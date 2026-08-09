@@ -695,7 +695,7 @@ test_bootstrap_activates_on_env_token() {
   SQUAD_HOME="$home" "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
   sum2=$(cat "$home/state/x-sentry.check.sh" "$home/config/x-mode.env" | shasum)
   [ "$sum1" = "$sum2" ] || fail "bootstrap X-mode setup must be idempotent"
-  n=$(find "$home/state" -maxdepth 1 -name 'x-watch*' | wc -l | tr -d ' ')
+  n=$(find "$home/state" -maxdepth 1 -name 'x-sentry*' | wc -l | tr -d ' ')
   [ "$n" = "1" ] || fail "bootstrap must not duplicate the shim (found $n)"
   pass "bootstrap activates X mode from an .env token, idempotently"
 }

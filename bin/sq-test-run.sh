@@ -145,7 +145,7 @@ family_for_basename() {
     sq-supervision-instructions.test.sh|sq-task-delivery.test.sh|\
     sq-tmux-submit-busy.test.sh|sq-trace-context-lib.test.sh|\
     sq-transition-lib.test.sh|\
-    sq-test-run.test.sh|sq-test-isolation-proof.test.sh)
+    sq-test-run.test.sh|sq-test-isolation-proof.test.sh|sq-rebrand-guard.test.sh)
       printf '%s\n' pure-contract-unit
       ;;
     sq-daemon.test.sh|sq-guard-stale-banner.test.sh|sq-pi-watch-extension.test.sh|\

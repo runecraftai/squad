@@ -67,12 +67,12 @@ guard_no_match() {
 
 test_guard_no_firstmate_tokens() {
   guard_no_match "rebrand guard 1: no firstmate tokens (excluding .specs/)" \
-    -i 'firstmate|first mate'
+    '(?i)firstmate|first mate'
 }
 
 test_guard_no_upstream_authors() {
   guard_no_match "rebrand guard 2: no upstream author identities (excluding .specs/)" \
-    -i 'kunchenguid|kun chen|@kunchenguid'
+    '(?i)kunchenguid|kun chen|@kunchenguid'
 }
 
 test_guard_no_fm_prefix() {

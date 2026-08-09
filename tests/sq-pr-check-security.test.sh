@@ -2131,7 +2131,7 @@ SH
     [ ! -e "$executed" ] || fail "$marker_kind historical X shim was executed during migration"
     assert_valid_migration_marker "$state/.pr-check-migration-v1"
     assert_valid_scan_marker "$state/.pr-check-migration-scan-v1"
-    ! find "$state/.pr-check-quarantine" -name 'x-watch.check.*' -type f 2>/dev/null | grep . >/dev/null \
+    ! find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f 2>/dev/null | grep . >/dev/null \
       || fail "$marker_kind historical X shim was quarantined"
   done
 
@@ -2218,7 +2218,7 @@ SH
         [ "$rc" -eq 0 ] || fail "$variant historical X lookalike was not safely quarantined"
         [ ! -e "$shim" ] && [ ! -L "$shim" ] \
           || fail "$variant historical X lookalike remained live after migration"
-        find "$state/.pr-check-quarantine" -name 'x-watch.check.*' -type f | grep . >/dev/null \
+        find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f | grep . >/dev/null \
           || fail "$variant historical X lookalike was not quarantined"
         ;;
     esac
@@ -2262,7 +2262,7 @@ test_direct_registration_refreshes_v1_x_shim() {
       || fail "$marker_kind X shim refresh suppressed direct PR registration"
     assert_valid_migration_marker "$state/.pr-check-migration-v1"
     assert_valid_scan_marker "$state/.pr-check-migration-scan-v1"
-    quarantined=$(find "$state/.pr-check-quarantine" -name 'x-watch.check.*' -type f 2>/dev/null || true)
+    quarantined=$(find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f 2>/dev/null || true)
     [ -z "$quarantined" ] || fail "$marker_kind authenticated v1 X shim was quarantined"
 
     snapshot_before=$(state_snapshot "$state")
@@ -2287,7 +2287,7 @@ test_direct_registration_refreshes_v1_x_shim() {
     || fail "direct registration failed after quarantining an X shim lookalike: $(cat "$dir/register.err")"
   [ ! -e "$shim" ] && [ ! -L "$shim" ] \
     || fail "unrecognized X shim lookalike remained armed"
-  find "$state/.pr-check-quarantine" -name 'x-watch.check.*' -type f | grep . >/dev/null \
+  find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f | grep . >/dev/null \
     || fail "unrecognized X shim lookalike was not quarantined"
   fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
     || fail "lookalike quarantine suppressed direct PR registration"
@@ -2448,7 +2448,7 @@ SH
     || fail "locked X-shim scan left the forged X shim runnable"
   find "$state/.pr-check-quarantine" -name 'b-custom.check.*' -type f | grep . >/dev/null \
     || fail "locked X-shim scan did not quarantine the replaced custom check"
-  find "$state/.pr-check-quarantine" -name 'x-watch.check.*' -type f | grep . >/dev/null \
+  find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f | grep . >/dev/null \
     || fail "locked X-shim scan did not quarantine the forged X shim"
   [ -f "$state/.pr-check-quarantine/task-a.diagnostic.failure-canonical" ] \
     || fail "sentry continuation lost the durable repair obligation"

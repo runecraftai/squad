@@ -342,7 +342,7 @@ refresh_v1_x_shim() {
   local shim="$STATE/x-sentry.check.sh"
   fmx_poll_shim_v1_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" "$STATE_DEVICE" || return 0
   fm_pr_regular_destination_on_device_or_absent "$shim" "$STATE_DEVICE" || return 1
-  MIGRATION_X_SHIM_TMP=$(mktemp "$STATE/.sq-x-watch.XXXXXX") || return 1
+  MIGRATION_X_SHIM_TMP=$(mktemp "$STATE/.sq-x-sentry.XXXXXX") || return 1
   fmx_poll_shim_content "$SQUAD_HOME" "$SQUAD_ROOT" > "$MIGRATION_X_SHIM_TMP" || return 1
   chmod 0700 "$MIGRATION_X_SHIM_TMP" || return 1
   fmx_poll_shim_valid "$MIGRATION_X_SHIM_TMP" "$SQUAD_HOME" "$SQUAD_ROOT" || return 1
