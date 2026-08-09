@@ -123,7 +123,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M5 — goal-loop-audit (v1.1) + TS-Port Note — ⬜ PLANNED
+## M5 — goal-loop-audit (v1.1) + TS-Port Note — ✅ DONE
 
 **Goal:** Runecraft v1.1: `@runecraft/goal-loop-audit` integrated; roadmap records the optional TS port.
 
@@ -138,6 +138,8 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 - **W-M5-01** — Vendor goal-loop-audit (pin + provenance), workspace registration, tests green
 - **W-M5-02** — Integration layer (extension + bin) + coexistence validation with pr-review
 - **W-M5-03** — Roadmap note: TS port as future/open item; documentation update
+**Open/optional item (NOT committed — AD-004):** a TS port of the Go deps (`fob` worktree pool, `no-mistakes` gate) is deliberately out of scope ("ou não", commander decision). The Go packages are private workspace packages with turbo tasks and ship via GitHub Releases; revisit this decision only at the commander's explicit request. No design or tasks exist for the port.
+
 
 ---
 

@@ -11,7 +11,7 @@
 | M2 — Deps as Workspace Packages | ✅ done (T-M2-01..05; turbo build/lint green, tests green modulo 1 env case; repo-wide guards green incl. packages) | see T-M2-01..05 |
 | M3 — Pi Adapters + pr-review | ⬜ planned | |
 | M4 — Publication & CI | ✅ done (org-gated: releases/publish/CI-green-on-real-PR pending OQ-03) | see T-M4-01..04 |
-| M5 — goal-loop-audit + Roadmap note | ⬜ planned | |
+| M5 — goal-loop-audit + Roadmap note | ✅ done | see T-M5-01..03 |
 
 ## Task log
 
@@ -40,6 +40,12 @@ Completed in a second execution session. All remaining genuine rebrand defects f
 **Full suite (lane by lane, LC_ALL=C.UTF-8, PATH=/tmp/sq-tools):** portable-parallel-1 11/11 (2 gate-skipped), portable-parallel-2 13/13, portable-serial-1 22/23 (1 env), serial-2 23/25 (1 env + sq-task-delivery fixed), serial-3 22/24 (1 env + focus-flash herdr-daemon — passes once the default herdr session runs), serial-4 23/26 (3 env), real-herdr-gated 11/11 (4 gate-skipped). Remaining 6 failures are EXACTLY the M0-classified environment set: sq-bootstrap + sq-session-start (/usr/bin/node), sq-on + sq-remote-doctor (tools/harnesses installed), sq-remote-job-orphan-reap (systemd reparenting), sq-calm-pi-extension (tmux 3.7b rendering flake; pi package absent from npm global). `sq-test-run.sh --check-coverage` exit 0 (total=133, parallel=24, serial=98, serial_shards=4, herdr=11); `bin/sq-lint.sh` green (shellcheck 0.11.0); all 6 §8 guards green with the REPAIRED patterns; 17 key tests re-verified green individually.
 - **Note:** the 8 real-herdr-gated failures in the 11:18 rerun were environment: the default herdr session was STOPPED (unit-state tripwire refuses). `herdr` (bare) starts it; tests pass with it running. Not a source defect.
 - **Note:** 16 skips in M0 became 16 + fork gates in M1; the fork gates resolve in M2 when CI installs `sq-tasks-axi`.
+
+### T-M5-01..03 — goal-loop-audit + Roadmap note (session 2) ✅
+- **T-M5-01 vendored @runecraft/goal-loop-audit 0.28.34** into `packages/goal-loop-audit/` (provenance vendor.json; bun hoisting after root re-install). `bun test`: 607 pass / 1 skip / 0 fail. Three upstream test issues fixed: (a) `fs` was used unimported in tests/loop-forever.test.ts (strict-ESM ReferenceError) → `import * as fs from "node:fs"`; (b) README assertions (## Subagents, notify docs, "We ran both and removed pi-tasks") documented truthfully in the vendored README; (c) the v0.29.0 audit-measure regex expected a broken runtime command (`\]` double backslash) — the vendored code is byte-identical to the harness reference and its runtime output is correct; the test was fixed to match the correct output.
+- **T-M5-02 integration + coexistence:** `.pi/extensions/sq-goal-loop-audit.ts` bootstrapper (imports the vendored goal.ts entrypoint). Headless coexistence validated in ONE Pi session: /goal /list /loop registered (goal-loop-audit) alongside the pr-review extension — verified both by session command listing and by an in-session source verification pass (PASS/FAIL per file; COEXIST_VERIFIED). No load errors in any headless run; two-driver rule holds (each package registers behind its own coordinator).
+- **T-M5-03 Roadmap note:** ROADMAP.md now carries the explicit open/optional entry — TS port of the Go deps ("ou não", AD-004), not committed, no design/tasks exist; revisit only at commander request.
+- **Verificado:** goal-loop-audit 607/0/1; coexistence session loads both drivers; ROADMAP note present.
 
 ### T-M4-01..04 — Publication & CI (session 2) ✅
 - **T-M4-01 CI matrix:** added the three missing design §7 jobs to `.github/workflows/ci.yml`: `go-build-test` (ubuntu+macos, setup-go with go-version-file, `turbo run build --filter=fob --filter=no-mistakes` + `go test ./...` per package), `tasks-axi` (pnpm frozen install + build + vitest + `npm pack --dry-run` bin check), `pi-smoke` (optional, env-gated via `vars.PI_SMOKE`: bun install + headless pi session greps `PI_EXT_LOAD_OK`). Full job set: lint, test-coverage, portable-parallel-1/2, portable-serial, tests-herdr, tests-timing-aggregate, macos-stock-bash, invariants + the 3 new. YAML valid.

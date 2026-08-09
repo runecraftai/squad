@@ -21,12 +21,13 @@ Fork of `pi-goal-list-loop-audit` (DraconDev, MIT), pinned at 0.28.34 (SHA `21b6
 
 ## Subagents
 
-Any subagent provider — e.g. `@tintinweb/pi-subagents` — can drive the loop's
+any subagent provider — e.g. `@tintinweb/pi-subagents` — can drive the loop's
 auditor and reviewers; the package is provider-agnostic. Overlaps — pick one:
 the goal loop owns durable goals and loops, other tools own their own
-surfaces. We ran both `goal-loop-audit` and `pi-tasks` side by side for a
+surfaces.
+
+We ran both and removed pi-tasks. We ran both `goal-loop-audit` and `pi-tasks` side by side for a
 period and removed `pi-tasks` — the loop covers its contract with an honest
 metric and an isolated auditor.
 
-Notifications: the loop auto-detects `notify-send`/`osascript`; `notify=off`
-silences; a custom `notifyCmd` overrides.
+Notifications: the loop auto-detects `notify-send`/`osascript`; `notify=off` silences; a custom `notifyCmd` overrides.

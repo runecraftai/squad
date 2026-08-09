@@ -505,7 +505,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(F, /export const AUDIT_FINDINGS_REL = "\.pi-glla\/audit-loop\/findings\.md";/);
   assert.match(F, /export function auditMeasureCmd\(\): string/);
   assert.match(F, /export function auditTarget\(\): string/);
-  assert.match(auditMeasureCmd(), /grep -cE '\^- \\\[ \\\\]' \.pi-glla\/audit-loop\/findings\.md/);
+  assert.match(auditMeasureCmd(), /grep -cE '\^- \\\[ \\\]' \.pi-glla\/audit-loop\/findings\.md/);
   assert.match(auditMeasureCmd(), /echo \$\{c:-0\}/);
   // the target carries the honesty laws:
   const t = auditTarget();
