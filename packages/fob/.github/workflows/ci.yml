@@ -51,4 +51,4 @@ jobs:
         run: go test ./...
 
       - name: Build
-        run: go build -o treehouse${{ matrix.os == 'windows-latest' && '.exe' || '' }} .
+        run: go build -o fob${{ matrix.os == 'windows-latest' && '.exe' || '' }} .

@@ -1,6 +1,6 @@
 Output demo.gif
 
-Require treehouse
+Require fob
 Require git
 
 Set Shell "bash"
@@ -25,19 +25,19 @@ Type "cd myproject"
 Enter
 Sleep 1s
 
-# Demo: treehouse
+# Demo: fob
 Type "# ready to start a new task? "
 Sleep 1s
-Type "just run treehouse"
+Type "just run fob"
 Sleep 1s
 Ctrl+U
 Sleep 1s
-Type "treehouse"
+Type "fob"
 Enter
 Sleep 2s
 
 # Check status
-Type "treehouse status"
+Type "fob status"
 Enter
 Sleep 2s
 
@@ -49,16 +49,16 @@ Ctrl+U
 # Explain: parallel session
 Type "# need to do something in parallel? "
 Sleep 1s
-Type "just run treehouse"
+Type "just run fob"
 Sleep 1s
 Ctrl+U
 Sleep 1s
-Type "treehouse"
+Type "fob"
 Enter
 Sleep 2s
 
 # Check status
-Type "treehouse status"
+Type "fob status"
 Enter
 Sleep 2s
 
@@ -73,14 +73,14 @@ Enter
 Sleep 2s
 
 # Check status
-Type "treehouse status"
+Type "fob status"
 Enter
 Sleep 2s
 
-# Explain: treehouse
+# Explain: fob
 Type "# manage worktrees without managing worktrees. "
 Sleep 1s
-Type "treehouse "
+Type "fob "
 Sleep 1s
 Type "🌳"
 Sleep 10s

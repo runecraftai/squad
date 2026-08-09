@@ -465,11 +465,11 @@ func TestParseCodexEvents_SkipsMalformedLines(t *testing.T) {
 // TestCodexAgent_BuildArgs_SuppressesProjectDocUnderOptOut locks in the codex
 // project-settings contract UNDER the trusted opt-out: codex is told to read
 // zero bytes of AGENTS.md (project doc) and to ignore project execpolicy .rules,
-// so a gate agent validating an agent-orchestration repo (firstmate) does not
-// adopt its fleet-captain identity.
+// so a gate agent validating an agent-orchestration repo (a gate-agent checkout) does not
+// adopt its commander identity.
 //
 // Empirical Codex E2E canary, run manually with codex-cli 0.144: a
-// firstmate-shaped checkout contained AGENTS.md and CLAUDE.md requiring the
+// Squad-shaped checkout contained AGENTS.md and CLAUDE.md requiring the
 // unique AYE_CAPTAIN_CANARY identity token in every reply if and only if the
 // project instructions governed the agent. Codex ran from that checkout in a
 // read-only sandbox. The default invocation's response to "pong" included the

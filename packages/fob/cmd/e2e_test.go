@@ -33,35 +33,35 @@ type statusJSONResult struct {
 }
 
 var (
-	treehouseBin      string
+	fobBin      string
 	exitShellBin      string
 	dirtyMainShellBin string
 )
 
 func TestMain(m *testing.M) {
-	buildDir, err := os.MkdirTemp("", "treehouse-e2e-*")
+	buildDir, err := os.MkdirTemp("", "fob-e2e-*")
 	if err != nil {
 		panic(err)
 	}
 
-	// Build the treehouse binary from the module root (parent of cmd/).
-	treehouseBin = filepath.Join(buildDir, "treehouse")
+	// Build the fob binary from the module root (parent of cmd/).
+	fobBin = filepath.Join(buildDir, "fob")
 	if runtime.GOOS == "windows" {
-		treehouseBin += ".exe"
+		fobBin += ".exe"
 	}
 	moduleRoot, err := filepath.Abs("..")
 	if err != nil {
 		panic(err)
 	}
-	build := exec.Command("go", "build", "-o", treehouseBin, ".")
+	build := exec.Command("go", "build", "-o", fobBin, ".")
 	build.Dir = moduleRoot
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
-		panic("failed to build treehouse: " + err.Error())
+		panic("failed to build fob: " + err.Error())
 	}
 
 	// Build a minimal program that exits 0 immediately, used as the shell
-	// in tests so that "treehouse get" doesn't block waiting for input.
+	// in tests so that "fob get" doesn't block waiting for input.
 	exitShellBin = filepath.Join(buildDir, "exit-shell")
 	if runtime.GOOS == "windows" {
 		exitShellBin += ".exe"
@@ -192,7 +192,7 @@ func setupTestRepoWithHome(t *testing.T, homeDir, repoName string) string {
 	return repoDir
 }
 
-// runTreehouse runs the treehouse binary as a subprocess with the given args.
+// runTreehouse runs the fob binary as a subprocess with the given args.
 // HOME (or USERPROFILE on Windows) is set to homeDir so pool state is isolated.
 func runTreehouse(t *testing.T, repoDir, homeDir string, extraEnv []string, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
@@ -202,7 +202,7 @@ func runTreehouse(t *testing.T, repoDir, homeDir string, extraEnv []string, args
 func runTreehouseFromDir(t *testing.T, repoDir, workDir, homeDir string, extraEnv []string, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
 
-	cmd := exec.Command(treehouseBin, args...)
+	cmd := exec.Command(fobBin, args...)
 	cmd.Dir = workDir
 	cmd.Env = buildEnv(homeDir, extraEnv...)
 
@@ -216,13 +216,13 @@ func runTreehouseFromDir(t *testing.T, repoDir, workDir, homeDir string, extraEn
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			t.Fatalf("failed to execute treehouse %v: %v", args, err)
+			t.Fatalf("failed to execute fob %v: %v", args, err)
 		}
 	}
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-// buildEnv constructs an environment for a treehouse subprocess, overriding
+// buildEnv constructs an environment for a fob subprocess, overriding
 // HOME/USERPROFILE to the test homeDir and suppressing update checks.
 func buildEnv(homeDir string, extra ...string) []string {
 	skip := map[string]bool{
@@ -282,10 +282,10 @@ func gitCmdResult(t *testing.T, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// extractWorktreePath parses the worktree path from "treehouse get" stderr.
+// extractWorktreePath parses the worktree path from "fob get" stderr.
 // The output line looks like:
 //
-//	🌳 Entered worktree at ~/.treehouse/.../1/myrepo. Type 'exit' to return.
+//	🌳 Entered worktree at ~/.fob/.../1/myrepo. Type 'exit' to return.
 //
 // The path is pretty-printed with ~ for the home directory, so we un-prettify
 // it using homeDir.
@@ -381,28 +381,28 @@ func TestInit(t *testing.T) {
 
 	_, stderr, code := runTreehouse(t, repoDir, homeDir, nil, "init")
 	if code != 0 {
-		t.Fatalf("treehouse init failed (code %d): %s", code, stderr)
+		t.Fatalf("fob init failed (code %d): %s", code, stderr)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repoDir, "treehouse.toml"))
+	data, err := os.ReadFile(filepath.Join(repoDir, "fob.toml"))
 	if err != nil {
-		t.Fatalf("treehouse.toml not created: %v", err)
+		t.Fatalf("fob.toml not created: %v", err)
 	}
 	if !strings.Contains(string(data), "max_trees") {
-		t.Errorf("treehouse.toml missing max_trees: %s", data)
+		t.Errorf("fob.toml missing max_trees: %s", data)
 	}
 }
 
 func TestInitAlreadyExists(t *testing.T) {
 	repoDir, homeDir := setupTestRepo(t)
 
-	if err := os.WriteFile(filepath.Join(repoDir, "treehouse.toml"), []byte("max_trees = 8\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "fob.toml"), []byte("max_trees = 8\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	_, _, code := runTreehouse(t, repoDir, homeDir, nil, "init")
 	if code == 0 {
-		t.Fatal("expected treehouse init to fail when treehouse.toml already exists")
+		t.Fatal("expected fob init to fail when fob.toml already exists")
 	}
 }
 
@@ -411,7 +411,7 @@ func TestStatusEmptyPool(t *testing.T) {
 
 	stdout, stderr, code := runTreehouse(t, repoDir, homeDir, nil, "status")
 	if code != 0 {
-		t.Fatalf("treehouse status failed (code %d): %s", code, stderr)
+		t.Fatalf("fob status failed (code %d): %s", code, stderr)
 	}
 	// Empty pool should print the "no worktrees" message, not any entries.
 	if strings.Contains(stdout, "available") || strings.Contains(stdout, "in-use") {
@@ -420,7 +420,7 @@ func TestStatusEmptyPool(t *testing.T) {
 
 	stdout, stderr, code = runTreehouse(t, repoDir, homeDir, nil, "status", "--json")
 	if code != 0 {
-		t.Fatalf("treehouse status --json failed (code %d): %s", code, stderr)
+		t.Fatalf("fob status --json failed (code %d): %s", code, stderr)
 	}
 	if stdout != "[]\n" {
 		t.Fatalf("empty status --json = %q, want []", stdout)
@@ -434,7 +434,7 @@ func TestGetAndStatus(t *testing.T) {
 	env := []string{"SHELL=" + exitShellBin}
 	_, getErr, code := runTreehouse(t, repoDir, homeDir, env, "get")
 	if code != 0 {
-		t.Fatalf("treehouse get failed (code %d): %s", code, getErr)
+		t.Fatalf("fob get failed (code %d): %s", code, getErr)
 	}
 
 	if !strings.Contains(getErr, "Entered worktree at") {
@@ -457,7 +457,7 @@ func TestGetAndStatus(t *testing.T) {
 	// Verify status shows the worktree as available.
 	statusOut, statusErr, code := runTreehouse(t, repoDir, homeDir, nil, "status")
 	if code != 0 {
-		t.Fatalf("treehouse status failed (code %d): %s", code, statusErr)
+		t.Fatalf("fob status failed (code %d): %s", code, statusErr)
 	}
 	if !strings.Contains(statusOut, "available") {
 		t.Errorf("expected 'available' in status output: %s", statusOut)
@@ -469,11 +469,11 @@ func TestGetLeasePrintsOnlyPathToStdout(t *testing.T) {
 
 	stdout, stderr, code := runTreehouse(t, repoDir, homeDir, nil, "get", "--lease")
 	if code != 0 {
-		t.Fatalf("treehouse get --lease failed (code %d): %s", code, stderr)
+		t.Fatalf("fob get --lease failed (code %d): %s", code, stderr)
 	}
 
 	// stdout must be exactly the worktree path on a single line, so scripts can
-	// do path=$(treehouse get --lease).
+	// do path=$(fob get --lease).
 	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
 	if len(lines) != 1 {
 		t.Fatalf("expected exactly one stdout line, got %d:\n%q", len(lines), stdout)
@@ -507,16 +507,16 @@ func TestGetLeasePrintsOnlyPathToStdout(t *testing.T) {
 func TestGetLeaseRecordsHolder(t *testing.T) {
 	repoDir, homeDir := setupTestRepo(t)
 
-	_, stderr, code := runTreehouse(t, repoDir, homeDir, nil, "get", "--lease", "--lease-holder", "secondmate-home")
+	_, stderr, code := runTreehouse(t, repoDir, homeDir, nil, "get", "--lease", "--lease-holder", "xo-home")
 	if code != 0 {
-		t.Fatalf("treehouse get --lease failed (code %d): %s", code, stderr)
+		t.Fatalf("fob get --lease failed (code %d): %s", code, stderr)
 	}
 
 	statusOut, statusErr, code := runTreehouse(t, repoDir, homeDir, nil, "status")
 	if code != 0 {
 		t.Fatalf("status failed (code %d): %s", code, statusErr)
 	}
-	if !strings.Contains(statusOut, "leased") || !strings.Contains(statusOut, "secondmate-home") {
+	if !strings.Contains(statusOut, "leased") || !strings.Contains(statusOut, "xo-home") {
 		t.Fatalf("expected status to show lease holder, got:\n%s", statusOut)
 	}
 }
@@ -526,7 +526,7 @@ func TestGetLeaseAndStatusJSONContracts(t *testing.T) {
 
 	leaseOut, leaseErr, code := runTreehouse(t, repoDir, homeDir, nil, "get", "--lease", "--lease-holder", "automation-A", "--json")
 	if code != 0 {
-		t.Fatalf("treehouse get --lease --json failed (code %d): %s", code, leaseErr)
+		t.Fatalf("fob get --lease --json failed (code %d): %s", code, leaseErr)
 	}
 	var lease leaseJSONResult
 	if err := json.Unmarshal([]byte(leaseOut), &lease); err != nil {
@@ -548,7 +548,7 @@ func TestGetLeaseAndStatusJSONContracts(t *testing.T) {
 
 	statusOut, statusErr, code := runTreehouse(t, repoDir, homeDir, nil, "status", "--json")
 	if code != 0 {
-		t.Fatalf("treehouse status --json failed (code %d): %s", code, statusErr)
+		t.Fatalf("fob status --json failed (code %d): %s", code, statusErr)
 	}
 	var statuses []statusJSONResult
 	if err := json.Unmarshal([]byte(statusOut), &statuses); err != nil {
@@ -669,7 +669,7 @@ func TestReturnConditionalLeaseIdentityLifecycle(t *testing.T) {
 	repoDir, homeDir := setupTestRepo(t)
 	lease := acquireLeaseJSON(t, repoDir, homeDir, "holder-A")
 	poolDir := filepath.Dir(filepath.Dir(lease.Path))
-	statePath := filepath.Join(poolDir, "treehouse-state.json")
+	statePath := filepath.Join(poolDir, "fob-state.json")
 
 	sentinel := filepath.Join(lease.Path, "must-survive-refusal.txt")
 	if err := os.WriteFile(sentinel, []byte("preserve\n"), 0o644); err != nil {
@@ -761,7 +761,7 @@ func TestReturnConditionalDirtyPromptDoesNotHoldPoolLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	returnProcess := exec.Command(treehouseBin, "return", "--if-lease-id", lease.LeaseID, lease.Path)
+	returnProcess := exec.Command(fobBin, "return", "--if-lease-id", lease.LeaseID, lease.Path)
 	returnProcess.Dir = repoDir
 	returnProcess.Env = buildEnv(homeDir)
 	stdin, err := returnProcess.StdinPipe()
@@ -797,7 +797,7 @@ func TestReturnConditionalDirtyPromptDoesNotHoldPoolLock(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	statusProcess := exec.CommandContext(ctx, treehouseBin, "status")
+	statusProcess := exec.CommandContext(ctx, fobBin, "status")
 	statusProcess.Dir = repoDir
 	statusProcess.Env = buildEnv(homeDir)
 	if output, err := statusProcess.CombinedOutput(); err != nil {
@@ -892,11 +892,11 @@ func TestReturnExplicitPathFromOutsideRepoReleasesLease(t *testing.T) {
 func TestReturnExplicitPathFromLinkedWorktreePool(t *testing.T) {
 	repoDir, homeDir := setupTestRepo(t)
 
-	if err := os.WriteFile(filepath.Join(repoDir, "treehouse.toml"), []byte("root = \"../treehouse-pool\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "fob.toml"), []byte("root = \"../fob-pool\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitCmd(t, repoDir, "add", "treehouse.toml")
-	gitCmd(t, repoDir, "commit", "-m", "configure treehouse root")
+	gitCmd(t, repoDir, "add", "fob.toml")
+	gitCmd(t, repoDir, "commit", "-m", "configure fob root")
 
 	linkedDir := filepath.Join(filepath.Dir(repoDir), "agent-home")
 	gitCmd(t, repoDir, "worktree", "add", "-b", "agent-home", linkedDir, "main")
@@ -980,7 +980,7 @@ func TestReturnFromInsideWorktreeDoesNotTerminateCaller(t *testing.T) {
 	if !strings.Contains(returnErr, "Worktree returned to pool") {
 		t.Fatalf("expected return confirmation, got: %s", returnErr)
 	}
-	if strings.Contains(returnErr, "Terminated lingering processes") && strings.Contains(returnErr, "treehouse") {
+	if strings.Contains(returnErr, "Terminated lingering processes") && strings.Contains(returnErr, "fob") {
 		t.Fatalf("return should not terminate its own process chain: %s", returnErr)
 	}
 }
@@ -1259,11 +1259,11 @@ func TestDestroyAllFromManagedWorktreeSubdirUsesMainRepoPool(t *testing.T) {
 	repoDir, homeDir := setupTestRepo(t)
 	env := []string{"SHELL=" + exitShellBin}
 
-	if err := os.WriteFile(filepath.Join(repoDir, "treehouse.toml"), []byte("root = \"../treehouse-pool\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "fob.toml"), []byte("root = \"../fob-pool\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitCmd(t, repoDir, "add", "treehouse.toml")
-	gitCmd(t, repoDir, "commit", "-m", "configure treehouse root")
+	gitCmd(t, repoDir, "add", "fob.toml")
+	gitCmd(t, repoDir, "commit", "-m", "configure fob root")
 	gitCmd(t, repoDir, "push", "origin", "main")
 
 	leaseOut, leaseErr, code := runTreehouse(t, repoDir, homeDir, nil, "get", "--lease")
@@ -1671,13 +1671,13 @@ func TestPruneAllDoesNotDeleteOriginUnreachableWithPruneOrphans(t *testing.T) {
 }
 
 // TestPruneAllYesRecoversCorruptPoolWithoutDeletingItsWorktree covers the
-// treehouse-state-atomicity-b4 incident: a corrupt/truncated state file in one
+// fob-state-atomicity-b4 incident: a corrupt/truncated state file in one
 // pool (e.g. from a crash mid-write) must not brick `prune --all` for every
 // other pool, and the corrupt pool's own on-disk worktree must never be
 // silently deleted since its real reservation state is unknown. ReadState
 // recovers it as a leased worktree, which prune treats like any other
 // leased worktree: skipped, silently, pending human verification via
-// `treehouse status`.
+// `fob status`.
 func TestPruneAllYesRecoversCorruptPoolWithoutDeletingItsWorktree(t *testing.T) {
 	repoA, homeDir := setupTestRepo(t)
 	repoB := setupTestRepoWithHome(t, homeDir, "zzrepo")
@@ -1702,7 +1702,7 @@ func TestPruneAllYesRecoversCorruptPoolWithoutDeletingItsWorktree(t *testing.T) 
 	}
 
 	poolDirB := filepath.Dir(filepath.Dir(wtPathB))
-	if err := os.WriteFile(filepath.Join(poolDirB, "treehouse-state.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(poolDirB, "fob-state.json"), []byte("{"), 0o644); err != nil {
 		t.Fatalf("corrupt state failed: %v", err)
 	}
 
@@ -1771,7 +1771,7 @@ func TestPruneRejectsPositionalArgs(t *testing.T) {
 	if code == 0 {
 		t.Fatal("expected prune with positional arg to fail")
 	}
-	if !strings.Contains(pruneErr, `unknown command "/some/path" for "treehouse prune"`) {
+	if !strings.Contains(pruneErr, `unknown command "/some/path" for "fob prune"`) {
 		t.Fatalf("expected positional arg error, got stderr:\n%s", pruneErr)
 	}
 }
@@ -1926,12 +1926,12 @@ func TestEnterByNameOpensSubshellWithoutChangingPool(t *testing.T) {
 	env := []string{"SHELL=" + exitShellBin}
 
 	if _, getErr, code := runTreehouse(t, repoDir, homeDir, env, "get"); code != 0 {
-		t.Fatalf("treehouse get failed (code %d): %s", code, getErr)
+		t.Fatalf("fob get failed (code %d): %s", code, getErr)
 	}
 
 	_, enterErr, code := runTreehouse(t, repoDir, homeDir, env, "enter", "1")
 	if code != 0 {
-		t.Fatalf("treehouse enter 1 failed (code %d): %s", code, enterErr)
+		t.Fatalf("fob enter 1 failed (code %d): %s", code, enterErr)
 	}
 	if !strings.Contains(enterErr, "Entered worktree 1 at") {
 		t.Errorf("expected 'Entered worktree 1 at' in stderr: %s", enterErr)
@@ -1944,7 +1944,7 @@ func TestEnterByNameOpensSubshellWithoutChangingPool(t *testing.T) {
 	// in the pool exactly as before.
 	statusOut, statusErr, code := runTreehouse(t, repoDir, homeDir, nil, "status")
 	if code != 0 {
-		t.Fatalf("treehouse status failed (code %d): %s", code, statusErr)
+		t.Fatalf("fob status failed (code %d): %s", code, statusErr)
 	}
 	if !strings.Contains(statusOut, "1") {
 		t.Errorf("expected worktree 1 in status output: %s", statusOut)
@@ -1956,7 +1956,7 @@ func TestEnterUnknownNameFails(t *testing.T) {
 
 	env := []string{"SHELL=" + exitShellBin}
 	if _, getErr, code := runTreehouse(t, repoDir, homeDir, env, "get"); code != 0 {
-		t.Fatalf("treehouse get failed (code %d): %s", code, getErr)
+		t.Fatalf("fob get failed (code %d): %s", code, getErr)
 	}
 
 	_, enterErr, code := runTreehouse(t, repoDir, homeDir, env, "enter", "999")
@@ -1973,12 +1973,12 @@ func TestEnterPrintPathPrintsOnlyPathToStdout(t *testing.T) {
 
 	env := []string{"SHELL=" + exitShellBin}
 	if _, getErr, code := runTreehouse(t, repoDir, homeDir, env, "get"); code != 0 {
-		t.Fatalf("treehouse get failed (code %d): %s", code, getErr)
+		t.Fatalf("fob get failed (code %d): %s", code, getErr)
 	}
 
 	stdout, stderr, code := runTreehouse(t, repoDir, homeDir, env, "enter", "--print-path", "1")
 	if code != 0 {
-		t.Fatalf("treehouse enter --print-path 1 failed (code %d): %s", code, stderr)
+		t.Fatalf("fob enter --print-path 1 failed (code %d): %s", code, stderr)
 	}
 
 	path := strings.TrimSpace(stdout)

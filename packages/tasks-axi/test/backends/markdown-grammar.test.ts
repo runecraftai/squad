@@ -11,7 +11,7 @@ import {
 } from "../../src/backends/markdown-grammar.js";
 import type { Task } from "../../src/model.js";
 import {
-  FIRSTMATE_FIXTURE,
+  LEGACY_FIXTURE,
   FIXTURE,
   MULTI_REASON_FIXTURE,
 } from "../helpers.js";
@@ -72,7 +72,7 @@ describe("markdown grammar", () => {
       expect(renderBacklog(parseBacklog(src))).toBe(src);
     });
 
-    // Real-corpus coverage: byte-exact on firstmate's actual backlog when present
+    // Real-corpus coverage: byte-exact on Squad's actual backlog when present
     // (the file is not committed to this public package, so this skips in CI).
     const realPath =
       "/home/squad/github/squad-org/squad/data/backlog.md";
@@ -235,13 +235,13 @@ describe("markdown grammar", () => {
     it("treats indented pseudo-headings as body, not section boundaries", () => {
       const src = [
         "## Queued",
-        "- [ ] intent-trap - harness default work (repo: firstmate)",
+        "- [ ] intent-trap - harness default work (repo: Squad)",
         "  Context for the xo.",
         "  ## Intent",
         "  Deliver the full spec, not the title alone.",
         "  ## Acceptance",
         "  - body survives parse",
-        "- [ ] next-item - after the trap (repo: firstmate)",
+        "- [ ] next-item - after the trap (repo: Squad)",
         "",
         "## Done",
         "",
@@ -492,17 +492,17 @@ describe("markdown grammar", () => {
     });
   });
 
-  // The two firstmate-adoption blockers: the `- [ ]` checkbox in-flight form and
+  // The two Squad-adoption blockers: the `- [ ]` checkbox in-flight form and
   // the `blocked-by: <id> - <reason>` dependency edge.
-  describe("firstmate format interop", () => {
+  describe("Squad format interop", () => {
     it("render(parse(src)) === src on the legacy-shaped fixture", () => {
-      expect(renderBacklog(parseBacklog(FIRSTMATE_FIXTURE))).toBe(
-        FIRSTMATE_FIXTURE,
+      expect(renderBacklog(parseBacklog(LEGACY_FIXTURE))).toBe(
+        LEGACY_FIXTURE,
       );
     });
 
-    it("parses the `- [ ] <id>` checkbox in-flight form firstmate uses", () => {
-      const task = tasksOf(parseBacklog(FIRSTMATE_FIXTURE)).find(
+    it("parses the `- [ ] <id>` checkbox in-flight form Squad uses", () => {
+      const task = tasksOf(parseBacklog(LEGACY_FIXTURE)).find(
         (t) => t.id === "fix-login-k3",
       )!;
       expect(task.state).toBe("in_flight");
@@ -524,7 +524,7 @@ describe("markdown grammar", () => {
     });
 
     it("parses `blocked-by: <id> - <reason>`, keeping both id and reason", () => {
-      const task = tasksOf(parseBacklog(FIRSTMATE_FIXTURE)).find(
+      const task = tasksOf(parseBacklog(LEGACY_FIXTURE)).find(
         (t) => t.id === "add-tests-q7",
       )!;
       expect(task.title).toBe("one line");
@@ -560,14 +560,14 @@ describe("markdown grammar", () => {
         ],
       };
       // A reason-bearing edge renders last (after the parentheticals), exactly
-      // as firstmate writes it.
+      // as Squad writes it.
       expect(buildProse(task)).toBe(
         "one line (repo: app) blocked-by: fix-login-k3 - waits on the login refactor",
       );
     });
 
     it("round-trips the blocked-by reason through a normalize cycle", () => {
-      const doc = parseBacklog(FIRSTMATE_FIXTURE);
+      const doc = parseBacklog(LEGACY_FIXTURE);
       markAllDirty(doc);
       const once = renderBacklog(doc);
       expect(once).toContain(
@@ -628,7 +628,7 @@ describe("markdown grammar", () => {
   });
 
   describe("leadingKind", () => {
-    it("maps the firstmate leading words", () => {
+    it("maps the Squad leading words", () => {
       expect(leadingKind("SHIP a thing")).toBe("strike");
       expect(leadingKind("SCOUT - report")).toBe("recon");
       expect(leadingKind("DOCS-ONLY change")).toBe("docs");

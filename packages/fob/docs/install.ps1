@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $repo = "squad-org/squad"
-$installDir = "$env:LOCALAPPDATA\treehouse"
+$installDir = "$env:LOCALAPPDATA\fob"
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
 
@@ -9,17 +9,17 @@ $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/l
 $version = $release.tag_name
 $versionNum = $version.TrimStart("v")
 
-$filename = "treehouse-v$versionNum-windows-$arch.zip"
+$filename = "fob-v$versionNum-windows-$arch.zip"
 $url = "https://github.com/$repo/releases/download/$version/$filename"
 
 $tmpDir = New-TemporaryFile | ForEach-Object { Remove-Item $_; New-Item -ItemType Directory -Path $_ }
 
-Write-Host "Downloading treehouse $version for windows/$arch..."
+Write-Host "Downloading fob $version for windows/$arch..."
 Invoke-WebRequest -Uri $url -OutFile "$tmpDir\$filename"
 Expand-Archive -Path "$tmpDir\$filename" -DestinationPath $tmpDir -Force
 
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-Move-Item -Path "$tmpDir\treehouse.exe" -Destination "$installDir\treehouse.exe" -Force
+Move-Item -Path "$tmpDir\fob.exe" -Destination "$installDir\fob.exe" -Force
 
 Remove-Item -Recurse -Force $tmpDir
 
@@ -30,4 +30,4 @@ if ($userPath -notlike "*$installDir*") {
     Write-Host "Added $installDir to user PATH. Restart your terminal for it to take effect."
 }
 
-Write-Host "treehouse $version installed to $installDir\treehouse.exe"
+Write-Host "fob $version installed to $installDir\fob.exe"

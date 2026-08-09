@@ -2081,7 +2081,7 @@ func TestCIStep_ZeroRerunBudgetEscalatesCancelledCheckWithoutMakingItReady(t *te
 	}
 }
 
-// Incident replay (firstmate PR 1495, 2026-08-02): the pipeline pushed its fix
+// Incident replay (upstream PR 1495, 2026-08-02): the pipeline pushed its fix
 // commits, GitHub ran the resulting workflow, every job finished, and one of
 // them ended CANCELLED (GitHub reports a job that exceeds its timeout-minutes
 // that way) while the rest passed. The CI monitor logged "CI checks running,

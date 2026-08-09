@@ -6,7 +6,7 @@ Thanks for your interest in contributing!
 
 ```sh
 git clone https://github.com/squad-org/squad/packages/fob.git
-cd treehouse
+cd fob
 make build
 make test
 ```
@@ -26,7 +26,7 @@ make test
 
 ## Reporting Issues
 
-Open a [GitHub issue](https://github.com/squad-org/squad/packages/fob/issues) with steps to reproduce. Include your OS, architecture, and treehouse version (`treehouse --version`).
+Open a [GitHub issue](https://github.com/squad-org/squad/packages/fob/issues) with steps to reproduce. Include your OS, architecture, and fob version (`fob --version`).
 
 ## License
 

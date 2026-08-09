@@ -31,7 +31,7 @@ func TestNewPipelineAgent_OptOut_AdmitsVerifiedHarness(t *testing.T) {
 	}
 }
 
-// TestNewPipelineAgent_OptOut_RefusesUnverifiedHarness is the captain-mandated
+// TestNewPipelineAgent_OptOut_RefusesUnverifiedHarness is the commander-mandated
 // fail-closed contract at the daemon wiring: under the opt-out, a harness with no
 // verified neutralization knob is refused rather than launched with project
 // instructions loaded.

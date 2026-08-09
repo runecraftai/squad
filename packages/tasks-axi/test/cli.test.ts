@@ -94,7 +94,7 @@ describe("CLI entrypoint", () => {
     const c = capture();
     await main({ argv: ["start", "cert-cleanup"], stdout: c.stdout });
     expect(c.read()).toContain("ok: start cert-cleanup -> In flight");
-    // In-flight items render in firstmate's `- [ ]` checkbox form, under the
+    // In-flight items render in Squad's `- [ ]` checkbox form, under the
     // In flight header (the section, not the bullet, carries the state).
     expect(readFileSync(path, "utf8")).toMatch(
       /## In flight[\s\S]*- \[ \] cert-cleanup/,

@@ -50,7 +50,7 @@ describe("crud commands", () => {
         // State-aware hints never suggest the action --start already performed.
         expect(out).not.toContain("Run `tasks-axi start new-h1`");
         expect(out).toContain("Run `tasks-axi done new-h1 --pr <url>`");
-        // In-flight items use firstmate's `- [ ]` checkbox form under the header.
+        // In-flight items use Squad's `- [ ]` checkbox form under the header.
         expect(b.read()).toMatch(/## In flight[\s\S]*- \[ \] new-h1/);
       } finally {
         b.cleanup();

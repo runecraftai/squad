@@ -28,7 +28,7 @@ var pruneCmd = &cobra.Command{
 	Short: "Remove stale worktrees and opted-in orphans from the pool",
 	Long: `Remove stale worktrees and opted-in orphans from the pool to reclaim disk space.
 
-A worktree is stale only when treehouse manages it, no owner reservation or
+A worktree is stale only when fob manages it, no owner reservation or
 running process is using it, it has no uncommitted changes, and its HEAD is
 already merged into the default branch.
 
@@ -37,7 +37,7 @@ Backing-repository-missing orphans are reported by default. Pass --prune-orphans
 to include them as unverified candidates, and combine it with --yes to delete
 them.
 Pass --all or --global to sweep every managed pool under the user-level
-treehouse root from any directory. Global prune derives each worktree's owning
+fob root from any directory. Global prune derives each worktree's owning
 repository from git metadata and requires the configured root to be unset or
 absolute.`,
 	Args: cobra.NoArgs,
@@ -97,7 +97,7 @@ absolute.`,
 
 func init() {
 	pruneCmd.Flags().BoolVar(&pruneYes, "yes", false, "Delete listed prune candidates instead of doing a dry run")
-	pruneCmd.Flags().BoolVar(&pruneAll, "all", false, "Sweep every managed pool under the user-level treehouse root")
+	pruneCmd.Flags().BoolVar(&pruneAll, "all", false, "Sweep every managed pool under the user-level fob root")
 	pruneCmd.Flags().BoolVar(&pruneGlobal, "global", false, "Alias for --all")
 	pruneCmd.Flags().BoolVar(&pruneOrphans, "prune-orphans", false, "Include backing-repository-missing orphaned worktrees in prune candidates")
 	pruneCmd.Flags().BoolVarP(&pruneVerbose, "verbose", "v", false, "Show detailed skip diagnostics")

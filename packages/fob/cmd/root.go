@@ -17,7 +17,7 @@ func SetVersion(v string) {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "treehouse",
+	Use:   "fob",
 	Short: "Manage a pool of git worktrees for parallel AI agent workflows",
 	Long: `Treehouse maintains a pool of reusable, pre-warmed git worktrees
 so that multiple AI coding agents can work on the same repo in parallel.`,
@@ -40,8 +40,8 @@ so that multiple AI coding agents can work on the same repo in parallel.`,
 		// Show cached update notice from a previous check
 		if result := updater.ReadCache(version); result != nil && result.UpdateAvailable {
 			yellow := color.New(color.FgYellow)
-			yellow.Fprintf(os.Stderr, "A new version of treehouse is available: %s → %s\n", version, result.LatestVersion)
-			yellow.Fprintln(os.Stderr, "Run \"treehouse update\" to update")
+			yellow.Fprintf(os.Stderr, "A new version of fob is available: %s → %s\n", version, result.LatestVersion)
+			yellow.Fprintln(os.Stderr, "Run \"fob update\" to update")
 			fmt.Fprintln(os.Stderr)
 		}
 

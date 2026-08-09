@@ -31,7 +31,7 @@ const (
 	DestroyDirty DestroyClass = "dirty"
 	// DestroyUnmerged means HEAD is not merged into the default branch ref.
 	DestroyUnmerged DestroyClass = "unmerged"
-	// DestroyUnverified means treehouse could not prove the work landed (backing
+	// DestroyUnverified means fob could not prove the work landed (backing
 	// repository missing, or status/merge could not be checked). It is gated like
 	// unlanded work because removing it may lose data.
 	DestroyUnverified DestroyClass = "unverified"
@@ -71,7 +71,7 @@ type DestroyTarget struct {
 	Classes   []DestroyClass
 	Processes []process.ProcessInfo
 	// Detail is an honest, user-facing diagnostic for non-disposable targets
-	// (e.g. "HEAD not merged into origin/main" or "held by secondmate").
+	// (e.g. "HEAD not merged into origin/main" or "held by an XO").
 	Detail string
 }
 
@@ -150,7 +150,7 @@ func DestroyWorktree(poolDir, worktreePath string, opts DestroyOptions) (Destroy
 		return DestroyResult{}, err
 	}
 	if target == nil {
-		return DestroyResult{}, fmt.Errorf("worktree %s is not managed by treehouse", worktreePath)
+		return DestroyResult{}, fmt.Errorf("worktree %s is not managed by fob", worktreePath)
 	}
 
 	// allowLeased is true: a named path is an explicit, single-target choice.

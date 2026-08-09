@@ -70,7 +70,7 @@ func TestWriteState_LeavesNoTempFileBehind(t *testing.T) {
 		t.Fatalf("ReadDir: %v", err)
 	}
 	for _, e := range entries {
-		if e.Name() != "treehouse-state.json" {
+		if e.Name() != "fob-state.json" {
 			t.Fatalf("unexpected leftover file %q in pool dir", e.Name())
 		}
 	}

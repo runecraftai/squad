@@ -200,7 +200,7 @@ func stringListField(m map[string]any, key string) ([]string, bool, error) {
 // pathExcluded reports whether path is excluded by the filter, matching
 // GitHub's documented paths / paths-ignore semantics closely enough for
 // exact file paths (no glob expansion beyond "**" / "*" prefix/suffix forms
-// used in this fleet). Exact string matches always work; for allow-lists,
+// used in this workspace). Exact string matches always work; for allow-lists,
 // a later negative pattern ("!path") re-excludes after a positive match.
 func pathExcluded(filter pathFilter, path string) bool {
 	switch filter.kind {

@@ -558,7 +558,7 @@ func TestReviewStep_RereviewFlagsIntentContradictionAsAskUser(t *testing.T) {
 			if callCount == 1 {
 				// Fixer turn: "resolve" the race finding by deleting the
 				// required guarded removal (retry-only).
-				os.WriteFile(filepath.Join(dir, "fleet-sync.txt"), []byte("retry-only\n"), 0o644)
+				os.WriteFile(filepath.Join(dir, "fob-sync.txt"), []byte("retry-only\n"), 0o644)
 				return &agent.Result{Output: json.RawMessage(`{"summary":"leave persistent refs locks intact"}`)}, nil
 			}
 			// Rereview: the change now contradicts the authoritative criteria,

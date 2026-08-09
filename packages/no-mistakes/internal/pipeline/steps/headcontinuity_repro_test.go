@@ -42,7 +42,7 @@ func TestCommitAgentFixes_RefusesToCommitOnOutOfBandResetHead(t *testing.T) {
 	if err := os.WriteFile(guard, []byte("FORCE_INCLUDE marker-inversion\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := commitAgentFixes(sctx, types.StepReview, "guard linked secondmate homes correctly", "address review findings"); err != nil {
+	if err := commitAgentFixes(sctx, types.StepReview, "guard linked XO homes correctly", "address review findings"); err != nil {
 		t.Fatalf("review-fix commit: %v", err)
 	}
 	reviewedHead := sctx.Run.HeadSHA
@@ -57,10 +57,10 @@ func TestCommitAgentFixes_RefusesToCommitOnOutOfBandResetHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitCmd(t, dir, "add", "-A")
-	gitCmd(t, dir, "commit", "-m", "crew minimal r2")
+	gitCmd(t, dir, "commit", "-m", "operators minimal r2")
 	clobber := gitCmd(t, dir, "rev-parse", "HEAD")
 
-	// Anchor integrity (captain requirement b): the recorded reviewed head is NOT
+	// Anchor integrity (commander requirement b): the recorded reviewed head is NOT
 	// overwritten by the out-of-band worktree reset - it still names 04b5f5d while
 	// the worktree HEAD now names the clobber.
 	if sctx.Run.HeadSHA != reviewedHead {
@@ -74,7 +74,7 @@ func TestCommitAgentFixes_RefusesToCommitOnOutOfBandResetHead(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "docs.md"), []byte("corrected docs\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := commitAgentFixes(sctx, types.StepDocument, "correct secondmate guard documentation", "update docs")
+	err := commitAgentFixes(sctx, types.StepDocument, "correct XO guard documentation", "update docs")
 	if err == nil {
 		t.Fatal("expected commitAgentFixes to refuse committing on an out-of-band-reset HEAD, got nil")
 	}
@@ -94,7 +94,7 @@ func TestCommitAgentFixes_RefusesToCommitOnOutOfBandResetHead(t *testing.T) {
 }
 
 // TestCommitAgentFixes_RefusesOnBackwardReset covers the other out-of-band shape
-// (captain requirement d): a reset BACKWARD to an ancestor of the reviewed head.
+// (commander requirement d): a reset BACKWARD to an ancestor of the reviewed head.
 // The recorded head is a descendant of the live HEAD, not an ancestor, so the
 // guard must still refuse - a backward reset would also silently drop the fix.
 func TestCommitAgentFixes_RefusesOnBackwardReset(t *testing.T) {
@@ -356,7 +356,7 @@ func TestPostReviewStepEntryAllowsEqualAndPipelineDescendantHeads(t *testing.T) 
 }
 
 // TestAssertPipelineHeadContinuity_AnchorIsRecordedReviewedHead directly
-// exercises the guard (captain requirement b): it anchors on the recorded
+// exercises the guard (commander requirement b): it anchors on the recorded
 // reviewed head (sctx.Run.HeadSHA), NOT on the mutable worktree, and an
 // out-of-band reset leaves that anchor intact so the guard still fires.
 func TestAssertPipelineHeadContinuity_AnchorIsRecordedReviewedHead(t *testing.T) {

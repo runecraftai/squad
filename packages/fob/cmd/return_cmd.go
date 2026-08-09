@@ -41,7 +41,7 @@ var returnCmd = &cobra.Command{
 		poolDir, err := resolveReturnPoolDir(wtPath, len(args) > 0)
 		if err != nil {
 			if errors.Is(err, errReturnWorktreeUnmanaged) {
-				return fmt.Errorf("worktree %s is not managed by treehouse", wtPath)
+				return fmt.Errorf("worktree %s is not managed by fob", wtPath)
 			}
 			return err
 		}

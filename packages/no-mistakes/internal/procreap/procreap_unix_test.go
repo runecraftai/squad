@@ -136,7 +136,7 @@ func TestParseETime(t *testing.T) {
 }
 
 func TestParseProcessTableKeepsFullCommandLine(t *testing.T) {
-	out := "  501     1   501 2-10:01:33 /bin/bash /path/to/fm-remote-job-worker.sh  --flag  value\n" +
+	out := "  501     1   501 2-10:01:33 /bin/bash /path/to/sq-remote-job-worker.sh  --flag  value\n" +
 		"bogus line\n" +
 		"  502   501   502       01:02 sleep 30\n"
 	procs := parseProcessTable(out)
@@ -149,7 +149,7 @@ func TestParseProcessTableKeepsFullCommandLine(t *testing.T) {
 	if want := 2*24*time.Hour + 10*time.Hour + time.Minute + 33*time.Second; procs[0].Elapsed != want {
 		t.Fatalf("Elapsed = %v, want %v", procs[0].Elapsed, want)
 	}
-	if want := "/bin/bash /path/to/fm-remote-job-worker.sh  --flag  value"; procs[0].Command != want {
+	if want := "/bin/bash /path/to/sq-remote-job-worker.sh  --flag  value"; procs[0].Command != want {
 		t.Fatalf("Command = %q, want %q", procs[0].Command, want)
 	}
 	if procs[1].PID != 502 || procs[1].Command != "sleep 30" {

@@ -201,7 +201,7 @@ func TestCacheCorrupted(t *testing.T) {
 		t.Setenv("USERPROFILE", tmp)
 	}
 
-	dir := filepath.Join(tmp, treehouseDir)
+	dir := filepath.Join(tmp, fobDir)
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, cacheFileName), []byte("not json"), 0o644)
 
@@ -214,12 +214,12 @@ func TestCacheCorrupted(t *testing.T) {
 func TestAssetNameForVersion(t *testing.T) {
 	name := AssetNameForVersion("v1.2.3")
 	if runtime.GOOS == "windows" {
-		expected := "treehouse-v1.2.3-windows-" + runtime.GOARCH + ".zip"
+		expected := "fob-v1.2.3-windows-" + runtime.GOARCH + ".zip"
 		if name != expected {
 			t.Errorf("AssetNameForVersion() = %q, want %q", name, expected)
 		}
 	} else {
-		expected := "treehouse-v1.2.3-" + runtime.GOOS + "-" + runtime.GOARCH + ".tar.gz"
+		expected := "fob-v1.2.3-" + runtime.GOOS + "-" + runtime.GOARCH + ".tar.gz"
 		if name != expected {
 			t.Errorf("AssetNameForVersion() = %q, want %q", name, expected)
 		}
@@ -232,7 +232,7 @@ func TestMatchesCurrentPlatformAsset(t *testing.T) {
 		t.Errorf("expected %q to match current platform", name)
 	}
 
-	if matchesCurrentPlatformAsset("treehouse-v1.0.0-fakeos-fakearg.tar.gz") {
+	if matchesCurrentPlatformAsset("fob-v1.0.0-fakeos-fakearg.tar.gz") {
 		t.Error("expected non-matching asset to fail")
 	}
 }
@@ -249,7 +249,7 @@ func TestExtractTarGz(t *testing.T) {
 	tw := tar.NewWriter(gz)
 
 	if err := tw.WriteHeader(&tar.Header{
-		Name: "treehouse",
+		Name: "fob",
 		Size: int64(len(content)),
 		Mode: 0o755,
 	}); err != nil {
@@ -286,7 +286,7 @@ func TestExtractZip(t *testing.T) {
 		t.Fatal(err)
 	}
 	zw := zip.NewWriter(f)
-	w, err := zw.Create("treehouse.exe")
+	w, err := zw.Create("fob.exe")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestCacheRoundTrip(t *testing.T) {
 	}
 }
 
-// createTestTarGz builds a tar.gz archive containing a fake "treehouse" binary
+// createTestTarGz builds a tar.gz archive containing a fake "fob" binary
 // with the given content, and returns the raw bytes.
 func createTestTarGz(t *testing.T, content []byte) []byte {
 	t.Helper()
@@ -380,7 +380,7 @@ func createTestTarGz(t *testing.T, content []byte) []byte {
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
 	tw.WriteHeader(&tar.Header{
-		Name: "treehouse",
+		Name: "fob",
 		Size: int64(len(content)),
 		Mode: 0o755,
 	})
@@ -403,7 +403,7 @@ func createTestZip(t *testing.T, content []byte) []byte {
 		t.Fatal(err)
 	}
 	zw := zip.NewWriter(f)
-	w, err := zw.Create("treehouse.exe")
+	w, err := zw.Create("fob.exe")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,9 +556,9 @@ func TestApplyE2E(t *testing.T) {
 
 	// Create a fake "current binary" to be replaced
 	targetDir := t.TempDir()
-	binaryName := "treehouse"
+	binaryName := "fob"
 	if runtime.GOOS == "windows" {
-		binaryName = "treehouse.exe"
+		binaryName = "fob.exe"
 	}
 	targetPath := filepath.Join(targetDir, binaryName)
 	if err := os.WriteFile(targetPath, []byte("old-binary"), 0o755); err != nil {

@@ -9,7 +9,7 @@ const workflowsDir = join(root, ".github", "workflows");
 
 /**
  * Derive the exact release-please output set from config + workflow inputs.
- * Keep this aligned with the fleet audit rule in firstmate's release-please CI
+ * Keep this aligned with the workspace audit rule in Squad release-please CI
  * report: node -> package.json (+ package-lock.json if present), changelog,
  * extra-files, and the manifest path.
  */

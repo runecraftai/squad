@@ -59,7 +59,7 @@ type acquireOptions struct {
 
 // Acquire reserves a clean worktree from the pool with a short-lived owner
 // reservation (the calling process). It is the backing call for the interactive
-// `treehouse get` subshell.
+// `fob get` subshell.
 func Acquire(repoRoot, poolDir string, poolSize int, postCreate []string) (string, error) {
 	acquired, err := acquire(repoRoot, poolDir, poolSize, postCreate, acquireOptions{
 		hookStdout: os.Stdout,
@@ -143,7 +143,7 @@ func acquire(repoRoot, poolDir string, poolSize int, postCreate []string, opts a
 
 		// No available worktree — create new if pool allows
 		if len(state.Worktrees) >= poolSize {
-			return fmt.Errorf("all %d worktrees are in use or dirty (max_trees = %d). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml", len(state.Worktrees), poolSize)
+			return fmt.Errorf("all %d worktrees are in use or dirty (max_trees = %d). Run 'fob status' to see details, or increase max_trees in fob.toml", len(state.Worktrees), poolSize)
 		}
 
 		name := nextName(state)
@@ -298,7 +298,7 @@ func releasableWorktree(state *State, worktreePath string, preconditions Release
 		}
 		return wt, nil
 	}
-	return nil, fmt.Errorf("worktree %s is not managed by treehouse", worktreePath)
+	return nil, fmt.Errorf("worktree %s is not managed by fob", worktreePath)
 }
 
 func validateReleasePreconditions(wt WorktreeEntry, preconditions ReleasePreconditions) error {

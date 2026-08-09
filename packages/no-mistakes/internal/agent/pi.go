@@ -124,7 +124,7 @@ func (a *piAgent) buildArgs() []string {
 	args := make([]string, 0, len(a.extraArgs)+5)
 	// Project-settings opt-out (trusted-only; see config.DisableProjectSettings):
 	// disable AGENTS.md/CLAUDE.md discovery so an agent-orchestration target
-	// (firstmate) cannot install a fleet-captain identity on the gate agent.
+	// (upstream) cannot install a commander identity on the gate agent.
 	// Preserve an operator-pinned -nc/--no-context-files spelling, but place it
 	// first. When the repo did not opt out, nothing is added and pi loads project
 	// instruction files exactly as before (backward-compat).

@@ -57,7 +57,7 @@ jobs:
         run: |
           ext=""
           if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
-          go build -ldflags "-X main.version=v${VERSION}" -o "treehouse${ext}" .
+          go build -ldflags "-X main.version=v${VERSION}" -o "fob${ext}" .
 
       - name: Archive
         env:
@@ -65,11 +65,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           VERSION: ${{ needs.release-please.outputs.version }}
         run: |
-          name="treehouse-v${VERSION}-${GOOS}-${GOARCH}"
+          name="fob-v${VERSION}-${GOOS}-${GOARCH}"
           if [ "$GOOS" = "windows" ]; then
-            zip "${name}.zip" treehouse.exe
+            zip "${name}.zip" fob.exe
           else
-            tar czf "${name}.tar.gz" treehouse
+            tar czf "${name}.tar.gz" fob
           fi
 
       - name: Upload archive
@@ -80,7 +80,7 @@ jobs:
           VERSION: ${{ needs.release-please.outputs.version }}
           TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          name="treehouse-v${VERSION}-${GOOS}-${GOARCH}"
+          name="fob-v${VERSION}-${GOOS}-${GOARCH}"
           if [ "$GOOS" = "windows" ]; then
             gh release upload "${TAG_NAME}" "${name}.zip"
           else
@@ -95,7 +95,7 @@ jobs:
           VERSION: ${{ needs.release-please.outputs.version }}
         with:
           name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: treehouse-v${{ needs.release-please.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
+          path: fob-v${{ needs.release-please.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
 
   notify-issues:
     needs: release-please
@@ -168,7 +168,7 @@ jobs:
           merge-multiple: true
 
       - name: Generate checksums
-        run: sha256sum treehouse-v* > checksums.txt
+        run: sha256sum fob-v* > checksums.txt
 
       - name: Upload checksums
         env:

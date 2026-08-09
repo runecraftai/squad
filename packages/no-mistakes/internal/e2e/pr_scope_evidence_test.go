@@ -76,7 +76,7 @@ func writeFinalPRScopeScenario(t *testing.T) string {
 // PR #605 originally made the whole PR body (including the deterministic
 // Risk Assessment, Testing, and Pipeline sections) final-diff scoped, but
 // that silently dropped those three sections everywhere (no-mistakes #605
-// regression, firstmate PR #1577/#1609). The corrected, intentional scope is
+// regression, upstream PR #1577/#1609). The corrected, intentional scope is
 // narrower: only the agent-authored `## What Changed` narrative is bound to
 // the actual final branch delta. The deterministic Risk Assessment, Testing,
 // and Pipeline sections legitimately describe the commit each step itself

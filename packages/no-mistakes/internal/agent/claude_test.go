@@ -463,7 +463,7 @@ func TestParseClaudeEvents_ResultCapturesRawEvent(t *testing.T) {
 // claude project-settings contract UNDER the trusted opt-out: load only
 // user-level settings/memory, never the target repo's project/local
 // CLAUDE.md/AGENTS.md or settings. Verified empirically: with project memory
-// loaded claude adopts the firstmate identity; with --setting-sources user it
+// loaded claude adopts the gate-agent identity; with --setting-sources user it
 // does not.
 func TestClaudeAgent_BuildArgs_SuppressesProjectMemoryUnderOptOut(t *testing.T) {
 	ca := &claudeAgent{bin: "claude", disableProjectSettings: true}

@@ -8,7 +8,7 @@ import (
 func TestFilterProtectedProcesses_SkipsCurrentProcessAndAncestors(t *testing.T) {
 	procs := []ProcessInfo{
 		{PID: 100, Name: "shell"},
-		{PID: 200, Name: "treehouse"},
+		{PID: 200, Name: "fob"},
 		{PID: 300, Name: "server"},
 	}
 
@@ -39,7 +39,7 @@ func TestFilterProtectedProcesses_SkipsCurrentProcessAndAncestors(t *testing.T) 
 func TestFilterProtectedProcesses_SkipsTerminationWhenParentLookupFails(t *testing.T) {
 	procs := []ProcessInfo{
 		{PID: 100, Name: "shell"},
-		{PID: 200, Name: "treehouse"},
+		{PID: 200, Name: "fob"},
 		{PID: 300, Name: "server"},
 	}
 

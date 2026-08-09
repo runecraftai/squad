@@ -107,7 +107,7 @@ func TestSweepReapsStaleWorktreeProcessAndSparesEverythingElse(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "worktrees")
 	fake := &fakeSystem{
 		procs: []Process{
-			{PID: 100, PPID: 1, PGID: 100, Command: "fm-remote-job-worker.sh", Elapsed: 40 * time.Hour},
+			{PID: 100, PPID: 1, PGID: 100, Command: "sq-remote-job-worker.sh", Elapsed: 40 * time.Hour},
 			{PID: 200, PPID: 1, PGID: 200, Command: "unrelated-worker", Elapsed: 40 * time.Hour},
 		},
 		cwds: map[int]string{

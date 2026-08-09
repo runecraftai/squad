@@ -29,7 +29,7 @@ const (
 	maxDownloadSize     = 100 << 20 // 100 MB
 	maxBinarySize       = 100 << 20 // 100 MB
 	maxAPIResponseSize  = 5 << 20   // 5 MB
-	treehouseDir        = ".treehouse"
+	fobDir        = ".fob"
 )
 
 // githubAPIURL is the endpoint for fetching the latest release.
@@ -49,7 +49,7 @@ type CheckResult struct {
 	ChecksumURL     string `json:"checksum_url,omitempty"`
 }
 
-// CacheEntry is persisted to ~/.treehouse/update-check.json.
+// CacheEntry is persisted to ~/.fob/update-check.json.
 type CacheEntry struct {
 	CheckedAt     time.Time `json:"checked_at"`
 	LatestVersion string    `json:"latest_version"`
@@ -110,7 +110,7 @@ func CheckLatest(currentVersion string) (*CheckResult, error) {
 	return result, nil
 }
 
-// ReadCache reads ~/.treehouse/update-check.json and returns a CheckResult
+// ReadCache reads ~/.fob/update-check.json and returns a CheckResult
 // if the cache exists. Returns nil if missing or corrupt.
 func ReadCache(currentVersion string) *CheckResult {
 	path := cachePath()
@@ -311,7 +311,7 @@ func AssetNameForVersion(version string) string {
 	if runtime.GOOS == "windows" {
 		ext = ".zip"
 	}
-	return fmt.Sprintf("treehouse-v%s-%s-%s%s", version, runtime.GOOS, runtime.GOARCH, ext)
+	return fmt.Sprintf("fob-v%s-%s-%s%s", version, runtime.GOOS, runtime.GOARCH, ext)
 }
 
 type semver struct {
@@ -356,7 +356,7 @@ func cachePath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, treehouseDir, cacheFileName)
+	return filepath.Join(home, fobDir, cacheFileName)
 }
 
 func writeCache(entry CacheEntry) error {
@@ -435,7 +435,7 @@ func matchesCurrentPlatformAsset(name string) bool {
 		ext = ".zip"
 	}
 	suffix := fmt.Sprintf("-%s-%s%s", runtime.GOOS, runtime.GOARCH, ext)
-	return strings.HasPrefix(name, "treehouse-v") && strings.HasSuffix(name, suffix)
+	return strings.HasPrefix(name, "fob-v") && strings.HasSuffix(name, suffix)
 }
 
 func downloadToTemp(url string) (string, error) {
@@ -450,7 +450,7 @@ func downloadToTemp(url string) (string, error) {
 		return "", fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp("", "treehouse-update-*")
+	tmp, err := os.CreateTemp("", "fob-update-*")
 	if err != nil {
 		return "", err
 	}
@@ -490,7 +490,7 @@ func extractTarGz(archivePath string) (string, error) {
 	defer gz.Close()
 
 	tr := tar.NewReader(gz)
-	binaryName := "treehouse"
+	binaryName := "fob"
 
 	for {
 		header, err := tr.Next()
@@ -503,7 +503,7 @@ func extractTarGz(archivePath string) (string, error) {
 
 		name := filepath.Base(header.Name)
 		if name == binaryName && header.Typeflag == tar.TypeReg {
-			tmp, err := os.CreateTemp("", "treehouse-new-*")
+			tmp, err := os.CreateTemp("", "fob-new-*")
 			if err != nil {
 				return "", err
 			}
@@ -537,7 +537,7 @@ func extractZip(archivePath string) (string, error) {
 	}
 	defer r.Close()
 
-	binaryName := "treehouse.exe"
+	binaryName := "fob.exe"
 
 	for _, f := range r.File {
 		name := filepath.Base(f.Name)
@@ -548,7 +548,7 @@ func extractZip(archivePath string) (string, error) {
 			}
 			defer rc.Close()
 
-			tmp, err := os.CreateTemp("", "treehouse-new-*.exe")
+			tmp, err := os.CreateTemp("", "fob-new-*.exe")
 			if err != nil {
 				return "", err
 			}
@@ -588,7 +588,7 @@ func atomicReplace(target, newBinary string) error {
 	// directory (e.g. /usr/local/bin owned by root) even though they own
 	// the file itself. In that case, fall back to direct overwrite.
 	dir := filepath.Dir(target)
-	tmp, err := os.CreateTemp(dir, ".treehouse-update-*")
+	tmp, err := os.CreateTemp(dir, ".fob-update-*")
 	if err != nil {
 		return directOverwrite(target, newBinary, info.Mode())
 	}

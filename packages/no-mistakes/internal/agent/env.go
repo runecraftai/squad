@@ -4,15 +4,15 @@ import "github.com/squad-org/squad/packages/no-mistakes/internal/git"
 
 // GateRoleEnvVar is exported into every spawned gate agent's environment as an
 // coarse diagnostic marker that the process is a no-mistakes gate agent (a
-// review/fix/document/test/lint/rebase/pr/ci invocation), NOT a fleet operator.
+// review/fix/document/test/lint/rebase/pr/ci invocation), NOT a workspace operator.
 // It is defense in depth only: it can be removed, forged, or inherited, so
 // runtime authorization uses canonical managed Git identity plus authenticated
 // daemon peer process ancestry. Its purpose is containment: when the target repository is itself an
-// agent-orchestration harness (for example firstmate), the target's project
-// agent-instruction file can otherwise convince the gate agent it is the fleet
-// captain and drive it to spawn a crew and reset the shared branch it is
+// agent-orchestration harness (for example a gate-agent checkout), the target's project
+// agent-instruction file can otherwise convince the gate agent it is the workspace
+// commander and drive it to spawn operators and reset the shared branch it is
 // validating (see the ambient-authority incident). A cooperating harness reads
-// this marker and its fleet-lifecycle entrypoints fail closed. It is deliberately
+// this marker and its workspace-lifecycle entrypoints fail closed. It is deliberately
 // coarse (`=1`): presence is the whole signal.
 const GateRoleEnvVar = "NO_MISTAKES_GATE"
 
@@ -23,7 +23,7 @@ const GateRoleEnvVar = "NO_MISTAKES_GATE"
 // times out.
 //
 // It also stamps GateRoleEnvVar so a cooperating orchestration harness in the
-// target repo can recognize the gate agent and refuse to let it act as a fleet
+// target repo can recognize the gate agent and refuse to let it act as the workspace driver
 // operator. Appended last so it wins over any ambient value.
 //
 // dir must be the value assigned to cmd.Dir so PWD stays coupled to the working

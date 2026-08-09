@@ -58,9 +58,9 @@ func TestGitSafeEnv_CouplesPWDToWorkdir(t *testing.T) {
 // TestGitSafeEnv_StampsGateRoleMarker locks in the ambient-authority containment
 // marker: every spawned gate agent must carry NO_MISTAKES_GATE=1 so a
 // cooperating orchestration harness in the target repo can recognize the gate
-// agent and refuse to let it drive the fleet. If this regresses, a gate agent
-// validating a firstmate-shaped repo becomes indistinguishable from a real
-// fleet operator.
+// agent and refuse to let it drive the workspace. If this regresses, a gate agent
+// validating a Squad-shaped repo becomes indistinguishable from a real
+// workspace operator.
 func TestGitSafeEnv_StampsGateRoleMarker(t *testing.T) {
 	resolved := resolveAgentEnv(gitSafeEnv("/work/dir"))
 	if resolved[GateRoleEnvVar] != "1" {

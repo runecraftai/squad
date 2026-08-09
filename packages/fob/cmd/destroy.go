@@ -33,8 +33,8 @@ worktree even though it still has unlanded work, but it is safe by default.
 
 Targets are narrow and explicit:
 
-  treehouse destroy <worktree-path>        Target exactly one worktree.
-  treehouse destroy <pool-path> --all      Target all worktrees in THAT pool.
+  fob destroy <worktree-path>        Target exactly one worktree.
+  fob destroy <pool-path> --all      Target all worktrees in THAT pool.
 
 There is no cross-pool or global destroy; --all without a pool path is an error.
 
@@ -90,7 +90,7 @@ func destroyRunE(cmd *cobra.Command, args []string) error {
 
 	if destroyAll {
 		if len(args) == 0 {
-			return errors.New("--all requires a pool path; name the pool to clear, e.g. 'treehouse destroy . --all'")
+			return errors.New("--all requires a pool path; name the pool to clear, e.g. 'fob destroy . --all'")
 		}
 		poolDir, err := resolveDestroyPoolFromTarget(args[0])
 		if err != nil {
@@ -142,7 +142,7 @@ func resolveDestroyPoolFromWorktree(wtPath string) (string, error) {
 	poolDir, err := resolveReturnPoolDir(wtPath, true)
 	if err != nil {
 		if errors.Is(err, errReturnWorktreeUnmanaged) {
-			return "", fmt.Errorf("worktree %s is not managed by treehouse", wtPath)
+			return "", fmt.Errorf("worktree %s is not managed by fob", wtPath)
 		}
 		return "", err
 	}
@@ -151,7 +151,7 @@ func resolveDestroyPoolFromWorktree(wtPath string) (string, error) {
 
 // resolveDestroyPoolFromTarget resolves the pool named by a --all target. The
 // target may be the pool directory itself, a worktree inside a pool, or a
-// repository (resolved via its treehouse config).
+// repository (resolved via its fob config).
 func resolveDestroyPoolFromTarget(targetPath string) (string, error) {
 	abs, err := filepath.Abs(targetPath)
 	if err != nil {
@@ -166,7 +166,7 @@ func resolveDestroyPoolFromTarget(targetPath string) (string, error) {
 
 	repoRoot, err := git.FindMainRepoRootFrom(abs)
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve a treehouse pool from %s: not a pool directory or git repository", targetPath)
+		return "", fmt.Errorf("cannot resolve a fob pool from %s: not a pool directory or git repository", targetPath)
 	}
 	cfg, err := config.Load(repoRoot)
 	if err != nil {

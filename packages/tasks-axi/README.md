@@ -71,12 +71,12 @@ $ tasks-axi
 bin: ~/.local/bin/tasks-axi
 description: Agent ergonomic task & backlog manager for the current workspace...
 in_flight[1]{id,title,kind,repo}:
-  homemux-h7,PERSISTENT SECONDMATE - owns HomeMux end to end,secondmate,homemux
+  homemux-h7,PERSISTENT XO - owns HomeMux end to end,xo,homemux
 summary:
   queued: 14
   ready: 13
 queued[10]{id,title,kind,blocked_by}:
-  firstmate-lease-adopt,adopt the durable lease,ship,treehouse-lease-t4
+  sq-lease-adopt,adopt the durable lease,ship,fob-lease-t4
   ...
 done: 10 retained
 help[2]:
@@ -91,15 +91,15 @@ The common mutations are one short, low-token command:
 tasks-axi add lavish-foo-q9 "fix summary toggle" --kind ship --repo lavish-axi --priority 2 --start
 
 # move through the workflow
-tasks-axi start firstmate-lease-adopt
+tasks-axi start sq-lease-adopt
 tasks-axi done sm-idle-handoff-q8 --pr https://github.com/owner/repo/pull/42
 tasks-axi done fj-task-q1 --pr https://forgejo.example.com/owner/repo/pulls/39
 tasks-axi reopen some-task
 
 # dependencies, holds, and the ready queue
-tasks-axi block firstmate-lease-adopt --by treehouse-lease-t4
-tasks-axi hold firstmate-lease-adopt --reason "captain decision pending" --kind captain
-tasks-axi unhold firstmate-lease-adopt
+tasks-axi block sq-lease-adopt --by fob-lease-t4
+tasks-axi hold sq-lease-adopt --reason "commander decision pending" --kind commander
+tasks-axi unhold sq-lease-adopt
 tasks-axi ready
 tasks-axi ready --include-held
 
@@ -153,7 +153,7 @@ tasks-axi public-followup add public-final-ab \
 tasks-axi public-followup bind-work public-final-ab --relation-file relation.json --json
 tasks-axi public-followup supersede-work public-final-ab --relation rel-code --successor-file successor.json --json
 tasks-axi public-followup work-event public-final-ab --event-file event.json --json
-tasks-axi public-followup list --work-ref secondmate:demo/work-code-q1 --json
+tasks-axi public-followup list --work-ref xo:demo/work-code-q1 --json
 tasks-axi public-followup ready --json
 tasks-axi public-followup begin-delivery public-final-ab --payload-hash <sha256> --json
 tasks-axi public-followup record-error public-final-ab --error-file error.json --json
@@ -180,7 +180,7 @@ Existing same-backlog `blocked-by` edges remain delivery gates for `ready` and `
 `tasks-axi ready` excludes public obligations from its ordinary `ready` worker group and exposes delivery-ready obligations only in `ready_public_followups`.
 Use `tasks-axi public-followup ready` when handling public delivery.
 Generic `start`, `done`, `reopen`, active removal, content or kind changes, and dispatch holds cannot bypass the public-followup state machine.
-Only `record-delivery` with a validated terminal `posted` receipt or `waive --approved-by captain` can atomically move an obligation to Done.
+Only `record-delivery` with a validated terminal `posted` receipt or `waive --approved-by commander` can atomically move an obligation to Done.
 Normal Done pruning then preserves the complete typed receipt or waiver in `done-archive.md`.
 
 The Markdown backend stores version 1 typed data in a reserved base64url canonical-JSON HTML comment immediately below the task bullet.
@@ -204,7 +204,7 @@ Moved tasks are re-rendered canonically, so their multi-paragraph bodies remain 
 
 The read-modify-write window is guarded by an advisory lockfile, an atomic write (temp file + rename), and a fresh re-read on every invocation, so a hand-edit and a CLI-edit cannot clobber each other.
 Task state is carried by the section header, not by the bullet style: `## In flight`, `## Queued`, and `## Done` decide whether a recognized item is in flight, queued, or done.
-In flight parses both the legacy `- **id** - ...` form and firstmate's `- [ ] id - ...` checkbox form, while normalization renders both In flight and Queued items as `- [ ] id - ...` and Done items as `- [x] id - ...`.
+In flight parses both the legacy `- **id** - ...` form and Squad.s `- [ ] id - ...` checkbox form, while normalization renders both In flight and Queued items as `- [ ] id - ...` and Done items as `- [x] id - ...`.
 Untouched legacy lines are still preserved byte-for-byte; only mutated or explicitly normalized tasks are rewritten.
 
 It gently formalizes the inline tags a backlog already uses as the canonical fields:
@@ -212,17 +212,17 @@ It gently formalizes the inline tags a backlog already uses as the canonical fie
 - `(repo: X)` - the repo a task belongs to
 - `blocked-by: <id>` or `blocked-by: <id> - <reason>` - a dependency edge, optionally with preserved free-text rationale (also `parent:` / `discovered-from:`)
 - `(since <date>)` - when a task started; `(merged <date>)` / `(reported <date>)` when it closed
-- `(kind: X)` - task kind, when not already implied by a leading `SHIP` / `SCOUT` / `DOCS-ONLY` / `PERSISTENT SECONDMATE` word
+- `(kind: X)` - task kind, when not already implied by a leading `SHIP` / `SCOUT` / `DOCS-ONLY` / `PERSISTENT XO` word
 - `(priority: 0-4)` - optional priority, also accepted through `add` / `update --priority`
-- `(hold: <reason>)`, `(hold-kind: captain|external|load|parked|future)`, `(hold-until: YYYY-MM-DD)` - structured dispatch holds written by `hold`
+- `(hold: <reason>)`, `(hold-kind: commander|external|load|parked|future)`, `(hold-until: YYYY-MM-DD)` - structured dispatch holds written by `hold`
 - PR urls, `data/<id>/report.md` paths, and other `http(s)` urls - typed links
 
 `tasks-axi render` rewrites every id'd task into this canonical form; free-form lines are left untouched.
 Bare dependency edges render immediately after the title, while reason-bearing dependency edges render after the parenthetical tags so the reason stays attached to the edge on the next parse.
 Dependency reasons are preserved metadata only; readiness still keys off the blocker id.
 Hold reasons are preserved metadata too, but active holds are a readiness gate until cleared or until their date gate expires.
-Existing prose markers like `HELD`, `PARKED`, `DEFERRED`, `CAPTAIN-DECISION`, and `do not dispatch` stay prose until you intentionally migrate them.
-Map them to structured holds by preserving the original prose as the reason and choosing `captain`, `parked`, `future`, `load`, or `external` only when the text supports that bucket.
+Existing prose markers like `HELD`, `PARKED`, `DEFERRED`, `COMMANDER-DECISION`, and `do not dispatch` stay prose until you intentionally migrate them.
+Map them to structured holds by preserving the original prose as the reason and choosing `commander`, `parked`, `future`, `load`, or `external` only when the text supports that bucket.
 Do not bulk-rewrite live backlogs just to chase these tags; migrate only when touching the task or when a hold migration specifically targets them.
 `add --blocked-by` and `block --by` require the referenced task to exist, and `rm` refuses to remove a task that still blocks active work.
 Single-task `mv` has the same protection; use multi-task `mv` to move its active dependents with it.

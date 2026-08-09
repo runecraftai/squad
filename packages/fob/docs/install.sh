@@ -32,23 +32,23 @@ if [ -z "$VERSION" ]; then
 fi
 
 VERSION_NUM="${VERSION#v}"
-FILENAME="treehouse-v${VERSION_NUM}-${OS}-${ARCH}.tar.gz"
+FILENAME="fob-v${VERSION_NUM}-${OS}-${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Downloading treehouse ${VERSION} for ${OS}/${ARCH}..."
+echo "Downloading fob ${VERSION} for ${OS}/${ARCH}..."
 curl -fsSL "$URL" -o "${TMPDIR}/${FILENAME}"
 tar xzf "${TMPDIR}/${FILENAME}" -C "$TMPDIR"
 
 if [ -w "$INSTALL_DIR" ]; then
   mkdir -p "$INSTALL_DIR"
-  mv "${TMPDIR}/treehouse" "${INSTALL_DIR}/treehouse"
+  mv "${TMPDIR}/fob" "${INSTALL_DIR}/fob"
 else
   echo "Installing to ${INSTALL_DIR} (requires sudo)..."
   sudo mkdir -p "$INSTALL_DIR"
-  sudo mv "${TMPDIR}/treehouse" "${INSTALL_DIR}/treehouse"
+  sudo mv "${TMPDIR}/fob" "${INSTALL_DIR}/fob"
 fi
 
-echo "treehouse ${VERSION} installed to ${INSTALL_DIR}/treehouse"
+echo "fob ${VERSION} installed to ${INSTALL_DIR}/fob"

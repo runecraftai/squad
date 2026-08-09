@@ -83,7 +83,7 @@ func TestAssertGateTrustedConfigReadable_PresentAndParseableIsOK(t *testing.T) {
 	}
 }
 
-// TestAssertGateTrustedConfigReadable_FetchFailureAborts is the captain's
+// TestAssertGateTrustedConfigReadable_FetchFailureAborts is the commander.s
 // security correction: an empty trustedSHA (fetch/resolve failure) must abort
 // LOUD, never silently become false.
 func TestAssertGateTrustedConfigReadable_FetchFailureAborts(t *testing.T) {

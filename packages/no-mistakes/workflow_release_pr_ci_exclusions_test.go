@@ -264,7 +264,7 @@ func pathMatch(pattern, path string) bool {
 		return true
 	}
 	// filepath.Match does not treat ** specially; handle common forms used in
-	// this fleet before falling back to path.Match for single-segment globs.
+	// this workspace before falling back to path.Match for single-segment globs.
 	if strings.Contains(pattern, "**") {
 		// prefix/**
 		if strings.HasSuffix(pattern, "/**") {

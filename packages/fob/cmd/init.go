@@ -14,17 +14,17 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Create a default treehouse.toml config file",
+	Short: "Create a default fob.toml config file",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		repoRoot, err := git.FindRepoRoot()
 		if err != nil {
 			return fmt.Errorf("not in a git repository: %w", err)
 		}
 
-		dest := filepath.Join(repoRoot, "treehouse.toml")
+		dest := filepath.Join(repoRoot, "fob.toml")
 
 		if _, err := os.Stat(dest); err == nil {
-			return fmt.Errorf("treehouse.toml already exists")
+			return fmt.Errorf("fob.toml already exists")
 		}
 
 		f, err := os.Create(dest)
@@ -38,7 +38,7 @@ var initCmd = &cobra.Command{
 		}
 
 		// Append a comment showing the root option.
-		if _, err := f.WriteString("\n# Worktree root directory (relative to repo root or absolute path).\n# Worktrees are placed under {root}/.treehouse/. Default: $HOME\n# Example: root = \"./\"\n"); err != nil {
+		if _, err := f.WriteString("\n# Worktree root directory (relative to repo root or absolute path).\n# Worktrees are placed under {root}/.fob/. Default: $HOME\n# Example: root = \"./\"\n"); err != nil {
 			return fmt.Errorf("failed to write config: %w", err)
 		}
 

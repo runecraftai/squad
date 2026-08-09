@@ -8,7 +8,7 @@ Treehouse is a Go CLI tool that manages a pool of git worktrees for parallel AI 
 
 - `main.go` - entry point, calls `cmd.Execute()`
 - `cmd/` - CLI commands (cobra): `get` (incl. `get --lease`), `enter`, `return`, `status`, `prune`, `destroy`
-- `internal/config/` - config file loading (`treehouse.toml`)
+- `internal/config/` - config file loading (`fob.toml`)
 - `internal/hooks/` - user-configured lifecycle hook command execution
 - `internal/pool/` - pool manager (acquire, release, list, destroy, prune) + state file
 - `internal/git/` - git operations (shells out to `git` binary)
@@ -19,7 +19,7 @@ Treehouse is a Go CLI tool that manages a pool of git worktrees for parallel AI 
 ## Building
 
 ```sh
-go build -o treehouse .
+go build -o fob .
 # or
 make build
 ```
@@ -45,7 +45,7 @@ make test
 - Prune reports unsafe idle worktrees in grouped, stable categories and keeps raw git diagnostics for verbose output instead of default output
 - Prune treats backing-repository-missing linked worktrees as orphans; they are only deletable with explicit `--prune-orphans --yes`, and each candidate warns that content could not be verified
 - Prune never treats an unreachable origin as a deletable orphan; those worktrees stay skipped because the repository may still be valid
-- Global prune enumerates managed pool directories under the user-level treehouse root and derives each worktree's owning repository from git metadata instead of relying on the current directory
+- Global prune enumerates managed pool directories under the user-level fob root and derives each worktree's owning repository from git metadata instead of relying on the current directory
 - Global prune loads user-level config and hooks only because it can run without a repository context
 - State file tracks pool membership, temporary owner/destroy reservations, and explicit durable leases.
   It still does not infer long-term usage from processes.
@@ -54,7 +54,7 @@ make test
   `ReadState` treats a state file that exists but fails to parse (empty or truncated) as recoverable rather than a hard failure: it prints a loud warning to stderr and rebuilds a `State` by scanning the pool directory for worktree subdirectories still on disk (`recoverCorruptState` in `internal/pool/state.go`).
   Since the real reservation (owner vs. lease vs. idle) is unknowable from disk alone, every recovered entry is marked `Leased` with a `recoveredLeaseHolder` placeholder.
   `Acquire` and `prune` skip recovered entries, and `destroy` only removes one via a single named `--include-leased` target.
-  A human clears a recovered entry with `treehouse status` then `treehouse return` (or `destroy --include-leased`) once verified
+  A human clears a recovered entry with `fob status` then `fob return` (or `destroy --include-leased`) once verified
 - Git operations shell out to `git` (go-git has incomplete worktree support)
 - Self-healing: stale state entries are auto-removed
 
@@ -71,7 +71,7 @@ This project targets Linux, macOS, and Windows. All new code **must** work on Wi
 
 ## Config
 
-Place repo-safe settings in repo root `treehouse.toml` or user-level `~/.config/treehouse/config.toml`:
+Place repo-safe settings in repo root `fob.toml` or user-level `~/.config/fob/config.toml`:
 
 ```toml
 max_trees = 16

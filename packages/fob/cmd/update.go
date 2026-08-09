@@ -10,7 +10,7 @@ import (
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update treehouse to the latest version",
+	Short: "Update fob to the latest version",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if version == "dev" {
 			fmt.Println("Skipping update: running a dev build")
@@ -24,7 +24,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if !result.UpdateAvailable {
-			fmt.Printf("treehouse is up to date (%s)\n", version)
+			fmt.Printf("fob is up to date (%s)\n", version)
 			return nil
 		}
 
@@ -33,7 +33,7 @@ var updateCmd = &cobra.Command{
 			return fmt.Errorf("applying update: %w", err)
 		}
 
-		color.Green("Successfully updated treehouse %s → %s", version, result.LatestVersion)
+		color.Green("Successfully updated fob %s → %s", version, result.LatestVersion)
 		return nil
 	},
 }

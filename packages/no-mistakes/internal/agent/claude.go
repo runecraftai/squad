@@ -52,7 +52,7 @@ func (a *claudeAgent) ReportsAgentAttempts() bool { return true }
 // `--setting-sources user` when the operator did not pin their own; an operator
 // override that re-adds `project`/`local` defeats neutralization, so this
 // returns false and the gate fails closed. Verified empirically: with project
-// memory loaded claude adopts the firstmate identity; with --setting-sources
+// memory loaded claude adopts the gate-agent identity; with --setting-sources
 // user it does not.
 func (a *claudeAgent) NeutralizesGateInstructions() bool {
 	return a.disableProjectSettings && claudeEffectiveSettingSourcesNeutral(a.extraArgs)
@@ -181,8 +181,8 @@ func (a *claudeAgent) buildArgs(schema json.RawMessage, resumeID string) []strin
 	// Project-settings opt-out (trusted-only; see config.DisableProjectSettings):
 	// load only user-level settings and memory, never the target repo's
 	// project/local CLAUDE.md/AGENTS.md, .claude/settings.json, or
-	// .claude/settings.local.json. In an agent-orchestration target (firstmate)
-	// the project memory otherwise installs a fleet-captain identity on the gate
+	// .claude/settings.local.json. In an agent-orchestration target (another agent harness)
+	// the project memory otherwise installs a commander identity on the gate
 	// agent; `--setting-sources user` drops the project and local sources (the
 	// full project surface) while preserving the operator's own user-level config
 	// and auth. Suppressed only when the operator did not pin their own

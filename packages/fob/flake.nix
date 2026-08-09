@@ -23,7 +23,7 @@
         in
         {
           default = pkgs.buildGoModule {
-            pname = "treehouse";
+            pname = "fob";
             inherit version;
             src = ./.;
             vendorHash = "sha256-z8IndcHcZ6nLqhLtAYul3ppddpOA4AHGQWIlfYY/pfI=";

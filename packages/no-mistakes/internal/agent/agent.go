@@ -127,9 +127,9 @@ func ReportsAgentAttempts(a Agent) bool {
 // identity on the gate agent.
 //
 // A gate agent runs with cmd.Dir set to the target checkout and a free shell. If
-// the checkout is itself an agent-orchestration harness (for example firstmate),
-// its AGENTS.md can otherwise convince the gate agent it is the fleet captain and
-// drive it to spawn a crew and reset the branch it is validating (the
+// the checkout is itself an agent-orchestration harness (for example another agent harness),
+// its AGENTS.md can otherwise convince the gate agent it is the commander and
+// drive it to spawn operators and reset the branch it is validating (the
 // ambient-authority incident). Only adapters whose suppression knob is
 // empirically verified implement this and return true, and only while that knob
 // is actually in effect for the invocation (an operator override that defeats the

@@ -18,7 +18,7 @@ var enterCmd = &cobra.Command{
 	Use:   "enter <name>",
 	Short: "Open a subshell in an existing worktree by name, even if in use",
 	Long: `Open a subshell in an existing pool worktree identified by its name
-(the number shown by 'treehouse status'), including worktrees that are
+(the number shown by 'fob status'), including worktrees that are
 already in use.
 
 Unlike 'get', enter does not acquire, reset, or return the worktree: it
@@ -27,7 +27,7 @@ exit. Use it to attach to a worktree another agent is already using.
 
 Pass --print-path to print only the worktree's absolute path to stdout
 instead of opening a subshell. A shell can wrap this to change its own
-directory, e.g. 'cd "$(treehouse enter --print-path 1)"'.`,
+directory, e.g. 'cd "$(fob enter --print-path 1)"'.`,
 	Args: cobra.ExactArgs(1),
 	RunE: enterRunE,
 }
@@ -75,14 +75,14 @@ func enterRunE(cmd *cobra.Command, args []string) error {
 			names[i] = wt.Name
 		}
 		if len(names) == 0 {
-			return fmt.Errorf("no worktree named %q: the pool is empty. Run 'treehouse get' to create one", name)
+			return fmt.Errorf("no worktree named %q: the pool is empty. Run 'fob get' to create one", name)
 		}
-		return fmt.Errorf("no worktree named %q in pool (available: %s). Run 'treehouse status' for details", name, strings.Join(names, ", "))
+		return fmt.Errorf("no worktree named %q in pool (available: %s). Run 'fob status' for details", name, strings.Join(names, ", "))
 	}
 
 	if enterPrintPath {
 		// Only the absolute path goes to stdout so callers can capture it with
-		// command substitution, e.g. cd "$(treehouse enter --print-path 1)".
+		// command substitution, e.g. cd "$(fob enter --print-path 1)".
 		fmt.Fprintln(os.Stdout, target.Path)
 		return nil
 	}

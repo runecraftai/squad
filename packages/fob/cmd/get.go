@@ -29,12 +29,12 @@ var getCmd = &cobra.Command{
 	Short: "Acquire a worktree from the pool and open a subshell",
 	Long: `Acquire a worktree from the pool and open a subshell in it.
 
-Pass --lease for a non-interactive, durable acquire: treehouse reserves the
+Pass --lease for a non-interactive, durable acquire: fob reserves the
 worktree and marks it leased in persistent state. By default it prints only the
 absolute path to stdout; add --json for the lease identity and metadata. All
 banners go to stderr. A leased worktree is never handed out by a later get and
 never removed by prune, even with no process running inside it, until you release
-it with 'treehouse return <path>'.`,
+it with 'fob return <path>'.`,
 	RunE: getRunE,
 }
 
@@ -96,7 +96,7 @@ func getRunE(cmd *cobra.Command, args []string) error {
 
 		ok, promptErr := ui.Confirm("Clean worktree and return to pool?", true)
 		if promptErr != nil || !ok {
-			fmt.Fprintln(os.Stderr, "🌳 Worktree left dirty. Use 'treehouse return --force' to clean it later.")
+			fmt.Fprintln(os.Stderr, "🌳 Worktree left dirty. Use 'fob return --force' to clean it later.")
 			return nil
 		}
 	}
@@ -126,7 +126,7 @@ func getLeaseRunE(repoRoot, poolDir string, cfg config.Config) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "🌳 Leased worktree at %s. Run 'treehouse return %s' to release it.\n",
+	fmt.Fprintf(os.Stderr, "🌳 Leased worktree at %s. Run 'fob return %s' to release it.\n",
 		ui.PrettyPath(lease.Path), ui.PrettyPath(lease.Path))
 	if getJSON {
 		return json.NewEncoder(os.Stdout).Encode(lease)

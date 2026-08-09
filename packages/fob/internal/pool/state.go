@@ -20,7 +20,7 @@ type WorktreeEntry struct {
 	// Leased marks a worktree as durably reserved by an external consumer that
 	// keeps no live process inside it. Unlike OwnerPID/OwnerStartedAt (which are
 	// process-derived and self-heal when the owner dies), a lease persists until
-	// it is explicitly released by `treehouse return`. A missing field decodes to
+	// it is explicitly released by `fob return`. A missing field decodes to
 	// false, so pre-lease state files keep today's behavior.
 	Leased bool `json:"leased,omitempty"`
 	// LeaseID is an immutable identity for one acquisition. It is empty only
@@ -46,19 +46,19 @@ type State struct {
 }
 
 func stateFilePath(poolDir string) string {
-	return filepath.Join(poolDir, "treehouse-state.json")
+	return filepath.Join(poolDir, "fob-state.json")
 }
 
 // IsPoolDir reports whether dir is a managed pool directory (it holds a
-// treehouse state file). It lets callers resolve a pool from a path without
-// knowing treehouse's internal state-file layout.
+// fob state file). It lets callers resolve a pool from a path without
+// knowing fob's internal state-file layout.
 func IsPoolDir(dir string) bool {
 	_, err := os.Stat(stateFilePath(dir))
 	return err == nil
 }
 
 func lockFilePath(poolDir string) string {
-	return filepath.Join(poolDir, "treehouse-state.lock")
+	return filepath.Join(poolDir, "fob-state.lock")
 }
 
 // ReadState loads the pool state file. A missing file is a fresh, empty pool.
@@ -95,8 +95,8 @@ const recoveredLeaseHolder = "recovered: state file was corrupt or truncated; ve
 // evidence alone cannot tell an idle spare from a live, process-independent
 // lease. Every recovered entry is therefore marked leased: Acquire and prune
 // skip it, and destroy only removes it via an explicit, single-target
-// --include-leased. A human clears the false lease with `treehouse status` to
-// see it and `treehouse return` (or `treehouse destroy --include-leased`) once
+// --include-leased. A human clears the false lease with `fob status` to
+// see it and `fob return` (or `fob destroy --include-leased`) once
 // verified.
 func recoverCorruptState(poolDir string, parseErr error) (State, error) {
 	slots, err := os.ReadDir(poolDir)
@@ -136,7 +136,7 @@ func recoverCorruptState(poolDir string, parseErr error) (State, error) {
 			})
 		}
 	}
-	fmt.Fprintf(os.Stderr, "treehouse: WARNING: state file %s is corrupt or truncated (%v); recovering from worktrees found on disk. They are marked leased until verified - see `treehouse status`, then `treehouse return` or `treehouse destroy --include-leased`.\n", stateFilePath(poolDir), parseErr)
+	fmt.Fprintf(os.Stderr, "fob: WARNING: state file %s is corrupt or truncated (%v); recovering from worktrees found on disk. They are marked leased until verified - see `fob status`, then `fob return` or `fob destroy --include-leased`.\n", stateFilePath(poolDir), parseErr)
 	return State{Worktrees: recovered}, nil
 }
 

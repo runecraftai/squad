@@ -4,7 +4,7 @@ import { MarkdownStore } from "../../src/backends/markdown.js";
 import { readyTasks } from "../../src/derive.js";
 import { AxiError } from "../../src/errors.js";
 import {
-  FIRSTMATE_FIXTURE,
+  LEGACY_FIXTURE,
   makeBacklog,
   MULTI_REASON_FIXTURE,
 } from "../helpers.js";
@@ -658,7 +658,7 @@ describe("MarkdownStore", () => {
         const task = await b.store.transition("cert-cleanup", "in_flight");
         expect(task.state).toBe("in_flight");
         const read = b.read();
-        // In-flight renders in firstmate's `- [ ]` checkbox form (same bullet as
+        // In-flight renders in Squad's `- [ ]` checkbox form (same bullet as
         // Queued); the In flight section header is what marks the state.
         expect(read).toMatch(/## In flight[\s\S]*- \[ \] cert-cleanup/);
       } finally {
@@ -1441,11 +1441,11 @@ describe("MarkdownStore", () => {
     }
   });
 
-  // Interop with firstmate's real backlog shape (the two adoption blockers):
+  // Interop with Squad's real backlog shape (the two adoption blockers):
   // `- [ ]` checkbox in-flight items and `blocked-by: <id> - <reason>` edges.
-  describe("firstmate interop", () => {
-    it("sees the `- [ ]` checkbox in-flight item that firstmate writes", async () => {
-      const b = makeBacklog(FIRSTMATE_FIXTURE);
+  describe("Squad interop", () => {
+    it("sees the `- [ ]` checkbox in-flight item that Squad writes", async () => {
+      const b = makeBacklog(LEGACY_FIXTURE);
       try {
         const inflight = await b.store.get("fix-login-k3");
         expect(inflight?.state).toBe("in_flight");
@@ -1461,7 +1461,7 @@ describe("MarkdownStore", () => {
     });
 
     it("keeps a `blocked-by: <id> - <reason>` item out of `ready`", async () => {
-      const b = makeBacklog(FIRSTMATE_FIXTURE);
+      const b = makeBacklog(LEGACY_FIXTURE);
       try {
         const blocked = await b.store.get("add-tests-q7");
         expect(blocked?.deps).toEqual([
@@ -1503,7 +1503,7 @@ describe("MarkdownStore", () => {
     });
 
     it("surfaces the item as ready once its blocker is done", async () => {
-      const b = makeBacklog(FIRSTMATE_FIXTURE);
+      const b = makeBacklog(LEGACY_FIXTURE);
       try {
         await b.store.transition("fix-login-k3", "done");
         const { items } = await b.store.list({});
@@ -1513,18 +1513,18 @@ describe("MarkdownStore", () => {
       }
     });
 
-    it("preserves firstmate's lines byte-for-byte on a read-only load", () => {
-      const b = makeBacklog(FIRSTMATE_FIXTURE);
+    it("preserves Squad's lines byte-for-byte on a read-only load", () => {
+      const b = makeBacklog(LEGACY_FIXTURE);
       try {
         // get() loads and parses but never rewrites; the file is untouched.
-        expect(b.read()).toBe(FIRSTMATE_FIXTURE);
+        expect(b.read()).toBe(LEGACY_FIXTURE);
       } finally {
         b.cleanup();
       }
     });
 
     it("preserves the blocked-by reason when the item is later mutated", async () => {
-      const b = makeBacklog(FIRSTMATE_FIXTURE);
+      const b = makeBacklog(LEGACY_FIXTURE);
       try {
         await b.store.update("add-tests-q7", { title: "two lines now" });
         const read = b.read();
@@ -1532,7 +1532,7 @@ describe("MarkdownStore", () => {
           "blocked-by: fix-login-k3 - waits on the login refactor",
         );
         // ...and the in-flight blocker stays in the `- [ ]` checkbox form,
-        // never rewritten to `- **id**`, so firstmate can still read it.
+        // never rewritten to `- **id**`, so Squad can still read it.
         expect(read).toMatch(/## In flight[\s\S]*- \[ \] fix-login-k3/);
         expect(read).not.toContain("**fix-login-k3**");
       } finally {

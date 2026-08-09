@@ -1715,7 +1715,7 @@ func TestRelease_RejectsDestroyingWorktree(t *testing.T) {
 func TestAcquireLease_MarksWorktreeLeasedInState(t *testing.T) {
 	repoDir, poolDir := setupRepo(t)
 
-	wtPath, err := AcquireLease(repoDir, poolDir, 4, nil, "secondmate-home")
+	wtPath, err := AcquireLease(repoDir, poolDir, 4, nil, "xo-home")
 	if err != nil {
 		t.Fatalf("AcquireLease failed: %v", err)
 	}
@@ -1731,7 +1731,7 @@ func TestAcquireLease_MarksWorktreeLeasedInState(t *testing.T) {
 		t.Fatalf("expected one worktree, got %#v", state.Worktrees)
 	}
 	wt := state.Worktrees[0]
-	if !wt.Leased || wt.LeaseHolder != "secondmate-home" {
+	if !wt.Leased || wt.LeaseHolder != "xo-home" {
 		t.Fatalf("expected durable lease with holder, got %#v", wt)
 	}
 	decodedID, err := hex.DecodeString(wt.LeaseID)
@@ -1886,7 +1886,7 @@ func TestRelease_PreIdentityLeaseFailsConditionalAndAllowsLegacyReturn(t *testin
 func TestList_ShowsLeasedState(t *testing.T) {
 	repoDir, poolDir := setupRepo(t)
 
-	wtPath, err := AcquireLease(repoDir, poolDir, 4, nil, "secondmate-7")
+	wtPath, err := AcquireLease(repoDir, poolDir, 4, nil, "xo-7")
 	if err != nil {
 		t.Fatalf("AcquireLease failed: %v", err)
 	}
@@ -1901,7 +1901,7 @@ func TestList_ShowsLeasedState(t *testing.T) {
 	if statuses[0].Status != StatusLeased {
 		t.Fatalf("expected leased status, got %q", statuses[0].Status)
 	}
-	if statuses[0].LeaseHolder != "secondmate-7" {
+	if statuses[0].LeaseHolder != "xo-7" {
 		t.Fatalf("expected lease holder to be reported, got %q", statuses[0].LeaseHolder)
 	}
 	if statuses[0].LeaseID == "" || statuses[0].LeasedAt.IsZero() {
@@ -1988,7 +1988,7 @@ func TestDestroyWorktree_LeasedRequiresIncludeLeased(t *testing.T) {
 func TestDestroyPool_NeverRemovesLeasedWorktree(t *testing.T) {
 	repoDir, poolDir := setupRepo(t)
 
-	wtPath, err := AcquireLease(repoDir, poolDir, 4, nil, "secondmate")
+	wtPath, err := AcquireLease(repoDir, poolDir, 4, nil, "xo")
 	if err != nil {
 		t.Fatalf("AcquireLease failed: %v", err)
 	}

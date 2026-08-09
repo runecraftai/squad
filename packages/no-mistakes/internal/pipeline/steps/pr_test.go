@@ -645,7 +645,7 @@ func TestPRStep_AppendsTestingSectionFromTestStep(t *testing.T) {
 	if !strings.Contains(ghLog, wantOrder) {
 		t.Fatalf("expected testing section between risk assessment and pipeline, got:\n%s", ghLog)
 	}
-	// Regression guard (#605/firstmate #1577, #1609): the Pipeline section
+	// Regression guard (#605/upstream #1577, #1609): the Pipeline section
 	// must carry the rich per-step fix detail (BuildPipelineSummary), not the
 	// compact status-only variant (BuildPipelineStatusSummary) whose
 	// <details> body is always empty and would never show this finding line.

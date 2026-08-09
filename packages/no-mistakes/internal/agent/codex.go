@@ -43,7 +43,7 @@ func (a *codexAgent) ReportsAgentAttempts() bool { return true }
 // `project_doc_max_bytes` is 0 (buildArgs appends `=0`, or the operator pinned
 // `=0` themselves). An operator override that re-enables the project doc
 // (`project_doc_max_bytes` > 0) defeats neutralization, so this returns false
-// and the gate fails closed rather than running with the captain-identity hazard
+// and the gate fails closed rather than running with the commander-identity hazard
 // re-enabled. Verified empirically: with the project doc loaded codex adopts the
 // AGENTS.md identity; with project_doc_max_bytes=0 (plus --ignore-rules) it does
 // not.
@@ -188,7 +188,7 @@ func (a *codexAgent) buildArgs(prompt, schemaPath, resumeID string) []string {
 	}
 	// Project-settings opt-out (trusted-only; see config.DisableProjectSettings):
 	// suppress codex's project-level settings/instructions so the target repo's
-	// AGENTS.md cannot install a fleet-captain identity on the gate agent. The
+	// AGENTS.md cannot install a commander identity on the gate agent. The
 	// full project surface codex loads from the checkout is the project doc
 	// (AGENTS.md) plus project execpolicy `.rules`; codex config itself is
 	// user-level ($CODEX_HOME), not project. Both knobs are global overrides
