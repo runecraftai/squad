@@ -1,18 +1,18 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
+import { encodeSquadOperationalInput } from "./lib/sq-operational-input.js";
 
-const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
+const COORDINATOR_KEY = "__SquadOpenCodeWatchArm";
 // 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
+// bin/sq-sentry-arm.sh): a slow but successful Git Bash cold start must not be
 // SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
 const ARM_READY_TIMEOUT_DEFAULT_MS = process.platform === "win32" ? 35000 : 12000;
-const ARM_READY_TIMEOUT_MS = positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", ARM_READY_TIMEOUT_DEFAULT_MS);
-const ARM_RETIRE_TIMEOUT_MS = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
-const REARM_RETRY_BASE_MS = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
-const REARM_RETRY_MAX_MS = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
-const REARM_RETRY_LIMIT = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
+const ARM_READY_TIMEOUT_MS = positiveInteger("SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS", ARM_READY_TIMEOUT_DEFAULT_MS);
+const ARM_RETIRE_TIMEOUT_MS = positiveInteger("SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
+const REARM_RETRY_BASE_MS = positiveInteger("SQUAD_WATCH_REARM_RETRY_BASE_MS", 250);
+const REARM_RETRY_MAX_MS = positiveInteger("SQUAD_WATCH_REARM_RETRY_MAX_MS", 4000);
+const REARM_RETRY_LIMIT = positiveInteger("SQUAD_WATCH_REARM_RETRY_LIMIT", 5);
 
 let child = null;
 let armStatus = "idle";
@@ -82,18 +82,18 @@ function resolvePath(anchor) {
 }
 
 function effectivePaths(root) {
-  const fmRoot = process.env.FM_ROOT_OVERRIDE || root;
-  const fmHome = process.env.FM_HOME || process.env.FM_ROOT_OVERRIDE || fmRoot;
-  const state = process.env.FM_STATE_OVERRIDE || `${fmHome}/state`;
-  const config = process.env.FM_CONFIG_OVERRIDE || `${fmHome}/config`;
+  const fmRoot = process.env.SQUAD_ROOT_OVERRIDE || root;
+  const fmHome = process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE || fmRoot;
+  const state = process.env.SQUAD_STATE_OVERRIDE || `${fmHome}/state`;
+  const config = process.env.SQUAD_CONFIG_OVERRIDE || `${fmHome}/config`;
   return { root: fmRoot, home: fmHome, state, config };
 }
 
 async function isPrimaryRoot(root, home) {
   if (!root) return false;
   if (!existsSync(`${root}/AGENTS.md`) || !existsSync(`${root}/bin`)) return false;
-  if (existsSync(`${root}/.fm-secondmate-home`)) return false;
-  if (home && home !== root && existsSync(`${home}/.fm-secondmate-home`)) return false;
+  if (existsSync(`${root}/.sq-xo-home`)) return false;
+  if (home && home !== root && existsSync(`${home}/.sq-xo-home`)) return false;
   const gitDir = await runProcess("git", ["-C", root, "rev-parse", "--git-dir"]);
   const commonDir = await runProcess("git", ["-C", root, "rev-parse", "--git-common-dir"]);
   if (gitDir.code !== 0 || commonDir.code !== 0) return false;
@@ -133,30 +133,30 @@ function classifyArmClose(stdout, stderr, code, signal) {
   const combined = `${stdout}\n${stderr}`;
   const reason = combined.split(/\r?\n/).find((line) => /^(signal:|stale:|check:|heartbeat($|:))/.test(line));
   if (reason) return { kind: "actionable", message: reason };
-  const healthy = combined.split(/\r?\n/).find((line) => /^watcher: healthy\b/.test(line));
+  const healthy = combined.split(/\r?\n/).find((line) => /^sentry: healthy\b/.test(line));
   if (healthy) {
     return {
       kind: "failure",
-      message: `watcher: FAILED - OpenCode arm child found an external healthy watcher instead of owning wake delivery\n${healthy}`,
+      message: `sentry: FAILED - OpenCode arm child found an external healthy sentry instead of owning wake delivery\n${healthy}`,
     };
   }
-  const failed = combined.split(/\r?\n/).find((line) => /^watcher: FAILED/.test(line));
+  const failed = combined.split(/\r?\n/).find((line) => /^sentry: FAILED/.test(line));
   if (failed) return { kind: "failure", message: failed };
   if (signal) {
     return {
       kind: "failure",
-      message: `watcher: FAILED - OpenCode arm child ended from ${signal}${combined.trim() ? `\n${combined.trim()}` : ""}`,
+      message: `sentry: FAILED - OpenCode arm child ended from ${signal}${combined.trim() ? `\n${combined.trim()}` : ""}`,
     };
   }
   if (code && code !== 0) {
     return {
       kind: "failure",
-      message: `watcher: FAILED - fm-watch-arm.sh exited ${code}${combined.trim() ? `\n${combined.trim()}` : ""}`,
+      message: `sentry: FAILED - sq-sentry-arm.sh exited ${code}${combined.trim() ? `\n${combined.trim()}` : ""}`,
     };
   }
   return {
     kind: "failure",
-    message: "watcher: FAILED - OpenCode arm cycle ended without an actionable reason",
+    message: "sentry: FAILED - OpenCode arm cycle ended without an actionable reason",
   };
 }
 
@@ -167,24 +167,24 @@ function observeArmOutput(stdout, stderr, settleReadiness) {
     settleReadiness("wake");
     return;
   }
-  if (combined.split(/\r?\n/).some((line) => /^watcher: (?:started|attached)\b/.test(line))) {
+  if (combined.split(/\r?\n/).some((line) => /^sentry: (?:started|attached)\b/.test(line))) {
     setArmStatus("armed");
     settleReadiness("armed");
     return;
   }
-  if (combined.split(/\r?\n/).some((line) => /^watcher: healthy\b/.test(line))) {
+  if (combined.split(/\r?\n/).some((line) => /^sentry: healthy\b/.test(line))) {
     setArmStatus("external");
     settleReadiness("external");
     return;
   }
-  if (combined.split(/\r?\n/).some((line) => /^watcher: FAILED/.test(line))) {
+  if (combined.split(/\r?\n/).some((line) => /^sentry: FAILED/.test(line))) {
     setArmStatus("failed");
     settleReadiness("failed");
   }
 }
 
 async function sendPrompt(paths, client, sessionID, text) {
-  const encoded = await encodeFirstmateOperationalInput(paths.root, "watcher", text);
+  const encoded = await encodeSquadOperationalInput(paths.root, "sentry", text);
   await client.session.promptAsync({
     path: { id: sessionID },
     body: {
@@ -194,7 +194,7 @@ async function sendPrompt(paths, client, sessionID, text) {
 }
 
 function wakePrompt(reason) {
-  return `WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.\n\n${reason}`;
+  return `WATCHER FIRED - drain queued wakes with bin/sq-stand-to-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.\n\n${reason}`;
 }
 
 function surfaceFailure(paths, client, sessionID, reason) {
@@ -230,9 +230,9 @@ async function retireArm(armChild) {
 
 function restorationFailure(status) {
   if (status === "read-only") {
-    return "watcher: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock";
+    return "sentry: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock";
   }
-  return `watcher: FAILED - OpenCode could not verify a ready successor watcher (${status || "idle"})`;
+  return `sentry: FAILED - OpenCode could not verify a ready successor sentry (${status || "idle"})`;
 }
 
 async function restoreAfterActionableClose(paths, sessionID, client, predecessorArmPid) {
@@ -246,27 +246,27 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
     failure = restorationFailure(status);
     if (!(await retireArm(armChild))) {
       setArmStatus("failed");
-      return `${failure}\nwatcher: FAILED - OpenCode could not restore watcher continuity because the unready successor arm did not exit within ${ARM_RETIRE_TIMEOUT_MS}ms`;
+      return `${failure}\nsentry: FAILED - OpenCode could not restore sentry continuity because the unready successor arm did not exit within ${ARM_RETIRE_TIMEOUT_MS}ms`;
     }
     if (status === "read-only" || status === "not-primary" || status === "skipped") break;
     if (attempt === REARM_RETRY_LIMIT) break;
     await waitForRetry(attempt + 1);
   }
   setArmStatus("failed");
-  return `${failure}\nwatcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries`;
+  return `${failure}\nsentry: FAILED - OpenCode could not restore sentry continuity after ${REARM_RETRY_LIMIT} retries`;
 }
 
 async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid) {
   if (child || retryTimer) return;
   if (!(await sessionOwnsLock(paths))) {
     setArmStatus("failed");
-    surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock\n${reason}`);
+    surfaceFailure(paths, client, sessionID, `sentry: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock\n${reason}`);
     return;
   }
   retryFailures += 1;
   if (retryFailures > REARM_RETRY_LIMIT) {
     setArmStatus("failed");
-    surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries\n${reason}`);
+    surfaceFailure(paths, client, sessionID, `sentry: FAILED - OpenCode could not restore sentry continuity after ${REARM_RETRY_LIMIT} retries\n${reason}`);
     return;
   }
   setArmStatus("retrying");
@@ -274,7 +274,7 @@ async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid
     if (retryTimer === timer) retryTimer = null;
     void ensureArm(paths, sessionID, client, predecessorArmPid).then((status) => {
       if (["armed", "starting", "wake"].includes(status)) return;
-      surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode could not launch a continuity retry (${status})`);
+      surfaceFailure(paths, client, sessionID, `sentry: FAILED - OpenCode could not launch a continuity retry (${status})`);
     });
   }, retryDelay(retryFailures));
   timer.unref();
@@ -285,12 +285,12 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   setArmStatus("starting");
   const env = {
     ...process.env,
-    FM_HOME: paths.home,
-    FM_ROOT_OVERRIDE: paths.root,
-    FM_CONFIG_OVERRIDE: paths.config,
-    FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
+    SQUAD_HOME: paths.home,
+    SQUAD_ROOT_OVERRIDE: paths.root,
+    SQUAD_CONFIG_OVERRIDE: paths.config,
+    SQUAD_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
-  const armChild = spawn("bash", ["-lc", 'config_dir="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --restart'], {
+  const armChild = spawn("bash", ["-lc", 'config_dir="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$SQUAD_ROOT_OVERRIDE/bin/sq-sentry-arm.sh" --restart'], {
     cwd: paths.root,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -370,7 +370,7 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
       paths,
       sessionID,
       client,
-      `watcher: FAILED - OpenCode arm child failed: ${error.message}`,
+      `sentry: FAILED - OpenCode arm child failed: ${error.message}`,
       String(armChild.pid ?? ""),
     );
   });

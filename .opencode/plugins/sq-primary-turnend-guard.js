@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
+import { encodeSquadOperationalInput } from "./lib/sq-operational-input.js";
 
-const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
+const COORDINATOR_KEY = "__SquadOpenCodeWatchArm";
 
 let skipNextIdle = false;
 
@@ -44,7 +44,7 @@ function resolvePath(anchor) {
 
 function runGuard(root) {
   if (!root) return Promise.resolve({ code: 0, stderr: "" });
-  return runProcess(`${root}/bin/fm-turnend-guard.sh`, [], '{"stop_hook_active":false}');
+  return runProcess(`${root}/bin/sq-turnend-guard.sh`, [], '{"stop_hook_active":false}');
 }
 
 async function letWatchArmRun(sessionID, client) {
@@ -75,11 +75,11 @@ export const FmPrimaryTurnendGuard = async ({ client, directory, worktree }) => 
       if (result.code !== 2) return;
 
       try {
-        const text = await encodeFirstmateOperationalInput(
+        const text = await encodeSquadOperationalInput(
           root,
           "turn-end-guard",
           "TURN WOULD END BLIND - supervision is off. " +
-            "The watcher cycle is missing, failed, or unhealthy. Follow the harness recovery instruction below before ending the turn.\n\n" +
+            "The sentry cycle is missing, failed, or unhealthy. Follow the harness recovery instruction below before ending the turn.\n\n" +
             result.stderr,
         );
         await client.session.promptAsync({

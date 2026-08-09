@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 
 const adapterRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-// Cross-language adapter only. bin/fm-operational-input.sh owns the protocol,
+// Cross-language adapter only. bin/sq-operational-input.sh owns the protocol,
 // accepted kinds, marker bytes, and serialization grammar.
-export function encodeFirstmateOperationalInput(root, kind, content) {
+export function encodeSquadOperationalInput(root, kind, content) {
   return new Promise((resolveResult, reject) => {
-    const requested = `${root}/bin/fm-operational-input.sh`;
+    const requested = `${root}/bin/sq-operational-input.sh`;
     const script = existsSync(requested)
       ? requested
-      : `${adapterRoot}/bin/fm-operational-input.sh`;
+      : `${adapterRoot}/bin/sq-operational-input.sh`;
     const child = spawn(script, ["encode", kind], {
       stdio: ["pipe", "pipe", "pipe"],
     });
