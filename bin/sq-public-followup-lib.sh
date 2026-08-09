@@ -56,6 +56,7 @@
 _SQUAD_PF_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _SQUAD_PF_LIB_DIR="."
 # shellcheck source=bin/sq-x-lib.sh
 . "$_SQUAD_PF_LIB_DIR/sq-x-lib.sh"
+# shellcheck source=bin/sq-tasks-axi-lib.sh
 . "$_SQUAD_PF_LIB_DIR/sq-tasks-axi-lib.sh"
 
 SQUAD_PF_DIRNAME='public-followup'
