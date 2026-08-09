@@ -9,7 +9,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M0 — Import & Scaffold — ⬜ PLANNED
+## M0 — Import & Scaffold — ✅ DONE
 
 **Goal:** The Squad repo exists at `/home/rehem/Projects/squad/` with a single squashed firstmate import (no history), planning artifacts committed, and the inherited test suite green as a pre-rebrand baseline.
 
@@ -60,7 +60,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M2 — Deps as Workspace Packages — ▶️ IN PROGRESS
+## M2 — Deps as Workspace Packages — ✅ DONE
 
 **Goal:** The three runtime deps are first-class packages in the monorepo, built and tested by turbo, with no upstream identity.
 
@@ -82,7 +82,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M3 — Pi Adapters + pr-review Integration — ⬜ PLANNED
+## M3 — Pi Adapters + pr-review Integration — ▶️ IN PROGRESS
 
 **Goal:** Pi is a first-class Squad primary with adapted tracked extensions, and `@runecraft/pr-review` runs inside the Pi-primary strike flow.
 
