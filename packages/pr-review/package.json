@@ -1,0 +1,73 @@
+{
+  "name": "@runecraft/pr-review",
+  "version": "1.11.4",
+  "description": "Parallel AI code review for GitHub pull requests in the Pi coding agent, with model-agnostic tiered subagents, structured findings, optional verification, and safe COMMENT-only publishing.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "pi-coding-agent",
+    "pr-review",
+    "code-review",
+    "ai-code-review",
+    "ai-review",
+    "github",
+    "github-pr",
+    "pull-request",
+    "pull-request-review",
+    "code-reviewer",
+    "code-quality",
+    "review",
+    "automation",
+    "llm",
+    "subagents",
+    "parallel",
+    "multi-agent",
+    "developer-tools"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runecraftai/harness.git"
+  },
+  "homepage": "https://github.com/runecraftai/harness/tree/main/packages/pr-review#readme",
+  "bugs": {
+    "url": "https://github.com/runecraftai/harness/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "README.md",
+    "CHANGELOG.md",
+    "extensions/",
+    "lib/",
+    "prompts/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "scripts": {
+    "test": "bun test",
+    "test:tooling": "node --test tests/tooling/compare-semver.node.mjs tests/tooling/package-contents.node.mjs tests/tooling/workflows.node.mjs",
+    "verify:release-version": "node scripts/verify-release-version.mjs",
+    "verify:package": "node scripts/verify-package-contents.mjs",
+    "verify:workflows": "node scripts/verify-workflows.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": ">=0.80.5",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
+  }
+}

@@ -82,7 +82,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M3 — Pi Adapters + pr-review Integration — ▶️ IN PROGRESS
+## M3 — Pi Adapters + pr-review Integration — ✅ DONE
 
 **Goal:** Pi is a first-class Squad primary with adapted tracked extensions, and `@runecraft/pr-review` runs inside the Pi-primary strike flow.
 
@@ -102,7 +102,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M4 — Publication & CI — ⬜ PLANNED
+## M4 — Publication & CI — ▶️ IN PROGRESS
 
 **Goal:** Everything builds and ships from the Squad monorepo.
 
