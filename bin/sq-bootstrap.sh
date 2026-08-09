@@ -371,7 +371,7 @@ XO_sync() {
       esac
       [ "$remote" -ne 1 ] || continue
       meta="$STATE/$id.meta"
-      [ -f "$meta" ] && [ "$(fm_meta_get "$meta" kind)" = XO ] || {
+      [ -f "$meta" ] && [ "$(fm_meta_get "$meta" kind)" = xo ] || {
         echo "NUDGE_XOS: XO ${id:-unknown}: send failed: retry target has no live XO metadata"
         continue
       }

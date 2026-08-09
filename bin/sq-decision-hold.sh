@@ -147,7 +147,7 @@ origin_open_decisions() {  # <origin-id>
   [ -f "$meta" ] || { printf '%s' "$open"; return 0; }
   kind=$(meta_value "$meta" kind)
   [ -n "$kind" ] || kind=strike
-  if [ "$kind" != XO ]; then
+  if [ "$kind" != xo ]; then
     last=$(last_status_line "$status_file")
     verb=$(status_line_verb "$last")
     case "$verb" in

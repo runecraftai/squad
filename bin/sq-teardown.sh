@@ -284,7 +284,7 @@ remote_XO_teardown() {
   remote_host=$(fm_meta_get "$META" remote_host)
   [ -n "$remote_host" ] || return 3
   kind=$(fm_meta_get "$META" kind)
-  [ "$kind" = XO ] || { echo "REFUSED: remote placement metadata is valid only for an XO" >&2; return 1; }
+  [ "$kind" = xo ] || { echo "REFUSED: remote placement metadata is valid only for an XO" >&2; return 1; }
   remote_root=$(fm_meta_get "$META" remote_root)
   remote_home=$(fm_meta_get "$META" home)
   [ -n "$remote_root" ] && [ -n "$remote_home" ] || { echo "REFUSED: remote XO metadata is incomplete" >&2; return 1; }
@@ -407,7 +407,7 @@ ORCA_WORKTREE_ID=$(fm_meta_get "$META" orca_worktree_id)
 ORCA_PATH_MATCH_VERIFIED=0
 
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
-[ -n "$KIND" ] || KIND=ship
+[ -n "$KIND" ] || KIND=strike
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
 PUBLIC_FOLLOWUP_HOME=$SQUAD_HOME
@@ -429,7 +429,7 @@ public_followup_resolve_primary_home() {
   [ "$parent" != "$child" ] || return 1
   parent_meta="$parent/state/$id.meta"
   [ -f "$parent_meta" ] && [ ! -L "$parent_meta" ] || return 1
-  [ "$(fm_meta_get "$parent_meta" kind)" = XO ] || return 1
+  [ "$(fm_meta_get "$parent_meta" kind)" = xo ] || return 1
   meta_home=$(fm_meta_get "$parent_meta" home)
   meta_home=$(CDPATH='' cd -- "$meta_home" 2>/dev/null && pwd -P) || return 1
   [ "$meta_home" = "$child" ] || return 1
@@ -541,7 +541,7 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
       PUBLIC_FOLLOWUP_STATE=
     fi
   fi
-elif [ "$KIND" = XO ]; then
+elif [ "$KIND" = xo ]; then
   PUBLIC_FOLLOWUP_WORK_HOME="XO:$ID"
   if [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_HOME"; then
     PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
@@ -591,7 +591,7 @@ require_orca_terminal() {
   printf '%s\n' "$terminal"
 }
 
-if [ "$BACKEND" = orca ] && [ "$KIND" != XO ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
   ORCA_WORKTREE_ID=$(require_orca_worktree_id "$META") || exit 1
   T_ORCA=$(meta_value "$META" terminal)
   [ -z "$T_ORCA" ] || T=$T_ORCA
@@ -839,7 +839,7 @@ work_is_landed() {
 
 backlog_refresh_reminder() {
   local pr done_cmd report_path
-  [ "$KIND" = XO ] && return 0
+  [ "$KIND" = xo ] && return 0
   if fm_tasks_axi_backend_available "$CONFIG"; then
     case "$KIND" in
       recon)
@@ -1207,12 +1207,12 @@ task_status_is_run_not_found() {  # <status-error> <run-id>
 
 # Abort THIS task's own parked no-mistakes run before the worker that would
 # have answered its gate is removed, so no run is left orphaned holding a
-# unit slot. Only KIND=ship drives a no-mistakes validation of its own
+# unit slot. Only KIND=strike drives a no-mistakes validation of its own
 # worktree (scouts and XOs never do, mirroring bin/sq-crew-state.sh);
 # a run not attributed to this exact branch+head is left completely alone.
 conclude_task_no_mistakes_run() {  # <worktree>
   local wt=$1 out run_id
-  [ "$KIND" = ship ] || return 0
+  [ "$KIND" = strike ] || return 0
   [ -d "$wt" ] || return 0
   command -v no-mistakes >/dev/null 2>&1 || return 0
   task_run_is_own_parked_run "$wt" || return 0
@@ -1824,7 +1824,7 @@ preflight_Squad_home_process_event_tree() {
     for child_meta in "$sub_state"/*.meta; do
       [ -e "$child_meta" ] || continue
       child_kind=$(meta_value "$child_meta" kind)
-      [ "$child_kind" = XO ] || continue
+      [ "$child_kind" = xo ] || continue
       child_id=$(basename "$child_meta" .meta)
       child_wt=$(meta_value "$child_meta" worktree)
       child_home=$(meta_value "$child_meta" home)
@@ -1848,7 +1848,7 @@ validate_Squad_home_children_removal() {
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=strike
     child_backend=$(fm_backend_of_meta "$child_meta")
-    if [ "$child_kind" = XO ]; then
+    if [ "$child_kind" = xo ]; then
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
       validate_Squad_home_for_removal "$child_home" "child Squad home" "$child_id" >/dev/null || return 1
@@ -1994,7 +1994,7 @@ preflight_Squad_home_herdr_children() {  # <home>
     fi
     child_kind=$(meta_value "$child_meta" kind)
     [ -n "$child_kind" ] || child_kind=strike
-    if [ "$child_kind" = XO ]; then
+    if [ "$child_kind" = xo ]; then
       child_wt=$(meta_value "$child_meta" worktree)
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
@@ -2020,7 +2020,7 @@ cleanup_Squad_home_children() {
     else
       child_t=$(fm_backend_target_of_meta "$child_meta")
     fi
-    if [ "$child_backend" = orca ] && [ "$child_kind" != XO ]; then
+    if [ "$child_backend" = orca ] && [ "$child_kind" != xo ]; then
       child_orca_worktree_id=$(require_orca_worktree_id "$child_meta") || return 1
       if [ -n "$child_wt" ] && [ -e "$child_wt" ]; then
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
@@ -2046,7 +2046,7 @@ cleanup_Squad_home_children() {
         fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" 2>/dev/null || true
       fi
     fi
-    if [ "$child_kind" = XO ]; then
+    if [ "$child_kind" = xo ]; then
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
       if [ -n "$child_home" ] && [ -d "$child_home" ]; then
@@ -2108,7 +2108,7 @@ remove_XO_registry_entry() {
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_Squad_home_for_removal "$HOME_PATH" "XO home" "$ID" >/dev/null || exit 1
   if [ "$FORCE" = "--force" ]; then
@@ -2120,7 +2120,7 @@ if [ "$KIND" = XO ]; then
   fi
 fi
 
-if [ "$KIND" = XO ] && [ "$FORCE" != "--force" ]; then
+if [ "$KIND" = xo ] && [ "$FORCE" != "--force" ]; then
   SUB_STATE="$HOME_PATH/state"
   if [ -d "$SUB_STATE" ]; then
     for child_meta in "$SUB_STATE"/*.meta; do
@@ -2132,11 +2132,11 @@ if [ "$KIND" = XO ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   preflight_Squad_home_process_event_tree "$HOME_PATH" "XO home" || exit 1
 fi
 
-if [ "$KIND" = XO ] && [ "$FORCE" = "--force" ]; then
+if [ "$KIND" = xo ] && [ "$FORCE" = "--force" ]; then
   cleanup_Squad_home_children "$HOME_PATH" || exit $?
 fi
 
@@ -2177,7 +2177,7 @@ if [ "$FORCE" != "--force" ] \
   fi
 fi
 
-if [ "$BACKEND" = orca ] && [ "$KIND" != recon ] && [ "$KIND" != XO ] && [ "$FORCE" != "--force" ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" != recon ] && [ "$KIND" != xo ] && [ "$FORCE" != "--force" ]; then
   if ! inspectable_git_worktree "$WT"; then
     echo "REFUSED: Orca strike task $ID has no inspectable git worktree at ${WT:-<missing>}." >&2
     echo "Cannot verify dirty or unlanded work; restore the worktree path or get explicit OK to discard, then --force." >&2
@@ -2208,7 +2208,7 @@ fi
 # kind=xo: an XO home's own runtime lifecycle is owned by the
 # dedicated process-event and Squad-home removal machinery further below,
 # not by task-worktree cleanup.
-if [ "$KIND" != XO ]; then
+if [ "$KIND" != xo ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
 fi
@@ -2234,7 +2234,7 @@ if [ "$BACKEND" = herdr ]; then
 fi
 
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
-if [ "$BACKEND" = orca ] && [ "$KIND" != XO ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
   if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
@@ -2252,7 +2252,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != XO ]; then
   fi
   [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "sq-$ID" 2>/dev/null || true
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
-elif [ -d "$WT" ] && [ "$KIND" != XO ]; then
+elif [ -d "$WT" ] && [ "$KIND" != xo ]; then
   branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
   if [ "$branch" != "HEAD" ]; then
     if git -C "$WT" checkout --detach -q 2>/dev/null; then
@@ -2267,7 +2267,7 @@ elif [ -d "$WT" ] && [ "$KIND" != XO ]; then
   # the project. teardown_fob_return tolerates transient and stale git locks
   # left by a killed crew process; see the script header for retry and stale-lock proof.
   post_lock_cleanup_check=
-  if [ "$FORCE" != "--force" ] && [ "$KIND" != recon ] && [ "$KIND" != XO ]; then
+  if [ "$FORCE" != "--force" ] && [ "$KIND" != recon ] && [ "$KIND" != xo ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
   teardown_fob_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
@@ -2350,7 +2350,7 @@ if [ "$BACKEND" = herdr ]; then
     exit 1
   fi
 fi
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   remove_Squad_home "$HOME_PATH" "XO home" "$ID" || exit $?
   remove_XO_registry_entry "$ID"
@@ -2368,7 +2368,7 @@ rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" \
   "$STATE/.$ID.open-decisions-cursor"
-if [ "$KIND" != recon ] && [ "$KIND" != XO ] && [ "$MODE" != local-only ]; then
+if [ "$KIND" != recon ] && [ "$KIND" != xo ] && [ "$MODE" != local-only ]; then
   "$SQUAD_ROOT/bin/sq-unit-sync.sh" "$PROJ" || true
 fi
 echo "teardown $ID complete (window $T, worktree $WT)"

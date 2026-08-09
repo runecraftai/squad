@@ -219,7 +219,7 @@ EOF
       s=$(repo_slug "$u"); [ -n "$s" ] || continue
       case " $repos " in *" $s "*) : ;; *) repos="$repos $s" ;; esac
     done <<EOF
-$(printf '%s' "$SNAP" | jq -r '.tasks[] | select(.kind != "XO") | .paths.worktree.path // empty')
+$(printf '%s' "$SNAP" | jq -r '.tasks[] | select(.kind != "xo") | .paths.worktree.path // empty')
 EOF
 
     for repo in $repos; do PR_REPOS_TOTAL=$((PR_REPOS_TOTAL + 1)); done
@@ -324,8 +324,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   | ($per_home_capped | sort_by([(.completion.date // ""), .id]) | reverse) as $landed_sorted
   | (if $all_landed == 1 then $landed_sorted else ($per_home_groups | round_robin_landed($landed_n)) end) as $done
   | ($done | map(.id)) as $done_ids
-  | ([.tasks[] | select(.kind != "XO") | .id]) as $live_ids
-  | ([.tasks[] | select(.kind != "XO" and .current_state.state == "working") | .id]) as $working_ids
+  | ([.tasks[] | select(.kind != "xo") | .id]) as $live_ids
+  | ([.tasks[] | select(.kind != "xo" and .current_state.state == "working") | .id]) as $working_ids
   | ($live_ids + $done_ids) as $rel_ids
   | ([ .tasks[]
        | select(.endpoint.exists == false or .endpoint.agent_alive == "dead")
@@ -367,7 +367,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
           age_seconds:.freshness.age_seconds,contradiction:(.contradiction // false),
           reason:(.current.reason // "-")} ]) as $XOs_all
   | ([ .tasks[]
-       | select(.kind != "XO")
+       | select(.kind != "xo")
        | select(.backlog.current_role != "program")
        | select(.backlog.current_role != "held" or .current_state.state == "working")
        | {id, kind,
@@ -377,7 +377,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
       } ]
      + [ $XO_views[]
          | select(.sitrep_state == "active_child_work")
-         | {id,kind:"XO",state:.sitrep_state,
+         | {id,kind:"xo",state:.sitrep_state,
             doing:([.active_children[] | .id + ": " + (.doing // .state)] | join("; ") | trunc(90))} ]) as $in_flight_all
   | ([ .backlog.records[]
          | select(.structured and .commander_actionable == true)
@@ -416,7 +416,7 @@ MODEL=$(printf '%s' "$SNAP" | jq \
        | . as $r
        | select(($all_reports == 1) or (($rel_ids | index($r.id)) != null))
        | {id, path} ]) as $reports_all
-  | ([ .tasks[] | select(.kind != "XO" and .pr.url != null and .pr.source == "meta") | {id, url:.pr.url} ]) as $recorded_prs_all
+  | ([ .tasks[] | select(.kind != "xo" and .pr.url != null and .pr.source == "meta") | {id, url:.pr.url} ]) as $recorded_prs_all
   | . as $snap
   | {
       schema: "sq-sitrep.v1",

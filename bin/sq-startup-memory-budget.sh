@@ -44,7 +44,7 @@ report() {
   fi
 
   if [ -e "$SQUAD_HOME/.sq-xo-home" ] || [ -L "$SQUAD_HOME/.sq-xo-home" ]; then
-    role=XO
+    role=xo
   fi
 
   printf 'estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate\n'
@@ -69,7 +69,7 @@ report() {
   else
     printf 'budget_status=over-budget\n'
   fi
-  if [ "$role" = XO ] \
+  if [ "$role" = xo ] \
     && ! fm_startup_memory_decimal_le "$shared_tokens" "$budget"; then
     printf 'exception=primary-owned-shared-file-alone-exceeds-budget\n'
   fi

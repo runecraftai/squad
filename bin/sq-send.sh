@@ -329,7 +329,7 @@ MARK_FROM_SQUAD=0
 PENDING_REPLY_CORR=
 PENDING_REPLY_CREATED=0
 TARGET_TASK_ID=
-if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = XO ]; then
+if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" kind)" = xo ]; then
   MARK_FROM_SQUAD=1
   TARGET_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
 fi

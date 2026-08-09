@@ -101,7 +101,7 @@ if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
 else
   STATE="$SQUAD_HOME/state"
 fi
-KIND=ship
+KIND=strike
 HERDR_LAB=0
 NO_PROJECTS=0
 MODE=
@@ -122,7 +122,7 @@ for a in "$@"; do
   fi
   case "$a" in
     --recon) KIND=recon ;;
-    --xo) KIND=XO ;;
+    --xo) KIND=xo ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
@@ -138,7 +138,7 @@ done
 
 # Ship delivery mode is an explicit per-task decision (AGENTS.md section 7). A
 # missing or invalid value stops the scaffold rather than silently defaulting.
-if [ "$KIND" = ship ]; then
+if [ "$KIND" = strike ]; then
   [ "$MODE_SET" -eq 1 ] || {
     echo "error: ship briefs require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
     exit 1
@@ -156,12 +156,12 @@ elif [ "$MODE_SET" -eq 1 ]; then
 fi
 ID=${POS[0]}
 
-if [ "$KIND" = XO ] && [ "$HERDR_LAB" -eq 1 ]; then
+if [ "$KIND" = xo ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to operator ship or recon briefs" >&2
   exit 1
 fi
 
-if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != XO ]; then
+if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != xo ]; then
   echo "error: --no-projects applies only to --xo charters" >&2
   exit 1
 fi
@@ -178,7 +178,7 @@ shell_quote() {
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
 
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
 XO_PROJECTS=""
 idx=1
 while [ "$idx" -lt "${#POS[@]}" ]; do

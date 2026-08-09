@@ -911,7 +911,7 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" SQUAD_FAKE_LAUNCH_LOG="$launchlog" \
     "$ROOT/bin/sq-spawn.sh" "$id" "$proj" --mode no-mistakes --yolo off >/dev/null 2>&1
   meta="$home/state/$id.meta"
-  [ "$(meta_field "$meta" kind)" = ship ] || fail "crew-unaffected: expected an ordinary strike task"
+  [ "$(meta_field "$meta" kind)" = strike ] || fail "crew-unaffected: expected an ordinary strike task"
   [ "$(meta_field "$meta" harness)" = codex ] || fail "crew-unaffected: crew harness resolution changed"
   [ "$(meta_field "$meta" model)" = default ] || fail "crew-unaffected: crew task must not invent a model"
   [ "$(meta_field "$meta" effort)" = default ] || fail "crew-unaffected: crew task must not invent an effort"

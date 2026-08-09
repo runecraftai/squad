@@ -467,7 +467,7 @@ task_json_lines() {
     # non-authoritative status-log/none read on a still-live task, keeps the fold's
     # open decision surfacing.
     open_decisions_tsv=$(status_open_decisions "$status_log")
-    if [ "$kind" != XO ] && \
+    if [ "$kind" != xo ] && \
        { { { [ "$current_source" = run-step ] || [ "$current_source" = pane ]; } \
            && [ "$current_state" != parked ] && [ "$current_state" != blocked ]; } \
          || { [ "$current_state" = "done" ] || [ "$current_state" = "failed" ]; }; }; then
@@ -510,7 +510,7 @@ task_json_lines() {
           endpoint_exists=false
         fi
       fi
-      if [ "$kind" = XO ] && [ -n "$target" ]; then
+      if [ "$kind" = xo ] && [ -n "$target" ]; then
         agent_alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
       fi
     fi
@@ -590,7 +590,7 @@ task_json_lines() {
           last_event_text:$last_event_raw
         },
         actions:(
-          if $kind == "XO" then
+          if $kind == "xo" then
             {send:"bin/sq-send.sh sq-\($id) \u0027<request>\u0027",
              watch:"read status/doc return channel; do not routinely sq-peek an XO for answers",
              return_channel_note:"XO answers come back through status/doc paths after a marked sq-send request."}
@@ -1121,7 +1121,7 @@ XO_current_json() {  # <parent-tasks-json>
     | (($registered | map(.id)) // []) as $registered_ids
     | ([ $registered[] as $r
          | $r + {parent_task:([$tasks[] | select(.id == $r.id)][0] // null)} ]
-       + [ $tasks[] | select(.kind == "XO") as $t
+       + [ $tasks[] | select(.kind == "xo") as $t
            | select(($registered_ids | index($t.id)) == null)
            | {id:$t.id,home:($t.paths.home.path // null),
               registered:(if $registry.complete == true then false else null end),

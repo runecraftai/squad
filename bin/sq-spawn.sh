@@ -223,7 +223,7 @@ fm_refuse_if_gate_agent
 # Skip the sentry guard when re-exec'd for one pair of a batch (SQUAD_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${SQUAD_SPAWN_NO_GUARD:-}" ] || "$SQUAD_ROOT/bin/sq-guard.sh" || true
-KIND=ship
+KIND=strike
 HARNESS_ARG=
 MODEL=
 EFFORT=
@@ -260,7 +260,7 @@ for a in "$@"; do
   fi
   case "$a" in
     --recon) KIND=recon ;;
-    --xo) KIND=XO ;;
+    --xo) KIND=xo ;;
     --harness) want_value=harness ;;
     --harness=*) HARNESS_ARG=${a#--harness=}; HARNESS_SET=1 ;;
     --model) want_value=model ;;
@@ -290,7 +290,7 @@ done
 # refused unless it is an XO spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
 if [ "$TRACEPARENT_SET" -eq 1 ]; then
-  [ "$KIND" = XO ] || {
+  [ "$KIND" = xo ] || {
     echo "error: --traceparent applies only to --xo spawns; every other spawn resolves its own carrier from this home's frozen trace-context decision" >&2
     exit 1
   }
@@ -308,13 +308,13 @@ esac
 # Squad's per-task decision, so they are required and closed-set validated
 # here rather than resolved from the project registry. Scouts deliver a report
 # and record no delivery posture; XO spawns hardcode theirs.
-if [ "$KIND" = ship ]; then
+if [ "$KIND" = strike ]; then
   [ "$MODE_SET" -eq 1 ] || {
-    echo "error: ship spawns require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
+    echo "error: strike spawns require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
     exit 1
   }
   [ "$YOLO_SET" -eq 1 ] || {
-    echo "error: ship spawns require --yolo <on|off>; it is this task's routine approval authority, not a project lookup" >&2
+    echo "error: strike spawns require --yolo <on|off>; it is this task's routine approval authority, not a project lookup" >&2
     exit 1
   }
   case "$MODE" in
@@ -330,11 +330,11 @@ if [ "$KIND" = ship ]; then
   esac
 else
   [ "$MODE_SET" -eq 0 ] || {
-    echo "error: --mode applies only to ship spawns; a recon delivers a report and an XO records its own fixed posture" >&2
+    echo "error: --mode applies only to strike spawns; a recon delivers a report and an XO records its own fixed posture" >&2
     exit 1
   }
   [ "$YOLO_SET" -eq 0 ] || {
-    echo "error: --yolo applies only to ship spawns; a recon delivers a report and an XO records its own fixed posture" >&2
+    echo "error: --yolo applies only to strike spawns; a recon delivers a report and an XO records its own fixed posture" >&2
     exit 1
   }
 fi
@@ -427,7 +427,7 @@ spawn_remote_XO() {
   meta="$STATE/$id.meta"
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if [ ! -f "$meta" ] || [ -L "$meta" ] \
-      || [ "$(fm_meta_get "$meta" kind)" != XO ] \
+      || [ "$(fm_meta_get "$meta" kind)" != xo ] \
       || [ "$(fm_meta_get "$meta" remote_host)" != "$host" ] \
       || [ "$(fm_meta_get "$meta" remote_root)" != "$root" ] \
       || [ "$(fm_meta_get "$meta" home)" != "$home" ]; then
@@ -583,7 +583,7 @@ spawn_remote_XO() {
   return 0
 }
 
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   if spawn_remote_XO "${POS[0]:-}"; then
     exit 0
   else
@@ -606,11 +606,11 @@ else
 fi
 fm_backend_validate_spawn "$BACKEND" || exit 1
 fm_backend_source "$BACKEND" || exit 1
-if [ "$BACKEND" = orca ] && [ "$KIND" = XO ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" = xo ]; then
   echo "error: backend=orca does not support --xo spawns yet" >&2
   exit 1
 fi
-if [ "$BACKEND" = cmux ] && [ "$KIND" = XO ]; then
+if [ "$BACKEND" = cmux ] && [ "$KIND" = xo ]; then
   echo "error: backend=cmux does not support --xo spawns yet" >&2
   exit 1
 fi
@@ -743,7 +743,7 @@ spawn_herdr_presentation_order_lock_release() {
 idpart=${POS[0]:-}
 idpart=${idpart%%=*}
 if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in */*) false ;; *) true ;; esac; then
-  if [ "$KIND" != XO ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
+  if [ "$KIND" != xo ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
@@ -763,7 +763,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
       *=*) : ;;
       *) echo "error: batch dispatch expects every argument as id=repo; got '$pair'" >&2; rc=2; continue ;;
     esac
-    if [ "$KIND" = XO ]; then
+    if [ "$KIND" = xo ]; then
       echo "error: batch dispatch does not support --xo; spawn each XO explicitly" >&2
       rc=2
       continue
@@ -785,23 +785,23 @@ fi
 SPAWN_TASK_LOCK_HELD=1
 PROJ=
 ARG3=
-SQUAD_HOME=
+XO_HOME=
 
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   case "${POS[1]:-}" in
     ''|claude|codex|opencode|pi|pi-signed|grok|kimi|muse)
       ARG3=${POS[1]:-}
       ;;
     *' '*)
       if [ "${#POS[@]}" -gt 2 ] || [ -d "${POS[1]}" ]; then
-        SQUAD_HOME=${POS[1]}
+        XO_HOME=${POS[1]}
         ARG3=${POS[2]:-}
       else
         ARG3=${POS[1]}
       fi
       ;;
     *)
-      SQUAD_HOME=${POS[1]}
+      XO_HOME=${POS[1]}
       ARG3=${POS[2]:-}
       ;;
   esac
@@ -828,7 +828,7 @@ launch_template() {
     # the defense-in-depth backstop for any pane this flag cannot reach.
     claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
-      if [ "$kind" = XO ]; then
+      if [ "$kind" = xo ]; then
         printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
         printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
@@ -836,7 +836,7 @@ launch_template() {
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     pi|pi-signed)
-      if [ "$kind" = XO ]; then
+      if [ "$kind" = xo ]; then
         printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
         printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
@@ -898,7 +898,7 @@ case "$ARG3" in
     # config/xo-harness keeps governing XO launches across restarts.
     # The launch_template lookup below is the unverified-adapter guard for both
     # kinds: a harness with no template aborts the spawn.
-    if [ "$KIND" = XO ]; then
+    if [ "$KIND" = xo ]; then
       HARNESS=$("$SQUAD_ROOT/bin/sq-harness.sh" XO)
       harness_src='config/xo-harness (falling back to config/crew-harness)'
     else
@@ -927,7 +927,7 @@ esac
 # asyncRewake handlers that Squad's primary turn-end supervision is built on
 # (muse 0.1.0-R708.1). Refusing here keeps that gap loud instead of standing up a
 # XO whose supervision cycle could never be armed.
-if [ "$KIND" = XO ] && [ "$HARNESS" = muse ]; then
+if [ "$KIND" = xo ] && [ "$HARNESS" = muse ]; then
   echo "error: muse is a verified operator/recon adapter only and cannot run an XO; it has no primary supervision protocol. Select a harness verified for XOs." >&2
   exit 1
 fi
@@ -946,7 +946,7 @@ fi
 # the harness itself came from the XO config fallback chain. Resolving
 # here on every spawn makes the pin durable across respawns. Precedence: explicit
 # --model/--effort flags still win over the file's tokens.
-if [ "$KIND" = XO ] && [ -z "$ARG3" ]; then
+if [ "$KIND" = xo ] && [ -z "$ARG3" ]; then
   if [ "$MODEL_SET" -eq 0 ]; then
     SM_MODEL=$("$SCRIPT_DIR/sq-harness.sh" XO-model)
     [ -z "$SM_MODEL" ] || MODEL=$SM_MODEL
@@ -1134,7 +1134,7 @@ case "$LAUNCH" in
   *__KIMIBIN__*)
     KIMI_BIN=$(resolve_kimi_binary) || exit 1
     LAUNCH=${LAUNCH//__KIMIBIN__/$(shell_quote "$KIMI_BIN")}
-    if [ "$KIND" != XO ]; then
+    if [ "$KIND" != xo ]; then
       "$SQUAD_ROOT/bin/sq-kimi-turnend-hook.sh" install || {
         echo "error: refusing Kimi spawn because the global turn-end hook could not be installed safely" >&2
         exit 1
@@ -1257,20 +1257,20 @@ validate_Squad_operational_dirs() {
   done
 }
 
-if [ "$KIND" = XO ]; then
-  if [ -z "$SQUAD_HOME" ] && [ -f "$STATE/$ID.meta" ]; then
-    SQUAD_HOME=$(grep '^home=' "$STATE/$ID.meta" | cut -d= -f2- || true)
+if [ "$KIND" = xo ]; then
+  if [ -z "$XO_HOME" ] && [ -f "$STATE/$ID.meta" ]; then
+    XO_HOME=$(grep '^home=' "$STATE/$ID.meta" | cut -d= -f2- || true)
   fi
-  if [ -z "$SQUAD_HOME" ]; then
-    SQUAD_HOME=$(XO_registry_value "$ID" home || true)
+  if [ -z "$XO_HOME" ]; then
+    XO_HOME=$(XO_registry_value "$ID" home || true)
   fi
 fi
 
-if [ "$KIND" = XO ]; then
-  [ -n "$SQUAD_HOME" ] || { echo "error: no Squad home supplied or registered for $ID" >&2; exit 1; }
-  PROJ_ABS=$(validate_Squad_home_for_spawn "$ID" "$SQUAD_HOME")
+if [ "$KIND" = xo ]; then
+  [ -n "$XO_HOME" ] || { echo "error: no Squad home supplied or registered for $ID" >&2; exit 1; }
+  PROJ_ABS=$(validate_Squad_home_for_spawn "$ID" "$XO_HOME")
   if [ -e "$DATA/XOs.md" ] || [ -L "$DATA/XOs.md" ]; then
-    if ! XO_registry_validate_bindings "$DATA/XOs.md" resolve_path "$ID" "$SQUAD_HOME"; then
+    if ! XO_registry_validate_bindings "$DATA/XOs.md" resolve_path "$ID" "$XO_HOME"; then
       echo "error: $XO_REGISTRY_ERROR" >&2
       exit 1
     fi
@@ -1342,7 +1342,7 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 # sq-brief.sh records a ship brief's mode as a fixed "Delivery contract: mode=<mode>"
 # line. A spawn that disagrees would launch a worker whose instructions and whose
 # recorded task delivery differ, which is the exact drift this contract prevents.
-if [ "$KIND" = ship ]; then
+if [ "$KIND" = strike ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
   BRIEF_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
   if [ -z "$BRIEF_MODE" ]; then
@@ -1524,13 +1524,13 @@ case "$BACKEND" in
     # the per-home container instead of inheriting this launcher's.
     HERDR_LABEL_HOME=$SQUAD_HOME
     HERDR_LAUNCHER_RELATIONSHIP=launcher-home
-    if [ "$KIND" = XO ]; then
+    if [ "$KIND" = xo ]; then
       HERDR_LABEL_HOME=$PROJ_ABS
       HERDR_LAUNCHER_RELATIONSHIP=other-home
     fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
-    if [ "$KIND" != XO ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
+    if [ "$KIND" != xo ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(SQUAD_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
       if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
@@ -1720,7 +1720,7 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
 esac
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   SQUAD_INHERITABLE_CONFIG=trace-context \
     propagate_inheritable_config "$CONFIG" "$PROJ_ABS/config" \
     || echo "warning: XO $ID trace-context inheritance failed for $PROJ_ABS" >&2
@@ -1818,7 +1818,7 @@ kimi_spawn_fail() {  # <detail>
   echo "error: $1; inspect window $T" >&2
 }
 
-if [ "$KIND" != XO ] && [ "$BACKEND" != orca ]; then
+if [ "$KIND" != xo ] && [ "$BACKEND" != orca ]; then
   spawn_send_text_line "$WT_TARGET" 'fob get'
 
   # Wait for the fob subshell: the pane's cwd moves from the project to the worktree.
@@ -1890,7 +1890,7 @@ exclude_path() {
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
-if [ "$KIND" != XO ]; then
+if [ "$KIND" != xo ]; then
   # Arm the semantic busy-state contract (bin/sq-busy-lib.sh) for every
   # adapter with a verified semantic source. The launch brief sent below IS a
   # submitted turn, so the seed record is busy/sq-spawn. The minted gen is
@@ -2145,7 +2145,7 @@ fi
 # records none at all, because its deliverable is a report rather than a merge
 # (sq-teardown.sh defaults an absent mode to no-mistakes, and sq-promote.sh
 # requires an explicit mode when a recon is promoted to a strike task).
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   MODE=XO
   YOLO=off
   : "${XO_PROJECTS:=}"
@@ -2222,7 +2222,7 @@ META_WINDOW=$T
     echo "cmux_workspace_id=$CMUX_WORKSPACE_ID"
     echo "cmux_surface_id=$CMUX_SURFACE_ID"
   fi
-  if [ "$KIND" = XO ]; then
+  if [ "$KIND" = xo ]; then
     echo "home=$PROJ_ABS"
     echo "projects=$XO_PROJECTS"
   fi
@@ -2255,7 +2255,7 @@ LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$CLAUDE_CONFIG_DIR") $LAUNCH"
 fi
-if [ "$KIND" = XO ]; then
+if [ "$KIND" = xo ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   sq_primary_home=$(shell_quote "$SQUAD_HOME")
   case "$HARNESS" in
@@ -2323,7 +2323,7 @@ if [ "$HARNESS" = kimi ]; then
     exit 1
   fi
 fi
-if [ "$KIND" = XO ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
+if [ "$KIND" = xo ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
   if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$SQUAD_HOME"; then
     if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$SQUAD_HOME"; then
       echo "CONFIG_REREAD: XO $ID: quarantined pre-relaunch generations after cleanup failure (destination=$PROJ_ABS/state/.sq-inherited-config-reread-quarantine source=$SQUAD_HOME/state/.sq-inherited-config-reread-quarantine)" >&2

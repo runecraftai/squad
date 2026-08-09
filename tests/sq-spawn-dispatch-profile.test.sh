@@ -502,7 +502,7 @@ test_pi_threads_model_and_max_effort() {
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "SQUAD_PI_HARNESS=pi pi --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
     "pi launch did not thread the requested model and max thinking level"
-  assert_not_contains "$launch" "SQUAD_SQUAD_PI_LAUNCH_BRIEF=" \
+  assert_not_contains "$launch" "SQUAD_PI_LAUNCH_BRIEF=" \
     "pi launch still exports the removed Calm input-reroute binding"
   assert_contains "$launch" "sq-operational-input.sh' encode launch-brief" \
     "pi launch lost the canonical typed launch-brief envelope"
