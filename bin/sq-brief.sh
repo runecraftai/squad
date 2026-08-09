@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scaffold a operator brief or persistent XO charter at
+# Scaffold an operator brief or persistent XO charter at
 # data/<task-id>/brief.md under the active Squad home.
 # For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
 # filled in. Squad then replaces the {TASK} placeholder with the task
@@ -8,16 +8,16 @@
 # of shipping a new one).
 # Usage: sq-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
 #        sq-brief.sh <task-id> <repo-name> --recon [--herdr-lab]
-#        sq-brief.sh <task-id> --XO {<project>...|--no-projects}
+#        sq-brief.sh <task-id> --xo {<project>...|--no-projects}
 #   --recon writes the recon contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
-#   --XO writes a persistent XO charter. The project list
+#   --xo writes a persistent XO charter. The project list
 #   is cloned into the XO home, while the natural-language scope
 #   tells the main Squad when to route work there; routine churn stays in its own home;
 #   commander-relevant escalations and marked from-squad replies append to this
 #   home's status file.
 #   --no-projects writes a project-less charter for a domain whose subject is the
-#   Squad repo itself (its home is a Squad worktree, its crews take pooled
+#   Squad repo itself (its home is a Squad worktree, its operators take pooled
 #   worktrees of the same repo). It is mutually exclusive with a project list, and
 #   omitting both still fails loudly so an accidental omission is never silent.
 #   Set SQUAD_XO_CHARTER='<charter>' to fill the charter text.
@@ -122,7 +122,7 @@ for a in "$@"; do
   fi
   case "$a" in
     --recon) KIND=recon ;;
-    --XO) KIND=XO ;;
+    --xo) KIND=XO ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
@@ -151,7 +151,7 @@ if [ "$KIND" = ship ]; then
     *) echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
   esac
 elif [ "$MODE_SET" -eq 1 ]; then
-  echo "error: --mode applies only to ship briefs; a recon delivers a report and a XO charter is not a delivery contract" >&2
+  echo "error: --mode applies only to ship briefs; a recon delivers a report and an XO charter is not a delivery contract" >&2
   exit 1
 fi
 ID=${POS[0]}
@@ -162,7 +162,7 @@ if [ "$KIND" = XO ] && [ "$HERDR_LAB" -eq 1 ]; then
 fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != XO ]; then
-  echo "error: --no-projects applies only to --XO charters" >&2
+  echo "error: --no-projects applies only to --xo charters" >&2
   exit 1
 fi
 
@@ -188,13 +188,13 @@ done
 if [ "$NO_PROJECTS" -eq 1 ]; then
   [ -z "$XO_PROJECTS" ] || { echo "error: --no-projects cannot be combined with a project list" >&2; exit 1; }
 else
-  [ -n "$XO_PROJECTS" ] || { echo "error: --XO requires at least one project, or --no-projects for a project-less home" >&2; exit 1; }
+  [ -n "$XO_PROJECTS" ] || { echo "error: --xo requires at least one project, or --no-projects for a project-less home" >&2; exit 1; }
 fi
 XO_CHARTER=${SQUAD_XO_CHARTER:-"{TASK}"}
 XO_SCOPE=${SQUAD_XO_SCOPE:-${SQUAD_XO_CHARTER:-"{TASK}"}}
 if [ "$NO_PROJECTS" -eq 1 ]; then
-  PROJECT_CLONES_BODY="None. This is a project-less domain: its subject is the Squad repo this home lives in, so it needs no separate clones under \`projects/\`; its crews take pooled worktrees of that Squad repo."
-  PROJECT_CLONES_NOTE="This domain has no separate project clones: its subject is the Squad repo this home lives in, and its crews take pooled worktrees of that repo."
+  PROJECT_CLONES_BODY="None. This is a project-less domain: its subject is the Squad repo this home lives in, so it needs no separate clones under \`projects/\`; its operators take pooled worktrees of that Squad repo."
+  PROJECT_CLONES_NOTE="This domain has no separate project clones: its subject is the Squad repo this home lives in, and its operators take pooled worktrees of that repo."
 else
   PROJECT_CLONES_BODY=$(printf '%s\n' "$XO_PROJECTS" | tr ' ' '\n' | sed 's/^/- /')
   PROJECT_CLONES_NOTE="The projects above are local clones for work you supervise; they are not an exclusive ownership claim."
@@ -300,7 +300,7 @@ fi
 
 if [ "$KIND" = recon ]; then
 cat > "$BRIEF" <<EOF
-You are a operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
+You are an operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
 
 # Task
 {TASK}
@@ -410,7 +410,7 @@ esac
 DOD=${DOD%$'\n'}
 
 cat > "$BRIEF" <<EOF
-You are a operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
+You are an operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
 
 # Task
 {TASK}

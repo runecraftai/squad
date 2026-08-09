@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# sq-crew-state.sh - deterministic read of a crew's CURRENT state.
+# sq-crew-state.sh - deterministic read of an operator's CURRENT state.
 #
 # Why this exists: state/<id>.status is an append-only, best-effort EVENT LOG.
-# Crews append only wake-worthy transitions (done/needs-decision/blocked/paused/failed)
+# Operators append only wake-worthy transitions (done/needs-decision/blocked/paused/failed)
 # and nothing when they silently resume, so `tail -1` of that log reports the
 # last EVENT, not the current STATE. After Squad resolves a needs-decision
-# or blocked and the crew resumes (responds to the gate, the pipeline fixes, it
+# or blocked and the operator resumes (responds to the gate, the pipeline fixes, it
 # re-validates), the log's last line stays stale. This helper never infers the
 # current state from a tail of the log: it reads the authoritative source (a
 # no-mistakes run-step attributed to this crew's branch and current code
@@ -117,7 +117,7 @@ log_last_line() {
 }
 # Map a status-log verb onto a canonical state for the fallback path. `paused` is
 # the deliberate-external-wait verb (sq-classify-lib.sh's SQUAD_CLASSIFY_PAUSED_VERB):
-# a crew with no active run and an idle pane that declared a known external wait
+# an operator with no active run and an idle pane that declared a known external wait
 # reports `paused` distinctly, so a supervisor reading this sees a declared pause
 # and its reason rather than a wedge-suspect idle.
 map_log_state() {  # <line>
@@ -153,14 +153,14 @@ pane_readable() {  # <target>
     *) fm_backend_capture "$TASK_BACKEND" "$1" 1 "$EXPECTED_LABEL" >/dev/null 2>&1 ;;
   esac
 }
-# crew_busy_verdict: the crew's semantic busy state from the one contract
+# operator_busy_verdict: the operator's semantic busy state from the one contract
 # owner (bin/sq-busy-lib.sh), as "<busy|idle|unknown> <source>". A converted
 # adapter answers from its own lifecycle record; Grok answers from its
 # isolated rendered-tail fallback; a herdr crew's native `busy` is accepted
 # when no record exists, but its native `idle` is NOT, because agent.get
-# reports generation state (idle while a crew blocks on its own long-running
+# reports generation state (idle while an operator blocks on its own long-running
 # foreground tool call) rather than turn state.
-crew_busy_verdict() {  # <target>
+operator_busy_verdict() {  # <target>
   local tail40=''
   case "$HARNESS" in
     grok*) tail40=$(fm_backend_capture "$TASK_BACKEND" "$1" 40 "$EXPECTED_LABEL" 2>/dev/null) || tail40='' ;;
@@ -309,7 +309,7 @@ nm_ci_checks_state() {
 # exists, else falls back to some other branch's run purely as informational
 # display (verified empirically: querying a worktree with its own active run
 # reliably returns that run, even under concurrent load from several other
-# validating crews on the same underlying repo). A crew whose branch genuinely
+# validating operators on the same underlying repo). A crew whose branch genuinely
 # has no run yet therefore sees another branch's answer here.
 #
 # This fallback used to shell out to `no-mistakes axi` (bare, no subcommand)
@@ -534,7 +534,7 @@ fi
 # --- fallback: no run attributed to this crew ------------------------------
 # The run-step path above already handled any crew with a run, regardless of pane
 # liveness, so a finished-but-pane-closed crew never reaches here. Down here there
-# is no run to consult, so a dead/unreadable target means the crew is gone: report
+# is no run to consult, so a dead/unreadable target means the operator is gone: report
 # unknown rather than trusting a possibly-stale status log as the current state.
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
 pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACKEND_TARGET"
@@ -545,7 +545,7 @@ pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACK
 # verdict permits the status-log fallback below. Missing, malformed, stale, or
 # unverified semantic state remains unknown.
 if [ "$KIND" != XO ]; then
-  BUSY_VERDICT=$(crew_busy_verdict "$BACKEND_TARGET")
+  BUSY_VERDICT=$(operator_busy_verdict "$BACKEND_TARGET")
   case "${BUSY_VERDICT%% *}" in
     busy) emit working pane "harness busy (${BUSY_VERDICT#* })" ;;
     idle) ;;
@@ -558,7 +558,7 @@ fi
 # SQUAD_CLASSIFY_RESOLVE_VERB), and any future decision-only sibling - is NOT a state:
 # it exists solely to CLOSE a keyed decision in the durable fold, so a trailing
 # resolved: must never become the current state or leak its resolution prose as the
-# detail. Skipping it lets a just-resolved idle crew (typically a XO, which
+# detail. Skipping it lets a just-resolved idle crew (typically an XO, which
 # has no busy check above) fall through to the idle default instead of rendering
 # `unknown` with the resolution note as `doing`. map_log_state is the single owner of
 # the verb->state mapping (including the configurable paused verb), so reusing its

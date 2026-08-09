@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tear down a finished task: return the fob worktree, release the Orca
-# worktree, or retire a XO home; kill the recorded runtime endpoint,
+# worktree, or retire an XO home; kill the recorded runtime endpoint,
 # clear volatile state, refresh/prune the project's clone for PR-based ship
 # tasks, then print a backlog-refresh reminder for ship and recon teardowns
-# (a XO teardown prints none, since XOs are not backlog items).
+# (an XO teardown prints none, since XOs are not backlog items).
 # REFUSES if the worktree holds work that has not LANDED, because cleanup
 # hard-resets/removes the worktree and kills its processes. Work has landed when it is
 # reachable from any remote-tracking branch (a fork counts as a remote, so
@@ -57,7 +57,7 @@
 #   checks, and discards XO child work for kind=xo. Only use it
 #   when the commander has explicitly said to discard the work.
 #
-# Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
+# Transient / stale worktree git lock recovery (teardown-lock-race): an operator process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
 # non-linked worktree, .git/index.lock) that makes `fob return --force` fail
 # with Unable to create '...index.lock': File exists. That lock is usually transient
@@ -284,7 +284,7 @@ remote_XO_teardown() {
   remote_host=$(fm_meta_get "$META" remote_host)
   [ -n "$remote_host" ] || return 3
   kind=$(fm_meta_get "$META" kind)
-  [ "$kind" = XO ] || { echo "REFUSED: remote placement metadata is valid only for a XO" >&2; return 1; }
+  [ "$kind" = XO ] || { echo "REFUSED: remote placement metadata is valid only for an XO" >&2; return 1; }
   remote_root=$(fm_meta_get "$META" remote_root)
   remote_home=$(fm_meta_get "$META" home)
   [ -n "$remote_root" ] && [ -n "$remote_home" ] || { echo "REFUSED: remote XO metadata is incomplete" >&2; return 1; }
@@ -927,7 +927,7 @@ retry_wait_secs_is_valid() {
 }
 
 STALE_WORKTREE_LOCK_AGE_SECS=${SQUAD_STALE_WORKTREE_LOCK_AGE_SECS:-30}
-# Bounded patience window for transient index.lock after killing a crew process.
+# Bounded patience window for transient index.lock after killing an operator process.
 # New knobs are preferred; SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS remains an alias
 # for the per-attempt wait so existing tests and operators keep working.
 TREEHOUSE_RETURN_LOCK_RETRIES=${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}
@@ -2205,7 +2205,7 @@ fi
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
 # --force, and before ANY destructive step below - a still-parked run or a
 # leaked process can own live work in this exact worktree. Not for
-# kind=xo: a XO home's own runtime lifecycle is owned by the
+# kind=xo: an XO home's own runtime lifecycle is owned by the
 # dedicated process-event and Squad-home removal machinery further below,
 # not by task-worktree cleanup.
 if [ "$KIND" != XO ]; then

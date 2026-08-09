@@ -794,7 +794,7 @@ refuse_projectful_projectless_charter() {
     return 0
   fi
   printf 'error: cannot seed project-less XO home because existing charter brief at %s conflicts with --no-projects\n' "$brief" >&2
-  printf 'error: re-scaffold it with sq-brief.sh %s --XO --no-projects or remove the stale brief before seeding\n' "$id" >&2
+  printf 'error: re-scaffold it with sq-brief.sh %s --xo --no-projects or remove the stale brief before seeding\n' "$id" >&2
   return 1
 }
 
@@ -907,9 +907,9 @@ seed_home() {
     }
     [ -d "$DATA/$id" ] || SEED_PARENT_BRIEF_DIR_CREATED=1
     if [ "$no_projects" -eq 1 ]; then
-      "$SQUAD_ROOT/bin/sq-brief.sh" "$id" --XO --no-projects
+      "$SQUAD_ROOT/bin/sq-brief.sh" "$id" --xo --no-projects
     else
-      "$SQUAD_ROOT/bin/sq-brief.sh" "$id" --XO "$@"
+      "$SQUAD_ROOT/bin/sq-brief.sh" "$id" --xo "$@"
     fi
     SEED_PARENT_BRIEF_CREATED=1
   fi

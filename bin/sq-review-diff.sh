@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Review a operator branch against the authoritative base.
+# Review an operator branch against the authoritative base.
 #
 # Pooled project clones do not keep their local default branch current, so this
 # helper compares remote-backed projects against origin/<default> after fetching

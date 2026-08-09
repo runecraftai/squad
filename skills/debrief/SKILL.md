@@ -1,14 +1,14 @@
 ---
-name: stow
-description: Sweep the current conversation for durable knowledge - user preferences, project facts, operational gotchas, standing decisions, and unfinished next steps - and file each through explicit instructions, existing local conventions, or the private `.stow-notes.md` fallback, curating the destination files as it writes. Use when the user invokes /stow, asks to save or write down what was learned this session, or before a context reset or long break.
+name: debrief
+description: Sweep the current conversation for durable knowledge - user preferences, project facts, operational gotchas, standing decisions, and unfinished next steps - and file each through explicit instructions, existing local conventions, or the private `.debrief-notes.md` fallback, curating the destination files as it writes. Use when the user invokes /debrief, asks to save or write down what was learned this session, or before a context reset or long break.
 user-invocable: true
 ---
 
-<!-- maintainers: this is the public, installer-facing skill. Keep it standalone, with no private project paths, tool assumptions, or environment branching. The firstmate-internal counterpart lives at .agents/skills/stow/SKILL.md - deliberately a separate file with no shared code. Keep them independent. -->
+<!-- maintainers: this is the public, installer-facing skill. Keep it standalone, with no private project paths, tool assumptions, or environment branching. The Squad-internal counterpart lives at .agents/skills/debrief/SKILL.md - deliberately a separate file with no shared code. Keep them independent. -->
 
-# stow
+# debrief
 
-Sweep this conversation for durable knowledge that only exists in chat right now, and file it through the user's explicit instructions, the project's existing local conventions, or the private `.stow-notes.md` fallback in the current directory.
+Sweep this conversation for durable knowledge that only exists in chat right now, and file it through the user's explicit instructions, the project's existing local conventions, or the private `.debrief-notes.md` fallback in the current directory.
 The goal is to leave the next session a compact, current operating map, not an accumulating journal: every durable finding lands on disk, and every file this skill touches comes out more accurate, not merely longer.
 Everything files to a local destination by default; an external system such as an issue tracker is reached only through the explicit-instruction rule in step 3.
 
@@ -37,12 +37,12 @@ Everything files to a local destination by default; an external system such as a
       A configured git host remote, a `.github`/`.gitlab` folder, or any other signal that a tracker probably exists is never by itself grounds to file anything there - never route externally on inference.
    2. **Otherwise - the local convention the project or user already has.** The discovered project memory file for project facts, operational gotchas, and standing decisions; an existing `TODO`/`BACKLOG`/`NOTES` file for undone next steps; a discovered user-level memory file for user preferences *when one happens to be accessible* - a bonus if reachable, never an assumption or a requirement.
       This is the only tier that writes findings into a tracked, shared file or outside the current directory, and only because the user already established that destination.
-   3. **Fallback - `.stow-notes.md` in the current directory, for every finding-kind.** When no existing convention fits, don't improvise a location or invent an ad hoc filename.
-      In a git worktree, first verify `.stow-notes.md` is not already tracked in the index; if it is tracked, do not write private findings there - report that the fallback is blocked until the user chooses a safe destination.
-      Otherwise create or update `.stow-notes.md` in the current working directory - never a user-level or home-directory path, so the fallback works even for agents sandboxed to the current directory.
-      Then keep it out of git: add a `.stow-notes.md` line to a `.gitignore` file in the current directory - an ordinary file at that path, not git's internal exclude mechanism, which can resolve outside the working directory in a linked worktree.
+   3. **Fallback - `.debrief-notes.md` in the current directory, for every finding-kind.** When no existing convention fits, don't improvise a location or invent an ad hoc filename.
+      In a git worktree, first verify `.debrief-notes.md` is not already tracked in the index; if it is tracked, do not write private findings there - report that the fallback is blocked until the user chooses a safe destination.
+      Otherwise create or update `.debrief-notes.md` in the current working directory - never a user-level or home-directory path, so the fallback works even for agents sandboxed to the current directory.
+      Then keep it out of git: add a `.debrief-notes.md` line to a `.gitignore` file in the current directory - an ordinary file at that path, not git's internal exclude mechanism, which can resolve outside the working directory in a linked worktree.
       Leave staging or committing that `.gitignore` line to the user, same as everything else this skill writes.
-      If even the `.gitignore` write fails, don't block or error - still write `.stow-notes.md` and tell the user to ignore it manually.
+      If even the `.gitignore` write fails, don't block or error - still write `.debrief-notes.md` and tell the user to ignore it manually.
 
 4. **When it's genuinely ambiguous between two existing conventions, ask once - then remember the answer.**
    If more than one discovered local convention plausibly fits a finding, ask the user once, plainly, which one they want that kind of note to live in going forward.
@@ -67,17 +67,17 @@ Everything files to a local destination by default; an external system such as a
    Prefer one concise current rule, or a pointer to the authoritative source, over duplicate prose.
    The counterweight: never remove a unique current fact unless it is preserved elsewhere by a stronger owner.
    This is an accuracy discipline, not a length target - a stale entry misleads the next session; a current one earns its place.
-   A `.stow-notes.md` note has exactly three exits: promotion into a shared, tracked file the user approves, folding into a discovered user-level memory file, or deletion as stale - do not invent another.
+   A `.debrief-notes.md` note has exactly three exits: promotion into a shared, tracked file the user approves, folding into a discovered user-level memory file, or deletion as stale - do not invent another.
 
 8. **Finish with an honest safe-to-end verdict and a resume pointer for the next session.**
    Report one action per file this sweep touched or considered: `unchanged`, `added`, `rewritten`, `pruned`, or `routed` (the finding went to a different owner).
    Then tell the user, in plain language, what was captured and where, what could not be captured (and why), and whether the conversation is now safe to end or reset - that is, whether every durable finding from this sweep now lives on disk or in an explicitly requested tracker rather than only in this chat.
    If something could not be captured yet, say so explicitly instead of reporting the session fully safe.
-   If anything landed in `.stow-notes.md`, say so - note that it is private and confined to this project, and name its promotion exit from step 7 if the user wants it more widely visible.
-   In a git repo, report the ignore protection as it actually happened: either the `.gitignore` line was added and awaits the user's own commit, or the write failed and the user must ignore `.stow-notes.md` manually before relying on git to hide it.
-   If the fallback was blocked because `.stow-notes.md` was already tracked, say that no private fallback was written and the session is not fully safe to reset until the user chooses another destination or accepts that tracked file.
-   If a user preference landed in `.stow-notes.md` because no user-level memory file was discovered, add one caveat: it now applies to this project only, and the user must copy it into their own global memory file themselves if they want it to follow them across projects.
-   The real payoff of stowing is not this session but the next one: close with a short, copy-pasteable RESUME POINTER naming exactly which files a fresh session should load to pick this back up cold, e.g. `To pick this back up in a new session, load: CLAUDE.md (project conventions), .stow-notes.md (private notes, not shared)`.
+   If anything landed in `.debrief-notes.md`, say so - note that it is private and confined to this project, and name its promotion exit from step 7 if the user wants it more widely visible.
+   In a git repo, report the ignore protection as it actually happened: either the `.gitignore` line was added and awaits the user's own commit, or the write failed and the user must ignore `.debrief-notes.md` manually before relying on git to hide it.
+   If the fallback was blocked because `.debrief-notes.md` was already tracked, say that no private fallback was written and the session is not fully safe to reset until the user chooses another destination or accepts that tracked file.
+   If a user preference landed in `.debrief-notes.md` because no user-level memory file was discovered, add one caveat: it now applies to this project only, and the user must copy it into their own global memory file themselves if they want it to follow them across projects.
+   The real payoff of stowing is not this session but the next one: close with a short, copy-pasteable RESUME POINTER naming exactly which files a fresh session should load to pick this back up cold, e.g. `To pick this back up in a new session, load: CLAUDE.md (project conventions), .debrief-notes.md (private notes, not shared)`.
    List only the files this sweep actually wrote or updated; skip the pointer if nothing was written.
 
 ## What this skill does not do

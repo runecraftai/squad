@@ -24,7 +24,7 @@
 #   ALLOW - exit 0 and no output.
 #   DENY - exit 2, a Claude-shaped deny object on stderr, and a Grok-shaped
 #          deny object on stdout unless --claude was supplied.
-#   INERT - not the real primary checkout (a operator/recon task worktree or a
+#   INERT - not the real primary checkout (an operator/recon task worktree or a
 #           non-Squad repo): exit 0 with no output, exactly like ALLOW.
 #   FAIL OPEN - malformed or empty stdin, missing jq for stdin transport,
 #               missing Node or policy owner, or an invalid policy response.
@@ -124,7 +124,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && 
 SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." 2>/dev/null && pwd -P)} || exit 0
 
 # Scope to a plain, non-worktree Squad checkout, where git-dir equals
-# git-common-dir. A operator/recon task worktree - the shape bin/sq-spawn.sh
+# git-common-dir. An operator/recon task worktree - the shape bin/sq-spawn.sh
 # always hands out - is a linked git worktree where the two differ. This guard
 # does not inspect .sq-xo-home, so it applies in a git-cloned XO
 # home but remains inert when the XO home is itself a fob-leased

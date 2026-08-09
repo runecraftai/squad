@@ -41,7 +41,7 @@
 #   ALLOW - exit 0 and no output.
 #   DENY - exit 2, a Claude-shaped deny object on stderr, and a Grok-shaped
 #          deny object on stdout unless --claude was supplied.
-#   INERT - not a genuine primary home (a operator/recon task worktree or a
+#   INERT - not a genuine primary home (an operator/recon task worktree or a
 #           non-Squad repo): exit 0 with no output, exactly like ALLOW.
 #   ESCAPE - SQUAD_ALLOW_SUBAGENT=1 in the environment allows deliberately.
 #   FAIL OPEN - malformed or empty stdin, or missing jq for stdin transport.
@@ -179,7 +179,7 @@ STATE=${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}
 # turn-end guard do. fm_primary_scope_matches accepts a plain checkout or a
 # marked XO home - both operate a unit and must dispatch through it -
 # and rejects a linked task worktree, which is the shape bin/sq-spawn.sh always
-# hands a operator. A operator using delegation tools inside its own task
+# hands an operator. An operator using delegation tools inside its own task
 # worktree is legitimate and stays allowed. Any failure to confirm the home is
 # inert (exit 0), never a block, so a broken environment never denies a call.
 # shellcheck source=bin/sq-primary-scope-lib.sh

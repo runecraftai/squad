@@ -162,7 +162,7 @@ cmd_launch() {
       *) die "remote endpoint state is $current; refusing duplicate launch" ;;
     esac
   fi
-  ARGS=("$id" "$TARGET_HOME" --XO --harness "$harness" --backend "$selected_backend")
+  ARGS=("$id" "$TARGET_HOME" --xo --harness "$harness" --backend "$selected_backend")
   [ "$model" = - ] || ARGS+=(--model "$model")
   [ "$effort" = - ] || ARGS+=(--effort "$effort")
   [ -z "$traceparent" ] || ARGS+=(--traceparent "$traceparent")

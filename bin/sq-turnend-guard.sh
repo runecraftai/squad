@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Turn-end guard for any Squad PRIMARY session: the main home OR a
-# XO's own home. A XO runs its own primary Squad session and
+# XO's own home. An XO runs its own primary Squad session and
 # is guarded exactly like the main primary; only child crew/recon worktrees are
 # exempt (see the scoping block below and docs/turnend-guard.md).
 #
@@ -22,7 +22,7 @@
 # checked out into every worktree of this repo: the primary checkout, every
 # XO home (fob-leased or git-cloned), and any operator/recon task
 # worktree spawned to work on Squad itself (the recursive "Squad
-# improving itself" case). A XO home runs its OWN primary Squad
+# improving itself" case). An XO home runs its OWN primary Squad
 # session, so it must be guarded like the main primary; only child crew/recon
 # worktrees are exempt. It must therefore scope itself at runtime to a real
 # primary checkout - the main home or a genuinely marked XO home - and
@@ -114,7 +114,7 @@ fi
 # A genuinely-marked XO home runs its OWN primary Squad session, so
 # force-INCLUDE it as a guarded primary whether fob leased it as a linked
 # worktree (git-dir != git-common-dir) or it is a git-cloned plain checkout. This
-# mirrors the cd-guard's intent that a XO's own session is a guarded
+# mirrors the cd-guard's intent that an XO's own session is a guarded
 # primary. Only an UNMARKED checkout (or one with an invalid marker) falls
 # through to the linked-worktree exemption: Squad hands out operator/recon
 # task worktrees as genuine linked `git worktree`s (bin/sq-spawn.sh aborts

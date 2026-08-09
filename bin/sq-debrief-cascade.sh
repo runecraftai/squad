@@ -39,7 +39,7 @@
 # blocking the primary's own /debrief. A local endpoint probe reads this host's
 # recorded backend in process, like every other caller of that contract.
 #
-# A XO home never cascades: XOs do not own XOs, so this
+# An XO home never cascades: XOs do not own XOs, so this
 # command reports the empty cascade there rather than reaching for a registry.
 #
 # Exit status: 0 every home reported cleanly (or there were none); 3 at least
@@ -162,7 +162,7 @@ resolve_remote_transport() { # <id>
 if [ -e "$SQUAD_HOME/$SUB_HOME_MARKER" ] || [ -L "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
   emit 'role=XO'
   emit 'XOs=0'
-  emit 'reason=a XO home stows its own memory only and never cascades'
+  emit 'reason=an XO home stows its own memory only and never cascades'
   exit 0
 fi
 emit 'role=primary'

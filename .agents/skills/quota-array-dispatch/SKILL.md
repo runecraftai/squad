@@ -66,7 +66,7 @@ Uncertainty and ineligibility are different findings:
 - Reserve login wording for that proven-unusable case, and name the harness, model, surface, and evidence.
 
 When a credential's local classification is the only thing standing between a candidate and a block, get ground truth before blocking.
-`bin/fm-vendor-auth-probe.sh` is the only approved vendor-credential probe; its `--help` owns the registered probes and mechanics.
+`bin/sq-vendor-auth-probe.sh` is the only approved vendor-credential probe; its `--help` owns the registered probes and mechanics.
 It takes no harness, model, or provider and returns a fact, not a route: only `authenticated` and `unauthenticated` are ground truth, while `indeterminate`, `timeout`, and `unavailable` establish nothing and must never be read as either outcome.
 Never launch a vendor CLI yourself, and never probe a credential store the candidate does not use.
 
@@ -86,7 +86,7 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
 
 1. Concrete contradictory evidence or malformed configuration: stop and report the tuple and that evidence.
    Unmeasurable quota, a missing model-level window, an absent runway field, and a credential surface quota-axi does not model are uncertainty, never this rule.
-2. Honor any explicit captain instruction that sets a floor for that candidate before the generic comparison.
+2. Honor any explicit commander instruction that sets a floor for that candidate before the generic comparison.
    Do not invent a generic percentage floor or treat a low percentage as an automatic failure.
 3. Keep the strongest-reasoning class when every candidate is tight or completion evidence is poor.
    Dispatch inside that class when a candidate can proceed, or report that its strongest-class choice cannot proceed rather than downgrading it to conserve quota.
@@ -98,13 +98,13 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
    Preserve projection confidence and basis, the limiting window, and the horizon estimate in the rationale rather than hiding them in a score or model-specific heuristic.
 6. Resolve remaining uncertainty explicitly.
    An authenticated candidate with unknown or unmeasurable headroom or runway stays eligible and cannot be silently excluded or assumed sustainable.
-   Prefer known viable evidence when otherwise comparable, and report uncertainty or ask the captain when it still prevents a justified choice.
+   Prefer known viable evidence when otherwise comparable, and report uncertainty or ask the commander when it still prevents a justified choice.
 7. Use pace and signed reserve only as later diagnostic tie-break evidence among candidates still unresolved after headroom, runway, likely-completion viability, and uncertainty.
    Pace and reserve never rescue a clearly inferior completion prospect.
    Do not collapse these facts into an opaque composite score.
 8. Older schemas or absent runway/pace fields: do not crash, fabricate runway or pace, treat absence as healthy, or silently exclude a candidate.
    State which evidence is unavailable, retain the candidate, and apply only the comparisons the snapshot supports.
-9. Genuine ties: stop and report every tied candidate for captain choice.
+9. Genuine ties: stop and report every tied candidate for commander choice.
    Do not select by array order, harness name, or another arbitrary identity ordering.
    Report duplicate concrete profiles as a configuration error.
 

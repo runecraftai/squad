@@ -30,7 +30,7 @@
 # chat cannot claim an empty unit while main current state is broken.
 #
 # The landed section merges this home's Done with the canonical snapshot's
-# XO_landed roll-up (sq-unit-snapshot.sh), so merges a XO managed -
+# XO_landed roll-up (sq-unit-snapshot.sh), so merges an XO managed -
 # recorded in ITS OWN backlog, never the main one - are visible. It stays bounded by
 # a per-home cap and an overall cap, with omitted[] disclosure of both and of any
 # XO home whose backlog was unreadable; no GitHub/network call is involved.

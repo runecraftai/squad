@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # Inheritance propagation: the PRIMARY Squad pushes a declared, extensible
 # set of LOCAL (gitignored) config items down into each XO home's
-# config/, so a XO's OWN operators inherit the primary's settings
-# (e.g. primary config/crew-dispatch.json makes a XO use the same dispatch
-# profile rules, primary config/crew-harness=codex makes a XO's operators
+# config/, so an XO's OWN operators inherit the primary's settings
+# (e.g. primary config/crew-dispatch.json makes an XO use the same dispatch
+# profile rules, primary config/crew-harness=codex makes an XO's operators
 # spawn on codex too, primary config/backlog-backend=manual makes that home
 # hand-edit backlog files too, primary config/backend pins that home's local
 # runtime-backend default for future spawns, primary config/startup-memory-budget
@@ -11,7 +11,7 @@
 # config/herdr-presentation-spaces carries the same Herdr presentation-projection
 # preference - an absent primary file and an absent destination file both mean
 # the same unconfigured default, so the generic absence mirror below converges
-# a XO without deciding the release-dependent floor; explicit "on" and
+# an XO without deciding the release-dependent floor; explicit "on" and
 # "off" preferences propagate as files. Primary
 # config/trace-context is copied at the launch convergence point as part of the
 # default-off W3C trace-context setup, while live convergence leaves it unchanged.
@@ -39,7 +39,7 @@
 # config-dir-relative items the primary propagates. Add an item there and every
 # convergence point inherits it - no other change needed. config/xo-harness
 # is deliberately NOT in the list: it is the primary's own setting for launching
-# XOs, and a XO never spawns XOs, so it must not flow
+# XOs, and an XO never spawns XOs, so it must not flow
 # downstream.
 #
 # That single declaration is also the ONE owner of the inherited-material

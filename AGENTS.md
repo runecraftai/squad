@@ -33,7 +33,7 @@ Hard rules, in priority order:
    A recon worktree is declared scratch and may be discarded only after its report exists and the shared unresolved-decision completion gate passes.
 4. **Operators never address the commander.**
    All operator communication flows through Squad.
-   Treat direct commander intervention in a operator window as authoritative and reconcile it at the next supervision review.
+   Treat direct commander intervention in an operator window as authoritative and reconcile it at the next supervision review.
 5. **Report outcomes faithfully.**
    If work failed, say so plainly with the evidence.
 
@@ -64,7 +64,7 @@ README.md            public overview and development notes
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
 bin/                 helper scripts, committed; read each script's header before first use
 .env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
-config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls a XO home's own operators (section 4)
+config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO home's own operators (section 4)
 config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (section 4). Inherited by XO homes
 config/xo-harness  harness the PRIMARY uses to launch XO agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; section 4); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then Squad's own. The primary's own setting; NOT inherited into XO homes (XOs do not spawn XOs)
 config/backlog-backend  backlog backend override; LOCAL, gitignored; absent or "tasks-axi" = default tasks-axi backend, "manual" = force routine backlog updates to hand-editing; inherited by XO homes (section 10)
@@ -220,7 +220,7 @@ Cloning or registering a project is add intake and uses the same trigger.
 That skill owns registry syntax, delivery-mode selection, outward-facing consent, clone and initialization procedure, safe rollback, and removal preflight.
 Project creation never authorizes an unmentioned remote, and project removal never bypasses that preflight or unlanded-work checks; hard rule 1's concrete commander-approved project operation exception remains available when its exact conditions are met.
 
-Load `xo-provisioning` before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a XO home, and before editing `data/XOs.md`.
+Load `xo-provisioning` before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring an XO home, and before editing `data/XOs.md`.
 Its scope field drives routing and its project list is non-exclusive provisioning data, not ownership.
 Keep `local-only` work in the main home.
 
@@ -238,7 +238,7 @@ Route durable knowledge to its most specific owner:
 - Knowledge general to every Squad user belongs in this repo's shared tracked surface.
 
 Squad never writes a project's `AGENTS.md` directly.
-A operator creates or updates it lazily through the project's selected delivery path, using `bin/sq-ensure-agents-md.sh` and preferring pointers to authoritative sources over copied detail.
+An operator creates or updates it lazily through the project's selected delivery path, using `bin/sq-ensure-agents-md.sh` and preferring pointers to authoritative sources over copied detail.
 Keep unit delivery posture and commander-private strategy out of project memory.
 When the commander invokes `/debrief`, load the `debrief` skill for the complete knowledge-routing and unfinished-work sweep.
 
@@ -354,7 +354,7 @@ A teardown refusal for uncommitted or unlanded work is a stop-and-investigate re
 Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
 
-A XO is persistent and an empty queue is healthy.
+An XO is persistent and an empty queue is healthy.
 Retire one only on an explicit commander or main-Squad decision, after loading `xo-provisioning`; its home must contain no work under way, and forced discard still requires explicit commander authority.
 
 ### Recon outcome and promotion
@@ -391,7 +391,7 @@ Handle actionable wakes as follows:
 When any wake reports a merged PR for a project cloned in this home, refresh that clone through the guarded unit-sync path.
 When Relay-linked work reaches a milestone or terminal state, load `relay-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 
-A XO's idle endpoint is healthy, and parent supervision relies on its routed status rather than treating a quiet pane as stale.
+An XO's idle endpoint is healthy, and parent supervision relies on its routed status rather than treating a quiet pane as stale.
 Waiting on a healthy supervision cycle is silent; empty polls, elapsed time, and no-change updates are not commander-facing progress.
 Never broadly kill sentrys, especially never `pkill -f bin/sq-sentry.sh`, because that can kill sibling Squad homes.
 A forced repair must use the home-scoped owner path emitted by supervision instructions.
@@ -467,7 +467,7 @@ Mention cost as a courtesy when unusually much work is running, but never block 
 
 `data/backlog.md` is the durable queue.
 It tracks work items only, never agents; persistent XOs never appear as backlog items.
-Work routed to a XO is recorded in that XO home's own backlog, not the main backlog.
+Work routed to an XO is recorded in that XO home's own backlog, not the main backlog.
 When a main-side thread such as a pending commander decision or relay reminder is worth durable tracking, file it as its own work item; use `tasks-axi hold <id> --reason "<reason>" --kind commander` for a commander-gated thread.
 Unresolved decisions discovered by investigations or visual reviews follow `decision-hold-lifecycle`, which owns their mandatory backlog lifecycle.
 Update the backlog on every dispatch, completion, and decision for a work item.
@@ -512,18 +512,18 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `diagnostic-reasoning` - load before scoping a reported bug and before acting on a diagnostic report.
 - `ask-user-authority` - load before deciding any ask-user finding, regardless of the project's `yolo` posture.
 - `quota-array-dispatch` - load before choosing among a matched crew-dispatch profile array from current quota-axi output.
-- `harness-adapters` - load before spawning or recovering a operator or XO, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter.
+- `harness-adapters` - load before spawning or recovering an operator or XO, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter.
 - `squad-orca` - load before switching to Orca, spawning or supervising Orca-backed work, smoke-testing Orca backend behavior, debugging Orca task state, or reconciling Orca-backed task metadata.
 - `project-management` - load before adding, creating, removing, or initializing a project.
   Cloning or registering a project is add intake and uses the same trigger.
 - `stuck-operator-recovery` - load when the session-start digest reports an ordinary direct report's endpoint dead or its metadata has no window, or after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive operator, or a failed steer.
-- `xo-provisioning` - load before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a XO home, and before editing `data/XOs.md`.
+- `xo-provisioning` - load before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring an XO home, and before editing `data/XOs.md`.
 - `decision-hold-lifecycle` - load before treating an investigation or visual review as complete, before ending a visual review that exposed a decision, and when recording or routing the commander's answer.
 - `process-event-sources` - load before arming a long-polling source, and on any `procevent <adapter> <source-id> <sequence>` check wake.
   Never run a registered source's blocking command yourself in a conversational turn.
 - `relay-respond` - load on an `x-mention <request_id>` `check:` wake to handle the mention, on an `x-mode-error ...` `check:` wake to report the Relay configuration blocker, on a `public-followup ...` `check:` wake or a startup-surfaced public commitment, and on any milestone or terminal wake for a Relay-linked task before posting its completion follow-up; relevant only when Relay is on.
 - `squad-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Squad work.
-- `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a operator for a Squad-repo task.
+- `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing an operator for a Squad-repo task.
 
 ## 14. Relay
 
@@ -538,7 +538,7 @@ For every Relay-linked terminal outcome, load that owner and use the promised-fi
 
 A promised final public reply is durable state, never conversation memory.
 Load `relay-respond` before promising one, on a `public-followup ...` check wake, and whenever the session-start digest lists a public commitment awaiting delivery.
-Only the home holding the relay consent and thread binding ever posts it, so never ask a XO or operator to find the thread or send the reply, and never recover a terminal result by reading a `done:` sentence.
+Only the home holding the relay consent and thread binding ever posts it, so never ask an XO or operator to find the thread or send the reply, and never recover a terminal result by reading a `done:` sentence.
 
 ## Commander instruction precedence
 

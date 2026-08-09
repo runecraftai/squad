@@ -128,9 +128,9 @@ BRIEF_CREATED=0
 if [ ! -f "$BRIEF" ]; then
   [ -n "${SQUAD_XO_CHARTER:-}" ] || die "no filled charter at $BRIEF; set SQUAD_XO_CHARTER or scaffold one first"
   if [ "$NO_PROJECTS" -eq 1 ]; then
-    "$SCRIPT_DIR/sq-brief.sh" "$ID" --XO --no-projects >/dev/null
+    "$SCRIPT_DIR/sq-brief.sh" "$ID" --xo --no-projects >/dev/null
   else
-    "$SCRIPT_DIR/sq-brief.sh" "$ID" --XO "${PROJECT_NAMES[@]}" >/dev/null
+    "$SCRIPT_DIR/sq-brief.sh" "$ID" --xo "${PROJECT_NAMES[@]}" >/dev/null
   fi
   BRIEF_CREATED=1
 fi

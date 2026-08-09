@@ -46,7 +46,7 @@
 #          Already-live and successfully relaunched XOs are silent
 #          unless SQUAD_BOOTSTRAP_VERBOSE_FACTS=1 requests BOOTSTRAP_INFO facts.
 #          A TANGLE line means the Squad primary checkout (SQUAD_ROOT) is stranded
-#          on a feature branch instead of its default branch - a operator's work
+#          on a feature branch instead of its default branch - an operator's work
 #          landed in the primary instead of its own worktree; restore it per the line.
 #          fob is also MISSING when its installed version lacks
 #          "fob get --lease" support.
@@ -275,7 +275,7 @@ XO_sync() {
   # commit (sq-ff-lib.sh), while a standalone clone without it is skipped until
   # /updatesquad refreshes it from origin. Startup sends reread nudges only
   # for RUNNING XOs whose instruction surface (AGENTS.md, bin/, or
-  # .agents/skills/) actually changed, so a XO already on the primary's
+  # .agents/skills/) actually changed, so an XO already on the primary's
   # version is never disturbed (AGENTS.md bootstrap + supervision). Unlike
   # /updatesquad, startup owns the live-convergence send itself because it is
   # a deterministic locked sweep and can report success as BOOTSTRAP_INFO while
@@ -667,7 +667,7 @@ XO_liveness_one() {  # <meta> <id>
         ;;
       dead|missing)
         cause="remote endpoint $agent_state on its configured host"
-        if out=$(SQUAD_SPAWN_NO_GUARD=1 "$SQUAD_ROOT/bin/sq-spawn.sh" "$id" --XO 2>&1); then
+        if out=$(SQUAD_SPAWN_NO_GUARD=1 "$SQUAD_ROOT/bin/sq-spawn.sh" "$id" --xo 2>&1); then
           XO_RESPAWNED_IDS="$XO_RESPAWNED_IDS $id"
           report_relaunch "$id" "$cause" "host=$remote_host"
         else
@@ -704,7 +704,7 @@ XO_liveness_one() {  # <meta> <id>
       else
         cause="recorded endpoint confidently missing"
       fi
-      if out=$(SQUAD_SPAWN_NO_GUARD=1 "$SQUAD_ROOT/bin/sq-spawn.sh" "$id" --XO 2>&1); then
+      if out=$(SQUAD_SPAWN_NO_GUARD=1 "$SQUAD_ROOT/bin/sq-spawn.sh" "$id" --xo 2>&1); then
         XO_RESPAWNED_IDS="$XO_RESPAWNED_IDS $id"
         report_relaunch "$id" "$cause" "backend=$backend"
       else
@@ -1083,7 +1083,7 @@ crew_dispatch_validate() {
 }
 
 startup_memory_budget_setup() {
-  # Primary bootstrap owns default publication. A XO is deliberately
+  # Primary bootstrap owns default publication. An XO is deliberately
   # passive here because its setting must converge from the primary through the
   # inherited-local-material contract rather than becoming a local authority.
   if [ -e "$SQUAD_HOME/.sq-xo-home" ] || [ -L "$SQUAD_HOME/.sq-xo-home" ]; then

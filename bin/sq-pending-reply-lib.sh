@@ -8,7 +8,7 @@
 # parent status line or status-pointed document - never from transport success,
 # chat content, or unrelated status activity.
 #
-# Safety property (commander direction 2026-07-22): a XO agent may ignore
+# Safety property (commander direction 2026-07-22): an XO agent may ignore
 # the marker and answer only in its visible conversation. The parent must notice
 # the missing correlated report without scraping that conversation, send exactly
 # one automatic recovery request asking for a repost through the parent channel,
@@ -634,7 +634,7 @@ fm_pending_reply_fallback_idle_eligible() {  # <record-path>
 #
 # Deliberately NOT the semantic busy-state contract (bin/sq-busy-lib.sh).
 # That contract covers ordinary task workers, whose turn lifecycle Squad
-# wires at spawn; a XO has no such wiring because an idle XO
+# wires at spawn; an XO has no such wiring because an idle XO
 # pane is healthy and it runs no supervised turn sequence of its own. This
 # observation exists only to notice a busy-then-idle transition around one
 # delivered request, so it is a delivery-confirmation signal in the same

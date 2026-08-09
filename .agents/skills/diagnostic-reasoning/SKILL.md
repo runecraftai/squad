@@ -12,8 +12,8 @@ metadata:
 # diagnostic-reasoning
 
 Use this procedure before scoping a reported bug and before acting on a diagnostic report.
-This skill is the single owner of Firstmate's bug-diagnosis reasoning procedure.
-Firstmate applies it when briefing delegated investigation and evaluating the resulting evidence, without taking over project-specific investigation itself.
+This skill is the single owner of Squad's bug-diagnosis reasoning procedure.
+Squad applies it when briefing delegated investigation and evaluating the resulting evidence, without taking over project-specific investigation itself.
 
 ## Establish the observed behavior
 
@@ -50,4 +50,4 @@ A diagnostic report should distinguish observed facts from hypotheses and state 
 Before acting on the report, verify that its claimed cause explains the end-user reproduction and the proven path without relying on an untested masking condition.
 If a load-bearing element is missing, route a focused follow-up investigation instead of treating confidence or implementation detail as proof.
 A diagnosis or implementation-ready recommendation is evidence, not authorization to change code.
-Implementation still requires the captain's request or another existing lifecycle authority, and the reproduction should become the regression test when a fix is authorized.
+Implementation still requires the commander's request or another existing lifecycle authority, and the reproduction should become the regression test when a fix is authorized.

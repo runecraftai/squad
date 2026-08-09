@@ -131,7 +131,7 @@ if [ -n "$tangle_branch" ]; then
     printf '●%s\n' "$trule"
     printf '●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH\n'
     printf "●  %s is on '%s', not its default branch '%s'.\n" "$SQUAD_ROOT" "$tangle_branch" "$tangle_default"
-    printf '●  A operator likely branched/committed in the primary instead of its own worktree.\n'
+    printf '●  An operator likely branched/committed in the primary instead of its own worktree.\n'
     printf "●  The work is SAFE on the '%s' ref.\n" "$tangle_branch"
     if [ "$READ_ONLY" -eq 1 ]; then
       printf '●  This read-only session must leave restore work to a session with verified unit-lock ownership.\n'

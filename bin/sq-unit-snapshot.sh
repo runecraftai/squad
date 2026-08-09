@@ -141,12 +141,12 @@ validate_positive_bound SQUAD_SNAPSHOT_REGISTRY_TIMEOUT "$SQUAD_SNAPSHOT_REGISTR
 usage() {
   cat <<'EOF'
 usage: sq-unit-snapshot.sh --json
-       sq-unit-snapshot.sh --XO-home-summary
+       sq-unit-snapshot.sh --xo-home-summary
 
 Print a read-only structured snapshot of the Squad unit.
 JSON is the stable machine-readable output contract.
 
---XO-home-summary emits the bounded structured summary used after a
+--xo-home-summary emits the bounded structured summary used after a
 validated registered-home handoff. It is local-only, skips nested XO
 aggregation, and marks inventory contradictions or unavailable child state invalid.
 Its invalidity object names the normalized failure kind and affected ids.
@@ -170,7 +170,7 @@ EOF
 OUTPUT_MODE=json
 case "${1:---json}" in
   --json) ;;
-  --XO-home-summary) OUTPUT_MODE=XO-home-summary ;;
+  --xo-home-summary) OUTPUT_MODE=XO-home-summary ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -197,7 +197,7 @@ last_nonempty_line() {  # <file>
   grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -1
 }
 
-crew_state_json() {  # <id>
+operator_state_json() {  # <id>
   local id=$1 raw rest state source detail sep
   raw=$(
     SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
@@ -443,7 +443,7 @@ task_json_lines() {
       pr_source=absent
     fi
 
-    current_json=$(crew_state_json "$id")
+    current_json=$(operator_state_json "$id")
     event_json=$(status_event_json "$status_log")
     last_event_raw=$(printf '%s' "$event_json" | jq -r '.last_event.raw // ""')
     current_state=$(printf '%s' "$current_json" | jq -r '.state // ""')
@@ -453,7 +453,7 @@ task_json_lines() {
     # (sq-classify-lib.sh's status_open_decisions) so a later unrelated event can
     # never mask a still-open commander decision. The set is derived purely from the
     # keyed fold - never from report bodies or decision-like prose - and then
-    # reconciled against the crew LIFECYCLE, which only clears a stale decision the
+    # reconciled against the operator LIFECYCLE, which only clears a stale decision the
     # crew has provably moved past. Two lifecycle signals clear it, neither of which
     # reads any report content:
     #   - a live activity read (run-step or busy pane) that is working/done, so a
@@ -592,7 +592,7 @@ task_json_lines() {
         actions:(
           if $kind == "XO" then
             {send:"bin/sq-send.sh sq-\($id) \u0027<request>\u0027",
-             watch:"read status/doc return channel; do not routinely sq-peek a XO for answers",
+             watch:"read status/doc return channel; do not routinely sq-peek an XO for answers",
              return_channel_note:"XO answers come back through status/doc paths after a marked sq-send request."}
           else
             {watch:"bin/sq-peek.sh sq-\($id)",
@@ -1189,7 +1189,7 @@ XO_current_json() {  # <parent-tasks-json>
     if [ -z "$reason" ]; then
       if [ "$remote" = true ]; then
         summary=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" \
-          "$SCRIPT_DIR/sq-on.sh" "$id" sq-unit-snapshot.sh --XO-home-summary < /dev/null 2>/dev/null)
+          "$SCRIPT_DIR/sq-on.sh" "$id" sq-unit-snapshot.sh --xo-home-summary < /dev/null 2>/dev/null)
         summary_rc=$?
       else
         summary=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" env \
@@ -1205,7 +1205,7 @@ XO_current_json() {  # <parent-tasks-json>
           SQUAD_SNAPSHOT_XO_QUEUED="$SQUAD_SNAPSHOT_XO_QUEUED" \
           SQUAD_SNAPSHOT_XO_DECISIONS="$SQUAD_SNAPSHOT_XO_DECISIONS" \
           SQUAD_SNAPSHOT_XO_LANDED_PER_HOME="$SQUAD_SNAPSHOT_XO_LANDED_PER_HOME" \
-          "$SCRIPT_DIR/sq-unit-snapshot.sh" --XO-home-summary 2>/dev/null)
+          "$SCRIPT_DIR/sq-unit-snapshot.sh" --xo-home-summary 2>/dev/null)
         summary_rc=$?
       fi
       if [ "$summary_rc" -ne 0 ]; then

@@ -14,9 +14,9 @@
 # signatures).
 #
 # There are two documented exceptions. The absorb classification
-# (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
+# (operator_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/sq-crew-state.sh, which may make a bounded no-mistakes call,
-# to decide whether a crew that just stopped its turn or went stale is working,
+# to decide whether an operator that just stopped its turn or went stale is working,
 # deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
 # stays cheap. status_open_decisions_incremental (see "incremental (cursor-backed)
@@ -369,7 +369,7 @@ EOF
 #
 # Not a pure status-file read: this writes/rewrites the sibling cursor file as a
 # side effect (state/.<task>.open-decisions-cursor), the library's second
-# documented exception to the pure-read rule after crew_absorb_class. The write
+# documented exception to the pure-read rule after operator_absorb_class. The write
 # is atomic (temp file + rename), so a crash between calls leaves either the
 # prior cursor or the new one, never a partial one. bin/sq-stand-to-drain.sh calls
 # this only after releasing the stand-to queue lock, so a hypothetical race between
@@ -590,8 +590,8 @@ window_to_task() {
 # commander-relevant last line; 1 otherwise. Pass the space-separated file list that
 # follows the "signal:" prefix. Non-.status arguments (e.g. .turn-ended markers,
 # which never carry a verb) are skipped. A 1 here is NOT "benign" on its own: a
-# no-verb signal (a bare turn-end, a working: note) is only benign when the crew is
-# also provably working (signal_crew_provably_working below); otherwise it surfaces.
+# no-verb signal (a bare turn-end, a working: note) is only benign when the operator is
+# also provably working (signal_operator_provably_working below); otherwise it surfaces.
 signal_reason_is_actionable() {  # <file> ...
   local f last
   for f in "$@"; do
@@ -608,19 +608,19 @@ signal_reason_is_actionable() {  # <file> ...
 # from bin/sq-crew-state.sh's one authoritative current-state line
 # ("state: <s> · source: <src> · <detail>"). Prints exactly one token:
 #   working - an actively-running no-mistakes step (running/fixing/ci) or a busy
-#             pane; the crew is legitimately mid-work on a static-looking pane
+#             pane; the operator is legitimately mid-work on a static-looking pane
 #             (e.g. waiting on CI);
-#   paused  - the crew's authoritative current state is a declared external-wait
+#   paused  - the operator's authoritative current state is a declared external-wait
 #             pause (paused:), which is EXPECTED to idle;
 #   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
 #             torn-down/unknown crew, or an unreadable verdict).
 # One sq-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
-# authoritatively (not the status log) is what keeps run-step precedence: a crew
+# authoritatively (not the status log) is what keeps run-step precedence: an operator
 # that appended paused: but then STARTED a run reports working, never paused.
 # NOT a pure read: sq-crew-state.sh may make a bounded no-mistakes call, so callers
 # run it only on no-verb signal and first-sighting stale paths, never every wake.
 # SQUAD_CREW_STATE_BIN lets tests stub the verdict.
-crew_absorb_class() {  # <id>
+operator_absorb_class() {  # <id>
   local id=$1 line state src
   [ -n "$id" ] || { printf 'none'; return; }
   line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
@@ -634,22 +634,22 @@ crew_absorb_class() {  # <id>
   printf 'none'
 }
 
-# 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class
+# 0 if crew <id> shows POSITIVE evidence it is still working (operator_absorb_class
 # reports `working`). This is the "provably working" predicate at the heart of
 # absorb-only-when-provably-working: a no-verb turn-end or stale wake is absorbed
-# ONLY when this returns 0, and SURFACED otherwise (the crew may be done, waiting
+# ONLY when this returns 0, and SURFACED otherwise (the operator may be done, waiting
 # on a decision, or wedged). For stale panes it is checked before trusting the
 # status log so a pre-validation commander-relevant line does not override an active
-# run. See crew_absorb_class for the exact working/paused/none decision.
-crew_is_provably_working() {  # <id>
-  [ "$(crew_absorb_class "$1")" = working ]
+# run. See operator_absorb_class for the exact working/paused/none decision.
+operator_is_provably_working() {  # <id>
+  [ "$(operator_absorb_class "$1")" = working ]
 }
 
 # 0 if crew <id>'s authoritative current state is a declared external-wait pause.
-# The stale path absorbs such a crew (on a long re-surface cadence) instead of
+# The stale path absorbs such an operator (on a long re-surface cadence) instead of
 # escalating a possible wedge.
-crew_is_paused() {  # <id>
-  [ "$(crew_absorb_class "$1")" = paused ]
+operator_is_paused() {  # <id>
+  [ "$(operator_absorb_class "$1")" = paused ]
 }
 
 # 0 (benign/absorb) if EVERY task referenced by a no-verb "signal:" wake is provably
@@ -657,7 +657,7 @@ crew_is_paused() {  # <id>
 # same space-separated file list as signal_reason_is_actionable. Files are mapped to
 # task ids by stripping the .status / .turn-ended suffix; a no-verb wake with nothing
 # provably working must surface, so an empty/unresolvable list returns 1.
-signal_crew_provably_working() {  # <file> ...
+signal_operator_provably_working() {  # <file> ...
   local f base task seen=""
   for f in "$@"; do
     base=${f##*/}
@@ -669,7 +669,7 @@ signal_crew_provably_working() {  # <file> ...
     [ -n "$task" ] || continue
     case " $seen " in *" $task "*) continue ;; esac
     seen="$seen $task"
-    crew_is_provably_working "$task" || return 1
+    operator_is_provably_working "$task" || return 1
   done
   [ -n "$seen" ] || return 1
   return 0
@@ -677,7 +677,7 @@ signal_crew_provably_working() {  # <file> ...
 
 # 0 (terminal/actionable) if a stale window's last status line is
 # commander-relevant; 1 otherwise, including the no-status case. A 1 only means
-# "non-terminal"; the always-on sentry then applies crew_is_provably_working,
+# "non-terminal"; the always-on sentry then applies operator_is_provably_working,
 # while the away-mode daemon applies its persistence recheck.
 stale_is_terminal() {  # <window> <state>
   local win=$1 state=$2 last

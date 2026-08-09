@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Print the tail of a operator endpoint (bounded, for cheap diagnosis).
+# Print the tail of an operator endpoint (bounded, for cheap diagnosis).
 # Usage: sq-peek.sh <target> [lines=40]
 #   <target> may be an exact task id, a legacy sq-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit backend target.

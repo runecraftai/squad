@@ -3,9 +3,9 @@
 # Classifies supervision wakes in bash. In normal mode it absorbs benign wakes
 # and keeps blocking; it queues and exits only for actionable wakes.
 # The no-verb signal and stale path is absorb-only-when-provably-working: a wake
-# is absorbed only when the crew shows POSITIVE evidence it is still working (an
+# is absorbed only when the operator shows POSITIVE evidence it is still working (an
 # actively-running no-mistakes step, or a backend busy signal), and surfaced
-# otherwise, so a crew that finishes (or stops and waits) without a current
+# otherwise, so an operator that finishes (or stops and waits) without a current
 # working signal is never silently swallowed. A declared external-wait pause is
 # the separate idle absorb case and re-surfaces only on its long bounded cadence,
 # although its initial no-verb status signal still surfaces in normal mode.
@@ -17,7 +17,7 @@
 #   stale: <window>        a provably-working stale is ALWAYS absorbed (with a wedge
 #                          timer) regardless of what the status log says - an active
 #                          run-step or busy pane outranks even a commander-relevant log
-#                          line, since the crew's own log gets no new entry once
+#                          line, since the operator's own log gets no new entry once
 #                          Squad hands it to a no-mistakes validation. A declared
 #                          external-wait pause is absorbed instead with its own long
 #                          re-surface cadence, never as a wedge. Only when neither
@@ -125,9 +125,9 @@ SIGNAL_GRACE=${SQUAD_SIGNAL_GRACE:-30}   # seconds to linger after a signal so t
 # and ABSORBS the benign majority - it advances the suppression marker, logs to a
 # debug log, and keeps blocking WITHOUT enqueuing or exiting. The no-verb signal
 # / stale path is absorb-only-when-provably-working: such a wake is absorbed ONLY
-# while the crew shows positive evidence it is still working (an actively-running
-# no-mistakes step, or a busy pane, via crew_is_provably_working over
-# sq-crew-state.sh); a crew that stopped its turn with no running pipeline and no
+# while the operator shows positive evidence it is still working (an actively-running
+# no-mistakes step, or a busy pane, via operator_is_provably_working over
+# sq-crew-state.sh); an operator that stopped its turn with no running pipeline and no
 # busy pane is SURFACED, so a finish reported only through interactive pane menus
 # (no done: status) is never swallowed. An ACTIONABLE wake (a commander-relevant
 # signal, a no-verb signal whose crew is not provably working, any check, a stale
@@ -270,7 +270,7 @@ SQUAD_WEDGE_DEMAND_INSPECT_COUNT=${SQUAD_WEDGE_DEMAND_INSPECT_COUNT:-3}
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # sentry restart between recording the hash and recording the timer), or
-# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the crew
+# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the operator
 # state (the costly check already ran once, at classification time). Shared by
 # both places a hash can be absorbed this way: the plain non-terminal path,
 # and the stale_is_terminal-overridden path (a commander-relevant status-log
@@ -374,7 +374,7 @@ pause_state_class() {  # <window> <task>
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_commander_held "$last"; then
     rm -f "$recheck_file"
-    crew_absorb_class "$task"
+    operator_absorb_class "$task"
     return
   fi
   if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
@@ -389,7 +389,7 @@ pause_state_class() {  # <window> <task>
     printf 'paused'
     return
   fi
-  class=$(crew_absorb_class "$task")
+  class=$(operator_absorb_class "$task")
   if [ "$class" = working ]; then
     rm -f "$recheck_file"
     printf 'working'
@@ -623,7 +623,7 @@ heartbeat_scan_finds_actionable() {
 
 # event_wait_or_sleep: the terminal wait of each supervision cycle. For a home
 # with push-capable windows (herdr), it replaces the blind `sleep POLL` with a
-# bounded wait on the backend's native transition stream, so a crew going
+# bounded wait on the backend's native transition stream, so an operator going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
 # wedge timer. For every other home - no push-capable window, backend not
 # capable, or the event path proven unreliable this process - it sleeps POLL,
@@ -863,7 +863,7 @@ while :; do
   fi
 
   # On the first changed signal, linger one grace period and re-scan before
-  # classifying: a operator's final status write and the same turn's turn-end
+  # classifying: an operator's final status write and the same turn's turn-end
   # hook land seconds apart, and reporting them as separate actionable wakes
   # costs a full Squad turn each. The re-scan also picks up a newer
   # signature for an already-pending file (last write wins below).
@@ -883,7 +883,7 @@ EOF
     #   - the away-mode daemon owns triage (afk) and wants every wake;
     #   - any status file carries a commander-relevant verb;
     #   - or it is a no-verb wake (a bare turn-end, a working: note) whose crew is
-    #     NOT provably working - the crew stopped its turn with no actively-running
+    #     NOT provably working - the operator stopped its turn with no actively-running
     #     pipeline and no busy pane, so it may be done (even via an interactive menu
     #     that wrote no done: status), waiting on a decision, or wedged. Absorbing
     #     such a turn-end is exactly the swallowed-finish this change guards against.
@@ -893,7 +893,7 @@ EOF
     # check is the only costly one (it may run a bounded no-mistakes call), so the ||
     # ordering evaluates it ONLY for a non-afk, no-commander-verb signal.
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+    if afk_present || signal_reason_is_actionable $files || ! signal_operator_provably_working $files; then
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
@@ -972,7 +972,7 @@ EOF
           fi
         elif stale_is_terminal "$w" "$STATE"; then
           # The log's last line is commander-relevant - but that alone is not
-          # proof the crew is actually done: a crew's own status log gets no
+          # proof the operator is actually done: an operator's own status log gets no
           # new entry once Squad hands it to a no-mistakes validation
           # (AGENTS.md's sparse status-reporting contract), so the log can
           # keep showing a "done:"/needs-decision/blocked leftover from
@@ -986,7 +986,7 @@ EOF
           # authoritative source sq-crew-state.sh itself already prioritizes
           # over the log) a chance to override before trusting the log.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
+            if operator_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
               date +%s > "$ssf"
               triage_log "absorbed stale (provably working, overriding a stale commander-relevant status): $w"
@@ -1000,7 +1000,7 @@ EOF
           elif [ -e "$ssf" ]; then
             # This exact hash was already overridden as provably-working (a
             # wedge timer is running for it) - keep treating it that way
-            # without re-reading the crew state every poll, and without
+            # without re-reading the operator state every poll, and without
             # letting the still-commander-relevant log line re-surface it.
             wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf"
           fi
@@ -1008,13 +1008,13 @@ EOF
           # this same hash - nothing left to do (matches the original,
           # unmodified terminal-status behavior).
         else
-          # Non-terminal stale: a crew gone quiet without a commander-relevant status.
+          # Non-terminal stale: an operator gone quiet without a commander-relevant status.
           # Decided once per distinct stale hash (the costly state reads run only
           # on first sight, never every poll) via pause_state_class, which returns:
           #   - working: an actively-running pipeline legitimately sits on a static
           #     pane (e.g. waiting on CI), so absorb and start the wedge timer so a
           #     genuinely frozen run still escalates past STALE_ESCALATE_SECS;
-          #   - paused: the crew declared an external wait, or a declared pause or
+          #   - paused: the operator declared an external wait, or a declared pause or
           #     commander hold is paired with a confidently dead agent, so absorb on
           #     the long PAUSE_RESURFACE_SECS cadence instead of wedge-escalating;
           #   - none: no running pipeline, no exact busy verdict, no declared pause.

@@ -473,7 +473,7 @@ print_status_tail() {
   local status=$1 line
   printf 'status tail (last %s line(s), each capped at %s characters, wake-EVENT history, not current state; full log: %s):\n' \
     "$STATUS_TAIL" "$SQUAD_LINE_CAP_DEFAULT" "$status"
-  # A operator writes its own status lines, so their length is unbounded: one
+  # An operator writes its own status lines, so their length is unbounded: one
   # observed line ran 865 characters. Cap each one the way the wake digest's
   # OPEN DECISIONS section does; the lede carries the state word and the key,
   # and the full log path above reaches the rest.

@@ -53,7 +53,7 @@ fm_afk_start_usage() {
 # session and the new daemon has not produced anything yet, so anything present
 # here belongs to a PRIOR session. This never drops a genuinely-pending
 # escalation - the delivery buffer is a transient cache, and any condition still
-# true (a crew still blocked, a check still firing) is re-derived and re-escalated
+# true (an operator still blocked, a check still firing) is re-derived and re-escalated
 # fresh by the daemon's heartbeat catch-all scan and the durable
 # state/.stand-to-queue replay (see docs/herdr-backend.md "Away-mode stale-artifact
 # lifecycle" and bin/sq-supervise-daemon.sh's escalate_add/inject_wedge_alarm).

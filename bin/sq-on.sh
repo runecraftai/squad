@@ -82,7 +82,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
 done < "$REG"
 [ "$MATCHES" -gt 0 ] || die "no remote XO or SSH alias matches '$ROUTE'"
-[ "$MATCHES" -eq 1 ] || die "remote route '$ROUTE' is ambiguous across $MATCHES configured XOs; use a XO id"
+[ "$MATCHES" -eq 1 ] || die "remote route '$ROUTE' is ambiguous across $MATCHES configured XOs; use an XO id"
 case "$HOST" in ''|-*|*[!A-Za-z0-9._-]*) die "configured SSH alias is unsafe: $HOST" ;; esac
 case "$ROOT" in /*) ;; *) die "configured remote root is not absolute: $ROOT" ;; esac
 case "$HOME_PATH" in /*) ;; *) die "configured remote home is not absolute: $HOME_PATH" ;; esac

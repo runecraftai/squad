@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sq-xo-report.sh - optional helper to append a correlated parent report.
 #
-# A XO answering a marked from-squad request must report on the
+# An XO answering a marked from-squad request must report on the
 # parent status channel with the request's corr=<id> token. This helper makes
 # that easy, but correctness must not depend on using it: a plain echo of a
 # status line that includes the same corr token is equally valid

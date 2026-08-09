@@ -6,8 +6,8 @@
 #        sq-harness.sh XO       print the harness the PRIMARY uses to launch
 #                                        XO agents: config/xo-harness ->
 #                                        config/crew-harness -> own. "default" or absent
-#                                        defers to the crew resolution, so an unset
-#                                        xo-harness behaves exactly as the crew
+#                                        defers to the operator resolution, so an unset
+#                                        xo-harness behaves exactly as the operator
 #                                        harness did before this knob existed.
 #        sq-harness.sh XO-model    print the optional MODEL token from
 #                                        config/xo-harness, or empty when absent.
@@ -137,9 +137,9 @@ XO_field() {
 
 # Resolve the harness the PRIMARY uses to launch XO agents: a fallback
 # chain config/xo-harness -> config/crew-harness -> own. An absent or
-# "default" xo-harness token defers to the crew resolution, so an unset
-# xo-harness behaves exactly as before this knob existed (a XO
-# launched on the crew harness). config/xo-harness is the PRIMARY's own
+# "default" xo-harness token defers to the operator resolution, so an unset
+# xo-harness behaves exactly as before this knob existed (an XO
+# launched on the operator harness). config/xo-harness is the PRIMARY's own
 # setting and is never inherited downstream - XOs do not spawn XOs.
 resolve_XO() {
   local sm

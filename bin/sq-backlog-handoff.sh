@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hand already-identified, in-scope backlog items off from the main Squad
-# backlog to a XO's own home backlog. Use this when a XO is
+# backlog to an XO's own home backlog. Use this when an XO is
 # created (or whenever an existing queued item should become its domain's work)
 # so the XO owns its queue from day one instead of the item staying
 # stranded in the main backlog.

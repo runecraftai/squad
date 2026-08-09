@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Spawn a direct report: a operator in a fob or Orca worktree, or a
+# Spawn a direct report: an operator in a fob or Orca worktree, or a
 # XO in its isolated Squad home.
 # Usage: sq-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        sq-spawn.sh <task-id> <project-dir> --recon [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        sq-spawn.sh <task-id> [<Squad-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --XO
+#        sq-spawn.sh <task-id> [<Squad-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --xo
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
-#   spawn and refused on --recon and --XO spawns. Squad resolves both
+#   spawn and refused on --recon and --xo spawns. Squad resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the commander's
 #   standing posture as context, not as this task's answer, so a spawn never looks
 #   the mode up. A ship spawn additionally reads the brief's recorded
@@ -38,7 +38,7 @@
 #   auto-detected tmux stays silent; zellij and orca are never auto-detected.
 #   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
 #   blocked backend contract. Default tmux spawns do not write backend= to meta;
-#   absent backend= means tmux. cmux does not support --XO spawns yet.
+#   absent backend= means tmux. cmux does not support --xo spawns yet.
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported XO mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
@@ -49,7 +49,7 @@
 #   identity that is unreadable, contradictory, stale, or from another herdr
 #   session stops the spawn before any worker endpoint exists. A launcher
 #   outside herdr has no workspace to inherit and uses this home's own labeled
-#   workspace, which must then match exactly one. --XO is the deliberate
+#   workspace, which must then match exactly one. --xo is the deliberate
 #   exception: it stands up that XO home's own workspace.
 #   Herdr additionally uses a presentation-only layout by default when the
 #   selected client and running server meet the Herdr 0.8.0 floor. The local
@@ -80,10 +80,10 @@
 #   Every single-task invocation holds one task-id-scoped lock across backend
 #   creation through metadata publication, so concurrent same-id spawns serialize
 #   even when they select different backends.
-#   With no harness arg, a operator/recon spawn resolves the CREW harness only when
+#   With no harness arg, an operator/recon spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, operator/recon
 #   spawns require an explicit harness so Squad cannot silently skip dispatch
-#   profile consultation. A --XO spawn is exempt and resolves the XO
+#   profile consultation. A --xo spawn is exempt and resolves the XO
 #   harness (config/xo-harness -> config/crew-harness -> own), so the
 #   XO-vs-operator split is DURABLE across every respawn (recovery,
 #   /updatesquad, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|muse)
@@ -93,22 +93,22 @@
 #   refuses before endpoint creation when it is unavailable; it never falls back to pi.
 #   config/xo-harness may also carry an optional model and effort as extra
 #   whitespace-separated tokens ("<harness> [<model>] [<effort>]"). For a
-#   --XO spawn, those tokens apply only when this spawn also resolves its
+#   --xo spawn, those tokens apply only when this spawn also resolves its
 #   harness from config/xo-harness. An explicit per-spawn --harness,
 #   positional harness arg, or raw launch command starts with clean model/effort
 #   defaults unless the caller also passes explicit --model/--effort flags. When
 #   the file governs the spawn, its model/effort tokens are re-resolved on every
 #   respawn exactly like the harness axis, and explicit --model/--effort flags
 #   still win over the file's tokens.
-#   A --XO spawn also propagates the primary's declared inherited local
+#   A --xo spawn also propagates the primary's declared inherited local
 #   material, so the XO's OWN operators inherit primary config and the
 #   XO receives the primary's read-only shared commander-preference file
 #   (sq-config-inherit-lib.sh). A successful launch clears pending inherited
 #   config reread generations because the new agent reads the converged files.
 #   --recon records kind=recon in the task's meta (report deliverable, scratch worktree;
-#   see AGENTS.md task lifecycle); --XO records kind=xo and launches in a
+#   see AGENTS.md task lifecycle); --xo records kind=xo and launches in a
 #   provisioned Squad home; the default is kind=strike.
-#   Before a XO launch, the home is locally fast-forwarded to the primary
+#   Before an XO launch, the home is locally fast-forwarded to the primary
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
 #   Ship/recon spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
@@ -138,10 +138,10 @@
 # plus a gitignored .sq-grok-turnend worktree pointer and a state token.
 # muse installs no hook at all - its plugin engine is off in the default build - so
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
-# log; muse is operator/recon only and is refused for --XO.
-# On success prints: spawned <id> harness=<name> kind=<ship|recon|XO> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
-# A strike task records the explicit mode/yolo it was passed; a XO spawn records
-# mode=XO, yolo=off, home=, and projects=; a recon records neither, and both the
+# log; muse is operator/recon only and is refused for --xo.
+# On success prints: spawned <id> harness=<name> kind=<strike|recon|XO> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
+# A strike task records the explicit mode/yolo it was passed; an XO spawn records
+# mode=xo, yolo=off, home=, and projects=; a recon records neither, and both the
 # success line and state/<id>.meta omit them.
 # When the home session's frozen trace-context decision is enabled (see
 # docs/configuration.md and bin/sq-trace-context-lib.sh), the meta also records
@@ -150,7 +150,7 @@
 # and launch environment unchanged.
 #   --traceparent <carrier> delivers a carrier that a REMOTE parent already
 #   resolved and will record, instead of resolving one from this home's frozen
-#   decision. It is accepted only for --XO spawns, only as a strictly
+#   decision. It is accepted only for --xo spawns, only as a strictly
 #   validated W3C traceparent, and exists because a remote XO's task
 #   identity is owned by the parent home that holds its task metadata, while the
 #   pane export happens on the remote host (bin/sq-remote-XO-control.sh).
@@ -260,7 +260,7 @@ for a in "$@"; do
   fi
   case "$a" in
     --recon) KIND=recon ;;
-    --XO) KIND=XO ;;
+    --xo) KIND=XO ;;
     --harness) want_value=harness ;;
     --harness=*) HARNESS_ARG=${a#--harness=}; HARNESS_SET=1 ;;
     --model) want_value=model ;;
@@ -287,11 +287,11 @@ done
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
 # A parent-delivered carrier replaces this home's own resolution, so it is
-# refused unless it is a XO spawn carrying a strictly valid W3C value.
+# refused unless it is an XO spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
 if [ "$TRACEPARENT_SET" -eq 1 ]; then
   [ "$KIND" = XO ] || {
-    echo "error: --traceparent applies only to --XO spawns; every other spawn resolves its own carrier from this home's frozen trace-context decision" >&2
+    echo "error: --traceparent applies only to --xo spawns; every other spawn resolves its own carrier from this home's frozen trace-context decision" >&2
     exit 1
   }
   fm_trace_context_valid "$TRACEPARENT_ARG" || {
@@ -330,11 +330,11 @@ if [ "$KIND" = ship ]; then
   esac
 else
   [ "$MODE_SET" -eq 0 ] || {
-    echo "error: --mode applies only to ship spawns; a recon delivers a report and a XO records its own fixed posture" >&2
+    echo "error: --mode applies only to ship spawns; a recon delivers a report and an XO records its own fixed posture" >&2
     exit 1
   }
   [ "$YOLO_SET" -eq 0 ] || {
-    echo "error: --yolo applies only to ship spawns; a recon delivers a report and a XO records its own fixed posture" >&2
+    echo "error: --yolo applies only to ship spawns; a recon delivers a report and an XO records its own fixed posture" >&2
     exit 1
   }
 fi
@@ -557,7 +557,7 @@ spawn_remote_XO() {
     echo "project=$root"
     echo "harness=$harness"
     echo "kind=xo"
-    echo "mode=XO"
+    echo "mode=xo"
     echo "yolo=off"
     echo "tasktmp="
     echo "model=${model#-}"
@@ -579,7 +579,7 @@ spawn_remote_XO() {
     echo "error: remote XO $id launched, but its reply source could not be armed; endpoint metadata is preserved" >&2
     return 1
   fi
-  echo "spawned $id harness=$harness kind=xo mode=XO yolo=off window=remote:$id worktree=$home remote=$host backend=$remote_backend"
+  echo "spawned $id harness=$harness kind=xo mode=xo yolo=off window=remote:$id worktree=$home remote=$host backend=$remote_backend"
   return 0
 }
 
@@ -607,11 +607,11 @@ fi
 fm_backend_validate_spawn "$BACKEND" || exit 1
 fm_backend_source "$BACKEND" || exit 1
 if [ "$BACKEND" = orca ] && [ "$KIND" = XO ]; then
-  echo "error: backend=orca does not support --XO spawns yet" >&2
+  echo "error: backend=orca does not support --xo spawns yet" >&2
   exit 1
 fi
 if [ "$BACKEND" = cmux ] && [ "$KIND" = XO ]; then
-  echo "error: backend=cmux does not support --XO spawns yet" >&2
+  echo "error: backend=cmux does not support --xo spawns yet" >&2
   exit 1
 fi
 if [ "$BACKEND" = orca ]; then
@@ -764,7 +764,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
       *) echo "error: batch dispatch expects every argument as id=repo; got '$pair'" >&2; rc=2; continue ;;
     esac
     if [ "$KIND" = XO ]; then
-      echo "error: batch dispatch does not support --XO; spawn each XO explicitly" >&2
+      echo "error: batch dispatch does not support --xo; spawn each XO explicitly" >&2
       rc=2
       continue
     elif [ "$KIND" = recon ]; then
@@ -856,7 +856,7 @@ launch_template() {
     # per-task worktree token, so no launch placeholder belongs here.
     kimi) printf '%s' '__KIMIBIN__ __MODELFLAG__--auto' ;;
     # muse (Muse Code): a positional prompt starts the supervised interactive
-    # session. --yolo is the single flag that makes a operator pane viable: muse
+    # session. --yolo is the single flag that makes an operator pane viable: muse
     # ships approval prompts AND a filesystem/network sandbox ON by default
     # (--sandbox-network defaults to proxy-only, which refuses outright without a
     # managed proxy), and it gates a fresh workspace behind a trust dialog. One
@@ -890,9 +890,9 @@ case "$ARG3" in
     done
     ;;
   '')
-    # No explicit harness: resolve from config. A XO AGENT launches on the
+    # No explicit harness: resolve from config. An XO AGENT launches on the
     # XO harness (config/xo-harness -> config/crew-harness -> own);
-    # every other kind uses the crew harness only when no dispatch profile file is
+    # every other kind uses the operator harness only when no dispatch profile file is
     # active. Resolving here on every spawn is what makes the split DURABLE - a
     # respawn (recovery, /updatesquad, restart) re-resolves, so
     # config/xo-harness keeps governing XO launches across restarts.
@@ -921,14 +921,14 @@ case "$HARNESS" in
   pi|pi-signed) LAUNCH="SQUAD_PI_HARNESS=$HARNESS $LAUNCH" ;;
 esac
 
-# muse is verified as a OPERATOR/RECON adapter only. A XO is a Squad
+# muse is verified as a OPERATOR/RECON adapter only. An XO is a Squad
 # instance, so it needs a primary supervision protocol; muse has none, and its
 # Claude-compatible hook dialect explicitly rejects the model-reawakening and
 # asyncRewake handlers that Squad's primary turn-end supervision is built on
 # (muse 0.1.0-R708.1). Refusing here keeps that gap loud instead of standing up a
 # XO whose supervision cycle could never be armed.
 if [ "$KIND" = XO ] && [ "$HARNESS" = muse ]; then
-  echo "error: muse is a verified operator/recon adapter only and cannot run a XO; it has no primary supervision protocol. Select a harness verified for XOs." >&2
+  echo "error: muse is a verified operator/recon adapter only and cannot run an XO; it has no primary supervision protocol. Select a harness verified for XOs." >&2
   exit 1
 fi
 
@@ -942,7 +942,7 @@ fi
 
 # config/xo-harness may carry optional model/effort tokens alongside the
 # harness ("<harness> [<model>] [<effort>]"). They apply only when this is a
-# --XO spawn and no explicit per-spawn harness/raw launch was supplied, so
+# --xo spawn and no explicit per-spawn harness/raw launch was supplied, so
 # the harness itself came from the XO config fallback chain. Resolving
 # here on every spawn makes the pin durable across respawns. Precedence: explicit
 # --model/--effort flags still win over the file's tokens.
@@ -1507,8 +1507,8 @@ case "$BACKEND" in
     # fm_backend_herdr_workspace_label resolves the target workspace from
     # SQUAD_HOME. For every KIND except XO, this process's own SQUAD_HOME is
     # already the right home (the primary spawning its own operator/recon, or
-    # a XO spawning ITS OWN operator/recon from its own process's
-    # SQUAD_HOME - the latter needs no glue at all). A --XO spawn is the
+    # an XO spawning ITS OWN operator/recon from its own process's
+    # SQUAD_HOME - the latter needs no glue at all). A --xo spawn is the
     # one case that does: it is the PRIMARY's own sq-spawn.sh process
     # launching a DIFFERENT home (PROJ_ABS, already validated above as the
     # XO's home), so SQUAD_HOME here still names the primary. Shadow it
@@ -1516,10 +1516,10 @@ case "$BACKEND" in
     # after each prefixed simple-command call) so the XO's tab lands
     # in the XO's own workspace, not the primary's "Squad" one.
     #
-    # Placement, separately from labeling: a operator/recon belongs in the
+    # Placement, separately from labeling: an operator/recon belongs in the
     # EXACT herdr workspace this launching process is itself running in, which
     # only its own herdr pane identity can name (a same-labeled sibling
-    # workspace must never be adopted). A --XO launch is the exception -
+    # workspace must never be adopted). A --xo launch is the exception -
     # it stands up a DIFFERENT home's own workspace by design - so it asks for
     # the per-home container instead of inheriting this launcher's.
     HERDR_LABEL_HOME=$SQUAD_HOME
@@ -2141,7 +2141,7 @@ fi
 
 # Delivery posture recorded in meta so sq-teardown's safety check and the
 # validate/merge stages can branch on it. A strike task carries the explicit
-# per-task decision validated above; a XO's posture is fixed; a recon
+# per-task decision validated above; an XO's posture is fixed; a recon
 # records none at all, because its deliverable is a report rather than a merge
 # (sq-teardown.sh defaults an absent mode to no-mistakes, and sq-promote.sh
 # requires an explicit mode when a recon is promoted to a strike task).

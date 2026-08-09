@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Send one line of literal text to a operator endpoint, then Enter.
+# Send one line of literal text to an operator endpoint, then Enter.
 # Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>
 #   <target> may be an exact task id, a legacy sq-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit well-formed backend
@@ -25,7 +25,7 @@
 # records kind=xo, the text uses the live-charter-compatible
 # from-squad carrier owned by bin/sq-operational-input.sh so the XO
 # routes its reply via its status file or a status-pointed doc instead of
-# stranding it in chat the main Squad never reads. A operator/recon target,
+# stranding it in chat the main Squad never reads. An operator/recon target,
 # an explicit backend-target escape-hatch target, and the --key path are never
 # marked - their behavior is unchanged.
 #
@@ -73,7 +73,7 @@ SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 # shellcheck source=bin/sq-gate-refuse-lib.sh
 . "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
 # Fail closed before any unit mutation: a no-mistakes gate agent must never steer
-# a operator (see bin/sq-gate-refuse-lib.sh).
+# an operator (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 
 if [ -z "${SQUAD_HOME+x}" ] || [ -z "${SQUAD_HOME:-}" ]; then

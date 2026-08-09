@@ -6,7 +6,7 @@
 # XO homes are all linked `git worktree`s of the same repo, while the
 # PRIMARY checkout (the repo root Squad operates from) is a normal checkout
 # on a real branch - normally the default branch, main. The "worktree tangle"
-# failure mode is a operator spawned to work on Squad ITSELF branching and
+# failure mode is an operator spawned to work on Squad ITSELF branching and
 # committing in the primary checkout instead of its own disposable worktree,
 # stranding the primary on a feature branch (e.g. fm/readme-restructure-d3).
 #
