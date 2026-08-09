@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Compatibility source for real-Herdr tests.
 # The production owner of the isolation, refuse-default, teardown, and
-# fleet-state tripwire contract is bin/fm-herdr-lab.sh.
+# unit-state tripwire contract is bin/sq-herdr-lab.sh.
 set -u
 
-# Herdr backend tests drive the real fm-spawn/fm-teardown but do not source
+# Herdr backend tests drive the real sq-spawn/sq-teardown but do not source
 # tests/lib.sh, so exempt them from the gate-lifecycle refusal here too (see
-# tests/lib.sh and bin/fm-gate-refuse-lib.sh for why firstmate's own suite,
+# tests/lib.sh and bin/sq-gate-refuse-lib.sh for why Squad's own suite,
 # which the no-mistakes gate runs from a gate worktree, must be exempt).
-export FM_GATE_REFUSE_BYPASS=1
+export SQUAD_GATE_REFUSE_BYPASS=1
 
 HERDR_TEST_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
-. "$HERDR_TEST_SAFETY_DIR/bin/fm-herdr-lab.sh"
+. "$HERDR_TEST_SAFETY_DIR/bin/sq-herdr-lab.sh"
 
 # herdr_forget_inherited_pane: drop the Herdr PANE identity this test process
 # inherited from whatever terminal it was started in.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/lib.sh - shared primitives for firstmate behavior tests.
+# tests/lib.sh - shared primitives for Squad behavior tests.
 #
 # Source this from a test file:
 #   # shellcheck source=tests/lib.sh
@@ -9,30 +9,30 @@
 # reporters, a self-cleaning temp root, fakebin/PATH-shim helpers, deterministic
 # git identity and fixture builders, state/<id>.meta writers, and the common
 # string/exit-code/file assertions. It deliberately does NOT bundle the
-# behavior-specific fake tmux/treehouse/no-mistakes mocks: those encode terminal
+# behavior-specific fake tmux/fob/no-mistakes mocks: those encode terminal
 # and lifecycle assumptions that differ per suite and belong with the tests that
 # own them.
 #
-# ROOT is exported as the firstmate repo root (this file lives in tests/), so a
+# ROOT is exported as the Squad repo root (this file lives in tests/), so a
 # sourcing test can use "$ROOT/bin/..." without recomputing it.
 
-# Idempotent guard: behavior-area helper files (secondmate-helpers.sh,
-# wake-helpers.sh) source this library for ROOT/fail/pass, and the test that
+# Idempotent guard: behavior-area helper files (xo-helpers.sh,
+# stand-to-helpers.sh) source this library for ROOT/fail/pass, and the test that
 # includes them may also source it directly. Re-sourcing must not wipe the
 # registered-cleanup array or reset state.
-if [ -n "${FM_TEST_LIB_SOURCED:-}" ]; then
+if [ -n "${SQUAD_TEST_LIB_SOURCED:-}" ]; then
   return 0
 fi
-FM_TEST_LIB_SOURCED=1
+SQUAD_TEST_LIB_SOURCED=1
 
-# Exempt firstmate's own test suite from the gate-lifecycle refusal
-# (bin/fm-gate-refuse-lib.sh). The no-mistakes gate runs this suite FROM a gate
+# Exempt Squad's own test suite from the gate-lifecycle refusal
+# (bin/sq-gate-refuse-lib.sh). The no-mistakes gate runs this suite FROM a gate
 # worktree - the exact environment that guard refuses - so without this every
-# test that drives the real fm-spawn/fm-send/fm-teardown would be refused during
-# firstmate's own validation. A confused gate agent never sources this helper, so
-# the boundary against the real hazard is unaffected. tests/fm-gate-refuse.test.sh
+# test that drives the real sq-spawn/sq-send/sq-teardown would be refused during
+# Squad's own validation. A confused gate agent never sources this helper, so
+# the boundary against the real hazard is unaffected. tests/sq-gate-refuse.test.sh
 # strips this to verify real refusal.
-export FM_GATE_REFUSE_BYPASS=1
+export SQUAD_GATE_REFUSE_BYPASS=1
 
 # Resolve the repo root from this library's own location. Consumed by sourcing
 # test files, not by this library, so it reads as "unused" here.
@@ -68,38 +68,38 @@ pass() {
 # that file is armed once, here, at source time - which always runs in the
 # real caller, never a subshell.
 
-FM_TEST_CLEANUP_DIRS=()
-FM_TEST_CLEANUP_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-cleanup.$$.XXXXXX") || return 1
+SQUAD_TEST_CLEANUP_DIRS=()
+SQUAD_TEST_CLEANUP_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.sq-test-cleanup.$$.XXXXXX") || return 1
 
 fm_test_pid_identity() {
   local pid=$1
-  FM_STATE_OVERRIDE="${TMPDIR:-/tmp}" bash -c \
-    '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$pid"
+  SQUAD_STATE_OVERRIDE="${TMPDIR:-/tmp}" bash -c \
+    '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/sq-stand-to-lib.sh" "$pid"
 }
 
-FM_TEST_OWNER_IDENTITY=$(fm_test_pid_identity "$$") || {
-  rm -f "$FM_TEST_CLEANUP_REGISTRY"
+SQUAD_TEST_OWNER_IDENTITY=$(fm_test_pid_identity "$$") || {
+  rm -f "$SQUAD_TEST_CLEANUP_REGISTRY"
   return 1
 }
 
 fm_test_cleanup() {
   local d
-  for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
+  for d in "${SQUAD_TEST_CLEANUP_DIRS[@]:-}"; do
     [ -n "$d" ] && rm -rf "$d"
   done
-  if [ -f "$FM_TEST_CLEANUP_REGISTRY" ]; then
+  if [ -f "$SQUAD_TEST_CLEANUP_REGISTRY" ]; then
     while IFS= read -r d; do
       [ -n "$d" ] && rm -rf "$d"
-    done < "$FM_TEST_CLEANUP_REGISTRY"
-    rm -f "$FM_TEST_CLEANUP_REGISTRY"
+    done < "$SQUAD_TEST_CLEANUP_REGISTRY"
+    rm -f "$SQUAD_TEST_CLEANUP_REGISTRY"
   fi
 }
 
 fm_test_tmproot() {
-  local prefix=${1:-fm-test} root
+  local prefix=${1:-sq-test} root
   root=$(mktemp -d "${TMPDIR:-/tmp}/${prefix}.XXXXXX") || return 1
-  if ! printf '%s\n%s\n' "$$" "$FM_TEST_OWNER_IDENTITY" > "$root/.fm-test-fixture" ||
-    ! printf '%s\n' "$root" >> "$FM_TEST_CLEANUP_REGISTRY"; then
+  if ! printf '%s\n%s\n' "$$" "$SQUAD_TEST_OWNER_IDENTITY" > "$root/.sq-test-fixture" ||
+    ! printf '%s\n' "$root" >> "$SQUAD_TEST_CLEANUP_REGISTRY"; then
     rm -rf "$root"
     return 1
   fi
@@ -112,17 +112,17 @@ trap 'fm_test_cleanup; exit 143' TERM
 
 # fm_test_reap_orphans: best-effort sweep for fixture roots left behind by a
 # prior run that was killed hard enough to skip the traps above (e.g. a
-# SIGKILL timeout). Only removes directories carrying the .fm-test-fixture
-# marker fm_test_tmproot writes, so it never touches unrelated fm-* tmp dirs
-# from real (non-test) firstmate commands. The marker identifies the owning
+# SIGKILL timeout). Only removes directories carrying the .sq-test-fixture
+# marker fm_test_tmproot writes, so it never touches unrelated sq-* tmp dirs
+# from real (non-test) Squad commands. The marker identifies the owning
 # shell across PID reuse, so the same live owner always wins over the age
 # fallback for dead or unowned roots.
-FM_TEST_ORPHAN_MAX_AGE_SECONDS=${FM_TEST_ORPHAN_MAX_AGE_SECONDS:-3600}
+SQUAD_TEST_ORPHAN_MAX_AGE_SECONDS=${SQUAD_TEST_ORPHAN_MAX_AGE_SECONDS:-3600}
 
 fm_test_reap_orphans() {
   local marker dir mtime now owner_pid owner_identity current_identity
   now=$(date +%s)
-  for marker in "${TMPDIR:-/tmp}"/fm-*/.fm-test-fixture; do
+  for marker in "${TMPDIR:-/tmp}"/sq-*/.sq-test-fixture; do
     [ -e "$marker" ] || continue
     owner_pid=$(sed -n '1p' "$marker" 2>/dev/null) || owner_pid=
     owner_identity=$(sed -n '2,$p' "$marker" 2>/dev/null) || owner_identity=
@@ -136,7 +136,7 @@ fm_test_reap_orphans() {
         ;;
     esac
     mtime=$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker" 2>/dev/null) || continue
-    [ $((now - mtime)) -ge "$FM_TEST_ORPHAN_MAX_AGE_SECONDS" ] || continue
+    [ $((now - mtime)) -ge "$SQUAD_TEST_ORPHAN_MAX_AGE_SECONDS" ] || continue
     dir=$(dirname "$marker")
     rm -rf "$dir"
   done
@@ -205,7 +205,7 @@ fm_git_init_commit() {
   git -C "$dir" init -q
   printf '# %s\n' "$(basename "$dir")" > "$dir/README.md"
   git -C "$dir" add README.md
-  git -C "$dir" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm initial
+  git -C "$dir" -c user.name='Squad Tests' -c user.email='tests@example.invalid' commit -qm initial
 }
 
 # fm_git_add_origin <repo> <bare>: clone <repo> bare into <bare> and register it
@@ -238,22 +238,22 @@ fm_write_meta() {
   done
 }
 
-# fm_write_secondmate_meta <file> <home> [window] [projects] [harness]: write the
-# standard kind=secondmate meta block used across the secondmate suites. Window
-# defaults to firstmate:fm-<id>, projects defaults to alpha, and harness defaults
+# fm_write_XO_meta <file> <home> [window] [projects] [harness]: write the
+# standard kind=xo meta block used across the XO suites. Window
+# defaults to Squad:sq-<id>, projects defaults to alpha, and harness defaults
 # to echo to match the common case.
-fm_write_secondmate_meta() {
+fm_write_XO_meta() {
   local file=$1 home=$2 id window projects=${4:-alpha} harness=${5:-echo}
   id=$(basename "$file" .meta)
-  window=${3:-firstmate:fm-$id}
+  window=${3:-Squad:sq-$id}
   fm_write_meta "$file" \
     "window=$window" \
     "endpoint_task_id=$id" \
     "worktree=$home" \
     "project=$home" \
     "harness=$harness" \
-    "kind=secondmate" \
-    "mode=secondmate" \
+    "kind=xo" \
+    "mode=xo" \
     "yolo=off" \
     "home=$home" \
     "projects=$projects"

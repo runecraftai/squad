@@ -3,11 +3,11 @@
 # second-mate suites install on their fake remote host.
 #
 # A remote second mate always launches on the Herdr backend
-# (docs/remote-secondmates.md), so a remote-route test needs a herdr CLI on the
+# (docs/remote-XOs.md), so a remote-route test needs a herdr CLI on the
 # remote code root's own bin directory. This fixture models the workspace, tab,
 # pane, and agent facts bin/backends/herdr.sh actually reads, backed by a JSON
 # state file mutated with real jq, using the same verified herdr behaviors as
-# tests/fm-backend-herdr.test.sh's stateful fake: workspace create seeds one
+# tests/sq-backend-herdr.test.sh's stateful fake: workspace create seeds one
 # default tab and returns its tab and root pane in the same response, closing a
 # tab's only pane closes the tab, and agent get reports agent_not_found for a
 # pane no agent has registered on.
@@ -110,7 +110,7 @@ case "${1:-} ${2:-}" in
     fi
     ;;
   "session list"*)
-    printf '{"sessions":[{"name":"default","running":true,"socket_path":"%s"},{"name":"fm-remote","running":true,"socket_path":"%s"}]}\n' "$SOCKET" "$SOCKET" ;;
+    printf '{"sessions":[{"name":"default","running":true,"socket_path":"%s"},{"name":"sq-remote","running":true,"socket_path":"%s"}]}\n' "$SOCKET" "$SOCKET" ;;
 esac
 exit 0
 SH

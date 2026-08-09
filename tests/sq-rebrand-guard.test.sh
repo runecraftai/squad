@@ -6,14 +6,14 @@
 # place allowed to name the fork origin and the legal caveat, RISK-01).
 #
 # Guards (design.md §8.1-8.7):
-#   1. no "firstmate"/"first mate"/"Firstmate" tokens
+#   1. no "Squad"/"sergeant at arms"/"Squad" tokens
 #   2. no upstream author identities: kunchenguid / Kun Chen / @kunchenguid
 #   3. no \bfm- or \bfmx- prefixes (fmx- escapes \bfm- and is grepped explicitly)
-#   4. no \bFM_ env prefix
-#   5. no mapped-sense vocabulary: captain, crewmate, fleet, secondmate,
-#      treehouse, ahoy, bearings, stow, wake-queue, "ship task", "scout task",
-#      "scout worktree", "the watch", watch.sh, watcher-continuity
-#      (natural-English watch/ship/scout outside these patterns is ALLOWED -
+#   4. no \bSQUAD_ env prefix
+#   5. no mapped-sense vocabulary: commander, operator, unit, XO,
+#      fob, reporting, sitrep, debrief, stand-to queue, "strike task", "recon task",
+#      "recon worktree", "the sentry", sentry.sh, sentry-continuity
+#      (natural-English watch/ship/recon outside these patterns is ALLOWED -
 #      the allowlist is this exact pattern list, never bare-word greps)
 #   6. keep-list asserts: AGENTS.md exists, CLAUDE.md is a symlink to it,
 #      .tasks.toml and .no-mistakes.yaml exist, .claude/skills symlink intact
@@ -31,6 +31,7 @@
 tracked_files() {
   git -C "$ROOT" ls-files -z | tr '\0' '\n' \
     | grep -v '^\.specs/' \
+    | grep -v '^tests/sq-rebrand-guard.test.sh$' \
     | grep -v '\.png$' \
     | grep -v '\.gif$'
 }
@@ -43,16 +44,15 @@ record_failure() {  # <label> <detail>
   printf -v GUARD_FAILURES '%s-- %s --\n%s\n' "$GUARD_FAILURES" "$1" "$2"
 }
 
-# guard_no_match <label> <grep-flags> <pattern>...
-# Records a violation if ANY tracked file matches ANY pattern.
+# guard_no_match <label> <pattern>...
+# Records a violation if ANY tracked file matches ANY pattern (fixed -E -I -H -n).
 guard_no_match() {
   local label=$1; shift
-  local flags=$1; shift
   local pattern
   local matches
   matches=$(tracked_files | while IFS= read -r file; do
     for pattern in "$@"; do
-      grep -I -H -n $flags -e "$pattern" -- "$ROOT/$file" 2>/dev/null \
+      grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null \
         | sed "s|^$ROOT/||"
     done
   done)
@@ -63,45 +63,44 @@ guard_no_match() {
   fi
 }
 
-test_guard_no_firstmate_tokens() {
-  guard_no_match "rebrand guard 1: no firstmate tokens (excluding .specs/)" \
-    -E 'firstmate|first mate|Firstmate'
+test_guard_no_Squad_tokens() {
+  guard_no_match "rebrand guard 1: no Squad tokens (excluding .specs/)" \
+    -E 'Squad|sergeant at arms|Squad'
 }
 
 test_guard_no_upstream_authors() {
   guard_no_match "rebrand guard 2: no upstream author identities (excluding .specs/)" \
-    -E 'kunchenguid|Kun Chen|@kunchenguid'
+    'kunchenguid|Kun Chen|@kunchenguid'
 }
 
 test_guard_no_fm_prefix() {
   guard_no_match "rebrand guard 3: no \bfm- or \bfmx- prefixes (excluding .specs/)" \
-    -E '\bfm-|\bfmx-'
+    '\bfm-|\bfmx-'
 }
 
 test_guard_no_fm_env_prefix() {
-  guard_no_match "rebrand guard 4: no \bFM_ env prefix (excluding .specs/)" \
-    -E '\bFM_'
+  guard_no_match "rebrand guard 4: no \bSQUAD_ env prefix (excluding .specs/)" \
+    -E '\bSQUAD_'
 }
 
 test_guard_no_mapped_vocabulary() {
   guard_no_match \
     "rebrand guard 5: no mapped-sense vocabulary (excluding .specs/)" \
-    -E \
-    '\bcaptain\b' \
-    '\bcrewmate\b' \
+    '\bcommander\b' \
+    '\boperator\b' \
     '\bfleet\b' \
-    '\bsecondmate\b' \
+    '\bXO\b' \
     '\btreehouse\b' \
     '\bahoy\b' \
     '\bbearings\b' \
     '\bstow\b' \
-    '\bwake-queue\b' \
-    '\bship task\b' \
+    '\bstand-to queue\b' \
+    '\bstrike task\b' \
     '\bscout task\b' \
     '\bscout worktree\b' \
     '\bthe watch\b' \
     'watch\.sh' \
-    'watcher-continuity'
+    'sentry-continuity'
 }
 
 test_guard_keep_list() {
@@ -117,7 +116,7 @@ test_guard_keep_list() {
   fi
 }
 
-test_guard_no_firstmate_tokens
+test_guard_no_Squad_tokens
 test_guard_no_upstream_authors
 test_guard_no_fm_prefix
 test_guard_no_fm_env_prefix
