@@ -1,0 +1,424 @@
+/**
+ * pi-goal-list-loop-audit — v0.3.0
+ * extensions/goal-loop-forever.ts
+ *
+ * Loop 3 core: metric parsing, improvement comparison, plateau detection.
+ * Pure + dependency-free so unit tests can exercise it under plain node.
+ *
+ * Design rule (the anti-doorknob law): the loop only believes a number.
+ * The orchestrator runs the user's measure command; the agent never
+ * self-reports progress.
+ */
+
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+export type LoopDirection = "min" | "max";
+
+export interface LoopMeasure {
+  iteration: number;
+  value: number | null;
+  improved: boolean;
+  at: string;
+}
+
+export interface LoopRefinement {
+  at: string;
+  iteration: number;
+  oldTarget: string;
+  newTarget: string;
+  oldMeasureCmd: string;
+  newMeasureCmd: string;
+}
+
+/** v0.28.17: stopReason marking a loop parked by the session-restore gate
+ * (it was active when the last session ended; the fresh session holds it
+ * until the user resumes with /loop). Exported so the display layer can
+ * recognize held loops — they must stay VISIBLE in the status/widget,
+ * unlike stopped loops which are genuinely gone. */
+export const HELD_ON_RESTORE = "held: restored in a fresh session";
+
+export interface LoopState {
+  target: string;
+  /** v0.23.0: optional — a metricless "spec loop" (measure=none) has no
+   * metric, no direction, and NO plateau stop; it ends only at max/time/
+   * tokens bounds or /loop stop. */
+  measureCmd?: string;
+  direction?: LoopDirection;
+  iteration: number;
+  /** v0.23.0: 0 = unbounded (no iteration cap). Default 50. */
+  maxIterations: number;
+  plateauWindow: number;
+  stallCount: number;
+  /** v0.28.8 (E5): consecutive iterations where the measure printed NO
+   * number. Tracked separately from stallCount — plateau judges movement
+   * (a real number that didn't improve); a broken measure says nothing
+   * about movement and must stop the loop with its own loud reason. */
+  consecutiveNullMeasures?: number;
+  bestValue: number | null;
+  lastValue: number | null;
+  active: boolean;
+  stopReason?: string;
+  history: LoopMeasure[];
+  startedAt: string;
+  /** v0.15.0: arbitrary bounds (never "completion") — stop after this many hours. */
+  timeLimitHours?: number;
+  /** v0.15.0: arbitrary bounds — stop after this many tokens (input+output). */
+  tokenBudget?: number;
+  /** v0.15.0: accumulated loop tokens (input+output), orchestrator-counted. */
+  tokensUsed?: number;
+  /** v0.15.0: living spec — user-confirmed target/measure refinements. */
+  refinements?: LoopRefinement[];
+  /** branch=1 mode: scratch branch holding the loop's commits. */
+  branchName?: string;
+  /** branch=1 mode: the branch to return to on stop. */
+  originalBranch?: string;
+  /** v0.24.0 anti-repetition: rolling fingerprints of iteration replies. */
+  recentPrints?: string[];
+  /** v0.24.0: last few iteration texts (near-duplicate check + banned openings). */
+  recentTexts?: string[];
+  /** v0.24.0: rolling tool-result fingerprints {tool, hash, isError}. */
+  recentToolResults?: { tool: string; hash: string; isError: boolean }[];
+  /** v0.24.0: tool calls seen since the last completed iteration. */
+  toolsThisTurn?: number;
+  /** v0.24.0: consecutive iterations with zero tool calls. */
+  toollessStreak?: number;
+  /** v0.24.0: consecutive stuck interventions (resets on a clean iteration). */
+  consecutiveStuck?: number;
+  /** v0.24.0: the last stuck reason (for the intervention directive + ledger). */
+  lastStuckReason?: string;
+  /** v0.25.1: /loop start toolsamerepeat=N — legacy same-tool-same-result
+   * check window. 0 disables it (multi-signal detector only). */
+  toolSameRepeat?: number;
+  /** v0.25.1: per-iteration progress-signal accumulators for the
+   * multi-signal stuck gate. fileWrites bumps on write/edit tool results;
+   * iterationStartHead/At snapshot when the iteration BEGAN so the tick can
+   * count commits and spec_item_progress events produced during it. */
+  iterMetrics?: {
+    fileWrites: number;
+    iterationStartHead?: string;
+    iterationStartAt?: string;
+  };
+}
+
+/** v0.25.1: stop reason for /loop finish — a clean "completed" end,
+ * distinct from stuck/plateau/stopped-by-user. */
+export function loopFinishStopReason(reason?: string): string {
+  const r = (reason ?? "").trim();
+  return `completed: ${r || "finished by user"}`;
+}
+
+/** v0.25.1: tool names that count as file-write progress signals for the
+ * multi-signal stuck gate (item 3). */
+export const LOOP_WRITE_TOOLS = ["write", "edit", "multi_edit", "write_file"] as const;
+
+export function isLoopWriteTool(toolName: string): boolean {
+  return (LOOP_WRITE_TOOLS as readonly string[]).includes(toolName);
+}
+
+/** Scratch-branch name for branch=1 mode. Format pinned by tests. */
+export function loopBranchName(startedAtIso: string, target: string): string {
+  const stamp = startedAtIso.replace(/[^0-9]/g, "").slice(0, 14);
+  const slug = target.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30) || "loop";
+  return `pi-glla-loop/${stamp}-${slug}`;
+}
+
+export const LOOP_DEFAULTS = {
+  maxIterations: 50,
+  plateauWindow: 5,
+};
+
+/**
+ * Apply a user-confirmed spec refinement (v0.15.0, propose_loop_refine).
+ * The loop is a process against a LIVING spec: target/measure may be
+ * sharpened mid-run. History keeps both eras via `refinements`. When the
+ * measure changes, the old best/last values are a different scale — the
+ * caller re-baselines with a fresh measurement and stall state resets.
+ */
+export function applyRefinement(
+  loop: LoopState,
+  refinement: LoopRefinement,
+  newBaseline: number | null,
+): void {
+  loop.refinements = loop.refinements ?? [];
+  loop.refinements.push(refinement);
+  loop.target = refinement.newTarget;
+  const measureChanged = refinement.newMeasureCmd !== refinement.oldMeasureCmd;
+  loop.measureCmd = refinement.newMeasureCmd;
+  if (measureChanged) {
+    loop.bestValue = newBaseline;
+    loop.lastValue = newBaseline;
+    loop.stallCount = 0;
+  }
+}
+
+/**
+ * Parse the first number in measure-command output. Accepts integers,
+ * decimals, negatives, and scientific notation; ignores surrounding text
+ * (e.g. "score: 42" → 42). Returns null when no number is present — a
+ * broken measure is a stall, never a crash.
+ */
+export function parseMetric(output: string): number | null {
+  const m = output.match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+  if (!m) return null;
+  const n = Number.parseFloat(m[0]!);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Did `value` improve on `best` for this direction? First value is always a baseline. */
+export function isImprovement(direction: LoopDirection, value: number, best: number | null): boolean {
+  if (best === null) return true;
+  return direction === "min" ? value < best : value > best;
+}
+
+export type LoopTickOutcome =
+  | { kind: "continue"; improved: boolean; value: number | null }
+  | { kind: "stop"; reason: string };
+
+/**
+ * Apply one measurement to the loop state (mutates + returns the outcome).
+ * v0.15.0: a loop NEVER checks for completion — there is no done=. Stop
+ * rules, in order: time bound, token bound, plateau (stall >= window),
+ * iteration cap. All four are arbitrary ends; the metric only judges
+ * movement, never arrival.
+ */
+export function applyMeasurement(loop: LoopState, value: number | null, at: string): LoopTickOutcome {
+  loop.iteration++;
+  // improved is judged BEFORE bestValue moves (post-mutation it would read false).
+  const improved = value !== null && loop.direction !== undefined && isImprovement(loop.direction, value, loop.bestValue);
+  if (value === null) {
+    // E5: a null measure is NOT a stall — it carries no information about
+    // improvement. Plateau stays reserved for real non-improving numbers.
+    loop.consecutiveNullMeasures = (loop.consecutiveNullMeasures ?? 0) + 1;
+  } else {
+    loop.consecutiveNullMeasures = 0;
+    if (improved) {
+      loop.bestValue = value;
+      loop.stallCount = 0;
+    } else {
+      loop.stallCount++;
+    }
+  }
+  loop.lastValue = value;
+  loop.history.push({ iteration: loop.iteration, value, improved, at });
+  if (loop.history.length > 200) loop.history.splice(0, loop.history.length - 200);
+
+  if (loop.timeLimitHours !== undefined) {
+    const elapsedH = (Date.parse(at) - Date.parse(loop.startedAt)) / 3_600_000;
+    if (Number.isFinite(elapsedH) && elapsedH >= loop.timeLimitHours) {
+      loop.active = false;
+      loop.stopReason = `time bound reached (${loop.timeLimitHours}h); best: ${loop.bestValue ?? "n/a"}`;
+      return { kind: "stop", reason: loop.stopReason };
+    }
+  }
+  if (loop.tokenBudget !== undefined && (loop.tokensUsed ?? 0) >= loop.tokenBudget) {
+    loop.active = false;
+    loop.stopReason = `token budget exhausted (${(loop.tokensUsed ?? 0).toLocaleString()} >= ${loop.tokenBudget.toLocaleString()}); best: ${loop.bestValue ?? "n/a"}`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  // E5: a broken measure command gets its OWN loud stop — never the
+  // misleading "plateau — no improvement" (there was nothing to improve
+  // against; the metric itself is dead).
+  if ((loop.consecutiveNullMeasures ?? 0) >= loop.plateauWindow) {
+    loop.active = false;
+    loop.stopReason = `measure command broken — ${loop.consecutiveNullMeasures} consecutive iterations printed no number (cmd: \`${loop.measureCmd ?? "?"}\`). Fix the measure command, or /loop stop.`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  if (loop.stallCount >= loop.plateauWindow) {
+    loop.active = false;
+    loop.stopReason = `plateau — no improvement in ${loop.plateauWindow} consecutive iterations (best: ${loop.bestValue ?? "n/a"})`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  if (loop.maxIterations > 0 && loop.iteration >= loop.maxIterations) {
+    loop.active = false;
+    loop.stopReason = `max iterations reached (${loop.maxIterations}); best: ${loop.bestValue ?? "n/a"}`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  return { kind: "continue", improved, value };
+}
+
+/**
+ * One iteration of a METRICLESS loop (v0.23.0, measure=none). There is no
+ * number to judge movement, so there is no plateau — the loop ends only at
+ * the time/token/iteration bounds or /loop stop. This is the Sisyphus mode:
+ * work the spec until the bounds say stop. The doorknob risk is real and
+ * accepted by the user explicitly; the iteration prompt demands one real,
+ * inspectable change per turn.
+ */
+export function applyMetriclessTick(loop: LoopState, at: string): LoopTickOutcome {
+  loop.iteration++;
+  loop.history.push({ iteration: loop.iteration, value: null, improved: false, at });
+  if (loop.history.length > 200) loop.history.splice(0, loop.history.length - 200);
+
+  if (loop.timeLimitHours !== undefined) {
+    const elapsedH = (Date.parse(at) - Date.parse(loop.startedAt)) / 3_600_000;
+    if (Number.isFinite(elapsedH) && elapsedH >= loop.timeLimitHours) {
+      loop.active = false;
+      loop.stopReason = `time bound reached (${loop.timeLimitHours}h) after ${loop.iteration} iterations`;
+      return { kind: "stop", reason: loop.stopReason };
+    }
+  }
+  if (loop.tokenBudget !== undefined && (loop.tokensUsed ?? 0) >= loop.tokenBudget) {
+    loop.active = false;
+    loop.stopReason = `token budget exhausted (${(loop.tokensUsed ?? 0).toLocaleString()} >= ${loop.tokenBudget.toLocaleString()}) after ${loop.iteration} iterations`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  if (loop.maxIterations > 0 && loop.iteration >= loop.maxIterations) {
+    loop.active = false;
+    loop.stopReason = `max iterations reached (${loop.maxIterations})`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  return { kind: "continue", improved: false, value: null };
+}
+
+/** Parse `/loop start` args into a config. Throws on missing pieces. */
+export function parseLoopStartArgs(raw: string): {
+  target: string;
+  measureCmd: string;
+  direction?: LoopDirection;
+  plateauWindow: number;
+  maxIterations: number;
+  branch: boolean;
+  force: boolean;
+  timeLimitHours?: number;
+  tokenBudget?: number;
+  toolSameRepeat?: number;
+} {
+  // Key=value pairs first (measure= and direction= may hold quoted values),
+  // the remaining text is the target.
+  let rest = raw.trim();
+  const kv = new Map<string, string>();
+  const kvRe = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  let m: RegExpExecArray | null;
+  const spans: Array<[number, number]> = [];
+  while ((m = kvRe.exec(rest)) !== null) {
+    kv.set(m[1]!.toLowerCase(), m[2] ?? m[3] ?? m[4] ?? "");
+    spans.push([m.index, m.index + m[0].length]);
+  }
+  // Remove kv spans from the target text.
+  let target = "";
+  let cursor = 0;
+  for (const [s, e] of spans) {
+    target += rest.slice(cursor, s);
+    cursor = e;
+  }
+  target += rest.slice(cursor);
+  target = target.trim().replace(/^["']|["']$/g, "").trim();
+
+  const measureRaw = (kv.get("measure") ?? "").trim();
+  // v0.23.0: measure=none → metricless "spec loop" (Sisyphus mode). No
+  // metric, no direction, no plateau — bounds and /loop stop only.
+  // v0.23.6: a bare `/loop start "<target>"` IS the infinite command —
+  // no measure= means metricless too. The Confirm dialog names "NO
+  // plateau · NO iteration cap · /loop stop" before anything runs, so
+  // the choice is never silent (the v0.23.0 rule). Metric loops keep
+  // the 50-iteration default cap; metricless loops default to UNBOUNDED
+  // (max=0) unless max= is given explicitly.
+  const metricless = !measureRaw || measureRaw.toLowerCase() === "none";
+  const dirRaw = (kv.get("direction") ?? "").toLowerCase();
+  if (metricless && dirRaw) throw new Error("direction= is meaningless without a metric — add measure=\"<cmd>\" or drop direction=");
+  if (!metricless && dirRaw !== "min" && dirRaw !== "max") throw new Error("missing direction=min|max (a metric loop needs to know which way is better; a bare /loop start \"<target>\" with no measure= is the infinite metricless form)");
+  if (!target) throw new Error("missing target (what to improve), e.g. /loop start \"keep polishing the UI\" — bare start is metricless + unbounded; add measure=\"<cmd>\" direction=min|max for a metric loop");
+
+  const window = Number.parseInt(kv.get("window") ?? "", 10);
+  const max = Number.parseInt(kv.get("max") ?? "", 10);
+  const branchRaw = (kv.get("branch") ?? "").toLowerCase();
+  const forceRaw = (kv.get("force") ?? "").toLowerCase();
+  // v0.15.0: done= is removed — a loop never checks for completion. Teach.
+  if (kv.has("done")) {
+    throw new Error(
+      'done= was removed in v0.15.0 — "improve until X" is a GOAL, not a loop. ' +
+      'Use /goal "<target>. Done when: <checkable criterion>" (the auditor verifies it). ' +
+      "A loop is a process: it runs until /loop stop, plateau, max= iterations, time= hours, or tokens= budget.",
+    );
+  }
+  const timeRaw = Number.parseFloat(kv.get("time") ?? "");
+  const tokensRaw = Number.parseInt(kv.get("tokens") ?? "", 10);
+  return {
+    target,
+    measureCmd: metricless ? "" : measureRaw,
+    direction: metricless ? undefined : dirRaw as LoopDirection,
+    plateauWindow: Number.isFinite(window) && window > 0 ? window : LOOP_DEFAULTS.plateauWindow,
+    // v0.23.0: max=0 = truly unbounded (no iteration cap).
+    // v0.23.6: metricless with no explicit max= defaults to UNBOUNDED —
+    // an infinite loop is the point of the bare form. Metric loops keep
+    // the 50-cap default.
+    maxIterations: kv.has("max") ? (Number.isFinite(max) && max >= 0 ? max : LOOP_DEFAULTS.maxIterations) : metricless ? 0 : LOOP_DEFAULTS.maxIterations,
+    branch: branchRaw === "1" || branchRaw === "true" || branchRaw === "yes",
+    force: forceRaw === "1" || forceRaw === "true" || forceRaw === "yes",
+    timeLimitHours: Number.isFinite(timeRaw) && timeRaw > 0 ? timeRaw : undefined,
+    tokenBudget: Number.isFinite(tokensRaw) && tokensRaw > 0 ? tokensRaw : undefined,
+    toolSameRepeat: (() => {
+      const raw = (kv.get("toolsamerepeat") ?? "").trim();
+      if (!raw) return undefined;
+      const n = Number.parseInt(raw, 10);
+      return Number.isInteger(n) && n >= 0 ? n : undefined;
+    })(),
+  };
+}
+
+// ---- /loop respec (v0.24.3) ----
+
+/** Root-only spec candidates, in priority order. No fuzzy search. */
+export const RESPEC_SPEC_CANDIDATES = ["SPEC.md", "spec.md"] as const;
+
+/** Resolve every root spec candidate that exists (priority order). */
+export function resolveSpecFiles(cwd: string): string[] {
+  const found: string[] = [];
+  for (const name of RESPEC_SPEC_CANDIDATES) {
+    const p = join(cwd, name);
+    try {
+      if (existsSync(p) && statSync(p).isFile()) found.push(p);
+    } catch { /* unreadable — keep looking */ }
+  }
+  return found;
+}
+
+/** Resolve the project spec in the root only; null when absent. */
+export function resolveSpecFile(cwd: string): string | null {
+  return resolveSpecFiles(cwd)[0] ?? null;
+}
+
+/**
+ * The respec target. The spec is DATA, not gospel: the loop reconciles code
+ * against it but reports stale/contradictory requirements instead of forcing
+ * the code to match a bad spec. Rotation keeps it honest: implement one
+ * iteration, audit the next (the doorknob failure is implementing nothing
+ * while claiming polish).
+ */
+export function respecTarget(specName: string): string {
+  return `Reconcile the codebase against ${specName} (the project spec in the root). Read the spec critically first: if a requirement is stale, contradictory, or wrong for the current codebase, report the discrepancy and move on — never force the code to match a bad spec. Otherwise pick the next gap between spec and code and close it. Rotate: one iteration implements a missing or outdated spec item, the next audits something already "implemented" against the spec and fixes what drifted.`;
+}
+
+// ---- /loop audit (v0.29.0) ----
+
+/**
+ * The audit loop's findings file — checkbox lines, append-only. The agent
+ * appends new findings and checks off fixed ones; the ORCHESTRATOR counts
+ * open boxes every iteration. The agent never self-reports progress.
+ */
+export const AUDIT_FINDINGS_REL = ".pi-glla/audit-loop/findings.md";
+
+/**
+ * The audit-loop measure command: count open findings. Prints exactly one
+ * number in every file state (missing file / zero matches → 0). This is
+ * what respec (metricless) and the reviewer cascade (no termination) both
+ * lacked: an honest metric the plateau stop can believe — audits that stop
+ * surfacing new findings = the well is dry = the loop ends.
+ */
+export function auditMeasureCmd(): string {
+  return `c=$(grep -cE '^- \\[ \\]' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
+}
+
+/**
+ * The audit target. User's design (2026-07-29): "the looper running audits
+ * to see where to progress and what to fix" — the thing that fires at the
+ * end of goals and lists, finds the next batch of work, and works it.
+ * Each iteration: fresh audit pass → append NEW findings → fix the top
+ * open ones → check them off with the fix commit. Honesty laws: never
+ * fabricate findings, never rewrite the file's history, never check a box
+ * without the fix commit existing.
+ */
+export function auditTarget(): string {
+  return `Audit the project for real problems and fix them, iteration by iteration. Every iteration: (1) run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real issues: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding as one checkbox line "- [ ] SEVERITY: short description (file:line)" to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed). (3) Fix the highest-severity OPEN finding(s) — real fixes, committed — then check the box: "- [x] … — fixed in <commit>". (4) Honesty law: never fabricate findings to look busy; never mark a finding fixed without the fix commit existing. When a full audit pass surfaces nothing new AND no open findings remain, say so plainly — the orchestrator counts open findings every iteration and the plateau stop ends the loop when the well is dry.`;
+}

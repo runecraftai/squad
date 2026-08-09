@@ -1,0 +1,4 @@
+# pi-goal-list-loop-audit — bun configuration
+[test]
+# Hermetic global-settings redirect for every test process (v0.28.18).
+preload = ["./tests/harness/setup.ts"]
