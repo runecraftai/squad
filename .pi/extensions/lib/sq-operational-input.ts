@@ -3,25 +3,25 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const operationalInputScript =
-  process.env.FM_OPERATIONAL_INPUT_SCRIPT ||
-  resolve(dirname(fileURLToPath(import.meta.url)), "../../../bin/fm-operational-input.sh");
+  process.env.SQUAD_OPERATIONAL_INPUT_SCRIPT ||
+  resolve(dirname(fileURLToPath(import.meta.url)), "../../../bin/sq-operational-input.sh");
 
-export const FIRSTMATE_CURRENT_OPERATIONAL_KINDS = [
+export const SQUAD_CURRENT_OPERATIONAL_KINDS = [
   "session-start",
-  "watcher",
+  "sentry",
   "turn-end-guard",
   "away-supervisor",
-  "from-firstmate",
+  "from-squad",
   "launch-brief",
 ] as const;
 
-export type FirstmateCurrentOperationalKind =
-  (typeof FIRSTMATE_CURRENT_OPERATIONAL_KINDS)[number];
+export type SquadCurrentOperationalKind =
+  (typeof SQUAD_CURRENT_OPERATIONAL_KINDS)[number];
 
 function runOperationalInputCommand(
   command: "encode" | "classify" | "kind",
   content: string,
-  kind?: FirstmateCurrentOperationalKind,
+  kind?: SquadCurrentOperationalKind,
 ): string | undefined {
   const args = command === "encode" ? [command, kind ?? ""] : [command];
   const result = spawnSync(operationalInputScript, args, {
@@ -33,22 +33,22 @@ function runOperationalInputCommand(
   return command === "classify" ? result.stdout.replace(/\n$/, "") : result.stdout;
 }
 
-export function encodeFirstmateOperationalInput(
-  kind: FirstmateCurrentOperationalKind,
+export function encodeSquadOperationalInput(
+  kind: SquadCurrentOperationalKind,
   content: string,
 ): string {
   const encoded = runOperationalInputCommand("encode", content, kind);
   if (encoded === undefined) {
-    throw new Error(`could not encode Firstmate operational input kind ${kind}`);
+    throw new Error(`could not encode Squad operational input kind ${kind}`);
   }
   return encoded;
 }
 
-export function classifyFirstmateOperationalText(content: string): string | undefined {
+export function classifySquadOperationalText(content: string): string | undefined {
   return runOperationalInputCommand("classify", content);
 }
 
-export function classifyFirstmateCurrentOperationalText(
+export function classifySquadCurrentOperationalText(
   content: string,
 ): string | undefined {
   return runOperationalInputCommand("kind", content);

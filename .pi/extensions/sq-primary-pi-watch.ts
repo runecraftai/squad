@@ -1,4 +1,4 @@
-// Firstmate primary watcher bridge for Pi.
+// Squad primary sentry bridge for Pi.
 //
 // Session-generation ownership (stated once here):
 // Pi emits session_shutdown for ordinary same-process replacements (/new, /resume,
@@ -19,9 +19,9 @@ import { Type } from "typebox";
 import {
   type CalmPresentationState,
   calmTranscriptClassIsVisible,
-  FIRSTMATE_CALM_PRESENTATION_EVENT,
-} from "./lib/fm-calm-visibility.ts";
-import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.ts";
+  SQUAD_CALM_PRESENTATION_EVENT,
+} from "./lib/sq-calm-visibility.ts";
+import { encodeSquadOperationalInput } from "./lib/sq-operational-input.ts";
 
 type ArmResult = {
   ok: boolean;
@@ -78,26 +78,26 @@ function refreshWatchToolShell(
 const extensionFile = fileURLToPath(import.meta.url);
 const extensionDir = dirname(extensionFile);
 const root = resolve(extensionDir, "../..");
-const fmHome = process.env.FM_HOME || process.env.FM_ROOT_OVERRIDE || root;
-const fmRoot = process.env.FM_ROOT_OVERRIDE || root;
-const state = process.env.FM_STATE_OVERRIDE || `${fmHome}/state`;
-const config = process.env.FM_CONFIG_OVERRIDE || `${fmHome}/config`;
-const armScript = `${fmRoot}/bin/fm-watch-arm.sh`;
+const fmHome = process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE || root;
+const fmRoot = process.env.SQUAD_ROOT_OVERRIDE || root;
+const state = process.env.SQUAD_STATE_OVERRIDE || `${fmHome}/state`;
+const config = process.env.SQUAD_CONFIG_OVERRIDE || `${fmHome}/config`;
+const armScript = `${fmRoot}/bin/sq-sentry-arm.sh`;
 const marker = `${state}/.pi-watch-extension-loaded`;
 const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
-const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
-const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
-const retryLimit = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
+const retryBaseMs = positiveInteger("SQUAD_WATCH_REARM_RETRY_BASE_MS", 250);
+const retryMaxMs = positiveInteger("SQUAD_WATCH_REARM_RETRY_MAX_MS", 4000);
+const retryLimit = positiveInteger("SQUAD_WATCH_REARM_RETRY_LIMIT", 5);
 // 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
+// bin/sq-sentry-arm.sh): a slow but successful Git Bash cold start must not be
 // SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
 const armReadyTimeoutMs = positiveInteger(
-  "FM_PI_ARM_READY_TIMEOUT_MS",
+  "SQUAD_PI_ARM_READY_TIMEOUT_MS",
   process.platform === "win32" ? 35000 : 12000,
 );
-const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
+const armRetireTimeoutMs = positiveInteger("SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
 const repairOnlyHint = "call fm_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
-const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
+const shuttingDownMessage = "sentry: not armed - Pi session is shutting down";
 
 let nextGenerationId = 0;
 let activeGeneration: SessionGeneration | null = null;
@@ -157,30 +157,30 @@ function classifyClose(stdout: string, stderr: string, code: number | null, sign
   const combined = `${stdout}\n${stderr}`.trim();
   const reason = actionableLine(combined);
   if (reason) return { kind: "actionable", message: reason };
-  const healthy = combined.split(/\r?\n/).find((line) => /^watcher: healthy\b/.test(line));
+  const healthy = combined.split(/\r?\n/).find((line) => /^sentry: healthy\b/.test(line));
   if (healthy) {
     return {
       kind: "failure",
-      message: `watcher: FAILED - Pi extension arm child found an external healthy watcher instead of owning wake delivery\n${healthy}`,
+      message: `sentry: FAILED - Pi extension arm child found an external healthy sentry instead of owning wake delivery\n${healthy}`,
     };
   }
-  const failed = combined.split(/\r?\n/).find((line) => /^watcher: FAILED/.test(line));
+  const failed = combined.split(/\r?\n/).find((line) => /^sentry: FAILED/.test(line));
   if (failed) return { kind: "failure", message: failed };
   if (signal) {
     return {
       kind: "failure",
-      message: `watcher: FAILED - Pi extension arm child ended from ${signal}${combined ? `\n${combined}` : ""}`,
+      message: `sentry: FAILED - Pi extension arm child ended from ${signal}${combined ? `\n${combined}` : ""}`,
     };
   }
   if (code && code !== 0) {
     return {
       kind: "failure",
-      message: `watcher: FAILED - fm-watch-arm.sh exited ${code}${combined ? `\n${combined}` : ""}`,
+      message: `sentry: FAILED - sq-sentry-arm.sh exited ${code}${combined ? `\n${combined}` : ""}`,
     };
   }
   return {
     kind: "failure",
-    message: "watcher: FAILED - Pi extension arm cycle ended without an actionable reason",
+    message: "sentry: FAILED - Pi extension arm cycle ended without an actionable reason",
   };
 }
 
@@ -225,7 +225,7 @@ export default function (pi: ExtensionAPI) {
     active: false,
     stockExportRendering: false,
   };
-  pi.events?.on?.(FIRSTMATE_CALM_PRESENTATION_EVENT, (data) => {
+  pi.events?.on?.(SQUAD_CALM_PRESENTATION_EVENT, (data) => {
     const next = data as Partial<CalmPresentationState>;
     calmPresentation = {
       active: next.active === true,
@@ -239,9 +239,9 @@ export default function (pi: ExtensionAPI) {
 
   async function sendWake(owner: SessionGeneration, message: string): Promise<void> {
     if (!generationIsLive(owner)) return;
-    const content = encodeFirstmateOperationalInput(
-      "watcher",
-      `FIRSTMATE WATCHER WAKE: ${message}\n\nRun bin/fm-wake-drain.sh first and handle the queued wake. Watcher continuity is extension-owned.`,
+    const content = encodeSquadOperationalInput(
+      "sentry",
+      `SQUAD WATCHER WAKE: ${message}\n\nRun bin/sq-stand-to-drain.sh first and handle the queued wake. Watcher continuity is extension-owned.`,
     );
     await pi.sendUserMessage(content, { deliverAs: "followUp" });
   }
@@ -299,32 +299,32 @@ export default function (pi: ExtensionAPI) {
       const successorChild = owner.child;
       if (replacement.ok && successorChild && await waitForReadiness(successorChild)) return "";
       if (replacement.ok) {
-        failure = "watcher: FAILED - Pi extension could not verify a ready successor watcher";
+        failure = "sentry: FAILED - Pi extension could not verify a ready successor sentry";
         if (!(await retireArm(successorChild))) {
-          return `${failure}\nwatcher: FAILED - Pi extension could not restore watcher continuity because the unready successor arm did not exit within ${armRetireTimeoutMs}ms`;
+          return `${failure}\nsentry: FAILED - Pi extension could not restore sentry continuity because the unready successor arm did not exit within ${armRetireTimeoutMs}ms`;
         }
       } else {
         failure = /(?:read-only|no live session)/.test(replacement.message)
-          ? `watcher: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${replacement.message}`
-          : `watcher: FAILED - Pi extension could not start the successor watcher cycle\n${replacement.message}`;
+          ? `sentry: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${replacement.message}`
+          : `sentry: FAILED - Pi extension could not start the successor sentry cycle\n${replacement.message}`;
         if (/(?:read-only|no live session)/.test(replacement.message)) break;
       }
       if (attempt === retryLimit) break;
       await waitForRetry(attempt + 1);
     }
-    return `${failure}\nwatcher: FAILED - Pi extension could not restore watcher continuity after ${retryLimit} retries`;
+    return `${failure}\nsentry: FAILED - Pi extension could not restore sentry continuity after ${retryLimit} retries`;
   }
 
   function scheduleRetry(owner: SessionGeneration, message: string, predecessorArmPid: string): void {
     if (!generationIsLive(owner) || owner.child || owner.retryTimer) return;
     const ownership = lockOwnership();
     if (ownership !== "owned") {
-      surfaceFailure(owner, `watcher: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${message}`);
+      surfaceFailure(owner, `sentry: FAILED - Pi extension cannot restore continuity because this session no longer owns the lock\n${message}`);
       return;
     }
     owner.retryFailures += 1;
     if (owner.retryFailures > retryLimit) {
-      surfaceFailure(owner, `watcher: FAILED - Pi extension could not restore watcher continuity after ${retryLimit} retries\n${message}`);
+      surfaceFailure(owner, `sentry: FAILED - Pi extension could not restore sentry continuity after ${retryLimit} retries\n${message}`);
       return;
     }
     const timer = setTimeout(() => {
@@ -332,7 +332,7 @@ export default function (pi: ExtensionAPI) {
       if (!generationIsLive(owner)) return;
       const result = startArm(owner, predecessorArmPid);
       if (!result.ok) {
-        surfaceFailure(owner, `watcher: FAILED - Pi extension could not launch a continuity retry\n${result.message}`);
+        surfaceFailure(owner, `sentry: FAILED - Pi extension could not launch a continuity retry\n${result.message}`);
       }
     }, retryDelay(owner.retryFailures));
     timer.unref();
@@ -342,36 +342,36 @@ export default function (pi: ExtensionAPI) {
   function startArm(owner: SessionGeneration, predecessorArmPid = ""): ArmResult {
     if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
     const ownership = lockOwnership();
-    if (ownership === "other") return { ok: false, message: "watcher: read-only - session lock is held by another firstmate session" };
+    if (ownership === "other") return { ok: false, message: "sentry: read-only - session lock is held by another Squad session" };
     if (ownership === "missing") {
       return {
         ok: false,
-        message: "watcher: not armed - no live session holds the lock; run bin/fm-session-start.sh to reclaim it, then call fm_watch_arm_pi to re-arm",
+        message: "sentry: not armed - no live session holds the lock; run bin/sq-session-start.sh to reclaim it, then call fm_watch_arm_pi to re-arm",
       };
     }
     markLoaded();
     if (owner.child) {
       return {
         ok: true,
-        message: `watcher: unchanged - Pi extension already owns an arm child; no manual re-arm needed; ${repairOnlyHint}`,
+        message: `sentry: unchanged - Pi extension already owns an arm child; no manual re-arm needed; ${repairOnlyHint}`,
       };
     }
     if (owner.retryTimer) {
       return {
         ok: true,
-        message: `watcher: unchanged - Pi extension already owns a scheduled continuity retry; no manual re-arm needed; ${repairOnlyHint}`,
+        message: `sentry: unchanged - Pi extension already owns a scheduled continuity retry; no manual re-arm needed; ${repairOnlyHint}`,
       };
     }
     const id = ++owner.seq;
     const env = {
       ...process.env,
-      FM_HOME: fmHome,
-      FM_ROOT_OVERRIDE: fmRoot,
-      FM_CONFIG_OVERRIDE: config,
-      FM_WATCH_ARM_SCRIPT: armScript,
-      FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
+      SQUAD_HOME: fmHome,
+      SQUAD_ROOT_OVERRIDE: fmRoot,
+      SQUAD_CONFIG_OVERRIDE: config,
+      SQUAD_WATCH_ARM_SCRIPT: armScript,
+      SQUAD_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
     };
-    const armChild = spawn("bash", ["-lc", "config_dir=\"${FM_CONFIG_OVERRIDE:-$FM_HOME/config}\"; [ -f \"$config_dir/x-mode.env\" ] && . \"$config_dir/x-mode.env\"; exec \"$FM_WATCH_ARM_SCRIPT\" --restart"], {
+    const armChild = spawn("bash", ["-lc", "config_dir=\"${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}\"; [ -f \"$config_dir/x-mode.env\" ] && . \"$config_dir/x-mode.env\"; exec \"$SQUAD_WATCH_ARM_SCRIPT\" --restart"], {
       cwd: fmRoot,
       env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -397,7 +397,7 @@ export default function (pi: ExtensionAPI) {
       resolveReadiness(ready);
     };
     const observeEstablishedArm = (): void => {
-      if (/^watcher: (?:started|attached)\b/m.test(`${stdout}\n${stderr}`)) {
+      if (/^sentry: (?:started|attached)\b/m.test(`${stdout}\n${stderr}`)) {
         settleReadiness(true);
       }
     };
@@ -445,11 +445,11 @@ export default function (pi: ExtensionAPI) {
       releaseChild();
       if (!generationIsLive(owner)) return;
       if (owner.restoring) return;
-      scheduleRetry(owner, `watcher: FAILED - Pi extension arm child ${id} failed: ${error.message}`, String(armChild.pid ?? ""));
+      scheduleRetry(owner, `sentry: FAILED - Pi extension arm child ${id} failed: ${error.message}`, String(armChild.pid ?? ""));
     });
     return {
       ok: true,
-      message: `watcher: started Pi extension arm child ${id}; future ordinary re-arms are automatic; ${repairOnlyHint}`,
+      message: `sentry: started Pi extension arm child ${id}; future ordinary re-arms are automatic; ${repairOnlyHint}`,
     };
   }
 
@@ -462,8 +462,8 @@ export default function (pi: ExtensionAPI) {
     stopGeneration(generation);
   });
 
-  pi.registerCommand?.("fm-watch-arm-pi", {
-    description: "Arm firstmate watcher supervision through the Pi extension instead of foreground bash.",
+  pi.registerCommand?.("sq-sentry-arm-pi", {
+    description: "Arm Squad sentry supervision through the Pi extension instead of foreground bash.",
     handler: async (_args, ctx) => {
       const result = startArm(generation);
       ctx.ui.notify(result.message, result.ok ? "info" : "warning");
@@ -472,11 +472,11 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool?.({
     name: "fm_watch_arm_pi",
-    label: "Arm firstmate watcher",
-    description: "Start the first required Pi watcher cycle, or repair one only after a notification says the cycle is missing, failed, or unhealthy. Do not call after ordinary work or ordinary notifications; the Pi extension re-arms automatically. Never run bin/fm-watch-arm.sh through bash.",
-    promptSnippet: "Start the first required Pi watcher cycle or repair a cycle reported missing, failed, or unhealthy; ordinary re-arming is automatic.",
+    label: "Arm Squad sentry",
+    description: "Start the first required Pi sentry cycle, or repair one only after a notification says the cycle is missing, failed, or unhealthy. Do not call after ordinary work or ordinary notifications; the Pi extension re-arms automatically. Never run bin/sq-sentry-arm.sh through bash.",
+    promptSnippet: "Start the first required Pi sentry cycle or repair a cycle reported missing, failed, or unhealthy; ordinary re-arming is automatic.",
     promptGuidelines: [
-      "Call fm_watch_arm_pi only for the first required cycle or after a notification says the cycle is missing, failed, or unhealthy. Do not call it after ordinary work, turn completion, or ordinary signal, stale, check, or heartbeat handling because the Pi extension owns re-arming. Never run bin/fm-watch-arm.sh through bash.",
+      "Call fm_watch_arm_pi only for the first required cycle or after a notification says the cycle is missing, failed, or unhealthy. Do not call it after ordinary work, turn completion, or ordinary signal, stale, check, or heartbeat handling because the Pi extension owns re-arming. Never run bin/sq-sentry-arm.sh through bash.",
     ],
     parameters: Type.Object({}),
     renderShell: "self",

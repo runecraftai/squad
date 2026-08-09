@@ -1,10 +1,10 @@
 // Verified against Pi 0.81.1 and 0.82.0, which export AssistantMessageComponent with an
 // updateContent method. installCalmAssistantLayout() probes that exact method and throws
-// if it is missing; fm-calm.ts catches that and skips only this adapter with a diagnostic
+// if it is missing; sq-calm.ts catches that and skips only this adapter with a diagnostic
 // instead of blocking Calm or Pi.
 import type { AssistantMessageComponent as PiAssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import * as PiCodingAgent from "@earendil-works/pi-coding-agent";
-import { calmPresentationHides } from "./fm-calm-visibility.ts";
+import { calmPresentationHides } from "./sq-calm-visibility.ts";
 
 type AssistantMessage = Parameters<PiAssistantMessageComponent["updateContent"]>[0];
 
@@ -21,7 +21,7 @@ type CalmAssistantLayoutPatch = {
 // Keep the introduction-version symbol stable so a compatible upgrade cannot
 // double-patch a live process.
 const CALM_ASSISTANT_LAYOUT_PATCH = Symbol.for(
-  "firstmate:calm-assistant-layout:pi-0.81.1",
+  "Squad:calm-assistant-layout:pi-0.81.1",
 );
 
 export function installCalmAssistantLayout(): void {
@@ -38,11 +38,11 @@ export function installCalmAssistantLayout(): void {
   const patch: CalmAssistantLayoutPatch = { hidesThinking };
   const AssistantMessageComponent = PiCodingAgent.AssistantMessageComponent;
   if (typeof AssistantMessageComponent !== "function") {
-    throw new Error("Firstmate Calm requires Pi AssistantMessageComponent");
+    throw new Error("Squad Calm requires Pi AssistantMessageComponent");
   }
   const originalUpdateContent = AssistantMessageComponent.prototype.updateContent;
   if (typeof originalUpdateContent !== "function") {
-    throw new Error("Firstmate Calm requires Pi AssistantMessageComponent.updateContent");
+    throw new Error("Squad Calm requires Pi AssistantMessageComponent.updateContent");
   }
 
   AssistantMessageComponent.prototype.updateContent = function (

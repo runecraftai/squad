@@ -1,12 +1,12 @@
 // Verified against Pi 0.81.1 and 0.82.0, which add the ordinary-user spacer and row
 // together via InteractiveMode.addMessageToChat. This adapter probes that exact method
-// and throws if it is missing; fm-calm.ts catches that and skips only this adapter with a
+// and throws if it is missing; sq-calm.ts catches that and skips only this adapter with a
 // diagnostic instead of blocking Calm or Pi. It changes only that presentation and never
 // message delivery.
 import type { UserMessageComponent as PiUserMessageComponent } from "@earendil-works/pi-coding-agent";
 import * as PiCodingAgent from "@earendil-works/pi-coding-agent";
-import { calmPresentationHides } from "./fm-calm-visibility.ts";
-import { classifyFirstmateCurrentOperationalText } from "./fm-operational-input.ts";
+import { calmPresentationHides } from "./sq-calm-visibility.ts";
+import { classifySquadCurrentOperationalText } from "./sq-operational-input.ts";
 
 type UserMessageConstructorArgs = ConstructorParameters<typeof PiUserMessageComponent>;
 type UserMessageLike = {
@@ -43,7 +43,7 @@ type CalmOperationalUserLayoutPatch = {
 // Keep the introduction-version symbol stable so a compatible upgrade cannot
 // double-patch a live process.
 const CALM_OPERATIONAL_USER_LAYOUT_PATCH = Symbol.for(
-  "firstmate:calm-operational-user-layout:pi-0.81.1",
+  "Squad:calm-operational-user-layout:pi-0.81.1",
 );
 const LEGACY_CALM_OPERATIONAL_PREFIX = "\u2063Supervisor escalate (";
 
@@ -67,7 +67,7 @@ export function installCalmOperationalUserLayout(): void {
   const isOperationalInput = (text: string): boolean => {
     if (!text.includes("\u2063")) return false;
     return (
-      classifyFirstmateCurrentOperationalText(text) !== undefined ||
+      classifySquadCurrentOperationalText(text) !== undefined ||
       text.startsWith(LEGACY_CALM_OPERATIONAL_PREFIX)
     );
   };
@@ -84,17 +84,17 @@ export function installCalmOperationalUserLayout(): void {
   };
   const InteractiveMode = PiCodingAgent.InteractiveMode;
   if (typeof InteractiveMode !== "function") {
-    throw new Error("Firstmate Calm requires Pi InteractiveMode");
+    throw new Error("Squad Calm requires Pi InteractiveMode");
   }
   const prototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
   const originalAddMessageToChat = prototype.addMessageToChat;
   if (typeof originalAddMessageToChat !== "function") {
-    throw new Error("Firstmate Calm requires Pi InteractiveMode.addMessageToChat");
+    throw new Error("Squad Calm requires Pi InteractiveMode.addMessageToChat");
   }
 
   const UserMessageComponent = PiCodingAgent.UserMessageComponent;
   if (typeof UserMessageComponent !== "function") {
-    throw new Error("Firstmate Calm requires Pi UserMessageComponent");
+    throw new Error("Squad Calm requires Pi UserMessageComponent");
   }
   class CalmOperationalUserMessageComponent extends UserMessageComponent {
     private readonly hasLeadingSpacer: boolean;

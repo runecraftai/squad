@@ -1,11 +1,11 @@
-// Firstmate's Calm-only animated working presentation.
+// Squad's Calm-only animated working presentation.
 //
 // Calm replaces Pi's stock working row with a tiny SSHHIP-derived boat while one
 // logical agent run is active. This module owns only the sprite geometry, the bounce
 // track, the two animation cadences, the session-scoped freeze/resume state, and the
-// temporary TUI widget; `.pi/extensions/fm-calm.ts` owns when the presentation is
+// temporary TUI widget; `.pi/extensions/sq-calm.ts` owns when the presentation is
 // installed and removed, and stays the sole caller of setWorkingVisible().
-// docs/calm.md owns the captain-facing contract.
+// docs/calm.md owns the commander-facing contract.
 //
 // Cadence: one scheduler drives two logically independent clocks. Every tick advances
 // the water phase, and only every CALM_WORKING_SHIP_TICKS_PER_MOVE-th tick moves the
@@ -48,7 +48,7 @@ const YELLOW = "\u001b[33m";
 // Restores the default foreground so color never bleeds into padding or later frames.
 const RESET = "\u001b[39m";
 
-export const CALM_WORKING_SHIP_WIDGET_KEY = "firstmate-calm-working-ship";
+export const CALM_WORKING_SHIP_WIDGET_KEY = "Squad-calm-working-ship";
 /** Scheduler period. One tick advances the water by one phase. */
 export const CALM_WORKING_SHIP_TICK_MS = 220;
 /** Boat moves one column every Nth tick, so it travels at 220 * 4 = 880ms per column. */
