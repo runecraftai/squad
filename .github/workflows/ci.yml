@@ -375,6 +375,76 @@ jobs:
             exit 1
           }
 
+  go-build-test:
+    name: Go packages build + test (fob, no-mistakes)
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/fob/go.mod
+      - name: Install Turbo
+        run: npm install -g turbo
+      - name: Build fob + no-mistakes
+        run: npx turbo run build --filter=fob --filter=no-mistakes
+      - name: Go test per package
+        run: |
+          set -eu
+          (cd packages/fob && go test ./...)
+          (cd packages/no-mistakes && go test ./...)
+
+  tasks-axi:
+    name: tasks-axi fork build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install and build the fork
+        run: |
+          set -eu
+          cd packages/tasks-axi
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Fork test suite
+        run: |
+          set -eu
+          cd packages/tasks-axi
+          pnpm run test
+      - name: npm pack dry-run (renamed bin + artifacts)
+        run: |
+          set -eu
+          cd packages/tasks-axi
+          npm pack --dry-run 2>&1 | grep -E 'sq-tasks-axi|dist/bin'
+
+  pi-smoke:
+    name: Headless Pi extension load (optional)
+    runs-on: ubuntu-latest
+    if: ${{ env.PI_SMOKE != '' }}
+    env:
+      PI_SMOKE: ${{ vars.PI_SMOKE }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - name: Install Pi
+        run: npm install -g @earendil-works/pi-coding-agent
+      - name: Install workspace deps
+        run: bun install
+      - name: Headless session loads extensions
+        run: |
+          set -eu
+          printf 'Respond with exactly: PI_EXT_LOAD_OK\n' | \
+            pi --offline --approve --no-context-files --no-skills --no-prompt-templates 2>/dev/null \
+            | grep -F 'PI_EXT_LOAD_OK'
+
+
   invariants:
     name: Repo invariants
     runs-on: ubuntu-latest

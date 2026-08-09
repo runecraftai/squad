@@ -102,7 +102,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M4 — Publication & CI — ▶️ IN PROGRESS
+## M4 — Publication & CI — ✅ DONE (org-gated boundaries recorded in STATE.md)
 
 **Goal:** Everything builds and ships from the Squad monorepo.
 
