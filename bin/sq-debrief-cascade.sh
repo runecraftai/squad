@@ -144,7 +144,7 @@ resolve_remote_transport() { # <id>
     set_transport deferred 'no recorded endpoint and no remote memory write path'
     return 0
   fi
-  run_step "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh state "$id" || rc=$?
+  run_step "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh state "$id" || rc=$?
   if [ "$rc" -eq 124 ]; then
     set_transport deferred "remote endpoint probe exceeded the ${BOUND}s bound"
     return 0
@@ -160,7 +160,7 @@ resolve_remote_transport() { # <id>
 }
 
 if [ -e "$SQUAD_HOME/$SUB_HOME_MARKER" ] || [ -L "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
-  emit 'role=XO'
+  emit 'role=xo'
   emit 'XOs=0'
   emit 'reason=an XO home stows its own memory only and never cascades'
   exit 0

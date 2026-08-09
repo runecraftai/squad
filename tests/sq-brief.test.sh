@@ -236,7 +236,7 @@ test_ship_mode_is_required_and_closed_set() {
     assert_contains "$out" "$expect" "$label: refusal did not explain the contract"
     assert_absent "$home/data/brief-required-$id/brief.md" "$label: refused scaffold still wrote a brief"
   done <<'ROWS'
-missing --mode||ship briefs require --mode
+missing --mode||strike briefs require --mode
 empty --mode value|--mode|requires a value
 unknown mode value|--mode nope|must be one of no-mistakes, direct-PR, local-only
 conditional policy is not a task mode|--mode no-mistakes-prod-only|classify this task's surface
@@ -284,8 +284,8 @@ test_delivery_flags_are_refused_where_they_do_not_apply() {
   done <<'ROWS'
 yolo on a ship brief|brief-refused-b1 some-proj --mode direct-PR --yolo on|--yolo is not a brief input
 yolo=value form on a ship brief|brief-refused-b2 some-proj --mode direct-PR --yolo=off|--yolo is not a brief input
-mode on a recon brief|brief-refused-b3 some-proj --recon --mode direct-PR|--mode applies only to ship briefs
-mode on an XO charter|brief-refused-b4 --xo --no-projects --mode no-mistakes|--mode applies only to ship briefs
+mode on a recon brief|brief-refused-b3 some-proj --recon --mode direct-PR|--mode applies only to strike briefs
+mode on an XO charter|brief-refused-b4 --xo --no-projects --mode no-mistakes|--mode applies only to strike briefs
 ROWS
   pass "sq-brief.sh: --yolo and recon/XO --mode are refused, never silently dropped"
 }

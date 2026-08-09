@@ -6,7 +6,7 @@
 # A remote second mate never reaches that path: bin/sq-spawn.sh routes it through
 # spawn_remote_XO, which hands the launch to the remote host. These
 # assertions drive the real chain - parent sq-spawn -> sq-on -> the real remote
-# entrypoint -> sq-remote-XO-control -> the remote host's own sq-spawn -
+# entrypoint -> sq-remote-xo-control -> the remote host's own sq-spawn -
 # against a fake herdr CLI, so the carrier the remote pane receives is observable.
 # See docs/verification/trace-context.md for the maintained coverage inventory.
 set -u

@@ -199,24 +199,24 @@ if [ "$command_name" = sq-remote-doctor.sh ]; then
   exit 0
 fi
 if [ "${SQUAD_FAKE_SSH_MODE:-normal}" = doctor-fixable ] \
-  && [ "$command_name" = sq-remote-XO-control.sh ] \
+  && [ "$command_name" = sq-remote-xo-control.sh ] \
   && [ "$_command_action" = state ] \
   && [ ! -f "$SQUAD_FAKE_DOCTOR_REPAIRED" ]; then
   printf 'unreadable\n'
   exit 0
 fi
 case "${SQUAD_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
-  launch-nonherdr-route:sq-remote-XO-control.sh:*)
+  launch-nonherdr-route:sq-remote-xo-control.sh:*)
     [ "$_command_action" = launch ] || exit 93
-    printf 'schema=sq-remote-XO-control.v1\n'
+    printf 'schema=sq-remote-xo-control.v1\n'
     printf 'backend=tmux\n'
     printf 'target=Squad:sq-ios\n'
     printf 'harness=codex\n'
     exit 0
     ;;
-  launch-default-session-route:sq-remote-XO-control.sh:*)
+  launch-default-session-route:sq-remote-xo-control.sh:*)
     [ "$_command_action" = launch ] || exit 93
-    printf 'schema=sq-remote-XO-control.v1\n'
+    printf 'schema=sq-remote-xo-control.v1\n'
     printf 'backend=herdr\n'
     printf 'target=default:w1:p2\n'
     printf 'herdr_session=default\n'
@@ -228,7 +228,7 @@ case "${SQUAD_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
     while [ ! -f "$SQUAD_FAKE_SEED_RELEASE" ]; do sleep 0.02; done
     exit 1
     ;;
-  launch-block:sq-remote-XO-control.sh:*)
+  launch-block:sq-remote-xo-control.sh:*)
     [ "$_command_action" = launch ] || exit 93
     touch "$SQUAD_FAKE_LAUNCH_ENTERED"
     while [ ! -f "$SQUAD_FAKE_LAUNCH_RELEASE" ]; do sleep 0.02; done
@@ -716,11 +716,11 @@ assert_no_grep '--session default' "$HERDR_LOG" "remote launch targeted the inte
 assert_grep 'window=remote:ios' "$PARENT/state/ios.meta" "parent metadata pretended the endpoint was local"
 assert_present "$PARENT/state/procevent/remote-reply-ios.source" "remote spawn did not arm its reply source"
 publish_healthy_sentry_identity "$PARENT/state" "$PARENT" "$ROOT/bin/sq-sentry.sh"
-[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh state ios)" = alive ] \
+[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh state ios)" = alive ] \
   || fail "remote endpoint was not projected alive from its own host"
 # Herdr reports a native agent state, so the delivery observation resolves
 # without the rendered-output fallback a tmux endpoint needs.
-[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh observe ios)" = idle ] \
+[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh observe ios)" = idle ] \
   || fail "remote endpoint delivery observation did not execute on its own host"
 pass "remote spawn launches on the remote-local backend and records a host-qualified route"
 
@@ -733,15 +733,15 @@ awk -v pane="$legacy_pane" '
   { print }
 ' "$TMP_ROOT/remote-ios-before-default-session.meta" > "$remote_route_meta"
 cp "$HERDR_LOG" "$TMP_ROOT/herdr-before-default-session.log"
-[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh state ios 2>/dev/null)" = unverified ] \
+[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh state ios 2>/dev/null)" = unverified ] \
   || fail "legacy default-session metadata was not classified unverified"
-if remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh route ios >/dev/null 2>&1 \
-  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh send ios probe >/dev/null 2>&1 \
-  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh key ios Enter >/dev/null 2>&1 \
-  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh capture ios >/dev/null 2>&1 \
-  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh observe ios >/dev/null 2>&1 \
-  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh retire ios --force >/dev/null 2>&1 \
-  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh launch ios codex - - herdr >/dev/null 2>&1; then
+if remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh route ios >/dev/null 2>&1 \
+  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh send ios probe >/dev/null 2>&1 \
+  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh key ios Enter >/dev/null 2>&1 \
+  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh capture ios >/dev/null 2>&1 \
+  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh observe ios >/dev/null 2>&1 \
+  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh retire ios --force >/dev/null 2>&1 \
+  || remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh launch ios codex - - herdr >/dev/null 2>&1; then
   fail "legacy default-session metadata remained operational"
 fi
 cmp -s "$TMP_ROOT/herdr-before-default-session.log" "$HERDR_LOG" \
@@ -753,7 +753,7 @@ awk -v pane="$legacy_pane" '
   /^window=/ { print "window=default:" pane; next }
   { print }
 ' "$TMP_ROOT/remote-ios-before-default-session.meta" > "$remote_route_meta"
-[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh state ios 2>/dev/null)" = unverified ] \
+[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh state ios 2>/dev/null)" = unverified ] \
   || fail "mismatched sq-remote target was not classified unverified"
 cmp -s "$TMP_ROOT/herdr-before-default-session.log" "$HERDR_LOG" \
   || fail "mismatched sq-remote target caused a Herdr operation"
@@ -799,7 +799,7 @@ EOF
 cp "$remote_route_meta" "$TMP_ROOT/remote-ios-legacy-before-refusal.meta"
 printf 'sq-ios|%s\n' "$REMOTE_HOME" > "$TMUX_STATE"
 set +e
-remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh launch ios codex - - herdr \
+remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh launch ios codex - - herdr \
   > "$TMP_ROOT/legacy-alive-refusal.out" 2>&1
 legacy_alive_rc=$?
 set -e
@@ -1020,7 +1020,7 @@ printf 'remote update probe\n' > "$REMOTE_SEED/REMOTE_UPDATE_PROBE"
 git -C "$REMOTE_SEED" add REMOTE_UPDATE_PROBE
 git -C "$REMOTE_SEED" commit -qm 'advance remote code root'
 git -C "$REMOTE_SEED" push -q origin main
-UPDATE_OUT=$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh update ios)
+UPDATE_OUT=$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh update ios)
 assert_contains "$UPDATE_OUT" 'synced:' "remote update did not report a host-local fast-forward"
 [ "$(git -C "$REMOTE_HOME" rev-parse HEAD)" = "$(git -C "$REMOTE_ROOT" rev-parse HEAD)" ] \
   || fail "remote persistent home did not fast-forward to its code-root commit"
@@ -1029,7 +1029,7 @@ pass "remote update imports and fast-forwards the persistent home on its configu
 
 rm -f "$TMP_ROOT/doctor.repaired"
 : > "$DOCTOR_LOG"
-[ "$(SQUAD_FAKE_SSH_MODE=doctor-fixable remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh state ios)" = unreadable ] \
+[ "$(SQUAD_FAKE_SSH_MODE=doctor-fixable remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh state ios)" = unreadable ] \
   || fail "the stopped-server fixture did not make the pre-repair endpoint probe unreadable"
 launches_before_repair=$(grep -c '^tab create' "$HERDR_LOG" || true)
 BOOT_REPAIRED=$(SQUAD_FAKE_SSH_MODE=doctor-fixable remote_env "$ROOT/bin/sq-bootstrap.sh")
@@ -1041,7 +1041,7 @@ assert_not_contains "$BOOT_REPAIRED" 'XO_LIVENESS: XO ios:' \
 launches_after_repair=$(grep -c '^tab create' "$HERDR_LOG" || true)
 [ "$launches_before_repair" -eq "$launches_after_repair" ] \
   || fail "readiness repair introduced a new remote relaunch point"
-[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-XO-control.sh state ios)" = alive ] \
+[ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh state ios)" = alive ] \
   || fail "the endpoint was not probed successfully after readiness repair"
 pass "startup repairs remote readiness before probing without relaunching"
 

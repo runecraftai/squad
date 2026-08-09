@@ -1,7 +1,7 @@
 # tmux runtime backend
 
 tmux is Squad's verified reference runtime backend and the fully supported baseline for XO homes.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared backend selection and metadata semantics.
+[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) owns shared backend selection and metadata semantics.
 
 ## Setup
 

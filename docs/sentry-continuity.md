@@ -1,4 +1,4 @@
-# Watcher continuity
+# Sentry continuity
 
 The sentry remains intentionally one-shot: one actionable reason closes one sentry cycle.
 Must-work continuity now lives above that process boundary instead of depending on the model remembering a re-arm step.

@@ -2,16 +2,16 @@
 # Host-local lifecycle control for the remote XO home selected by sq-on.
 #
 # Usage:
-#   sq-remote-XO-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
-#   sq-remote-XO-control.sh state <id>
-#   sq-remote-XO-control.sh route <id>
-#   sq-remote-XO-control.sh send <id> <message>
-#   sq-remote-XO-control.sh key <id> <key>
-#   sq-remote-XO-control.sh capture <id> [lines]
-#   sq-remote-XO-control.sh observe <id>
-#   sq-remote-XO-control.sh sync <id>
-#   sq-remote-XO-control.sh update <id>
-#   sq-remote-XO-control.sh retire <id> [--force]
+#   sq-remote-xo-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
+#   sq-remote-xo-control.sh state <id>
+#   sq-remote-xo-control.sh route <id>
+#   sq-remote-xo-control.sh send <id> <message>
+#   sq-remote-xo-control.sh key <id> <key>
+#   sq-remote-xo-control.sh capture <id> [lines]
+#   sq-remote-xo-control.sh observe <id>
+#   sq-remote-xo-control.sh sync <id>
+#   sq-remote-xo-control.sh update <id>
+#   sq-remote-xo-control.sh retire <id> [--force]
 #
 # Remote placement ends here, but the second-mate agent always runs on the
 # Herdr backend in the dedicated sq-remote session, so launch refuses any other
@@ -113,7 +113,7 @@ print_route() { # <id>
   remote_endpoint_require "$id"
   harness=$(fm_meta_get "$REMOTE_ENDPOINT_META" harness)
   traceparent=$(fm_meta_get "$REMOTE_ENDPOINT_META" traceparent)
-  printf 'schema=sq-remote-XO-control.v1\n'
+  printf 'schema=sq-remote-xo-control.v1\n'
   printf 'backend=%s\n' "$REMOTE_ENDPOINT_BACKEND"
   printf 'target=%s\n' "$REMOTE_ENDPOINT_TARGET"
   printf 'herdr_session=%s\n' "$REMOTE_HERDR_SESSION"

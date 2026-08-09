@@ -87,7 +87,7 @@ matrix_case D20 deny "command pkill -f '/bin/sq-sentry.sh'"
 matrix_case D21 deny "/usr/bin/pkill -f '/bin/sq-sentry.sh'"
 matrix_case D22 deny "sudo pkill -f '/bin/sq-sentry.sh'"
 matrix_case D23 deny 'kill "$(pgrep -f '\''/bin/sq-sentry.sh'\'')"'
-matrix_case D24 deny $'bin/sq-watc\\\nh-arm.sh &'
+matrix_case D24 deny $'bin/sq-sentry-ar\\\nm.sh &'
 matrix_case D25 deny 'sudo -u root bin/sq-sentry-arm.sh &'
 matrix_case D26 deny 'env -u PATH bin/sq-sentry-arm.sh &'
 matrix_case D27 deny "bash -c \$'bin/sq-sentry-arm.sh &'"
@@ -115,8 +115,8 @@ matrix_case D48 deny '~/Squad/bin/sq-sentry-arm.sh &'
 matrix_case D49 deny 'bin/sq-sentry.sh'
 matrix_case D50 deny '$SQUAD_HOME/bin/sq-sentry.sh'
 matrix_case D51 deny '~/Squad/bin/sq-sentry.sh --restart'
-matrix_case D52 deny "bin/sq-\$'\x77'atch-arm.sh &"
-matrix_case D53 deny 'bin/sq-$"watch"-arm.sh &'
+matrix_case D52 deny "bin/sq-\$'\x73'entry-arm.sh &"
+matrix_case D53 deny 'bin/sq-$"sentry"-arm.sh &'
 matrix_case D54 deny 'bin/sq-sentry-$"arm".sh &'
 matrix_case D55 deny 'while true; do pkill -f sq-sentry; done'
 matrix_case D56 deny 'for x in 1; do pkill -f sq-sentry; done'
@@ -319,7 +319,7 @@ test_prefilter_is_strict_superset() {
   # continuation or a quote splits them), yet the classifier reconstructs them.
   # The prefilter normalizes those bytes first, so both must still delegate and
   # deny rather than slip through as a fast allow.
-  "$CHECK" --command "$(printf 'bin/sq-watc\\\nh-arm.sh &')" >/dev/null 2>&1
+  "$CHECK" --command "$(printf 'bin/sq-sentry-ar\\\nm.sh &')" >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 2 ] || fail "prefilter must delegate a line-continuation-split protected path, not fast-allow it, got exit $rc"
   "$CHECK" --command 'bin/sq-"sentry-arm.sh" &' >/dev/null 2>&1
@@ -329,10 +329,10 @@ test_prefilter_is_strict_superset() {
   # from the cheap byte strip but the classifier reconstructs them, so the
   # prefilter must delegate on the marker rather than fast-allow. Without this
   # the byte strip loses the encoded character and slips the command through.
-  "$CHECK" --command "bin/sq-\$'\x77'atch-arm.sh &" >/dev/null 2>&1
+  "$CHECK" --command "bin/sq-\$'\x73'entry-arm.sh &" >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 2 ] || fail "prefilter must delegate an ANSI-C-encoded protected path, not fast-allow it, got exit $rc"
-  "$CHECK" --command 'bin/sq-$"watch"-arm.sh &' >/dev/null 2>&1
+  "$CHECK" --command 'bin/sq-$"sentry"-arm.sh &' >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 2 ] || fail "prefilter must delegate a locale-string-encoded protected path, not fast-allow it, got exit $rc"
   # The marker is specifically $ followed by a quote, not any $ expansion: an

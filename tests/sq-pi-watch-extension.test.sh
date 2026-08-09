@@ -1179,11 +1179,11 @@ EOF
 test_opencode_plugin_package_boundary_is_explicit_esm() {
   local fixture plugin out status
   fixture="$TMP_ROOT/opencode-esm-boundary/.opencode"
-  plugin="$fixture/plugins/sq-primary-sentry-arm.js"
+  plugin="$fixture/plugins/sq-primary-watch-arm.js"
   mkdir -p "$fixture/plugins/lib"
   printf '%s\n' '{"dependencies":{}}' > "$fixture/package.json"
   cp "$ROOT/.opencode/plugins/package.json" "$fixture/plugins/package.json"
-  cp "$ROOT/.opencode/plugins/sq-primary-sentry-arm.js" "$plugin"
+  cp "$ROOT/.opencode/plugins/sq-primary-watch-arm.js" "$plugin"
   cp "$ROOT/.opencode/plugins/lib/sq-operational-input.js" "$fixture/plugins/lib/sq-operational-input.js"
   out=$(PLUGIN="$plugin" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
@@ -1198,7 +1198,7 @@ EOF
 
 test_opencode_primary_watch_plugin_uses_effective_state_home() {
   local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-effective-state-root"
   home="$TMP_ROOT/opencode-effective-state-home"
   log="$TMP_ROOT/opencode-effective-state.log"
@@ -1248,7 +1248,7 @@ EOF
 
 test_opencode_primary_watch_plugin_sources_effective_config() {
   local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-effective-config-root"
   home="$TMP_ROOT/opencode-effective-config-home"
   log="$TMP_ROOT/opencode-effective-config.log"
@@ -1297,7 +1297,7 @@ EOF
 
 test_opencode_primary_watch_plugin_requires_session_lock() {
   local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-lock-root"
   home="$TMP_ROOT/opencode-lock-home"
   log="$TMP_ROOT/opencode-lock.log"
@@ -1349,7 +1349,7 @@ EOF
 
 test_opencode_watch_arm_coordinator_respects_primary_scope() {
   local plugin base repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   base="$TMP_ROOT/opencode-coordinator-base"
   repo="$TMP_ROOT/opencode-coordinator-wt"
   home="$TMP_ROOT/opencode-coordinator-home"
@@ -1396,7 +1396,7 @@ EOF
 
 test_opencode_primary_watch_plugin_rearms_after_wake() {
   local plugin repo home log stop out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-rearm-root"
   home="$TMP_ROOT/opencode-rearm-home"
   log="$TMP_ROOT/opencode-rearm.log"
@@ -1475,7 +1475,7 @@ EOF
 
 test_opencode_pre_ready_actionable_close_preserves_its_successor() {
   local plugin repo home log release retired stop out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-pre-ready-actionable-root"
   home="$TMP_ROOT/opencode-pre-ready-actionable-home"
   log="$TMP_ROOT/opencode-pre-ready-actionable.log"
@@ -1558,7 +1558,7 @@ EOF
 
 test_opencode_hung_successor_falls_back_to_typed_wake() {
   local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-hung-successor-root"
   home="$TMP_ROOT/opencode-hung-successor-home"
   log="$TMP_ROOT/opencode-hung-successor.log"
@@ -1626,7 +1626,7 @@ EOF
 
 test_opencode_unretired_successor_falls_back_without_retry() {
   local plugin repo home log release out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-unretired-successor-root"
   home="$TMP_ROOT/opencode-unretired-successor-home"
   log="$TMP_ROOT/opencode-unretired-successor.log"
@@ -1700,7 +1700,7 @@ EOF
 test_opencode_late_unretired_close_resumes_supervision() {
   local kind plugin repo home log ready retired release stop out status
   for kind in actionable non-actionable; do
-    plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+    plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
     repo="$TMP_ROOT/opencode-late-$kind-root"
     home="$TMP_ROOT/opencode-late-$kind-home"
     log="$TMP_ROOT/opencode-late-$kind.log"
@@ -1798,7 +1798,7 @@ EOF
 
 test_opencode_empty_close_retries_instead_of_disappearing() {
   local plugin repo home log stop out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-empty-close-root"
   home="$TMP_ROOT/opencode-empty-close-home"
   log="$TMP_ROOT/opencode-empty-close.log"
@@ -1858,7 +1858,7 @@ EOF
 
 test_opencode_established_empty_close_honors_retry_limit() {
   local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-established-empty-close-root"
   home="$TMP_ROOT/opencode-established-empty-close-home"
   log="$TMP_ROOT/opencode-established-empty-close.log"
@@ -1911,7 +1911,7 @@ EOF
 
 test_opencode_actionable_close_rechecks_session_lock() {
   local plugin repo home log release out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-close-lock-root"
   home="$TMP_ROOT/opencode-close-lock-home"
   log="$TMP_ROOT/opencode-close-lock.log"
@@ -1976,7 +1976,7 @@ EOF
 
 test_opencode_watch_arm_coordinates_with_turnend_guard() {
   local arm_plugin guard_plugin repo home log guard_log out status
-  arm_plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  arm_plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   guard_plugin="$ROOT/.opencode/plugins/sq-primary-turnend-guard.js"
   repo="$TMP_ROOT/opencode-coordinate-root"
   home="$TMP_ROOT/opencode-coordinate-home"
@@ -2049,7 +2049,7 @@ EOF
 
 test_opencode_healthy_arm_output_does_not_suppress_guard() {
   local arm_plugin guard_plugin repo home log guard_log out status
-  arm_plugin="$ROOT/.opencode/plugins/sq-primary-sentry-arm.js"
+  arm_plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
   guard_plugin="$ROOT/.opencode/plugins/sq-primary-turnend-guard.js"
   repo="$TMP_ROOT/opencode-external-healthy-root"
   home="$TMP_ROOT/opencode-external-healthy-home"

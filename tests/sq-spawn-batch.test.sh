@@ -116,7 +116,7 @@ test_batch_requires_the_shared_delivery_contract() {
   out=$(run_spawn nope-batch-nomode-z9=projects/none-a nope-batch-nomode-z10=projects/none-b)
   status=$?
   [ "$status" -ne 0 ] || fail "a ship batch without --mode should exit non-zero"
-  printf '%s\n' "$out" | grep -F 'ship spawns require --mode' >/dev/null \
+  printf '%s\n' "$out" | grep -F 'strike spawns require --mode' >/dev/null \
     || fail "batch refusal did not name the missing delivery mode"
   printf '%s\n' "$out" | grep -F 'batch:' >/dev/null \
     && fail "batch dispatched pairs despite an undecided delivery contract"
@@ -124,7 +124,7 @@ test_batch_requires_the_shared_delivery_contract() {
   out=$(run_spawn nope-batch-noyolo-z11=projects/none-a --mode direct-PR)
   status=$?
   [ "$status" -ne 0 ] || fail "a ship batch without --yolo should exit non-zero"
-  printf '%s\n' "$out" | grep -F 'ship spawns require --yolo' >/dev/null \
+  printf '%s\n' "$out" | grep -F 'strike spawns require --yolo' >/dev/null \
     || fail "batch refusal did not name the missing approval posture"
   pass "batch dispatch requires the shared ship delivery contract before any pair runs"
 }
@@ -136,7 +136,7 @@ test_scout_batch_refuses_delivery_flags() {
   out=$(run_spawn nope-batch-recon-z12=projects/none-a --recon --mode direct-PR --yolo on)
   status=$?
   [ "$status" -ne 0 ] || fail "a recon batch carrying delivery flags should exit non-zero"
-  printf '%s\n' "$out" | grep -F 'applies only to ship spawns' >/dev/null \
+  printf '%s\n' "$out" | grep -F 'applies only to strike spawns' >/dev/null \
     || fail "recon batch did not refuse the delivery flags"
   pass "recon batch refuses ship delivery flags instead of ignoring them"
 }

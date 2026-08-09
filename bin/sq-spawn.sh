@@ -153,7 +153,7 @@
 #   decision. It is accepted only for --xo spawns, only as a strictly
 #   validated W3C traceparent, and exists because a remote XO's task
 #   identity is owned by the parent home that holds its task metadata, while the
-#   pane export happens on the remote host (bin/sq-remote-XO-control.sh).
+#   pane export happens on the remote host (bin/sq-remote-xo-control.sh).
 #   Local spawns never pass it and resolve their own carrier exactly as before.
 set -eu
 
@@ -500,7 +500,7 @@ spawn_remote_XO() {
   fi
   launch_args=("$id" "$harness" "$model" "$effort" "$backend")
   [ -z "$remote_traceparent" ] || launch_args+=("$remote_traceparent")
-  if out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh launch \
+  if out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh launch \
     "${launch_args[@]}" < /dev/null 2>&1); then
     rc=0
   else

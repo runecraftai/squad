@@ -295,7 +295,7 @@ Observed output:
 sq-claude-stop-autoarm: ok
 ```
 
-## Watcher continuity
+## Sentry continuity
 
 The cross-harness evidence combines the 2026-07-17 live pass with Claude's replacement Stop-owned path revalidated on 2026-07-24, all against isolated project and home state.
 No credential material was copied into a fixture.

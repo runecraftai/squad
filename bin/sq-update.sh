@@ -83,7 +83,7 @@ if [ -f "$XOS_MD" ]; then
     id=$XO_REGISTRY_ID
     home=$XO_REGISTRY_HOME
     if [ "$XO_REGISTRY_REMOTE" -eq 1 ]; then
-      if remote_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh update "$id" < /dev/null 2>&1); then
+      if remote_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh update "$id" < /dev/null 2>&1); then
         remote_result=$(printf '%s\n' "$remote_out" | tail -1)
         case "$remote_result" in
           synced:*)

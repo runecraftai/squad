@@ -48,14 +48,19 @@ record_failure() {  # <label> <detail>
 
 # guard_no_match <label> <pattern>...
 # Records a violation if ANY tracked file matches ANY pattern (fixed -E -I -H -n).
+# A pattern may be written case-insensitive with a leading (?i) marker, which is
+# stripped and applied as a real grep -i flag (grep -E has no inline (?i)).
 guard_no_match() {
   local label=$1; shift
-  local pattern
-  local matches
+  local pattern file
   matches=$(tracked_files | while IFS= read -r file; do
     for pattern in "$@"; do
-      grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null \
-        | sed "s|^$ROOT/||"
+      case "$pattern" in
+        '(?i)'*) grep -I -i -H -n -E -e "${pattern#(?i)}" -- "$ROOT/$file" 2>/dev/null \
+                   | sed "s|^$ROOT/||" ;;
+        *) grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null \
+             | sed "s|^$ROOT/||" ;;
+      esac
     done
   done)
   if [ -n "$matches" ]; then

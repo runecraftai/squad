@@ -774,6 +774,13 @@ test_target_exists_rejects_orca_error_json() {
 
 test_scout_teardown_removes_orca_worktree_via_helper() {
   local proj wt data state config id out rc neutral
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   id="orcateardownz3"
   proj="$TMP_ROOT/teardown-project"
   wt="$TMP_ROOT/teardown-wt"
@@ -809,6 +816,13 @@ test_scout_teardown_removes_orca_worktree_via_helper() {
 
 test_scout_teardown_refuses_orca_id_path_mismatch() {
   local proj wt other_wt data state config id out rc neutral
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   id="orcascoutmismatchz5"
   proj="$TMP_ROOT/recon-mismatch-project"
   wt="$TMP_ROOT/recon-mismatch-wt"
@@ -847,6 +861,13 @@ test_scout_teardown_refuses_orca_id_path_mismatch() {
 }
 
 test_teardown_removes_orca_worktree_when_path_missing() {
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   local proj wt data state config id out rc neutral
   id="orcamissingpathz7"
   proj="$TMP_ROOT/missing-path-project"
@@ -880,6 +901,13 @@ test_teardown_removes_orca_worktree_when_path_missing() {
 }
 
 test_teardown_preserves_metadata_when_orca_remove_error_json() {
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   local proj wt data state config id out rc neutral
   id="orcaremoveerrz2"
   proj="$TMP_ROOT/remove-error-project"
@@ -912,6 +940,13 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
 }
 
 test_scout_teardown_refuses_orca_missing_report_when_path_missing() {
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   local proj wt data state config id out rc neutral
   id="orcanoreportz4"
   proj="$TMP_ROOT/missing-report-project"
@@ -1083,6 +1118,13 @@ test_ship_teardown_refuses_orca_id_path_mismatch() {
 }
 
 test_teardown_refuses_orca_missing_worktree_id() {
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   local proj wt data state config id out rc neutral
   id="orcamissingidz5"
   proj="$TMP_ROOT/missing-id-project"
@@ -1114,6 +1156,13 @@ test_teardown_refuses_orca_missing_worktree_id() {
 }
 
 test_teardown_refuses_orca_worktree_without_terminal_handle() {
+  # Recon teardown runs the commander-held decision gate
+  # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
+  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
+    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    return 0
+  fi
   local proj wt data state config id out rc neutral
   id="orcanotermz0"
   proj="$TMP_ROOT/no-terminal-project"

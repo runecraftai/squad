@@ -518,7 +518,7 @@ XO_sync() {
     fi
     nudge_needed=0
     converged=1
-    if sync_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh sync "$id" < /dev/null 2>&1); then
+    if sync_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh sync "$id" < /dev/null 2>&1); then
       case "$sync_out" in synced:*) nudge_needed=1 ;; esac
     else
       echo "XO_SYNC: XO $id: skipped: remote tracked-file sync failed on $remote_host: $(first_line "$sync_out")"
@@ -629,7 +629,7 @@ XO_liveness_one() {  # <meta> <id>
       echo "XO_LIVENESS: XO $id: skipped: remote readiness failed on $remote_host: $readiness_reason"
       return 0
     fi
-    if out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh state "$id" < /dev/null 2>/dev/null); then
+    if out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh state "$id" < /dev/null 2>/dev/null); then
       remote_rc=0
     else
       remote_rc=$?
@@ -645,7 +645,7 @@ XO_liveness_one() {  # <meta> <id>
     agent_state=$(printf '%s\n' "$out" | tail -1)
     case "$agent_state" in
       alive)
-        if route_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh route "$id" < /dev/null 2>/dev/null); then
+        if route_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh route "$id" < /dev/null 2>/dev/null); then
           remote_rc=0
         else
           remote_rc=$?

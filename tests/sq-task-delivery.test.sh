@@ -78,9 +78,9 @@ EOF
     assert_contains "$out" "$expect" "$label: refusal did not explain the contract"
     assert_absent "$home/state/delivery-required-$n.meta" "$label: refused spawn wrote task metadata"
   done <<'ROWS'
-missing both flags||ship spawns require --mode
-missing --yolo|--mode no-mistakes|ship spawns require --yolo
-missing --mode|--yolo off|ship spawns require --mode
+missing both flags||strike spawns require --mode
+missing --yolo|--mode no-mistakes|strike spawns require --yolo
+missing --mode|--yolo off|strike spawns require --mode
 unknown mode|--mode nope --yolo off|must be one of no-mistakes, direct-PR, local-only
 unknown yolo|--mode no-mistakes --yolo maybe|--yolo must be on or off
 conditional policy as a task mode|--mode no-mistakes-prod-only --yolo off|classify this task's surface
@@ -101,17 +101,17 @@ EOF
   out=$(run_spawn "$home" "$fakebin" delivery-recon-a1 "$proj" claude --recon --mode direct-PR)
   status=$?
   [ "$status" -ne 0 ] || fail "a recon spawn carrying --mode should exit non-zero"
-  assert_contains "$out" "--mode applies only to ship spawns" "recon spawn did not refuse --mode"
+  assert_contains "$out" "--mode applies only to strike spawns" "recon spawn did not refuse --mode"
 
   out=$(run_spawn "$home" "$fakebin" delivery-recon-a1 "$proj" claude --recon --yolo on)
   status=$?
   [ "$status" -ne 0 ] || fail "a recon spawn carrying --yolo should exit non-zero"
-  assert_contains "$out" "--yolo applies only to ship spawns" "recon spawn did not refuse --yolo"
+  assert_contains "$out" "--yolo applies only to strike spawns" "recon spawn did not refuse --yolo"
 
   out=$(run_spawn "$home" "$fakebin" delivery-sm-a2 "$home" --xo --mode no-mistakes --yolo off)
   status=$?
   [ "$status" -ne 0 ] || fail "an XO spawn carrying delivery flags should exit non-zero"
-  assert_contains "$out" "applies only to ship spawns" "XO spawn did not refuse the delivery flags"
+  assert_contains "$out" "applies only to strike spawns" "XO spawn did not refuse the delivery flags"
   pass "sq-spawn: recon and XO spawns refuse ship delivery flags"
 }
 

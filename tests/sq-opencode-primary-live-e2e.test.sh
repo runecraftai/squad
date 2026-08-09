@@ -296,7 +296,7 @@ run_ahoy_transcript_regressions
 run_native_ahoy_regressions
 git clone -q "$ROOT" "$PROJECT"
 mkdir -p "$PROJECT/.opencode/plugins/lib"
-cp "$ROOT/.opencode/plugins/sq-primary-sentry-arm.js" "$PROJECT/.opencode/plugins/sq-primary-sentry-arm.js"
+cp "$ROOT/.opencode/plugins/sq-primary-watch-arm.js" "$PROJECT/.opencode/plugins/sq-primary-watch-arm.js"
 cp "$ROOT/.opencode/plugins/lib/sq-operational-input.js" "$PROJECT/.opencode/plugins/lib/sq-operational-input.js"
 cp "$ROOT/bin/sq-sentry-arm.sh" "$PROJECT/bin/sq-sentry-arm.sh"
 cp "$ROOT/bin/sq-operational-input.sh" "$PROJECT/bin/sq-operational-input.sh"

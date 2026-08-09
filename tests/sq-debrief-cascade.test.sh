@@ -42,7 +42,7 @@ case "$command" in
   sq-startup-memory-budget.sh)
     cat "$SQUAD_FAKE_REMOTE_BUDGET"
     ;;
-  sq-remote-XO-control.sh)
+  sq-remote-xo-control.sh)
     printf '%s\n' "${SQUAD_FAKE_REMOTE_AGENT_STATE:-alive}"
     ;;
   *) exit 91 ;;
@@ -155,7 +155,7 @@ test_budget_is_enforced_per_home_and_never_summed() {
     || fail "the over-budget home was not classified against its own allowance"
   [ "$(value_in "$sb" budget_status)" = within-budget ] \
     || fail "a within-budget home was penalized for another home's memory"
-  [ "$(value_in "$sa" role)" = XO ] \
+  [ "$(value_in "$sa" role)" = xo ] \
     || fail "per-home accounting did not run in the XO home"
   pass "each home is accounted against its own allowance instead of a unit total"
 }
@@ -214,7 +214,7 @@ test_transport_routes_by_placement_and_liveness() {
   } > "$primary/data/XOs.md"
   fm_write_XO_meta "$primary/state/live-local.meta" "$live" 'Squad:sq-live-local' alpha claude
   fm_write_XO_meta "$primary/state/remote-live.meta" "$remote" 'sq-remote:sq-remote-live' alpha claude
-  printf 'role=XO\neffective_budget_tokens=7500\ntotal_estimated_tokens=100\nbudget_status=within-budget\n' \
+  printf 'role=xo\neffective_budget_tokens=7500\ntotal_estimated_tokens=100\nbudget_status=within-budget\n' \
     > "$TMP_ROOT/remote-budget.txt"
 
   set +e
@@ -357,7 +357,7 @@ test_no_cascade_without_XOs_or_from_a_XO_home() {
   rc=$?
   set -e
   expect_code 0 "$rc" "an XO home should not fail its own debrief"
-  assert_contains "$out" 'role=XO' "an XO home was not recognized"
+  assert_contains "$out" 'role=xo' "an XO home was not recognized"
   assert_contains "$out" 'XOs=0' "an XO home cascaded to its own registry"
   pass "the cascade stays silent with no XOs and never runs from an XO home"
 }

@@ -25,6 +25,23 @@ TMP_ROOT=$(fm_test_tmproot sq-public-followup)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
+# The typed public-followup contract uses Squad's home taxonomy (xo:<stable-id>),
+# which the forked sq-tasks-axi validates (M2, T-M2-04). The upstream tasks-axi
+# validates home ids against its own legacy taxonomy instead, so without the
+# fork every bind-work fixture fails at validation, not at the behaviour under
+# test.
+probe=$(mktemp -d "${TMPDIR:-/tmp}/sq-pf-probe.XXXXXX")
+cp "$ROOT/.tasks.toml" "$probe/.tasks.toml"
+mkdir -p "$probe/data"
+printf '## In flight\n\n## Queued\n\n## Done\n' > "$probe/data/backlog.md"
+jq -n '{relation_id:"rel-probe", work_ref:{home_id:"xo:probe", task_id:"probe"}, role:"fulfills", required:true, generation:1}' > "$probe/relation.json"
+if (cd "$probe" && tasks-axi public-followup bind-work pf-probe --relation-file "$probe/relation.json" 2>&1) \
+  | grep -Fq 'must be main or'; then
+  rm -rf "$probe"
+  echo "skip: installed tasks-axi lacks the Squad xo: home taxonomy (forked sq-tasks-axi, M2)"
+  exit 0
+fi
+rm -rf "$probe"
 
 # A fakebin `curl` standing in for the relay. It logs every call so a test can
 # prove exactly how many public posts happened, and honours FAKE_FOLLOWUP_CODE so

@@ -319,9 +319,9 @@ remote_XO_teardown() {
   }
   "$SQUAD_ROOT/bin/sq-guard.sh" || true
   if [ "$FORCE" = --force ]; then
-    if out=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-XO-control.sh retire "$ID" --force < /dev/null 2>&1); then rc=0; else rc=$?; fi
+    if out=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-xo-control.sh retire "$ID" --force < /dev/null 2>&1); then rc=0; else rc=$?; fi
   else
-    if out=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-XO-control.sh retire "$ID" < /dev/null 2>&1); then rc=0; else rc=$?; fi
+    if out=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-xo-control.sh retire "$ID" < /dev/null 2>&1); then rc=0; else rc=$?; fi
   fi
   if [ "$rc" -ne 0 ]; then
     [ -z "$out" ] || printf '%s\n' "$out" >&2
@@ -1084,7 +1084,7 @@ validate_worktree_teardown_safety() {
   [ -d "$WT" ] || return 0
   [ "$FORCE" != "--force" ] || return 0
   case "$KIND" in
-    XO|recon) return 0 ;;
+    xo|recon) return 0 ;;
   esac
 
   if ! dirty_raw=$(git -C "$WT" status --porcelain 2>/dev/null); then

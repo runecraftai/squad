@@ -406,7 +406,7 @@ if [ "${1:-}" = "--key" ]; then
   key=$2
   semantic_key=$(fm_send_normalize_key "$key")
   if [ "$TARGET_BACKEND" = remote ]; then
-    if ! "$SCRIPT_DIR/sq-on.sh" "$TARGET_REMOTE_ID" sq-remote-XO-control.sh key "$TARGET_REMOTE_ID" "$key" < /dev/null; then
+    if ! "$SCRIPT_DIR/sq-on.sh" "$TARGET_REMOTE_ID" sq-remote-xo-control.sh key "$TARGET_REMOTE_ID" "$key" < /dev/null; then
       echo "error: key '$key' not sent to remote XO $TARGET_REMOTE_ID; completion may be unknown" >&2
       exit 1
     fi
@@ -467,7 +467,7 @@ else
   # verdict preserves the loud refusal boundary.
   send_rc=0
   if [ "$TARGET_BACKEND" = remote ]; then
-    if "$SCRIPT_DIR/sq-on.sh" "$TARGET_REMOTE_ID" sq-remote-XO-control.sh send "$TARGET_REMOTE_ID" "$MESSAGE" < /dev/null >/dev/null; then
+    if "$SCRIPT_DIR/sq-on.sh" "$TARGET_REMOTE_ID" sq-remote-xo-control.sh send "$TARGET_REMOTE_ID" "$MESSAGE" < /dev/null >/dev/null; then
       verdict=empty
     else
       send_rc=$?

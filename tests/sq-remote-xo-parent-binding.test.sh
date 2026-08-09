@@ -5,7 +5,7 @@
 # primary home ... durable parent binding", because the remote launch hands the
 # child the remote code checkout as its parent home (bin/sq-spawn.sh's sole
 # writer of SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME receives SQUAD_HOME=$SQUAD_ROOT from
-# bin/sq-remote-XO-control.sh's host-local launch), and that path can
+# bin/sq-remote-xo-control.sh's host-local launch), and that path can
 # never carry the parent's real state or registry.
 #
 # The fix (report section 7, commander-approved same-machine scope): a durable
@@ -20,7 +20,7 @@
 # shell mask into this home's binding before.
 #
 # This drives the REAL remote route (sq-remote-home-seed.sh -> sq-on.sh ->
-# sq-remote-entrypoint.sh -> the host-local sq-remote-XO-control.sh ->
+# sq-remote-entrypoint.sh -> the host-local sq-remote-xo-control.sh ->
 # the real bin/sq-spawn.sh --xo) across the repo's own deterministic SSH
 # boundary and Herdr fixture, then runs the real bin/sq-teardown.sh for a
 # finished child worker inside the produced remote home - never source-text

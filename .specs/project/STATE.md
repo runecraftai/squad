@@ -1,19 +1,47 @@
 # Squad — State
 
-**Updated:** M0 execution (session 1)
+**Updated:** M1 execution (session 2 — T-M1-12 completion)
 
 ## Progress
 
 | Milestone | Status | Notes |
 | --- | --- | --- |
 | M0 — Import & Scaffold | ✅ done (baseline documented; 9 env/decision-attributable failures, 0 source defects — see T-M0-05) | T-M0-01..05 all done |
-| M1 — Rebrand Sweep | ▶️ in progress | T-M1-01 done; T-M1-02 next (AGENTS.md sweep) |
+| M1 — Rebrand Sweep | ✅ done (T-M1-01..12; suite pass-set = M0 baseline + 2 M1-input fixes; 6 env-attributable failures identical to M0; fork-dependent cases gated until M2) | see T-M1-12 |
 | M2 — Deps as Workspace Packages | ⬜ planned | |
 | M3 — Pi Adapters + pr-review | ⬜ planned | |
 | M4 — Publication & CI | ⬜ planned | |
 | M5 — goal-loop-audit + Roadmap note | ⬜ planned | |
 
 ## Task log
+
+### T-M1-12 — Private-material seeds + full gate ✅ (session 2)
+
+Completed in a second execution session. All remaining genuine rebrand defects fixed, the guard was found broken and repaired, and the full suite was re-run lane by lane.
+
+**Genuine remaining defects fixed (all traceable to the sweep, none to upstream source):**
+- Kind-value leftovers: `tests/sq-teardown.test.sh` fixtures still wrote `kind=ship`/`kind=XO` (54+3 calls) while bin normalized to `kind=strike`/`kind=xo`; `bin/sq-teardown.sh` `validate_worktree_teardown_safety` still compared uppercase `XO`; `tests/sq-decision-hold-lifecycle.test.sh` wrote `kind=XO`. Fixed all to lowercase `xo`/`strike` (consistent with c811c3e).
+- `bin/sq-debrief-cascade.sh` emitted `role=XO` while `sq-startup-memory-budget.sh` emits `role=xo`; tests asserted both ways. Normalized to `role=xo` (bin + tests).
+- `sq-remote-XO-control.sh` (uppercase) vs actual file `sq-remote-xo-control.sh` — 8 bin files + 4 test files + docs referenced the uppercase name, which broke every remote-XO path (sq-on validates the remote command is a tracked executable). Renamed all references + `schema=sq-remote-XO-control.v1` → `schema=sq-remote-xo-control.v1` (bin/tests/docs).
+- `tests/sq-arm-pretool-check.test.sh` — sweep mangled obfuscated script-name fixtures (`sq-watc\nh-arm.sh`, `$'\x77'atch`, `$"watch"`) into nonsense that no longer matched any protected pattern; restored as `sq-sentry-ar\nm.sh`, `$'\x73'entry`, `$"sentry"` forms.
+- `tests/sq-sentry-lock.test.sh` expected hex still encoded `fm-watch.sh`; updated to `sq-sentry.sh` bytes.
+- `tests/sq-operational-input.test.sh` expected hex still encoded `FIRSTMATE_OP:`; updated to `SQUAD_OP:` bytes.
+- `tests/sq-pi-watch-extension.test.sh` + `sq-opencode-primary-live-e2e.test.sh` referenced `.opencode/plugins/sq-primary-sentry-arm.js`; actual name is `sq-primary-watch-arm.js`.
+- `tests/sq-bootstrap.test.sh` assertions still expected upstream `kunchenguid` install URLs; updated to the OQ-03 placeholder the binary emits.
+- `tests/sq-unit-snapshot-view.test.sh`: byte-order id sort (`XO-task` first), `kind` column now `strike`/`xo`, XO send guidance case.
+- `tests/sq-task-delivery.test.sh`, `tests/sq-spawn-batch.test.sh`, `tests/sq-brief.test.sh` + `bin/sq-brief.sh` — remaining `ship spawns/ship briefs` prose normalized to `strike`.
+- `docs/`: three broken `fm_backend` anchors (architecture, cmux/herdr/tmux/zellij-backend), one broken `XO-routes-dataXOsmd` anchor, `gitlab-merge-watch.md` → `gitlab-merge-sentry.md` link, `verification/supervision.md` heading `Watcher continuity` → `Sentry continuity`, `sentry-continuity.md` title.
+- `LICENSE` still carried `Copyright (c) 2026 Kun Chen` (guard 2 catch); now `Squad contributors` (RISK-01 documented deviation, commander decision).
+- `tests/fixtures/tmux-permissive-kill.sh` (NEW): M1 input A resolved — `resolve_permissive_tmux_kill_ref` (git-history walk, broken by AD-010 squash) replaced by a pinned one-line derivation of `bin/backends/tmux.sh` with the permissive kill-window selector (documented in the test).
+- **Guard repair (critical):** guard 1/2 patterns used inline `(?i)` which is NOT valid ERE — GNU grep warns "? at start of expression" and matches nothing. The guards were no-ops; 25 `kunchenguid` fixture URLs passed silently. Fixed `guard_no_match` to strip `(?i)` and apply real `-i`; rebranded the 25 fixture URLs to `github.com/squad-org/squad` (OQ-03 placeholder) in calm-pi-extension, project-origin, sitrep-snapshot, unit-snapshot-view tests.
+
+**Fork-dependent cases gated until M2 (documented skips, not passes):** the upstream npm `tasks-axi 0.2.5` cannot run Squad's typed contracts — `hold --kind commander` (validates captain|external|load|parked|future) and `public-followup` home taxonomy (`xo:` vs upstream `main|secondmate:`). The forked `sq-tasks-axi` (T-M2-04, AD-006) supplies both. Gated: `sq-decision-hold-lifecycle` (file), `sq-public-followup` (file, functional probe), `sq-backend` teardown-conformance sub-case, `sq-backend-orca` 7 recon-teardown sub-cases, `sq-backend-zellij` recon-teardown sub-case. Each prints `skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)` (or the xo: taxonomy variant) and exits 0. The secondmate word itself is guard-5-forbidden, so the public-followup probe greps `must be main or` only.
+
+**Full suite (lane by lane, LC_ALL=C.UTF-8, PATH=/tmp/sq-tools):** portable-parallel-1 11/11 (2 gate-skipped), portable-parallel-2 13/13, portable-serial-1 22/23 (1 env), serial-2 23/25 (1 env + sq-task-delivery fixed), serial-3 22/24 (1 env + focus-flash herdr-daemon — passes once the default herdr session runs), serial-4 23/26 (3 env), real-herdr-gated 11/11 (4 gate-skipped). Remaining 6 failures are EXACTLY the M0-classified environment set: sq-bootstrap + sq-session-start (/usr/bin/node), sq-on + sq-remote-doctor (tools/harnesses installed), sq-remote-job-orphan-reap (systemd reparenting), sq-calm-pi-extension (tmux 3.7b rendering flake; pi package absent from npm global). `sq-test-run.sh --check-coverage` exit 0 (total=133, parallel=24, serial=98, serial_shards=4, herdr=11); `bin/sq-lint.sh` green (shellcheck 0.11.0); all 6 §8 guards green with the REPAIRED patterns; 17 key tests re-verified green individually.
+- **Note:** the 8 real-herdr-gated failures in the 11:18 rerun were environment: the default herdr session was STOPPED (unit-state tripwire refuses). `herdr` (bare) starts it; tests pass with it running. Not a source defect.
+- **Note:** 16 skips in M0 became 16 + fork gates in M1; the fork gates resolve in M2 when CI installs `sq-tasks-axi`.
+
+### T-M1-11 — CI workflows ✅ (session 1; see commit e80322e)
 
 ### T-M1-01 — Mapping table frozen + guard skeleton ✅
 - design.md §2 rows 1–20 verified against AD-015: all 16 mappings (firstmate→Squad, tagline, captain→commander, first mate→sergeant at arms, crewmate→operator, fleet→unit, ship→strike, scout→recon, secondmate→XO, treehouse→FOB, watch→sentry, wake-queue→stand-to queue, /ahoy→/reporting, /bearings→/sitrep, /stow→/debrief, fm-→sq-, FM_*→SQUAD_*, read-only boundary→the perimeter) + 4 keep-rows (AGENTS.md, CLAUDE.md symlink, .tasks.toml/.no-mistakes.yaml, .claude/skills symlink) match exactly. Table frozen as single source of truth; no edits without a context.md AD update.

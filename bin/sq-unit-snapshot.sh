@@ -484,7 +484,7 @@ task_json_lines() {
     agent_alive=not_checked
     if [ -n "$remote_host" ]; then
       if remote_state=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" \
-        "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh state "$id" < /dev/null 2>/dev/null); then
+        "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-xo-control.sh state "$id" < /dev/null 2>/dev/null); then
         remote_rc=0
       else
         remote_rc=$?

@@ -25,7 +25,7 @@ kind_cli() {
 test_current_generic_matrix() {
   local kind body encoded parsed stripped prefix_hex
   prefix_hex=$(printf '%s' "$SQUAD_OPERATIONAL_PREFIX" | od -An -tx1 | tr -d ' \n')
-  [ "$prefix_hex" = e281a346495253544d4154455f4f503a20 ] \
+  [ "$prefix_hex" = e281a353515541445f4f503a20 ] \
     || fail "current operational prefix lost the landed U+2063 SQUAD_OP bytes: $prefix_hex"
 
   for kind in session-start sentry turn-end-guard away-supervisor launch-brief; do

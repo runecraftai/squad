@@ -14,6 +14,8 @@ TASKS_AXI_BIN=$(command -v tasks-axi || true)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
+tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null \
+  || { echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"; exit 0; }
 
 make_home() {  # <name>
   local home="$TMP_ROOT/$1" fakebin
@@ -400,7 +402,7 @@ test_terminal_single_owner_status_decision_does_not_block_empty_inventory() {
     || fail "terminal single-owner stale status decision blocked teardown: $(cat "$home/terminal-teardown.err")"
 
   XO=sample-XO
-  write_origin_meta "$home" "$XO" XO
+  write_origin_meta "$home" "$XO" xo
   printf 'needs-decision [key=route]: choose route A or route B\ndone: heartbeat complete\n' \
     > "$home/state/$XO.status"
   if run_decisions "$home" complete "$XO" --none \

@@ -140,7 +140,7 @@ done
 # missing or invalid value stops the scaffold rather than silently defaulting.
 if [ "$KIND" = strike ]; then
   [ "$MODE_SET" -eq 1 ] || {
-    echo "error: ship briefs require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
+    echo "error: strike briefs require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
     exit 1
   }
   case "$MODE" in
@@ -151,13 +151,13 @@ if [ "$KIND" = strike ]; then
     *) echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
   esac
 elif [ "$MODE_SET" -eq 1 ]; then
-  echo "error: --mode applies only to ship briefs; a recon delivers a report and an XO charter is not a delivery contract" >&2
+  echo "error: --mode applies only to strike briefs; a recon delivers a report and an XO charter is not a delivery contract" >&2
   exit 1
 fi
 ID=${POS[0]}
 
 if [ "$KIND" = xo ] && [ "$HERDR_LAB" -eq 1 ]; then
-  echo "error: --herdr-lab applies only to operator ship or recon briefs" >&2
+  echo "error: --herdr-lab applies only to operator strike or recon briefs" >&2
   exit 1
 fi
 
@@ -461,4 +461,4 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+echo "scaffolded: $BRIEF (strike, mode=$MODE; replace {TASK})"

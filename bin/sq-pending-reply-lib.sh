@@ -1212,7 +1212,7 @@ fm_pending_reply_tick() {  # <state-dir>
         if [ "$found" = 0 ]; then
           if [ -n "$remote_host" ]; then
             observation=$("$_SQUAD_PENDING_REPLY_LIB_DIR/sq-on.sh" "$task_id" \
-              sq-remote-XO-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
+              sq-remote-xo-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
             case "$observation" in busy|idle|fallback-idle|unknown) ;; *) observation=unknown ;; esac
           else
             observation=$(fm_pending_reply_backend_observation "$backend" "$target" "$label" "$harness")

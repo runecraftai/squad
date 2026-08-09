@@ -2,7 +2,7 @@
 
 Zellij is an experimental explicit-only session backend.
 It provides the terminal session while FOB continues to provide task worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) owns shared selection and metadata semantics.
 
 ## Setup
 
