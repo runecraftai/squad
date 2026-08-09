@@ -36,6 +36,20 @@
 
 SQUAD_TASKS_AXI_MIN=0.2.4
 
+# Resolve the tasks-axi backend command: the forked sq-tasks-axi (M2,
+# T-M2-04) wins when installed; otherwise the legacy tasks-axi name is used
+# so a pre-M2 environment keeps working. The fork keeps the same CLI protocol.
+# Note: runtime call sites keep invoking the bare `tasks-axi` name so PATH
+# shadowing (test fakebin stubs, the CI tasks-axi alias) keeps working; this
+# resolver drives the compatibility probes below.
+fm_tasks_axi_cmd() {
+  if type -P sq-tasks-axi >/dev/null 2>&1; then
+    printf '%s\n' sq-tasks-axi
+  elif type -P tasks-axi >/dev/null 2>&1; then
+    printf '%s\n' tasks-axi
+  fi
+}
+
 SQUAD_TASKS_AXI_COMPATIBLE_MEMO=${SQUAD_TASKS_AXI_COMPATIBLE:-}
 unset SQUAD_TASKS_AXI_COMPATIBLE
 case "$SQUAD_TASKS_AXI_COMPATIBLE_MEMO" in
@@ -44,9 +58,9 @@ case "$SQUAD_TASKS_AXI_COMPATIBLE_MEMO" in
 esac
 
 fm_tasks_axi_version_parts() {
-  local output
-  command -v tasks-axi >/dev/null 2>&1 || return 1
-  output=$(tasks-axi --version 2>/dev/null) || return 1
+  local output cmd
+  cmd=$(fm_tasks_axi_cmd) || return 1
+  output=$("$cmd" --version 2>/dev/null) || return 1
   printf '%s\n' "$output" |
     sed -n 's/.*\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2 \3/p' |
     head -1
@@ -86,16 +100,16 @@ fm_tasks_axi_compatible_probe() {
 }
 
 fm_tasks_axi_update_has_archive_body() {
-  local output
-  command -v tasks-axi >/dev/null 2>&1 || return 1
-  output=$(tasks-axi update --help 2>&1) || return 1
+  local output cmd
+  cmd=$(fm_tasks_axi_cmd) || return 1
+  output=$("$cmd" update --help 2>&1) || return 1
   printf '%s\n' "$output" | grep -F -- '--archive-body' >/dev/null
 }
 
 fm_tasks_axi_mv_has_multi_id() {
-  local output
-  command -v tasks-axi >/dev/null 2>&1 || return 1
-  output=$(tasks-axi mv --help 2>&1) || return 1
+  local output cmd
+  cmd=$(fm_tasks_axi_cmd) || return 1
+  output=$("$cmd" mv --help 2>&1) || return 1
   printf '%s\n' "$output" | grep -F -- '[<id>...]' >/dev/null
 }
 

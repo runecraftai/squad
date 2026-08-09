@@ -1,0 +1,9 @@
+{
+  "name": "fob",
+  "private": true,
+  "scripts": {
+    "build": "go build -o dist/ .",
+    "test": "go test ./...",
+    "lint": "go vet ./..."
+  }
+}

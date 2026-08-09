@@ -1,0 +1,838 @@
+package daemon
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
+	gitpkg "github.com/squad-org/squad/packages/no-mistakes/internal/git"
+	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
+	"github.com/squad-org/squad/packages/no-mistakes/internal/lifecycle"
+	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline/steps"
+	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+)
+
+func TestSubscribeReceivesEvents(t *testing.T) {
+	approvalStep := &mockApprovalStep{name: types.StepReview}
+
+	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step {
+		return []pipeline.Step{approvalStep}
+	})
+
+	_, headSHA := setupTestGitRepo(t, p, d, "testrepo-sub1")
+
+	// Trigger a push to get a run ID.
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	var pushResult ipc.PushReceivedResult
+	err = client.Call(ipc.MethodPushReceived, &ipc.PushReceivedParams{
+		Gate: p.RepoDir("testrepo-sub1"),
+		Ref:  "refs/heads/main",
+		Old:  "0000000000000000000000000000000000000000",
+		New:  headSHA,
+	}, &pushResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for step to reach awaiting_approval.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		steps, _ := d.GetStepsByRun(pushResult.RunID)
+		for _, s := range steps {
+			if s.Status == types.StepStatusAwaitingApproval {
+				goto subscribeNow
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("step never reached awaiting_approval")
+
+subscribeNow:
+	// Subscribe to events for this run.
+	ch, cancelSub, err := ipc.Subscribe(p.Socket(), &ipc.SubscribeParams{RunID: pushResult.RunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelSub()
+
+	// Approve the step to trigger completion events.
+	var respondResult ipc.RespondResult
+	err = client.Call(ipc.MethodRespond, &ipc.RespondParams{
+		RunID:  pushResult.RunID,
+		Step:   types.StepReview,
+		Action: types.ActionApprove,
+	}, &respondResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Collect events until channel closes.
+	var events []ipc.Event
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case event, ok := <-ch:
+			if !ok {
+				goto verifyEvents
+			}
+			events = append(events, event)
+		case <-timeout:
+			t.Fatal("subscriber channel never closed")
+		}
+	}
+
+verifyEvents:
+	if len(events) == 0 {
+		t.Fatal("received no events")
+	}
+	hasRunCompleted := false
+	for _, e := range events {
+		if e.Type == ipc.EventRunCompleted {
+			hasRunCompleted = true
+		}
+		if e.RunID != pushResult.RunID {
+			t.Errorf("event run_id=%q, want %q", e.RunID, pushResult.RunID)
+		}
+	}
+	if !hasRunCompleted {
+		t.Error("never received run_completed event")
+	}
+}
+
+func TestSubscribeToSlowRunReceivesEvents(t *testing.T) {
+	started := make(chan struct{})
+	slowStep := &mockSlowStep{name: types.StepReview, started: started}
+
+	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step {
+		return []pipeline.Step{slowStep}
+	})
+
+	_, headSHA := setupTestGitRepo(t, p, d, "testrepo-sub2")
+
+	// Trigger a push first.
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	var pushResult ipc.PushReceivedResult
+	err = client.Call(ipc.MethodPushReceived, &ipc.PushReceivedParams{
+		Gate: p.RepoDir("testrepo-sub2"),
+		Ref:  "refs/heads/main",
+		Old:  "0000000000000000000000000000000000000000",
+		New:  headSHA,
+	}, &pushResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the slow step to start.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("slow step never started")
+	}
+
+	// Subscribe to the running run.
+	ch, cancelSub, err := ipc.Subscribe(p.Socket(), &ipc.SubscribeParams{RunID: pushResult.RunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelSub()
+
+	// Cancel the run (by sending another push, which cancels active runs).
+	started2 := make(chan struct{})
+	slowStep.started = started2
+
+	var pushResult2 ipc.PushReceivedResult
+	err = client.Call(ipc.MethodPushReceived, &ipc.PushReceivedParams{
+		Gate: p.RepoDir("testrepo-sub2"),
+		Ref:  "refs/heads/main",
+		Old:  "0000000000000000000000000000000000000000",
+		New:  headSHA,
+	}, &pushResult2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The subscriber channel should close when the first run ends.
+	eventCount := 0
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				goto done // channel closed
+			}
+			eventCount++
+		case <-timeout:
+			t.Fatal("subscriber channel never closed")
+		}
+	}
+done:
+	// We should have received at least the run events before channel closed.
+	// The exact count depends on timing, but the channel MUST close.
+}
+
+func TestSubscribeToCompletedRunYieldsOneGapThenCloses(t *testing.T) {
+	// Use a fast step so the run completes quickly.
+	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step {
+		return []pipeline.Step{&mockPassStep{name: types.StepTest}}
+	})
+
+	_, headSHA := setupTestGitRepo(t, p, d, "testrepo-sub-done")
+
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	var pushResult ipc.PushReceivedResult
+	err = client.Call(ipc.MethodPushReceived, &ipc.PushReceivedParams{
+		Gate: p.RepoDir("testrepo-sub-done"),
+		Ref:  "refs/heads/main",
+		Old:  "0000000000000000000000000000000000000000",
+		New:  headSHA,
+	}, &pushResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the run to complete by polling get_run.
+	deadline := time.After(10 * time.Second)
+	for {
+		var result ipc.GetRunResult
+		if err := client.Call(ipc.MethodGetRun, &ipc.GetRunParams{RunID: pushResult.RunID}, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Run != nil && (result.Run.Status == types.RunCompleted || result.Run.Status == types.RunFailed || result.Run.Status == types.RunCancelled) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("run did not complete in time")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	// Subscribe to the already-completed run. Every subscription opens with
+	// one stream-gap frame so the subscriber gets exactly one chance to
+	// reconcile the terminal state, and then the stream closes.
+	ch, cancelSub, err := ipc.Subscribe(p.Socket(), &ipc.SubscribeParams{RunID: pushResult.RunID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelSub()
+
+	select {
+	case first, ok := <-ch:
+		if !ok {
+			t.Fatal("expected one stream-gap frame before the stream closes")
+		}
+		if first.Type != ipc.EventStreamGap {
+			t.Fatalf("first frame = %s, want %s", first.Type, ipc.EventStreamGap)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no frame for completed run")
+	}
+
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("expected the stream to close after the single gap frame")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("channel was not closed for completed run")
+	}
+}
+
+func TestRecoverStaleRunsOnStartup(t *testing.T) {
+	// Set up a DB with stale runs BEFORE starting the daemon.
+	tmpDir, err := os.MkdirTemp("", "dtest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+
+	p := paths.WithRoot(tmpDir)
+	if err := p.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a "running" run with in-progress steps (simulating a crash).
+	repo, err := d.InsertRepoWithID("stale-repo", "/tmp/stale-repo", "https://github.com/test/stale", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleRun, err := d.InsertRun(repo.ID, "feature", "abc123", "def456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.UpdateRunStatus(staleRun.ID, types.RunRunning)
+	staleStep, err := d.InsertStepResult(staleRun.ID, types.StepReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.StartStep(staleStep.ID)
+
+	d.Close()
+
+	// Start daemon — it should recover the stale run.
+	d, err = db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunWithOptions(p, d, func() []pipeline.Step {
+			return []pipeline.Step{&mockPassStep{name: types.StepReview}}
+		})
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(p.Socket()); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Cleanup(func() {
+		client, err := ipc.Dial(p.Socket())
+		if err == nil {
+			client.Call(ipc.MethodShutdown, &ipc.ShutdownParams{}, nil)
+			client.Close()
+		}
+		select {
+		case <-errCh:
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not stop within 3s")
+		}
+	})
+
+	// Verify the stale run was marked as failed.
+	run, err := d.GetRun(staleRun.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != types.RunFailed {
+		t.Errorf("stale run status = %q, want %q", run.Status, types.RunFailed)
+	}
+	if run.Error == nil || *run.Error != "daemon crashed during execution" {
+		t.Errorf("stale run error = %v, want %q", run.Error, "daemon crashed during execution")
+	}
+
+	// Verify the stale step was marked as failed.
+	step, err := d.GetStepResult(staleStep.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step.Status != types.StepStatusFailed {
+		t.Errorf("stale step status = %q, want %q", step.Status, types.StepStatusFailed)
+	}
+}
+
+func TestRecoverOnStartup_FinalizesLegacyTerminalPRRun(t *testing.T) {
+	for _, state := range []string{"merged", "closed"} {
+		t.Run(state, func(t *testing.T) {
+			root, err := os.MkdirTemp("", "dtest")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(root) })
+			p := paths.WithRoot(root)
+			if err := p.EnsureDirs(); err != nil {
+				t.Fatal(err)
+			}
+			database, err := db.Open(p.DB())
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo, err := database.InsertRepoWithID("terminal-pr-"+state, t.TempDir(), "https://github.com/test/repo", "main")
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := database.InsertRun(repo.ID, "feature", "abc123", "def456")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := database.UpdateRunPRState(run.ID, state); err != nil {
+				t.Fatal(err)
+			}
+			// Recreate a legacy interrupted row after the current writer has run:
+			// terminal PR truth was durable, but status was still running.
+			if err := database.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
+				t.Fatal(err)
+			}
+			ci, err := database.InsertStepResult(run.ID, types.StepCI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := database.StartStep(ci.ID); err != nil {
+				t.Fatal(err)
+			}
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- RunWithOptions(p, database, func() []pipeline.Step { return []pipeline.Step{&mockPassStep{name: types.StepCI}} })
+			}()
+			defer func() {
+				client, dialErr := ipc.Dial(p.Socket())
+				if dialErr == nil {
+					_ = client.Call(ipc.MethodShutdown, &ipc.ShutdownParams{}, nil)
+					_ = client.Close()
+				}
+				select {
+				case <-errCh:
+				case <-time.After(3 * time.Second):
+					t.Error("isolated daemon did not stop")
+				}
+				_ = database.Close()
+			}()
+
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				if _, statErr := os.Stat(p.Socket()); statErr == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("isolated daemon did not become ready")
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+
+			got, err := database.GetRun(run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != types.RunCompleted || got.PRState == nil || *got.PRState != state {
+				t.Fatalf("startup reconciliation = status %s pr_state %v, want completed/%s", got.Status, got.PRState, state)
+			}
+			gotCI, err := database.GetStepResult(ci.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotCI.Status != types.StepStatusCompleted {
+				t.Fatalf("startup reconciliation CI status = %s, want completed", gotCI.Status)
+			}
+			active, err := lifecycle.ActiveRuns(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(active) != 0 {
+				t.Fatalf("startup reconciliation retained active runs: %+v", active)
+			}
+		})
+	}
+}
+
+func TestRecoverOnStartup_ResumesParkedRun(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dtest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+	p := paths.WithRoot(tmpDir)
+	if err := p.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	mockClaude := writeMockClaude(t, t.TempDir())
+	if err := os.WriteFile(p.ConfigFile(), []byte("agent: claude\nagent_path_override:\n  claude: "+mockClaude+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	repo, headSHA := setupTestGitRepo(t, p, d, "resume-parked-run")
+	run, err := d.InsertRun(repo.ID, "main", headSHA, headSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
+		t.Fatal(err)
+	}
+	worktree := p.WorktreeDir(repo.ID, run.ID)
+	if err := gitpkg.WorktreeAdd(context.Background(), p.RepoDir(repo.ID), worktree, headSHA); err != nil {
+		t.Fatal(err)
+	}
+	step, err := d.InsertStepResult(run.ID, types.StepReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.StartStep(step.ID); err != nil {
+		t.Fatal(err)
+	}
+	findings := `{"findings":[{"id":"review-1","severity":"warning","description":"needs approval","action":"ask-user"}],"summary":"needs approval"}`
+	if err := d.SetStepFindings(step.ID, findings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.InsertReviewStepRound(step.ID, 1, "initial", &findings, nil, headSHA, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.UpdateStepStatusWithDuration(step.ID, types.StepStatusAwaitingApproval, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetRunAwaitingAgent(run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.UpsertRunAgentSession(run.ID, string(pipeline.SessionRoleReviewer), "codex", "legacy-reviewer-session"); err != nil {
+		t.Fatal(err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunWithOptions(p, d, func() []pipeline.Step {
+			return []pipeline.Step{&mockApprovalStep{name: types.StepReview}}
+		})
+	}()
+	defer func() {
+		client, err := ipc.Dial(p.Socket())
+		if err == nil {
+			_ = client.Call(ipc.MethodShutdown, &ipc.ShutdownParams{}, nil)
+			_ = client.Close()
+		}
+		select {
+		case <-errCh:
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not stop")
+		}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var lastErr error
+	for {
+		if time.Now().After(deadline) {
+			recovered, getErr := d.GetRun(run.ID)
+			t.Fatalf("recovered gate never accepted an approval: last error %v, run %#v, get run error %v", lastErr, recovered, getErr)
+		}
+		client, err := ipc.Dial(p.Socket())
+		if err == nil {
+			var response ipc.RespondResult
+			err = client.Call(ipc.MethodRespond, &ipc.RespondParams{
+				RunID:  run.ID,
+				Step:   types.StepReview,
+				Action: types.ActionApprove,
+			}, &response)
+			_ = client.Close()
+			if err == nil {
+				break
+			}
+			lastErr = err
+		} else {
+			lastErr = err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	completed := waitForRunTerminalState(t, d, run.ID)
+	if completed.Status != types.RunCompleted {
+		t.Fatalf("recovered run status = %s, want completed", completed.Status)
+	}
+	if completed.AwaitingAgentSince != nil {
+		t.Fatal("recovered run remained parked after approval")
+	}
+	if completed.ReviewApprovedHeadSHA == nil || *completed.ReviewApprovedHeadSHA != headSHA {
+		t.Fatalf("recovered review approval = %#v, want %s", completed.ReviewApprovedHeadSHA, headSHA)
+	}
+	// The executor marks the run terminal before its owner goroutine performs
+	// worktree cleanup. Wait for that cleanup rather than assuming it completed
+	// in the same scheduling slice, which is especially unreliable on Windows.
+	cleanupDeadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(worktree); os.IsNotExist(err) {
+			break
+		} else if err != nil {
+			t.Fatalf("stat recovered worktree: %v", err)
+		}
+		if time.Now().After(cleanupDeadline) {
+			t.Fatalf("recovered worktree still exists after cleanup: %s", worktree)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestRecoverOnStartup_ReconcilesHistoricalCIGateFromCurrentPRState(t *testing.T) {
+	for _, state := range []string{"MERGED", "CLOSED"} {
+		t.Run(state, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "dtest")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+			p := paths.WithRoot(tmpDir)
+			if err := p.EnsureDirs(); err != nil {
+				t.Fatal(err)
+			}
+			mockClaude := writeMockClaude(t, t.TempDir())
+			if err := os.WriteFile(p.ConfigFile(), []byte("agent: claude\nagent_path_override:\n  claude: "+mockClaude+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			d, err := db.Open(p.DB())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer d.Close()
+			repo, headSHA := setupTestGitRepo(t, p, d, "reconcile-parked-ci-"+strings.ToLower(state))
+			run, err := d.InsertRun(repo.ID, "feature", headSHA, headSHA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := d.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.UpdateRunPRURL(run.ID, "https://github.com/test/repo/pull/42"); err != nil {
+				t.Fatal(err)
+			}
+			prURL := "https://github.com/test/repo/pull/42"
+			run.PRURL = &prURL
+			worktree := p.WorktreeDir(repo.ID, run.ID)
+			if err := gitpkg.WorktreeAdd(context.Background(), p.RepoDir(repo.ID), worktree, headSHA); err != nil {
+				t.Fatal(err)
+			}
+			step, err := d.InsertStepResult(run.ID, types.StepCI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := d.StartStep(step.ID); err != nil {
+				t.Fatal(err)
+			}
+			findings := `{"findings":[{"id":"ci-1","severity":"warning","description":"PR was still open when CI monitoring timed out","action":"ask-user"}],"summary":"CI monitoring timed out before PR was merged or closed"}`
+			if err := d.SetStepFindings(step.ID, findings); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := d.InsertStepRound(step.ID, 1, "initial", &findings, nil, 1); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.UpdateStepStatusWithDuration(step.ID, types.StepStatusAwaitingApproval, 1); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.SetRunAwaitingAgent(run.ID); err != nil {
+				t.Fatal(err)
+			}
+
+			ghDir, ghLog := writeMockGHState(t, t.TempDir(), state)
+			t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- RunWithOptions(p, d, func() []pipeline.Step { return []pipeline.Step{&steps.CIStep{}} })
+			}()
+			defer func() {
+				client, dialErr := ipc.Dial(p.Socket())
+				if dialErr == nil {
+					_ = client.Call(ipc.MethodShutdown, &ipc.ShutdownParams{}, nil)
+					_ = client.Close()
+				}
+				select {
+				case <-errCh:
+				case <-time.After(3 * time.Second):
+					t.Error("daemon did not stop")
+				}
+			}()
+
+			completed := waitForRunTerminalState(t, d, run.ID)
+			if completed.Status != types.RunCompleted || completed.AwaitingAgentSince != nil {
+				t.Fatalf("historical CI gate after %s reconciliation = status %s awaiting %v", state, completed.Status, completed.AwaitingAgentSince)
+			}
+			active, err := lifecycle.ActiveRuns(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(active) != 0 {
+				t.Fatalf("update guard still sees %d active runs after reconciliation", len(active))
+			}
+			logData, err := os.ReadFile(ghLog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(logData), "pr view 42") {
+				t.Fatalf("startup reconciliation did not read current PR state: %s", logData)
+			}
+		})
+	}
+}
+
+func TestRecoverCleansUpOrphanedWorktrees(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dtest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(tmpDir) })
+
+	p := paths.WithRoot(tmpDir)
+	if err := p.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create orphaned worktree directories.
+	orphanDir := p.WorktreeDir("some-repo", "some-run")
+	if err := os.MkdirAll(orphanDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(orphanDir, "test.txt"), []byte("orphan"), 0o644)
+
+	d, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunWithOptions(p, d, func() []pipeline.Step {
+			return []pipeline.Step{&mockPassStep{name: types.StepReview}}
+		})
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(p.Socket()); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Cleanup(func() {
+		client, err := ipc.Dial(p.Socket())
+		if err == nil {
+			client.Call(ipc.MethodShutdown, &ipc.ShutdownParams{}, nil)
+			client.Close()
+		}
+		select {
+		case <-errCh:
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not stop within 3s")
+		}
+	})
+
+	// Orphaned worktree directory should be removed.
+	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
+		t.Errorf("orphaned worktree dir still exists: %s", orphanDir)
+	}
+}
+
+// TestRecoverIsolatesGateRepoHooksPath covers issue #122 for existing
+// installs: bare repos created before the fix have no per-worktree
+// core.hookspath, so a husky pollution still disables their hook.
+// Daemon startup must migrate them in place.
+func TestRecoverIsolatesGateRepoHooksPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := paths.WithRoot(tmpDir)
+	if err := p.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an existing install: a bare repo created the old way
+	// (without IsolateHooksPath) whose shared local config has been
+	// poisoned by husky during a prior pipeline run.
+	bareDir := p.RepoDir("legacy-repo")
+	ctx := context.Background()
+	if err := gitpkg.InitBare(ctx, bareDir); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", bareDir, "config", "core.hookspath", ".husky/_").CombinedOutput(); err != nil {
+		t.Fatalf("seed poisoned config: %v: %s", err, out)
+	}
+
+	database, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrateGateConfigs(ctx, database, p)
+
+	// Effective core.hookspath should now resolve to the bare's hooks dir.
+	out, err := exec.Command("git", "-C", bareDir, "config", "--get", "core.hookspath").Output()
+	if err != nil {
+		t.Fatalf("get core.hookspath: %v", err)
+	}
+	want, err := filepath.Abs(filepath.Join(bareDir, "hooks"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Errorf("after migration, core.hookspath = %q, want %q", got, want)
+	}
+	out, err = exec.Command("git", "-C", bareDir, "config", "--get", "receive.advertisePushOptions").Output()
+	if err != nil {
+		t.Fatalf("get receive.advertisePushOptions: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "true" {
+		t.Fatalf("receive.advertisePushOptions = %q, want true", got)
+	}
+}
+
+func TestRecoverRefreshesLegacyManagedGateHook(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := paths.WithRoot(tmpDir)
+	if err := p.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+
+	bareDir := p.RepoDir("legacy-repo")
+	ctx := context.Background()
+	if err := gitpkg.InitBare(ctx, bareDir); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(bareDir, "hooks", "post-receive")
+	legacyHook := `#!/bin/sh
+# no-mistakes post-receive hook
+# Notify daemon of push. Non-blocking - push always succeeds.
+NM_BIN='/usr/local/bin/no-mistakes'
+while read oldrev newrev refname; do
+  NM_HOOK_HELPER=1 "$NM_BIN" daemon notify-push \
+    --gate "$(pwd)" \
+    --ref "$refname" \
+    --old "$oldrev" \
+    --new "$newrev" >/dev/null 2>&1 || true
+done
+exit 0
+`
+	if err := os.WriteFile(hookPath, []byte(legacyHook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrateGateConfigs(ctx, database, p)
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "GIT_PUSH_OPTION_COUNT") {
+		t.Fatalf("migrated hook should forward git push options, got:\n%s", content)
+	}
+	if !strings.Contains(content, "--push-option") {
+		t.Fatalf("migrated hook should pass push options to notify-push, got:\n%s", content)
+	}
+	if strings.Contains(content, ">/dev/null 2>&1 || true") {
+		t.Fatalf("migrated hook should not silently swallow notify-push errors, got:\n%s", content)
+	}
+}

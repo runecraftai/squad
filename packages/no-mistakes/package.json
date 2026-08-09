@@ -1,0 +1,9 @@
+{
+  "name": "no-mistakes",
+  "private": true,
+  "scripts": {
+    "build": "go build -o dist/ ./cmd/no-mistakes",
+    "test": "go test ./...",
+    "lint": "go vet ./..."
+  }
+}

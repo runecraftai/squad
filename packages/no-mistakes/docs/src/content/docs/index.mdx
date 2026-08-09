@@ -1,0 +1,65 @@
+---
+title: git push no-mistakes
+description: Kill all the slop. Raise clean PR.
+template: splash
+hero:
+  tagline: Kill all the slop. Raise clean PR.
+  actions:
+    - text: Get Started
+      link: /no-mistakes/start-here/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/squad-org/squad/packages/no-mistakes
+      icon: external
+---
+
+## The bottleneck has moved
+
+AI agents generate mountains of code. Some of it is brilliant. Some of it is
+slop. You can't tell which is which at 5,000 lines per diff. The bottleneck
+isn't writing code anymore. It's reviewing and validating it.
+
+Most of that quality infrastructure still lives in the outer loop, after the
+branch is already public. `no-mistakes` moves more of that loop closer to where
+you are working.
+
+```mermaid
+flowchart LR
+  subgraph before[" Before "]
+    direction TB
+    A["Local branch"] -->|"git push origin"| B["Remote branch"]
+    B --> C["CI + review churn"]
+    C --> D["More pushes"]
+    D --> A
+  end
+
+  subgraph after[" With no-mistakes "]
+    direction TB
+    E["Local branch"] -->|"git push no-mistakes"| F["Local gate"]
+    F --> G["Rebase, review, test, docs, lint"]
+    G --> H["Push branch + open PR"]
+    H --> I["Watch CI + auto-fix"]
+  end
+
+  before ~~~ after
+```
+
+## What happens to a gated push
+
+A gated push turns a rough branch into a clean PR:
+
+| Before the gate | After the gate |
+|---|---|
+| Raw branch diff | Rebases onto fresh upstream and pushed branch |
+| Bugs and tech debt | AI review catches problems early |
+| Uneven test coverage | Regression + new tests executed |
+| Missing docs | Documentation kept up to date |
+| Formatting and lint churn | Linter and formatter done before push |
+| Manually raise and babysit PR | PR opened and CI watched automatically |
+
+## Start here
+
+- [Quick Start](/no-mistakes/start-here/quick-start/) - first gated push in a few minutes
+- [Introduction](/no-mistakes/start-here/introduction/) - why the tool exists and how to think about it
+- [The Gate Model](/no-mistakes/concepts/gate-model/) - architecture, push flow, and design choices

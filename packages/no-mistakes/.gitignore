@@ -1,0 +1,33 @@
+# Build output
+bin/
+tmp/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Demo intermediate
+demo_raw.gif
+
+# Environment
+.env
+.env.local

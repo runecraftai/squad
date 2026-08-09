@@ -1,0 +1,16 @@
+{
+  "name": "squad",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
+  },
+  "packageManager": "bun@1.2.0",
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}

@@ -139,7 +139,7 @@ next_attempt_rfc3339() {
 
 require_tools() {
   command -v jq >/dev/null 2>&1 || die "jq is required" 1
-  command -v tasks-axi >/dev/null 2>&1 || die "tasks-axi is required" 1
+  fm_tasks_axi_cmd >/dev/null 2>&1 || die "tasks-axi is required (install the sq-tasks-axi fork or legacy tasks-axi)" 1
 }
 
 # Every tasks-axi call runs from the home whose backlog owns the obligation, the
@@ -432,7 +432,7 @@ cmd_pending() {
   local listing id payload delivery task_state summary platform request printed=0
   # An unreadable backlog with registrations present is exactly the silence this
   # whole path exists to prevent, so say so rather than printing nothing.
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tasks-axi >/dev/null 2>&1 \
+  if ! command -v jq >/dev/null 2>&1 || ! fm_tasks_axi_cmd >/dev/null 2>&1 \
       || ! listing=$(tx public-followup list --json 2>/dev/null) || [ -z "$listing" ] \
       || ! printf '%s' "$listing" | jq -e '
         type == "object"
@@ -819,7 +819,7 @@ cmd_guard_work() {
 
   # From here the work IS bound to a public promise, so an unreadable state is a
   # blocking answer, not a pass: cleanup must never proceed on a guess.
-  if ! command -v jq >/dev/null 2>&1 || ! command -v tasks-axi >/dev/null 2>&1; then
+  if ! command -v jq >/dev/null 2>&1 || ! fm_tasks_axi_cmd >/dev/null 2>&1; then
     printf 'cannot verify the public commitments bound to %s/%s: jq and tasks-axi are required\n' \
       "$work_home" "$work_id"
     exit 3

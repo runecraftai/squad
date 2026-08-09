@@ -40,8 +40,8 @@ All decisions below are **FINAL** (user-confirmed). They were captured before pl
 
 | # | Question | Where it lands |
 | --- | --- | --- |
-| OQ-01 | Exact new Go module path for fob / no-mistakes forks (AD-005) | M2 execution; default recommended, executor confirms once |
-| OQ-02 | Exact npm package name for the tasks-axi fork (AD-006) | M4 publish; verify availability before publish |
+| OQ-01 | Exact new Go module path for fob / no-mistakes forks (AD-005) | ✅ **Resolved at M2:** `github.com/squad-org/squad/packages/fob` and `github.com/squad-org/squad/packages/no-mistakes` (recommended default confirmed; placeholder org until OQ-03 lands) |
+| OQ-02 | Exact npm package name for the tasks-axi fork (AD-006) | ✅ **Resolved at M2:** `sq-tasks-axi` (bin `sq-tasks-axi`); availability re-verified at M4 publish |
 | OQ-03 | Squad GitHub org / repository URL (needed for README clone URL, Release assets, badge links) | M0/M4; placeholder `<squad-org>/squad` used until known |
 
 ## Decisions explicitly NOT made (by user order)

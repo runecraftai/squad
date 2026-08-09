@@ -1,0 +1,605 @@
+// Package github implements scm.Host backed by the gh CLI.
+package github
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+)
+
+// CmdFactory builds an exec.Cmd in the caller's workdir with the caller's env.
+type CmdFactory func(ctx context.Context, name string, args ...string) *exec.Cmd
+
+// Host talks to GitHub through the gh CLI.
+type Host struct {
+	cmd          CmdFactory
+	cliAvailable func() bool
+	host         string // repo's GitHub hostname; scopes the auth check
+	repo         string // "owner/name" slug for --repo; empty when unknown
+	forkOwner    string // fork owner for cross-repository PR heads
+}
+
+// New builds a Host. cliAvailable reports whether the gh binary is
+// resolvable on the caller's PATH (possibly overridden by env). host is the
+// repo's GitHub hostname; when set the availability check is scoped to it via
+// --hostname so a stale credential for an unrelated configured gh host cannot
+// make this repo look unauthenticated. repo is the "owner/name" slug; when set
+// it is passed via --repo to every PR/run command so they resolve the right
+// repository regardless of the process working directory. The daemon runs from
+// a fixed, non-repo working dir, so without this gh cannot infer the repo (or
+// branch) and fails on every poll. host is optional; empty reproduces the
+// legacy unscoped auth-check behavior.
+func New(cmd CmdFactory, cliAvailable func() bool, host, repo string) *Host {
+	return &Host{
+		cmd:          cmd,
+		cliAvailable: cliAvailable,
+		host:         strings.TrimSpace(host),
+		repo:         strings.TrimSpace(repo),
+	}
+}
+
+// NewWithFork builds a Host that opens PRs on repo using forkRepo as the head
+// repository owner. forkRepo is an "owner/name" slug; only the owner is needed
+// because gh pr create expects --head <owner>:<branch>. host is optional; see
+// New for its role in scoping the auth check.
+func NewWithFork(cmd CmdFactory, cliAvailable func() bool, host, repo, forkRepo string) *Host {
+	h := New(cmd, cliAvailable, host, repo)
+	h.forkOwner = repoOwner(forkRepo)
+	return h
+}
+
+// RepoSlug extracts the "owner/name" identifier from a GitHub remote or PR URL.
+// It supports https URLs, scp-style ssh URLs (git@github.com:owner/name.git),
+// ssh:// URLs, and longer paths such as PR links (the leading two path segments
+// are used). It returns "" when the input has no owner/name pair.
+func RepoSlug(remoteURL string) string {
+	raw := strings.TrimSpace(remoteURL)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimSuffix(raw, ".git")
+
+	// Reduce raw to the path portion after the host.
+	switch {
+	case strings.Contains(raw, "://"):
+		rest := raw[strings.Index(raw, "://")+len("://"):]
+		slash := strings.IndexByte(rest, '/')
+		if slash < 0 {
+			return ""
+		}
+		raw = rest[slash+1:]
+	case strings.Contains(raw, ":"):
+		// scp-style ssh: [user@]host:owner/name
+		raw = raw[strings.IndexByte(raw, ':')+1:]
+	}
+
+	parts := strings.Split(strings.Trim(raw, "/"), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	owner, name := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	if owner == "" || name == "" {
+		return ""
+	}
+	return owner + "/" + name
+}
+
+// HostPrefixedSlug returns "host/owner/name" for GitHub Enterprise Server
+// instances and plain "owner/name" for github.com. This is the format that
+// the gh CLI's --repo flag requires for GHE.
+func HostPrefixedSlug(remoteURL string) string {
+	return HostPrefixedSlugForHost(remoteURL, scm.ExtractHost(remoteURL))
+}
+
+// HostPrefixedSlugForHost is HostPrefixedSlug using an already-resolved host.
+// This lets callers honor SSH HostName aliases without rewriting the remote.
+func HostPrefixedSlugForHost(remoteURL, host string) string {
+	slug := RepoSlug(remoteURL)
+	if slug == "" {
+		return ""
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || strings.EqualFold(host, "github.com") {
+		return slug
+	}
+	return host + "/" + slug
+}
+
+// repoArgs returns the --repo flag pair when the slug is known, so gh commands
+// resolve the right repository regardless of the process working directory.
+func (h *Host) repoArgs() []string {
+	if h.repo == "" {
+		return nil
+	}
+	return []string{"--repo", h.repo}
+}
+
+// prSelector returns the explicit gh PR selector for pr, preferring the numeric
+// PR number and falling back to the canonical PR URL; both name the exact pull
+// request to gh regardless of the process working directory. It fails closed
+// when neither is known: an empty positional makes `gh pr <verb>` fall back to
+// resolving the current branch of the cwd, and the daemon runs from a detached
+// bare gate repo whose HEAD is the default branch (main), so an inferred
+// selector silently targets the wrong PR (or none — "no pull requests found for
+// branch main") instead of the feature PR the pipeline already knows.
+func prSelector(pr *scm.PR) (string, error) {
+	if pr != nil {
+		if n := strings.TrimSpace(pr.Number); n != "" {
+			return n, nil
+		}
+		if u := strings.TrimSpace(pr.URL); u != "" {
+			return u, nil
+		}
+	}
+	return "", errors.New("no PR number or URL known; refusing to run gh with a cwd-inferred branch")
+}
+
+func (h *Host) headRef(branch string) string {
+	if h.forkOwner == "" {
+		return branch
+	}
+	return h.forkOwner + ":" + branch
+}
+
+func repoOwner(slug string) string {
+	owner, _, ok := strings.Cut(strings.TrimSpace(slug), "/")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(owner)
+}
+
+func (h *Host) Provider() scm.Provider { return scm.ProviderGitHub }
+
+func (h *Host) Capabilities() scm.Capabilities {
+	return scm.Capabilities{MergeableState: true, FailedCheckLogs: true}
+}
+
+func (h *Host) Available(ctx context.Context) error {
+	if h.cliAvailable != nil && !h.cliAvailable() {
+		return errors.New("gh CLI is not installed")
+	}
+	// Scope the auth check to this repo's host. Unscoped `gh auth status`
+	// checks every authenticated account and exits non-zero if ANY of them has
+	// a stale/expired token, even when this repo's own host is fully
+	// authenticated. Passing --hostname keeps an unrelated bad credential from
+	// poisoning availability for this repo. When the host is unknown we fall
+	// back to the unscoped check (fail-safe: same behavior as before).
+	authArgs := []string{"auth", "status"}
+	if h.host != "" {
+		authArgs = append(authArgs, "--hostname", h.host)
+	}
+	if err := h.cmd(ctx, "gh", authArgs...).Run(); err != nil {
+		return errors.New("gh CLI is not authenticated")
+	}
+	return nil
+}
+
+func (h *Host) FindPR(ctx context.Context, branch, base string) (*scm.PR, error) {
+	args := []string{"pr", "list", "--head", branch}
+	if strings.TrimSpace(base) != "" {
+		args = append(args, "--base", base)
+	}
+	args = append(args, h.repoArgs()...)
+	jsonFields := "number,url"
+	if h.forkOwner != "" {
+		jsonFields = "number,url,headRefName,headRepositoryOwner"
+	}
+	args = append(args, "--state", "open", "--json", jsonFields)
+	cmd := h.cmd(ctx, "gh", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh pr list: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	var prs []struct {
+		Number              int    `json:"number"`
+		URL                 string `json:"url"`
+		HeadRefName         string `json:"headRefName"`
+		HeadRepositoryOwner *struct {
+			Login string `json:"login"`
+		} `json:"headRepositoryOwner"`
+	}
+	if err := json.Unmarshal(out, &prs); err != nil || len(prs) == 0 {
+		return nil, nil
+	}
+	for _, candidate := range prs {
+		if !h.matchesHead(candidate.HeadRefName, candidate.HeadRepositoryOwner, branch) {
+			continue
+		}
+		pr := &scm.PR{URL: strings.TrimSpace(candidate.URL)}
+		if candidate.Number > 0 {
+			pr.Number = fmt.Sprintf("%d", candidate.Number)
+		} else if num, nerr := scm.ExtractPRNumber(pr.URL); nerr == nil {
+			pr.Number = num
+		}
+		if pr.URL == "" {
+			return nil, nil
+		}
+		return pr, nil
+	}
+	return nil, nil
+}
+
+func (h *Host) matchesHead(headRefName string, owner *struct {
+	Login string `json:"login"`
+}, branch string) bool {
+	if h.forkOwner == "" {
+		return true
+	}
+	if strings.TrimSpace(headRefName) != "" && headRefName != branch {
+		return false
+	}
+	if owner == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(owner.Login), h.forkOwner)
+}
+
+func (h *Host) CreatePR(ctx context.Context, branch, base string, content scm.PRContent) (*scm.PR, error) {
+	args := append([]string{"pr", "create",
+		"--head", h.headRef(branch),
+		"--base", base,
+	}, h.repoArgs()...)
+	args = append(args, "--title", content.Title, "--body-file", "-")
+	cmd := h.cmd(ctx, "gh", args...)
+	cmd.Stdin = strings.NewReader(content.Body)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh pr create: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	url := strings.TrimSpace(string(out))
+	pr := &scm.PR{URL: url}
+	if num, nerr := scm.ExtractPRNumber(url); nerr == nil {
+		pr.Number = num
+	}
+	return pr, nil
+}
+
+func (h *Host) UpdatePR(ctx context.Context, pr *scm.PR, content scm.PRContent) (*scm.PR, error) {
+	selector, err := prSelector(pr)
+	if err != nil {
+		return nil, err
+	}
+	args := append([]string{"pr", "edit", selector}, h.repoArgs()...)
+	args = append(args, "--title", content.Title, "--body-file", "-")
+	cmd := h.cmd(ctx, "gh", args...)
+	cmd.Stdin = strings.NewReader(content.Body)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("gh pr edit: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return pr, nil
+}
+
+func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {
+	selector, err := prSelector(pr)
+	if err != nil {
+		return "", err
+	}
+	args := append([]string{"pr", "view", selector}, h.repoArgs()...)
+	args = append(args, "--json", "state", "--jq", ".state")
+	cmd := h.cmd(ctx, "gh", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("gh pr view: %w", err)
+	}
+	return normalizePRState(strings.TrimSpace(string(out))), nil
+}
+
+func (h *Host) GetChecks(ctx context.Context, pr *scm.PR) ([]scm.Check, error) {
+	selector, err := prSelector(pr)
+	if err != nil {
+		return nil, err
+	}
+	args := append([]string{"pr", "checks", selector}, h.repoArgs()...)
+	args = append(args, "--json", "name,state,bucket,completedAt,link")
+	cmd := h.cmd(ctx, "gh", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "no checks reported") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("gh pr checks: %w", err)
+	}
+	var raw []struct {
+		Name        string `json:"name"`
+		State       string `json:"state"`
+		Bucket      string `json:"bucket"`
+		CompletedAt string `json:"completedAt"`
+		Link        string `json:"link"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parse CI checks: %w", err)
+	}
+	checks := make([]scm.Check, 0, len(raw))
+	for _, r := range raw {
+		var completedAt time.Time
+		if r.CompletedAt != "" {
+			if parsed, parseErr := time.Parse(time.RFC3339, r.CompletedAt); parseErr == nil {
+				completedAt = parsed
+			}
+		}
+		checks = append(checks, scm.Check{
+			Name:        r.Name,
+			Bucket:      normalizeCheckBucket(r.Bucket, r.State),
+			State:       strings.ToUpper(strings.TrimSpace(r.State)),
+			CompletedAt: completedAt,
+			Link:        strings.TrimSpace(r.Link),
+		})
+	}
+	return checks, nil
+}
+
+// RerunCheck re-runs the Actions job behind check for the same commit, so a
+// check the provider cancelled rather than failed can be retried without a new
+// push. The job is identified from the check's details link, which is the only
+// run/job identity `gh pr checks` reports: a link naming a job re-runs just that
+// job (and its dependencies), and a link naming only a run re-runs that run's
+// failed jobs. Anything else - a third-party status pointing at an external
+// dashboard, or a run path this backend cannot read - names no re-runnable job,
+// and the error says so rather than falling back to a wider rerun.
+func (h *Host) RerunCheck(ctx context.Context, _ *scm.PR, check scm.Check) error {
+	rerunArgs, ok := rerunTargetArgs(check.Link)
+	if !ok {
+		return fmt.Errorf("check %q has no GitHub Actions job to re-run", check.Name)
+	}
+	args := append([]string{"run", "rerun"}, rerunArgs...)
+	args = append(args, h.repoArgs()...)
+	cmd := h.cmd(ctx, "gh", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("gh run rerun: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// rerunTargetArgs turns a check's details link into the `gh run rerun`
+// arguments that re-run exactly that work, or reports that the link names
+// nothing this backend can re-run.
+func rerunTargetArgs(link string) ([]string, bool) {
+	runID, jobID, ok := actionsRerunTarget(link)
+	switch {
+	case !ok:
+		return nil, false
+	case jobID != "":
+		return []string{"--job", jobID}, true
+	default:
+		return []string{runID, "--failed"}, true
+	}
+}
+
+// actionsRerunTarget resolves the Actions run, and where possible the exact job,
+// that a check's details URL names. It parses the URL and reads only its path:
+// a real details URL routinely carries a query (?check_suite_focus=true) or a
+// step fragment (#step:4:12), and neither belongs to the job identity.
+//
+// Only ".../actions/runs/<run-id>/job/<id>" yields a job id, because that `id`
+// is the job's databaseId, which is what `gh run rerun --job` requires. Two
+// shapes are deliberately rejected rather than downgraded to the whole run:
+// the browser's ".../runs/<run-id>/jobs/<n>" form, whose number is a per-run
+// display index the API answers with 404, and any other unrecognized path under
+// a run. Re-running a run re-runs every failed job in it, so widening one
+// check's rerun into all of them on an unparsable link is a blast radius this
+// policy must not take; a link that names only the run itself is the one case
+// where that is exactly what it points at.
+func actionsRerunTarget(link string) (runID, jobID string, ok bool) {
+	parsed, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return "", "", false
+	}
+	const runsSegment = "/actions/runs/"
+	idx := strings.Index(parsed.Path, runsSegment)
+	if idx < 0 {
+		return "", "", false
+	}
+	segments := strings.Split(strings.Trim(parsed.Path[idx+len(runsSegment):], "/"), "/")
+	if len(segments) == 0 || !isNumericID(segments[0]) {
+		return "", "", false
+	}
+	runID = segments[0]
+	switch {
+	case len(segments) == 1:
+		return runID, "", true
+	case len(segments) == 3 && segments[1] == "job" && isNumericID(segments[2]):
+		return runID, segments[2], true
+	default:
+		return "", "", false
+	}
+}
+
+func isNumericID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *Host) GetMergeableState(ctx context.Context, pr *scm.PR) (scm.MergeableState, error) {
+	selector, err := prSelector(pr)
+	if err != nil {
+		return "", err
+	}
+	args := append([]string{"pr", "view", selector}, h.repoArgs()...)
+	args = append(args, "--json", "mergeable", "--jq", ".mergeable")
+	cmd := h.cmd(ctx, "gh", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("gh pr view mergeable: %w", err)
+	}
+	return normalizeMergeableState(strings.TrimSpace(string(out))), nil
+}
+
+func (h *Host) FetchFailedCheckLogs(ctx context.Context, _ *scm.PR, branch, headSHA string, failingNames []string) (string, error) {
+	if len(failingNames) == 0 {
+		return "", nil
+	}
+	targets := make(map[string]struct{}, len(failingNames))
+	for _, name := range failingNames {
+		name = normalizeRunName(name)
+		if name != "" {
+			targets[name] = struct{}{}
+		}
+	}
+	if len(targets) == 0 {
+		return "", nil
+	}
+	args := []string{"run", "list", "--branch", branch}
+	if strings.TrimSpace(headSHA) != "" {
+		args = append(args, "--commit", strings.TrimSpace(headSHA))
+	}
+	args = append(args, h.repoArgs()...)
+	args = append(args,
+		"--status", "failure",
+		"--limit", "20",
+		"--json", "databaseId,headSha,name,displayTitle,workflowName",
+	)
+	listCmd := h.cmd(ctx, "gh", args...)
+	listOut, err := listCmd.Output()
+	if err != nil {
+		return "", nil
+	}
+	var runs []githubRun
+	if err := json.Unmarshal(listOut, &runs); err != nil {
+		return "", nil
+	}
+	for _, run := range runs {
+		if !runMatchesTargets(ctx, h, run, targets) {
+			continue
+		}
+		viewArgs := append([]string{"run", "view", fmt.Sprintf("%d", run.DatabaseID)}, h.repoArgs()...)
+		viewArgs = append(viewArgs, "--log-failed")
+		viewCmd := h.cmd(ctx, "gh", viewArgs...)
+		out, err := viewCmd.Output()
+		if err != nil {
+			continue
+		}
+		logs := strings.TrimSpace(string(out))
+		if logs != "" {
+			return logs, nil
+		}
+	}
+	return "", nil
+}
+
+type githubRun struct {
+	DatabaseID   int    `json:"databaseId"`
+	HeadSHA      string `json:"headSha"`
+	Name         string `json:"name"`
+	DisplayTitle string `json:"displayTitle"`
+	WorkflowName string `json:"workflowName"`
+}
+
+type githubRunView struct {
+	Jobs []githubRunJob `json:"jobs"`
+}
+
+type githubRunJob struct {
+	Name       string `json:"name"`
+	Conclusion string `json:"conclusion"`
+	Status     string `json:"status"`
+}
+
+func runMatchesTargets(ctx context.Context, h *Host, run githubRun, targets map[string]struct{}) bool {
+	for _, candidate := range []string{run.Name, run.DisplayTitle, run.WorkflowName} {
+		if _, ok := targets[normalizeRunName(candidate)]; ok {
+			return true
+		}
+	}
+	if run.DatabaseID == 0 {
+		return false
+	}
+	viewArgs := append([]string{"run", "view", fmt.Sprintf("%d", run.DatabaseID)}, h.repoArgs()...)
+	viewArgs = append(viewArgs, "--json", "jobs")
+	viewCmd := h.cmd(ctx, "gh", viewArgs...)
+	out, err := viewCmd.Output()
+	if err != nil {
+		return false
+	}
+	var payload githubRunView
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return false
+	}
+	for _, job := range payload.Jobs {
+		if !isFailedJob(job) {
+			continue
+		}
+		if _, ok := targets[normalizeRunName(job.Name)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func isFailedJob(job githubRunJob) bool {
+	state := strings.ToUpper(strings.TrimSpace(job.Conclusion))
+	if state == "" {
+		state = strings.ToUpper(strings.TrimSpace(job.Status))
+	}
+	switch state {
+	case "FAILURE", "FAILED", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeRunName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func normalizePRState(raw string) scm.PRState {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "OPEN":
+		return scm.PRStateOpen
+	case "MERGED":
+		return scm.PRStateMerged
+	case "CLOSED":
+		return scm.PRStateClosed
+	default:
+		return scm.PRState(raw)
+	}
+}
+
+func normalizeMergeableState(raw string) scm.MergeableState {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "MERGEABLE":
+		return scm.MergeableOK
+	case "CONFLICTING":
+		return scm.MergeableConflict
+	case "UNKNOWN", "":
+		return scm.MergeablePending
+	default:
+		return scm.MergeableState(raw)
+	}
+}
+
+func normalizeCheckBucket(bucket, state string) scm.CheckBucket {
+	if normalized := scm.CheckBucket(strings.TrimSpace(bucket)); normalized != "" {
+		return normalized
+	}
+
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case "SUCCESS":
+		return scm.CheckBucketPass
+	case "FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
+		return scm.CheckBucketFail
+	case "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "EXPECTED":
+		return scm.CheckBucketPending
+	case "CANCELLED":
+		return scm.CheckBucketCancel
+	case "SKIPPED", "NEUTRAL", "STALE":
+		return scm.CheckBucketSkip
+	default:
+		return ""
+	}
+}

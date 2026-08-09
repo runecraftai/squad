@@ -10,3 +10,8 @@ __pycache__/
 *.pyc
 .env
 config/
+
+# Workspace packages (M2)
+packages/*/node_modules/
+packages/*/dist/
+packages/*/.turbo/

@@ -31,7 +31,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M1 — Rebrand Sweep — ⬜ PLANNED
+## M1 — Rebrand Sweep — ✅ DONE
 
 **Goal:** Everything in the distro speaks Squad. Vocabulary, `SQUAD_*` env, `sq-` prefix, AGENTS.md contract, skills, docs, README, adapters, `.pi` extensions, and the test suite are fully rebranded; the suite is green under the new names.
 
@@ -60,7 +60,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ---
 
-## M2 — Deps as Workspace Packages — ⬜ PLANNED
+## M2 — Deps as Workspace Packages — ▶️ IN PROGRESS
 
 **Goal:** The three runtime deps are first-class packages in the monorepo, built and tested by turbo, with no upstream identity.
 

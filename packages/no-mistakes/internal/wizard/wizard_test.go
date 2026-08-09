@@ -1,0 +1,1130 @@
+package wizard
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// recording stubs capture calls for assertions.
+type recorder struct {
+	createdBranch string
+	commitMsg     string
+	pushedBranch  string
+	telemetry     []wizardTelemetryEvent
+
+	createBranchErr error
+	commitErr       error
+	pushErr         error
+
+	suggestBranch    string
+	suggestCommit    string
+	suggestBranchErr error
+	suggestCommitErr error
+}
+
+type wizardTelemetryEvent struct {
+	action string
+	fields map[string]any
+}
+
+func (r *recorder) deps() Config {
+	return Config{
+		CreateBranch: func(_ context.Context, name string) error {
+			r.createdBranch = name
+			return r.createBranchErr
+		},
+		CommitAll: func(_ context.Context, msg string) error {
+			r.commitMsg = msg
+			return r.commitErr
+		},
+		Push: func(_ context.Context, branch string) error {
+			r.pushedBranch = branch
+			return r.pushErr
+		},
+		SuggestBranch: func(_ context.Context) (string, error) {
+			return r.suggestBranch, r.suggestBranchErr
+		},
+		SuggestCommit: func(_ context.Context) (string, error) {
+			return r.suggestCommit, r.suggestCommitErr
+		},
+		Track: func(action string, fields map[string]any) {
+			clone := make(map[string]any, len(fields))
+			for k, v := range fields {
+				clone[k] = v
+			}
+			r.telemetry = append(r.telemetry, wizardTelemetryEvent{action: action, fields: clone})
+		},
+	}
+}
+
+func baseConfig(r *recorder) Config {
+	cfg := r.deps()
+	cfg.RepoDir = "/tmp/repo"
+	cfg.CurrentBranch = "main"
+	cfg.DefaultBranch = "main"
+	cfg.NeedsBranch = true
+	cfg.IsDirty = true
+	cfg.GateRemote = "no-mistakes"
+	return cfg
+}
+
+// step the model through a command synchronously by running the returned
+// Cmd and feeding the result back into Update.
+func drain(m Model, cmd tea.Cmd) Model {
+	for cmd != nil {
+		msg := cmd()
+		if msg == nil {
+			return m
+		}
+		// Skip timer ticks - they'd spin forever in tests.
+		if _, ok := msg.(spinnerTickMsg); ok {
+			return m
+		}
+		// Skip batched commands from bubbles/textinput (e.g. Blink).
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				m = drain(m, c)
+			}
+			return m
+		}
+		next, nextCmd := m.Update(msg)
+		m = next.(Model)
+		cmd = nextCmd
+	}
+	return m
+}
+
+func advance(m Model, msg tea.Msg) Model {
+	next, cmd := m.Update(msg)
+	return drain(next.(Model), cmd)
+}
+
+func TestNewModel_AllStepsPending(t *testing.T) {
+	m := NewModel(baseConfig(&recorder{}))
+	if m.steps[0].status != statInput {
+		t.Errorf("active branch step should be in input mode, got %v", m.steps[0].status)
+	}
+	if m.steps[1].status != statPending {
+		t.Errorf("commit should be pending when dirty, got %v", m.steps[1].status)
+	}
+	if m.steps[2].status != statPending {
+		t.Errorf("push should be pending initially, got %v", m.steps[2].status)
+	}
+	if m.active != 0 {
+		t.Errorf("first active step should be branch (0), got %d", m.active)
+	}
+}
+
+func TestNewModel_SkipsBranchOnFeatureBranch(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/existing"
+	cfg.NeedsBranch = false
+	m := NewModel(cfg)
+	if m.steps[0].status != statSkipped {
+		t.Fatalf("expected branch skipped, got %v", m.steps[0].status)
+	}
+	if !strings.Contains(m.steps[0].skipReason, "feat/existing") {
+		t.Fatalf("skip reason should mention branch, got %q", m.steps[0].skipReason)
+	}
+	if m.active != 1 {
+		t.Fatalf("first active should be commit, got %d", m.active)
+	}
+}
+
+func TestNewModel_SkipsCommitWhenClean(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.IsDirty = false
+	m := NewModel(cfg)
+	if m.steps[1].status != statSkipped {
+		t.Fatalf("expected commit skipped, got %v", m.steps[1].status)
+	}
+}
+
+func TestNewModel_SkipsBothWhenOnFeatureAndClean(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	m := NewModel(cfg)
+	if m.active != 2 {
+		t.Fatalf("expected push to be first active, got %d", m.active)
+	}
+}
+
+func TestNewModel_DetachedHEADForcesBranchStep(t *testing.T) {
+	// Simulates detached HEAD: CurrentBranch literally "HEAD" but caller
+	// set NeedsBranch=true to force the branch step to run.
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "HEAD"
+	cfg.DefaultBranch = "main"
+	cfg.NeedsBranch = true
+	cfg.IsDirty = false
+	m := NewModel(cfg)
+
+	if m.steps[0].status == statSkipped {
+		t.Fatal("branch step should NOT be skipped in detached HEAD")
+	}
+	if m.active != 0 {
+		t.Fatalf("expected branch to be first active, got %d", m.active)
+	}
+}
+
+func TestNewModel_UsesConfigContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg := baseConfig(&recorder{})
+	cfg.Context = ctx
+
+	m := NewModel(cfg)
+	defer m.cancel()
+
+	cancel()
+
+	select {
+	case <-m.ctx.Done():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected model context to be cancelled with config context")
+	}
+}
+
+func TestBranchStep_UserTyped(t *testing.T) {
+	r := &recorder{}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+
+	// Type a name.
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feat/wizard")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// After running the create-branch cmd, handleAction advances.
+	if r.createdBranch != "feat/wizard" {
+		t.Fatalf("expected CreateBranch called with feat/wizard, got %q", r.createdBranch)
+	}
+	if m.steps[0].status != statDone {
+		t.Fatalf("expected branch done, got %v", m.steps[0].status)
+	}
+	if !m.branchCreated {
+		t.Fatal("expected branchCreated = true")
+	}
+	if m.targetBranch != "feat/wizard" {
+		t.Fatalf("expected targetBranch feat/wizard, got %q", m.targetBranch)
+	}
+	if m.active != 1 {
+		t.Fatalf("expected active to be commit, got %d", m.active)
+	}
+}
+
+func TestBranchStep_BlankUsesAgent(t *testing.T) {
+	r := &recorder{suggestBranch: "fix/agent-name"}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+
+	// Press enter with blank input.
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if r.createdBranch != "fix/agent-name" {
+		t.Fatalf("expected agent suggestion used, got %q", r.createdBranch)
+	}
+	if m.targetBranch != "fix/agent-name" {
+		t.Fatalf("targetBranch should be agent suggestion, got %q", m.targetBranch)
+	}
+}
+
+func TestBranchStep_SuggestionFailureFallsBackToInput(t *testing.T) {
+	r := &recorder{suggestBranchErr: errors.New("agent down")}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.steps[0].status != statInput {
+		t.Fatalf("expected fallback to input, got %v", m.steps[0].status)
+	}
+	if !strings.Contains(m.input.Placeholder, "agent unavailable") {
+		t.Fatalf("expected placeholder to mention agent failure, got %q", m.input.Placeholder)
+	}
+	if r.createdBranch != "" {
+		t.Fatalf("should not have called CreateBranch, got %q", r.createdBranch)
+	}
+}
+
+func TestCommitStep_UserTyped(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x" // skip branch
+	cfg.NeedsBranch = false
+	r := &recorder{}
+	cfg2 := cfg
+	cfg2.CreateBranch = r.deps().CreateBranch
+	cfg2.CommitAll = r.deps().CommitAll
+	cfg2.Push = r.deps().Push
+	cfg2.SuggestBranch = r.deps().SuggestBranch
+	cfg2.SuggestCommit = r.deps().SuggestCommit
+	m := NewModel(cfg2)
+	m = drain(m, m.Init())
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feat: add x")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if r.commitMsg != "feat: add x" {
+		t.Fatalf("expected commit message, got %q", r.commitMsg)
+	}
+	if !m.commitMade {
+		t.Fatal("expected commitMade = true")
+	}
+	if m.steps[1].status != statDone {
+		t.Fatalf("expected commit done, got %v", m.steps[1].status)
+	}
+	if m.active != 2 {
+		t.Fatalf("expected push active, got %d", m.active)
+	}
+}
+
+func TestPushStep_Confirm(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x" // skip branch
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false // skip commit
+	r := &recorder{}
+	cfg.CreateBranch = r.deps().CreateBranch
+	cfg.CommitAll = r.deps().CommitAll
+	cfg.Push = r.deps().Push
+	cfg.SuggestBranch = r.deps().SuggestBranch
+	cfg.SuggestCommit = r.deps().SuggestCommit
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	if m.active != 2 {
+		t.Fatalf("active should be push, got %d", m.active)
+	}
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if r.pushedBranch != "feat/x" {
+		t.Fatalf("expected Push for feat/x, got %q", r.pushedBranch)
+	}
+	if !m.pushed {
+		t.Fatal("expected pushed = true")
+	}
+	if !m.quitting {
+		t.Fatal("wizard should quit after final step")
+	}
+	if !m.success {
+		t.Fatal("wizard should report success")
+	}
+}
+
+func TestRunAuto_UsesAgentSuggestionsAndPushes(t *testing.T) {
+	r := &recorder{suggestBranch: "feat/auto", suggestCommit: "feat: auto commit"}
+
+	res, err := RunAuto(baseConfig(r))
+	if err != nil {
+		t.Fatalf("RunAuto() error = %v", err)
+	}
+
+	if r.createdBranch != "feat/auto" {
+		t.Fatalf("expected CreateBranch called with agent suggestion, got %q", r.createdBranch)
+	}
+	if r.commitMsg != "feat: auto commit" {
+		t.Fatalf("expected CommitAll called with agent suggestion, got %q", r.commitMsg)
+	}
+	if r.pushedBranch != "feat/auto" {
+		t.Fatalf("expected Push called with created branch, got %q", r.pushedBranch)
+	}
+	if !res.Success {
+		t.Fatal("expected success result")
+	}
+	if !res.BranchCreated || !res.CommitMade || !res.Pushed {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if res.TargetBranch != "feat/auto" {
+		t.Fatalf("TargetBranch = %q, want %q", res.TargetBranch, "feat/auto")
+	}
+	if !containsWizardEvent(r.telemetry, "branch_created", "source", "agent") {
+		t.Fatal("expected branch_created telemetry with agent source")
+	}
+	if !containsWizardEvent(r.telemetry, "committed", "source", "agent") {
+		t.Fatal("expected committed telemetry with agent source")
+	}
+	if !containsWizardEvent(r.telemetry, "pushed", "source", "auto") {
+		t.Fatal("expected pushed telemetry with auto source")
+	}
+	if !containsWizardEvent(r.telemetry, "completed", "pushed", true) {
+		t.Fatal("expected completed telemetry")
+	}
+}
+
+func TestAutoAdvance_ActsLikePressingEnterThroughWizard(t *testing.T) {
+	r := &recorder{suggestBranch: "feat/auto", suggestCommit: "feat: auto commit"}
+	cfg := baseConfig(r)
+	cfg.AutoAdvance = true
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	if r.createdBranch != "feat/auto" {
+		t.Fatalf("expected CreateBranch called with agent suggestion, got %q", r.createdBranch)
+	}
+	if r.commitMsg != "feat: auto commit" {
+		t.Fatalf("expected CommitAll called with agent suggestion, got %q", r.commitMsg)
+	}
+	if r.pushedBranch != "feat/auto" {
+		t.Fatalf("expected Push called with created branch, got %q", r.pushedBranch)
+	}
+	if !m.success || !m.quitting {
+		t.Fatalf("expected auto-advanced wizard to finish successfully, got success=%v quitting=%v", m.success, m.quitting)
+	}
+	out := m.View()
+	if !strings.Contains(out, "feat/auto") {
+		t.Fatalf("expected final view to show created branch, got:\n%s", out)
+	}
+	if !strings.Contains(out, "feat: auto commit") {
+		t.Fatalf("expected final view to show commit message, got:\n%s", out)
+	}
+	if !containsWizardEvent(r.telemetry, "branch_created", "source", "agent") {
+		t.Fatal("expected branch_created telemetry with agent source")
+	}
+	if !containsWizardEvent(r.telemetry, "committed", "source", "agent") {
+		t.Fatal("expected committed telemetry with agent source")
+	}
+	if !containsWizardEvent(r.telemetry, "pushed", "source", "auto") {
+		t.Fatal("expected pushed telemetry with auto source")
+	}
+}
+
+func TestAutoAdvance_SuggestionErrorFailsFast(t *testing.T) {
+	r := &recorder{suggestBranchErr: errors.New("agent down")}
+	cfg := baseConfig(r)
+	cfg.AutoAdvance = true
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	if m.err == nil {
+		t.Fatal("expected auto-advance suggestion failure to be recorded")
+	}
+	if !strings.Contains(m.err.Error(), "suggest branch") {
+		t.Fatalf("error should mention branch suggestion, got %v", m.err)
+	}
+	if !m.quitting {
+		t.Fatal("expected auto-advance suggestion failure to quit")
+	}
+	if m.steps[0].status != statFailed {
+		t.Fatalf("expected branch step to fail, got %v", m.steps[0].status)
+	}
+	if r.createdBranch != "" || r.commitMsg != "" || r.pushedBranch != "" {
+		t.Fatalf("auto-advance should stop before side effects, got branch=%q commit=%q push=%q", r.createdBranch, r.commitMsg, r.pushedBranch)
+	}
+	res := m.Result()
+	if !errors.Is(res.Err, m.err) {
+		t.Fatalf("result error = %v, want %v", res.Err, m.err)
+	}
+}
+
+func TestAutoAdvance_ActionErrorFailsFast(t *testing.T) {
+	r := &recorder{createBranchErr: errors.New("branch exists")}
+	cfg := baseConfig(r)
+	cfg.AutoAdvance = true
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	if m.err == nil {
+		t.Fatal("expected auto-advance action failure to be recorded")
+	}
+	if !strings.Contains(m.err.Error(), "create branch") {
+		t.Fatalf("error should mention branch action, got %v", m.err)
+	}
+	if !strings.Contains(m.err.Error(), "branch exists") {
+		t.Fatalf("error should mention branch failure, got %v", m.err)
+	}
+	if !m.quitting {
+		t.Fatal("expected auto-advance action failure to quit")
+	}
+	if m.steps[0].status != statFailed {
+		t.Fatalf("expected branch step to fail, got %v", m.steps[0].status)
+	}
+	if r.commitMsg != "" || r.pushedBranch != "" {
+		t.Fatalf("auto-advance should stop after branch failure, got commit=%q push=%q", r.commitMsg, r.pushedBranch)
+	}
+	res := m.Result()
+	if !errors.Is(res.Err, m.err) {
+		t.Fatalf("result error = %v, want %v", res.Err, m.err)
+	}
+}
+
+func TestRunAuto_SuggestionErrorReturnsFailure(t *testing.T) {
+	r := &recorder{suggestBranchErr: errors.New("agent down")}
+
+	res, err := RunAuto(baseConfig(r))
+	if err == nil {
+		t.Fatal("expected RunAuto to fail when branch suggestion fails")
+	}
+	if !strings.Contains(err.Error(), "suggest branch") {
+		t.Fatalf("error should mention branch suggestion, got %v", err)
+	}
+	if res.Success {
+		t.Fatal("RunAuto should not report success on suggestion error")
+	}
+	if r.createdBranch != "" || r.commitMsg != "" || r.pushedBranch != "" {
+		t.Fatalf("RunAuto should stop before side effects, got branch=%q commit=%q push=%q", r.createdBranch, r.commitMsg, r.pushedBranch)
+	}
+}
+
+func TestRunAuto_UsesCallerContext(t *testing.T) {
+	r := &recorder{}
+	cfg := baseConfig(r)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg.Context = ctx
+	cfg.SuggestBranch = func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+
+	res, err := RunAuto(cfg)
+	if err == nil {
+		t.Fatal("expected RunAuto to fail when caller context is canceled")
+	}
+	if !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("error should mention canceled context, got %v", err)
+	}
+	if res.Success {
+		t.Fatal("RunAuto should not report success when caller context is canceled")
+	}
+	if r.createdBranch != "" || r.commitMsg != "" || r.pushedBranch != "" {
+		t.Fatalf("RunAuto should stop before side effects, got branch=%q commit=%q push=%q", r.createdBranch, r.commitMsg, r.pushedBranch)
+	}
+}
+
+func TestRunAuto_WrapsUnderlyingContextError(t *testing.T) {
+	r := &recorder{}
+	cfg := baseConfig(r)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg.Context = ctx
+	cfg.SuggestBranch = func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+
+	_, err := RunAuto(cfg)
+	if err == nil {
+		t.Fatal("expected RunAuto to fail when caller context is canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("errors.Is(err, context.Canceled) = false, err = %v", err)
+	}
+}
+
+func TestRun_UsesCallerContext(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/existing"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg.Context = ctx
+
+	_, err := Run(cfg)
+	if err == nil {
+		t.Fatal("expected Run to fail when caller context is canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want wrapped context.Canceled", err)
+	}
+}
+
+func TestRun_ContextCancelResetsTerminalTitle(t *testing.T) {
+	var out bytes.Buffer
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/existing"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	cfg.DisableInput = true
+	cfg.Output = &out
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg.Context = ctx
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := Run(cfg)
+	if err == nil {
+		t.Fatal("expected Run to fail when caller context is canceled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want wrapped context.Canceled", err)
+	}
+
+	initialTitle := setTerminalTitle("⏸ Setup Push - feat/existing")
+	resetTitle := setTerminalTitle("")
+	if !strings.Contains(out.String(), initialTitle) {
+		t.Fatalf("expected wizard output to include initial title sequence, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), resetTitle) {
+		t.Fatalf("expected wizard output to include title reset sequence on context cancel, got %q", out.String())
+	}
+	if strings.LastIndex(out.String(), resetTitle) < strings.Index(out.String(), initialTitle) {
+		t.Fatalf("expected title reset to be emitted after initial title, got %q", out.String())
+	}
+}
+
+func TestWizardTracksCompletedKeyActions(t *testing.T) {
+	r := &recorder{}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feat/wizard")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feat: add wizard telemetry")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !containsWizardEvent(r.telemetry, "branch_created", "source", "user") {
+		t.Fatal("expected branch_created telemetry with user source")
+	}
+	if !containsWizardEvent(r.telemetry, "committed", "source", "user") {
+		t.Fatal("expected committed telemetry with user source")
+	}
+	if !containsWizardEvent(r.telemetry, "pushed", "step", "push") {
+		t.Fatal("expected pushed telemetry")
+	}
+	if !containsWizardEvent(r.telemetry, "completed", "pushed", true) {
+		t.Fatal("expected completed telemetry")
+	}
+}
+
+func TestWizardTracksAbortOnPushDecline(t *testing.T) {
+	r := &recorder{}
+	cfg := baseConfig(r)
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+
+	if !containsWizardEvent(r.telemetry, "aborted", "reason", "decline_push") {
+		t.Fatal("expected aborted telemetry with decline_push reason")
+	}
+}
+
+func TestWizardTracksAgentSourcedBranchAction(t *testing.T) {
+	r := &recorder{suggestBranch: "feat/agent"}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !containsWizardEvent(r.telemetry, "branch_created", "source", "agent") {
+		t.Fatal("expected branch_created telemetry with agent source")
+	}
+}
+
+func containsWizardEvent(events []wizardTelemetryEvent, action, field string, want any) bool {
+	for _, event := range events {
+		if event.action != action {
+			continue
+		}
+		if field == "" {
+			return true
+		}
+		if got, ok := event.fields[field]; ok && got == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestWaitForRun_CalledAfterPushWithTargetBranch(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+
+	var gotBranch string
+	var called int
+	cfg.WaitForRun = func(_ context.Context, branch string) error {
+		called++
+		gotBranch = branch
+		return nil
+	}
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if called != 1 {
+		t.Fatalf("WaitForRun called %d times, want 1", called)
+	}
+	if gotBranch != "feat/x" {
+		t.Fatalf("WaitForRun got branch %q, want feat/x", gotBranch)
+	}
+	if !m.success {
+		t.Fatal("expected success after wait completes")
+	}
+	if !m.quitting {
+		t.Fatal("expected wizard to quit after wait completes")
+	}
+	if m.err != nil {
+		t.Fatalf("unexpected err after successful wait: %v", m.err)
+	}
+}
+
+func TestWaitForRun_NotCalledWhenNil(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	cfg.WaitForRun = nil
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if !m.success || !m.quitting {
+		t.Fatal("nil WaitForRun should fall through to immediate quit")
+	}
+}
+
+func TestWaitForRun_NotCalledWhenUserDeclinesPush(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	called := false
+	cfg.WaitForRun = func(context.Context, string) error {
+		called = true
+		return nil
+	}
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+
+	if called {
+		t.Fatal("WaitForRun must not run when push is declined")
+	}
+	if !m.aborted {
+		t.Fatal("expected aborted on decline")
+	}
+}
+
+func TestWaitForRun_ErrorSurfacesInResult(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	cfg.WaitForRun = func(context.Context, string) error {
+		return errors.New("run never appeared")
+	}
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if !m.quitting {
+		t.Fatal("wizard should quit even when wait fails")
+	}
+	if m.err == nil || !strings.Contains(m.err.Error(), "run never appeared") {
+		t.Fatalf("expected wait error in m.err, got %v", m.err)
+	}
+	res := m.Result()
+	if !res.Pushed {
+		t.Fatal("Pushed should remain true even if wait errored")
+	}
+	if res.Err == nil {
+		t.Fatal("Result.Err should reflect the wait failure")
+	}
+	if res.Success {
+		t.Fatal("Result.Success must be false when wait fails (issue #122)")
+	}
+}
+
+func TestWaitForRun_CompletedTelemetrySkippedOnWaitError(t *testing.T) {
+	r := &recorder{}
+	cfg := baseConfig(r)
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	cfg.WaitForRun = func(context.Context, string) error {
+		return errors.New("timeout")
+	}
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if containsWizardEvent(r.telemetry, "completed", "", nil) {
+		t.Fatal("completed telemetry should not fire when wait fails")
+	}
+	if !containsWizardEvent(r.telemetry, "pushed", "step", "push") {
+		t.Fatal("pushed telemetry should still fire")
+	}
+}
+
+func TestWaitForRun_IgnoresStrayKeys(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	cfg.WaitForRun = func(context.Context, string) error { return nil }
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	next, _ := m.executeStep(m.activeStep(), "")
+	m = next.(Model)
+	next, _ = m.Update(actionMsg{id: stepPush})
+	m = next.(Model)
+
+	if !m.waiting {
+		t.Fatal("expected wizard to be in wait-for-run mode")
+	}
+	if m.quitting {
+		t.Fatal("wait-for-run mode should not already be quitting")
+	}
+
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("x")},
+		{Type: tea.KeyEnter},
+	} {
+		next, _ = m.Update(key)
+		m = next.(Model)
+		if !m.waiting {
+			t.Fatalf("expected wait-for-run mode to ignore %q", key.String())
+		}
+		if m.quitting {
+			t.Fatalf("expected wait-for-run mode to keep running after %q", key.String())
+		}
+		if err := m.ctx.Err(); err != nil {
+			t.Fatalf("expected wait-for-run context to stay active after %q, got %v", key.String(), err)
+		}
+	}
+}
+
+func TestPushStep_DeclineAborts(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	r := &recorder{}
+	cfg.CreateBranch = r.deps().CreateBranch
+	cfg.CommitAll = r.deps().CommitAll
+	cfg.Push = r.deps().Push
+	cfg.SuggestBranch = r.deps().SuggestBranch
+	cfg.SuggestCommit = r.deps().SuggestCommit
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+
+	if r.pushedBranch != "" {
+		t.Fatalf("Push should not have run, got %q", r.pushedBranch)
+	}
+	if !m.aborted {
+		t.Fatal("expected aborted = true")
+	}
+	if m.success {
+		t.Fatal("declining push should not be success")
+	}
+}
+
+func TestActionFailure(t *testing.T) {
+	r := &recorder{createBranchErr: errors.New("branch exists")}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("dup")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.steps[0].status != statFailed {
+		t.Fatalf("expected failed, got %v", m.steps[0].status)
+	}
+	if m.steps[0].errMsg == "" {
+		t.Fatal("expected error message")
+	}
+}
+
+func TestRetryAfterFailure(t *testing.T) {
+	r := &recorder{createBranchErr: errors.New("branch exists")}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("dup")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.steps[0].status != statFailed {
+		t.Fatalf("precondition: expected failed, got %v", m.steps[0].status)
+	}
+
+	// Clear the error and press r to retry.
+	r.createBranchErr = nil
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	if m.steps[0].status != statInput {
+		t.Fatalf("expected retry to re-enter input, got %v", m.steps[0].status)
+	}
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fresh")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.steps[0].status != statDone {
+		t.Fatalf("expected retry to succeed, got %v", m.steps[0].status)
+	}
+}
+
+func TestQuit_NoSideEffects_SinglePress(t *testing.T) {
+	m := NewModel(baseConfig(&recorder{}))
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if !m.aborted || !m.quitting {
+		t.Fatal("single q with no side-effects should quit immediately")
+	}
+}
+
+func TestQuit_WithSideEffects_RequiresConfirm(t *testing.T) {
+	r := &recorder{}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+	// Complete branch step (side-effect).
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feat/x")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.branchCreated {
+		t.Fatal("precondition: branch should be created")
+	}
+
+	// First q sets confirm, does not quit.
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if m.quitting {
+		t.Fatal("first q should not quit when there are side-effects")
+	}
+	if !m.confirmQuit {
+		t.Fatal("first q should set confirmQuit")
+	}
+
+	// Second q actually quits.
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if !m.aborted || !m.quitting {
+		t.Fatal("second q should abort")
+	}
+}
+
+func TestConfirmQuit_ResetsOnOtherKey(t *testing.T) {
+	r := &recorder{}
+	m := NewModel(baseConfig(r))
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feat/x")})
+	m = advance(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if !m.confirmQuit {
+		t.Fatal("expected confirmQuit set")
+	}
+	// Any other key resets.
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if m.confirmQuit {
+		t.Fatal("non-q key should clear confirmQuit")
+	}
+}
+
+func TestQuit_CancelsInFlightSuggestion(t *testing.T) {
+	ctxCh := make(chan context.Context, 1)
+	done := make(chan tea.Msg, 1)
+
+	cfg := baseConfig(&recorder{})
+	cfg.SuggestBranch = func(ctx context.Context) (string, error) {
+		ctxCh <- ctx
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+
+	m := NewModel(cfg)
+	cmd := m.suggestCmd(stepBranch)
+	go func() {
+		done <- cmd()
+	}()
+
+	var suggestCtx context.Context
+	select {
+	case suggestCtx = <-ctxCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for suggestion to start")
+	}
+
+	if err := suggestCtx.Err(); err != nil {
+		t.Fatalf("suggestion context should start active, got %v", err)
+	}
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = next.(Model)
+
+	if !m.aborted || !m.quitting {
+		t.Fatal("quit should abort the wizard")
+	}
+
+	select {
+	case msg := <-done:
+		suggestion, ok := msg.(suggestionMsg)
+		if !ok {
+			t.Fatalf("expected suggestionMsg, got %T", msg)
+		}
+		if !errors.Is(suggestion.err, context.Canceled) {
+			t.Fatalf("expected context canceled, got %v", suggestion.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for suggestion cancellation")
+	}
+}
+
+func TestQuit_CancelsInFlightGitActions(t *testing.T) {
+	tests := []struct {
+		name    string
+		run     func(Model, string) tea.Cmd
+		wantMsg stepID
+	}{
+		{name: "create branch", run: func(m Model, value string) tea.Cmd { return m.runCreateBranch(value) }, wantMsg: stepBranch},
+		{name: "commit", run: func(m Model, value string) tea.Cmd { return m.runCommit(value) }, wantMsg: stepCommit},
+		{name: "push", run: func(m Model, value string) tea.Cmd { return m.runPush() }, wantMsg: stepPush},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctxCh := make(chan context.Context, 1)
+			done := make(chan tea.Msg, 1)
+
+			cfg := baseConfig(&recorder{})
+			cfg.CurrentBranch = "feat/x"
+			cfg.NeedsBranch = false
+			cfg.IsDirty = false
+			cfg.CreateBranch = func(ctx context.Context, _ string) error {
+				ctxCh <- ctx
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			cfg.CommitAll = func(ctx context.Context, _ string) error {
+				ctxCh <- ctx
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			cfg.Push = func(ctx context.Context, _ string) error {
+				ctxCh <- ctx
+				<-ctx.Done()
+				return ctx.Err()
+			}
+
+			m := NewModel(cfg)
+			cmd := tc.run(m, "value")
+			go func() {
+				done <- cmd()
+			}()
+
+			var actionCtx context.Context
+			select {
+			case actionCtx = <-ctxCh:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for action to start")
+			}
+
+			if err := actionCtx.Err(); err != nil {
+				t.Fatalf("action context should start active, got %v", err)
+			}
+
+			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+			m = next.(Model)
+
+			if !m.aborted || !m.quitting {
+				t.Fatal("quit should abort the wizard")
+			}
+
+			select {
+			case msg := <-done:
+				action, ok := msg.(actionMsg)
+				if !ok {
+					t.Fatalf("expected actionMsg, got %T", msg)
+				}
+				if action.id != tc.wantMsg {
+					t.Fatalf("expected action id %v, got %v", tc.wantMsg, action.id)
+				}
+				if !errors.Is(action.err, context.Canceled) {
+					t.Fatalf("expected context canceled, got %v", action.err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for action cancellation")
+			}
+		})
+	}
+}
+
+func TestCtrlCAborts(t *testing.T) {
+	m := NewModel(baseConfig(&recorder{}))
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.aborted || !m.quitting {
+		t.Fatal("ctrl+c should abort regardless of side-effects")
+	}
+}
+
+func TestResult(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+	r := &recorder{}
+	cfg.CreateBranch = r.deps().CreateBranch
+	cfg.CommitAll = r.deps().CommitAll
+	cfg.Push = r.deps().Push
+	cfg.SuggestBranch = r.deps().SuggestBranch
+	cfg.SuggestCommit = r.deps().SuggestCommit
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	res := m.Result()
+	if !res.Success {
+		t.Fatal("expected Success")
+	}
+	if !res.Pushed {
+		t.Fatal("expected Pushed")
+	}
+	if res.TargetBranch != "feat/x" {
+		t.Fatalf("expected TargetBranch feat/x, got %q", res.TargetBranch)
+	}
+}
+
+func TestWaitForRun_CalledAfterPush(t *testing.T) {
+	cfg := baseConfig(&recorder{})
+	cfg.CurrentBranch = "feat/x"
+	cfg.NeedsBranch = false
+	cfg.IsDirty = false
+
+	called := 0
+	gotBranch := ""
+	cfg.WaitForRun = func(_ context.Context, branch string) error {
+		called++
+		gotBranch = branch
+		return nil
+	}
+
+	m := NewModel(cfg)
+	m = drain(m, m.Init())
+	m = advance(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+
+	if called != 1 {
+		t.Fatalf("WaitForRun called %d times, want 1", called)
+	}
+	if gotBranch != "feat/x" {
+		t.Fatalf("WaitForRun branch = %q, want %q", gotBranch, "feat/x")
+	}
+	if !m.success || !m.quitting {
+		t.Fatalf("expected successful quit after wait, got success=%v quitting=%v", m.success, m.quitting)
+	}
+	if m.err != nil {
+		t.Fatalf("unexpected wait error: %v", m.err)
+	}
+	if !m.Result().Pushed {
+		t.Fatal("expected pushed result to remain true")
+	}
+}

@@ -52,11 +52,16 @@ jobs:
           set -eu
           bin/sq-install-shellcheck.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install tasks-axi
+      - name: Install tasks-axi (forked sq-tasks-axi, M2)
         run: |
           set -eu
-          npm install -g tasks-axi
+          npm install -g ./packages/tasks-axi
+          # Backward-compat alias: the distro and its tests invoke the backlog
+          # backend by the protocol name `tasks-axi`; the fork's own bin is
+          # `sq-tasks-axi` (AD-006).
+          ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
           tasks-axi --version
+          sq-tasks-axi --version
       - name: Run portable parallel shard 1
         run: |
           set -eu
@@ -84,11 +89,16 @@ jobs:
           set -eu
           bin/sq-install-shellcheck.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install tasks-axi
+      - name: Install tasks-axi (forked sq-tasks-axi, M2)
         run: |
           set -eu
-          npm install -g tasks-axi
+          npm install -g ./packages/tasks-axi
+          # Backward-compat alias: the distro and its tests invoke the backlog
+          # backend by the protocol name `tasks-axi`; the fork's own bin is
+          # `sq-tasks-axi` (AD-006).
+          ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
           tasks-axi --version
+          sq-tasks-axi --version
       - name: Run portable parallel shard 2
         run: |
           set -eu
@@ -138,11 +148,13 @@ jobs:
             exit 1
           }
           tmux -V
-      - name: Install tasks-axi for backlog-handoff delegation
+      - name: Install tasks-axi for backlog-handoff delegation (forked sq-tasks-axi, M2)
         run: |
           set -eu
-          npm install -g tasks-axi
+          npm install -g ./packages/tasks-axi
+          ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
           tasks-axi --version
+          sq-tasks-axi --version
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
