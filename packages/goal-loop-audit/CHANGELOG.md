@@ -74,7 +74,7 @@ empty-state guidance. 605 tests.
 ### Added — `/glla reset`: one-shot clean slate for leftover-laden projects
 
 User directive: "make sure we only have one goal or loop or list at a time
-— many of my older projects have many leftovers." A fleet-wide scan (22
+— many of my older projects have many leftovers." A workspace-wide scan (22
 `.pi-glla` dirs) confirmed the pile: queued lists up to 56 deep (pully),
 36 (virtual-pet), 18 (neonbreak), held loops at iter 11–50 across seven
 projects, and paused goals in ~10. The one-active-thing guard (v0.28.14+)
@@ -263,10 +263,10 @@ Two field-observed instances of the same design flaw — retry budgets spent
 back-to-back, then a pause:
 
 **1. Inter-error retries ride an exponential ladder** (dracon-utilities,
-kimi, 19-session fleet on one provider account): a "concurrent request
+kimi, 19-session batch on one provider account): a "concurrent request
 limit" 403 storm got 5 retries BACK-TO-BACK — an errored turn leaves the
 session idle, so `scheduleContinuation` fired with delay 0 after each
-`agent_end`. The fleet-wide limit clears on a minutes scale, not
+`agent_end`. The batch-wide limit clears on a minutes scale, not
 milliseconds. Retries between consecutive error turns now wait
 5s → 15s → 45s → 90s → 3m (`ERROR_RETRY_LADDER_MS`, ledgered as
 `error_retry_backoff`), so the 5-retry budget spans ~5.5 minutes instead

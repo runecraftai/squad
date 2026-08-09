@@ -474,11 +474,11 @@ let loopRearmStreak = 0;
 let compactionGraceUntil = 0;
 const COMPACTION_GRACE_MS = 3 * 60_000;
 // v0.28.25: provider-error retry cadence. Field-observed in dracon-utilities
-// (kimi, 19-session fleet on one provider account): a "concurrent request
+// (kimi, 19-session batch on one provider account): a "concurrent request
 // limit" 403 storm got 5 retries BACK-TO-BACK (delay 0 after each errored
 // turn — the session is idle at agent_end, so scheduleContinuation fired
 // instantly) and the brake then cycled on a flat 60s cooldown for 1h 38m.
-// The condition clears on a minutes-to-fleet scale, not milliseconds:
+// The condition clears on a minutes-to-batch scale, not milliseconds:
 // ladder the inter-error retries (5s, 15s, 45s, 90s, 3m — the 5-retry
 // budget now spans ~5.5m) and escalate the brake cooldown per consecutive
 // brake (1m, 2m, 4m, 8m, 16m cap). A successful turn resets both.
@@ -4253,7 +4253,7 @@ function cmdLog(args: string, ctx: ExtensionContext): void {
  * v0.28.31 (renamed v0.28.33): /glla wipe — ONE confirmed command that leaves a project with
  * zero live glla state. User directive: "make sure we only have one goal or
  * loop or list at a time — many of my older projects have leftovers" (the
- * fleet scan found queued lists up to 56 deep, held loops at iter 50, and
+ * full scan found queued lists up to 56 deep, held loops at iter 50, and
  * paused goals across ~10 projects). The goal is archived HONESTLY (aborted
  * — lands in goals/ + the archive, reviewer's abort-suppression applies),
  * the list is cleared, the loop record is wiped after a graceful stop.
@@ -5344,7 +5344,7 @@ export default function (pi: ExtensionAPI): void {
         // 60-second provider hiccup waiting on a manual /goal resume.
         const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
         const reason = `5 consecutive errors${detail}`;
-        // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
+        // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a workspace-wide
         // 403 window is not cleared by re-braking every 60 seconds.
         const cooldownMs = 60_000 * 2 ** Math.min(errorBrakeStreak, 4);
         const cooldownMin = Math.round(cooldownMs / 60_000);
