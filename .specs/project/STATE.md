@@ -1,6 +1,6 @@
 # Squad — State
 
-**Updated:** M1 execution (session 2 — T-M1-12 completion)
+**Updated:** M0–M5 complete (session 2) — project acceptance reached; org-gated publication steps pending OQ-03
 
 ## Progress
 
@@ -9,9 +9,9 @@
 | M0 — Import & Scaffold | ✅ done (baseline documented; 9 env/decision-attributable failures, 0 source defects — see T-M0-05) | T-M0-01..05 all done |
 | M1 — Rebrand Sweep | ✅ done (T-M1-01..12; suite pass-set = M0 baseline + 2 M1-input fixes; 6 env-attributable failures identical to M0; fork-dependent cases gated until M2) | see T-M1-12 |
 | M2 — Deps as Workspace Packages | ✅ done (T-M2-01..05; turbo build/lint green, tests green modulo 1 env case; repo-wide guards green incl. packages) | see T-M2-01..05 |
-| M3 — Pi Adapters + pr-review | ⬜ planned | |
+| M3 — Pi Adapters + pr-review | ✅ done | see T-M3-01..03 |
 | M4 — Publication & CI | ✅ done (org-gated: releases/publish/CI-green-on-real-PR pending OQ-03) | see T-M4-01..04 |
-| M5 — goal-loop-audit + Roadmap note | ✅ done | see T-M5-01..03 |
+| M5 — goal-loop-audit + Roadmap note | ✅ done (coexistence verified; ROADMAP open-item recorded) | see T-M5-01..03 |
 
 ## Task log
 
@@ -137,6 +137,19 @@ Completed in a second execution session. All remaining genuine rebrand defects f
 - D-EXEC-02: Baseline runs under `LC_ALL=C.UTF-8` to mirror CI collation; en_US.UTF-8 `comm` failure recorded as environment issue; LC_ALL=C (UTF-8-blind) produces false failures — never use for the suite.
 - D-EXEC-03: M0 evidence lives in STATE.md task log; no edits to pristine `docs/` before M1.
 - D-EXEC-04: M0 marked done with criterion 4 ("suite runs green") holding modulo documented exceptions; two M1-input items recorded (fm-backend git-history test adaptation; `.specs/` classification in doc-audience inventory).
+
+
+## Final acceptance (project-level)
+
+- ✅ All §8 grep guards pass on the full tracked tree (repaired patterns; packages included) — 6/6.
+- ✅ Full distro suite pass-set = M0 baseline + M1-input fixes; remaining local failures are the 6 recorded environment cases (node in /usr/bin, installed harnesses, systemd reparenting, tmux rendering flake); CI is the gate. `--check-coverage` ok (total=134).
+- ✅ `turbo build` + `turbo lint` green across Go + TS packages; `turbo test` green except the no-mistakes procreap env case (fails identically on pristine upstream).
+- ✅ pr-review (v1) and goal-loop-audit (v1.1) load and run in Pi; coexistence in one headless session verified; live pr-review demonstration documented as A-08 in docs/pr-review.md (needs a scratch repo PR).
+- ✅ Publication paths proven up to the org boundary: Go release workflows + manifests carried and rebranded; `sq-tasks-axi` npm name verified available + publishConfig (public, provenance) + pack dry-run; install scripts point at Squad sources (OQ-03 placeholder); real Release fetch / npm publish / CI-green-on-real-PR / Apple Team ID + umami site id land when the org exists (OQ-03).
+- ✅ ROADMAP open-item recorded ("ou não" TS port, AD-004).
+- ✅ context.md updated: OQ-01 (module path) and OQ-02 (npm name) resolved; OQ-03 placeholder documented.
+
+**Blocker:** none. **Remaining work is org-gated (OQ-03) and commander decisions (Discord community badges; real telemetry/Team ID values).**
 
 ## Blockers
 - None.
