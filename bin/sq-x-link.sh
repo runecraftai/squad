@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Link a spawned task to the X-mode mention that triggered it, so firstmate can
+# Link a spawned task to the X-mode mention that triggered it, so Squad can
 # post up to THREE completion follow-ups when the task lands (within a 7-day window).
 #
-# Usage: fm-x-link.sh <task-id> <request_id> [--carry-count <n> --carry-ts <epoch> [--carry-platform <x|discord>] [--carry-max <n>]]
+# Usage: sq-x-link.sh <task-id> <request_id> [--carry-count <n> --carry-ts <epoch> [--carry-platform <x|discord>] [--carry-max <n>]]
 #
 # Records link lines in state/<task-id>.meta (replacing any prior link,
 # preserving every other meta line):
@@ -14,7 +14,7 @@
 #
 # A fresh link always starts x_followups at 0 and uses the current time for
 # x_request_ts. --carry-count <n> and --carry-ts <epoch> are a required pair for
-# re-linking the SAME request onto a successor task (e.g. a stuck-crewmate
+# re-linking the SAME request onto a successor task (e.g. a stuck-operator
 # recovery that respawns under a new task id): the caller reads the prior task's
 # x_followups and x_request_ts before its meta goes away and passes both here,
 # so the new task does not get a fresh follow-up budget, a refreshed local
@@ -27,27 +27,27 @@
 # relay lookup by request_id. If either axis remains missing, the link is still
 # recorded but a loud warning is printed and follow-ups fail closed.
 #
-# This is a separate step the fmx-respond skill runs AFTER fm-spawn.sh, so it
-# never changes fm-spawn's interface. The follow-up itself - detection, the
+# This is a separate step the relay-respond skill runs AFTER sq-spawn.sh, so it
+# never changes sq-spawn's interface. The follow-up itself - detection, the
 # window/cap check, the post, and clearing the link - is owned by
-# fm-x-followup.sh on the task's captain-relevant wakes. The meta read/write
-# lives in fm-x-lib.sh.
+# sq-x-followup.sh on the task's commander-relevant wakes. The meta read/write
+# lives in sq-x-lib.sh.
 #
-# Both ids are relay/firstmate slugs that compose a filename, so they are guarded
+# Both ids are relay/Squad slugs that compose a filename, so they are guarded
 # against path traversal even though they come from trusted callers.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-# shellcheck source=bin/fm-x-lib.sh
-. "$SCRIPT_DIR/fm-x-lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+# shellcheck source=bin/sq-x-lib.sh
+. "$SCRIPT_DIR/sq-x-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
 
 usage() {
-  echo "usage: fm-x-link.sh <task-id> <request_id> [--carry-count <n> --carry-ts <epoch> [--carry-platform <x|discord>] [--carry-max <n>]]" >&2
+  echo "usage: sq-x-link.sh <task-id> <request_id> [--carry-count <n> --carry-ts <epoch> [--carry-platform <x|discord>] [--carry-max <n>]]" >&2
 }
 
 ID=${1:-}
@@ -68,14 +68,14 @@ while [ "$#" -gt 0 ]; do
       shift
       CARRY_COUNT=${1:-}
       case "$CARRY_COUNT" in
-        ''|*[!0-9]*) echo "fm-x-link: --carry-count needs a non-negative integer" >&2; exit 2 ;;
+        ''|*[!0-9]*) echo "sq-x-link: --carry-count needs a non-negative integer" >&2; exit 2 ;;
       esac
       ;;
     --carry-ts)
       shift
       CARRY_TS=${1:-}
       case "$CARRY_TS" in
-        ''|*[!0-9]*) echo "fm-x-link: --carry-ts needs a non-negative epoch integer" >&2; exit 2 ;;
+        ''|*[!0-9]*) echo "sq-x-link: --carry-ts needs a non-negative epoch integer" >&2; exit 2 ;;
       esac
       ;;
     --carry-platform)
@@ -84,15 +84,15 @@ while [ "$#" -gt 0 ]; do
       case "$CARRY_PLATFORM" in
         discord|x) ;;
         twitter) CARRY_PLATFORM=x ;;
-        *) echo "fm-x-link: --carry-platform needs x or discord" >&2; exit 2 ;;
+        *) echo "sq-x-link: --carry-platform needs x or discord" >&2; exit 2 ;;
       esac
       ;;
     --carry-max)
       shift
       CARRY_MAX=${1:-}
       case "$CARRY_MAX" in
-        ''|*[!0-9]*) echo "fm-x-link: --carry-max needs an integer of at least 50" >&2; exit 2 ;;
-        *) [ "$CARRY_MAX" -ge 50 ] 2>/dev/null || { echo "fm-x-link: --carry-max needs an integer of at least 50" >&2; exit 2; } ;;
+        ''|*[!0-9]*) echo "sq-x-link: --carry-max needs an integer of at least 50" >&2; exit 2 ;;
+        *) [ "$CARRY_MAX" -ge 50 ] 2>/dev/null || { echo "sq-x-link: --carry-max needs an integer of at least 50" >&2; exit 2; } ;;
       esac
       ;;
     *) usage; exit 2 ;;
@@ -100,32 +100,32 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 if [ -n "$CARRY_COUNT" ] && [ -z "$CARRY_TS" ]; then
-  echo "fm-x-link: --carry-count requires --carry-ts to preserve the original follow-up window" >&2
+  echo "sq-x-link: --carry-count requires --carry-ts to preserve the original follow-up window" >&2
   exit 2
 fi
 if [ -n "$CARRY_TS" ] && [ -z "$CARRY_COUNT" ]; then
-  echo "fm-x-link: --carry-ts requires --carry-count to preserve the consumed follow-up count" >&2
+  echo "sq-x-link: --carry-ts requires --carry-count to preserve the consumed follow-up count" >&2
   exit 2
 fi
 if { [ -n "$CARRY_PLATFORM" ] || [ -n "$CARRY_MAX" ]; } && { [ -z "$CARRY_COUNT" ] || [ -z "$CARRY_TS" ]; }; then
-  echo "fm-x-link: --carry-platform and --carry-max require --carry-count and --carry-ts" >&2
+  echo "sq-x-link: --carry-platform and --carry-max require --carry-count and --carry-ts" >&2
   exit 2
 fi
 
 # task-id composes a path (state/<id>.meta); request_id composes a path elsewhere
 # (the inbox/outbox record). Reject anything outside a safe slug for both.
-fm_pr_task_id_valid "$ID" || { echo "fm-x-link: unsafe task id: $ID" >&2; exit 2; }
+fm_pr_task_id_valid "$ID" || { echo "sq-x-link: unsafe task id: $ID" >&2; exit 2; }
 case "$RID" in
-  ''|.*|*[!A-Za-z0-9._-]*) echo "fm-x-link: unsafe request_id: $RID" >&2; exit 2 ;;
+  ''|.*|*[!A-Za-z0-9._-]*) echo "sq-x-link: unsafe request_id: $RID" >&2; exit 2 ;;
 esac
 
 META="$STATE/$ID.meta"
 if [ ! -f "$META" ]; then
-  echo "fm-x-link: no such task: state/$ID.meta" >&2
+  echo "sq-x-link: no such task: state/$ID.meta" >&2
   exit 1
 fi
 
-command -v jq >/dev/null 2>&1 || { echo "fm-x-link: jq not found" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "sq-x-link: jq not found" >&2; exit 1; }
 fmx_load_config
 REQ_PLATFORM=
 REQ_EXPLICIT_MAX=
@@ -139,7 +139,7 @@ fi
 
 if [ -z "$CARRY_TS" ]; then
   REPLY_CONTEXT=$(fmx_resolve_reply_context "$STATE" "$RID" 1) || {
-    echo "fm-x-link: failed to resolve request reply context" >&2
+    echo "sq-x-link: failed to resolve request reply context" >&2
     exit 1
   }
   REQ_PLATFORM=$(printf '%s' "$REPLY_CONTEXT" | jq -r '.platform // ""')
@@ -148,12 +148,12 @@ if [ -z "$CARRY_TS" ]; then
 fi
 
 if [ -n "$CARRY_TS" ] && { [ -z "$REQ_PLATFORM" ] || [ -z "$REQ_REPLY_MAX" ]; }; then
-  echo "fm-x-link: relink requires carried reply context; pass --carry-platform and --carry-max from the prior task" >&2
+  echo "sq-x-link: relink requires carried reply context; pass --carry-platform and --carry-max from the prior task" >&2
   exit 2
 fi
 
 if [ -z "$CARRY_TS" ] && { [ -z "$REQ_PLATFORM" ] || [ -z "$REQ_REPLY_MAX" ]; }; then
-  echo "fm-x-link: WARNING: incomplete authoritative reply context for request $RID; every completion follow-up will be HELD until both platform and explicit budget can be resolved. Ensure the relay request-context lookup supplies both values." >&2
+  echo "sq-x-link: WARNING: incomplete authoritative reply context for request $RID; every completion follow-up will be HELD until both platform and explicit budget can be resolved. Ensure the relay request-context lookup supplies both values." >&2
 fi
 
 FOLLOWUPS=0
@@ -161,15 +161,15 @@ if [ -n "$CARRY_TS" ]; then
   LINK_TS=$CARRY_TS
   FOLLOWUPS=$CARRY_COUNT
 else
-  # FMX_NOW_OVERRIDE keeps tests deterministic; production uses the wall clock.
-  LINK_TS=${FMX_NOW_OVERRIDE:-$(date +%s)}
+  # SQX_NOW_OVERRIDE keeps tests deterministic; production uses the wall clock.
+  LINK_TS=${SQX_NOW_OVERRIDE:-$(date +%s)}
   case "$LINK_TS" in
-    ''|*[!0-9]*) echo "fm-x-link: could not read the current time" >&2; exit 1 ;;
+    ''|*[!0-9]*) echo "sq-x-link: could not read the current time" >&2; exit 1 ;;
   esac
 fi
 
 if ! fmx_meta_link_set "$META" "$RID" "$LINK_TS" "$FOLLOWUPS" "$REQ_PLATFORM" "$REQ_REPLY_MAX"; then
-  echo "fm-x-link: failed to record the link in state/$ID.meta" >&2
+  echo "sq-x-link: failed to record the link in state/$ID.meta" >&2
   exit 1
 fi
 

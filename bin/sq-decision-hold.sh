@@ -1,56 +1,56 @@
 #!/usr/bin/env bash
-# fm-decision-hold.sh - deterministic mechanics for durable captain decisions.
+# sq-decision-hold.sh - deterministic mechanics for durable commander decisions.
 #
 # The semantic policy is owned once by
 # .agents/skills/decision-hold-lifecycle/SKILL.md. This script never reads report,
 # visual-review, chat, or terminal prose to guess whether a decision exists.
 # The invoking agent inventories unresolved decisions, assigns stable keys, and
 # routes dependent work. This script supplies deterministic identities, creates
-# and verifies structured tasks-axi captain holds, records completion attestation
+# and verifies structured tasks-axi commander holds, records completion attestation
 # in the originating task's metadata, and closes a hold only after a durable
 # decision record has been linked to existing dependent work.
 #
 # A hold identity is <origin-id>-decision-<decision-key>. Origin ids and decision
 # keys must already be privacy-safe slugs. Repeating `hold` with the same identity
 # is idempotent. A different decision key creates a different backlog identity.
-# All backlog mutations run in the active FM_HOME, which keeps main-home and
-# secondmate-home ownership aligned with the work that discovered the decision.
+# All backlog mutations run in the active SQUAD_HOME, which keeps main-home and
+# XO-home ownership aligned with the work that discovered the decision.
 #
 # Usage:
-#   fm-decision-hold.sh id <origin-id> <decision-key>
-#   fm-decision-hold.sh hold <origin-id> <decision-key> \
+#   sq-decision-hold.sh id <origin-id> <decision-key>
+#   sq-decision-hold.sh hold <origin-id> <decision-key> \
 #     --title <title> --reason <reason> [--repo <repo>]
-#   fm-decision-hold.sh complete <origin-id> (--none | <decision-key>...)
-#   fm-decision-hold.sh verify <origin-id>
-#   fm-decision-hold.sh resolve <origin-id> <decision-key> \
+#   sq-decision-hold.sh complete <origin-id> (--none | <decision-key>...)
+#   sq-decision-hold.sh verify <origin-id>
+#   sq-decision-hold.sh resolve <origin-id> <decision-key> \
 #     --decision-file <path> --routed-to <task-id> [--routed-to <task-id>...]
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
-# no unresolved captain decision. Later review passes may add keys; a live task's
+# no unresolved commander decision. Later review passes may add keys; a live task's
 # metadata inventory is unioned idempotently. A post-teardown visual review can
 # complete against the surviving report and holds without recreating task state.
-# `verify` is read-only and is called by scout teardown so teardown cannot erase a
+# `verify` is read-only and is called by recon teardown so teardown cannot erase a
 # source before this gate has succeeded.
 #
 # `resolve` requires every --routed-to task to exist and to be blocked by the hold.
-# It writes the captain decision and routed identities into the hold body, clears
+# It writes the commander decision and routed identities into the hold body, clears
 # those dependency edges, and only then marks the hold Done. A failure before the
-# final step leaves the captain hold open.
+# final step leaves the commander hold open.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
 
-# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck source=bin/sq-classify-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-tasks-axi-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
+. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
 
 usage() {
   awk '
@@ -61,7 +61,7 @@ usage() {
 }
 
 fail() {
-  printf 'fm-decision-hold: %s\n' "$*" >&2
+  printf 'sq-decision-hold: %s\n' "$*" >&2
   exit 1
 }
 
@@ -97,13 +97,13 @@ hold_id() {  # <origin-id> <decision-key>
 }
 
 tasks_axi() {
-  (cd "$FM_HOME" && tasks-axi "$@")
+  (cd "$SQUAD_HOME" && tasks-axi "$@")
 }
 
 require_tasks_axi() {
   fm_tasks_axi_compatible || fail "compatible tasks-axi is required"
-  tasks-axi hold --help 2>&1 | grep -F -- '--kind captain' >/dev/null \
-    || fail "tasks-axi does not expose the captain-hold contract"
+  tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null \
+    || fail "tasks-axi does not expose the commander-hold contract"
 }
 
 task_show() {  # <id>
@@ -146,8 +146,8 @@ origin_open_decisions() {  # <origin-id>
   [ -n "$open" ] || return 0
   [ -f "$meta" ] || { printf '%s' "$open"; return 0; }
   kind=$(meta_value "$meta" kind)
-  [ -n "$kind" ] || kind=ship
-  if [ "$kind" != secondmate ]; then
+  [ -n "$kind" ] || kind=strike
+  if [ "$kind" != XO ]; then
     last=$(last_status_line "$status_file")
     verb=$(status_line_verb "$last")
     case "$verb" in
@@ -159,15 +159,15 @@ origin_open_decisions() {  # <origin-id>
 
 verify_hold_active() {  # <hold-id>
   local id=$1 show state held kind hold_kind
-  show=$(task_show "$id") || fail "captain hold $id is absent from $FM_HOME/data/backlog.md"
+  show=$(task_show "$id") || fail "commander hold $id is absent from $SQUAD_HOME/data/backlog.md"
   state=$(show_field "$show" state)
   held=$(show_field "$show" held)
   kind=$(show_field "$show" kind)
   hold_kind=$(show_field "$show" hold_kind)
-  [ "$state" = queued ] || fail "captain hold $id is not queued (state=$state)"
-  [ "$held" = yes ] || fail "captain hold $id is not active"
-  [ "$kind" = captain ] || fail "backlog item $id is not kind captain"
-  [ "$hold_kind" = captain ] || fail "backlog item $id is not held for the captain"
+  [ "$state" = queued ] || fail "commander hold $id is not queued (state=$state)"
+  [ "$held" = yes ] || fail "commander hold $id is not active"
+  [ "$kind" = commander ] || fail "backlog item $id is not kind commander"
+  [ "$hold_kind" = commander ] || fail "backlog item $id is not held for the commander"
 }
 
 verify_hold_resolved() {  # <hold-id>
@@ -177,50 +177,50 @@ verify_hold_resolved() {  # <hold-id>
   kind=$(show_field "$show" kind)
   body=$(show_field "$show" body)
   [ "$state" = "done" ] || return 1
-  [ "$kind" = captain ] || return 1
+  [ "$kind" = commander ] || return 1
   case "$body" in
-    *"Resolution recorded by fm-decision-hold."*"Routed work:"*) return 0 ;;
+    *"Resolution recorded by sq-decision-hold."*"Routed work:"*) return 0 ;;
   esac
   return 1
 }
 
 verify_hold_durable() {  # <hold-id>
   local id=$1 show state held kind hold_kind body
-  show=$(task_show "$id") || fail "captain decision $id is absent from $FM_HOME/data/backlog.md"
+  show=$(task_show "$id") || fail "commander decision $id is absent from $SQUAD_HOME/data/backlog.md"
   state=$(show_field "$show" state)
   held=$(show_field "$show" held)
   kind=$(show_field "$show" kind)
   hold_kind=$(show_field "$show" hold_kind)
   body=$(show_field "$show" body)
-  if [ "$state" = queued ] && [ "$held" = yes ] && [ "$kind" = captain ] && [ "$hold_kind" = captain ]; then
+  if [ "$state" = queued ] && [ "$held" = yes ] && [ "$kind" = commander ] && [ "$hold_kind" = commander ]; then
     return 0
   fi
-  if [ "$state" = "done" ] && [ "$kind" = captain ]; then
+  if [ "$state" = "done" ] && [ "$kind" = commander ]; then
     case "$body" in
-      *"Resolution recorded by fm-decision-hold."*"Routed work:"*) return 0 ;;
+      *"Resolution recorded by sq-decision-hold."*"Routed work:"*) return 0 ;;
     esac
   fi
-  fail "captain decision $id is neither actively held nor durably resolved"
+  fail "commander decision $id is neither actively held nor durably resolved"
 }
 
 verify_resolution_identity() {
   local id=$1 hold_body=$2 decision_digest=$3 routed_csv=$4 resolution_prefix resolution_fields recorded_digest recorded_routes
-  resolution_prefix='"Resolution recorded by fm-decision-hold.\nDecision digest: '
+  resolution_prefix='"Resolution recorded by sq-decision-hold.\nDecision digest: '
   case "$hold_body" in
     "$resolution_prefix"*) resolution_fields=${hold_body#"$resolution_prefix"} ;;
-    *) fail "captain hold $id has no retry identity record" ;;
+    *) fail "commander hold $id has no retry identity record" ;;
   esac
   case "$resolution_fields" in
-    *'\nRouted identities: '*'\n\nCaptain decision:'*) : ;;
-    *) fail "captain hold $id has an invalid retry identity record" ;;
+    *'\nRouted identities: '*'\n\nCommander decision:'*) : ;;
+    *) fail "commander hold $id has an invalid retry identity record" ;;
   esac
   recorded_digest=${resolution_fields%%\\n*}
   resolution_fields=${resolution_fields#*\\nRouted identities: }
   recorded_routes=${resolution_fields%%\\n*}
   [ "$recorded_digest" = "$decision_digest" ] \
-    || fail "captain hold $id records a different captain decision"
+    || fail "commander hold $id records a different commander decision"
   [ "$recorded_routes" = "$routed_csv" ] \
-    || fail "captain hold $id records different routed work"
+    || fail "commander hold $id records different routed work"
 }
 
 command_id() {
@@ -247,29 +247,29 @@ command_hold() {
   validate_one_line reason "$reason"
   case "$reason" in *'('*|*')'*) fail "reason must not contain parentheses (tasks-axi hold contract)" ;; esac
   require_tasks_axi
-  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
+  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_HOME"
   id=$(hold_id "$origin" "$key")
   if show=$(task_show "$id"); then
     state=$(show_field "$show" state)
     kind=$(show_field "$show" kind)
     existing_title=$(show_field "$show" title)
-    [ "$state" != "done" ] || fail "captain decision $id is already durably resolved; use a new decision key for a new decision"
-    [ "$kind" = captain ] || fail "existing backlog identity $id is not kind captain"
-    [ "$existing_title" = "$title" ] || fail "existing captain hold $id has a different title"
+    [ "$state" != "done" ] || fail "commander decision $id is already durably resolved; use a new decision key for a new decision"
+    [ "$kind" = commander ] || fail "existing backlog identity $id is not kind commander"
+    [ "$existing_title" = "$title" ] || fail "existing commander hold $id has a different title"
   else
     if [ -z "$repo" ] && [ -f "$STATE/$origin.meta" ]; then
       repo=$(meta_value "$STATE/$origin.meta" project)
       repo=${repo%/}
       repo=${repo##*/}
     fi
-    [ -n "$repo" ] || repo=firstmate
+    [ -n "$repo" ] || repo=Squad
     validate_one_line repo "$repo"
-    body=$(printf 'Origin: %s\nDecision key: %s\nState: awaiting captain decision.' "$origin" "$key")
-    tasks_axi add "$id" "$title" --kind captain --repo "$repo" --body "$body" >/dev/null \
-      || fail "could not create captain decision item $id"
+    body=$(printf 'Origin: %s\nDecision key: %s\nState: awaiting commander decision.' "$origin" "$key")
+    tasks_axi add "$id" "$title" --kind commander --repo "$repo" --body "$body" >/dev/null \
+      || fail "could not create commander decision item $id"
   fi
-  tasks_axi hold "$id" --reason "$reason" --kind captain >/dev/null \
-    || fail "could not activate captain hold $id"
+  tasks_axi hold "$id" --reason "$reason" --kind commander >/dev/null \
+    || fail "could not activate commander hold $id"
   verify_hold_active "$id"
   printf '%s\n' "$id"
 }
@@ -282,7 +282,7 @@ command_complete() {
   meta="$STATE/$origin.meta"
   [ -f "$meta" ] && has_meta=1
   require_tasks_axi
-  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
+  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_HOME"
   if [ "$#" -eq 1 ] && [ "$1" = --none ]; then
     supplied=''
   else
@@ -312,7 +312,7 @@ EOF
   while IFS=$'\t' read -r key _verb _summary; do
     [ -n "$key" ] || continue
     list_has_key "$keys" "$key" \
-      || fail "open structured decision $origin/$key has no captain-held inventory entry"
+      || fail "open structured decision $origin/$key has no commander-held inventory entry"
   done <<EOF
 $open
 EOF
@@ -323,11 +323,11 @@ EOF
     fi
 
     # Transfer any still-open status decision to its durable backlog owner so the
-    # live status fold does not duplicate the same Captain's Call item.
+    # live status fold does not duplicate the same Commander's Call item.
     while IFS=$'\t' read -r key _verb _summary; do
       [ -n "$key" ] || continue
       list_has_key "$keys" "$key" || continue
-      printf 'captain-held [key=%s]: tracked by %s\n' "$key" "$(hold_id "$origin" "$key")" >> "$status_file"
+      printf 'commander-held [key=%s]: tracked by %s\n' "$key" "$(hold_id "$origin" "$key")" >> "$status_file"
       key_seen=1
     done <<EOF
 $raw_open
@@ -404,7 +404,7 @@ command_resolve() {
   hold_show=$(task_show "$id")
   hold_body=$(show_field "$hold_show" body)
   case "$hold_body" in
-    *"Resolution recorded by fm-decision-hold."*)
+    *"Resolution recorded by sq-decision-hold."*)
       verify_resolution_identity "$id" "$hold_body" "$decision_digest" "$routed_csv"
       resolution_recorded=1
       ;;
@@ -423,19 +423,19 @@ command_resolve() {
       *",$id,"*) : ;;
       *)
         case "$hold_body" in
-          *"Resolution recorded by fm-decision-hold."*"- $dep"*) : ;;
+          *"Resolution recorded by sq-decision-hold."*"- $dep"*) : ;;
           *) fail "routed task $dep is not durably blocked by $id" ;;
         esac
         ;;
     esac
   done
 
-  body=$(printf 'Resolution recorded by fm-decision-hold.\nDecision digest: %s\nRouted identities: %s\n\nCaptain decision:\n%s\n\nRouted work:\n' "$decision_digest" "$routed_csv" "$decision")
+  body=$(printf 'Resolution recorded by sq-decision-hold.\nDecision digest: %s\nRouted identities: %s\n\nCommander decision:\n%s\n\nRouted work:\n' "$decision_digest" "$routed_csv" "$decision")
   for dep in $routed; do
     body="${body}- ${dep}"$'\n'
   done
   tasks_axi update "$id" --body "$body" >/dev/null \
-    || fail "could not record the captain decision on $id"
+    || fail "could not record the commander decision on $id"
   for dep in $routed; do
     show=$(task_show "$dep") || fail "routed task $dep disappeared before routing"
     blocked=$(show_field "$show" blocked_by | tr -d '[:space:]')
@@ -448,8 +448,8 @@ command_resolve() {
         ;;
     esac
   done
-  tasks_axi "done" "$id" >/dev/null || fail "could not close resolved captain hold $id"
-  verify_hold_resolved "$id" || fail "captain hold $id did not retain its durable resolution record"
+  tasks_axi "done" "$id" >/dev/null || fail "could not close resolved commander hold $id"
+  verify_hold_resolved "$id" || fail "commander hold $id did not retain its durable resolution record"
   printf 'resolved: %s -> %s\n' "$id" "$routed"
 }
 

@@ -2,16 +2,16 @@
 # Check, and optionally repair, one remote account's second-mate readiness.
 #
 # Usage:
-#   bin/fm-on.sh <secondmate-id|ssh-alias> fm-remote-doctor.sh [--fix]
+#   bin/sq-on.sh <XO-id|ssh-alias> sq-remote-doctor.sh [--fix]
 #
-# Run it through fm-on.sh so the fixed entrypoint invokes this readiness owner
+# Run it through sq-on.sh so the fixed entrypoint invokes this readiness owner
 # over its plain SSH bootstrap. The command reports the same filesystem-composed
 # PATH used by worker jobs while retaining authority to inspect and repair the
 # worker itself.
 #
 # A remote second mate always runs on the Herdr backend in the dedicated
-# fm-remote session. Its account therefore needs the Firstmate-owned Aqua Herdr
-# agent plus the sibling dev.firstmate.remote-job worker that runs normal fm-on
+# sq-remote session. Its account therefore needs the Squad-owned Aqua Herdr
+# agent plus the sibling dev.Squad.remote-job worker that runs normal sq-on
 # commands through the Aqua or Linux job-worker path. Doctor remains invokable
 # over the plain-SSH bootstrap path to inspect and repair that worker. SSH cannot
 # create an Aqua session, so a host with no GUI login is a human gap rather than
@@ -37,11 +37,11 @@
 # exits non-zero.
 #
 # --fix is idempotent and closes only automatable gaps: it writes and reloads
-# both Firstmate-owned Aqua agents, starts the Linux workers where no Aqua agent
+# both Squad-owned Aqua agents, starts the Linux workers where no Aqua agent
 # applies, recreates the entrypoint symlink, and may add an owned ~/.local/bin
 # wrapper for a required tool it can discover under nvm, asdf, or mise. It never
 # installs packages, creates a login session, writes an auto-login password,
-# changes FileVault, stores an account password, or replaces a non-Firstmate
+# changes FileVault, stores an account password, or replaces a non-Squad
 # wrapper; those remain reported gaps.
 set -eu
 
@@ -51,24 +51,24 @@ SCRIPT_SELF=${BASH_SOURCE[0]}
 SCRIPT_DIR=${SCRIPT_SELF%/*}
 [ "$SCRIPT_DIR" != "$SCRIPT_SELF" ] || SCRIPT_DIR=.
 SCRIPT_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR" && pwd -P)
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}"
-# shellcheck source=bin/fm-remote-job-lib.sh
-. "$SCRIPT_DIR/fm-remote-job-lib.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-REQUIRED_TOOLS=(git jq herdr tasks-axi treehouse)
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}"
+# shellcheck source=bin/sq-remote-job-lib.sh
+. "$SCRIPT_DIR/sq-remote-job-lib.sh"
+# shellcheck source=bin/sq-tasks-axi-lib.sh
+. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+REQUIRED_TOOLS=(git jq herdr tasks-axi fob)
 HARNESS_TOOLS=(claude codex opencode pi pi-signed grok kimi)
 OPTIONAL_TOOLS=(tmux no-mistakes gh)
-LAUNCH_AGENT_LABEL=dev.firstmate.herdr.fm-remote
-# The dedicated remote-secondmate session. The user's interactive Herdr work
+LAUNCH_AGENT_LABEL=dev.Squad.herdr.sq-remote
+# The dedicated remote-XO session. The user's interactive Herdr work
 # remains in the separate default session, which this readiness check never
 # requires or changes.
-HERDR_SESSION_NAME=fm-remote
+HERDR_SESSION_NAME=sq-remote
 LAUNCH_AGENT_DIR="${HOME:-}/Library/LaunchAgents"
 LAUNCH_AGENT_PLIST="$LAUNCH_AGENT_DIR/$LAUNCH_AGENT_LABEL.plist"
 LAUNCH_AGENT_LOG_DIR="${HOME:-}/Library/Logs"
 LAUNCH_AGENT_LOG="$LAUNCH_AGENT_LOG_DIR/$LAUNCH_AGENT_LABEL.log"
-ENTRYPOINT_LINK="${HOME:-}/.local/bin/fm-remote-entrypoint.sh"
+ENTRYPOINT_LINK="${HOME:-}/.local/bin/sq-remote-entrypoint.sh"
 
 usage() { sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -77,7 +77,7 @@ case "${1:-}" in
   '') ;;
   --fix) MODE=fix; shift ;;
   --worker-tool-probe)
-    [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] || { printf 'error: worker tool probe requires the remote job worker\n' >&2; exit 64; }
+    [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" = 1 ] || { printf 'error: worker tool probe requires the remote job worker\n' >&2; exit 64; }
     MODE='worker-tool-probe'
     shift
     ;;
@@ -140,13 +140,13 @@ herdr_cli_available() {
 # either here. Sourced only when both tools resolve, so a bare host still
 # reports its gaps instead of failing to load.
 herdr_adapter_load() {
-  [ -z "${FM_REMOTE_DOCTOR_HERDR_LOADED:-}" ] || return 0
+  [ -z "${SQUAD_REMOTE_DOCTOR_HERDR_LOADED:-}" ] || return 0
   herdr_cli_available || return 1
-  [ -f "$SCRIPT_DIR/fm-backend.sh" ] && [ -f "$SCRIPT_DIR/backends/herdr.sh" ] || return 1
-  # shellcheck source=bin/fm-backend.sh
-  . "$SCRIPT_DIR/fm-backend.sh" || return 1
+  [ -f "$SCRIPT_DIR/sq-backend.sh" ] && [ -f "$SCRIPT_DIR/backends/herdr.sh" ] || return 1
+  # shellcheck source=bin/sq-backend.sh
+  . "$SCRIPT_DIR/sq-backend.sh" || return 1
   fm_backend_source herdr || return 1
-  FM_REMOTE_DOCTOR_HERDR_LOADED=1
+  SQUAD_REMOTE_DOCTOR_HERDR_LOADED=1
 }
 
 herdr_server_running() {
@@ -228,18 +228,18 @@ launch_agent_loaded_contract_matches() {
 
 remote_job_existing_state() {
   local root
-  root=${FM_REMOTE_JOB_STATE_ROOT:-${HOME:-}/.firstmate/remote-job}
+  root=${SQUAD_REMOTE_JOB_STATE_ROOT:-${HOME:-}/.Squad/remote-job}
   root=$(fm_remote_job_canonical_existing_dir "$root") || return 1
   fm_remote_job_canonical_existing_dir "$root/jobs" >/dev/null || return 1
   # shellcheck disable=SC2034 # The sourceable worker helpers consume the validated state root.
-  FM_REMOTE_JOB_STATE=$root
+  SQUAD_REMOTE_JOB_STATE=$root
 }
 
 remote_job_probe_ok() {
   local ready mtime now
-  [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] && return 0
+  [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" = 1 ] && return 0
   remote_job_existing_state || return 1
-  ready="$FM_REMOTE_JOB_STATE/worker.ready"
+  ready="$SQUAD_REMOTE_JOB_STATE/worker.ready"
   [ -f "$ready" ] && [ ! -L "$ready" ] || return 1
   mtime=$(fm_remote_job_path_mtime "$ready" 2>/dev/null || true)
   case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
@@ -248,45 +248,45 @@ remote_job_probe_ok() {
 }
 
 remote_job_identity_ok() {
-  [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] && return 0
+  [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" = 1 ] && return 0
   remote_job_probe_ok || return 1
-  fm_remote_job_worker_identity_matches "$FM_ROOT" "${HOME:-}"
+  fm_remote_job_worker_identity_matches "$SQUAD_ROOT" "${HOME:-}"
 }
 
 check_remote_job_worker() {
   local worker
-  worker="$FM_ROOT/bin/fm-remote-job-worker.sh"
+  worker="$SQUAD_ROOT/bin/sq-remote-job-worker.sh"
   if [ ! -f "$worker" ] || [ -L "$worker" ] || [ ! -x "$worker" ]; then
-    record remote-job-worker "human: the configured Firstmate code root has no safe remote job worker" \
-      "update the remote Firstmate checkout, then rerun this command with --fix"
+    record remote-job-worker "human: the configured Squad code root has no safe remote job worker" \
+      "update the remote Squad checkout, then rerun this command with --fix"
     record remote-job-worker-loaded "skip: no worker executable is available"
     record remote-job-probe "skip: no worker executable is available"
     return 0
   fi
   if [ "$PLATFORM" = darwin ]; then
     fm_remote_job_launchagent_paths "${HOME:-}"
-    if fm_remote_job_launchagent_contract_matches "$FM_ROOT" "${HOME:-}"; then
-      record remote-job-worker "ok: $FM_REMOTE_JOB_LAUNCH_AGENT_PLIST matches the Firstmate-owned Aqua worker contract"
+    if fm_remote_job_launchagent_contract_matches "$SQUAD_ROOT" "${HOME:-}"; then
+      record remote-job-worker "ok: $SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST matches the Squad-owned Aqua worker contract"
     else
-      record remote-job-worker "fixable: $FM_REMOTE_JOB_LAUNCH_AGENT_PLIST does not match the Firstmate-owned Aqua worker contract" \
-        "rerun this command with --fix to write dev.firstmate.remote-job"
+      record remote-job-worker "fixable: $SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST does not match the Squad-owned Aqua worker contract" \
+        "rerun this command with --fix to write dev.Squad.remote-job"
     fi
     if [ -z "$UID_NUM" ] || ! command -v launchctl >/dev/null 2>&1; then
       record remote-job-worker-loaded "human: the remote job worker cannot be inspected without launchctl and an account uid" \
         "restore launchctl and a readable account uid, then rerun this command"
-    elif fm_remote_job_launchagent_loaded "$FM_ROOT" "${HOME:-}" "$UID_NUM"; then
-      record remote-job-worker-loaded "ok: $FM_REMOTE_JOB_LABEL is loaded in gui/$UID_NUM"
+    elif fm_remote_job_launchagent_loaded "$SQUAD_ROOT" "${HOME:-}" "$UID_NUM"; then
+      record remote-job-worker-loaded "ok: $SQUAD_REMOTE_JOB_LABEL is loaded in gui/$UID_NUM"
     elif check_is_ok gui-session; then
-      record remote-job-worker-loaded "fixable: $FM_REMOTE_JOB_LABEL is not loaded in gui/$UID_NUM" \
+      record remote-job-worker-loaded "fixable: $SQUAD_REMOTE_JOB_LABEL is not loaded in gui/$UID_NUM" \
         "rerun this command with --fix to bootstrap the worker"
     else
-      record remote-job-worker-loaded "human: $FM_REMOTE_JOB_LABEL cannot be loaded because gui/$UID_NUM has no login session" \
+      record remote-job-worker-loaded "human: $SQUAD_REMOTE_JOB_LABEL cannot be loaded because gui/$UID_NUM has no login session" \
         "close the login-session gap first; SSH cannot create an Aqua session"
     fi
   else
     local pid
-    pid=$(cat "${FM_REMOTE_JOB_STATE_ROOT:-${HOME:-}/.firstmate/remote-job}/worker.pid" 2>/dev/null || true)
-    if [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] ||
+    pid=$(cat "${SQUAD_REMOTE_JOB_STATE_ROOT:-${HOME:-}/.Squad/remote-job}/worker.pid" 2>/dev/null || true)
+    if [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" = 1 ] ||
       { remote_job_existing_state && case "$pid" in ''|*[!0-9]*) false ;; *) kill -0 "$pid" 2>/dev/null ;; esac; }; then
       record remote-job-worker "ok: the Linux remote job worker is running"
       record remote-job-worker-loaded "skip: Aqua launch agents do not apply on $PLATFORM"
@@ -298,9 +298,9 @@ check_remote_job_worker() {
   fi
   if ! remote_job_probe_ok; then
     record remote-job-probe "fixable: the remote job worker has not reported a fresh probe" \
-      "rerun this command with --fix to restart the worker, then rerun through fm-on.sh"
+      "rerun this command with --fix to restart the worker, then rerun through sq-on.sh"
   elif ! remote_job_identity_ok; then
-    set_check remote-job-worker "fixable: the running remote job worker does not match the current Firstmate code" \
+    set_check remote-job-worker "fixable: the running remote job worker does not match the current Squad code" \
       "rerun this command with --fix to reload the current worker"
     record remote-job-probe "fixable: the remote job worker identity is stale, so its runtime cannot be probed" \
       "rerun this command with --fix to reload the current worker"
@@ -340,8 +340,8 @@ report_required_tools() {
 report_required_tools_from_worker() {
   local job_id probe_stdout probe_stderr probe_exit line fact name value
   local expected=6 count=0 valid=1 seen=' '
-  if ! job_id=$(fm_remote_job_stage "${HOME:-}" "$FM_ROOT" "${FM_HOME:-}" \
-    fm-remote-doctor.sh --worker-tool-probe </dev/null); then
+  if ! job_id=$(fm_remote_job_stage "${HOME:-}" "$SQUAD_ROOT" "${SQUAD_HOME:-}" \
+    sq-remote-doctor.sh --worker-tool-probe </dev/null); then
     set_check remote-job-probe "fixable: the remote job worker could not accept the required-tool probe" \
       "rerun this command with --fix to restart the worker"
     report_required_tools
@@ -354,16 +354,16 @@ report_required_tools_from_worker() {
     report_required_tools
     return 0
   fi
-  probe_stdout=$FM_REMOTE_JOB_STDOUT
-  probe_stderr=$FM_REMOTE_JOB_STDERR
-  probe_exit=$FM_REMOTE_JOB_EXIT
+  probe_stdout=$SQUAD_REMOTE_JOB_STDOUT
+  probe_stderr=$SQUAD_REMOTE_JOB_STDERR
+  probe_exit=$SQUAD_REMOTE_JOB_EXIT
   MISSING=()
   while IFS= read -r line; do
     case "$line" in required\ *=*) ;; *) valid=0; continue ;; esac
     fact=${line#required }
     name=${fact%%=*}
     value=${fact#*=}
-    case "$name" in git|jq|herdr|tasks-axi|treehouse|harness) ;; *) valid=0; continue ;; esac
+    case "$name" in git|jq|herdr|tasks-axi|fob|harness) ;; *) valid=0; continue ;; esac
     case "$seen" in *" $name "*) valid=0; continue ;; esac
     seen="$seen$name "
     count=$((count + 1))
@@ -383,12 +383,12 @@ report_required_tools_from_worker() {
   fm_remote_job_reap "${HOME:-}" "$job_id" 2>/dev/null || true
 }
 
-wrapper_is_firstmate_owned() { # <path>
+wrapper_is_Squad_owned() { # <path>
   local path=$1 first second
   [ -f "$path" ] && [ ! -L "$path" ] || return 1
   IFS= read -r first < "$path" || return 1
   IFS= read -r second < <(tail -n +2 "$path") || return 1
-  [ "$first" = '#!/usr/bin/env bash' ] && [ "$second" = '# Firstmate remote tool wrapper v1' ]
+  [ "$first" = '#!/usr/bin/env bash' ] && [ "$second" = '# Squad remote tool wrapper v1' ]
 }
 
 repair_tool_wrapper() { # <tool>
@@ -400,8 +400,8 @@ repair_tool_wrapper() { # <tool>
   [ -n "$target" ] || return 1
   wrapper="${HOME:-}/.local/bin/$tool"
   if [ -e "$wrapper" ] || [ -L "$wrapper" ]; then
-    if ! wrapper_is_firstmate_owned "$wrapper"; then
-      fix_report "required-$tool" failed "$wrapper exists and is not Firstmate-owned"
+    if ! wrapper_is_Squad_owned "$wrapper"; then
+      fix_report "required-$tool" failed "$wrapper exists and is not Squad-owned"
       return 1
     fi
   else
@@ -413,7 +413,7 @@ repair_tool_wrapper() { # <tool>
   tmp="${HOME:-}/.local/bin/.$tool.tmp.$$"
   {
     printf '%s\n' '#!/usr/bin/env bash'
-    printf '%s\n' '# Firstmate remote tool wrapper v1'
+    printf '%s\n' '# Squad remote tool wrapper v1'
     printf 'exec %q "$@"\n' "$target"
   } > "$tmp" || { rm -f -- "$tmp"; fix_report "required-$tool" failed "cannot write $wrapper"; return 1; }
   if ! chmod 0700 "$tmp" || ! mv -f -- "$tmp" "$wrapper"; then
@@ -440,11 +440,11 @@ repair_required_wrappers() {
 }
 
 fix_remote_job_worker() {
-  if fm_remote_job_ensure_worker "$FM_ROOT" "${HOME:-}"; then
-    [ "$FM_REMOTE_JOB_REPAIRED" -eq 0 ] || fix_report remote-job-worker applied "installed or reloaded $FM_REMOTE_JOB_LABEL"
+  if fm_remote_job_ensure_worker "$SQUAD_ROOT" "${HOME:-}"; then
+    [ "$SQUAD_REMOTE_JOB_REPAIRED" -eq 0 ] || fix_report remote-job-worker applied "installed or reloaded $SQUAD_REMOTE_JOB_LABEL"
     return 0
   fi
-  fix_report remote-job-worker failed "${FM_REMOTE_JOB_ERROR:-the remote job worker could not start}"
+  fix_report remote-job-worker failed "${SQUAD_REMOTE_JOB_ERROR:-the remote job worker could not start}"
   return 1
 }
 
@@ -467,7 +467,7 @@ check_gui_session() {
   fi
   if [ -z "$UID_NUM" ]; then
     record gui-session "human: the account uid could not be read, so its login session cannot be inspected" \
-      "run 'id -u' on that account and report the failure; Firstmate cannot address gui/<uid> without it"
+      "run 'id -u' on that account and report the failure; Squad cannot address gui/<uid> without it"
     return 0
   fi
   if ! command -v launchctl >/dev/null 2>&1; then
@@ -480,7 +480,7 @@ check_gui_session() {
     return 0
   fi
   record gui-session "human: no Aqua login session exists for uid $UID_NUM" \
-    "log that account in once at the console, and enable automatic login in System Settings > Users & Groups if the machine runs headless; SSH cannot create a GUI session, and Firstmate never writes an auto-login password or changes FileVault"
+    "log that account in once at the console, and enable automatic login in System Settings > Users & Groups if the machine runs headless; SSH cannot create a GUI session, and Squad never writes an auto-login password or changes FileVault"
 }
 
 check_launch_agent() {
@@ -492,9 +492,9 @@ check_launch_agent() {
   fi
   if [ -f "$LAUNCH_AGENT_PLIST" ] && [ ! -L "$LAUNCH_AGENT_PLIST" ]; then
     if launch_agent_contract_matches; then
-      record launchagent "ok: $LAUNCH_AGENT_PLIST matches the Firstmate-owned contract"
+      record launchagent "ok: $LAUNCH_AGENT_PLIST matches the Squad-owned contract"
     else
-      record launchagent "fixable: $LAUNCH_AGENT_PLIST does not match the current Firstmate-owned contract" \
+      record launchagent "fixable: $LAUNCH_AGENT_PLIST does not match the current Squad-owned contract" \
         "rerun this command with --fix to rewrite its label, program arguments, session scope, restart policy, and log paths"
     fi
     if launch_agent_is_aqua; then
@@ -504,7 +504,7 @@ check_launch_agent() {
         "rerun this command with --fix to rewrite it with LimitLoadToSessionType=Aqua"
     fi
   else
-    record launchagent "fixable: no Firstmate herdr launch agent at $LAUNCH_AGENT_PLIST" \
+    record launchagent "fixable: no Squad herdr launch agent at $LAUNCH_AGENT_PLIST" \
       "rerun this command with --fix to install it"
     record launchagent-scope "skip: no launch agent is installed yet"
   fi
@@ -521,7 +521,7 @@ check_launch_agent_loaded() {
     if launch_agent_loaded_contract_matches; then
       record launchagent-loaded "ok: gui/$UID_NUM/$LAUNCH_AGENT_LABEL matches the effective contract"
     else
-      record launchagent-loaded "fixable: gui/$UID_NUM/$LAUNCH_AGENT_LABEL does not match the effective Firstmate-owned contract" \
+      record launchagent-loaded "fixable: gui/$UID_NUM/$LAUNCH_AGENT_LABEL does not match the effective Squad-owned contract" \
         "rerun this command with --fix to replace the loaded job with the current launch-agent contract"
     fi
     return 0
@@ -556,18 +556,18 @@ check_herdr_server() {
 
 check_entrypoint_link() {
   local want
-  if [ -z "${FM_ROOT_OVERRIDE:-}" ]; then
+  if [ -z "${SQUAD_ROOT_OVERRIDE:-}" ]; then
     record entrypoint-link "skip: this run did not come through the fixed remote entrypoint"
     return 0
   fi
-  want="$FM_ROOT_OVERRIDE/bin/fm-remote-entrypoint.sh"
+  want="$SQUAD_ROOT_OVERRIDE/bin/sq-remote-entrypoint.sh"
   if [ -L "$ENTRYPOINT_LINK" ] && [ "$(readlink "$ENTRYPOINT_LINK")" = "$want" ]; then
     record entrypoint-link "ok: $ENTRYPOINT_LINK"
     return 0
   fi
   if [ -e "$ENTRYPOINT_LINK" ] || [ -L "$ENTRYPOINT_LINK" ]; then
     record entrypoint-link "human: $ENTRYPOINT_LINK exists but is not the symlink to $want" \
-      "inspect that path yourself and replace it with 'ln -sfn $want $ENTRYPOINT_LINK' if it is stale; Firstmate never overwrites a file it did not create there"
+      "inspect that path yourself and replace it with 'ln -sfn $want $ENTRYPOINT_LINK' if it is stale; Squad never overwrites a file it did not create there"
     return 0
   fi
   record entrypoint-link "fixable: no entrypoint symlink at $ENTRYPOINT_LINK" \
@@ -673,7 +673,7 @@ start_herdr_server() {
 }
 
 link_entrypoint() {
-  local want="${FM_ROOT_OVERRIDE:-}/bin/fm-remote-entrypoint.sh"
+  local want="${SQUAD_ROOT_OVERRIDE:-}/bin/sq-remote-entrypoint.sh"
   if ! mkdir -p "$(dirname "$ENTRYPOINT_LINK")" 2>/dev/null; then
     fix_report entrypoint-link failed "cannot create $(dirname "$ENTRYPOINT_LINK")"
     return 1
@@ -742,7 +742,7 @@ fi
 
 printf 'mode=%s\n' "$MODE"
 printf 'path=%s\n' "${PATH:-}"
-if [ -n "${FM_ROOT_OVERRIDE:-}" ] && [ "${PATH%%:*}" = "$FM_ROOT_OVERRIDE/bin" ]; then
+if [ -n "${SQUAD_ROOT_OVERRIDE:-}" ] && [ "${PATH%%:*}" = "$SQUAD_ROOT_OVERRIDE/bin" ]; then
   printf 'entrypoint=yes\n'
 else
   printf 'entrypoint=no\n'
@@ -758,7 +758,7 @@ if [ "$MODE" = fix ]; then
   run_checks
 fi
 
-if [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] || ! remote_job_identity_ok; then
+if [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" = 1 ] || ! remote_job_identity_ok; then
   report_required_tools
 else
   report_required_tools_from_worker
@@ -787,7 +787,7 @@ done
 if [ "${#MISSING[@]}" -gt 0 ]; then
   printf 'error: required tools do not resolve on the remote runtime PATH: %s\n' "${MISSING[*]}" >&2
   printf 'fix: install each one where it resolves on the path reported above, or put a wrapper script for it in %s/.local/bin, which is always on that PATH.\n' "${HOME:-~}" >&2
-  printf 'fix: tools in an unselected nvm version or outside the discovered asdf or mise paths need an absolute wrapper; see docs/remote-secondmates.md for the wrapper recipe.\n' >&2
+  printf 'fix: tools in an unselected nvm version or outside the discovered asdf or mise paths need an absolute wrapper; see docs/remote-XOs.md for the wrapper recipe.\n' >&2
 fi
 if [ "${#MISSING[@]}" -gt 0 ] || [ "${#GAPS[@]}" -gt 0 ]; then
   NAMES=

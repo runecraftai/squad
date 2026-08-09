@@ -1,35 +1,35 @@
 #!/usr/bin/env bash
-# Safe, home-scoped (re-)arm of the firstmate watcher, with honest verification.
+# Safe, home-scoped (re-)arm of the Squad sentry, with honest verification.
 #
-# The watcher (bin/fm-watch.sh) blocks until it has an actionable wake to
+# The sentry (bin/sq-sentry.sh) blocks until it has an actionable wake to
 # surface, then prints one reason line and exits. While state/.afk exists the
-# daemon owns triage and the watcher exits on every wake for the daemon to
+# daemon owns triage and the sentry exits on every wake for the daemon to
 # classify. Reliability depends on arming through a mechanism that SURVIVES the
-# call and NOTIFIES on exit, so firstmate must run this script as the harness's
+# call and NOTIFIES on exit, so Squad must run this script as the harness's
 # own tracked background task (e.g. run_in_background), or - for a Claude
 # primary - inside the Stop asyncRewake hook's foreground process tree
-# (bin/fm-claude-stop-autoarm.sh), where the harness owns the process group and
+# (bin/sq-claude-stop-autoarm.sh), where the harness owns the process group and
 # the hook's exit-2 rewake is the notification. Run it as its own standalone
 # background task, never bundled onto the tail of another command.
 # NEVER fire it and forget with a shell `&` inside another call: that backgrounded
-# child is reaped when the call returns, leaving NO watcher running and a false
+# child is reaped when the call returns, leaving NO sentry running and a false
 # "already running" off the dying process. That exact mistake silently took
 # supervision down for ~30 minutes.
-# On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
+# On a harness with a PreToolUse-equivalent hook, bin/sq-arm-pretool-check.sh
 # applies the command-position policy before the command runs; see
 # docs/arm-pretool-check.md for the blessed tree and deny reason codes. It is a
 # pre-execution seatbelt, not a substitute for the verification here.
 #
-# This script forks the watcher as a tracked child, then VERIFIES the outcome
-# before it settles in. It confirms a watcher process is genuinely alive AND the
-# liveness beacon (state/.last-watcher-beat) is fresh within FM_GUARD_GRACE (the
-# single source of truth, shared with fm-watch.sh and fm-guard.sh), and prints
+# This script forks the sentry as a tracked child, then VERIFIES the outcome
+# before it settles in. It confirms a sentry process is genuinely alive AND the
+# liveness beacon (state/.last-sentry-beat) is fresh within SQUAD_GUARD_GRACE (the
+# single source of truth, shared with sq-sentry.sh and sq-guard.sh), and prints
 # exactly one unambiguous status line:
-#   watcher: started pid=<N> (beacon fresh)              - it launched one and confirmed it
-#   watcher: attached pid=<N> (beacon <age>s)            - a live+fresh successor holds the lock;
+#   sentry: started pid=<N> (beacon fresh)              - it launched one and confirmed it
+#   sentry: attached pid=<N> (beacon <age>s)            - a live+fresh successor holds the lock;
 #                                                          this arm attaches and follows it
-#   watcher: FAILED - no live watcher with a fresh beacon  - could not confirm one
-#   watcher: FAILED - cycle ended without an actionable reason
+#   sentry: FAILED - no live sentry with a fresh beacon  - could not confirm one
+#   sentry: FAILED - cycle ended without an actionable reason
 #                                                        - a clean cycle ended with no wake and no
 #                                                          verified healthy successor
 # It NEVER reports started/attached/healthy off a stale beacon or a dead/reused pid: a
@@ -38,58 +38,58 @@
 # returns the FAILED line. On started it waits the child and propagates the wake
 # reason; on attached it stays live across identity-matched successors. A cycle
 # that ends with no reason line and no healthy successor is resolved against the
-# watcher's identity-bound delivery record: a matching record reports that wake
+# sentry's identity-bound delivery record: a matching record reports that wake
 # and exits 0, and only a cycle that delivered nothing is the typed nonzero
 # failure. Neither is ever a clean empty completion. On FAILED it exits non-zero
 # so the failure is loud. A live cycle already present means re-arm attaches - do
-# not start a second watcher.
+# not start a second sentry.
 #
-# Every observed watcher cycle appends one tab-separated lifecycle record to
+# Every observed sentry cycle appends one tab-separated lifecycle record to
 # state/.watch-cycle-exits.log. The arm layer owns that bounded ledger; it records
-# arm/watcher identities, timestamps, exit/signal classification, beacon age,
+# arm/sentry identities, timestamps, exit/signal classification, beacon age,
 # lock identity before and after close, and successor disposition. The separate
-# state/.watch-triage.log remains exclusively the watcher's absorbed-wake debug
+# state/.sentry-triage.log remains exclusively the sentry's absorbed-wake debug
 # log and is never written here.
 #
-# --restart: stop ONLY this FM_HOME's watcher (the pid recorded in THIS home's
-# state/.watch.lock) and own a fresh cycle, or attach if a verified live peer
+# --restart: stop ONLY this SQUAD_HOME's sentry (the pid recorded in THIS home's
+# state/.sentry.lock) and own a fresh cycle, or attach if a verified live peer
 # wins the singleton while the duplicate child stands down. It
 # resolves and signals exactly that pid, so it can never touch another home's
-# watcher. NEVER `pkill -f
-# bin/fm-watch.sh`: that pattern matches every firstmate home's watcher
-# (secondmate homes run the same script) and would kill siblings.
+# sentry. NEVER `pkill -f
+# bin/sq-sentry.sh`: that pattern matches every Squad home's sentry
+# (XO homes run the same script) and would kill siblings.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
-WATCH="$SCRIPT_DIR/fm-watch.sh"
-WATCH_LOCK="$STATE/.watch.lock"
-BEAT="$STATE/.last-watcher-beat"
+WATCH="$SCRIPT_DIR/sq-sentry.sh"
+WATCH_LOCK="$STATE/.sentry.lock"
+BEAT="$STATE/.last-sentry-beat"
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
-GRACE=${FM_GUARD_GRACE:-300}
-# How long to wait for a freshly forked watcher to acquire the lock and beat.
-# Git Bash/MSYS pays a much higher fork cost while the watcher completes its
+GRACE=${SQUAD_GUARD_GRACE:-300}
+# How long to wait for a freshly forked sentry to acquire the lock and beat.
+# Git Bash/MSYS pays a much higher fork cost while the sentry completes its
 # required pre-lock migration, so its bounded default covers that cold start.
 case "${OSTYPE:-}" in
   msys*|mingw*|cygwin*) ARM_CONFIRM_DEFAULT=30 ;;
   *) ARM_CONFIRM_DEFAULT=10 ;;
 esac
-CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
-# Poll interval while attached to an existing healthy watcher.
-ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
+CONFIRM_TIMEOUT=${SQUAD_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
+# Poll interval while attached to an existing healthy sentry.
+ATTACH_POLL=${SQUAD_ARM_ATTACH_POLL:-0.5}
 CYCLE_LOG="$STATE/.watch-cycle-exits.log"
 CYCLE_LOG_LOCK="$STATE/.watch-cycle-exits.lock"
-CYCLE_LOG_MAX_BYTES=${FM_WATCH_CYCLE_LOG_MAX_BYTES:-262144}
-CYCLE_LOG_KEEP_LINES=${FM_WATCH_CYCLE_LOG_KEEP_LINES:-1000}
+CYCLE_LOG_MAX_BYTES=${SQUAD_WATCH_CYCLE_LOG_MAX_BYTES:-262144}
+CYCLE_LOG_KEEP_LINES=${SQUAD_WATCH_CYCLE_LOG_KEEP_LINES:-1000}
 ARM_PID=${BASHPID:-$$}
 case "$CYCLE_LOG_MAX_BYTES" in ''|*[!0-9]*|0) CYCLE_LOG_MAX_BYTES=262144 ;; esac
 case "$CYCLE_LOG_KEEP_LINES" in ''|*[!0-9]*|0) CYCLE_LOG_KEEP_LINES=1000 ;; esac
 
 # The lifecycle ledger is diagnostic evidence, not a supervision dependency.
 # Writes are bounded and best-effort so an observability failure cannot stall an
-# otherwise healthy watcher cycle.
+# otherwise healthy sentry cycle.
 cycle_clean_field() {
   printf '%s' "$1" | tr '\t\r\n' '   ' | cut -c1-512
 }
@@ -105,16 +105,16 @@ WATCH_DELIVERY_LOG="$STATE/.watch-deliveries.log"
 WATCH_DELIVERY_LOCK="$STATE/.watch-deliveries.lock"
 
 cycle_active=0
-cycle_watcher_pid=none
-cycle_watcher_identity=none
+cycle_sentry_pid=none
+cycle_sentry_identity=none
 cycle_origin=unknown
 cycle_started_at=0
 cycle_lock_before='pid:none|identity:none'
 
 cycle_begin() {
-  cycle_watcher_pid=$1
+  cycle_sentry_pid=$1
   cycle_origin=$2
-  cycle_watcher_identity=$3
+  cycle_sentry_identity=$3
   cycle_started_at=$(date +%s)
   cycle_lock_before=$(lock_snapshot)
   cycle_active=1
@@ -122,8 +122,8 @@ cycle_begin() {
 
 cycle_refresh_lock_before() {
   [ "$cycle_active" -eq 1 ] || return 0
-  if [ "$HEALTHY_PID" = "$cycle_watcher_pid" ] && [ -n "$HEALTHY_IDENTITY" ]; then
-    cycle_watcher_identity=$HEALTHY_IDENTITY
+  if [ "$HEALTHY_PID" = "$cycle_sentry_pid" ] && [ -n "$HEALTHY_IDENTITY" ]; then
+    cycle_sentry_identity=$HEALTHY_IDENTITY
   fi
   cycle_lock_before=$(lock_snapshot)
 }
@@ -151,9 +151,9 @@ cycle_log_append() {
     sleep 0.02
     i=$((i + 1))
   done
-  printf 'arm_pid=%s\twatcher_pid=%s\torigin=%s\tstarted_at=%s\tended_at=%s\texit_code=%s\tsignal=%s\treason=%s\tbeacon_age=%s\tlock_before=%s\tlock_after=%s\tsuccessor=%s\n' \
+  printf 'arm_pid=%s\tsentry_pid=%s\torigin=%s\tstarted_at=%s\tended_at=%s\texit_code=%s\tsignal=%s\treason=%s\tbeacon_age=%s\tlock_before=%s\tlock_after=%s\tsuccessor=%s\n' \
     "$ARM_PID" \
-    "$(cycle_clean_field "$cycle_watcher_pid")" \
+    "$(cycle_clean_field "$cycle_sentry_pid")" \
     "$(cycle_clean_field "$cycle_origin")" \
     "$cycle_started_at" \
     "$ended_at" \
@@ -185,11 +185,11 @@ cycle_log_append() {
 }
 
 # A persistent adapter passes the arm pid that just closed. Once this new arm
-# verifies its watcher, update that predecessor's final record in place so the
+# verifies its sentry, update that predecessor's final record in place so the
 # one-record-per-cycle ledger captures the actual successor outcome without an
 # extra synthetic lifecycle row.
 cycle_mark_predecessor_successor() {
-  local successor=$1 predecessor=${FM_WATCH_PREDECESSOR_ARM_PID:-} i tmp
+  local successor=$1 predecessor=${SQUAD_WATCH_PREDECESSOR_ARM_PID:-} i tmp
   case "$predecessor" in
     ''|*[!0-9]*) return 0 ;;
   esac
@@ -222,36 +222,36 @@ cycle_mark_predecessor_successor() {
   fm_lock_release "$CYCLE_LOG_LOCK"
 }
 
-clear_stale_recorded_watcher_lock() {
+clear_stale_recorded_sentry_lock() {
   local lock_home lock_path lock_identity
-  lock_home=$(cat "$WATCH_LOCK/fm-home" 2>/dev/null || true)
-  lock_path=$(cat "$WATCH_LOCK/watcher-path" 2>/dev/null || true)
+  lock_home=$(cat "$WATCH_LOCK/sq-home" 2>/dev/null || true)
+  lock_path=$(cat "$WATCH_LOCK/sentry-path" 2>/dev/null || true)
   lock_identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
-  [ "$lock_home" = "$FM_HOME" ] || return 0
+  [ "$lock_home" = "$SQUAD_HOME" ] || return 0
   [ "$lock_path" = "$WATCH" ] || return 0
   [ -n "$lock_identity" ] || return 0
   fm_lock_remove_path "$WATCH_LOCK" || true
 }
 
-# A watcher is "healthy" iff the lock names a live process that is genuinely THIS
-# home's watcher (the identity match guards against a recycled/reused pid) AND the
+# A sentry is "healthy" iff the lock names a live process that is genuinely THIS
+# home's sentry (the identity match guards against a recycled/reused pid) AND the
 # liveness beacon is fresh within GRACE. Sets HEALTHY_PID on success. This is the
 # single honesty gate: a dead pid, a reused pid, or a stale beacon all fail it, so
-# this script can never report a watcher that is not really there.
+# this script can never report a sentry that is not really there.
 HEALTHY_PID=
 HEALTHY_IDENTITY=
-healthy_watcher() {
+healthy_sentry() {
   HEALTHY_PID=
   HEALTHY_IDENTITY=
-  fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" || return 1
-  HEALTHY_PID=$FM_WATCHER_HEALTHY_PID
-  HEALTHY_IDENTITY=$FM_WATCHER_HEALTHY_IDENTITY
+  fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME" || return 1
+  HEALTHY_PID=$SQUAD_SENTRY_HEALTHY_PID
+  HEALTHY_IDENTITY=$SQUAD_SENTRY_HEALTHY_IDENTITY
 }
 
 report_attached() {
   local age
   age=$(fm_path_age "$BEAT")
-  echo "watcher: attached pid=$HEALTHY_PID (beacon ${age}s)"
+  echo "sentry: attached pid=$HEALTHY_PID (beacon ${age}s)"
 }
 
 # Give a successor the same bounded confirmation window used for a fresh child.
@@ -263,22 +263,22 @@ wait_for_healthy_successor() {
   # second cannot collapse to a few milliseconds when called near a boundary.
   deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
   while :; do
-    healthy_watcher && return 0
+    healthy_sentry && return 0
     [ "$(date +%s)" -ge "$deadline" ] && return 1
     sleep 0.2
   done
 }
 
 fail_unexplained_cycle() {
-  echo "watcher: FAILED - cycle ended without an actionable reason"
+  echo "sentry: FAILED - cycle ended without an actionable reason"
   return 1
 }
 
 # Close a cycle whose reason line this arm could not read against the bounded
-# terminal-delivery ledger the watcher publishes before releasing its lock.
+# terminal-delivery ledger the sentry publishes before releasing its lock.
 close_unobserved_cycle() {
   local i reason clean_identity record_pid record_identity record_reason
-  clean_identity=$(printf '%s' "$cycle_watcher_identity" | tr '\t\r\n' '   ')
+  clean_identity=$(printf '%s' "$cycle_sentry_identity" | tr '\t\r\n' '   ')
   i=0
   while ! fm_lock_try_acquire "$WATCH_DELIVERY_LOCK"; do
     [ "$i" -lt 20 ] || {
@@ -291,7 +291,7 @@ close_unobserved_cycle() {
   reason=
   if [ -f "$WATCH_DELIVERY_LOG" ]; then
     while IFS=$'\t' read -r record_pid record_identity record_reason; do
-      if [ "$record_pid" = "$cycle_watcher_pid" ] && [ "$record_identity" = "$clean_identity" ]; then
+      if [ "$record_pid" = "$cycle_sentry_pid" ] && [ "$record_identity" = "$clean_identity" ]; then
         reason=$record_reason
       fi
     done < "$WATCH_DELIVERY_LOG"
@@ -312,8 +312,8 @@ close_unobserved_cycle() {
 attach_and_wait() {
   local attached_pid=$1
   while :; do
-    if healthy_watcher; then
-      if [ "$HEALTHY_PID" != "$attached_pid" ] || [ "$HEALTHY_IDENTITY" != "$cycle_watcher_identity" ]; then
+    if healthy_sentry; then
+      if [ "$HEALTHY_PID" != "$attached_pid" ] || [ "$HEALTHY_IDENTITY" != "$cycle_sentry_identity" ]; then
         cycle_log_append unknown unknown lock-replaced "attached:$HEALTHY_PID"
         attached_pid=$HEALTHY_PID
         cycle_begin "$attached_pid" attached "$HEALTHY_IDENTITY"
@@ -380,12 +380,12 @@ case "${1:-}" in
 esac
 
 if [ "$mode" = restart ]; then
-  # Home-scoped stop: only the watcher pid recorded in THIS home's lock.
+  # Home-scoped stop: only the sentry pid recorded in THIS home's lock.
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   if fm_pid_alive "$lock_pid"; then
-    if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$FM_HOME"; then
+    if fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$SQUAD_HOME"; then
       kill -TERM "$lock_pid" 2>/dev/null || true
-      # Wait for it to actually exit before relaunching, so the fresh watcher
+      # Wait for it to actually exit before relaunching, so the fresh sentry
       # either takes a released lock or reclaims a now-dead-pid stale lock instead
       # of seeing the dying one as a live holder and no-opping.
       i=0
@@ -394,16 +394,16 @@ if [ "$mode" = restart ]; then
         i=$((i + 1))
       done
     else
-      clear_stale_recorded_watcher_lock
+      clear_stale_recorded_sentry_lock
     fi
   fi
 fi
 
-# If a genuinely live+fresh watcher already holds the lock, do not start a second
+# If a genuinely live+fresh sentry already holds the lock, do not start a second
 # one - attach to that cycle and wait until it ends so the harness notify fires
 # then, not as an immediate empty wake. (--restart skips this: it just stopped
-# this home's watcher and wants a fresh one.)
-if [ "$mode" = arm ] && healthy_watcher; then
+# this home's sentry and wants a fresh one.)
+if [ "$mode" = arm ] && healthy_sentry; then
   cycle_mark_predecessor_successor "attached:$HEALTHY_PID"
   cycle_begin "$HEALTHY_PID" attached "$HEALTHY_IDENTITY"
   report_attached
@@ -411,10 +411,10 @@ if [ "$mode" = arm ] && healthy_watcher; then
   exit $?
 fi
 
-# Start a watcher as a tracked child and confirm it before settling in. The child
+# Start a sentry as a tracked child and confirm it before settling in. The child
 # stays our child for its whole life: we wait on it, so killing this arm (the
-# harness-tracked task) tears the watcher down too, and the watcher's eventual
-# wake exit propagates out so the harness re-notifies firstmate.
+# harness-tracked task) tears the sentry down too, and the sentry's eventual
+# wake exit propagates out so the harness re-notifies Squad.
 child=
 child_out=
 cleanup_child() {
@@ -443,8 +443,8 @@ trap 'handle_arm_signal HUP 129' HUP
 trap 'handle_arm_signal TERM 143' TERM
 trap 'handle_arm_signal INT 130' INT
 
-child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
-  echo "watcher: FAILED - no live watcher with a fresh beacon"
+child_out=$(mktemp "$STATE/.sentry-arm-output.XXXXXX") || {
+  echo "sentry: FAILED - no live sentry with a fresh beacon"
   exit 1
 }
 "$WATCH" >"$child_out" &
@@ -494,8 +494,8 @@ owned_child_finished() {
   [ "$signal" = none ] || reason_type="signal-exit"
   cycle_log_append "$rc" "$signal" "$reason_type" none
   print_watch_output "$child_out"
-  if ! grep -q '^watcher: FAILED' "$child_out" 2>/dev/null; then
-    echo "watcher: FAILED - watcher cycle exited $rc without an actionable reason"
+  if ! grep -q '^sentry: FAILED' "$child_out" 2>/dev/null; then
+    echo "sentry: FAILED - sentry cycle exited $rc without an actionable reason"
   fi
   rm -f "$child_out" 2>/dev/null || true
   child=
@@ -505,24 +505,24 @@ owned_child_finished() {
   return "$status"
 }
 
-# Verify the outcome: poll until this child is the confirmed healthy watcher, or
-# until some other watcher legitimately holds the singleton (a startup race), or
+# Verify the outcome: poll until this child is the confirmed healthy sentry, or
+# until some other sentry legitimately holds the singleton (a startup race), or
 # until the child gives up. Only then print the honest line.
 # date(1) exposes whole seconds. Keep the configured confirmation budget from
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
 while :; do
-  if healthy_watcher; then
+  if healthy_sentry; then
     if [ "$HEALTHY_PID" = "$child" ]; then
       cycle_refresh_lock_before
       cycle_mark_predecessor_successor "started:$child"
-      echo "watcher: started pid=$child (beacon fresh)"
+      echo "sentry: started pid=$child (beacon fresh)"
       wait "$child"
       rc=$?
       owned_child_finished "$rc"
       exit $?
     fi
-    # Another watcher won the singleton; our child stood down.
+    # Another sentry won the singleton; our child stood down.
     wait "$child"
     rc=$?
     owned_child_finished "$rc"
@@ -545,5 +545,5 @@ cleanup_child
 wait "$child" 2>/dev/null
 rc=$?
 cycle_log_append "$rc" "$(cycle_signal_name "$rc")" confirmation-timeout none
-echo "watcher: FAILED - no live watcher with a fresh beacon"
+echo "sentry: FAILED - no live sentry with a fresh beacon"
 exit 1

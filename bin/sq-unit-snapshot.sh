@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# fm-fleet-snapshot.sh - read-only structured fleet snapshot.
+# sq-unit-snapshot.sh - read-only structured unit snapshot.
 #
 # Output contract: `--json` prints one object with schema
-# `fm-fleet-snapshot.v1`.
+# `sq-unit-snapshot.v1`.
 # The command is read-only: it does not acquire the session lock, drain wakes,
-# arm watchers, mutate backlog state, or write reports.
+# arm sentrys, mutate backlog state, or write reports.
 #
 # Top-level fields:
 #   schema: stable schema id.
@@ -15,59 +15,59 @@
 #     data/backlog.md and cover In flight, Queued, and Done.
 #     Canonical tasks-axi rows are structured; free-form non-empty lines in
 #     those sections are preserved as unstructured records.
-#     Structured rows preserve captain-hold metadata such as hold_kind and
+#     Structured rows preserve commander-hold metadata such as hold_kind and
 #     hold_reason when tasks-axi emits it. They also carry normalized current_role,
 #     requires_child_metadata, blocked_by_ids, unresolved_blocker_ids, and
-#     captain_actionable fields. Repeated blocker tokens remain ordered; a blocker
+#     commander_actionable fields. Repeated blocker tokens remain ordered; a blocker
 #     resolves only when its structured record is Done, and missing ids stay open.
 #   tasks[]: one row per state/<id>.meta, sorted by id.
-#     current_state is parsed from bin/fm-crew-state.sh <id> and preserves
+#     current_state is parsed from bin/sq-crew-state.sh <id> and preserves
 #     state, source, detail, and raw line separately.
 #     paths.status_log.last_event is historical wake-event data only, never
 #     current state.
 #     hints.open_decisions is the keyed open-decision set returned by
-#     fm-classify-lib.sh's authoritative status_open_decisions fold and reconciled
+#     sq-classify-lib.sh's authoritative status_open_decisions fold and reconciled
 #     against current_state; hints.pending_decision and hints.blocked_event are
 #     booleans derived from that set.
 #     endpoint.exists is the cheap backend endpoint-presence read.
-#     endpoint.agent_alive is populated for secondmates only, where it is useful
+#     endpoint.agent_alive is populated for XOs only, where it is useful
 #     return-channel supervision data; other tasks use "not_checked".
 #   scout_reports[]: present data/<id>/report.md pointers.
 #   main_inventory: {valid,reason,orphan_in_flight[],unstructured_current_count} -
-#     main-home current-inventory checks shared with secondmate_home_summary_json
+#     main-home current-inventory checks shared with XO_home_summary_json
 #     (orphan structured in-flight ids with no state/<id>.meta, and unstructured
 #     current backlog rows). Does not invent live tasks; meta remains truth for
-#     workers. Bearings maps failures into omitted[] disclosure (and a Charted
+#     workers. Sitrep maps failures into omitted[] disclosure (and a Charted
 #     Next gate line) rather than silent empty Underway.
-#   secondmate_current: {records[],total,shown,truncated} - bounded current summaries
-#     for registered secondmates, selected from validated structured state inside
+#   XO_current: {records[],total,shown,truncated} - bounded current summaries
+#     for registered XOs, selected from validated structured state inside
 #     each home with explicit provenance, freshness, endpoint evidence, and unknown
 #     failure reasons. Parent status and bounded terminal evidence are historical,
 #     untrusted supplements only and never override readable structured-home facts.
 #     Each structured-home record carries active_children, decisions_open, holds,
-#     queued, landed, endpoints, counts, and omitted. Actionable captain holds
-#     appear in decisions_open; blocked captain holds remain queued with metadata.
-#   secondmate_landed: {records[],truncated[],unreadable[],partial[]} - the
-#     compatibility landed-work roll-up derived from secondmate_current. Readable
+#     queued, landed, endpoints, counts, and omitted. Actionable commander holds
+#     appear in decisions_open; blocked commander holds remain queued with metadata.
+#   XO_landed: {records[],truncated[],unreadable[],partial[]} - the
+#     compatibility landed-work roll-up derived from XO_current. Readable
 #     structured homes with an unknown current classification are partial, not
 #     unreadable, and retain independently trustworthy structured surfaces.
-#   secondmate_guidance: return-channel action note for renderers and bearings.
+#   XO_guidance: return-channel action note for renderers and sitrep.
 #
 # Compatibility: JSON is the primary machine-readable surface.
 # Human views must render this output instead of parsing state files again.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
 BACKLOG="$DATA/backlog.md"
-SNAPSHOT_NOW=${FM_SNAPSHOT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
-if [ -n "${FM_SNAPSHOT_NOW_EPOCH:-}" ]; then
-  SNAPSHOT_EPOCH=$FM_SNAPSHOT_NOW_EPOCH
+SNAPSHOT_NOW=${SQUAD_SNAPSHOT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+if [ -n "${SQUAD_SNAPSHOT_NOW_EPOCH:-}" ]; then
+  SNAPSHOT_EPOCH=$SQUAD_SNAPSHOT_NOW_EPOCH
 else
   SNAPSHOT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$SNAPSHOT_NOW" +%s 2>/dev/null \
     || date -u -d "$SNAPSHOT_NOW" +%s 2>/dev/null \
@@ -77,105 +77,105 @@ case "$SNAPSHOT_EPOCH" in ''|*[!0-9]*) SNAPSHOT_EPOCH=$(date +%s) ;; esac
 
 # Cross-home bounds are explicit so one broken or unexpectedly large home cannot
 # hang or explode the parent snapshot.
-FM_SNAPSHOT_SECONDMATES=${FM_SNAPSHOT_SECONDMATES:-20}
-FM_SNAPSHOT_SECONDMATE_TIMEOUT=${FM_SNAPSHOT_SECONDMATE_TIMEOUT:-8}
-FM_SNAPSHOT_SECONDMATE_MAX_BYTES=${FM_SNAPSHOT_SECONDMATE_MAX_BYTES:-262144}
-FM_SNAPSHOT_SECONDMATE_CHILDREN=${FM_SNAPSHOT_SECONDMATE_CHILDREN:-20}
-FM_SNAPSHOT_SECONDMATE_QUEUED=${FM_SNAPSHOT_SECONDMATE_QUEUED:-20}
-FM_SNAPSHOT_SECONDMATE_DECISIONS=${FM_SNAPSHOT_SECONDMATE_DECISIONS:-20}
-FM_SNAPSHOT_TERMINAL_LINES=${FM_SNAPSHOT_TERMINAL_LINES:-8}
-FM_SNAPSHOT_TERMINAL_BYTES=${FM_SNAPSHOT_TERMINAL_BYTES:-4096}
-FM_SNAPSHOT_TERMINAL_TIMEOUT=${FM_SNAPSHOT_TERMINAL_TIMEOUT:-2}
-FM_SNAPSHOT_PARENT_ACTIVITY_LINES=${FM_SNAPSHOT_PARENT_ACTIVITY_LINES:-256}
-FM_SNAPSHOT_PARENT_ACTIVITY_BYTES=${FM_SNAPSHOT_PARENT_ACTIVITY_BYTES:-65536}
-FM_SNAPSHOT_PARENT_ACTIVITIES=${FM_SNAPSHOT_PARENT_ACTIVITIES:-20}
-FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT=${FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT:-2}
-FM_SNAPSHOT_REGISTRY_LINES=${FM_SNAPSHOT_REGISTRY_LINES:-256}
-FM_SNAPSHOT_REGISTRY_BYTES=${FM_SNAPSHOT_REGISTRY_BYTES:-65536}
-FM_SNAPSHOT_REGISTRY_RECORDS=${FM_SNAPSHOT_REGISTRY_RECORDS:-40}
-FM_SNAPSHOT_REGISTRY_TIMEOUT=${FM_SNAPSHOT_REGISTRY_TIMEOUT:-2}
+SQUAD_SNAPSHOT_XOS=${SQUAD_SNAPSHOT_XOS:-20}
+SQUAD_SNAPSHOT_XO_TIMEOUT=${SQUAD_SNAPSHOT_XO_TIMEOUT:-8}
+SQUAD_SNAPSHOT_XO_MAX_BYTES=${SQUAD_SNAPSHOT_XO_MAX_BYTES:-262144}
+SQUAD_SNAPSHOT_XO_CHILDREN=${SQUAD_SNAPSHOT_XO_CHILDREN:-20}
+SQUAD_SNAPSHOT_XO_QUEUED=${SQUAD_SNAPSHOT_XO_QUEUED:-20}
+SQUAD_SNAPSHOT_XO_DECISIONS=${SQUAD_SNAPSHOT_XO_DECISIONS:-20}
+SQUAD_SNAPSHOT_TERMINAL_LINES=${SQUAD_SNAPSHOT_TERMINAL_LINES:-8}
+SQUAD_SNAPSHOT_TERMINAL_BYTES=${SQUAD_SNAPSHOT_TERMINAL_BYTES:-4096}
+SQUAD_SNAPSHOT_TERMINAL_TIMEOUT=${SQUAD_SNAPSHOT_TERMINAL_TIMEOUT:-2}
+SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES=${SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES:-256}
+SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES=${SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES:-65536}
+SQUAD_SNAPSHOT_PARENT_ACTIVITIES=${SQUAD_SNAPSHOT_PARENT_ACTIVITIES:-20}
+SQUAD_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT=${SQUAD_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT:-2}
+SQUAD_SNAPSHOT_REGISTRY_LINES=${SQUAD_SNAPSHOT_REGISTRY_LINES:-256}
+SQUAD_SNAPSHOT_REGISTRY_BYTES=${SQUAD_SNAPSHOT_REGISTRY_BYTES:-65536}
+SQUAD_SNAPSHOT_REGISTRY_RECORDS=${SQUAD_SNAPSHOT_REGISTRY_RECORDS:-40}
+SQUAD_SNAPSHOT_REGISTRY_TIMEOUT=${SQUAD_SNAPSHOT_REGISTRY_TIMEOUT:-2}
 validate_positive_bound() {  # <name> <value>
   case "$2" in
     ''|*[!0-9]*|0)
-      printf 'fm-fleet-snapshot: %s must be a positive integer\n' "$1" >&2
+      printf 'sq-unit-snapshot: %s must be a positive integer\n' "$1" >&2
       exit 2
       ;;
   esac
 }
-case "$FM_SNAPSHOT_SECONDMATES" in
+case "$SQUAD_SNAPSHOT_XOS" in
   ''|*[!0-9]*)
-    echo "fm-fleet-snapshot: FM_SNAPSHOT_SECONDMATES must be a non-negative integer" >&2
+    echo "sq-unit-snapshot: SQUAD_SNAPSHOT_XOS must be a non-negative integer" >&2
     exit 2
     ;;
 esac
-validate_positive_bound FM_SNAPSHOT_SECONDMATE_TIMEOUT "$FM_SNAPSHOT_SECONDMATE_TIMEOUT"
-validate_positive_bound FM_SNAPSHOT_SECONDMATE_MAX_BYTES "$FM_SNAPSHOT_SECONDMATE_MAX_BYTES"
-validate_positive_bound FM_SNAPSHOT_SECONDMATE_CHILDREN "$FM_SNAPSHOT_SECONDMATE_CHILDREN"
-validate_positive_bound FM_SNAPSHOT_SECONDMATE_QUEUED "$FM_SNAPSHOT_SECONDMATE_QUEUED"
-validate_positive_bound FM_SNAPSHOT_SECONDMATE_DECISIONS "$FM_SNAPSHOT_SECONDMATE_DECISIONS"
-validate_positive_bound FM_SNAPSHOT_TERMINAL_LINES "$FM_SNAPSHOT_TERMINAL_LINES"
-validate_positive_bound FM_SNAPSHOT_TERMINAL_BYTES "$FM_SNAPSHOT_TERMINAL_BYTES"
-validate_positive_bound FM_SNAPSHOT_TERMINAL_TIMEOUT "$FM_SNAPSHOT_TERMINAL_TIMEOUT"
-validate_positive_bound FM_SNAPSHOT_PARENT_ACTIVITY_LINES "$FM_SNAPSHOT_PARENT_ACTIVITY_LINES"
-validate_positive_bound FM_SNAPSHOT_PARENT_ACTIVITY_BYTES "$FM_SNAPSHOT_PARENT_ACTIVITY_BYTES"
-validate_positive_bound FM_SNAPSHOT_PARENT_ACTIVITIES "$FM_SNAPSHOT_PARENT_ACTIVITIES"
-validate_positive_bound FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT "$FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT"
-validate_positive_bound FM_SNAPSHOT_REGISTRY_LINES "$FM_SNAPSHOT_REGISTRY_LINES"
-validate_positive_bound FM_SNAPSHOT_REGISTRY_BYTES "$FM_SNAPSHOT_REGISTRY_BYTES"
-validate_positive_bound FM_SNAPSHOT_REGISTRY_RECORDS "$FM_SNAPSHOT_REGISTRY_RECORDS"
-validate_positive_bound FM_SNAPSHOT_REGISTRY_TIMEOUT "$FM_SNAPSHOT_REGISTRY_TIMEOUT"
+validate_positive_bound SQUAD_SNAPSHOT_XO_TIMEOUT "$SQUAD_SNAPSHOT_XO_TIMEOUT"
+validate_positive_bound SQUAD_SNAPSHOT_XO_MAX_BYTES "$SQUAD_SNAPSHOT_XO_MAX_BYTES"
+validate_positive_bound SQUAD_SNAPSHOT_XO_CHILDREN "$SQUAD_SNAPSHOT_XO_CHILDREN"
+validate_positive_bound SQUAD_SNAPSHOT_XO_QUEUED "$SQUAD_SNAPSHOT_XO_QUEUED"
+validate_positive_bound SQUAD_SNAPSHOT_XO_DECISIONS "$SQUAD_SNAPSHOT_XO_DECISIONS"
+validate_positive_bound SQUAD_SNAPSHOT_TERMINAL_LINES "$SQUAD_SNAPSHOT_TERMINAL_LINES"
+validate_positive_bound SQUAD_SNAPSHOT_TERMINAL_BYTES "$SQUAD_SNAPSHOT_TERMINAL_BYTES"
+validate_positive_bound SQUAD_SNAPSHOT_TERMINAL_TIMEOUT "$SQUAD_SNAPSHOT_TERMINAL_TIMEOUT"
+validate_positive_bound SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES "$SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES"
+validate_positive_bound SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES "$SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES"
+validate_positive_bound SQUAD_SNAPSHOT_PARENT_ACTIVITIES "$SQUAD_SNAPSHOT_PARENT_ACTIVITIES"
+validate_positive_bound SQUAD_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT "$SQUAD_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT"
+validate_positive_bound SQUAD_SNAPSHOT_REGISTRY_LINES "$SQUAD_SNAPSHOT_REGISTRY_LINES"
+validate_positive_bound SQUAD_SNAPSHOT_REGISTRY_BYTES "$SQUAD_SNAPSHOT_REGISTRY_BYTES"
+validate_positive_bound SQUAD_SNAPSHOT_REGISTRY_RECORDS "$SQUAD_SNAPSHOT_REGISTRY_RECORDS"
+validate_positive_bound SQUAD_SNAPSHOT_REGISTRY_TIMEOUT "$SQUAD_SNAPSHOT_REGISTRY_TIMEOUT"
 
-# shellcheck source=bin/fm-backend.sh
+# shellcheck source=bin/sq-backend.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-classify-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-ff-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-ff-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-ff-lib.sh"  # validate_secondmate_home: shared seeded-home boundary checks
-# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/sq-ff-lib.sh"  # validate_XO_home: shared seeded-home boundary checks
+# shellcheck source=bin/sq-timeout-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/fm-timeout-lib.sh"  # fm_run_timed: the shared hard bound
+. "$SCRIPT_DIR/sq-timeout-lib.sh"  # fm_run_timed: the shared hard bound
 
 usage() {
   cat <<'EOF'
-usage: fm-fleet-snapshot.sh --json
-       fm-fleet-snapshot.sh --secondmate-home-summary
+usage: sq-unit-snapshot.sh --json
+       sq-unit-snapshot.sh --XO-home-summary
 
-Print a read-only structured snapshot of the firstmate fleet.
+Print a read-only structured snapshot of the Squad unit.
 JSON is the stable machine-readable output contract.
 
---secondmate-home-summary emits the bounded structured summary used after a
-validated registered-home handoff. It is local-only, skips nested secondmate
+--XO-home-summary emits the bounded structured summary used after a
+validated registered-home handoff. It is local-only, skips nested XO
 aggregation, and marks inventory contradictions or unavailable child state invalid.
 Its invalidity object names the normalized failure kind and affected ids.
-Actionable tasks-axi captain holds appear as decisions_open and stay visible in
+Actionable tasks-axi commander holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, and plural blocker fields for downstream
-projections. A captain hold is actionable only when every blocker is Done.
-Cross-home reads use FM_SNAPSHOT_SECONDMATES (default 20, 0 lifts the count
-bound), FM_SNAPSHOT_SECONDMATE_TIMEOUT, and FM_SNAPSHOT_SECONDMATE_MAX_BYTES.
+projections. A commander hold is actionable only when every blocker is Done.
+Cross-home reads use SQUAD_SNAPSHOT_XOS (default 20, 0 lifts the count
+bound), SQUAD_SNAPSHOT_XO_TIMEOUT, and SQUAD_SNAPSHOT_XO_MAX_BYTES.
 Terminal contradiction evidence uses
-FM_SNAPSHOT_TERMINAL_LINES, FM_SNAPSHOT_TERMINAL_BYTES, and
-FM_SNAPSHOT_TERMINAL_TIMEOUT and never becomes canonical current state.
-Parent activity evidence uses FM_SNAPSHOT_PARENT_ACTIVITY_LINES,
-FM_SNAPSHOT_PARENT_ACTIVITY_BYTES, FM_SNAPSHOT_PARENT_ACTIVITIES, and
-FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT, with truncation disclosed in the result.
-The registered secondmate table uses FM_SNAPSHOT_REGISTRY_LINES,
-FM_SNAPSHOT_REGISTRY_BYTES, FM_SNAPSHOT_REGISTRY_RECORDS, and
-FM_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
+SQUAD_SNAPSHOT_TERMINAL_LINES, SQUAD_SNAPSHOT_TERMINAL_BYTES, and
+SQUAD_SNAPSHOT_TERMINAL_TIMEOUT and never becomes canonical current state.
+Parent activity evidence uses SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES,
+SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES, SQUAD_SNAPSHOT_PARENT_ACTIVITIES, and
+SQUAD_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT, with truncation disclosed in the result.
+The registered XO table uses SQUAD_SNAPSHOT_REGISTRY_LINES,
+SQUAD_SNAPSHOT_REGISTRY_BYTES, SQUAD_SNAPSHOT_REGISTRY_RECORDS, and
+SQUAD_SNAPSHOT_REGISTRY_TIMEOUT, with unavailability and truncation disclosed.
 EOF
 }
 
 OUTPUT_MODE=json
 case "${1:---json}" in
   --json) ;;
-  --secondmate-home-summary) OUTPUT_MODE=secondmate-home-summary ;;
+  --XO-home-summary) OUTPUT_MODE=XO-home-summary ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
 
-command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "sq-unit-snapshot: jq not found" >&2; exit 1; }
 
 bool_json() {
   if [ "$1" = 1 ]; then printf 'true'; else printf 'false'; fi
@@ -200,13 +200,13 @@ last_nonempty_line() {  # <file>
 crew_state_json() {  # <id>
   local id=$1 raw rest state source detail sep
   raw=$(
-    FM_ROOT_OVERRIDE="$FM_ROOT" \
-      FM_HOME="$FM_HOME" \
-      FM_STATE_OVERRIDE="$STATE" \
-      FM_DATA_OVERRIDE="$DATA" \
-      FM_PROJECTS_OVERRIDE="$PROJECTS" \
-      FM_CONFIG_OVERRIDE="$CONFIG" \
-      "$SCRIPT_DIR/fm-crew-state.sh" "$id" 2>/dev/null || true
+    SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+      SQUAD_HOME="$SQUAD_HOME" \
+      SQUAD_STATE_OVERRIDE="$STATE" \
+      SQUAD_DATA_OVERRIDE="$DATA" \
+      SQUAD_PROJECTS_OVERRIDE="$PROJECTS" \
+      SQUAD_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/sq-crew-state.sh" "$id" 2>/dev/null || true
   )
   raw=$(printf '%s\n' "$raw" | head -1)
   sep=' · '
@@ -392,8 +392,8 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
                elif .state == "queued" then "queued"
                else "done" end)
           | .requires_child_metadata = (.current_role == "worker")
-          | .captain_actionable =
-              (.state == "queued" and .kind == "captain" and .hold_kind == "captain"
+          | .commander_actionable =
+              (.state == "queued" and .kind == "commander" and .hold_kind == "commander"
                and .hold_reason != null and (.unresolved_blocker_ids | length) == 0)
         else . end)
     | del(.section,.order)
@@ -411,7 +411,7 @@ task_json_lines() {
     [ -e "$meta" ] || continue
     id=$(basename "$meta" .meta)
     kind=$(meta_value "$meta" kind)
-    [ -n "$kind" ] || kind=ship
+    [ -n "$kind" ] || kind=strike
     harness=$(meta_value "$meta" harness)
     mode=$(meta_value "$meta" mode)
     yolo=$(meta_value "$meta" yolo)
@@ -450,24 +450,24 @@ task_json_lines() {
     current_source=$(printf '%s' "$current_json" | jq -r '.source // ""')
 
     # Durable keyed open-decision set: fold the WHOLE status stream
-    # (fm-classify-lib.sh's status_open_decisions) so a later unrelated event can
-    # never mask a still-open captain decision. The set is derived purely from the
+    # (sq-classify-lib.sh's status_open_decisions) so a later unrelated event can
+    # never mask a still-open commander decision. The set is derived purely from the
     # keyed fold - never from report bodies or decision-like prose - and then
     # reconciled against the crew LIFECYCLE, which only clears a stale decision the
     # crew has provably moved past. Two lifecycle signals clear it, neither of which
     # reads any report content:
     #   - a live activity read (run-step or busy pane) that is working/done, so a
     #     crew that resumed past a gate is not still reported as parked; and
-    #   - a TERMINAL done/failed state on a single-owner task (scout or ship), whose
-    #     deliverable is its report or PR, so a COMPLETED scout surfaces only as a
+    #   - a TERMINAL done/failed state on a single-owner task (recon or ship), whose
+    #     deliverable is its report or PR, so a COMPLETED recon surfaces only as a
     #     report POINTER, never as a reopened pending decision.
-    # Secondmates are excluded from lifecycle clearing: they are persistent and
+    # XOs are excluded from lifecycle clearing: they are persistent and
     # multiplex many concerns onto one stream, so activity on one concern must
     # never clear another concern's keyed decision. A parked/blocked state, or a
     # non-authoritative status-log/none read on a still-live task, keeps the fold's
     # open decision surfacing.
     open_decisions_tsv=$(status_open_decisions "$status_log")
-    if [ "$kind" != secondmate ] && \
+    if [ "$kind" != XO ] && \
        { { { [ "$current_source" = run-step ] || [ "$current_source" = pane ]; } \
            && [ "$current_state" != parked ] && [ "$current_state" != blocked ]; } \
          || { [ "$current_state" = "done" ] || [ "$current_state" = "failed" ]; }; }; then
@@ -483,8 +483,8 @@ task_json_lines() {
     endpoint_exists=null
     agent_alive=not_checked
     if [ -n "$remote_host" ]; then
-      if remote_state=$(fm_run_timed "$FM_SNAPSHOT_SECONDMATE_TIMEOUT" \
-        "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh state "$id" < /dev/null 2>/dev/null); then
+      if remote_state=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" \
+        "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh state "$id" < /dev/null 2>/dev/null); then
         remote_rc=0
       else
         remote_rc=$?
@@ -504,13 +504,13 @@ task_json_lines() {
       fi
     else
       if [ -n "$target" ]; then
-        if fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
+        if fm_backend_target_exists "$backend" "$target" "sq-$id" >/dev/null 2>&1; then
           endpoint_exists=true
         else
           endpoint_exists=false
         fi
       fi
-      if [ "$kind" = secondmate ] && [ -n "$target" ]; then
+      if [ "$kind" = XO ] && [ -n "$target" ]; then
         agent_alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
       fi
     fi
@@ -574,7 +574,7 @@ task_json_lines() {
           home:$home_path,
           report:$report
         },
-        secondmate_projects:($projects | if . == "" then [] else split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; "")) | map(select(. != "")) end),
+        XO_projects:($projects | if . == "" then [] else split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; "")) | map(select(. != "")) end),
         current_state:($current_state + {observed_at:$observed_at,freshness:"fresh"}),
         endpoint:{target:($target | if . == "" then null else . end),exists:$endpoint_exists,agent_alive:$agent_alive,
           status:(if $endpoint_exists == false then "absent"
@@ -590,13 +590,13 @@ task_json_lines() {
           last_event_text:$last_event_raw
         },
         actions:(
-          if $kind == "secondmate" then
-            {send:"bin/fm-send.sh fm-\($id) \u0027<request>\u0027",
-             watch:"read status/doc return channel; do not routinely fm-peek a secondmate for answers",
-             return_channel_note:"Secondmate answers come back through status/doc paths after a marked fm-send request."}
+          if $kind == "XO" then
+            {send:"bin/sq-send.sh sq-\($id) \u0027<request>\u0027",
+             watch:"read status/doc return channel; do not routinely sq-peek a XO for answers",
+             return_channel_note:"XO answers come back through status/doc paths after a marked sq-send request."}
           else
-            {watch:"bin/fm-peek.sh fm-\($id)",
-             steer:"bin/fm-send.sh fm-\($id) \u0027<instruction>\u0027",
+            {watch:"bin/sq-peek.sh sq-\($id)",
+             steer:"bin/sq-send.sh sq-\($id) \u0027<instruction>\u0027",
              return_channel_note:null}
           end)
       }'
@@ -604,9 +604,9 @@ task_json_lines() {
 }
 
 # Main-home current-inventory validity: same orphan / unstructured-current checks
-# used by secondmate_home_summary_json, without inventing live task rows.
+# used by XO_home_summary_json, without inventing live task rows.
 # Meta inventory remains the sole source of live workers; this object only
-# discloses backlog↔task inconsistency for renderers (Bearings omitted/gates).
+# discloses backlog↔task inconsistency for renderers (Sitrep omitted/gates).
 main_inventory_json() {  # <backlog-json> <tasks-json>
   jq -n \
     --argjson backlog "$1" \
@@ -634,15 +634,15 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
 # Project one home's canonical structured inventory into the bounded shape a
 # validated parent read needs.
 # This mode never reads parent events or terminal text and never aggregates
-# nested secondmates.
-secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
+# nested XOs.
+XO_home_summary_json() {  # <backlog-json> <tasks-json>
   jq -n \
     --arg generated "$SNAPSHOT_NOW" \
-    --arg home "$FM_HOME" \
-    --argjson child_n "$FM_SNAPSHOT_SECONDMATE_CHILDREN" \
-    --argjson queued_n "$FM_SNAPSHOT_SECONDMATE_QUEUED" \
-    --argjson decisions_n "$FM_SNAPSHOT_SECONDMATE_DECISIONS" \
-    --argjson landed_n "$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" \
+    --arg home "$SQUAD_HOME" \
+    --argjson child_n "$SQUAD_SNAPSHOT_XO_CHILDREN" \
+    --argjson queued_n "$SQUAD_SNAPSHOT_XO_QUEUED" \
+    --argjson decisions_n "$SQUAD_SNAPSHOT_XO_DECISIONS" \
+    --argjson landed_n "$SQUAD_SNAPSHOT_XO_LANDED_PER_HOME" \
     --argjson backlog "$1" \
     --argjson tasks "$2" '
     def trunc($n):
@@ -658,10 +658,10 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
                and (.id as $id
                     | any($tasks[]; .id == $id and .current_state.state == "working") | not)))) ]) as $queued_all
     | ([ $queued_all[]
-         | select(.captain_actionable == true)
-         | {id,key:.id,verb:"captain-hold",summary:(.title | trunc(160)),
-            reason:(.hold_reason | trunc(160)),source:"backlog"} ]) as $captain_holds_all
-    | ([ $backlog.records[]? | select(.state == "done" and .structured and .kind != "captain")
+         | select(.commander_actionable == true)
+         | {id,key:.id,verb:"commander-hold",summary:(.title | trunc(160)),
+            reason:(.hold_reason | trunc(160)),source:"backlog"} ]) as $commander_holds_all
+    | ([ $backlog.records[]? | select(.state == "done" and .structured and .kind != "commander")
          | {id:(.id | trunc(120)),title:(.title | trunc(120)),
             pr_url:((.pr_url // null) | if . == null then null else trunc(500) end),
             report_path:((.report_path // null) | if . == null then null else trunc(500) end),
@@ -704,7 +704,7 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
          | select(.id == $work.id and .current_state.state == "working")
          | {id,kind,state:.current_state.state,source:.current_state.source,
             doing:((.current_state.detail // "") | trunc(120))} ]) as $active_all
-    | ($captain_holds_all
+    | ($commander_holds_all
        + ([ $tasks[] as $t | ($t.hints.open_decisions // [])[]
             | {id:$t.id,key,verb,summary:(.summary | trunc(160)),reason:null,source:"status"} ])) as $decisions_all
     | ([ $queued_all[]
@@ -735,12 +735,12 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
        elif ($unknown_children | length) > 0 then {kind:"child_current_unavailable",ids:($unknown_children | map(.id))}
        else {kind:null,ids:[]} end) as $invalidity
     | (if $valid | not then "unknown"
-       elif any($decisions_all[]; .verb == "needs-decision" or .verb == "captain-hold") then "captain_decision"
+       elif any($decisions_all[]; .verb == "needs-decision" or .verb == "commander-hold") then "commander_decision"
        elif ($active_all | length) > 0 then "active_child_work"
        elif ($holds_all | length) > 0 then "externally_held"
        else "no_active_work" end) as $state
     | {
-        schema:"fm-secondmate-home-summary.v1",
+        schema:"sq-xo-home-summary.v1",
         generated:$generated,
         home:$home,
         valid:$valid,
@@ -757,7 +757,7 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
           blocked_reason:((.blocked_reason // null) | if . == null then null else trunc(160) end),
           hold_reason:((.hold_reason // null) | if . == null then null else trunc(160) end),
           hold_kind:((.hold_kind // null) | if . == null then null else trunc(40) end),
-          captain_actionable:(.captain_actionable // false),
+          commander_actionable:(.commander_actionable // false),
           repo:((.repo // null) | if . == null then null else trunc(120) end),
           kind:((.kind // null) | if . == null then null else trunc(40) end)}][:$queued_n]),
         landed:(if $landed_n == 0 then $landed_all else $landed_all[:$landed_n] end),
@@ -781,12 +781,12 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
       }'
 }
 
-# Current registered-secondmate aggregation.
+# Current registered-XO aggregation.
 # The validated home summary is canonical.
 # Parent status and bounded terminal capture remain untrusted supplemental evidence
 # with explicit provenance, and can only produce a contradiction or unknown fallback.
-FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME=${FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME:-10}
-case "$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" in ''|*[!0-9]*) FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME=10 ;; esac
+SQUAD_SNAPSHOT_XO_LANDED_PER_HOME=${SQUAD_SNAPSHOT_XO_LANDED_PER_HOME:-10}
+case "$SQUAD_SNAPSHOT_XO_LANDED_PER_HOME" in ''|*[!0-9]*) SQUAD_SNAPSHOT_XO_LANDED_PER_HOME=10 ;; esac
 
 # GNU stat treats -f as a filesystem-report command, so a BSD-first fallback can
 # pollute arithmetic input before failing. Select the platform syntax once.
@@ -800,8 +800,8 @@ else
   file_mode_octal() { stat -c '%a' "$1" 2>/dev/null || true; }
 fi
 
-registry_secondmates_json() {
-  local reg="$DATA/secondmates.md" out rc reason mode script parse_filter output_filter
+registry_XOs_json() {
+  local reg="$DATA/XOs.md" out rc reason mode script parse_filter output_filter
   if [ ! -f "$reg" ]; then
     jq -n --arg path "$reg" --arg observed "$SNAPSHOT_NOW" \
       '{present:false,available:true,complete:true,reason:null,provenance:"registered-table",path:$path,freshness:{status:"fresh",observed_at:$observed},records:[],input_truncated:false,records_truncated:false,reasons:[],lines_in_window:0,records_in_window:0}'
@@ -810,7 +810,7 @@ registry_secondmates_json() {
   mode=$(file_mode_octal "$reg")
   if [ -z "$mode" ] || [ $((8#$mode & 0444)) -eq 0 ]; then
     jq -n --arg path "$reg" --arg observed "$SNAPSHOT_NOW" \
-      --arg reason "registered secondmate table is unreadable" \
+      --arg reason "registered XO table is unreadable" \
       '{present:true,available:false,complete:false,reason:$reason,provenance:"registered-table",path:$path,freshness:{status:"unavailable",observed_at:$observed},records:[],input_truncated:false,records_truncated:false,reasons:[$reason],lines_in_window:0,records_in_window:0}'
     return 0
   fi
@@ -877,7 +877,7 @@ BASH
            remote:$is_remote,registered:true,
            registry_error:(if $route == null or ($route.home | length) == 0 then "registry entry has no home" else null end)} ]
       | group_by(.id)
-      | map(if length > 1 then .[0] + {registry_error:"duplicate secondmate id in registry"} else .[0] end)
+      | map(if length > 1 then .[0] + {registry_error:"duplicate XO id in registry"} else .[0] end)
 JQ
   )
   output_filter=$(cat <<'JQ'
@@ -893,9 +893,9 @@ JQ
        ],lines_in_window:$lines_in_window,records_in_window:$records_in_window}
 JQ
   )
-  out=$(fm_run_timed "$FM_SNAPSHOT_REGISTRY_TIMEOUT" bash -c "$script" \
-    fm-secondmate-registry "$reg" "$FM_SNAPSHOT_REGISTRY_LINES" \
-    "$FM_SNAPSHOT_REGISTRY_BYTES" "$FM_SNAPSHOT_REGISTRY_RECORDS" "$reg" "$SNAPSHOT_NOW" \
+  out=$(fm_run_timed "$SQUAD_SNAPSHOT_REGISTRY_TIMEOUT" bash -c "$script" \
+    sq-xo-registry "$reg" "$SQUAD_SNAPSHOT_REGISTRY_LINES" \
+    "$SQUAD_SNAPSHOT_REGISTRY_BYTES" "$SQUAD_SNAPSHOT_REGISTRY_RECORDS" "$reg" "$SNAPSHOT_NOW" \
     "$parse_filter" "$output_filter" 2>/dev/null)
   rc=$?
   if [ "$rc" -eq 0 ] && printf '%s' "$out" | jq -e '
@@ -904,8 +904,8 @@ JQ
     printf '%s' "$out"
     return 0
   fi
-  [ "$rc" -eq 124 ] && reason="registered secondmate table read timed out" \
-    || reason="registered secondmate table is unreadable"
+  [ "$rc" -eq 124 ] && reason="registered XO table read timed out" \
+    || reason="registered XO table is unreadable"
   jq -n --arg path "$reg" --arg observed "$SNAPSHOT_NOW" --arg reason "$reason" \
     '{present:true,available:false,complete:false,reason:$reason,provenance:"registered-table",path:$path,freshness:{status:"unavailable",observed_at:$observed},records:[],input_truncated:false,records_truncated:false,reasons:[$reason],lines_in_window:0,records_in_window:0}'
 }
@@ -980,10 +980,10 @@ bounded_parent_activities_json() {  # <status-file>
          records_in_window:$records_in_window}'
 BASH
   )
-  out=$(fm_run_timed "$FM_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT" bash -c "$script" \
-    fm-parent-activities "$SCRIPT_DIR/fm-classify-lib.sh" "$f" \
-    "$FM_SNAPSHOT_PARENT_ACTIVITY_LINES" "$FM_SNAPSHOT_PARENT_ACTIVITY_BYTES" \
-    "$FM_SNAPSHOT_PARENT_ACTIVITIES" "$SNAPSHOT_STAT_STYLE" 2>/dev/null)
+  out=$(fm_run_timed "$SQUAD_SNAPSHOT_PARENT_ACTIVITY_TIMEOUT" bash -c "$script" \
+    sq-parent-activities "$SCRIPT_DIR/sq-classify-lib.sh" "$f" \
+    "$SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES" "$SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES" \
+    "$SQUAD_SNAPSHOT_PARENT_ACTIVITIES" "$SNAPSHOT_STAT_STYLE" 2>/dev/null)
   rc=$?
   if [ "$rc" -eq 0 ] && printf '%s' "$out" | jq -e '
     (.records | type) == "array" and (.available | type) == "boolean"
@@ -1007,7 +1007,7 @@ terminal_evidence_json() {  # <parent-task-json> <event-note> <evidence-contradi
       '{provenance:"remote-direct-report-terminal",trust:"untrusted-supplement",captured:false,observed_at:$observed,freshness:"not-collected",reason:$reason,lines:0,bytes:0,event_note_seen:false,contradiction:false}'
     return 0
   fi
-  expected=$(printf '%s' "$task" | jq -r '"fm-" + (.id // "")')
+  expected=$(printf '%s' "$task" | jq -r '"sq-" + (.id // "")')
   if [ -z "$target" ] || [ "$exists" = false ]; then
     [ "$exists" = false ] && reason="recorded endpoint is absent" || reason="no recorded endpoint"
     jq -n --arg observed "$SNAPSHOT_NOW" --arg reason "$reason" \
@@ -1015,9 +1015,9 @@ terminal_evidence_json() {  # <parent-task-json> <event-note> <evidence-contradi
     return 0
   fi
   # shellcheck disable=SC2016 # Positional parameters expand inside the child bash, not here.
-  out=$(fm_run_timed "$FM_SNAPSHOT_TERMINAL_TIMEOUT" bash -c \
+  out=$(fm_run_timed "$SQUAD_SNAPSHOT_TERMINAL_TIMEOUT" bash -c \
     '. "$1"; fm_backend_capture "$2" "$3" "$4" "$5" | LC_ALL=C head -c "$6"; rc=${PIPESTATUS[0]}; [ "$rc" -eq 141 ] && rc=0; exit "$rc"' \
-    fm-terminal-capture "$SCRIPT_DIR/fm-backend.sh" "$backend" "$target" "$FM_SNAPSHOT_TERMINAL_LINES" "$expected" "$FM_SNAPSHOT_TERMINAL_BYTES" 2>/dev/null)
+    sq-terminal-capture "$SCRIPT_DIR/sq-backend.sh" "$backend" "$target" "$SQUAD_SNAPSHOT_TERMINAL_LINES" "$expected" "$SQUAD_SNAPSHOT_TERMINAL_BYTES" 2>/dev/null)
   rc=$?
   if [ "$rc" -ne 0 ]; then
     [ "$rc" -eq 124 ] && reason="terminal capture timed out" || reason="terminal capture unavailable"
@@ -1025,7 +1025,7 @@ terminal_evidence_json() {  # <parent-task-json> <event-note> <evidence-contradi
       '{provenance:"parent-direct-report-terminal",trust:"untrusted-supplement",captured:false,observed_at:$observed,freshness:"unknown",reason:$reason,lines:0,bytes:0,event_note_seen:false,contradiction:false}'
     return 0
   fi
-  clean=$(printf '%s' "$out" | tail -n "$FM_SNAPSHOT_TERMINAL_LINES" | LC_ALL=C head -c "$FM_SNAPSHOT_TERMINAL_BYTES")
+  clean=$(printf '%s' "$out" | tail -n "$SQUAD_SNAPSHOT_TERMINAL_LINES" | LC_ALL=C head -c "$SQUAD_SNAPSHOT_TERMINAL_BYTES")
   if command -v perl >/dev/null 2>&1; then
     clean=$(printf '%s' "$clean" | perl -pe 's/\e\[[0-?]*[ -\/]*[@-~]//g; s/[^\x09\x0A\x0D\x20-\x7E]//g')
   else
@@ -1110,30 +1110,30 @@ parent_evidence_reconciliation_json() {  # <summary-json> <activities-json> <dec
        inconclusive:any(($activity_results + $decision_results)[]; .verdict == "inconclusive")}'
 }
 
-secondmate_current_json() {  # <parent-tasks-json>
+XO_current_json() {  # <parent-tasks-json>
   local tasks=$1 registry union rows total_registered total shown truncated
   local row id home host remote registered registry_error task status_file event_raw event_note event_epoch event_age
   local activity_scan activities decisions reconciliation provenance freshness reason summary summary_rc summary_bytes summary_valid summary_reason summary_invalidity state current_reason terminal terminal_contradiction contradiction
   local records='[]' seen_homes=''
-  registry=$(registry_secondmates_json) || return 1
+  registry=$(registry_XOs_json) || return 1
   union=$(jq -n --argjson registry "$registry" --argjson tasks "$tasks" '
     ($registry.records // []) as $registered
     | (($registered | map(.id)) // []) as $registered_ids
     | ([ $registered[] as $r
          | $r + {parent_task:([$tasks[] | select(.id == $r.id)][0] // null)} ]
-       + [ $tasks[] | select(.kind == "secondmate") as $t
+       + [ $tasks[] | select(.kind == "XO") as $t
            | select(($registered_ids | index($t.id)) == null)
            | {id:$t.id,home:($t.paths.home.path // null),
               registered:(if $registry.complete == true then false else null end),
               registry_error:(if $registry.complete == true
-                              then "secondmate metadata is not registered"
-                              else "secondmate registration is unknown because the registry read is incomplete or unavailable" end),
+                              then "XO metadata is not registered"
+                              else "XO registration is unknown because the registry read is incomplete or unavailable" end),
               parent_task:$t} ])
     | sort_by(.id)
     | {registry:$registry,records:.}') || return 1
   total_registered=$(printf '%s' "$union" | jq '[.records[] | select(.registered)] | length')
   total=$(printf '%s' "$union" | jq '.records | length')
-  rows=$(printf '%s' "$union" | jq -c --argjson cap "$FM_SNAPSHOT_SECONDMATES" '(if $cap == 0 then .records else .records[:$cap] end)[]')
+  rows=$(printf '%s' "$union" | jq -c --argjson cap "$SQUAD_SNAPSHOT_XOS" '(if $cap == 0 then .records else .records[:$cap] end)[]')
   shown=$(printf '%s\n' "$rows" | grep -c . || true)
   truncated=$((total - shown))
 
@@ -1162,7 +1162,7 @@ secondmate_current_json() {  # <parent-tasks-json>
     reason=$registry_error
     summary='{}'
     summary_valid=false
-    if [ -z "$reason" ] && [ -z "$home" ]; then reason="no recorded secondmate home"; fi
+    if [ -z "$reason" ] && [ -z "$home" ]; then reason="no recorded XO home"; fi
     if [ -z "$reason" ]; then
       case "$home" in
         /*) : ;;
@@ -1176,7 +1176,7 @@ secondmate_current_json() {  # <parent-tasks-json>
           *" $host:$home "*) reason="invalid home: duplicate resolved remote route" ;;
           *) seen_homes="$seen_homes $host:$home" ;;
         esac
-      elif ! validate_secondmate_home "$id" "$home" 2>/dev/null; then
+      elif ! validate_XO_home "$id" "$home" 2>/dev/null; then
         reason="invalid home: $VALIDATION_ERROR"
       else
         home=$VALIDATED_HOME
@@ -1188,34 +1188,34 @@ secondmate_current_json() {  # <parent-tasks-json>
     fi
     if [ -z "$reason" ]; then
       if [ "$remote" = true ]; then
-        summary=$(fm_run_timed "$FM_SNAPSHOT_SECONDMATE_TIMEOUT" \
-          "$SCRIPT_DIR/fm-on.sh" "$id" fm-fleet-snapshot.sh --secondmate-home-summary < /dev/null 2>/dev/null)
+        summary=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" \
+          "$SCRIPT_DIR/sq-on.sh" "$id" sq-unit-snapshot.sh --XO-home-summary < /dev/null 2>/dev/null)
         summary_rc=$?
       else
-        summary=$(fm_run_timed "$FM_SNAPSHOT_SECONDMATE_TIMEOUT" env \
-          FM_ROOT_OVERRIDE="$FM_ROOT" \
-          FM_HOME="$home" \
-          FM_STATE_OVERRIDE="$home/state" \
-          FM_DATA_OVERRIDE="$home/data" \
-          FM_CONFIG_OVERRIDE="$home/config" \
-          FM_PROJECTS_OVERRIDE="$home/projects" \
-          FM_SNAPSHOT_NOW="$SNAPSHOT_NOW" \
-          FM_SNAPSHOT_NOW_EPOCH="$SNAPSHOT_EPOCH" \
-          FM_SNAPSHOT_SECONDMATE_CHILDREN="$FM_SNAPSHOT_SECONDMATE_CHILDREN" \
-          FM_SNAPSHOT_SECONDMATE_QUEUED="$FM_SNAPSHOT_SECONDMATE_QUEUED" \
-          FM_SNAPSHOT_SECONDMATE_DECISIONS="$FM_SNAPSHOT_SECONDMATE_DECISIONS" \
-          FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME="$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" \
-          "$SCRIPT_DIR/fm-fleet-snapshot.sh" --secondmate-home-summary 2>/dev/null)
+        summary=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" env \
+          SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+          SQUAD_HOME="$home" \
+          SQUAD_STATE_OVERRIDE="$home/state" \
+          SQUAD_DATA_OVERRIDE="$home/data" \
+          SQUAD_CONFIG_OVERRIDE="$home/config" \
+          SQUAD_PROJECTS_OVERRIDE="$home/projects" \
+          SQUAD_SNAPSHOT_NOW="$SNAPSHOT_NOW" \
+          SQUAD_SNAPSHOT_NOW_EPOCH="$SNAPSHOT_EPOCH" \
+          SQUAD_SNAPSHOT_XO_CHILDREN="$SQUAD_SNAPSHOT_XO_CHILDREN" \
+          SQUAD_SNAPSHOT_XO_QUEUED="$SQUAD_SNAPSHOT_XO_QUEUED" \
+          SQUAD_SNAPSHOT_XO_DECISIONS="$SQUAD_SNAPSHOT_XO_DECISIONS" \
+          SQUAD_SNAPSHOT_XO_LANDED_PER_HOME="$SQUAD_SNAPSHOT_XO_LANDED_PER_HOME" \
+          "$SCRIPT_DIR/sq-unit-snapshot.sh" --XO-home-summary 2>/dev/null)
         summary_rc=$?
       fi
       if [ "$summary_rc" -ne 0 ]; then
         [ "$summary_rc" -eq 124 ] && reason="structured home snapshot timed out" || reason="structured home snapshot failed"
       else
         summary_bytes=$(printf '%s' "$summary" | LC_ALL=C wc -c | tr -d ' ')
-        if [ "$summary_bytes" -gt "$FM_SNAPSHOT_SECONDMATE_MAX_BYTES" ]; then
+        if [ "$summary_bytes" -gt "$SQUAD_SNAPSHOT_XO_MAX_BYTES" ]; then
           reason="structured home snapshot exceeded byte limit"
         elif ! printf '%s' "$summary" | jq -e --arg home "$home" --arg generated "$SNAPSHOT_NOW" --argjson remote "$remote" '
-          .schema == "fm-secondmate-home-summary.v1" and .home == $home
+          .schema == "sq-xo-home-summary.v1" and .home == $home
           and (($remote == true) or .generated == $generated)
           and (.valid | type) == "boolean" and (.state | type) == "string"
           and (.invalidity | type) == "object" and (.invalidity.ids | type) == "array"
@@ -1312,7 +1312,7 @@ EOF
     '{registry:$registry,records:$records,total_registered:$total_registered,total:$total,shown:$shown,truncated:$truncated}'
 }
 
-secondmate_landed_from_current_json() {  # <secondmate-current-json>
+XO_landed_from_current_json() {  # <XO-current-json>
   jq -n --argjson current "$1" '
     {records:[ $current.records[]
       | select(.provenance.selected == "structured-home") as $mate
@@ -1345,27 +1345,27 @@ scout_report_lines() {
     | jq -s 'sort_by(.id)'
 }
 
-BACKLOG_JSON=$(backlog_json) || { echo "fm-fleet-snapshot: backlog read failed" >&2; exit 1; }
-TASKS_JSON=$(task_json_lines) || { echo "fm-fleet-snapshot: task snapshot failed" >&2; exit 1; }
+BACKLOG_JSON=$(backlog_json) || { echo "sq-unit-snapshot: backlog read failed" >&2; exit 1; }
+TASKS_JSON=$(task_json_lines) || { echo "sq-unit-snapshot: task snapshot failed" >&2; exit 1; }
 
-if [ "$OUTPUT_MODE" = secondmate-home-summary ]; then
-  secondmate_home_summary_json "$BACKLOG_JSON" "$TASKS_JSON" \
-    || { echo "fm-fleet-snapshot: secondmate home summary failed" >&2; exit 1; }
+if [ "$OUTPUT_MODE" = XO-home-summary ]; then
+  XO_home_summary_json "$BACKLOG_JSON" "$TASKS_JSON" \
+    || { echo "sq-unit-snapshot: XO home summary failed" >&2; exit 1; }
   exit 0
 fi
 
 SCOUT_REPORTS_JSON=$(scout_report_lines)
 MAIN_INVENTORY_JSON=$(main_inventory_json "$BACKLOG_JSON" "$TASKS_JSON") \
-  || { echo "fm-fleet-snapshot: main inventory summary failed" >&2; exit 1; }
-SECONDMATE_CURRENT_JSON=$(secondmate_current_json "$TASKS_JSON") \
-  || { echo "fm-fleet-snapshot: registered secondmate aggregation failed" >&2; exit 1; }
-SECONDMATE_LANDED_JSON=$(secondmate_landed_from_current_json "$SECONDMATE_CURRENT_JSON") \
-  || { echo "fm-fleet-snapshot: secondmate landed projection failed" >&2; exit 1; }
+  || { echo "sq-unit-snapshot: main inventory summary failed" >&2; exit 1; }
+XO_CURRENT_JSON=$(XO_current_json "$TASKS_JSON") \
+  || { echo "sq-unit-snapshot: registered XO aggregation failed" >&2; exit 1; }
+XO_LANDED_JSON=$(XO_landed_from_current_json "$XO_CURRENT_JSON") \
+  || { echo "sq-unit-snapshot: XO landed projection failed" >&2; exit 1; }
 
 jq -n \
   --arg generated "$SNAPSHOT_NOW" \
-  --arg fm_home "$FM_HOME" \
-  --arg fm_root "$FM_ROOT" \
+  --arg fm_home "$SQUAD_HOME" \
+  --arg fm_root "$SQUAD_ROOT" \
   --arg state "$STATE" \
   --arg data "$DATA" \
   --arg config "$CONFIG" \
@@ -1374,13 +1374,13 @@ jq -n \
   --argjson tasks "$TASKS_JSON" \
   --argjson main_inventory "$MAIN_INVENTORY_JSON" \
   --argjson scout_reports "$SCOUT_REPORTS_JSON" \
-  --argjson secondmate_current "$SECONDMATE_CURRENT_JSON" \
-  --argjson secondmate_landed "$SECONDMATE_LANDED_JSON" \
+  --argjson XO_current "$XO_CURRENT_JSON" \
+  --argjson XO_landed "$XO_LANDED_JSON" \
   'def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
    def task_by_id($id): ($tasks[]? | select(.id == $id) | .) // null;
-   def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "scout");
+   def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "recon");
    {
-     schema:"fm-fleet-snapshot.v1",
+     schema:"sq-unit-snapshot.v1",
      generated:$generated,
      fm_home:$fm_home,
      roots:{fm_root:$fm_root,state:$state,data:$data,config:$config,projects:$projects},
@@ -1388,9 +1388,9 @@ jq -n \
      tasks:($tasks | map(. + {backlog:backlog_by_id(.id)})),
      main_inventory:$main_inventory,
      scout_reports:($scout_reports | map(. + {kind:report_kind(.id)})),
-     secondmate_current:$secondmate_current,
-     secondmate_landed:$secondmate_landed,
-     secondmate_guidance:{
-       note:"For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+     XO_current:$XO_current,
+     XO_landed:$XO_landed,
+     XO_guidance:{
+       note:"For kind=xo, sitrep selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
      }
    }'

@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Acquire or inspect the per-home firstmate session lock.
+# Acquire or inspect the per-home Squad session lock.
 # Writes the harness (agent) process PID found by walking the shell's ancestry,
-# which lives as long as the firstmate session - unlike the transient subshell
+# which lives as long as the Squad session - unlike the transient subshell
 # PID of any one tool call, which is dead moments after it is written.
-# Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
-#        fm-lock.sh status    print holder and liveness; always exits 0
+# Usage: sq-lock.sh           acquire; exit 1 unless ownership is verified
+#        sq-lock.sh status    print holder and liveness; always exits 0
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 LOCK="$STATE/.lock"
 mkdir -p "$STATE" 2>/dev/null || {
   echo "error: cannot create session-lock state directory $STATE; operate read-only until resolved" >&2
   exit 1
 }
 
-# Harness identity (FM_HARNESS_RE, ancestry walk, holder liveness) is owned by
+# Harness identity (SQUAD_HARNESS_RE, ancestry walk, holder liveness) is owned by
 # the shared session-lock lib so the Claude Stop auto-arm applies the exact
 # same identity contract.
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/sq-session-lock-lib.sh
+. "$SCRIPT_DIR/sq-session-lock-lib.sh"
 
 if [ "${1:-}" = "status" ]; then
   if [ ! -f "$LOCK" ]; then echo "lock: free"; exit 0; fi
@@ -42,8 +42,8 @@ rm -f "$probe" 2>/dev/null || {
   echo "error: cannot clean session-lock publication probe; operate read-only until resolved" >&2
   exit 1
 }
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 CLAIM_LOCK="$STATE/.lock.acquire"
 CLAIM_LOCK_HELD=0
 release_claim_lock() {
@@ -62,15 +62,15 @@ if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
     exit 0
   fi
   if fm_harness_pid_alive "$old"; then
-    echo "error: another live firstmate session holds the lock (pid $old); operate read-only until resolved" >&2
+    echo "error: another live Squad session holds the lock (pid $old); operate read-only until resolved" >&2
     exit 1
   fi
 fi
 
 if ! fm_lock_try_acquire "$CLAIM_LOCK"; then
   sweep_pid=$(sed -n 's/^pid=//p' "$STATE/.startup-network.status" 2>/dev/null | tail -1)
-  if [ -n "${FM_LOCK_HELD_PID:-}" ] && [ "$FM_LOCK_HELD_PID" = "$sweep_pid" ]; then
-    echo "error: the prior session's bounded startup sweep is finishing; operate read-only until it releases the fleet lock" >&2
+  if [ -n "${SQUAD_LOCK_HELD_PID:-}" ] && [ "$SQUAD_LOCK_HELD_PID" = "$sweep_pid" ]; then
+    echo "error: the prior session's bounded startup sweep is finishing; operate read-only until it releases the unit lock" >&2
     exit 1
   fi
   fm_lock_acquire_wait "$CLAIM_LOCK"
@@ -87,7 +87,7 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
     exit 1
   }
   if [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
-    echo "error: another live firstmate session holds the lock (pid $old); operate read-only until resolved" >&2
+    echo "error: another live Squad session holds the lock (pid $old); operate read-only until resolved" >&2
     exit 1
   fi
 fi

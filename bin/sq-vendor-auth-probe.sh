@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# fm-vendor-auth-probe.sh - one hard-bounded, non-destructive authentication
+# sq-vendor-auth-probe.sh - one hard-bounded, non-destructive authentication
 # probe of a named vendor CLI.
 #
 # This script collects a FACT and renders no verdict. It takes no harness, model,
 # or provider, reads no quota, and never decides whether a dispatch candidate is
-# eligible. The dispatching first mate owns that judgment from `quota-axi`'s data
+# eligible. The dispatching sergeant at arms owns that judgment from `quota-axi`'s data
 # plus each harness's authoritative model catalog; the decision procedure is
 # owned once by .agents/skills/quota-array-dispatch/SKILL.md.
 #
 # Why it exists rather than the agent running the vendor CLI itself: the
-# captain's 2026-07-30 `firstmate-grok-auth-preflight` decision approved exactly
+# commander's 2026-07-30 `Squad-grok-auth-preflight` decision approved exactly
 # one bounded, non-interactive probe, and that safety envelope must not depend on
 # agent memory. It is enforced here deterministically:
 #   - the argv is fixed in this file and never composed from input, so no caller
@@ -54,10 +54,10 @@
 # renders no verdict for a caller to branch on.
 #
 # Usage:
-#   fm-vendor-auth-probe.sh <probe>
+#   sq-vendor-auth-probe.sh <probe>
 #
 # Environment:
-#   FM_VENDOR_AUTH_PROBE_TIMEOUT   hard per-command bound in seconds; must be a
+#   SQUAD_VENDOR_AUTH_PROBE_TIMEOUT   hard per-command bound in seconds; must be a
 #                                  positive integer, otherwise the default 20 is
 #                                  used. Zero is rejected because `timeout 0` and
 #                                  `alarm 0` both mean "no deadline".
@@ -67,13 +67,13 @@ VERIFIED_GROK_VERSION=0.2.117
 
 usage() {
   cat <<'EOF'
-fm-vendor-auth-probe.sh - one hard-bounded, non-destructive authentication probe
+sq-vendor-auth-probe.sh - one hard-bounded, non-destructive authentication probe
 of a named vendor CLI. It collects a fact and renders no verdict: it takes no
 harness, model, or provider, reads no quota, and never decides dispatch
-eligibility. The dispatching first mate owns that judgment.
+eligibility. The dispatching sergeant at arms owns that judgment.
 
 Usage:
-  fm-vendor-auth-probe.sh <probe>
+  sq-vendor-auth-probe.sh <probe>
 
 Registered probes:
   grok   `grok models` on the standalone Grok Build CLI
@@ -95,15 +95,15 @@ printed. Login, logout, and the interactive TUI are never invoked.
 Exit status: 0 whenever the line is printed, 2 on a usage error.
 
 Environment:
-  FM_VENDOR_AUTH_PROBE_TIMEOUT   hard per-command bound in seconds (default 20);
+  SQUAD_VENDOR_AUTH_PROBE_TIMEOUT   hard per-command bound in seconds (default 20);
                                  a non-positive or non-numeric value is rejected
                                  in favor of the default
 EOF
 }
 
 die_usage() {
-  printf 'fm-vendor-auth-probe: %s\n' "$1" >&2
-  printf 'usage: fm-vendor-auth-probe.sh <probe>   (registered probes: grok)\n' >&2
+  printf 'sq-vendor-auth-probe: %s\n' "$1" >&2
+  printf 'usage: sq-vendor-auth-probe.sh <probe>   (registered probes: grok)\n' >&2
   exit 2
 }
 
@@ -124,17 +124,17 @@ done
 
 # A non-positive bound is not a bound: `timeout 0` and the Perl fallback's
 # `alarm 0` both disable the deadline, so a hung vendor CLI would run unbounded.
-TIMEOUT=${FM_VENDOR_AUTH_PROBE_TIMEOUT:-20}
+TIMEOUT=${SQUAD_VENDOR_AUTH_PROBE_TIMEOUT:-20}
 case "$TIMEOUT" in
   ''|*[!0-9]*|0*) TIMEOUT=20 ;;
 esac
 
-# Bounded execution is owned by bin/fm-timeout-lib.sh, so a macOS host without
+# Bounded execution is owned by bin/sq-timeout-lib.sh, so a macOS host without
 # coreutils still gets a hard bound instead of an unbounded vendor CLI call.
 # Exit 124 means the bound was hit.
-# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck source=bin/sq-timeout-lib.sh
 # shellcheck disable=SC1091
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sq-timeout-lib.sh"
 
 STATUS=unavailable
 VERSION=none

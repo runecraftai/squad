@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# fm-startup-network.sh - the deferred network stage of a session start.
+# sq-startup-network.sh - the deferred network stage of a session start.
 #
 # WHY THIS EXISTS. Every external-network call a session start makes used to run
 # BEFORE the digest printed, on a hook that blocks session initialization: `gh
-# auth status`, the secondmate liveness and convergence sweeps (11 sequential,
-# individually unbounded SSH connections per REMOTE secondmate), pending remote
-# handoff delivery, and the fleet-sync fetch of every project clone. None of
+# auth status`, the XO liveness and convergence sweeps (11 sequential,
+# individually unbounded SSH connections per REMOTE XO), pending remote
+# handoff delivery, and the unit-sync fetch of every project clone. None of
 # those calls is individually bounded, so one unreachable host could consume the
-# whole FM_SESSION_START_TIMEOUT budget and truncate the digest outright, turning
+# whole SQUAD_SESSION_START_TIMEOUT budget and truncate the digest outright, turning
 # a slow network into a startup that never printed the work queue at all.
 # This script runs exactly that work OFF the blocking path: the digest is
 # composed from local reads alone while these checks run concurrently in a
 # detached worker, and their result is reported back inline when it finishes in
 # time, or as a durable wake when it does not.
 #
-# WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
+# WHAT IS PRESERVED. Nothing is dropped. bin/sq-bootstrap.sh remains the single
 # owner of every one of these sweeps and still runs all of them, unchanged, via
-# its FM_BOOTSTRAP_NETWORK=only phase. Deferral changes WHEN they run, not
+# its SQUAD_BOOTSTRAP_NETWORK=only phase. Deferral changes WHEN they run, not
 # WHETHER, and three properties make the later run safe:
 #   - The sweeps are idempotent DETECTORS. A run whose report is lost (killed
 #     worker, truncated digest, crashed session) loses no finding: the next run
-#     re-derives the same dead secondmate, the same stuck clone, the same
+#     re-derives the same dead XO, the same stuck clone, the same
 #     undelivered handoff. There is no once-only signal to miss.
 #   - The result is durable and always surfaces. It lands in
 #     state/.startup-network.report and reaches the agent either inline in the
@@ -34,7 +34,7 @@
 #     holds it through the bounded mutating run. A takeover stays read-only until
 #     that run settles, so old and new owners can never sweep concurrently.
 #
-# Usage: fm-startup-network.sh start --locked <0|1> --harvest-pid <pid>
+# Usage: sq-startup-network.sh start --locked <0|1> --harvest-pid <pid>
 #          Launch the detached worker and return immediately. Single-flight: a
 #          worker already running for the same lock owner is left alone. A new
 #          owner gets a distinct generation. --locked 1 asks
@@ -42,20 +42,20 @@
 #          asks for the probe only. --harvest-pid names the session-start process
 #          that will try to print the result inline, so the worker can tell
 #          whether a wake is still needed.
-#        fm-startup-network.sh run --locked <0|1>
+#        sq-startup-network.sh run --locked <0|1>
 #          Run the checks in the foreground and publish the result. This is what
 #          `start` detaches with its private generation reservation; run it
 #          directly to redo the stage by hand from the lock-owning harness.
-#        fm-startup-network.sh harvest --pid <pid>
+#        sq-startup-network.sh harvest --pid <pid>
 #          Print the digest's NETWORK CHECKS section and release the inline-print
-#          claim. Called by bin/fm-session-start.sh, not by hand.
-#        fm-startup-network.sh report
+#          claim. Called by bin/sq-session-start.sh, not by hand.
+#        sq-startup-network.sh report
 #          Print the current state and report without changing anything, then the
 #          last run's per-step elapsed times. This is the ONLY command that prints
 #          those timings: `harvest` composes the session-start digest, and adding
 #          diagnostic detail there would make every startup pay for a question
 #          only a slow run raises.
-#        fm-startup-network.sh wait [<seconds>]
+#        sq-startup-network.sh wait [<seconds>]
 #          Block until the report is published, up to <seconds> (default 120).
 #          For operators and tests only; a session start never waits.
 #
@@ -65,7 +65,7 @@
 #                             whether the report was published. The single
 #                             source of truth for what ran and how it ended.
 #   .startup-network.report   the sweep output, byte for byte as
-#                             bin/fm-bootstrap.sh produced it, plus a
+#                             bin/sq-bootstrap.sh produced it, plus a
 #                             NETWORK_CHECKS: line whenever the stage itself
 #                             could not complete or had to downgrade.
 #   .startup-network.claim    the generation and pid of a session start that
@@ -76,10 +76,10 @@
 #                             current finished result; only this suppresses its
 #                             wake.
 #   .startup-network.timings  per-step elapsed times for the last run, in
-#                             bin/fm-timing-lib.sh's tab-separated format: the
+#                             bin/sq-timing-lib.sh's tab-separated format: the
 #                             stage total, one record per network phase (gh auth,
-#                             secondmate liveness, secondmate convergence, handoff
-#                             delivery, fleet sync), one per secondmate for the
+#                             XO liveness, XO convergence, handoff
+#                             delivery, unit sync), one per XO for the
 #                             remote-touching steps (id and host), and one per
 #                             project clone. Published for a timed-out or failed
 #                             run too, where a partial record is the answer.
@@ -88,16 +88,16 @@
 #   .startup-network.lock     serializes publication, harvest acknowledgement,
 #                             and the wake decision.
 #
-# The whole stage is bounded by FM_STARTUP_NETWORK_TIMEOUT (default 120s), one
+# The whole stage is bounded by SQUAD_STARTUP_NETWORK_TIMEOUT (default 120s), one
 # aggregate deadline replacing the per-call unboundedness that used to be able to
 # wedge a startup. Hitting the bound is reported as an actionable NETWORK_CHECKS:
 # line, never as silence.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 
 STATUS_FILE="$STATE/.startup-network.status"
 REPORT_FILE="$STATE/.startup-network.report"
@@ -106,22 +106,22 @@ DELIVERED_FILE="$STATE/.startup-network.delivered"
 TIMINGS_FILE="$STATE/.startup-network.timings"
 PUBLISH_LOCK="$STATE/.startup-network.lock"
 
-# shellcheck source=bin/fm-timeout-lib.sh
-. "$SCRIPT_DIR/fm-timeout-lib.sh"
-# fm-timing-lib.sh owns the per-step elapsed record this stage publishes beside
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
+# sq-timing-lib.sh owns the per-step elapsed record this stage publishes beside
 # its report. Recording is opt-in per run: it stays inert until cmd_run points
-# FM_TIMING_LOG at a file, so nothing else that sources these scripts pays for it.
-# shellcheck source=bin/fm-timing-lib.sh
-. "$SCRIPT_DIR/fm-timing-lib.sh"
-# fm-wake-lib.sh owns both the portable lock helpers used below and the durable
-# wake queue this stage publishes into.
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# SQUAD_TIMING_LOG at a file, so nothing else that sources these scripts pays for it.
+# shellcheck source=bin/sq-timing-lib.sh
+. "$SCRIPT_DIR/sq-timing-lib.sh"
+# sq-stand-to-lib.sh owns both the portable lock helpers used below and the durable
+# stand-to queue this stage publishes into.
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-session-lock-lib.sh
+. "$SCRIPT_DIR/sq-session-lock-lib.sh"
 
 usage() {
-  sed -n '2,/^set -u$/p' "$SCRIPT_DIR/fm-startup-network.sh" | sed 's/^# \{0,1\}//; $d'
+  sed -n '2,/^set -u$/p' "$SCRIPT_DIR/sq-startup-network.sh" | sed 's/^# \{0,1\}//; $d'
 }
 
 status_get() {  # <key>
@@ -148,13 +148,13 @@ age_of() {  # <epoch> - seconds since, or empty when unreadable
 }
 
 stage_budget() {
-  local budget=${FM_STARTUP_NETWORK_TIMEOUT:-120}
+  local budget=${SQUAD_STARTUP_NETWORK_TIMEOUT:-120}
   case "$budget" in ''|*[!0-9]*|0) budget=120 ;; esac
   printf '%s' "$budget"
 }
 
 delivery_budget() {
-  local budget=${FM_SESSION_START_TIMEOUT:-120}
+  local budget=${SQUAD_SESSION_START_TIMEOUT:-120}
   case "$budget" in ''|*[!0-9]*|0) budget=120 ;; esac
   printf '%s' "$budget"
 }
@@ -182,7 +182,7 @@ worker_alive() {
 phase_label() {  # <phases>
   case "$1" in
     probe) printf 'GitHub authentication' ;;
-    probe,sweeps) printf 'GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, and project clone refresh with its drift reporting' ;;
+    probe,sweeps) printf 'GitHub authentication, dead-XO relaunch, XO convergence, pending handoff delivery, and project clone refresh with its drift reporting' ;;
     *) printf 'the deferred network checks' ;;
   esac
 }
@@ -246,7 +246,7 @@ EOF
   local monitor_was_on=0
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m 2>/dev/null || true
-  nohup "$SCRIPT_DIR/fm-startup-network.sh" run --locked "$locked" --lock-pid "$lock_pid" \
+  nohup "$SCRIPT_DIR/sq-startup-network.sh" run --locked "$locked" --lock-pid "$lock_pid" \
     --generation "$generation" \
     >/dev/null 2>&1 </dev/null &
   worker_pid=$!
@@ -280,7 +280,7 @@ EOF
 # The question is deliberately "does the lock still name the session that asked
 # for this work?", not "is that session still alive". The hazard being closed is
 # a SECOND session sweeping concurrently, and taking the lock is exactly what
-# rewrites this value - bin/fm-lock.sh overwrites a dead holder's pid with its
+# rewrites this value - bin/sq-lock.sh overwrites a dead holder's pid with its
 # own. An unchanged value therefore proves no one else owns the sweeps, which is
 # the whole guarantee. Requiring liveness instead would refuse to finish work
 # nobody else has claimed, and the sweeps are idempotent, so finishing it is
@@ -323,7 +323,7 @@ EOF
     fi
     if [ "$claim_live" -eq 0 ]; then
       fm_wake_append check startup-network \
-        "check: startup-network: deferred startup network checks finished ($state); read them with $FM_ROOT/bin/fm-startup-network.sh report" \
+        "check: startup-network: deferred startup network checks finished ($state); read them with $SQUAD_ROOT/bin/sq-startup-network.sh report" \
         || true
       fm_lock_release "$PUBLISH_LOCK"
       return 0
@@ -338,7 +338,7 @@ EOF
     return 0
   fi
   fm_wake_append check startup-network \
-    "check: startup-network: deferred startup network checks finished ($state); read them with $FM_ROOT/bin/fm-startup-network.sh report" \
+    "check: startup-network: deferred startup network checks finished ($state); read them with $SQUAD_ROOT/bin/sq-startup-network.sh report" \
     || true
   fm_lock_release "$PUBLISH_LOCK"
 }
@@ -427,13 +427,13 @@ EOF
     fm_lock_release "$PUBLISH_LOCK"
   fi
 
-  out=$(mktemp "${TMPDIR:-/tmp}/fm-startup-network.XXXXXX" 2>/dev/null) || return 1
+  out=$(mktemp "${TMPDIR:-/tmp}/sq-startup-network.XXXXXX" 2>/dev/null) || return 1
   # Recorded into a temp file rather than straight into state/ so a run that is
   # killed mid-sweep cannot leave a half-written artifact where the previous
   # run's complete one used to be; publish() promotes it atomically at the end.
-  # Sweeps run in child processes (bin/fm-bootstrap.sh, and bin/fm-fleet-sync.sh
-  # below it), so FM_TIMING_LOG is exported and appended to by all of them.
-  timings=$(mktemp "${TMPDIR:-/tmp}/fm-startup-network-timings.XXXXXX" 2>/dev/null) || timings=
+  # Sweeps run in child processes (bin/sq-bootstrap.sh, and bin/sq-unit-sync.sh
+  # below it), so SQUAD_TIMING_LOG is exported and appended to by all of them.
+  timings=$(mktemp "${TMPDIR:-/tmp}/sq-startup-network-timings.XXXXXX" 2>/dev/null) || timings=
   [ -z "$timings" ] || fm_timing_start "$timings"
   stage_started=$(fm_timing_now_ms)
   rc=0
@@ -447,12 +447,12 @@ EOF
     fi
   fi
   if [ "$sweep_locked" -eq 1 ]; then
-    fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only \
-      FM_BOOTSTRAP_NETWORK_LOCK_PID="$lock_pid" \
-      "$SCRIPT_DIR/fm-bootstrap.sh" >"$out" 2>&1 || rc=$?
+    fm_run_timed "$budget" env SQUAD_BOOTSTRAP_NETWORK=only \
+      SQUAD_BOOTSTRAP_NETWORK_LOCK_PID="$lock_pid" \
+      "$SCRIPT_DIR/sq-bootstrap.sh" >"$out" 2>&1 || rc=$?
   else
-    fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_DETECT_ONLY=1 \
-      "$SCRIPT_DIR/fm-bootstrap.sh" >"$out" 2>&1 || rc=$?
+    fm_run_timed "$budget" env SQUAD_BOOTSTRAP_NETWORK=only SQUAD_BOOTSTRAP_DETECT_ONLY=1 \
+      "$SCRIPT_DIR/sq-bootstrap.sh" >"$out" 2>&1 || rc=$?
   fi
   [ "$lease_held" -eq 0 ] || fm_lock_release "$STATE/.lock.acquire"
   # The bounded run as a whole, so the per-phase records can be read against the
@@ -460,18 +460,18 @@ EOF
   fm_timing_record stage network-checks "$stage_started" "$phases"
 
   if [ "$downgraded" -eq 1 ]; then
-    printf 'NETWORK_CHECKS: the fleet lock was no longer held by the session that requested these, so dead-secondmate relaunch, secondmate convergence, pending handoff delivery, and project clone refresh were skipped; they belong to whichever session holds the lock now\n' >> "$out"
+    printf 'NETWORK_CHECKS: the unit lock was no longer held by the session that requested these, so dead-XO relaunch, XO convergence, pending handoff delivery, and project clone refresh were skipped; they belong to whichever session holds the lock now\n' >> "$out"
   fi
   case "$rc" in
     0) publish "$generation" 'done' "$phases" "$sweep_locked" "$started" "$rc" "$out" "$timings" ;;
     124)
-      printf 'NETWORK_CHECKS: hit the %ss bound before finishing, so %s may be incomplete; rerun %s/bin/fm-startup-network.sh run --locked %s\n' \
-        "$budget" "$(phase_label "$phases")" "$FM_ROOT" "$sweep_locked" >> "$out"
+      printf 'NETWORK_CHECKS: hit the %ss bound before finishing, so %s may be incomplete; rerun %s/bin/sq-startup-network.sh run --locked %s\n' \
+        "$budget" "$(phase_label "$phases")" "$SQUAD_ROOT" "$sweep_locked" >> "$out"
       publish "$generation" timeout "$phases" "$sweep_locked" "$started" "$rc" "$out" "$timings"
       ;;
     *)
-      printf 'NETWORK_CHECKS: the deferred check worker exited %s, so %s may be incomplete; rerun %s/bin/fm-startup-network.sh run --locked %s\n' \
-        "$rc" "$(phase_label "$phases")" "$FM_ROOT" "$sweep_locked" >> "$out"
+      printf 'NETWORK_CHECKS: the deferred check worker exited %s, so %s may be incomplete; rerun %s/bin/sq-startup-network.sh run --locked %s\n' \
+        "$rc" "$(phase_label "$phases")" "$SQUAD_ROOT" "$sweep_locked" >> "$out"
       publish "$generation" failed "$phases" "$sweep_locked" "$started" "$rc" "$out" "$timings"
       ;;
   esac
@@ -495,8 +495,8 @@ print_finished() {  # <state>
   printf 'completed off the startup path in %ss: %s.\n' "$took" "$(phase_label "$phases")"
   [ "$state" = 'done' ] || printf 'The stage itself did not finish cleanly (%s) - the NETWORK_CHECKS line below names what to rerun.\n' "$state"
   if [ "$report_published" = 0 ]; then
-    printf 'NETWORK_CHECKS: could not publish the deferred check report, so %s results are unavailable; rerun %s/bin/fm-startup-network.sh run --locked %s\n' \
-      "$(phase_label "$phases")" "$FM_ROOT" "$(status_get locked)"
+    printf 'NETWORK_CHECKS: could not publish the deferred check report, so %s results are unavailable; rerun %s/bin/sq-startup-network.sh run --locked %s\n' \
+      "$(phase_label "$phases")" "$SQUAD_ROOT" "$(status_get locked)"
   elif [ -s "$REPORT_FILE" ]; then
     cat "$REPORT_FILE"
     printf 'These ran AFTER the sections above were composed, so re-read any record a line here names.\n'
@@ -524,7 +524,7 @@ print_pending() {
   [ -z "$age" ] || printf 'Started %ss ago, bounded at %ss.\n' "$age" "$(stage_budget)"
   # shellcheck disable=SC2016  # The backticked wake name is literal digest text.
   printf 'The result is durable in state/.startup-network.report and arrives as a `check: startup-network` wake.\n'
-  printf 'Read it now with %s/bin/fm-startup-network.sh report; until it lands, treat none of it as confirmed.\n' "$FM_ROOT"
+  printf 'Read it now with %s/bin/sq-startup-network.sh report; until it lands, treat none of it as confirmed.\n' "$SQUAD_ROOT"
 }
 
 print_state() {
@@ -534,8 +534,8 @@ print_state() {
       if worker_alive; then
         print_pending
       else
-        printf 'NETWORK_CHECKS: the deferred check worker stopped before publishing, so %s did not complete; rerun %s/bin/fm-startup-network.sh run --locked %s\n' \
-          "$(phase_label "$(status_get phases)")" "$FM_ROOT" "$(status_get locked)"
+        printf 'NETWORK_CHECKS: the deferred check worker stopped before publishing, so %s did not complete; rerun %s/bin/sq-startup-network.sh run --locked %s\n' \
+          "$(phase_label "$(status_get phases)")" "$SQUAD_ROOT" "$(status_get locked)"
       fi
       ;;
     *) printf 'not started - no deferred network checks have run for this home yet.\n' ;;
@@ -610,8 +610,8 @@ case "$MODE" in
   wait) cmd_wait "${1:-120}" || exit $? ;;
   -h|--help) usage ;;
   *)
-    printf 'fm-startup-network: unknown mode: %s\n' "${MODE:-<none>}" >&2
-    printf 'usage: fm-startup-network.sh start|run|harvest|report|wait\n' >&2
+    printf 'sq-startup-network: unknown mode: %s\n' "${MODE:-<none>}" >&2
+    printf 'usage: sq-startup-network.sh start|run|harvest|report|wait\n' >&2
     exit 2
     ;;
 esac

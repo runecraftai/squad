@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Blocking, non-destructive delta read for a remote secondmate append-only log.
+# Blocking, non-destructive delta read for a remote XO append-only log.
 #
 # Usage:
-#   fm-remote-delta-read.sh <relative-log> <offset> <prefix-sha256> [wait-seconds]
+#   sq-remote-delta-read.sh <relative-log> <offset> <prefix-sha256> [wait-seconds]
 #
 # The reader validates continuity by hashing the exact prefix represented by the
 # caller's cursor. It then blocks until at least one complete appended line is
@@ -13,13 +13,13 @@
 # Exit 75 means the wait window closed with no complete line. SIGTERM exits the
 # same way after cleanup. The remote job worker preempts this read-only poll to
 # unblock any queued command other than another reply long-poll. The
-# bin/fm-remote-job-lib.sh header owns that contract, and a preempted read is
+# bin/sq-remote-job-lib.sh header owns that contract, and a preempted read is
 # indistinguishable from an empty window.
 set -eu
 
-FM_HOME=${FM_HOME:?FM_HOME is required}
-MAX_BYTES=${FM_REMOTE_DELTA_MAX_BYTES:-65536}
-POLL_SECONDS=${FM_REMOTE_DELTA_POLL_SECONDS:-0.2}
+SQUAD_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
+MAX_BYTES=${SQUAD_REMOTE_DELTA_MAX_BYTES:-65536}
+POLL_SECONDS=${SQUAD_REMOTE_DELTA_POLL_SECONDS:-0.2}
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -84,11 +84,11 @@ resolve_log() { # <relative-path>
   case "$rel" in ''|/*|*'//'*) die "log must be a nonempty relative path" ;; esac
   case "/$rel/" in */../*|*/./*) die "log traversal is not allowed: $rel" ;; esac
   case "$rel" in *$'\n'*|*$'\r'*|*$'\t'*) die "log path contains control characters" ;; esac
-  home_real=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || die "FM_HOME is unavailable"
+  home_real=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
   parent=$(dirname "$rel")
   base=$(basename "$rel")
-  parent_real=$(CDPATH='' cd -- "$FM_HOME/$parent" 2>/dev/null && pwd -P) || die "log parent is unavailable: $rel"
-  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "log escapes FM_HOME: $rel" ;; esac
+  parent_real=$(CDPATH='' cd -- "$SQUAD_HOME/$parent" 2>/dev/null && pwd -P) || die "log parent is unavailable: $rel"
+  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "log escapes SQUAD_HOME: $rel" ;; esac
   path="$parent_real/$base"
   if [ -e "$path" ] || [ -L "$path" ]; then
     [ -f "$path" ] && [ ! -L "$path" ] || die "log is not a non-symlink regular file: $rel"
@@ -97,7 +97,7 @@ resolve_log() { # <relative-path>
 }
 
 emit_break() { # <reason> <size> <actual-prefix>
-  printf 'schema=fm-remote-delta.v1\n'
+  printf 'schema=sq-remote-delta.v1\n'
   printf 'status=continuity-broken\n'
   printf 'path=%s\n' "$REL"
   printf 'from_offset=%s\n' "$OFFSET"
@@ -120,11 +120,11 @@ case "$PREFIX" in *[!A-Fa-f0-9]*|'') die "prefix-sha256 must be hexadecimal" ;; 
 PREFIX=$(printf '%s' "$PREFIX" | tr 'A-F' 'a-f')
 case "$WAIT" in ''|*[!0-9]*) die "wait-seconds must be a nonnegative integer" ;; esac
 [ "$WAIT" -le 300 ] || die "wait-seconds exceeds the 300-second safety bound"
-case "$MAX_BYTES" in ''|*[!0-9]*|0) die "FM_REMOTE_DELTA_MAX_BYTES must be a positive integer" ;; esac
-[ "$MAX_BYTES" -le 1048576 ] || die "FM_REMOTE_DELTA_MAX_BYTES exceeds the safety bound"
+case "$MAX_BYTES" in ''|*[!0-9]*|0) die "SQUAD_REMOTE_DELTA_MAX_BYTES must be a positive integer" ;; esac
+[ "$MAX_BYTES" -le 1048576 ] || die "SQUAD_REMOTE_DELTA_MAX_BYTES exceeds the safety bound"
 
 LOG=$(resolve_log "$REL")
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-delta.XXXXXX") || die "cannot create delta staging directory"
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-remote-delta.XXXXXX") || die "cannot create delta staging directory"
 trap 'rm -rf -- "$TMP"' EXIT
 trap 'exit 75' TERM
 : > "$TMP/empty"
@@ -161,7 +161,7 @@ while :; do
         copy_prefix "$TMP/source" "$TO" "$TMP/to-prefix"
         TO_HASH=$(sha256_file "$TMP/to-prefix")
         PAYLOAD_HASH=$(sha256_file "$TMP/payload")
-        printf 'schema=fm-remote-delta.v1\n'
+        printf 'schema=sq-remote-delta.v1\n'
         printf 'status=delta\n'
         printf 'path=%s\n' "$REL"
         printf 'from_offset=%s\n' "$OFFSET"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# fm-busy-lib.sh - the ONE owner of firstmate's semantic busy-state contract.
+# sq-busy-lib.sh - the ONE owner of Squad's semantic busy-state contract.
 #
-# Design source: the captain-approved semantic busy-state redesign
+# Design source: the commander-approved semantic busy-state redesign
 # (2026-07-28): each harness adapter reports turn lifecycle through a
 # machine-readable semantic source it owns, classification always exposes
 # which source produced it, and missing, malformed, stale, unsupported, or
@@ -9,15 +9,15 @@
 # process-level override and yields dead, never busy. Child processes, CPU,
 # process sleep state, marker mtimes, and the old global UI-regex OR are not
 # state signals here; state/<id>.turn-ended files remain wake NOTIFICATIONS
-# owned by the watcher, not current-state truth.
+# owned by the sentry, not current-state truth.
 #
 # Record file: state/<id>.busy-state - exactly one line, atomically replaced
-# by bin/fm-busy-event.sh (the only writer):
+# by bin/sq-busy-event.sh (the only writer):
 #
 #   v1 gen=<token> seq=<uint> state=<busy|idle|unknown> source=<token> event=<token> ts=<epoch>
 #
 # Gen sidecar: state/<id>.busy-gen - one token minted when the task's busy
-# wiring is armed (fm-spawn, or a documented recovery re-arm). Every event
+# wiring is armed (sq-spawn, or a documented recovery re-arm). Every event
 # must present the current gen; an event or record carrying any other gen is
 # a stale incarnation and is rejected (written events) or classified unknown
 # (read records). seq is a strictly increasing integer per gen, advanced
@@ -34,10 +34,10 @@
 #   codex-hook, codex-appserver  reserved: Codex, gated by
 #                    fm_busy_codex_semantic_source
 #   kimi-wire, kimi-hook  reserved: standalone Kimi, gated by fm_busy_kimi_verified
-# Firstmate-owned sources accepted for every converted adapter:
-#   fm-spawn         the launch-brief turn seeded at spawn
-#   fm-interrupt     a firstmate-controlled interruption of the worker
-#   fm-recovery      a documented recovery reset after relaunch
+# Squad-owned sources accepted for every converted adapter:
+#   sq-spawn         the launch-brief turn seeded at spawn
+#   sq-interrupt     a Squad-controlled interruption of the worker
+#   sq-recovery      a documented recovery reset after relaunch
 # Classifier-only sources (never written into a record):
 #   endpoint-gone, herdr-native, grok-regex, muse-session-log, missing,
 #   malformed, gen-mismatch, source-mismatch, kimi-unverified,
@@ -56,7 +56,7 @@
 # The Grok arm is the ONLY rendered-text classification that survives the
 # redesign, because Grok's structured lifecycle was not credited-live-verified
 # in the approved audit; it is scoped to harness=grok and can never classify
-# another adapter. The delivery guards in bin/fm-tmux-lib.sh match rendered
+# another adapter. The delivery guards in bin/sq-tmux-lib.sh match rendered
 # footers for submit acknowledgement and away-mode supervisor injection only;
 # neither is a recorded worker state source.
 #
@@ -73,16 +73,16 @@
 # app-server turn lifecycle with capability negotiation, and sanctions its
 # stable lifecycle hooks as the intermediate. Neither is usable on the
 # installed binary, so Codex classifies unknown codex-unverified rather than
-# falling back to idle, and fm-spawn installs no Codex busy wiring.
+# falling back to idle, and sq-spawn installs no Codex busy wiring.
 # docs/verification/supervision.md owns the evidence for both probes.
 #
 # Sourcing: set -u and set -e safe; no subshell-unfriendly globals.
 
-FM_BUSY_LIB_VERSION=v1
+SQUAD_BUSY_LIB_VERSION=v1
 
 # Standalone-Kimi verification gate. Empty means no installed Kimi version
 # has passed live verification, so every standalone Kimi task classifies
-# unknown kimi-unverified and fm-spawn wires no Kimi busy events. Kimi's
+# unknown kimi-unverified and sq-spawn wires no Kimi busy events. Kimi's
 # rendered moon-phase spinner is deliberately NOT a state source here: the
 # approved redesign forbids inventing a Kimi UI signature, and that spinner
 # is locale- and emoji-font-sensitive.
@@ -94,14 +94,14 @@ FM_BUSY_LIB_VERSION=v1
 # `Interrupt` because Kimi documents that `Stop` does not fire on interrupts.
 #
 # To open the gate: install Kimi, live-verify the chosen source brackets a
-# real turn on a firstmate-launched worker including the interrupt path,
+# real turn on a Squad-launched worker including the interrupt path,
 # record the version, exact commands, and observed output in
 # docs/verification/supervision.md, add the verified version string(s) here,
-# and land the wiring in fm-spawn behind this same gate in the same change.
-FM_BUSY_KIMI_VERIFIED_VERSIONS=""
+# and land the wiring in sq-spawn behind this same gate in the same change.
+SQUAD_BUSY_KIMI_VERIFIED_VERSIONS=""
 
 fm_busy_kimi_verified() {
-  [ -n "$FM_BUSY_KIMI_VERIFIED_VERSIONS" ]
+  [ -n "$SQUAD_BUSY_KIMI_VERIFIED_VERSIONS" ]
 }
 
 # fm_busy_codex_appserver_observable: capability/version negotiation for the
@@ -120,8 +120,8 @@ fm_busy_codex_appserver_observable() {
 # fm_busy_codex_hooks_verified: the sanctioned intermediate - Codex's stable
 # hooks engine (UserPromptSubmit to open a turn, Stop and SessionEnd to close
 # it). Returns 0 only once those hooks are live-verified to fire for a
-# firstmate-launched worker. codex-cli 0.145.0 verdict (live, 2026-07-28):
-# NOT verified. Firstmate-written project hooks under <worktree>/.codex/
+# Squad-launched worker. codex-cli 0.145.0 verdict (live, 2026-07-28):
+# NOT verified. Squad-written project hooks under <worktree>/.codex/
 # never fired in an interactive pane whose directory trust was granted, nor
 # under `codex exec`, in either case with --dangerously-bypass-hook-trust,
 # while global hooks fired in the same runs. Codex additionally exposes no
@@ -132,7 +132,7 @@ fm_busy_codex_hooks_verified() {
 }
 
 # fm_busy_codex_semantic_source: 0 when ANY verified Codex semantic source
-# exists. fm-spawn arms and wires Codex only behind this gate, and the
+# exists. sq-spawn arms and wires Codex only behind this gate, and the
 # classifier reports unknown codex-unverified until it opens.
 fm_busy_codex_semantic_source() {
   fm_busy_codex_appserver_observable || fm_busy_codex_hooks_verified
@@ -168,7 +168,7 @@ fm_busy_current_gen() {  # <state-dir> <id>
 
 # fm_busy_sources_for_harness: the semantic sources trusted to classify a
 # task recorded with <harness>. One line, space-separated, possibly empty.
-# The firstmate-owned sources are appended for every converted adapter.
+# The Squad-owned sources are appended for every converted adapter.
 # Grok and muse deliberately trust nothing: neither has a semantic WRITER, so
 # neither is armed, and both read their live source on demand in the classifier
 # (grok's rendered tail, muse's session log) rather than through a stored
@@ -190,7 +190,7 @@ fm_busy_sources_for_harness() {  # <harness>
       ;;
     *) printf ''; return 0 ;;
   esac
-  printf '%s fm-spawn fm-interrupt fm-recovery' "$adapter"
+  printf '%s sq-spawn sq-interrupt sq-recovery' "$adapter"
 }
 
 fm_busy_source_trusted() {  # <harness> <source>
@@ -232,7 +232,7 @@ fm_busy_record_read() {  # <state-dir> <id>
   local -a fields
   IFS=' ' read -r -a fields <<< "$line"
   ver=${fields[0]:-}
-  [ "$ver" = "$FM_BUSY_LIB_VERSION" ] || { printf 'malformed'; return 1; }
+  [ "$ver" = "$SQUAD_BUSY_LIB_VERSION" ] || { printf 'malformed'; return 1; }
   for f in "${fields[@]:1}"; do
     case "$f" in
       gen=*) r_gen=${f#gen=} ;;
@@ -283,7 +283,7 @@ fm_busy_record_read() {  # <state-dir> <id>
 # failures - no sidecar, no matching log, an unreadable or run-free log - remain
 # unknown because those prove nothing about the turn either way. See
 # docs/verification/muse.md for the evidence.
-# fm_busy_muse_binding_path: the per-task sidecar fm-spawn writes so the
+# fm_busy_muse_binding_path: the per-task sidecar sq-spawn writes so the
 # classifier binds a pane to its session log without re-deriving muse's data
 # directory. It records sessions_root=<abs>, workspace_root=<abs>, one
 # binding_id=<token>, and one prior_log=<abs> for each matching main log that
@@ -483,7 +483,7 @@ fm_busy_muse_cache_session_log() {  # <state-dir> <id> <binding-id> <session-log
 }
 
 # fm_busy_muse_session_log: the one matching MAIN session log that did not
-# exist when fm-spawn created this pane's binding. Multiple candidates are
+# exist when sq-spawn created this pane's binding. Multiple candidates are
 # ambiguous and fail closed rather than guessing which pane owns either log.
 fm_busy_muse_session_log() {  # <state-dir> <id>
   local root ws binding_id='' candidate selected='' cache namespace_day namespace_before namespace_after
@@ -552,11 +552,11 @@ fm_busy_muse_run_state() {  # <session-log>
 
 # fm_busy_grok_tail_busy: the Grok-only temporary rendered-tail fallback.
 # Consumes the tail on stdin; 0 when Grok's verified busy signature matches.
-# FM_BUSY_REGEX still globally overrides the signature, mirroring the
+# SQUAD_BUSY_REGEX still globally overrides the signature, mirroring the
 # historical operator escape hatch.
 fm_busy_grok_tail_busy() {
   grep -v '^[[:space:]]*$' | tail -12 \
-    | grep -qiE "${FM_BUSY_REGEX:-${FM_TMUX_GROK_BUSY_REGEX_DEFAULT:-Ctrl\\+c:cancel}}"
+    | grep -qiE "${SQUAD_BUSY_REGEX:-${SQUAD_TMUX_GROK_BUSY_REGEX_DEFAULT:-Ctrl\\+c:cancel}}"
 }
 
 # fm_busy_classify: semantic classification for a task whose endpoint the
@@ -652,7 +652,7 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
 }
 
 # fm_busy_classify_live: fm_busy_classify behind the one process-level
-# override - a gone endpoint is dead, never busy. Requires fm-backend.sh to
+# override - a gone endpoint is dead, never busy. Requires sq-backend.sh to
 # be sourced for fm_backend_target_exists.
 fm_busy_classify_live() {  # <backend> <target> <harness> <id> <state-dir> [expected-label]
   local backend=$1 target=$2 harness=$3 id=$4 state=$5 label=${6-}
@@ -669,7 +669,7 @@ fm_busy_classify_live() {  # <backend> <target> <harness> <id> <state-dir> [expe
 
 # fm_busy_classify_meta: classify a task from its recorded metadata, so every
 # consumer resolves backend, target, and harness the same way instead of
-# re-deriving them. Requires fm-backend.sh to be sourced. <tail40> is
+# re-deriving them. Requires sq-backend.sh to be sourced. <tail40> is
 # optional pre-captured plain output reused by the Grok arm.
 fm_busy_classify_meta() {  # <meta-file> <id> <state-dir> [tail40]
   local meta=$1 id=$2 state=$3 tail40=${4-} backend target harness

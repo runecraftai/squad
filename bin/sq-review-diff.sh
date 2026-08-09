@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Review a crewmate branch against the authoritative base.
+# Review a operator branch against the authoritative base.
 #
 # Pooled project clones do not keep their local default branch current, so this
 # helper compares remote-backed projects against origin/<default> after fetching
@@ -10,18 +10,18 @@
 # only a fallback when fetch fails (stale recorded SHAs must never win over a
 # reachable remote PR head). If neither PR head can be resolved, fall back to
 # the local branch with a warning. Without pr=, compare the local branch.
-# Usage: fm-review-diff.sh <task-id> [--stat]
+# Usage: sq-review-diff.sh <task-id> [--stat]
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-"$FM_ROOT/bin/fm-guard.sh" || true
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+"$SQUAD_ROOT/bin/sq-guard.sh" || true
 
 usage() {
-  echo "usage: fm-review-diff.sh <task-id> [--stat]" >&2
+  echo "usage: sq-review-diff.sh <task-id> [--stat]" >&2
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -97,8 +97,8 @@ fetch_pull_head() {
   # Fetch into a private ref so a later base-branch fetch cannot clobber the
   # compare tip via FETCH_HEAD, and so we never review a stale local object.
   git -C "$WT" fetch --quiet origin \
-    "+refs/pull/$n/head:refs/fm-review/pull/$n/head" >/dev/null 2>&1 || return 1
-  resolved=$(git -C "$WT" rev-parse --verify "refs/fm-review/pull/$n/head^{commit}" 2>/dev/null) || return 1
+    "+refs/pull/$n/head:refs/sq-review/pull/$n/head" >/dev/null 2>&1 || return 1
+  resolved=$(git -C "$WT" rev-parse --verify "refs/sq-review/pull/$n/head^{commit}" 2>/dev/null) || return 1
   [ -n "$resolved" ] || return 1
   printf '%s' "$resolved"
 }

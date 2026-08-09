@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-lint.sh - the single owner of firstmate's shell-lint definition.
+# sq-lint.sh - the single owner of Squad's shell-lint definition.
 #
 # Runs its file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI and
@@ -23,35 +23,35 @@
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
-# deterministic shard and root order after every worker finishes. FM_LINT_JOBS=1
+# deterministic shard and root order after every worker finishes. SQUAD_LINT_JOBS=1
 # runs the same shards serially with byte-identical diagnostics and exit selection.
 #
 # Optional quiet telemetry writes one bounded TSV snapshot of content and source
 # graph identity, wall/CPU/RSS, shard load, and competing ShellCheck processes.
 #
 # Usage:
-#   fm-lint.sh                         lint the context-selected file set (see above)
-#   fm-lint.sh <path>...               lint explicit roots with the same config
-#   fm-lint.sh --jobs <1|2> [path]...  override bounded worker count
-#   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
-#   fm-lint.sh --required-version      print the ShellCheck pin
-#   fm-lint.sh --list-files            print the file set that would be linted
-#   fm-lint.sh --help                  print this usage
+#   sq-lint.sh                         lint the context-selected file set (see above)
+#   sq-lint.sh <path>...               lint explicit roots with the same config
+#   sq-lint.sh --jobs <1|2> [path]...  override bounded worker count
+#   sq-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
+#   sq-lint.sh --required-version      print the ShellCheck pin
+#   sq-lint.sh --list-files            print the file set that would be linted
+#   sq-lint.sh --help                  print this usage
 set -u
 
 REQUIRED_SHELLCHECK=0.11.0
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SELF="$SELF_DIR/fm-lint.sh"
+SELF="$SELF_DIR/sq-lint.sh"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
 cd "$ROOT" || exit 1
 
-FM_LINT_WORKER_SHELLCHECK_PID=
+SQUAD_LINT_WORKER_SHELLCHECK_PID=
 # shellcheck disable=SC2329 # Registered by the private worker's signal traps.
 fm_lint_worker_stop() {
-  [ -n "$FM_LINT_WORKER_SHELLCHECK_PID" ] || return 0
-  kill "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
-  wait "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
-  FM_LINT_WORKER_SHELLCHECK_PID=
+  [ -n "$SQUAD_LINT_WORKER_SHELLCHECK_PID" ] || return 0
+  kill "$SQUAD_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
+  wait "$SQUAD_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
+  SQUAD_LINT_WORKER_SHELLCHECK_PID=
 }
 
 fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
@@ -68,10 +68,10 @@ fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
     trap 'fm_lint_worker_stop; exit 129' HUP
     trap 'fm_lint_worker_stop; exit 130' INT
     trap 'fm_lint_worker_stop; exit 143' TERM
-    "$FM_LINT_SHELLCHECK" --norc --external-sources -- "${roots[@]}" > "$output.out" 2>&1 &
-    FM_LINT_WORKER_SHELLCHECK_PID=$!
-    wait "$FM_LINT_WORKER_SHELLCHECK_PID" || rc=$?
-    FM_LINT_WORKER_SHELLCHECK_PID=
+    "$SQUAD_LINT_SHELLCHECK" --norc --external-sources -- "${roots[@]}" > "$output.out" 2>&1 &
+    SQUAD_LINT_WORKER_SHELLCHECK_PID=$!
+    wait "$SQUAD_LINT_WORKER_SHELLCHECK_PID" || rc=$?
+    SQUAD_LINT_WORKER_SHELLCHECK_PID=
     trap - HUP INT TERM
   else
     : > "$output.out"
@@ -82,11 +82,11 @@ fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
 
 # Private subprocess mode used only by the bounded parent above.
 if [ "${1:-}" = "--internal-worker" ]; then
-  [ "${FM_LINT_INTERNAL:-}" = 1 ] || {
-    printf 'fm-lint.sh: --internal-worker is private to the lint owner.\n' >&2
+  [ "${SQUAD_LINT_INTERNAL:-}" = 1 ] || {
+    printf 'sq-lint.sh: --internal-worker is private to the lint owner.\n' >&2
     exit 2
   }
-  [ "$#" -eq 4 ] && [ -n "${FM_LINT_SHELLCHECK:-}" ] || exit 2
+  [ "$#" -eq 4 ] && [ -n "${SQUAD_LINT_SHELLCHECK:-}" ] || exit 2
   fm_lint_worker "$2" "$3" "$4"
   exit $?
 fi
@@ -100,13 +100,13 @@ fm_lint_usage() {
   sed -n '2,39{s/^# \{0,1\}//;p;}' "$SELF"
 }
 
-JOBS=${FM_LINT_JOBS:-2}
-TELEMETRY=${FM_LINT_TELEMETRY:-}
+JOBS=${SQUAD_LINT_JOBS:-2}
+TELEMETRY=${SQUAD_LINT_TELEMETRY:-}
 LIST_FILES=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --jobs)
-      [ "$#" -ge 2 ] || { printf 'fm-lint.sh: --jobs requires 1 or 2.\n' >&2; exit 2; }
+      [ "$#" -ge 2 ] || { printf 'sq-lint.sh: --jobs requires 1 or 2.\n' >&2; exit 2; }
       JOBS=$2
       shift 2
       ;;
@@ -115,7 +115,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --telemetry)
-      [ "$#" -ge 2 ] || { printf 'fm-lint.sh: --telemetry requires a path.\n' >&2; exit 2; }
+      [ "$#" -ge 2 ] || { printf 'sq-lint.sh: --telemetry requires a path.\n' >&2; exit 2; }
       TELEMETRY=$2
       shift 2
       ;;
@@ -141,7 +141,7 @@ done
 
 case "$JOBS" in
   1|2) ;;
-  *) printf 'fm-lint.sh: jobs must be 1 or 2, got %s.\n' "$JOBS" >&2; exit 2 ;;
+  *) printf 'sq-lint.sh: jobs must be 1 or 2, got %s.\n' "$JOBS" >&2; exit 2 ;;
 esac
 
 # fm_lint_changed_base_ref prints the ref to diff the working branch against:
@@ -210,7 +210,7 @@ ROOT_COUNT=${#ROOTS[@]}
 
 if [ "$LIST_FILES" -eq 1 ]; then
   [ "$#" -eq 0 ] || {
-    printf 'fm-lint.sh: --list-files does not accept explicit paths.\n' >&2
+    printf 'sq-lint.sh: --list-files does not accept explicit paths.\n' >&2
     exit 2
   }
   [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' "${ROOTS[@]}"
@@ -218,38 +218,38 @@ if [ "$LIST_FILES" -eq 1 ]; then
 fi
 
 if ! command -v shellcheck >/dev/null 2>&1; then
-  printf 'fm-lint.sh: ShellCheck not found; install ShellCheck %s for CI parity.\n' \
+  printf 'sq-lint.sh: ShellCheck not found; install ShellCheck %s for CI parity.\n' \
     "$REQUIRED_SHELLCHECK" >&2
   exit 127
 fi
 unset SHELLCHECK_OPTS
 SHELLCHECK_BIN=$(command -v shellcheck)
 if ! PERL_BIN=$(command -v perl); then
-  printf 'fm-lint.sh: perl is required for bounded worker cleanup.\n' >&2
+  printf 'sq-lint.sh: perl is required for bounded worker cleanup.\n' >&2
   exit 127
 fi
 resolved=$("$SHELLCHECK_BIN" --version | awk '/^version:/ {print $2; exit}')
-printf 'fm-lint.sh: ShellCheck %s (pinned %s)\n' "$resolved" "$REQUIRED_SHELLCHECK" >&2
+printf 'sq-lint.sh: ShellCheck %s (pinned %s)\n' "$resolved" "$REQUIRED_SHELLCHECK" >&2
 if [ "$resolved" != "$REQUIRED_SHELLCHECK" ]; then
-  printf 'fm-lint.sh: ShellCheck %s required for CI parity, found %s. Install %s.\n' \
+  printf 'sq-lint.sh: ShellCheck %s required for CI parity, found %s. Install %s.\n' \
     "$REQUIRED_SHELLCHECK" "$resolved" "$REQUIRED_SHELLCHECK" >&2
   exit 1
 fi
 
 if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
-  printf 'fm-lint.sh: no changed lint targets\n'
+  printf 'sq-lint.sh: no changed lint targets\n'
   exit 0
 fi
 
 if [ -n "$TELEMETRY" ]; then
   telemetry_parent=$(dirname "$TELEMETRY")
   [ -d "$telemetry_parent" ] || {
-    printf 'fm-lint.sh: telemetry directory does not exist: %s\n' "$telemetry_parent" >&2
+    printf 'sq-lint.sh: telemetry directory does not exist: %s\n' "$telemetry_parent" >&2
     exit 2
   }
 fi
 
-TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-lint.XXXXXX") || exit 1
+TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/sq-lint.XXXXXX") || exit 1
 ACTIVE_PIDS=()
 # shellcheck disable=SC2329 # Registered by the EXIT and signal traps below.
 fm_lint_cleanup() {
@@ -290,7 +290,7 @@ index=1
 for path in "${ROOTS[@]}"; do
   case "$path" in
     *"$TAB"*|*$'\n'*)
-      printf 'fm-lint.sh: paths containing tabs or newlines are not supported: %s\n' "$path" >&2
+      printf 'sq-lint.sh: paths containing tabs or newlines are not supported: %s\n' "$path" >&2
       exit 2
       ;;
   esac
@@ -365,18 +365,18 @@ fm_lint_run_worker() {  # <worker-index>
     if [ "$(uname)" = Darwin ]; then
       exec "$PERL_BIN" -e 'setpgrp(0, 0) or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
         /usr/bin/time -lp -o "$timing" \
-        env FM_LINT_INTERNAL=1 FM_LINT_SHELLCHECK="$SHELLCHECK_BIN" \
+        env SQUAD_LINT_INTERNAL=1 SQUAD_LINT_SHELLCHECK="$SHELLCHECK_BIN" \
         "${BASH:-bash}" "$SELF" --internal-worker "$manifest" "$OUTPUT_DIR" "$worker_index"
     else
       exec "$PERL_BIN" -e 'setpgrp(0, 0) or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
         /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsystem_seconds=%S\nmax_rss_kib=%M' -o "$timing" \
-        env FM_LINT_INTERNAL=1 FM_LINT_SHELLCHECK="$SHELLCHECK_BIN" \
+        env SQUAD_LINT_INTERNAL=1 SQUAD_LINT_SHELLCHECK="$SHELLCHECK_BIN" \
         "${BASH:-bash}" "$SELF" --internal-worker "$manifest" "$OUTPUT_DIR" "$worker_index"
     fi
   else
     [ -z "$TELEMETRY" ] || printf 'timing_unavailable=1\n' > "$timing"
     exec "$PERL_BIN" -e 'setpgrp(0, 0) or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
-      env FM_LINT_INTERNAL=1 FM_LINT_SHELLCHECK="$SHELLCHECK_BIN" \
+      env SQUAD_LINT_INTERNAL=1 SQUAD_LINT_SHELLCHECK="$SHELLCHECK_BIN" \
       "${BASH:-bash}" "$SELF" --internal-worker "$manifest" "$OUTPUT_DIR" "$worker_index"
   fi
 }
@@ -422,7 +422,7 @@ while [ "$worker" -lt "$SHARD_COUNT" ]; do
     rc=$(cat "$output.rc" 2>/dev/null || printf '2')
     case "$rc" in ''|*[!0-9]*) rc=2 ;; esac
   else
-    printf 'fm-lint.sh: worker produced no result for shard %s.\n' "$worker" >&2
+    printf 'sq-lint.sh: worker produced no result for shard %s.\n' "$worker" >&2
     rc=2
   fi
   if [ "$overall_rc" -eq 0 ] && [ "$rc" -ne 0 ]; then
@@ -503,7 +503,7 @@ EOF
 
   telemetry_tmp="$TMP_ROOT/telemetry.tsv"
   {
-    printf 'format\tfm-lint-telemetry-v1\n'
+    printf 'format\tsq-lint-telemetry-v1\n'
     printf 'git_head\t%s\n' "$git_head"
     printf 'content_cksum\t%s\n' "$content_cksum"
     printf 'shellcheck_version\t%s\n' "$resolved"
@@ -533,7 +533,7 @@ EOF
     printf 'result_exit\t%s\n' "$overall_rc"
   } > "$telemetry_tmp"
   if ! mv -f "$telemetry_tmp" "$TELEMETRY"; then
-    printf 'fm-lint.sh: could not write telemetry to %s.\n' "$TELEMETRY" >&2
+    printf 'sq-lint.sh: could not write telemetry to %s.\n' "$TELEMETRY" >&2
     [ "$overall_rc" -ne 0 ] || overall_rc=2
   fi
 fi

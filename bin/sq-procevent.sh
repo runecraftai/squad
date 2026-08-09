@@ -4,13 +4,13 @@
 # durable wakes.
 #
 # Usage:
-#   fm-procevent.sh register <adapter> <source-id> -- <argv>...
-#   fm-procevent.sh start <source-id>
-#   fm-procevent.sh reconcile
-#   fm-procevent.sh handled <source-id> <sequence>
-#   fm-procevent.sh retire <source-id>
-#   fm-procevent.sh sweep-home [--preflight]
-#   fm-procevent.sh list
+#   sq-procevent.sh register <adapter> <source-id> -- <argv>...
+#   sq-procevent.sh start <source-id>
+#   sq-procevent.sh reconcile
+#   sq-procevent.sh handled <source-id> <sequence>
+#   sq-procevent.sh retire <source-id>
+#   sq-procevent.sh sweep-home [--preflight]
+#   sq-procevent.sh list
 #
 # register   Record a source: its adapter, its canonical id, and the exact argv
 #            to execute. argv is stored one argument per line and executed
@@ -23,7 +23,7 @@
 #            turn. After publishing, it asks the source's own adapter whether the
 #            captured result ends the source and retires the registration when it
 #            says so, so a source that has ended stops being restarted.
-# reconcile  Idempotent liveness entry the watcher calls on its ordinary cycle:
+# reconcile  Idempotent liveness entry the sentry calls on its ordinary cycle:
 #            republish every durably captured result with no handled
 #            acknowledgement yet - regardless of any earlier publication - and
 #            start a runner for any registered source that has no live owner.
@@ -42,12 +42,12 @@
 #            already retired itself on its adapter's terminal verdict.
 # sweep-home Retire a bounded snapshot of this home's registrations and owned
 #            claims, then refuse unless no registration, runner record, or owned
-#            claim remains. Used by supported Firstmate home retirement.
+#            claim remains. Used by supported Squad home retirement.
 # list       Show registered sources, owners, and pending captured results.
 #
 # Terminal knowledge is adapter-owned. This runner never inspects a result and
 # never names an adapter-specific status: it calls
-# `bin/fm-procevent-<adapter>.sh terminal <result-file>` and treats exit 0 as the
+# `bin/sq-procevent-<adapter>.sh terminal <result-file>` and treats exit 0 as the
 # only terminal verdict. A missing command, an error, or any other exit keeps the
 # registration armed, so an adapter that has no notion of ending needs no change.
 #
@@ -55,44 +55,44 @@
 # carry no judgement at all - they must simply be applied idempotently to the
 # home's own durable state - and leaving that to an agent that has to remember
 # means it silently does not happen. So after publishing, `start` calls
-# `bin/fm-procevent-<adapter>.sh autohandle <source-id> <sequence> <result-file>`
+# `bin/sq-procevent-<adapter>.sh autohandle <source-id> <sequence> <result-file>`
 # and lets the adapter apply and acknowledge its own result. Exit 0 means the
 # adapter fully handled it. A missing command, an error, or any other exit is not
 # a failure of capture: the result stays unacknowledged and therefore eligible
 # for re-announcement, so the handler still receives it exactly as before. This
 # runner still inspects nothing and still names no adapter-specific condition.
 #
-# Ownership is machine-wide per canonical source, because separate Firstmate
+# Ownership is machine-wide per canonical source, because separate Squad
 # homes can share one underlying source store. A live owner is never displaced;
 # only a claim whose whole generation is gone is reclaimed. A runner leads its
 # own process group, so a crashed leader whose group still has members is not
 # stale: reconcile stops that surviving group and releases its generation before
 # any replacement starts, and keeps the claim for a later retry when it cannot.
 #
-# Durability boundary: see bin/fm-procevent-lib.sh. This runner proves capture
+# Durability boundary: see bin/sq-procevent-lib.sh. This runner proves capture
 # before publication and bounded re-announcement until handled, and nothing
 # about the source side of the handoff.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 
-# shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-procevent-lib.sh
-. "$SCRIPT_DIR/fm-procevent-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-procevent-lib.sh
+. "$SCRIPT_DIR/sq-procevent-lib.sh"
 
 REG=$(fm_procevent_registry_dir "$STATE")
-MAX_OUTPUT_BYTES=${FM_PROCEVENT_MAX_OUTPUT_BYTES:-1048576}
+MAX_OUTPUT_BYTES=${SQUAD_PROCEVENT_MAX_OUTPUT_BYTES:-1048576}
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,74p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
-adapter_script() { printf '%s/bin/fm-procevent-%s.sh\n' "$FM_ROOT" "$1"; }
+adapter_script() { printf '%s/bin/sq-procevent-%s.sh\n' "$SQUAD_ROOT" "$1"; }
 
 # Ask the source's own adapter whether a captured result ends the source. Exit 0
 # is the only terminal verdict; everything else - including a missing adapter
@@ -225,7 +225,7 @@ isolate_runner() {  # <wait|detach> <source-id>
     defined(my $pid = fork) or exit 125;
     if ($pid == 0) {
       setpgrp(0, 0) or exit 125;
-      $ENV{FM_PROCEVENT_RUNNER_GROUP} = $$;
+      $ENV{SQUAD_PROCEVENT_RUNNER_GROUP} = $$;
       exec @ARGV;
       exit 125;
     }
@@ -235,20 +235,20 @@ isolate_runner() {  # <wait|detach> <source-id>
     exit(128 + ($status & 127)) if $status & 127;
     exit($status >> 8);'
   if [ "$mode" = wait ]; then
-    exec perl -e "$program" "$mode" "$SCRIPT_DIR/fm-procevent.sh" _start "$id"
+    exec perl -e "$program" "$mode" "$SCRIPT_DIR/sq-procevent.sh" _start "$id"
   fi
-  perl -e "$program" "$mode" "$SCRIPT_DIR/fm-procevent.sh" _start "$id" >/dev/null 2>&1 &
+  perl -e "$program" "$mode" "$SCRIPT_DIR/sq-procevent.sh" _start "$id" >/dev/null 2>&1 &
 }
 
 require_runner_group() {
   local pgid
-  [ "${FM_PROCEVENT_RUNNER_GROUP:-}" = "$$" ] \
+  [ "${SQUAD_PROCEVENT_RUNNER_GROUP:-}" = "$$" ] \
     || die "runner process group was not isolated"
   pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d '[:space:]') \
     || die "cannot inspect runner process group"
   [ -n "$pgid" ] || die "cannot inspect runner process group"
   [ "$pgid" = "$$" ] || die "runner does not lead its process group"
-  unset FM_PROCEVENT_RUNNER_GROUP
+  unset SQUAD_PROCEVENT_RUNNER_GROUP
 }
 
 cmd_start_public() {
@@ -279,7 +279,7 @@ cmd_start() {
     fm_procevent_source_lock_release "$id"
     die "registration argv is unreadable: $id"
   fi
-  fm_procevent_claim_acquire_locked "$id" "$FM_HOME" "$$" "$(source_file "$id")"
+  fm_procevent_claim_acquire_locked "$id" "$SQUAD_HOME" "$$" "$(source_file "$id")"
   claimed=$?
   fm_procevent_source_lock_release "$id"
   case "$claimed" in
@@ -288,19 +288,19 @@ cmd_start() {
     *) die "cannot claim source: $id" ;;
   esac
   CLAIM_ID=$id
-  CLAIM_HOME=$FM_HOME
+  CLAIM_HOME=$SQUAD_HOME
   CLAIM_PID=$$
-  CLAIM_TOKEN=$FM_PROCEVENT_CLAIM_TOKEN
-  CLAIM_REG_IDENTITY=$FM_PROCEVENT_CLAIM_REG_IDENTITY
+  CLAIM_TOKEN=$SQUAD_PROCEVENT_CLAIM_TOKEN
+  CLAIM_REG_IDENTITY=$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY
   STAGED_OUTPUT=
   release_start_claim() {
     [ -z "$STAGED_OUTPUT" ] || rm -f -- "$STAGED_OUTPUT"
     fm_procevent_source_lock_acquire "$CLAIM_ID" 2>/dev/null || return 0
     if fm_procevent_claim_load_locked "$CLAIM_ID" 2>/dev/null \
-      && [ "$FM_PROCEVENT_CLAIM_HOME" = "$CLAIM_HOME" ] \
-      && [ "$FM_PROCEVENT_CLAIM_PID" = "$CLAIM_PID" ] \
-      && [ "$FM_PROCEVENT_CLAIM_TOKEN" = "$CLAIM_TOKEN" ] \
-      && [ "$FM_PROCEVENT_CLAIM_TERMINAL" = terminal ]; then
+      && [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$CLAIM_HOME" ] \
+      && [ "$SQUAD_PROCEVENT_CLAIM_PID" = "$CLAIM_PID" ] \
+      && [ "$SQUAD_PROCEVENT_CLAIM_TOKEN" = "$CLAIM_TOKEN" ] \
+      && [ "$SQUAD_PROCEVENT_CLAIM_TERMINAL" = terminal ]; then
       fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
       return 0
     fi
@@ -311,7 +311,7 @@ cmd_start() {
   printf '%s\n' "$$" > "$(runner_file "$id")" 2>/dev/null || true
   chmod 0600 "$(runner_file "$id")" 2>/dev/null || true
 
-  case "$MAX_OUTPUT_BYTES" in ''|*[!0-9]*) die "FM_PROCEVENT_MAX_OUTPUT_BYTES must be a nonnegative integer" ;; esac
+  case "$MAX_OUTPUT_BYTES" in ''|*[!0-9]*) die "SQUAD_PROCEVENT_MAX_OUTPUT_BYTES must be a nonnegative integer" ;; esac
   out=$(staging_file "$id" "$CLAIM_TOKEN")
   [ ! -e "$out" ] && [ ! -L "$out" ] || die "cannot safely stage output"
   (umask 077; : > "$out") || die "cannot stage output"
@@ -403,10 +403,10 @@ retire_owned_terminal_source() {  # <source-id>
   registration=$(source_file "$id")
   fm_procevent_source_lock_acquire "$id" || return 1
   if fm_procevent_claim_load_locked "$id" 2>/dev/null \
-    && [ "$FM_PROCEVENT_CLAIM_HOME" = "$CLAIM_HOME" ] \
-    && [ "$FM_PROCEVENT_CLAIM_PID" = "$CLAIM_PID" ] \
-    && [ "$FM_PROCEVENT_CLAIM_TOKEN" = "$CLAIM_TOKEN" ] \
-    && [ "$FM_PROCEVENT_CLAIM_REG_IDENTITY" = "$CLAIM_REG_IDENTITY" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$CLAIM_HOME" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_PID" = "$CLAIM_PID" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_TOKEN" = "$CLAIM_TOKEN" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY" = "$CLAIM_REG_IDENTITY" ] \
     && current_identity=$(fm_pr_file_identity "$registration" 2>/dev/null) \
     && [ "$current_identity" = "$CLAIM_REG_IDENTITY" ] \
     && fm_procevent_claim_mark_terminal_locked "$id" "$CLAIM_HOME" "$CLAIM_PID" "$CLAIM_TOKEN"; then
@@ -422,7 +422,7 @@ retire_owned_terminal_source() {  # <source-id>
   return "$status"
 }
 
-# Start a runner outside the watcher cycle that noticed it was missing. The
+# Start a runner outside the sentry cycle that noticed it was missing. The
 # public start boundary establishes its own process group before claiming.
 detach_runner() {  # <source-id>
   isolate_runner detach "$1"
@@ -449,11 +449,11 @@ cmd_reconcile() {
       fm_procevent_source_lock_release "$id"
       continue
     fi
-    owner=$FM_PROCEVENT_CLAIM_HOME
-    pid=$FM_PROCEVENT_CLAIM_PID
-    token=$FM_PROCEVENT_CLAIM_TOKEN
-    identity=$FM_PROCEVENT_CLAIM_IDENTITY
-    if [ "$owner" != "$FM_HOME" ]; then
+    owner=$SQUAD_PROCEVENT_CLAIM_HOME
+    pid=$SQUAD_PROCEVENT_CLAIM_PID
+    token=$SQUAD_PROCEVENT_CLAIM_TOKEN
+    identity=$SQUAD_PROCEVENT_CLAIM_IDENTITY
+    if [ "$owner" != "$SQUAD_HOME" ]; then
       fm_procevent_source_lock_release "$id"
       continue
     fi
@@ -489,10 +489,10 @@ cmd_reconcile() {
           started=$((started + 1))
           continue
         elif [ "$claim_state" -eq 4 ]; then
-          owner=$FM_PROCEVENT_CLAIM_HOME
-          pid=$FM_PROCEVENT_CLAIM_PID
-          token=$FM_PROCEVENT_CLAIM_TOKEN
-          if [ "$owner" = "$FM_HOME" ] \
+          owner=$SQUAD_PROCEVENT_CLAIM_HOME
+          pid=$SQUAD_PROCEVENT_CLAIM_PID
+          token=$SQUAD_PROCEVENT_CLAIM_TOKEN
+          if [ "$owner" = "$SQUAD_HOME" ] \
             && rm -f -- "$(source_file "$id")" \
             && [ ! -e "$(source_file "$id")" ] \
             && [ ! -L "$(source_file "$id")" ] \
@@ -507,12 +507,12 @@ cmd_reconcile() {
           # release its generation first, and if either cannot be proved, keep
           # the claim and retry on a later cycle rather than adding a second
           # poller. Only the owning home may signal its own group.
-          owner=$FM_PROCEVENT_CLAIM_HOME
-          pid=$FM_PROCEVENT_CLAIM_PID
-          token=$FM_PROCEVENT_CLAIM_TOKEN
-          identity=$FM_PROCEVENT_CLAIM_IDENTITY
+          owner=$SQUAD_PROCEVENT_CLAIM_HOME
+          pid=$SQUAD_PROCEVENT_CLAIM_PID
+          token=$SQUAD_PROCEVENT_CLAIM_TOKEN
+          identity=$SQUAD_PROCEVENT_CLAIM_IDENTITY
           stop_state=2
-          if [ "$owner" = "$FM_HOME" ]; then
+          if [ "$owner" = "$SQUAD_HOME" ]; then
             stop_runner_pid "$pid" "$identity"
             stop_state=$?
           fi
@@ -611,11 +611,11 @@ cmd_retire() {
       fm_procevent_source_lock_release "$id"
       die "cannot safely read source ownership: $id"
     fi
-    if [ "$FM_PROCEVENT_CLAIM_HOME" = "$FM_HOME" ]; then
-      owner=$FM_PROCEVENT_CLAIM_HOME
-      pid=$FM_PROCEVENT_CLAIM_PID
-      token=$FM_PROCEVENT_CLAIM_TOKEN
-      identity=$FM_PROCEVENT_CLAIM_IDENTITY
+    if [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$SQUAD_HOME" ]; then
+      owner=$SQUAD_PROCEVENT_CLAIM_HOME
+      pid=$SQUAD_PROCEVENT_CLAIM_PID
+      token=$SQUAD_PROCEVENT_CLAIM_TOKEN
+      identity=$SQUAD_PROCEVENT_CLAIM_IDENTITY
       stop_runner_pid "$pid" "$identity"
       stop_state=$?
       if [ "$stop_state" -eq 2 ]; then
@@ -653,7 +653,7 @@ sweep_relevant_state() {
   for path in "$(fm_procevent_claim_root)"/*.claim; do
     [ -f "$path" ] && [ ! -L "$path" ] || continue
     IFS= read -r owner < "$path" 2>/dev/null || continue
-    [ "$owner" = "$FM_HOME" ] && return 0
+    [ "$owner" = "$SQUAD_HOME" ] && return 0
   done
   return 1
 }
@@ -666,8 +666,8 @@ sweep_source_preflight() {
       fm_procevent_source_lock_release "$id"
       return 1
     fi
-    if [ "$FM_PROCEVENT_CLAIM_HOME" = "$FM_HOME" ]; then
-      fm_procevent_pid_state "$FM_PROCEVENT_CLAIM_PID" "$FM_PROCEVENT_CLAIM_IDENTITY"
+    if [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$SQUAD_HOME" ]; then
+      fm_procevent_pid_state "$SQUAD_PROCEVENT_CLAIM_PID" "$SQUAD_PROCEVENT_CLAIM_IDENTITY"
       state=$?
       if [ "$state" -eq 2 ]; then
         fm_procevent_source_lock_release "$id"
@@ -695,7 +695,7 @@ cmd_sweep_home() {
   for path in "$(fm_procevent_claim_root)"/*.claim; do
     [ -f "$path" ] && [ ! -L "$path" ] || continue
     IFS= read -r owner < "$path" 2>/dev/null || continue
-    [ "$owner" = "$FM_HOME" ] || continue
+    [ "$owner" = "$SQUAD_HOME" ] || continue
     id=${path##*/}; id=${id%.claim}
     if fm_procevent_source_id_valid "$id"; then
       sweep_add_id "$id"
@@ -731,8 +731,8 @@ cmd_sweep_home() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     attempted=$((attempted + 1))
-    if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-        "$SCRIPT_DIR/fm-procevent.sh" retire "$id"; then
+    if ! SQUAD_HOME="$SQUAD_HOME" SQUAD_STATE_OVERRIDE="$STATE" \
+        "$SCRIPT_DIR/sq-procevent.sh" retire "$id"; then
       failed=$((failed + 1))
     fi
   done <<< "$SWEEP_IDS"

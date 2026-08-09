@@ -4,13 +4,13 @@
 # invoke, and it decides, from the session-open source, whether this open needs
 # the full digest, a context re-emit, or nothing at all.
 #
-# Why running beats nudging: bin/fm-sessionstart-nudge.sh can only ASK the agent
+# Why running beats nudging: bin/sq-sessionstart-nudge.sh can only ASK the agent
 # to take the helm, and an agent can defer that, including when a first-command
 # skill has its own read-only path. When the harness injects hook stdout into
 # model context, running the digest here removes that discretion - the helm is
 # taken before the model's first turn, whatever the first turn is.
 #
-# Usage: fm-sessionstart-run.sh [--source <source>]
+# Usage: sq-sessionstart-run.sh [--source <source>]
 #   --source  The harness's own session-open source. When omitted, the source is
 #             read from a Claude/Codex-shaped JSON hook payload on stdin
 #             (the `source` field). An unreadable or unrecognized source is
@@ -37,17 +37,17 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 COMPLETION_FILE="$STATE/.session-start-complete"
 
-# shellcheck source=bin/fm-gate-refuse-lib.sh
-. "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
-# shellcheck source=bin/fm-primary-scope-lib.sh
-. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/sq-gate-refuse-lib.sh
+. "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
+# shellcheck source=bin/sq-primary-scope-lib.sh
+. "$SCRIPT_DIR/sq-primary-scope-lib.sh"
+# shellcheck source=bin/sq-session-lock-lib.sh
+. "$SCRIPT_DIR/sq-session-lock-lib.sh"
 
 SOURCE=
 while [ $# -gt 0 ]; do
@@ -66,8 +66,8 @@ done
 # The same two eligibility owners the nudge wrapper uses, so a no-mistakes gate
 # agent and an unmarked task worktree can never run a session start for a home
 # they do not own.
-fm_is_gate_agent "$FM_ROOT" && exit 0
-fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
+fm_is_gate_agent "$SQUAD_ROOT" && exit 0
+fm_primary_scope_matches "$SQUAD_ROOT" "$STATE" || exit 0
 
 session_start_completed() {
   local lock_pid completion_pid
@@ -101,17 +101,17 @@ fi
 
 case "$SOURCE" in
   resume|reload|fork)
-    exec "$SCRIPT_DIR/fm-sessionstart-nudge.sh"
+    exec "$SCRIPT_DIR/sq-sessionstart-nudge.sh"
     ;;
   clear|compact)
     if session_start_completed; then
-      "$SCRIPT_DIR/fm-session-start.sh" --reemit || true
+      "$SCRIPT_DIR/sq-session-start.sh" --reemit || true
     else
-      "$SCRIPT_DIR/fm-session-start.sh" || true
+      "$SCRIPT_DIR/sq-session-start.sh" || true
     fi
     ;;
   *)
-    "$SCRIPT_DIR/fm-session-start.sh" || true
+    "$SCRIPT_DIR/sq-session-start.sh" || true
     ;;
 esac
 exit 0

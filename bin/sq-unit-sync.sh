@@ -14,51 +14,51 @@
 # Still skips (benignly) local-only/no-origin projects, missing remotes/branches,
 # and fetch failures.
 # Pruning never deletes the checked-out branch or a branch that still has a
-# worktree, so it cannot discard unlanded work; set FM_FLEET_PRUNE=0 to disable it.
+# worktree, so it cannot discard unlanded work; set SQUAD_FLEET_PRUNE=0 to disable it.
 # When the fetch fails on an orphaned .git/packed-refs.lock (left by a ref rewrite
 # killed mid-write - e.g. a timed-out bootstrap sync or a teardown process kill),
 # it is retried with a bounded wait and removed only when provably stale; see
-# fetch_with_packed_refs_lock_guard and the FM_FLEET_SYNC_PACKED_REFS_LOCK_* knobs.
-# Usage: fm-fleet-sync.sh [<project-dir-or-name>]
+# fetch_with_packed_refs_lock_guard and the SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_* knobs.
+# Usage: sq-unit-sync.sh [<project-dir-or-name>]
 # The single-project form accepts either a path (absolute, or relative to the
 # caller's cwd) or a bare "<name>"/"projects/<name>" form, resolved against
-# this home's projects dir ($FM_HOME/projects, or $FM_PROJECTS_OVERRIDE).
+# this home's projects dir ($SQUAD_HOME/projects, or $SQUAD_PROJECTS_OVERRIDE).
 # Bare names and "projects/<name>" forms prefer this home's projects dir before
 # falling back to an explicit path. Example: from anywhere,
-# `fm-fleet-sync.sh dotfiles-private` syncs just that one clone, same as
+# `sq-unit-sync.sh dotfiles-private` syncs just that one clone, same as
 # passing its full projects/dotfiles-private path.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
-# shellcheck source=bin/fm-lock-lib.sh
-. "$SCRIPT_DIR/fm-lock-lib.sh"
-# Inert unless FM_TIMING_LOG names a file; only the deferred network stage sets it.
-# shellcheck source=bin/fm-timing-lib.sh
-. "$SCRIPT_DIR/fm-timing-lib.sh"
-FM_LOCK_LOG_PREFIX=fleet-sync
-"$FM_ROOT/bin/fm-guard.sh" || true
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
+# shellcheck source=bin/sq-lock-lib.sh
+. "$SCRIPT_DIR/sq-lock-lib.sh"
+# Inert unless SQUAD_TIMING_LOG names a file; only the deferred network stage sets it.
+# shellcheck source=bin/sq-timing-lib.sh
+. "$SCRIPT_DIR/sq-timing-lib.sh"
+SQUAD_LOCK_LOG_PREFIX=unit-sync
+"$SQUAD_ROOT/bin/sq-guard.sh" || true
 
 # Bounded recovery for an orphaned .git/packed-refs.lock. A git ref rewrite
 # (fetch --prune, branch -D, pack-refs) killed after creating the lock but before
-# renaming it - e.g. bootstrap's fleet-sync timeout kill, or teardown's process
+# renaming it - e.g. bootstrap's unit-sync timeout kill, or teardown's process
 # kills - leaves a lock that makes the next sync's fetch fail with Git's
 # "Unable to create '...packed-refs.lock': File exists". These knobs bound the
 # patience-then-provably-stale-clear recovery; see fetch_with_packed_refs_lock_guard.
-FLEET_SYNC_PACKED_REFS_LOCK_RETRIES=${FM_FLEET_SYNC_PACKED_REFS_LOCK_RETRIES:-3}
-FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=${FM_FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS:-1}
-FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS=${FM_FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS:-30}
-case "$FLEET_SYNC_PACKED_REFS_LOCK_RETRIES" in ''|*[!0-9]*) FLEET_SYNC_PACKED_REFS_LOCK_RETRIES=3 ;; esac
-case "$FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS" in ''|*[!0-9]*) FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS=30 ;; esac
-if ! [[ "$FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]]; then
-  echo "fleet-sync: invalid packed-refs lock retry wait '$FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
-  FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=1
+UNIT_SYNC_PACKED_REFS_LOCK_RETRIES=${SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_RETRIES:-3}
+UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=${SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS:-1}
+UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS=${SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS:-30}
+case "$UNIT_SYNC_PACKED_REFS_LOCK_RETRIES" in ''|*[!0-9]*) UNIT_SYNC_PACKED_REFS_LOCK_RETRIES=3 ;; esac
+case "$UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS" in ''|*[!0-9]*) UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS=30 ;; esac
+if ! [[ "$UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]]; then
+  echo "unit-sync: invalid packed-refs lock retry wait '$UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
+  UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=1
 fi
 
 usage() {
-  echo "usage: fm-fleet-sync.sh [<project-dir-or-name>]" >&2
+  echo "usage: sq-unit-sync.sh [<project-dir-or-name>]" >&2
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -154,14 +154,14 @@ packed_refs_lock_path() {
 # Run `git -C "$PROJ" fetch origin --prune --quiet`, tolerating an orphaned
 # packed-refs.lock left by a killed ref rewrite. Sets FETCH_OUTPUT to the git
 # command's combined output and returns its exit status. On the packed-refs.lock
-# signature ONLY: retry up to FLEET_SYNC_PACKED_REFS_LOCK_RETRIES times (a
+# signature ONLY: retry up to UNIT_SYNC_PACKED_REFS_LOCK_RETRIES times (a
 # transient lock self-clears as the owning process exits), then - only if the lock
-# is provably stale per fm-lock-lib.sh (still present, mtime age past the
+# is provably stale per sq-lock-lib.sh (still present, mtime age past the
 # threshold, no lsof holder of the lock or the clone worktree $PROJ) - remove it
 # and retry once more. A live lock, an unprovable one, or any other failure keeps
 # today's behavior. Every wait, retry, and removal prints to stderr, and a
 # successful recovery also prints one "$label: recovered: ..." summary to stdout so
-# a session-start refresh (which discards fleet-sync stderr) still surfaces it.
+# a session-start refresh (which discards unit-sync stderr) still surfaces it.
 fetch_with_packed_refs_lock_guard() {
   local rc attempt=0 lock lock_desc
   FETCH_OUTPUT=$(git -C "$PROJ" fetch origin --prune --quiet 2>&1); rc=$?
@@ -170,14 +170,14 @@ fetch_with_packed_refs_lock_guard() {
 
   lock=$(packed_refs_lock_path) || lock=""
   lock_desc=${lock:-packed-refs.lock}
-  while [ "$attempt" -lt "$FLEET_SYNC_PACKED_REFS_LOCK_RETRIES" ]; do
+  while [ "$attempt" -lt "$UNIT_SYNC_PACKED_REFS_LOCK_RETRIES" ]; do
     attempt=$(( attempt + 1 ))
-    echo "$label: fetch blocked by packed-refs lock ($lock_desc); waiting ${FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${FLEET_SYNC_PACKED_REFS_LOCK_RETRIES}) (owning process may be exiting)" >&2
-    sleep "$FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS"
+    echo "$label: fetch blocked by packed-refs lock ($lock_desc); waiting ${UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${UNIT_SYNC_PACKED_REFS_LOCK_RETRIES}) (owning process may be exiting)" >&2
+    sleep "$UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS"
     FETCH_OUTPUT=$(git -C "$PROJ" fetch origin --prune --quiet 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then
       echo "$label: fetch succeeded on retry; packed-refs lock cleared on its own" >&2
-      # One stdout summary so a session-start refresh (which discards fleet-sync
+      # One stdout summary so a session-start refresh (which discards unit-sync
       # stderr and relays only stdout) still surfaces the recovery.
       echo "$label: recovered: packed-refs lock cleared on its own during retry"
       return 0
@@ -192,12 +192,12 @@ fetch_with_packed_refs_lock_guard() {
   # alone would miss.
   lock=$(packed_refs_lock_path) || lock=""
   if [ -n "$lock" ] && [ -e "$lock" ]; then
-    if fm_lock_is_provably_stale "$lock" "$PROJ" "$FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS"; then
+    if fm_lock_is_provably_stale "$lock" "$PROJ" "$UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS"; then
       if ! rm -f "$lock"; then
         echo "$label: failed to remove provably-stale packed-refs lock $lock; leaving it in place" >&2
         return "$rc"
       fi
-      echo "$label: removed provably-stale packed-refs lock $lock (age >= ${FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS}s, no live holder) and retrying fetch" >&2
+      echo "$label: removed provably-stale packed-refs lock $lock (age >= ${UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS}s, no live holder) and retrying fetch" >&2
       FETCH_OUTPUT=$(git -C "$PROJ" fetch origin --prune --quiet 2>&1); rc=$?
       if [ "$rc" -eq 0 ]; then
         echo "$label: fetch succeeded after stale packed-refs lock cleanup" >&2
@@ -206,25 +206,25 @@ fetch_with_packed_refs_lock_guard() {
       fi
       return "$rc"
     fi
-    echo "$label: fetch blocked by packed-refs lock $lock that persisted across ${FLEET_SYNC_PACKED_REFS_LOCK_RETRIES} retries and is not provably stale (may belong to a live process); leaving it in place" >&2
+    echo "$label: fetch blocked by packed-refs lock $lock that persisted across ${UNIT_SYNC_PACKED_REFS_LOCK_RETRIES} retries and is not provably stale (may belong to a live process); leaving it in place" >&2
     return "$rc"
   fi
-  echo "$label: fetch packed-refs lock signature persisted across ${FLEET_SYNC_PACKED_REFS_LOCK_RETRIES} retries even after the lock file disappeared" >&2
+  echo "$label: fetch packed-refs lock signature persisted across ${UNIT_SYNC_PACKED_REFS_LOCK_RETRIES} retries even after the lock file disappeared" >&2
   return "$rc"
 }
 
 prune_gone_branches() {
   # Delete local branches whose upstream tracking branch is gone - the remote
-  # branch was deleted, which in this fleet means its PR merged - as long as
+  # branch was deleted, which in this unit means its PR merged - as long as
   # nothing still needs them. Never the checked-out branch, and never a branch
   # that still has a worktree (a live or not-yet-torn-down task). "Gone" plus
   # "no worktree" already proves the work landed: teardown removes a branch's
   # worktree only after confirming the work reached the remote. We deliberately
   # do NOT also require the branch to be an ancestor of origin/<default> - PRs in
-  # this fleet are squash-merged, so a merged branch is never an ancestor and
+  # this unit are squash-merged, so a merged branch is never an ancestor and
   # such a check would prune nothing. The no-worktree guard is the real safety
-  # net. Set FM_FLEET_PRUNE=0 to skip pruning entirely.
-  [ "${FM_FLEET_PRUNE:-1}" != "0" ] || return 0
+  # net. Set SQUAD_FLEET_PRUNE=0 to skip pruning entirely.
+  [ "${SQUAD_FLEET_PRUNE:-1}" != "0" ] || return 0
 
   local worktree_branches current refline branch track
   worktree_branches=$(git -C "$PROJ" worktree list --porcelain 2>/dev/null \
@@ -304,7 +304,7 @@ sync_project() {
     echo "$label: skipped: not a git repo"
     return 0
   fi
-  mode_line=$("$FM_ROOT/bin/fm-project-mode.sh" "$label" 2>/dev/null || echo "no-mistakes off")
+  mode_line=$("$SQUAD_ROOT/bin/sq-project-mode.sh" "$label" 2>/dev/null || echo "no-mistakes off")
   mode=${mode_line%% *}
   if [ "$mode" = "local-only" ]; then
     echo "$label: skipped: local-only project"
@@ -429,7 +429,7 @@ fi
 for proj in "$PROJECTS"/*; do
   [ -e "$proj" ] || continue
   [ -d "$proj" ] || continue
-  # Per-clone elapsed, so a fleet refresh that runs long names WHICH clone cost
+  # Per-clone elapsed, so a unit refresh that runs long names WHICH clone cost
   # the time instead of only its total. Recording is a no-op unless the deferred
   # network stage asked for it.
   __fm_timing_stamp=$(fm_timing_now_ms)

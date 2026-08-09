@@ -2,23 +2,23 @@
 # Lavish adapter for the generic process-to-event runner.
 #
 # Usage:
-#   fm-procevent-lavish.sh arm <artifact.html>
-#   fm-procevent-lavish.sh classify <result-file>
-#   fm-procevent-lavish.sh terminal <result-file>
-#   fm-procevent-lavish.sh source-id <artifact.html>
-#   fm-procevent-lavish.sh retire <artifact.html>
+#   sq-procevent-lavish.sh arm <artifact.html>
+#   sq-procevent-lavish.sh classify <result-file>
+#   sq-procevent-lavish.sh terminal <result-file>
+#   sq-procevent-lavish.sh source-id <artifact.html>
+#   sq-procevent-lavish.sh retire <artifact.html>
 #
 # classify   Print the lifecycle state a handler should act on: feedback, ended,
 #            waiting, missing, or unknown.
 # terminal   Exit 0 when the captured result means this Lavish source will never
 #            produce another result, so the runner may retire it; any other exit
-#            keeps it armed. This is the generic adapter contract bin/fm-procevent.sh
+#            keeps it armed. This is the generic adapter contract bin/sq-procevent.sh
 #            calls, and the only place Lavish's notion of "ended" is decided.
 #
 # This adapter is deliberately thin. It owns only what is specific to Lavish:
 # canonical source identity, the argv for the currently published poll command,
 # and how to read a completed result. Ownership, durable capture, publication,
-# and restart recovery all belong to bin/fm-procevent.sh.
+# and restart recovery all belong to bin/sq-procevent.sh.
 #
 # It wraps ONLY the currently published interface, verified against 0.1.45:
 #   Usage: lavish-axi poll <html-file> [--agent-reply "..."]
@@ -29,22 +29,22 @@
 #
 # LOSS LIMITATION, stated plainly. The published poll destructively clears
 # feedback before returning it. A result lost after that clearing and before the
-# runner reads the process output is unrecoverable, and no Firstmate wrapper can
+# runner reads the process output is unrecoverable, and no Squad wrapper can
 # close that source-side handoff window. Never describe this path as
 # at-least-once, no-loss, or lossless. The only durability this proves is the
 # runner's own: output that reached the runner is stored before it is announced.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
 
-# shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-procevent-lib.sh
-. "$SCRIPT_DIR/fm-procevent-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-procevent-lib.sh
+. "$SCRIPT_DIR/sq-procevent-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -74,7 +74,7 @@ cmd_arm() {
   real=$(perl -MCwd=realpath -e '$p = realpath($ARGV[0]); defined($p) or exit 1; print "$p\n"' "$artifact" 2>/dev/null) \
     || die "cannot resolve the artifact path: $artifact"
   # The plain blocking form: no --timeout-ms, so completion is a server event.
-  "$SCRIPT_DIR/fm-procevent.sh" register lavish "$id" -- lavish-axi poll "$real" || exit 1
+  "$SCRIPT_DIR/sq-procevent.sh" register lavish "$id" -- lavish-axi poll "$real" || exit 1
   printf 'armed: %s\n' "$id"
   printf 'artifact: %s\n' "$real"
 }
@@ -83,7 +83,7 @@ cmd_retire() {
   local artifact=${1-} id
   [ -n "$artifact" ] || usage
   id=$(cmd_source_id "$artifact") || exit 1
-  "$SCRIPT_DIR/fm-procevent.sh" retire "$id"
+  "$SCRIPT_DIR/sq-procevent.sh" retire "$id"
 }
 
 # Read one field of the response's leading `session:` block. Those fields are

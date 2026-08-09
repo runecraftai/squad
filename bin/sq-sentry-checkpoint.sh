@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Run one bounded foreground watcher checkpoint for harnesses that should not
+# Run one bounded foreground sentry checkpoint for harnesses that should not
 # rely on background-task completion to wake the model.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SECONDS_ARG=${FM_CODEX_WATCH_CHECKPOINT:-180}
+SECONDS_ARG=${SQUAD_CODEX_WATCH_CHECKPOINT:-180}
 
 usage() {
   cat <<'EOF'
-Usage: fm-watch-checkpoint.sh [--seconds <n>]
+Usage: sq-sentry-checkpoint.sh [--seconds <n>]
 
-Run bin/fm-watch.sh in the foreground for a bounded checkpoint.
-On an actionable watcher wake, pass through the watcher output and exit 0.
+Run bin/sq-sentry.sh in the foreground for a bounded checkpoint.
+On an actionable sentry wake, pass through the sentry output and exit 0.
 On a quiet checkpoint, print "checkpoint: no actionable wake within <n>s" and exit 124.
 EOF
 }
@@ -44,8 +44,8 @@ case "$SECONDS_ARG" in
   0) echo "error: --seconds must be greater than zero" >&2; exit 2 ;;
 esac
 
-OUT=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.out.XXXXXX") || exit 1
-ERR=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.err.XXXXXX") || {
+OUT=$(mktemp "${TMPDIR:-/tmp}/sq-sentry-checkpoint.out.XXXXXX") || exit 1
+ERR=$(mktemp "${TMPDIR:-/tmp}/sq-sentry-checkpoint.err.XXXXXX") || {
   rm -f "$OUT"
   exit 1
 }
@@ -70,15 +70,15 @@ run_with_perl_timeout() {
     alarm $seconds;
     waitpid $pid, 0;
     exit($? >> 8);
-  ' "$SECONDS_ARG" "$SCRIPT_DIR/fm-watch.sh"
+  ' "$SECONDS_ARG" "$SCRIPT_DIR/sq-sentry.sh"
 }
 
 set +e
 if command -v timeout >/dev/null 2>&1; then
-  timeout "$SECONDS_ARG" "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
+  timeout "$SECONDS_ARG" "$SCRIPT_DIR/sq-sentry.sh" >"$OUT" 2>"$ERR"
   RC=$?
 elif command -v gtimeout >/dev/null 2>&1; then
-  gtimeout "$SECONDS_ARG" "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
+  gtimeout "$SECONDS_ARG" "$SCRIPT_DIR/sq-sentry.sh" >"$OUT" 2>"$ERR"
   RC=$?
 else
   run_with_perl_timeout >"$OUT" 2>"$ERR"
@@ -92,10 +92,10 @@ if grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$OUT" >/dev/null 2>&1; the
   exit 0
 fi
 
-if grep -E '^watcher: already running' "$OUT" "$ERR" >/dev/null 2>&1; then
+if grep -E '^sentry: already running' "$OUT" "$ERR" >/dev/null 2>&1; then
   [ ! -s "$OUT" ] || cat "$OUT"
   [ ! -s "$ERR" ] || cat "$ERR" >&2
-  echo "checkpoint: watcher is already running outside this foreground checkpoint" >&2
+  echo "checkpoint: sentry is already running outside this foreground checkpoint" >&2
   exit 1
 fi
 

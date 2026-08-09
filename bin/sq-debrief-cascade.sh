@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Enumerate this home's registered secondmates for an internal /stow cascade.
-# Usage: fm-stow-cascade.sh [--help]
+# Enumerate this home's registered XOs for an internal /debrief cascade.
+# Usage: sq-debrief-cascade.sh [--help]
 #
-# The internal /stow skill owns curation judgement; this command owns only the
+# The internal /debrief skill owns curation judgement; this command owns only the
 # mechanical inputs a cascade needs: which homes exist, what each home's own
 # startup-memory accounting says right now, and how the sweep can reach it.
 #
-# Enumeration comes from data/secondmates.md, the registry that already refuses
+# Enumeration comes from data/XOs.md, the registry that already refuses
 # a duplicate id, a duplicate home, and an overlapping home, so each registered
-# secondmate is emitted exactly once and no home is accounted twice. A home's
-# budget is that home's alone: this command never sums a fleet total, because
+# XO is emitted exactly once and no home is accounted twice. A home's
+# budget is that home's alone: this command never sums a unit total, because
 # config/startup-memory-budget is a per-home allowance.
 #
 # Each home is reported as one blank-line-separated key=value stanza:
-#   secondmate=<id>
+#   XO=<id>
 #   placement=local|remote            (host=<alias> on a remote route)
 #   home=<path>
 #   budget_report=ok|error|timeout    (report lines follow on ok)
@@ -21,25 +21,25 @@
 #   reason=<one line>                 (whenever a step did not complete)
 #
 # transport says how the sweep reaches that home:
-#   agent     - a live secondmate agent owns the home; steer it with
-#               bin/fm-send.sh so it sweeps its own uncaptured session
+#   agent     - a live XO agent owns the home; steer it with
+#               bin/sq-send.sh so it sweeps its own uncaptured session
 #               knowledge and replies through its marked return channel.
 #   direct    - a local home with no live agent; curate its editable memory
 #               files in place.
 #   deferred  - a remote home with no live agent. There is deliberately no
-#               generic remote write path (bin/fm-remote-file.sh put reaches
+#               generic remote write path (bin/sq-remote-file.sh put reaches
 #               only the handoff outbox), so that home is accounted read-only
 #               and curated by its next cascade once its agent is back.
 #   unavailable - the home's own accounting did not complete, so no transport
 #               conclusion is safe.
 #
 # Every step that crosses a host, plus each home's own accounting, runs under
-# one hard bound (FM_STOW_CASCADE_TIMEOUT seconds, default 60), so a slow or
+# one hard bound (SQUAD_STOW_CASCADE_TIMEOUT seconds, default 60), so a slow or
 # unreachable home reports an exception and the sweep continues instead of
-# blocking the primary's own /stow. A local endpoint probe reads this host's
+# blocking the primary's own /debrief. A local endpoint probe reads this host's
 # recorded backend in process, like every other caller of that contract.
 #
-# A secondmate home never cascades: secondmates do not own secondmates, so this
+# A XO home never cascades: XOs do not own XOs, so this
 # command reports the empty cascade there rather than reaching for a registry.
 #
 # Exit status: 0 every home reported cleanly (or there were none); 3 at least
@@ -59,32 +59,32 @@ esac
 [ "$#" -le 1 ] || { usage >&2; exit 2; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-REGISTRY="$DATA/secondmates.md"
-BUDGET_CMD=fm-startup-memory-budget.sh
-SUB_HOME_MARKER="${SUB_HOME_MARKER:-.fm-secondmate-home}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+REGISTRY="$DATA/XOs.md"
+BUDGET_CMD=sq-startup-memory-budget.sh
+SUB_HOME_MARKER="${SUB_HOME_MARKER:-.sq-xo-home}"
 
-# shellcheck source=bin/fm-ff-lib.sh
-. "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-timeout-lib.sh
-. "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/sq-ff-lib.sh
+. "$SCRIPT_DIR/sq-ff-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
 
-BOUND=${FM_STOW_CASCADE_TIMEOUT:-60}
+BOUND=${SQUAD_STOW_CASCADE_TIMEOUT:-60}
 case "$BOUND" in
-  ''|*[!0-9]*) printf 'error: FM_STOW_CASCADE_TIMEOUT must be a positive integer: %s\n' "$BOUND" >&2; exit 2 ;;
+  ''|*[!0-9]*) printf 'error: SQUAD_STOW_CASCADE_TIMEOUT must be a positive integer: %s\n' "$BOUND" >&2; exit 2 ;;
 esac
 [ "$BOUND" -gt 0 ] \
-  || { printf 'error: FM_STOW_CASCADE_TIMEOUT must be a positive integer: %s\n' "$BOUND" >&2; exit 2; }
+  || { printf 'error: SQUAD_STOW_CASCADE_TIMEOUT must be a positive integer: %s\n' "$BOUND" >&2; exit 2; }
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 emit() { printf '%s\n' "$1"; }
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-stow-cascade.XXXXXX") || exit 1
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-debrief-cascade.XXXXXX") || exit 1
 # shellcheck disable=SC2317,SC2329 # Invoked by the EXIT trap.
 cleanup() { rm -rf -- "$TMP"; }
 trap cleanup EXIT
@@ -98,11 +98,11 @@ run_step() {
   return "$rc"
 }
 
-# This home's recorded secondmate endpoint for <id>, if it has one.
+# This home's recorded XO endpoint for <id>, if it has one.
 meta_for() { # <id>
   local meta="$STATE/$1.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
-  grep -q '^kind=secondmate$' "$meta" 2>/dev/null || return 1
+  grep -q '^kind=xo$' "$meta" 2>/dev/null || return 1
   printf '%s\n' "$meta"
 }
 
@@ -119,7 +119,7 @@ resolve_local_transport() { # <id> <resolved-home>
   fi
   meta_home=$(fm_meta_get "$meta" home)
   if [ -n "$meta_home" ] \
-    && [ "$(secondmate_registry_path_key "$meta_home" 2>/dev/null || true)" != "$home" ]; then
+    && [ "$(XO_registry_path_key "$meta_home" 2>/dev/null || true)" != "$home" ]; then
     set_transport direct 'recorded endpoint belongs to another home'
     return 0
   fi
@@ -144,7 +144,7 @@ resolve_remote_transport() { # <id>
     set_transport deferred 'no recorded endpoint and no remote memory write path'
     return 0
   fi
-  run_step "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh state "$id" || rc=$?
+  run_step "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-XO-control.sh state "$id" || rc=$?
   if [ "$rc" -eq 124 ]; then
     set_transport deferred "remote endpoint probe exceeded the ${BOUND}s bound"
     return 0
@@ -159,22 +159,22 @@ resolve_remote_transport() { # <id>
   esac
 }
 
-if [ -e "$FM_HOME/$SUB_HOME_MARKER" ] || [ -L "$FM_HOME/$SUB_HOME_MARKER" ]; then
-  emit 'role=secondmate'
-  emit 'secondmates=0'
-  emit 'reason=a secondmate home stows its own memory only and never cascades'
+if [ -e "$SQUAD_HOME/$SUB_HOME_MARKER" ] || [ -L "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
+  emit 'role=XO'
+  emit 'XOs=0'
+  emit 'reason=a XO home stows its own memory only and never cascades'
   exit 0
 fi
 emit 'role=primary'
 
 if [ ! -e "$REGISTRY" ] && [ ! -L "$REGISTRY" ]; then
-  emit 'secondmates=0'
+  emit 'XOs=0'
   emit 'exceptions=0'
-  emit 'reason=no secondmate registry in this home'
+  emit 'reason=no XO registry in this home'
   exit 0
 fi
-if ! secondmate_registry_validate_bindings "$REGISTRY" secondmate_registry_path_key; then
-  die "$SECONDMATE_REGISTRY_ERROR"
+if ! XO_registry_validate_bindings "$REGISTRY" XO_registry_path_key; then
+  die "$XO_REGISTRY_ERROR"
 fi
 
 grep '^- ' "$REGISTRY" > "$TMP/records" 2>/dev/null || : > "$TMP/records"
@@ -182,23 +182,23 @@ total=0
 exceptions=0
 while IFS= read -r line || [ -n "$line" ]; do
   [ -n "$line" ] || continue
-  secondmate_registry_parse_line "$line" || die "malformed secondmate registry entry: $line"
-  id=$SECONDMATE_REGISTRY_ID
-  home=$SECONDMATE_REGISTRY_HOME
-  remote=$SECONDMATE_REGISTRY_REMOTE
-  host=$SECONDMATE_REGISTRY_HOST
+  XO_registry_parse_line "$line" || die "malformed XO registry entry: $line"
+  id=$XO_REGISTRY_ID
+  home=$XO_REGISTRY_HOME
+  remote=$XO_REGISTRY_REMOTE
+  host=$XO_REGISTRY_HOST
   total=$((total + 1))
   rc=0
   printf '\n'
-  emit "secondmate=$id"
+  emit "XO=$id"
   if [ "$remote" -eq 1 ]; then
     emit 'placement=remote'
     emit "host=$host"
     emit "home=$home"
-    run_step "$SCRIPT_DIR/fm-on.sh" "$id" "$BUDGET_CMD" report || rc=$?
+    run_step "$SCRIPT_DIR/sq-on.sh" "$id" "$BUDGET_CMD" report || rc=$?
   else
     emit 'placement=local'
-    if ! validate_secondmate_home "$id" "$home"; then
+    if ! validate_XO_home "$id" "$home"; then
       emit "home=$home"
       emit 'budget_report=error'
       emit 'transport=unavailable'
@@ -208,14 +208,14 @@ while IFS= read -r line || [ -n "$line" ]; do
     fi
     resolved=$VALIDATED_HOME
     emit "home=$resolved"
-    # Every FM_*_OVERRIDE is restated so a caller's own override cannot leak
+    # Every SQUAD_*_OVERRIDE is restated so a caller's own override cannot leak
     # this home's memory files into the accounting of another home.
     run_step env \
-      FM_ROOT_OVERRIDE="$FM_ROOT" \
-      FM_HOME="$resolved" \
-      FM_STATE_OVERRIDE="$resolved/state" \
-      FM_DATA_OVERRIDE="$resolved/data" \
-      FM_CONFIG_OVERRIDE="$resolved/config" \
+      SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+      SQUAD_HOME="$resolved" \
+      SQUAD_STATE_OVERRIDE="$resolved/state" \
+      SQUAD_DATA_OVERRIDE="$resolved/data" \
+      SQUAD_CONFIG_OVERRIDE="$resolved/config" \
       "$SCRIPT_DIR/$BUDGET_CMD" report || rc=$?
   fi
   if [ "$rc" -eq 124 ]; then
@@ -245,7 +245,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$TMP/records"
 
 printf '\n'
-emit "secondmates=$total"
+emit "XOs=$total"
 emit "exceptions=$exceptions"
 [ "$exceptions" -eq 0 ] || exit 3
 exit 0

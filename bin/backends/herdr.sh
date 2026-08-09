@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # bin/backends/herdr.sh - the herdr session-provider adapter (EXPERIMENTAL).
 #
-# Design: data/fm-backend-design-d7/herdr-addendum.md ("Interface mapping",
+# Design: data/sq-backend-design-d7/herdr-addendum.md ("Interface mapping",
 # decisions D1-D6) and the empirical verification recorded in
-# data/fm-backend-design-d7/herdr-verification-p2.md (real herdr v0.7.1,
+# data/sq-backend-design-d7/herdr-verification-p2.md (real herdr v0.7.1,
 # protocol 14, macOS aarch64), refined by docs/herdr-backend.md's
 # "workspace-per-home" pass (AGENTS.md task herdr-sm-spaces-k4). Herdr is a
-# session provider ONLY (D3): the worktree provider stays treehouse, exactly
-# like tmux. Sourced only through bin/fm-backend.sh's fm_backend_source in
-# normal operation; the unit tests source it directly, so the FM_HOME fallback
-# below keeps that path sane without fm-backend.sh's preamble.
+# session provider ONLY (D3): the worktree provider stays fob, exactly
+# like tmux. Sourced only through bin/sq-backend.sh's fm_backend_source in
+# normal operation; the unit tests source it directly, so the SQUAD_HOME fallback
+# below keeps that path sane without sq-backend.sh's preamble.
 #
 # Default container shape (D4, decided empirically - see
 # herdr-verification-p2.md "Task container shape", refined by
 # docs/herdr-backend.md "Default task container shape"): ONE herdr workspace PER
-# FIRSTMATE HOME (the primary, and each secondmate, gets its own), ONE herdr TAB
+# SQUAD HOME (the primary, and each XO, gets its own), ONE herdr TAB
 # per task inside its home's workspace. The default-on presentation projection
 # creates a disposable workspace for a clean fresh task instead unless the home
 # opts out. That
@@ -34,7 +34,7 @@
 # preserves focus exactly when the dying workspace sits behind the focused
 # one or the focused one is last (upstream issue #1621, fixed by PR #1912);
 # both fixes first shipped in Herdr 0.8.0, which is the version floor for
-# default-on projection (FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION). Projected cleanup
+# default-on projection (SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION). Projected cleanup
 # therefore serializes under the session lock, repositions a doomed workspace
 # behind the focused one when needed, and ends its verified lone idle shell
 # so Herdr removes the emptied workspace through the focus-preserving
@@ -46,13 +46,13 @@
 # remainder is the whole pane id - fm_backend_herdr_parse_target splits on the
 # first colon only). This is the value stored in a herdr task's meta window=
 # field and is what fm_backend_resolve_selector already returns unchanged for
-# exact task-id, legacy fm-<id>, and explicit backend-target forms (that
+# exact task-id, legacy sq-<id>, and explicit backend-target forms (that
 # function has no herdr-specific logic; it just returns meta's window=
 # verbatim).
 #
 # Authoritative task recovery/orphan discovery (ids may not deterministically match live state
 # after a server restart in a differently-configured session; see the
-# verification doc) uses LABEL matching (fm-<id> tab labels), never trusts a
+# verification doc) uses LABEL matching (sq-<id> tab labels), never trusts a
 # stored pane id blindly: fm_backend_herdr_list_live. The presentation journal
 # is deliberately excluded from that path.
 #
@@ -60,48 +60,48 @@
 # through fm_backend_required_tools only when herdr is the resolved backend;
 # this adapter also gates them again before spawning.
 
-# FM_HOME fallback: every real caller (fm-spawn.sh, fm-peek.sh, fm-send.sh,
-# fm-teardown.sh, fm-watch.sh, fm-crew-state.sh) already sets FM_HOME as a
-# global before sourcing fm-backend.sh (which sources this file), so this
+# SQUAD_HOME fallback: every real caller (sq-spawn.sh, sq-peek.sh, sq-send.sh,
+# sq-teardown.sh, sq-sentry.sh, sq-crew-state.sh) already sets SQUAD_HOME as a
+# global before sourcing sq-backend.sh (which sources this file), so this
 # never overrides a real invocation. It exists only so this file's own unit
 # tests, which source it directly without that preamble, resolve to a sane
-# default (the firstmate repo root - never a secondmate home, so
-# fm_backend_herdr_workspace_label falls through to "firstmate" exactly like
+# default (the Squad repo root - never a XO home, so
+# fm_backend_herdr_workspace_label falls through to "Squad" exactly like
 # pre-P3 behavior when a test does not care about home-specific labeling).
-FM_BACKEND_HERDR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_BACKEND_HERDR_ROOT}}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+SQUAD_BACKEND_HERDR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_HERDR_ROOT}}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
 
-# Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
-# dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
+# Shared composer-content classifier (empty|pending|unknown, and the unit-wide
+# dead-shell-vs-agent-composer rule). Owned by bin/sq-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
-# shellcheck source=bin/fm-composer-lib.sh
-. "$FM_BACKEND_HERDR_ROOT/bin/fm-composer-lib.sh"
+# shellcheck source=bin/sq-composer-lib.sh
+. "$SQUAD_BACKEND_HERDR_ROOT/bin/sq-composer-lib.sh"
 
 # Shared, backend-neutral normalized-transition shape and the single-owner
-# status->action policy table (bin/fm-transition-lib.sh). This adapter's event
+# status->action policy table (bin/sq-transition-lib.sh). This adapter's event
 # subscriber (fm_backend_herdr_wait_transition) normalizes every
 # pane.agent_status_changed edge through fm_transition_record and routes it
 # through fm_transition_policy - it never re-encodes the mapping.
-# shellcheck source=bin/fm-transition-lib.sh
-. "$FM_BACKEND_HERDR_ROOT/bin/fm-transition-lib.sh"
+# shellcheck source=bin/sq-transition-lib.sh
+. "$SQUAD_BACKEND_HERDR_ROOT/bin/sq-transition-lib.sh"
 
-FM_BACKEND_HERDR_MIN_PROTOCOL=14
+SQUAD_BACKEND_HERDR_MIN_PROTOCOL=14
 # events.subscribe (the native pane.agent_status_changed push stream) and its
 # subscription_event schema first shipped at protocol 16 (verified: herdr
 # 0.7.3). Below this, or with the events surface absent from `herdr api schema`,
-# the event fast-path fails closed to the watcher's poll loop
-# (fm_backend_herdr_events_capable). Distinct from FM_BACKEND_HERDR_MIN_PROTOCOL
+# the event fast-path fails closed to the sentry's poll loop
+# (fm_backend_herdr_events_capable). Distinct from SQUAD_BACKEND_HERDR_MIN_PROTOCOL
 # (14): the adapter's spawn/capture/send primitives work on 14, only the push
 # subscriber needs 16.
-FM_BACKEND_HERDR_MIN_EVENTS_PROTOCOL=16
+SQUAD_BACKEND_HERDR_MIN_EVENTS_PROTOCOL=16
 # workspace.move first appears in the protocol-16 schema.
 # The installed CLI does not expose it as a workspace subcommand, so the
 # presentation path uses one narrowly whitelisted raw-socket request after
 # verifying the exact method and parameter schema.
-FM_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL=16
+SQUAD_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL=16
 # The version floor for DEFAULT-ON presentation projection. Projection turns
-# every crewmate teardown into a workspace-emptying removal, and the focus-safe
+# every operator teardown into a workspace-emptying removal, and the focus-safe
 # removal plan can only avoid Herdr's focus-stealing explicit close while the
 # doomed pane holds a provably lone idle childless shell; a persistent child of
 # that shell (gitstatusd, a zsh-async worker, direnv) makes the plan fall back
@@ -115,23 +115,23 @@ FM_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL=16
 # "Presentation version floor"): 0.7.3 and 0.7.4 report 16, 0.7.5 reports 17,
 # the first post-fix preview reports 18, and 0.8.0 reports 19. No build lacking
 # both fixes reaches 19, and the pre-fix builds top out at 17.
-FM_BACKEND_HERDR_MIN_PRESENTATION_PROTOCOL=19
-FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION=0.8.0
+SQUAD_BACKEND_HERDR_MIN_PRESENTATION_PROTOCOL=19
+SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION=0.8.0
 # One-warning-per-release dedupe marker prefix, under the state dir. The
 # projection decision is remade on every spawn, so an undeduplicated
-# below-floor warning would repeat on every crewmate; the key is the detected
+# below-floor warning would repeat on every operator; the key is the detected
 # release, so an upgrade or a downgrade is announced again.
-FM_BACKEND_HERDR_PRESENTATION_FLOOR_MARKER_PREFIX=".herdr-presentation-floor-"
+SQUAD_BACKEND_HERDR_PRESENTATION_FLOOR_MARKER_PREFIX=".herdr-presentation-floor-"
 # Per-pane escalation dedupe marker prefix, under the state dir. One marker per
-# window (keyed like the watcher's own .stale-<key>): set when a ->blocked edge
+# window (keyed like the sentry's own .stale-<key>): set when a ->blocked edge
 # is enqueued, cleared on any working edge, so exactly one wake fires per
 # ->blocked edge and a reconnect level-reconcile never re-delivers a still-
-# blocked pane. Mirrors bin/fm-watch.sh's .stale-<key> naming.
-FM_BACKEND_HERDR_ESCALATED_PREFIX=".herdr-escalated-"
-# .fm-secondmate-home is written by bin/fm-home-seed.sh (AGENTS.md section 6)
-# at a seeded secondmate home's root, containing exactly that secondmate's id.
-# The primary firstmate home never carries this marker.
-FM_BACKEND_HERDR_SECONDMATE_MARKER=".fm-secondmate-home"
+# blocked pane. Mirrors bin/sq-sentry.sh's .stale-<key> naming.
+SQUAD_BACKEND_HERDR_ESCALATED_PREFIX=".herdr-escalated-"
+# .sq-xo-home is written by bin/sq-home-seed.sh (AGENTS.md section 6)
+# at a seeded XO home's root, containing exactly that XO's id.
+# The primary Squad home never carries this marker.
+SQUAD_BACKEND_HERDR_XO_MARKER=".sq-xo-home"
 # The presentation projection is intentionally separate from the authoritative
 # task endpoint record.
 # A per-task journal lives under state/ as <id>.herdr-presentation.
@@ -139,12 +139,12 @@ FM_BACKEND_HERDR_SECONDMATE_MARKER=".fm-secondmate-home"
 # Version 2 additionally binds the successful projection's exact home,
 # session, workspace, tab, pane, parent, and presentation labels so a resumed
 # spawn can replace one verified agent-free husk under the session lock.
-# No send, capture, Treehouse, or general task-ownership path reads it.
-FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
+# No send, capture, FOB, or general task-ownership path reads it.
+SQUAD_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
 
 # The config item a home writes to opt out of, or explicitly in to, the
 # projection.
-FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
+SQUAD_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
 
 # fm_backend_herdr_presentation_preference <config-dir>: the single owner of
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
@@ -160,7 +160,7 @@ FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
 fm_backend_herdr_presentation_preference() {  # <config-dir>
   local config_dir=${1:-} file value
   [ -n "$config_dir" ] || { printf 'default\n'; return 0; }
-  file="$config_dir/$FM_BACKEND_HERDR_PRESENTATION_CONFIG"
+  file="$config_dir/$SQUAD_BACKEND_HERDR_PRESENTATION_CONFIG"
   [ -f "$file" ] || { printf 'default\n'; return 0; }
   value=$(tr -d '[:space:]' < "$file" 2>/dev/null | tr '[:upper:]' '[:lower:]') || value=""
   case "$value" in
@@ -209,10 +209,10 @@ fm_backend_herdr_release_floor_verdict() {  # <protocol> <version>
     ''|*[!0-9]*) ;;
     *)
       protocol_known=1
-      [ "$protocol" -ge "$FM_BACKEND_HERDR_MIN_PRESENTATION_PROTOCOL" ] && return 0
+      [ "$protocol" -ge "$SQUAD_BACKEND_HERDR_MIN_PRESENTATION_PROTOCOL" ] && return 0
       ;;
   esac
-  fm_backend_herdr_version_at_least "$version" "$FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION" \
+  fm_backend_herdr_version_at_least "$version" "$SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION" \
     || version_status=$?
   [ "$version_status" -eq 0 ] && return 0
   { [ "$protocol_known" -eq 1 ] || [ "$version_status" -eq 1 ]; } && return 1
@@ -225,13 +225,13 @@ fm_backend_herdr_release_floor_verdict() {  # <protocol> <version>
 # be supported. When status positively reports no running server, only the
 # client that will start it is applicable. Same return codes as
 # fm_backend_herdr_release_floor_verdict, and sets
-# FM_BACKEND_HERDR_PRESENTATION_RELEASE to the identifier a caller's warning
+# SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE to the identifier a caller's warning
 # names. An unreadable server-running state is indeterminate rather than
 # permission to substitute the client release.
 fm_backend_herdr_presentation_release_supported() {  # [<session>]
   local session=${1:-} status running client_protocol client_version client_verdict=0
   local server_protocol server_version server_verdict=0
-  FM_BACKEND_HERDR_PRESENTATION_RELEASE="an unreadable release"
+  SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE="an unreadable release"
   command -v herdr >/dev/null 2>&1 || return 2
   command -v jq >/dev/null 2>&1 || return 2
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
@@ -251,25 +251,25 @@ fm_backend_herdr_presentation_release_supported() {  # [<session>]
       server_version=$(printf '%s' "$status" | jq -r '.server.version // empty' 2>/dev/null) || return 2
       fm_backend_herdr_release_floor_verdict "$server_protocol" "$server_version" || server_verdict=$?
       if [ "$server_verdict" -eq 1 ]; then
-        FM_BACKEND_HERDR_PRESENTATION_RELEASE="server version ${server_version:-unknown} (protocol ${server_protocol:-unknown})"
+        SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE="server version ${server_version:-unknown} (protocol ${server_protocol:-unknown})"
         return 1
       fi
       if [ "$client_verdict" -eq 1 ]; then
-        FM_BACKEND_HERDR_PRESENTATION_RELEASE="version ${client_version:-unknown} (protocol ${client_protocol:-unknown})"
+        SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE="version ${client_version:-unknown} (protocol ${client_protocol:-unknown})"
         return 1
       fi
       if [ "$server_verdict" -ne 0 ]; then
-        FM_BACKEND_HERDR_PRESENTATION_RELEASE="server version ${server_version:-unknown} (protocol ${server_protocol:-unknown})"
+        SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE="server version ${server_version:-unknown} (protocol ${server_protocol:-unknown})"
         return 2
       fi
       if [ "$client_verdict" -ne 0 ]; then
-        FM_BACKEND_HERDR_PRESENTATION_RELEASE="version ${client_version:-unknown} (protocol ${client_protocol:-unknown})"
+        SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE="version ${client_version:-unknown} (protocol ${client_protocol:-unknown})"
         return 2
       fi
       return 0
       ;;
     false)
-      FM_BACKEND_HERDR_PRESENTATION_RELEASE="version ${client_version:-unknown} (protocol ${client_protocol:-unknown})"
+      SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE="version ${client_version:-unknown} (protocol ${client_protocol:-unknown})"
       return "$client_verdict"
       ;;
     *) return 2 ;;
@@ -281,15 +281,15 @@ fm_backend_herdr_presentation_release_supported() {  # [<session>]
 # usable state dir is given. Without one the warning is emitted every call,
 # which is what a one-shot caller wants.
 fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
-  local state_dir=${1:-} verdict=${2:-2} release=${FM_BACKEND_HERDR_PRESENTATION_RELEASE:-an unreadable release} key marker reason tmp=""
+  local state_dir=${1:-} verdict=${2:-2} release=${SQUAD_BACKEND_HERDR_PRESENTATION_RELEASE:-an unreadable release} key marker reason tmp=""
   if [ "$verdict" -eq 1 ]; then
-    reason="herdr $release is older than the $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for presentation spaces, where projected cleanup can steal the active workspace"
+    reason="herdr $release is older than the $SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for presentation spaces, where projected cleanup can steal the active workspace"
   else
-    reason="the selected herdr release could not be read, so the $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for presentation spaces cannot be verified"
+    reason="the selected herdr release could not be read, so the $SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for presentation spaces cannot be verified"
   fi
   if [ -n "$state_dir" ] && [ -d "$state_dir" ] && [ ! -L "$state_dir" ]; then
     key=${release//[^a-zA-Z0-9]/-}
-    marker="$state_dir/$FM_BACKEND_HERDR_PRESENTATION_FLOOR_MARKER_PREFIX$key"
+    marker="$state_dir/$SQUAD_BACKEND_HERDR_PRESENTATION_FLOOR_MARKER_PREFIX$key"
     { [ -e "$marker" ] || [ -L "$marker" ]; } && return 0
     tmp=$(umask 077; mktemp "$state_dir/.herdr-presentation-floor.XXXXXX" 2>/dev/null) || tmp=""
     if [ -n "$tmp" ]; then
@@ -301,7 +301,7 @@ fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
       fi
     fi
   fi
-  echo "warning: $reason; using the ordinary flat layout instead. Upgrade herdr to $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION or newer (herdr update) to restore the projection, or write \"on\" into config/$FM_BACKEND_HERDR_PRESENTATION_CONFIG to force it on this release." >&2
+  echo "warning: $reason; using the ordinary flat layout instead. Upgrade herdr to $SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION or newer (herdr update) to restore the projection, or write \"on\" into config/$SQUAD_BACKEND_HERDR_PRESENTATION_CONFIG to force it on this release." >&2
   return 0
 }
 
@@ -317,19 +317,19 @@ fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
 }
 
 # fm_backend_herdr_presentation_enabled <config-dir> [<state-dir>]: the one gate
-# bin/fm-spawn.sh consults before projecting this home's children into
+# bin/sq-spawn.sh consults before projecting this home's children into
 # disposable one-task workspaces (docs/herdr-backend.md "Presentation spaces"
 # owns the full contract). An explicit "off" or "on" is obeyed as written; a
 # home that configured nothing is projected only at or above the version floor,
 # and otherwise falls back to the flat layout with one warning. Sets
-# FM_BACKEND_HERDR_PRESENTATION_PREFERENCE for the new-projection boundary to
+# SQUAD_BACKEND_HERDR_PRESENTATION_PREFERENCE for the new-projection boundary to
 # distinguish an unconfigured default from an explicit opt-in.
 fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   local config_dir=${1:-} state_dir=${2:-} preference
   preference=$(fm_backend_herdr_presentation_preference "$config_dir")
-  # bin/fm-spawn.sh reads this out-parameter after sourcing this adapter.
+  # bin/sq-spawn.sh reads this out-parameter after sourcing this adapter.
   # shellcheck disable=SC2034
-  FM_BACKEND_HERDR_PRESENTATION_PREFERENCE=$preference
+  SQUAD_BACKEND_HERDR_PRESENTATION_PREFERENCE=$preference
   case "$preference" in
     off) return 1 ;;
     on) return 0 ;;
@@ -337,21 +337,21 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   fm_backend_herdr_presentation_default_supported "$state_dir"
 }
 
-# fm_backend_herdr_workspace_label: the per-firstmate-HOME herdr workspace
+# fm_backend_herdr_workspace_label: the per-Squad-HOME herdr workspace
 # label (docs/herdr-backend.md "Default task container shape"). The PRIMARY home (no
-# secondmate marker) resolves to the constant "firstmate", byte-identical to
-# every pre-existing task's recorded label - no forced migration. A SECONDMATE
-# home resolves to "2ndmate-<secondmate-id>", so its tasks land in their own
+# XO marker) resolves to the constant "Squad", byte-identical to
+# every pre-existing task's recorded label - no forced migration. A XO
+# home resolves to "2ndmate-<XO-id>", so its tasks land in their own
 # workspace, obviously distinguishable from the primary's (and from every
-# other secondmate's) in herdr's spaces sidebar. Read fresh from FM_HOME on
-# every call rather than cached at source time: FM_HOME is the home's own
+# other XO's) in herdr's spaces sidebar. Read fresh from SQUAD_HOME on
+# every call rather than cached at source time: SQUAD_HOME is the home's own
 # durable identity, not env plumbing threaded through a call chain, so the
 # label is automatically stable across every respawn/recovery for the life of
-# that home. fm-spawn.sh briefly shadows FM_HOME to a secondmate's own home
-# when the PRIMARY spawns that secondmate (its own process's FM_HOME still
-# names the primary at that point) - see fm-spawn.sh's herdr case arm.
+# that home. sq-spawn.sh briefly shadows SQUAD_HOME to a XO's own home
+# when the PRIMARY spawns that XO (its own process's SQUAD_HOME still
+# names the primary at that point) - see sq-spawn.sh's herdr case arm.
 fm_backend_herdr_workspace_label() {
-  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id
+  local marker="$SQUAD_HOME/$SQUAD_BACKEND_HERDR_XO_MARKER" id
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
@@ -359,7 +359,7 @@ fm_backend_herdr_workspace_label() {
       return 0
     fi
   fi
-  printf 'firstmate'
+  printf 'Squad'
 }
 
 # fm_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting
@@ -405,8 +405,8 @@ fm_backend_herdr_version_check() {
       return 1
       ;;
   esac
-  if [ "$protocol" -lt "$FM_BACKEND_HERDR_MIN_PROTOCOL" ]; then
-    echo "error: herdr protocol $protocol (version ${version:-unknown}) is older than the verified minimum $FM_BACKEND_HERDR_MIN_PROTOCOL; update herdr (herdr update) before using backend=herdr" >&2
+  if [ "$protocol" -lt "$SQUAD_BACKEND_HERDR_MIN_PROTOCOL" ]; then
+    echo "error: herdr protocol $protocol (version ${version:-unknown}) is older than the verified minimum $SQUAD_BACKEND_HERDR_MIN_PROTOCOL; update herdr (herdr update) before using backend=herdr" >&2
     return 1
   fi
   return 0
@@ -414,7 +414,7 @@ fm_backend_herdr_version_check() {
 
 # fm_backend_herdr_session: resolve which named herdr session this normal
 # spawn/op uses. HERDR_SESSION mirrors tmux's $TMUX ambient-selection for
-# adapter workspace/tab/pane operations: an operator (or firstmate's own
+# adapter workspace/tab/pane operations: an operator (or Squad's own
 # isolated test harness) sets it explicitly; absent means herdr's own
 # "default" session. Do not use HERDR_SESSION alone for destructive test
 # cleanup; tests/herdr-test-safety.sh documents and guards that path.
@@ -439,7 +439,7 @@ fm_backend_herdr_projection_id() {
 }
 
 fm_backend_herdr_projection_journal_path() {  # <state-dir> <task-id>
-  printf '%s/%s%s' "$1" "$2" "$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX"
+  printf '%s/%s%s' "$1" "$2" "$SQUAD_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX"
 }
 
 # fm_backend_herdr_projection_journal_create: atomically publish the
@@ -492,73 +492,73 @@ fm_backend_herdr_projection_journal_field() {  # <journal> <key>
 
 # fm_backend_herdr_projection_journal_snapshot: validate a version 1 attempt
 # journal or a version 2 exact projection binding without sourcing shell code.
-# Version 2 sets FM_BACKEND_HERDR_JOURNAL_* globals for same-process callers.
+# Version 2 sets SQUAD_BACKEND_HERDR_JOURNAL_* globals for same-process callers.
 fm_backend_herdr_projection_journal_snapshot() {  # <journal> <task-id>
   local journal=$1 id=$2 lines expected_label expected_task_label exact
-  FM_BACKEND_HERDR_JOURNAL_VERSION=""
-  FM_BACKEND_HERDR_JOURNAL_TASK_ID=""
-  FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID=""
-  FM_BACKEND_HERDR_JOURNAL_HOME=""
-  FM_BACKEND_HERDR_JOURNAL_SESSION=""
-  FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID=""
-  FM_BACKEND_HERDR_JOURNAL_TAB_ID=""
-  FM_BACKEND_HERDR_JOURNAL_PANE_ID=""
-  FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID=""
-  FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL=""
-  FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL=""
-  FM_BACKEND_HERDR_JOURNAL_TASK_LABEL=""
+  SQUAD_BACKEND_HERDR_JOURNAL_VERSION=""
+  SQUAD_BACKEND_HERDR_JOURNAL_TASK_ID=""
+  SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID=""
+  SQUAD_BACKEND_HERDR_JOURNAL_HOME=""
+  SQUAD_BACKEND_HERDR_JOURNAL_SESSION=""
+  SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_ID=""
+  SQUAD_BACKEND_HERDR_JOURNAL_TAB_ID=""
+  SQUAD_BACKEND_HERDR_JOURNAL_PANE_ID=""
+  SQUAD_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID=""
+  SQUAD_BACKEND_HERDR_JOURNAL_PARENT_LABEL=""
+  SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL=""
+  SQUAD_BACKEND_HERDR_JOURNAL_TASK_LABEL=""
   [ -f "$journal" ] && [ ! -L "$journal" ] || return 1
   lines=$(wc -l < "$journal" 2>/dev/null | tr -d '[:space:]')
-  FM_BACKEND_HERDR_JOURNAL_VERSION=$(fm_backend_herdr_projection_journal_field "$journal" version) || return 1
-  FM_BACKEND_HERDR_JOURNAL_TASK_ID=$(fm_backend_herdr_projection_journal_field "$journal" task_id) || return 1
-  FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID=$(fm_backend_herdr_projection_journal_field "$journal" projection_id) || return 1
-  [ "$FM_BACKEND_HERDR_JOURNAL_TASK_ID" = "$id" ] || return 1
-  [ "${#FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID}" -eq 22 ] || return 1
-  case "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" in
+  SQUAD_BACKEND_HERDR_JOURNAL_VERSION=$(fm_backend_herdr_projection_journal_field "$journal" version) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_TASK_ID=$(fm_backend_herdr_projection_journal_field "$journal" task_id) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID=$(fm_backend_herdr_projection_journal_field "$journal" projection_id) || return 1
+  [ "$SQUAD_BACKEND_HERDR_JOURNAL_TASK_ID" = "$id" ] || return 1
+  [ "${#SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID}" -eq 22 ] || return 1
+  case "$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID" in
     *[!A-Za-z0-9_-]*) return 1 ;;
   esac
-  case "$FM_BACKEND_HERDR_JOURNAL_VERSION:$lines" in
+  case "$SQUAD_BACKEND_HERDR_JOURNAL_VERSION:$lines" in
     1:3) return 0 ;;
     2:12) ;;
     *) return 1 ;;
   esac
-  FM_BACKEND_HERDR_JOURNAL_HOME=$(fm_backend_herdr_projection_journal_field "$journal" home) || return 1
-  FM_BACKEND_HERDR_JOURNAL_SESSION=$(fm_backend_herdr_projection_journal_field "$journal" session) || return 1
-  FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID=$(fm_backend_herdr_projection_journal_field "$journal" workspace_id) || return 1
-  FM_BACKEND_HERDR_JOURNAL_TAB_ID=$(fm_backend_herdr_projection_journal_field "$journal" tab_id) || return 1
-  FM_BACKEND_HERDR_JOURNAL_PANE_ID=$(fm_backend_herdr_projection_journal_field "$journal" pane_id) || return 1
-  FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID=$(fm_backend_herdr_projection_journal_field "$journal" parent_workspace_id) || return 1
-  FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL=$(fm_backend_herdr_projection_journal_field "$journal" parent_label) || return 1
-  FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL=$(fm_backend_herdr_projection_journal_field "$journal" workspace_label) || return 1
-  FM_BACKEND_HERDR_JOURNAL_TASK_LABEL=$(fm_backend_herdr_projection_journal_field "$journal" task_label) || return 1
-  case "$FM_BACKEND_HERDR_JOURNAL_HOME" in
+  SQUAD_BACKEND_HERDR_JOURNAL_HOME=$(fm_backend_herdr_projection_journal_field "$journal" home) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_SESSION=$(fm_backend_herdr_projection_journal_field "$journal" session) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_ID=$(fm_backend_herdr_projection_journal_field "$journal" workspace_id) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_TAB_ID=$(fm_backend_herdr_projection_journal_field "$journal" tab_id) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_PANE_ID=$(fm_backend_herdr_projection_journal_field "$journal" pane_id) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID=$(fm_backend_herdr_projection_journal_field "$journal" parent_workspace_id) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_PARENT_LABEL=$(fm_backend_herdr_projection_journal_field "$journal" parent_label) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL=$(fm_backend_herdr_projection_journal_field "$journal" workspace_label) || return 1
+  SQUAD_BACKEND_HERDR_JOURNAL_TASK_LABEL=$(fm_backend_herdr_projection_journal_field "$journal" task_label) || return 1
+  case "$SQUAD_BACKEND_HERDR_JOURNAL_HOME" in
     /*) ;;
     *) return 1 ;;
   esac
   for exact in \
-    "$FM_BACKEND_HERDR_JOURNAL_SESSION" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" \
-    "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" \
-    "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" \
-    "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID"; do
+    "$SQUAD_BACKEND_HERDR_JOURNAL_SESSION" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_TAB_ID" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_PANE_ID" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID"; do
     case "$exact" in
       ''|*[[:space:]]*) return 1 ;;
     esac
   done
-  [ -n "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" ] \
-    && [ -n "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" ] \
-    && [ -n "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" ] || return 1
-  expected_label=$(fm_backend_herdr_projection_workspace_label "$id" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID")
-  expected_task_label="fm-$id"
-  [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" = "$expected_label" ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "$expected_task_label" ]
+  [ -n "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_LABEL" ] \
+    && [ -n "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" ] \
+    && [ -n "$SQUAD_BACKEND_HERDR_JOURNAL_TASK_LABEL" ] || return 1
+  expected_label=$(fm_backend_herdr_projection_workspace_label "$id" "$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID")
+  expected_task_label="sq-$id"
+  [ "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" = "$expected_label" ] \
+    && [ "$SQUAD_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "$expected_task_label" ]
 }
 
 # fm_backend_herdr_projection_journal_token: validate and read either journal
 # version's non-authoritative visual correlator.
 fm_backend_herdr_projection_journal_token() {  # <journal> <task-id>
   fm_backend_herdr_projection_journal_snapshot "$1" "$2" || return 1
-  printf '%s' "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID"
+  printf '%s' "$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID"
 }
 
 fm_backend_herdr_projection_home_identity() {  # <home>
@@ -601,8 +601,8 @@ fm_backend_herdr_projection_journal_bind() {  # <journal> <task-id> <home> <sess
   local journal=$1 id=$2 home=$3 session=$4 workspace=$5 tab=$6 pane=$7
   local parent_workspace=$8 parent_label=$9 workspace_label=${10} task_label=${11} token
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
-  [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 1 ] || return 1
-  token=$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID
+  [ "$SQUAD_BACKEND_HERDR_JOURNAL_VERSION" = 1 ] || return 1
+  token=$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID
   fm_backend_herdr_projection_journal_write_v2 \
     "$journal" "$id" "$token" "$home" "$session" "$workspace" "$tab" "$pane" \
     "$parent_workspace" "$parent_label" "$workspace_label" "$task_label"
@@ -613,30 +613,30 @@ fm_backend_herdr_projection_journal_bind() {  # <journal> <task-id> <home> <sess
 fm_backend_herdr_projection_journal_replace_endpoint() {  # <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane>
   local journal=$1 id=$2 old_tab=$3 old_pane=$4 new_tab=$5 new_pane=$6
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
-  [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$old_tab" ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$old_pane" ] || return 1
+  [ "$SQUAD_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
+    && [ "$SQUAD_BACKEND_HERDR_JOURNAL_TAB_ID" = "$old_tab" ] \
+    && [ "$SQUAD_BACKEND_HERDR_JOURNAL_PANE_ID" = "$old_pane" ] || return 1
   fm_backend_herdr_projection_journal_write_v2 \
-    "$journal" "$id" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
-    "$FM_BACKEND_HERDR_JOURNAL_HOME" "$FM_BACKEND_HERDR_JOURNAL_SESSION" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" "$new_tab" "$new_pane" \
-    "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL"
+    "$journal" "$id" "$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_HOME" "$SQUAD_BACKEND_HERDR_JOURNAL_SESSION" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" "$new_tab" "$new_pane" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_LABEL" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$SQUAD_BACKEND_HERDR_JOURNAL_TASK_LABEL"
 }
 
 # fm_backend_herdr_projection_concise_task_label: strip redundant owner
 # prefixes from a task id used only in the presentation workspace label.
-# Removes firstmate/, 2ndmate-<id>/, and a presentation-level fm- owner
-# prefix when present. The ordinary task tab remains fm-<id> and is not
+# Removes Squad/, 2ndmate-<id>/, and a presentation-level sq- owner
+# prefix when present. The ordinary task tab remains sq-<id> and is not
 # built by this helper.
 fm_backend_herdr_projection_concise_task_label() {  # <task-id>
   local task=$1
   case "$task" in
-    firstmate/*) task=${task#firstmate/} ;;
+    Squad/*) task=${task#Squad/} ;;
     2ndmate-*/*) task=${task#*/} ;;
   esac
   case "$task" in
-    fm-*) task=${task#fm-} ;;
+    sq-*) task=${task#sq-} ;;
   esac
   printf '%s' "$task"
 }
@@ -650,13 +650,13 @@ fm_backend_herdr_projection_workspace_label() {  # <task-id> <projection-id>
 }
 
 # fm_backend_herdr_presentation_session_lock_path: one machine-private lock
-# path per live named Herdr session/socket, shared across every Firstmate home
+# path per live named Herdr session/socket, shared across every Squad home
 # that uses that session.
-# The path is never under any one home's state/ and secondmates never write the
+# The path is never under any one home's state/ and XOs never write the
 # primary home. Returns non-zero when the named session's socket cannot be
 # resolved unambiguously.
 fm_backend_herdr_presentation_lock_namespace() {
-  printf '%s' '/tmp/firstmate-herdr-presentation'
+  printf '%s' '/tmp/Squad-herdr-presentation'
 }
 
 fm_backend_herdr_presentation_lock_namespace_mode() {
@@ -825,7 +825,7 @@ fm_backend_herdr_projection_focus_restore() {  # <session> <snapshot> <operation
 }
 
 # fm_backend_herdr_projection_close_pane_focus_preserving: close one exact
-# response-derived projection pane without leaving the captain focused
+# response-derived projection pane without leaving the commander focused
 # anywhere else.
 # If the target belongs to the active tab, exact tab preservation is
 # impossible, so cleanup refuses instead of changing focus.
@@ -840,7 +840,7 @@ fm_backend_herdr_projection_focus_restore() {  # <session> <snapshot> <operation
 fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-id> [required-agent-state]
   local session=$1 pane_id=$2 required_agent_state=${3:-}
   local before active_tab info target_pane target_tab target_ws close_status state plan plan_shell_pid plan_move_record workspace_presence
-  FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=""
+  SQUAD_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=""
   [ -n "$pane_id" ] || return 0
   before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
     echo "warning: herdr presentation cleanup could not capture exact active workspace and tab; refusing focus-unsafe pane close" >&2
@@ -859,12 +859,12 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
     return 1
   fi
   if [ "$target_tab" = "$active_tab" ]; then
-    echo "warning: herdr presentation cleanup target is the captain's active tab; refusing a close that cannot preserve focus" >&2
+    echo "warning: herdr presentation cleanup target is the commander's active tab; refusing a close that cannot preserve focus" >&2
     return 1
   fi
   if [ -n "$required_agent_state" ]; then
     state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
-    FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
+    SQUAD_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
     [ "$state" = "$required_agent_state" ] || return 1
   fi
   plan=plain
@@ -929,7 +929,7 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
 #   focused workspace's right neighbor otherwise (upstream issue #1621, fixed
 #   by PR #1912, commit a979916).
 # Both fixes first shipped in Herdr 0.8.0 (protocol 19), verified 2026-08-05.
-# Firstmate therefore removes a doomed non-focused workspace by ending its
+# Squad therefore removes a doomed non-focused workspace by ending its
 # verified lone idle shell (the pane-death path), repositioning it behind the
 # focused workspace first when needed. Moving it to the end preserves every
 # other workspace's relative order, so no presentation ordering change
@@ -940,7 +940,7 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
 # direnv fails that proof permanently - and on a release without both fixes the
 # fallback is the focus-stealing close itself, so the mitigation is conditional
 # rather than unconditional and a version gate IS required. Default-on
-# projection is therefore floored at FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION,
+# projection is therefore floored at SQUAD_BACKEND_HERDR_MIN_PRESENTATION_VERSION,
 # where every removal primitive preserves focus and the proof stops being
 # load-bearing. That floor has ONE owner, the spawn-time gate
 # fm_backend_herdr_presentation_enabled, so every new projection is either on a
@@ -951,7 +951,7 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
 # to a 0.7.x release, and occurs once per leftover workspace at session start
 # rather than once per task teardown; the exact prior-tab restore bounds it.
 # Refusing that close below the floor would leak workspaces that nothing else
-# removes and block teardown because fm-teardown treats an unconfirmed close as
+# removes and block teardown because sq-teardown treats an unconfirmed close as
 # a hard stop. That cleanup is therefore authorized containment rather than a
 # second gate, and the spawn-time gate remains the floor's sole owner.
 
@@ -968,7 +968,7 @@ fm_backend_herdr_workspace_move_capable() {  # <session>
   case "$protocol" in
     ''|*[!0-9]*) return 2 ;;
   esac
-  [ "$protocol" -lt "$FM_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL" ] && return 3
+  [ "$protocol" -lt "$SQUAD_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL" ] && return 3
   schema=$(fm_backend_herdr_cli "$session" api schema --json 2>/dev/null) || return 4
   printf '%s' "$schema" | jq -e '
     any(.schemas.request.oneOf[]?; .properties.method.const == "workspace.move")
@@ -1051,7 +1051,7 @@ fm_backend_herdr_emptying_close_plan() {  # <session> <pane-id> <workspace-id> <
       printf 'plain\n'
       return 0
     }
-    mover=${FM_BACKEND_HERDR_WORKSPACE_MOVER:-$FM_BACKEND_HERDR_ROOT/bin/backends/herdr-workspace-move.py}
+    mover=${SQUAD_BACKEND_HERDR_WORKSPACE_MOVER:-$SQUAD_BACKEND_HERDR_ROOT/bin/backends/herdr-workspace-move.py}
     before_order=$(printf '%s' "$list" | jq -c '[.result.workspaces[].workspace_id]' 2>/dev/null)
     if response=$("$mover" "$socket" "$ws_id" "$len" 2>/dev/null); then
       move_status=0
@@ -1106,7 +1106,7 @@ FMEOF
       return 1
       ;;
   esac
-  mover=${FM_BACKEND_HERDR_WORKSPACE_MOVER:-$FM_BACKEND_HERDR_ROOT/bin/backends/herdr-workspace-move.py}
+  mover=${SQUAD_BACKEND_HERDR_WORKSPACE_MOVER:-$SQUAD_BACKEND_HERDR_ROOT/bin/backends/herdr-workspace-move.py}
   if ! response=$("$mover" "$socket" "$ws" "$index" 2>/dev/null) \
     || ! printf '%s' "$response" | jq -e --argjson expected "$order" --arg focused "$focused" '
       .result.type == "workspace_list"
@@ -1129,12 +1129,12 @@ FMEOF
 # Returns 0 only when the pane is confirmed gone.
 fm_backend_herdr_death_close_pane() {  # <session> <pane-id> <shell-pid>
   local session=$1 pane_id=$2 shell_pid=$3 ps_bin attempt max_attempts presence resampled_pid
-  ps_bin=${FM_HERDR_PS_BIN:-ps}
+  ps_bin=${SQUAD_HERDR_PS_BIN:-ps}
   case "$shell_pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
   command -v "$ps_bin" >/dev/null 2>&1 || return 1
-  max_attempts=${FM_BACKEND_HERDR_DEATH_CLOSE_POLLS:-40}
+  max_attempts=${SQUAD_BACKEND_HERDR_DEATH_CLOSE_POLLS:-40}
   fm_backend_herdr_pid_is_bare_shell "$ps_bin" "$shell_pid" || return 1
   kill -HUP "$shell_pid" 2>/dev/null || true
   attempt=0
@@ -1191,7 +1191,7 @@ fm_backend_herdr_pid_is_bare_shell() {  # <ps-bin> <pid>
 # This is the single owner of the idle-shell proof; the session-start
 # projection cleanup and every pane-death close path both rely on it.
 fm_backend_herdr_pane_idle_shell_pid() {  # <session> <pane-id>
-  local attempt=0 max_attempts=${FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS:-10}
+  local attempt=0 max_attempts=${SQUAD_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS:-10}
   while :; do
     if fm_backend_herdr_pane_idle_shell_sample "$1" "$2"; then
       return 0
@@ -1237,7 +1237,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
   [ "$argv0" = "$shell_name" ] || return 1
   case "$shell_name" in sh|bash|zsh|dash|ksh|fish) ;; *) return 1 ;; esac
 
-  ps_bin=${FM_HERDR_PS_BIN:-ps}
+  ps_bin=${SQUAD_HERDR_PS_BIN:-ps}
   command -v "$ps_bin" >/dev/null 2>&1 || return 1
   rows=$("$ps_bin" -axo pid=,ppid= 2>/dev/null) || return 1
   printf '%s\n' "$rows" | awk -v shell="$shell_pid" '
@@ -1254,7 +1254,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning FM_HOME label (firstmate or 2ndmate-<id>).
+# <parent-label> is the owning SQUAD_HOME label (Squad or 2ndmate-<id>).
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1262,7 +1262,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # label exactly as before. With a unique label the two select the same
 # workspace, so ordering behavior is unchanged in the ordinary case.
 # New-format └ ... · p:<token> children and, for compatibility only, already
-# adjacent old-format firstmate/... or 2ndmate-<id>/... projections may extend
+# adjacent old-format Squad/... or 2ndmate-<id>/... projections may extend
 # the block read-only; they are never renamed or moved.
 #
 # This is presentation-only and always returns success.
@@ -1294,13 +1294,13 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       end;
     def is_top_level_parent:
       (.label | type) == "string"
-      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")));
+      and ((.label == "Squad") or (.label | test("^2ndmate-[^/]+$")));
     def is_new_child:
       (.label | type) == "string"
       and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child:
       (.label | type) == "string"
-      and (.label | test("^(firstmate|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"));
+      and (.label | test("^(Squad|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child_for($owner):
       is_legacy_child and (.label | startswith($owner + "/"));
     def is_child_for($owner):
@@ -1382,7 +1382,7 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       return 0
       ;;
     3)
-      echo "warning: herdr presentation ordering needs protocol $FM_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL or newer; leaving worker in Herdr's current order" >&2
+      echo "warning: herdr presentation ordering needs protocol $SQUAD_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL or newer; leaving worker in Herdr's current order" >&2
       return 0
       ;;
     4)
@@ -1399,7 +1399,7 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
     return 0
   }
 
-  mover=${FM_BACKEND_HERDR_WORKSPACE_MOVER:-$FM_BACKEND_HERDR_ROOT/bin/backends/herdr-workspace-move.py}
+  mover=${SQUAD_BACKEND_HERDR_WORKSPACE_MOVER:-$SQUAD_BACKEND_HERDR_ROOT/bin/backends/herdr-workspace-move.py}
   focus_before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
     echo "warning: herdr presentation ordering could not capture exact active workspace and tab; leaving worker in Herdr's current order" >&2
     return 0
@@ -1468,7 +1468,7 @@ fm_backend_herdr_server_ensure() {  # <session>
 #
 # Single owner of the home-label workspace query. Herdr enforces no workspace
 # label uniqueness at all (docs/herdr-backend.md "Label collisions"), so this
-# can legitimately return MORE THAN ONE id: a captain-owned workspace can
+# can legitimately return MORE THAN ONE id: a commander-owned workspace can
 # collide by label, a cwd-basename-derived label can coincide, and concurrent
 # first spawns can mint two same-labeled home workspaces. Callers decide what a
 # duplicate means for them - fm_backend_herdr_workspace_ensure refuses to guess
@@ -1481,7 +1481,7 @@ fm_backend_herdr_workspace_find_all() {  # <session>
   # NOTE: the jq variable is $want, NOT $label - `label` is a jq reserved
   # keyword (label/break), so declaring a jq variable named "label" is a
   # compile error that `2>/dev/null` would silently swallow, making this find
-  # ALWAYS return empty and every spawn mint a fresh "firstmate" workspace
+  # ALWAYS return empty and every spawn mint a fresh "Squad" workspace
   # (the workspace leak).
   printf '%s' "$list" | jq -r --arg want "$label" \
     '.result.workspaces[]? | select(.label == $want) | .workspace_id' 2>/dev/null
@@ -1503,12 +1503,12 @@ fm_backend_herdr_workspace_find() {  # <session>
 #
 # Herdr 0.7.5 injects HERDR_ENV=1, HERDR_PANE_ID, HERDR_SESSION,
 # HERDR_SOCKET_PATH, HERDR_TAB_ID, and HERDR_WORKSPACE_ID into every process it
-# manages a pane for (docs/verification/runtime-backends.md), and a firstmate
-# or secondmate agent's own tool calls inherit them. Older injection shapes are
+# manages a pane for (docs/verification/runtime-backends.md), and a Squad
+# or XO agent's own tool calls inherit them. Older injection shapes are
 # unverified and cannot establish launcher ancestry without both pane and
 # socket identity. Workspace LABELS are mutable and herdr enforces no
-# uniqueness on them, so a label search cannot tell one `firstmate` workspace
-# from another, and herdr's globally focused workspace is whatever the captain
+# uniqueness on them, so a label search cannot tell one `Squad` workspace
+# from another, and herdr's globally focused workspace is whatever the commander
 # happens to be looking at, not the launcher's.
 #
 # The injected HERDR_TAB_ID/HERDR_WORKSPACE_ID are deliberately NOT read as the
@@ -1518,16 +1518,16 @@ fm_backend_herdr_workspace_find() {  # <session>
 # parent, which is what placement has to bind to.
 #
 # Sets, only on a 0 return:
-#   FM_BACKEND_HERDR_LAUNCHER_PANE_ID
-#   FM_BACKEND_HERDR_LAUNCHER_TAB_ID
-#   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
+#   SQUAD_BACKEND_HERDR_LAUNCHER_PANE_ID
+#   SQUAD_BACKEND_HERDR_LAUNCHER_TAB_ID
+#   SQUAD_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
 #
 # Returns:
 #   0 - one exact, self-consistent launcher pane/tab/workspace in <session>.
 #   2 - this process is NOT running in a herdr pane (no HERDR_PANE_ID at all),
 #       so there is no launcher workspace to inherit and the caller falls back
 #       to its per-home container. HERDR_ENV=1 on its own is only a backend
-#       SELECTION marker (bin/fm-backend.sh's fm_backend_detect), never a
+#       SELECTION marker (bin/sq-backend.sh's fm_backend_detect), never a
 #       parent binding - herdr always injects the pane id alongside it.
 #   1 - a launcher pane IS claimed but its binding is missing, stale,
 #       contradictory, or belongs to another herdr session. The caller must
@@ -1536,9 +1536,9 @@ fm_backend_herdr_workspace_find() {  # <session>
 fm_backend_herdr_launcher_identity() {  # <session>
   local session=$1 pane=${HERDR_PANE_ID:-} claimed_session claimed_socket session_socket
   local pane_out tab_out list tab workspace
-  FM_BACKEND_HERDR_LAUNCHER_PANE_ID=""
-  FM_BACKEND_HERDR_LAUNCHER_TAB_ID=""
-  FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=""
+  SQUAD_BACKEND_HERDR_LAUNCHER_PANE_ID=""
+  SQUAD_BACKEND_HERDR_LAUNCHER_TAB_ID=""
+  SQUAD_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=""
   [ -n "$pane" ] || return 2
 
   # Same-session proof, before the pane id is trusted at all: herdr pane ids
@@ -1616,10 +1616,10 @@ fm_backend_herdr_launcher_identity() {  # <session>
   fi
 
   # shellcheck disable=SC2034  # callers consume the verified binding's parts
-  FM_BACKEND_HERDR_LAUNCHER_PANE_ID=$pane
+  SQUAD_BACKEND_HERDR_LAUNCHER_PANE_ID=$pane
   # shellcheck disable=SC2034  # callers consume the verified binding's parts
-  FM_BACKEND_HERDR_LAUNCHER_TAB_ID=$tab
-  FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=$workspace
+  SQUAD_BACKEND_HERDR_LAUNCHER_TAB_ID=$tab
+  SQUAD_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=$workspace
   return 0
 }
 
@@ -1637,15 +1637,15 @@ fm_backend_herdr_launcher_identity() {  # <session>
 # tab, labeled "1" - run against whatever workspace fm_backend_herdr_workspace_find
 # had just resolved. Herdr enforces no label uniqueness (docs/herdr-backend.md
 # "Label collisions") and derives an unlabeled workspace's DISPLAYED label from
-# its pane cwd's basename, so a captain launching herdr directly inside a
-# directory named "firstmate" produces a workspace that looks byte-identical,
-# by label alone, to firstmate's own auto-created container - one tab, label
-# "1". workspace_find adopted that pre-existing (captain-owned, LIVE) workspace
+# its pane cwd's basename, so a commander launching herdr directly inside a
+# directory named "Squad" produces a workspace that looks byte-identical,
+# by label alone, to Squad's own auto-created container - one tab, label
+# "1". workspace_find adopted that pre-existing (commander-owned, LIVE) workspace
 # by the label match, the heuristic matched too, and the very next spawn
-# closed the captain's own live pane 27ms after creating its task tab. The
+# closed the commander's own live pane 27ms after creating its task tab. The
 # fix is structural, not another heuristic: only a workspace THIS SAME
 # fm_backend_herdr_workspace_ensure call just created carries a non-empty
-# seeded_tab_id at all (see FM_BACKEND_HERDR_WS_SEEDED_TAB_ID below); an
+# seeded_tab_id at all (see SQUAD_BACKEND_HERDR_WS_SEEDED_TAB_ID below); an
 # ADOPTED workspace's seeded_tab_id is always empty, so create_task never
 # calls this function for one, regardless of how its tabs happen to be
 # labeled.
@@ -1692,9 +1692,9 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 # substitution ($(...)) - it communicates through these globals, not solely
 # through stdout, and a command substitution forks a subshell that would
 # discard them:
-#   FM_BACKEND_HERDR_WS_ID          - the resolved workspace_id (also echoed,
+#   SQUAD_BACKEND_HERDR_WS_ID          - the resolved workspace_id (also echoed,
 #                                      for callers that only need the id)
-#   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID - non-empty ONLY when THIS call just
+#   SQUAD_BACKEND_HERDR_WS_SEEDED_TAB_ID - non-empty ONLY when THIS call just
 #                                      CREATED the workspace: the tab_id of
 #                                      the auto-created default tab herdr
 #                                      seeded it with, read straight from the
@@ -1729,14 +1729,14 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 # depth and because it is a no-op in the already-safe case.
 #
 # <launcher-relationship> (3rd arg, default "launcher-home") says whether the
-# container being ensured belongs to the SAME firstmate home as the process
+# container being ensured belongs to the SAME Squad home as the process
 # calling this:
-#   launcher-home - a crewmate or scout for the caller's own home. When the
+#   launcher-home - a operator or recon for the caller's own home. When the
 #                   caller is itself running in a herdr pane, the worker MUST
 #                   land in that exact workspace
 #                   (fm_backend_herdr_launcher_identity), never in whichever
 #                   same-labeled workspace happens to sort first.
-#   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
+#   other-home    - a --XO launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
@@ -1749,14 +1749,14 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 # stderr, and 1 for a failed or unparseable herdr call.
 fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship>]
   local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
-  FM_BACKEND_HERDR_WS_ID=""
-  FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
+  SQUAD_BACKEND_HERDR_WS_ID=""
+  SQUAD_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
   if [ "$relationship" = launcher-home ]; then
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
     case "$status" in
       0)
-        FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
-        printf '%s' "$FM_BACKEND_HERDR_WS_ID"
+        SQUAD_BACKEND_HERDR_WS_ID=$SQUAD_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
+        printf '%s' "$SQUAD_BACKEND_HERDR_WS_ID"
         return 0
         ;;
       2) ;;
@@ -1767,27 +1767,27 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   matches=$(fm_backend_herdr_workspace_find_all "$session")
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
   if [ "$count" -gt 1 ]; then
-    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
+    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run Squad inside the workspace its workers belong in" >&2
     return 3
   fi
   wsid=${matches%%$'\n'*}
   if [ -n "$wsid" ]; then
-    FM_BACKEND_HERDR_WS_ID=$wsid
+    SQUAD_BACKEND_HERDR_WS_ID=$wsid
     printf '%s' "$wsid"
     return 0
   fi
   out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
-  FM_BACKEND_HERDR_WS_ID=$wsid
-  # Herdr seeds a new workspace with one auto-created default tab firstmate
+  SQUAD_BACKEND_HERDR_WS_ID=$wsid
+  # Herdr seeds a new workspace with one auto-created default tab Squad
   # never uses. It is NOT pruned here: at this instant it is the workspace's
   # ONLY tab, and closing a workspace's last tab deletes the workspace itself
   # (verified against the real herdr binary) - pruning here would destroy the
   # workspace we just created. fm_backend_herdr_create_task prunes it instead,
   # once the first real task tab exists alongside it, and only ever targets
   # this exact captured tab_id.
-  FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  SQUAD_BACKEND_HERDR_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
   printf '%s' "$wsid"
 }
 
@@ -1810,12 +1810,12 @@ fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-
   # A 3 already reported the exact placement it refused to guess at; adding the
   # generic message here would bury it.
   [ "$status" -ne 3 ] || return 1
-  if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_WS_ID" ]; then
+  if [ "$status" -ne 0 ] || [ -z "$SQUAD_BACKEND_HERDR_WS_ID" ]; then
     label=$(fm_backend_herdr_workspace_label)
     echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2
     return 1
   fi
-  printf '%s:%s\t%s' "$session" "$FM_BACKEND_HERDR_WS_ID" "$FM_BACKEND_HERDR_WS_SEEDED_TAB_ID"
+  printf '%s:%s\t%s' "$session" "$SQUAD_BACKEND_HERDR_WS_ID" "$SQUAD_BACKEND_HERDR_WS_SEEDED_TAB_ID"
 }
 
 # fm_backend_herdr_pane_presence_state: classify one exact pane get response
@@ -1929,7 +1929,7 @@ fm_backend_herdr_tab_is_husk() {  # <session> <pane_id>
 fm_backend_herdr_agent_state() {  # <target>
   local target=$1
   fm_backend_herdr_parse_target "$target" || { printf 'unreadable'; return 0; }
-  case "$(fm_backend_herdr_pane_agent_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")" in
+  case "$(fm_backend_herdr_pane_agent_state "$SQUAD_BACKEND_HERDR_SESSION" "$SQUAD_BACKEND_HERDR_PANE")" in
     dead) printf 'missing' ;;
     no-agent) printf 'dead' ;;
     live) printf 'alive' ;;
@@ -1954,12 +1954,12 @@ fm_backend_herdr_agent_alive() {  # <target>
 #
 # A same-labeled tab already existing no longer means an automatic refusal:
 # herdr persists and restores its whole session layout (workspaces/tabs/
-# panes) across a server restart, including a reboot, and a restored fm-<id>
+# panes) across a server restart, including a reboot, and a restored sq-<id>
 # task tab comes back a HUSK - a dead pane, or (today, and unconditionally
 # once a future `resume_agents_on_restore = false` config ships) a plain
-# agent-less shell sitting in the saved cwd, never the crewmate that used to
-# be there. Before this fix, every fleet respawn after such a restart needed
-# the operator to manually close each husk pane first before firstmate could
+# agent-less shell sitting in the saved cwd, never the operator that used to
+# be there. Before this fix, every unit respawn after such a restart needed
+# the operator to manually close each husk pane first before Squad could
 # spawn into it again. fm_backend_herdr_tab_is_husk classifies the existing
 # tab's pane conservatively (dead or no-agent only; anything live or
 # ambiguous refuses exactly as before) and, when it is a confirmed husk,
@@ -1980,7 +1980,7 @@ fm_backend_herdr_agent_alive() {  # <target>
 # --no-focus: verified tab create never focuses by default regardless of
 # sibling tabs, so this is defense in depth rather than a behavior change.
 # <seeded_default_tab_id> (4th arg, may be empty) is exactly the value
-# fm_backend_herdr_workspace_ensure captured as FM_BACKEND_HERDR_WS_SEEDED_TAB_ID
+# fm_backend_herdr_workspace_ensure captured as SQUAD_BACKEND_HERDR_WS_SEEDED_TAB_ID
 # for THIS SAME container - non-empty only when this spawn's own
 # container_ensure call just created the workspace. Once the real task tab
 # above is created, this is the ONLY input that may trigger a prune, and it is
@@ -2048,29 +2048,29 @@ EOF
 }
 
 # fm_backend_herdr_projection_create_task: create one disposable presentation
-# workspace and its normal fm-<id> task tab without looking up, adopting, or
+# workspace and its normal sq-<id> task tab without looking up, adopting, or
 # reusing any existing workspace.
 # The caller must atomically publish the projection journal first.
 # This function sets exact response-derived globals and prints nothing:
-#   FM_BACKEND_HERDR_PROJECTION_SESSION
-#   FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID
-#   FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID
-#   FM_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID
-#   FM_BACKEND_HERDR_PROJECTION_TAB_ID
-#   FM_BACKEND_HERDR_PROJECTION_PANE_ID
-#   FM_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE
+#   SQUAD_BACKEND_HERDR_PROJECTION_SESSION
+#   SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID
+#   SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID
+#   SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID
+#   SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID
+#   SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID
+#   SQUAD_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE
 # CLEANUP_SAFE becomes 1 only after both creates returned complete exact IDs.
 # A missing, failed, or malformed create response stays ambiguous and grants no
 # cleanup authority.
 fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-label>
   local cwd=$1 workspace_label=$2 task_label=$3 session out tabs panes tab_count pane_count focus_before
-  FM_BACKEND_HERDR_PROJECTION_SESSION=""
-  FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID=""
-  FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID=""
-  FM_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID=""
-  FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
-  FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
-  FM_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE=0
+  SQUAD_BACKEND_HERDR_PROJECTION_SESSION=""
+  SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE=0
 
   fm_backend_herdr_version_check || return 1
   session=$(fm_backend_herdr_session)
@@ -2091,13 +2091,13 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     return 1
   }
   # shellcheck disable=SC2034  # caller consumes the response-derived global
-  FM_BACKEND_HERDR_PROJECTION_SESSION=$session
-  FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
-  FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
-  FM_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
-  if [ -z "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" ] \
-     || [ -z "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" ] \
-     || [ -z "$FM_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID" ]; then
+  SQUAD_BACKEND_HERDR_PROJECTION_SESSION=$session
+  SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
+  SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
+  if [ -z "$SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" ] \
+     || [ -z "$SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" ] \
+     || [ -z "$SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_PANE_ID" ]; then
     echo "error: herdr presentation workspace create returned incomplete IDs; leaving its journal quarantined" >&2
     return 1
   fi
@@ -2107,7 +2107,7 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     return 1
   }
   if out=$(fm_backend_herdr_cli "$session" tab create \
-    --workspace "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
+    --workspace "$SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
     --cwd "$cwd" --label "$task_label" --no-focus 2>/dev/null); then
     :
   else
@@ -2119,22 +2119,22 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     echo "error: herdr presentation task-tab create did not preserve exact active focus; leaving its journal quarantined" >&2
     return 1
   }
-  FM_BACKEND_HERDR_PROJECTION_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
-  FM_BACKEND_HERDR_PROJECTION_PANE_ID=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
-  if [ -z "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" ] || [ -z "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" ]; then
+  SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
+  if [ -z "$SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID" ] || [ -z "$SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID" ]; then
     echo "error: herdr presentation task-tab create returned incomplete IDs; leaving its journal quarantined" >&2
     return 1
   fi
   # shellcheck disable=SC2034  # caller consumes the same-process cleanup gate
-  FM_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE=1
+  SQUAD_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE=1
   focus_before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
     echo "error: herdr presentation seeded-tab prune could not capture exact active workspace and tab; refusing a focus-unsafe prune" >&2
     return 1
   }
   if ! fm_backend_herdr_workspace_prune_seeded_default_tab \
     "$session" \
-    "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
-    "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
+    "$SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" \
+    "$SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
     focus-preserving; then
     echo "error: herdr presentation seeded-tab prune refused a focus-unsafe close; leaving its journal quarantined" >&2
     return 1
@@ -2144,11 +2144,11 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
     return 1
   }
 
-  tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" 2>/dev/null) || {
+  tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" 2>/dev/null) || {
     echo "error: could not verify the disposable herdr presentation workspace shape" >&2
     return 1
   }
-  panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$FM_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" 2>/dev/null) || {
+  panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$SQUAD_BACKEND_HERDR_PROJECTION_WORKSPACE_ID" 2>/dev/null) || {
     echo "error: could not verify the disposable herdr presentation pane shape" >&2
     return 1
   }
@@ -2160,11 +2160,11 @@ fm_backend_herdr_projection_create_task() {  # <cwd> <workspace-label> <task-lab
   tab_count=$(printf '%s' "$tabs" | jq -r '.result.tabs | length' 2>/dev/null)
   pane_count=$(printf '%s' "$panes" | jq -r '.result.panes | length' 2>/dev/null)
   if [ "$tab_count" != 1 ] || [ "$pane_count" != 1 ] \
-     || ! printf '%s' "$tabs" | jq -e --arg task "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
-       --arg seeded "$FM_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
+     || ! printf '%s' "$tabs" | jq -e --arg task "$SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID" \
+       --arg seeded "$SQUAD_BACKEND_HERDR_PROJECTION_SEEDED_TAB_ID" \
        '.result.tabs[0].tab_id == $task and ([.result.tabs[] | select(.tab_id == $seeded)] | length) == 0' >/dev/null 2>&1 \
-     || ! printf '%s' "$panes" | jq -e --arg pane "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" \
-       --arg tab "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
+     || ! printf '%s' "$panes" | jq -e --arg pane "$SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID" \
+       --arg tab "$SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID" \
        '.result.panes[0].pane_id == $pane and .result.panes[0].tab_id == $tab' >/dev/null 2>&1; then
     echo "error: disposable herdr presentation workspace did not converge to exactly one task pane" >&2
     return 1
@@ -2220,7 +2220,7 @@ fm_backend_herdr_projection_live_binding_matches() {  # <session> <token> <works
         and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
       def is_legacy_child_for($owner):
         (.label | type) == "string"
-        and (.label | test("^(firstmate|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"))
+        and (.label | test("^(Squad|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"))
         and (.label | startswith($owner + "/"));
       (.result.workspaces // null) as $spaces
       | select(($spaces | type) == "array")
@@ -2277,10 +2277,10 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-pane>
 fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd>
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
   local parent_label=$8 task_label=$9 cwd=${10} canonical_home state focus_before active_tab out new_tab new_pane info close_status
-  FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
-  FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID=""
+  SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID=""
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
-  if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" != 2 ]; then
+  if [ "$SQUAD_BACKEND_HERDR_JOURNAL_VERSION" != 2 ]; then
     echo "warning: herdr presentation journal for $id has no exact restart binding; spawning flat" >&2
     return 2
   fi
@@ -2288,21 +2288,21 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     echo "warning: herdr presentation home for $id could not be resolved exactly; spawning flat" >&2
     return 2
   }
-  if [ "$FM_BACKEND_HERDR_JOURNAL_HOME" != "$canonical_home" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" != "$session" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" != "$meta_workspace" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$meta_tab" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
+  if [ "$SQUAD_BACKEND_HERDR_JOURNAL_HOME" != "$canonical_home" ] \
+     || [ "$SQUAD_BACKEND_HERDR_JOURNAL_SESSION" != "$session" ] \
+     || [ "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" != "$meta_workspace" ] \
+     || [ "$SQUAD_BACKEND_HERDR_JOURNAL_TAB_ID" != "$meta_tab" ] \
+     || [ "$SQUAD_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
+     || [ "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
+     || [ "$SQUAD_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
     echo "warning: herdr presentation binding for $id does not match its exact home, endpoint, or parent; spawning flat" >&2
     return 2
   fi
   if ! fm_backend_herdr_projection_live_binding_matches \
-    "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
+    "$session" "$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
     "$meta_workspace" "$meta_tab" "$meta_pane" \
-    "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
+    "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
     echo "warning: herdr presentation binding for $id has an ambiguous, renamed, foreign, or non-nested live shape; spawning flat" >&2
     return 2
   fi
@@ -2382,7 +2382,7 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     if [ "$close_status" -eq 2 ]; then
       return 1
     fi
-    state=$FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE
+    state=$SQUAD_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE
     fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
     case "$state" in
       live|unknown)
@@ -2398,10 +2398,10 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     return 1
   fi
   if ! fm_backend_herdr_projection_live_binding_matches \
-    "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
+    "$session" "$SQUAD_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
     "$meta_workspace" "$new_tab" "$new_pane" \
-    "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
+    "$SQUAD_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
+    "$SQUAD_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
     fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
     echo "warning: herdr presentation reclaim for $id did not converge exactly; spawning flat" >&2
     return 2
@@ -2412,8 +2412,8 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     echo "warning: herdr presentation reclaim for $id could not publish its replacement binding; spawning flat" >&2
     return 2
   fi
-  FM_BACKEND_HERDR_PROJECTION_TAB_ID=$new_tab
-  FM_BACKEND_HERDR_PROJECTION_PANE_ID=$new_pane
+  SQUAD_BACKEND_HERDR_PROJECTION_TAB_ID=$new_tab
+  SQUAD_BACKEND_HERDR_PROJECTION_PANE_ID=$new_pane
   return 0
 }
 
@@ -2499,44 +2499,44 @@ fm_backend_herdr_projection_endpoint_matches_journal() {  # <session> <workspace
 
 # fm_backend_herdr_parse_target: split "<session>:<pane_id>" (pane_id itself
 # contains a colon, e.g. "w1:p2") on the FIRST colon only. Sets
-# FM_BACKEND_HERDR_SESSION and FM_BACKEND_HERDR_PANE for the caller.
+# SQUAD_BACKEND_HERDR_SESSION and SQUAD_BACKEND_HERDR_PANE for the caller.
 fm_backend_herdr_parse_target() {  # <target>
   local target=$1
-  FM_BACKEND_HERDR_SESSION=${target%%:*}
-  FM_BACKEND_HERDR_PANE=${target#*:}
-  [ -n "$FM_BACKEND_HERDR_SESSION" ] && [ -n "$FM_BACKEND_HERDR_PANE" ] && [ "$FM_BACKEND_HERDR_PANE" != "$target" ]
+  SQUAD_BACKEND_HERDR_SESSION=${target%%:*}
+  SQUAD_BACKEND_HERDR_PANE=${target#*:}
+  [ -n "$SQUAD_BACKEND_HERDR_SESSION" ] && [ -n "$SQUAD_BACKEND_HERDR_PANE" ] && [ "$SQUAD_BACKEND_HERDR_PANE" != "$target" ]
 }
 
 fm_backend_herdr_target_ready() {  # <target>
   fm_backend_herdr_parse_target "$1" || return 1
-  fm_backend_herdr_server_ensure "$FM_BACKEND_HERDR_SESSION" || return 1
+  fm_backend_herdr_server_ensure "$SQUAD_BACKEND_HERDR_SESSION" || return 1
 }
 
 # fm_backend_herdr_current_path: the live FOREGROUND process's cwd, or empty on
 # any error. Mirrors tmux's pane_current_path poll used for worktree-path
-# discovery after `treehouse get`.
+# discovery after `fob get`.
 #
 # Verified pitfall: `pane get`'s `.result.pane.cwd` is the pane's cwd AT
 # CREATION TIME - the top-level shell's cwd - and does NOT update when that
-# shell `cd`s or enters a subshell (as `treehouse get` does). Reading it here
-# would make fm-spawn.sh's worktree-discovery poll never see the pane "leave"
+# shell `cd`s or enters a subshell (as `fob get` does). Reading it here
+# would make sq-spawn.sh's worktree-discovery poll never see the pane "leave"
 # the project directory, since `cwd` stays frozen at the original path forever.
 # `.result.pane.foreground_cwd` tracks the ACTUALLY RUNNING foreground
-# process's cwd instead, which is what changes when `treehouse get` enters its
-# worktree subshell - confirmed live against a real treehouse acquisition.
+# process's cwd instead, which is what changes when `fob get` enters its
+# worktree subshell - confirmed live against a real fob acquisition.
 fm_backend_herdr_current_path() {  # <target>
   fm_backend_herdr_target_ready "$1" || return 0
-  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane get "$FM_BACKEND_HERDR_PANE" 2>/dev/null \
+  fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane get "$SQUAD_BACKEND_HERDR_PANE" 2>/dev/null \
     | jq -r '.result.pane.foreground_cwd // empty' 2>/dev/null
 }
 
 # fm_backend_herdr_send_text_line: send one line of TEXT then submit,
 # ATOMICALLY - mirrors tmux's `send-keys -t T text Enter`. Used for the fixed
-# spawn-time commands (treehouse get, the GOTMPDIR export). `pane run` types
+# spawn-time commands (fob get, the GOTMPDIR export). `pane run` types
 # the command and submits it in one call (verified).
 fm_backend_herdr_send_text_line() {  # <target> <text>
   fm_backend_herdr_target_ready "$1" || return 1
-  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane run "$FM_BACKEND_HERDR_PANE" "$2" >/dev/null 2>&1
+  fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane run "$SQUAD_BACKEND_HERDR_PANE" "$2" >/dev/null 2>&1
 }
 
 # fm_backend_herdr_send_literal: send TEXT as literal, UNSUBMITTED input - the
@@ -2545,11 +2545,11 @@ fm_backend_herdr_send_text_line() {  # <target> <text>
 # original guess); it behaves exactly like tmux's `-l` literal send.
 fm_backend_herdr_send_literal() {  # <target> <text>
   fm_backend_herdr_target_ready "$1" || return 1
-  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-text "$FM_BACKEND_HERDR_PANE" "$2" >/dev/null 2>&1
+  fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane send-text "$SQUAD_BACKEND_HERDR_PANE" "$2" >/dev/null 2>&1
 }
 
-# fm_backend_herdr_normalize_key: map firstmate's key vocabulary (Enter,
-# Escape, C-c, as used by fm-send.sh --key and stuck-crewmate-recovery) onto
+# fm_backend_herdr_normalize_key: map Squad's key vocabulary (Enter,
+# Escape, C-c, as used by sq-send.sh --key and stuck-operator-recovery) onto
 # herdr's `pane send-keys` names. Verified empirically: enter, escape/esc, and
 # both ctrl+c/C-c all work (case-insensitive on herdr's side, but normalize
 # explicitly rather than relying on that).
@@ -2558,24 +2558,24 @@ fm_backend_herdr_normalize_key() {  # <key>
     Enter|enter) printf 'enter' ;;
     Escape|escape|Esc|esc) printf 'escape' ;;
     C-c|c-c|ctrl+c|Ctrl+C) printf 'ctrl+c' ;;
-    # C-u clears a composer line. fm-send.sh's muse interrupt path needs it to
+    # C-u clears a composer line. sq-send.sh's muse interrupt path needs it to
     # drop the prompt muse restores into the composer after Escape.
     C-u|c-u|ctrl+u|Ctrl+U) printf 'ctrl+u' ;;
     *) printf '%s' "$1" ;;
   esac
 }
 
-# fm_backend_herdr_send_key: one named special key. Mirrors fm-send.sh's --key
+# fm_backend_herdr_send_key: one named special key. Mirrors sq-send.sh's --key
 # path (tmux's `send-keys -t T key`).
 fm_backend_herdr_send_key() {  # <target> <key>
   fm_backend_herdr_target_ready "$1" || return 1
   local key
   key=$(fm_backend_herdr_normalize_key "$2")
-  fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane send-keys "$FM_BACKEND_HERDR_PANE" "$key" >/dev/null 2>&1
+  fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane send-keys "$SQUAD_BACKEND_HERDR_PANE" "$key" >/dev/null 2>&1
 }
 
 # fm_backend_herdr_capture: bounded plain-text pane capture. Mirrors
-# fm-peek.sh's/fm-watch.sh's `tmux capture-pane -p -t T -S -N`. --source recent
+# sq-peek.sh's/sq-sentry.sh's `tmux capture-pane -p -t T -S -N`. --source recent
 # is the closest herdr analogue to tmux's scrollback-bounded capture.
 #
 # Verified CLI quirk (herdr-verification-p2.md "pane read --lines bug", v0.7.1):
@@ -2593,7 +2593,7 @@ fm_backend_herdr_capture() {  # <target> <lines>
   case "$lines" in ''|*[!0-9]*) lines=200 ;; esac
   fetch=$lines
   case "$fetch" in ''|*[!0-9]*) fetch=200 ;; *) [ "$fetch" -ge 200 ] || fetch=200 ;; esac
-  out=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane read "$FM_BACKEND_HERDR_PANE" --source recent --lines "$fetch" 2>/dev/null) || return 1
+  out=$(fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane read "$SQUAD_BACKEND_HERDR_PANE" --source recent --lines "$fetch" 2>/dev/null) || return 1
   printf '%s' "$out" | tail -n "$lines"
 }
 
@@ -2603,11 +2603,11 @@ fm_backend_herdr_capture_ansi() {  # <target> <lines>
   case "$lines" in ''|*[!0-9]*) lines=200 ;; esac
   fetch=$lines
   case "$fetch" in ''|*[!0-9]*) fetch=200 ;; *) [ "$fetch" -ge 200 ] || fetch=200 ;; esac
-  out=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane read "$FM_BACKEND_HERDR_PANE" --source recent --lines "$fetch" --format ansi 2>/dev/null) || return 1
+  out=$(fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane read "$SQUAD_BACKEND_HERDR_PANE" --source recent --lines "$fetch" --format ansi 2>/dev/null) || return 1
   printf '%s' "$out" | tail -n "$lines"
 }
 
-# Thin adapter over the shared plain-text stripper (bin/fm-composer-lib.sh),
+# Thin adapter over the shared plain-text stripper (bin/sq-composer-lib.sh),
 # used only for STRUCTURAL row/shape detection where ghost text must be kept so
 # the box border or bare prompt glyph is still visible. Content extraction uses
 # the shared fm_composer_strip_ghost instead.
@@ -2674,7 +2674,7 @@ fm_backend_herdr_strip_ansi() {  # <text>
 #
 # Ghost/placeholder note: herdr's ANSI pane read preserves the harness's own
 # de-emphasis styling, and the classifier extracts real typed content with the
-# shared fm_composer_strip_ghost (bin/fm-composer-lib.sh), which drops dim/faint
+# shared fm_composer_strip_ghost (bin/sq-composer-lib.sh), which drops dim/faint
 # runs (claude's rotating prompt suggestion, codex's idle suggestion after the
 # bare `›` prompt) AND dark/muted truecolor foreground runs (grok's placeholder),
 # while keeping non-de-emphasised real typed input. This is the same owner the
@@ -2682,26 +2682,26 @@ fm_backend_herdr_strip_ansi() {  # <text>
 # afk-herdr-false-pending); it superseded a herdr-only faint byte-pattern check
 # that recognized only codex's bold-wrapped bare prompt and missed claude's own
 # dim ghost - the overnight away-mode injection wedge on the primary claude pane.
-FM_BACKEND_HERDR_COMPOSER_LINES=${FM_BACKEND_HERDR_COMPOSER_LINES:-20}
+SQUAD_BACKEND_HERDR_COMPOSER_LINES=${SQUAD_BACKEND_HERDR_COMPOSER_LINES:-20}
 # Known ghost/placeholder composer text. Extend this if another
 # herdr-verified harness needs its own idle placeholder recognized.
-FM_BACKEND_HERDR_IDLE_RE=${FM_BACKEND_HERDR_IDLE_RE:-'^Type a message\.\.\.$'}
+SQUAD_BACKEND_HERDR_IDLE_RE=${SQUAD_BACKEND_HERDR_IDLE_RE:-'^Type a message\.\.\.$'}
 # Known bare (unbordered) prompt glyphs a composer row may start with: ❯
 # (claude) and › (codex) only. Generic shell-style glyphs > $ % # are still
 # recognized after a bordered composer row has already been structurally found.
 # Deliberately an alternation, not a `[...]` bracket expression: under a C/POSIX
-# locale (LC_CTYPE=C, the fleet default), grep's bracket expressions match
+# locale (LC_CTYPE=C, the unit default), grep's bracket expressions match
 # individual BYTES rather than whole multibyte characters, so `[❯›]` silently
 # decomposes into the shared leading UTF-8 byte (0xE2) and spuriously matches
 # ANY multibyte glyph in that range - including box-drawing corners like ╰,
 # misclassifying a bordered composer's bottom border row as the bare shape.
 # An alternation's branches are matched as whole literal byte sequences and
 # stay correct regardless of locale.
-FM_BACKEND_HERDR_BARE_PROMPT_RE=${FM_BACKEND_HERDR_BARE_PROMPT_RE:-'^(❯|›)'}
+SQUAD_BACKEND_HERDR_BARE_PROMPT_RE=${SQUAD_BACKEND_HERDR_BARE_PROMPT_RE:-'^(❯|›)'}
 # Pi allows a multi-line composer between its horizontal separators. Bound the
 # structural candidate so two unrelated transcript rules with an arbitrarily
 # large region between them can never be promoted into a composer.
-FM_BACKEND_HERDR_PI_COMPOSER_MAX_LINES=${FM_BACKEND_HERDR_PI_COMPOSER_MAX_LINES:-8}
+SQUAD_BACKEND_HERDR_PI_COMPOSER_MAX_LINES=${SQUAD_BACKEND_HERDR_PI_COMPOSER_MAX_LINES:-8}
 
 fm_backend_herdr_pi_separator_row() {  # <plain-row>
   local row=$1
@@ -2719,29 +2719,29 @@ fm_backend_herdr_pi_separator_row() {  # <plain-row>
 # composer content through command substitution.
 fm_backend_herdr_pi_composer_find() {  # <ansi-capture>
   local cap=$1 line plain open=0 lines=0 candidate="" max row=0 open_row=0
-  max=$FM_BACKEND_HERDR_PI_COMPOSER_MAX_LINES
+  max=$SQUAD_BACKEND_HERDR_PI_COMPOSER_MAX_LINES
   case "$max" in ''|*[!0-9]*|0) max=8 ;; esac
-  FM_BACKEND_HERDR_PI_PAIR_FOUND=0
-  FM_BACKEND_HERDR_PI_PAIR_VALID=0
-  FM_BACKEND_HERDR_PI_PAIR_OPEN_LINE=0
-  FM_BACKEND_HERDR_PI_PAIR_LINE=0
-  FM_BACKEND_HERDR_PI_LAST_SEPARATOR_LINE=0
-  FM_BACKEND_HERDR_PI_CONTENT=""
+  SQUAD_BACKEND_HERDR_PI_PAIR_FOUND=0
+  SQUAD_BACKEND_HERDR_PI_PAIR_VALID=0
+  SQUAD_BACKEND_HERDR_PI_PAIR_OPEN_LINE=0
+  SQUAD_BACKEND_HERDR_PI_PAIR_LINE=0
+  SQUAD_BACKEND_HERDR_PI_LAST_SEPARATOR_LINE=0
+  SQUAD_BACKEND_HERDR_PI_CONTENT=""
   while IFS= read -r line; do
     row=$((row + 1))
     plain=$(fm_backend_herdr_strip_ansi "$line")
     if fm_backend_herdr_pi_separator_row "$plain"; then
-      FM_BACKEND_HERDR_PI_LAST_SEPARATOR_LINE=$row
+      SQUAD_BACKEND_HERDR_PI_LAST_SEPARATOR_LINE=$row
       if [ "$open" -eq 1 ]; then
-        FM_BACKEND_HERDR_PI_PAIR_FOUND=1
-        FM_BACKEND_HERDR_PI_PAIR_OPEN_LINE=$open_row
-        FM_BACKEND_HERDR_PI_PAIR_LINE=$row
+        SQUAD_BACKEND_HERDR_PI_PAIR_FOUND=1
+        SQUAD_BACKEND_HERDR_PI_PAIR_OPEN_LINE=$open_row
+        SQUAD_BACKEND_HERDR_PI_PAIR_LINE=$row
         if [ "$lines" -le "$max" ]; then
-          FM_BACKEND_HERDR_PI_PAIR_VALID=1
-          FM_BACKEND_HERDR_PI_CONTENT=$candidate
+          SQUAD_BACKEND_HERDR_PI_PAIR_VALID=1
+          SQUAD_BACKEND_HERDR_PI_CONTENT=$candidate
         else
-          FM_BACKEND_HERDR_PI_PAIR_VALID=0
-          FM_BACKEND_HERDR_PI_CONTENT=""
+          SQUAD_BACKEND_HERDR_PI_PAIR_VALID=0
+          SQUAD_BACKEND_HERDR_PI_CONTENT=""
         fi
       fi
       open=1
@@ -2768,10 +2768,10 @@ fm_backend_herdr_composer_state() {  # <target> -> empty|pending|unknown
   local target=$1 session pane cap line trimmed found=0 shape="" raw_match="" bordered=0 stripped
   local identity agent agent_status row=0 generic_line=0
   fm_backend_herdr_parse_target "$target" || { printf 'unknown'; return 0; }
-  session=$FM_BACKEND_HERDR_SESSION
-  pane=$FM_BACKEND_HERDR_PANE
-  cap=$(fm_backend_herdr_capture_ansi "$target" "$FM_BACKEND_HERDR_COMPOSER_LINES" 2>/dev/null \
-    || fm_backend_herdr_capture "$target" "$FM_BACKEND_HERDR_COMPOSER_LINES") || { printf 'unknown'; return 0; }
+  session=$SQUAD_BACKEND_HERDR_SESSION
+  pane=$SQUAD_BACKEND_HERDR_PANE
+  cap=$(fm_backend_herdr_capture_ansi "$target" "$SQUAD_BACKEND_HERDR_COMPOSER_LINES" 2>/dev/null \
+    || fm_backend_herdr_capture "$target" "$SQUAD_BACKEND_HERDR_COMPOSER_LINES") || { printf 'unknown'; return 0; }
   # Structural scan: locate the bottom-most composer row and remember its RAW
   # (styled) bytes. Shape detection runs on the plain row (fm_backend_herdr_strip_ansi
   # keeps ghost text so the border/prompt glyph is still visible); the raw row is
@@ -2790,7 +2790,7 @@ fm_backend_herdr_composer_state() {  # <target> -> empty|pending|unknown
         found=1
         ;;
       *)
-        if printf '%s' "$trimmed" | grep -qE "$FM_BACKEND_HERDR_BARE_PROMPT_RE"; then
+        if printf '%s' "$trimmed" | grep -qE "$SQUAD_BACKEND_HERDR_BARE_PROMPT_RE"; then
           shape=bare
           raw_match=$line
           generic_line=$row
@@ -2804,18 +2804,18 @@ fm_backend_herdr_composer_state() {  # <target> -> empty|pending|unknown
   # row can never suppress the live Pi composer. Identity is consulted only when
   # a lower separator pair could change the verdict.
   fm_backend_herdr_pi_composer_find "$cap"
-  if [ "$FM_BACKEND_HERDR_PI_PAIR_FOUND" -eq 1 ] \
-     && [ "$FM_BACKEND_HERDR_PI_PAIR_LINE" -gt "$generic_line" ] \
-     && [ "$generic_line" -lt "$FM_BACKEND_HERDR_PI_PAIR_OPEN_LINE" ]; then
+  if [ "$SQUAD_BACKEND_HERDR_PI_PAIR_FOUND" -eq 1 ] \
+     && [ "$SQUAD_BACKEND_HERDR_PI_PAIR_LINE" -gt "$generic_line" ] \
+     && [ "$generic_line" -lt "$SQUAD_BACKEND_HERDR_PI_PAIR_OPEN_LINE" ]; then
     identity=$(fm_backend_herdr_agent_identity_raw "$session" "$pane" 2>/dev/null || true)
     IFS=$'\t' read -r agent agent_status <<EOF
 $identity
 EOF
     case "$agent:$agent_status" in
       pi:idle|pi:done|pi:blocked)
-        if [ "$FM_BACKEND_HERDR_PI_PAIR_VALID" -eq 1 ]; then
+        if [ "$SQUAD_BACKEND_HERDR_PI_PAIR_VALID" -eq 1 ]; then
           shape=separated
-          raw_match=$FM_BACKEND_HERDR_PI_CONTENT
+          raw_match=$SQUAD_BACKEND_HERDR_PI_CONTENT
           found=1
         else
           found=0
@@ -2828,15 +2828,15 @@ EOF
         ;;
       *) : ;; # A known non-Pi agent keeps its established generic verdict.
     esac
-  elif [ "$FM_BACKEND_HERDR_PI_PAIR_FOUND" -eq 0 ] \
-       && [ "$FM_BACKEND_HERDR_PI_LAST_SEPARATOR_LINE" -gt "$generic_line" ]; then
+  elif [ "$SQUAD_BACKEND_HERDR_PI_PAIR_FOUND" -eq 0 ] \
+       && [ "$SQUAD_BACKEND_HERDR_PI_LAST_SEPARATOR_LINE" -gt "$generic_line" ]; then
     # A lower unmatched separator proves the generic row is stale, but does
     # not provide the complete Pi composer structure required for injection.
     found=0
   fi
   [ "$found" -eq 1 ] || { printf 'unknown'; return 0; }
   # Content: extract the real typed text from the raw row with the shared,
-  # fleet-wide ghost stripper (bin/fm-composer-lib.sh), which drops dim/faint AND
+  # unit-wide ghost stripper (bin/sq-composer-lib.sh), which drops dim/faint AND
   # dark-truecolor ghost/placeholder runs. This replaces the former herdr-only
   # faint byte-pattern check (which recognized only Codex's bold-wrapped bare
   # prompt and missed claude's own dim prompt-suggestion ghost - the overnight
@@ -2860,10 +2860,10 @@ EOF
     bordered=1
   fi
   # Delegate the empty/pending/unknown decision to the shared owner. The bare
-  # shape only ever starts with an AGENT glyph (FM_BACKEND_HERDR_BARE_PROMPT_RE
+  # shape only ever starts with an AGENT glyph (SQUAD_BACKEND_HERDR_BARE_PROMPT_RE
   # is '^(❯|›)'), so a bare shell prompt never reaches here - it stays 'unknown'
   # via the no-composer-row path above, exactly as before.
-  fm_composer_classify_content "$bordered" "$stripped" "$FM_BACKEND_HERDR_IDLE_RE"
+  fm_composer_classify_content "$bordered" "$stripped" "$SQUAD_BACKEND_HERDR_IDLE_RE"
 }
 
 # fm_backend_herdr_send_text_submit: type <text> into <target> once (raw,
@@ -2919,7 +2919,7 @@ EOF
 #     residual chance it happens, the verdict is "pending" and the caller
 #     never retypes - only re-sends Enter, which lands on an already-empty
 #     composer and is a no-op, not a duplicate delivery of <text> (see
-#     fm-send.sh/fm-supervise-daemon.sh: retyping only happens if a caller
+#     sq-send.sh/sq-supervise-daemon.sh: retyping only happens if a caller
 #     re-invokes this function from scratch with the same text after seeing
 #     an error, which is a human/escalation decision, not an automatic
 #     retry).
@@ -2933,13 +2933,13 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
   fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
   sleep "$settle"
   baseline=$(fm_backend_herdr_classify_submit_agent_status \
-    "$(fm_backend_herdr_agent_status_raw "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")")
+    "$(fm_backend_herdr_agent_status_raw "$SQUAD_BACKEND_HERDR_SESSION" "$SQUAD_BACKEND_HERDR_PANE")")
   confirm_sleep=$(fm_backend_herdr_submit_confirm_budget "$sleep_s")
   while :; do
     fm_backend_herdr_send_key "$target" Enter || true
     if [ "$baseline" = idle ]; then
-      verdict=$(fm_backend_herdr_wait_for_working "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE" \
-        "$confirm_sleep" "$FM_BACKEND_HERDR_SUBMIT_POLLS")
+      verdict=$(fm_backend_herdr_wait_for_working "$SQUAD_BACKEND_HERDR_SESSION" "$SQUAD_BACKEND_HERDR_PANE" \
+        "$confirm_sleep" "$SQUAD_BACKEND_HERDR_SUBMIT_POLLS")
     else
       sleep "$sleep_s"
       verdict=$(fm_backend_herdr_composer_state "$target")
@@ -3016,11 +3016,11 @@ fm_backend_herdr_kill_serialized() {  # <session> <pane>
 
 fm_backend_herdr_kill() {  # <target>
   fm_backend_herdr_target_ready "$1" || return 0
-  local session=$FM_BACKEND_HERDR_SESSION pane=$FM_BACKEND_HERDR_PANE
+  local session=$SQUAD_BACKEND_HERDR_SESSION pane=$SQUAD_BACKEND_HERDR_PANE
   local lock_path attempt=0 lock_held=0
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-wake-lib.sh
-    . "$FM_BACKEND_HERDR_ROOT/bin/fm-wake-lib.sh"
+    # shellcheck source=bin/sq-stand-to-lib.sh
+    . "$SQUAD_BACKEND_HERDR_ROOT/bin/sq-stand-to-lib.sh"
   fi
   if lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session"); then
     while [ "$attempt" -lt 50 ]; do
@@ -3050,14 +3050,14 @@ fm_backend_herdr_kill() {  # <target>
 fm_backend_herdr_endpoint_confirmed_gone() {  # <target>
   local presence
   fm_backend_herdr_parse_target "$1" || return 1
-  presence=$(fm_backend_herdr_pane_presence_state "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")
+  presence=$(fm_backend_herdr_pane_presence_state "$SQUAD_BACKEND_HERDR_SESSION" "$SQUAD_BACKEND_HERDR_PANE")
   [ "$presence" = dead ]
 }
 
 # fm_backend_herdr_classify_agent_status: map a raw `agent get` agent_status
-# value to the adapter's watcher busy|idle|unknown vocabulary. working ->
+# value to the adapter's sentry busy|idle|unknown vocabulary. working ->
 # busy (actively generating); idle/done -> idle; blocked -> idle (a blocked
-# agent is stuck waiting on the human, not grinding - the watcher should
+# agent is stuck waiting on the human, not grinding - the sentry should
 # treat it like a stale pane needing attention, not suppress it as busy);
 # unknown/unparseable/empty -> unknown, the caller's cue to fall back to
 # pane-regex detection.
@@ -3101,7 +3101,7 @@ fm_backend_herdr_agent_status_raw() {  # <session> <pane_id>
 fm_backend_herdr_busy_state() {  # <target>
   fm_backend_herdr_target_ready "$1" || { printf 'unknown'; return 0; }
   fm_backend_herdr_classify_agent_status \
-    "$(fm_backend_herdr_agent_status_raw "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE")"
+    "$(fm_backend_herdr_agent_status_raw "$SQUAD_BACKEND_HERDR_SESSION" "$SQUAD_BACKEND_HERDR_PANE")"
 }
 
 # fm_backend_herdr_wait_for_working: poll <session>:<pane_id>'s NATIVE
@@ -3139,16 +3139,16 @@ fm_backend_herdr_busy_state() {  # <target>
 # close to that, but it is a residual risk, not a mathematical impossibility
 # (see the doc section for the full characterization and the failure-mode
 # analysis for both directions this must guard).
-# FM_BACKEND_HERDR_SUBMIT_POLLS (default 6): how many samples
+# SQUAD_BACKEND_HERDR_SUBMIT_POLLS (default 6): how many samples
 # fm_backend_herdr_send_text_submit spreads across each Enter attempt's
 # confirmation budget. Overridable for tests (a value of 1
 # reproduces the old single-check-at-the-end timing exactly, for byte-for-byte
 # call-count assertions).
-FM_BACKEND_HERDR_SUBMIT_POLLS=${FM_BACKEND_HERDR_SUBMIT_POLLS:-6}
-FM_BACKEND_HERDR_SUBMIT_MIN_SLEEP=${FM_BACKEND_HERDR_SUBMIT_MIN_SLEEP:-0.6}
+SQUAD_BACKEND_HERDR_SUBMIT_POLLS=${SQUAD_BACKEND_HERDR_SUBMIT_POLLS:-6}
+SQUAD_BACKEND_HERDR_SUBMIT_MIN_SLEEP=${SQUAD_BACKEND_HERDR_SUBMIT_MIN_SLEEP:-0.6}
 
 fm_backend_herdr_submit_confirm_budget() {  # <caller-budget-seconds>
-  awk -v b="${1:-0}" -v m="$FM_BACKEND_HERDR_SUBMIT_MIN_SLEEP" 'BEGIN {
+  awk -v b="${1:-0}" -v m="$SQUAD_BACKEND_HERDR_SUBMIT_MIN_SLEEP" 'BEGIN {
     b += 0
     m += 0
     if (b < 0) b = 0
@@ -3220,14 +3220,14 @@ EOF
 }
 
 # fm_backend_herdr_list_live: recovery/orphan discovery. Lists every tab whose
-# label looks like a firstmate task window (fm-<id>) in <session>'s, THIS
+# label looks like a Squad task window (sq-<id>) in <session>'s, THIS
 # HOME'S OWN workspace (fm_backend_herdr_workspace_label - never another
 # home's), by LABEL - never by trusting a stored pane id, since ids are not
 # guaranteed stable across every server lifecycle (see herdr-verification-p2.md
-# "ID stability"). A caller running as a given home (e.g. a secondmate
+# "ID stability"). A caller running as a given home (e.g. a XO
 # recovering its own in-flight work) naturally scopes to that home's own
-# workspace because FM_HOME already names it - no glue needed, unlike the
-# primary-spawns-a-secondmate path in fm-spawn.sh. Read-only: a session/
+# workspace because SQUAD_HOME already names it - no glue needed, unlike the
+# primary-spawns-a-XO path in sq-spawn.sh. Read-only: a session/
 # workspace that does not exist yet simply lists nothing. One
 # "<session>:<pane_id>\t<label>" line per live task tab.
 fm_backend_herdr_list_live() {  # <session>
@@ -3240,14 +3240,14 @@ fm_backend_herdr_list_live() {  # <session>
     pane_id=$(fm_backend_herdr_pane_for_tab "$session" "$wsid" "$tab_id") || continue
     [ -n "$pane_id" ] || continue
     printf '%s:%s\t%s\n' "$session" "$pane_id" "$label"
-  done < <(printf '%s' "$tabs" | jq -r '.result.tabs[]? | select(.label | startswith("fm-")) | "\(.tab_id)\t\(.label)"' 2>/dev/null)
+  done < <(printf '%s' "$tabs" | jq -r '.result.tabs[]? | select(.label | startswith("sq-")) | "\(.tab_id)\t\(.label)"' 2>/dev/null)
 }
 
 # --- native event push: pane.agent_status_changed subscriber -----------------
 #
 # The push half of the immediate blocked-state escalation (AGENTS.md section 8,
 # docs/herdr-backend.md "Native pane.agent_status_changed push escalation").
-# fm_backend_herdr_wait_transition is the watcher's bounded wait primitive for
+# fm_backend_herdr_wait_transition is the sentry's bounded wait primitive for
 # herdr homes: instead of a blind sleep, it blocks on herdr's native event
 # stream and returns the instant a subscribed pane transitions to `blocked`, so
 # a crew waiting on the human wakes its supervisor sub-second instead of after
@@ -3271,25 +3271,25 @@ fm_backend_herdr_socket_path() {  # <session>
 # fm_backend_herdr_events_capable: the version/capability gate for the event
 # fast-path (report section 5c trigger 1). Fails closed to the poll loop unless
 # ALL hold: herdr+jq present; the raw-socket reader available (python3, unless a
-# reader override is configured); client protocol >= FM_BACKEND_HERDR_MIN_EVENTS_PROTOCOL;
+# reader override is configured); client protocol >= SQUAD_BACKEND_HERDR_MIN_EVENTS_PROTOCOL;
 # and both `events.subscribe` and `pane.agent_status_changed` present in `herdr
-# api schema`. FM_BACKEND_HERDR_EVENTS_FORCE overrides the whole verdict for
+# api schema`. SQUAD_BACKEND_HERDR_EVENTS_FORCE overrides the whole verdict for
 # tests (1 = capable, 0 = incapable) without touching the real binary. The
-# `api schema` read is ~220KB, so callers (the watcher) memoize this per session
+# `api schema` read is ~220KB, so callers (the sentry) memoize this per session
 # for a process lifetime rather than probing every poll.
 fm_backend_herdr_events_capable() {  # <session>
   local session=$1 protocol schema
-  case "${FM_BACKEND_HERDR_EVENTS_FORCE:-}" in
+  case "${SQUAD_BACKEND_HERDR_EVENTS_FORCE:-}" in
     1) return 0 ;;
     0) return 1 ;;
   esac
   fm_backend_herdr_tool_check || return 1
-  if [ -z "${FM_BACKEND_HERDR_EVENT_READER:-}" ]; then
+  if [ -z "${SQUAD_BACKEND_HERDR_EVENT_READER:-}" ]; then
     command -v python3 >/dev/null 2>&1 || return 1
   fi
   protocol=$(herdr status --json 2>/dev/null | jq -r '.client.protocol // empty' 2>/dev/null)
   case "$protocol" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$protocol" -ge "$FM_BACKEND_HERDR_MIN_EVENTS_PROTOCOL" ] || return 1
+  [ "$protocol" -ge "$SQUAD_BACKEND_HERDR_MIN_EVENTS_PROTOCOL" ] || return 1
   schema=$(herdr api schema --json 2>/dev/null) || return 1
   printf '%s' "$schema" | grep -Fq 'events.subscribe' || return 1
   printf '%s' "$schema" | grep -Fq 'pane.agent_status_changed' || return 1
@@ -3308,27 +3308,27 @@ fm_backend_herdr_normalize_event() {  # <pane_id> <workspace_id> <agent_status> 
 
 # fm_backend_herdr_event_reader_cmd: emit the reader argv (one word per line) for
 # the raw-socket subscriber. Default: `python3 <this dir>/herdr-eventwait.py`.
-# FM_BACKEND_HERDR_EVENT_READER overrides it with a whitespace-split command so
+# SQUAD_BACKEND_HERDR_EVENT_READER overrides it with a whitespace-split command so
 # tests can substitute a fake reader that replays canned stream lines.
 fm_backend_herdr_event_reader_cmd() {
   local word
-  if [ -n "${FM_BACKEND_HERDR_EVENT_READER:-}" ]; then
-    for word in $FM_BACKEND_HERDR_EVENT_READER; do
+  if [ -n "${SQUAD_BACKEND_HERDR_EVENT_READER:-}" ]; then
+    for word in $SQUAD_BACKEND_HERDR_EVENT_READER; do
       printf '%s\n' "$word"
     done
     return 0
   fi
   printf 'python3\n'
-  printf '%s\n' "$FM_BACKEND_HERDR_ROOT/bin/backends/herdr-eventwait.py"
+  printf '%s\n' "$SQUAD_BACKEND_HERDR_ROOT/bin/backends/herdr-eventwait.py"
 }
 
 # fm_backend_herdr_escalation_marker: the per-pane dedupe marker path for a
-# <window> ("<session>:<pane_id>"), keyed identically to the watcher's
+# <window> ("<session>:<pane_id>"), keyed identically to the sentry's
 # .stale-<key> (tr ':/.' '___'), under <state_dir>.
 fm_backend_herdr_escalation_marker() {  # <state_dir> <window>
   local state=$1 window=$2 key
   key=$(printf '%s' "$window" | tr ':/.' '___')
-  printf '%s/%s%s' "$state" "$FM_BACKEND_HERDR_ESCALATED_PREFIX" "$key"
+  printf '%s/%s%s' "$state" "$SQUAD_BACKEND_HERDR_ESCALATED_PREFIX" "$key"
 }
 
 # fm_backend_herdr_apply_transition: route one normalized record through the
@@ -3339,7 +3339,7 @@ fm_backend_herdr_escalation_marker() {  # <state_dir> <window>
 # `absorb` (working) clears the marker and
 # returns 1. `defer`/`fallback`, and an already-marked `actionable`, return 1
 # with no output. <session> reconstructs the window ("<session>:<pane_id>") for
-# the marker key, matching the watcher's own key scheme.
+# the marker key, matching the sentry's own key scheme.
 fm_backend_herdr_apply_transition() {  # <state_dir> <session> <record>
   local state=$1 session=$2 record=$3 pane_id to action window marker
   pane_id=$(fm_transition_pane_id "$record")
@@ -3391,7 +3391,7 @@ fm_backend_herdr_wait_transition() {  # <session> <timeout_secs> <state_dir> <pa
   shift 3
   local windows=("$@")
   [ "${#windows[@]}" -gt 0 ] || return 2
-  if [ "${FM_BACKEND_EVENTS_CAPABILITY_CONFIRMED:-0}" != 1 ]; then
+  if [ "${SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED:-0}" != 1 ]; then
     fm_backend_herdr_events_capable "$session" || return 2
   fi
   local sock
@@ -3420,7 +3420,7 @@ fm_backend_herdr_wait_transition() {  # <session> <timeout_secs> <state_dir> <pa
   [ "${#reader[@]}" -gt 0 ] || return 2
 
   local fifo_dir fifo reader_pid line ws status agent raw record hit rc=1 reader_rc=0
-  fifo_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-herdr-eventwait.XXXXXX") || return 2
+  fifo_dir=$(mktemp -d "${TMPDIR:-/tmp}/sq-herdr-eventwait.XXXXXX") || return 2
   fifo="$fifo_dir/events"
   if ! mkfifo "$fifo" 2>/dev/null; then
     rm -rf "$fifo_dir" 2>/dev/null || true
@@ -3460,7 +3460,7 @@ fm_backend_herdr_wait_transition() {  # <session> <timeout_secs> <state_dir> <pa
   fi
 
   # Drain stream edges until a fresh blocked edge or the timeout. The reader is
-  # a subprocess of this call (NOT a second watcher), and is killed the instant
+  # a subprocess of this call (NOT a second sentry), and is killed the instant
   # a blocked edge is found.
   # Split each raw projected line (pane_id\tworkspace_id\tagent_status\tagent)
   # with `cut`, NOT `IFS=$'\t' read`: a tab is IFS-whitespace, so `read` would

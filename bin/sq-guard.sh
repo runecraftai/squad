@@ -1,57 +1,57 @@
 #!/usr/bin/env bash
 # Watcher liveness and worktree-tangle guard, called by supervision scripts, by
-# fm-wake-drain.sh after it empties queued wakes, and by fm-session-start.sh in
+# sq-stand-to-drain.sh after it empties queued wakes, and by sq-session-start.sh in
 # read-only advisory mode whenever session-lock ownership was not verified.
-# First, always warn if the firstmate primary checkout (FM_ROOT) is on a named
-# non-default branch, because that means firstmate-on-itself work landed in the
+# First, always warn if the Squad primary checkout (SQUAD_ROOT) is on a named
+# non-default branch, because that means Squad-on-itself work landed in the
 # primary instead of an isolated worktree.
 # Then, if a task is in flight (a state/<id>.meta exists) or X-mode relay
-# polling is active (state/x-watch.check.sh exists) and supervision is not
+# polling is active (state/x-sentry.check.sh exists) and supervision is not
 # healthy, prints a loud, clearly delimited banner so the agent cannot skim past
 # it in the tool output of whatever it was doing - the one channel every harness
-# has. Supervision health is MODEL-AWARE (fm_watcher_supervision_verdict in
-# bin/fm-wake-lib.sh): under the Claude Stop auto-arm model the watcher runs only
-# between turns, so mid-turn a fresh beacon with no live watcher is healthy and
-# only a stale beacon (beyond FM_GUARD_GRACE) is a genuine lapse; under every
-# persistent-watcher harness a live identity-matched watcher with a fresh beacon
+# has. Supervision health is MODEL-AWARE (fm_sentry_supervision_verdict in
+# bin/sq-stand-to-lib.sh): under the Claude Stop auto-arm model the sentry runs only
+# between turns, so mid-turn a fresh beacon with no live sentry is healthy and
+# only a stale beacon (beyond SQUAD_GUARD_GRACE) is a genuine lapse; under every
+# persistent-sentry harness a live identity-matched sentry with a fresh beacon
 # is required. The banner names the true failing condition (a missing live
-# watcher process vs a genuinely stale beacon). The full banner is emitted once
-# per distinct down-episode in this FM_HOME (keyed to the failing condition, not
-# the beacon mtime, which a healthy between-turns watcher advances every poll);
+# sentry process vs a genuinely stale beacon). The full banner is emitted once
+# per distinct down-episode in this SQUAD_HOME (keyed to the failing condition, not
+# the beacon mtime, which a healthy between-turns sentry advances every poll);
 # later guarded commands in the same episode print a one-line reminder instead.
-# Episode state lives only under state/.guard-watcher-stale-banner (volatile,
+# Episode state lives only under state/.guard-sentry-stale-banner (volatile,
 # bounded). Independent alarms (queued wakes, worktree tangle) are never
-# suppressed by that dedup. Normal wake handling (watcher briefly down between a
+# suppressed by that dedup. Normal wake handling (sentry briefly down between a
 # wake and the next supervision resume) stays inside the grace window and stays
 # silent. Always exits 0: the guard warns, it never blocks.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-WATCH="$SCRIPT_DIR/fm-watch.sh"
-GRACE=${FM_GUARD_GRACE:-300}
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+WATCH="$SCRIPT_DIR/sq-sentry.sh"
+GRACE=${SQUAD_GUARD_GRACE:-300}
 queue_pending=false
-READ_ONLY=${FM_GUARD_READ_ONLY:-0}
+READ_ONLY=${SQUAD_GUARD_READ_ONLY:-0}
 case "$READ_ONLY" in 1|true|TRUE|yes|YES) READ_ONLY=1 ;; *) READ_ONLY=0 ;; esac
-CONTINUE_LINE=${FM_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
+CONTINUE_LINE=${SQUAD_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
 
 # Volatile, home-scoped episode marker: one line = the current stale-episode key.
 # Cleared when the home leaves the unhealthy state so a later episode re-arms.
-STALE_BANNER_MARKER="$STATE/.guard-watcher-stale-banner"
+STALE_BANNER_MARKER="$STATE/.guard-sentry-stale-banner"
 
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-tangle-lib.sh
-. "$SCRIPT_DIR/fm-tangle-lib.sh"
-# shellcheck source=bin/fm-supervision-lib.sh
-. "$SCRIPT_DIR/fm-supervision-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-tangle-lib.sh
+. "$SCRIPT_DIR/sq-tangle-lib.sh"
+# shellcheck source=bin/sq-supervision-lib.sh
+. "$SCRIPT_DIR/sq-supervision-lib.sh"
 
 # Deterministic episode key from the qualitative down-state (the failing
 # condition), NOT the beacon mtime: under the auto-arm model a healthy
-# between-turns watcher advances that mtime every poll, which made the "same
+# between-turns sentry advances that mtime every poll, which made the "same
 # episode" key change every turn and re-print the full banner. Keying on the
 # failing condition keeps one continuous down-episode stable, while positive
 # recovery clears the marker (below) and re-arms the next episode.
@@ -65,8 +65,8 @@ fm_guard_stale_episode_key() {
 # re-check under the lock makes concurrent claims idempotent.
 fm_guard_claim_stale_banner() {
   local state=$1 key=$2
-  local marker="$state/.guard-watcher-stale-banner"
-  local lock="$state/.guard-watcher-stale-banner.lock"
+  local marker="$state/.guard-sentry-stale-banner"
+  local lock="$state/.guard-sentry-stale-banner.lock"
   local seen i
 
   seen=$(cat "$marker" 2>/dev/null || true)
@@ -105,7 +105,7 @@ fm_guard_claim_stale_banner() {
 
 fm_guard_stale_banner_seen() {
   local state=$1 key=$2
-  local marker="$state/.guard-watcher-stale-banner"
+  local marker="$state/.guard-sentry-stale-banner"
   local seen
 
   seen=$(cat "$marker" 2>/dev/null || true)
@@ -118,58 +118,58 @@ fm_guard_clear_stale_banner() {
 }
 
 # Worktree-tangle alarm, checked FIRST and independent of in-flight tasks: the
-# firstmate PRIMARY checkout (FM_ROOT) must stay on its default branch. If a
-# crewmate's branch/commits landed here instead of in its own isolated worktree,
+# Squad PRIMARY checkout (SQUAD_ROOT) must stay on its default branch. If a
+# operator's branch/commits landed here instead of in its own isolated worktree,
 # the primary is stranded on a feature branch - surface it loudly on the very next
-# fleet action, the same way the watcher-down banner does. Scoped to the primary
-# only: detached HEAD (linked worktrees, secondmate homes) never trips this.
-tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" || true)
+# unit action, the same way the sentry-down banner does. Scoped to the primary
+# only: detached HEAD (linked worktrees, XO homes) never trips this.
+tangle_branch=$(fm_primary_tangle_branch "$SQUAD_ROOT" || true)
 if [ -n "$tangle_branch" ]; then
-  tangle_default=$(fm_default_branch "$FM_ROOT" 2>/dev/null || echo main)
+  tangle_default=$(fm_default_branch "$SQUAD_ROOT" 2>/dev/null || echo main)
   trule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   {
     printf '●%s\n' "$trule"
     printf '●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH\n'
-    printf "●  %s is on '%s', not its default branch '%s'.\n" "$FM_ROOT" "$tangle_branch" "$tangle_default"
-    printf '●  A crewmate likely branched/committed in the primary instead of its own worktree.\n'
+    printf "●  %s is on '%s', not its default branch '%s'.\n" "$SQUAD_ROOT" "$tangle_branch" "$tangle_default"
+    printf '●  A operator likely branched/committed in the primary instead of its own worktree.\n'
     printf "●  The work is SAFE on the '%s' ref.\n" "$tangle_branch"
     if [ "$READ_ONLY" -eq 1 ]; then
-      printf '●  This read-only session must leave restore work to a session with verified fleet-lock ownership.\n'
+      printf '●  This read-only session must leave restore work to a session with verified unit-lock ownership.\n'
     else
       printf "●  Restore the primary to '%s':\n" "$tangle_default"
-      printf '●      git -C %s checkout %s\n' "$FM_ROOT" "$tangle_default"
+      printf '●      git -C %s checkout %s\n' "$SQUAD_ROOT" "$tangle_default"
       printf "●  then re-validate '%s' in a proper isolated worktree.\n" "$tangle_branch"
     fi
     printf '●%s\n' "$trule"
   } >&2
 fi
 
-# Compute supervision need and watcher-beacon freshness via the shared
-# grace-based predicate (bin/fm-supervision-lib.sh). Act when work, an event
+# Compute supervision need and sentry-beacon freshness via the shared
+# grace-based predicate (bin/sq-supervision-lib.sh). Act when work, an event
 # source, or an X-mode relay poll needs supervision.
 fm_supervision_status "$STATE" "$GRACE"
-in_flight=$FM_SUP_IN_FLIGHT
-sources=$FM_SUP_SOURCES
-needed=$FM_SUP_NEEDED
-beacon_desc=$FM_SUP_BEACON_DESC
-fm_watcher_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$FM_HOME"
-watcher_healthy=$FM_WATCHER_VERDICT_OK
-watcher_down_reason=$FM_WATCHER_VERDICT_REASON
+in_flight=$SQUAD_SUP_IN_FLIGHT
+sources=$SQUAD_SUP_SOURCES
+needed=$SQUAD_SUP_NEEDED
+beacon_desc=$SQUAD_SUP_BEACON_DESC
+fm_sentry_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"
+sentry_healthy=$SQUAD_SENTRY_VERDICT_OK
+sentry_down_reason=$SQUAD_SENTRY_VERDICT_REASON
 if [ "$needed" = false ]; then
-  # Leave the unhealthy state (nothing riding on the watcher): clear so a later
+  # Leave the unhealthy state (nothing riding on the sentry): clear so a later
   # work or X-mode need + stale combination is a fresh episode even if the
   # beacon is still absent with the same key string.
   [ "$READ_ONLY" -eq 1 ] || fm_guard_clear_stale_banner
   exit 0
 fi
 
-[ -s "$FM_WAKE_QUEUE" ] && queue_pending=true
+[ -s "$SQUAD_WAKE_QUEUE" ] && queue_pending=true
 
-# No fresh watcher with tasks in flight is the dangerous state: emit a prominent,
+# No fresh sentry with tasks in flight is the dangerous state: emit a prominent,
 # bordered banner FIRST so it reads as an alarm, not a buried stderr line. Later
 # calls in the same episode get a one-line reminder only.
-if [ "$watcher_healthy" = false ]; then
-  episode_key=$(fm_guard_stale_episode_key "$watcher_down_reason")
+if [ "$sentry_healthy" = false ]; then
+  episode_key=$(fm_guard_stale_episode_key "$sentry_down_reason")
   episode_key=${episode_key%$'\n'}
   print_full_banner=0
   if [ "$READ_ONLY" -eq 1 ]; then
@@ -184,39 +184,39 @@ if [ "$watcher_healthy" = false ]; then
     "$queue_pending" && queue_arg=1
     x_mode=0
     [ -f "$CONFIG/x-mode.env" ] && x_mode=1
-    fix=$("$SCRIPT_DIR/fm-supervision-instructions.sh" \
+    fix=$("$SCRIPT_DIR/sq-supervision-instructions.sh" \
       --read-only "$READ_ONLY" \
       --afk "$afk" \
       --x-mode "$x_mode" \
       --queue-pending "$queue_arg" \
-      --repair-line 2>/dev/null || printf '%s\n' 'Repair missing watcher supervision according to the session-start operating block.')
+      --repair-line 2>/dev/null || printf '%s\n' 'Repair missing sentry supervision according to the session-start operating block.')
     rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     {
       printf '●%s\n' "$rule"
       printf '●  WATCHER DOWN - SUPERVISION IS OFF\n'
-      if [ "$watcher_down_reason" = no-watcher ]; then
-        watcher_cause=$(printf 'no live watcher process holds this home lock (last beat: %s)' "$beacon_desc")
+      if [ "$sentry_down_reason" = no-sentry ]; then
+        sentry_cause=$(printf 'no live sentry process holds this home lock (last beat: %s)' "$beacon_desc")
       else
-        watcher_cause=$(printf 'no watcher has a fresh beacon (last beat: %s, grace %ss)' "$beacon_desc" "$GRACE")
+        sentry_cause=$(printf 'no sentry has a fresh beacon (last beat: %s, grace %ss)' "$beacon_desc" "$GRACE")
       fi
       if [ "$in_flight" -gt 0 ]; then
-        printf '●  %s task(s) in flight, but %s.\n' "$in_flight" "$watcher_cause"
+        printf '●  %s task(s) in flight, but %s.\n' "$in_flight" "$sentry_cause"
       elif [ "$sources" -gt 0 ]; then
-        printf '●  %s process-event source(s) registered, but %s.\n' "$sources" "$watcher_cause"
+        printf '●  %s process-event source(s) registered, but %s.\n' "$sources" "$sentry_cause"
       else
-        printf '●  X-mode relay polling needs supervision, but %s.\n' "$watcher_cause"
+        printf '●  X-mode relay polling needs supervision, but %s.\n' "$sentry_cause"
       fi
       if [ "$READ_ONLY" -eq 1 ]; then
         printf '●  This read-only session should report the lapse, not repair it.\n'
       else
-        printf '●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n'
+        printf '●  Trust the emitted supervision protocol for this harness; do not use shell & for sentry repair.\n'
       fi
       printf '●  %s\n' "$CONTINUE_LINE"
       printf '●  %s\n' "$fix"
       printf '●%s\n' "$rule"
     } >&2
   else
-    printf 'WARNING: watcher still down (same stale episode; last beat: %s, grace %ss) - full banner already printed this episode.\n' \
+    printf 'WARNING: sentry still down (same stale episode; last beat: %s, grace %ss) - full banner already printed this episode.\n' \
       "$beacon_desc" "$GRACE" >&2
   fi
 else
@@ -226,13 +226,13 @@ else
 fi
 
 # Queued wakes are an independent hazard; warn whenever they are pending, even if
-# a watcher is alive. Kept after the banner so the no-watcher alarm reads first.
-# Dedup of the watcher-down banner never suppresses this warning.
+# a sentry is alive. Kept after the banner so the no-sentry alarm reads first.
+# Dedup of the sentry-down banner never suppresses this warning.
 if "$queue_pending"; then
   if [ "$READ_ONLY" -eq 1 ]; then
-    echo "WARNING: queued wakes pending - left untouched because this session lacks verified fleet-lock ownership." >&2
+    echo "WARNING: queued wakes pending - left untouched because this session lacks verified unit-lock ownership." >&2
   else
-    echo "WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else." >&2
+    echo "WARNING: queued wakes pending - drain them with bin/sq-stand-to-drain.sh before anything else." >&2
   fi
 fi
 exit 0

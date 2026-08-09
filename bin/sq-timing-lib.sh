@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# fm-timing-lib.sh - the single owner of the deferred network stage's elapsed-time
+# sq-timing-lib.sh - the single owner of the deferred network stage's elapsed-time
 # instrumentation.
 #
 # Sourced, never executed.
 #
-# WHY THIS EXISTS. The deferred stage (bin/fm-startup-network.sh) publishes one
+# WHY THIS EXISTS. The deferred stage (bin/sq-startup-network.sh) publishes one
 # aggregate started/finished pair, so a run that took a minute could not be
 # attributed to a phase, a host, or a clone without re-running it by hand under
 # manual tracing. These helpers record per-step elapsed times as the run happens,
 # so the next slow run is answerable from the durable record alone.
 #
-# OFF BY DEFAULT, AND INERT. Every helper is a no-op unless FM_TIMING_LOG names a
+# OFF BY DEFAULT, AND INERT. Every helper is a no-op unless SQUAD_TIMING_LOG names a
 # file. Nothing here talks to the network, waits, locks, or changes control flow:
 # a failed append is discarded rather than propagated, because losing a diagnostic
 # line must never change what a sweep does or how it exits.
 #
 # ENVIRONMENT, both exported by the stage that owns a run:
-#   FM_TIMING_LOG       append-only record file. Unset or empty disables recording.
+#   SQUAD_TIMING_LOG       append-only record file. Unset or empty disables recording.
 #                       Exported across process boundaries on purpose: the phases
-#                       being measured run in bin/fm-bootstrap.sh and
-#                       bin/fm-fleet-sync.sh, which are children of the stage.
-#   FM_TIMING_EPOCH_MS  the run's start instant, so every record carries an offset
+#                       being measured run in bin/sq-bootstrap.sh and
+#                       bin/sq-unit-sync.sh, which are children of the stage.
+#   SQUAD_TIMING_EPOCH_MS  the run's start instant, so every record carries an offset
 #                       from ONE origin even though the records are written by
 #                       several processes. Defaults to the first recording
 #                       process's own start, which keeps a hand-run child readable.
@@ -30,7 +30,7 @@
 # Appends are single short lines opened O_APPEND, so concurrent writers interleave
 # whole lines rather than corrupting each other.
 #
-# NO SECRETS, BY CONSTRUCTION. `detail` names an identity - a secondmate id, a
+# NO SECRETS, BY CONSTRUCTION. `detail` names an identity - a XO id, a
 # host, a clone directory name - and identities never contain whitespace, while
 # the things that must never reach this file (a command line, an environment
 # dump, a captured error) always do. So a detail carrying ANY whitespace is not a
@@ -44,10 +44,10 @@
 # place.
 set -u
 
-FM_TIMING_DETAIL_MAX=${FM_TIMING_DETAIL_MAX:-80}
+SQUAD_TIMING_DETAIL_MAX=${SQUAD_TIMING_DETAIL_MAX:-80}
 
 fm_timing_enabled() {
-  [ -n "${FM_TIMING_LOG:-}" ]
+  [ -n "${SQUAD_TIMING_LOG:-}" ]
 }
 
 # Milliseconds since the epoch. EPOCHREALTIME is a bash builtin (no fork) whose
@@ -76,20 +76,20 @@ fm_timing_now_ms() {
   printf '%s\n' "$(( sec * 1000 ))"
 }
 
-# Ensure FM_TIMING_EPOCH_MS holds the origin every offset is measured from.
+# Ensure SQUAD_TIMING_EPOCH_MS holds the origin every offset is measured from.
 # Callers that own a run export it up front; a process that starts recording
 # without one adopts its own first measurement so its records stay internally
 # consistent instead of being silently dropped.
 #
 # This SETS the variable rather than printing it, because the caller must read it
-# as "$FM_TIMING_EPOCH_MS" and not through a command substitution: a substitution
+# as "$SQUAD_TIMING_EPOCH_MS" and not through a command substitution: a substitution
 # runs in a subshell, so the lazily chosen origin would be discarded and every
 # record would recompute it, flattening every start offset to zero.
 fm_timing_epoch_ensure() {
-  case "${FM_TIMING_EPOCH_MS:-}" in
+  case "${SQUAD_TIMING_EPOCH_MS:-}" in
     ''|*[!0-9]*)
-      FM_TIMING_EPOCH_MS=$(fm_timing_now_ms)
-      export FM_TIMING_EPOCH_MS
+      SQUAD_TIMING_EPOCH_MS=$(fm_timing_now_ms)
+      export SQUAD_TIMING_EPOCH_MS
       ;;
   esac
 }
@@ -101,9 +101,9 @@ fm_timing_start() {  # <file>
   local file=$1
   [ -n "$file" ] || return 0
   : > "$file" 2>/dev/null || return 0
-  FM_TIMING_LOG=$file
-  FM_TIMING_EPOCH_MS=$(fm_timing_now_ms)
-  export FM_TIMING_LOG FM_TIMING_EPOCH_MS
+  SQUAD_TIMING_LOG=$file
+  SQUAD_TIMING_EPOCH_MS=$(fm_timing_now_ms)
+  export SQUAD_TIMING_LOG SQUAD_TIMING_EPOCH_MS
 }
 
 fm_timing_sanitize() {  # <text>
@@ -112,7 +112,7 @@ fm_timing_sanitize() {  # <text>
     *[[:space:]]*) printf '%s\n' 'unrecordable'; return 0 ;;
   esac
   text=${text//[!A-Za-z0-9._@:\/+-]/_}
-  printf '%s\n' "${text:0:$FM_TIMING_DETAIL_MAX}"
+  printf '%s\n' "${text:0:$SQUAD_TIMING_DETAIL_MAX}"
 }
 
 # Record one measured step. Never fails the caller: a missing log, an unwritable
@@ -123,14 +123,14 @@ fm_timing_record() {  # <scope> <name> <start-ms> [detail]
   case "$start" in ''|*[!0-9]*) return 0 ;; esac
   now=$(fm_timing_now_ms)
   fm_timing_epoch_ensure
-  offset=$(( start - FM_TIMING_EPOCH_MS ))
+  offset=$(( start - SQUAD_TIMING_EPOCH_MS ))
   [ "$offset" -ge 0 ] || offset=0
   elapsed=$(( now - start ))
   [ "$elapsed" -ge 0 ] || elapsed=0
   printf 'v1\t%s\t%s\t%s\t%s\t%s\n' \
     "$(fm_timing_sanitize "$scope")" "$(fm_timing_sanitize "$name")" \
     "$offset" "$elapsed" "$(fm_timing_sanitize "$detail")" \
-    >> "$FM_TIMING_LOG" 2>/dev/null || true
+    >> "$SQUAD_TIMING_LOG" 2>/dev/null || true
   return 0
 }
 

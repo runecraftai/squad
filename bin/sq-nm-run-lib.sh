@@ -2,8 +2,8 @@
 # Shared no-mistakes axi run attribution primitives.
 #
 # ONE owner for the branch+code-identity matching rule that decides whether a
-# no-mistakes run belongs to a given worktree, used by fm-crew-state.sh
-# (read-only current-state reporting) and fm-teardown.sh (pre-teardown run
+# no-mistakes run belongs to a given worktree, used by sq-crew-state.sh
+# (read-only current-state reporting) and sq-teardown.sh (pre-teardown run
 # abort, see its "Fix 1" header comment). Getting this wrong in either
 # direction is unsafe: a false negative hides a genuinely parked run, and a
 # false positive lets teardown act on a run it does not own.

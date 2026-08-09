@@ -3,13 +3,13 @@
 # Prints two words to stdout: "<mode> <yolo>" where mode is one of
 # no-mistakes|direct-PR|local-only and yolo is on|off.
 #
-# MECHANICAL CONSUMERS ONLY. This answers "what posture did the captain register
+# MECHANICAL CONSUMERS ONLY. This answers "what posture did the commander register
 # for this project", never "how does this task ship". A task's delivery mode and
-# yolo are resolved by firstmate at intake and passed explicitly to
-# bin/fm-brief.sh, bin/fm-spawn.sh, and bin/fm-promote.sh (AGENTS.md section 7).
-# The consumers are bin/fm-fleet-sync.sh (skip local-only clones),
-# bin/fm-home-seed.sh (refuse local-only seeding, run no-mistakes init), and
-# bin/fm-spawn.sh's advisory registry-deviation notice.
+# yolo are resolved by Squad at intake and passed explicitly to
+# bin/sq-brief.sh, bin/sq-spawn.sh, and bin/sq-promote.sh (AGENTS.md section 7).
+# The consumers are bin/sq-unit-sync.sh (skip local-only clones),
+# bin/sq-home-seed.sh (refuse local-only seeding, run no-mistakes init), and
+# bin/sq-spawn.sh's advisory registry-deviation notice.
 #
 # Registry line format (data/projects.md):
 #   - <name> - <desc> (added <date>)                  -> no-mistakes off  (legacy default)
@@ -20,35 +20,35 @@
 #   no-mistakes            full pipeline -> PR -> configured merge authority (default)
 #   direct-PR              push + PR via gh-axi, no pipeline
 #   local-only             local branch, no remote/PR, guarded local merge
-#   no-mistakes-prod-only  a conditional policy, not a task mode: firstmate
+#   no-mistakes-prod-only  a conditional policy, not a task mode: Squad
 #                          classifies each task's surface at intake (the
 #                          project-management skill owns that classification).
 #                          Mechanical output maps it to its most rigorous leg,
 #                          no-mistakes, so sync, seeding, and init treat such a
 #                          project as the remote-backed pipeline project it is.
-# yolo (orthogonal) = when on, firstmate may make routine approval decisions itself.
+# yolo (orthogonal) = when on, Squad may make routine approval decisions itself.
 #   AGENTS.md section 7 is the single owner of authority exceptions, including
-#   ask-user contract expansion and stronger captain boundaries.
+#   ask-user contract expansion and stronger commander boundaries.
 #
 # --raw prints the registered annotation unmapped, so a caller that must tell a
 # conditional policy apart from a flat mode sees "no-mistakes-prod-only" itself.
 #
 # An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
 # to stderr, so a typo never silently drops the gate.
-# Usage: fm-project-mode.sh [--raw] <project-name>
+# Usage: sq-project-mode.sh [--raw] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
 REG="$DATA/projects.md"
 RAW=0
 if [ "${1:-}" = "--raw" ]; then
   RAW=1
   shift
 fi
-NAME=${1:?usage: fm-project-mode.sh [--raw] <project-name>}
+NAME=${1:?usage: sq-project-mode.sh [--raw] <project-name>}
 
 if [ ! -f "$REG" ]; then
   echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2

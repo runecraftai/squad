@@ -2,22 +2,22 @@
 # Apply one primary-authoritative inherited item inside the selected remote home.
 #
 # Usage:
-#   fm-remote-inherit.sh put <allowlisted-relative-path> <bytes> <sha256> <generation> < stdin
-#   fm-remote-inherit.sh absent <allowlisted-relative-path> 0 <empty-sha256> <generation>
+#   sq-remote-inherit.sh put <allowlisted-relative-path> <bytes> <sha256> <generation> < stdin
+#   sq-remote-inherit.sh absent <allowlisted-relative-path> 0 <empty-sha256> <generation>
 #
 # Only the inherited-material allowlist is writable or removable. Writes are
-# atomic ordinary-file replacements. Divergent data/captain-shared.md bytes are
+# atomic ordinary-file replacements. Divergent data/commander-shared.md bytes are
 # quarantined before replacement or removal and its converged copy is read-only.
 set -eu
 
-FM_HOME=${FM_HOME:?FM_HOME is required}
+SQUAD_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
 MAX_BYTES=1048576
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-config-inherit-lib.sh
-. "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-config-inherit-lib.sh
+. "$SCRIPT_DIR/sq-config-inherit-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -28,7 +28,7 @@ sha256_file() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi
 }
 # Writable set, derived from the ONE declared inherited-material owner
-# (FM_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh), so this code root's
+# (SQUAD_INHERITABLE_CONFIG in bin/sq-config-inherit-lib.sh), so this code root's
 # receiver and sender cannot drift silently. This runs under the remote
 # entrypoint's fixed empty environment, so the declaration is this code root's
 # own, never something the caller can widen over SSH; a caller from a different
@@ -58,13 +58,13 @@ case "$EXPECTED_HASH" in ''|*[!A-Fa-f0-9]*) die "expected SHA-256 is invalid" ;;
 EXPECTED_HASH=$(printf '%s' "$EXPECTED_HASH" | tr 'A-F' 'a-f')
 case "$GENERATION" in ''|*[!0-9]*) die "generation must be a positive integer" ;; esac
 [ "${#GENERATION}" -le 18 ] && [ "$GENERATION" -ge 1 ] || die "generation is outside the supported range"
-HOME_REAL=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || die "FM_HOME is unavailable"
+HOME_REAL=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
 PARENT="$HOME_REAL/$(dirname "$REL")"
-# The captain accepts this config/data parent TOCTOU within Firstmate's single-user trust boundary.
+# The commander accepts this config/data parent TOCTOU within Squad's single-user trust boundary.
 [ ! -L "$PARENT" ] || die "inherited destination parent is a symlink"
 mkdir -p "$PARENT" || die "cannot create inherited destination parent"
 PARENT_REAL=$(CDPATH='' cd -- "$PARENT" && pwd -P)
-case "$PARENT_REAL" in "$HOME_REAL/config"|"$HOME_REAL/data") ;; *) die "inherited destination escapes FM_HOME" ;; esac
+case "$PARENT_REAL" in "$HOME_REAL/config"|"$HOME_REAL/data") ;; *) die "inherited destination escapes SQUAD_HOME" ;; esac
 DEST="$PARENT_REAL/$(basename "$REL")"
 [ ! -L "$DEST" ] || die "inherited destination is a symlink"
 if [ -e "$DEST" ]; then
@@ -73,8 +73,8 @@ if [ -e "$DEST" ]; then
 fi
 
 BASE=$(basename "$REL")
-LOCK="$PARENT_REAL/.fm-inherit-$BASE.lock"
-GENERATION_FILE="$PARENT_REAL/.fm-inherit-$BASE.generation"
+LOCK="$PARENT_REAL/.sq-inherit-$BASE.lock"
+GENERATION_FILE="$PARENT_REAL/.sq-inherit-$BASE.generation"
 fm_lock_acquire_wait "$LOCK" || die "cannot lock inherited destination"
 TMP=
 GENERATION_TMP=
@@ -124,15 +124,15 @@ commit_generation() {
 
 quarantine_shared() {
   local reason=$1 quarantine stamp base n=0
-  [ "$REL" = data/captain-shared.md ] && [ -f "$DEST" ] || return 0
+  [ "$REL" = data/commander-shared.md ] && [ -f "$DEST" ] || return 0
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  base="$HOME_REAL/data/captain-shared.md.remote-quarantine-$stamp-$$"
+  base="$HOME_REAL/data/commander-shared.md.remote-quarantine-$stamp-$$"
   quarantine=$base
   while [ -e "$quarantine" ] || [ -L "$quarantine" ]; do
     n=$((n + 1))
     quarantine="$base.$n"
   done
-  cp -p -- "$DEST" "$quarantine" || die "cannot quarantine divergent shared captain preferences"
+  cp -p -- "$DEST" "$quarantine" || die "cannot quarantine divergent shared commander preferences"
   chmod 600 "$quarantine" || die "cannot secure shared-preference quarantine"
   printf 'quarantined: %s (%s)\n' "${quarantine#"$HOME_REAL/"}" "$reason" >&2
 }
@@ -148,7 +148,7 @@ case "$COMMAND" in
     [ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || die "inherited material digest does not match its commitment"
     commit_generation
     if [ -f "$DEST" ] && cmp -s "$TMP" "$DEST"; then
-      [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
+      [ "$REL" != data/commander-shared.md ] || chmod 444 "$DEST"
       printf 'unchanged: %s\n' "$REL"
       exit 0
     fi
@@ -156,7 +156,7 @@ case "$COMMAND" in
     chmod 600 "$TMP" || die "cannot secure inherited material"
     mv -f -- "$TMP" "$DEST" || die "cannot publish inherited material"
     TMP=
-    [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
+    [ "$REL" != data/commander-shared.md ] || chmod 444 "$DEST"
     printf 'pushed: %s\n' "$REL"
     ;;
   absent)

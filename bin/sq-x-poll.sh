@@ -2,11 +2,11 @@
 # One short-poll of the relay connector for a pending X-mode mention.
 #
 # Inert by default: a HARD no-op (exit 0, no output) unless X mode is configured
-# via a non-empty FMX_PAIRING_TOKEN (from the home's .env or the environment).
-# The watcher invokes this trusted repository script directly only after
-# state/x-watch.check.sh matches the expected byte-static identity shim.
-# Its contract is "output => wake firstmate, silence => keep sleeping", so the
-# no-op keeps the watcher behaving exactly as today until a user opts in.
+# via a non-empty SQX_PAIRING_TOKEN (from the home's .env or the environment).
+# The sentry invokes this trusted repository script directly only after
+# state/x-sentry.check.sh matches the expected byte-static identity shim.
+# Its contract is "output => wake Squad, silence => keep sleeping", so the
+# no-op keeps the sentry behaving exactly as today until a user opts in.
 #
 # Behavior when X mode is on:
 #   HTTP 204 / empty / missing text              -> print nothing, exit 0 (no wake)
@@ -15,7 +15,7 @@
 #       state/x-inbox/<request_id>.json, record the durable per-request reply
 #       context to state/x-context/<request_id>.json (best-effort), atomically
 #       claim state/x-context/<request_id>.offered.json, and print one compact
-#       line "x-mention <request_id>" (which becomes the watcher wake payload)
+#       line "x-mention <request_id>" (which becomes the sentry wake payload)
 #   an already offered request_id                -> print nothing, exit 0
 #   a new set of unreconciled public-followup terminal results -> print one
 #       "public-followup ..." line BEFORE the relay call, so a promised final
@@ -27,38 +27,38 @@
 # backlog scan. A home with no pending terminal results pays nothing for it.
 # The full object is stashed verbatim, so any conversation context the relay
 # includes (in_reply_to: {author_handle, text}, null for a fresh mention) is
-# preserved for fmx-respond to handle follow-ups with continuity. The durable
+# preserved for relay-respond to handle follow-ups with continuity. The durable
 # context record lets a delayed follow-up recover the ORIGINAL platform/budget
 # even after this inbox file is drained.
 #
-# Config (home .env, FMX_ENV_FILE, or env): FMX_PAIRING_TOKEN (required),
-# FMX_RELAY_URL (default https://myfirstmate.io). Auth: Authorization: Bearer
+# Config (home .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN (required),
+# SQX_RELAY_URL (default https://mySquad.io). Auth: Authorization: Bearer
 # <token>.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-# shellcheck source=bin/fm-public-followup-lib.sh
-# Also brings in bin/fm-x-lib.sh, which this script's relay client uses.
-. "$SCRIPT_DIR/fm-public-followup-lib.sh"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+# shellcheck source=bin/sq-public-followup-lib.sh
+# Also brings in bin/sq-x-lib.sh, which this script's relay client uses.
+. "$SCRIPT_DIR/sq-public-followup-lib.sh"
 
 fmx_load_config
 # Hard no-op when X mode is off: this is what keeps the check shim inert.
-[ -n "$FMX_TOKEN" ] || exit 0
+[ -n "$SQX_TOKEN" ] || exit 0
 
 # Unreconciled terminal results for a public commitment are actionable even when
 # the relay has no new mention, and they outlive any session, so surface them
 # first. The signature compare keeps this to one wake per new result set instead
-# of one per cycle; bin/fm-public-followup.sh consume clears it.
+# of one per cycle; bin/sq-public-followup.sh consume clears it.
 if fm_pf_has_events "$STATE"; then
   PF_ROOT=$(fm_pf_root "$STATE")
   PF_SIG=$(fm_pf_events_signature "$STATE" 2>/dev/null) || PF_SIG=
   if [ -n "$PF_SIG" ] \
-    && [ "$(cat "$PF_ROOT/$FM_PF_SURFACED_BASENAME" 2>/dev/null || true)" != "$PF_SIG" ]; then
+    && [ "$(cat "$PF_ROOT/$SQUAD_PF_SURFACED_BASENAME" 2>/dev/null || true)" != "$PF_SIG" ]; then
     if printf '%s\n' "$PF_SIG" \
-      | fmx_private_artifact_publish_stdin "$PF_ROOT" "$FM_PF_SURFACED_BASENAME" 600 2>/dev/null; then
+      | fmx_private_artifact_publish_stdin "$PF_ROOT" "$SQUAD_PF_SURFACED_BASENAME" 600 2>/dev/null; then
       printf 'public-followup terminal results are waiting to be reconciled\n'
     fi
   fi
@@ -104,18 +104,18 @@ command -v jq   >/dev/null 2>&1 || { emit_error_once "missing jq"; exit 0; }
 
 fmx_context_registry_prune "$STATE"
 
-BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-x-poll.XXXXXX") || exit 0
+BODY_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-x-poll.XXXXXX") || exit 0
 AUTH_HEADER_FILE=
 trap 'rm -f "$BODY_FILE" "$AUTH_HEADER_FILE"' EXIT
 AUTH_HEADER_FILE=$(fmx_auth_header_file) || { emit_error_once "invalid token"; exit 0; }
 
 # Short, bounded poll: a failure or timeout simply means "no wake this cycle";
-# the next check cycle retries. -m 5 keeps this well inside the watcher's
+# the next check cycle retries. -m 5 keeps this well inside the sentry's
 # per-check timeout so the supervision loop is never starved.
 code=$(curl -m 5 -s -o "$BODY_FILE" -w '%{http_code}' \
   -H "@$AUTH_HEADER_FILE" \
   -H 'Accept: application/json' \
-  "$FMX_RELAY/connector/poll" 2>/dev/null) || exit 0
+  "$SQX_RELAY/connector/poll" 2>/dev/null) || exit 0
 
 # 204 (nothing pending) is the common path; only 200 can carry a mention.
 case "$code" in
@@ -130,7 +130,7 @@ REQ=$(jq -r '.request_id // empty' "$BODY_FILE" 2>/dev/null) || exit 0
 [ -n "$REQ" ] || { clear_error; exit 0; }
 
 # A pending mention only reaches the agent when it has non-empty text.
-# Semantic worthiness is decided by fmx-respond, so acknowledgments can still be
+# Semantic worthiness is decided by relay-respond, so acknowledgments can still be
 # stashed here and deliberately skipped there.
 # Empty/absent/null text must not stash an inbox file or wake a public X flow for
 # nothing - stay inert (exit 0).
@@ -143,7 +143,7 @@ case "$REQ" in
   ''|.*|*[!A-Za-z0-9._-]*) clear_error; exit 0 ;;
 esac
 
-# The offer marker outlives the inbox file, which fmx-respond removes after a
+# The offer marker outlives the inbox file, which relay-respond removes after a
 # successful answer or dismiss. Checking it before the inbox stash keeps both a
 # still-pending request and the relay's brief post-answer re-offer silent without
 # recreating a drained inbox. The startup prune above bounds marker retention.

@@ -1,48 +1,48 @@
 #!/usr/bin/env bash
-# Register and provision a whole secondmate home on an SSH-reachable host.
+# Register and provision a whole XO home on an SSH-reachable host.
 #
 # Usage:
-#   fm-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects}
+#   sq-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects}
 #
 # The SSH alias must already reach a host whose non-interactive PATH exposes the
-# fixed fm-remote-entrypoint.sh from <remote-root>. The command records the
-# remote host dimension in data/secondmates.md, gates the host on
-# fm-remote-doctor.sh readiness before touching it, sends a bounded provisioning
-# manifest through fm-on.sh, and lets the remote host clone its own Firstmate
+# fixed sq-remote-entrypoint.sh from <remote-root>. The command records the
+# remote host dimension in data/XOs.md, gates the host on
+# sq-remote-doctor.sh readiness before touching it, sends a bounded provisioning
+# manifest through sq-on.sh, and lets the remote host clone its own Squad
 # home and project origins. No project tree or secret environment is copied.
 #
-# Each project needs an origin the remote account can clone. Firstmate resolves
+# Each project needs an origin the remote account can clone. Squad resolves
 # that origin and names it as <project>=<origin-url>, so seeding never requires
 # a clone of that project in this home; a bare <project> is accepted only when
 # this home already has projects/<project>, whose origin is then read instead.
-# bin/fm-project-origin-lib.sh owns which URLs are accepted, and this home's
+# bin/sq-project-origin-lib.sh owns which URLs are accepted, and this home's
 # data/projects.md still owns the project's registered delivery mode, so an
 # unregistered or local-only project is refused rather than provisioned.
-# Seeding writes nothing under projects/ and needs no fleet sync first.
+# Seeding writes nothing under projects/ and needs no unit sync first.
 #
 # Known provisioning failure rolls the registry back. SSH status 255 preserves
 # the route and any newly scaffolded brief because completion is unknown and a same-route rerun converges.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-REG="$DATA/secondmates.md"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+REG="$DATA/XOs.md"
 MAX_MANIFEST_BYTES=1048576
 
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-secondmate-charter-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-charter-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-remote-readiness-lib.sh
-. "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
-# shellcheck source=bin/fm-project-origin-lib.sh
-. "$SCRIPT_DIR/fm-project-origin-lib.sh"
+# shellcheck source=bin/sq-xo-registry-lib.sh
+. "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-xo-charter-lib.sh
+. "$SCRIPT_DIR/sq-xo-charter-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-remote-readiness-lib.sh
+. "$SCRIPT_DIR/sq-remote-readiness-lib.sh"
+# shellcheck source=bin/sq-project-origin-lib.sh
+. "$SCRIPT_DIR/sq-project-origin-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -67,7 +67,7 @@ HOST=$2
 REMOTE_ROOT=$3
 REMOTE_HOME=$4
 shift 4
-safe_id "$ID" || die "invalid secondmate id: $ID"
+safe_id "$ID" || die "invalid XO id: $ID"
 case "$HOST" in ''|-*|*[!A-Za-z0-9._-]*) die "invalid SSH config alias: $HOST" ;; esac
 for path in "$REMOTE_ROOT" "$REMOTE_HOME"; do
   case "$path" in /*) ;; *) die "remote root and home must be absolute paths" ;; esac
@@ -105,20 +105,20 @@ else
 fi
 
 mkdir -p "$STATE" || die "cannot create parent state directory"
-REGISTRY_LOCK=$(secondmate_registry_lock_path "$STATE")
-fm_lock_acquire_wait "$REGISTRY_LOCK" || die "cannot lock the secondmate registry"
+REGISTRY_LOCK=$(XO_registry_lock_path "$STATE")
+fm_lock_acquire_wait "$REGISTRY_LOCK" || die "cannot lock the XO registry"
 REGISTRY_LOCK_HELD=1
 
 if [ -e "$REG" ] || [ -L "$REG" ]; then
-  [ -f "$REG" ] && [ ! -L "$REG" ] || die "secondmate registry is unavailable or unsafe: $REG"
-  secondmate_registry_validate_bindings "$REG" secondmate_registry_path_key \
-    || die "$SECONDMATE_REGISTRY_ERROR"
-  if secondmate_registry_line_for_id "$REG" "$ID"; then
-    [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ] \
-      && [ "$SECONDMATE_REGISTRY_HOST" = "$HOST" ] \
-      && [ "$SECONDMATE_REGISTRY_ROOT" = "$REMOTE_ROOT" ] \
-      && [ "$SECONDMATE_REGISTRY_HOME" = "$REMOTE_HOME" ] \
-      || die "secondmate $ID is already registered to a different local or remote home"
+  [ -f "$REG" ] && [ ! -L "$REG" ] || die "XO registry is unavailable or unsafe: $REG"
+  XO_registry_validate_bindings "$REG" XO_registry_path_key \
+    || die "$XO_REGISTRY_ERROR"
+  if XO_registry_line_for_id "$REG" "$ID"; then
+    [ "$XO_REGISTRY_REMOTE" -eq 1 ] \
+      && [ "$XO_REGISTRY_HOST" = "$HOST" ] \
+      && [ "$XO_REGISTRY_ROOT" = "$REMOTE_ROOT" ] \
+      && [ "$XO_REGISTRY_HOME" = "$REMOTE_HOME" ] \
+      || die "XO $ID is already registered to a different local or remote home"
   fi
 fi
 
@@ -126,23 +126,23 @@ mkdir -p "$DATA"
 BRIEF="$DATA/$ID/brief.md"
 BRIEF_CREATED=0
 if [ ! -f "$BRIEF" ]; then
-  [ -n "${FM_SECONDMATE_CHARTER:-}" ] || die "no filled charter at $BRIEF; set FM_SECONDMATE_CHARTER or scaffold one first"
+  [ -n "${SQUAD_XO_CHARTER:-}" ] || die "no filled charter at $BRIEF; set SQUAD_XO_CHARTER or scaffold one first"
   if [ "$NO_PROJECTS" -eq 1 ]; then
-    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate --no-projects >/dev/null
+    "$SCRIPT_DIR/sq-brief.sh" "$ID" --XO --no-projects >/dev/null
   else
-    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate "${PROJECT_NAMES[@]}" >/dev/null
+    "$SCRIPT_DIR/sq-brief.sh" "$ID" --XO "${PROJECT_NAMES[@]}" >/dev/null
   fi
   BRIEF_CREATED=1
 fi
 if grep -F '{TASK}' "$BRIEF" >/dev/null 2>&1; then
   [ "$BRIEF_CREATED" -eq 0 ] || rm -f -- "$BRIEF"
-  die "secondmate charter still contains {TASK}: $BRIEF"
+  die "XO charter still contains {TASK}: $BRIEF"
 fi
 SUMMARY=$(registry_summary_for_brief "$BRIEF")
 SCOPE=$(registry_scope_for_brief "$BRIEF")
 [ -n "$SUMMARY" ] && [ -n "$SCOPE" ] || die "charter summary and routing scope must be nonempty"
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-home-seed.XXXXXX") || die "cannot create seed staging directory"
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-remote-home-seed.XXXXXX") || die "cannot create seed staging directory"
 REG_EXISTED=0
 [ -f "$REG" ] && { cp "$REG" "$TMP/registry.before"; REG_EXISTED=1; }
 
@@ -160,7 +160,7 @@ PROJECT_INDEX=0
 for project in "${PROJECT_NAMES[@]}"; do
   ORIGIN=${PROJECT_ORIGINS[$PROJECT_INDEX]}
   PROJECT_INDEX=$((PROJECT_INDEX + 1))
-  MODE_LINE=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-project-mode.sh" "$project")
+  MODE_LINE=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-project-mode.sh" "$project")
   read -r MODE _ <<EOF
 $MODE_LINE
 EOF
@@ -190,12 +190,12 @@ EOF
 done
 
 {
-  printf 'schema=fm-remote-home-provision.v1\n'
+  printf 'schema=sq-remote-home-provision.v1\n'
   printf 'id_b64=%s\n' "$(printf '%s' "$ID" | encode)"
   printf 'charter_b64=%s\n' "$(encode < "$TMP/charter.remote")"
   # The SSH alias reaching this host from the parent's own config, carried
   # only so the remote-provisioned home can record durably that its parent
-  # lives on another machine (bin/fm-teardown.sh's cleanup gate). It is
+  # lives on another machine (bin/sq-teardown.sh's cleanup gate). It is
   # diagnostic identity, never a route the remote host could use to reach
   # back; the parent's real filesystem path is never sent, since it names
   # nothing on the remote filesystem.
@@ -208,14 +208,14 @@ MANIFEST_BYTES=$(LC_ALL=C wc -c < "$TMP/manifest" | tr -d ' ')
   || die "remote provisioning manifest exceeds the $MAX_MANIFEST_BYTES-byte bound"
 
 TODAY=$(date +%F)
-REG_TMP="$TMP/secondmates.next"
+REG_TMP="$TMP/XOs.next"
 if [ -f "$REG" ]; then grep -vE "^- $ID( |$)" "$REG" > "$REG_TMP" || true; else : > "$REG_TMP"; fi
 printf -- '- %s - %s (host: %s; root: %s; home: %s; scope: %s; projects: %s; added %s)\n' \
   "$ID" "$SUMMARY" "$HOST" "$REMOTE_ROOT" "$REMOTE_HOME" "$SCOPE" "$PROJECTS_CSV" "$TODAY" >> "$REG_TMP"
 mv -f -- "$REG_TMP" "$REG"
-if ! secondmate_registry_validate_bindings "$REG" secondmate_registry_path_key "$ID" "$REMOTE_HOME"; then
+if ! XO_registry_validate_bindings "$REG" XO_registry_path_key "$ID" "$REMOTE_HOME"; then
   if [ "$REG_EXISTED" -eq 1 ]; then cp "$TMP/registry.before" "$REG"; else rm -f -- "$REG"; fi
-  die "$SECONDMATE_REGISTRY_ERROR"
+  die "$XO_REGISTRY_ERROR"
 fi
 
 restore_registry_and_brief() {
@@ -234,15 +234,15 @@ if [ "$PREFLIGHT_RC" -ne 0 ]; then
   if [ "$PREFLIGHT_RC" -ne 255 ]; then
     restore_registry_and_brief
   fi
-  [ -z "$FM_REMOTE_READINESS_OUT" ] || printf '%s\n' "$FM_REMOTE_READINESS_OUT" >&2
+  [ -z "$SQUAD_REMOTE_READINESS_OUT" ] || printf '%s\n' "$SQUAD_REMOTE_READINESS_OUT" >&2
   if [ "$PREFLIGHT_RC" -eq 255 ]; then
     die "remote readiness completion is unknown; route and brief preserved for same-host reconciliation"
   fi
-  die "remote runtime preflight failed; nothing was provisioned. Close the gaps listed above, or update the remote code root if it predates the current fm-remote-doctor.sh"
+  die "remote runtime preflight failed; nothing was provisioned. Close the gaps listed above, or update the remote code root if it predates the current sq-remote-doctor.sh"
 fi
 
 set +e
-PROVISION_OUT=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-home-provision.sh < "$TMP/manifest" 2>&1)
+PROVISION_OUT=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-home-provision.sh < "$TMP/manifest" 2>&1)
 PROVISION_RC=$?
 set -e
 if [ "$PROVISION_RC" -ne 0 ]; then

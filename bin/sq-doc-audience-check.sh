@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# fm-doc-audience-check.sh - validate the tracked documentation audience inventory.
+# sq-doc-audience-check.sh - validate the tracked documentation audience inventory.
 #
 # Usage:
-#   bin/fm-doc-audience-check.sh
-#   bin/fm-doc-audience-check.sh --root <repo> [--inventory <path>]
+#   bin/sq-doc-audience-check.sh
+#   bin/sq-doc-audience-check.sh --root <repo> [--inventory <path>]
 #
 # The inventory owns classification and setup routing.
 # This check validates structure only and does not keyword-lint prose.
@@ -247,7 +247,7 @@ def validate(root: Path, inventory_path: Path) -> tuple[int, int]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate Firstmate documentation audiences and local links.")
+    parser = argparse.ArgumentParser(description="Validate Squad documentation audiences and local links.")
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--inventory", type=Path)
     args = parser.parse_args()
@@ -258,9 +258,9 @@ def main() -> int:
     try:
         surfaces, links = validate(root, inventory_path)
     except CheckError as exc:
-        print(f"fm-doc-audience-check: {exc}", file=sys.stderr)
+        print(f"sq-doc-audience-check: {exc}", file=sys.stderr)
         return 1
-    print(f"fm-doc-audience-check: ok surfaces={surfaces} local_links={links}")
+    print(f"sq-doc-audience-check: ok surfaces={surfaces} local_links={links}")
     return 0
 
 

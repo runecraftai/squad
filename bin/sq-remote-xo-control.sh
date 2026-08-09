@@ -1,65 +1,65 @@
 #!/usr/bin/env bash
-# Host-local lifecycle control for the remote secondmate home selected by fm-on.
+# Host-local lifecycle control for the remote XO home selected by sq-on.
 #
 # Usage:
-#   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
-#   fm-remote-secondmate-control.sh state <id>
-#   fm-remote-secondmate-control.sh route <id>
-#   fm-remote-secondmate-control.sh send <id> <message>
-#   fm-remote-secondmate-control.sh key <id> <key>
-#   fm-remote-secondmate-control.sh capture <id> [lines]
-#   fm-remote-secondmate-control.sh observe <id>
-#   fm-remote-secondmate-control.sh sync <id>
-#   fm-remote-secondmate-control.sh update <id>
-#   fm-remote-secondmate-control.sh retire <id> [--force]
+#   sq-remote-XO-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
+#   sq-remote-XO-control.sh state <id>
+#   sq-remote-XO-control.sh route <id>
+#   sq-remote-XO-control.sh send <id> <message>
+#   sq-remote-XO-control.sh key <id> <key>
+#   sq-remote-XO-control.sh capture <id> [lines]
+#   sq-remote-XO-control.sh observe <id>
+#   sq-remote-XO-control.sh sync <id>
+#   sq-remote-XO-control.sh update <id>
+#   sq-remote-XO-control.sh retire <id> [--force]
 #
 # Remote placement ends here, but the second-mate agent always runs on the
-# Herdr backend in the dedicated fm-remote session, so launch refuses any other
+# Herdr backend in the dedicated sq-remote session, so launch refuses any other
 # selection rather than reading this home's config/backend. The interactive
 # default session remains for the user's work.
-# fm-spawn/fm-send/fm-teardown keep owning the local endpoint mechanics.
+# sq-spawn/sq-send/sq-teardown keep owning the local endpoint mechanics.
 # The home's own workers keep their ordinary backend selection.
-# bin/fm-remote-doctor.sh owns that host's readiness for Herdr.
-# docs/remote-secondmates.md owns why.
-# A private parent-route state directory stores only the remote secondmate
+# bin/sq-remote-doctor.sh owns that host's readiness for Herdr.
+# docs/remote-XOs.md owns why.
+# A private parent-route state directory stores only the remote XO
 # agent's endpoint record; the home's own
-# state/*.meta remains reserved for workers the secondmate supervises.
-# Retirement closes only this secondmate's panes or workspace and never
-# stops fm-remote or removes a sibling secondmate's workspace or panes.
+# state/*.meta remains reserved for workers the XO supervises.
+# Retirement closes only this XO's panes or workspace and never
+# stops sq-remote or removes a sibling XO's workspace or panes.
 #
 # The optional launch traceparent is the per-task W3C trace-context carrier the
-# PARENT home resolved for this secondmate; this host only delivers it to the
-# pane, and fm-spawn validates it (bin/fm-trace-context-lib.sh). Omitting it is
+# PARENT home resolved for this XO; this host only delivers it to the
+# pane, and sq-spawn validates it (bin/sq-trace-context-lib.sh). Omitting it is
 # the default-off path. print_route echoes the carrier the endpoint actually
 # holds, including for an already-alive endpoint that was not relaunched, so the
 # parent records the identity the agent really received rather than an intent.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-TARGET_HOME=${FM_HOME:?FM_HOME is required}
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+TARGET_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
 CONTROL_STATE="$TARGET_HOME/state/parent-route"
 CONTROL_DATA="$TARGET_HOME/data/.parent-route"
-REMOTE_HERDR_SESSION=fm-remote
+REMOTE_HERDR_SESSION=sq-remote
 
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-pending-reply-lib.sh
-. "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-pending-reply-lib.sh
+. "$SCRIPT_DIR/sq-pending-reply-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac; }
+validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid XO id: $1" ;; esac; }
 
 validate_home() { # <id> [allow-absent]
   local id=$1 allow_absent=${2:-no} marker
   if [ ! -e "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ] && [ "$allow_absent" = yes ]; then return 2; fi
-  [ -d "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ] || die "remote secondmate home is unavailable or unsafe"
-  [ -f "$TARGET_HOME/.fm-secondmate-home" ] && [ ! -L "$TARGET_HOME/.fm-secondmate-home" ] \
-    || die "remote home is not a seeded secondmate home"
-  marker=$(cat "$TARGET_HOME/.fm-secondmate-home")
+  [ -d "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ] || die "remote XO home is unavailable or unsafe"
+  [ -f "$TARGET_HOME/.sq-xo-home" ] && [ ! -L "$TARGET_HOME/.sq-xo-home" ] \
+    || die "remote home is not a seeded XO home"
+  marker=$(cat "$TARGET_HOME/.sq-xo-home")
   [ "$marker" = "$id" ] || die "remote home belongs to $marker, not $id"
-  [ -f "$TARGET_HOME/AGENTS.md" ] && [ -d "$TARGET_HOME/bin" ] || die "remote home is not a Firstmate checkout"
+  [ -f "$TARGET_HOME/AGENTS.md" ] && [ -d "$TARGET_HOME/bin" ] || die "remote home is not a Squad checkout"
 }
 
 meta_path() { printf '%s/%s.meta\n' "$CONTROL_STATE" "$1"; }
@@ -69,24 +69,24 @@ remote_endpoint_load() {
   REMOTE_ENDPOINT_ERROR=
   REMOTE_ENDPOINT_META=$(meta_path "$id")
   if ! fm_backend_validate_task_endpoint "$REMOTE_ENDPOINT_META" "$id" 2>/dev/null; then
-    REMOTE_ENDPOINT_ERROR="remote secondmate $id endpoint metadata is invalid; refusing access until it is explicitly migrated"
+    REMOTE_ENDPOINT_ERROR="remote XO $id endpoint metadata is invalid; refusing access until it is explicitly migrated"
     return 1
   fi
-  REMOTE_ENDPOINT_BACKEND=$FM_BACKEND_VALIDATED_BACKEND
-  REMOTE_ENDPOINT_TARGET=$FM_BACKEND_VALIDATED_TARGET
+  REMOTE_ENDPOINT_BACKEND=$SQUAD_BACKEND_VALIDATED_BACKEND
+  REMOTE_ENDPOINT_TARGET=$SQUAD_BACKEND_VALIDATED_TARGET
   if [ "$REMOTE_ENDPOINT_BACKEND" != herdr ]; then
-    REMOTE_ENDPOINT_ERROR="remote secondmate $id endpoint is recorded on backend '$REMOTE_ENDPOINT_BACKEND', expected 'herdr'; refusing access until it is explicitly migrated"
+    REMOTE_ENDPOINT_ERROR="remote XO $id endpoint is recorded on backend '$REMOTE_ENDPOINT_BACKEND', expected 'herdr'; refusing access until it is explicitly migrated"
     return 1
   fi
   herdr_session=$(fm_backend_meta_exact_value "$REMOTE_ENDPOINT_META" herdr_session 2>/dev/null || true)
   if [ "$herdr_session" != "$REMOTE_HERDR_SESSION" ]; then
-    REMOTE_ENDPOINT_ERROR="remote secondmate $id endpoint is recorded in Herdr session '${herdr_session:-missing}', expected '$REMOTE_HERDR_SESSION'; refusing access until it is explicitly migrated"
+    REMOTE_ENDPOINT_ERROR="remote XO $id endpoint is recorded in Herdr session '${herdr_session:-missing}', expected '$REMOTE_HERDR_SESSION'; refusing access until it is explicitly migrated"
     return 1
   fi
   case "$REMOTE_ENDPOINT_TARGET" in
     "$REMOTE_HERDR_SESSION":?*) ;;
     *)
-      REMOTE_ENDPOINT_ERROR="remote secondmate $id endpoint target '$REMOTE_ENDPOINT_TARGET' is outside Herdr session '$REMOTE_HERDR_SESSION'; refusing access until it is explicitly migrated"
+      REMOTE_ENDPOINT_ERROR="remote XO $id endpoint target '$REMOTE_ENDPOINT_TARGET' is outside Herdr session '$REMOTE_HERDR_SESSION'; refusing access until it is explicitly migrated"
       return 1
       ;;
   esac
@@ -113,7 +113,7 @@ print_route() { # <id>
   remote_endpoint_require "$id"
   harness=$(fm_meta_get "$REMOTE_ENDPOINT_META" harness)
   traceparent=$(fm_meta_get "$REMOTE_ENDPOINT_META" traceparent)
-  printf 'schema=fm-remote-secondmate-control.v1\n'
+  printf 'schema=sq-remote-XO-control.v1\n'
   printf 'backend=%s\n' "$REMOTE_ENDPOINT_BACKEND"
   printf 'target=%s\n' "$REMOTE_ENDPOINT_TARGET"
   printf 'herdr_session=%s\n' "$REMOTE_HERDR_SESSION"
@@ -127,7 +127,7 @@ cmd_route() {
   validate_home "$id"
   meta=$(meta_path "$id")
   if [ ! -f "$meta" ] || [ -L "$meta" ]; then
-    die "remote secondmate has no endpoint metadata"
+    die "remote XO has no endpoint metadata"
   fi
   print_route "$id"
 }
@@ -138,12 +138,12 @@ cmd_launch() {
 
   validate_id "$id"
   validate_home "$id"
-  case "$harness" in claude|codex|opencode|pi|pi-signed|grok|kimi) ;; *) die "unverified remote secondmate harness: $harness" ;; esac
-  case "$effort" in -|low|medium|high|xhigh|max) ;; *) die "invalid remote secondmate effort: $effort" ;; esac
+  case "$harness" in claude|codex|opencode|pi|pi-signed|grok|kimi) ;; *) die "unverified remote XO harness: $harness" ;; esac
+  case "$effort" in -|low|medium|high|xhigh|max) ;; *) die "invalid remote XO effort: $effort" ;; esac
   # Herdr is required on this host, not merely preferred: its server belongs to
   # the GUI login session, so the endpoint survives every SSH disconnection that
-  # a remote route depends on. bin/fm-remote-doctor.sh is the readiness owner.
-  case "$selected_backend" in herdr) ;; *) die "a remote secondmate runs only on the herdr backend, not '$selected_backend'" ;; esac
+  # a remote route depends on. bin/sq-remote-doctor.sh is the readiness owner.
+  case "$selected_backend" in herdr) ;; *) die "a remote XO runs only on the herdr backend, not '$selected_backend'" ;; esac
   mkdir -p "$CONTROL_STATE" "$CONTROL_DATA"
   meta=$(meta_path "$id")
   if [ -f "$meta" ]; then
@@ -162,16 +162,16 @@ cmd_launch() {
       *) die "remote endpoint state is $current; refusing duplicate launch" ;;
     esac
   fi
-  ARGS=("$id" "$TARGET_HOME" --secondmate --harness "$harness" --backend "$selected_backend")
+  ARGS=("$id" "$TARGET_HOME" --XO --harness "$harness" --backend "$selected_backend")
   [ "$model" = - ] || ARGS+=(--model "$model")
   [ "$effort" = - ] || ARGS+=(--effort "$effort")
   [ -z "$traceparent" ] || ARGS+=(--traceparent "$traceparent")
-  if ! out=$(HERDR_SESSION="$REMOTE_HERDR_SESSION" FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
-    FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
-    FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_SKIP_SECONDMATE_INHERIT=1 \
-    "$SCRIPT_DIR/fm-spawn.sh" "${ARGS[@]}" 2>&1); then
+  if ! out=$(HERDR_SESSION="$REMOTE_HERDR_SESSION" SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    SQUAD_STATE_OVERRIDE="$CONTROL_STATE" SQUAD_DATA_OVERRIDE="$CONTROL_DATA" \
+    SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" SQUAD_SKIP_XO_INHERIT=1 \
+    "$SCRIPT_DIR/sq-spawn.sh" "${ARGS[@]}" 2>&1); then
     [ -z "$out" ] || printf '%s\n' "$out" >&2
-    die "remote host-local secondmate launch failed"
+    die "remote host-local XO launch failed"
   fi
   [ -f "$meta" ] || die "remote launch returned without endpoint metadata"
   herdr_session=$(fm_meta_get "$meta" herdr_session)
@@ -185,8 +185,8 @@ cmd_send() {
   validate_id "$id"
   validate_home "$id"
   remote_endpoint_require "$id"
-  FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$TARGET_HOME/state" \
-    "$SCRIPT_DIR/fm-send.sh" "$REMOTE_ENDPOINT_TARGET" "$message"
+  SQUAD_HOME="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
+    "$SCRIPT_DIR/sq-send.sh" "$REMOTE_ENDPOINT_TARGET" "$message"
 }
 
 cmd_key() {
@@ -194,8 +194,8 @@ cmd_key() {
   validate_id "$id"
   validate_home "$id"
   remote_endpoint_require "$id"
-  FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$TARGET_HOME/state" \
-    "$SCRIPT_DIR/fm-send.sh" "$REMOTE_ENDPOINT_TARGET" --key "$key"
+  SQUAD_HOME="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
+    "$SCRIPT_DIR/sq-send.sh" "$REMOTE_ENDPOINT_TARGET" --key "$key"
 }
 
 cmd_capture() {
@@ -205,7 +205,7 @@ cmd_capture() {
   case "$lines" in ''|*[!0-9]*|0) die "capture line count must be positive" ;; esac
   [ "$lines" -le 100 ] || die "capture line count exceeds 100"
   remote_endpoint_require "$id"
-  fm_backend_capture "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$lines" "fm-$id" | head -c 65536
+  fm_backend_capture "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$lines" "sq-$id" | head -c 65536
 }
 
 cmd_observe() {
@@ -214,7 +214,7 @@ cmd_observe() {
   validate_home "$id"
   remote_endpoint_require "$id"
   harness=$(fm_meta_get "$REMOTE_ENDPOINT_META" harness)
-  fm_pending_reply_backend_observation "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "fm-$id" "$harness"
+  fm_pending_reply_backend_observation "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "sq-$id" "$harness"
   printf '\n'
 }
 
@@ -223,21 +223,21 @@ cmd_sync() {
   validate_id "$id"
   validate_home "$id"
   target=$TARGET_HOME
-  dirty=$(git -C "$target" status --porcelain 2>/dev/null | awk '$0 != "?? .fm-secondmate-home" { print; exit }')
-  [ -z "$dirty" ] || die "remote secondmate checkout is dirty; sync skipped"
-  head=$(git -C "$FM_ROOT" rev-parse HEAD 2>/dev/null) || die "remote code root HEAD is unreadable"
+  dirty=$(git -C "$target" status --porcelain 2>/dev/null | awk '$0 != "?? .sq-xo-home" { print; exit }')
+  [ -z "$dirty" ] || die "remote XO checkout is dirty; sync skipped"
+  head=$(git -C "$SQUAD_ROOT" rev-parse HEAD 2>/dev/null) || die "remote code root HEAD is unreadable"
   current=$(git -C "$target" rev-parse HEAD 2>/dev/null) || die "remote home HEAD is unreadable"
   if [ "$current" = "$head" ]; then
     printf 'current: %s\n' "$head"
     return 0
   fi
   if ! git -C "$target" cat-file -e "$head^{commit}" 2>/dev/null; then
-    git -C "$target" fetch --quiet --no-tags "$FM_ROOT" "$head" \
+    git -C "$target" fetch --quiet --no-tags "$SQUAD_ROOT" "$head" \
       || die "remote home could not import the code-root commit"
   fi
   git -C "$target" cat-file -e "$head^{commit}" 2>/dev/null || die "remote home does not contain the code-root commit"
-  git -C "$target" merge-base --is-ancestor HEAD "$head" || die "remote secondmate checkout is not a fast-forward"
-  git -C "$target" checkout --detach -q "$head" || die "remote secondmate fast-forward failed"
+  git -C "$target" merge-base --is-ancestor HEAD "$head" || die "remote XO checkout is not a fast-forward"
+  git -C "$target" checkout --detach -q "$head" || die "remote XO fast-forward failed"
   printf 'synced: %s\n' "$head"
 }
 
@@ -245,14 +245,14 @@ cmd_update() {
   local id=$1 update_out root_status
   validate_id "$id"
   validate_home "$id"
-  if ! update_out=$(FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
-    "$SCRIPT_DIR/fm-update.sh" 2>&1); then
+  if ! update_out=$(SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    "$SCRIPT_DIR/sq-update.sh" 2>&1); then
     [ -z "$update_out" ] || printf '%s\n' "$update_out" >&2
     die "remote code root update failed"
   fi
-  root_status=$(printf '%s\n' "$update_out" | grep '^firstmate:' | tail -1)
+  root_status=$(printf '%s\n' "$update_out" | grep '^Squad:' | tail -1)
   case "$root_status" in
-    'firstmate: updated '*|'firstmate: already current'*) ;;
+    'Squad: updated '*|'Squad: already current'*) ;;
     *)
       [ -z "$update_out" ] || printf '%s\n' "$update_out" >&2
       die "remote code root did not complete a safe origin update"
@@ -271,18 +271,18 @@ cmd_retire() {
   fi
   [ -z "$force" ] || [ "$force" = --force ] || usage
   remote_endpoint_require "$id"
-  FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$TARGET_HOME/state" \
-    FM_CONFIG_OVERRIDE="$TARGET_HOME/config" "$SCRIPT_DIR/fm-guard.sh" || true
+  SQUAD_HOME="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
+    SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" "$SCRIPT_DIR/sq-guard.sh" || true
   if [ -n "$force" ]; then
-    FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
-      FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
-      FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_TEARDOWN_GUARD_DONE=1 \
-      "$SCRIPT_DIR/fm-teardown.sh" "$id" --force
+    SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+      SQUAD_STATE_OVERRIDE="$CONTROL_STATE" SQUAD_DATA_OVERRIDE="$CONTROL_DATA" \
+      SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" SQUAD_TEARDOWN_GUARD_DONE=1 \
+      "$SCRIPT_DIR/sq-teardown.sh" "$id" --force
   else
-    FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
-      FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
-      FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_TEARDOWN_GUARD_DONE=1 \
-      "$SCRIPT_DIR/fm-teardown.sh" "$id"
+    SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+      SQUAD_STATE_OVERRIDE="$CONTROL_STATE" SQUAD_DATA_OVERRIDE="$CONTROL_DATA" \
+      SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" SQUAD_TEARDOWN_GUARD_DONE=1 \
+      "$SCRIPT_DIR/sq-teardown.sh" "$id"
   fi
 }
 

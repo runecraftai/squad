@@ -5,9 +5,9 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$REPO_ROOT}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$REPO_ROOT}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
 DOC_DIR="$REPO_ROOT/docs/supervision-protocols"
 
 HARNESS=
@@ -19,7 +19,7 @@ QUEUE_PENDING=0
 
 usage() {
   cat <<'EOF'
-Usage: fm-supervision-instructions.sh [--harness <name>] [--read-only 0|1] [--afk 0|1] [--x-mode 0|1] [--repair-line] [--queue-pending 0|1]
+Usage: sq-supervision-instructions.sh [--harness <name>] [--read-only 0|1] [--afk 0|1] [--x-mode 0|1] [--repair-line] [--queue-pending 0|1]
 
 Print the current primary harness's supervision operating instructions.
 With --repair-line, print one concise repair instruction for guard and hook messages.
@@ -77,7 +77,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -z "$HARNESS" ]; then
-  HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
+  HARNESS=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || printf unknown)
 fi
 
 case "$HARNESS" in
@@ -87,9 +87,9 @@ case "$HARNESS" in
 esac
 [ -f "$SNIPPET" ] || SNIPPET="$DOC_DIR/unknown.md"
 
-checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
-pi_ext="$FM_ROOT/.pi/extensions/fm-primary-pi-watch.ts"
-pi_turnend_ext="$FM_ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
+checkpoint_seconds=${SQUAD_CODEX_WATCH_CHECKPOINT:-180}
+pi_ext="$SQUAD_ROOT/.pi/extensions/sq-primary-pi-watch.ts"
+pi_turnend_ext="$SQUAD_ROOT/.pi/extensions/sq-primary-turnend-guard.ts"
 x_mode_env="$CONFIG/x-mode.env"
 
 shell_quote() {
@@ -107,21 +107,21 @@ fi
 render_snippet() {
   local line
   while IFS= read -r line || [ -n "$line" ]; do
-    line=${line//__FM_PI_EXT__/$pi_ext}
-    line=${line//__FM_PI_TURNEND_EXT__/$pi_turnend_ext}
-    line=${line//__FM_X_MODE_ENV_SH__/$x_mode_env_sh}
-    line=${line//__FM_X_MODE_ENV__/$x_mode_env}
+    line=${line//__SQUAD_PI_EXT__/$pi_ext}
+    line=${line//__SQUAD_PI_TURNEND_EXT__/$pi_turnend_ext}
+    line=${line//__SQUAD_X_MODE_ENV_SH__/$x_mode_env_sh}
+    line=${line//__SQUAD_X_MODE_ENV__/$x_mode_env}
     printf '%s\n' "$line"
   done < "$SNIPPET"
 }
 
 repair_line() {
   if [ "$READ_ONLY" -eq 1 ]; then
-    printf '%s\n' 'Watcher repair belongs to the session holding the fleet lock; do not drain, arm, or repair from this read-only session.'
+    printf '%s\n' 'Watcher repair belongs to the session holding the unit lock; do not drain, arm, or repair from this read-only session.'
     return 0
   fi
   if [ "$AFK" -eq 1 ]; then
-    printf '%s\n' 'Away mode owns watcher supervision; load /afk and ensure the daemon is running instead of starting normal supervision directly.'
+    printf '%s\n' 'Away mode owns sentry supervision; load /afk and ensure the daemon is running instead of starting normal supervision directly.'
     return 0
   fi
 
@@ -135,22 +135,22 @@ repair_line() {
 
   case "$HARNESS" in
     claude)
-      printf '%s%s\n' "$prefix" 'watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.'
+      printf '%s%s\n' "$prefix" 'sentry supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.'
       ;;
     codex)
-      printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" '.'
+      printf '%s%s%s%s\n' "$prefix" 'repair missing sentry supervision with a foreground checkpoint: bin/sq-sentry-checkpoint.sh --seconds ' "$checkpoint_seconds" '.'
       ;;
     pi|pi-signed)
-      printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
+      printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed sentry cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
       ;;
     opencode)
-      printf '%s%s\n' "$prefix" 'repair missing watcher supervision by letting the OpenCode TUI plugin arm after idle; use bin/fm-watch-arm.sh only as a manual recovery probe if the plugin reports failure.'
+      printf '%s%s\n' "$prefix" 'repair missing sentry supervision by letting the OpenCode TUI plugin arm after idle; use bin/sq-sentry-arm.sh only as a manual recovery probe if the plugin reports failure.'
       ;;
     grok)
-      printf '%s%s\n' "$prefix" 'repair missing watcher supervision with bin/fm-watch-arm.sh as its own Grok tracked background task, never shell &.'
+      printf '%s%s\n' "$prefix" 'repair missing sentry supervision with bin/sq-sentry-arm.sh as its own Grok tracked background task, never shell &.'
       ;;
     *)
-      printf '%s%s\n' "$prefix" 'repair missing watcher supervision according to the session-start block for this harness; do not use shell &.'
+      printf '%s%s\n' "$prefix" 'repair missing sentry supervision according to the session-start block for this harness; do not use shell &.'
       ;;
   esac
 }
@@ -158,19 +158,19 @@ repair_line() {
 ordinary_wake_line() {
   case "$HARNESS" in
     claude)
-      printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
+      printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/sq-claude-stop-autoarm.sh) already owns sentry continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     codex)
-      printf '%s\n' '- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.'
+      printf '%s\n' '- Ordinary wake: take the next foreground bin/sq-sentry-checkpoint.sh checkpoint as directed below.'
       ;;
     pi|pi-signed)
-      printf '%s\n' '- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.'
+      printf '%s\n' '- Ordinary wake: the Pi extension already owns sentry continuity; do not arm another cycle.'
       ;;
     opencode)
-      printf '%s\n' '- Ordinary wake: the OpenCode TUI plugin already owns watcher continuity; do not arm manually.'
+      printf '%s\n' '- Ordinary wake: the OpenCode TUI plugin already owns sentry continuity; do not arm manually.'
       ;;
     grok)
-      printf '%s\n' '- Ordinary wake: re-arm exactly one bin/fm-watch-arm.sh Grok tracked background task as directed below.'
+      printf '%s\n' '- Ordinary wake: re-arm exactly one bin/sq-sentry-arm.sh Grok tracked background task as directed below.'
       ;;
     *)
       printf '%s\n' '- Ordinary wake: follow the continuation in the harness protocol below; do not use shell &.'
@@ -189,19 +189,19 @@ printf 'SUPERVISION OPERATING INSTRUCTIONS - primary harness: %s\n' "$HARNESS"
 printf '%s\n' "$RULE"
 printf 'Current state:\n'
 if [ "$READ_ONLY" -eq 1 ]; then
-  printf '%s\n' '- Lock: read-only; do not drain, arm, spawn, steer, merge, or repair fleet state here.'
+  printf '%s\n' '- Lock: read-only; do not drain, arm, spawn, steer, merge, or repair unit state here.'
 else
   printf '%s\n' '- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.'
 fi
 if [ "$AFK" -eq 1 ]; then
-  printf '%s\n' '- Away mode: active; load /afk and keep normal harness supervision paused while the daemon owns the watcher.'
+  printf '%s\n' '- Away mode: active; load /afk and keep normal harness supervision paused while the daemon owns the sentry.'
 else
   printf '%s\n' '- Away mode: inactive.'
 fi
 if [ "$X_MODE" -eq 1 ]; then
-  printf '%s%s%s\n' '- X mode: active; source ' "$x_mode_env" ' before launching any watcher process so the 30s cadence is inherited.'
+  printf '%s%s%s\n' '- X mode: active; source ' "$x_mode_env" ' before launching any sentry process so the 30s cadence is inherited.'
 else
-  printf '%s\n' '- X mode: inactive; use the default watcher cadence.'
+  printf '%s\n' '- X mode: inactive; use the default sentry cadence.'
 fi
 ordinary_wake_line
 printf '\n'

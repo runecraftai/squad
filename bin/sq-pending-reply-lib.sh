@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# fm-pending-reply-lib.sh - parent-owned secondmate missed-report guards.
+# sq-pending-reply-lib.sh - parent-owned XO missed-report guards.
 #
-# When the main firstmate delivers a marked from-firstmate request to a
-# secondmate, this library records a durable parent-owned pending-reply
+# When the main Squad delivers a marked from-squad request to a
+# XO, this library records a durable parent-owned pending-reply
 # expectation BEFORE delivery, embeds a privacy-safe correlation id in the
 # outbound message, and later resolves that expectation only from a correlated
 # parent status line or status-pointed document - never from transport success,
 # chat content, or unrelated status activity.
 #
-# Safety property (captain direction 2026-07-22): a secondmate agent may ignore
+# Safety property (commander direction 2026-07-22): a XO agent may ignore
 # the marker and answer only in its visible conversation. The parent must notice
 # the missing correlated report without scraping that conversation, send exactly
 # one automatic recovery request asking for a repost through the parent channel,
@@ -17,13 +17,13 @@
 # records, and never treat wrong-home or structured-home heuristics as
 # acknowledgement.
 #
-# Record location (parent FM_HOME):
+# Record location (parent SQUAD_HOME):
 #   state/pending-replies/<corr_id>
 # Each record is a key=value file owned by this library. Schema:
-#   schema=fm-pending-reply.v1
+#   schema=sq-pending-reply.v1
 #   corr_id=                privacy-safe correlation token
-#   task_id=                secondmate task id in the parent home
-#   parent_home=            absolute parent FM_HOME
+#   task_id=                XO task id in the parent home
+#   parent_home=            absolute parent SQUAD_HOME
 #   parent_status=          absolute path of parent state/<task_id>.status
 #   parent_status_scan_signature=
 #   request_summary=        short sanitized summary (no secrets by design)
@@ -49,13 +49,13 @@
 #                           lifecycle note below); empty until then
 #   resolved_epoch=
 #   resolved_via=           status | document | helper | empty
-#   wrong_home_hits=        count of corr sightings under the secondmate home
+#   wrong_home_hits=        count of corr sightings under the XO home
 #   wrong_home_sightings=   comma-separated identities of counted sightings
 #   wrong_home_scan_signature=
 #   grace_secs=             bounded grace before recovery is eligible
 #
 # Escalation lifecycle: an escalation is not just a message, it OPENS a durable
-# keyed decision in the parent status log, and bin/fm-classify-lib.sh's fold is
+# keyed decision in the parent status log, and bin/sq-classify-lib.sh's fold is
 # the one owner of what closes it. So this library owns both ends of that
 # decision: fm_pending_reply_maybe_escalate opens it under a per-request key, and
 # fm_pending_reply_close_escalation closes it once the record resolves. Resolving
@@ -64,45 +64,45 @@
 # That per-request key lives in a namespace the fold reserves to this library, so
 # no other writer into the same status stream - a local mate appending directly,
 # or a remote mate's mirrored line - can take the key over or clear it; see the
-# reserved-key rule in bin/fm-classify-lib.sh.
+# reserved-key rule in bin/sq-classify-lib.sh.
 #
-# Sourced by bin/fm-send.sh, bin/fm-watch.sh, bin/fm-secondmate-report.sh, and
+# Sourced by bin/sq-send.sh, bin/sq-sentry.sh, bin/sq-xo-report.sh, and
 # tests. No side effects on source. set -u / set -e safe.
 #
 # Tunables (env):
-#   FM_PENDING_REPLY_GRACE_SECS   default 120
-#   FM_PENDING_REPLY_DIR_OVERRIDE override the pending-replies directory (tests)
-#   FM_PENDING_REPLY_SEND_HOOK    optional command template for recovery delivery
+#   SQUAD_PENDING_REPLY_GRACE_SECS   default 120
+#   SQUAD_PENDING_REPLY_DIR_OVERRIDE override the pending-replies directory (tests)
+#   SQUAD_PENDING_REPLY_SEND_HOOK    optional command template for recovery delivery
 #                                 (tests); receives task_id and full message as args
-#   FM_PENDING_REPLY_NOW          optional fixed epoch for deterministic tests
+#   SQUAD_PENDING_REPLY_NOW          optional fixed epoch for deterministic tests
 
-# shellcheck source=bin/fm-marker-lib.sh
-_FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _FM_PENDING_REPLY_LIB_DIR="."
-# shellcheck source=bin/fm-marker-lib.sh
-. "$_FM_PENDING_REPLY_LIB_DIR/fm-marker-lib.sh"
-# shellcheck source=bin/fm-backend.sh
-. "$_FM_PENDING_REPLY_LIB_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-tmux-lib.sh
-. "$_FM_PENDING_REPLY_LIB_DIR/fm-tmux-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
-. "$_FM_PENDING_REPLY_LIB_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/sq-marker-lib.sh
+_SQUAD_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _SQUAD_PENDING_REPLY_LIB_DIR="."
+# shellcheck source=bin/sq-marker-lib.sh
+. "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-marker-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-tmux-lib.sh
+. "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-tmux-lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-classify-lib.sh"
 
-FM_PENDING_REPLY_SCHEMA='fm-pending-reply.v1'
-FM_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
-FM_PENDING_REPLY_GRACE_DEFAULT=120
+SQUAD_PENDING_REPLY_SCHEMA='sq-pending-reply.v1'
+SQUAD_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
+SQUAD_PENDING_REPLY_GRACE_DEFAULT=120
 
 fm_pending_reply_now() {
-  if [ -n "${FM_PENDING_REPLY_NOW:-}" ]; then
-    printf '%s' "$FM_PENDING_REPLY_NOW"
+  if [ -n "${SQUAD_PENDING_REPLY_NOW:-}" ]; then
+    printf '%s' "$SQUAD_PENDING_REPLY_NOW"
     return 0
   fi
   date +%s
 }
 
 fm_pending_reply_grace_secs() {
-  local g=${FM_PENDING_REPLY_GRACE_SECS:-$FM_PENDING_REPLY_GRACE_DEFAULT}
+  local g=${SQUAD_PENDING_REPLY_GRACE_SECS:-$SQUAD_PENDING_REPLY_GRACE_DEFAULT}
   case "$g" in
-    ''|*[!0-9]*) g=$FM_PENDING_REPLY_GRACE_DEFAULT ;;
+    ''|*[!0-9]*) g=$SQUAD_PENDING_REPLY_GRACE_DEFAULT ;;
   esac
   printf '%s' "$g"
 }
@@ -110,8 +110,8 @@ fm_pending_reply_grace_secs() {
 # Directory holding durable pending-reply records for <state-dir>.
 fm_pending_reply_dir() {  # <state-dir>
   local state=$1
-  if [ -n "${FM_PENDING_REPLY_DIR_OVERRIDE:-}" ]; then
-    printf '%s' "$FM_PENDING_REPLY_DIR_OVERRIDE"
+  if [ -n "${SQUAD_PENDING_REPLY_DIR_OVERRIDE:-}" ]; then
+    printf '%s' "$SQUAD_PENDING_REPLY_DIR_OVERRIDE"
     return 0
   fi
   printf '%s/pending-replies' "$state"
@@ -142,7 +142,7 @@ fm_pending_reply_corr_token() {  # <corr_id>
 # Extract the first corr=<16hex> token from free text, or empty.
 fm_pending_reply_extract_corr() {  # <text>
   local text=$1
-  printf '%s' "$text" | grep -oE "$FM_PENDING_REPLY_CORR_RE" 2>/dev/null | head -1 | cut -d= -f2- | tr 'A-F' 'a-f' || true
+  printf '%s' "$text" | grep -oE "$SQUAD_PENDING_REPLY_CORR_RE" 2>/dev/null | head -1 | cut -d= -f2- | tr 'A-F' 'a-f' || true
 }
 
 # 0 if <text> carries the exact correlation token for <corr_id>.
@@ -160,7 +160,7 @@ fm_pending_reply_summarize() {  # <text>
   local text=$1 cleaned
   cleaned=$(printf '%s' "$text" | tr '\t\r\n' '   ' | tr -cd '\11\12\15\40-\176' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   # Drop an already-present marker/corr prefix so the durable summary stays short.
-  cleaned=${cleaned#"$FM_FROMFIRST_MARK"}
+  cleaned=${cleaned#"$SQUAD_FROMFIRST_MARK"}
   cleaned=$(printf '%s' "$cleaned" | sed -E "s/^corr=[A-Fa-f0-9]{16}[[:space:]]*//")
   if [ "${#cleaned}" -gt 120 ]; then
     cleaned="${cleaned:0:117}..."
@@ -205,7 +205,7 @@ fm_pending_reply_set() {  # <record-path> <key> <value>
   mv -f "$tmp" "$rec"
 }
 
-# Embed or replace a correlation token after the from-firstmate marker.
+# Embed or replace a correlation token after the from-squad marker.
 # Idempotent for the same corr; replaces a different leading corr token.
 # Result is assigned to <result-var>.
 # Trailing newlines in the request body are preserved: never strip via bare
@@ -214,8 +214,8 @@ fm_pending_reply_embed_corr() {  # <message> <corr_id> <result-var>
   local message=$1 corr=$2 result_var=$3 body token marked existing
   [ -n "$result_var" ] || return 2
   token=$(fm_pending_reply_corr_token "$corr")
-  fm_message_mark_from_firstmate "$message" marked
-  body=${marked#"$FM_FROMFIRST_MARK"}
+  fm_message_mark_from_Squad "$message" marked
+  body=${marked#"$SQUAD_FROMFIRST_MARK"}
   # Strip a leading corr=<16hex> plus following blanks (space/tab only).
   existing=${body:0:21}
   case "$existing" in
@@ -225,7 +225,7 @@ fm_pending_reply_embed_corr() {  # <message> <corr_id> <result-var>
       while [ "${body#$'\t'}" != "$body" ]; do body=${body#$'\t'}; done
       ;;
   esac
-  printf -v "$result_var" '%s' "${FM_FROMFIRST_MARK}${token} ${body}"
+  printf -v "$result_var" '%s' "${SQUAD_FROMFIRST_MARK}${token} ${body}"
 }
 
 # Create a durable pending-reply expectation. Prints corr_id on success.
@@ -260,7 +260,7 @@ fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text
   esac
   tmp="$dir/.${corr}.tmp.$$"
   cat > "$tmp" <<EOF
-schema=$FM_PENDING_REPLY_SCHEMA
+schema=$SQUAD_PENDING_REPLY_SCHEMA
 corr_id=$corr
 task_id=$task_id
 parent_home=$parent_home
@@ -478,7 +478,7 @@ fm_pending_reply_resolve_via_of_line() {  # <line>
     *data/*report*|*report.md*|*document*|*pointer*)
       printf 'document'
       ;;
-    *via-helper*|*fm-secondmate-report*)
+    *via-helper*|*sq-xo-report*)
       printf 'helper'
       ;;
     *)
@@ -491,18 +491,18 @@ fm_pending_reply_resolve_via_of_line() {  # <line>
 # Returns 0 when the record is resolved after the call (already or newly).
 fm_pending_reply_try_resolve() {  # <state-dir> <corr_id> [status-file-override]
   # Serialized per correlation so a resolution and an escalation cannot interleave.
-  # bin/fm-wake-lib.sh owns the lock primitives but assigns its own globals when
+  # bin/sq-stand-to-lib.sh owns the lock primitives but assigns its own globals when
   # sourced, so they are declared local here: that contains them to this call
   # instead of leaking into every script that sources this library, without the
   # subshell that would make every later use of them read as a lost write.
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  local STATE SQUAD_WAKE_QUEUE SQUAD_WAKE_QUEUE_LOCK
   STATE=$state
   lock="$state/.pending-reply-$corr.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
-  . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-stand-to-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
   _fm_pending_reply_try_resolve_locked "$@" || rc=$?
   fm_lock_release "$lock"
@@ -552,7 +552,7 @@ _fm_pending_reply_try_resolve_locked() {  # <state-dir> <corr_id> [status-file-o
   fm_pending_reply_set "$rec" resolved_epoch "$now" || return 1
   fm_pending_reply_set "$rec" resolved_via "$via" || return 1
   # The record is resolved either way; a failed close stays retryable from the
-  # watcher tick rather than turning a settled request back into a failure.
+  # sentry tick rather than turning a settled request back into a failure.
   _fm_pending_reply_close_escalation_locked "$state" "$corr" || true
   return 0
 }
@@ -630,15 +630,15 @@ fm_pending_reply_fallback_idle_eligible() {  # <record-path>
 }
 
 # fm_pending_reply_backend_observation: one busy/idle observation of a
-# SECONDMATE endpoint, without ever reading its conversation.
+# XO endpoint, without ever reading its conversation.
 #
-# Deliberately NOT the semantic busy-state contract (bin/fm-busy-lib.sh).
-# That contract covers ordinary task workers, whose turn lifecycle firstmate
-# wires at spawn; a secondmate has no such wiring because an idle secondmate
+# Deliberately NOT the semantic busy-state contract (bin/sq-busy-lib.sh).
+# That contract covers ordinary task workers, whose turn lifecycle Squad
+# wires at spawn; a XO has no such wiring because an idle XO
 # pane is healthy and it runs no supervised turn sequence of its own. This
 # observation exists only to notice a busy-then-idle transition around one
 # delivered request, so it is a delivery-confirmation signal in the same
-# category as the submit acknowledgement in bin/fm-tmux-lib.sh - never task
+# category as the submit acknowledgement in bin/sq-tmux-lib.sh - never task
 # state, and never a source consumers can confuse with semantic state.
 #
 # It stays harness-scoped (fm_busy_lines_match with the recorded harness, no
@@ -710,8 +710,8 @@ fm_pending_reply_recovery_message() {  # <record-path>
 }
 
 # Deliver the recovery message once. Caller must hold phase awaiting_report with
-# turn completed and grace elapsed. Uses FM_PENDING_REPLY_SEND_HOOK when set
-# (tests), otherwise invokes fm-send with FM_PENDING_REPLY_EXISTING_CORR so a
+# turn completed and grace elapsed. Uses SQUAD_PENDING_REPLY_SEND_HOOK when set
+# (tests), otherwise invokes sq-send with SQUAD_PENDING_REPLY_EXISTING_CORR so a
 # second expectation is not created.
 fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
@@ -744,17 +744,17 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   fm_pending_reply_set "$rec" recovery_sender_identity "$sender_identity" || return 1
   fm_pending_reply_set "$rec" recovery_attempted_epoch "$now" || return 1
   fm_pending_reply_set "$rec" phase recovery_sending || return 1
-  if [ -n "${FM_PENDING_REPLY_SEND_HOOK:-}" ]; then
+  if [ -n "${SQUAD_PENDING_REPLY_SEND_HOOK:-}" ]; then
     # Hook receives: task_id message
     # shellcheck disable=SC2086
-    if ! eval "$FM_PENDING_REPLY_SEND_HOOK" "$(printf '%q' "$task_id")" "$(printf '%q' "$msg")"; then
+    if ! eval "$SQUAD_PENDING_REPLY_SEND_HOOK" "$(printf '%q' "$task_id")" "$(printf '%q' "$msg")"; then
       send_status=1
     fi
   else
     if [ -z "$parent_home" ] || [ ! -d "$parent_home" ]; then
       send_status=1
-    elif ! env FM_HOME="$parent_home" FM_PENDING_REPLY_EXISTING_CORR="$corr" \
-      "$_FM_PENDING_REPLY_LIB_DIR/fm-send.sh" "$task_id" "$msg"; then
+    elif ! env SQUAD_HOME="$parent_home" SQUAD_PENDING_REPLY_EXISTING_CORR="$corr" \
+      "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-send.sh" "$task_id" "$msg"; then
       send_status=1
     fi
   fi
@@ -882,21 +882,21 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
 # Close the durable status decision a previous escalation opened for <corr_id>.
 # Idempotent, and safe to retry until it succeeds: it appends the closing line
 # only while that exact keyed decision is still open in
-# bin/fm-classify-lib.sh's fold. Records that never escalated are left untouched.
+# bin/sq-classify-lib.sh's fold. Records that never escalated are left untouched.
 fm_pending_reply_close_escalation() {  # <state-dir> <corr_id>
   # Serialized per correlation so a resolution and an escalation cannot interleave.
-  # bin/fm-wake-lib.sh owns the lock primitives but assigns its own globals when
+  # bin/sq-stand-to-lib.sh owns the lock primitives but assigns its own globals when
   # sourced, so they are declared local here: that contains them to this call
   # instead of leaking into every script that sources this library, without the
   # subshell that would make every later use of them read as a lost write.
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  local STATE SQUAD_WAKE_QUEUE SQUAD_WAKE_QUEUE_LOCK
   STATE=$state
   lock="$state/.pending-reply-$corr.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
-  . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-stand-to-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
   _fm_pending_reply_close_escalation_locked "$@" || rc=$?
   fm_lock_release "$lock"
@@ -943,18 +943,18 @@ EOF
 # Retains the durable unresolved record. Never loops.
 fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
   # Serialized per correlation so a resolution and an escalation cannot interleave.
-  # bin/fm-wake-lib.sh owns the lock primitives but assigns its own globals when
+  # bin/sq-stand-to-lib.sh owns the lock primitives but assigns its own globals when
   # sourced, so they are declared local here: that contains them to this call
   # instead of leaking into every script that sources this library, without the
   # subshell that would make every later use of them read as a lost write.
   # The lock is released explicitly rather than from an EXIT trap, because a trap
   # in a plain function would clobber the caller's own.
   local state=$1 corr=$2 lock rc=0
-  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  local STATE SQUAD_WAKE_QUEUE SQUAD_WAKE_QUEUE_LOCK
   STATE=$state
   lock="$state/.pending-reply-$corr.lock"
-  # shellcheck source=bin/fm-wake-lib.sh
-  . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-stand-to-lib.sh"
   fm_lock_acquire_wait "$lock" || return 1
   _fm_pending_reply_maybe_escalate_locked "$@" || rc=$?
   fm_lock_release "$lock"
@@ -1003,9 +1003,9 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   return 0
 }
 
-# Detect a correlated report written under the secondmate home (wrong home)
+# Detect a correlated report written under the XO home (wrong home)
 # without treating it as acknowledgement.
-fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home>
+fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <XO-home>
   local state=$1 corr=$2 sm_home=$3
   local rec delivered hits sightings snapshot previous status_file line line_no sighting_id phase changed=0
   rec=$(fm_pending_reply_path "$state" "$corr")
@@ -1051,9 +1051,9 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
 }
 
 # One reconciliation tick for a single record: resolve, observe, recover, escalate.
-# busy_state is busy|idle|unknown for the secondmate endpoint.
-# secondmate_home may be empty when unknown.
-fm_pending_reply_tick_one() {  # <state-dir> <corr_id> <busy_state> [secondmate-home]
+# busy_state is busy|idle|unknown for the XO endpoint.
+# XO_home may be empty when unknown.
+fm_pending_reply_tick_one() {  # <state-dir> <corr_id> <busy_state> [XO-home]
   local state=$1 corr=$2 busy_state=$3 sm_home=${4-}
   local rec phase delivered
   rec=$(fm_pending_reply_path "$state" "$corr")
@@ -1118,8 +1118,8 @@ fm_pending_reply_tick_one() {  # <state-dir> <corr_id> <busy_state> [secondmate-
 }
 
 # Scan every pending record for this parent state. Safe to call every poll.
-# Never scrapes secondmate conversation; uses only parent status, backend busy
-# state, and optional secondmate-home wrong-home path checks.
+# Never scrapes XO conversation; uses only parent status, backend busy
+# state, and optional XO-home wrong-home path checks.
 fm_pending_reply_tick() {  # <state-dir>
   local state=$1 dir rec corr task_id phase delivered meta backend target label busy sm_home harness remote_host
   local observation observation_task found i
@@ -1199,7 +1199,7 @@ fm_pending_reply_tick() {  # <state-dir>
         sm_home=
       fi
       if [ -n "$target" ]; then
-        label="fm-$task_id"
+        label="sq-$task_id"
         observation=
         found=0
         for ((i = 0; i < ${#observation_tasks[@]}; i++)); do
@@ -1211,8 +1211,8 @@ fm_pending_reply_tick() {  # <state-dir>
         done
         if [ "$found" = 0 ]; then
           if [ -n "$remote_host" ]; then
-            observation=$("$_FM_PENDING_REPLY_LIB_DIR/fm-on.sh" "$task_id" \
-              fm-remote-secondmate-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
+            observation=$("$_SQUAD_PENDING_REPLY_LIB_DIR/sq-on.sh" "$task_id" \
+              sq-remote-XO-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
             case "$observation" in busy|idle|fallback-idle|unknown) ;; *) observation=unknown ;; esac
           else
             observation=$(fm_pending_reply_backend_observation "$backend" "$target" "$label" "$harness")

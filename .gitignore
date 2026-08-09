@@ -3,8 +3,8 @@ state/
 data/
 .no-mistakes/
 .lavish/
-.fm-secondmate-home
-.fm-secondmate-parent
+.sq-xo-home
+.sq-xo-parent
 .DS_Store
 __pycache__/
 *.pyc

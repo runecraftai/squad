@@ -1,16 +1,16 @@
 # shellcheck shell=bash
 # Shared identity, ownership, capture, and publication rules for the generic
 # process-to-event runner.
-# Usage: . bin/fm-procevent-lib.sh   (requires fm-pr-lib.sh and fm-wake-lib.sh)
+# Usage: . bin/sq-procevent-lib.sh   (requires sq-pr-lib.sh and sq-stand-to-lib.sh)
 #
-# The runner lets firstmate learn that a registered long-polling source produced
+# The runner lets Squad learn that a registered long-polling source produced
 # a result without holding that blocking process in its conversational turn. It
 # is domain-neutral: a thin adapter supplies source identity, the argv to run,
 # and how to classify a completed result. Everything else - ownership, durable
 # capture, publication, and restart recovery - lives here.
 #
 # It adds no second notification control plane: a completed result is published
-# as an ordinary `check` wake through the existing durable wake queue, which is
+# as an ordinary `check` wake through the existing durable stand-to queue, which is
 # the same mechanism merge polls and X mode already use.
 #
 # DURABILITY BOUNDARY, stated precisely. This runner proves exactly one thing:
@@ -18,11 +18,11 @@
 # stored atomically at mode 0600 BEFORE any event referencing it is published,
 # and a captured result with no durable handled acknowledgement remains eligible
 # for bounded re-announcement - including across a restart between publication
-# and handling - until `fm-procevent.sh handled` records it. It proves nothing
+# and handling - until `sq-procevent.sh handled` records it. It proves nothing
 # about the source side of the handoff. In particular the currently published
 # `lavish-axi poll` destructively clears feedback before returning it, so a
 # result lost between that clearing and this runner reading the process output
-# is unrecoverable. A Firstmate wrapper cannot close that window, and marking a
+# is unrecoverable. A Squad wrapper cannot close that window, and marking a
 # result handled says nothing about whether a paired external effect performed
 # before that call actually completed: a crash between the effect and the
 # acknowledgement can still repeat the effect on replay. Never describe this
@@ -32,7 +32,7 @@
 # Machine-wide claim root. Homes can share one underlying source store, so the
 # "one owner per canonical source" rule cannot live inside a single home.
 fm_procevent_claim_root() {
-  printf '%s\n' "${FM_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/procevent-claims}"
+  printf '%s\n' "${SQUAD_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/Squad/procevent-claims}"
 }
 
 fm_procevent_registry_dir() { printf '%s\n' "$1/procevent"; }
@@ -114,13 +114,13 @@ fm_procevent_claim_load_locked() {  # <source-id>
   case "$reg_dir" in ''|/*) ;; *) return 1 ;; esac
   case "$reg_identity" in ''|*:* ) ;; *) return 1 ;; esac
   case "$terminal" in active|terminal) ;; *) return 1 ;; esac
-  FM_PROCEVENT_CLAIM_HOME=$home
-  FM_PROCEVENT_CLAIM_PID=$pid
-  FM_PROCEVENT_CLAIM_TOKEN=$token
-  FM_PROCEVENT_CLAIM_IDENTITY=$identity
-  FM_PROCEVENT_CLAIM_REG_DIR=$reg_dir
-  FM_PROCEVENT_CLAIM_REG_IDENTITY=$reg_identity
-  FM_PROCEVENT_CLAIM_TERMINAL=$terminal
+  SQUAD_PROCEVENT_CLAIM_HOME=$home
+  SQUAD_PROCEVENT_CLAIM_PID=$pid
+  SQUAD_PROCEVENT_CLAIM_TOKEN=$token
+  SQUAD_PROCEVENT_CLAIM_IDENTITY=$identity
+  SQUAD_PROCEVENT_CLAIM_REG_DIR=$reg_dir
+  SQUAD_PROCEVENT_CLAIM_REG_IDENTITY=$reg_identity
+  SQUAD_PROCEVENT_CLAIM_TERMINAL=$terminal
 }
 
 # fm_procevent_group_alive <pid>
@@ -165,12 +165,12 @@ fm_procevent_claim_state_locked() {
   claim=$(fm_procevent_claim_path "$1")
   [ -e "$claim" ] || return 1
   fm_procevent_claim_load_locked "$1" || return 2
-  if [ "$FM_PROCEVENT_CLAIM_TERMINAL" = terminal ] && [ -n "$FM_PROCEVENT_CLAIM_REG_IDENTITY" ]; then
-    registration="$FM_PROCEVENT_CLAIM_REG_DIR/$1.source"
+  if [ "$SQUAD_PROCEVENT_CLAIM_TERMINAL" = terminal ] && [ -n "$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY" ]; then
+    registration="$SQUAD_PROCEVENT_CLAIM_REG_DIR/$1.source"
     current_identity=$(fm_pr_file_identity "$registration" 2>/dev/null || true)
-    [ "$current_identity" = "$FM_PROCEVENT_CLAIM_REG_IDENTITY" ] && return 4
+    [ "$current_identity" = "$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY" ] && return 4
   fi
-  fm_procevent_pid_state "$FM_PROCEVENT_CLAIM_PID" "$FM_PROCEVENT_CLAIM_IDENTITY"
+  fm_procevent_pid_state "$SQUAD_PROCEVENT_CLAIM_PID" "$SQUAD_PROCEVENT_CLAIM_IDENTITY"
 }
 
 # fm_procevent_claim_acquire_locked <source-id> <home> <pid> <registration>
@@ -193,9 +193,9 @@ fm_procevent_claim_acquire_locked() {
       0|2|3|4) status=2 ;;
       1)
         if [ -f "$claim" ] && [ ! -L "$claim" ]; then
-          old_home=$FM_PROCEVENT_CLAIM_HOME
-          old_token=$FM_PROCEVENT_CLAIM_TOKEN
-          old_reg_dir=$FM_PROCEVENT_CLAIM_REG_DIR
+          old_home=$SQUAD_PROCEVENT_CLAIM_HOME
+          old_token=$SQUAD_PROCEVENT_CLAIM_TOKEN
+          old_reg_dir=$SQUAD_PROCEVENT_CLAIM_REG_DIR
           if [ -z "$old_reg_dir" ]; then
             if [ "$old_home" = "$home" ]; then
               old_reg_dir=$reg_dir
@@ -232,8 +232,8 @@ fm_procevent_claim_acquire_locked() {
     [ "$status" -ne 0 ] || chmod 0600 "$tmp" || status=1
     [ "$status" -ne 0 ] || mv -f -- "$tmp" "$claim" || status=1
     if [ "$status" -eq 0 ]; then
-      FM_PROCEVENT_CLAIM_TOKEN=$token
-      FM_PROCEVENT_CLAIM_REG_IDENTITY=$reg_identity
+      SQUAD_PROCEVENT_CLAIM_TOKEN=$token
+      SQUAD_PROCEVENT_CLAIM_REG_IDENTITY=$reg_identity
     else
       rm -f -- "$tmp"
     fi
@@ -245,16 +245,16 @@ fm_procevent_claim_mark_terminal_locked() {
   local id=$1 home=$2 pid=$3 token=$4 claim root tmp
   claim=$(fm_procevent_claim_path "$id")
   fm_procevent_claim_load_locked "$id" \
-    && [ "$FM_PROCEVENT_CLAIM_HOME" = "$home" ] \
-    && [ "$FM_PROCEVENT_CLAIM_PID" = "$pid" ] \
-    && [ "$FM_PROCEVENT_CLAIM_TOKEN" = "$token" ] \
-    && [ -n "$FM_PROCEVENT_CLAIM_REG_IDENTITY" ] || return 1
+    && [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$home" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_PID" = "$pid" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_TOKEN" = "$token" ] \
+    && [ -n "$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY" ] || return 1
   root=$(fm_procevent_claim_root)
   tmp=$(umask 077; mktemp "$root/.claim.XXXXXX") || return 1
   if printf '%s\n%s\n%s\n%s\n%s\n%s\nterminal\n' \
-    "$FM_PROCEVENT_CLAIM_HOME" "$FM_PROCEVENT_CLAIM_PID" "$FM_PROCEVENT_CLAIM_TOKEN" \
-    "$FM_PROCEVENT_CLAIM_IDENTITY" "$FM_PROCEVENT_CLAIM_REG_DIR" \
-    "$FM_PROCEVENT_CLAIM_REG_IDENTITY" > "$tmp" \
+    "$SQUAD_PROCEVENT_CLAIM_HOME" "$SQUAD_PROCEVENT_CLAIM_PID" "$SQUAD_PROCEVENT_CLAIM_TOKEN" \
+    "$SQUAD_PROCEVENT_CLAIM_IDENTITY" "$SQUAD_PROCEVENT_CLAIM_REG_DIR" \
+    "$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY" > "$tmp" \
     && chmod 0600 "$tmp" \
     && mv -f -- "$tmp" "$claim"; then
     return 0
@@ -271,9 +271,9 @@ fm_procevent_claim_release_locked() {
   claim=$(fm_procevent_claim_path "$id")
   [ -e "$claim" ] || return 0
   if fm_procevent_claim_load_locked "$id" \
-    && [ "$FM_PROCEVENT_CLAIM_HOME" = "$home" ] \
-    && [ "$FM_PROCEVENT_CLAIM_PID" = "$pid" ] \
-    && [ "$FM_PROCEVENT_CLAIM_TOKEN" = "$token" ]; then
+    && [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$home" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_PID" = "$pid" ] \
+    && [ "$SQUAD_PROCEVENT_CLAIM_TOKEN" = "$token" ]; then
     rm -f -- "$claim"
     return $?
   fi
@@ -309,7 +309,7 @@ fm_procevent_capture() {
 # fm_procevent_pending <state>
 # Print every durably captured result that has no durable handled
 # acknowledgement yet, oldest first. A result stays here - and so remains
-# eligible for repeat publication on the existing durable wake queue - across
+# eligible for repeat publication on the existing durable stand-to queue - across
 # any number of restarts and drains until `fm_procevent_mark_handled` records
 # it; this is what makes a restart between publication and handling recover
 # instead of silently losing the result.

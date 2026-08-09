@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# fm-busy-event.sh - the ONLY writer of the semantic busy-state contract
-# owned by bin/fm-busy-lib.sh (record format, gen binding, and classification
+# sq-busy-event.sh - the ONLY writer of the semantic busy-state contract
+# owned by bin/sq-busy-lib.sh (record format, gen binding, and classification
 # live there; this script owns mutation mechanics only).
 #
 # Subcommands:
 #
 #   arm <state-dir> <id> [--state busy|idle|unknown] [--source S] [--event E]
 #       Mint a fresh incarnation gen token, write the gen sidecar, and seed
-#       the record at seq=1 (default: busy, source fm-spawn, event
+#       the record at seq=1 (default: busy, source sq-spawn, event
 #       launch-brief - the launch prompt IS a submitted turn). Prints the
 #       minted gen on stdout so the caller can embed it into adapter wiring.
 #       Arming again replaces the previous incarnation: late events carrying
@@ -18,8 +18,8 @@
 #       Append one lifecycle event: validate the gen against the armed
 #       sidecar, advance seq under the lock, atomically replace the record.
 #       Adapter wiring passes the exact --gen embedded at arm time, so a
-#       hook that outlives its incarnation fails closed here. Firstmate-owned
-#       paths (fm-interrupt, fm-recovery) may pass --current-gen to bind to
+#       hook that outlives its incarnation fails closed here. Squad-owned
+#       paths (sq-interrupt, sq-recovery) may pass --current-gen to bind to
 #       whatever incarnation is armed right now.
 #
 #   retire <state-dir> <id> (--gen G | --current-gen)
@@ -36,17 +36,17 @@ set -u
 usage() {
   cat >&2 <<'EOF'
 usage:
-  fm-busy-event.sh arm <state-dir> <id> [--state busy|idle|unknown] [--source S] [--event E]
-  fm-busy-event.sh apply <state-dir> <id> <busy|idle|unknown> (--gen G | --current-gen) --source S --event E
-  fm-busy-event.sh retire <state-dir> <id> (--gen G | --current-gen)
+  sq-busy-event.sh arm <state-dir> <id> [--state busy|idle|unknown] [--source S] [--event E]
+  sq-busy-event.sh apply <state-dir> <id> <busy|idle|unknown> (--gen G | --current-gen) --source S --event E
+  sq-busy-event.sh retire <state-dir> <id> (--gen G | --current-gen)
 See the header comment for the full contract.
 EOF
   exit 2
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-busy-lib.sh
-. "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/sq-busy-lib.sh
+. "$SCRIPT_DIR/sq-busy-lib.sh"
 
 CMD=${1:-}
 case "$CMD" in
@@ -71,7 +71,7 @@ if [ "$CMD" = apply ]; then
   case "$NEW_STATE" in busy|idle|unknown) shift ;; *) usage ;; esac
 elif [ "$CMD" = arm ]; then
   NEW_STATE=busy
-  SOURCE=fm-spawn
+  SOURCE=sq-spawn
   EVENT=launch-brief
 fi
 while [ $# -gt 0 ]; do
@@ -95,7 +95,7 @@ GEN_FILE=$(fm_busy_gen_path "$STATE" "$ID")
 LOCK="$REC.lock"
 
 # Serialize writers. The lock protects seq advancement and the sidecar/record
-# pair; a holder that died mid-write is broken after FM_BUSY_LOCK_STALE_SECS.
+# pair; a holder that died mid-write is broken after SQUAD_BUSY_LOCK_STALE_SECS.
 lock_acquire() {
   local tries=0 now mtime age
   while ! mkdir "$LOCK" 2>/dev/null; do
@@ -104,7 +104,7 @@ lock_acquire() {
       now=$(date +%s)
       mtime=$(stat -f %m "$LOCK" 2>/dev/null || stat -c %Y "$LOCK" 2>/dev/null || echo "$now")
       age=$((now - mtime))
-      if [ "$age" -ge "${FM_BUSY_LOCK_STALE_SECS:-5}" ]; then
+      if [ "$age" -ge "${SQUAD_BUSY_LOCK_STALE_SECS:-5}" ]; then
         rmdir "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null || true
         mkdir "$LOCK" 2>/dev/null && break
       fi

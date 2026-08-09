@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# fm-test-isolation-proof.sh - bounded concurrent isolation proof for portable
+# sq-test-isolation-proof.sh - bounded concurrent isolation proof for portable
 # behavior-test candidates (Phase 2 pre-shard gate).
 #
 # This is the single owner of the proven parallel candidate set, the concurrent
 # proof run, and the isolation checks that admitted that set. Production
-# portable CI shards and bounded local fm-test-run.sh --jobs for this exact set
-# are owned by bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
+# portable CI shards and bounded local sq-test-run.sh --jobs for this exact set
+# are owned by bin/sq-test-run.sh (docs/sq-test-portable-shards.md).
 #
 # It does NOT:
-#   - compose production CI shard membership (fm-test-run.sh owns that partition)
-#   - run real Herdr, real default-server tmux, watcher lock races, AFK, live
+#   - compose production CI shard membership (sq-test-run.sh owns that partition)
+#   - run real Herdr, real default-server tmux, sentry lock races, AFK, live
 #     harnesses, or GUI backends
 #
 # Usage:
-#   fm-test-isolation-proof.sh [--jobs N] [--json path] [--list]
-#   fm-test-isolation-proof.sh --list-exclusions
-#   fm-test-isolation-proof.sh -h | --help
+#   sq-test-isolation-proof.sh [--jobs N] [--json path] [--list]
+#   sq-test-isolation-proof.sh --list-exclusions
+#   sq-test-isolation-proof.sh -h | --help
 #
 # Options:
 #   --jobs N     max concurrent workers (default: 4; min 1)
@@ -23,21 +23,21 @@
 #   --list       print the proven candidate paths (one per line) and exit 0
 #   --list-exclusions
 #                print basename + reason for scripts deliberately kept serial
-#                relative to the scout-proposed parallel pool, then exit 0
+#                relative to the recon-proposed parallel pool, then exit 0
 #   -h, --help   print this header
 #
 # Isolation contract for each concurrent worker:
 #   - distinct mode-0700 temporary root under a proof-owned parent
 #   - TMPDIR/TMP point only at that root so mktemp/fm_test_tmproot stay private
-#   - ambient FM_HOME / FM_*_OVERRIDE cleared so no shared home is reused
+#   - ambient SQUAD_HOME / SQUAD_*_OVERRIDE cleared so no shared home is reused
 #   - no global git config mutation (snapshot before/after)
 #   - no production sharding and no retry-until-green
 #
 # Markers (stdout):
-#   FM_ISOLATION_BEGIN <iso8601> concurrency=<n> candidates=<n>
-#   FM_ISOLATION_CANDIDATE_BEGIN <iso8601> <script> worker=<i>
-#   FM_ISOLATION_CANDIDATE_END <iso8601> <script> exit=<code> duration_ms=<n> worker=<i>
-#   FM_ISOLATION_SUMMARY total=<n> failed=<n> concurrency=<n> duration_ms=<n>
+#   SQUAD_ISOLATION_BEGIN <iso8601> concurrency=<n> candidates=<n>
+#   SQUAD_ISOLATION_CANDIDATE_BEGIN <iso8601> <script> worker=<i>
+#   SQUAD_ISOLATION_CANDIDATE_END <iso8601> <script> exit=<code> duration_ms=<n> worker=<i>
+#   SQUAD_ISOLATION_SUMMARY total=<n> failed=<n> concurrency=<n> duration_ms=<n>
 #
 # Exit status is the aggregate of candidate exits: non-zero if any candidate
 # fails, if isolation checks fail, or if the candidate set is empty. A script
@@ -62,12 +62,12 @@ usage() {
 }
 
 die() {
-  printf 'fm-test-isolation-proof: %s\n' "$*" >&2
+  printf 'sq-test-isolation-proof: %s\n' "$*" >&2
   exit 2
 }
 
 log() {
-  printf 'fm-test-isolation-proof: %s\n' "$*" >&2
+  printf 'sq-test-isolation-proof: %s\n' "$*" >&2
 }
 
 now_iso() {
@@ -82,61 +82,61 @@ now_ms() {
   fi
 }
 
-# Serial exclusions relative to the scout-proposed parallel pool (pure units,
+# Serial exclusions relative to the recon-proposed parallel pool (pure units,
 # fake backends, private git fixtures, stubbed network). Reasons are audit
 # evidence; do not re-add a basename without clearing its reason.
 exclusion_reason() {
   case "$1" in
-    fm-test-isolation-proof.test.sh)
+    sq-test-isolation-proof.test.sh)
       printf '%s\n' 'isolation-proof harness contract itself; must not re-enter concurrent matrix'
       ;;
-    fm-backend-tmux-smoke.test.sh)
+    sq-backend-tmux-smoke.test.sh)
       printf '%s\n' 'real tmux on a private socket; keep exclusive of default-server contention class'
       ;;
-    fm-backend.test.sh)
+    sq-backend.test.sh)
       printf '%s\n' 'old-vs-new main checkout diff fixture; gray-zone concurrent git/worktree cost'
       ;;
-    fm-spawn-dispatch-profile.test.sh|fm-spawn-worktree-settle.test.sh|fm-trace-context-spawn.test.sh)
+    sq-spawn-dispatch-profile.test.sh|sq-spawn-worktree-settle.test.sh|sq-trace-context-spawn.test.sh)
       printf '%s\n' 'real isolated git worktrees plus spawn settle loops; gray zone until dedicated proof'
       ;;
-    fm-pr-check-security.test.sh)
-      printf '%s\n' 'watcher lock / migration / poll security surface; intentional shared-lock class'
+    sq-pr-check-security.test.sh)
+      printf '%s\n' 'sentry lock / migration / poll security surface; intentional shared-lock class'
       ;;
-    fm-teardown.test.sh)
+    sq-teardown.test.sh)
       printf '%s\n' 'landed-work + lock-race teardown matrix; keep serial with forge/git stress peers'
       ;;
-    fm-herdr-session-cleanup.test.sh)
+    sq-herdr-session-cleanup.test.sh)
       printf '%s\n' 'session-start task/presentation lock matrix; keep serial until dedicated concurrent proof'
       ;;
-    fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
-    fm-supervision-events.test.sh|fm-turnend-guard.test.sh|fm-wake-daemon-lifecycle-e2e.test.sh|\
-    fm-wake-queue.test.sh|fm-watch-checkpoint.test.sh|fm-watch-triage.test.sh|\
-    fm-watcher-lock.test.sh)
-      printf '%s\n' 'watcher/wake/lock family; intentional process locks and daemon races'
+    sq-daemon.test.sh|sq-guard-stale-banner.test.sh|sq-pi-watch-extension.test.sh|\
+    sq-supervision-events.test.sh|sq-turnend-guard.test.sh|sq-stand-to-daemon-lifecycle-e2e.test.sh|\
+    sq-stand-to-queue.test.sh|sq-sentry-checkpoint.test.sh|sq-sentry-triage.test.sh|\
+    sq-sentry-lock.test.sh)
+      printf '%s\n' 'sentry/wake/lock family; intentional process locks and daemon races'
       ;;
-    fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|fm-afk-inject-herdr-e2e.test.sh|\
-    fm-afk-launch.test.sh)
+    sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh|sq-afk-inject-herdr-e2e.test.sh|\
+    sq-afk-launch.test.sh)
       printf '%s\n' 'AFK lifecycle / inject path; exclusive daemon and pane control'
       ;;
-    fm-afk-pi-herdr-return-e2e.test.sh|\
-    fm-codex-continuity-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
-    fm-opencode-primary-live-e2e.test.sh|fm-pi-primary-live-e2e.test.sh|\
-    fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh)
+    sq-afk-pi-herdr-return-e2e.test.sh|\
+    sq-codex-continuity-live-e2e.test.sh|sq-grok-continuity-live-e2e.test.sh|\
+    sq-opencode-primary-live-e2e.test.sh|sq-pi-primary-live-e2e.test.sh|\
+    sq-quota-array-dispatch-live-e2e.test.sh|sq-send-XO-marker-herdr-e2e.test.sh)
       printf '%s\n' 'live harness opt-in; never default parallel CI'
       ;;
-    fm-backend-autodetect-smoke.test.sh|fm-backend-herdr-eventwait-smoke.test.sh|\
-    fm-backend-herdr-presentation-e2e.test.sh|fm-backend-herdr-prune-safety-e2e.test.sh|\
-    fm-backend-herdr-respawn-idem-e2e.test.sh|fm-backend-herdr-smoke.test.sh|\
-    fm-backend-herdr-workspace-per-home-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh)
+    sq-backend-autodetect-smoke.test.sh|sq-backend-herdr-eventwait-smoke.test.sh|\
+    sq-backend-herdr-presentation-e2e.test.sh|sq-backend-herdr-prune-safety-e2e.test.sh|\
+    sq-backend-herdr-respawn-idem-e2e.test.sh|sq-backend-herdr-smoke.test.sh|\
+    sq-backend-herdr-workspace-per-home-e2e.test.sh|sq-herdr-session-cleanup-e2e.test.sh)
       printf '%s\n' 'real Herdr-gated; Herdr lane is a later phase'
       ;;
-    fm-backend-cmux.test.sh|fm-backend-cmux-smoke.test.sh)
+    sq-backend-cmux.test.sh|sq-backend-cmux-smoke.test.sh)
       printf '%s\n' 'cmux GUI backend; never parallel with another cmux mutator'
       ;;
-    fm-backend-zellij.test.sh|fm-backend-zellij-smoke.test.sh)
+    sq-backend-zellij.test.sh|sq-backend-zellij-smoke.test.sh)
       printf '%s\n' 'zellij optional backend; keep out of pure parallel pool'
       ;;
-    fm-backend-orca.test.sh)
+    sq-backend-orca.test.sh)
       printf '%s\n' 'orca backend surface; keep serial until dedicated isolation proof'
       ;;
     *)
@@ -149,57 +149,57 @@ exclusion_reason() {
 # path requires a new audit and proof archive.
 list_parallel_candidates() {
   cat <<'EOF'
-tests/fm-arm-pretool-check.test.sh
-tests/fm-backend-herdr.test.sh
-tests/fm-brief.test.sh
-tests/fm-cd-pretool-check.test.sh
-tests/fm-composer-ghost.test.sh
-tests/fm-composer-lib.test.sh
-tests/fm-crew-state.test.sh
-tests/fm-decision-hold-lifecycle.test.sh
-tests/fm-ensure-agents-md.test.sh
-tests/fm-grok-harness.test.sh
-tests/fm-herdr-lab.test.sh
-tests/fm-lint.test.sh
-tests/fm-pi-primary-types.test.sh
-tests/fm-pr-merge.test.sh
-tests/fm-review-diff.test.sh
-tests/fm-send-popup-settle.test.sh
-tests/fm-send-settle.test.sh
-tests/fm-send-strict.test.sh
-tests/fm-spawn-batch.test.sh
-tests/fm-supervision-instructions.test.sh
-tests/fm-test-run.test.sh
-tests/fm-tmux-submit-busy.test.sh
-tests/fm-transition-lib.test.sh
-tests/fm-x-mode.test.sh
+tests/sq-arm-pretool-check.test.sh
+tests/sq-backend-herdr.test.sh
+tests/sq-brief.test.sh
+tests/sq-cd-pretool-check.test.sh
+tests/sq-composer-ghost.test.sh
+tests/sq-composer-lib.test.sh
+tests/sq-crew-state.test.sh
+tests/sq-decision-hold-lifecycle.test.sh
+tests/sq-ensure-agents-md.test.sh
+tests/sq-grok-harness.test.sh
+tests/sq-herdr-lab.test.sh
+tests/sq-lint.test.sh
+tests/sq-pi-primary-types.test.sh
+tests/sq-pr-merge.test.sh
+tests/sq-review-diff.test.sh
+tests/sq-send-popup-settle.test.sh
+tests/sq-send-settle.test.sh
+tests/sq-send-strict.test.sh
+tests/sq-spawn-batch.test.sh
+tests/sq-supervision-instructions.test.sh
+tests/sq-test-run.test.sh
+tests/sq-tmux-submit-busy.test.sh
+tests/sq-transition-lib.test.sh
+tests/sq-x-mode.test.sh
 EOF
 }
 
 list_exclusions_for_report() {
   local base reason
-  # Stable report of known serial reasons for the scout-proposed pool classes.
+  # Stable report of known serial reasons for the recon-proposed pool classes.
   while IFS= read -r base; do
     [ -n "$base" ] || continue
     if reason=$(exclusion_reason "$base"); then
       printf '%s\t%s\n' "$base" "$reason"
     fi
   done <<'EOF'
-fm-test-isolation-proof.test.sh
-fm-backend-tmux-smoke.test.sh
-fm-backend.test.sh
-fm-spawn-dispatch-profile.test.sh
-fm-spawn-worktree-settle.test.sh
-fm-trace-context-spawn.test.sh
-fm-pr-check-security.test.sh
-fm-teardown.test.sh
-fm-watcher-lock.test.sh
-fm-wake-queue.test.sh
-fm-afk-inject-e2e.test.sh
-fm-backend-herdr-smoke.test.sh
-fm-backend-cmux-smoke.test.sh
-fm-pi-primary-live-e2e.test.sh
-fm-quota-array-dispatch-live-e2e.test.sh
+sq-test-isolation-proof.test.sh
+sq-backend-tmux-smoke.test.sh
+sq-backend.test.sh
+sq-spawn-dispatch-profile.test.sh
+sq-spawn-worktree-settle.test.sh
+sq-trace-context-spawn.test.sh
+sq-pr-check-security.test.sh
+sq-teardown.test.sh
+sq-sentry-lock.test.sh
+sq-stand-to-queue.test.sh
+sq-afk-inject-e2e.test.sh
+sq-backend-herdr-smoke.test.sh
+sq-backend-cmux-smoke.test.sh
+sq-pi-primary-live-e2e.test.sh
+sq-quota-array-dispatch-live-e2e.test.sh
 EOF
 }
 
@@ -327,7 +327,7 @@ for s in "${CANDIDATES[@]}"; do
   [ -f "$s" ] || die "candidate not found: $s"
 done
 
-PROOF_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-isolation-proof.XXXXXX")
+PROOF_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/sq-isolation-proof.XXXXXX")
 chmod 0700 "$PROOF_ROOT" || die "could not chmod 0700 proof root $PROOF_ROOT"
 RECORDS="$PROOF_ROOT/records.tsv"
 : >"$RECORDS"
@@ -336,12 +336,12 @@ trap 'rm -rf "$PROOF_ROOT"' EXIT
 GIT_BEFORE=$(global_git_snapshot)
 RUN_STARTED_ISO=$(now_iso)
 RUN_STARTED_MS=$(now_ms)
-RUN_ID="fm-isolation-${RUN_STARTED_MS}-$$"
+RUN_ID="sq-isolation-${RUN_STARTED_MS}-$$"
 TOTAL=${#CANDIDATES[@]}
 FAILED=0
 AGG_RC=0
 
-printf 'FM_ISOLATION_BEGIN %s concurrency=%s candidates=%s\n' \
+printf 'SQUAD_ISOLATION_BEGIN %s concurrency=%s candidates=%s\n' \
   "$RUN_STARTED_ISO" "$JOBS" "$TOTAL"
 
 # Worker state arrays parallel to CANDIDATES indices (1-based worker labels).
@@ -362,7 +362,7 @@ wait_one_slot() {
   script=${CANDIDATES[$((idx - 1))]}
   rc=$(cat "$work/out/exit" 2>/dev/null || echo 1)
   duration=$(cat "$work/out/duration_ms" 2>/dev/null || echo 0)
-  printf 'FM_ISOLATION_CANDIDATE_END %s %s exit=%s duration_ms=%s worker=%s\n' \
+  printf 'SQUAD_ISOLATION_CANDIDATE_END %s %s exit=%s duration_ms=%s worker=%s\n' \
     "$(now_iso)" "$script" "$rc" "$duration" "$idx"
   printf '%s\t%s\t%s\t%s\n' "$script" "$rc" "$duration" "$idx" >>"$RECORDS"
   if [ "$rc" -ne 0 ]; then
@@ -416,16 +416,16 @@ for script in "${CANDIDATES[@]}"; do
     *) die "failed to create mode-0700 TMPDIR at $work/tmp (mode=$mode)" ;;
   esac
 
-  printf 'FM_ISOLATION_CANDIDATE_BEGIN %s %s worker=%s\n' \
+  printf 'SQUAD_ISOLATION_CANDIDATE_BEGIN %s %s worker=%s\n' \
     "$(now_iso)" "$script" "$idx"
 
   (
     set +e
     export TMPDIR="$work/tmp"
     export TMP="$work/tmp"
-    # Clear ambient fleet overrides so candidates cannot share a live home.
-    unset FM_HOME FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_ROOT_OVERRIDE \
-      FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2>/dev/null || true
+    # Clear ambient unit overrides so candidates cannot share a live home.
+    unset SQUAD_HOME SQUAD_STATE_OVERRIDE SQUAD_DATA_OVERRIDE SQUAD_ROOT_OVERRIDE \
+      SQUAD_PROJECTS_OVERRIDE SQUAD_CONFIG_OVERRIDE SQUAD_BACKEND 2>/dev/null || true
     cd "$ROOT" || exit 1
     begin_ms=$(now_ms)
     bash "$script" >"$work/out/stdout" 2>"$work/out/stderr"
@@ -468,7 +468,7 @@ fi
 # residual path under PROOF_ROOT is expected and cleaned by trap. Refuse if a
 # worker wrote a fixed global path we know about from audit (none remain after
 # the arm-pretool stderr path uses TMPDIR).
-if find "$PROOF_ROOT" -type f -name 'fm-arm-pretool-check-claude-stderr.*' 2>/dev/null | grep -q .; then
+if find "$PROOF_ROOT" -type f -name 'sq-arm-pretool-check-claude-stderr.*' 2>/dev/null | grep -q .; then
   : # allowed only under proof roots; nothing to do
 fi
 
@@ -479,7 +479,7 @@ if [ "$RUN_DURATION" -lt 0 ]; then
   RUN_DURATION=0
 fi
 
-printf 'FM_ISOLATION_SUMMARY total=%s failed=%s concurrency=%s duration_ms=%s\n' \
+printf 'SQUAD_ISOLATION_SUMMARY total=%s failed=%s concurrency=%s duration_ms=%s\n' \
   "$TOTAL" "$FAILED" "$JOBS" "$RUN_DURATION"
 
 if [ -n "$JSON_PATH" ]; then

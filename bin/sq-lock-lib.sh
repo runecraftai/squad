@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Shared "is this git lock file provably abandoned?" decision procedure.
 #
-# ONE owner for the staleness proof that fm-teardown.sh (a worktree index.lock)
-# and fm-fleet-sync.sh (a clone's .git/packed-refs.lock) both rely on: a lock is
+# ONE owner for the staleness proof that sq-teardown.sh (a worktree index.lock)
+# and sq-unit-sync.sh (a clone's .git/packed-refs.lock) both rely on: a lock is
 # provably stale iff ALL of the following hold -
 #   1. the lock file still exists;
 #   2. no live process holds the lock file open, and none holds a companion
@@ -13,15 +13,15 @@
 #      lock might belong to a process lsof has not yet reflected.
 # ANY uncertainty - lsof missing, an lsof error, an unreadable mtime - returns
 # non-zero (NOT stale): fail safe, never remove a lock that cannot be proven dead.
-# Diagnostics print to stderr prefixed by ${FM_LOCK_LOG_PREFIX:-fm-lock} so each
+# Diagnostics print to stderr prefixed by ${SQUAD_LOCK_LOG_PREFIX:-sq-lock} so each
 # caller's output stays recognizable.
 
 fm_lock_log() {
-  echo "${FM_LOCK_LOG_PREFIX:-fm-lock}: $*" >&2
+  echo "${SQUAD_LOCK_LOG_PREFIX:-sq-lock}: $*" >&2
 }
 
 # Portable mtime in epoch seconds. Kept self-contained so this leaf lib drags in
-# no wake-queue machinery when a caller only needs the staleness proof.
+# no stand-to queue machinery when a caller only needs the staleness proof.
 fm_lock_path_mtime() {
   if [ "$(uname)" = Darwin ]; then
     stat -f %m "$1" 2>/dev/null

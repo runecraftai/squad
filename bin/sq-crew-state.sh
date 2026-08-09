@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# fm-crew-state.sh - deterministic read of a crew's CURRENT state.
+# sq-crew-state.sh - deterministic read of a crew's CURRENT state.
 #
 # Why this exists: state/<id>.status is an append-only, best-effort EVENT LOG.
 # Crews append only wake-worthy transitions (done/needs-decision/blocked/paused/failed)
 # and nothing when they silently resume, so `tail -1` of that log reports the
-# last EVENT, not the current STATE. After firstmate resolves a needs-decision
+# last EVENT, not the current STATE. After Squad resolves a needs-decision
 # or blocked and the crew resumes (responds to the gate, the pipeline fixes, it
 # re-validates), the log's last line stays stale. This helper never infers the
 # current state from a tail of the log: it reads the authoritative source (a
@@ -14,7 +14,7 @@
 #
 # The determinism lives entirely here - only run-step / pane / log reads plus
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
-# token-tight line firstmate can read every heartbeat:
+# token-tight line Squad can read every heartbeat:
 #
 #   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> · <detail>
 #
@@ -39,7 +39,7 @@
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
 #      agree, and are reported as parked.
-#   4. No run for this crew (pre-validation, or kind=scout): fall back to the
+#   4. No run for this crew (pre-validation, or kind=recon): fall back to the
 #      recorded backend's pane busy state, then the status log's last line only
 #      when its verb maps to a recognized run-state. Decision-only events such as
 #      `resolved` never become current state or detail.
@@ -52,34 +52,34 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 
-# shellcheck source=bin/fm-tmux-lib.sh
-. "$SCRIPT_DIR/fm-tmux-lib.sh"
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-classify-lib.sh
-. "$SCRIPT_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-busy-lib.sh
-. "$SCRIPT_DIR/fm-busy-lib.sh"
-# shellcheck source=bin/fm-nm-run-lib.sh
-. "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/sq-tmux-lib.sh
+. "$SCRIPT_DIR/sq-tmux-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-busy-lib.sh
+. "$SCRIPT_DIR/sq-busy-lib.sh"
+# shellcheck source=bin/sq-nm-run-lib.sh
+. "$SCRIPT_DIR/sq-nm-run-lib.sh"
 
 ID=${1:-}
-[ -n "$ID" ] || { echo "usage: fm-crew-state.sh <id>" >&2; exit 2; }
+[ -n "$ID" ] || { echo "usage: sq-crew-state.sh <id>" >&2; exit 2; }
 
 META="$STATE/$ID.meta"
 LOG="$STATE/$ID.status"
-NM_TIMEOUT=${FM_CREW_STATE_NM_TIMEOUT:-10}
+NM_TIMEOUT=${SQUAD_CREW_STATE_NM_TIMEOUT:-10}
 case "$NM_TIMEOUT" in ''|*[!0-9]*) NM_TIMEOUT=10 ;; esac
 # How many of the most recent `no-mistakes runs` rows the cross-branch fallback
 # (nm_runs_status_for_branch, below) scans. Generous enough to still find a
-# branch's own run on a busy multi-crew fleet without listing the entire
+# branch's own run on a busy multi-crew unit without listing the entire
 # history every call.
-FM_CREW_STATE_RUNS_LIMIT=${FM_CREW_STATE_RUNS_LIMIT:-200}
-case "$FM_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) FM_CREW_STATE_RUNS_LIMIT=200 ;; esac
+SQUAD_CREW_STATE_RUNS_LIMIT=${SQUAD_CREW_STATE_RUNS_LIMIT:-200}
+case "$SQUAD_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) SQUAD_CREW_STATE_RUNS_LIMIT=200 ;; esac
 SEP=' · '
 
 # Emit the one canonical line and exit 0. Detail is optional.
@@ -116,7 +116,7 @@ log_last_line() {
   grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1
 }
 # Map a status-log verb onto a canonical state for the fallback path. `paused` is
-# the deliberate-external-wait verb (fm-classify-lib.sh's FM_CLASSIFY_PAUSED_VERB):
+# the deliberate-external-wait verb (sq-classify-lib.sh's SQUAD_CLASSIFY_PAUSED_VERB):
 # a crew with no active run and an idle pane that declared a known external wait
 # reports `paused` distinctly, so a supervisor reading this sees a declared pause
 # and its reason rather than a wedge-suspect idle.
@@ -146,7 +146,7 @@ LOG_VERB=$(status_line_verb "$LOG_LINE")
 # herdr task is read through fm_backend_capture instead of a bare tmux probe.
 TASK_BACKEND=$(fm_backend_of_meta "$META")
 BACKEND_TARGET=$(fm_backend_target_of_meta "$META")
-EXPECTED_LABEL="fm-$ID"
+EXPECTED_LABEL="sq-$ID"
 pane_readable() {  # <target>
   case "$TASK_BACKEND" in
     tmux) tmux display-message -p -t "$1" '#{pane_id}' >/dev/null 2>&1 ;;
@@ -154,7 +154,7 @@ pane_readable() {  # <target>
   esac
 }
 # crew_busy_verdict: the crew's semantic busy state from the one contract
-# owner (bin/fm-busy-lib.sh), as "<busy|idle|unknown> <source>". A converted
+# owner (bin/sq-busy-lib.sh), as "<busy|idle|unknown> <source>". A converted
 # adapter answers from its own lifecycle record; Grok answers from its
 # isolated rendered-tail fallback; a herdr crew's native `busy` is accepted
 # when no record exists, but its native `idle` is NOT, because agent.get
@@ -171,7 +171,7 @@ crew_busy_verdict() {  # <target>
 # --- no-mistakes run lookup (authoritative when a run matches this branch) --
 # trim, strip_quotes, the bounded nm_run call, nm_field's TOON parse, and the
 # branch+head attribution rule below are thin wrappers over the ONE owner in
-# bin/fm-nm-run-lib.sh, shared with fm-teardown.sh's pre-teardown run abort.
+# bin/sq-nm-run-lib.sh, shared with sq-teardown.sh's pre-teardown run abort.
 
 trim() { fm_nm_trim "$@"; }
 strip_quotes() { fm_nm_strip_quotes "$@"; }
@@ -275,7 +275,7 @@ nm_effective_ci_step_status() {
 }
 
 # Root cause of the PR #252 incident (2026-07): for a repo where merge is left
-# to the captain, no-mistakes' ci step (and therefore top-level status/outcome)
+# to the commander, no-mistakes' ci step (and therefore top-level status/outcome)
 # stays "running" for the ENTIRE CI-monitor phase, including long after GitHub
 # reports every check green - it only reaches outcome=passed once the PR is
 # actually merged (or failed/cancelled if closed). `axi status`'s steps[] table
@@ -321,7 +321,7 @@ nm_ci_checks_state() {
 # status` answer was not this crew's own branch, attribution always failed and
 # the caller fell straight through to the pane/log fallback below. (The
 # PRIMARY cause of the 2026-07 herdr false-surface incidents turned out to be
-# a separate bug in bin/fm-watch.sh's stale_is_terminal precedence - see that
+# a separate bug in bin/sq-sentry.sh's stale_is_terminal precedence - see that
 # file's history - but this cross-branch path was independently confirmed
 # dead code and is worth having actually work.)
 #
@@ -333,10 +333,10 @@ nm_ci_checks_state() {
 # is exact) - but branch + coarse status is exactly what this predicate needs:
 # is a run for THIS branch active right now. Echoes the first (most recent)
 # matching row's status word (running/completed/cancelled/failed), or empty
-# when the branch has no run within FM_CREW_STATE_RUNS_LIMIT rows.
+# when the branch has no run within SQUAD_CREW_STATE_RUNS_LIMIT rows.
 nm_runs_status_for_branch() {  # <branch>
   local branch=$1 out row st rest br sha
-  out=$(nm_run runs --limit "$FM_CREW_STATE_RUNS_LIMIT")
+  out=$(nm_run runs --limit "$SQUAD_CREW_STATE_RUNS_LIMIT")
   [ -n "$out" ] || return 0
   while IFS= read -r row; do
     row=$(trim "$row")
@@ -361,13 +361,13 @@ nm_runs_status_for_branch() {  # <branch>
   return 0
 }
 
-# CREW_BRANCH is empty at detached HEAD (a just-spawned crew, or a scout's
+# CREW_BRANCH is empty at detached HEAD (a just-spawned crew, or a recon's
 # scratch worktree); with no branch there is no run to attribute to this crew.
 CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
 # 0 if the active axi-status run's head field matches this worktree's code
 # identity. Branch match is a precondition (caller). Rule owned by
-# fm_nm_head_matches_worktree in bin/fm-nm-run-lib.sh.
+# fm_nm_head_matches_worktree in bin/sq-nm-run-lib.sh.
 nm_run_head_matches_worktree() {
   local run_head
   run_head=$(strip_quotes "$(nm_field head)")
@@ -388,7 +388,7 @@ HAVE_RUN=0
 # run-step block below skips the TOON field parsing entirely for this crew.
 RUN_SOURCE=full
 COARSE_STATUS=""
-# Scouts and secondmates never drive a no-mistakes validation of their own
+# Scouts and XOs never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
   RUN_OUT=$(nm_run axi status)
@@ -426,7 +426,7 @@ if [ "$HAVE_RUN" = 1 ]; then
     # true/working, done, or failed. A crew genuinely parked at a gate still
     # gets full detail once `axi status` reports its own branch again (e.g.
     # once its own step is the most-recently-touched one), and its own
-    # needs-decision/blocked status-log append (a captain-relevant VERB) is
+    # needs-decision/blocked status-log append (a commander-relevant VERB) is
     # surfaced through signal_reason_is_actionable regardless of this
     # coarse-vs-full distinction, so a real gate is never silently missed.
     case "$COARSE_STATUS" in
@@ -539,12 +539,12 @@ fi
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
 pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACKEND_TARGET"
 
-# Secondmates idle on their own watcher (idle pane = healthy), so the busy
+# XOs idle on their own sentry (idle pane = healthy), so the busy
 # state is not meaningful for them; read their state from the status log only.
 # Only an exact busy verdict reports working here, and only an exact idle
 # verdict permits the status-log fallback below. Missing, malformed, stale, or
 # unverified semantic state remains unknown.
-if [ "$KIND" != secondmate ]; then
+if [ "$KIND" != XO ]; then
   BUSY_VERDICT=$(crew_busy_verdict "$BACKEND_TARGET")
   case "${BUSY_VERDICT%% *}" in
     busy) emit working pane "harness busy (${BUSY_VERDICT#* })" ;;
@@ -554,11 +554,11 @@ if [ "$KIND" != secondmate ]; then
 fi
 
 # Fall back to the status log's last line, but ONLY when its verb maps to a real
-# run-state. A decision-closing event - resolved: (fm-classify-lib.sh's
-# FM_CLASSIFY_RESOLVE_VERB), and any future decision-only sibling - is NOT a state:
+# run-state. A decision-closing event - resolved: (sq-classify-lib.sh's
+# SQUAD_CLASSIFY_RESOLVE_VERB), and any future decision-only sibling - is NOT a state:
 # it exists solely to CLOSE a keyed decision in the durable fold, so a trailing
 # resolved: must never become the current state or leak its resolution prose as the
-# detail. Skipping it lets a just-resolved idle crew (typically a secondmate, which
+# detail. Skipping it lets a just-resolved idle crew (typically a XO, which
 # has no busy check above) fall through to the idle default instead of rendering
 # `unknown` with the resolution note as `doing`. map_log_state is the single owner of
 # the verb->state mapping (including the configurable paused verb), so reusing its

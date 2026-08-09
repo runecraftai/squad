@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Reap remote job workers whose code root no longer exists.
 #
-# Usage: fm-remote-job-reap-orphans.sh [--dry-run]
+# Usage: sq-remote-job-reap-orphans.sh [--dry-run]
 #   --dry-run reports what would be reaped and signals nothing.
 #
-# A remote job worker (bin/fm-remote-job-worker.sh) is launched from a specific
-# Firstmate code root: the account's own checkout under the LaunchAgent, a
-# remote secondmate's checkout, a no-mistakes gate worktree, a pooled task
+# A remote job worker (bin/sq-remote-job-worker.sh) is launched from a specific
+# Squad code root: the account's own checkout under the LaunchAgent, a
+# remote XO's checkout, a no-mistakes gate worktree, a pooled task
 # worktree, or a test fixture root. When that root is pruned while the worker is
 # running, the worker is reparented to init and, on older builds, keeps polling
 # and logging indefinitely. Current workers stop themselves once their root is
-# gone (bin/fm-remote-job-worker.sh); this sweep is the belt-and-suspenders pass
+# gone (bin/sq-remote-job-worker.sh); this sweep is the belt-and-suspenders pass
 # that clears workers already orphaned that way, including ones started before
 # self-termination shipped.
 #
@@ -18,7 +18,7 @@
 # named in the worker's own command line. That is deliberately the whole test:
 # a worker whose root is gone can never claim, validate, or execute another job,
 # and no healthy worker can present a missing root. The account's healthy
-# LaunchAgent worker, a live remote secondmate's worker, and any worker whose
+# LaunchAgent worker, a live remote XO's worker, and any worker whose
 # checkout still exists are therefore never candidates, with no dependence on
 # log paths, process age, or which home is sweeping.
 #
@@ -35,21 +35,21 @@ set -u
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
-# shellcheck source=bin/fm-remote-job-lib.sh
-. "$SCRIPT_DIR/fm-remote-job-lib.sh"
+# shellcheck source=bin/sq-remote-job-lib.sh
+. "$SCRIPT_DIR/sq-remote-job-lib.sh"
 
 DRY_RUN=0
-REAP_SUFFIX=/bin/fm-remote-job-worker.sh
+REAP_SUFFIX=/bin/sq-remote-job-worker.sh
 
-reap_die() { printf 'fm-remote-job-reap-orphans: %s\n' "$1" >&2; exit 2; }
+reap_die() { printf 'sq-remote-job-reap-orphans: %s\n' "$1" >&2; exit 2; }
 
 reap_usage() {
   cat <<'TXT'
-Usage: fm-remote-job-reap-orphans.sh [--dry-run]
+Usage: sq-remote-job-reap-orphans.sh [--dry-run]
 
-Stop every remote job worker whose Firstmate code root has been pruned. A
+Stop every remote job worker whose Squad code root has been pruned. A
 worker whose root still exists - the account's LaunchAgent worker, a live
-remote secondmate's worker - is never a candidate. --dry-run reports the
+remote XO's worker - is never a candidate. --dry-run reports the
 candidates and signals nothing. Read this script's header for the full rule.
 TXT
 }

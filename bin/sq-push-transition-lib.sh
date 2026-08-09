@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Shared owner of the watcher's native push-transition escalation.
+# Shared owner of the sentry's native push-transition escalation.
 #
-# The watcher and event-wait smoke tests source this library instead of loading
-# the whole watcher to obtain handle_push_transition. Its source list is limited
+# The sentry and event-wait smoke tests source this library instead of loading
+# the whole sentry to obtain handle_push_transition. Its source list is limited
 # to the four production boundaries the transition handler actually calls.
 
-FM_PUSH_TRANSITION_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SQUAD_PUSH_TRANSITION_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=bin/fm-wake-lib.sh
-. "$FM_PUSH_TRANSITION_LIB_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-classify-lib.sh
-. "$FM_PUSH_TRANSITION_LIB_DIR/fm-classify-lib.sh"
-# shellcheck source=bin/fm-backend.sh
-. "$FM_PUSH_TRANSITION_LIB_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-transition-lib.sh
-. "$FM_PUSH_TRANSITION_LIB_DIR/fm-transition-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SQUAD_PUSH_TRANSITION_LIB_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SQUAD_PUSH_TRANSITION_LIB_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SQUAD_PUSH_TRANSITION_LIB_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-transition-lib.sh
+. "$SQUAD_PUSH_TRANSITION_LIB_DIR/sq-transition-lib.sh"
 
-TRIAGE_LOG="$STATE/.watch-triage.log"
-TRIAGE_LOG_MAX_BYTES=${FM_WATCH_TRIAGE_LOG_MAX_BYTES:-262144}
-FM_WAKE_POST_OUTPUT_ACTION=
-FM_WATCH_DELIVERY_PID=
-FM_WATCH_DELIVERY_IDENTITY=
+TRIAGE_LOG="$STATE/.sentry-triage.log"
+TRIAGE_LOG_MAX_BYTES=${SQUAD_WATCH_TRIAGE_LOG_MAX_BYTES:-262144}
+SQUAD_WAKE_POST_OUTPUT_ACTION=
+SQUAD_WATCH_DELIVERY_PID=
+SQUAD_WATCH_DELIVERY_IDENTITY=
 WATCH_DELIVERY_LOG="$STATE/.watch-deliveries.log"
 WATCH_DELIVERY_LOCK="$STATE/.watch-deliveries.lock"
-WATCH_DELIVERY_MAX_BYTES=${FM_WATCH_DELIVERY_MAX_BYTES:-65536}
-WATCH_DELIVERY_KEEP_LINES=${FM_WATCH_DELIVERY_KEEP_LINES:-64}
+WATCH_DELIVERY_MAX_BYTES=${SQUAD_WATCH_DELIVERY_MAX_BYTES:-65536}
+WATCH_DELIVERY_KEEP_LINES=${SQUAD_WATCH_DELIVERY_KEEP_LINES:-64}
 case "$WATCH_DELIVERY_MAX_BYTES" in ''|*[!0-9]*|0) WATCH_DELIVERY_MAX_BYTES=65536 ;; esac
 case "$WATCH_DELIVERY_KEEP_LINES" in ''|*[!0-9]*|0) WATCH_DELIVERY_KEEP_LINES=64 ;; esac
 
@@ -38,8 +38,8 @@ watch_delivery_clean_reason() {
 
 watch_delivery_publish() {
   local reason=$1 i size tmp raw
-  [ -n "$FM_WATCH_DELIVERY_PID" ] || return 0
-  [ -n "$FM_WATCH_DELIVERY_IDENTITY" ] || return 0
+  [ -n "$SQUAD_WATCH_DELIVERY_PID" ] || return 0
+  [ -n "$SQUAD_WATCH_DELIVERY_IDENTITY" ] || return 0
   i=0
   while ! fm_lock_try_acquire "$WATCH_DELIVERY_LOCK"; do
     [ "$i" -lt 20 ] || return 0
@@ -47,15 +47,15 @@ watch_delivery_publish() {
     i=$((i + 1))
   done
   printf '%s\t%s\t%s\n' \
-    "$FM_WATCH_DELIVERY_PID" \
-    "$(watch_delivery_clean_identity "$FM_WATCH_DELIVERY_IDENTITY")" \
+    "$SQUAD_WATCH_DELIVERY_PID" \
+    "$(watch_delivery_clean_identity "$SQUAD_WATCH_DELIVERY_IDENTITY")" \
     "$(watch_delivery_clean_reason "$reason")" >> "$WATCH_DELIVERY_LOG" 2>/dev/null || true
   size=$(wc -c < "$WATCH_DELIVERY_LOG" 2>/dev/null | tr -d '[:space:]')
   case "$size" in
     ''|*[!0-9]*) ;;
     *)
       if [ "$size" -ge "$WATCH_DELIVERY_MAX_BYTES" ]; then
-        tmp="$WATCH_DELIVERY_LOG.tmp.$FM_WATCH_DELIVERY_PID"
+        tmp="$WATCH_DELIVERY_LOG.tmp.$SQUAD_WATCH_DELIVERY_PID"
         raw="$tmp.raw"
         tail -n "$WATCH_DELIVERY_KEEP_LINES" "$WATCH_DELIVERY_LOG" 2>/dev/null \
           | tail -c "$WATCH_DELIVERY_MAX_BYTES" > "$raw" 2>/dev/null \
@@ -88,15 +88,15 @@ wake() {
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
   esac
   trap '' HUP INT TERM
-  [ -z "$FM_WAKE_POST_OUTPUT_ACTION" ] || trap '' PIPE
+  [ -z "$SQUAD_WAKE_POST_OUTPUT_ACTION" ] || trap '' PIPE
   if echo "$1"; then
     output_status=0
     watch_delivery_publish "$1" || true
   else
     output_status=1
   fi
-  if [ -n "$FM_WAKE_POST_OUTPUT_ACTION" ]; then
-    "$FM_WAKE_POST_OUTPUT_ACTION" "$output_status" || true
+  if [ -n "$SQUAD_WAKE_POST_OUTPUT_ACTION" ]; then
+    "$SQUAD_WAKE_POST_OUTPUT_ACTION" "$output_status" || true
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
   exit 0
@@ -106,13 +106,13 @@ _hb_surfaced_path() {
   printf '%s/.hb-surfaced-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
 }
 
-# Record a captain-relevant status after its durable wake has been enqueued.
+# Record a commander-relevant status after its durable wake has been enqueued.
 mark_surfaced() {  # <status-file>
   local f=$1 task last
   task=$(basename "$f"); task="${task%.status}"
   last=$(last_status_line "$f")
   [ -n "$last" ] || return 0
-  status_is_captain_relevant "$last" || return 0
+  status_is_commander_relevant "$last" || return 0
   printf '%s' "$last" > "$(_hb_surfaced_path "$task")"
 }
 

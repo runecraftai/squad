@@ -6,11 +6,11 @@
 #
 # Target string shape: the Orca terminal id accepted by `orca terminal ...`.
 
-# Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
-# dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
+# Shared composer-content classifier (empty|pending|unknown, and the unit-wide
+# dead-shell-vs-agent-composer rule). Owned by bin/sq-composer-lib.sh, reused by
 # every backend so the decision cannot drift.
-# shellcheck source=bin/fm-composer-lib.sh
-. "$(dirname -- "${BASH_SOURCE[0]}")/../fm-composer-lib.sh"
+# shellcheck source=bin/sq-composer-lib.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/../sq-composer-lib.sh"
 
 fm_backend_orca_tool_check() {
   command -v orca >/dev/null 2>&1 || { echo "error: backend=orca selected but the 'orca' CLI is not installed" >&2; return 1; }
@@ -262,8 +262,8 @@ fm_backend_orca_read_text_paged() {  # <terminal-id> <limit>
   printf '%s' "$text"
 }
 
-FM_BACKEND_ORCA_COMPOSER_LINES=${FM_BACKEND_ORCA_COMPOSER_LINES:-200}
-FM_BACKEND_ORCA_IDLE_RE=${FM_BACKEND_ORCA_IDLE_RE:-'^Type a message\.\.\.$'}
+SQUAD_BACKEND_ORCA_COMPOSER_LINES=${SQUAD_BACKEND_ORCA_COMPOSER_LINES:-200}
+SQUAD_BACKEND_ORCA_IDLE_RE=${SQUAD_BACKEND_ORCA_IDLE_RE:-'^Type a message\.\.\.$'}
 
 # fm_backend_orca_composer_state: classify the composer's own bordered row as
 # empty|pending|unknown. Real text stays pending, including a slash-command
@@ -271,7 +271,7 @@ FM_BACKEND_ORCA_IDLE_RE=${FM_BACKEND_ORCA_IDLE_RE:-'^Type a message\.\.\.$'}
 # that first Enter selected the popup item, it did not submit the command.
 fm_backend_orca_composer_state() {  # <terminal-id> -> empty|pending|unknown
   local terminal=$1 cap line trimmed stripped="" found=0
-  cap=$(fm_backend_orca_read_text_paged "$terminal" "$FM_BACKEND_ORCA_COMPOSER_LINES") || { printf 'unknown'; return 0; }
+  cap=$(fm_backend_orca_read_text_paged "$terminal" "$SQUAD_BACKEND_ORCA_COMPOSER_LINES") || { printf 'unknown'; return 0; }
   while IFS= read -r line; do
     trimmed="${line#"${line%%[![:space:]]*}"}"
     trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
@@ -292,7 +292,7 @@ fm_backend_orca_composer_state() {  # <terminal-id> -> empty|pending|unknown
   # A row was found only by the bordered shape above, so content came from a
   # genuine composer box - delegate to the shared owner with bordered=1. A bare
   # dead-shell prompt has no bordered row and already returned 'unknown' above.
-  fm_composer_classify_content 1 "$stripped" "$FM_BACKEND_ORCA_IDLE_RE"
+  fm_composer_classify_content 1 "$stripped" "$SQUAD_BACKEND_ORCA_IDLE_RE"
 }
 
 fm_backend_orca_send_key() {  # <terminal-id> <key>

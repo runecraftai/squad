@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Turn-end guard for any firstmate PRIMARY session: the main home OR a
-# secondmate's own home. A secondmate runs its own primary firstmate session and
-# is guarded exactly like the main primary; only child crew/scout worktrees are
+# Turn-end guard for any Squad PRIMARY session: the main home OR a
+# XO's own home. A XO runs its own primary Squad session and
+# is guarded exactly like the main primary; only child crew/recon worktrees are
 # exempt (see the scoping block below and docs/turnend-guard.md).
 #
-# fm-guard.sh (bin/fm-guard.sh) is pull-based: it only warns when some other
+# sq-guard.sh (bin/sq-guard.sh) is pull-based: it only warns when some other
 # supervision script happens to run. A primary session that ends a turn without
 # resuming its harness supervision protocol, and then never runs another
-# fleet-touching command itself, can sit blind for hours.
+# unit-touching command itself, can sit blind for hours.
 # This script is push-based: verified harness turn-end hooks invoke it every time
 # the primary is about to end a turn.
 # Claude and codex can block directly by preserving exit status 2 and stderr.
@@ -20,12 +20,12 @@
 #
 # Ships with TRACKED harness hook files at the repo root, so this file is
 # checked out into every worktree of this repo: the primary checkout, every
-# secondmate home (treehouse-leased or git-cloned), and any crewmate/scout task
-# worktree spawned to work on firstmate itself (the recursive "firstmate
-# improving itself" case). A secondmate home runs its OWN primary firstmate
-# session, so it must be guarded like the main primary; only child crew/scout
+# XO home (fob-leased or git-cloned), and any operator/recon task
+# worktree spawned to work on Squad itself (the recursive "Squad
+# improving itself" case). A XO home runs its OWN primary Squad
+# session, so it must be guarded like the main primary; only child crew/recon
 # worktrees are exempt. It must therefore scope itself at runtime to a real
-# primary checkout - the main home or a genuinely marked secondmate home - and
+# primary checkout - the main home or a genuinely marked XO home - and
 # stay a silent, fast no-op inside child task worktrees.
 #
 # Loop-guard, codex/Grok (default) mode: never block twice in the same turn.
@@ -44,9 +44,9 @@
 # would re-open the exact blind window this guard exists to close
 # (docs/turnend-guard.md records the 2026-07-21 incident). In --claude mode this
 # guard ignores stop_hook_active and instead cooperates with the Stop-owned
-# auto-arm (bin/fm-claude-stop-autoarm.sh), which fires on the same Stop event:
-#   1. a live identity-matched watcher with a fresh beacon allows immediately;
-#   2. otherwise wait briefly (FM_CLAUDE_AUTOARM_SYNC_WAIT_MS, default 800ms)
+# auto-arm (bin/sq-claude-stop-autoarm.sh), which fires on the same Stop event:
+#   1. a live identity-matched sentry with a fresh beacon allows immediately;
+#   2. otherwise wait briefly (SQUAD_CLAUDE_AUTOARM_SYNC_WAIT_MS, default 800ms)
 #      for the auto-arm to claim this home (state/.claude-autoarm.lock owner
 #      alive) or to record a fresh actionable exit-2 outcome
 #      (state/.claude-autoarm-epoch) for this event epoch - either proof allows
@@ -54,23 +54,23 @@
 #      the first fresh exhausted-failure epoch preserves the bounded progression,
 #      while later fresh failed epochs consume it instead of resetting it;
 #   3. only when neither materializes is the auto-arm genuinely absent: re-block
-#      with the repair banner, bounded to FM_CLAUDE_TURNEND_BLOCK_BUDGET
+#      with the repair banner, bounded to SQUAD_CLAUDE_TURNEND_BLOCK_BUDGET
 #      (default 3) consecutive blocks per session - safely below Claude Code's
 #      hard 8-consecutive-block override - then allow one loud attended
 #      fail-open only for an already verified failure episode.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-GRACE=${FM_GUARD_GRACE:-300}
-WATCH="$SCRIPT_DIR/fm-watch.sh"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+GRACE=${SQUAD_GUARD_GRACE:-300}
+WATCH="$SCRIPT_DIR/sq-sentry.sh"
 CLAUDE_MODE=0
-SYNC_WAIT_MS=${FM_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
-EPOCH_FRESH=${FM_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
-BLOCK_BUDGET=${FM_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
+SYNC_WAIT_MS=${SQUAD_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
+EPOCH_FRESH=${SQUAD_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
+BLOCK_BUDGET=${SQUAD_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
 case "$SYNC_WAIT_MS" in ''|*[!0-9]*) SYNC_WAIT_MS=800 ;; esac
 case "$EPOCH_FRESH" in ''|*[!0-9]*|0) EPOCH_FRESH=15 ;; esac
 case "$BLOCK_BUDGET" in ''|*[!0-9]*|0) BLOCK_BUDGET=3 ;; esac
@@ -82,17 +82,17 @@ for arg in "$@"; do
   esac
 done
 
-# shellcheck source=bin/fm-supervision-lib.sh
-. "$SCRIPT_DIR/fm-supervision-lib.sh"
-# shellcheck source=bin/fm-primary-scope-lib.sh
-. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+# shellcheck source=bin/sq-supervision-lib.sh
+. "$SCRIPT_DIR/sq-supervision-lib.sh"
+# shellcheck source=bin/sq-primary-scope-lib.sh
+. "$SCRIPT_DIR/sq-primary-scope-lib.sh"
 
 # Read the whole turn-end hook payload once; never block on unreadable/absent
 # stdin.
 PAYLOAD=$(cat 2>/dev/null || true)
 [ -n "$PAYLOAD" ] || exit 0
 
-# jq is the repo's established JSON dependency (bin/fm-x-poll.sh uses the same
+# jq is the repo's established JSON dependency (bin/sq-x-poll.sh uses the same
 # "missing jq -> silent no-op" degrade). Without it we cannot safely read the
 # loop-guard field, so we must never block - fail open, not noisy.
 command -v jq >/dev/null 2>&1 || exit 0
@@ -111,22 +111,22 @@ if [ "$CLAUDE_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 # --- scope precisely to a PRIMARY checkout ----------------------------------
-# A genuinely-marked secondmate home runs its OWN primary firstmate session, so
-# force-INCLUDE it as a guarded primary whether treehouse leased it as a linked
+# A genuinely-marked XO home runs its OWN primary Squad session, so
+# force-INCLUDE it as a guarded primary whether fob leased it as a linked
 # worktree (git-dir != git-common-dir) or it is a git-cloned plain checkout. This
-# mirrors the cd-guard's intent that a secondmate's own session is a guarded
+# mirrors the cd-guard's intent that a XO's own session is a guarded
 # primary. Only an UNMARKED checkout (or one with an invalid marker) falls
-# through to the linked-worktree exemption: firstmate hands out crewmate/scout
-# task worktrees as genuine linked `git worktree`s (bin/fm-spawn.sh aborts
+# through to the linked-worktree exemption: Squad hands out operator/recon
+# task worktrees as genuine linked `git worktree`s (bin/sq-spawn.sh aborts
 # otherwise), whose git-dir lives under the parent repo's .git/worktrees/<name>
 # and differs from the common (shared) git-dir, while a main, non-worktree
 # checkout has the two equal. Child worktrees never carry the gitignored marker,
-# so this exempts them while guarding every real secondmate home.
-fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
+# so this exempts them while guarding every real XO home.
+fm_primary_scope_matches "$SQUAD_ROOT" "$STATE" || exit 0
 
 # --- the actual predicate ----------------------------------------------------
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
 BUDGET_FILE="$STATE/.turnend-claude-blocks"
 BUDGET_LOCK="$STATE/.turnend-claude-blocks.lock"
@@ -142,11 +142,11 @@ budget_reset() {
 }
 
 fm_supervision_status "$STATE" "$GRACE"
-if [ "$FM_SUP_NEEDED" = false ]; then
+if [ "$SQUAD_SUP_NEEDED" = false ]; then
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
-if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
   fm_failure_episode_reset "$STATE" && exit 0
   exit 2
@@ -158,18 +158,18 @@ block_stop() {
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
   [ -f "$CONFIG/x-mode.env" ] && x_mode=1
-  reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" --afk "$afk" --x-mode "$x_mode" --repair-line 2>/dev/null \
-    || printf '%s\n' 'tasks in flight, no live watcher - repair missing watcher supervision according to the session-start operating block before ending the turn')
+  reason=$("$SCRIPT_DIR/sq-supervision-instructions.sh" --afk "$afk" --x-mode "$x_mode" --repair-line 2>/dev/null \
+    || printf '%s\n' 'tasks in flight, no live sentry - repair missing sentry supervision according to the session-start operating block before ending the turn')
   rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   {
     printf '●%s\n' "$rule"
     printf '●  TURN WOULD END BLIND - SUPERVISION IS OFF\n'
-    if [ "$FM_SUP_IN_FLIGHT" -gt 0 ]; then
-      printf '●  %s task(s) in flight, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_IN_FLIGHT" "$FM_SUP_BEACON_DESC"
-    elif [ "$FM_SUP_SOURCES" -gt 0 ]; then
-      printf '●  %s process-event source(s) registered, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_SOURCES" "$FM_SUP_BEACON_DESC"
+    if [ "$SQUAD_SUP_IN_FLIGHT" -gt 0 ]; then
+      printf '●  %s task(s) in flight, but no live sentry holds this home lock (last beat: %s).\n' "$SQUAD_SUP_IN_FLIGHT" "$SQUAD_SUP_BEACON_DESC"
+    elif [ "$SQUAD_SUP_SOURCES" -gt 0 ]; then
+      printf '●  %s process-event source(s) registered, but no live sentry holds this home lock (last beat: %s).\n' "$SQUAD_SUP_SOURCES" "$SQUAD_SUP_BEACON_DESC"
     else
-      printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
+      printf '●  X-mode relay polling needs supervision, but no live sentry holds this home lock (last beat: %s).\n' "$SQUAD_SUP_BEACON_DESC"
     fi
     if [ "$CLAUDE_MODE" -eq 1 ]; then
       printf '●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.\n'
@@ -239,7 +239,7 @@ budget_account_current_epoch() {
 
 autoarm_owns_recovery() {
   local pid role outcome age
-  fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" && return 0
+  fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME" && return 0
   pid=$(cat "$OWNER_LOCK/pid" 2>/dev/null || true)
   role=$(fm_lock_role "$OWNER_LOCK" 2>/dev/null || true)
   if fm_pid_alive "$pid" && [ "$role" = autoarm ]; then
@@ -307,7 +307,7 @@ terminal_fail_open() {
     fm_lock_release "$OWNER_LOCK"
     return 1
   fi
-  if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+  if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
     if ! fm_failure_episode_reset "$STATE" held; then
       fm_lock_release "$BUDGET_LOCK"
       fm_lock_release "$OWNER_LOCK"
@@ -341,7 +341,7 @@ failure_episode_verified() {
 i=0
 while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   if autoarm_owns_recovery; then
-    if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+    if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
       fm_failure_episode_reset "$STATE" || exit 2
     fi
     exit 0
@@ -350,7 +350,7 @@ while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   i=$((i + 1))
 done
 if autoarm_owns_recovery; then
-  if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+  if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
     fm_failure_episode_reset "$STATE" || exit 2
   fi
   exit 0
@@ -362,14 +362,14 @@ budget_account_current_epoch || block_stop
 terminal_fail_open
 terminal_status=$?
 if [ "$terminal_status" -eq 0 ]; then
-  if [ "$FM_SUP_IN_FLIGHT" -gt 0 ]; then
-    NEED_DESC="$FM_SUP_IN_FLIGHT task(s) in flight"
-  elif [ "$FM_SUP_SOURCES" -gt 0 ]; then
-    NEED_DESC="$FM_SUP_SOURCES process-event source(s) registered"
+  if [ "$SQUAD_SUP_IN_FLIGHT" -gt 0 ]; then
+    NEED_DESC="$SQUAD_SUP_IN_FLIGHT task(s) in flight"
+  elif [ "$SQUAD_SUP_SOURCES" -gt 0 ]; then
+    NEED_DESC="$SQUAD_SUP_SOURCES process-event source(s) registered"
   else
     NEED_DESC="X-mode relay polling active"
   fi
-  printf '{"systemMessage":"FIRSTMATE SUPERVISION IS GENUINELY DOWN: %s, the Stop-owned auto-arm exhausted its bounded retries and one failure notice, no watcher or automatic continuation exists, and the block budget is exhausted. Keep this session attended and diagnose the automatic Stop-hook and watcher startup before relying on unattended supervision."}\n' "$NEED_DESC"
+  printf '{"systemMessage":"SQUAD SUPERVISION IS GENUINELY DOWN: %s, the Stop-owned auto-arm exhausted its bounded retries and one failure notice, no sentry or automatic continuation exists, and the block budget is exhausted. Keep this session attended and diagnose the automatic Stop-hook and sentry startup before relying on unattended supervision."}\n' "$NEED_DESC"
   exit 0
 fi
 [ "$terminal_status" -eq 2 ] && exit 0

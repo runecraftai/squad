@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# fm-public-followup-emit.sh - emit ONE structured terminal work result for work
+# sq-public-followup-emit.sh - emit ONE structured terminal work result for work
 # bound to a public commitment, into the owning home's private event inbox.
 #
 # WHY THIS EXISTS: a public promise is kept by the home that owns the relay
 # consent and the thread binding. The home doing the work only has to report a
-# TYPED result. Firstmate must never recover the source home, work id, outcome,
+# TYPED result. Squad must never recover the source home, work id, outcome,
 # or deliverables by parsing a free-form "done: ..." status sentence, so this
 # script is the structured channel that carries them.
 #
 # WHAT IT DOES NOT DO: it never posts anything, never reads relay credentials,
 # and never resolves a public thread. Outward delivery stays with the owning
-# home (bin/fm-public-followup.sh deliver).
+# home (bin/sq-public-followup.sh deliver).
 #
 # Usage:
-#   fm-public-followup-emit.sh --home <owning-home> \
+#   sq-public-followup-emit.sh --home <owning-home> \
 #     --obligation <obligation-id> --relation <relation-id> \
-#     --source-home <main|secondmate:<id>> --work-id <task-id> \
+#     --source-home <main|XO:<id>> --work-id <task-id> \
 #     --generation <n> --outcome <outcome-type> \
 #     [--deliverable <key>=<value>]... \
 #     (--outcome-text <text> | --outcome-text-file <path> | --outcome-text -)
@@ -24,11 +24,11 @@
 #   --home <path>          The home that owns the public commitment (the primary
 #                          that took the mention). Must already have a
 #                          registration for --obligation; see
-#                          `fm-public-followup.sh register`.
+#                          `sq-public-followup.sh register`.
 #   --obligation <id>      tasks-axi public-followup obligation id.
 #   --relation <id>        The relation_id this work fulfills or contributes to.
 #   --source-home <id>     This worker's stable home identity, exactly as bound:
-#                          "main" or "secondmate:<stable-id>".
+#                          "main" or "XO:<stable-id>".
 #   --work-id <id>         This worker's exact task id, exactly as bound.
 #   --generation <n>       The bound relation generation (integer >= 1).
 #   --outcome <type>       Typed outcome. tasks-axi owns the vocabulary and
@@ -59,13 +59,13 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-public-followup-lib.sh
-. "$SCRIPT_DIR/fm-public-followup-lib.sh"
+# shellcheck source=bin/sq-public-followup-lib.sh
+. "$SCRIPT_DIR/sq-public-followup-lib.sh"
 
 usage() {
   cat >&2 <<'EOF'
-usage: fm-public-followup-emit.sh --home <owning-home> --obligation <id> --relation <id>
-         --source-home <main|secondmate:<id>> --work-id <id> --generation <n>
+usage: sq-public-followup-emit.sh --home <owning-home> --obligation <id> --relation <id>
+         --source-home <main|XO:<id>> --work-id <id> --generation <n>
          --outcome <type> [--deliverable <key>=<value>]...
          (--outcome-text <text> | --outcome-text-file <path> | --outcome-text -)
 EOF
@@ -76,7 +76,7 @@ help() {
   sed -n '2,/^set -u$/p' "$0" | sed '$d; s/^# \{0,1\}//'
 }
 
-die() { printf 'fm-public-followup-emit: %s\n' "$1" >&2; exit "${2:-2}"; }
+die() { printf 'sq-public-followup-emit: %s\n' "$1" >&2; exit "${2:-2}"; }
 
 HOME_DIR=
 OBLIGATION=
@@ -135,7 +135,7 @@ fm_pf_slug_valid "$RELATION"   || die "unsafe relation id: $RELATION"
 fm_pf_slug_valid "$WORK_ID"    || die "unsafe work id: $WORK_ID"
 fm_pf_slug_valid "$OUTCOME"    || die "unsafe outcome type: $OUTCOME"
 fm_pf_home_id_valid "$SOURCE_HOME" \
-  || die "source home must be 'main' or 'secondmate:<stable-id>', got '$SOURCE_HOME'"
+  || die "source home must be 'main' or 'XO:<stable-id>', got '$SOURCE_HOME'"
 case "$GENERATION" in
   ''|*[!0-9]*) die "generation must be a positive integer, got '$GENERATION'" ;;
 esac
@@ -227,7 +227,7 @@ esac
 # jq bounds the outcome text by codepoint, so a long or non-ASCII sentence is
 # capped without ever splitting a multi-byte character.
 EVENT_JSON=$(jq -Sc -n \
-  --argjson schema_version "$FM_PF_EVENT_SCHEMA_VERSION" \
+  --argjson schema_version "$SQUAD_PF_EVENT_SCHEMA_VERSION" \
   --arg event_id "$EVENT_ID" \
   --arg obligation_id "$OBLIGATION" \
   --arg relation_id "$RELATION" \
@@ -237,7 +237,7 @@ EVENT_JSON=$(jq -Sc -n \
   --arg outcome_type "$OUTCOME" \
   --argjson deliverables "$DELIVERABLES_JSON" \
   --arg public_safe_outcome "$OUTCOME_TEXT" \
-  --argjson outcome_max "$FM_PF_OUTCOME_TEXT_MAX" \
+  --argjson outcome_max "$SQUAD_PF_OUTCOME_TEXT_MAX" \
   --arg occurred_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '{schema_version:$schema_version, event_id:$event_id, obligation_id:$obligation_id,
     relation_id:$relation_id, work_id:$work_id, generation:$generation,
@@ -249,8 +249,8 @@ EVENT_JSON=$(jq -Sc -n \
 
 EVENT_BYTES=$(printf '%s\n' "$EVENT_JSON" | LC_ALL=C wc -c | tr -d ' ') \
   || die "could not measure the typed terminal event" 1
-[ "$EVENT_BYTES" -le "$FM_PF_EVENT_BYTES_MAX" ] \
-  || die "typed terminal event exceeds $FM_PF_EVENT_BYTES_MAX bytes" 2
+[ "$EVENT_BYTES" -le "$SQUAD_PF_EVENT_BYTES_MAX" ] \
+  || die "typed terminal event exceeds $SQUAD_PF_EVENT_BYTES_MAX bytes" 2
 
 printf '%s\n' "$EVENT_JSON" \
   | fmx_private_artifact_publish_stdin_once "$(fm_pf_events_dir "$STATE")" "$EVENT_ID.json" 600

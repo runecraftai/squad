@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Shared durable wake queue and portable lock helpers.
+# Shared durable stand-to queue and portable lock helpers.
 
-FM_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-${FM_ROOT:-$FM_WAKE_DEFAULT_ROOT}}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-${STATE:-$FM_HOME/state}}"
-FM_WAKE_QUEUE="${FM_WAKE_QUEUE:-$STATE/.wake-queue}"
-FM_WAKE_QUEUE_LOCK="${FM_WAKE_QUEUE_LOCK:-$STATE/.wake-queue.lock}"
-FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
+SQUAD_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SQUAD_WAKE_DEFAULT_ROOT="$(cd "$SQUAD_WAKE_LIB_DIR/.." && pwd)"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_WAKE_DEFAULT_ROOT}}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-${STATE:-$SQUAD_HOME/state}}"
+SQUAD_WAKE_QUEUE="${SQUAD_WAKE_QUEUE:-$STATE/.stand-to-queue}"
+SQUAD_WAKE_QUEUE_LOCK="${SQUAD_WAKE_QUEUE_LOCK:-$STATE/.stand-to-queue.lock}"
+SQUAD_LOCK_STALE_AFTER="${SQUAD_LOCK_STALE_AFTER:-2}"
 # Resolved once at source time: fm_pid_identity and fm_path_mtime run inside 0.2s
 # confirm and 0.5s attach polls, and forking uname per call is a measurable cost on
 # the platform (Git Bash/MSYS) that already pays the highest fork price.
-_FM_UNAME=$(uname 2>/dev/null || echo unknown)
+_SQUAD_UNAME=$(uname 2>/dev/null || echo unknown)
 mkdir -p "$STATE"
 
 fm_current_pid() {
@@ -33,10 +33,10 @@ fm_pid_identity() {
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  proc_root=${SQUAD_PROC_ROOT_OVERRIDE:-/proc}
   # Prefer a Linux-compatible /proc when present: stat field 22 (starttime, clock ticks since boot) is
   # immune to the wall-clock steps that re-render the ps lstart fallback's date
-  # (observed as WSL2 btime drift) and would evict a live watcher; combining the
+  # (observed as WSL2 btime drift) and would evict a live sentry; combining the
   # full NUL-separated cmdline keeps PID reuse a mismatch even on a tick collision.
   # Git Bash/MSYS exposes these compatible files but its Cygwin ps rejects the
   # portable fallback's -o fields, so capability detection must not key on uname.
@@ -52,20 +52,20 @@ fm_pid_identity() {
     cmdline_hex=$(od -An -v -tx1 "$proc_root/$pid/cmdline" 2>/dev/null | tr -d '[:space:]') || return 1
     [ -n "$cmdline_hex" ] || return 1
     identity_key=proc-starttime
-    [ "$_FM_UNAME" != Linux ] || identity_key=linux-starttime
+    [ "$_SQUAD_UNAME" != Linux ] || identity_key=linux-starttime
     printf '%s=%s cmdline-hex=%s\n' "$identity_key" "$starttime" "$cmdline_hex"
     return 0
   fi
   # Pin LC_ALL=C so lstart's date format is locale-invariant: the identity is
   # written under one locale but re-read under the machine's ambient locale, which
-  # would otherwise mismatch on a non-C locale (e.g. ko_KR) and reject a live watcher.
+  # would otherwise mismatch on a non-C locale (e.g. ko_KR) and reject a live sentry.
   out=$(LC_ALL=C ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out" | sed 's/^[[:space:]]*//'
 }
 
 fm_path_mtime() {
-  if [ "$_FM_UNAME" = Darwin ]; then
+  if [ "$_SQUAD_UNAME" = Darwin ]; then
     stat -f %m "$1" 2>/dev/null
   else
     stat -c %Y "$1" 2>/dev/null
@@ -78,115 +78,115 @@ fm_path_age() {
   echo $(( $(date +%s) - m ))
 }
 
-FM_WATCHER_MATCHED_IDENTITY=
-fm_watcher_lock_matches_pid() {
-  local state=$1 watch_path=$2 pid=$3 home=${4:-$FM_HOME} lockdir lock_home lock_path lock_identity current_identity
-  FM_WATCHER_MATCHED_IDENTITY=
-  lockdir="$state/.watch.lock"
-  lock_home=$(cat "$lockdir/fm-home" 2>/dev/null || true)
-  lock_path=$(cat "$lockdir/watcher-path" 2>/dev/null || true)
+SQUAD_SENTRY_MATCHED_IDENTITY=
+fm_sentry_lock_matches_pid() {
+  local state=$1 watch_path=$2 pid=$3 home=${4:-$SQUAD_HOME} lockdir lock_home lock_path lock_identity current_identity
+  SQUAD_SENTRY_MATCHED_IDENTITY=
+  lockdir="$state/.sentry.lock"
+  lock_home=$(cat "$lockdir/sq-home" 2>/dev/null || true)
+  lock_path=$(cat "$lockdir/sentry-path" 2>/dev/null || true)
   lock_identity=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
   [ "$lock_home" = "$home" ] || return 1
   [ "$lock_path" = "$watch_path" ] || return 1
   [ -n "$lock_identity" ] || return 1
   current_identity=$(fm_pid_identity "$pid") || return 1
   [ "$current_identity" = "$lock_identity" ] || return 1
-  FM_WATCHER_MATCHED_IDENTITY=$lock_identity
+  SQUAD_SENTRY_MATCHED_IDENTITY=$lock_identity
 }
 
-FM_WATCHER_HEALTHY_PID=
-FM_WATCHER_HEALTHY_IDENTITY=
-fm_watcher_healthy() {
-  local state=$1 watch_path=$2 grace=${3:-${FM_GUARD_GRACE:-300}} home=${4:-$FM_HOME} lockdir beat pid identity age
-  FM_WATCHER_HEALTHY_PID=
-  FM_WATCHER_HEALTHY_IDENTITY=
-  lockdir="$state/.watch.lock"
-  beat="$state/.last-watcher-beat"
+SQUAD_SENTRY_HEALTHY_PID=
+SQUAD_SENTRY_HEALTHY_IDENTITY=
+fm_sentry_healthy() {
+  local state=$1 watch_path=$2 grace=${3:-${SQUAD_GUARD_GRACE:-300}} home=${4:-$SQUAD_HOME} lockdir beat pid identity age
+  SQUAD_SENTRY_HEALTHY_PID=
+  SQUAD_SENTRY_HEALTHY_IDENTITY=
+  lockdir="$state/.sentry.lock"
+  beat="$state/.last-sentry-beat"
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   fm_pid_alive "$pid" || return 1
-  fm_watcher_lock_matches_pid "$state" "$watch_path" "$pid" "$home" || return 1
-  identity=$FM_WATCHER_MATCHED_IDENTITY
+  fm_sentry_lock_matches_pid "$state" "$watch_path" "$pid" "$home" || return 1
+  identity=$SQUAD_SENTRY_MATCHED_IDENTITY
   age=$(fm_path_age "$beat")
   [ "$age" -lt "$grace" ] || return 1
-  # shellcheck disable=SC2034 # Read by callers after fm_watcher_healthy returns.
-  FM_WATCHER_HEALTHY_PID=$pid
-  # shellcheck disable=SC2034 # Read by callers after fm_watcher_healthy returns.
-  FM_WATCHER_HEALTHY_IDENTITY=$identity
+  # shellcheck disable=SC2034 # Read by callers after fm_sentry_healthy returns.
+  SQUAD_SENTRY_HEALTHY_PID=$pid
+  # shellcheck disable=SC2034 # Read by callers after fm_sentry_healthy returns.
+  SQUAD_SENTRY_HEALTHY_IDENTITY=$identity
   return 0
 }
 
-# fm_watcher_healthy above is the PID-STRICT primitive: true only when a live,
-# identity-matched watcher PROCESS holds this home's lock with a fresh beacon. The
-# arm layer (bin/fm-watch-arm.sh, bin/fm-claude-stop-autoarm.sh) needs exactly
-# that - it decides whether to start, attach to, or replace a real watcher
-# process, so a leftover beacon must never satisfy it. bin/fm-turnend-guard.sh
+# fm_sentry_healthy above is the PID-STRICT primitive: true only when a live,
+# identity-matched sentry PROCESS holds this home's lock with a fresh beacon. The
+# arm layer (bin/sq-sentry-arm.sh, bin/sq-claude-stop-autoarm.sh) needs exactly
+# that - it decides whether to start, attach to, or replace a real sentry
+# process, so a leftover beacon must never satisfy it. bin/sq-turnend-guard.sh
 # also keeps this strict check because it fires at the turn boundary where the
-# auto-arm brings a fresh watcher up. The pull warning (bin/fm-guard.sh) fires
-# mid-turn, where the auto-arm model runs no watcher at all, so it wants a
+# auto-arm brings a fresh sentry up. The pull warning (bin/sq-guard.sh) fires
+# mid-turn, where the auto-arm model runs no sentry at all, so it wants a
 # different, model-aware question:
 
 # fm_supervision_model
 # Print the supervision model of this home's PRIMARY harness:
-#   autoarm     Claude Stop-hook auto-arm: the watcher is armed at each turn end
+#   autoarm     Claude Stop-hook auto-arm: the sentry is armed at each turn end
 #               and exits on its wake, so it runs only BETWEEN turns. Mid-turn a
-#               fresh beacon with no live watcher process is the healthy state.
+#               fresh beacon with no live sentry process is the healthy state.
 #   persistent  every other harness (codex foreground checkpoint, opencode/pi/grok
-#               background arm, tmux, unknown): the watcher runs as a tracked live
+#               background arm, tmux, unknown): the sentry runs as a tracked live
 #               process, so a live identity-matched pid is the real liveness signal.
-# FM_SUPERVISION_MODEL overrides detection (tests, and callers that already know
-# the harness). Otherwise bin/fm-harness.sh is the single detection owner, so this
+# SQUAD_SUPERVISION_MODEL overrides detection (tests, and callers that already know
+# the harness). Otherwise bin/sq-harness.sh is the single detection owner, so this
 # stays consistent with the harness-specific repair line the guards already emit.
 fm_supervision_model() {
   local harness
-  case "${FM_SUPERVISION_MODEL:-}" in
-    autoarm|persistent) printf '%s\n' "$FM_SUPERVISION_MODEL"; return 0 ;;
+  case "${SQUAD_SUPERVISION_MODEL:-}" in
+    autoarm|persistent) printf '%s\n' "$SQUAD_SUPERVISION_MODEL"; return 0 ;;
   esac
-  harness=$("$FM_WAKE_LIB_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
+  harness=$("$SQUAD_WAKE_LIB_DIR/sq-harness.sh" 2>/dev/null || printf unknown)
   case "$harness" in
     claude) printf 'autoarm\n' ;;
     *) printf 'persistent\n' ;;
   esac
 }
 
-# fm_watcher_supervision_verdict <state> <watch-path> [grace] [home]
+# fm_sentry_supervision_verdict <state> <watch-path> [grace] [home]
 # Model-aware "is supervision healthy right now" verdict for the pull warning
-# guard (bin/fm-guard.sh), NOT the arm layer or the turn-end guard. Sets:
-#   FM_WATCHER_VERDICT_OK      true when supervision is healthy for this model
-#   FM_WATCHER_VERDICT_REASON  when not ok, the true failing condition:
-#                              no-watcher   - a live watcher process is the real
+# guard (bin/sq-guard.sh), NOT the arm layer or the turn-end guard. Sets:
+#   SQUAD_SENTRY_VERDICT_OK      true when supervision is healthy for this model
+#   SQUAD_SENTRY_VERDICT_REASON  when not ok, the true failing condition:
+#                              no-sentry   - a live sentry process is the real
 #                                             signal for this model but none holds
 #                                             the lock (the beacon is still fresh)
 #                              stale-beacon - the beacon is stale beyond grace or
 #                                             absent (a genuine supervision lapse)
-# autoarm: a fresh beacon within grace is healthy even with no live watcher,
-# because the watcher only runs between turns; only a stale beacon is a lapse.
-# persistent: require a live identity-matched watcher with a fresh beacon
-# (fm_watcher_healthy); a fresh leftover beacon with no live watcher is still down.
+# autoarm: a fresh beacon within grace is healthy even with no live sentry,
+# because the sentry only runs between turns; only a stale beacon is a lapse.
+# persistent: require a live identity-matched sentry with a fresh beacon
+# (fm_sentry_healthy); a fresh leftover beacon with no live sentry is still down.
 # shellcheck disable=SC2034 # Read by callers after the function returns.
-FM_WATCHER_VERDICT_OK=false
+SQUAD_SENTRY_VERDICT_OK=false
 # shellcheck disable=SC2034 # Read by callers after the function returns.
-FM_WATCHER_VERDICT_REASON=stale-beacon
-fm_watcher_supervision_verdict() {
-  local state=$1 watch=$2 grace=${3:-${FM_GUARD_GRACE:-300}} home=${4:-$FM_HOME}
+SQUAD_SENTRY_VERDICT_REASON=stale-beacon
+fm_sentry_supervision_verdict() {
+  local state=$1 watch=$2 grace=${3:-${SQUAD_GUARD_GRACE:-300}} home=${4:-$SQUAD_HOME}
   local beat age fresh=false
-  FM_WATCHER_VERDICT_OK=false
-  FM_WATCHER_VERDICT_REASON=stale-beacon
-  beat="$state/.last-watcher-beat"
+  SQUAD_SENTRY_VERDICT_OK=false
+  SQUAD_SENTRY_VERDICT_REASON=stale-beacon
+  beat="$state/.last-sentry-beat"
   age=$(fm_path_age "$beat")
   case "$age" in
     ''|*[!0-9]*) ;;
     *) [ "$age" -lt "$grace" ] && fresh=true ;;
   esac
   if [ "$(fm_supervision_model)" = autoarm ]; then
-    [ "$fresh" = true ] && FM_WATCHER_VERDICT_OK=true
+    [ "$fresh" = true ] && SQUAD_SENTRY_VERDICT_OK=true
     return 0
   fi
-  if fm_watcher_healthy "$state" "$watch" "$grace" "$home"; then
+  if fm_sentry_healthy "$state" "$watch" "$grace" "$home"; then
     # shellcheck disable=SC2034 # Read by callers after the function returns.
-    FM_WATCHER_VERDICT_OK=true
+    SQUAD_SENTRY_VERDICT_OK=true
   elif [ "$fresh" = true ]; then
     # shellcheck disable=SC2034 # Read by callers after the function returns.
-    FM_WATCHER_VERDICT_REASON=no-watcher
+    SQUAD_SENTRY_VERDICT_REASON=no-sentry
   fi
   return 0
 }
@@ -195,10 +195,10 @@ fm_lock_clean_known_files() {
   local lockdir=$1
   rm -f \
     "$lockdir/pid" \
-    "$lockdir/fm-home" \
+    "$lockdir/sq-home" \
     "$lockdir/pid-identity" \
     "$lockdir/role" \
-    "$lockdir/watcher-path" \
+    "$lockdir/sentry-path" \
     2>/dev/null || true
 }
 
@@ -311,7 +311,7 @@ fm_lock_claim() {
 
 fm_lock_try_create() {
   local lockdir=$1 allowed_steal_owner=${2:-} ownerdir
-  FM_LOCK_OWNER_DIR=
+  SQUAD_LOCK_OWNER_DIR=
   ownerdir=$(fm_lock_owner_dir "$lockdir") || return 1
   if [ -e "$lockdir" ] || [ -L "$lockdir" ]; then
     fm_lock_discard_owner "$ownerdir"
@@ -323,7 +323,7 @@ fm_lock_try_create() {
   fi
   if ln -s "$ownerdir" "$lockdir" 2>/dev/null && fm_lock_points_to_owner "$lockdir" "$ownerdir"; then
     if fm_lock_claim "$lockdir" "$ownerdir" "$allowed_steal_owner"; then
-      FM_LOCK_OWNER_DIR=$ownerdir
+      SQUAD_LOCK_OWNER_DIR=$ownerdir
       return 0
     fi
     if fm_lock_points_to_owner "$lockdir" "$ownerdir"; then
@@ -352,7 +352,7 @@ fm_lock_mid_acquire_is_fresh() {
   local lockdir=$1 pid=$2 mid_acquire_stale
   case "$pid" in
     ''|*[!0-9]*)
-      mid_acquire_stale=$FM_LOCK_STALE_AFTER
+      mid_acquire_stale=$SQUAD_LOCK_STALE_AFTER
       [ "$mid_acquire_stale" -lt 2 ] && mid_acquire_stale=2
       [ "$(fm_path_age "$lockdir")" -lt "$mid_acquire_stale" ]
       return
@@ -381,8 +381,8 @@ fm_lock_recheck_stale_owner() {
 
 fm_lock_try_acquire() {
   local lockdir=$1 pid steal cur rc steal_owner primary_owner
-  FM_LOCK_HELD_PID=
-  FM_LOCK_OWNER_DIR=
+  SQUAD_LOCK_HELD_PID=
+  SQUAD_LOCK_OWNER_DIR=
 
   if fm_lock_try_create "$lockdir"; then
     return 0
@@ -390,39 +390,39 @@ fm_lock_try_acquire() {
 
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   if fm_pid_alive "$pid"; then
-    FM_LOCK_HELD_PID=$pid
+    SQUAD_LOCK_HELD_PID=$pid
     return 1
   fi
   if fm_lock_mid_acquire_is_fresh "$lockdir" "$pid"; then
-    FM_LOCK_HELD_PID=$pid
+    SQUAD_LOCK_HELD_PID=$pid
     return 1
   fi
 
   steal="$lockdir.steal"
   if ! fm_lock_try_acquire "$steal"; then
-    FM_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
-    FM_LOCK_OWNER_DIR=
+    SQUAD_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
+    SQUAD_LOCK_OWNER_DIR=
     return 1
   fi
-  steal_owner=${FM_LOCK_OWNER_DIR:-}
+  steal_owner=${SQUAD_LOCK_OWNER_DIR:-}
 
   cur=$(cat "$lockdir/pid" 2>/dev/null || true)
   if fm_pid_alive "$cur"; then
     fm_lock_release "$steal"
-    FM_LOCK_HELD_PID=$cur
-    FM_LOCK_OWNER_DIR=
+    SQUAD_LOCK_HELD_PID=$cur
+    SQUAD_LOCK_OWNER_DIR=
     return 1
   fi
   if fm_lock_mid_acquire_is_fresh "$lockdir" "$cur"; then
     fm_lock_release "$steal"
-    FM_LOCK_HELD_PID=$cur
-    FM_LOCK_OWNER_DIR=
+    SQUAD_LOCK_HELD_PID=$cur
+    SQUAD_LOCK_OWNER_DIR=
     return 1
   fi
   if ! fm_lock_points_to_owner "$steal" "$steal_owner"; then
     fm_lock_release "$steal"
-    FM_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
-    FM_LOCK_OWNER_DIR=
+    SQUAD_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
+    SQUAD_LOCK_OWNER_DIR=
     return 1
   fi
 
@@ -433,8 +433,8 @@ fm_lock_try_acquire() {
   cur=$(cat "$lockdir/pid" 2>/dev/null || true)
   if ! fm_lock_recheck_stale_owner "$lockdir" "$primary_owner" "$cur"; then
     fm_lock_release "$steal"
-    FM_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
-    FM_LOCK_OWNER_DIR=
+    SQUAD_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
+    SQUAD_LOCK_OWNER_DIR=
     return 1
   fi
 
@@ -445,8 +445,8 @@ fm_lock_try_acquire() {
   fi
   if [ "$rc" -ne 0 ]; then
     # shellcheck disable=SC2034 # Read by callers after fm_lock_try_acquire returns.
-    FM_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
-    FM_LOCK_OWNER_DIR=
+    SQUAD_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
+    SQUAD_LOCK_OWNER_DIR=
   fi
   fm_lock_release "$steal"
   return "$rc"
@@ -529,10 +529,10 @@ fm_wake_append() {
   clean_key=$(printf '%s' "$key" | fm_wake_clean_field)
   clean_payload=$(printf '%s' "$payload" | fm_wake_clean_field)
   epoch=$(date +%s)
-  seq_file="$STATE/.wake-queue.seq"
+  seq_file="$STATE/.stand-to-queue.seq"
   status=0
 
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
   seq=$(cat "$seq_file" 2>/dev/null || echo 0)
   case "$seq" in
     ''|*[!0-9]*) seq=0 ;;
@@ -540,9 +540,9 @@ fm_wake_append() {
   seq=$((seq + 1))
   printf '%s\n' "$seq" > "$seq_file" || status=$?
   if [ "$status" -eq 0 ]; then
-    printf '%s\t%s\t%s\t%s\t%s\n' "$epoch" "$seq" "$kind" "$clean_key" "$clean_payload" >> "$FM_WAKE_QUEUE" || status=$?
+    printf '%s\t%s\t%s\t%s\t%s\n' "$epoch" "$seq" "$kind" "$clean_key" "$clean_payload" >> "$SQUAD_WAKE_QUEUE" || status=$?
   fi
-  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
   return "$status"
 }
 
@@ -557,24 +557,24 @@ fm_wake_queued_keys() {
     signal|stale|check|heartbeat) ;;
     *) printf 'fm_wake_queued_keys: invalid wake kind: %s\n' "$kind" >&2; return 2 ;;
   esac
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
   fm_wake_queued_keys_locked "$kind"
-  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
 }
 
 fm_wake_queued_keys_locked() {
   local kind=$1
   awk -F '\t' -v kind="$kind" 'NF >= 5 && $3 == kind && !seen[$4]++ { print $4 }' \
-    "$FM_WAKE_QUEUE" 2>/dev/null || true
+    "$SQUAD_WAKE_QUEUE" 2>/dev/null || true
 }
 
 fm_wake_restore_queue() {
   local drained=$1 restore
-  restore="$STATE/.wake-queue.restore.$(fm_current_pid)"
-  if [ -e "$FM_WAKE_QUEUE" ]; then
-    cat "$drained" "$FM_WAKE_QUEUE" > "$restore" && mv "$restore" "$FM_WAKE_QUEUE"
+  restore="$STATE/.stand-to-queue.restore.$(fm_current_pid)"
+  if [ -e "$SQUAD_WAKE_QUEUE" ]; then
+    cat "$drained" "$SQUAD_WAKE_QUEUE" > "$restore" && mv "$restore" "$SQUAD_WAKE_QUEUE"
   else
-    mv "$drained" "$FM_WAKE_QUEUE"
+    mv "$drained" "$SQUAD_WAKE_QUEUE"
   fi
 }
 
@@ -604,19 +604,19 @@ fm_wake_print_deduped() {
 # Queue payload text is intentionally ignored: it is display data, not a path
 # authority. The caller still verifies the resulting regular file immediately
 # before its bounded read.
-FM_WAKE_STATUS_KEY=
-FM_WAKE_STATUS_HISTORICAL=false
+SQUAD_WAKE_STATUS_KEY=
+SQUAD_WAKE_STATUS_HISTORICAL=false
 fm_wake_status_key_map() {  # <queue-key>
   local key=$1 id
-  FM_WAKE_STATUS_KEY=
-  FM_WAKE_STATUS_HISTORICAL=false
+  SQUAD_WAKE_STATUS_KEY=
+  SQUAD_WAKE_STATUS_HISTORICAL=false
   case "$key" in
     *.status)
       id=${key%.status}
       ;;
     *.turn-ended)
       id=${key%.turn-ended}
-      FM_WAKE_STATUS_HISTORICAL=true
+      SQUAD_WAKE_STATUS_HISTORICAL=true
       ;;
     *)
       return 1
@@ -626,7 +626,7 @@ fm_wake_status_key_map() {  # <queue-key>
     ''|.*|*[!A-Za-z0-9._-]*) return 1 ;;
   esac
   [ "${#id}" -le 64 ] || return 1
-  FM_WAKE_STATUS_KEY="$id.status"
+  SQUAD_WAKE_STATUS_KEY="$id.status"
 }
 
 fm_wake_annotation_manifest() {  # <deduped-raw-rows>
@@ -634,22 +634,22 @@ fm_wake_annotation_manifest() {  # <deduped-raw-rows>
   while IFS=$(printf '\t') read -r epoch seq kind key payload; do
     [ "$kind" = signal ] || continue
     fm_wake_status_key_map "$key" || continue
-    if [ "$FM_WAKE_STATUS_HISTORICAL" = true ]; then
-      printf '%s\thistorical\n' "$FM_WAKE_STATUS_KEY"
+    if [ "$SQUAD_WAKE_STATUS_HISTORICAL" = true ]; then
+      printf '%s\thistorical\n' "$SQUAD_WAKE_STATUS_KEY"
     else
-      printf '%s\tdirect\n' "$FM_WAKE_STATUS_KEY"
+      printf '%s\tdirect\n' "$SQUAD_WAKE_STATUS_KEY"
     fi
   done <<EOF
 $rows
 EOF
 }
 
-FM_WAKE_EVENT_LINE=
-FM_WAKE_EVENT_TRUNCATED=false
+SQUAD_WAKE_EVENT_LINE=
+SQUAD_WAKE_EVENT_TRUNCATED=false
 fm_wake_latest_event() {  # <validated-status-path> <tail-byte-cap>
   local path=$1 tail_bytes=$2 result size chunk record line_number
-  FM_WAKE_EVENT_LINE=
-  FM_WAKE_EVENT_TRUNCATED=false
+  SQUAD_WAKE_EVENT_LINE=
+  SQUAD_WAKE_EVENT_TRUNCATED=false
   result=$(perl -MFcntl=:DEFAULT -e '
     my ($path, $limit) = @ARGV;
     sysopen(my $file, $path, O_RDONLY | O_NOFOLLOW) or exit 1;
@@ -679,10 +679,10 @@ fm_wake_latest_event() {  # <validated-status-path> <tail-byte-cap>
   ') || return 1
   [ -n "$record" ] || return 1
   line_number=${record%%	*}
-  FM_WAKE_EVENT_LINE=${record#*	}
-  FM_WAKE_EVENT_LINE=$(printf '%s' "$FM_WAKE_EVENT_LINE" | LC_ALL=C tr '\t\r' '  ')
+  SQUAD_WAKE_EVENT_LINE=${record#*	}
+  SQUAD_WAKE_EVENT_LINE=$(printf '%s' "$SQUAD_WAKE_EVENT_LINE" | LC_ALL=C tr '\t\r' '  ')
   if [ "$size" -gt "$tail_bytes" ] && [ "$line_number" -eq 1 ]; then
-    FM_WAKE_EVENT_TRUNCATED=true
+    SQUAD_WAKE_EVENT_TRUNCATED=true
   fi
 }
 
@@ -713,10 +713,10 @@ fm_wake_print_annotations() {  # <deduped-raw-rows>
 
   # Test-only latency seam for proving that queue appends remain independent of
   # a slow best-effort annotation phase.
-  case "${FM_WAKE_ENRICH_TEST_DELAY:-0}" in
+  case "${SQUAD_WAKE_ENRICH_TEST_DELAY:-0}" in
     0) ;;
     ''|*[!0-9]*) ;;
-    *) sleep "$FM_WAKE_ENRICH_TEST_DELAY" ;;
+    *) sleep "$SQUAD_WAKE_ENRICH_TEST_DELAY" ;;
   esac
 
   while IFS=$(printf '\t') read -r status_key mode; do
@@ -732,9 +732,9 @@ fm_wake_print_annotations() {  # <deduped-raw-rows>
     if [ "$mode" = historical ]; then
       prefix="$prefix; historical / not necessarily the triggering event"
     fi
-    line="$prefix: $status_key: $FM_WAKE_EVENT_LINE"
+    line="$prefix: $status_key: $SQUAD_WAKE_EVENT_LINE"
     suffix=''
-    [ "$FM_WAKE_EVENT_TRUNCATED" = false ] || suffix=' [truncated]'
+    [ "$SQUAD_WAKE_EVENT_TRUNCATED" = false ] || suffix=' [truncated]'
     line="$line$suffix"
     if [ $(( ${#line} + 1 )) -gt "$item_bytes" ]; then
       suffix=' [truncated]'

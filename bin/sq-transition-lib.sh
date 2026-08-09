@@ -29,12 +29,12 @@
 # The split is what keeps the escalation general rather than a herdr blocked
 # hack: a backend contributes only a wire->record normalizer and a stream
 # reader; the shape and the policy are shared. See bin/backends/herdr.sh
-# (fm_backend_herdr_wait_transition) for the herdr producer and bin/fm-watch.sh
-# (the watcher's event-wait splice) for the consumer.
+# (fm_backend_herdr_wait_transition) for the herdr producer and bin/sq-sentry.sh
+# (the sentry's event-wait splice) for the consumer.
 
 # Field separator for the normalized record. A literal TAB; every field is
 # scrubbed of TAB/newline by the producer so the record is exactly five fields.
-FM_TRANSITION_FIELD_SEP=$'\t'
+SQUAD_TRANSITION_FIELD_SEP=$'\t'
 
 # fm_transition_record: THE constructor for a normalized transition record.
 # Both a backend's stream normalizer and its level-reconcile read MUST build
@@ -58,7 +58,7 @@ fm_transition_clean_field() {  # <value>
 
 # Field accessors (1-based), so consumers never hardcode the column layout.
 fm_transition_field() {  # <record> <n>
-  printf '%s' "$1" | cut -d"$FM_TRANSITION_FIELD_SEP" -f"$2"
+  printf '%s' "$1" | cut -d"$SQUAD_TRANSITION_FIELD_SEP" -f"$2"
 }
 
 fm_transition_pane_id()      { fm_transition_field "$1" 1; }

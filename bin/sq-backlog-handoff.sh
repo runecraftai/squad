@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Hand already-identified, in-scope backlog items off from the main firstmate
-# backlog to a secondmate's own home backlog. Use this when a secondmate is
+# Hand already-identified, in-scope backlog items off from the main Squad
+# backlog to a XO's own home backlog. Use this when a XO is
 # created (or whenever an existing queued item should become its domain's work)
-# so the secondmate owns its queue from day one instead of the item staying
+# so the XO owns its queue from day one instead of the item staying
 # stranded in the main backlog.
 #
-# Scope-matching is firstmate's JUDGMENT: you pass the task-id keys you have
-# already judged in-scope for the secondmate. This script performs only the
-# fleet-level validation that the backlog backend cannot know, then DELEGATES
+# Scope-matching is Squad's JUDGMENT: you pass the task-id keys you have
+# already judged in-scope for the XO. This script performs only the
+# unit-level validation that the backlog backend cannot know, then DELEGATES
 # the actual item move to `tasks-axi mv`, the single owner of the backlog
 # format. Delegating the move is the durability end-state: it removes the awk
 # that used to re-implement block extraction and insertion here, so the format
@@ -15,15 +15,15 @@
 # of bug fixed in PR #401 was exactly that drift).
 #
 # What this script still owns (never delegated):
-#   - resolving the secondmate home from data/secondmates.md;
-#   - proving the destination is a genuine seeded secondmate home
-#     (.fm-secondmate-home marker, AGENTS.md + bin/), never a project clone, the
-#     active home, or the firstmate repo;
+#   - resolving the XO home from data/XOs.md;
+#   - proving the destination is a genuine seeded XO home
+#     (.sq-xo-home marker, AGENTS.md + bin/), never a project clone, the
+#     active home, or the Squad repo;
 #   - moving only `## Queued` items, refusing `## In flight` and historical
 #     `## Done` records, which must stay with their home for pruning or
 #     archiving;
 #   - the multi-key classification and idempotent per-key reporting: a key
-#     already present in the secondmate backlog is reported and skipped, and if
+#     already present in the XO backlog is reported and skipped, and if
 #     any key matches neither backlog nothing is moved.
 #
 # What `tasks-axi mv <id>... --to <dest>` owns: moving each full item BLOCK
@@ -37,31 +37,31 @@
 # item with a single-space or tab-indented continuation rather than risk leaving
 # it orphaned, because tasks-axi treats only two-or-more-space lines as body.
 # The move needs compatible `tasks-axi` on PATH, including atomic multi-ID `mv`
-# support. Bootstrap requires a compatible build fleet-wide, so this works
-# everywhere; the `config/backlog-backend=manual` knob only governs firstmate's
+# support. Bootstrap requires a compatible build unit-wide, so this works
+# everywhere; the `config/backlog-backend=manual` knob only governs Squad's
 # own hand-editing of its own backlog, not this validated helper. Idempotent:
 # re-running converges. Atomic: on any move failure nothing moves.
 # See AGENTS.md project management and task lifecycle.
 # Remote routes use an outbox handoff: one atomic local tasks-axi mv removes the
 # selected set from the dispatchable backlog into data/handoff/<id>.outbox.md,
-# then an idempotent confined transfer and fm-backlog-receive.sh deliver it.
+# then an idempotent confined transfer and sq-backlog-receive.sh deliver it.
 # A present outbox is the whole recovery record. No two-phase journal exists.
-# Usage: fm-backlog-handoff.sh <secondmate-id> <item-key>...
-#        fm-backlog-handoff.sh --resume-pending
+# Usage: sq-backlog-handoff.sh <XO-id> <item-key>...
+#        sq-backlog-handoff.sh --resume-pending
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-REG="$DATA/secondmates.md"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+REG="$DATA/XOs.md"
 MAIN_BACKLOG="$DATA/backlog.md"
-# shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-tasks-axi-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-xo-registry-lib.sh
+. "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
 ACTIVE_HANDOFF_LOCK=
 ACTIVE_REGISTRY_LOCK=
@@ -84,21 +84,21 @@ sha256_file() {
 
 RESUME_PENDING=0
 if [ "${1:-}" = --resume-pending ]; then
-  [ "$#" -eq 1 ] || { echo "usage: fm-backlog-handoff.sh --resume-pending" >&2; exit 1; }
+  [ "$#" -eq 1 ] || { echo "usage: sq-backlog-handoff.sh --resume-pending" >&2; exit 1; }
   RESUME_PENDING=1
   ID=
   shift
 else
-  [ "$#" -ge 2 ] || { echo "usage: fm-backlog-handoff.sh <secondmate-id> <item-key>..." >&2; exit 1; }
+  [ "$#" -ge 2 ] || { echo "usage: sq-backlog-handoff.sh <XO-id> <item-key>..." >&2; exit 1; }
   ID=$1
   shift
 fi
 
-secondmate_home() {
+XO_home() {
   local id=$1 home
-  [ -f "$REG" ] || { echo "error: no secondmate registry at $REG" >&2; return 1; }
-  home=$(secondmate_registry_field "$REG" "$id" home || true)
-  [ -n "$home" ] || { echo "error: secondmate $id has no home in $REG" >&2; return 1; }
+  [ -f "$REG" ] || { echo "error: no XO registry at $REG" >&2; return 1; }
+  home=$(XO_registry_field "$REG" "$id" home || true)
+  [ -n "$home" ] || { echo "error: XO $id has no home in $REG" >&2; return 1; }
   printf '%s\n' "$home"
 }
 
@@ -115,7 +115,7 @@ path_is_ancestor_of() {
 
 resolved_existing_dir() {
   local path=$1
-  [ -d "$path" ] || { echo "error: firstmate home does not exist or is not a directory: $path" >&2; return 1; }
+  [ -d "$path" ] || { echo "error: Squad home does not exist or is not a directory: $path" >&2; return 1; }
   cd "$path" && pwd -P
 }
 
@@ -124,81 +124,81 @@ validate_operational_dirs() {
   for name in data state config projects; do
     dir="$abs_home/$name"
     if [ -L "$dir" ] && [ ! -e "$dir" ]; then
-      echo "error: secondmate $name directory must resolve inside the secondmate home: $dir" >&2
+      echo "error: XO $name directory must resolve inside the XO home: $dir" >&2
       return 1
     fi
     if [ -d "$dir" ]; then
       abs_dir=$(cd "$dir" && pwd -P)
     elif [ -e "$dir" ]; then
-      echo "error: secondmate $name path is not a directory: $dir" >&2
+      echo "error: XO $name path is not a directory: $dir" >&2
       return 1
     else
       abs_dir="$abs_home/$name"
     fi
     if ! path_is_ancestor_of "$abs_home" "$abs_dir"; then
-      echo "error: secondmate $name directory must resolve inside the secondmate home: $dir" >&2
+      echo "error: XO $name directory must resolve inside the XO home: $dir" >&2
       return 1
     fi
     if [ "$abs_dir" = "$abs_active_home" ] || path_is_ancestor_of "$abs_active_home" "$abs_dir"; then
-      echo "error: secondmate $name directory cannot be inside the active firstmate home: $dir" >&2
+      echo "error: XO $name directory cannot be inside the active Squad home: $dir" >&2
       return 1
     fi
     if [ "$abs_dir" = "$abs_root" ] || path_is_ancestor_of "$abs_root" "$abs_dir"; then
-      echo "error: secondmate $name directory cannot be inside the firstmate repo: $dir" >&2
+      echo "error: XO $name directory cannot be inside the Squad repo: $dir" >&2
       return 1
     fi
   done
 }
 
-validate_secondmate_home() {
+validate_XO_home() {
   local id=$1 home=$2 abs_home abs_active_home abs_root marker_id
   abs_home=$(resolved_existing_dir "$home") || return 1
-  abs_active_home=$(resolved_existing_dir "$FM_HOME")
-  abs_root=$(resolved_existing_dir "$FM_ROOT")
+  abs_active_home=$(resolved_existing_dir "$SQUAD_HOME")
+  abs_root=$(resolved_existing_dir "$SQUAD_ROOT")
   if [ "$abs_home" = "/" ]; then
-    echo "error: secondmate home cannot be the filesystem root: $home" >&2
+    echo "error: XO home cannot be the filesystem root: $home" >&2
     return 1
   fi
   if [ "$abs_home" = "$abs_active_home" ]; then
-    echo "error: secondmate home cannot be the active firstmate home: $home" >&2
+    echo "error: XO home cannot be the active Squad home: $home" >&2
     return 1
   fi
   if [ "$abs_home" = "$abs_root" ]; then
-    echo "error: secondmate home cannot be the firstmate repo: $home" >&2
+    echo "error: XO home cannot be the Squad repo: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_active_home" "$abs_home"; then
-    echo "error: secondmate home cannot be inside the active firstmate home: $home" >&2
+    echo "error: XO home cannot be inside the active Squad home: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_root" "$abs_home"; then
-    echo "error: secondmate home cannot be inside the firstmate repo: $home" >&2
+    echo "error: XO home cannot be inside the Squad repo: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_active_home"; then
-    echo "error: secondmate home cannot be an ancestor of the active firstmate home: $home" >&2
+    echo "error: XO home cannot be an ancestor of the active Squad home: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_root"; then
-    echo "error: secondmate home cannot be an ancestor of the firstmate repo: $home" >&2
+    echo "error: XO home cannot be an ancestor of the Squad repo: $home" >&2
     return 1
   fi
   validate_operational_dirs "$abs_home" "$abs_active_home" "$abs_root" || return 1
-  if [ ! -f "$abs_home/.fm-secondmate-home" ]; then
-    echo "error: firstmate home $home is not a seeded secondmate home" >&2
+  if [ ! -f "$abs_home/.sq-xo-home" ]; then
+    echo "error: Squad home $home is not a seeded XO home" >&2
     return 1
   fi
-  marker_id=$(cat "$abs_home/.fm-secondmate-home" 2>/dev/null || true)
+  marker_id=$(cat "$abs_home/.sq-xo-home" 2>/dev/null || true)
   if [ "$marker_id" != "$id" ]; then
-    echo "error: firstmate home $home is marked for secondmate ${marker_id:-unknown}, expected $id" >&2
+    echo "error: Squad home $home is marked for XO ${marker_id:-unknown}, expected $id" >&2
     return 1
   fi
   if [ ! -f "$abs_home/AGENTS.md" ]; then
-    echo "error: $home is not a firstmate home (missing AGENTS.md)" >&2
+    echo "error: $home is not a Squad home (missing AGENTS.md)" >&2
     return 1
   fi
   if [ ! -d "$abs_home/bin" ]; then
-    echo "error: $home is not a firstmate home (missing bin/)" >&2
+    echo "error: $home is not a Squad home (missing bin/)" >&2
     return 1
   fi
   printf '%s\n' "$abs_home"
@@ -219,7 +219,7 @@ validate_backlog_file() {
 # Classify a single key by the section it lives under (## In flight /
 # ## Queued / ## Done), or return non-zero if no `- [ ] <key>` / `- [x] <key>`
 # header exists in the file. This reads only section headings and item header
-# lines - never item bodies - so it drives the fleet-level classification (in-
+# lines - never item bodies - so it drives the unit-level classification (in-
 # flight refusal, already-present idempotency, missing-key abort) without
 # re-implementing the block/body move semantics that tasks-axi mv owns.
 backlog_key_section() {
@@ -270,13 +270,13 @@ outbox_item_count() { # <path>
   awk '/^- \[[ x]\] / { count++ } END { print count + 0 }' "$1"
 }
 
-remote_deliver_outbox() { # <secondmate-id> <outbox-path>
+remote_deliver_outbox() { # <XO-id> <outbox-path>
   local id=$1 outbox=$2 remote_rel receive_out snapshot bytes hash generation counter counter_tmp current
   [ -f "$outbox" ] && [ ! -L "$outbox" ] || {
     echo "error: pending outbox is unavailable or unsafe: $outbox" >&2
     return 1
   }
-  snapshot=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-handoff-payload.XXXXXX") || return 1
+  snapshot=$(umask 077; mktemp "${TMPDIR:-/tmp}/sq-handoff-payload.XXXXXX") || return 1
   if ! cp -p -- "$outbox" "$snapshot"; then
     rm -f -- "$snapshot"
     return 1
@@ -301,14 +301,14 @@ remote_deliver_outbox() { # <secondmate-id> <outbox-path>
   mv -f -- "$counter_tmp" "$counter" \
     || { rm -f -- "$snapshot" "$counter_tmp"; return 1; }
   remote_rel="state/handoff/$id.outbox.md"
-  if ! "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-file.sh put "$remote_rel" 1048576 \
+  if ! "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-file.sh put "$remote_rel" 1048576 \
     "$bytes" "$hash" "$generation" < "$snapshot"; then
     rm -f -- "$snapshot"
     echo "error: handoff transfer to $id was unavailable or completion is unknown; outbox preserved at $outbox" >&2
     return 1
   fi
   rm -f -- "$snapshot"
-  if ! receive_out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-backlog-receive.sh \
+  if ! receive_out=$("$SCRIPT_DIR/sq-on.sh" "$id" sq-backlog-receive.sh \
     "$remote_rel" "$bytes" "$hash" "$generation" < /dev/null 2>&1); then
     [ -z "$receive_out" ] || printf '%s\n' "$receive_out" >&2
     echo "error: handoff receipt by $id was unavailable or completion is unknown; outbox preserved at $outbox" >&2
@@ -346,7 +346,7 @@ remove_interrupted_source_duplicates() { # <outbox> <keys...>
   done
 }
 
-remote_handoff() { # <secondmate-id> <keys...>
+remote_handoff() { # <XO-id> <keys...>
   local id=$1 outbox section main_section out_section key mv_out
   local -a requested to_move already missing in_flight done_items not_queued
   shift
@@ -355,7 +355,7 @@ remote_handoff() { # <secondmate-id> <keys...>
   validate_backlog_file "main backlog" "$MAIN_BACKLOG" || return 1
   validate_backlog_file "remote handoff outbox" "$outbox" || return 1
   fm_tasks_axi_compatible || {
-    echo "error: a compatible tasks-axi with atomic multi-ID mv support is required to stage remote handoffs; run bin/fm-bootstrap.sh for the required version" >&2
+    echo "error: a compatible tasks-axi with atomic multi-ID mv support is required to stage remote handoffs; run bin/sq-bootstrap.sh for the required version" >&2
     return 1
   }
   to_move=()
@@ -408,18 +408,18 @@ remote_handoff() { # <secondmate-id> <keys...>
   # deleting only duplicates that tasks-axi itself confirms are dependency-safe.
   remove_interrupted_source_duplicates "$outbox" "${requested[@]}" || return 1
   remote_deliver_outbox "$id" "$outbox" || return 1
-  echo "handed off ${#requested[@]} item(s) to remote secondmate $id: ${requested[*]}"
+  echo "handed off ${#requested[@]} item(s) to remote XO $id: ${requested[*]}"
   [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]}"
 }
 
-with_remote_route_locks() { # <secondmate-id> <function> <args...>
+with_remote_route_locks() { # <XO-id> <function> <args...>
   local id=$1 operation=$2 rc
   shift 2
   case "$id" in ''|*[!A-Za-z0-9._-]*) echo "error: unsafe remote handoff id: $id" >&2; return 1 ;; esac
-  ACTIVE_REGISTRY_LOCK=$(secondmate_registry_lock_path "$STATE")
+  ACTIVE_REGISTRY_LOCK=$(XO_registry_lock_path "$STATE")
   fm_lock_acquire_wait "$ACTIVE_REGISTRY_LOCK"
-  if [ "$(secondmate_registry_field "$REG" "$id" remote 2>/dev/null || true)" != 1 ]; then
-    echo "error: pending outbox has no matching remote secondmate route: $id" >&2
+  if [ "$(XO_registry_field "$REG" "$id" remote 2>/dev/null || true)" != 1 ]; then
+    echo "error: pending outbox has no matching remote XO route: $id" >&2
     release_remote_locks
     return 1
   fi
@@ -430,7 +430,7 @@ with_remote_route_locks() { # <secondmate-id> <function> <args...>
   return "$rc"
 }
 
-resume_remote_outbox() { # <secondmate-id> <outbox-path>
+resume_remote_outbox() { # <XO-id> <outbox-path>
   local id=$1 outbox=$2
   [ -e "$outbox" ] || [ -L "$outbox" ] || return 0
   if [ ! -f "$outbox" ] || [ -L "$outbox" ]; then
@@ -457,9 +457,9 @@ if [ "$RESUME_PENDING" -eq 1 ]; then
   exit $?
 fi
 
-ACTIVE_REGISTRY_LOCK=$(secondmate_registry_lock_path "$STATE")
+ACTIVE_REGISTRY_LOCK=$(XO_registry_lock_path "$STATE")
 fm_lock_acquire_wait "$ACTIVE_REGISTRY_LOCK"
-REMOTE=$(secondmate_registry_field "$REG" "$ID" remote 2>/dev/null || true)
+REMOTE=$(XO_registry_field "$REG" "$ID" remote 2>/dev/null || true)
 if [ "$REMOTE" = 1 ]; then
   ACTIVE_HANDOFF_LOCK="$STATE/.backlog-handoff-$ID.lock"
   fm_lock_acquire_wait "$ACTIVE_HANDOFF_LOCK"
@@ -469,12 +469,12 @@ if [ "$REMOTE" = 1 ]; then
 fi
 release_remote_locks
 
-RAW_HOME=$(secondmate_home "$ID") || exit 1
-[ -n "$RAW_HOME" ] || { echo "error: secondmate $ID has no home in $REG" >&2; exit 1; }
-SUB_HOME=$(validate_secondmate_home "$ID" "$RAW_HOME") || exit 1
+RAW_HOME=$(XO_home "$ID") || exit 1
+[ -n "$RAW_HOME" ] || { echo "error: XO $ID has no home in $REG" >&2; exit 1; }
+SUB_HOME=$(validate_XO_home "$ID" "$RAW_HOME") || exit 1
 SUB_BACKLOG="$SUB_HOME/data/backlog.md"
 validate_backlog_file "main backlog" "$MAIN_BACKLOG" || exit 1
-validate_backlog_file "secondmate backlog" "$SUB_BACKLOG" || exit 1
+validate_backlog_file "XO backlog" "$SUB_BACKLOG" || exit 1
 
 # Classify every key before changing anything: move-from-main, already-in-sub, or
 # missing. Abort with no changes if any key matches neither backlog.
@@ -540,14 +540,14 @@ if [ "$FAILED" -ne 0 ]; then
 fi
 
 if ! fm_tasks_axi_compatible; then
-  echo "error: a compatible tasks-axi with atomic multi-ID mv support is required to move backlog items; run bin/fm-bootstrap.sh for the required version" >&2
+  echo "error: a compatible tasks-axi with atomic multi-ID mv support is required to move backlog items; run bin/sq-bootstrap.sh for the required version" >&2
   exit 1
 fi
 
-# Seed the destination with firstmate's standard three-section scaffold when it
+# Seed the destination with Squad's standard three-section scaffold when it
 # does not exist yet, so the moved item lands under the right section. (Left to
 # create the file itself, tasks-axi mv writes its own `# Backlog` title format,
-# which is not firstmate's home-backlog convention.)
+# which is not Squad's home-backlog convention.)
 mkdir -p "$SUB_HOME/data"
 SUB_CREATED=0
 if [ ! -f "$SUB_BACKLOG" ]; then

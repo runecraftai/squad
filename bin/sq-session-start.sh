@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# fm-session-start.sh - one command for the whole session start.
+# sq-session-start.sh - one command for the whole session start.
 #
 # Collapses AGENTS.md sections 3 (bootstrap) and 5 (recovery) into ONE script
 # producing ONE ordered digest, so a session starts in one or two turns
 # instead of the six-plus separate reads the old docs required: run
-# fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
-# data/captain.md, data/captain-shared.md, data/learnings.md, then run
-# fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
+# sq-bootstrap.sh, then separately read data/projects.md, data/XOs.md,
+# data/commander.md, data/commander-shared.md, data/learnings.md, then run
+# sq-lock.sh, sq-stand-to-drain.sh, then read data/backlog.md, every state/*.meta,
 # and every state/*.status.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
 # belong in a script, not in N agent turns.
 #
-# COMPOSITION, NOT DUPLICATION: this script calls fm-lock.sh, fm-bootstrap.sh,
-# fm-wake-drain.sh, and fm-startup-network.sh as real subprocesses and prints
+# COMPOSITION, NOT DUPLICATION: this script calls sq-lock.sh, sq-bootstrap.sh,
+# sq-stand-to-drain.sh, and sq-startup-network.sh as real subprocesses and prints
 # their real output. It never re-implements their logic; all
 # sequencing/formatting logic added here stays local to this file. Those four
 # scripts remain fully working
-# standalone with unchanged default behavior - other flows (fm-bootstrap.sh
-# install <tools> after consent, /updatefirstmate, the afk daemon, existing
+# standalone with unchanged default behavior - other flows (sq-bootstrap.sh
+# install <tools> after consent, /updatesquad, the afk daemon, existing
 # tests) still call them directly. The one seam this script needed -
 # bootstrap running its detect-only diagnostics without its six mutating
-# sweeps - is an opt-in FM_BOOTSTRAP_DETECT_ONLY=1 flag on fm-bootstrap.sh
+# sweeps - is an opt-in SQUAD_BOOTSTRAP_DETECT_ONLY=1 flag on sq-bootstrap.sh
 # itself (default unset/0 = unchanged behavior), not a fork.
 #
 # ORDERING, and why LOCK now runs before BOOTSTRAP (the old AGENTS.md order
@@ -31,45 +31,45 @@
 #   2. bootstrap      - home-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
 #                       diagnostics always run. Bootstrap's six MUTATING sweeps
-#                       (legacy PR-check migration, secondmate convergence,
-#                       secondmate liveness, pending remote handoff retry,
-#                       X-mode artifact writes, fleet sync) also run only when
+#                       (legacy PR-check migration, XO convergence,
+#                       XO liveness, pending remote handoff retry,
+#                       X-mode artifact writes, unit sync) also run only when
 #                       locked; the four network sweeps run in the deferred
 #                       stage rather than this synchronous bootstrap section.
-#   3. wake-drain     - mutates the durable wake queue, so it also only runs
+#   3. stand-to drain     - mutates the durable stand-to queue, so it also only runs
 #                       when locked.
 #   4. supervision-instructions - the one emitted operating block for the
 #                       detected primary harness.
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the two digests below.
-#   6. fleet digest   - a compact data/backlog.md identity/metadata listing,
+#   6. unit digest   - a compact data/backlog.md identity/metadata listing,
 #                       every state/*.meta, a bounded state/*.status tail,
 #                       state/.afk, and a cheap per-task endpoint-liveness read:
 #                       read-only, always runs.
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
-#   8. context digest - data/projects.md, data/secondmates.md, data/captain.md,
-#                       data/captain-shared.md, data/learnings.md: read-only,
+#   8. context digest - data/projects.md, data/XOs.md, data/commander.md,
+#                       data/commander-shared.md, data/learnings.md: read-only,
 #                       always safe, always runs.
-#   9. closing reminder - prints the context-specific watcher next step; this
+#   9. closing reminder - prints the context-specific sentry next step; this
 #                       script points back to the emitted harness supervision
-#                       block and deliberately never arms the watcher itself.
+#                       block and deliberately never arms the sentry itself.
 #
 # Those nine names are also the runtime-bound stage list below, so a truncated
 # startup can name exactly which of them never ran.
 #
 # NO NETWORK ON THE BLOCKING PATH. This digest runs on a session-open hook that
-# blocks session initialization, so anything it waits for is time the captain
+# blocks session initialization, so anything it waits for is time the commander
 # waits before the first turn - and every external-network call it used to make
-# was individually unbounded. One unreachable remote secondmate could burn the
-# entire FM_SESSION_START_TIMEOUT and truncate the digest, so a slow network
+# was individually unbounded. One unreachable remote XO could burn the
+# entire SQUAD_SESSION_START_TIMEOUT and truncate the digest, so a slow network
 # could cost the work queue itself.
 # So no step between here and the last line below makes an external-network
-# call. The five that did - `gh auth status`, secondmate liveness, secondmate
-# convergence, pending remote handoff delivery, and the fleet-sync fetch - are
+# call. The five that did - `gh auth status`, XO liveness, XO
+# convergence, pending remote handoff delivery, and the unit-sync fetch - are
 # started as one detached bounded worker right after the lock (step 1) and
-# harvested at step 7 without ever blocking on it. bin/fm-startup-network.sh
-# owns that stage and its safety argument; bin/fm-bootstrap.sh remains the owner
+# harvested at step 7 without ever blocking on it. bin/sq-startup-network.sh
+# owns that stage and its safety argument; bin/sq-bootstrap.sh remains the owner
 # of the sweeps themselves and still runs every one of them.
 # The digest is therefore composed from local reads and local subprocesses only,
 # and an unreachable host now delays a reported check rather than the startup.
@@ -77,16 +77,16 @@
 # PROGRESS" and names exactly which checks are not yet confirmed, instead of
 # waiting for them. It never reports an unconfirmed check as passed.
 #
-# ORDERING, and why FLEET STATE now runs before CONTEXT: this digest is
+# ORDERING, and why UNIT STATE now runs before CONTEXT: this digest is
 # delivered through a harness that truncates an oversized payload from the TAIL,
 # and it has really been truncated in practice - a 70KB digest arrived as lines
 # 1-435 of 578, cutting off eight lines before the live-task inventory. What a
 # truncated tail drops must therefore be the CHEAPEST thing to lose. Curated
-# memory is stable session to session, is already governed by a captain-set
+# memory is stable session to session, is already governed by a commander-set
 # budget (config/startup-memory-budget), and is recoverable with one targeted
-# read; live fleet identity - which tasks exist, their windows, worktrees,
+# read; live unit identity - which tasks exist, their windows, worktrees,
 # backends, and endpoint liveness - changes every session and is exactly what
-# recovery depends on. So fleet state goes first and the memory files absorb the
+# recovery depends on. So unit state goes first and the memory files absorb the
 # truncation. The read-once contract moves ahead of both for the same reason: a
 # contract that only arrives after the payload it governs is the first thing a
 # truncated digest loses, and it carries the truncation caveat that keeps it
@@ -100,7 +100,7 @@
 #
 # Why lock first: the old documented order (bootstrap, THEN lock) let a
 # SECOND concurrent session run bootstrap's mutating sweeps - converging
-# secondmate homes, retrying pending handoff outboxes, writing X-mode artifacts,
+# XO homes, retrying pending handoff outboxes, writing X-mode artifacts,
 # and fetching or fast-forwarding every project clone - before ever discovering
 # another session already holds the lock. Two sessions racing those sweeps is
 # exactly the hazard the lock exists to prevent, so locking first closes the
@@ -108,7 +108,7 @@
 # shared mutable state.
 #
 # The tradeoff this ordering accepts: a refused (read-only) session must not
-# go dark. So on refusal, bootstrap still runs (in FM_BOOTSTRAP_DETECT_ONLY=1
+# go dark. So on refusal, bootstrap still runs (in SQUAD_BOOTSTRAP_DETECT_ONLY=1
 # mode) for its local read-only detect lines - missing tools, the worktree-tangle
 # check, the harness override, crew-dispatch validation, tasks-axi and quota-axi
 # tool checks, and tasks-axi availability - none of which mutate shared state
@@ -116,24 +116,24 @@
 # It deliberately skips the network-only GitHub-auth probe because a read-only
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
 # Only projection cleanup, the six bootstrap mutating sweeps, and the
-# wake-queue drain are skipped.
-# The context and fleet-state digests
+# stand-to queue drain are skipped.
+# The context and unit-state digests
 # below are always read-only, so they run unconditionally in both modes.
 #
 # BACKLOG DIGEST: the startup listing is a RECOVERY input, not a reporting
 # surface, so it carries what this turn can act on and nothing else.
 #   - `done` rows are never listed. Retained completion history belongs to the
-#     reporting surfaces (bin/fm-bearings-snapshot.sh, /ahoy), and at startup it
+#     reporting surfaces (bin/sq-sitrep-snapshot.sh, /reporting), and at startup it
 #     is pure weight - 10 done rows cost 3.3KB in an observed main-home digest.
 #   - Every in-flight, held, and blocked row is listed IN FULL, with its
 #     hold_kind/hold_reason and blocked_by. Those are the rows AGENTS.md
 #     sections 7 and 10 make actionable at startup, so they are never bounded
 #     away.
 #   - Only the plain queued (dispatchable-now) listing is bounded, by
-#     FM_SESSION_START_QUEUED_LIMIT, default 20. Anything it omits is disclosed
+#     SQUAD_SESSION_START_QUEUED_LIMIT, default 20. Anything it omits is disclosed
 #     with an exact remainder count and the command that shows the rest, so a
 #     deep queue costs a counter rather than kilobytes.
-#     (This replaces FM_SESSION_START_BACKLOG_LIMIT, which bounded the whole
+#     (This replaces SQUAD_SESSION_START_BACKLOG_LIMIT, which bounded the whole
 #     listing indiscriminately and so could drop a held or blocked row.)
 # When compatible tasks-axi is selected and available, the shared tasks-axi
 # backend probe remains the compatibility owner and this script asks
@@ -152,19 +152,19 @@
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
-# STATUS TAILS: FM_SESSION_START_STATUS_TAIL bounds how many lines each task's
-# tail prints, and bin/fm-line-cap-lib.sh bounds how long each of those lines
+# STATUS TAILS: SQUAD_SESSION_START_STATUS_TAIL bounds how many lines each task's
+# tail prints, and bin/sq-line-cap-lib.sh bounds how long each of those lines
 # may be. Both bounds are safe because the section prints every task's full
 # status log path, and AGENTS.md section 8 treats a status line as a wake EVENT
-# rather than current state - bin/fm-crew-state.sh owns current state.
+# rather than current state - bin/sq-crew-state.sh owns current state.
 #
 # RUNTIME BOUND: the digest is now executed on a session-open hook (see
-# bin/fm-sessionstart-run.sh), which blocks session initialization while it
+# bin/sq-sessionstart-run.sh), which blocks session initialization while it
 # runs, so an unbounded digest is no longer merely slow - it can strand a whole
 # session behind one hung subprocess. Every remaining step is local, but local is
 # not the same as bounded: tool version probes, the backlog listing, and the
 # per-task endpoint reads are all unbounded subprocesses. So the whole digest
-# still runs as ONE bounded child of this script (FM_SESSION_START_TIMEOUT,
+# still runs as ONE bounded child of this script (SQUAD_SESSION_START_TIMEOUT,
 # default 120s). The deferred network stage deliberately sits OUTSIDE that bound,
 # in its own process group under its own aggregate deadline, so a truncated
 # digest neither waits for it nor orphans it unbounded. The
@@ -172,12 +172,12 @@
 # emitted before the bound was hit is already delivered; the parent then prints
 # a loud STARTUP TRUNCATED banner naming the stage that did not finish and the
 # sections that were therefore never emitted, and still exits 0. The child
-# records its progress in FM_SESSION_START_STAGE_FILE, which is also the flag
+# records its progress in SQUAD_SESSION_START_STAGE_FILE, which is also the flag
 # that tells a child it is the child - the parent never recurses.
 # Hosts without timeout, gtimeout, or perl use the shared pure-Bash watchdog, so
 # the digest never runs without the same hard bound and process-group cleanup.
 #
-# Usage: fm-session-start.sh [--reemit]
+# Usage: sq-session-start.sh [--reemit]
 #   Prints the full ordered digest to stdout and always exits 0: this is a
 #   reporting command, not a gate. A lock refusal is reported as a loud
 #   banner inline, never a silent failure or a non-zero exit that would make
@@ -186,25 +186,25 @@
 #   --reemit  This process ALREADY took the helm at its own startup and has
 #             only lost its context (a /clear or a compaction). Skip the
 #             mutating sweeps that startup already reconciled - the stale Herdr
-#             projection cleanup and bootstrap's six mutating sweeps (fleet
-#             sync, secondmate convergence and liveness, PR-check migration,
+#             projection cleanup and bootstrap's six mutating sweeps (unit
+#             sync, XO convergence and liveness, PR-check migration,
 #             pending remote handoff retry, X-mode artifact writes) - and
-#             re-emit the rest. The wake-queue drain is NOT skipped: queued
+#             re-emit the rest. The stand-to queue drain is NOT skipped: queued
 #             records are this turn's work queue, they arrived after startup,
 #             and a session that owns the lock is exactly the session that must
 #             take them. Lock acquisition still runs, because ownership must be
-#             re-verified rather than assumed: fm-lock.sh already treats a lock
+#             re-verified rather than assumed: sq-lock.sh already treats a lock
 #             this session's own harness holds as its own, so the re-emit
 #             proceeds, while a lock another live session took meanwhile still
 #             produces the ordinary read-only path.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
 COMPLETION_FILE="$STATE/.session-start-complete"
 
 REEMIT=0
@@ -212,12 +212,12 @@ for arg in "$@"; do
   case "$arg" in
     --reemit) REEMIT=1 ;;
     -h|--help)
-      sed -n '2,/^set -u$/p' "$SCRIPT_DIR/fm-session-start.sh" | sed 's/^# \{0,1\}//; $d'
+      sed -n '2,/^set -u$/p' "$SCRIPT_DIR/sq-session-start.sh" | sed 's/^# \{0,1\}//; $d'
       exit 0
       ;;
     *)
-      printf 'fm-session-start: unknown argument: %s\n' "$arg" >&2
-      printf 'usage: fm-session-start.sh [--reemit]\n' >&2
+      printf 'sq-session-start: unknown argument: %s\n' "$arg" >&2
+      printf 'usage: sq-session-start.sh [--reemit]\n' >&2
       exit 2
       ;;
   esac
@@ -227,31 +227,31 @@ done
 # The ordered stage list is the contract behind the truncation banner: the child
 # names the stage it is entering, and the parent reports every stage at or after
 # that one as never emitted. Keep it in the exact order the digest prints.
-SESSION_START_STAGES='lock bootstrap wake-queue supervision-instructions read-once fleet-state network-checks context next-step'
+SESSION_START_STAGES='lock bootstrap stand-to queue supervision-instructions read-once unit-state network-checks context next-step'
 
 stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
-  [ -n "${FM_SESSION_START_STAGE_FILE:-}" ] || return 0
-  printf '%s\n' "$1" > "$FM_SESSION_START_STAGE_FILE" 2>/dev/null || true
+  [ -n "${SQUAD_SESSION_START_STAGE_FILE:-}" ] || return 0
+  printf '%s\n' "$1" > "$SQUAD_SESSION_START_STAGE_FILE" 2>/dev/null || true
 }
 
-# shellcheck source=bin/fm-timeout-lib.sh
-. "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
 
-if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
-  SESSION_START_BUDGET=${FM_SESSION_START_TIMEOUT:-120}
+if [ -z "${SQUAD_SESSION_START_STAGE_FILE:-}" ]; then
+  SESSION_START_BUDGET=${SQUAD_SESSION_START_TIMEOUT:-120}
   # A non-positive or non-numeric budget is not a budget (`timeout 0` disables
   # the deadline outright), so an unusable value falls back to the default
   # rather than silently removing the bound.
   case "$SESSION_START_BUDGET" in ''|*[!0-9]*|0) SESSION_START_BUDGET=120 ;; esac
-  SESSION_START_STAGE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-session-start-stage.XXXXXX" 2>/dev/null) || SESSION_START_STAGE_FILE=
+  SESSION_START_STAGE_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-session-start-stage.XXXXXX" 2>/dev/null) || SESSION_START_STAGE_FILE=
   if [ -z "$SESSION_START_STAGE_FILE" ]; then
     # Without a breadcrumb the bound still holds; only the banner's precision
     # is lost, so the child still runs bounded.
     SESSION_START_STAGE_FILE=/dev/null
   fi
   fm_run_timed "$SESSION_START_BUDGET" \
-    env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
-    "$SCRIPT_DIR/fm-session-start.sh" "$@"
+    env SQUAD_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
+    "$SCRIPT_DIR/sq-session-start.sh" "$@"
   SESSION_START_RC=$?
   if [ "$SESSION_START_RC" -eq 124 ]; then
     SESSION_START_LAST_STAGE=$(cat "$SESSION_START_STAGE_FILE" 2>/dev/null) || SESSION_START_LAST_STAGE=
@@ -268,40 +268,40 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     printf '●  only up to that point.\n'
     printf '●  RECONCILE these stages before acting on anything they would have shown:\n'
     printf '●    %s\n' "${SESSION_START_PENDING% }"
-    printf '●  Rerun bin/fm-session-start.sh now to finish taking the helm. If it truncates\n'
-    printf '●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that\n'
-    printf '●  cannot finish inside the bound is a fleet problem, not a reporting detail.\n'
+    printf '●  Rerun bin/sq-session-start.sh now to finish taking the helm. If it truncates\n'
+    printf '●  again, raise SQUAD_SESSION_START_TIMEOUT and report the slow stage - a stage that\n'
+    printf '●  cannot finish inside the bound is a unit problem, not a reporting detail.\n'
     printf '%s\n' "$BAR"
   fi
   rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
   exit 0
 fi
 
-PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
+PRIMARY_HARNESS=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || printf unknown)
 
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-public-followup-lib.sh
-. "$SCRIPT_DIR/fm-public-followup-lib.sh"
-# shellcheck source=bin/fm-trace-context-lib.sh
-. "$SCRIPT_DIR/fm-trace-context-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
-. "$SCRIPT_DIR/fm-line-cap-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-tasks-axi-lib.sh
+. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-public-followup-lib.sh
+. "$SCRIPT_DIR/sq-public-followup-lib.sh"
+# shellcheck source=bin/sq-trace-context-lib.sh
+. "$SCRIPT_DIR/sq-trace-context-lib.sh"
+# shellcheck source=bin/sq-line-cap-lib.sh
+. "$SCRIPT_DIR/sq-line-cap-lib.sh"
 
 # One tasks-axi compatibility verdict per session start. The probe costs three
 # tasks-axi subprocesses and this digest needs the same answer twice - here for
-# the backlog listing and again inside the fm-bootstrap.sh child, which reports
+# the backlog listing and again inside the sq-bootstrap.sh child, which reports
 # an incompatible build as MISSING. Computing it once and handing it to that
-# child collapses six subprocesses to three. fm-tasks-axi-lib.sh owns both reuse
+# child collapses six subprocesses to three. sq-tasks-axi-lib.sh owns both reuse
 # layers and the one-hop consumption rule that keeps the verdict out of any
 # agent's environment.
 if fm_tasks_axi_compatible; then TASKS_AXI_COMPATIBLE=1; else TASKS_AXI_COMPATIBLE=0; fi
 
-STATUS_TAIL=${FM_SESSION_START_STATUS_TAIL:-5}
+STATUS_TAIL=${SQUAD_SESSION_START_STATUS_TAIL:-5}
 case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
-QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
+QUEUED_LIMIT=${SQUAD_SESSION_START_QUEUED_LIMIT:-20}
 case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
 BACKLOG_FIELDS=blocked_by,hold_kind,hold_reason
 
@@ -313,7 +313,7 @@ subsection() { printf '\n%s\n%s\n' "$1" "$SUBRULE"; }
 
 # print_file_or_absent <path> <label>: full contents under a labeled
 # subsection, or an explicit ABSENT marker. Absence is semantically
-# meaningful for every one of these files (captain.md absent = firstmate
+# meaningful for every one of these files (commander.md absent = Squad
 # repo built-in defaults, projects.md absent = rebuild from clones, etc. -
 # AGENTS.md section 3) and must never be confused with an empty-but-present
 # file, so the two cases print differently.
@@ -378,7 +378,7 @@ print_backlog_manual_compact() {
         printf "(shown %d in-flight, %d held or blocked queued, %d of %d other queued title line(s); %d done row(s) omitted)\n", \
           in_flight, gated, plain_shown, plain_total, done_total
         if (plain_total > plain_shown) {
-          printf "(%d more queued - raise FM_SESSION_START_QUEUED_LIMIT or read data/backlog.md for the rest)\n", plain_total - plain_shown
+          printf "(%d more queued - raise SQUAD_SESSION_START_QUEUED_LIMIT or read data/backlog.md for the rest)\n", plain_total - plain_shown
         }
       }
     }
@@ -435,7 +435,7 @@ print_backlog_tasks_axi_compact() {
       "$QUEUED_LIMIT"
     printf '\nin flight:\n'
     printf '%s\n' "$in_flight" | strip_axi_help
-    printf '\nheld (captain- or time-gated; an in-flight item that is also held appears in both groups):\n'
+    printf '\nheld (commander- or time-gated; an in-flight item that is also held appears in both groups):\n'
     printf '%s\n' "$held" | strip_axi_help
     printf '\nblocked queued:\n'
     printf '%s\n' "$blocked" | strip_axi_help
@@ -472,8 +472,8 @@ print_backlog_compact() {
 print_status_tail() {
   local status=$1 line
   printf 'status tail (last %s line(s), each capped at %s characters, wake-EVENT history, not current state; full log: %s):\n' \
-    "$STATUS_TAIL" "$FM_LINE_CAP_DEFAULT" "$status"
-  # A crewmate writes its own status lines, so their length is unbounded: one
+    "$STATUS_TAIL" "$SQUAD_LINE_CAP_DEFAULT" "$status"
+  # A operator writes its own status lines, so their length is unbounded: one
   # observed line ran 865 characters. Cap each one the way the wake digest's
   # OPEN DECISIONS section does; the lede carries the state word and the key,
   # and the full log path above reaches the rest.
@@ -505,20 +505,20 @@ pi_extension_loaded() {
 }
 
 if [ "$REEMIT" -eq 1 ]; then
-  section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
+  section "SESSION START (CONTEXT RE-EMIT) - $SQUAD_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
   printf 'reprinted, but the sweeps startup already reconciled - project clone refresh,\n'
-  printf 'secondmate convergence and liveness, PR-check migration, pending remote handoff\n'
+  printf 'XO convergence and liveness, PR-check migration, pending remote handoff\n'
   printf 'retry, X-mode artifact writes, and stale Herdr child cleanup - are NOT repeated.\n'
   printf 'Queued wakes ARE still drained: they arrived after startup and are this turn work.\n'
 else
-  section "SESSION START - $FM_HOME"
+  section "SESSION START - $SQUAD_HOME"
 fi
 # --- 1. lock -----------------------------------------------------------
 stage lock
 subsection "LOCK"
-LOCK_OUT=$("$SCRIPT_DIR/fm-lock.sh" 2>&1)
+LOCK_OUT=$("$SCRIPT_DIR/sq-lock.sh" 2>&1)
 LOCK_RC=$?
 printf '%s\n' "$LOCK_OUT"
 READ_ONLY=0
@@ -527,14 +527,14 @@ if [ "$LOCK_RC" -ne 0 ]; then
   BAR='●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   {
     printf '%s\n' "$BAR"
-    printf '●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED\n'
+    printf '●  READ-ONLY SESSION - UNIT LOCK OWNERSHIP WAS NOT VERIFIED\n'
     printf '●  %s\n' "$LOCK_OUT"
     printf '●  Skipping every mutating step: PR-check migration, stale Herdr child cleanup,\n'
-    printf '●  secondmate convergence, secondmate liveness, pending remote handoff retry,\n'
-    printf '●  X-mode artifacts, fleet sync, and wake-queue drain. Detect-only bootstrap\n'
+    printf '●  XO convergence, XO liveness, pending remote handoff retry,\n'
+    printf '●  X-mode artifacts, unit sync, and stand-to queue drain. Detect-only bootstrap\n'
     printf '●  diagnostics and the rest of this read-only-safe digest still ran below.\n'
     printf '●  Operate read-only until this resolves - do not spawn, steer, merge, or\n'
-    printf '●  otherwise mutate fleet state from this session.\n'
+    printf '●  otherwise mutate unit state from this session.\n'
     printf '%s\n' "$BAR"
   }
 fi
@@ -553,27 +553,27 @@ if [ "$READ_ONLY" -eq 0 ]; then
   # steer, or merge anyway, so it has no action left for an auth verdict to gate.
   NETWORK_STAGE_LOCKED=1
   [ "$REEMIT" -eq 0 ] || NETWORK_STAGE_LOCKED=0
-  "$SCRIPT_DIR/fm-startup-network.sh" start \
+  "$SCRIPT_DIR/sq-startup-network.sh" start \
     --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 || true
 fi
 
 # --- 2. bootstrap --------------------------------------------------------
-# FM_BOOTSTRAP_NETWORK=skip on every path: bootstrap's own network half is what
+# SQUAD_BOOTSTRAP_NETWORK=skip on every path: bootstrap's own network half is what
 # the deferred stage above is running right now, and running it twice would both
 # re-block this digest and race the worker's sweeps against themselves.
 stage bootstrap
 subsection "BOOTSTRAP"
 if [ "$READ_ONLY" -eq 1 ]; then
-  BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_NETWORK=skip \
-    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
+  BOOT_OUT=$(SQUAD_BOOTSTRAP_DETECT_ONLY=1 SQUAD_BOOTSTRAP_NETWORK=skip \
+    SQUAD_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/sq-bootstrap.sh" 2>&1)
 elif [ "$REEMIT" -eq 1 ]; then
-  BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_LOCKED=1 FM_BOOTSTRAP_NETWORK=skip \
-    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
+  BOOT_OUT=$(SQUAD_BOOTSTRAP_DETECT_ONLY=1 SQUAD_BOOTSTRAP_LOCKED=1 SQUAD_BOOTSTRAP_NETWORK=skip \
+    SQUAD_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/sq-bootstrap.sh" 2>&1)
 else
   BOOT_OUT=$(
-    "$SCRIPT_DIR/fm-herdr-session-cleanup.sh" 2>&1 || true
-    FM_BOOTSTRAP_NETWORK=skip FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
-      "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1
+    "$SCRIPT_DIR/sq-herdr-session-cleanup.sh" 2>&1 || true
+    SQUAD_BOOTSTRAP_NETWORK=skip SQUAD_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
+      "$SCRIPT_DIR/sq-bootstrap.sh" 2>&1
   )
 fi
 if [ -n "$BOOT_OUT" ]; then
@@ -582,26 +582,26 @@ else
   printf '(silent - all good)\n'
 fi
 
-# --- 3. wake-drain -------------------------------------------------------
+# --- 3. stand-to drain -------------------------------------------------------
 # Drained records are this turn's first work queue, and the drain's separate
 # OPEN DECISIONS section remains actionable even when that queue is empty
 # (AGENTS.md sections 3 and 8).
-# The drain also runs fm-guard.sh internally on the locked path, so the
-# tangle/watcher-liveness alarms land right here too, ahead of the bulk digest
+# The drain also runs sq-guard.sh internally on the locked path, so the
+# tangle/sentry-liveness alarms land right here too, ahead of the bulk digest
 # below. The read-only path never touches the queue because it lacks mutation
 # authority, and another session may be actively draining it. It still runs
-# fm-guard.sh directly with non-mutating advisory text, so the same alarms
+# sq-guard.sh directly with non-mutating advisory text, so the same alarms
 # surface without repair commands.
-stage wake-queue
+stage stand-to queue
 subsection "WAKE QUEUE"
 if [ "$READ_ONLY" -eq 1 ]; then
   QLEN=0
-  [ -s "$STATE/.wake-queue" ] && QLEN=$(grep -c . "$STATE/.wake-queue" 2>/dev/null || printf '0')
-  printf 'skipped (read-only session) - %s record(s) remain queued because this session lacks verified fleet-lock ownership.\n' "$QLEN"
-  GUARD_OUT=$(FM_GUARD_READ_ONLY=1 "$SCRIPT_DIR/fm-guard.sh" 2>&1)
+  [ -s "$STATE/.stand-to-queue" ] && QLEN=$(grep -c . "$STATE/.stand-to-queue" 2>/dev/null || printf '0')
+  printf 'skipped (read-only session) - %s record(s) remain queued because this session lacks verified unit-lock ownership.\n' "$QLEN"
+  GUARD_OUT=$(SQUAD_GUARD_READ_ONLY=1 "$SCRIPT_DIR/sq-guard.sh" 2>&1)
   [ -n "$GUARD_OUT" ] && printf '%s\n' "$GUARD_OUT"
 else
-  DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
+  DRAIN_OUT=$("$SCRIPT_DIR/sq-stand-to-drain.sh" 2>&1)
   if [ -n "$DRAIN_OUT" ]; then
     printf '%s\n' "$DRAIN_OUT"
   else
@@ -617,8 +617,8 @@ X_MODE_PRESENT=0
 [ -f "$CONFIG/x-mode.env" ] && X_MODE_PRESENT=1
 
 if [ "$PRIMARY_HARNESS" = pi ] || [ "$PRIMARY_HARNESS" = pi-signed ]; then
-  PI_EXT="$FM_ROOT/.pi/extensions/fm-primary-pi-watch.ts"
-  PI_TURNEND_EXT="$FM_ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
+  PI_EXT="$SQUAD_ROOT/.pi/extensions/sq-primary-pi-watch.ts"
+  PI_TURNEND_EXT="$SQUAD_ROOT/.pi/extensions/sq-primary-turnend-guard.ts"
   PI_WATCH_MARKER="$STATE/.pi-watch-extension-loaded"
   PI_TURNEND_MARKER="$STATE/.pi-turnend-extension-loaded"
   PI_LOCK="$STATE/.lock"
@@ -631,7 +631,7 @@ if [ "$PRIMARY_HARNESS" = pi ] || [ "$PRIMARY_HARNESS" = pi-signed ]; then
     printf 'PI_WATCH_EXTENSION: not loaded - approve Pi project trust once per clone, then restart %s so %s and %s auto-load for turn-end guard and background wake coverage; use -e %s -e %s only if project hooks are not trusted\n' "$PI_RESTART_COMMAND" "$PI_TURNEND_EXT" "$PI_EXT" "$PI_TURNEND_EXT" "$PI_EXT"
   fi
 fi
-"$SCRIPT_DIR/fm-supervision-instructions.sh" \
+"$SCRIPT_DIR/sq-supervision-instructions.sh" \
   --harness "$PRIMARY_HARNESS" \
   --read-only "$READ_ONLY" \
   --afk "$AFK_PRESENT" \
@@ -648,7 +648,7 @@ section "READ-ONCE CONTRACT"
 cat <<'EOF'
 Everything below is printed in full for this session start: every state/*.meta,
 a compact data/backlog.md listing, a bounded tail of every state/*.status,
-data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
+data/projects.md, data/XOs.md, data/commander.md, data/commander-shared.md,
 and data/learnings.md.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
 data/backlog.md or state/*.status: re-reading everything defeats the entire
@@ -663,16 +663,16 @@ Go to a source directly only when:
   - a full task body is needed (tasks-axi show <id> --full, or data/backlog.md),
   - the backlog listing disclosed omitted queued items and this turn needs them,
   - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
-    turn needs their verdict (bin/fm-startup-network.sh report),
+    turn needs their verdict (bin/sq-startup-network.sh report),
   - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
     which case that stage's sources were never emitted and must be reconciled.
 EOF
 
-# --- 6. fleet-state digest ---------------------------------------------
-# Before CONTEXT: see this file's ORDERING note. Live fleet identity is what a
+# --- 6. unit-state digest ---------------------------------------------
+# Before CONTEXT: see this file's ORDERING note. Live unit identity is what a
 # truncated tail must never take.
-stage fleet-state
-section "FLEET STATE"
+stage unit-state
+section "UNIT STATE"
 print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
 
 subsection "Work under way (state/*.meta)"
@@ -688,7 +688,7 @@ for meta in "$STATE"/*.meta; do
   target=$(fm_backend_target_of_meta "$meta")
   if [ -n "$window" ]; then
     backend=$(fm_backend_of_meta "$meta")
-    if fm_backend_target_exists "$backend" "${target:-$window}" "fm-$id"; then
+    if fm_backend_target_exists "$backend" "${target:-$window}" "sq-$id"; then
       printf 'endpoint: alive (backend=%s window=%s)\n' "$backend" "$window"
     else
       printf 'endpoint: dead (backend=%s window=%s)\n' "$backend" "$window"
@@ -720,31 +720,31 @@ done
 
 subsection "AFK"
 if [ -e "$STATE/.afk" ]; then
-  printf 'present - away-mode supervision is active; the daemon owns the watcher.\n'
+  printf 'present - away-mode supervision is active; the daemon owns the sentry.\n'
 else
   printf 'absent\n'
 fi
 
-# Public commitments made through the myfirstmate relay. A promise to reply in a
+# Public commitments made through the mySquad relay. A promise to reply in a
 # public thread must survive compaction and restart, so it is surfaced from disk
-# here rather than from conversation memory. fm-public-followup-lib.sh owns both
+# here rather than from conversation memory. sq-public-followup-lib.sh owns both
 # gates: a home that never opted into the relay runs one [ -f ] test, prints no
-# subsection, and never reaches fm-public-followup.sh.
-if fm_pf_relay_active "$FM_HOME" \
+# subsection, and never reaches sq-public-followup.sh.
+if fm_pf_relay_active "$SQUAD_HOME" \
   && { fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE"; }; then
-  PUBLIC_FOLLOWUP=$("$SCRIPT_DIR/fm-public-followup.sh" pending 2>/dev/null) || PUBLIC_FOLLOWUP=
+  PUBLIC_FOLLOWUP=$("$SCRIPT_DIR/sq-public-followup.sh" pending 2>/dev/null) || PUBLIC_FOLLOWUP=
   if [ -n "$PUBLIC_FOLLOWUP" ]; then
     subsection "Public commitments awaiting delivery"
     printf '%s\n' "$PUBLIC_FOLLOWUP"
     printf '\nEach line is a public reply this home still owes. Reconcile terminal results with\n'
-    printf '%s/bin/fm-public-followup.sh consume, then deliver a ready one with\n' "$FM_ROOT"
-    printf '%s/bin/fm-public-followup.sh deliver <id>. Load fmx-respond for the procedure.\n' "$FM_ROOT"
+    printf '%s/bin/sq-public-followup.sh consume, then deliver a ready one with\n' "$SQUAD_ROOT"
+    printf '%s/bin/sq-public-followup.sh deliver <id>. Load relay-respond for the procedure.\n' "$SQUAD_ROOT"
   fi
 fi
 
 # --- 7. network checks ------------------------------------------------------
 # Deliberately here and not later: these lines are actionable (a stuck clone, a
-# secondmate that could not be relaunched, broken GitHub auth), and the section
+# XO that could not be relaunched, broken GitHub auth), and the section
 # after this one is the curated memory a truncated tail is meant to take first.
 # Deliberately here and not earlier: this is the last point in the digest, so the
 # worker started at step 1 has had the whole composition above to finish in. It
@@ -754,11 +754,11 @@ stage network-checks
 section "NETWORK CHECKS"
 if [ "$READ_ONLY" -eq 1 ]; then
   printf 'skipped (read-only session) - GitHub authentication, project clone refresh,\n'
-  printf 'secondmate liveness and convergence, and pending handoff delivery were not run.\n'
-  printf 'They need the fleet lock, and this session must not spawn, steer, or merge, so it\n'
+  printf 'XO liveness and convergence, and pending handoff delivery were not run.\n'
+  printf 'They need the unit lock, and this session must not spawn, steer, or merge, so it\n'
   printf 'has no action they would gate. The session holding the lock runs them.\n'
 else
-  "$SCRIPT_DIR/fm-startup-network.sh" harvest --pid $$ 2>&1 || true
+  "$SCRIPT_DIR/sq-startup-network.sh" harvest --pid $$ 2>&1 || true
 fi
 
 # --- 8. context digest -----------------------------------------------------
@@ -769,9 +769,9 @@ fi
 stage context
 section "CONTEXT"
 print_file_or_absent "$DATA/projects.md" "data/projects.md"
-print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
-print_file_or_absent "$DATA/captain.md" "data/captain.md"
-print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
+print_file_or_absent "$DATA/XOs.md" "data/XOs.md"
+print_file_or_absent "$DATA/commander.md" "data/commander.md"
+print_file_or_absent "$DATA/commander-shared.md" "data/commander-shared.md (shared, main-authoritative, read-only in XO homes)"
 print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
 
 # --- 9. closing reminder -----------------------------------------------
@@ -779,15 +779,15 @@ stage next-step
 section "NEXT STEP"
 if [ "$READ_ONLY" -eq 1 ]; then
   cat <<'EOF'
-This session did not acquire the fleet lock. Stay read-only: do not arm,
-drain, spawn, steer, merge, or repair fleet state from here. Only a session
-with verified fleet-lock ownership may perform mutable follow-up.
+This session did not acquire the unit lock. Stay read-only: do not arm,
+drain, spawn, steer, merge, or repair unit state from here. Only a session
+with verified unit-lock ownership may perform mutable follow-up.
 
 EOF
 elif [ "$AFK_PRESENT" -eq 1 ]; then
   cat <<'EOF'
 Away mode is active. Follow the supervision operating instructions block above:
-load /afk and ensure the daemon is running, because the daemon owns watcher
+load /afk and ensure the daemon is running, because the daemon owns sentry
 supervision.
 
 EOF

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|muse|unknown
-#        fm-harness.sh crew             print the effective CREWMATE harness
+# Usage: sq-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|muse|unknown
+#        sq-harness.sh crew             print the effective OPERATOR harness
 #                                        (config/crew-harness; "default" resolves to own)
-#        fm-harness.sh secondmate       print the harness the PRIMARY uses to launch
-#                                        SECONDMATE agents: config/secondmate-harness ->
+#        sq-harness.sh XO       print the harness the PRIMARY uses to launch
+#                                        XO agents: config/xo-harness ->
 #                                        config/crew-harness -> own. "default" or absent
 #                                        defers to the crew resolution, so an unset
-#                                        secondmate-harness behaves exactly as the crew
+#                                        xo-harness behaves exactly as the crew
 #                                        harness did before this knob existed.
-#        fm-harness.sh secondmate-model    print the optional MODEL token from
-#                                        config/secondmate-harness, or empty when absent.
-#        fm-harness.sh secondmate-effort   print the optional EFFORT token from
-#                                        config/secondmate-harness, or empty when absent.
-# config/secondmate-harness format: a single line "<harness> [<model>] [<effort>]",
+#        sq-harness.sh XO-model    print the optional MODEL token from
+#                                        config/xo-harness, or empty when absent.
+#        sq-harness.sh XO-effort   print the optional EFFORT token from
+#                                        config/xo-harness, or empty when absent.
+# config/xo-harness format: a single line "<harness> [<model>] [<effort>]",
 # whitespace-separated. A bare "<harness>" (today's format) behaves exactly as before:
 # harness only, no model/effort. Only the first non-empty, non-comment line is parsed.
 # Model/effort come ONLY from this file - config/crew-harness stays a bare adapter
@@ -23,9 +23,9 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
 
 detect_own() {
   # Layer 1: environment markers for verified harnesses.
@@ -37,7 +37,7 @@ detect_own() {
   # CLAUDECODE inheritance into a kimi child was observed; it was not observed.
   [ "${CLAUDECODE:-}" = "1" ] && { echo claude; return; }
   if [ "${PI_CODING_AGENT:-}" = "true" ]; then
-    if [ "${FM_PI_HARNESS:-}" = pi-signed ]; then echo pi-signed; else echo pi; fi
+    if [ "${SQUAD_PI_HARNESS:-}" = pi-signed ]; then echo pi-signed; else echo pi; fi
     return
   fi
   # grok set GROK_AGENT=1 for its child/tool processes (verified, grok 0.2.73).
@@ -94,20 +94,20 @@ detect_own() {
   echo unknown
 }
 
-# Resolve the effective crewmate harness: config/crew-harness (a bare adapter
-# name) wins; absent or "default" mirrors firstmate's own harness.
+# Resolve the effective operator harness: config/crew-harness (a bare adapter
+# name) wins; absent or "default" mirrors Squad's own harness.
 resolve_crew() {
   local crew=
   [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
   if [ -z "$crew" ] || [ "$crew" = "default" ]; then detect_own; else echo "$crew"; fi
 }
 
-# Print the first non-empty, non-comment line of config/secondmate-harness
+# Print the first non-empty, non-comment line of config/xo-harness
 # (leading/trailing whitespace trimmed), or nothing when the file is absent or
 # holds only blank/comment lines.
-secondmate_line() {
+XO_line() {
   local line
-  [ -f "$CONFIG/secondmate-harness" ] || return 0
+  [ -f "$CONFIG/xo-harness" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
@@ -117,14 +117,14 @@ secondmate_line() {
     esac
     printf '%s\n' "$line"
     return 0
-  done < "$CONFIG/secondmate-harness"
+  done < "$CONFIG/xo-harness"
 }
 
 # Print the 1-based whitespace-separated token (1=harness, 2=model, 3=effort) of
-# the resolved secondmate_line, or nothing if the line or that field is absent.
-secondmate_field() {
+# the resolved XO_line, or nothing if the line or that field is absent.
+XO_field() {
   local idx=$1 line
-  line=$(secondmate_line)
+  line=$(XO_line)
   [ -n "$line" ] || return 0
   # shellcheck disable=SC2086  # deliberate word-splitting: tokenizing the line into fields
   set -- $line
@@ -135,41 +135,41 @@ secondmate_field() {
   esac
 }
 
-# Resolve the harness the PRIMARY uses to launch SECONDMATE agents: a fallback
-# chain config/secondmate-harness -> config/crew-harness -> own. An absent or
-# "default" secondmate-harness token defers to the crew resolution, so an unset
-# secondmate-harness behaves exactly as before this knob existed (a secondmate
-# launched on the crew harness). config/secondmate-harness is the PRIMARY's own
-# setting and is never inherited downstream - secondmates do not spawn secondmates.
-resolve_secondmate() {
+# Resolve the harness the PRIMARY uses to launch XO agents: a fallback
+# chain config/xo-harness -> config/crew-harness -> own. An absent or
+# "default" xo-harness token defers to the crew resolution, so an unset
+# xo-harness behaves exactly as before this knob existed (a XO
+# launched on the crew harness). config/xo-harness is the PRIMARY's own
+# setting and is never inherited downstream - XOs do not spawn XOs.
+resolve_XO() {
   local sm
-  sm=$(secondmate_field 1)
+  sm=$(XO_field 1)
   if [ -z "$sm" ] || [ "$sm" = "default" ]; then resolve_crew; else echo "$sm"; fi
 }
 
-# Print the optional model token (2nd field) from config/secondmate-harness, or
+# Print the optional model token (2nd field) from config/xo-harness, or
 # empty when the harness token is absent/"default" (harness-only file, same as
 # today) or when no model token is present.
-resolve_secondmate_model() {
+resolve_XO_model() {
   local sm
-  sm=$(secondmate_field 1)
+  sm=$(XO_field 1)
   [ -n "$sm" ] && [ "$sm" != "default" ] || return 0
-  secondmate_field 2
+  XO_field 2
 }
 
-# Print the optional effort token (3rd field) from config/secondmate-harness,
+# Print the optional effort token (3rd field) from config/xo-harness,
 # the same way.
-resolve_secondmate_effort() {
+resolve_XO_effort() {
   local sm
-  sm=$(secondmate_field 1)
+  sm=$(XO_field 1)
   [ -n "$sm" ] && [ "$sm" != "default" ] || return 0
-  secondmate_field 3
+  XO_field 3
 }
 
 case "${1:-}" in
   crew) resolve_crew ;;
-  secondmate) resolve_secondmate ;;
-  secondmate-model) resolve_secondmate_model ;;
-  secondmate-effort) resolve_secondmate_effort ;;
+  XO) resolve_XO ;;
+  XO-model) resolve_XO_model ;;
+  XO-effort) resolve_XO_effort ;;
   *) detect_own ;;
 esac

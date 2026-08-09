@@ -3,12 +3,12 @@
 
 This is the WIRE TRANSPORT half of the herdr push-escalation path
 (bin/backends/herdr.sh fm_backend_herdr_wait_transition). It deliberately does
-NOT know firstmate's supervision policy: it opens ONE connection to a herdr
+NOT know Squad's supervision policy: it opens ONE connection to a herdr
 session's control socket, subscribes to pane.agent_status_changed for the given
 panes (all statuses, so working/idle/done edges are seen too), and prints one
 projected line per event to stdout, flushing each so the bash caller can react
 sub-second. The bash side normalizes each line through the shared transition
-shape and applies the single-owner policy table (bin/fm-transition-lib.sh); the
+shape and applies the single-owner policy table (bin/sq-transition-lib.sh); the
 bash side also decides when to stop and kills this reader.
 
 Wire protocol (verified: herdr 0.7.3, protocol 16, newline-delimited JSON):
@@ -94,7 +94,7 @@ def main(argv):
         {"type": "pane.agent_status_changed", "pane_id": pane} for pane in panes
     ]
     request = {
-        "id": "fm-eventwait",
+        "id": "sq-eventwait",
         "method": "events.subscribe",
         "params": {"subscriptions": subscriptions},
     }

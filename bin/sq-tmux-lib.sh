@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# fm-tmux-lib.sh — shared tmux pane primitives for firstmate.
+# sq-tmux-lib.sh — shared tmux pane primitives for Squad.
 #
 # ONE source of truth for: busy detection, composer-empty (pending-input)
 # detection, and a verify-and-retry-Enter submit. Sourced by both the away-mode
-# daemon (bin/fm-supervise-daemon.sh) and bin/fm-send.sh so the composer/submit
+# daemon (bin/sq-supervise-daemon.sh) and bin/sq-send.sh so the composer/submit
 # logic cannot drift between the two.
 #
 # Why this exists (incident afk-invx-i5): the daemon's old composer check only
@@ -18,15 +18,15 @@
 # Ghost text (incident composer-robust): claude renders a predicted-next-prompt
 # "suggestion" as dim/faint text inside an otherwise-empty composer. A plain
 # capture cannot tell it apart from text a human typed, so the old reader saw an
-# idle pane as holding pending input and the daemon deferred injection / firstmate
+# idle pane as holding pending input and the daemon deferred injection / Squad
 # misjudged the pane. The composer reader now captures the visible pane WITH ANSI
 # styling (tmux capture-pane -e), locates a bordered composer structurally, and
-# extracts the real typed content from every row with the shared, fleet-wide
-# fm_composer_strip_ghost (bin/fm-composer-lib.sh), which drops every
+# extracts the real typed content from every row with the shared, unit-wide
+# fm_composer_strip_ghost (bin/sq-composer-lib.sh), which drops every
 # de-emphasised run - dim/faint (SGR 2) AND a dark/muted truecolor foreground -
 # so ghost/placeholder text never counts as real input. The styled capture is
 # consumed internally and parsed into a boolean here; it is NEVER surfaced
-# (fm-peek and every human/LLM-facing path stay plain). This is harness-generic:
+# (sq-peek and every human/LLM-facing path stay plain). This is harness-generic:
 # any harness that de-emphasises placeholder/ghost text
 # benefits, and the herdr adapter routes through the same owner (task
 # afk-herdr-false-pending), so the two backends cannot drift.
@@ -36,8 +36,8 @@
 # keystroke but does NOT clear the composer until then, so the composer keeps
 # showing the typed text the whole time. The plain "empty iff composer cleared"
 # acknowledgement above false-positives on a swallowed Enter for every steer
-# sent to a busy opencode pane, and `fm-send` exits non-zero on a normal
-# captain instruction. The submit core now falls back to `fm_pane_is_busy` once
+# sent to a busy opencode pane, and `sq-send` exits non-zero on a normal
+# commander instruction. The submit core now falls back to `fm_pane_is_busy` once
 # the Enter-retry budget is spent: a busy pane means the harness accepted and
 # queued the Enter (report `empty` so the caller does not re-send), while an
 # idle pane keeps the `pending` verdict (a genuine swallow). The herdr backend
@@ -45,11 +45,11 @@
 # as a known gap in `docs/herdr-backend.md` rather than patched here, so the
 # tmux adapter does not paper over a herdr-specific shape.
 #
-# Overrides: FM_COMPOSER_IDLE_RE matches an empty composer after ghost and
-# structural border stripping. FM_BUSY_REGEX overrides the rendered busy-footer
+# Overrides: SQUAD_COMPOSER_IDLE_RE matches an empty composer after ghost and
+# structural border stripping. SQUAD_BUSY_REGEX overrides the rendered busy-footer
 # matching used here.
 #
-# NOT a task-state source: task busy state is owned by bin/fm-busy-lib.sh's
+# NOT a task-state source: task busy state is owned by bin/sq-busy-lib.sh's
 # semantic contract. The matching below serves only delivery guards: the submit
 # acknowledgement and the away-mode supervisor-pane busy guard. Both ask about
 # the pane receiving input, not the state of a recorded worker task. Matching
@@ -58,13 +58,13 @@
 # All functions are `set -u` and `set -e` safe (guarded tmux calls, explicit
 # returns) so they can be sourced into either context.
 #
-# Composer-content classification (empty|pending|unknown, and the fleet-wide
+# Composer-content classification (empty|pending|unknown, and the unit-wide
 # rule that a BARE shell prompt glyph is a dead shell, not an empty agent
-# composer) is NOT owned here: it is the shared bin/fm-composer-lib.sh, sourced
+# composer) is NOT owned here: it is the shared bin/sq-composer-lib.sh, sourced
 # below and reused by every backend adapter so the decision cannot drift.
 
-# shellcheck source=bin/fm-composer-lib.sh
-. "$(dirname -- "${BASH_SOURCE[0]}")/fm-composer-lib.sh"
+# shellcheck source=bin/sq-composer-lib.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/sq-composer-lib.sh"
 
 # Delivery-only rendered busy footers per harness. claude/codex: "esc to
 # interrupt"; opencode: "esc interrupt"; pi: "Working..."; grok: "Ctrl+c:cancel".
@@ -82,28 +82,28 @@
 # busy signals on their own.
 # The full moon-phase set remains locale- and emoji-font-sensitive because Kimi
 # exposes no stable ASCII busy token.
-FM_TMUX_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel'
-FM_TMUX_CLAUDE_BUSY_REGEX_DEFAULT='esc to interrupt|…[[:space:]]+\([0-9]+[smh]'
-FM_TMUX_CODEX_BUSY_REGEX_DEFAULT='esc to interrupt'
-FM_TMUX_OPENCODE_BUSY_REGEX_DEFAULT='esc interrupt'
-FM_TMUX_PI_BUSY_REGEX_DEFAULT='Working\.\.\.'
-FM_TMUX_GROK_BUSY_REGEX_DEFAULT='Ctrl\+c:cancel'
-FM_TMUX_KIMI_BUSY_REGEX_DEFAULT='^[[:space:]]*(🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘)[[:space:]]+·[[:space:]]+'
+SQUAD_TMUX_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel'
+SQUAD_TMUX_CLAUDE_BUSY_REGEX_DEFAULT='esc to interrupt|…[[:space:]]+\([0-9]+[smh]'
+SQUAD_TMUX_CODEX_BUSY_REGEX_DEFAULT='esc to interrupt'
+SQUAD_TMUX_OPENCODE_BUSY_REGEX_DEFAULT='esc interrupt'
+SQUAD_TMUX_PI_BUSY_REGEX_DEFAULT='Working\.\.\.'
+SQUAD_TMUX_GROK_BUSY_REGEX_DEFAULT='Ctrl\+c:cancel'
+SQUAD_TMUX_KIMI_BUSY_REGEX_DEFAULT='^[[:space:]]*(🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘)[[:space:]]+·[[:space:]]+'
 
 fm_busy_lines_match() {  # [harness]
   local harness=${1:-} lines regex
   IFS= read -r -d '' lines || true
-  if [ -n "${FM_BUSY_REGEX:-}" ]; then
-    regex=$FM_BUSY_REGEX
+  if [ -n "${SQUAD_BUSY_REGEX:-}" ]; then
+    regex=$SQUAD_BUSY_REGEX
   else
     case "$harness" in
-      claude) regex=$FM_TMUX_CLAUDE_BUSY_REGEX_DEFAULT ;;
-      codex) regex=$FM_TMUX_CODEX_BUSY_REGEX_DEFAULT ;;
-      opencode) regex=$FM_TMUX_OPENCODE_BUSY_REGEX_DEFAULT ;;
-      pi|pi-signed) regex=$FM_TMUX_PI_BUSY_REGEX_DEFAULT ;;
-      grok) regex=$FM_TMUX_GROK_BUSY_REGEX_DEFAULT ;;
-      kimi) regex=$FM_TMUX_KIMI_BUSY_REGEX_DEFAULT ;;
-      '') regex=$FM_TMUX_BUSY_REGEX_DEFAULT ;;
+      claude) regex=$SQUAD_TMUX_CLAUDE_BUSY_REGEX_DEFAULT ;;
+      codex) regex=$SQUAD_TMUX_CODEX_BUSY_REGEX_DEFAULT ;;
+      opencode) regex=$SQUAD_TMUX_OPENCODE_BUSY_REGEX_DEFAULT ;;
+      pi|pi-signed) regex=$SQUAD_TMUX_PI_BUSY_REGEX_DEFAULT ;;
+      grok) regex=$SQUAD_TMUX_GROK_BUSY_REGEX_DEFAULT ;;
+      kimi) regex=$SQUAD_TMUX_KIMI_BUSY_REGEX_DEFAULT ;;
+      '') regex=$SQUAD_TMUX_BUSY_REGEX_DEFAULT ;;
       *)
         # A supplied harness must never borrow another harness's signature.
         # Register its verified signature explicitly before classifying it busy.
@@ -114,8 +114,8 @@ fm_busy_lines_match() {  # [harness]
   [ -n "$regex" ] && printf '%s' "$lines" | grep -qiE "$regex"
 }
 
-# fm_tmux_strip_ghost: thin adapter over the shared, fleet-wide ghost extractor
-# fm_composer_strip_ghost (bin/fm-composer-lib.sh). It drops de-emphasised
+# fm_tmux_strip_ghost: thin adapter over the shared, unit-wide ghost extractor
+# fm_composer_strip_ghost (bin/sq-composer-lib.sh). It drops de-emphasised
 # ghost/placeholder runs - dim/faint (SGR 2, claude's/codex's ghost) AND a
 # dark/muted truecolor foreground (grok's placeholder) - from one captured,
 # styled composer line and prints the plain, real-typed text. Kept as a named
@@ -143,10 +143,10 @@ fm_tmux_composer_row_state() {  # <raw-row> [bordered] [allow-busy] -> empty|pen
   stripped="${stripped#"${stripped%%[![:space:]]*}"}"
   stripped="${stripped%"${stripped##*[![:space:]]}"}"
   if [ "$allow_busy" = 1 ] && [ -n "$stripped" ] \
-     && printf '%s' "$stripped" | grep -qiE "${FM_BUSY_REGEX:-$FM_TMUX_BUSY_REGEX_DEFAULT}"; then
+     && printf '%s' "$stripped" | grep -qiE "${SQUAD_BUSY_REGEX:-$SQUAD_TMUX_BUSY_REGEX_DEFAULT}"; then
     printf 'empty'; return 0
   fi
-  fm_composer_classify_content "$bordered" "$stripped" "${FM_COMPOSER_IDLE_RE:-}" insensitive "$plain"
+  fm_composer_classify_content "$bordered" "$stripped" "${SQUAD_COMPOSER_IDLE_RE:-}" insensitive "$plain"
 }
 
 fm_tmux_row_has_composer_edge() {  # <plain-row>
@@ -371,7 +371,7 @@ fm_pane_input_pending() {  # <target>
 }
 
 # fm_pane_is_busy: 0 if the pane's last few non-blank lines show a busy footer
-# (an agent mid-turn). Scans a 40-line tail like fm-watch.sh.
+# (an agent mid-turn). Scans a 40-line tail like sq-sentry.sh.
 fm_pane_is_busy() {  # <target> [harness]
   local win=$1 harness=${2:-} tail40
   tail40=$(tmux capture-pane -p -t "$win" -S -40 2>/dev/null) || return 1

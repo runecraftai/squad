@@ -10,13 +10,13 @@
 # Refuses a case-variant real memory file such as a lowercase agents.md, whose
 # CLAUDE.md symlink would carry an uppercase literal target that dangles on a
 # case-sensitive filesystem (issue #389).
-# This is a worktree utility for crewmates, not a supervision script, so it does
-# not call fm-guard.sh.
-# Usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
+# This is a worktree utility for operators, not a supervision script, so it does
+# not call sq-guard.sh.
+# Usage: sq-ensure-agents-md.sh [repo-or-worktree-dir]
 set -eu
 
 usage() {
-  echo "usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]" >&2
+  echo "usage: sq-ensure-agents-md.sh [repo-or-worktree-dir]" >&2
 }
 
 case "${1:-}" in

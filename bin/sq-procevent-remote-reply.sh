@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Remote-secondmate reply adapter for the generic process-event runner.
+# Remote-XO reply adapter for the generic process-event runner.
 #
 # Usage:
-#   fm-procevent-remote-reply.sh arm <secondmate-id>
-#   fm-procevent-remote-reply.sh handle <secondmate-id> <sequence> <result-file>
-#   fm-procevent-remote-reply.sh autohandle <source-id> <sequence> <result-file>
-#   fm-procevent-remote-reply.sh classify <result-file>
-#   fm-procevent-remote-reply.sh terminal <result-file>
-#   fm-procevent-remote-reply.sh source-id <secondmate-id>
-#   fm-procevent-remote-reply.sh retire <secondmate-id>
+#   sq-procevent-remote-reply.sh arm <XO-id>
+#   sq-procevent-remote-reply.sh handle <XO-id> <sequence> <result-file>
+#   sq-procevent-remote-reply.sh autohandle <source-id> <sequence> <result-file>
+#   sq-procevent-remote-reply.sh classify <result-file>
+#   sq-procevent-remote-reply.sh terminal <result-file>
+#   sq-procevent-remote-reply.sh source-id <XO-id>
+#   sq-procevent-remote-reply.sh retire <XO-id>
 #
 # `arm` registers one blocking, non-destructive delta source for the remote
 # home's state/parent-replies.status log. The process-event runner owns blocking,
@@ -18,20 +18,20 @@
 # cursor-anchored source. A continuity break is escalated and not re-armed.
 #
 # `autohandle` is the runner's own entry into that same `handle`: it takes the
-# canonical source id instead of the secondmate id and is called by the runner
+# canonical source id instead of the XO id and is called by the runner
 # right after capture, so applying a reply never depends on a handler
 # remembering to run it. Ingesting a delta carries no judgement, so it belongs
-# in code. The published wake still reaches firstmate, and running `handle`
+# in code. The published wake still reaches Squad, and running `handle`
 # again on that wake is idempotent.
 #
 # This channel is a status-stream MIRROR, not a correlated-reply channel. A local
-# secondmate appends its whole status stream straight into the parent's
+# XO appends its whole status stream straight into the parent's
 # state/<id>.status, and every parent consumer - the open-decision fold, wake
 # classification, crew-state reconciliation, and pending-reply resolution - reads
-# that one stream. A remote secondmate must present the same model, so ingest
+# that one stream. A remote XO must present the same model, so ingest
 # mirrors every content-bearing line at most once, omits blank separators, and
 # leaves every semantic judgement to those same shared consumers. Correlation is
-# a per-line property that fm-pending-reply-lib.sh consumes; it is never a gate
+# a per-line property that sq-pending-reply-lib.sh consumes; it is never a gate
 # on the stream. Gating on it here made a remote mate's own progress lines and
 # newly raised decisions - which carry no corr= by contract - unrepresentable,
 # and rejecting one line failed the whole delta, so the cursor could never
@@ -45,31 +45,31 @@
 #   - at-most-once append, because a captured generation can be replayed
 #   - control-byte normalization, so content-bearing bytes from another machine
 #     cannot make the parent's status file unsafe to read
-# Line framing and size bounding belong to bin/fm-remote-delta-read.sh, which
+# Line framing and size bounding belong to bin/sq-remote-delta-read.sh, which
 # delivers only whole lines and breaks continuity on an over-long one.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
 CURSOR_DIR="$STATE/remote-replies"
 REMOTE_LOG='state/parent-replies.status'
-WAIT_SECONDS=${FM_REMOTE_REPLY_WAIT_SECONDS:-55}
-MAX_DOC_BYTES=${FM_REMOTE_REPLY_MAX_DOC_BYTES:-262144}
-# fm-on.sh returns ssh's status unchanged, so 255 alone means unavailable
+WAIT_SECONDS=${SQUAD_REMOTE_REPLY_WAIT_SECONDS:-55}
+MAX_DOC_BYTES=${SQUAD_REMOTE_REPLY_MAX_DOC_BYTES:-262144}
+# sq-on.sh returns ssh's status unchanged, so 255 alone means unavailable
 # transport or unknown remote completion. Any other nonzero status is the remote
 # reader's own refusal and will not change on a retry.
 SSH_UNAVAILABLE=255
 DOCUMENT_LOCAL_FAILURE=2
 
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-pending-reply-lib.sh
-. "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-xo-registry-lib.sh
+. "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-pending-reply-lib.sh
+. "$SCRIPT_DIR/sq-pending-reply-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -86,14 +86,14 @@ sha256_file() {
 
 empty_hash() {
   local tmp
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-empty-hash.XXXXXX") || return 1
+  tmp=$(mktemp "${TMPDIR:-/tmp}/sq-empty-hash.XXXXXX") || return 1
   : > "$tmp"
   sha256_file "$tmp"
   rm -f -- "$tmp"
 }
 
 validate_id() {
-  case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac
+  case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid XO id: $1" ;; esac
 }
 
 source_id() {
@@ -114,7 +114,7 @@ read_cursor() { # <id>; sets CURSOR_OFFSET and CURSOR_HASH
   schema=$(sed -n 's/^schema=//p' "$path")
   offset=$(sed -n 's/^offset=//p' "$path")
   hash=$(sed -n 's/^prefix_sha256=//p' "$path")
-  [ "$schema" = fm-remote-reply-cursor.v1 ] || die "reply cursor has an incompatible schema: $path"
+  [ "$schema" = sq-remote-reply-cursor.v1 ] || die "reply cursor has an incompatible schema: $path"
   case "$offset" in ''|*[!0-9]*) die "reply cursor has an invalid offset: $path" ;; esac
   case "$hash" in *[!A-Fa-f0-9]*|'') die "reply cursor has an invalid hash: $path" ;; esac
   [ "${#hash}" -eq 64 ] || die "reply cursor has an invalid hash length: $path"
@@ -130,7 +130,7 @@ write_cursor() { # <id> <offset> <hash>
   [ ! -L "$path" ] || return 1
   tmp=$(umask 077; mktemp "$CURSOR_DIR/.cursor.XXXXXX") || return 1
   {
-    printf 'schema=fm-remote-reply-cursor.v1\n'
+    printf 'schema=sq-remote-reply-cursor.v1\n'
     printf 'offset=%s\n' "$offset"
     printf 'prefix_sha256=%s\n' "$hash"
   } > "$tmp" || { rm -f -- "$tmp"; return 1; }
@@ -188,7 +188,7 @@ classify_result() {
   [ -f "$file" ] && [ ! -L "$file" ] || { printf 'malformed\n'; return 0; }
   schema=$(result_field "$file" schema 2>/dev/null || true)
   status=$(result_field "$file" status 2>/dev/null || true)
-  [ "$schema" = fm-remote-delta.v1 ] || { printf 'malformed\n'; return 0; }
+  [ "$schema" = sq-remote-delta.v1 ] || { printf 'malformed\n'; return 0; }
   case "$status" in
     delta) printf 'delta\n' ;;
     continuity-broken) printf 'continuity-broken\n' ;;
@@ -198,8 +198,8 @@ classify_result() {
 
 remote_route_exists() {
   local id=$1 remote
-  remote=$(secondmate_registry_field "$DATA/secondmates.md" "$id" remote 2>/dev/null || true)
-  [ "$remote" = 1 ] || die "secondmate $id is not a configured remote route"
+  remote=$(XO_registry_field "$DATA/XOs.md" "$id" remote 2>/dev/null || true)
+  [ "$remote" = 1 ] || die "XO $id is not a configured remote route"
 }
 
 cmd_arm_locked() {
@@ -208,15 +208,15 @@ cmd_arm_locked() {
   remote_route_exists "$id"
   read_cursor "$id"
   sid=$(source_id "$id")
-  "$SCRIPT_DIR/fm-procevent.sh" register remote-reply "$sid" -- \
-    "$SCRIPT_DIR/fm-procevent-remote-reply.sh" source "$id" || return 1
+  "$SCRIPT_DIR/sq-procevent.sh" register remote-reply "$sid" -- \
+    "$SCRIPT_DIR/sq-procevent-remote-reply.sh" source "$id" || return 1
   printf 'armed: %s offset=%s\n' "$sid" "$CURSOR_OFFSET"
 }
 
 cmd_arm() {
   local id=${1:-} lock
   validate_id "$id"
-  lock=$(secondmate_reply_lifecycle_lock_path "$STATE" "$id")
+  lock=$(XO_reply_lifecycle_lock_path "$STATE" "$id")
   (
     fm_lock_acquire_wait "$lock" || die "cannot lock remote reply lifecycle for $id"
     trap 'fm_lock_release "$lock"' EXIT
@@ -228,7 +228,7 @@ cmd_source() {
   local id=${1:-}
   validate_id "$id"
   read_cursor "$id"
-  exec "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-delta-read.sh \
+  exec "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-delta-read.sh \
     "$REMOTE_LOG" "$CURSOR_OFFSET" "$CURSOR_HASH" "$WAIT_SECONDS" < /dev/null
 }
 
@@ -248,7 +248,7 @@ safe_doc_path() {
 fetch_document() { # <id> <remote-relative> <result-var>
   local id=$1 rel=$2 result_var=$3 base destination parent parent_real tmp local_rel rc=0
   safe_doc_path "$rel" || return 1
-  base="$DATA/remote-secondmates/$id"
+  base="$DATA/remote-XOs/$id"
   destination="$base/$rel"
   parent=$(dirname "$destination")
   mkdir -p "$parent" || return "$DOCUMENT_LOCAL_FAILURE"
@@ -257,7 +257,7 @@ fetch_document() { # <id> <remote-relative> <result-var>
   case "$parent_real" in "$base"|"$base"/*) ;; *) return "$DOCUMENT_LOCAL_FAILURE" ;; esac
   [ ! -L "$destination" ] || return "$DOCUMENT_LOCAL_FAILURE"
   tmp=$(umask 077; mktemp "$parent/.remote-doc.XXXXXX") || return "$DOCUMENT_LOCAL_FAILURE"
-  "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-file.sh get "$rel" "$MAX_DOC_BYTES" < /dev/null > "$tmp" || rc=$?
+  "$SCRIPT_DIR/sq-on.sh" "$id" sq-remote-file.sh get "$rel" "$MAX_DOC_BYTES" < /dev/null > "$tmp" || rc=$?
   if [ "$rc" -ne 0 ]; then
     rm -f -- "$tmp"
     [ "$rc" -ne "$SSH_UNAVAILABLE" ] || return "$SSH_UNAVAILABLE"
@@ -265,14 +265,14 @@ fetch_document() { # <id> <remote-relative> <result-var>
   fi
   chmod 600 "$tmp" || { rm -f -- "$tmp"; return "$DOCUMENT_LOCAL_FAILURE"; }
   mv -f -- "$tmp" "$destination" || { rm -f -- "$tmp"; return "$DOCUMENT_LOCAL_FAILURE"; }
-  local_rel="data/remote-secondmates/$id/$rel"
+  local_rel="data/remote-XOs/$id/$rel"
   printf -v "$result_var" '%s' "$local_rel"
 }
 
 # The one adaptation a machine boundary forces on the mirrored bytes: NUL and
 # every other C0 control except tab and newline, plus DEL, become '?'. Printable
 # ASCII and every high byte pass through untouched, so ordinary UTF-8 notes
-# mirror exactly as a local secondmate would have written them. Newlines remain
+# mirror exactly as a local XO would have written them. Newlines remain
 # framing rather than payload bytes, and blank separators are not carried into
 # the parent status stream.
 normalize_payload() { # <source> <destination>
@@ -307,7 +307,7 @@ cmd_ingest() {
   payload_hash=$(result_field "$result" payload_sha256) || die "result payload hash is ambiguous"
   payload_bytes=$(result_field "$result" payload_bytes) || die "result payload size is ambiguous"
   reason=$(result_field "$result" reason) || die "result reason is ambiguous"
-  [ "$schema" = fm-remote-delta.v1 ] && [ "$path" = "$REMOTE_LOG" ] || die "result identifies the wrong source"
+  [ "$schema" = sq-remote-delta.v1 ] && [ "$path" = "$REMOTE_LOG" ] || die "result identifies the wrong source"
   case "$from$to$payload_bytes" in *[!0-9]*) die "result carries a nonnumeric size or offset" ;; esac
   for hash in "$from_hash" "$to_hash" "$payload_hash"; do
     case "$hash" in *[!A-Fa-f0-9]*|'') die "result carries an invalid SHA-256 value" ;; esac
@@ -315,7 +315,7 @@ cmd_ingest() {
   done
   blank=$(LC_ALL=C awk '$0 == "" { print NR; exit }' "$result")
   case "$blank" in ''|*[!0-9]*) die "result has no payload boundary" ;; esac
-  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-reply-ingest.XXXXXX") || die "cannot create ingest staging directory"
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/sq-remote-reply-ingest.XXXXXX") || die "cannot create ingest staging directory"
   trap 'rm -rf -- "$tmp"' EXIT
   payload="$tmp/payload"
   tail -n "+$((blank + 1))" "$result" > "$payload"
@@ -414,7 +414,7 @@ cmd_handle_locked() {
   if [ "$class" = delta ]; then
     cmd_arm_locked "$id" || return 1
   fi
-  "$SCRIPT_DIR/fm-procevent.sh" handled "$sid" "$seq" || return 1
+  "$SCRIPT_DIR/sq-procevent.sh" handled "$sid" "$seq" || return 1
   return "$rc"
 }
 
@@ -428,7 +428,7 @@ cmd_autohandle() {
     *) die "not a remote reply source: $sid" ;;
   esac
   validate_id "$id"
-  [ "$(source_id "$id")" = "$sid" ] || die "source id does not identify one secondmate: $sid"
+  [ "$(source_id "$id")" = "$sid" ] || die "source id does not identify one XO: $sid"
   cmd_handle "$id" "$seq" "$result" || rc=$?
   [ "$rc" -eq 3 ] && rc=0
   return "$rc"
@@ -437,7 +437,7 @@ cmd_autohandle() {
 cmd_handle() {
   local id=${1:-} lock
   validate_id "$id"
-  lock=$(secondmate_reply_lifecycle_lock_path "$STATE" "$id")
+  lock=$(XO_reply_lifecycle_lock_path "$STATE" "$id")
   (
     fm_lock_acquire_wait "$lock" || die "cannot lock remote reply lifecycle for $id"
     trap 'fm_lock_release "$lock"' EXIT
@@ -474,7 +474,7 @@ cmd_retire_quiesce_locked() {
   validate_id "$id"
   [ -z "$force" ] || [ "$force" = --force ] || die "invalid retirement option: $force"
   sid=$(source_id "$id")
-  "$SCRIPT_DIR/fm-procevent.sh" retire "$sid" || return 1
+  "$SCRIPT_DIR/sq-procevent.sh" retire "$sid" || return 1
   RETIREMENT_PENDING=0
   retirement_capture_scan "$id" || true
   if [ "$force" != --force ] && [ "$RETIREMENT_PENDING" -gt 0 ]; then
@@ -506,7 +506,7 @@ cmd_retire_finalize_locked() {
 cmd_retire() {
   local id=${1:-} force=${2:-} lock
   validate_id "$id"
-  lock=$(secondmate_reply_lifecycle_lock_path "$STATE" "$id")
+  lock=$(XO_reply_lifecycle_lock_path "$STATE" "$id")
   (
     fm_lock_acquire_wait "$lock" || die "cannot lock remote reply lifecycle for $id"
     trap 'fm_lock_release "$lock"' EXIT
@@ -517,7 +517,7 @@ cmd_retire() {
 
 require_parent_lifecycle_lock() {
   local id=$1 lock owner pid
-  lock=$(secondmate_reply_lifecycle_lock_path "$STATE" "$id")
+  lock=$(XO_reply_lifecycle_lock_path "$STATE" "$id")
   if [ -L "$lock" ]; then
     owner=$(fm_lock_link_owner "$lock" 2>/dev/null || true)
     [ -n "$owner" ] || die "remote reply lifecycle lock ownership is invalid"

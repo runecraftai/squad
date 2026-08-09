@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Non-executing migration for watcher PR checks created by older Firstmate
+# Non-executing migration for sentry PR checks created by older Squad
 # versions. Legacy check files are never run, sourced, or parsed by Bash.
 # Pending validated merged-poll retirements finish first. Canonical polls are
 # then rebuilt from validated metadata, remaining provenance-bound polls and
 # registered custom checks remain armed, and every other task poll is
 # quarantined for private review. A current X-mode shim is preserved by exact
 # content, while the recognized older byte-static shim is refreshed in place.
-# Usage: fm-pr-check-migrate.sh [--checks-safe]
+# Usage: sq-pr-check-migrate.sh [--checks-safe]
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-TEMPLATE="$SCRIPT_DIR/fm-pr-poll.sh"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+TEMPLATE="$SCRIPT_DIR/sq-pr-poll.sh"
 LOG="$STATE/.pr-check-migration.log"
 QUARANTINE="$STATE/.pr-check-quarantine"
 MARKER="$STATE/.pr-check-migration-v1"
-MARKER_VALUE=fm-pr-check-migration-v1
+MARKER_VALUE=sq-pr-check-migration-v1
 SCAN_MARKER="$STATE/.pr-check-migration-scan-v1"
-SCAN_MARKER_VALUE=fm-pr-check-migration-scan-v1
-WATCH="$SCRIPT_DIR/fm-watch.sh"
-WATCH_LOCK="$STATE/.watch.lock"
+SCAN_MARKER_VALUE=sq-pr-check-migration-scan-v1
+WATCH="$SCRIPT_DIR/sq-sentry.sh"
+WATCH_LOCK="$STATE/.sentry.lock"
 NONCANONICAL_PREFIX='!noncanonical'
 LEGACY_NONCANONICAL_PREFIX=_noncanonical
 
@@ -33,12 +33,12 @@ elif [ "$#" -ne 0 ]; then
   exit 2
 fi
 
-# shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-x-lib.sh
-. "$SCRIPT_DIR/fm-x-lib.sh"
-# shellcheck source=bin/fm-check-lib.sh
-. "$SCRIPT_DIR/fm-check-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-x-lib.sh
+. "$SCRIPT_DIR/sq-x-lib.sh"
+# shellcheck source=bin/sq-check-lib.sh
+. "$SCRIPT_DIR/sq-check-lib.sh"
 
 umask 077
 if [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
@@ -80,8 +80,8 @@ current_checks_authenticated() {
   local check id
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-watch.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$FM_HOME" "$FM_ROOT"; then
+    if [ "$(basename "$check")" = x-sentry.check.sh ] \
+      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -158,7 +158,7 @@ diagnostic_obligation_message() {
         MIGRATION_DIAGNOSTIC_MESSAGE="task $prefix: ambiguous poll migration is incomplete; poll remains unarmed; repair its private artifacts, then rerun bootstrap"
         ;;
       failure-replacement)
-        MIGRATION_DIAGNOSTIC_MESSAGE="task $prefix: replacement poll lacks canonical provenance or metadata binding; poll remains unarmed; republish it through fm-pr-check.sh"
+        MIGRATION_DIAGNOSTIC_MESSAGE="task $prefix: replacement poll lacks canonical provenance or metadata binding; poll remains unarmed; republish it through sq-pr-check.sh"
         ;;
       ambiguous)
         MIGRATION_DIAGNOSTIC_MESSAGE="task $prefix: ambiguous or invalid legacy poll quarantined and unarmed"
@@ -248,41 +248,41 @@ migration_complete() {
 }
 
 x_shim_locked_scan_needed() {
-  local shim="$STATE/x-watch.check.sh"
+  local shim="$STATE/x-sentry.check.sh"
   [ -e "$shim" ] || [ -L "$shim" ] || return 1
-  fmx_poll_shim_valid "$shim" "$FM_HOME" "$FM_ROOT" && return 1
+  fmx_poll_shim_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" && return 1
   return 0
 }
 
 # Marker short-circuits apply only when generated artifact identities are current.
-# Otherwise watcher exclusion comes before every check scan and state mutation.
+# Otherwise sentry exclusion comes before every check scan and state mutation.
 if ! x_shim_locked_scan_needed; then
   migration_complete && exit 0
   [ "$ALLOW_INCOMPLETE_REPAIRS" -eq 1 ] && scan_complete && exit 0
 fi
 
-# shellcheck source=bin/fm-wake-lib.sh disable=SC1091
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
-stopped_watcher=0
+stopped_sentry=0
 pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
 if fm_pid_alive "$pid"; then
-  if ! fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$pid" "$FM_HOME"; then
-    echo "PR_CHECK_MIGRATION: watcher ownership is ambiguous; review state/.watch.lock before rearming polls" >&2
+  if ! fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$pid" "$SQUAD_HOME"; then
+    echo "PR_CHECK_MIGRATION: sentry ownership is ambiguous; review state/.sentry.lock before rearming polls" >&2
     exit 1
   fi
   kill -TERM "$pid" 2>/dev/null || {
-    echo "PR_CHECK_MIGRATION: watcher could not be paused; review state/.watch.lock before rearming polls" >&2
+    echo "PR_CHECK_MIGRATION: sentry could not be paused; review state/.sentry.lock before rearming polls" >&2
     exit 1
   }
-  stopped_watcher=1
+  stopped_sentry=1
   i=0
   while [ "$i" -lt 100 ] && fm_pid_alive "$pid"; do
     sleep 0.05
     i=$((i + 1))
   done
   if fm_pid_alive "$pid"; then
-    echo "PR_CHECK_MIGRATION: watcher did not pause; review state/.watch.lock before rearming polls" >&2
+    echo "PR_CHECK_MIGRATION: sentry did not pause; review state/.sentry.lock before rearming polls" >&2
     exit 1
   fi
 fi
@@ -295,9 +295,9 @@ while [ "$i" -lt 100 ]; do
     break
   fi
   # A concurrent migration may have completed while this process waited.
-  # Its validated marker proves the old watcher crossed the boundary, so this
-  # process can continue to the normal watcher singleton instead of competing
-  # with the newly started watcher for a second migration lock.
+  # Its validated marker proves the old sentry crossed the boundary, so this
+  # process can continue to the normal sentry singleton instead of competing
+  # with the newly started sentry for a second migration lock.
   if migration_complete && ! x_shim_locked_scan_needed; then
     exit 0
   fi
@@ -305,7 +305,7 @@ while [ "$i" -lt 100 ]; do
   i=$((i + 1))
 done
 if [ "$lock_held" -ne 1 ]; then
-  echo "PR_CHECK_MIGRATION: watcher exclusion could not be acquired; review state/.watch.lock before rearming polls" >&2
+  echo "PR_CHECK_MIGRATION: sentry exclusion could not be acquired; review state/.sentry.lock before rearming polls" >&2
   exit 1
 fi
 
@@ -335,23 +335,23 @@ fi
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ -n "$STATE_DEVICE" ] || exit 1
 if ! fm_pr_poll_retirement_recover_all "$STATE" "$TEMPLATE"; then
-  echo "PR_CHECK_MIGRATION: pending PR poll retirement could not be validated:$FM_PR_POLL_RETIREMENT_REJECTED" >&2
+  echo "PR_CHECK_MIGRATION: pending PR poll retirement could not be validated:$SQUAD_PR_POLL_RETIREMENT_REJECTED" >&2
   exit 1
 fi
 refresh_v1_x_shim() {
-  local shim="$STATE/x-watch.check.sh"
-  fmx_poll_shim_v1_valid "$shim" "$FM_HOME" "$FM_ROOT" "$STATE_DEVICE" || return 0
+  local shim="$STATE/x-sentry.check.sh"
+  fmx_poll_shim_v1_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" "$STATE_DEVICE" || return 0
   fm_pr_regular_destination_on_device_or_absent "$shim" "$STATE_DEVICE" || return 1
-  MIGRATION_X_SHIM_TMP=$(mktemp "$STATE/.fm-x-watch.XXXXXX") || return 1
-  fmx_poll_shim_content "$FM_HOME" "$FM_ROOT" > "$MIGRATION_X_SHIM_TMP" || return 1
+  MIGRATION_X_SHIM_TMP=$(mktemp "$STATE/.sq-x-watch.XXXXXX") || return 1
+  fmx_poll_shim_content "$SQUAD_HOME" "$SQUAD_ROOT" > "$MIGRATION_X_SHIM_TMP" || return 1
   chmod 0700 "$MIGRATION_X_SHIM_TMP" || return 1
-  fmx_poll_shim_valid "$MIGRATION_X_SHIM_TMP" "$FM_HOME" "$FM_ROOT" || return 1
-  fmx_poll_shim_v1_valid "$shim" "$FM_HOME" "$FM_ROOT" "$STATE_DEVICE" || return 1
+  fmx_poll_shim_valid "$MIGRATION_X_SHIM_TMP" "$SQUAD_HOME" "$SQUAD_ROOT" || return 1
+  fmx_poll_shim_v1_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" "$STATE_DEVICE" || return 1
   mv -f -- "$MIGRATION_X_SHIM_TMP" "$shim" || return 1
   MIGRATION_X_SHIM_TMP=
   [ "$(fm_pr_file_device "$shim")" = "$STATE_DEVICE" ] || return 1
   [ "$(fm_pr_file_mode "$shim")" = 700 ] || return 1
-  fmx_poll_shim_valid "$shim" "$FM_HOME" "$FM_ROOT"
+  fmx_poll_shim_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT"
 }
 if ! refresh_v1_x_shim; then
   echo "PR_CHECK_MIGRATION: authenticated X poll shim could not be refreshed; migration did not complete safely" >&2
@@ -374,8 +374,8 @@ migration_needed() {
   local check id
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-watch.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$FM_HOME" "$FM_ROOT"; then
+    if [ "$(basename "$check")" = x-sentry.check.sh ] \
+      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -391,8 +391,8 @@ unsafe_checks_absent() {
   local check id
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-watch.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$FM_HOME" "$FM_ROOT"; then
+    if [ "$(basename "$check")" = x-sentry.check.sh ] \
+      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -413,7 +413,7 @@ revoke_migration_marker() {
 
 publish_migration_marker() {
   fm_pr_regular_destination_on_device_or_absent "$MARKER" "$STATE_DEVICE" || return 1
-  MIGRATION_MARKER_TMP=$(mktemp "$STATE/.fm-pr-check-migration.XXXXXX") || return 1
+  MIGRATION_MARKER_TMP=$(mktemp "$STATE/.sq-pr-check-migration.XXXXXX") || return 1
   fm_pr_private_file_valid "$MIGRATION_MARKER_TMP" 600 "$STATE_DEVICE" || return 1
   printf '%s\n' "$MARKER_VALUE" > "$MIGRATION_MARKER_TMP" || return 1
   chmod 0600 "$MIGRATION_MARKER_TMP" || return 1
@@ -442,7 +442,7 @@ revoke_scan_marker() {
 
 publish_scan_marker() {
   fm_pr_regular_destination_on_device_or_absent "$SCAN_MARKER" "$STATE_DEVICE" || return 1
-  MIGRATION_SCAN_MARKER_TMP=$(mktemp "$STATE/.fm-pr-check-scan.XXXXXX") || return 1
+  MIGRATION_SCAN_MARKER_TMP=$(mktemp "$STATE/.sq-pr-check-scan.XXXXXX") || return 1
   fm_pr_private_file_valid "$MIGRATION_SCAN_MARKER_TMP" 600 "$STATE_DEVICE" || return 1
   printf '%s\n' "$SCAN_MARKER_VALUE" > "$MIGRATION_SCAN_MARKER_TMP" || return 1
   chmod 0600 "$MIGRATION_SCAN_MARKER_TMP" || return 1
@@ -506,11 +506,11 @@ metadata_pr_is_canonical() {
   MIGRATION_PATH=
   MIGRATION_NUMBER=
   fm_pr_metadata_identity_parse "$meta" || return 1
-  MIGRATION_PROVIDER=$FM_PR_META_PROVIDER
-  MIGRATION_URL=$FM_PR_META_URL
-  MIGRATION_HOST=$FM_PR_META_HOST
-  MIGRATION_PATH=$FM_PR_META_PATH
-  MIGRATION_NUMBER=$FM_PR_META_NUMBER
+  MIGRATION_PROVIDER=$SQUAD_PR_META_PROVIDER
+  MIGRATION_URL=$SQUAD_PR_META_URL
+  MIGRATION_HOST=$SQUAD_PR_META_HOST
+  MIGRATION_PATH=$SQUAD_PR_META_PATH
+  MIGRATION_NUMBER=$SQUAD_PR_META_NUMBER
 }
 
 quarantine_artifact() {
@@ -578,7 +578,7 @@ record_diagnostic() {
   [ ! -e "$LOG" ] || diagnostic_log_valid || return 1
   [ -z "$MIGRATION_LOG_TMP" ] || rm -f -- "$MIGRATION_LOG_TMP"
   MIGRATION_LOG_TMP=
-  MIGRATION_LOG_TMP=$(mktemp "$STATE/.fm-pr-check-log.XXXXXX") || return 1
+  MIGRATION_LOG_TMP=$(mktemp "$STATE/.sq-pr-check-log.XXXXXX") || return 1
   [ -f "$MIGRATION_LOG_TMP" ] && [ ! -L "$MIGRATION_LOG_TMP" ] || return 1
   [ "$(fm_pr_file_device "$MIGRATION_LOG_TMP")" = "$STATE_DEVICE" ] || return 1
   if [ -f "$LOG" ]; then
@@ -667,7 +667,7 @@ ensure_diagnostic_obligation() {
   fi
   [ -z "$MIGRATION_OBLIGATION_TMP" ] || rm -f -- "$MIGRATION_OBLIGATION_TMP"
   MIGRATION_OBLIGATION_TMP=
-  MIGRATION_OBLIGATION_TMP=$(mktemp "$QUARANTINE/.fm-pr-check-obligation.XXXXXX") || return 1
+  MIGRATION_OBLIGATION_TMP=$(mktemp "$QUARANTINE/.sq-pr-check-obligation.XXXXXX") || return 1
   printf '%s\n' "$message" > "$MIGRATION_OBLIGATION_TMP" || return 1
   chmod 0600 "$MIGRATION_OBLIGATION_TMP" || return 1
   diagnostic_file_is_one_line "$MIGRATION_OBLIGATION_TMP" "$message" || return 1
@@ -1023,8 +1023,8 @@ if migration_needed; then
 
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-watch.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$FM_HOME" "$FM_ROOT"; then
+    if [ "$(basename "$check")" = x-sentry.check.sh ] \
+      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -1143,6 +1143,6 @@ if [ "$quarantined_unarmed" -eq 1 ]; then
 fi
 if [ "$canonical_rebuilt" -eq 0 ] && [ "$validated_rearmed" -eq 0 ] \
   && [ "$quarantined_unarmed" -eq 0 ] \
-  && [ "$stopped_watcher" -eq 1 ]; then
+  && [ "$stopped_sentry" -eq 1 ]; then
   echo "PR_CHECK_MIGRATION: migration completed safely; resume supervision for this home"
 fi

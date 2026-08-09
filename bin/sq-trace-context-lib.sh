@@ -1,16 +1,16 @@
 # shellcheck shell=bash
-# Native W3C trace-context propagation for firstmate spawns (default-off).
+# Native W3C trace-context propagation for Squad spawns (default-off).
 #
-# When enabled, firstmate resolves one W3C `traceparent` carrier for a task,
+# When enabled, Squad resolves one W3C `traceparent` carrier for a task,
 # injects it into the agent's pane shell as the TRACEPARENT environment variable
-# before launch (bin/fm-spawn.sh, alongside GOTMPDIR, so it reaches every spawn
-# backend and every harness for ship, scout, and secondmate spawns), and records
+# before launch (bin/sq-spawn.sh, alongside GOTMPDIR, so it reaches every spawn
+# backend and every harness for ship, recon, and XO spawns), and records
 # the identical value as `traceparent=` in state/<id>.meta. Because the injected
 # carrier and the recorded carrier are the same string, an observer that reads
 # the metadata sees exactly the identity the child received - no collector,
 # storage, UI, or vendor coupling.
 #
-# TRACEPARENT here is a firstmate CONVENTION that carries a W3C-formatted
+# TRACEPARENT here is a Squad CONVENTION that carries a W3C-formatted
 # traceparent value in the process environment. W3C Trace Context standardizes
 # the `traceparent` HTTP header, not an environment variable, and OpenTelemetry
 # SDKs do NOT read TRACEPARENT from the environment automatically. A downstream
@@ -26,11 +26,11 @@
 # environment, and adopting its carrier would merge every routed task into one
 # ever-growing trace instead of one trace per task.
 #
-# Usage: . bin/fm-trace-context-lib.sh
+# Usage: . bin/sq-trace-context-lib.sh
 #
 # Public entry points:
 #   fm_trace_context_session_start <config-dir> <effective-state-file>
-#     Resolves config/trace-context plus FM_TRACE_CONTEXT once and atomically
+#     Resolves config/trace-context plus SQUAD_TRACE_CONTEXT once and atomically
 #     writes the normalized on/off decision bound to the locked home session.
 #   fm_trace_context_session_effective <effective-state-file>
 #     Echoes the normalized frozen decision only when its session binding matches
@@ -44,7 +44,7 @@
 #
 # Enablement (see docs/configuration.md for the schema):
 #   config/trace-context   presence flag under the home's config dir enables it.
-#   FM_TRACE_CONTEXT        env override: 1/on/true/yes enables, any other
+#   SQUAD_TRACE_CONTEXT        env override: 1/on/true/yes enables, any other
 #                           non-empty value disables, and unset OR empty defers
 #                           to the file.
 #   Each locked home session resolves these inputs once into
@@ -53,14 +53,14 @@
 #   cannot reactivate a stale on decision. Every spawn reads only that frozen
 #   on/off value, so later config and environment edits take effect only after a
 #   new home session starts.
-#   At launch, the primary propagates config/trace-context into the secondmate
-#   home (FM_INHERITABLE_CONFIG in bin/fm-config-inherit-lib.sh) and passes its
-#   frozen on/off decision into the new process as a non-empty FM_TRACE_CONTEXT
-#   value in the launch prefix (bin/fm-spawn.sh). The Secondmate freezes that
+#   At launch, the primary propagates config/trace-context into the XO
+#   home (SQUAD_INHERITABLE_CONFIG in bin/sq-config-inherit-lib.sh) and passes its
+#   frozen on/off decision into the new process as a non-empty SQUAD_TRACE_CONTEXT
+#   value in the launch prefix (bin/sq-spawn.sh). The XO freezes that
 #   inherited decision when its own home session starts.
-#   A REMOTE secondmate route resolves here too, in the PARENT process that owns
-#   that task's meta: fm-spawn's spawn_remote_secondmate resolves the carrier,
-#   hands it to the configured host through fm-spawn's --traceparent, and records
+#   A REMOTE XO route resolves here too, in the PARENT process that owns
+#   that task's meta: sq-spawn's spawn_remote_XO resolves the carrier,
+#   hands it to the configured host through sq-spawn's --traceparent, and records
 #   the carrier the remote endpoint reports back. Only the pane export moves
 #   hosts; identity, enablement, and the per-task boundary do not.
 #
@@ -68,7 +68,7 @@
 # with the trace id and span id never all-zero (W3C rejects both). New roots use
 # RANDOM ids from /dev/urandom. The root's `01` (sampled) flag records a
 # sampling DECISION that downstream parent-based samplers honor; it does not
-# guarantee any collector stores a span, and firstmate emits no spans itself.
+# guarantee any collector stores a span, and Squad emits no spans itself.
 #
 # Security / trust boundary. This feature adds no OTEL_* variables, no
 # tracestate, no arbitrary environment injection, and no configurable or
@@ -78,8 +78,8 @@
 # guarantee; any resolver failure that returns omits the carrier without aborting
 # the spawn. Carrier-delivery failure also omits telemetry and continues when the
 # backend clears its input; if the backend reports that partial input could not be
-# cleared, fm-spawn refuses to append the launch command. Every carrier this lib
-# yields is either a firstmate-MINTED random root that reads no prompt, path,
+# cleared, sq-spawn refuses to append the launch command. Every carrier this lib
+# yields is either a Squad-MINTED random root that reads no prompt, path,
 # task prose, credential, or arbitrary environment key, or the same task's
 # previously recorded carrier reused verbatim from its own meta. Ambient
 # TRACEPARENT is never read, so no caller-controlled bytes enter a new carrier.
@@ -127,8 +127,8 @@ fm_trace_context_enabled() {  # <config-dir>
   local config_dir=$1 v
   # A non-empty value is an explicit override; unset OR empty defers to the file
   # (the conventional "empty is like unset" behavior).
-  if [ -n "${FM_TRACE_CONTEXT:-}" ]; then
-    v=$(printf '%s' "$FM_TRACE_CONTEXT" | tr '[:upper:]' '[:lower:]')
+  if [ -n "${SQUAD_TRACE_CONTEXT:-}" ]; then
+    v=$(printf '%s' "$SQUAD_TRACE_CONTEXT" | tr '[:upper:]' '[:lower:]')
     case "$v" in
       1 | on | true | yes) return 0 ;;
       *) return 1 ;;

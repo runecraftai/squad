@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
-# fm-secondmate-report.sh - optional helper to append a correlated parent report.
+# sq-xo-report.sh - optional helper to append a correlated parent report.
 #
-# A secondmate answering a marked from-firstmate request must report on the
+# A XO answering a marked from-squad request must report on the
 # parent status channel with the request's corr=<id> token. This helper makes
 # that easy, but correctness must not depend on using it: a plain echo of a
 # status line that includes the same corr token is equally valid
-# (bin/fm-pending-reply-lib.sh).
+# (bin/sq-pending-reply-lib.sh).
 #
 # Usage:
-#   fm-secondmate-report.sh <status-file> <verb> <corr_id> <note...>
-#   fm-secondmate-report.sh --doc <status-file> <verb> <corr_id> <doc-path> <note...>
+#   sq-xo-report.sh <status-file> <verb> <corr_id> <note...>
+#   sq-xo-report.sh --doc <status-file> <verb> <corr_id> <doc-path> <note...>
 #
 # Examples:
-#   fm-secondmate-report.sh "$STATUS" done abcdef0123456789 "audit clean"
-#   fm-secondmate-report.sh --doc "$STATUS" done abcdef0123456789 data/x/report.md "see report"
+#   sq-xo-report.sh "$STATUS" done abcdef0123456789 "audit clean"
+#   sq-xo-report.sh --doc "$STATUS" done abcdef0123456789 data/x/report.md "see report"
 #
-# The status file must be the absolute parent route from the secondmate charter
+# The status file must be the absolute parent route from the XO charter
 # (state/<id>.status under the PARENT home), never a path relative to this
-# secondmate home. Writing under the wrong home is detected as supporting
+# XO home. Writing under the wrong home is detected as supporting
 # evidence by the parent pending-reply guard and does not acknowledge the
 # request.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bin/fm-pending-reply-lib.sh
-. "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/sq-pending-reply-lib.sh
+. "$SCRIPT_DIR/sq-pending-reply-lib.sh"
 
 usage() {
   cat <<'EOF' >&2
 Usage:
-  fm-secondmate-report.sh <status-file> <verb> <corr_id> <note...>
-  fm-secondmate-report.sh --doc <status-file> <verb> <corr_id> <doc-path> <note...>
+  sq-xo-report.sh <status-file> <verb> <corr_id> <note...>
+  sq-xo-report.sh --doc <status-file> <verb> <corr_id> <doc-path> <note...>
 EOF
   exit 2
 }

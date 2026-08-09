@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# bin/fm-composer-lib.sh - the ONE fleet-wide owner of composer-content
+# bin/sq-composer-lib.sh - the ONE unit-wide owner of composer-content
 # classification, shared by every session-provider adapter: the tmux path
-# through bin/fm-tmux-lib.sh, and bin/backends/{herdr,orca,cmux}.sh directly.
+# through bin/sq-tmux-lib.sh, and bin/backends/{herdr,orca,cmux}.sh directly.
 #
-# WHY THIS EXISTS (task fm-composer-shellglyph-safety): the four adapters each
+# WHY THIS EXISTS (task sq-composer-shellglyph-safety): the four adapters each
 # carried their own copy of the "is this composer row empty / pending / not an
 # agent composer" decision, and the copies drifted. The dangerous drift: a BARE
 # shell prompt glyph (`>`, `$`, `%`, `#`) - what a pane shows once its agent has
 # exited to a plain login shell - was treated as an empty, ready-to-inject
-# AGENT composer. The away-mode escalation injector (bin/fm-supervise-daemon.sh)
+# AGENT composer. The away-mode escalation injector (bin/sq-supervise-daemon.sh)
 # reads composer-emptiness to decide whether a pane is a safe injection target,
 # so a dead-shell pane misread as "empty" meant an escalation could be typed
 # into (and, worst case, executed by) that shell. Consolidating the one decision
@@ -37,7 +37,7 @@
 # claude and codex render ghost text) AND a dark/muted TRUECOLOR foreground (how
 # grok renders placeholder/hint text) - and keeps only normal-intensity,
 # normally-coloured text. Consolidating it here means the two ANSI-capable
-# adapters (tmux via bin/fm-tmux-lib.sh, herdr via bin/backends/herdr.sh) cannot
+# adapters (tmux via bin/sq-tmux-lib.sh, herdr via bin/backends/herdr.sh) cannot
 # drift into per-harness one-off strips again; the previous herdr-only faint
 # byte-pattern check missed claude's own dim ghost (its prompt glyph is not
 # bold-wrapped) and no adapter covered grok's truecolor placeholder at all.
@@ -52,7 +52,7 @@
 # empty|pending|unknown verdict. orca/cmux read a plain (unstyled) screen so
 # they have no ghost styling to strip and rely on the idle-placeholder match
 # below. Re-sourcing is a cheap idempotent redefinition, so this file needs no
-# include guard (matching bin/fm-tmux-lib.sh).
+# include guard (matching bin/sq-tmux-lib.sh).
 
 # fm_composer_strip_ansi: drop every CSI escape sequence, leaving plain text.
 # Used for STRUCTURAL row/shape detection, where ghost text must be KEPT so the
@@ -66,7 +66,7 @@ fm_composer_strip_ansi() {
   LC_ALL=C sed "s/${esc}\\[[0-9;:?]*[[:alpha:]]//g"
 }
 
-# fm_composer_strip_ghost: the ONE fleet-wide ANSI-aware extractor of "real typed
+# fm_composer_strip_ghost: the ONE unit-wide ANSI-aware extractor of "real typed
 # content" from a captured, styled composer row. Reads the styled line on stdin
 # (from `tmux capture-pane -e` or `herdr pane read --format ansi`) and prints the
 # plain, non-ghost text on stdout, dropping:
@@ -74,19 +74,19 @@ fm_composer_strip_ansi() {
 #     A reset (SGR 0) or normal-intensity (SGR 22) ends a dim run.
 #   - dark/muted TRUECOLOR foreground runs (SGR 38;2;r;g;b or the colon form
 #     38:2::r:g:b) whose perceived luminance (0.299R + 0.587G + 0.114B) is below
-#     FM_COMPOSER_GHOST_LUMA_MAX (default 128): how grok renders its placeholder
+#     SQUAD_COMPOSER_GHOST_LUMA_MAX (default 128): how grok renders its placeholder
 #     and hint text. A reset (SGR 0), a default-foreground (SGR 39), any base
 #     foreground colour (30-37 / 90-97), or a lighter 38;2 foreground ends the
-#     dark-foreground run. This assumes a DARK terminal theme, the firstmate
-#     fleet reality, where real typed input is bright and only de-emphasised UI
+#     dark-foreground run. This assumes a DARK terminal theme, the Squad
+#     unit reality, where real typed input is bright and only de-emphasised UI
 #     is dark; the SGR-2 signal above stays theme-independent. A 256-colour
 #     foreground (38;5;n) is NOT luminance-tested - it is palette-dependent and
-#     no fleet harness uses it for ghost text, so it is kept (real text wins:
+#     no unit harness uses it for ghost text, so it is kept (real text wins:
 #     under-stripping merely defers, which the max-defer alarm surfaces, while
 #     over-stripping would inject over real input).
-# Raising FM_COMPOSER_GHOST_LUMA_MAX is not free: muse draws its `⟩` prompt glyph
+# Raising SQUAD_COMPOSER_GHOST_LUMA_MAX is not free: muse draws its `⟩` prompt glyph
 # in truecolor 38;2;90;160;255, luminance ~149.9 (verified, muse 0.1.0-R708.1),
-# the tightest margin over the 128 default in the fleet. Above ~150 that glyph is
+# the tightest margin over the 128 default in the unit. Above ~150 that glyph is
 # stripped as ghost text, which is why the bare-glyph fallback below must also
 # recognise every agent glyph from the UNSTRIPPED plain row.
 # The dim/faint and dark-foreground states are tracked together as "de-emphasis";
@@ -94,7 +94,7 @@ fm_composer_strip_ansi() {
 # LC_ALL=C makes awk walk bytes, so multibyte glyphs (e.g. ❯) and de-emphasised
 # runs alike pass through or drop intact without locale-dependent classes.
 fm_composer_strip_ghost() {
-  LC_ALL=C awk -v lumamax="${FM_COMPOSER_GHOST_LUMA_MAX:-128}" '
+  LC_ALL=C awk -v lumamax="${SQUAD_COMPOSER_GHOST_LUMA_MAX:-128}" '
     function sgr_code(v, b) {
       b = v
       sub(/:.*/, "", b)

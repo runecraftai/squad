@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Path-confined remote file transfer for fm-on.sh.
+# Path-confined remote file transfer for sq-on.sh.
 #
 # Usage:
-#   fm-remote-file.sh get <relative-path> [max-bytes]
-#   fm-remote-file.sh put state/handoff/<id>.outbox.md <max-bytes> <bytes> <sha256> <generation>
+#   sq-remote-file.sh get <relative-path> [max-bytes]
+#   sq-remote-file.sh put state/handoff/<id>.outbox.md <max-bytes> <bytes> <sha256> <generation>
 #
-# A get path is relative to FM_HOME, must resolve through ordinary directories
+# A get path is relative to SQUAD_HOME, must resolve through ordinary directories
 # to one non-symlink regular file inside that home, and is bounded before output.
 # Put is deliberately narrower: it atomically replaces only a backlog handoff
 # scratch file under state/handoff. There is no delete operation and no generic
 # write path; the receiving command owns scratch cleanup after committed ingest.
 set -eu
 
-FM_HOME=${FM_HOME:?FM_HOME is required}
+SQUAD_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
 MAX_DEFAULT=262144
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -30,11 +30,11 @@ resolve_file() { # <relative-path>
   case "$rel" in ''|/*|*'//'*) die "path must be a nonempty relative path" ;; esac
   case "/$rel/" in */../*|*/./*) die "path traversal is not allowed: $rel" ;; esac
   case "$rel" in *$'\n'*|*$'\r'*|*$'\t'*) die "path contains control characters" ;; esac
-  home_real=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || die "FM_HOME is unavailable"
+  home_real=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
   parent=$(dirname "$rel")
   base=$(basename "$rel")
-  parent_real=$(CDPATH='' cd -- "$FM_HOME/$parent" 2>/dev/null && pwd -P) || die "file parent is unavailable: $rel"
-  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "file escapes FM_HOME: $rel" ;; esac
+  parent_real=$(CDPATH='' cd -- "$SQUAD_HOME/$parent" 2>/dev/null && pwd -P) || die "file parent is unavailable: $rel"
+  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "file escapes SQUAD_HOME: $rel" ;; esac
   path="$parent_real/$base"
   [ -f "$path" ] && [ ! -L "$path" ] || die "file is not a non-symlink regular file: $rel"
   printf '%s\n' "$path"
@@ -179,7 +179,7 @@ case "$COMMAND" in
   get)
     [ "$#" -le 3 ] || usage
     FILE=$(resolve_file "$REL")
-    TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-file.XXXXXX") \
+    TMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-remote-file.XXXXXX") \
       || die "cannot create file staging directory"
     trap 'rm -rf -- "$TMP"' EXIT
     if snapshot_bounded_file "$FILE" "$MAX" "$TMP/file" "$TMP/size"; then
@@ -215,7 +215,7 @@ case "$COMMAND" in
     case "$NAME" in */*) die "put path has an extra directory" ;; esac
     case "/$REL/" in */../*|*/./*) die "put path contains traversal" ;; esac
     case "$REL" in *'//'*) die "put path is malformed" ;; esac
-    HOME_REAL=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || die "FM_HOME is unavailable"
+    HOME_REAL=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
     if put_handoff_file "$HOME_REAL" "$(basename "$REL")" "$MAX" "$REL" \
       "$EXPECTED_BYTES" "$EXPECTED_HASH" "$GENERATION"; then
       :

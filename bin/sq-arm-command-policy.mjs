@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Semantic policy for watcher arm and checkpoint shell commands.
+// Semantic policy for sentry arm and checkpoint shell commands.
 //
 // This parser is deliberately narrow.
 // It recognizes executed command positions without evaluating, expanding,
 // sourcing, or running any byte of the submitted command.
 //
-// This file is the sole owner of firstmate's shell command classification.
+// This file is the sole owner of Squad's shell command classification.
 // The tokenizer and command-position analysis (Lexer, splitProgram,
 // commandPosition) are exported so the sibling cd-guard policy
-// (bin/fm-cd-command-policy.mjs) reuses the same proven parser instead of
-// duplicating shell lexing; see docs/cd-guard.md. The watcher-arm decision
+// (bin/sq-cd-command-policy.mjs) reuses the same proven parser instead of
+// duplicating shell lexing; see docs/cd-guard.md. The sentry-arm decision
 // procedure below stays private to this file. The CLI entry point at the bottom
 // runs only when this module is invoked directly, never on import.
 
@@ -18,14 +18,14 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const REASONS = {
-  "watcher-background": "a protected watcher command cannot run in an asynchronous shell list or through nohup/disown",
-  "watcher-pipeline": "a protected watcher command must not participate in a pipeline",
-  "watcher-redirection": "a protected watcher command must not use shell redirection",
-  "watcher-bundled": "a protected watcher command must be the sole final command after approved setup nodes",
-  "watcher-nested": "a protected watcher command must not run through a wrapper, substitution, or compound command",
-  "broad-watcher-kill": "a broad process kill targeting the firstmate watcher is forbidden",
-  "unclassifiable-protected-command": "unsupported or malformed shell syntax contains a protected watcher command",
-  "watcher-direct": "bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead",
+  "sentry-background": "a protected sentry command cannot run in an asynchronous shell list or through nohup/disown",
+  "sentry-pipeline": "a protected sentry command must not participate in a pipeline",
+  "sentry-redirection": "a protected sentry command must not use shell redirection",
+  "sentry-bundled": "a protected sentry command must be the sole final command after approved setup nodes",
+  "sentry-nested": "a protected sentry command must not run through a wrapper, substitution, or compound command",
+  "broad-sentry-kill": "a broad process kill targeting the Squad sentry is forbidden",
+  "unclassifiable-protected-command": "unsupported or malformed shell syntax contains a protected sentry command",
+  "sentry-direct": "bin/sq-sentry.sh must not be run directly; arm the sentry with bin/sq-sentry-arm.sh or run bin/sq-sentry-checkpoint.sh instead",
 };
 
 function parseArguments(argv) {
@@ -44,12 +44,12 @@ function parseArguments(argv) {
 }
 
 function rawMentionsProtected(command) {
-  return /(?:^|[/\s'"`(])fm-watch(?:-(?:arm|checkpoint))?\.sh\b/.test(normalizeLineContinuations(command));
+  return /(?:^|[/\s'"`(])sq-sentry(?:-(?:arm|checkpoint))?\.sh\b/.test(normalizeLineContinuations(command));
 }
 
 function rawMentionsBroadKill(command) {
   const normalized = normalizeLineContinuations(command);
-  return /fm-watch/.test(normalized) && /\b(?:pkill|kill)\b/.test(normalized);
+  return /sq-sentry/.test(normalized) && /\b(?:pkill|kill)\b/.test(normalized);
 }
 
 function normalizeLineContinuations(source) {
@@ -596,9 +596,9 @@ export function commandPosition(tokens) {
 }
 
 const PROTECTED_SCRIPTS = [
-  { relative: "bin/fm-watch-arm.sh", kind: "arm" },
-  { relative: "bin/fm-watch-checkpoint.sh", kind: "checkpoint" },
-  { relative: "bin/fm-watch.sh", kind: "watch" },
+  { relative: "bin/sq-sentry-arm.sh", kind: "arm" },
+  { relative: "bin/sq-sentry-checkpoint.sh", kind: "checkpoint" },
+  { relative: "bin/sq-sentry.sh", kind: "watch" },
 ];
 
 function protectedIdentity(value, root) {
@@ -611,7 +611,7 @@ function protectedIdentity(value, root) {
 
 function hasUnclassifiableProtectedExpansion(word, root) {
   if (!word?.unquotedExpansion || protectedIdentity(word.value, root)) return false;
-  return /(?:^|\/)fm-watch/.test(word.value);
+  return /(?:^|\/)sq-sentry/.test(word.value);
 }
 
 function shellInvocation(position) {
@@ -697,20 +697,20 @@ function assignmentName(word) {
 
 function contextWithAssignments(context, words) {
   const protectedVariables = new Set(context.protectedVariables || []);
-  const watcherPatterns = new Set(context.watcherPatterns || []);
-  const watcherPids = new Set(context.watcherPids || []);
+  const sentryPatterns = new Set(context.sentryPatterns || []);
+  const sentryPids = new Set(context.sentryPids || []);
   for (const word of words) {
     const name = assignmentName(word);
     if (!name) continue;
     const value = word.value.slice(word.value.indexOf("=") + 1);
     if (rawMentionsProtected(value) || wordReferencesAny(word, protectedVariables)) protectedVariables.add(name);
     else protectedVariables.delete(name);
-    if (/fm-watch/.test(value) || wordReferencesAny(word, watcherPatterns)) watcherPatterns.add(name);
-    else watcherPatterns.delete(name);
-    if (wordReferencesAny(word, watcherPids)) watcherPids.add(name);
-    else watcherPids.delete(name);
+    if (/sq-sentry/.test(value) || wordReferencesAny(word, sentryPatterns)) sentryPatterns.add(name);
+    else sentryPatterns.delete(name);
+    if (wordReferencesAny(word, sentryPids)) sentryPids.add(name);
+    else sentryPids.delete(name);
   }
-  return { ...context, protectedVariables, watcherPatterns, watcherPids };
+  return { ...context, protectedVariables, sentryPatterns, sentryPids };
 }
 
 function nodeHasRedirection(tokens) {
@@ -723,16 +723,16 @@ function nodeHasUnsafeSubstitution(tokens) {
 
 function isWatcherPgrep(position, context) {
   if (!position.command || basename(position.command.value) !== "pgrep") return false;
-  return position.words.slice(position.index + 1).some((word) => /(?:^|\/)fm-watch(?:\.sh)?\b/.test(word.value) || wordReferencesAny(word, context.watcherPatterns));
+  return position.words.slice(position.index + 1).some((word) => /(?:^|\/)sq-sentry(?:\.sh)?\b/.test(word.value) || wordReferencesAny(word, context.sentryPatterns));
 }
 
 function analyzeProgram(command, context, depth = 0) {
   if (depth > 12) {
-    return { error: "recursion limit", protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), pgrepWatcher: false, watcherPids: new Set() };
+    return { error: "recursion limit", protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), pgrepWatcher: false, sentryPids: new Set() };
   }
   const lexed = new Lexer(command).tokenize();
   if (lexed.error) {
-    return { error: lexed.error, protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), pgrepWatcher: false, watcherPids: new Set() };
+    return { error: lexed.error, protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), pgrepWatcher: false, sentryPids: new Set() };
   }
   const program = splitProgram(lexed.tokens);
   const nodeInfos = [];
@@ -743,8 +743,8 @@ function analyzeProgram(command, context, depth = 0) {
   let activeContext = {
     ...context,
     protectedVariables: new Set(context.protectedVariables || []),
-    watcherPatterns: new Set(context.watcherPatterns || []),
-    watcherPids: new Set(context.watcherPids || []),
+    sentryPatterns: new Set(context.sentryPatterns || []),
+    sentryPids: new Set(context.sentryPids || []),
   };
   let unclassifiableProtected = false;
 
@@ -821,14 +821,14 @@ function analyzeProgram(command, context, depth = 0) {
     if (hasUnclassifiableProtectedExpansion(position.command, context.root)) unclassifiableProtected = true;
     const commandName = basename(executable);
     const args = position.words.slice(position.index + 1);
-    if (commandName === "pkill" && args.some((word) => /fm-watch/.test(word.value) || wordReferencesAny(word, nodeContext.watcherPatterns))) broadKill = true;
-    if (commandName === "kill" && (nodePgrepWatcher || args.some((word) => wordReferencesAny(word, nodeContext.watcherPids)))) broadKill = true;
+    if (commandName === "pkill" && args.some((word) => /sq-sentry/.test(word.value) || wordReferencesAny(word, nodeContext.sentryPatterns))) broadKill = true;
+    if (commandName === "kill" && (nodePgrepWatcher || args.some((word) => wordReferencesAny(word, nodeContext.sentryPids)))) broadKill = true;
     if (isWatcherPgrep(position, nodeContext)) pgrepWatcher = true;
     if (hasDynamicExecutionPayload(position, nodeContext) || wordReferencesAny(position.command, nodeContext.protectedVariables)) nodeNestedProtected = true;
     for (const word of position.words) {
       const name = assignmentName(word);
       if (!name) continue;
-      if (word.subs.some((substitution) => substitutionResults.get(substitution)?.pgrepWatcher)) nodeContext.watcherPids.add(name);
+      if (word.subs.some((substitution) => substitutionResults.get(substitution)?.pgrepWatcher)) nodeContext.sentryPids.add(name);
     }
     pgrepWatcher ||= nodePgrepWatcher;
     nestedProtected ||= nodeNestedProtected;
@@ -849,9 +849,9 @@ function analyzeProgram(command, context, depth = 0) {
   if (unclassifiableProtected) unsupported = true;
   const broadKillFound = broadKill || (unsupported && rawMentionsBroadKill(command));
   if (unsupported && (protectedFound || rawMentionsProtected(command) || broadKillFound)) {
-    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, pgrepWatcher, sentryPids: activeContext.sentryPids, program, nodeInfos };
   }
-  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, pgrepWatcher, sentryPids: activeContext.sentryPids, program, nodeInfos };
 }
 
 function xModePathAllowed(value, home) {
@@ -900,34 +900,34 @@ function blessedProgram(analysis, context) {
 }
 
 function decision(command, root, home) {
-  const context = { root: path.normalize(root), home: path.normalize(home), protectedVariables: new Set(), watcherPatterns: new Set(), watcherPids: new Set() };
+  const context = { root: path.normalize(root), home: path.normalize(home), protectedVariables: new Set(), sentryPatterns: new Set(), sentryPids: new Set() };
   const analysis = analyzeProgram(command, context);
-  if (analysis.broadKill) return deny("broad-watcher-kill");
+  if (analysis.broadKill) return deny("broad-sentry-kill");
   if (analysis.error && analysis.protectedFound) return deny("unclassifiable-protected-command");
   if (!analysis.protectedFound) return { decision: "allow" };
-  if (analysis.nodeInfos?.some((info) => info.protectedKind === "watch")) return deny("watcher-direct");
-  if (analysis.nestedProtected) return deny("watcher-nested");
+  if (analysis.nodeInfos?.some((info) => info.protectedKind === "watch")) return deny("sentry-direct");
+  if (analysis.nestedProtected) return deny("sentry-nested");
 
   const separators = analysis.program.separators;
   if (separators.includes("&") || analysis.nodeInfos.some((info) => info.position.wrappers.includes("nohup")) || analysis.nodeInfos.some((info) => basename(info.position.words[0]?.value || "") === "disown")) {
-    return deny("watcher-background");
+    return deny("sentry-background");
   }
-  if (separators.includes("|") || separators.includes("|&")) return deny("watcher-pipeline");
-  if (analysis.nodeInfos.some((info) => info.redirection)) return deny("watcher-redirection");
-  if (analysis.nodeInfos.some((info) => info.substitution)) return deny("watcher-nested");
+  if (separators.includes("|") || separators.includes("|&")) return deny("sentry-pipeline");
+  if (analysis.nodeInfos.some((info) => info.redirection)) return deny("sentry-redirection");
+  if (analysis.nodeInfos.some((info) => info.substitution)) return deny("sentry-nested");
   if (blessedProgram(analysis, context)) return { decision: "allow" };
   if (analysis.nodeInfos.some((info) => info.position.prefixAssignments > 0 || info.position.wrappers.some((wrapper) => wrapper !== "exec"))) {
-    return deny("watcher-nested");
+    return deny("sentry-nested");
   }
-  return deny("watcher-bundled");
+  return deny("sentry-bundled");
 }
 
 function deny(code) {
   return { decision: "deny", code, reason: REASONS[code] };
 }
 
-// Run the CLI only when invoked directly (node fm-arm-command-policy.mjs ...),
-// never when imported by a sibling policy such as bin/fm-cd-command-policy.mjs.
+// Run the CLI only when invoked directly (node sq-arm-command-policy.mjs ...),
+// never when imported by a sibling policy such as bin/sq-cd-command-policy.mjs.
 function invokedDirectly() {
   const entry = process.argv[1];
   if (!entry) return false;

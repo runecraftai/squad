@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # Merge a task's PR after recording pr= and any available pr_head= through
-# bin/fm-pr-check.sh, so teardown can verify landed work after squash merges.
-# The full canonical GitHub PR URL is parsed by bin/fm-pr-lib.sh and the derived
+# bin/sq-pr-check.sh, so teardown can verify landed work after squash merges.
+# The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
 # owner/repository and PR number are passed to gh-axi as separate arguments.
 #
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
 # must not include --repo or -R because the repository comes only from the URL.
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra gh-axi pr merge args>]
+# Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra gh-axi pr merge args>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 
-# shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -24,18 +24,18 @@ if [ "$#" -lt 2 ]; then
 fi
 ID=$1
 RAW_URL=$2
-# bin/fm-pr-lib.sh parses GitLab merge request URLs so the watcher can follow
+# bin/sq-pr-lib.sh parses GitLab merge request URLs so the sentry can follow
 # them, but this path still addresses only GitHub by owner/repository. The
 # provider check holds that refusal exactly as it was until merge parity lands.
 if ! fm_pr_task_id_valid "$ID" || ! fm_pr_url_parse "$RAW_URL" \
-  || [ "$FM_PR_PROVIDER" != github ]; then
+  || [ "$SQUAD_PR_PROVIDER" != github ]; then
   echo "error: invalid PR merge request" >&2
   exit 2
 fi
-URL=$FM_PR_URL
-PR_OWNER=$FM_PR_OWNER
-PR_REPO=$FM_PR_REPO
-PR_NUMBER=$FM_PR_NUMBER
+URL=$SQUAD_PR_URL
+PR_OWNER=$SQUAD_PR_OWNER
+PR_REPO=$SQUAD_PR_REPO
+PR_NUMBER=$SQUAD_PR_NUMBER
 shift 2
 [ "${1:-}" = "--" ] && shift
 
@@ -70,7 +70,7 @@ if [ ! -f "$META" ] || [ -L "$META" ]; then
   exit 1
 fi
 
-"$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"
+"$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"
 grep -qxF "pr=$URL" "$META" || {
   echo "error: PR metadata recording failed" >&2
   exit 1

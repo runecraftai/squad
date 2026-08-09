@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# fm-afk-return.sh - deterministic away-mode return catch-up gate.
+# sq-afk-return.sh - deterministic away-mode return catch-up gate.
 #
 # Usage:
-#   fm-afk-return.sh          Stop away mode, drain catch-up, and open/check gate.
-#   fm-afk-return.sh begin    Same as the default command.
-#   fm-afk-return.sh check    Re-drain and close the gate only after blockers resolve.
-#   fm-afk-return.sh guard    Read-only refusal while away or catch-up is pending.
+#   sq-afk-return.sh          Stop away mode, drain catch-up, and open/check gate.
+#   sq-afk-return.sh begin    Same as the default command.
+#   sq-afk-return.sh check    Re-drain and close the gate only after blockers resolve.
+#   sq-afk-return.sh guard    Read-only refusal while away or catch-up is pending.
 #
-# `blocked:` is the crewmate protocol's firstmate-actionable verb. A live task's
+# `blocked:` is the operator protocol's Squad-actionable verb. A live task's
 # open blocked event must be remediated and closed with `resolved [key=...]`, or
 # explicitly reclassified in the status stream with a durable reason, before an
-# ordinary captain request may proceed. `needs-decision:` belongs to the
+# ordinary commander request may proceed. `needs-decision:` belongs to the
 # configured approval authority and is deliberately not part of this blocker
 # gate; normal reporting routes it through the AGENTS.md section 7 contract.
 #
@@ -19,13 +19,13 @@
 # retains the drained wake, buffered-escalation, and wedge-marker evidence until
 # every live open blocker is closed and `check` succeeds. Repeated begin/check
 # calls are idempotent. `guard` never mutates state and is suitable for ordinary
-# read entrypoints such as fm-bearings-snapshot.sh.
+# read entrypoints such as sq-sitrep-snapshot.sh.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 GATE="$STATE/.afk-return-catchup"
 LOCK="$STATE/.afk-return-catchup.lock"
 
@@ -81,7 +81,7 @@ write_pending_seed() {  # Fail-closed marker before any lifecycle mutation.
   [ -n "$started" ] || started=$(date +%s)
   pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
   {
-    printf 'schema\tfm-afk-return.v1\n'
+    printf 'schema\tsq-afk-return.v1\n'
     printf 'started\t%s\n' "$started"
     printf 'phase\tstopping-and-draining\n'
     preserve_evidence /dev/stdout
@@ -95,7 +95,7 @@ write_gate() {  # <evidence-file> <blockers-file>
   started=$(awk -F '\t' '$1 == "started" { print $2; exit }' "$GATE" 2>/dev/null || true)
   [ -n "$started" ] || started=$(date +%s)
   {
-    printf 'schema\tfm-afk-return.v1\n'
+    printf 'schema\tsq-afk-return.v1\n'
     printf 'started\t%s\n' "$started"
     printf 'phase\tblocked\n'
     cat "$evidence" 2>/dev/null || true
@@ -116,7 +116,7 @@ print_blockers() {  # <file>
   local file=$1 tag id key summary
   while IFS="$(printf '\t')" read -r tag id key summary; do
     [ "$tag" = blocker ] || continue
-    printf 'firstmate-actionable blocker: %s [key=%s] %s\n' "$id" "$key" "$summary"
+    printf 'Squad-actionable blocker: %s [key=%s] %s\n' "$id" "$key" "$summary"
   done < "$file"
 }
 
@@ -129,11 +129,11 @@ clear_delivery_artifacts() {
 
 return_guard() {
   if [ -e "$STATE/.afk" ]; then
-    printf 'fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work\n' >&2
+    printf 'sq-afk-return: away mode is still active; run bin/sq-afk-return.sh before ordinary commander work\n' >&2
     return 3
   fi
   if [ -e "$GATE" ]; then
-    printf 'fm-afk-return: return catch-up is pending; remediate or durably reclassify every listed blocker, then run bin/fm-afk-return.sh check\n' >&2
+    printf 'sq-afk-return: return catch-up is pending; remediate or durably reclassify every listed blocker, then run bin/sq-afk-return.sh check\n' >&2
     print_blockers "$GATE" >&2
     return 3
   fi
@@ -147,13 +147,13 @@ return_reconcile() {
   preserve_evidence "$evidence"
 
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
-    if ! "$SCRIPT_DIR/fm-afk-launch.sh" stop; then
+    if ! "$SCRIPT_DIR/sq-afk-launch.sh" stop; then
       lifecycle_ok=0
       append_evidence lifecycle 'away-mode shutdown failed; lifecycle state preserved for retry' "$evidence"
     fi
   fi
 
-  drained=$("$SCRIPT_DIR/fm-wake-drain.sh") || {
+  drained=$("$SCRIPT_DIR/sq-stand-to-drain.sh") || {
     append_evidence lifecycle 'durable wake drain failed; retry catch-up before ordinary work' "$evidence"
     lifecycle_ok=0
     drained=""
@@ -172,10 +172,10 @@ return_reconcile() {
   scan_open_blockers > "$blockers"
   if [ "$lifecycle_ok" -ne 1 ] || [ -s "$blockers" ]; then
     write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers"; return 1; }
-    printf 'fm-afk-return: catch-up must finish before the captain request\n' >&2
+    printf 'sq-afk-return: catch-up must finish before the commander request\n' >&2
     print_evidence "$GATE" >&2
     print_blockers "$GATE" >&2
-    printf 'fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check\n' >&2
+    printf 'sq-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/sq-afk-return.sh check\n' >&2
     rm -f "$evidence" "$blockers"
     return 3
   fi
@@ -184,7 +184,7 @@ return_reconcile() {
   rm -f "$GATE"
   clear_delivery_artifacts
   rm -f "$evidence" "$blockers"
-  printf 'fm-afk-return: catch-up clear; ordinary captain work may proceed\n'
+  printf 'sq-afk-return: catch-up clear; ordinary commander work may proceed\n'
   return 0
 }
 
@@ -198,12 +198,12 @@ main() {
   esac
 
   # The mutating begin/check paths need locks and the keyed status fold.
-  # `guard` returned above without sourcing fm-wake-lib.sh, whose initialization
+  # `guard` returned above without sourcing sq-stand-to-lib.sh, whose initialization
   # creates the state directory, so the advertised read-only guard is literal.
-  # shellcheck source=bin/fm-wake-lib.sh
-  . "$SCRIPT_DIR/fm-wake-lib.sh"
-  # shellcheck source=bin/fm-classify-lib.sh
-  . "$SCRIPT_DIR/fm-classify-lib.sh"
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  . "$SCRIPT_DIR/sq-stand-to-lib.sh"
+  # shellcheck source=bin/sq-classify-lib.sh
+  . "$SCRIPT_DIR/sq-classify-lib.sh"
 
   mkdir -p "$STATE" || return 1
   fm_lock_acquire_wait "$LOCK"

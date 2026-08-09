@@ -1,124 +1,124 @@
 #!/usr/bin/env bash
-# fm-afk-launch.sh - the single owner of the away-mode daemon TERMINAL lifecycle:
+# sq-afk-launch.sh - the single owner of the away-mode daemon TERMINAL lifecycle:
 # launch it in a NON-VISIBLE tracked terminal per backend, record its exact id,
 # tear it down by that exact id, and reconcile a leaked one after a crash.
 #
 # Why this exists (docs/herdr-backend.md "Away-mode daemon terminal launch"):
-# bin/fm-afk-start.sh execs the supervise daemon in the FOREGROUND of whatever
+# bin/sq-afk-start.sh execs the supervise daemon in the FOREGROUND of whatever
 # terminal it is already in. Harnesses with a native in-pane tracked-background
 # tool (claude, grok) run it there directly and it is fine. A harness with NO
 # native background mechanism (pi) has to manufacture a terminal, and doing that
-# by SPLITTING the captain's active pane visibly shrinks it - the regression this
+# by SPLITTING the commander's active pane visibly shrinks it - the regression this
 # script fixes. Instead this creates a non-visible tracked terminal (a herdr tab/
 # workspace with --no-focus, or a detached tmux session) that never touches the
-# captain's active tab, and NEVER uses shell `&` (which herdr/codex can reap).
+# commander's active tab, and NEVER uses shell `&` (which herdr/codex can reap).
 #
-# Correct supervisor targeting: the daemon finds the captain pane to inject into
+# Correct supervisor targeting: the daemon finds the commander pane to inject into
 # from its OWN inherited env (discover_supervisor_target). Running it in a
 # separate terminal would make it discover its OWN pane, so this captures the
-# captain pane FIRST (from the pane this script runs in) and passes it in as
-# FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND explicitly.
+# commander pane FIRST (from the pane this script runs in) and passes it in as
+# SQUAD_SUPERVISOR_TARGET/SQUAD_SUPERVISOR_BACKEND explicitly.
 #
 # Usage:
-#   fm-afk-launch.sh start     Capture the captain pane, then (unless the daemon
+#   sq-afk-launch.sh start     Capture the commander pane, then (unless the daemon
 #                              is already running) launch the daemon in a fresh
 #                              non-visible terminal for the detected backend and
 #                              record it. Idempotent: an already-running daemon
 #                              just refreshes state/.afk; a recorded-but-dead
 #                              terminal is reconciled (closed by id) first.
-#   fm-afk-launch.sh start-native
+#   sq-afk-launch.sh start-native
 #                              Prepare lifecycle state for a harness-native
 #                              background job and record that no terminal exists.
-#   fm-afk-launch.sh stop      Correct-ordered exit: SIGTERM the daemon so its
+#   sq-afk-launch.sh stop      Correct-ordered exit: SIGTERM the daemon so its
 #                              cleanup flushes WHILE state/.afk is still present,
 #                              wait for it, close the recorded terminal by exact
 #                              id, then clear state/.afk last.
-#   fm-afk-launch.sh reconcile Close a recorded-but-dead daemon terminal by exact
+#   sq-afk-launch.sh reconcile Close a recorded-but-dead daemon terminal by exact
 #                              id and drop the record (recovery after a crash).
 #
 # Supported backends: herdr, tmux. Others (zellij, orca, cmux) have no verified
 # non-visible-launch primitive here yet and refuse loudly.
 #
-# Test seam: FM_AFK_LAUNCH_ENTRY overrides the command run in the created
-# terminal (default bin/fm-afk-start.sh), so a topology test can run a harmless
-# placeholder instead of a real daemon. FM_SUPERVISOR_TARGET/FM_SUPERVISOR_BACKEND
-# override the captured captain pane/backend (an isolated lab pane in tests).
+# Test seam: SQUAD_AFK_LAUNCH_ENTRY overrides the command run in the created
+# terminal (default bin/sq-afk-start.sh), so a topology test can run a harmless
+# placeholder instead of a real daemon. SQUAD_SUPERVISOR_TARGET/SQUAD_SUPERVISOR_BACKEND
+# override the captured commander pane/backend (an isolated lab pane in tests).
 set -u
 
-FM_AFK_LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$FM_AFK_LAUNCH_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-case "$FM_HOME" in
+SQUAD_AFK_LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SQUAD_AFK_LAUNCH_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+case "$SQUAD_HOME" in
   /*) ;;
   *)
-    FM_AFK_LAUNCH_HOME_INPUT=$FM_HOME
-    FM_HOME=$(CDPATH='' cd -- "$FM_AFK_LAUNCH_HOME_INPUT" 2>/dev/null && pwd -P) || {
-      echo "error: FM_HOME directory cannot be resolved: $FM_AFK_LAUNCH_HOME_INPUT" >&2
+    SQUAD_AFK_LAUNCH_HOME_INPUT=$SQUAD_HOME
+    SQUAD_HOME=$(CDPATH='' cd -- "$SQUAD_AFK_LAUNCH_HOME_INPUT" 2>/dev/null && pwd -P) || {
+      echo "error: SQUAD_HOME directory cannot be resolved: $SQUAD_AFK_LAUNCH_HOME_INPUT" >&2
       exit 1
     }
     ;;
 esac
-if [ -n "${FM_STATE_OVERRIDE:-}" ]; then
-  case "$FM_STATE_OVERRIDE" in
+if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
+  case "$SQUAD_STATE_OVERRIDE" in
     /*) ;;
     *)
-      FM_AFK_LAUNCH_STATE_INPUT=$FM_STATE_OVERRIDE
-      FM_STATE_OVERRIDE=$(CDPATH='' cd -- "$FM_AFK_LAUNCH_STATE_INPUT" 2>/dev/null && pwd -P) || {
-        echo "error: FM_STATE_OVERRIDE directory cannot be resolved: $FM_AFK_LAUNCH_STATE_INPUT" >&2
+      SQUAD_AFK_LAUNCH_STATE_INPUT=$SQUAD_STATE_OVERRIDE
+      SQUAD_STATE_OVERRIDE=$(CDPATH='' cd -- "$SQUAD_AFK_LAUNCH_STATE_INPUT" 2>/dev/null && pwd -P) || {
+        echo "error: SQUAD_STATE_OVERRIDE directory cannot be resolved: $SQUAD_AFK_LAUNCH_STATE_INPUT" >&2
         exit 1
       }
       ;;
   esac
 fi
-FM_AFK_LAUNCH_STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-FM_AFK_LAUNCH_RECORD="$FM_AFK_LAUNCH_STATE/.afk-daemon-terminal"
-FM_AFK_LAUNCH_LOCK="$FM_AFK_LAUNCH_STATE/.afk-launch.lock"
-FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"
+SQUAD_AFK_LAUNCH_STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_AFK_LAUNCH_RECORD="$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal"
+SQUAD_AFK_LAUNCH_LOCK="$SQUAD_AFK_LAUNCH_STATE/.afk-launch.lock"
+SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 
-# shellcheck source=bin/fm-backend.sh
-. "$FM_AFK_LAUNCH_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-supervisor-target-lib.sh
-. "$FM_AFK_LAUNCH_DIR/fm-supervisor-target-lib.sh"
-# fm-afk-start.sh provides the daemon-lock liveness helpers and
+# shellcheck source=bin/sq-backend.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-supervisor-target-lib.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
+# sq-afk-start.sh provides the daemon-lock liveness helpers and
 # fm_afk_clear_stale_artifacts; it is sourceable (BASH_SOURCE guard) and its
 # main does not run on source. It sets `set -eu`, so turn errexit back off for
 # this script's best-effort flow immediately after.
-# shellcheck source=bin/fm-afk-start.sh
-. "$FM_AFK_LAUNCH_DIR/fm-afk-start.sh"
+# shellcheck source=bin/sq-afk-start.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-afk-start.sh"
 set +e
 
-fm_afk_launch_log() { printf 'fm-afk-launch: %s\n' "$*" >&2; }
+fm_afk_launch_log() { printf 'sq-afk-launch: %s\n' "$*" >&2; }
 
 fm_afk_launch_lock_owned() {
   local pid expected actual
-  [ -d "$FM_AFK_LAUNCH_LOCK" ] || return 1
-  pid=$(cat "$FM_AFK_LAUNCH_LOCK/pid" 2>/dev/null) || return 1
-  expected=$(cat "$FM_AFK_LAUNCH_LOCK/pid-identity" 2>/dev/null) || return 1
+  [ -d "$SQUAD_AFK_LAUNCH_LOCK" ] || return 1
+  pid=$(cat "$SQUAD_AFK_LAUNCH_LOCK/pid" 2>/dev/null) || return 1
+  expected=$(cat "$SQUAD_AFK_LAUNCH_LOCK/pid-identity" 2>/dev/null) || return 1
   actual=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
   [ -n "$expected" ] && [ "$actual" = "$expected" ]
 }
 
 fm_afk_launch_lock_acquire() {
   local attempt=0 incomplete=0 identity
-  mkdir -p "$FM_AFK_LAUNCH_STATE" || return 1
+  mkdir -p "$SQUAD_AFK_LAUNCH_STATE" || return 1
   while [ "$attempt" -lt 200 ]; do
     attempt=$((attempt + 1))
-    if mkdir "$FM_AFK_LAUNCH_LOCK" 2>/dev/null; then
-      if ! printf '%s' "$$" > "$FM_AFK_LAUNCH_LOCK/pid"; then
-        rm -rf "$FM_AFK_LAUNCH_LOCK"
+    if mkdir "$SQUAD_AFK_LAUNCH_LOCK" 2>/dev/null; then
+      if ! printf '%s' "$$" > "$SQUAD_AFK_LAUNCH_LOCK/pid"; then
+        rm -rf "$SQUAD_AFK_LAUNCH_LOCK"
         return 1
       fi
       identity=$(fm_pid_identity "$$" 2>/dev/null) || {
-        rm -rf "$FM_AFK_LAUNCH_LOCK"
+        rm -rf "$SQUAD_AFK_LAUNCH_LOCK"
         return 1
       }
-      if [ -z "$identity" ] || ! printf '%s' "$identity" > "$FM_AFK_LAUNCH_LOCK/pid-identity"; then
-        rm -rf "$FM_AFK_LAUNCH_LOCK"
+      if [ -z "$identity" ] || ! printf '%s' "$identity" > "$SQUAD_AFK_LAUNCH_LOCK/pid-identity"; then
+        rm -rf "$SQUAD_AFK_LAUNCH_LOCK"
         return 1
       fi
       return 0
     fi
-    if [ ! -s "$FM_AFK_LAUNCH_LOCK/pid" ] || [ ! -s "$FM_AFK_LAUNCH_LOCK/pid-identity" ]; then
+    if [ ! -s "$SQUAD_AFK_LAUNCH_LOCK/pid" ] || [ ! -s "$SQUAD_AFK_LAUNCH_LOCK/pid-identity" ]; then
       incomplete=$((incomplete + 1))
       if [ "$incomplete" -lt 20 ]; then
         sleep 0.05
@@ -128,7 +128,7 @@ fm_afk_launch_lock_acquire() {
       incomplete=0
     fi
     if ! fm_afk_launch_lock_owned; then
-      rm -rf "$FM_AFK_LAUNCH_LOCK" 2>/dev/null || return 1
+      rm -rf "$SQUAD_AFK_LAUNCH_LOCK" 2>/dev/null || return 1
       incomplete=0
       continue
     fi
@@ -140,9 +140,9 @@ fm_afk_launch_lock_acquire() {
 
 fm_afk_launch_lock_release() {
   local pid
-  pid=$(cat "$FM_AFK_LAUNCH_LOCK/pid" 2>/dev/null || true)
+  pid=$(cat "$SQUAD_AFK_LAUNCH_LOCK/pid" 2>/dev/null || true)
   [ "$pid" = "$$" ] || return 0
-  rm -rf "$FM_AFK_LAUNCH_LOCK"
+  rm -rf "$SQUAD_AFK_LAUNCH_LOCK"
 }
 
 fm_afk_launch_usage() {
@@ -152,42 +152,42 @@ fm_afk_launch_usage() {
 # The command run inside the created terminal. Real launch runs the shared
 # daemon entry; a test overrides it with a harmless placeholder.
 fm_afk_launch_entry_cmd() {
-  printf '%s' "${FM_AFK_LAUNCH_ENTRY:-$FM_ROOT/bin/fm-afk-start.sh}"
+  printf '%s' "${SQUAD_AFK_LAUNCH_ENTRY:-$SQUAD_ROOT/bin/sq-afk-start.sh}"
 }
 
 fm_afk_launch_record_write() {  # <backend> <target> <extra>
   local pending
-  mkdir -p "$FM_AFK_LAUNCH_STATE" || return 1
-  pending=$(mktemp "$FM_AFK_LAUNCH_STATE/.afk-daemon-terminal.pending.XXXXXX") || return 1
+  mkdir -p "$SQUAD_AFK_LAUNCH_STATE" || return 1
+  pending=$(mktemp "$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal.pending.XXXXXX") || return 1
   printf '%s\t%s\t%s\n' "$1" "$2" "$3" > "$pending" || { rm -f "$pending"; return 1; }
-  mv "$pending" "$FM_AFK_LAUNCH_RECORD" || { rm -f "$pending"; return 1; }
+  mv "$pending" "$SQUAD_AFK_LAUNCH_RECORD" || { rm -f "$pending"; return 1; }
 }
 
 fm_afk_launch_flag_write() {
-  local pending="$FM_AFK_LAUNCH_STATE/.afk.pending.$$"
+  local pending="$SQUAD_AFK_LAUNCH_STATE/.afk.pending.$$"
   date '+%s' > "$pending" || { rm -f "$pending"; return 1; }
-  mv "$pending" "$FM_AFK_LAUNCH_STATE/.afk" || { rm -f "$pending"; return 1; }
+  mv "$pending" "$SQUAD_AFK_LAUNCH_STATE/.afk" || { rm -f "$pending"; return 1; }
 }
 
-# Read the recorded terminal into FM_AFK_REC_BACKEND/FM_AFK_REC_TARGET. The third
+# Read the recorded terminal into SQUAD_AFK_REC_BACKEND/SQUAD_AFK_REC_TARGET. The third
 # field (a herdr workspace id, kept for the record's own documentation) is not
 # needed to close by id, so it is discarded. Returns 1 when no record exists.
 fm_afk_launch_record_read() {
   local extra record
-  FM_AFK_REC_BACKEND=""; FM_AFK_REC_TARGET=""; extra=""
-  [ -f "$FM_AFK_LAUNCH_RECORD" ] || return 1
-  record=$(cat "$FM_AFK_LAUNCH_RECORD" 2>/dev/null) || record=""
-  IFS=$'\t' read -r FM_AFK_REC_BACKEND FM_AFK_REC_TARGET extra \
-    < "$FM_AFK_LAUNCH_RECORD" || true
+  SQUAD_AFK_REC_BACKEND=""; SQUAD_AFK_REC_TARGET=""; extra=""
+  [ -f "$SQUAD_AFK_LAUNCH_RECORD" ] || return 1
+  record=$(cat "$SQUAD_AFK_LAUNCH_RECORD" 2>/dev/null) || record=""
+  IFS=$'\t' read -r SQUAD_AFK_REC_BACKEND SQUAD_AFK_REC_TARGET extra \
+    < "$SQUAD_AFK_LAUNCH_RECORD" || true
   if ! printf '%s\n' "$record" | awk -F '\t' 'NF != 3 { bad=1 } END { exit !(NR == 1 && !bad) }' \
-    || [ -z "$FM_AFK_REC_BACKEND" ] || [ -z "$FM_AFK_REC_TARGET" ]; then
+    || [ -z "$SQUAD_AFK_REC_BACKEND" ] || [ -z "$SQUAD_AFK_REC_TARGET" ]; then
     fm_afk_launch_log "daemon terminal record is malformed; refusing to act on it"
     return 2
   fi
-  case "$FM_AFK_REC_BACKEND" in
+  case "$SQUAD_AFK_REC_BACKEND" in
     herdr) [ -n "$extra" ] ;;
     tmux) : ;;
-    none) [ "$FM_AFK_REC_TARGET" = - ] && [ "$extra" = native ] ;;
+    none) [ "$SQUAD_AFK_REC_TARGET" = - ] && [ "$extra" = native ] ;;
     *) return 2 ;;
   esac || { fm_afk_launch_log "daemon terminal record is malformed; refusing to act on it"; return 2; }
 }
@@ -253,9 +253,9 @@ fm_afk_launch_terminal_absent() {  # <backend> <target>
 
 fm_afk_launch_close_recorded() {
   local close_result=0
-  fm_afk_launch_close_terminal "$FM_AFK_REC_BACKEND" "$FM_AFK_REC_TARGET" || close_result=$?
-  if fm_afk_launch_terminal_absent "$FM_AFK_REC_BACKEND" "$FM_AFK_REC_TARGET"; then
-    rm -f "$FM_AFK_LAUNCH_RECORD" || return 1
+  fm_afk_launch_close_terminal "$SQUAD_AFK_REC_BACKEND" "$SQUAD_AFK_REC_TARGET" || close_result=$?
+  if fm_afk_launch_terminal_absent "$SQUAD_AFK_REC_BACKEND" "$SQUAD_AFK_REC_TARGET"; then
+    rm -f "$SQUAD_AFK_LAUNCH_RECORD" || return 1
     [ "$close_result" -eq 0 ] || fm_afk_launch_log "terminal close command failed, but exact absence was confirmed"
     return 0
   fi
@@ -281,7 +281,7 @@ fm_afk_launch_terminal_alive() {  # <backend> <target>
 
 fm_afk_launch_wait_ready() {  # <backend> <target>
   local backend=$1 target=$2 attempt=0
-  if [ -n "${FM_AFK_LAUNCH_ENTRY:-}" ]; then
+  if [ -n "${SQUAD_AFK_LAUNCH_ENTRY:-}" ]; then
     fm_afk_launch_terminal_alive "$backend" "$target"
     return
   fi
@@ -303,8 +303,8 @@ fm_afk_launch_commit_terminal() {  # <backend> <target> <extra> [already-recorde
   fi
   if ! fm_afk_launch_wait_ready "$backend" "$target"; then
     fm_afk_launch_log "daemon did not become ready; closing $backend:$target"
-    FM_AFK_REC_BACKEND=$backend
-    FM_AFK_REC_TARGET=$target
+    SQUAD_AFK_REC_BACKEND=$backend
+    SQUAD_AFK_REC_TARGET=$target
     fm_afk_launch_close_recorded
     return 1
   fi
@@ -350,7 +350,7 @@ fm_afk_launch_reconcile() {
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 0 ]; then
-    fm_afk_launch_log "reconciling leaked daemon terminal ${FM_AFK_REC_BACKEND}:${FM_AFK_REC_TARGET}"
+    fm_afk_launch_log "reconciling leaked daemon terminal ${SQUAD_AFK_REC_BACKEND}:${SQUAD_AFK_REC_TARGET}"
     fm_afk_launch_close_recorded
   elif [ "$read_result" -eq 2 ]; then
     return 1
@@ -359,16 +359,16 @@ fm_afk_launch_reconcile() {
 
 fm_afk_launch_restore_backup() {  # <backup> <had-afk>
   local backup=$1 had_afk=$2 artifact result=0
-  rm -f "$FM_AFK_LAUNCH_STATE/.afk" \
-    "$FM_AFK_LAUNCH_STATE/.subsuper-escalations" \
-    "$FM_AFK_LAUNCH_STATE/.subsuper-escalations.since" \
-    "$FM_AFK_LAUNCH_STATE/.subsuper-inject-wedged" || result=1
+  rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk" \
+    "$SQUAD_AFK_LAUNCH_STATE/.subsuper-escalations" \
+    "$SQUAD_AFK_LAUNCH_STATE/.subsuper-escalations.since" \
+    "$SQUAD_AFK_LAUNCH_STATE/.subsuper-inject-wedged" || result=1
   if [ "$had_afk" -eq 1 ]; then
-    cp "$backup/.afk" "$FM_AFK_LAUNCH_STATE/.afk" || result=1
+    cp "$backup/.afk" "$SQUAD_AFK_LAUNCH_STATE/.afk" || result=1
   fi
   for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
     if [ -e "$backup/$artifact" ]; then
-      cp -p "$backup/$artifact" "$FM_AFK_LAUNCH_STATE/$artifact" || result=1
+      cp -p "$backup/$artifact" "$SQUAD_AFK_LAUNCH_STATE/$artifact" || result=1
     fi
   done
   if [ "$result" -eq 0 ]; then
@@ -379,29 +379,29 @@ fm_afk_launch_restore_backup() {  # <backup> <had-afk>
   return "$result"
 }
 
-# Launch the daemon in a non-visible herdr terminal in the CAPTAIN's session
-# (so the daemon can inject into the captain pane, which lives there). A
+# Launch the daemon in a non-visible herdr terminal in the COMMANDER's session
+# (so the daemon can inject into the commander pane, which lives there). A
 # dedicated background workspace (--no-focus) holds exactly one tab/pane; it
-# never touches the captain's active tab. Prints the record line on success.
-fm_afk_launch_create_herdr() {  # <captain-target> <captain-backend>
-  local captain_target=$1 captain_backend=$2 session out wsid pane entry cmd label recovered create_result
-  session=${captain_target%%:*}
-  if [ -z "$session" ] || [ "$session" = "$captain_target" ]; then
-    fm_afk_launch_log "cannot derive herdr session from captain target '$captain_target'"
+# never touches the commander's active tab. Prints the record line on success.
+fm_afk_launch_create_herdr() {  # <commander-target> <commander-backend>
+  local commander_target=$1 commander_backend=$2 session out wsid pane entry cmd label recovered create_result
+  session=${commander_target%%:*}
+  if [ -z "$session" ] || [ "$session" = "$commander_target" ]; then
+    fm_afk_launch_log "cannot derive herdr session from commander target '$commander_target'"
     return 1
   fi
   fm_backend_source herdr || return 1
   fm_backend_herdr_server_ensure "$session" || { fm_afk_launch_log "herdr server not ready for session '$session'"; return 1; }
-  label=${FM_AFK_LAUNCH_LABEL:-"$FM_AFK_LAUNCH_WS_LABEL-$$-${RANDOM:-0}-$(date '+%s')"}
-  out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$FM_HOME" --label "$label" --no-focus 2>/dev/null)
+  label=${SQUAD_AFK_LAUNCH_LABEL:-"$SQUAD_AFK_LAUNCH_WS_LABEL-$$-${RANDOM:-0}-$(date '+%s')"}
+  out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$SQUAD_HOME" --label "$label" --no-focus 2>/dev/null)
   create_result=$?
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   pane=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
   if [ "$create_result" -ne 0 ] && [ -n "$wsid" ] && [ -n "$pane" ]; then
     fm_afk_launch_log "herdr create failed after returning exact ids; closing $session:$pane"
     if fm_afk_launch_record_write herdr "$session:$pane" "$wsid"; then
-      FM_AFK_REC_BACKEND=herdr
-      FM_AFK_REC_TARGET="$session:$pane"
+      SQUAD_AFK_REC_BACKEND=herdr
+      SQUAD_AFK_REC_TARGET="$session:$pane"
       fm_afk_launch_close_recorded || true
     else
       fm_afk_launch_log "failed to persist exact id for failed herdr create"
@@ -416,8 +416,8 @@ fm_afk_launch_create_herdr() {  # <captain-target> <captain-backend>
     IFS=$'\t' read -r wsid pane <<< "$recovered"
   fi
   entry=$(fm_afk_launch_entry_cmd)
-  cmd=$(printf 'exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q %q' \
-    "$FM_HOME" "$captain_target" "$captain_backend" "$entry")
+  cmd=$(printf 'exec env SQUAD_HOME=%q SQUAD_SUPERVISOR_TARGET=%q SQUAD_SUPERVISOR_BACKEND=%q %q' \
+    "$SQUAD_HOME" "$commander_target" "$commander_backend" "$entry")
   if ! fm_afk_launch_record_write herdr "$session:$pane" "$wsid"; then
     fm_afk_launch_log "failed to persist herdr daemon terminal record; closing $session:$pane"
     fm_afk_launch_close_terminal herdr "$session:$pane"
@@ -425,54 +425,54 @@ fm_afk_launch_create_herdr() {  # <captain-target> <captain-backend>
   fi
   if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then
     fm_afk_launch_log "failed to run daemon in herdr pane $session:$pane; closing it"
-    FM_AFK_REC_BACKEND=herdr
-    FM_AFK_REC_TARGET="$session:$pane"
+    SQUAD_AFK_REC_BACKEND=herdr
+    SQUAD_AFK_REC_TARGET="$session:$pane"
     fm_afk_launch_close_recorded || true
     return 1
   fi
   fm_afk_launch_commit_terminal herdr "$session:$pane" "$wsid" 1 || return 1
-  fm_afk_launch_log "daemon launched in non-visible herdr workspace $wsid (pane $session:$pane), supervising $captain_target"
+  fm_afk_launch_log "daemon launched in non-visible herdr workspace $wsid (pane $session:$pane), supervising $commander_target"
 }
 
 # Launch the daemon in a detached tmux session (never a split-window in the
-# captain's window). tmux pane ids are server-global, so the daemon reaches the
-# captain pane by its %id from this separate session.
-fm_afk_launch_create_tmux() {  # <captain-target> <captain-backend>
-  local captain_target=$1 captain_backend=$2 session entry cmd hash nonce
-  hash=$(printf '%s' "$FM_HOME" | cksum | cut -d' ' -f1)
+# commander's window). tmux pane ids are server-global, so the daemon reaches the
+# commander pane by its %id from this separate session.
+fm_afk_launch_create_tmux() {  # <commander-target> <commander-backend>
+  local commander_target=$1 commander_backend=$2 session entry cmd hash nonce
+  hash=$(printf '%s' "$SQUAD_HOME" | cksum | cut -d' ' -f1)
   nonce="$$-${RANDOM:-0}-$(date '+%s')"
-  session="fm-afk-daemon-$hash-$nonce"
+  session="sq-afk-daemon-$hash-$nonce"
   entry=$(fm_afk_launch_entry_cmd)
-  cmd=$(printf 'exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q %q' \
-    "$FM_HOME" "$captain_target" "$captain_backend" "$entry")
+  cmd=$(printf 'exec env SQUAD_HOME=%q SQUAD_SUPERVISOR_TARGET=%q SQUAD_SUPERVISOR_BACKEND=%q %q' \
+    "$SQUAD_HOME" "$commander_target" "$commander_backend" "$entry")
   if ! fm_afk_launch_record_write tmux "$session" ""; then
     fm_afk_launch_log "failed to persist planned tmux daemon session '$session'"
     return 1
   fi
   if ! tmux new-session -d -s "$session" "$cmd" 2>/dev/null; then
     fm_afk_launch_log "failed to create detached tmux daemon session '$session'"
-    if ! rm -f "$FM_AFK_LAUNCH_RECORD"; then
+    if ! rm -f "$SQUAD_AFK_LAUNCH_RECORD"; then
       fm_afk_launch_log "failed to remove planned tmux daemon record after creation failure"
     fi
     return 1
   fi
   fm_afk_launch_commit_terminal tmux "$session" "" 1 || return 1
-  fm_afk_launch_log "daemon launched in detached tmux session '$session', supervising $captain_target"
+  fm_afk_launch_log "daemon launched in detached tmux session '$session', supervising $commander_target"
 }
 
 fm_afk_launch_start() {
-  local captain_target captain_backend backup artifact had_afk=0 result
-  if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
-    fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
+  local commander_target commander_backend backup artifact had_afk=0 result
+  if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
+    fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
     return 1
   fi
-  # Capture the captain pane FIRST, before creating anything.
-  captain_target=$(discover_supervisor_target) || {
-    fm_afk_launch_log "could not resolve the captain supervisor pane (set FM_SUPERVISOR_TARGET)"; return 1; }
-  captain_backend=$(discover_supervisor_backend) || {
-    fm_afk_launch_log "could not resolve the captain supervisor backend (set FM_SUPERVISOR_BACKEND)"; return 1; }
+  # Capture the commander pane FIRST, before creating anything.
+  commander_target=$(discover_supervisor_target) || {
+    fm_afk_launch_log "could not resolve the commander supervisor pane (set SQUAD_SUPERVISOR_TARGET)"; return 1; }
+  commander_backend=$(discover_supervisor_backend) || {
+    fm_afk_launch_log "could not resolve the commander supervisor backend (set SQUAD_SUPERVISOR_BACKEND)"; return 1; }
 
-  mkdir -p "$FM_AFK_LAUNCH_STATE"
+  mkdir -p "$SQUAD_AFK_LAUNCH_STATE"
 
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1
@@ -484,20 +484,20 @@ fm_afk_launch_start() {
     return 0
   fi
 
-  backup=$(mktemp -d "$FM_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
-  if [ -f "$FM_AFK_LAUNCH_STATE/.afk" ]; then
+  backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
+  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
     had_afk=1
-    cp "$FM_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
+    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
   fi
   for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
-    if [ -e "$FM_AFK_LAUNCH_STATE/$artifact" ]; then
-      cp -p "$FM_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
+    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
+      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
     fi
   done
   if ! fm_afk_launch_reconcile; then
     result=1
   else
-    if fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
+    if fm_afk_clear_stale_artifacts "$SQUAD_AFK_LAUNCH_STATE"; then
       result=0
     else
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
@@ -512,11 +512,11 @@ fm_afk_launch_start() {
   fi
 
   if [ "$result" -eq 0 ]; then
-    case "$captain_backend" in
-      herdr) fm_afk_launch_create_herdr "$captain_target" "$captain_backend"; result=$? ;;
-      tmux)  fm_afk_launch_create_tmux "$captain_target" "$captain_backend"; result=$? ;;
+    case "$commander_backend" in
+      herdr) fm_afk_launch_create_herdr "$commander_target" "$commander_backend"; result=$? ;;
+      tmux)  fm_afk_launch_create_tmux "$commander_target" "$commander_backend"; result=$? ;;
       *)
-        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$captain_backend' yet (supported: herdr, tmux)"
+        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux)"
         result=1
         ;;
     esac
@@ -531,9 +531,9 @@ fm_afk_launch_start() {
 
 fm_afk_launch_start_native() {
   local backup artifact had_afk=0 result=0
-  mkdir -p "$FM_AFK_LAUNCH_STATE" || return 1
-  if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
-    fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
+  mkdir -p "$SQUAD_AFK_LAUNCH_STATE" || return 1
+  if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
+    fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
     return 1
   fi
   if daemon_lock_held_by_live_daemon; then
@@ -542,19 +542,19 @@ fm_afk_launch_start_native() {
     fm_afk_launch_log "daemon already running; refreshed away-mode flag"
     return 0
   fi
-  backup=$(mktemp -d "$FM_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
-  if [ -f "$FM_AFK_LAUNCH_STATE/.afk" ]; then
+  backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
+  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
     had_afk=1
-    cp "$FM_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
+    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
   fi
   for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
-    if [ -e "$FM_AFK_LAUNCH_STATE/$artifact" ]; then
-      cp -p "$FM_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
+    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
+      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
     fi
   done
   fm_afk_launch_reconcile || result=1
   if [ "$result" -eq 0 ]; then
-    if ! fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
+    if ! fm_afk_clear_stale_artifacts "$SQUAD_AFK_LAUNCH_STATE"; then
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
       result=1
     elif ! fm_afk_launch_flag_write; then
@@ -614,7 +614,7 @@ fm_afk_launch_stop() {
     fm_afk_launch_close_recorded || result=1
   fi
   # (3) Clear the away-mode flag LAST.
-  if ! rm -f "$FM_AFK_LAUNCH_STATE/.afk"; then
+  if ! rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk"; then
     fm_afk_launch_log "failed to clear away-mode flag"
     result=1
   fi

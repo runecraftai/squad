@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Shared remote fm-on job-worker protocol.
+# Shared remote sq-on job-worker protocol.
 #
 # Source this file from the fixed SSH entrypoint, the long-lived worker, or the
 # remote doctor. It owns the per-account queue at
-# ~/.firstmate/remote-job (override only with FM_REMOTE_JOB_STATE_ROOT for
+# ~/.Squad/remote-job (override only with SQUAD_REMOTE_JOB_STATE_ROOT for
 # isolated tests), the bounded job record, worker installation, and the remote
 # runtime PATH.
 #
@@ -18,22 +18,22 @@
 # The worker executes one job at a time, so a deliberately long-blocking poll
 # would serialize every short interactive command behind its wait window.
 # fm_remote_job_command_preemptible names the read-only long-poll class
-# (fm-remote-delta-read.sh, the reply-log delta read). The worker preempts a
+# (sq-remote-delta-read.sh, the reply-log delta read). The worker preempts a
 # running preemptible job as soon as a non-preemptible job is queued and
 # publishes exit 75 with emptied stdout and stderr, identical to the poll's own
 # elapsed-window-with-no-data result. The delta read is non-destructive and
 # cursor-anchored, so the caller's normal re-arm re-reads the same data and a
 # preempted poll loses nothing.
 #
-# The worker accepts only a tracked, non-symlink executable named fm-*.sh below
-# its configured FM_ROOT/bin. Every child receives env -i with the composed
-# PATH, HOME, FM_HOME, FM_ROOT_OVERRIDE, and FM_REMOTE_JOB_ACTIVE=1. The PATH
+# The worker accepts only a tracked, non-symlink executable named sq-*.sh below
+# its configured SQUAD_ROOT/bin. Every child receives env -i with the composed
+# PATH, HOME, SQUAD_HOME, SQUAD_ROOT_OVERRIDE, and SQUAD_REMOTE_JOB_ACTIVE=1. The PATH
 # is intentionally filesystem-discovered rather than login-shell-derived:
 # ~/.local/bin; nvm, asdf, and mise shims/install bins; Nix; Homebrew; and the
 # system tail. No shell startup files are evaluated.
 #
-# On macOS the worker is Firstmate's Aqua LaunchAgent
-# dev.firstmate.remote-job at ~/Library/LaunchAgents/dev.firstmate.remote-job.plist
+# On macOS the worker is Squad's Aqua LaunchAgent
+# dev.Squad.remote-job at ~/Library/LaunchAgents/dev.Squad.remote-job.plist
 # with logs under ~/Library/Logs. Linux starts the same worker process without
 # an Aqua requirement. The launch-agent renderer and repair helpers here are
 # shared by the entrypoint and remote doctor so their ownership cannot drift.
@@ -45,28 +45,28 @@
 # signal a group whose leader is not itself a worker, so a worker inherited
 # from an older build or from launchd's own session is still stopped safely as
 # a single process. fm_remote_job_root_is_live is the shared predicate for
-# whether a worker's code root still exists; bin/fm-remote-job-worker.sh uses
+# whether a worker's code root still exists; bin/sq-remote-job-worker.sh uses
 # it to stop itself once its root is pruned, and
-# bin/fm-remote-job-reap-orphans.sh uses it to reap workers that were already
+# bin/sq-remote-job-reap-orphans.sh uses it to reap workers that were already
 # orphaned that way.
 
-FM_REMOTE_JOB_LABEL=dev.firstmate.remote-job
-FM_REMOTE_JOB_MAX_BYTES=${FM_REMOTE_JOB_MAX_BYTES:-1048576}
-FM_REMOTE_JOB_QUEUE_TIMEOUT=${FM_REMOTE_JOB_QUEUE_TIMEOUT:-360}
-FM_REMOTE_JOB_TIMEOUT=${FM_REMOTE_JOB_TIMEOUT:-360}
-FM_REMOTE_JOB_WAIT_GRACE=${FM_REMOTE_JOB_WAIT_GRACE:-30}
-FM_REMOTE_JOB_POLL_SECONDS=${FM_REMOTE_JOB_POLL_SECONDS:-0.05}
-FM_REMOTE_JOB_REAP_SECONDS=${FM_REMOTE_JOB_REAP_SECONDS:-3600}
-FM_REMOTE_JOB_OPERATOR_PATH=
-FM_REMOTE_JOB_CHILD_PATH=
-FM_REMOTE_JOB_STATE=
-FM_REMOTE_JOB_JOBS=
-FM_REMOTE_JOB_ID=
-FM_REMOTE_JOB_STDOUT=
-FM_REMOTE_JOB_STDERR=
-FM_REMOTE_JOB_EXIT=
-FM_REMOTE_JOB_ERROR=
-FM_REMOTE_JOB_REPAIRED=0
+SQUAD_REMOTE_JOB_LABEL=dev.Squad.remote-job
+SQUAD_REMOTE_JOB_MAX_BYTES=${SQUAD_REMOTE_JOB_MAX_BYTES:-1048576}
+SQUAD_REMOTE_JOB_QUEUE_TIMEOUT=${SQUAD_REMOTE_JOB_QUEUE_TIMEOUT:-360}
+SQUAD_REMOTE_JOB_TIMEOUT=${SQUAD_REMOTE_JOB_TIMEOUT:-360}
+SQUAD_REMOTE_JOB_WAIT_GRACE=${SQUAD_REMOTE_JOB_WAIT_GRACE:-30}
+SQUAD_REMOTE_JOB_POLL_SECONDS=${SQUAD_REMOTE_JOB_POLL_SECONDS:-0.05}
+SQUAD_REMOTE_JOB_REAP_SECONDS=${SQUAD_REMOTE_JOB_REAP_SECONDS:-3600}
+SQUAD_REMOTE_JOB_OPERATOR_PATH=
+SQUAD_REMOTE_JOB_CHILD_PATH=
+SQUAD_REMOTE_JOB_STATE=
+SQUAD_REMOTE_JOB_JOBS=
+SQUAD_REMOTE_JOB_ID=
+SQUAD_REMOTE_JOB_STDOUT=
+SQUAD_REMOTE_JOB_STDERR=
+SQUAD_REMOTE_JOB_EXIT=
+SQUAD_REMOTE_JOB_ERROR=
+SQUAD_REMOTE_JOB_REPAIRED=0
 
 fm_remote_job_die() {
   printf 'error: %s\n' "$1" >&2
@@ -78,24 +78,24 @@ fm_remote_job_safe_id() {
 }
 
 fm_remote_job_command_preemptible() { # <staged argv command>
-  case "${1:-}" in fm-remote-delta-read.sh) return 0 ;; *) return 1 ;; esac
+  case "${1:-}" in sq-remote-delta-read.sh) return 0 ;; *) return 1 ;; esac
 }
 
 fm_remote_job_validate_settings() {
-  case "$FM_REMOTE_JOB_MAX_BYTES" in ''|*[!0-9]*|0) return 1 ;; esac
-  [ "$FM_REMOTE_JOB_MAX_BYTES" -le 1048576 ] || return 1
-  case "$FM_REMOTE_JOB_QUEUE_TIMEOUT" in ''|*[!0-9]*|0) return 1 ;; esac
-  [ "$FM_REMOTE_JOB_QUEUE_TIMEOUT" -le 3600 ] || return 1
-  case "$FM_REMOTE_JOB_TIMEOUT" in ''|*[!0-9]*|0) return 1 ;; esac
-  [ "$FM_REMOTE_JOB_TIMEOUT" -le 3600 ] || return 1
-  case "$FM_REMOTE_JOB_WAIT_GRACE" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$FM_REMOTE_JOB_WAIT_GRACE" -le 300 ] || return 1
-  case "$FM_REMOTE_JOB_REAP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
+  case "$SQUAD_REMOTE_JOB_MAX_BYTES" in ''|*[!0-9]*|0) return 1 ;; esac
+  [ "$SQUAD_REMOTE_JOB_MAX_BYTES" -le 1048576 ] || return 1
+  case "$SQUAD_REMOTE_JOB_QUEUE_TIMEOUT" in ''|*[!0-9]*|0) return 1 ;; esac
+  [ "$SQUAD_REMOTE_JOB_QUEUE_TIMEOUT" -le 3600 ] || return 1
+  case "$SQUAD_REMOTE_JOB_TIMEOUT" in ''|*[!0-9]*|0) return 1 ;; esac
+  [ "$SQUAD_REMOTE_JOB_TIMEOUT" -le 3600 ] || return 1
+  case "$SQUAD_REMOTE_JOB_WAIT_GRACE" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$SQUAD_REMOTE_JOB_WAIT_GRACE" -le 300 ] || return 1
+  case "$SQUAD_REMOTE_JOB_REAP_SECONDS" in ''|*[!0-9]*|0) return 1 ;; esac
   return 0
 }
 
 fm_remote_job_platform() {
-  local raw=${FM_REMOTE_JOB_PLATFORM_OVERRIDE:-}
+  local raw=${SQUAD_REMOTE_JOB_PLATFORM_OVERRIDE:-}
   [ -n "$raw" ] || raw=$(uname -s 2>/dev/null || true)
   case "$raw" in
     Darwin|darwin) printf 'darwin\n' ;;
@@ -106,8 +106,8 @@ fm_remote_job_platform() {
 }
 
 fm_remote_job_path_append() { # <directory>
-  case ":$FM_REMOTE_JOB_OPERATOR_PATH:" in *":$1:"*) return 0 ;; esac
-  FM_REMOTE_JOB_OPERATOR_PATH="${FM_REMOTE_JOB_OPERATOR_PATH:+$FM_REMOTE_JOB_OPERATOR_PATH:}$1"
+  case ":$SQUAD_REMOTE_JOB_OPERATOR_PATH:" in *":$1:"*) return 0 ;; esac
+  SQUAD_REMOTE_JOB_OPERATOR_PATH="${SQUAD_REMOTE_JOB_OPERATOR_PATH:+$SQUAD_REMOTE_JOB_OPERATOR_PATH:}$1"
 }
 
 fm_remote_job_path_append_if_dir() { # <directory>
@@ -210,7 +210,7 @@ fm_remote_job_nvm_selected_bin() { # <account-home>
 
 fm_remote_job_compose_operator_path() { # <account-home>
   local account_home=$1 account_user nvm_bin
-  FM_REMOTE_JOB_OPERATOR_PATH=
+  SQUAD_REMOTE_JOB_OPERATOR_PATH=
   fm_remote_job_path_append_if_dir "$account_home/.local/bin"
   nvm_bin=$(fm_remote_job_nvm_selected_bin "$account_home" 2>/dev/null || true)
   [ -z "$nvm_bin" ] || fm_remote_job_path_append "$nvm_bin"
@@ -232,29 +232,29 @@ fm_remote_job_compose_operator_path() { # <account-home>
   fm_remote_job_path_append /bin
   fm_remote_job_path_append /usr/sbin
   fm_remote_job_path_append /sbin
-  printf '%s\n' "$FM_REMOTE_JOB_OPERATOR_PATH"
+  printf '%s\n' "$SQUAD_REMOTE_JOB_OPERATOR_PATH"
 }
 
 fm_remote_job_build_child_path() { # <remote-root>
   local root=$1 directory old_ifs
-  FM_REMOTE_JOB_CHILD_PATH="$root/bin"
+  SQUAD_REMOTE_JOB_CHILD_PATH="$root/bin"
   old_ifs=$IFS
   IFS=:
-  for directory in $FM_REMOTE_JOB_OPERATOR_PATH; do
-    case ":$FM_REMOTE_JOB_CHILD_PATH:" in *":$directory:"*) continue ;; esac
-    FM_REMOTE_JOB_CHILD_PATH="$FM_REMOTE_JOB_CHILD_PATH:$directory"
+  for directory in $SQUAD_REMOTE_JOB_OPERATOR_PATH; do
+    case ":$SQUAD_REMOTE_JOB_CHILD_PATH:" in *":$directory:"*) continue ;; esac
+    SQUAD_REMOTE_JOB_CHILD_PATH="$SQUAD_REMOTE_JOB_CHILD_PATH:$directory"
   done
   IFS=$old_ifs
-  printf '%s\n' "$FM_REMOTE_JOB_CHILD_PATH"
+  printf '%s\n' "$SQUAD_REMOTE_JOB_CHILD_PATH"
 }
 
 fm_remote_job_operator_tool() { # <tool>; resolves only outside the checkout bin
   local tool=$1 resolved
-  resolved=$(PATH="$FM_REMOTE_JOB_OPERATOR_PATH" command -v "$tool" 2>/dev/null || true)
+  resolved=$(PATH="$SQUAD_REMOTE_JOB_OPERATOR_PATH" command -v "$tool" 2>/dev/null || true)
   case "$resolved" in
     /*)
       [ -x "$resolved" ] || return 1
-      case ":$FM_REMOTE_JOB_OPERATOR_PATH:" in *":${resolved%/*}:"*) printf '%s\n' "$resolved" ;; *) return 1 ;; esac
+      case ":$SQUAD_REMOTE_JOB_OPERATOR_PATH:" in *":${resolved%/*}:"*) printf '%s\n' "$resolved" ;; *) return 1 ;; esac
       ;;
     *) return 1 ;;
   esac
@@ -346,48 +346,48 @@ fm_remote_job_safe_child_dir() { # <canonical-parent> <single child basename>
 }
 
 fm_remote_job_prepare_state() { # <account-home>
-  local account_home=$1 root parent base firstmate
+  local account_home=$1 root parent base Squad
   fm_remote_job_validate_settings || {
-    FM_REMOTE_JOB_ERROR="remote job bounds or timeout are invalid"
+    SQUAD_REMOTE_JOB_ERROR="remote job bounds or timeout are invalid"
     return 1
   }
   account_home=$(fm_remote_job_canonical_existing_dir "$account_home") || {
-    FM_REMOTE_JOB_ERROR="remote account home is unavailable or unsafe"
+    SQUAD_REMOTE_JOB_ERROR="remote account home is unavailable or unsafe"
     return 1
   }
-  if [ -n "${FM_REMOTE_JOB_STATE_ROOT:-}" ]; then
-    root=$(fm_remote_job_normalize_absolute_path "$FM_REMOTE_JOB_STATE_ROOT") || {
-      FM_REMOTE_JOB_ERROR="remote job state root is not a safe absolute path"
+  if [ -n "${SQUAD_REMOTE_JOB_STATE_ROOT:-}" ]; then
+    root=$(fm_remote_job_normalize_absolute_path "$SQUAD_REMOTE_JOB_STATE_ROOT") || {
+      SQUAD_REMOTE_JOB_ERROR="remote job state root is not a safe absolute path"
       return 1
     }
     parent=$(dirname "$root")
     base=$(basename "$root")
     parent=$(fm_remote_job_canonical_existing_dir "$parent") || {
-      FM_REMOTE_JOB_ERROR="remote job state parent is unavailable or unsafe"
+      SQUAD_REMOTE_JOB_ERROR="remote job state parent is unavailable or unsafe"
       return 1
     }
     [ "$parent/$base" = "$root" ] || return 1
     root=$(fm_remote_job_safe_child_dir "$parent" "$base") || {
-      FM_REMOTE_JOB_ERROR="remote job state root is unsafe"
+      SQUAD_REMOTE_JOB_ERROR="remote job state root is unsafe"
       return 1
     }
   else
-    firstmate=$(fm_remote_job_safe_child_dir "$account_home" .firstmate) || {
-      FM_REMOTE_JOB_ERROR="cannot prepare $account_home/.firstmate for remote jobs"
+    Squad=$(fm_remote_job_safe_child_dir "$account_home" .Squad) || {
+      SQUAD_REMOTE_JOB_ERROR="cannot prepare $account_home/.Squad for remote jobs"
       return 1
     }
-    root=$(fm_remote_job_safe_child_dir "$firstmate" remote-job) || {
-      FM_REMOTE_JOB_ERROR="cannot prepare remote job state"
+    root=$(fm_remote_job_safe_child_dir "$Squad" remote-job) || {
+      SQUAD_REMOTE_JOB_ERROR="cannot prepare remote job state"
       return 1
     }
   fi
-  FM_REMOTE_JOB_STATE=$root
-  FM_REMOTE_JOB_JOBS=$(fm_remote_job_safe_child_dir "$FM_REMOTE_JOB_STATE" jobs) || {
-    FM_REMOTE_JOB_ERROR="remote job queue is unsafe"
+  SQUAD_REMOTE_JOB_STATE=$root
+  SQUAD_REMOTE_JOB_JOBS=$(fm_remote_job_safe_child_dir "$SQUAD_REMOTE_JOB_STATE" jobs) || {
+    SQUAD_REMOTE_JOB_ERROR="remote job queue is unsafe"
     return 1
   }
-  fm_remote_job_safe_child_dir "$FM_REMOTE_JOB_STATE" logs >/dev/null || {
-    FM_REMOTE_JOB_ERROR="remote job log directory is unsafe"
+  fm_remote_job_safe_child_dir "$SQUAD_REMOTE_JOB_STATE" logs >/dev/null || {
+    SQUAD_REMOTE_JOB_ERROR="remote job log directory is unsafe"
     return 1
   }
 }
@@ -395,8 +395,8 @@ fm_remote_job_prepare_state() { # <account-home>
 fm_remote_job_job_dir() { # <id>
   local id=$1 dir physical
   fm_remote_job_safe_id "$id" || return 1
-  [ -n "$FM_REMOTE_JOB_JOBS" ] || return 1
-  dir="$FM_REMOTE_JOB_JOBS/$id"
+  [ -n "$SQUAD_REMOTE_JOB_JOBS" ] || return 1
+  dir="$SQUAD_REMOTE_JOB_JOBS/$id"
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
   physical=$(CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P) || return 1
   [ "$physical" = "$dir" ] || return 1
@@ -462,40 +462,40 @@ fm_remote_job_stage() { # <account-home> <root> <home> <command> [args...]; stdi
   shift 4
   fm_remote_job_prepare_state "$account_home" || return 1
   root=$(fm_remote_job_canonical_existing_dir "$root") || {
-    FM_REMOTE_JOB_ERROR="remote job root is unavailable or unsafe"
+    SQUAD_REMOTE_JOB_ERROR="remote job root is unavailable or unsafe"
     return 1
   }
   home=$(fm_remote_job_canonical_home "$home") || {
-    FM_REMOTE_JOB_ERROR="remote job home is unavailable or unsafe"
+    SQUAD_REMOTE_JOB_ERROR="remote job home is unavailable or unsafe"
     return 1
   }
-  case "$command" in fm-*.sh) ;; *) FM_REMOTE_JOB_ERROR="remote job command is outside the fm-*.sh namespace"; return 1 ;; esac
-  case "$command" in */*|*..*) FM_REMOTE_JOB_ERROR="remote job command contains a path or traversal"; return 1 ;; esac
-  stage=$(umask 077; mktemp -d "$FM_REMOTE_JOB_JOBS/.stage.XXXXXX") || {
-    FM_REMOTE_JOB_ERROR="cannot stage remote job"
+  case "$command" in sq-*.sh) ;; *) SQUAD_REMOTE_JOB_ERROR="remote job command is outside the sq-*.sh namespace"; return 1 ;; esac
+  case "$command" in */*|*..*) SQUAD_REMOTE_JOB_ERROR="remote job command contains a path or traversal"; return 1 ;; esac
+  stage=$(umask 077; mktemp -d "$SQUAD_REMOTE_JOB_JOBS/.stage.XXXXXX") || {
+    SQUAD_REMOTE_JOB_ERROR="cannot stage remote job"
     return 1
   }
   chmod 700 "$stage" || { rm -rf -- "$stage"; return 1; }
-  queue_deadline=$(( $(date +%s) + FM_REMOTE_JOB_QUEUE_TIMEOUT ))
+  queue_deadline=$(( $(date +%s) + SQUAD_REMOTE_JOB_QUEUE_TIMEOUT ))
   if ! printf '%s\n' "$root" > "$stage/root" ||
     ! printf '%s\n' "$home" > "$stage/home" ||
     ! printf '%s\n' "$queue_deadline" > "$stage/queue_deadline" ||
-    ! printf '%s\n' "$FM_REMOTE_JOB_TIMEOUT" > "$stage/timeout" ||
+    ! printf '%s\n' "$SQUAD_REMOTE_JOB_TIMEOUT" > "$stage/timeout" ||
     ! printf '%s\0' "$command" "$@" > "$stage/argv" ||
-    ! head -c "$((FM_REMOTE_JOB_MAX_BYTES + 1))" > "$stage/stdin"; then
+    ! head -c "$((SQUAD_REMOTE_JOB_MAX_BYTES + 1))" > "$stage/stdin"; then
     rm -rf -- "$stage"
-    FM_REMOTE_JOB_ERROR="cannot capture remote job input"
+    SQUAD_REMOTE_JOB_ERROR="cannot capture remote job input"
     return 1
   fi
   for bytes in root home queue_deadline timeout argv stdin; do chmod 600 "$stage/$bytes" || { rm -rf -- "$stage"; return 1; }; done
-  fm_remote_job_regular_bounded "$stage/argv" "$FM_REMOTE_JOB_MAX_BYTES" || {
+  fm_remote_job_regular_bounded "$stage/argv" "$SQUAD_REMOTE_JOB_MAX_BYTES" || {
     rm -rf -- "$stage"
-    FM_REMOTE_JOB_ERROR="remote job argv exceeds the ${FM_REMOTE_JOB_MAX_BYTES}-byte bound"
+    SQUAD_REMOTE_JOB_ERROR="remote job argv exceeds the ${SQUAD_REMOTE_JOB_MAX_BYTES}-byte bound"
     return 1
   }
-  fm_remote_job_regular_bounded "$stage/stdin" "$FM_REMOTE_JOB_MAX_BYTES" || {
+  fm_remote_job_regular_bounded "$stage/stdin" "$SQUAD_REMOTE_JOB_MAX_BYTES" || {
     rm -rf -- "$stage"
-    FM_REMOTE_JOB_ERROR="remote job stdin exceeds the ${FM_REMOTE_JOB_MAX_BYTES}-byte bound"
+    SQUAD_REMOTE_JOB_ERROR="remote job stdin exceeds the ${SQUAD_REMOTE_JOB_MAX_BYTES}-byte bound"
     return 1
   }
   : > "$stage/stdout"
@@ -504,11 +504,11 @@ fm_remote_job_stage() { # <account-home> <root> <home> <command> [args...]; stdi
   fm_remote_job_write_state "$stage" queued || { rm -rf -- "$stage"; return 1; }
   id="job-${stage##*/.stage.}"
   fm_remote_job_safe_id "$id" || { rm -rf -- "$stage"; return 1; }
-  destination="$FM_REMOTE_JOB_JOBS/$id"
+  destination="$SQUAD_REMOTE_JOB_JOBS/$id"
   [ ! -e "$destination" ] && [ ! -L "$destination" ] || { rm -rf -- "$stage"; return 1; }
   mv -- "$stage" "$destination" || { rm -rf -- "$stage"; return 1; }
   # shellcheck disable=SC2034 # Sourceable API consumed by callers that do not use command substitution.
-  FM_REMOTE_JOB_ID=$id
+  SQUAD_REMOTE_JOB_ID=$id
   printf '%s\n' "$id"
 }
 
@@ -516,51 +516,51 @@ fm_remote_job_wait() { # <account-home> <id>
   local account_home=$1 id=$2 job state queue_deadline execution_timeout wait_deadline exit_value
   fm_remote_job_prepare_state "$account_home" || return 1
   job=$(fm_remote_job_job_dir "$id") || {
-    FM_REMOTE_JOB_ERROR="remote job record disappeared or became unsafe"
+    SQUAD_REMOTE_JOB_ERROR="remote job record disappeared or became unsafe"
     return 1
   }
   queue_deadline=$(fm_remote_job_read_number "$job" queue_deadline) || {
-    FM_REMOTE_JOB_ERROR="remote job queue deadline is invalid"
+    SQUAD_REMOTE_JOB_ERROR="remote job queue deadline is invalid"
     return 1
   }
   execution_timeout=$(fm_remote_job_read_number "$job" timeout) || {
-    FM_REMOTE_JOB_ERROR="remote job execution timeout is invalid"
+    SQUAD_REMOTE_JOB_ERROR="remote job execution timeout is invalid"
     return 1
   }
   [ "$execution_timeout" -le 3600 ] || {
-    FM_REMOTE_JOB_ERROR="remote job execution timeout is invalid"
+    SQUAD_REMOTE_JOB_ERROR="remote job execution timeout is invalid"
     return 1
   }
-  wait_deadline=$((queue_deadline + execution_timeout + FM_REMOTE_JOB_WAIT_GRACE))
+  wait_deadline=$((queue_deadline + execution_timeout + SQUAD_REMOTE_JOB_WAIT_GRACE))
   while :; do
     state=$(fm_remote_job_read_state "$job" 2>/dev/null || true)
     case "$state" in
       'done')
-        if ! fm_remote_job_regular_bounded "$job/stdout" "$FM_REMOTE_JOB_MAX_BYTES" ||
-          ! fm_remote_job_regular_bounded "$job/stderr" "$FM_REMOTE_JOB_MAX_BYTES" ||
+        if ! fm_remote_job_regular_bounded "$job/stdout" "$SQUAD_REMOTE_JOB_MAX_BYTES" ||
+          ! fm_remote_job_regular_bounded "$job/stderr" "$SQUAD_REMOTE_JOB_MAX_BYTES" ||
           ! fm_remote_job_regular_bounded "$job/exit" 32; then
-          FM_REMOTE_JOB_ERROR="remote job result is unsafe or exceeds its byte bound"
+          SQUAD_REMOTE_JOB_ERROR="remote job result is unsafe or exceeds its byte bound"
           return 1
         fi
         exit_value=$(tr -d '\n' < "$job/exit")
-        case "$exit_value" in ''|*[!0-9]*) FM_REMOTE_JOB_ERROR="remote job exit status is invalid"; return 1 ;; esac
-        [ "$exit_value" -le 255 ] || { FM_REMOTE_JOB_ERROR="remote job exit status is invalid"; return 1; }
+        case "$exit_value" in ''|*[!0-9]*) SQUAD_REMOTE_JOB_ERROR="remote job exit status is invalid"; return 1 ;; esac
+        [ "$exit_value" -le 255 ] || { SQUAD_REMOTE_JOB_ERROR="remote job exit status is invalid"; return 1; }
         # shellcheck disable=SC2034 # Sourceable API consumed by the entrypoint after this function returns.
-        FM_REMOTE_JOB_STDOUT="$job/stdout"
+        SQUAD_REMOTE_JOB_STDOUT="$job/stdout"
         # shellcheck disable=SC2034 # Sourceable API consumed by the entrypoint after this function returns.
-        FM_REMOTE_JOB_STDERR="$job/stderr"
+        SQUAD_REMOTE_JOB_STDERR="$job/stderr"
         # shellcheck disable=SC2034 # Sourceable API consumed by the entrypoint after this function returns.
-        FM_REMOTE_JOB_EXIT=$exit_value
+        SQUAD_REMOTE_JOB_EXIT=$exit_value
         return 0
         ;;
       queued|running) ;;
-      *) FM_REMOTE_JOB_ERROR="remote job state is invalid"; return 1 ;;
+      *) SQUAD_REMOTE_JOB_ERROR="remote job state is invalid"; return 1 ;;
     esac
     if [ "$(date +%s)" -ge "$wait_deadline" ]; then
-      FM_REMOTE_JOB_ERROR="remote job did not complete within its bounded wait"
+      SQUAD_REMOTE_JOB_ERROR="remote job did not complete within its bounded wait"
       return 1
     fi
-    sleep "$FM_REMOTE_JOB_POLL_SECONDS"
+    sleep "$SQUAD_REMOTE_JOB_POLL_SECONDS"
   done
 }
 
@@ -592,7 +592,7 @@ fm_remote_job_reap_stale() { # <account-home>
   local account_home=$1 job id state mtime now
   fm_remote_job_prepare_state "$account_home" || return 1
   now=$(date +%s)
-  for job in "$FM_REMOTE_JOB_JOBS"/job-*; do
+  for job in "$SQUAD_REMOTE_JOB_JOBS"/job-*; do
     [ -d "$job" ] && [ ! -L "$job" ] || continue
     id=${job##*/}
     fm_remote_job_safe_id "$id" || continue
@@ -600,17 +600,17 @@ fm_remote_job_reap_stale() { # <account-home>
     [ "$state" = 'done' ] || continue
     mtime=$(fm_remote_job_path_mtime "$job" 2>/dev/null || true)
     case "$mtime" in ''|*[!0-9]*) continue ;; esac
-    [ $((now - mtime)) -ge "$FM_REMOTE_JOB_REAP_SECONDS" ] || continue
+    [ $((now - mtime)) -ge "$SQUAD_REMOTE_JOB_REAP_SECONDS" ] || continue
     fm_remote_job_reap "$account_home" "$id" || true
   done
 }
 
 fm_remote_job_launchagent_paths() { # <account-home>
   local account_home=$1
-  FM_REMOTE_JOB_LAUNCH_AGENT_DIR="$account_home/Library/LaunchAgents"
-  FM_REMOTE_JOB_LAUNCH_AGENT_PLIST="$FM_REMOTE_JOB_LAUNCH_AGENT_DIR/$FM_REMOTE_JOB_LABEL.plist"
-  FM_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR="$account_home/Library/Logs"
-  FM_REMOTE_JOB_LAUNCH_AGENT_LOG="$FM_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR/$FM_REMOTE_JOB_LABEL.log"
+  SQUAD_REMOTE_JOB_LAUNCH_AGENT_DIR="$account_home/Library/LaunchAgents"
+  SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST="$SQUAD_REMOTE_JOB_LAUNCH_AGENT_DIR/$SQUAD_REMOTE_JOB_LABEL.plist"
+  SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR="$account_home/Library/Logs"
+  SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG="$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR/$SQUAD_REMOTE_JOB_LABEL.log"
 }
 
 fm_remote_job_plist_safe_path() {
@@ -619,17 +619,17 @@ fm_remote_job_plist_safe_path() {
 
 fm_remote_job_render_launchagent() { # <remote-root> <account-home>
   local root=$1 account_home=$2 worker
-  worker="$root/bin/fm-remote-job-worker.sh"
+  worker="$root/bin/sq-remote-job-worker.sh"
   fm_remote_job_launchagent_paths "$account_home"
   fm_remote_job_plist_safe_path "$worker" && fm_remote_job_plist_safe_path "$account_home" &&
-    fm_remote_job_plist_safe_path "$FM_REMOTE_JOB_LAUNCH_AGENT_LOG" || return 1
+    fm_remote_job_plist_safe_path "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG" || return 1
   cat <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>$FM_REMOTE_JOB_LABEL</string>
+	<string>$SQUAD_REMOTE_JOB_LABEL</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>$worker</string>
@@ -638,7 +638,7 @@ fm_remote_job_render_launchagent() { # <remote-root> <account-home>
 	<dict>
 		<key>HOME</key>
 		<string>$account_home</string>
-		<key>FM_ROOT_OVERRIDE</key>
+		<key>SQUAD_ROOT_OVERRIDE</key>
 		<string>$root</string>
 	</dict>
 	<key>LimitLoadToSessionType</key>
@@ -648,9 +648,9 @@ fm_remote_job_render_launchagent() { # <remote-root> <account-home>
 	<key>KeepAlive</key>
 	<true/>
 	<key>StandardOutPath</key>
-	<string>$FM_REMOTE_JOB_LAUNCH_AGENT_LOG</string>
+	<string>$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG</string>
 	<key>StandardErrorPath</key>
-	<string>$FM_REMOTE_JOB_LAUNCH_AGENT_LOG</string>
+	<string>$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG</string>
 </dict>
 </plist>
 XML
@@ -659,8 +659,8 @@ XML
 fm_remote_job_launchagent_contract_matches() { # <remote-root> <account-home>
   local root=$1 account_home=$2 actual expected
   fm_remote_job_launchagent_paths "$account_home"
-  [ -f "$FM_REMOTE_JOB_LAUNCH_AGENT_PLIST" ] && [ ! -L "$FM_REMOTE_JOB_LAUNCH_AGENT_PLIST" ] || return 1
-  actual=$(tr -d ' \t\r\n' < "$FM_REMOTE_JOB_LAUNCH_AGENT_PLIST" 2>/dev/null) || return 1
+  [ -f "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST" ] && [ ! -L "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST" ] || return 1
+  actual=$(tr -d ' \t\r\n' < "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST" 2>/dev/null) || return 1
   expected=$(fm_remote_job_render_launchagent "$root" "$account_home" | tr -d ' \t\r\n') || return 1
   [ "$actual" = "$expected" ]
 }
@@ -673,18 +673,18 @@ fm_remote_job_gui_available() { # <uid>
 fm_remote_job_launchagent_loaded() { # <remote-root> <account-home> <uid>
   local root=$1 account_home=$2 uid=$3 worker loaded compact
   fm_remote_job_launchagent_paths "$account_home"
-  worker="$root/bin/fm-remote-job-worker.sh"
-  loaded=$(launchctl print "gui/$uid/$FM_REMOTE_JOB_LABEL" 2>/dev/null) || return 1
+  worker="$root/bin/sq-remote-job-worker.sh"
+  loaded=$(launchctl print "gui/$uid/$SQUAD_REMOTE_JOB_LABEL" 2>/dev/null) || return 1
   compact=$(printf '%s' "$loaded" | tr -d ' \t\r\n') || return 1
-  [[ "$compact" == *"$FM_REMOTE_JOB_LABEL"* ]] || return 1
+  [[ "$compact" == *"$SQUAD_REMOTE_JOB_LABEL"* ]] || return 1
   [[ "$compact" == *"$worker"* ]] || return 1
-  [[ "$compact" == *"$FM_REMOTE_JOB_LAUNCH_AGENT_PLIST"* ]] || return 1
+  [[ "$compact" == *"$SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST"* ]] || return 1
 }
 
-fm_remote_job_worker_pid_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.pid"; }
-fm_remote_job_worker_ready_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.ready"; }
-fm_remote_job_worker_identity_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.identity"; }
-fm_remote_job_worker_lock_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.lock"; }
+fm_remote_job_worker_pid_path() { printf '%s\n' "$SQUAD_REMOTE_JOB_STATE/worker.pid"; }
+fm_remote_job_worker_ready_path() { printf '%s\n' "$SQUAD_REMOTE_JOB_STATE/worker.ready"; }
+fm_remote_job_worker_identity_path() { printf '%s\n' "$SQUAD_REMOTE_JOB_STATE/worker.identity"; }
+fm_remote_job_worker_lock_path() { printf '%s\n' "$SQUAD_REMOTE_JOB_STATE/worker.lock"; }
 
 fm_remote_job_process_start() {
   local pid=$1 ps_bin value
@@ -713,7 +713,7 @@ fm_remote_job_process_pgid() { # <pid>
   printf '%s\n' "$value"
 }
 
-# The code root a worker serves is still a genuine Firstmate checkout. A worker
+# The code root a worker serves is still a genuine Squad checkout. A worker
 # whose root fails this can never claim, validate, or execute another job, so
 # the same predicate decides both self-termination and orphan reaping.
 fm_remote_job_root_is_live() { # <remote-root>
@@ -721,7 +721,7 @@ fm_remote_job_root_is_live() { # <remote-root>
   [ -n "$root" ] || return 1
   [ -d "$root" ] && [ ! -L "$root" ] || return 1
   [ -f "$root/AGENTS.md" ] && [ ! -L "$root/AGENTS.md" ] || return 1
-  [ -f "$root/bin/fm-remote-job-worker.sh" ] && [ ! -L "$root/bin/fm-remote-job-worker.sh" ]
+  [ -f "$root/bin/sq-remote-job-worker.sh" ] && [ ! -L "$root/bin/sq-remote-job-worker.sh" ]
 }
 
 # The isolated process group that owns <pid>'s whole worker tree, echoed only
@@ -736,7 +736,7 @@ fm_remote_job_worker_process_group() { # <pid>
   own_pgid=$(fm_remote_job_process_pgid "$$") || return 1
   [ "$pgid" != "$own_pgid" ] || return 1
   leader_command=$(fm_remote_job_process_command "$pgid" 2>/dev/null || true)
-  case "$leader_command" in *fm-remote-job-worker.sh*) ;; *) return 1 ;; esac
+  case "$leader_command" in *sq-remote-job-worker.sh*) ;; *) return 1 ;; esac
   printf '%s\n' "$pgid"
 }
 
@@ -789,12 +789,12 @@ fm_remote_job_lock_owner_matches_process() {
   recorded_command=$(fm_remote_job_read_single_line "$lock/command" 8192) || return 1
   actual_command=$(fm_remote_job_process_command "$pid") || return 1
   [ "$recorded_command" = "$actual_command" ] || return 1
-  FM_REMOTE_JOB_OWNER_PID=$pid
+  SQUAD_REMOTE_JOB_OWNER_PID=$pid
 }
 
 fm_remote_job_worker_owned_alive() {
   local root=$1 account_home=$2 lock pid pid_file identity_file command ps_bin
-  [ "${FM_REMOTE_JOB_ACTIVE:-}" != 1 ] || return 0
+  [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" != 1 ] || return 0
   fm_remote_job_prepare_state "$account_home" || return 1
   lock=$(fm_remote_job_worker_lock_path)
   [ -d "$lock" ] && [ ! -L "$lock" ] || return 1
@@ -806,7 +806,7 @@ fm_remote_job_worker_owned_alive() {
   fm_remote_job_regular_bounded "$identity_file" 256 || return 1
   fm_remote_job_probe "$account_home" || return 1
   if fm_remote_job_lock_owner_matches_process "$account_home"; then
-    [ "$pid" = "$FM_REMOTE_JOB_OWNER_PID" ] || return 1
+    [ "$pid" = "$SQUAD_REMOTE_JOB_OWNER_PID" ] || return 1
     return 0
   fi
   [ ! -e "$lock/pid" ] && [ ! -L "$lock/pid" ] &&
@@ -814,21 +814,21 @@ fm_remote_job_worker_owned_alive() {
     [ ! -e "$lock/command" ] && [ ! -L "$lock/command" ] || return 1
   if [ -x /bin/ps ]; then ps_bin=/bin/ps; elif [ -x /usr/bin/ps ]; then ps_bin=/usr/bin/ps; else return 1; fi
   command=$("$ps_bin" -p "$pid" -o command= 2>/dev/null) || return 1
-  case "$command" in *"$root/bin/fm-remote-job-worker.sh"*) FM_REMOTE_JOB_OWNER_PID=$pid; return 0 ;; esac
+  case "$command" in *"$root/bin/sq-remote-job-worker.sh"*) SQUAD_REMOTE_JOB_OWNER_PID=$pid; return 0 ;; esac
   return 1
 }
 
 fm_remote_job_code_identity() { # <remote-root> <account-home>
   local root=$1 account_home=$2 git_bin root_hash library_hash worker_hash
   root=$(fm_remote_job_canonical_existing_dir "$root") || return 1
-  [ -f "$root/bin/fm-remote-job-lib.sh" ] && [ ! -L "$root/bin/fm-remote-job-lib.sh" ] || return 1
-  [ -f "$root/bin/fm-remote-job-worker.sh" ] && [ ! -L "$root/bin/fm-remote-job-worker.sh" ] || return 1
+  [ -f "$root/bin/sq-remote-job-lib.sh" ] && [ ! -L "$root/bin/sq-remote-job-lib.sh" ] || return 1
+  [ -f "$root/bin/sq-remote-job-worker.sh" ] && [ ! -L "$root/bin/sq-remote-job-worker.sh" ] || return 1
   fm_remote_job_compose_operator_path "$account_home" >/dev/null
   git_bin=$(fm_remote_job_operator_tool git 2>/dev/null || true)
   [ -n "$git_bin" ] || return 1
   root_hash=$(printf '%s' "$root" | "$git_bin" hash-object --stdin 2>/dev/null) || return 1
-  library_hash=$("$git_bin" hash-object -- "$root/bin/fm-remote-job-lib.sh" 2>/dev/null) || return 1
-  worker_hash=$("$git_bin" hash-object -- "$root/bin/fm-remote-job-worker.sh" 2>/dev/null) || return 1
+  library_hash=$("$git_bin" hash-object -- "$root/bin/sq-remote-job-lib.sh" 2>/dev/null) || return 1
+  worker_hash=$("$git_bin" hash-object -- "$root/bin/sq-remote-job-worker.sh" 2>/dev/null) || return 1
   case "$root_hash:$library_hash:$worker_hash" in *[!0-9a-f:]*) return 1 ;; esac
   [ -n "$root_hash" ] && [ -n "$library_hash" ] && [ -n "$worker_hash" ] || return 1
   printf '%s:%s:%s\n' "$root_hash" "$library_hash" "$worker_hash"
@@ -836,7 +836,7 @@ fm_remote_job_code_identity() { # <remote-root> <account-home>
 
 fm_remote_job_worker_identity_matches() { # <remote-root> <account-home>
   local root=$1 account_home=$2 identity_file expected actual extra
-  [ "${FM_REMOTE_JOB_ACTIVE:-}" != 1 ] || return 0
+  [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" != 1 ] || return 0
   fm_remote_job_prepare_state "$account_home" || return 1
   identity_file=$(fm_remote_job_worker_identity_path)
   fm_remote_job_regular_bounded "$identity_file" 256 || return 1
@@ -859,7 +859,7 @@ fm_remote_job_worker_alive() { # <account-home>
 
 fm_remote_job_probe() { # <account-home>; a fresh worker heartbeat or active job proves readiness
   local account_home=$1 ready lock mtime now
-  [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] && return 0
+  [ "${SQUAD_REMOTE_JOB_ACTIVE:-}" = 1 ] && return 0
   fm_remote_job_prepare_state "$account_home" || return 1
   lock=$(fm_remote_job_worker_lock_path)
   [ ! -e "$lock/quarantine" ] && [ ! -L "$lock/quarantine" ] || return 1
@@ -884,23 +884,23 @@ fm_remote_job_wait_for_probe() { # <remote-root> <account-home>
 fm_remote_job_write_launchagent() { # <remote-root> <account-home>
   local root=$1 account_home=$2 tmp
   fm_remote_job_launchagent_paths "$account_home"
-  if ! mkdir -p "$FM_REMOTE_JOB_LAUNCH_AGENT_DIR" 2>/dev/null ||
-    ! mkdir -p "$FM_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR" 2>/dev/null; then
-    FM_REMOTE_JOB_ERROR="cannot create the remote job LaunchAgent directories"
+  if ! mkdir -p "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_DIR" 2>/dev/null ||
+    ! mkdir -p "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR" 2>/dev/null; then
+    SQUAD_REMOTE_JOB_ERROR="cannot create the remote job LaunchAgent directories"
     return 1
   fi
-  [ -d "$FM_REMOTE_JOB_LAUNCH_AGENT_DIR" ] && [ ! -L "$FM_REMOTE_JOB_LAUNCH_AGENT_DIR" ] || return 1
-  [ -d "$FM_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR" ] && [ ! -L "$FM_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR" ] || return 1
-  tmp="$FM_REMOTE_JOB_LAUNCH_AGENT_DIR/.$FM_REMOTE_JOB_LABEL.plist.tmp.$$"
+  [ -d "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_DIR" ] && [ ! -L "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_DIR" ] || return 1
+  [ -d "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR" ] && [ ! -L "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_LOG_DIR" ] || return 1
+  tmp="$SQUAD_REMOTE_JOB_LAUNCH_AGENT_DIR/.$SQUAD_REMOTE_JOB_LABEL.plist.tmp.$$"
   fm_remote_job_render_launchagent "$root" "$account_home" > "$tmp" || {
     rm -f -- "$tmp"
-    FM_REMOTE_JOB_ERROR="remote job paths cannot be embedded safely in a property list"
+    SQUAD_REMOTE_JOB_ERROR="remote job paths cannot be embedded safely in a property list"
     return 1
   }
   chmod 0644 "$tmp" 2>/dev/null || true
-  mv -f -- "$tmp" "$FM_REMOTE_JOB_LAUNCH_AGENT_PLIST" || {
+  mv -f -- "$tmp" "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST" || {
     rm -f -- "$tmp"
-    FM_REMOTE_JOB_ERROR="cannot publish $FM_REMOTE_JOB_LAUNCH_AGENT_PLIST"
+    SQUAD_REMOTE_JOB_ERROR="cannot publish $SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST"
     return 1
   }
 }
@@ -908,22 +908,22 @@ fm_remote_job_write_launchagent() { # <remote-root> <account-home>
 fm_remote_job_reload_launchagent() { # <account-home> <uid>
   local account_home=$1 uid=$2 out
   fm_remote_job_launchagent_paths "$account_home"
-  launchctl bootout "gui/$uid/$FM_REMOTE_JOB_LABEL" >/dev/null 2>&1 || true
-  if ! out=$(launchctl bootstrap "gui/$uid" "$FM_REMOTE_JOB_LAUNCH_AGENT_PLIST" 2>&1); then
-    FM_REMOTE_JOB_ERROR="launchctl bootstrap gui/$uid refused: ${out:-no diagnostic}"
+  launchctl bootout "gui/$uid/$SQUAD_REMOTE_JOB_LABEL" >/dev/null 2>&1 || true
+  if ! out=$(launchctl bootstrap "gui/$uid" "$SQUAD_REMOTE_JOB_LAUNCH_AGENT_PLIST" 2>&1); then
+    SQUAD_REMOTE_JOB_ERROR="launchctl bootstrap gui/$uid refused: ${out:-no diagnostic}"
     return 1
   fi
-  if ! out=$(launchctl kickstart -k "gui/$uid/$FM_REMOTE_JOB_LABEL" 2>&1); then
-    FM_REMOTE_JOB_ERROR="launchctl kickstart gui/$uid/$FM_REMOTE_JOB_LABEL refused: ${out:-no diagnostic}"
+  if ! out=$(launchctl kickstart -k "gui/$uid/$SQUAD_REMOTE_JOB_LABEL" 2>&1); then
+    SQUAD_REMOTE_JOB_ERROR="launchctl kickstart gui/$uid/$SQUAD_REMOTE_JOB_LABEL refused: ${out:-no diagnostic}"
     return 1
   fi
 }
 
 fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   local root=$1 account_home=$2 worker pid
-  worker="$root/bin/fm-remote-job-worker.sh"
+  worker="$root/bin/sq-remote-job-worker.sh"
   [ -f "$worker" ] && [ ! -L "$worker" ] && [ -x "$worker" ] || {
-    FM_REMOTE_JOB_ERROR="remote job worker is not a genuine executable in the configured code root"
+    SQUAD_REMOTE_JOB_ERROR="remote job worker is not a genuine executable in the configured code root"
     return 1
   }
   fm_remote_job_prepare_state "$account_home" || return 1
@@ -932,13 +932,13 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
     # The owner pid is the serving child; its restart supervisor sits above it
     # and would immediately replace a lone process kill, so stop the whole
     # worker tree through its isolated group.
-    pid=$FM_REMOTE_JOB_OWNER_PID
+    pid=$SQUAD_REMOTE_JOB_OWNER_PID
     fm_remote_job_stop_worker_tree "$pid" || {
-      FM_REMOTE_JOB_ERROR="stale remote job worker did not stop safely"
+      SQUAD_REMOTE_JOB_ERROR="stale remote job worker did not stop safely"
       return 1
     }
     wait "$pid" 2>/dev/null || true
-    FM_REMOTE_JOB_REPAIRED=1
+    SQUAD_REMOTE_JOB_REPAIRED=1
   fi
   # Job control puts the worker tree in its own process group, so a later stop
   # can signal every descendant at once without ever reaching the caller's own
@@ -946,50 +946,50 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   set -m
   nohup env \
     HOME="$account_home" \
-    FM_ROOT_OVERRIDE="$root" \
-    FM_REMOTE_JOB_STATE_ROOT="$FM_REMOTE_JOB_STATE" \
-    FM_REMOTE_JOB_PLATFORM_OVERRIDE="${FM_REMOTE_JOB_PLATFORM_OVERRIDE:-}" \
-    "$worker" >> "$FM_REMOTE_JOB_STATE/logs/$FM_REMOTE_JOB_LABEL.log" 2>&1 < /dev/null &
+    SQUAD_ROOT_OVERRIDE="$root" \
+    SQUAD_REMOTE_JOB_STATE_ROOT="$SQUAD_REMOTE_JOB_STATE" \
+    SQUAD_REMOTE_JOB_PLATFORM_OVERRIDE="${SQUAD_REMOTE_JOB_PLATFORM_OVERRIDE:-}" \
+    "$worker" >> "$SQUAD_REMOTE_JOB_STATE/logs/$SQUAD_REMOTE_JOB_LABEL.log" 2>&1 < /dev/null &
   pid=$!
   set +m
-  case "$pid" in ''|*[!0-9]*) FM_REMOTE_JOB_ERROR="could not start the remote job worker"; return 1 ;; esac
-  FM_REMOTE_JOB_REPAIRED=1
+  case "$pid" in ''|*[!0-9]*) SQUAD_REMOTE_JOB_ERROR="could not start the remote job worker"; return 1 ;; esac
+  SQUAD_REMOTE_JOB_REPAIRED=1
 }
 
 fm_remote_job_ensure_worker() { # <remote-root> <account-home>
   local root=$1 account_home=$2 platform uid identity_matches=0
-  FM_REMOTE_JOB_ERROR=
-  FM_REMOTE_JOB_REPAIRED=0
+  SQUAD_REMOTE_JOB_ERROR=
+  SQUAD_REMOTE_JOB_REPAIRED=0
   root=$(fm_remote_job_canonical_existing_dir "$root") || {
-    FM_REMOTE_JOB_ERROR="configured remote root is unavailable or unsafe"
+    SQUAD_REMOTE_JOB_ERROR="configured remote root is unavailable or unsafe"
     return 1
   }
   account_home=$(fm_remote_job_canonical_existing_dir "$account_home") || {
-    FM_REMOTE_JOB_ERROR="remote account home is unavailable or unsafe"
+    SQUAD_REMOTE_JOB_ERROR="remote account home is unavailable or unsafe"
     return 1
   }
-  [ -f "$root/bin/fm-remote-job-worker.sh" ] && [ ! -L "$root/bin/fm-remote-job-worker.sh" ] &&
-    [ -x "$root/bin/fm-remote-job-worker.sh" ] || {
-    FM_REMOTE_JOB_ERROR="configured remote root has no safe executable remote job worker"
+  [ -f "$root/bin/sq-remote-job-worker.sh" ] && [ ! -L "$root/bin/sq-remote-job-worker.sh" ] &&
+    [ -x "$root/bin/sq-remote-job-worker.sh" ] || {
+    SQUAD_REMOTE_JOB_ERROR="configured remote root has no safe executable remote job worker"
     return 1
   }
   platform=$(fm_remote_job_platform)
   fm_remote_job_worker_identity_matches "$root" "$account_home" && identity_matches=1
   if [ "$platform" = darwin ]; then
     uid=$(id -u 2>/dev/null || true)
-    case "$uid" in ''|*[!0-9]*) FM_REMOTE_JOB_ERROR="remote account uid is unavailable; run fm-on.sh <route> fm-remote-doctor.sh --fix"; return 1 ;; esac
+    case "$uid" in ''|*[!0-9]*) SQUAD_REMOTE_JOB_ERROR="remote account uid is unavailable; run sq-on.sh <route> sq-remote-doctor.sh --fix"; return 1 ;; esac
     if ! fm_remote_job_gui_available "$uid"; then
-      FM_REMOTE_JOB_ERROR="no Aqua login session exists for uid $uid; log that account in at the console, then run fm-on.sh <route> fm-remote-doctor.sh --fix"
+      SQUAD_REMOTE_JOB_ERROR="no Aqua login session exists for uid $uid; log that account in at the console, then run sq-on.sh <route> sq-remote-doctor.sh --fix"
       return 1
     fi
     if ! fm_remote_job_launchagent_contract_matches "$root" "$account_home"; then
       fm_remote_job_write_launchagent "$root" "$account_home" || return 1
-      FM_REMOTE_JOB_REPAIRED=1
+      SQUAD_REMOTE_JOB_REPAIRED=1
     fi
     if ! fm_remote_job_launchagent_loaded "$root" "$account_home" "$uid" ||
-      [ "$FM_REMOTE_JOB_REPAIRED" -eq 1 ] || [ "$identity_matches" -eq 0 ]; then
+      [ "$SQUAD_REMOTE_JOB_REPAIRED" -eq 1 ] || [ "$identity_matches" -eq 0 ]; then
       fm_remote_job_reload_launchagent "$account_home" "$uid" || return 1
-      FM_REMOTE_JOB_REPAIRED=1
+      SQUAD_REMOTE_JOB_REPAIRED=1
     fi
   else
     fm_remote_job_start_linux_worker "$root" "$account_home" || return 1
@@ -997,7 +997,7 @@ fm_remote_job_ensure_worker() { # <remote-root> <account-home>
   fm_remote_job_wait_for_probe "$root" "$account_home" && return 0
   if [ "$platform" = darwin ]; then
     fm_remote_job_reload_launchagent "$account_home" "$uid" || return 1
-    FM_REMOTE_JOB_REPAIRED=1
+    SQUAD_REMOTE_JOB_REPAIRED=1
     fm_remote_job_wait_for_probe "$root" "$account_home" && return 0
   else
     # A replaced Linux supervisor can lose its first ownership race while the
@@ -1005,10 +1005,10 @@ fm_remote_job_ensure_worker() { # <remote-root> <account-home>
     # idempotent start once, matching the bounded recovery already used above
     # for launchd, before reporting a startup failure.
     fm_remote_job_start_linux_worker "$root" "$account_home" || return 1
-    FM_REMOTE_JOB_REPAIRED=1
+    SQUAD_REMOTE_JOB_REPAIRED=1
     fm_remote_job_wait_for_probe "$root" "$account_home" && return 0
   fi
   # shellcheck disable=SC2034 # Sourceable API consumed by the entrypoint and remote doctor.
-  FM_REMOTE_JOB_ERROR="remote job worker did not report ready after startup"
+  SQUAD_REMOTE_JOB_ERROR="remote job worker did not report ready after startup"
   return 1
 }

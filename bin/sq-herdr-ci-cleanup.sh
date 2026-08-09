@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# fm-herdr-ci-cleanup.sh - bounded cleanup of CI-owned Herdr lab sessions.
+# sq-herdr-ci-cleanup.sh - bounded cleanup of CI-owned Herdr lab sessions.
 #
 # Snapshot the session list before the real-Herdr suite, then at job end only
 # stop/delete sessions that:
-#   1. match the guarded fm-lab-* name pattern,
+#   1. match the guarded sq-lab-* name pattern,
 #   2. were not present in the pre-suite snapshot (job-proven ownership),
 #   3. report default:false on a fresh session list.
 #
@@ -12,22 +12,22 @@
 # harmlessly; destructive failures for known lab leftovers exit non-zero.
 #
 # Usage:
-#   fm-herdr-ci-cleanup.sh snapshot <path>
-#   fm-herdr-ci-cleanup.sh teardown <snapshot-path>
+#   sq-herdr-ci-cleanup.sh snapshot <path>
+#   sq-herdr-ci-cleanup.sh teardown <snapshot-path>
 set -eu
 
 die() {
-  printf 'fm-herdr-ci-cleanup.sh: %s\n' "$*" >&2
+  printf 'sq-herdr-ci-cleanup.sh: %s\n' "$*" >&2
   exit 1
 }
 
 log() {
-  printf 'fm-herdr-ci-cleanup.sh: %s\n' "$*" >&2
+  printf 'sq-herdr-ci-cleanup.sh: %s\n' "$*" >&2
 }
 
 cmd=${1:-}
 path=${2:-}
-[ -n "$cmd" ] && [ -n "$path" ] || die "usage: fm-herdr-ci-cleanup.sh snapshot|teardown <path>"
+[ -n "$cmd" ] && [ -n "$path" ] || die "usage: sq-herdr-ci-cleanup.sh snapshot|teardown <path>"
 
 if ! command -v herdr >/dev/null 2>&1; then
   log "herdr not on PATH; nothing to $cmd"
@@ -42,7 +42,7 @@ list_sessions_json() {
 
 is_lab_name() {
   local name=$1
-  [[ "$name" =~ ^fm-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]
+  [[ "$name" =~ ^sq-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]
 }
 
 case "$cmd" in
@@ -59,13 +59,13 @@ case "$cmd" in
     candidates=$(printf '%s' "$after_json" | jq -r --argjson before "$before" '
       .sessions[]?
       | select(.default == false)
-      | select(.name | test("^fm-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$"))
+      | select(.name | test("^sq-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$"))
       | select((.name as $n | $before | index($n) | not))
       | .name
     ')
     failed=0
     if [ -z "$candidates" ]; then
-      log "no job-owned fm-lab-* sessions to clean"
+      log "no job-owned sq-lab-* sessions to clean"
       exit 0
     fi
     while IFS= read -r name; do

@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Push declared inherited local material to live secondmate homes.
-# Usage: fm-config-push.sh [--help]
+# Push declared inherited local material to live XO homes.
+# Usage: sq-config-push.sh [--help]
 #
 # Mid-session convergence for inherited local material such as
-# config/crew-dispatch.json, config/backend, or data/captain-shared.md updates.
-# This discovers live secondmate homes from state/*.meta, backfills
-# home= from data/secondmates.md for older meta records, and reuses the same
+# config/crew-dispatch.json, config/backend, or data/commander-shared.md updates.
+# This discovers live XO homes from state/*.meta, backfills
+# home= from data/XOs.md for older meta records, and reuses the same
 # propagation machinery as bootstrap, but deliberately does not
 # fast-forward tracked files.
 # After a successful per-home propagation that changes any allowlisted config/*
 # item, local routes receive the generation-specific literal-content pointer from
-# fm-config-inherit-lib.sh. Remote routes receive one durable marked reread nudge
-# through their SSH route. Unchanged config and data/captain-shared.md-only
+# sq-config-inherit-lib.sh. Remote routes receive one durable marked reread nudge
+# through their SSH route. Unchanged config and data/commander-shared.md-only
 # updates send no reread unless a previous send failure is pending for that home.
 # Warnings-only skips exit 0; real propagation or reread-send errors exit non-zero.
 set -u
 
 usage() {
   cat <<'EOF'
-Usage: fm-config-push.sh [--help]
+Usage: sq-config-push.sh [--help]
 
-Push the primary firstmate home's declared inherited local material into each
-live secondmate home.
+Push the primary Squad home's declared inherited local material into each
+live XO home.
 
 This is local-material-only:
   - does not fast-forward tracked files
@@ -32,16 +32,16 @@ This is local-material-only:
     skipped, or error
   - exits non-zero for real propagation errors or reread-send failures
 
-Live homes come from state/*.meta records with kind=secondmate.
-data/secondmates.md is only a fallback for missing home= fields in older or
+Live homes come from state/*.meta records with kind=xo.
+data/XOs.md is only a fallback for missing home= fields in older or
 incomplete meta records.
 
-Environment overrides follow the rest of firstmate:
-  FM_HOME            active firstmate home
-  FM_ROOT_OVERRIDE  firstmate repo root
-  FM_STATE_OVERRIDE state dir
-  FM_DATA_OVERRIDE  data dir
-  FM_CONFIG_OVERRIDE config dir
+Environment overrides follow the rest of Squad:
+  SQUAD_HOME            active Squad home
+  SQUAD_ROOT_OVERRIDE  Squad repo root
+  SQUAD_STATE_OVERRIDE state dir
+  SQUAD_DATA_OVERRIDE  data dir
+  SQUAD_CONFIG_OVERRIDE config dir
 EOF
 }
 
@@ -53,31 +53,31 @@ case "${1:-}" in
   "")
     ;;
   *)
-    echo "usage: fm-config-push.sh [--help]" >&2
+    echo "usage: sq-config-push.sh [--help]" >&2
     exit 2
     ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-SECONDMATES_MD="$DATA/secondmates.md"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+XOS_MD="$DATA/XOs.md"
 
-"$SCRIPT_DIR/fm-guard.sh" || true
+"$SCRIPT_DIR/sq-guard.sh" || true
 
-# shellcheck source=bin/fm-ff-lib.sh
-. "$SCRIPT_DIR/fm-ff-lib.sh"
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-config-inherit-lib.sh
-. "$SCRIPT_DIR/fm-config-inherit-lib.sh"
-# shellcheck source=bin/fm-secondmate-nudge-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
+# shellcheck source=bin/sq-ff-lib.sh
+. "$SCRIPT_DIR/sq-ff-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-config-inherit-lib.sh
+. "$SCRIPT_DIR/sq-config-inherit-lib.sh"
+# shellcheck source=bin/sq-xo-nudge-lib.sh
+. "$SCRIPT_DIR/sq-xo-nudge-lib.sh"
 
 print_item_report() {
   local report=$1 item status reason
@@ -91,7 +91,7 @@ print_item_report() {
   done < "$report"
 }
 
-records=$(mktemp "${TMPDIR:-/tmp}/fm-config-push-records.XXXXXX" 2>/dev/null) || exit 1
+records=$(mktemp "${TMPDIR:-/tmp}/sq-config-push-records.XXXXXX" 2>/dev/null) || exit 1
 reports=""
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
@@ -103,25 +103,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-live_secondmate_meta_records "$STATE" "$SECONDMATES_MD" > "$records"
+live_XO_meta_records "$STATE" "$XOS_MD" > "$records"
 if [ ! -s "$records" ]; then
-  echo "config-push: no live secondmate homes found"
+  echo "config-push: no live XO homes found"
   exit 0
 fi
 
-echo "config-push: $FM_HOME -> live secondmate homes"
+echo "config-push: $SQUAD_HOME -> live XO homes"
 
 seen_homes=""
 errors=0
 while IFS='|' read -r id home _window meta; do
   [ -n "$id" ] || continue
   if [ -z "$home" ]; then
-    printf 'secondmate %s: skipped - no home= in %s and no registry home\n' "$id" "$meta"
+    printf 'XO %s: skipped - no home= in %s and no registry home\n' "$id" "$meta"
     continue
   fi
   remote_host=$(fm_meta_get "$meta" remote_host)
   if [ -n "$remote_host" ]; then
-    printf 'secondmate %s (%s:%s):\n' "$id" "$remote_host" "$home"
+    printf 'XO %s (%s:%s):\n' "$id" "$remote_host" "$home"
     remote_lock=$(fm_remote_inherit_transaction_lock_path "$STATE" "$id" 2>/dev/null || true)
     if [ -z "$remote_lock" ] || ! fm_lock_acquire_wait "$remote_lock"; then
       echo "  config-reread: transaction lock failed"
@@ -135,25 +135,25 @@ while IFS='|' read -r id home _window meta; do
       fm_lock_release "$remote_lock" || true
       continue
     fi
-    remote_marker=$(fm_secondmate_nudge_marker_path "$STATE" "$id" 2>/dev/null || true)
+    remote_marker=$(fm_XO_nudge_marker_path "$STATE" "$id" 2>/dev/null || true)
     remote_pending=0
     if [ -f "$remote_marker" ] && [ "$(fm_meta_get "$remote_marker" remote)" = 1 ]; then remote_pending=1; fi
-    if ! fm_secondmate_nudge_write "$STATE" "$id" "$home" "" remote \
-      "$FM_REMOTE_SECOND_MATE_NUDGE_MESSAGE" 1; then
+    if ! fm_XO_nudge_write "$STATE" "$id" "$home" "" remote \
+      "$SQUAD_REMOTE_SECOND_MATE_NUDGE_MESSAGE" 1; then
       echo "  config-reread: retry marker failed"
       errors=1
       fm_lock_release "$remote_lock" || true
       continue
     fi
-    if remote_out=$(FM_CONFIG_INHERIT_LIVE=1 \
-      "$SCRIPT_DIR/fm-remote-inherit-push.sh" "$id" "$remote_generation" 2>&1); then
+    if remote_out=$(SQUAD_CONFIG_INHERIT_LIVE=1 \
+      "$SCRIPT_DIR/sq-remote-inherit-push.sh" "$id" "$remote_generation" 2>&1); then
       printf '%s\n' "$remote_out" | sed 's/^/  /'
       remote_nudge=0
       if printf '%s\n' "$remote_out" | grep -Eq '^(pushed|removed):'; then remote_nudge=1; fi
       [ "$remote_pending" -eq 0 ] || remote_nudge=1
       if [ "$remote_nudge" -eq 1 ]; then
-        if FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
-          "$SCRIPT_DIR/fm-send.sh" "fm-$id" "$FM_REMOTE_SECOND_MATE_NUDGE_MESSAGE" >/dev/null 2>&1; then
+        if SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" \
+          "$SCRIPT_DIR/sq-send.sh" "sq-$id" "$SQUAD_REMOTE_SECOND_MATE_NUDGE_MESSAGE" >/dev/null 2>&1; then
           rm -f -- "$remote_marker"
           echo "  config-reread: sent"
         else
@@ -170,20 +170,20 @@ while IFS='|' read -r id home _window meta; do
     fm_lock_release "$remote_lock" || true
     continue
   fi
-  if ! validate_secondmate_home "$id" "$home"; then
-    printf 'secondmate %s (%s): skipped - unsafe home: %s\n' "$id" "$home" "$VALIDATION_ERROR"
+  if ! validate_XO_home "$id" "$home"; then
+    printf 'XO %s (%s): skipped - unsafe home: %s\n' "$id" "$home" "$VALIDATION_ERROR"
     continue
   fi
   home_real="$VALIDATED_HOME"
   case " $seen_homes " in
     *" $home_real "*)
-      printf 'secondmate %s (%s): skipped - already processed for another live meta\n' "$id" "$home_real"
+      printf 'XO %s (%s): skipped - already processed for another live meta\n' "$id" "$home_real"
       continue
       ;;
   esac
   seen_homes="$seen_homes $home_real"
 
-  printf 'secondmate %s (%s):\n' "$id" "$home_real"
+  printf 'XO %s (%s):\n' "$id" "$home_real"
   dirty=$(dirty_status "$home_real" yes || true)
   if [ -n "$dirty" ]; then
     echo "  home: dirty working tree - local-material push continuing"
@@ -204,9 +204,9 @@ while IFS='|' read -r id home _window meta; do
     errors=1
     continue
   }
-  if fm_config_reread_retry_queue_is_full "$FM_HOME" "$id"; then
+  if fm_config_reread_retry_queue_is_full "$SQUAD_HOME" "$id"; then
     fm_config_reread_retry_pending "$id" "$home_real" || true
-    if fm_config_reread_retry_queue_is_full "$FM_HOME" "$id"; then
+    if fm_config_reread_retry_queue_is_full "$SQUAD_HOME" "$id"; then
       echo "  config-reread: error - retry instruction queue is full"
       errors=1
       fm_lock_release "$home_lock" || true
@@ -214,26 +214,26 @@ while IFS='|' read -r id home _window meta; do
     fi
   fi
 
-  report=$(mktemp "${TMPDIR:-/tmp}/fm-config-push-report.XXXXXX" 2>/dev/null) || {
+  report=$(mktemp "${TMPDIR:-/tmp}/sq-config-push-report.XXXXXX" 2>/dev/null) || {
     echo "  home: error - could not create report file"
     errors=1
     fm_lock_release "$home_lock" || true
     continue
   }
   reports="$reports $report"
-  if FM_CONFIG_INHERIT_REPORT="$report" FM_CONFIG_INHERIT_LIVE=1 \
-    propagate_secondmate_inheritance "$FM_HOME" "$home_real" "$CONFIG" "$DATA"; then
+  if SQUAD_CONFIG_INHERIT_REPORT="$report" SQUAD_CONFIG_INHERIT_LIVE=1 \
+    propagate_XO_inheritance "$SQUAD_HOME" "$home_real" "$CONFIG" "$DATA"; then
     :
   else
     errors=1
   fi
   print_item_report "$report"
   reread_pending=0
-  if fm_config_reread_has_pending "$home_real" || fm_config_reread_has_staged "$FM_HOME" "$id"; then
+  if fm_config_reread_has_pending "$home_real" || fm_config_reread_has_staged "$SQUAD_HOME" "$id"; then
     reread_pending=1
   fi
-  if reread_out=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" \
-    FM_STATE_OVERRIDE="$STATE" \
+  if reread_out=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    SQUAD_STATE_OVERRIDE="$STATE" \
     fm_config_send_reread_nudge "$id" "$home_real" "$report" 2>&1); then
     if [ -n "$(fm_config_reread_changed_items "$report")" ] || [ "$reread_pending" -eq 1 ]; then
       printf '  config-reread: sent\n'

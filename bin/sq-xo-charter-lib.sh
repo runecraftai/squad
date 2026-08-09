@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Shared extraction of secondmate registry summary and scope from a charter.
-# Source only. FM_SECONDMATE_CHARTER and FM_SECONDMATE_SCOPE remain explicit
+# Shared extraction of XO registry summary and scope from a charter.
+# Source only. SQUAD_XO_CHARTER and SQUAD_XO_SCOPE remain explicit
 # caller overrides; otherwise the named sections in the filled brief are used.
 
 normalize_registry_text() {
@@ -27,8 +27,8 @@ brief_section_text() {
 
 registry_summary_for_brief() {
   local brief=$1
-  if [ -n "${FM_SECONDMATE_CHARTER:-}" ]; then
-    printf '%s\n' "$FM_SECONDMATE_CHARTER" | normalize_registry_text
+  if [ -n "${SQUAD_XO_CHARTER:-}" ]; then
+    printf '%s\n' "$SQUAD_XO_CHARTER" | normalize_registry_text
   else
     brief_section_text "$brief" "Charter" | normalize_registry_text
   fi
@@ -36,8 +36,8 @@ registry_summary_for_brief() {
 
 registry_scope_for_brief() {
   local brief=$1
-  if [ -n "${FM_SECONDMATE_SCOPE:-}" ]; then
-    printf '%s\n' "$FM_SECONDMATE_SCOPE" | normalize_registry_text
+  if [ -n "${SQUAD_XO_SCOPE:-}" ]; then
+    printf '%s\n' "$SQUAD_XO_SCOPE" | normalize_registry_text
   else
     brief_section_text "$brief" "Routing scope" | normalize_registry_text
   fi

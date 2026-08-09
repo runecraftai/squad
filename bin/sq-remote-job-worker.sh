@@ -1,34 +1,34 @@
 #!/bin/bash
-# Long-lived per-account worker for remote fm-on jobs.
+# Long-lived per-account worker for remote sq-on jobs.
 #
-# This process is launched by the Firstmate-owned dev.firstmate.remote-job
+# This process is launched by the Squad-owned dev.Squad.remote-job
 # LaunchAgent on macOS and by a detached restart supervisor on Linux. It claims
-# only complete 0700 records staged by fm-remote-job-lib.sh under the fixed
+# only complete 0700 records staged by sq-remote-job-lib.sh under the fixed
 # account queue, refuses symlinks and malformed records, and executes only a
-# tracked non-symlink fm-*.sh under this worker's configured FM_ROOT/bin.
+# tracked non-symlink sq-*.sh under this worker's configured SQUAD_ROOT/bin.
 #
 # Each child runs under env -i with the shared filesystem-composed PATH, HOME,
-# FM_HOME, FM_ROOT_OVERRIDE, and FM_REMOTE_JOB_ACTIVE=1. Commands receive their
+# SQUAD_HOME, SQUAD_ROOT_OVERRIDE, and SQUAD_REMOTE_JOB_ACTIVE=1. Commands receive their
 # captured stdin and have a 360-second default timeout. Their stdout and stderr
 # are independently constrained to the job library's 1048576-byte bound. A
 # record is marked done only after its bounded outputs and numeric exit status
 # have been committed. The library header owns the exact record fields and
 # lifecycle.
 #
-# The worker is abandoned when its configured FM_ROOT stops being a genuine
-# Firstmate checkout - the state a pruned no-mistakes gate worktree, a returned
+# The worker is abandoned when its configured SQUAD_ROOT stops being a genuine
+# Squad checkout - the state a pruned no-mistakes gate worktree, a returned
 # pooled worktree, or a removed test fixture root leaves behind. It can never
 # validate or execute another job from a root that is gone, so both the serving
 # loop and the Linux restart supervisor stop instead of polling forever
-# reparented to init. FM_REMOTE_JOB_ORPHAN_GRACE_SECONDS is how long the root
+# reparented to init. SQUAD_REMOTE_JOB_ORPHAN_GRACE_SECONDS is how long the root
 # must stay missing before that counts, so an ordinary transient never stops a
 # healthy worker. The supervisor additionally refuses to restart a child that
 # keeps failing immediately: it backs off up to
-# FM_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS and gives up after
-# FM_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS consecutive failures, since a restart
+# SQUAD_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS and gives up after
+# SQUAD_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS consecutive failures, since a restart
 # loop that never stays up only burns CPU and grows its log without bound. A
-# child that stays up for FM_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS clears that
-# count. fm-on's ensure path restarts a worker that gave up.
+# child that stays up for SQUAD_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS clears that
+# count. sq-on's ensure path restarts a worker that gave up.
 set -u
 
 # A non-numeric override falls back to the default rather than crashing the
@@ -36,16 +36,16 @@ set -u
 worker_bounded_setting() { # <value> <default>
   case "$1" in ''|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
 }
-FM_REMOTE_JOB_ORPHAN_GRACE_SECONDS=$(worker_bounded_setting "${FM_REMOTE_JOB_ORPHAN_GRACE_SECONDS:-}" 5)
-FM_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS=$(worker_bounded_setting "${FM_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS:-}" 20)
-FM_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS=$(worker_bounded_setting "${FM_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS:-}" 5)
-FM_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS=$(worker_bounded_setting "${FM_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS:-}" 10)
+SQUAD_REMOTE_JOB_ORPHAN_GRACE_SECONDS=$(worker_bounded_setting "${SQUAD_REMOTE_JOB_ORPHAN_GRACE_SECONDS:-}" 5)
+SQUAD_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS=$(worker_bounded_setting "${SQUAD_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS:-}" 20)
+SQUAD_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS=$(worker_bounded_setting "${SQUAD_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS:-}" 5)
+SQUAD_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS=$(worker_bounded_setting "${SQUAD_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS:-}" 10)
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-FM_ROOT=${FM_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}
+SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}
 
-# shellcheck source=bin/fm-remote-job-lib.sh
-. "$SCRIPT_DIR/fm-remote-job-lib.sh"
+# shellcheck source=bin/sq-remote-job-lib.sh
+. "$SCRIPT_DIR/sq-remote-job-lib.sh"
 
 WORKER_ACTIVE_JOB=
 WORKER_LOCK=
@@ -69,7 +69,7 @@ worker_account_home() {
 worker_write_heartbeat() {
   local ready tmp
   ready=$(fm_remote_job_worker_ready_path)
-  tmp=$(umask 077; mktemp "$FM_REMOTE_JOB_STATE/.ready.XXXXXX") || return 1
+  tmp=$(umask 077; mktemp "$SQUAD_REMOTE_JOB_STATE/.ready.XXXXXX") || return 1
   printf '%s\n' "${BASHPID:-$$}" > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" || { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$ready"
@@ -78,7 +78,7 @@ worker_write_heartbeat() {
 worker_publish_pid() {
   local pid_file tmp
   pid_file=$(fm_remote_job_worker_pid_path)
-  tmp=$(umask 077; mktemp "$FM_REMOTE_JOB_STATE/.pid.XXXXXX") || return 1
+  tmp=$(umask 077; mktemp "$SQUAD_REMOTE_JOB_STATE/.pid.XXXXXX") || return 1
   printf '%s\n' "${BASHPID:-$$}" > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" || { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$pid_file"
@@ -86,9 +86,9 @@ worker_publish_pid() {
 
 worker_publish_identity() {
   local account_home=$1 identity identity_file tmp
-  identity=$(fm_remote_job_code_identity "$FM_ROOT" "$account_home") || return 1
+  identity=$(fm_remote_job_code_identity "$SQUAD_ROOT" "$account_home") || return 1
   identity_file=$(fm_remote_job_worker_identity_path)
-  tmp=$(umask 077; mktemp "$FM_REMOTE_JOB_STATE/.identity.XXXXXX") || return 1
+  tmp=$(umask 077; mktemp "$SQUAD_REMOTE_JOB_STATE/.identity.XXXXXX") || return 1
   printf '%s\n' "$identity" > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" || { rm -f -- "$tmp"; return 1; }
   mv -f -- "$tmp" "$identity_file"
@@ -123,7 +123,7 @@ worker_quarantined_execution_stopped() { # <account-home>
   local account_home=$1 job state kind file pid
   fm_remote_job_regular_bounded "$WORKER_LOCK/quarantine" 256 || return 1
   fm_remote_job_lock_owner_matches_process "$account_home" && return 1
-  for job in "$FM_REMOTE_JOB_JOBS"/job-*; do
+  for job in "$SQUAD_REMOTE_JOB_JOBS"/job-*; do
     [ -d "$job" ] && [ ! -L "$job" ] || continue
     state=$(fm_remote_job_read_state "$job" 2>/dev/null || true)
     [ "$state" = running ] || continue
@@ -212,11 +212,11 @@ worker_cleanup() {
 # worker.
 worker_code_root_abandoned() {
   local waited=0
-  fm_remote_job_root_is_live "$FM_ROOT" && return 1
-  while [ "$waited" -lt "$FM_REMOTE_JOB_ORPHAN_GRACE_SECONDS" ]; do
+  fm_remote_job_root_is_live "$SQUAD_ROOT" && return 1
+  while [ "$waited" -lt "$SQUAD_REMOTE_JOB_ORPHAN_GRACE_SECONDS" ]; do
     sleep 1
     waited=$((waited + 1))
-    fm_remote_job_root_is_live "$FM_ROOT" && return 1
+    fm_remote_job_root_is_live "$SQUAD_ROOT" && return 1
   done
   return 0
 }
@@ -278,7 +278,7 @@ worker_stop_active_execution() {
   if [ -n "$job" ]; then
     worker_stop_recorded_execution "$job" || return 1
   else
-    for job in "$FM_REMOTE_JOB_JOBS"/job-*; do
+    for job in "$SQUAD_REMOTE_JOB_JOBS"/job-*; do
       [ -d "$job" ] && [ ! -L "$job" ] || continue
       state=$(fm_remote_job_read_state "$job" 2>/dev/null || true)
       [ "$state" = running ] || continue
@@ -386,7 +386,7 @@ worker_publish_result() { # <job-dir> <exit>
   case "$exit_status" in ''|*[!0-9]*) exit_status=125 ;; esac
   [ "$exit_status" -le 255 ] || exit_status=125
   for tmp in stdout stderr; do
-    fm_remote_job_regular_bounded "$job/$tmp" "$FM_REMOTE_JOB_MAX_BYTES" || return 1
+    fm_remote_job_regular_bounded "$job/$tmp" "$SQUAD_REMOTE_JOB_MAX_BYTES" || return 1
   done
   tmp=$(umask 077; mktemp "$job/.exit.XXXXXX") || return 1
   printf '%s\n' "$exit_status" > "$tmp" || { rm -f -- "$tmp"; return 1; }
@@ -477,7 +477,7 @@ worker_run_with_timeout() { # <job-dir> <seconds> <command> [args...]
       fi
       next_heartbeat=$((SECONDS + 1))
     fi
-    sleep "$FM_REMOTE_JOB_POLL_SECONDS"
+    sleep "$SQUAD_REMOTE_JOB_POLL_SECONDS"
   done
   wait "$group_pid" 2>/dev/null
   rc=$?
@@ -491,14 +491,14 @@ worker_run_with_timeout() { # <job-dir> <seconds> <command> [args...]
 
 worker_job_command() { # <job-dir>; the first argv element of a staged record
   local job=$1 first=
-  fm_remote_job_regular_bounded "$job/argv" "$FM_REMOTE_JOB_MAX_BYTES" || return 1
+  fm_remote_job_regular_bounded "$job/argv" "$SQUAD_REMOTE_JOB_MAX_BYTES" || return 1
   IFS= read -r -d '' first < "$job/argv" || [ -n "$first" ] || return 1
   printf '%s\n' "$first"
 }
 
 worker_preempting_waiter_exists() {
   local job state command
-  for job in "$FM_REMOTE_JOB_JOBS"/job-*; do
+  for job in "$SQUAD_REMOTE_JOB_JOBS"/job-*; do
     [ -d "$job" ] && [ ! -L "$job" ] || continue
     state=$(fm_remote_job_read_state "$job" 2>/dev/null || true)
     [ "$state" = queued ] || continue
@@ -519,7 +519,7 @@ worker_cleanup_output_capture() { # <job-dir> <stdout-reader> <stderr-reader>
 worker_capture_output() { # <fifo> <destination>
   local fifo=$1 destination=$2
   {
-    head -c "$FM_REMOTE_JOB_MAX_BYTES"
+    head -c "$SQUAD_REMOTE_JOB_MAX_BYTES"
     cat >/dev/null
   } < "$fifo" > "$destination"
 }
@@ -532,11 +532,11 @@ worker_run_job() { # <account-home> <job-dir>
   home=$(worker_read_text "$job" home 8192) || { worker_publish_result "$job" 126; return; }
   root=$(fm_remote_job_canonical_existing_dir "$root") || { worker_publish_result "$job" 126; return; }
   home=$(fm_remote_job_canonical_home "$home") || { worker_publish_result "$job" 126; return; }
-  [ "$root" = "$FM_ROOT" ] || { worker_publish_result "$job" 126; return; }
+  [ "$root" = "$SQUAD_ROOT" ] || { worker_publish_result "$job" 126; return; }
   [ -f "$root/AGENTS.md" ] && [ ! -L "$root/AGENTS.md" ] &&
     [ -d "$root/bin" ] && [ ! -L "$root/bin" ] || { worker_publish_result "$job" 126; return; }
-  fm_remote_job_regular_bounded "$job/argv" "$FM_REMOTE_JOB_MAX_BYTES" || { worker_publish_result "$job" 126; return; }
-  fm_remote_job_regular_bounded "$job/stdin" "$FM_REMOTE_JOB_MAX_BYTES" || { worker_publish_result "$job" 126; return; }
+  fm_remote_job_regular_bounded "$job/argv" "$SQUAD_REMOTE_JOB_MAX_BYTES" || { worker_publish_result "$job" 126; return; }
+  fm_remote_job_regular_bounded "$job/stdin" "$SQUAD_REMOTE_JOB_MAX_BYTES" || { worker_publish_result "$job" 126; return; }
   deadline=$(fm_remote_job_read_deadline "$job") || { worker_publish_result "$job" 126; return; }
   remaining=$((deadline - $(date +%s)))
   [ "$remaining" -gt 0 ] || { worker_publish_result "$job" 124; return; }
@@ -544,7 +544,7 @@ worker_run_job() { # <account-home> <job-dir>
   while IFS= read -r -d '' command; do argv+=("$command"); done < "$job/argv"
   [ "${#argv[@]}" -ge 1 ] || { worker_publish_result "$job" 126; return; }
   command=${argv[0]}
-  case "$command" in fm-*.sh) ;; *) worker_publish_result "$job" 126; return ;; esac
+  case "$command" in sq-*.sh) ;; *) worker_publish_result "$job" 126; return ;; esac
   case "$command" in */*|*..*) worker_publish_result "$job" 126; return ;; esac
   if fm_remote_job_command_preemptible "$command"; then preemptible=1; fi
   command_path="$root/bin/$command"
@@ -590,14 +590,14 @@ worker_run_job() { # <account-home> <job-dir>
   stderr_reader=$!
   child_env=(
     /usr/bin/env -i
-    "PATH=$FM_REMOTE_JOB_CHILD_PATH"
+    "PATH=$SQUAD_REMOTE_JOB_CHILD_PATH"
     "HOME=$account_home"
-    "FM_HOME=$home"
-    "FM_ROOT_OVERRIDE=$root"
-    FM_REMOTE_JOB_ACTIVE=1
+    "SQUAD_HOME=$home"
+    "SQUAD_ROOT_OVERRIDE=$root"
+    SQUAD_REMOTE_JOB_ACTIVE=1
   )
-  if [ -n "${FM_REMOTE_JOB_PLATFORM_OVERRIDE:-}" ]; then
-    child_env+=("FM_REMOTE_JOB_PLATFORM_OVERRIDE=$FM_REMOTE_JOB_PLATFORM_OVERRIDE")
+  if [ -n "${SQUAD_REMOTE_JOB_PLATFORM_OVERRIDE:-}" ]; then
+    child_env+=("SQUAD_REMOTE_JOB_PLATFORM_OVERRIDE=$SQUAD_REMOTE_JOB_PLATFORM_OVERRIDE")
   fi
   remaining=$((deadline - $(date +%s)))
   [ "$remaining" -gt 0 ] || {
@@ -624,7 +624,7 @@ worker_run_job() { # <account-home> <job-dir>
 
 worker_process_once() { # <account-home>
   local account_home=$1 job id state queue_deadline timeout deadline
-  for job in "$FM_REMOTE_JOB_JOBS"/job-*; do
+  for job in "$SQUAD_REMOTE_JOB_JOBS"/job-*; do
     [ -d "$job" ] && [ ! -L "$job" ] || continue
     id=${job##*/}
     fm_remote_job_safe_id "$id" || continue
@@ -670,9 +670,9 @@ worker_process_once() { # <account-home>
 main() {
   local account_home lock_status
   account_home=$(worker_account_home) || { worker_error "cannot resolve account home"; exit 1; }
-  FM_ROOT=$(fm_remote_job_canonical_existing_dir "$FM_ROOT") || { worker_error "configured FM_ROOT is unsafe"; exit 1; }
-  [ -f "$FM_ROOT/AGENTS.md" ] && [ ! -L "$FM_ROOT/AGENTS.md" ] || { worker_error "FM_ROOT is not a Firstmate checkout"; exit 1; }
-  fm_remote_job_prepare_state "$account_home" || { worker_error "$FM_REMOTE_JOB_ERROR"; exit 1; }
+  SQUAD_ROOT=$(fm_remote_job_canonical_existing_dir "$SQUAD_ROOT") || { worker_error "configured SQUAD_ROOT is unsafe"; exit 1; }
+  [ -f "$SQUAD_ROOT/AGENTS.md" ] && [ ! -L "$SQUAD_ROOT/AGENTS.md" ] || { worker_error "SQUAD_ROOT is not a Squad checkout"; exit 1; }
+  fm_remote_job_prepare_state "$account_home" || { worker_error "$SQUAD_REMOTE_JOB_ERROR"; exit 1; }
   WORKER_LOCK=$(fm_remote_job_worker_lock_path)
   trap worker_exit_cleanup EXIT
   worker_acquire_lock "$account_home"
@@ -691,7 +691,7 @@ main() {
     # Checked right after a fresh heartbeat, so the grace window cannot make a
     # still-healthy worker read as unready to a concurrent probe.
     if worker_code_root_abandoned; then
-      worker_error "configured FM_ROOT $FM_ROOT no longer exists; stopping the abandoned worker"
+      worker_error "configured SQUAD_ROOT $SQUAD_ROOT no longer exists; stopping the abandoned worker"
       exit 0
     fi
     worker_reap=0
@@ -700,7 +700,7 @@ main() {
       worker_reap=1
     fi
     worker_process_once "$account_home"
-    sleep "$FM_REMOTE_JOB_POLL_SECONDS"
+    sleep "$SQUAD_REMOTE_JOB_POLL_SECONDS"
   done
 }
 
@@ -736,17 +736,17 @@ worker_supervisor_shutdown() {
 worker_supervise_linux() {
   local account_home child_status started failures=0 backoff
   account_home=$(worker_account_home) || { worker_error "cannot resolve account home"; return 1; }
-  FM_ROOT=$(fm_remote_job_canonical_existing_dir "$FM_ROOT") || { worker_error "configured FM_ROOT is unsafe"; return 1; }
-  [ -f "$FM_ROOT/AGENTS.md" ] && [ ! -L "$FM_ROOT/AGENTS.md" ] || { worker_error "FM_ROOT is not a Firstmate checkout"; return 1; }
-  fm_remote_job_prepare_state "$account_home" || { worker_error "$FM_REMOTE_JOB_ERROR"; return 1; }
+  SQUAD_ROOT=$(fm_remote_job_canonical_existing_dir "$SQUAD_ROOT") || { worker_error "configured SQUAD_ROOT is unsafe"; return 1; }
+  [ -f "$SQUAD_ROOT/AGENTS.md" ] && [ ! -L "$SQUAD_ROOT/AGENTS.md" ] || { worker_error "SQUAD_ROOT is not a Squad checkout"; return 1; }
+  fm_remote_job_prepare_state "$account_home" || { worker_error "$SQUAD_REMOTE_JOB_ERROR"; return 1; }
   trap worker_supervisor_shutdown HUP INT TERM
   while :; do
     if worker_code_root_abandoned; then
-      worker_error "configured FM_ROOT $FM_ROOT no longer exists; stopping the abandoned worker supervisor"
+      worker_error "configured SQUAD_ROOT $SQUAD_ROOT no longer exists; stopping the abandoned worker supervisor"
       return 0
     fi
     started=$SECONDS
-    "$SCRIPT_DIR/fm-remote-job-worker.sh" --serve &
+    "$SCRIPT_DIR/sq-remote-job-worker.sh" --serve &
     WORKER_SUPERVISED_PID=$!
     wait "$WORKER_SUPERVISED_PID" 2>/dev/null
     child_status=$?
@@ -760,19 +760,19 @@ worker_supervise_linux() {
     fi
     worker_supervisor_cleanup_dead_child "$account_home" "$WORKER_SUPERVISED_PID" || true
     WORKER_SUPERVISED_PID=
-    if [ $((SECONDS - started)) -ge "$FM_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS" ]; then
+    if [ $((SECONDS - started)) -ge "$SQUAD_REMOTE_JOB_SUPERVISOR_HEALTHY_SECONDS" ]; then
       failures=0
       sleep 0.1
       continue
     fi
     failures=$((failures + 1))
-    if [ "$failures" -ge "$FM_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS" ]; then
+    if [ "$failures" -ge "$SQUAD_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS" ]; then
       worker_error "remote job worker failed $failures times without staying up; stopping the supervisor"
       return 1
     fi
     backoff=$failures
-    [ "$backoff" -le "$FM_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS" ] ||
-      backoff=$FM_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS
+    [ "$backoff" -le "$SQUAD_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS" ] ||
+      backoff=$SQUAD_REMOTE_JOB_SUPERVISOR_MAX_BACKOFF_SECONDS
     sleep "$backoff"
   done
 }

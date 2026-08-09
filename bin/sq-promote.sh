@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# Promote a scout task to a ship task in place: the crewmate keeps its window,
+# Promote a recon task to a strike task in place: the operator keeps its window,
 # worktree, and loaded context; only the contract changes. Flips kind= to ship in
-# state/<task-id>.meta so fm-teardown.sh applies the full ship-task teardown protection
-# again. After promoting, send the crewmate its ship instructions via fm-send.sh
+# state/<task-id>.meta so sq-teardown.sh applies the full ship-task teardown protection
+# again. After promoting, send the operator its ship instructions via sq-send.sh
 # (inventory scratch state, reset to a clean default-branch base, carry over only
 # intended fix changes, create branch fm/<task-id>, implement, then report done
 # according to this task's delivery mode).
-# A scout records no delivery posture, so promotion is where this task's delivery
+# A recon records no delivery posture, so promotion is where this task's delivery
 # contract is decided: --mode and --yolo are REQUIRED and written into the meta
-# alongside the kind= flip. Firstmate resolves both at promotion time, having just
-# read the scout's report (AGENTS.md section 7); data/projects.md holds the
-# captain's standing posture as context, and this script never looks it up.
+# alongside the kind= flip. Squad resolves both at promotion time, having just
+# read the recon's report (AGENTS.md section 7); data/projects.md holds the
+# commander's standing posture as context, and this script never looks it up.
 # no-mistakes-prod-only is a registry policy rather than a task mode and is refused.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>
+# Usage: sq-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 
 MODE=
 YOLO=
@@ -47,9 +47,9 @@ for a in "$@"; do
   esac
 done
 [ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
-[ "${#POS[@]}" -ge 1 ] || { echo "usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>" >&2; exit 1; }
+[ "${#POS[@]}" -ge 1 ] || { echo "usage: sq-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>" >&2; exit 1; }
 [ "$MODE_SET" -eq 1 ] || {
-  echo "error: promotion requires --mode <no-mistakes|direct-PR|local-only>; decide it now from the scout's findings and the project's registered posture in data/projects.md" >&2
+  echo "error: promotion requires --mode <no-mistakes|direct-PR|local-only>; decide it now from the recon's findings and the project's registered posture in data/projects.md" >&2
   exit 1
 }
 [ "$YOLO_SET" -eq 1 ] || {
@@ -68,21 +68,21 @@ case "$YOLO" in
   *) echo "error: --yolo must be on or off (got '$YOLO')" >&2; exit 1 ;;
 esac
 
-"$FM_ROOT/bin/fm-guard.sh" || true
+"$SQUAD_ROOT/bin/sq-guard.sh" || true
 ID=${POS[0]}
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
-grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (kind=scout not in meta)" >&2; exit 1; }
+grep -qx 'kind=recon' "$META" || { echo "error: task $ID is not a recon task (kind=recon not in meta)" >&2; exit 1; }
 
 TMP="$META.tmp"
 grep -v -e '^kind=' -e '^mode=' -e '^yolo=' "$META" > "$TMP"
 {
-  echo "kind=ship"
+  echo "kind=strike"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
 } >> "$TMP"
 mv "$TMP" "$META"
 
-HOME_Q=$(printf '%q' "$FM_HOME")
+HOME_Q=$(printf '%q' "$SQUAD_HOME")
 echo "promoted $ID to ship mode=$MODE yolo=$YOLO (teardown protection restored)"
-echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID '<ship instructions for mode=$MODE: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"
+echo "next: SQUAD_HOME=$HOME_Q bin/sq-send.sh sq-$ID '<ship instructions for mode=$MODE: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"

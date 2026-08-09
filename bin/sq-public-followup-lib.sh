@@ -1,11 +1,11 @@
 # shellcheck shell=bash
-# fm-public-followup-lib.sh - shared gating and private-transport helpers for the
+# sq-public-followup-lib.sh - shared gating and private-transport helpers for the
 # deterministic public-followup consumer.
 #
-# Firstmate promises a public final reply when a myfirstmate relay mention (X or
+# Squad promises a public final reply when a mySquad relay mention (X or
 # Discord) asks for work. `tasks-axi public-followup` is the sole owner of that
 # typed obligation and its state machine; state/x-context/ is the sole owner of
-# the private full request context. This library owns only the small Firstmate
+# the private full request context. This library owns only the small Squad
 # side: the activation gate, the private per-home transport directories, and the
 # deterministic terminal-event identity.
 #
@@ -14,19 +14,19 @@
 # set -u / set -e safe.
 #
 # GATE ORDER - the acceptance criterion for relay-disabled homes:
-#   1. fm_pf_relay_active <home>     the authoritative myfirstmate activation
-#                                    contract, a non-empty FMX_PAIRING_TOKEN in
+#   1. fm_pf_relay_active <home>     the authoritative mySquad activation
+#                                    contract, a non-empty SQX_PAIRING_TOKEN in
 #                                    <home>/.env. There is no second flag. When
 #                                    <home>/.env is absent this is a single
 #                                    [ -f ] test and nothing else runs.
 #   2. fm_pf_has_registrations       O(1) presence check on the registry created
-#      / fm_pf_has_events            only by the relay path (fm-public-followup.sh
+#      / fm_pf_has_events            only by the relay path (sq-public-followup.sh
 #                                    register). Relay-enabled homes with no
 #                                    public commitments stop here, so no
 #                                    tasks-axi call and no backlog scan happens.
 #
 # Private transport layout, all under <home>/state/public-followup (mode 0700,
-# created only by `fm-public-followup.sh register`):
+# created only by `sq-public-followup.sh register`):
 #   registry/<obligation-id>   registration record: the bounded public-safe
 #                              binding (obligation, relation, work ref,
 #                              generation, platform, request id). Presence hint
@@ -49,48 +49,48 @@
 # event id and the same destination path. Idempotency therefore holds across
 # retries, restarts, and duplicate child reports without any coordination.
 #
-# Depends on bin/fm-x-lib.sh for .env reading and the private-artifact
+# Depends on bin/sq-x-lib.sh for .env reading and the private-artifact
 # publication primitives (atomic, single-link, mode-validated, non-executable);
 # those remain that file's contract and are not restated here.
 
-_FM_PF_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _FM_PF_LIB_DIR="."
-# shellcheck source=bin/fm-x-lib.sh
-. "$_FM_PF_LIB_DIR/fm-x-lib.sh"
+_SQUAD_PF_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _SQUAD_PF_LIB_DIR="."
+# shellcheck source=bin/sq-x-lib.sh
+. "$_SQUAD_PF_LIB_DIR/sq-x-lib.sh"
 
-FM_PF_DIRNAME='public-followup'
+SQUAD_PF_DIRNAME='public-followup'
 # Consumed by the sourcing scripts, not by this library.
 # shellcheck disable=SC2034
-FM_PF_EVENT_SCHEMA_VERSION=1
+SQUAD_PF_EVENT_SCHEMA_VERSION=1
 # Bounded so a public-safe outcome line can never carry a raw public message,
 # and so one event file stays small enough to read and validate cheaply.
-FM_PF_OUTCOME_TEXT_MAX=${FM_PF_OUTCOME_TEXT_MAX:-600}
-FM_PF_EVENT_BYTES_MAX=${FM_PF_EVENT_BYTES_MAX:-8192}
+SQUAD_PF_OUTCOME_TEXT_MAX=${SQUAD_PF_OUTCOME_TEXT_MAX:-600}
+SQUAD_PF_EVENT_BYTES_MAX=${SQUAD_PF_EVENT_BYTES_MAX:-8192}
 
 # --- gate 1: the authoritative relay activation contract --------------------
 
-# fm_pf_relay_active <home>: 0 when this home has opted into the myfirstmate
+# fm_pf_relay_active <home>: 0 when this home has opted into the mySquad
 # relay, 1 otherwise. Identical contract to bootstrap's X-mode activation - a
-# non-empty FMX_PAIRING_TOKEN in <home>/.env - so no second activation flag
-# exists to drift. FMX_PAIRING_TOKEN in the environment wins, matching
+# non-empty SQX_PAIRING_TOKEN in <home>/.env - so no second activation flag
+# exists to drift. SQX_PAIRING_TOKEN in the environment wins, matching
 # fmx_load_config, so a direct client call and this gate agree.
 fm_pf_relay_active() {
   local home=$1 token
-  if [ -n "${FMX_PAIRING_TOKEN+x}" ]; then
-    [ -n "${FMX_PAIRING_TOKEN-}" ]
+  if [ -n "${SQX_PAIRING_TOKEN+x}" ]; then
+    [ -n "${SQX_PAIRING_TOKEN-}" ]
     return $?
   fi
   [ -f "$home/.env" ] || return 1
-  token=$(fmx_env_get FMX_PAIRING_TOKEN "$home/.env")
+  token=$(fmx_env_get SQX_PAIRING_TOKEN "$home/.env")
   [ -n "$token" ]
 }
 
 # --- gate 2: O(1) presence checks on relay-path-owned registrations ---------
 
-fm_pf_root()       { printf '%s\n' "$1/$FM_PF_DIRNAME"; }
-fm_pf_registry_dir() { printf '%s\n' "$1/$FM_PF_DIRNAME/registry"; }
-fm_pf_events_dir()   { printf '%s\n' "$1/$FM_PF_DIRNAME/events"; }
-fm_pf_consumed_dir() { printf '%s\n' "$1/$FM_PF_DIRNAME/consumed"; }
-fm_pf_rejected_dir() { printf '%s\n' "$1/$FM_PF_DIRNAME/rejected"; }
+fm_pf_root()       { printf '%s\n' "$1/$SQUAD_PF_DIRNAME"; }
+fm_pf_registry_dir() { printf '%s\n' "$1/$SQUAD_PF_DIRNAME/registry"; }
+fm_pf_events_dir()   { printf '%s\n' "$1/$SQUAD_PF_DIRNAME/events"; }
+fm_pf_consumed_dir() { printf '%s\n' "$1/$SQUAD_PF_DIRNAME/consumed"; }
+fm_pf_rejected_dir() { printf '%s\n' "$1/$SQUAD_PF_DIRNAME/rejected"; }
 
 # fm_pf_dir_has_entry <dir>: 0 when <dir> is a real directory holding at least
 # one non-dot entry. Stops at the first hit, so cost does not grow with the
@@ -129,13 +129,13 @@ fm_pf_slug_valid() {
 }
 
 # fm_pf_home_id_valid <home_id>: tasks-axi accepts "main" or
-# "secondmate:<stable-id>" as a work_ref home. Validate the same shape here so a
+# "XO:<stable-id>" as a work_ref home. Validate the same shape here so a
 # malformed source home is refused before it reaches a filename or a CLI call.
 fm_pf_home_id_valid() {
   local v=$1
   case "$v" in
     main) return 0 ;;
-    secondmate:*) fm_pf_slug_valid "${v#secondmate:}" ;;
+    XO:*) fm_pf_slug_valid "${v#XO:}" ;;
     *) return 1 ;;
   esac
 }
@@ -228,11 +228,11 @@ EOF
 
 # Consumed by the sourcing scripts, not by this library.
 # shellcheck disable=SC2034
-FM_PF_SURFACED_BASENAME=surfaced
+SQUAD_PF_SURFACED_BASENAME=surfaced
 
 # fm_pf_events_signature <state>: a stable digest of the pending event id set.
 # The relay poll compares it against the surfaced record so an unconsumed event
-# wakes firstmate once per new event, not once per poll cycle.
+# wakes Squad once per new event, not once per poll cycle.
 fm_pf_events_signature() {
   local dir entry names=
   dir=$(fm_pf_events_dir "$1")

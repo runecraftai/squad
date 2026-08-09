@@ -1,23 +1,23 @@
 # shellcheck shell=bash
 # Startup-memory budget primitives.
-# Usage: . bin/fm-startup-memory-budget-lib.sh
+# Usage: . bin/sq-startup-memory-budget-lib.sh
 #
 # The local, primary-authoritative config/startup-memory-budget setting is one
 # strictly formatted positive decimal value followed by one newline.  The
-# locked primary bootstrap owns first materialization.  This library owns safe
+# locked primary bootstrap owns sergeant at armsrialization.  This library owns safe
 # parsing, default publication, and the portable prompt-memory estimate used by
-# bin/fm-startup-memory-budget.sh and the internal /stow skill.
+# bin/sq-startup-memory-budget.sh and the internal /debrief skill.
 
-FM_STARTUP_MEMORY_BUDGET_FILE="startup-memory-budget"
-FM_STARTUP_MEMORY_BUDGET_DEFAULT="7500"
-FM_STARTUP_MEMORY_BUDGET_ERROR=""
-FM_STARTUP_MEMORY_BUDGET_VALUE=""
-FM_STARTUP_MEMORY_MEASURE_BYTES=""
-FM_STARTUP_MEMORY_MEASURE_TOKENS=""
-FM_STARTUP_MEMORY_MEASURE_PRESENCE=""
+SQUAD_STARTUP_MEMORY_BUDGET_FILE="startup-memory-budget"
+SQUAD_STARTUP_MEMORY_BUDGET_DEFAULT="7500"
+SQUAD_STARTUP_MEMORY_BUDGET_ERROR=""
+SQUAD_STARTUP_MEMORY_BUDGET_VALUE=""
+SQUAD_STARTUP_MEMORY_MEASURE_BYTES=""
+SQUAD_STARTUP_MEMORY_MEASURE_TOKENS=""
+SQUAD_STARTUP_MEMORY_MEASURE_PRESENCE=""
 
 fm_startup_memory_budget_fail() {
-  FM_STARTUP_MEMORY_BUDGET_ERROR=$1
+  SQUAD_STARTUP_MEMORY_BUDGET_ERROR=$1
   return 1
 }
 
@@ -43,11 +43,11 @@ fm_startup_memory_budget_config_dir_safe() {
 }
 
 # fm_startup_memory_budget_file_valid <path>
-# Sets FM_STARTUP_MEMORY_BUDGET_VALUE only for a regular, single-linked file
+# Sets SQUAD_STARTUP_MEMORY_BUDGET_VALUE only for a regular, single-linked file
 # containing exactly one positive decimal value and one terminating newline.
 fm_startup_memory_budget_file_valid() {
   local path=$1 links value
-  FM_STARTUP_MEMORY_BUDGET_VALUE=""
+  SQUAD_STARTUP_MEMORY_BUDGET_VALUE=""
   if [ -L "$path" ]; then
     fm_startup_memory_budget_fail "file is symlinked"
     return 1
@@ -82,7 +82,7 @@ fm_startup_memory_budget_file_valid() {
     fm_startup_memory_budget_fail "file must contain exactly one value followed by one newline"
     return 1
   fi
-  FM_STARTUP_MEMORY_BUDGET_VALUE=$value
+  SQUAD_STARTUP_MEMORY_BUDGET_VALUE=$value
   return 0
 }
 
@@ -92,9 +92,9 @@ fm_startup_memory_budget_file_valid() {
 fm_startup_memory_budget_read() {
   local config_dir=$1 path
   fm_startup_memory_budget_config_dir_safe "$config_dir" || return 1
-  path="$config_dir/$FM_STARTUP_MEMORY_BUDGET_FILE"
+  path="$config_dir/$SQUAD_STARTUP_MEMORY_BUDGET_FILE"
   fm_startup_memory_budget_file_valid "$path" || return 1
-  printf '%s\n' "$FM_STARTUP_MEMORY_BUDGET_VALUE"
+  printf '%s\n' "$SQUAD_STARTUP_MEMORY_BUDGET_VALUE"
 }
 
 # fm_startup_memory_budget_materialize <config-dir>
@@ -113,7 +113,7 @@ fm_startup_memory_budget_materialize() {
     fm_startup_memory_budget_config_dir_safe "$config_dir" || return 1
   fi
 
-  path="$config_dir/$FM_STARTUP_MEMORY_BUDGET_FILE"
+  path="$config_dir/$SQUAD_STARTUP_MEMORY_BUDGET_FILE"
   if [ -e "$path" ] || [ -L "$path" ]; then
     fm_startup_memory_budget_read "$config_dir" >/dev/null || return 1
     return 0
@@ -123,10 +123,10 @@ fm_startup_memory_budget_materialize() {
     fm_startup_memory_budget_fail "could not create default temporary file"
     return 1
   }
-  if ! printf '%s\n' "$FM_STARTUP_MEMORY_BUDGET_DEFAULT" > "$tmp" \
+  if ! printf '%s\n' "$SQUAD_STARTUP_MEMORY_BUDGET_DEFAULT" > "$tmp" \
     || ! fm_startup_memory_budget_file_valid "$tmp"; then
     rm -f "$tmp"
-    [ -n "$FM_STARTUP_MEMORY_BUDGET_ERROR" ] \
+    [ -n "$SQUAD_STARTUP_MEMORY_BUDGET_ERROR" ] \
       || fm_startup_memory_budget_fail "could not write default value"
     return 1
   fi
@@ -166,13 +166,13 @@ fm_startup_memory_estimated_tokens_for_bytes() {
 # a special file.
 fm_startup_memory_measure_file() {
   local path=$1 bytes tokens
-  FM_STARTUP_MEMORY_MEASURE_BYTES=""
-  FM_STARTUP_MEMORY_MEASURE_TOKENS=""
-  FM_STARTUP_MEMORY_MEASURE_PRESENCE=""
+  SQUAD_STARTUP_MEMORY_MEASURE_BYTES=""
+  SQUAD_STARTUP_MEMORY_MEASURE_TOKENS=""
+  SQUAD_STARTUP_MEMORY_MEASURE_PRESENCE=""
   if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-    FM_STARTUP_MEMORY_MEASURE_BYTES=0
-    FM_STARTUP_MEMORY_MEASURE_TOKENS=0
-    FM_STARTUP_MEMORY_MEASURE_PRESENCE=absent
+    SQUAD_STARTUP_MEMORY_MEASURE_BYTES=0
+    SQUAD_STARTUP_MEMORY_MEASURE_TOKENS=0
+    SQUAD_STARTUP_MEMORY_MEASURE_PRESENCE=absent
     printf '0 0 absent\n'
     return 0
   fi
@@ -195,11 +195,11 @@ fm_startup_memory_measure_file() {
     return 1
   }
   # shellcheck disable=SC2034 # Public measurement result consumed by the caller after sourcing.
-  FM_STARTUP_MEMORY_MEASURE_BYTES=$bytes
+  SQUAD_STARTUP_MEMORY_MEASURE_BYTES=$bytes
   # shellcheck disable=SC2034 # Public measurement result consumed by the caller after sourcing.
-  FM_STARTUP_MEMORY_MEASURE_TOKENS=$tokens
+  SQUAD_STARTUP_MEMORY_MEASURE_TOKENS=$tokens
   # shellcheck disable=SC2034 # Public measurement result consumed by the caller after sourcing.
-  FM_STARTUP_MEMORY_MEASURE_PRESENCE=present
+  SQUAD_STARTUP_MEMORY_MEASURE_PRESENCE=present
   printf '%s %s present\n' "$bytes" "$tokens"
 }
 

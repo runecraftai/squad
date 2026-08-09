@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# fm-supervise-daemon.sh — presence-gated sub-supervisor (closes #27's P2).
+# sq-supervise-daemon.sh — presence-gated sub-supervisor (closes #27's P2).
 #
-# Wraps bin/fm-watch.sh: runs it as a child, classifies each wake reason, and
-# either SELF-HANDLES the routine majority in bash (no firstmate turn) or
+# Wraps bin/sq-sentry.sh: runs it as a child, classifies each wake reason, and
+# either SELF-HANDLES the routine majority in bash (no Squad turn) or
 # ESCALATES a batched, distilled digest to the supervisor pane on
-# captain-relevant events plus bounded declared-pause rechecks. This is the
+# commander-relevant events plus bounded declared-pause rechecks. This is the
 # token-efficient replacement for the prior always-inject daemon: routine
-# signal/stale/heartbeat wakes cost zero firstmate context; only done/
+# signal/stale/heartbeat wakes cost zero Squad context; only done/
 # needs-decision/blocked/failed/persistent-wedge/check-output events and a
 # declared-pause recheck reach the LLM, and even then as one pre-read digest per
 # batch window.
@@ -14,105 +14,105 @@
 # PRESENCE-GATING (the /afk contract). The daemon is the away-mode engine: it
 # injects ONLY when the durable away-mode flag state/.afk is present. Invoking
 # the /afk skill sets that flag and starts this daemon; any real (unmarked)
-# user message clears it and firstmate resumes full responsiveness.
-# When afk is off, normal fm-watch.sh always-on triage is the active mechanism.
+# user message clears it and Squad resumes full responsiveness.
+# When afk is off, normal sq-sentry.sh always-on triage is the active mechanism.
 # Any buffered daemon escalations that remain while afk is off survive in
 # state/.subsuper-escalations and are flushed on the next "while you were out"
 # catch-up or when afk is re-entered.
 #
-# IN-BAND OPERATIONAL INPUT. bin/fm-operational-input.sh constructs every
+# IN-BAND OPERATIONAL INPUT. bin/sq-operational-input.sh constructs every
 # current daemon injection as the typed away-supervisor kind after the stable
-# FM_OPERATIONAL_PREFIX. A human cannot type its leading U+2063 from a normal
+# SQUAD_OPERATIONAL_PREFIX. A human cannot type its leading U+2063 from a normal
 # keyboard at the start of a message, and Herdr transports it as text.
-# Firstmate's contract: a message that starts with the current prefix, or a
+# Squad's contract: a message that starts with the current prefix, or a
 # legacy bare-marker daemon escalation, is internal (stay afk); an unmarked
-# message means the captain is back (exit afk, flush catch-up, resume per-wake
+# message means the commander is back (exit afk, flush catch-up, resume per-wake
 # responsiveness). The prefix and busy-guard solve the same problem - the
 # daemon and the human share one input channel - so they live together under
 # /afk.
 #
 # Reliability model (see the /afk skill):
-#   - Nothing is lost in away mode: while state/.afk exists, the watcher reverts
+#   - Nothing is lost in away mode: while state/.afk exists, the sentry reverts
 #     to daemon-owned one-shot behavior and enqueues every wake to
-#     state/.wake-queue BEFORE advancing its suppression markers, so a
-#     crash/restart/missed injection is recovered on the next fm-wake-drain.sh.
-#     The daemon does not touch the queue; it only reads the watcher's stdout
+#     state/.stand-to-queue BEFORE advancing its suppression markers, so a
+#     crash/restart/missed injection is recovered on the next sq-stand-to-drain.sh.
+#     The daemon does not touch the queue; it only reads the sentry's stdout
 #     reason.
 #   - Fail-safe-to-escalate: any wake the classifier cannot confidently mark
 #     routine is escalated.
 #   - Bounded wedge latency: a stale pane without a declared external wait is
 #     escalated only after it has been idle for STALE_ESCALATE_SECS
-#     (configurable), rechecked once. A wedged crewmate is therefore detected
+#     (configurable), rechecked once. A wedged operator is therefore detected
 #     within STALE_ESCALATE_SECS + a tick, never lost. A declared pause instead
 #     gets its own longer PAUSE_RESURFACE_SECS recheck, never a wedge escalation.
-#     Crewmates are autonomous, so a delayed stale response does not stall a
-#     healthy crewmate's own progress.
+#     Operators are autonomous, so a delayed stale response does not stall a
+#     healthy operator's own progress.
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
-#     undelivered past FM_MAX_DEFER_SECS, the daemon retries a normal flush and
+#     undelivered past SQUAD_MAX_DEFER_SECS, the daemon retries a normal flush and
 #     writes state/.subsuper-inject-wedged and attempts a configurable active
 #     alert if submit still cannot be confirmed.
 #   - Cheap heartbeat catch-all: every HEARTBEAT_SCAN_SECS the daemon greps all
-#     state/*.status for a captain-relevant line the per-wake classifier might
-#     have missed (e.g. a status verb outside CAPTAIN_RE) and escalates it.
+#     state/*.status for a commander-relevant line the per-wake classifier might
+#     have missed (e.g. a status verb outside COMMANDER_RE) and escalates it.
 #
 # The robustness shell from the prior always-inject version is preserved:
 # single-instance lock (portable helper, no flock dependency), crash-loop
 # backoff, pane-gone guard, and a signal-trapped shutdown that flushes buffered
 # escalations before exit.
 #
-# Usage: fm-supervise-daemon.sh
+# Usage: sq-supervise-daemon.sh
 #          Long-lived background loop. Normally started by the /afk skill, which
 #          sets state/.afk first. Env knobs:
-#          FM_SUPERVISOR_TARGET     supervisor pane target (override; otherwise
+#          SQUAD_SUPERVISOR_TARGET     supervisor pane target (override; otherwise
 #                                   auto-discovered per backend - $TMUX_PANE
 #                                   under tmux, "<session>:<pane-id>" from
 #                                   $HERDR_PANE_ID under herdr - then
-#                                   firstmate:0 fallback). Accepts either a
+#                                   Squad:0 fallback). Accepts either a
 #                                   tmux target or a herdr "<session>:<pane-id>"
 #                                   target; which one it's read as is decided by
-#                                   FM_SUPERVISOR_BACKEND (below), independently.
-#          FM_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr;
+#                                   SQUAD_SUPERVISOR_BACKEND (below), independently.
+#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr;
 #                                   override; otherwise auto-discovered the same
-#                                   way bin/fm-backend.sh's fm_backend_detect
-#                                   resolves the runtime firstmate itself is
+#                                   way bin/sq-backend.sh's fm_backend_detect
+#                                   resolves the runtime Squad itself is
 #                                   executing inside - $TMUX_PANE selects tmux,
 #                                   $HERDR_ENV=1 selects herdr - falling back to
 #                                   tmux). zellij, orca, and cmux are not yet
 #                                   supported as supervisor backends; the daemon
 #                                   refuses loudly at startup rather than trying
 #                                   tmux primitives against a non-tmux pane.
-#          FM_INJECT_SKIP           |-prefixes force-self-handle bypassing
+#          SQUAD_INJECT_SKIP           |-prefixes force-self-handle bypassing
 #                                   classification (default "heartbeat"); empty
 #                                   disables. Use sparingly: it overrides the
-#                                   captain-relevant escalation for matching
+#                                   commander-relevant escalation for matching
 #                                   kinds.
-#          FM_STALE_ESCALATE_SECS   idle seconds before a stale pane escalates
+#          SQUAD_STALE_ESCALATE_SECS   idle seconds before a stale pane escalates
 #                                   as a possible wedge (default 240)
-#          FM_PAUSE_RESURFACE_SECS  idle seconds before a declared external wait
+#          SQUAD_PAUSE_RESURFACE_SECS  idle seconds before a declared external wait
 #                                   re-surfaces as a recheck (default 3600)
-#          FM_ESCALATE_BATCH_SECS   buffer window for batched escalation
+#          SQUAD_ESCALATE_BATCH_SECS   buffer window for batched escalation
 #                                   digests; 0 = flush immediately (default 90)
-#          FM_HEARTBEAT_SCAN_SECS   cadence for the catch-all status scan
+#          SQUAD_HEARTBEAT_SCAN_SECS   cadence for the catch-all status scan
 #                                   (default 300)
-#          FM_HOUSEKEEPING_TICK     seconds between housekeeping passes while
-#                                   the watcher is mid-cycle (default 15)
-#          FM_BUSY_REGEX            optional rendered busy-signature override
+#          SQUAD_HOUSEKEEPING_TICK     seconds between housekeeping passes while
+#                                   the sentry is mid-cycle (default 15)
+#          SQUAD_BUSY_REGEX            optional rendered busy-signature override
 #                                   for delivery guards and Grok's fallback
-#          FM_COMPOSER_IDLE_RE      empty-composer regex applied after dim-ghost
+#          SQUAD_COMPOSER_IDLE_RE      empty-composer regex applied after dim-ghost
 #                                   and structural border stripping (default:
 #                                   bare prompt glyphs plus busy footers)
-#          FM_MAX_DEFER_SECS        max seconds a buffered escalation may sit
+#          SQUAD_MAX_DEFER_SECS        max seconds a buffered escalation may sit
 #                                   undelivered before one normal flush attempt;
 #                                   if that cannot confirm a submit, a wedge
 #                                   alarm fires (default 300; 0 disables)
-#          FM_WEDGE_ALARM_CHANNEL   override config/wedge-alarm with a single
+#          SQUAD_WEDGE_ALARM_CHANNEL   override config/wedge-alarm with a single
 #                                   active-alert directive for that wedge alarm
 #                                   (off|auto|osascript|herdr|command:<cmd>). An
 #                                   absent file/var means auto: on macOS that is
 #                                   an OS-level notification, so the alarm is
 #                                   never silent. See wedge_alarm_notify below
 #                                   and docs/configuration.md.
-#          FM_WEDGE_ALARM_EXEC      notifier seam: when set, every notifier
+#          SQUAD_WEDGE_ALARM_EXEC      notifier seam: when set, every notifier
 #                                   channel routes through this command as
 #                                   `<cmd> <channel> <summary>` instead of
 #                                   invoking its real notifier; "discard" fires
@@ -120,75 +120,75 @@
 #                                   daemon defaults this to "discard" so no test
 #                                   can post a real notification (wedge_alarm_emit
 #                                   and the library-mode guard at the foot).
-#          FM_WEDGE_ALARM_TIMEOUT_SECS seconds allowed for each notifier before
+#          SQUAD_WEDGE_ALARM_TIMEOUT_SECS seconds allowed for each notifier before
 #                                   its watchdog terminates it and continues to the
 #                                   next channel (default 10; invalid/zero uses the
 #                                   default).
-#          FM_INJECT_CONFIRM_RETRIES Enter-retry attempts on a swallowed Enter
+#          SQUAD_INJECT_CONFIRM_RETRIES Enter-retry attempts on a swallowed Enter
 #                                   (default 3); the digest is typed once, only
 #                                   Enter is retried. Composer-empty detection is
-#                                   structural and style-aware (bin/fm-tmux-lib.sh):
+#                                   structural and style-aware (bin/sq-tmux-lib.sh):
 #                                   it drops dim/faint ghost text and strips the
 #                                   harness's box borders before deciding, so a
 #                                   ghost-only or bordered-but-empty composer is
 #                                   not misread as pending input.
-#          FM_INJECT_CONFIRM_SLEEP  seconds between daemon submit checks
+#          SQUAD_INJECT_CONFIRM_SLEEP  seconds between daemon submit checks
 #                                   (default 0.5)
-#          FM_LOG_MAX_BYTES / FM_LOG_KEEP_LINES / FM_CRASH_*  log + crash guards
-#          FM_STATE_OVERRIDE        alternate state dir (testing)
+#          SQUAD_LOG_MAX_BYTES / SQUAD_LOG_KEEP_LINES / SQUAD_CRASH_*  log + crash guards
+#          SQUAD_STATE_OVERRIDE        alternate state dir (testing)
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down within ~1s, flush escalations, release the
-#          lock. A crashing fm-watch.sh is logged and restarted, never killing
+#          lock. A crashing sq-sentry.sh is logged and restarted, never killing
 #          the daemon; a tight crash-restart spin is detected and backed off.
 set -u
 
-FM_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$FM_DAEMON_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+SQUAD_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SQUAD_DAEMON_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
 
 # Shared tmux pane primitives for supervisor injection (busy/composer detection
 # + verify-retry submit). Sourced at top level so BOTH the executed daemon and
 # the unit tests (which source this file for its pure functions) get the
-# corrected composer detection. Stale task rechecks use fm-backend.sh below.
-# shellcheck source=bin/fm-tmux-lib.sh
-. "$FM_DAEMON_DIR/fm-tmux-lib.sh"
+# corrected composer detection. Stale task rechecks use sq-backend.sh below.
+# shellcheck source=bin/sq-tmux-lib.sh
+. "$SQUAD_DAEMON_DIR/sq-tmux-lib.sh"
 
-# shellcheck source=bin/fm-backend.sh
-. "$FM_DAEMON_DIR/fm-backend.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SQUAD_DAEMON_DIR/sq-backend.sh"
 
-# Canonical construction and parsing for every Firstmate operational input.
-# shellcheck source=bin/fm-operational-input.sh
-. "$FM_DAEMON_DIR/fm-operational-input.sh"
+# Canonical construction and parsing for every Squad operational input.
+# shellcheck source=bin/sq-operational-input.sh
+. "$SQUAD_DAEMON_DIR/sq-operational-input.sh"
 
-# Shared wake classifier (last_status_line, status_is_captain_relevant,
-# window_to_task, scan_captain_relevant_statuses). The SAME library backs the
-# always-on watcher's triage, so the captain-relevant verb set and the
+# Shared wake classifier (last_status_line, status_is_commander_relevant,
+# window_to_task, scan_commander_relevant_statuses). The SAME library backs the
+# always-on sentry's triage, so the commander-relevant verb set and the
 # classification predicates have exactly one definition.
-# shellcheck source=bin/fm-classify-lib.sh
-. "$FM_DAEMON_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SQUAD_DAEMON_DIR/sq-classify-lib.sh"
 
-# Supervisor-pane discovery (FM_SUPERVISOR_TARGET_DEFAULT,
-# FM_SUPERVISOR_BACKEND_DEFAULT, discover_supervisor_target,
+# Supervisor-pane discovery (SQUAD_SUPERVISOR_TARGET_DEFAULT,
+# SQUAD_SUPERVISOR_BACKEND_DEFAULT, discover_supervisor_target,
 # discover_supervisor_backend). Shared with the script-owned away launcher
-# (bin/fm-afk-launch.sh) so the captain-pane resolution has exactly one owner.
-# shellcheck source=bin/fm-supervisor-target-lib.sh
-. "$FM_DAEMON_DIR/fm-supervisor-target-lib.sh"
+# (bin/sq-afk-launch.sh) so the commander-pane resolution has exactly one owner.
+# shellcheck source=bin/sq-supervisor-target-lib.sh
+. "$SQUAD_DAEMON_DIR/sq-supervisor-target-lib.sh"
 
 # The single owner of semantic busy state for recorded tasks
 # (fm_busy_classify).
-# shellcheck source=bin/fm-busy-lib.sh
-. "$FM_DAEMON_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/sq-busy-lib.sh
+. "$SQUAD_DAEMON_DIR/sq-busy-lib.sh"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# and cmux are real backends elsewhere in firstmate (bin/fm-backend.sh) but this
+# and cmux are real backends elsewhere in Squad (bin/sq-backend.sh) but this
 # daemon has no verified composer/busy primitives wired up for them yet - see
 # docs/herdr-backend.md and AGENTS.md section 4's
 # harness-verification discipline. Selecting one refuses loudly at startup
 # instead of silently running tmux primitives against a pane that is not a tmux
 # pane.
-FM_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr"
+SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr"
 INJECT_SKIP_DEFAULT="heartbeat"
 STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
@@ -201,12 +201,12 @@ MAX_DEFER_SECS_DEFAULT=300
 WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
 WEDGE_ALARM_LAST_EPOCH=0
 WEDGE_ALARM_NOTIFIER_PID=
-# The captain-relevant verb set and the status classifiers (last_status_line,
-# status_is_captain_relevant, window_to_task, scan_captain_relevant_statuses) now
-# live in bin/fm-classify-lib.sh, shared with the always-on watcher.
+# The commander-relevant verb set and the status classifiers (last_status_line,
+# status_is_commander_relevant, window_to_task, scan_commander_relevant_statuses) now
+# live in bin/sq-classify-lib.sh, shared with the always-on sentry.
 # Composer-empty detection, submit acknowledgement, and the harness-scoped
-# supervisor-pane busy guard live in bin/fm-tmux-lib.sh.
-# FM_BUSY_REGEX also overrides Grok's isolated task-state fallback.
+# supervisor-pane busy guard live in bin/sq-tmux-lib.sh.
+# SQUAD_BUSY_REGEX also overrides Grok's isolated task-state fallback.
 INJECT_FAIL_SLEEP_DEFAULT=30
 INJECT_CONFIRM_RETRIES_DEFAULT=3
 INJECT_CONFIRM_SLEEP_DEFAULT=0.5
@@ -218,17 +218,17 @@ LOG_MAX_BYTES_DEFAULT=1048576
 LOG_KEEP_LINES_DEFAULT=2000
 
 # --- presence-gating --------------------------------------------------------
-# bin/fm-operational-input.sh owns the U+2063 FIRSTMATE_OP bytes and typed
+# bin/sq-operational-input.sh owns the U+2063 SQUAD_OP bytes and typed
 # away-supervisor construction. The away-exit predicate intentionally retains
 # its landed leading-U+2063 compatibility behavior.
 AFK_FLAG_NAME=".afk"
 
-# Resolve the effective state dir. FM_STATE_OVERRIDE wins (testing); otherwise
-# $FM_HOME/state. Kept as a function so the pure
+# Resolve the effective state dir. SQUAD_STATE_OVERRIDE wins (testing); otherwise
+# $SQUAD_HOME/state. Kept as a function so the pure
 # classifiers can take an explicit state arg without depending on globals.
-_state_root() { printf '%s' "${FM_STATE_OVERRIDE:-$FM_HOME/state}"; }
+_state_root() { printf '%s' "${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"; }
 
-# --- portable stat (same trap as fm-watch.sh: no `stat -f || stat -c`) -------
+# --- portable stat (same trap as sq-sentry.sh: no `stat -f || stat -c`) -------
 if [ "$(uname)" = Darwin ]; then
   _stat_file_mtime() { stat -f %m "$1" 2>/dev/null; }
 else
@@ -253,7 +253,7 @@ afk_active() {  # <state>
 }
 
 # afk_enter / afk_exit: write/clear the away-mode flag. Called by the /afk
-# skill (enter) and by firstmate on user return (exit). Durable: a plain file,
+# skill (enter) and by Squad on user return (exit). Durable: a plain file,
 # so recovery (§5) re-enters afk if it is present after a restart.
 afk_enter() {  # <state>
   mkdir -p "$1"
@@ -264,13 +264,13 @@ afk_exit() {  # <state>
   rm -f "$1/$AFK_FLAG_NAME"
 }
 
-# should_exit_afk: encodes firstmate's afk-exit contract as a testable function.
+# should_exit_afk: encodes Squad's afk-exit contract as a testable function.
 #   afk inactive            -> 1 (nothing to exit)
 #   message has marker      -> 1 (internal escalation; stay afk)
 #   message is /afk command -> 1 (re-entering/extending afk; stay afk)
-#   anything else           -> 0 (captain is back; exit afk)
+#   anything else           -> 0 (commander is back; exit afk)
 # Bias toward exit: only the marker and an explicit /afk invocation keep afk
-# alive. A false exit is self-correcting (the captain re-runs /afk).
+# alive. A false exit is self-correcting (the commander re-runs /afk).
 should_exit_afk() {  # <state> <message-text>
   local state=$1 msg=$2
   afk_active "$state" || return 1
@@ -282,20 +282,20 @@ should_exit_afk() {  # <state> <message-text>
 }
 
 # message_is_injection: 0 if the given message text starts with the sentinel
-# marker (a daemon escalation), 1 otherwise (a real user message). Firstmate's
-# afk-exit contract uses this: marker present -> stay afk; absent -> captain is
+# marker (a daemon escalation), 1 otherwise (a real user message). Squad's
+# afk-exit contract uses this: marker present -> stay afk; absent -> commander is
 # back. Bias ambiguous cases toward exit (a false exit is self-correcting).
 message_is_injection() {  # <message-text>
   local msg=$1
   [ -n "$msg" ] || return 1
   case "$msg" in
-    "$FM_INJECT_MARK"*) return 0 ;;
+    "$SQUAD_INJECT_MARK"*) return 0 ;;
   esac
   return 1
 }
 
 # strip_injection_marker: remove a current typed away envelope, the landed
-# untyped FIRSTMATE_OP prefix, or the legacy bare sentinel. Current grammar is
+# untyped SQUAD_OP prefix, or the legacy bare sentinel. Current grammar is
 # delegated to its owner rather than reimplemented here.
 strip_injection_marker() {  # <message-text>
   local msg=$1 body
@@ -304,8 +304,8 @@ strip_injection_marker() {  # <message-text>
     return
   fi
   case "$msg" in
-    "$FM_OPERATIONAL_PREFIX"*) msg=${msg#"$FM_OPERATIONAL_PREFIX"} ;;
-    "$FM_INJECT_MARK"*) msg=${msg#"$FM_INJECT_MARK"} ;;
+    "$SQUAD_OPERATIONAL_PREFIX"*) msg=${msg#"$SQUAD_OPERATIONAL_PREFIX"} ;;
+    "$SQUAD_INJECT_MARK"*) msg=${msg#"$SQUAD_INJECT_MARK"} ;;
   esac
   printf '%s' "$msg"
 }
@@ -320,20 +320,20 @@ _collapse_newlines() {  # <text>
 }
 
 # discover_supervisor_target / discover_supervisor_backend are owned by
-# bin/fm-supervisor-target-lib.sh (sourced above). fm_super_main below calls
+# bin/sq-supervisor-target-lib.sh (sourced above). fm_super_main below calls
 # them exactly as before; the away launcher reuses the identical resolution to
-# pass the captain pane in as FM_SUPERVISOR_TARGET.
+# pass the commander pane in as SQUAD_SUPERVISOR_TARGET.
 
 # --- classification helpers (PURE: no side effects, testable) ---------------
-# last_status_line, status_is_captain_relevant, window_to_task, and
-# scan_captain_relevant_statuses come from bin/fm-classify-lib.sh (sourced above),
-# the single classifier shared with bin/fm-watch.sh. The decision-string wrappers
+# last_status_line, status_is_commander_relevant, window_to_task, and
+# scan_commander_relevant_statuses come from bin/sq-classify-lib.sh (sourced above),
+# the single classifier shared with bin/sq-sentry.sh. The decision-string wrappers
 # and dedup state below layer the daemon's escalation-digest concerns on top.
 #
 # Decision protocol: every classifier prints exactly one line on stdout of the
 # form "<action>|<distilled>" where action is "self" or "escalate". The distilled
 # field for "self" is informational (logged); for "escalate" it is the pre-read
-# summary firstmate would otherwise have to re-read.
+# summary Squad would otherwise have to re-read.
 
 classify_signal() {  # <reason-after-colon> <state>
   local reason=$1 state=$2 f last distilled="" rel="" all_seen=1 task seen
@@ -342,7 +342,7 @@ classify_signal() {  # <reason-after-colon> <state>
     last=$(last_status_line "$f")
     [ -n "$last" ] || continue
     distilled="${distilled}$(basename "$f"): ${last} | "
-    status_is_captain_relevant "$last" || continue
+    status_is_commander_relevant "$last" || continue
     rel=1
     # Dedupe against the catch-all scan: if this status was already escalated
     # (seen marker matches), skip escalating again. The seen marker is the
@@ -373,23 +373,23 @@ classify_stale() {  # <window> <state>
   task=$(window_to_task "$win" "$state")
   last=$(last_status_line "$state/$task.status")
   if [ -n "$last" ] && status_is_paused "$last"; then
-    # A DECLARED external-wait pause (fm-classify-lib.sh): an idle pane is EXPECTED,
+    # A DECLARED external-wait pause (sq-classify-lib.sh): an idle pane is EXPECTED,
     # so this is not a wedge. The caller records a pause marker (long re-surface
     # cadence in housekeeping) rather than a wedge stale marker. Cheap: reuses the
-    # status line already read, no fm-crew-state.sh call, mirroring the daemon's
+    # status line already read, no sq-crew-state.sh call, mirroring the daemon's
     # existing status-log classification.
     printf 'pause|paused (awaiting external), rechecked on a long cadence: %s' "$last"
     return
   fi
-  if [ -n "$last" ] && status_is_captain_relevant "$last"; then
-    # Independent of free-text captain-relevant matching: a nonterminal progress
+  if [ -n "$last" ] && status_is_commander_relevant "$last"; then
+    # Independent of free-text commander-relevant matching: a nonterminal progress
     # verb (working:) must never take the terminal stale path. Seen-status dedupe
     # must not permanently suppress or clear possible-wedge aging merely because
-    # prose once looked captain-relevant. Real terminal verbs and legacy free-text
-    # captain lines without those verbs keep the terminal escalate/dedupe path.
+    # prose once looked commander-relevant. Real terminal verbs and legacy free-text
+    # commander lines without those verbs keep the terminal escalate/dedupe path.
     if ! status_is_terminal_verb "$last"; then
       case "$(status_line_verb "$last")" in
-        working|resolved|captain-held)
+        working|resolved|commander-held)
           printf 'self|transient stale (%s): %s' "$win" "$last"
           return
           ;;
@@ -410,7 +410,7 @@ classify_stale() {  # <window> <state>
   printf 'self|transient stale (%s): %s' "$win" "${last:-no status}"
 }
 
-classify_check() {  # <full reason>  — check scripts print only when firstmate should wake
+classify_check() {  # <full reason>  — check scripts print only when Squad should wake
   printf 'escalate|%s' "$1"
 }
 
@@ -465,40 +465,40 @@ pause_marker_remove() {  # <window> <state>
 }
 
 clear_pause_tracking() {  # <window> <state>
-  local win=$1 state=$2 task key watcher_key
+  local win=$1 state=$2 task key sentry_key
   task=$(window_to_task "$win" "$state")
   key=$(_stale_key "$task")
-  watcher_key=$(_stale_key "$win")
+  sentry_key=$(_stale_key "$win")
   rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-stale-$key" \
-    "$state/.paused-$watcher_key" "$state/.paused-rechecked-$watcher_key" "$state/.paused-resurfaced-$watcher_key" \
-    "$state/.stale-$watcher_key" "$state/.stale-since-$watcher_key" "$state/.wedge-escalations-$watcher_key"
+    "$state/.paused-$sentry_key" "$state/.paused-rechecked-$sentry_key" "$state/.paused-resurfaced-$sentry_key" \
+    "$state/.stale-$sentry_key" "$state/.stale-since-$sentry_key" "$state/.wedge-escalations-$sentry_key"
 }
 
 reconcile_pause_tracking() {  # <window> <state> <last-status-line>
-  local win=$1 state=$2 last=$3 task key marker watcher_key
+  local win=$1 state=$2 last=$3 task key marker sentry_key
   task=$(window_to_task "$win" "$state")
   key=$(_stale_key "$task")
   marker="$state/.subsuper-paused-$key"
-  watcher_key=$(_stale_key "$win")
+  sentry_key=$(_stale_key "$win")
   if status_is_paused "$last"; then
     stale_marker_remove "$win" "$state"
     pause_marker_record "$win" "$state"
-  elif [ -e "$marker" ] || [ -e "$state/.paused-$watcher_key" ]; then
+  elif [ -e "$marker" ] || [ -e "$state/.paused-$sentry_key" ]; then
     clear_pause_tracking "$win" "$state"
   fi
 }
 
-migrate_watcher_pause_markers() {  # <state>
-  local state=$1 meta win task key last watcher_key
+migrate_sentry_pause_markers() {  # <state>
+  local state=$1 meta win task key last sentry_key
   for meta in "$state"/*.meta; do
     [ -e "$meta" ] || continue
     win=$(fm_backend_target_of_meta "$meta")
     [ -n "$win" ] || continue
     task=$(basename "$meta"); task=${task%.meta}
     key=$(_stale_key "$task")
-    watcher_key=$(_stale_key "$win")
+    sentry_key=$(_stale_key "$win")
     last=$(last_status_line "$state/$task.status")
-    if status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$watcher_key" ]; then
+    if status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$sentry_key" ]; then
       reconcile_pause_tracking "$win" "$state" "$last"
     fi
   done
@@ -519,7 +519,7 @@ sync_pause_markers_from_signal() {  # <state> <signal files>
   done
 }
 
-# Record the seen-status marker for a captain-relevant status line so the
+# Record the seen-status marker for a commander-relevant status line so the
 # heartbeat catch-all scan does not re-fire it. The single source of truth for
 # the .subsuper-seen-status-<task> dedup state: called from both the per-wake
 # escalate path and the catch-all scan.
@@ -528,7 +528,7 @@ mark_status_seen() {  # <state> <task> <last-line>
   printf '%s' "$line" > "$state/.subsuper-seen-status-$(_stale_key "$task")"
 }
 
-# Mark every captain-relevant status line a per-wake classification escalated as
+# Mark every commander-relevant status line a per-wake classification escalated as
 # seen, so the catch-all scan does not re-escalate the same line within
 # HEARTBEAT_SCAN_SECS. Mirrors classify_signal/classify_stale's relevance test.
 mark_escalated_seen() {  # <kind> <arg> <state>
@@ -539,14 +539,14 @@ mark_escalated_seen() {  # <kind> <arg> <state>
         [ -e "$f" ] || continue
         last=$(last_status_line "$f")
         [ -n "$last" ] || continue
-        status_is_captain_relevant "$last" || continue
+        status_is_commander_relevant "$last" || continue
         task=$(basename "$f"); task="${task%.status}"
         mark_status_seen "$state" "$task" "$last"
       done ;;
     stale)
       task=$(window_to_task "$arg" "$state")
       last=$(last_status_line "$state/$task.status")
-      [ -n "$last" ] && status_is_captain_relevant "$last" \
+      [ -n "$last" ] && status_is_commander_relevant "$last" \
         && mark_status_seen "$state" "$task" "$last" ;;
   esac
 }
@@ -560,7 +560,7 @@ mark_escalated_seen() {  # <kind> <arg> <state>
 # harness's composer box borders, so an aligned ghost-only or idle bordered
 # claude composer ("│ > … │") is correctly proven empty.
 # pane_is_busy / pane_input_pending: BACKEND-AWARE (dispatch goes through
-# bin/fm-backend.sh's generic per-backend primitives rather than a hand-rolled
+# bin/sq-backend.sh's generic per-backend primitives rather than a hand-rolled
 # case statement here). <backend> defaults to tmux when omitted, so every
 # existing caller/test that passes only <target> is unaffected.
 #
@@ -573,11 +573,11 @@ mark_escalated_seen() {  # <kind> <arg> <state>
 # is too heavy to pay on every source of this library (the unit tests and the
 # launcher source it purely for its pure functions).
 fm_daemon_primary_harness() {
-  if [ -z "${FM_DAEMON_PRIMARY_HARNESS:-}" ]; then
-    FM_DAEMON_PRIMARY_HARNESS=$("$FM_DAEMON_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
-    [ -n "$FM_DAEMON_PRIMARY_HARNESS" ] || FM_DAEMON_PRIMARY_HARNESS=unknown
+  if [ -z "${SQUAD_DAEMON_PRIMARY_HARNESS:-}" ]; then
+    SQUAD_DAEMON_PRIMARY_HARNESS=$("$SQUAD_DAEMON_DIR/sq-harness.sh" 2>/dev/null || printf 'unknown')
+    [ -n "$SQUAD_DAEMON_PRIMARY_HARNESS" ] || SQUAD_DAEMON_PRIMARY_HARNESS=unknown
   fi
-  printf '%s' "$FM_DAEMON_PRIMARY_HARNESS"
+  printf '%s' "$SQUAD_DAEMON_PRIMARY_HARNESS"
 }
 
 pane_is_busy() {  # <target> [backend]
@@ -615,7 +615,7 @@ task_window_harness() {  # <window> <state>
 }
 
 # stale_window_is_busy: 0 when the task is PROVABLY working through the
-# semantic busy-state contract (bin/fm-busy-lib.sh), 1 when it is not, and 2
+# semantic busy-state contract (bin/sq-busy-lib.sh), 1 when it is not, and 2
 # when the endpoint could not be read at all. Only an exact busy verdict is
 # working: unknown semantic state never becomes busy and never becomes a
 # silent idle, so a stale pane whose state cannot be proven surfaces.
@@ -624,7 +624,7 @@ stale_window_is_busy() {  # <window> <state>
   backend=$(task_window_backend "$win" "$state")
   harness=$(task_window_harness "$win" "$state")
   task=$(window_to_task "$win" "$state")
-  label="fm-$task"
+  label="sq-$task"
   tail40=$(fm_backend_capture "$backend" "$win" 40 "$label" 2>/dev/null) || return 2
   verdict=$(fm_busy_classify "$backend" "$win" "$harness" "$task" "$state" "$tail40")
   [ "${verdict%% *}" = busy ]
@@ -649,7 +649,7 @@ escalate_flush() {  # <state>
   msg=$(awk 'NR>1{printf " | "} {printf "%s",$0} END{print ""}' "$buf" 2>/dev/null)
   # Single-line wrapper: no embedded newlines (inject_msg also collapses as a
   # safety net, but keeping the source single-line makes the intent explicit).
-  msg=$(printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — watcher daemon-managed)' "$n" "$msg")
+  msg=$(printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$n" "$msg")
   if inject_msg "$msg" "$state"; then : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"; return 0; fi
   return 1
 }
@@ -659,16 +659,16 @@ escalate_flush() {  # <state>
 # client-side OSD with no cross-backend equivalent, so a wedged non-tmux primary
 # (the 2026-07-10 overnight incident: a claude-on-herdr primary) got NO active
 # signal - only the passive state/.subsuper-inject-wedged marker, which nothing
-# surfaces until the next fleet action (that night, 20 escalations sat buffered
+# surfaces until the next unit action (that night, 20 escalations sat buffered
 # for 8.5h). These helpers add a configurable active alert that does not depend
 # on any pane or its backend status-line: an OS-level macOS notification, a
-# herdr notification, or a captain-supplied command (push to a phone, etc.).
+# herdr notification, or a commander-supplied command (push to a phone, etc.).
 # Every channel is best-effort - a missing or failing channel logs and is
 # skipped, never crashing the daemon loop - and the durable marker plus the tmux
 # flash stay exactly as before.
 #
 # Config: config/wedge-alarm (local, gitignored), one channel directive per
-# non-empty, non-comment line. FM_WEDGE_ALARM_CHANNEL overrides the file with a
+# non-empty, non-comment line. SQUAD_WEDGE_ALARM_CHANNEL overrides the file with a
 # single directive. Directives:
 #   off              disable the active alert entirely, regardless of position
 #                    (marker + flash remain)
@@ -678,18 +678,18 @@ escalate_flush() {  # <state>
 #   command:<cmd>    run <cmd> via `sh -c`, summary on $1 and on stdin
 # An absent config means auto, i.e. default-ON on macOS: the alarm's whole
 # purpose is to never be silent, so the reachable OS channel fires unless the
-# captain explicitly disables it.
+# commander explicitly disables it.
 
-# Print the configured channel directives, one per line. FM_WEDGE_ALARM_CHANNEL
+# Print the configured channel directives, one per line. SQUAD_WEDGE_ALARM_CHANNEL
 # wins (a single directive); else each non-empty, non-comment line of
 # config/wedge-alarm; else "auto".
 wedge_alarm_configured_channels() {
   local cfg line found=
-  if [ -n "${FM_WEDGE_ALARM_CHANNEL:-}" ]; then
-    printf '%s\n' "$FM_WEDGE_ALARM_CHANNEL"
+  if [ -n "${SQUAD_WEDGE_ALARM_CHANNEL:-}" ]; then
+    printf '%s\n' "$SQUAD_WEDGE_ALARM_CHANNEL"
     return 0
   fi
-  cfg="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wedge-alarm"
+  cfg="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}/wedge-alarm"
   if [ -f "$cfg" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       line="${line#"${line%%[![:space:]]*}"}"
@@ -704,8 +704,8 @@ wedge_alarm_configured_channels() {
 }
 
 # Resolve the platform's default OS-level channel for `auto`. macOS reaches the
-# captain via an osascript Notification Center banner; other platforms have no
-# built-in OS channel (the captain wires a command: directive), so this prints
+# commander via an osascript Notification Center banner; other platforms have no
+# built-in OS channel (the commander wires a command: directive), so this prints
 # nothing and wedge_alarm_notify logs that the marker is the only signal.
 wedge_alarm_platform_default() {
   case "$(uname)" in
@@ -717,7 +717,7 @@ wedge_alarm_platform_default() {
 wedge_alarm_run_bounded() {
   local channel=$1 timeout monitor_was_on=0 pid start elapsed rc
   shift
-  timeout=${FM_WEDGE_ALARM_TIMEOUT_SECS:-$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT}
+  timeout=${SQUAD_WEDGE_ALARM_TIMEOUT_SECS:-$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT}
   case "$timeout" in
     ''|*[!0-9]*) timeout=$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT ;;
     *) [ "$timeout" -gt 0 ] 2>/dev/null || timeout=$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT ;;
@@ -759,16 +759,16 @@ wedge_alarm_stop_active_notifier() {
 }
 
 # The single execution seam for every configured notifier channel.
-# FM_WEDGE_ALARM_EXEC, when set, REPLACES the real notifier: the resolved channel
+# SQUAD_WEDGE_ALARM_EXEC, when set, REPLACES the real notifier: the resolved channel
 # name and summary are handed to that command instead of ever invoking osascript
-# or herdr or a captain-supplied command. This is the one injection point the test harness forces to a recorder
+# or herdr or a commander-supplied command. This is the one injection point the test harness forces to a recorder
 # so no test can post a real desktop notification - the library-mode guard at the
 # foot of this file defaults it to "discard" whenever the daemon is SOURCED
 # rather than executed, which is the only way a test reaches these functions. The
 # special value "discard" fires nothing; unset means production (the executed
 # daemon), so the real channels fire.
 wedge_alarm_os_notifier_override() {  # <channel> <summary>
-  local channel=$1 summary=$2 rc exec_override=${FM_WEDGE_ALARM_EXEC:-}
+  local channel=$1 summary=$2 rc exec_override=${SQUAD_WEDGE_ALARM_EXEC:-}
   case "$exec_override" in
     '') return 2 ;;
     discard) return 0 ;;
@@ -796,7 +796,7 @@ wedge_alarm_via_osascript() {  # <summary>
   command -v osascript >/dev/null 2>&1 || {
     log "wedge alarm: osascript not found; cannot post a macOS notification"; return 1; }
   wedge_alarm_run_bounded osascript osascript -e 'on run argv' \
-    -e 'display notification (item 1 of argv) with title "firstmate: away-mode escalations WEDGED" sound name "Basso"' \
+    -e 'display notification (item 1 of argv) with title "Squad: away-mode escalations WEDGED" sound name "Basso"' \
     -e 'end run' "$summary" >/dev/null 2>&1 && return 0
   log "wedge alarm: osascript notification failed"
   return 1
@@ -814,14 +814,14 @@ wedge_alarm_via_herdr() {  # <summary>
   esac
   command -v herdr >/dev/null 2>&1 || {
     log "wedge alarm: herdr not found; cannot post a herdr notification"; return 1; }
-  wedge_alarm_run_bounded herdr herdr notification show "firstmate: away-mode escalations WEDGED" \
+  wedge_alarm_run_bounded herdr herdr notification show "Squad: away-mode escalations WEDGED" \
     --body "$summary" --sound request >/dev/null 2>&1 && return 0
   log "wedge alarm: herdr notification failed"
   return 1
 }
 
-# Run a captain-supplied command with the summary on $1 and on stdin, so an
-# alert can reach a phone/pager (ntfy, Slack, SMS) even when the captain is away
+# Run a commander-supplied command with the summary on $1 and on stdin, so an
+# alert can reach a phone/pager (ntfy, Slack, SMS) even when the commander is away
 # from the machine entirely. Best-effort: logs and returns 1 on failure.
 wedge_alarm_via_command() {  # <cmd> <summary>
   local cmd=$1 summary=$2 rc
@@ -830,7 +830,7 @@ wedge_alarm_via_command() {  # <cmd> <summary>
     return $?
   fi
   [ -n "$cmd" ] || { log "wedge alarm: empty command: channel; nothing to run"; return 1; }
-  wedge_alarm_run_bounded command sh -c "$cmd" fm-wedge-alarm "$summary" \
+  wedge_alarm_run_bounded command sh -c "$cmd" sq-wedge-alarm "$summary" \
     <<< "$summary" >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] && return 0
@@ -839,7 +839,7 @@ wedge_alarm_via_command() {  # <cmd> <summary>
 }
 
 wedge_alarm_emit() {  # <channel> <summary>
-  local channel=$1 summary=$2 cmd=${3:-} rc exec_override=${FM_WEDGE_ALARM_EXEC:-} WEDGE_ALARM_EMIT_ACTIVE=1
+  local channel=$1 summary=$2 cmd=${3:-} rc exec_override=${SQUAD_WEDGE_ALARM_EXEC:-} WEDGE_ALARM_EMIT_ACTIVE=1
   case "$exec_override" in
     '') ;;
     discard) return 0 ;;
@@ -887,15 +887,15 @@ wedge_alarm_notify() {  # <summary> <marker>
 # Raise a loud, rate-limited alarm when escalations cannot be delivered after
 # max-defer (the supervisor pane is genuinely busy/wedged, or the submit's Enter
 # is swallowed). The daemon must NEVER silently wedge: this logs
-# an ERROR, drops a durable marker firstmate/recovery can surface, flashes
+# an ERROR, drops a durable marker Squad/recovery can surface, flashes
 # the tmux supervisor client's status line when applicable, and attempts a
 # configurable backend-independent active alert (wedge_alarm_notify). Nothing
 # is lost - the buffer and the
-# wake-queue both survive - but the stall stops being invisible.
+# stand-to queue both survive - but the stall stops being invisible.
 inject_wedge_alarm() {  # <state> <age-seconds>
   local state=$1 age=$2 marker target backend max_defer now notify=1
   marker="$state/.subsuper-inject-wedged"
-  max_defer="${FM_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}"
+  max_defer="${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}"
   # Re-alarm at most once per max-defer window so a long wedge does not spam.
   if [ "$(_file_age "$marker")" -lt "$max_defer" ]; then
     return 0
@@ -905,15 +905,15 @@ inject_wedge_alarm() {  # <state> <age-seconds>
     notify=0
   else
     WEDGE_ALARM_LAST_EPOCH=$now
-    log "ERROR: away-mode escalation undelivered ${age}s; inject could not confirm a submit (supervisor pane busy or wedged). Buffer + wake-queue preserved; alarm marker written."
+    log "ERROR: away-mode escalation undelivered ${age}s; inject could not confirm a submit (supervisor pane busy or wedged). Buffer + stand-to queue preserved; alarm marker written."
   fi
   {
     printf 'fm away-mode inject WEDGED: %ss undelivered as of %s\n' "$age" "$(date '+%Y-%m-%dT%H:%M:%S%z')"
     printf 'The supervisor pane could not accept an escalation. Buffered items:\n'
     cat "$state/.subsuper-escalations" 2>/dev/null
   } 2>/dev/null > "$marker" || true
-  target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
-  backend="${FM_SUPERVISOR_BACKEND:-$FM_SUPERVISOR_BACKEND_DEFAULT}"
+  target="${SQUAD_SUPERVISOR_TARGET:-$SQUAD_SUPERVISOR_TARGET_DEFAULT}"
+  backend="${SQUAD_SUPERVISOR_BACKEND:-$SQUAD_SUPERVISOR_BACKEND_DEFAULT}"
   # Best-effort status-line flash. tmux's display-message is a client-side OSD
   # with no herdr equivalent; the log line + durable marker above are already
   # the primary, backend-independent signal, so a non-tmux backend just skips
@@ -922,7 +922,7 @@ inject_wedge_alarm() {  # <state> <age-seconds>
     tmux display-message -t "$target" "fm: away-mode escalations WEDGED ${age}s — see $marker" 2>/dev/null || true
   fi
   # Backend-independent active alert. Unlike the tmux flash above (skipped on
-  # every non-tmux backend), this can reach the captain even when every pane and
+  # every non-tmux backend), this can reach the commander even when every pane and
   # its backend status-line is unreadable - the gap the 2026-07-10 overnight
   # incident fell through. Configurable and best-effort; the marker above stays
   # the durable record whether or not any channel fires.
@@ -942,8 +942,8 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
   fi
 }
 
-# --- housekeeping (runs every tick while the watcher is mid-cycle) ----------
-# Four cheap jobs, each guarded so an empty/quiet fleet costs near zero:
+# --- housekeeping (runs every tick while the sentry is mid-cycle) ----------
+# Four cheap jobs, each guarded so an empty/quiet unit costs near zero:
 #  1) batch flush: if the escalation buffer's oldest content is older than
 #     ESCALATE_BATCH_SECS (or batching is disabled), inject one digest.
 #  1b) max-defer escape: if the buffer is STILL undelivered past MAX_DEFER_SECS,
@@ -955,18 +955,18 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 #     re-peek; busy/gone -> clear; still idle + still paused -> escalate a recheck
 #     digest and reset the window (repeating bounded re-surface, never a wedge).
 #  3) heartbeat scan: every HEARTBEAT_SCAN_SECS, grep state/*.status for a
-#     captain-relevant line the per-wake classifier missed and escalate it.
+#     commander-relevant line the per-wake classifier missed and escalate it.
 housekeeping() {  # <state>
   local state=$1 now due f key task win marker age last max_defer oldest pause_secs
   now=$(_now)
-  migrate_watcher_pause_markers "$state"
+  migrate_sentry_pause_markers "$state"
 
   # (1) batch flush
-  if [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ]; then
+  if [ "${SQUAD_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ]; then
     escalate_flush "$state" || true
   else
     due=$(_oldest_line_age "$state/.subsuper-escalations")
-    if [ "$due" -ge "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" ]; then
+    if [ "$due" -ge "${SQUAD_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" ]; then
       escalate_flush "$state" || true
     fi
   fi
@@ -974,7 +974,7 @@ housekeeping() {  # <state>
   # (1b) max-defer escape. If anything is still buffered past MAX_DEFER_SECS,
   # retry the normal delivery path. If that still cannot confirm, raise a loud
   # wedge alarm while preserving the buffer.
-  max_defer=${FM_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}
+  max_defer=${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}
   if afk_active "$state" && [ "$max_defer" -gt 0 ] && [ -s "$state/.subsuper-escalations" ]; then
     oldest=$(_oldest_line_age "$state/.subsuper-escalations")
     # Throttle the alarm to once per max-defer window (the wedge marker doubles
@@ -1009,7 +1009,7 @@ housekeeping() {  # <state>
       continue
     fi
     age=$(( now - $(cat "$marker" 2>/dev/null || echo "$now") ))
-    [ "$age" -ge "${FM_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}" ] || continue
+    [ "$age" -ge "${SQUAD_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}" ] || continue
     stale_window_is_busy "$win" "$state"
     case "$?" in
       0) rm -f "$marker" ;;
@@ -1025,7 +1025,7 @@ housekeeping() {  # <state>
   # rot invisibly. Past the window: busy (resumed) or gone -> drop; still idle and
   # still declaring the pause -> escalate a recheck digest and reset the marker so
   # the window repeats.
-  pause_secs=${FM_PAUSE_RESURFACE_SECS:-$FM_PAUSE_RESURFACE_SECS_DEFAULT}
+  pause_secs=${SQUAD_PAUSE_RESURFACE_SECS:-$SQUAD_PAUSE_RESURFACE_SECS_DEFAULT}
   for marker in "$state"/.subsuper-paused-*; do
     [ -e "$marker" ] || continue
     key="${marker##*.subsuper-paused-}"
@@ -1057,11 +1057,11 @@ housekeeping() {  # <state>
     esac
   done
 
-  # (3) heartbeat scan (catch-all for a captain-relevant status the per-wake
+  # (3) heartbeat scan (catch-all for a commander-relevant status the per-wake
   #     classifier may have missed). Cheap: status files only, no tmux. The
-  #     captain-relevant filtering is the shared classifier's
-  #     scan_captain_relevant_statuses; the daemon layers its digest dedup on top.
-  if [ "$(_file_age "$state/.subsuper-last-scan")" -ge "${FM_HEARTBEAT_SCAN_SECS:-$HEARTBEAT_SCAN_SECS_DEFAULT}" ]; then
+  #     commander-relevant filtering is the shared classifier's
+  #     scan_commander_relevant_statuses; the daemon layers its digest dedup on top.
+  if [ "$(_file_age "$state/.subsuper-last-scan")" -ge "${SQUAD_HEARTBEAT_SCAN_SECS:-$HEARTBEAT_SCAN_SECS_DEFAULT}" ]; then
     _now > "$state/.subsuper-last-scan"
     local seen
     while IFS="$(printf '\t')" read -r f task last; do
@@ -1070,7 +1070,7 @@ housekeeping() {  # <state>
       [ "$(cat "$seen" 2>/dev/null || true)" = "$last" ] && continue
       escalate_add "$state" "$(basename "$f"): $last (catch-all scan)"
       mark_status_seen "$state" "$task" "$last"
-    done < <(scan_captain_relevant_statuses "$state")
+    done < <(scan_commander_relevant_statuses "$state")
   fi
 }
 
@@ -1084,7 +1084,7 @@ window_for_task() {  # <task-key> [state]
     w=$(fm_backend_target_of_meta "$meta")
     [ -n "$w" ] && { printf '%s' "$w"; return 0; }
   done
-  for w in $(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep ':fm-' || true); do
+  for w in $(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep ':sq-' || true); do
     t=$(window_to_task "$w" "$state")
     [ "$(_stale_key "$t")" = "$key" ] && { printf '%s' "$w"; return 0; }
   done
@@ -1115,8 +1115,8 @@ inject_msg() {  # <message> [state]
   local msg=$1 state target backend retries sleep_s verdict composer encoded
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
-  # daemon self-handles and stays quiet; firstmate drives the normal always-on
-  # watcher triage. Escalations buffer and survive for the next catch-up flush.
+  # daemon self-handles and stays quiet; Squad drives the normal always-on
+  # sentry triage. Escalations buffer and survive for the next catch-up flush.
   afk_active "$state" || { log "inject deferred: afk inactive"; return 1; }
   # (2) Single-line digest: collapse any embedded newlines so submission via
   # send-keys + Enter is unambiguous regardless of how the TUI composer treats
@@ -1125,13 +1125,13 @@ inject_msg() {  # <message> [state]
   msg=$(_collapse_newlines "$msg")
   fm_operational_input_encode away-supervisor "$msg" encoded || return 1
   msg=$encoded
-  target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
+  target="${SQUAD_SUPERVISOR_TARGET:-$SQUAD_SUPERVISOR_TARGET_DEFAULT}"
   # BACKEND-AWARE (previously a raw `tmux display-message` pane-exists probe):
-  # dispatches through bin/fm-backend.sh so a herdr supervisor pane is checked
+  # dispatches through bin/sq-backend.sh so a herdr supervisor pane is checked
   # via the herdr adapter instead of always assuming tmux. Falls back to tmux
   # when unset (sourced/test contexts that never ran fm_super_main's startup
   # discovery), matching this function's pre-existing default assumption.
-  backend="${FM_SUPERVISOR_BACKEND:-tmux}"
+  backend="${SQUAD_SUPERVISOR_BACKEND:-tmux}"
   fm_backend_target_exists "$backend" "$target" || return 1
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
@@ -1140,7 +1140,7 @@ inject_msg() {  # <message> [state]
   fi
   #   b) Composer-guard: inject ONLY into a confirmed-empty GENUINE agent
   #      composer. The shared classifier (fm_backend_composer_state ->
-  #      fm_composer_classify_content, bin/fm-composer-lib.sh) reports 'pending'
+  #      fm_composer_classify_content, bin/sq-composer-lib.sh) reports 'pending'
   #      for real unsubmitted text (a human's half-typed line, or a swallowed
   #      prior injection) and 'unknown' for a bare dead-shell prompt (the agent
   #      exited to its login shell) or an unreadable pane. Neither is a safe
@@ -1156,11 +1156,11 @@ inject_msg() {  # <message> [state]
   # retype) via the shared submit primitive. Success = the backend confirms
   # submit. An unconfirmed/unknown pane does NOT count as delivered, so the
   # buffer is preserved (strict) rather than cleared.
-  # Dispatches through fm_backend_send_text_submit (bin/fm-backend.sh): for
+  # Dispatches through fm_backend_send_text_submit (bin/sq-backend.sh): for
   # backend=tmux this calls fm_backend_tmux_send_text_submit, a verbatim
   # re-export of fm_tmux_submit_core - byte-identical to calling it directly.
-  retries=${FM_INJECT_CONFIRM_RETRIES:-$INJECT_CONFIRM_RETRIES_DEFAULT}
-  sleep_s=${FM_INJECT_CONFIRM_SLEEP:-$INJECT_CONFIRM_SLEEP_DEFAULT}
+  retries=${SQUAD_INJECT_CONFIRM_RETRIES:-$INJECT_CONFIRM_RETRIES_DEFAULT}
+  sleep_s=${SQUAD_INJECT_CONFIRM_SLEEP:-$INJECT_CONFIRM_SLEEP_DEFAULT}
   verdict=$(fm_backend_send_text_submit "$backend" "$target" "$msg" "$retries" "$sleep_s" "$sleep_s")
   if [ "$verdict" = empty ]; then
     return 0  # Backend confirmed the submit.
@@ -1171,7 +1171,7 @@ inject_msg() {  # <message> [state]
 
 # --- INJECT_SKIP prefix match (literal prefixes, no regex) ------------------
 should_force_self() {  # <reason>
-  local reason=$1 skip="${FM_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}" prefix
+  local reason=$1 skip="${SQUAD_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}" prefix
   [ -n "$skip" ] || return 1
   local -a prefixes
   IFS='|' read -ra prefixes <<<"$skip"
@@ -1182,9 +1182,9 @@ should_force_self() {  # <reason>
   return 1
 }
 
-# A real watcher WAKE reason starts with one of these prefixes. Anything else on
-# the watcher child's stdout (e.g. "watcher: already running" on a singleton-lock
-# collision, reachable if the daemon was SIGKILL'd and its orphaned watcher child
+# A real sentry WAKE reason starts with one of these prefixes. Anything else on
+# the sentry child's stdout (e.g. "sentry: already running" on a singleton-lock
+# collision, reachable if the daemon was SIGKILL'd and its orphaned sentry child
 # still holds the #29 singleton lock) is a STATUS line, not a wake: handling it
 # as an unknown wake would flood the escalation buffer and restart the child with
 # no crash backoff. The main loop treats a non-wake line as idle (log + sleep +
@@ -1203,7 +1203,7 @@ handle_wake() {  # <reason> <state>
   local reason=$1 state=$2 decision action distilled task last stale_detail
   local kind="" arg=""
   if should_force_self "$reason"; then
-    log "wake force-self (FM_INJECT_SKIP): $reason"
+    log "wake force-self (SQUAD_INJECT_SKIP): $reason"
     return
   fi
   case "$reason" in
@@ -1231,7 +1231,7 @@ handle_wake() {  # <reason> <state>
       # housekeeping re-escalates the same pane as a false wedge later.
       [ "$kind" = "stale" ] && stale_marker_remove "$arg" "$state"
       mark_escalated_seen "$kind" "$arg" "$state"
-      [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] && { escalate_flush "$state" || true; }
+      [ "${SQUAD_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] && { escalate_flush "$state" || true; }
       ;;
     pause)
       # Declared external-wait pause: record a pause marker (long re-surface
@@ -1252,16 +1252,16 @@ handle_wake() {  # <reason> <state>
       if [ "$kind" = "stale" ]; then
         task=$(window_to_task "$arg" "$state")
         last=$(last_status_line "$state/$task.status")
-        # Clear wedge aging only for terminal (or legacy free-text) captain lines.
+        # Clear wedge aging only for terminal (or legacy free-text) commander lines.
         # Nonterminal progress verbs keep possible-wedge markers even if free text
-        # once looked captain-relevant or was written into a seen marker.
+        # once looked commander-relevant or was written into a seen marker.
         _clear_wedge=0
-        if [ -n "$last" ] && status_is_captain_relevant "$last"; then
+        if [ -n "$last" ] && status_is_commander_relevant "$last"; then
           if status_is_terminal_verb "$last"; then
             _clear_wedge=1
           else
             case "$(status_line_verb "$last")" in
-              working|resolved|captain-held) _clear_wedge=0 ;;
+              working|resolved|commander-held) _clear_wedge=0 ;;
               *) _clear_wedge=1 ;;
             esac
           fi
@@ -1287,14 +1287,14 @@ trim_log() {
   local sz tmp
   [ -n "${LOG:-}" ] || return 0
   sz=$(wc -c < "$LOG" 2>/dev/null) || return 0
-  [ "$sz" -ge "${FM_LOG_MAX_BYTES:-$LOG_MAX_BYTES_DEFAULT}" ] || return 0
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-daemon-log.XXXXXX") || return 0
-  tail -n "${FM_LOG_KEEP_LINES:-$LOG_KEEP_LINES_DEFAULT}" "$LOG" >"$tmp" 2>/dev/null && mv -f "$tmp" "$LOG"
+  [ "$sz" -ge "${SQUAD_LOG_MAX_BYTES:-$LOG_MAX_BYTES_DEFAULT}" ] || return 0
+  tmp=$(mktemp "${TMPDIR:-/tmp}/sq-daemon-log.XXXXXX") || return 0
+  tail -n "${SQUAD_LOG_KEEP_LINES:-$LOG_KEEP_LINES_DEFAULT}" "$LOG" >"$tmp" 2>/dev/null && mv -f "$tmp" "$LOG"
 }
 
 # ============================================================================
 # Everything below runs only when the script is EXECUTED, not sourced. The pure
-# classifiers above are sourceable for unit tests (tests/fm-daemon.test.sh).
+# classifiers above are sourceable for unit tests (tests/sq-daemon.test.sh).
 # ============================================================================
 
 fm_super_main() {
@@ -1303,29 +1303,29 @@ fm_super_main() {
   mkdir -p "$STATE"
 
   # Source the portable lock helpers (works on macOS where flock is absent).
-  # Export FM_STATE_OVERRIDE so the lib resolves the same state dir.
-  # shellcheck source=bin/fm-wake-lib.sh
-  FM_STATE_OVERRIDE="$STATE" . "$FM_DAEMON_DIR/fm-wake-lib.sh"
+  # Export SQUAD_STATE_OVERRIDE so the lib resolves the same state dir.
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  SQUAD_STATE_OVERRIDE="$STATE" . "$SQUAD_DAEMON_DIR/sq-stand-to-lib.sh"
 
-  local WATCH="$FM_DAEMON_DIR/fm-watch.sh"
+  local WATCH="$SQUAD_DAEMON_DIR/sq-sentry.sh"
   local LOG="$STATE/.supervise-daemon.log"
-  local WATCH_ERR="$STATE/.supervise-daemon.watcher.err"
+  local WATCH_ERR="$STATE/.supervise-daemon.sentry.err"
   local LOCK="$STATE/.supervise-daemon.lock"
   local PIDFILE="$STATE/.supervise-daemon.pid"
-  local INJECT_FAIL_SLEEP=${FM_INJECT_FAIL_SLEEP:-$INJECT_FAIL_SLEEP_DEFAULT}
-  local CRASH_THRESHOLD=${FM_CRASH_THRESHOLD:-$CRASH_THRESHOLD_DEFAULT}
-  local CRASH_WINDOW=${FM_CRASH_WINDOW:-$CRASH_WINDOW_DEFAULT}
-  local CRASH_BACKOFF=${FM_CRASH_BACKOFF:-$CRASH_BACKOFF_DEFAULT}
-  local CRASH_NORMAL_SLEEP=${FM_CRASH_NORMAL_SLEEP:-$CRASH_NORMAL_SLEEP_DEFAULT}
+  local INJECT_FAIL_SLEEP=${SQUAD_INJECT_FAIL_SLEEP:-$INJECT_FAIL_SLEEP_DEFAULT}
+  local CRASH_THRESHOLD=${SQUAD_CRASH_THRESHOLD:-$CRASH_THRESHOLD_DEFAULT}
+  local CRASH_WINDOW=${SQUAD_CRASH_WINDOW:-$CRASH_WINDOW_DEFAULT}
+  local CRASH_BACKOFF=${SQUAD_CRASH_BACKOFF:-$CRASH_BACKOFF_DEFAULT}
+  local CRASH_NORMAL_SLEEP=${SQUAD_CRASH_NORMAL_SLEEP:-$CRASH_NORMAL_SLEEP_DEFAULT}
 
-  [ -x "$WATCH" ] || { echo "error: watcher not found or not executable: $WATCH" >&2; exit 1; }
+  [ -x "$WATCH" ] || { echo "error: sentry not found or not executable: $WATCH" >&2; exit 1; }
 
   # --- single instance (portable lock, no flock dependency) ------------------
   if ! fm_lock_try_acquire "$LOCK"; then
-    if [ -n "${FM_LOCK_HELD_PID:-}" ]; then
-      echo "error: another fm-supervise-daemon is already running (pid $FM_LOCK_HELD_PID, lock $LOCK held)" >&2
+    if [ -n "${SQUAD_LOCK_HELD_PID:-}" ]; then
+      echo "error: another sq-supervise-daemon is already running (pid $SQUAD_LOCK_HELD_PID, lock $LOCK held)" >&2
     else
-      echo "error: another fm-supervise-daemon is already running (lock $LOCK held)" >&2
+      echo "error: another sq-supervise-daemon is already running (lock $LOCK held)" >&2
     fi
     exit 1
   fi
@@ -1333,73 +1333,73 @@ fm_super_main() {
   fm_pid_identity "${BASHPID:-$$}" > "$LOCK/pid-identity" 2>/dev/null || true
 
   # --- auto-discover the supervisor BACKEND (tmux vs herdr) first -----------
-  # Priority: FM_SUPERVISOR_BACKEND override > $TMUX_PANE (tmux) > $HERDR_ENV=1
+  # Priority: SQUAD_SUPERVISOR_BACKEND override > $TMUX_PANE (tmux) > $HERDR_ENV=1
   # (herdr) > tmux fallback. Resolved before the target below, since target
   # discovery composes a herdr "<session>:<pane-id>" string using the same
   # $HERDR_PANE_ID/$HERDR_SESSION markers this checks. Exporting the result
-  # into FM_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending
+  # into SQUAD_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending
   # (which read that env var) dispatch through the right backend without an
   # extra global thread-through.
   local discovered_backend backend_source
-  backend_source="FM_SUPERVISOR_BACKEND"
-  if [ -z "${FM_SUPERVISOR_BACKEND:-}" ]; then
+  backend_source="SQUAD_SUPERVISOR_BACKEND"
+  if [ -z "${SQUAD_SUPERVISOR_BACKEND:-}" ]; then
     if [ -n "${TMUX_PANE:-}" ]; then
       backend_source="TMUX_PANE"
     elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
       backend_source="HERDR_ENV"
     else
-      backend_source="FALLBACK($FM_SUPERVISOR_BACKEND_DEFAULT)"
+      backend_source="FALLBACK($SQUAD_SUPERVISOR_BACKEND_DEFAULT)"
     fi
   fi
   discovered_backend=$(discover_supervisor_backend) || true
-  FM_SUPERVISOR_BACKEND="$discovered_backend"
-  local BACKEND="$FM_SUPERVISOR_BACKEND"
+  SQUAD_SUPERVISOR_BACKEND="$discovered_backend"
+  local BACKEND="$SQUAD_SUPERVISOR_BACKEND"
 
   # --- refuse an unsupported supervisor backend loudly, before ever trying a
   # tmux/herdr-specific call against it (zellij, orca, and cmux have no verified
   # composer/busy primitives wired up for this daemon yet - AGENTS.md section 4
   # harness-verification discipline). This is the clear refusal the task calls
   # for, instead of a confusing "does not resolve to a tmux pane" error.
-  if ! fm_backend_list_contains "$FM_SUPERVISOR_SUPPORTED_BACKENDS" "$BACKEND"; then
-    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $FM_SUPERVISOR_SUPPORTED_BACKENDS); set FM_SUPERVISOR_BACKEND=tmux|herdr and FM_SUPERVISOR_TARGET to run firstmate's own pane under a supported backend" >&2
+  if ! fm_backend_list_contains "$SQUAD_SUPERVISOR_SUPPORTED_BACKENDS" "$BACKEND"; then
+    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
     log "startup failed: unsupported supervisor backend '$BACKEND' (source=$backend_source)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
     exit 1
   fi
 
-  # --- auto-discover the supervisor target (the pane running firstmate) -----
-  # Priority: FM_SUPERVISOR_TARGET override > $TMUX_PANE (tmux; inherited from
-  # the pane that launched the daemon, normally firstmate's own) >
-  # $HERDR_PANE_ID (herdr, composed into "<session>:<pane-id>") > firstmate:0
-  # fallback. Exporting the result into FM_SUPERVISOR_TARGET makes inject_msg
+  # --- auto-discover the supervisor target (the pane running Squad) -----
+  # Priority: SQUAD_SUPERVISOR_TARGET override > $TMUX_PANE (tmux; inherited from
+  # the pane that launched the daemon, normally Squad's own) >
+  # $HERDR_PANE_ID (herdr, composed into "<session>:<pane-id>") > Squad:0
+  # fallback. Exporting the result into SQUAD_SUPERVISOR_TARGET makes inject_msg
   # (which reads that env var) use the discovered pane without an extra global.
   local discovered target_source
-  target_source="FM_SUPERVISOR_TARGET"
-  if [ -z "${FM_SUPERVISOR_TARGET:-}" ]; then
+  target_source="SQUAD_SUPERVISOR_TARGET"
+  if [ -z "${SQUAD_SUPERVISOR_TARGET:-}" ]; then
     if [ -n "${TMUX_PANE:-}" ]; then
       target_source="TMUX_PANE"
     elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
       target_source="HERDR_ENV(HERDR_PANE_ID)"
     else
-      target_source="FALLBACK(firstmate:0)"
+      target_source="FALLBACK(Squad:0)"
     fi
   fi
   if discovered=$(discover_supervisor_target); then
     : # resolved cleanly
   else
-    echo "warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '$discovered' — verify this is firstmate's pane" >&2
+    echo "warn: could not auto-discover supervisor pane (no SQUAD_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '$discovered' — verify this is Squad's pane" >&2
   fi
-  FM_SUPERVISOR_TARGET="$discovered"
-  local TARGET="$FM_SUPERVISOR_TARGET"
+  SQUAD_SUPERVISOR_TARGET="$discovered"
+  local TARGET="$SQUAD_SUPERVISOR_TARGET"
 
   # --- validate supervisor target at startup (a missing target is a typo) ---
-  # Dispatches through bin/fm-backend.sh instead of a raw `tmux display-message`
+  # Dispatches through bin/sq-backend.sh instead of a raw `tmux display-message`
   # probe, so a herdr supervisor pane is checked via the herdr adapter; for
   # backend=tmux this runs the exact same `tmux display-message -p -t "$TARGET"
   # '#{pane_id}'` call as before.
   if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
-    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set FM_SUPERVISOR_TARGET" >&2
+    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set SQUAD_SUPERVISOR_TARGET" >&2
     log "startup failed: target '$TARGET' not found (backend=$BACKEND)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
@@ -1408,8 +1408,8 @@ fm_super_main() {
 
   local afk_status="off"
   afk_active "$STATE" && afk_status="on"
-  log "daemon starting (pid $$); target=$TARGET; target_source=$target_source; backend=$BACKEND; backend_source=$backend_source; afk=$afk_status; inject_skip='${FM_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}'; stale_escalate=${FM_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}s; batch=${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}s"
-  migrate_watcher_pause_markers "$STATE"
+  log "daemon starting (pid $$); target=$TARGET; target_source=$target_source; backend=$BACKEND; backend_source=$backend_source; afk=$afk_status; inject_skip='${SQUAD_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}'; stale_escalate=${SQUAD_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}s; batch=${SQUAD_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}s"
+  migrate_sentry_pause_markers "$STATE"
 
   # --- shutdown: flush buffered escalations, reap child, release lock -------
   local WATCHER_PID="" CUR_TMP=""
@@ -1443,7 +1443,7 @@ fm_super_main() {
     keep+=("$now")
     crash_times=("${keep[@]}")
     if [ "${#crash_times[@]}" -gt "$CRASH_THRESHOLD" ]; then
-      log "ERROR: watcher crashed ${#crash_times[@]} times within ${CRASH_WINDOW}s; backing off ${CRASH_BACKOFF}s"
+      log "ERROR: sentry crashed ${#crash_times[@]} times within ${CRASH_WINDOW}s; backing off ${CRASH_BACKOFF}s"
       crash_times=()
       backoff_secs=$CRASH_BACKOFF
     else
@@ -1451,8 +1451,8 @@ fm_super_main() {
     fi
   }
 
-  start_watcher() {
-    CUR_TMP=$(mktemp "${TMPDIR:-/tmp}/fm-watch.XXXXXX") || { log "error: mktemp failed; retrying in 5s"; sleep 5; return 1; }
+  start_sentry() {
+    CUR_TMP=$(mktemp "${TMPDIR:-/tmp}/sq-sentry.XXXXXX") || { log "error: mktemp failed; retrying in 5s"; sleep 5; return 1; }
     "$WATCH" >"$CUR_TMP" 2>>"$WATCH_ERR" &
     WATCHER_PID=$!
   }
@@ -1460,10 +1460,10 @@ fm_super_main() {
   local rc reason
   while true; do
     # --- pane-gone guard (preserved) ---------------------------------------
-    # With the #29 watcher's enqueue-before-suppress, a wake is no longer
-    # swallowed by running the watcher with no injection target. We still back
+    # With the #29 sentry's enqueue-before-suppress, a wake is no longer
+    # swallowed by running the sentry with no injection target. We still back
     # off while the pane is gone: self-handling needs no pane, but escalation
-    # has nowhere to go, and firstmate itself is the consumer of escalations.
+    # has nowhere to go, and Squad itself is the consumer of escalations.
     # Catch-up signals persist in state/*.status and flow on the next run, so
     # this delays rather than loses work.
     if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
@@ -1473,7 +1473,7 @@ fm_super_main() {
       continue
     fi
 
-    # --- (re)start watcher if it has exited --------------------------------
+    # --- (re)start sentry if it has exited --------------------------------
     if [ -z "${WATCHER_PID:-}" ] || ! kill -0 "${WATCHER_PID:-}" 2>/dev/null; then
       if [ -n "${WATCHER_PID:-}" ]; then
         # child exited: reap + classify its wake reason
@@ -1488,17 +1488,17 @@ fm_super_main() {
         CUR_TMP=""
         if [ "$rc" -ne 0 ] || [ -z "$reason" ]; then
           record_crash
-          log "watcher exited rc=$rc reason='$reason'; restarting after ${backoff_secs}s"
+          log "sentry exited rc=$rc reason='$reason'; restarting after ${backoff_secs}s"
           WATCHER_PID=""
           sleep "$backoff_secs"
           continue
         fi
-        # Non-wake stdout (e.g. a watcher singleton-collision "already running"
+        # Non-wake stdout (e.g. a sentry singleton-collision "already running"
         # status line) is NOT a wake: idling here prevents an escalation flood
         # and a backoff-less child restart. record_crash is intentionally
         # skipped (rc=0, this is normal idle, not a crash).
         if ! is_wake_reason "$reason"; then
-          log "watcher non-wake stdout, idling: $reason"
+          log "sentry non-wake stdout, idling: $reason"
           WATCHER_PID=""
           sleep "${HOUSEKEEPING_TICK:-$HOUSEKEEPING_TICK_DEFAULT}"
           continue
@@ -1507,16 +1507,16 @@ fm_super_main() {
         handle_wake "$reason" "$STATE"
         trim_log
       fi
-      start_watcher || continue
+      start_sentry || continue
     fi
 
     # --- one housekeeping tick (gated to HOUSEKEEPING_TICK), then poll -------
-    # The watcher child runs on its own FM_POLL cadence internally; we only need
+    # The sentry child runs on its own SQUAD_POLL cadence internally; we only need
     # to detect its exit (the kill -0 above) promptly and run housekeeping often
     # enough that batch flushes, stale rechecks, and the catch-all scan fire on
-    # cadence. Gating keeps a large fleet cheap between ticks.
+    # cadence. Gating keeps a large unit cheap between ticks.
     sleep 1
-    if [ "$(_file_age "$STATE/.subsuper-last-housekeep")" -ge "${FM_HOUSEKEEPING_TICK:-$HOUSEKEEPING_TICK_DEFAULT}" ]; then
+    if [ "$(_file_age "$STATE/.subsuper-last-housekeep")" -ge "${SQUAD_HOUSEKEEPING_TICK:-$HOUSEKEEPING_TICK_DEFAULT}" ]; then
       _now > "$STATE/.subsuper-last-housekeep"
       housekeeping "$STATE"
     fi
@@ -1528,12 +1528,12 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   fm_super_main "$@"
 else
   # Library mode: these functions were SOURCED (only tests do this - production
-  # execs the daemon, see bin/fm-afk-start.sh). Make it structurally impossible
+  # execs the daemon, see bin/sq-afk-start.sh). Make it structurally impossible
   # for a sourced context to fire a real desktop notification from the wedge
-  # alarm: default the FM_WEDGE_ALARM_EXEC notifier seam to "discard" unless the
-  # embedder already wired one (e.g. a recorder in tests/wake-helpers.sh). It is
+  # alarm: default the SQUAD_WEDGE_ALARM_EXEC notifier seam to "discard" unless the
+  # embedder already wired one (e.g. a recorder in tests/stand-to-helpers.sh). It is
   # exported so a real daemon a test later spawns inherits the safe default too.
   # The executed branch above never runs this, so production is untouched.
-  : "${FM_WEDGE_ALARM_EXEC:=discard}"
-  export FM_WEDGE_ALARM_EXEC
+  : "${SQUAD_WEDGE_ALARM_EXEC:=discard}"
+  export SQUAD_WEDGE_ALARM_EXEC
 fi

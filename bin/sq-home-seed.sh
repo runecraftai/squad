@@ -1,65 +1,65 @@
 #!/usr/bin/env bash
-# Provision and route persistent secondmate homes.
+# Provision and route persistent XO homes.
 #
 # Usage:
-#   fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}
-#       Provision <home> as an isolated firstmate home. If <home> is "-", acquire
-#       a fresh firstmate worktree via "treehouse get --lease", which durably
-#       leases the worktree under the secondmate <id> so the home survives with
+#   sq-home-seed.sh <id> <home|-> {<project>...|--no-projects}
+#       Provision <home> as an isolated Squad home. If <home> is "-", acquire
+#       a fresh Squad worktree via "fob get --lease", which durably
+#       leases the worktree under the XO <id> so the home survives with
 #       no live process and is never recycled until the lease is released with
-#       "treehouse return". Projects are cloned
-#       from the active home into the secondmate home's projects/ directory.
+#       "fob return". Projects are cloned
+#       from the active home into the XO home's projects/ directory.
 #       That project list is non-exclusive provisioning data. Pass --no-projects
 #       instead of a project list to seed a project-less home for a domain whose
-#       subject is the firstmate repo itself; it is mutually exclusive with a
+#       subject is the Squad repo itself; it is mutually exclusive with a
 #       project list, and omitting both still fails loudly. A project-less seed
 #       refuses a home with project clones or project-registry entries, so it
 #       never converts populated homes in place. The charter brief
 #       is copied to data/charter.md, newly cloned no-mistakes projects are
-#       initialized, an ignored .fm-secondmate-parent binding is published before
-#       the .fm-secondmate-home identity marker, and data/secondmates.md is updated.
+#       initialized, an ignored .sq-xo-parent binding is published before
+#       the .sq-xo-home identity marker, and data/XOs.md is updated.
 #       Seeding is transactional: on validation, clone, init, or registry failure,
 #       generated briefs, new homes, new project clones, and registry edits are
-#       rolled back. Treehouse-acquired homes are returned only when the rollback
+#       rolled back. FOB-acquired homes are returned only when the rollback
 #       target is safe; a failed return warns because the lease may still be held.
-#       Set FM_SECONDMATE_CHARTER='<charter>' to seed from inline charter text
-#       when no filled charter brief exists. Set FM_SECONDMATE_SCOPE='<scope>'
+#       Set SQUAD_XO_CHARTER='<charter>' to seed from inline charter text
+#       when no filled charter brief exists. Set SQUAD_XO_SCOPE='<scope>'
 #       to override the registry routing scope. Otherwise the registry summary
 #       and scope are derived from the filled charter brief.
-#   fm-home-seed.sh validate
+#   sq-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
 #       unsafe registry files when present, non-absolute or unresolvable homes,
 #       duplicate ids or homes, and nested or overlapping homes.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-REG="$DATA/secondmates.md"
-SUB_HOME_MARKER=".fm-secondmate-home"
-SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-secondmate-parent-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
-# shellcheck source=bin/fm-secondmate-charter-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-charter-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+REG="$DATA/XOs.md"
+SUB_HOME_MARKER=".sq-xo-home"
+SUB_HOME_PARENT_MARKER=".sq-xo-parent"
+# shellcheck source=bin/sq-xo-registry-lib.sh
+. "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-xo-parent-lib.sh
+. "$SCRIPT_DIR/sq-xo-parent-lib.sh"
+# shellcheck source=bin/sq-xo-charter-lib.sh
+. "$SCRIPT_DIR/sq-xo-charter-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
 usage() {
-  echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
-  echo "       fm-home-seed.sh validate" >&2
+  echo "usage: sq-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
+  echo "       sq-home-seed.sh validate" >&2
 }
 
 validate_registry_home_text() {
   local home=$1
   case "$home" in
     *';'*|*')'*|*$'\n'*)
-      echo "error: secondmate home path contains registry delimiters: $home" >&2
+      echo "error: XO home path contains registry delimiters: $home" >&2
       return 1
       ;;
   esac
@@ -147,12 +147,12 @@ registry_home_conflict_for_assignment() {
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "- "*)
-        if ! secondmate_registry_parse_line "$line"; then
-          echo "error: malformed secondmate registry entry: $line" >&2
+        if ! XO_registry_parse_line "$line"; then
+          echo "error: malformed XO registry entry: $line" >&2
           return 1
         fi
-        registered_id=$SECONDMATE_REGISTRY_ID
-        registered_home=$SECONDMATE_REGISTRY_HOME
+        registered_id=$XO_REGISTRY_ID
+        registered_home=$XO_REGISTRY_HOME
         registered_key=$(resolved_path "$registered_home")
         if [ "$registered_key" = "$target" ]; then
           [ "$registered_id" = "$id" ] && continue
@@ -176,13 +176,13 @@ registry_id_conflict_for_assignment() {
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "- "*)
-        secondmate_registry_parse_line "$line" || {
-          echo "error: malformed secondmate registry entry: $line" >&2
+        XO_registry_parse_line "$line" || {
+          echo "error: malformed XO registry entry: $line" >&2
           return 1
         }
-        registered_id=$SECONDMATE_REGISTRY_ID
+        registered_id=$XO_REGISTRY_ID
         [ "$registered_id" = "$id" ] || continue
-        registered_home=$SECONDMATE_REGISTRY_HOME
+        registered_home=$XO_REGISTRY_HOME
         registered_key=$(resolved_path "$registered_home")
         [ "$registered_key" = "$target" ] && continue
         printf '%s\n' "$registered_key"
@@ -195,8 +195,8 @@ registry_id_conflict_for_assignment() {
 
 validate_registry() {
   [ -e "$REG" ] || [ -L "$REG" ] || return 0
-  secondmate_registry_validate_bindings "$REG" resolved_path || {
-    printf 'error: %s\n' "$SECONDMATE_REGISTRY_ERROR" >&2
+  XO_registry_validate_bindings "$REG" resolved_path || {
+    printf 'error: %s\n' "$XO_REGISTRY_ERROR" >&2
     return 1
   }
 }
@@ -220,34 +220,34 @@ resolved_path() {
 refuse_active_home_path() {
   local home=$1 abs_home abs_active_home abs_root
   abs_home=$(resolved_path "$home")
-  abs_active_home=$(resolved_path "$FM_HOME")
-  abs_root=$(resolved_path "$FM_ROOT")
+  abs_active_home=$(resolved_path "$SQUAD_HOME")
+  abs_root=$(resolved_path "$SQUAD_ROOT")
   if [ "$abs_home" = "/" ]; then
-    echo "error: secondmate home cannot be the filesystem root: $home" >&2
+    echo "error: XO home cannot be the filesystem root: $home" >&2
     return 1
   fi
   if [ "$abs_home" = "$abs_active_home" ]; then
-    echo "error: secondmate home cannot be the active firstmate home: $home" >&2
+    echo "error: XO home cannot be the active Squad home: $home" >&2
     return 1
   fi
   if [ "$abs_home" = "$abs_root" ]; then
-    echo "error: secondmate home cannot be the firstmate repo: $home" >&2
+    echo "error: XO home cannot be the Squad repo: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_active_home" "$abs_home"; then
-    echo "error: secondmate home cannot be inside the active firstmate home: $home" >&2
+    echo "error: XO home cannot be inside the active Squad home: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_root" "$abs_home"; then
-    echo "error: secondmate home cannot be inside the firstmate repo: $home" >&2
+    echo "error: XO home cannot be inside the Squad repo: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_active_home"; then
-    echo "error: secondmate home cannot be an ancestor of the active firstmate home: $home" >&2
+    echo "error: XO home cannot be an ancestor of the active Squad home: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_root"; then
-    echo "error: secondmate home cannot be an ancestor of the firstmate repo: $home" >&2
+    echo "error: XO home cannot be an ancestor of the Squad repo: $home" >&2
     return 1
   fi
 }
@@ -256,23 +256,23 @@ validate_operational_dir() {
   local home=$1 name=$2 dir abs_home abs_dir abs_active_home abs_root
   dir="$home/$name"
   if [ -L "$dir" ] && [ ! -e "$dir" ]; then
-    echo "error: secondmate $name directory must resolve inside the secondmate home: $dir" >&2
+    echo "error: XO $name directory must resolve inside the XO home: $dir" >&2
     return 1
   fi
   abs_home=$(resolved_path "$home")
   abs_dir=$(resolved_path "$dir")
-  abs_active_home=$(resolved_path "$FM_HOME")
-  abs_root=$(resolved_path "$FM_ROOT")
+  abs_active_home=$(resolved_path "$SQUAD_HOME")
+  abs_root=$(resolved_path "$SQUAD_ROOT")
   if ! path_is_ancestor_of "$abs_home" "$abs_dir"; then
-    echo "error: secondmate $name directory must resolve inside the secondmate home: $dir" >&2
+    echo "error: XO $name directory must resolve inside the XO home: $dir" >&2
     return 1
   fi
   if [ "$abs_dir" = "$abs_active_home" ] || path_is_ancestor_of "$abs_active_home" "$abs_dir"; then
-    echo "error: secondmate $name directory cannot be inside the active firstmate home: $dir" >&2
+    echo "error: XO $name directory cannot be inside the active Squad home: $dir" >&2
     return 1
   fi
   if [ "$abs_dir" = "$abs_root" ] || path_is_ancestor_of "$abs_root" "$abs_dir"; then
-    echo "error: secondmate $name directory cannot be inside the firstmate repo: $dir" >&2
+    echo "error: XO $name directory cannot be inside the Squad repo: $dir" >&2
     return 1
   fi
 }
@@ -290,19 +290,19 @@ validate_seed_leaf_files() {
   for label in "data/projects.md" "data/charter.md" "$SUB_HOME_MARKER" "$SUB_HOME_PARENT_MARKER"; do
     path="$home/$label"
     if [ -L "$path" ]; then
-      echo "error: secondmate leaf file must not be a symlink: $path" >&2
+      echo "error: XO leaf file must not be a symlink: $path" >&2
       return 1
     fi
     [ -e "$path" ] || continue
     if [ ! -f "$path" ]; then
-      echo "error: secondmate leaf file must be a regular file: $path" >&2
+      echo "error: XO leaf file must be a regular file: $path" >&2
       return 1
     fi
     abs_path=$(resolved_path "$path")
     case "$abs_path" in
       "$abs_home"/*) ;;
       *)
-        echo "error: secondmate leaf file must resolve inside the secondmate home: $path" >&2
+        echo "error: XO leaf file must resolve inside the XO home: $path" >&2
         return 1
         ;;
     esac
@@ -313,13 +313,13 @@ validate_existing_parent_binding() {
   local home=$1 record recorded_parent requested_parent
   record="$home/$SUB_HOME_PARENT_MARKER"
   [ -f "$record" ] && [ ! -L "$record" ] || return 0
-  fm_secondmate_parent_record_parse "$record" || return 0
-  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 0
+  fm_XO_parent_record_parse "$record" || return 0
+  [ "$SQUAD_XO_PARENT_ROUTE" = local ] || return 0
 
-  recorded_parent=$(resolved_path "$FM_SECONDMATE_PARENT_HOME")
-  requested_parent=$(resolved_path "$FM_HOME")
+  recorded_parent=$(resolved_path "$SQUAD_XO_PARENT_HOME")
+  requested_parent=$(resolved_path "$SQUAD_HOME")
   [ "$recorded_parent" = "$requested_parent" ] && return 0
-  printf 'error: secondmate home is bound to parent %s, not requested parent %s\n' \
+  printf 'error: XO home is bound to parent %s, not requested parent %s\n' \
     "$recorded_parent" "$requested_parent" >&2
   return 1
 }
@@ -331,22 +331,22 @@ validate_project_destination() {
   abs_home=$(resolved_path "$home")
   abs_projects=$(resolved_path "$projects_dir")
   abs_dst=$(resolved_path "$dst")
-  abs_active_home=$(resolved_path "$FM_HOME")
-  abs_root=$(resolved_path "$FM_ROOT")
+  abs_active_home=$(resolved_path "$SQUAD_HOME")
+  abs_root=$(resolved_path "$SQUAD_ROOT")
   if ! path_is_ancestor_of "$abs_home" "$abs_projects"; then
-    echo "error: secondmate projects directory must resolve inside the secondmate home: $projects_dir" >&2
+    echo "error: XO projects directory must resolve inside the XO home: $projects_dir" >&2
     return 1
   fi
   if ! path_is_ancestor_of "$abs_projects" "$abs_dst"; then
-    echo "error: seeded project $project destination must resolve inside the secondmate projects directory: $dst" >&2
+    echo "error: seeded project $project destination must resolve inside the XO projects directory: $dst" >&2
     return 1
   fi
   if [ "$abs_dst" = "$abs_active_home" ] || path_is_ancestor_of "$abs_active_home" "$abs_dst"; then
-    echo "error: seeded project $project destination cannot be inside the active firstmate home: $dst" >&2
+    echo "error: seeded project $project destination cannot be inside the active Squad home: $dst" >&2
     return 1
   fi
   if [ "$abs_dst" = "$abs_root" ] || path_is_ancestor_of "$abs_root" "$abs_dst"; then
-    echo "error: seeded project $project destination cannot be inside the firstmate repo: $dst" >&2
+    echo "error: seeded project $project destination cannot be inside the Squad repo: $dst" >&2
     return 1
   fi
   printf '%s\n' "$abs_dst"
@@ -387,25 +387,25 @@ seeded_origin_url() {
   normalize_origin_url "$dst" "$url"
 }
 
-acquire_treehouse_home() {
+acquire_fob_home() {
   local id=$1 home
-  # Durably lease a firstmate worktree from the pool. The lease persists with no
+  # Durably lease a Squad worktree from the pool. The lease persists with no
   # live process and is skipped by later get/prune, so the home survives restarts
-  # until teardown or rollback returns it. treehouse prints only the worktree path
+  # until teardown or rollback returns it. fob prints only the worktree path
   # to stdout (banners go to stderr), so command substitution captures the path.
-  home=$(cd "$FM_ROOT" && treehouse get --lease --lease-holder "$id") || {
-    echo "error: treehouse get --lease failed to lease a firstmate home" >&2
+  home=$(cd "$SQUAD_ROOT" && fob get --lease --lease-holder "$id") || {
+    echo "error: fob get --lease failed to lease a Squad home" >&2
     return 1
   }
-  [ -n "$home" ] || { echo "error: treehouse get --lease did not report a firstmate home" >&2; return 1; }
+  [ -n "$home" ] || { echo "error: fob get --lease did not report a Squad home" >&2; return 1; }
   printf '%s\n' "$home"
 }
 
 ensure_home() {
   local id=$1 requested=$2 home
   if [ "$requested" = "-" ]; then
-    home=$(acquire_treehouse_home "$id")
-    verify_firstmate_home "$home"
+    home=$(acquire_fob_home "$id")
+    verify_Squad_home "$home"
     return
   fi
 
@@ -415,16 +415,16 @@ ensure_home() {
     [ -d "$home" ] || { echo "error: $home exists and is not a directory" >&2; return 1; }
   else
     mkdir -p "$(dirname "$home")"
-    git clone --quiet "$FM_ROOT" "$home"
+    git clone --quiet "$SQUAD_ROOT" "$home"
   fi
-  verify_firstmate_home "$home"
+  verify_Squad_home "$home"
 }
 
-verify_firstmate_home() {
+verify_Squad_home() {
   local home=$1
   refuse_active_home_path "$home" || return 1
-  [ -f "$home/AGENTS.md" ] || { echo "error: $home is not a firstmate home (missing AGENTS.md)" >&2; return 1; }
-  [ -d "$home/bin" ] || { echo "error: $home is not a firstmate home (missing bin/)" >&2; return 1; }
+  [ -f "$home/AGENTS.md" ] || { echo "error: $home is not a Squad home (missing AGENTS.md)" >&2; return 1; }
+  [ -d "$home/bin" ] || { echo "error: $home is not a Squad home (missing bin/)" >&2; return 1; }
   validate_operational_dirs "$home" || return 1
   printf '%s\n' "$(cd "$home" && pwd -P)"
 }
@@ -434,13 +434,13 @@ validate_home_assignment() {
   if [ -f "$home/$SUB_HOME_MARKER" ]; then
     marker_id=$(cat "$home/$SUB_HOME_MARKER" 2>/dev/null || true)
     if [ "$marker_id" != "$id" ]; then
-      echo "error: secondmate home $home is already marked for ${marker_id:-unknown}" >&2
+      echo "error: XO home $home is already marked for ${marker_id:-unknown}" >&2
       return 1
     fi
   fi
   id_conflict=$(registry_id_conflict_for_assignment "$id" "$home" || true)
   if [ -n "$id_conflict" ]; then
-    echo "error: secondmate id $id is already registered to home $id_conflict; retire it before assigning $home" >&2
+    echo "error: XO id $id is already registered to home $id_conflict; retire it before assigning $home" >&2
     return 1
   fi
   conflict=$(registry_home_conflict_for_assignment "$id" "$home" || true)
@@ -449,10 +449,10 @@ validate_home_assignment() {
 $conflict
 EOF
   if [ "$conflict_type" = exact ]; then
-    echo "error: secondmate home $home is already registered to $owner" >&2
+    echo "error: XO home $home is already registered to $owner" >&2
     return 1
   fi
-  echo "error: secondmate home $home overlaps registered secondmate home $registered_home for $owner" >&2
+  echo "error: XO home $home overlaps registered XO home $registered_home for $owner" >&2
   return 1
 }
 
@@ -463,10 +463,10 @@ clone_project() {
   [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
   git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
   read -r mode _ <<EOF
-$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
+$(SQUAD_HOME="$SQUAD_HOME" SQUAD_DATA_OVERRIDE="$DATA" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only no-mistakes and direct-PR projects" >&2
+    echo "error: project $project is local-only; XO routes support only no-mistakes and direct-PR projects" >&2
     return 1
   fi
   if [ -e "$dst" ]; then
@@ -490,10 +490,10 @@ validate_seed_project() {
   [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
   git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
   read -r mode _ <<EOF
-$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
+$(SQUAD_HOME="$SQUAD_HOME" SQUAD_DATA_OVERRIDE="$DATA" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only no-mistakes and direct-PR projects" >&2
+    echo "error: project $project is local-only; XO routes support only no-mistakes and direct-PR projects" >&2
     return 1
   fi
   url=$(git -C "$src" remote get-url origin 2>/dev/null || true)
@@ -546,44 +546,44 @@ seed_rollback_target() {
   [ -n "$target" ] || return 1
   [ "$target" != "/" ] || { echo "REFUSED: unsafe $label rollback target $target" >&2; return 1; }
   abs_target=$(resolved_path "$target")
-  abs_home=$(resolved_path "$FM_HOME")
-  abs_root=$(resolved_path "$FM_ROOT")
+  abs_home=$(resolved_path "$SQUAD_HOME")
+  abs_root=$(resolved_path "$SQUAD_ROOT")
   if [ "$abs_target" = "$abs_home" ]; then
-    echo "REFUSED: unsafe $label rollback target $target is the active firstmate home" >&2
+    echo "REFUSED: unsafe $label rollback target $target is the active Squad home" >&2
     return 1
   fi
   if [ "$abs_target" = "$abs_root" ]; then
-    echo "REFUSED: unsafe $label rollback target $target is the firstmate repo" >&2
+    echo "REFUSED: unsafe $label rollback target $target is the Squad repo" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_target" "$abs_home"; then
-    echo "REFUSED: unsafe $label rollback target $target is an ancestor of the active firstmate home" >&2
+    echo "REFUSED: unsafe $label rollback target $target is an ancestor of the active Squad home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_target" "$abs_root"; then
-    echo "REFUSED: unsafe $label rollback target $target is an ancestor of the firstmate repo" >&2
+    echo "REFUSED: unsafe $label rollback target $target is an ancestor of the Squad repo" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_target"; then
-    echo "REFUSED: unsafe $label rollback target $target is inside the active firstmate home" >&2
+    echo "REFUSED: unsafe $label rollback target $target is inside the active Squad home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_root" "$abs_target"; then
-    echo "REFUSED: unsafe $label rollback target $target is inside the firstmate repo" >&2
+    echo "REFUSED: unsafe $label rollback target $target is inside the Squad repo" >&2
     return 1
   fi
   printf '%s\n' "$abs_target"
 }
 
-seed_return_treehouse_home() {
+seed_return_fob_home() {
   local home=$1 abs_home
-  abs_home=$(seed_rollback_target "$home" "treehouse-acquired home") || return 0
-  if ! command -v treehouse >/dev/null 2>&1; then
-    echo "warning: failed to return treehouse-acquired home $abs_home during seed rollback; treehouse command not found" >&2
+  abs_home=$(seed_rollback_target "$home" "fob-acquired home") || return 0
+  if ! command -v fob >/dev/null 2>&1; then
+    echo "warning: failed to return fob-acquired home $abs_home during seed rollback; fob command not found" >&2
     return 0
   fi
-  ( cd "$FM_ROOT" && treehouse return --force "$abs_home" >/dev/null ) || {
-    echo "warning: failed to return treehouse-acquired home $abs_home during seed rollback; lease may still be held" >&2
+  ( cd "$SQUAD_ROOT" && fob return --force "$abs_home" >/dev/null ) || {
+    echo "warning: failed to return fob-acquired home $abs_home during seed rollback; lease may still be held" >&2
     return 0
   }
 }
@@ -600,11 +600,11 @@ seed_project_rollback_target() {
   abs_home=$(resolved_path "$SEED_HOME")
   abs_projects=$(resolved_path "$SEED_HOME/projects")
   if ! path_is_ancestor_of "$abs_home" "$abs_projects"; then
-    echo "REFUSED: unsafe created project rollback target $target has projects directory outside the secondmate home" >&2
+    echo "REFUSED: unsafe created project rollback target $target has projects directory outside the XO home" >&2
     return 1
   fi
   if ! path_is_ancestor_of "$abs_projects" "$abs_target"; then
-    echo "REFUSED: unsafe created project rollback target $target is outside the secondmate projects directory" >&2
+    echo "REFUSED: unsafe created project rollback target $target is outside the XO projects directory" >&2
     return 1
   fi
   printf '%s\n' "$abs_target"
@@ -637,7 +637,7 @@ seed_rollback() {
 
   if [ -n "${SEED_HOME:-}" ] && [ "$SEED_HOME" != "/" ]; then
     if [ "$SEED_HOME_ACQUIRED" = 1 ]; then
-      seed_return_treehouse_home "$SEED_HOME"
+      seed_return_fob_home "$SEED_HOME"
     elif [ "$SEED_HOME_CREATED" = 1 ]; then
       seed_remove_created_home "$SEED_HOME"
     else
@@ -657,7 +657,7 @@ seed_rollback() {
   fi
 
   if [ -n "${SEED_BACKUP_DIR:-}" ]; then
-    restore_seed_file "$SEED_PARENT_REG_EXISTED" "$SEED_BACKUP_DIR/parent-secondmates.md" "$REG"
+    restore_seed_file "$SEED_PARENT_REG_EXISTED" "$SEED_BACKUP_DIR/parent-XOs.md" "$REG"
     rm -rf -- "$SEED_BACKUP_DIR" 2>/dev/null || true
   fi
 }
@@ -673,7 +673,7 @@ registry_line_for_project() {
 project_mode_in_home() {
   local home=$1 project=$2 mode
   read -r mode _ <<EOF
-$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' FM_HOME="$home" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
+$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_HOME="$home" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
 EOF
   printf '%s\n' "$mode"
 }
@@ -775,7 +775,7 @@ refuse_populated_projectless_home() {
   fi
   [ "${#clones[@]}" -eq 0 ] && [ "${#registry_projects[@]}" -eq 0 ] && return 0
 
-  echo "error: cannot seed project-less secondmate home $home because it contains project data" >&2
+  echo "error: cannot seed project-less XO home $home because it contains project data" >&2
   if [ "${#clones[@]}" -gt 0 ]; then
     printf 'error: projects/ entries: %s\n' "$(join_projects "${clones[@]}")" >&2
   fi
@@ -793,8 +793,8 @@ refuse_projectful_projectless_charter() {
     && ! printf '%s\n' "$project_clones" | grep -Eq '^[[:space:]]*-[[:space:]]+'; then
     return 0
   fi
-  printf 'error: cannot seed project-less secondmate home because existing charter brief at %s conflicts with --no-projects\n' "$brief" >&2
-  printf 'error: re-scaffold it with fm-brief.sh %s --secondmate --no-projects or remove the stale brief before seeding\n' "$id" >&2
+  printf 'error: cannot seed project-less XO home because existing charter brief at %s conflicts with --no-projects\n' "$brief" >&2
+  printf 'error: re-scaffold it with sq-brief.sh %s --XO --no-projects or remove the stale brief before seeding\n' "$id" >&2
   return 1
 }
 
@@ -820,11 +820,11 @@ seed_home() {
   if [ "$no_projects" -eq 1 ]; then
     [ $# -eq 0 ] || { echo "error: --no-projects cannot be combined with a project list" >&2; return 1; }
   else
-    [ $# -gt 0 ] || { echo "error: secondmate needs at least one project, or --no-projects for a project-less home" >&2; return 1; }
+    [ $# -gt 0 ] || { echo "error: XO needs at least one project, or --no-projects for a project-less home" >&2; return 1; }
   fi
 
   mkdir -p "$STATE" || return 1
-  SEED_REGISTRY_LOCK=$(secondmate_registry_lock_path "$STATE")
+  SEED_REGISTRY_LOCK=$(XO_registry_lock_path "$STATE")
   fm_lock_acquire_wait "$SEED_REGISTRY_LOCK" || return 1
   SEED_REGISTRY_LOCK_HELD=1
   trap seed_exit_cleanup EXIT
@@ -841,7 +841,7 @@ seed_home() {
   SEED_HOME_CREATED=0
   SEED_HOME_ACQUIRED=0
   SEED_HOME_BACKED_UP=0
-  SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX")
+  SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sq-home-seed.XXXXXX")
   SEED_CREATED_PROJECTS_FILE="$SEED_BACKUP_DIR/created-projects"
   : > "$SEED_CREATED_PROJECTS_FILE"
   SEED_PARENT_REG_EXISTED=0
@@ -853,14 +853,14 @@ seed_home() {
   SEED_MARKER_EXISTED=0
   if [ -f "$REG" ]; then
     SEED_PARENT_REG_EXISTED=1
-    cp "$REG" "$SEED_BACKUP_DIR/parent-secondmates.md"
+    cp "$REG" "$SEED_BACKUP_DIR/parent-XOs.md"
   fi
 
   if [ "$requested_home" = "-" ]; then
     SEED_HOME_ACQUIRED=1
-    home=$(acquire_treehouse_home "$id")
+    home=$(acquire_fob_home "$id")
     SEED_HOME="$home"
-    home=$(verify_firstmate_home "$home")
+    home=$(verify_Squad_home "$home")
   else
     requested_abs=$(abs_path_for_new "$requested_home")
     refuse_active_home_path "$requested_abs" || return 1
@@ -901,30 +901,30 @@ seed_home() {
   SEED_HOME_BACKED_UP=1
 
   if [ ! -f "$SEED_PARENT_BRIEF" ]; then
-    [ -n "${FM_SECONDMATE_CHARTER:-}" ] || {
-      echo "error: no filled secondmate charter brief at $SEED_PARENT_BRIEF; set FM_SECONDMATE_CHARTER or scaffold one and replace {TASK}" >&2
+    [ -n "${SQUAD_XO_CHARTER:-}" ] || {
+      echo "error: no filled XO charter brief at $SEED_PARENT_BRIEF; set SQUAD_XO_CHARTER or scaffold one and replace {TASK}" >&2
       return 1
     }
     [ -d "$DATA/$id" ] || SEED_PARENT_BRIEF_DIR_CREATED=1
     if [ "$no_projects" -eq 1 ]; then
-      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate --no-projects
+      "$SQUAD_ROOT/bin/sq-brief.sh" "$id" --XO --no-projects
     else
-      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate "$@"
+      "$SQUAD_ROOT/bin/sq-brief.sh" "$id" --XO "$@"
     fi
     SEED_PARENT_BRIEF_CREATED=1
   fi
   if grep -F '{TASK}' "$SEED_PARENT_BRIEF" >/dev/null 2>&1; then
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF still contains {TASK}; fill it before seeding" >&2
+    echo "error: XO charter brief at $SEED_PARENT_BRIEF still contains {TASK}; fill it before seeding" >&2
     return 1
   fi
   charter_summary=$(registry_summary_for_brief "$SEED_PARENT_BRIEF")
   [ -n "$charter_summary" ] || {
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF has an empty Charter section; fill it before seeding" >&2
+    echo "error: XO charter brief at $SEED_PARENT_BRIEF has an empty Charter section; fill it before seeding" >&2
     return 1
   }
   charter_scope=$(registry_scope_for_brief "$SEED_PARENT_BRIEF")
   [ -n "$charter_scope" ] || {
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF has an empty Routing scope section; fill it before seeding" >&2
+    echo "error: XO charter brief at $SEED_PARENT_BRIEF has an empty Routing scope section; fill it before seeding" >&2
     return 1
   }
 
@@ -947,14 +947,14 @@ seed_home() {
 
   projects_csv=$(join_projects "$@")
   # Durable record of this home's route to its parent, written once here next
-  # to the identity marker: the cleanup check in fm-teardown.sh reads it so a
-  # restart that drops the launch-time FM_PUBLIC_FOLLOWUP_PRIMARY_HOME prefix
+  # to the identity marker: the cleanup check in sq-teardown.sh reads it so a
+  # restart that drops the launch-time SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME prefix
   # can still resolve the real parent instead of silently treating its relay
   # as inactive.
   {
-    printf 'schema=fm-secondmate-parent.v1\n'
+    printf 'schema=sq-xo-parent.v1\n'
     printf 'route=local\n'
-    printf 'parent_home=%s\n' "$(resolved_path "$FM_HOME")"
+    printf 'parent_home=%s\n' "$(resolved_path "$SQUAD_HOME")"
   } > "$home/$SUB_HOME_PARENT_MARKER.tmp.$$"
   mv -f -- "$home/$SUB_HOME_PARENT_MARKER.tmp.$$" "$home/$SUB_HOME_PARENT_MARKER"
   printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER.tmp.$$"

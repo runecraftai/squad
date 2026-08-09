@@ -1,33 +1,33 @@
 #!/usr/bin/env bash
 # bin/backends/tmux.sh - the tmux session-provider adapter.
 #
-# Reference backend (AGENTS.md section 8; data/fm-backend-design-d7). P1 moves
-# the tmux command sequences that fm-send.sh, fm-peek.sh, fm-watch.sh,
-# fm-spawn.sh, and fm-teardown.sh already ran inline into named functions
+# Reference backend (AGENTS.md section 8; data/sq-backend-design-d7). P1 moves
+# the tmux command sequences that sq-send.sh, sq-peek.sh, sq-sentry.sh,
+# sq-spawn.sh, and sq-teardown.sh already ran inline into named functions
 # here, running the EXACT same commands in the EXACT same order, so the
 # default (tmux, `backend=` absent) path stays byte-identical. Sourced only
-# through bin/fm-backend.sh's fm_backend_source, never directly.
+# through bin/sq-backend.sh's fm_backend_source, never directly.
 #
-# Worktree acquisition (running `treehouse get` inside the pane, and polling
+# Worktree acquisition (running `fob get` inside the pane, and polling
 # its cwd) is unchanged by this extraction: P1 scopes only the session
-# provider, not the worktree provider, so fm-spawn.sh still drives that part
+# provider, not the worktree provider, so sq-spawn.sh still drives that part
 # inline with these same send/current-path primitives.
 #
 # The verified composer/busy-detection and verify-and-retry-submit primitives
-# already live in bin/fm-tmux-lib.sh, shared with the away-mode daemon
-# (bin/fm-supervise-daemon.sh); this adapter sources that file and re-exports
+# already live in bin/sq-tmux-lib.sh, shared with the away-mode daemon
+# (bin/sq-supervise-daemon.sh); this adapter sources that file and re-exports
 # its submit core under the backend's naming convention rather than
 # duplicating it, so the two consumers cannot drift apart.
-# shellcheck source=bin/fm-tmux-lib.sh
-. "$FM_BACKEND_LIB_DIR/fm-tmux-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$FM_BACKEND_LIB_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/sq-tmux-lib.sh
+. "$SQUAD_BACKEND_LIB_DIR/sq-tmux-lib.sh"
+# shellcheck source=bin/sq-session-lock-lib.sh
+. "$SQUAD_BACKEND_LIB_DIR/sq-session-lock-lib.sh"
 
 # fm_backend_tmux_resolve_bare_selector: the live-window-listing fallback for a
 # selector that is neither an explicit target nor a task selector routed
 # through meta - an ad hoc window name with no recorded task. Mirrors the
 # `tmux list-windows -a ... | grep` pipeline that used to live inline in
-# fm-send.sh's and fm-peek.sh's own (until now duplicated) resolve().
+# sq-send.sh's and sq-peek.sh's own (until now duplicated) resolve().
 fm_backend_tmux_resolve_bare_selector() {  # <name>
   local name=$1
   tmux list-windows -a -F '#{session_name}:#{window_name}' | grep -m1 ":$name\$" \
@@ -35,12 +35,12 @@ fm_backend_tmux_resolve_bare_selector() {  # <name>
 }
 
 # fm_backend_tmux_capture: bounded plain-text pane capture. Mirrors
-# fm-peek.sh's and fm-watch.sh's `tmux capture-pane -p -t "$T" -S -"$N"`.
+# sq-peek.sh's and sq-sentry.sh's `tmux capture-pane -p -t "$T" -S -"$N"`.
 fm_backend_tmux_capture() {  # <target> <lines>
   tmux capture-pane -p -t "$1" -S -"$2"
 }
 
-# fm_backend_tmux_send_key: one named key. Mirrors fm-send.sh's --key path:
+# fm_backend_tmux_send_key: one named key. Mirrors sq-send.sh's --key path:
 # `tmux display-message -p -t "$T" '#{pane_id}' >/dev/null`, then
 # `tmux send-keys -t "$T" "$2"`.
 fm_backend_tmux_send_key() {  # <target> <key>
@@ -50,38 +50,38 @@ fm_backend_tmux_send_key() {  # <target> <key>
 
 # fm_backend_tmux_send_text_submit: type <text> into <target> once, then
 # submit with Enter, retried (Enter only, never retyped) until the composer
-# clears. Re-exports fm_tmux_submit_core (bin/fm-tmux-lib.sh) verbatim; see
+# clears. Re-exports fm_tmux_submit_core (bin/sq-tmux-lib.sh) verbatim; see
 # that file for the composer-verification contract and echoed verdicts.
 fm_backend_tmux_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle>
   fm_tmux_submit_core "$@"
 }
 
 # fm_backend_tmux_container_ensure: reuse the current tmux session when
-# firstmate itself runs inside tmux, else ensure a dedicated detached
-# "firstmate" session exists. Mirrors fm-spawn.sh's container-ensure block;
+# Squad itself runs inside tmux, else ensure a dedicated detached
+# "Squad" session exists. Mirrors sq-spawn.sh's container-ensure block;
 # prints the resolved session name.
 fm_backend_tmux_container_ensure() {
   if [ -n "${TMUX:-}" ]; then
     tmux display-message -p '#S'
   else
-    tmux has-session -t firstmate 2>/dev/null || tmux new-session -d -s firstmate
-    printf 'firstmate'
+    tmux has-session -t Squad 2>/dev/null || tmux new-session -d -s Squad
+    printf 'Squad'
   fi
 }
 
 # fm_backend_tmux_create_task: create the task's window in <proj-abs>,
-# refusing an existing <window-name> in <session>. Mirrors fm-spawn.sh's
+# refusing an existing <window-name> in <session>. Mirrors sq-spawn.sh's
 # duplicate-check-then-new-window sequence, including the exact error text
-# (session:window, matching how fm-spawn.sh composed its own $T). Prints the
+# (session:window, matching how sq-spawn.sh composed its own $T). Prints the
 # created window's stable window id on stdout for the caller to target.
 #
-# Robustness (fm-spawn tmux window handling under a non-default captain config):
+# Robustness (sq-spawn tmux window handling under a non-default commander config):
 #   - Capture a STABLE window id with -P -F '#{window_id}', and let tmux append
 #     at the next free index by targeting the session with a trailing colon
 #     ("$ses:"), so a non-default base-index (e.g. base-index 1) cannot collide.
 #   - PIN the window name by disabling automatic-rename and allow-rename on the
-#     new window: the captain's tmux may rename the window away from fm-<id> once
-#     treehouse cd's into the worktree, which would break name-based targeting.
+#     new window: the commander's tmux may rename the window away from sq-<id> once
+#     fob cd's into the worktree, which would break name-based targeting.
 # The returned window id lets callers target the window even if its name is ever
 # lost, so worktree discovery cannot fall back to the active client's window.
 fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs> -> prints window id
@@ -97,7 +97,7 @@ fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs> -> prints 
 }
 
 # fm_backend_tmux_current_path: the live pane's current working directory, or
-# empty on any tmux error. Mirrors fm-spawn.sh's worktree-discovery poll:
+# empty on any tmux error. Mirrors sq-spawn.sh's worktree-discovery poll:
 # `tmux display-message -p -t "$T" '#{pane_current_path}'`.
 fm_backend_tmux_current_path() {  # <target>
   tmux display-message -p -t "$1" '#{pane_current_path}' 2>/dev/null
@@ -105,14 +105,14 @@ fm_backend_tmux_current_path() {  # <target>
 
 # fm_backend_tmux_send_text_line: send one line of TEXT then Enter, with no
 # composer verification - used for the fixed spawn-time commands
-# (`treehouse get`, the GOTMPDIR export) that already ran this exact sequence
-# inline in fm-spawn.sh. Mirrors `tmux send-keys -t "$T" "<text>" Enter`.
+# (`fob get`, the GOTMPDIR export) that already ran this exact sequence
+# inline in sq-spawn.sh. Mirrors `tmux send-keys -t "$T" "<text>" Enter`.
 fm_backend_tmux_send_text_line() {  # <target> <text>
   tmux send-keys -t "$1" "$2" Enter
 }
 
 # fm_backend_tmux_send_literal: send TEXT as literal bytes with no
-# submission - the caller sends Enter separately (fm-spawn.sh's launch-command
+# submission - the caller sends Enter separately (sq-spawn.sh's launch-command
 # send pauses between the literal send and Enter for the harness to settle).
 # Mirrors `tmux send-keys -t "$T" -l "<text>"`.
 fm_backend_tmux_send_literal() {  # <target> <text>
@@ -233,7 +233,7 @@ fm_backend_tmux_foreground_argv0s() {  # <target>
 }
 
 # fm_backend_tmux_agent_state: recovery-grade harness-agent state for one
-# recorded target. See bin/fm-backend.sh's fm_backend_agent_state for the
+# recorded target. See bin/sq-backend.sh's fm_backend_agent_state for the
 # shared state vocabulary and docs/tmux-backend.md "Agent liveness probe" for
 # the empirical basis. Tmux silently falls back to the active window when a
 # named target is absent, so the exact recorded window must appear in a

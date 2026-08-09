@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# Inheritance propagation: the PRIMARY firstmate pushes a declared, extensible
-# set of LOCAL (gitignored) config items down into each secondmate home's
-# config/, so a secondmate's OWN crewmates inherit the primary's settings
-# (e.g. primary config/crew-dispatch.json makes a secondmate use the same dispatch
-# profile rules, primary config/crew-harness=codex makes a secondmate's crewmates
+# Inheritance propagation: the PRIMARY Squad pushes a declared, extensible
+# set of LOCAL (gitignored) config items down into each XO home's
+# config/, so a XO's OWN operators inherit the primary's settings
+# (e.g. primary config/crew-dispatch.json makes a XO use the same dispatch
+# profile rules, primary config/crew-harness=codex makes a XO's operators
 # spawn on codex too, primary config/backlog-backend=manual makes that home
 # hand-edit backlog files too, primary config/backend pins that home's local
 # runtime-backend default for future spawns, primary config/startup-memory-budget
@@ -11,86 +11,86 @@
 # config/herdr-presentation-spaces carries the same Herdr presentation-projection
 # preference - an absent primary file and an absent destination file both mean
 # the same unconfigured default, so the generic absence mirror below converges
-# a secondmate without deciding the release-dependent floor; explicit "on" and
+# a XO without deciding the release-dependent floor; explicit "on" and
 # "off" preferences propagate as files. Primary
 # config/trace-context is copied at the launch convergence point as part of the
 # default-off W3C trace-context setup, while live convergence leaves it unchanged.
 # The primary passes its frozen home-session decision into a newly launched
-# Secondmate; see docs/trace-context.md.
+# XO; see docs/trace-context.md.
 # It also pushes
-# the one primary-authoritative shared captain-preference file,
-# data/captain-shared.md, into each secondmate home's data/ as a read-only copy.
+# the one primary-authoritative shared commander-preference file,
+# data/commander-shared.md, into each XO home's data/ as a read-only copy.
 #
-# Usage: . bin/fm-config-inherit-lib.sh   (no FM_* setup required)
+# Usage: . bin/sq-config-inherit-lib.sh   (no SQUAD_* setup required)
 #
-# Why this is separate from the tracked-files fast-forward (fm-ff-lib.sh): config/
+# Why this is separate from the tracked-files fast-forward (sq-ff-lib.sh): config/
 # is gitignored, so a tracked-files fast-forward never carries these items. This
 # is an explicit copy run at the convergence points the primary owns - a
-# secondmate spawn (bin/fm-spawn.sh), the bootstrap secondmate sweep
-# (bin/fm-bootstrap.sh), and the focused mid-session config push
-# (bin/fm-config-push.sh). It is PRIMARY-AUTHORITATIVE: the primary's value wins
-# and is re-pushed on every convergence, so the fleet stays converged on the
+# XO spawn (bin/sq-spawn.sh), the bootstrap XO sweep
+# (bin/sq-bootstrap.sh), and the focused mid-session config push
+# (bin/sq-config-push.sh). It is PRIMARY-AUTHORITATIVE: the primary's value wins
+# and is re-pushed on every convergence, so the unit stays converged on the
 # primary; an item the primary does not set is mirrored as absence downstream.
-# After successful config/* changes under an already-running secondmate, callers
+# After successful config/* changes under an already-running XO, callers
 # invoke fm_config_send_reread_nudge so the live agent re-reads exact post-write
 # bytes (spawn/respawn already re-reads at launch and needs no redundant nudge).
 #
-# Extensible by design: FM_INHERITABLE_CONFIG is the single declared list of
+# Extensible by design: SQUAD_INHERITABLE_CONFIG is the single declared list of
 # config-dir-relative items the primary propagates. Add an item there and every
-# convergence point inherits it - no other change needed. config/secondmate-harness
+# convergence point inherits it - no other change needed. config/xo-harness
 # is deliberately NOT in the list: it is the primary's own setting for launching
-# secondmates, and a secondmate never spawns secondmates, so it must not flow
+# XOs, and a XO never spawns XOs, so it must not flow
 # downstream.
 #
 # That single declaration is also the ONE owner of the inherited-material
-# allowlist for remote routes: bin/fm-remote-inherit-push.sh (sender) and
-# bin/fm-remote-inherit.sh (receiver, executing inside the remote home) both
+# allowlist for remote routes: bin/sq-remote-inherit-push.sh (sender) and
+# bin/sq-remote-inherit.sh (receiver, executing inside the remote home) both
 # derive their item set from fm_config_inherit_items rather than restating it,
 # so a new inheritable item cannot be accepted by one side and refused by the
 # other. A local and remote code root that disagree about this list must be
 # reconciled by the ordinary remote sync/update path before the transfer
 # succeeds; there is no separate allowlist version negotiation.
 #
-# shellcheck source=bin/fm-startup-memory-budget-lib.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"
+# shellcheck source=bin/sq-startup-memory-budget-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sq-startup-memory-budget-lib.sh"
 
 # The one shared data file in this inheritance contract. There is deliberately
 # no shared learnings file.
-FM_SHARED_CAPTAIN_FILE="captain-shared.md"
-FM_SHARED_CAPTAIN_REL="data/$FM_SHARED_CAPTAIN_FILE"
-FM_SHARED_CAPTAIN_MODE="444"
+SQUAD_SHARED_COMMANDER_FILE="commander-shared.md"
+SQUAD_SHARED_COMMANDER_REL="data/$SQUAD_SHARED_COMMANDER_FILE"
+SQUAD_SHARED_COMMANDER_MODE="444"
 
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context}"
+SQUAD_INHERITABLE_CONFIG="${SQUAD_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context}"
 
 # Items whose value is a home-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where
 # the primary also hands the new process its frozen on/off decision, and left
 # untouched by live convergence into an already-running home, whose decision is
-# already frozen for its current session (bin/fm-trace-context-lib.sh).
-FM_SESSION_SCOPED_INHERITABLE_CONFIG="trace-context"
+# already frozen for its current session (bin/sq-trace-context-lib.sh).
+SQUAD_SESSION_SCOPED_INHERITABLE_CONFIG="trace-context"
 
 # True when <item> is session-scoped in the sense above.
 fm_config_inherit_item_session_scoped() {  # <item>
   local item=$1 candidate
-  for candidate in $FM_SESSION_SCOPED_INHERITABLE_CONFIG; do
+  for candidate in $SQUAD_SESSION_SCOPED_INHERITABLE_CONFIG; do
     [ "$candidate" = "$item" ] && return 0
   done
   return 1
 }
 
 # The complete declared inherited-material set as home-relative paths, one per
-# line, in propagation order: every FM_INHERITABLE_CONFIG item under config/,
+# line, in propagation order: every SQUAD_INHERITABLE_CONFIG item under config/,
 # then the one shared data file. This is what remote senders and receivers
 # derive from, so both ends of a transfer agree by construction.
 fm_config_inherit_items() {
   local item
-  for item in $FM_INHERITABLE_CONFIG; do
+  for item in $SQUAD_INHERITABLE_CONFIG; do
     printf 'config/%s\n' "$item"
   done
-  printf '%s\n' "$FM_SHARED_CAPTAIN_REL"
+  printf '%s\n' "$SQUAD_SHARED_COMMANDER_REL"
 }
 
 fm_inherit_file_mode() {
@@ -135,7 +135,7 @@ copy_inheritable_file() {
   dest_parent=${dest%/*}
   [ -n "$dest_parent" ] && [ "$dest_parent" != "$dest" ] || return 1
   mkdir -p "$dest_parent" 2>/dev/null || return 1
-  tmp=$(mktemp "$dest_parent/.fm-inherit.XXXXXX" 2>/dev/null) || return 1
+  tmp=$(mktemp "$dest_parent/.sq-inherit.XXXXXX" 2>/dev/null) || return 1
   if ! cp "$src" "$tmp" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
     return 1
@@ -171,7 +171,7 @@ destination_allows_inherited_item() {
 
 # propagate_inheritable_config <src-config-dir> <dest-config-dir>
 # Copy each declared inheritable item from the primary's config dir (src) into a
-# secondmate home's config dir (dest). SILENT on stdout - callers parse stdout,
+# XO home's config dir (dest). SILENT on stdout - callers parse stdout,
 # so this writes nothing there. It emits concise stderr diagnostics only for
 # notable events: a guard skip or a copy/remove error. A source item that is
 # present is copied only when its content differs (idempotent: a re-run never
@@ -179,8 +179,8 @@ destination_allows_inherited_item() {
 # destination item, so clearing the primary's value clears it downstream too
 # (primary-authoritative). The destination dir is created lazily, only when there
 # is actually something to write, so a primary with no inherited config item set is a
-# complete no-op (it leaves the secondmate home exactly as it was - the
-# backward-compatible path). When FM_CONFIG_INHERIT_REPORT points at a writable
+# complete no-op (it leaves the XO home exactly as it was - the
+# backward-compatible path). When SQUAD_CONFIG_INHERIT_REPORT points at a writable
 # file, one tab-separated line per item is appended there:
 #   <item> <status> <reason>
 # Status is pushed, unchanged, skipped, or error. Skipped items are warnings and
@@ -188,8 +188,8 @@ destination_allows_inherited_item() {
 # error, such as copy or remove failure, occurs.
 record_inheritable_config_result() {
   local item=$1 status=$2 reason=${3:-}
-  [ -n "${FM_CONFIG_INHERIT_REPORT:-}" ] || return 0
-  printf '%s\t%s\t%s\n' "$item" "$status" "$reason" >> "$FM_CONFIG_INHERIT_REPORT" 2>/dev/null || true
+  [ -n "${SQUAD_CONFIG_INHERIT_REPORT:-}" ] || return 0
+  printf '%s\t%s\t%s\n' "$item" "$status" "$reason" >> "$SQUAD_CONFIG_INHERIT_REPORT" 2>/dev/null || true
 }
 
 inheritable_config_skip_reason() {
@@ -198,25 +198,25 @@ inheritable_config_skip_reason() {
 
 warn_inheritable_config_skip() {
   local item=$1 dest_config=$2 reason=$3
-  echo "fm-config-inherit: warning: skipped $item for $dest_config: $reason" >&2
+  echo "sq-config-inherit: warning: skipped $item for $dest_config: $reason" >&2
 }
 
 warn_inheritable_config_error() {
   local item=$1 dest=$2 reason=$3
-  echo "fm-config-inherit: error: $reason $item at $dest" >&2
+  echo "sq-config-inherit: error: $reason $item at $dest" >&2
 }
 
-shared_captain_header_valid() {
+shared_commander_header_valid() {
   local src=$1 head
   head=$(sed -n '1,12p' "$src" 2>/dev/null) || return 1
   case "$head" in *main-authoritative*) ;; *) return 1 ;; esac
-  case "$head" in *"read-only in secondmate homes"*) ;; *) return 1 ;; esac
+  case "$head" in *"read-only in XO homes"*) ;; *) return 1 ;; esac
   case "$head" in *"must not be edited there"*) ;; *) return 1 ;; esac
-  case "$head" in *"main firstmate"*) ;; *) return 1 ;; esac
+  case "$head" in *"main Squad"*) ;; *) return 1 ;; esac
   case "$head" in *"marked status"*|*"document pointer"*) ;; *) return 1 ;; esac
 }
 
-shared_captain_dir_safe() {
+shared_commander_dir_safe() {
   local dir=$1
   [ -n "$dir" ] || return 1
   if [ -e "$dir" ] || [ -L "$dir" ]; then
@@ -227,24 +227,24 @@ shared_captain_dir_safe() {
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
 }
 
-shared_captain_file_safe_existing() {
+shared_commander_file_safe_existing() {
   local path=$1
   [ -f "$path" ] && [ ! -L "$path" ] || return 1
   [ "$(fm_inherit_file_link_count "$path")" = 1 ]
 }
 
-restore_shared_captain_readonly() {
+restore_shared_commander_readonly() {
   local dest=$1
   [ -e "$dest" ] || [ -L "$dest" ] || return 0
-  shared_captain_file_safe_existing "$dest" || return 1
-  chmod "$FM_SHARED_CAPTAIN_MODE" "$dest" 2>/dev/null || return 1
+  shared_commander_file_safe_existing "$dest" || return 1
+  chmod "$SQUAD_SHARED_COMMANDER_MODE" "$dest" 2>/dev/null || return 1
 }
 
-shared_captain_quarantine_existing_for_hash() {
+shared_commander_quarantine_existing_for_hash() {
   local parent=$1 hash=$2 artifact artifact_hash
-  for artifact in "$parent"/."$FM_SHARED_CAPTAIN_FILE".quarantine.*."$hash" "$parent"/."$FM_SHARED_CAPTAIN_FILE".quarantine.*."$hash".[0-9]*; do
+  for artifact in "$parent"/."$SQUAD_SHARED_COMMANDER_FILE".quarantine.*."$hash" "$parent"/."$SQUAD_SHARED_COMMANDER_FILE".quarantine.*."$hash".[0-9]*; do
     [ -e "$artifact" ] || [ -L "$artifact" ] || continue
-    shared_captain_file_safe_existing "$artifact" || return 1
+    shared_commander_file_safe_existing "$artifact" || return 1
     artifact_hash=$(fm_inherit_sha256 "$artifact") || return 1
     [ "$artifact_hash" = "$hash" ] || continue
     printf '%s\n' "$artifact"
@@ -253,10 +253,10 @@ shared_captain_quarantine_existing_for_hash() {
   return 1
 }
 
-shared_captain_quarantine_name() {
+shared_commander_quarantine_name() {
   local parent=$1 hash=$2 stamp base candidate n
   stamp=$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null) || return 1
-  base="$parent/.$FM_SHARED_CAPTAIN_FILE.quarantine.$stamp.$hash"
+  base="$parent/.$SQUAD_SHARED_COMMANDER_FILE.quarantine.$stamp.$hash"
   candidate=$base
   n=0
   while [ -e "$candidate" ] || [ -L "$candidate" ]; do
@@ -266,168 +266,168 @@ shared_captain_quarantine_name() {
   printf '%s\n' "$candidate"
 }
 
-quarantine_shared_captain_dest() {
+quarantine_shared_commander_dest() {
   local dest=$1 dest_parent=$2 dest_hash artifact existing
-  shared_captain_file_safe_existing "$dest" || return 1
+  shared_commander_file_safe_existing "$dest" || return 1
   dest_hash=$(fm_inherit_sha256 "$dest") || return 1
-  if existing=$(shared_captain_quarantine_existing_for_hash "$dest_parent" "$dest_hash" 2>/dev/null); then
+  if existing=$(shared_commander_quarantine_existing_for_hash "$dest_parent" "$dest_hash" 2>/dev/null); then
     chmod u+w "$dest" 2>/dev/null || return 1
     if rm -f -- "$dest" 2>/dev/null; then
       printf '%s\n' "$existing"
       return 0
     fi
-    restore_shared_captain_readonly "$dest" || true
+    restore_shared_commander_readonly "$dest" || true
     return 1
   fi
-  artifact=$(shared_captain_quarantine_name "$dest_parent" "$dest_hash") || return 1
+  artifact=$(shared_commander_quarantine_name "$dest_parent" "$dest_hash") || return 1
   chmod u+w "$dest" 2>/dev/null || return 1
   if mv -- "$dest" "$artifact" 2>/dev/null; then
     chmod 0600 "$artifact" 2>/dev/null || return 1
-    shared_captain_file_safe_existing "$artifact" || return 1
+    shared_commander_file_safe_existing "$artifact" || return 1
     printf '%s\n' "$artifact"
     return 0
   fi
-  restore_shared_captain_readonly "$dest" || true
+  restore_shared_commander_readonly "$dest" || true
   return 1
 }
 
-copy_shared_captain_file() {
+copy_shared_commander_file() {
   local src=$1 dest=$2 dest_parent tmp
   dest_parent=${dest%/*}
-  shared_captain_dir_safe "$dest_parent" || return 1
-  tmp=$(mktemp "$dest_parent/.fm-captain-shared.XXXXXX" 2>/dev/null) || return 1
+  shared_commander_dir_safe "$dest_parent" || return 1
+  tmp=$(mktemp "$dest_parent/.sq-commander-shared.XXXXXX" 2>/dev/null) || return 1
   if ! cp "$src" "$tmp" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null || true
     return 1
   fi
   chmod 0600 "$tmp" 2>/dev/null || { rm -f "$tmp" 2>/dev/null || true; return 1; }
-  shared_captain_file_safe_existing "$tmp" || { rm -f "$tmp" 2>/dev/null || true; return 1; }
+  shared_commander_file_safe_existing "$tmp" || { rm -f "$tmp" 2>/dev/null || true; return 1; }
   if mv -f -- "$tmp" "$dest" 2>/dev/null; then
-    chmod "$FM_SHARED_CAPTAIN_MODE" "$dest" 2>/dev/null || return 1
-    shared_captain_file_safe_existing "$dest" || return 1
+    chmod "$SQUAD_SHARED_COMMANDER_MODE" "$dest" 2>/dev/null || return 1
+    shared_commander_file_safe_existing "$dest" || return 1
     return 0
   fi
   rm -f "$tmp" 2>/dev/null || true
   return 1
 }
 
-propagate_shared_captain_preferences() {
+propagate_shared_commander_preferences() {
   local src_data=$1 dest_data=$2 src dest src_hash dest_hash dest_parent dest_home quarantine reason rc
   [ -n "$src_data" ] || return 1
   [ -n "$dest_data" ] || return 1
-  src="$src_data/$FM_SHARED_CAPTAIN_FILE"
-  dest="$dest_data/$FM_SHARED_CAPTAIN_FILE"
+  src="$src_data/$SQUAD_SHARED_COMMANDER_FILE"
+  dest="$dest_data/$SQUAD_SHARED_COMMANDER_FILE"
   dest_parent=${dest%/*}
   dest_home=${dest_data%/data}
   rc=0
 
   if [ -e "$src" ] || [ -L "$src" ]; then
-    if ! shared_captain_file_safe_existing "$src"; then
+    if ! shared_commander_file_safe_existing "$src"; then
       reason="unsafe primary source"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$src" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$src" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
       return 1
     fi
-    if ! shared_captain_header_valid "$src"; then
+    if ! shared_commander_header_valid "$src"; then
       reason="primary source header missing required main-authoritative warning"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$src" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$src" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
       return 1
     fi
     src_hash=$(fm_inherit_sha256 "$src") || {
       reason="failed to hash primary source"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$src" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$src" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
       return 1
     }
     if [ -e "$dest" ] || [ -L "$dest" ]; then
-      if ! shared_captain_file_safe_existing "$dest"; then
+      if ! shared_commander_file_safe_existing "$dest"; then
         reason="unsafe destination"
-        warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+        warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
         return 1
       fi
       dest_hash=$(fm_inherit_sha256 "$dest") || {
         reason="failed to hash destination"
-        warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
-        restore_shared_captain_readonly "$dest" || true
+        warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
+        restore_shared_commander_readonly "$dest" || true
         return 1
       }
       if [ "$src_hash" = "$dest_hash" ]; then
-        if restore_shared_captain_readonly "$dest"; then
-          record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" unchanged ""
+        if restore_shared_commander_readonly "$dest"; then
+          record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" unchanged ""
           return 0
         fi
         reason="failed to restore read-only mode"
-        warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+        warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
         return 1
       fi
-      if ! shared_captain_dir_safe "$dest_parent"; then
+      if ! shared_commander_dir_safe "$dest_parent"; then
         reason="unsafe destination directory"
-        warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest_parent" "$reason"
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
-        restore_shared_captain_readonly "$dest" || true
+        warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest_parent" "$reason"
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
+        restore_shared_commander_readonly "$dest" || true
         return 1
       fi
-      if ! quarantine=$(quarantine_shared_captain_dest "$dest" "$dest_parent"); then
+      if ! quarantine=$(quarantine_shared_commander_dest "$dest" "$dest_parent"); then
         reason="failed to quarantine divergent destination"
-        warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
-        restore_shared_captain_readonly "$dest" || true
+        warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
+        restore_shared_commander_readonly "$dest" || true
         return 1
       fi
-      printf 'SECONDMATE_SYNC: secondmate home %s: quarantined %s drift at %s\n' "$dest_home" "$FM_SHARED_CAPTAIN_REL" "$quarantine"
-    elif ! shared_captain_dir_safe "$dest_parent"; then
+      printf 'XO_SYNC: XO home %s: quarantined %s drift at %s\n' "$dest_home" "$SQUAD_SHARED_COMMANDER_REL" "$quarantine"
+    elif ! shared_commander_dir_safe "$dest_parent"; then
       reason="unsafe destination directory"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest_parent" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest_parent" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
       return 1
     fi
-    if copy_shared_captain_file "$src" "$dest"; then
+    if copy_shared_commander_file "$src" "$dest"; then
       if [ -n "${quarantine:-}" ]; then
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" pushed "quarantined local drift at $quarantine"
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" pushed "quarantined local drift at $quarantine"
       else
-        record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" pushed ""
+        record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" pushed ""
       fi
     else
       reason="failed to copy"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
       rc=1
     fi
   elif [ -e "$dest" ] || [ -L "$dest" ]; then
-    if ! shared_captain_file_safe_existing "$dest"; then
+    if ! shared_commander_file_safe_existing "$dest"; then
       reason="unsafe destination"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
       return 1
     fi
-    if ! shared_captain_dir_safe "$dest_parent"; then
+    if ! shared_commander_dir_safe "$dest_parent"; then
       reason="unsafe destination directory"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest_parent" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
-      restore_shared_captain_readonly "$dest" || true
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest_parent" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
+      restore_shared_commander_readonly "$dest" || true
       return 1
     fi
-    if quarantine=$(quarantine_shared_captain_dest "$dest" "$dest_parent"); then
-      printf 'SECONDMATE_SYNC: secondmate home %s: quarantined %s drift at %s\n' "$dest_home" "$FM_SHARED_CAPTAIN_REL" "$quarantine"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" pushed "mirrored primary absence after quarantining local copy at $quarantine"
+    if quarantine=$(quarantine_shared_commander_dest "$dest" "$dest_parent"); then
+      printf 'XO_SYNC: XO home %s: quarantined %s drift at %s\n' "$dest_home" "$SQUAD_SHARED_COMMANDER_REL" "$quarantine"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" pushed "mirrored primary absence after quarantining local copy at $quarantine"
     else
       reason="failed to quarantine destination before mirroring primary absence"
-      warn_inheritable_config_error "$FM_SHARED_CAPTAIN_REL" "$dest" "$reason"
-      record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" error "$reason"
-      restore_shared_captain_readonly "$dest" || true
+      warn_inheritable_config_error "$SQUAD_SHARED_COMMANDER_REL" "$dest" "$reason"
+      record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" error "$reason"
+      restore_shared_commander_readonly "$dest" || true
       rc=1
     fi
   else
-    record_inheritable_config_result "$FM_SHARED_CAPTAIN_REL" unchanged ""
+    record_inheritable_config_result "$SQUAD_SHARED_COMMANDER_REL" unchanged ""
   fi
   return "$rc"
 }
 
-propagate_secondmate_inheritance() {
+propagate_XO_inheritance() {
   local src_home=$1 dest_home=$2 src_config=${3:-} src_data=${4:-} rc
   [ -n "$src_home" ] || return 1
   [ -n "$dest_home" ] || return 1
@@ -435,7 +435,7 @@ propagate_secondmate_inheritance() {
   [ -n "$src_data" ] || src_data="$src_home/data"
   rc=0
   propagate_inheritable_config "$src_config" "$dest_home/config" || rc=1
-  propagate_shared_captain_preferences "$src_data" "$dest_home/data" || rc=1
+  propagate_shared_commander_preferences "$src_data" "$dest_home/data" || rc=1
   return "$rc"
 }
 
@@ -444,11 +444,11 @@ propagate_inheritable_config() {
   [ -n "$src_config" ] || return 1
   [ -n "$dest_config" ] || return 1
   rc=0
-  for item in $FM_INHERITABLE_CONFIG; do
+  for item in $SQUAD_INHERITABLE_CONFIG; do
     case "$item" in
       ''|/*|.|..|../*|*/../*|*/..) return 1 ;;
     esac
-    if [ "${FM_CONFIG_INHERIT_LIVE:-0}" = 1 ] && fm_config_inherit_item_session_scoped "$item"; then
+    if [ "${SQUAD_CONFIG_INHERIT_LIVE:-0}" = 1 ] && fm_config_inherit_item_session_scoped "$item"; then
       record_inheritable_config_result "$item" unchanged "session-scoped"
       continue
     fi
@@ -457,10 +457,10 @@ propagate_inheritable_config() {
     # This one scalar config is consumed as a local safety boundary, so reject
     # every unsafe or malformed source/destination artifact before the generic
     # byte-copy behavior below can treat it as ordinary inherited material.
-    if [ "$item" = "$FM_STARTUP_MEMORY_BUDGET_FILE" ]; then
+    if [ "$item" = "$SQUAD_STARTUP_MEMORY_BUDGET_FILE" ]; then
       if [ -e "$src_config" ] || [ -L "$src_config" ]; then
         if ! fm_startup_memory_budget_config_dir_safe "$src_config"; then
-          reason="unsafe primary config directory: $FM_STARTUP_MEMORY_BUDGET_ERROR"
+          reason="unsafe primary config directory: $SQUAD_STARTUP_MEMORY_BUDGET_ERROR"
           warn_inheritable_config_error "$item" "$src_config" "$reason"
           record_inheritable_config_result "$item" error "$reason"
           rc=1
@@ -469,7 +469,7 @@ propagate_inheritable_config() {
       fi
       if [ -e "$dest_config" ] || [ -L "$dest_config" ]; then
         if ! fm_startup_memory_budget_config_dir_safe "$dest_config"; then
-          reason="unsafe destination config directory: $FM_STARTUP_MEMORY_BUDGET_ERROR"
+          reason="unsafe destination config directory: $SQUAD_STARTUP_MEMORY_BUDGET_ERROR"
           warn_inheritable_config_error "$item" "$dest_config" "$reason"
           record_inheritable_config_result "$item" error "$reason"
           rc=1
@@ -478,7 +478,7 @@ propagate_inheritable_config() {
       fi
       if [ -e "$src" ] || [ -L "$src" ]; then
         if ! fm_startup_memory_budget_file_valid "$src"; then
-          reason="unsafe or invalid primary source: $FM_STARTUP_MEMORY_BUDGET_ERROR"
+          reason="unsafe or invalid primary source: $SQUAD_STARTUP_MEMORY_BUDGET_ERROR"
           warn_inheritable_config_error "$item" "$src" "$reason"
           record_inheritable_config_result "$item" error "$reason"
           rc=1
@@ -487,7 +487,7 @@ propagate_inheritable_config() {
       fi
       if [ -e "$dest" ] || [ -L "$dest" ]; then
         if ! fm_startup_memory_budget_file_valid "$dest"; then
-          reason="unsafe or invalid destination: $FM_STARTUP_MEMORY_BUDGET_ERROR"
+          reason="unsafe or invalid destination: $SQUAD_STARTUP_MEMORY_BUDGET_ERROR"
           warn_inheritable_config_error "$item" "$dest" "$reason"
           record_inheritable_config_result "$item" error "$reason"
           rc=1
@@ -538,26 +538,26 @@ propagate_inheritable_config() {
 }
 
 # Relative prefix of per-home instruction files written after a successful
-# config push so the live secondmate can re-read exact post-write bytes.
+# config push so the live XO can re-read exact post-write bytes.
 # Kept under state/ (gitignored operational dir) so it never dirties the home.
-FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL="state/.fm-inherited-config-reread"
-FM_CONFIG_REREAD_MAX_SENT=16
-FM_CONFIG_REREAD_RETRY_ROOT_REL="state/.fm-inherited-config-reread-retry"
-FM_CONFIG_REREAD_MAX_PENDING=16
-FM_CONFIG_REREAD_MAX_QUARANTINE=16
-FM_CONFIG_INHERIT_LOCK_REL="state/.fm-inherited-config.lock"
+SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL="state/.sq-inherited-config-reread"
+SQUAD_CONFIG_REREAD_MAX_SENT=16
+SQUAD_CONFIG_REREAD_RETRY_ROOT_REL="state/.sq-inherited-config-reread-retry"
+SQUAD_CONFIG_REREAD_MAX_PENDING=16
+SQUAD_CONFIG_REREAD_MAX_QUARANTINE=16
+SQUAD_CONFIG_INHERIT_LOCK_REL="state/.sq-inherited-config.lock"
 
 # Framing lines for the config-reread instruction. Defaults/rules only - never
 # an enforcement claim, and never a parsed summary of file contents.
-FM_CONFIG_REREAD_FRAMING='These inherited config files changed. Re-read and apply their exact contents at every future intake. They are defaults/rules and do not remove your judgment to choose differently when warranted.'
+SQUAD_CONFIG_REREAD_FRAMING='These inherited config files changed. Re-read and apply their exact contents at every future intake. They are defaults/rules and do not remove your judgment to choose differently when warranted.'
 
 # fm_config_reread_is_allowlisted_item <item>
 # True only for the declared inheritable config allowlist (bare item name as
-# recorded in FM_CONFIG_INHERIT_REPORT). data/captain-shared.md is never
+# recorded in SQUAD_CONFIG_INHERIT_REPORT). data/commander-shared.md is never
 # allowlisted here and must never be inlined into a reread instruction.
 fm_config_reread_is_allowlisted_item() {
   local item=$1 candidate
-  for candidate in $FM_INHERITABLE_CONFIG; do
+  for candidate in $SQUAD_INHERITABLE_CONFIG; do
     [ "$candidate" = "$item" ] && return 0
   done
   return 1
@@ -565,11 +565,11 @@ fm_config_reread_is_allowlisted_item() {
 
 # fm_config_reread_changed_items <report>
 # Print bare allowlisted config item names whose report status is "pushed",
-# in FM_INHERITABLE_CONFIG order (deterministic path order). Empty when none.
+# in SQUAD_INHERITABLE_CONFIG order (deterministic path order). Empty when none.
 fm_config_reread_changed_items() {
   local report=$1 item status
   [ -n "$report" ] && [ -f "$report" ] || return 0
-  for item in $FM_INHERITABLE_CONFIG; do
+  for item in $SQUAD_INHERITABLE_CONFIG; do
     status=$(awk -F '\t' -v item="$item" '$1 == item { print $2; exit }' "$report" 2>/dev/null) || status=""
     [ "$status" = pushed ] || continue
     printf '%s\n' "$item"
@@ -579,7 +579,7 @@ fm_config_reread_changed_items() {
 fm_config_inherit_lock_path() {
   local dest_home=$1
   [ -n "$dest_home" ] || return 1
-  printf '%s/%s\n' "$dest_home" "$FM_CONFIG_INHERIT_LOCK_REL"
+  printf '%s/%s\n' "$dest_home" "$SQUAD_CONFIG_INHERIT_LOCK_REL"
 }
 
 fm_config_reread_retry_dir() {
@@ -587,13 +587,13 @@ fm_config_reread_retry_dir() {
   [ -n "$source_home" ] && [ -n "$id" ] || return 1
   token=${id//[^a-zA-Z0-9_.-]/_}
   [ -n "$token" ] || token=unknown
-  printf '%s/%s/%s\n' "$source_home" "$FM_CONFIG_REREAD_RETRY_ROOT_REL" "$token"
+  printf '%s/%s/%s\n' "$source_home" "$SQUAD_CONFIG_REREAD_RETRY_ROOT_REL" "$token"
 }
 
 fm_config_reread_pending_stages() {
   local source_home=$1 id=$2 retry_dir stage
   retry_dir=$(fm_config_reread_retry_dir "$source_home" "$id") || return 1
-  for stage in "$retry_dir"/.fm-inherited-config-reread.*; do
+  for stage in "$retry_dir"/.sq-inherited-config-reread.*; do
     case "$stage" in
       *.report) continue ;;
     esac
@@ -606,7 +606,7 @@ fm_config_reread_pending_stages() {
 fm_config_reread_pending_reports() {
   local source_home=$1 id=$2 retry_dir report
   retry_dir=$(fm_config_reread_retry_dir "$source_home" "$id") || return 1
-  for report in "$retry_dir"/.fm-inherited-config-reread.*.report; do
+  for report in "$retry_dir"/.sq-inherited-config-reread.*.report; do
     [ -f "$report" ] && [ ! -L "$report" ] || continue
     printf '%s\n' "$report"
   done | LC_ALL=C sort
@@ -628,13 +628,13 @@ fm_config_reread_retry_queue_is_full() {
   count=$(fm_config_reread_pending_stages "$source_home" "$id" | wc -l | tr -d ' ')
   report_count=$(fm_config_reread_pending_reports "$source_home" "$id" | wc -l | tr -d ' ')
   count=$((count + report_count))
-  [ "$count" -ge "$FM_CONFIG_REREAD_MAX_PENDING" ]
+  [ "$count" -ge "$SQUAD_CONFIG_REREAD_MAX_PENDING" ]
 }
 
 fm_config_reread_retry_pending() {
   local id=$1 dest_home=$2 report retry_out rc
-  report=$(mktemp "${TMPDIR:-/tmp}/fm-config-reread-retry.XXXXXX" 2>/dev/null) || {
-    printf 'CONFIG_REREAD: secondmate %s: send failed: could not create retry report\n' "$id"
+  report=$(mktemp "${TMPDIR:-/tmp}/sq-config-reread-retry.XXXXXX" 2>/dev/null) || {
+    printf 'CONFIG_REREAD: XO %s: send failed: could not create retry report\n' "$id"
     return 1
   }
   retry_out=$(fm_config_send_reread_nudge "$id" "$dest_home" "$report" 2>&1)
@@ -662,7 +662,7 @@ fm_config_reread_new_retry_stage_path() {
   fi
   generation=$(date -u +%Y%m%dT%H%M%S 2>/dev/null) || return 1
   generation="$generation.$(printf '%08d' "$sequence")"
-  stage=$(umask 077; mktemp "$retry_dir/.fm-inherited-config-reread.$generation.XXXXXX" 2>/dev/null) || return 1
+  stage=$(umask 077; mktemp "$retry_dir/.sq-inherited-config-reread.$generation.XXXXXX" 2>/dev/null) || return 1
   printf '%s\n' "$stage"
 }
 
@@ -670,7 +670,7 @@ fm_config_reread_save_retry_report() {
   local report=$1 stage_path=$2 report_path tmp parent
   parent=${stage_path%/*}
   report_path="$stage_path.report"
-  tmp=$(umask 077; mktemp "$parent/.fm-config-reread-report.XXXXXX" 2>/dev/null) || return 1
+  tmp=$(umask 077; mktemp "$parent/.sq-config-reread-report.XXXXXX" 2>/dev/null) || return 1
   if ! cat "$report" > "$tmp" || ! chmod 0600 "$tmp" 2>/dev/null || ! mv -f "$tmp" "$report_path" 2>/dev/null; then
     rm -f "$tmp"
     return 1
@@ -684,11 +684,11 @@ fm_config_reread_save_retry_report() {
 # relative path, begin/end delimiters, and either the destination file's full
 # exact post-write bytes (streamed unparsed) or the literal token ABSENT when
 # the destination copy was removed. Returns 1 when no allowlisted config item
-# changed (or on write failure). Never inlines data/captain-shared.md, SHA
+# changed (or on write failure). Never inlines data/commander-shared.md, SHA
 # values, selected profiles, or any generated interpretation.
 fm_config_write_reread_instruction() {
   local dest_home=$1 report=$2 instruction_path=$3 item rel dest parent tmp first=1
-  FM_CONFIG_REREAD_FAILED_TEMP=""
+  SQUAD_CONFIG_REREAD_FAILED_TEMP=""
   [ -n "$dest_home" ] || return 1
   [ -n "$report" ] && [ -f "$report" ] || return 1
   [ -n "$instruction_path" ] || return 1
@@ -703,7 +703,7 @@ fm_config_write_reread_instruction() {
     rel="config/$item"
     dest="$dest_home/config/$item"
     if [ "$first" = 1 ]; then
-      printf '%s\n' "$FM_CONFIG_REREAD_FRAMING" >> "$tmp" || { rm -f "$tmp"; return 1; }
+      printf '%s\n' "$SQUAD_CONFIG_REREAD_FRAMING" >> "$tmp" || { rm -f "$tmp"; return 1; }
       first=0
     fi
     {
@@ -724,7 +724,7 @@ fm_config_write_reread_instruction() {
     return 1
   fi
   if ! mv -f "$tmp" "$instruction_path" 2>/dev/null; then
-    FM_CONFIG_REREAD_FAILED_TEMP="$tmp"
+    SQUAD_CONFIG_REREAD_FAILED_TEMP="$tmp"
     return 1
   fi
   return 0
@@ -749,7 +749,7 @@ fm_config_reread_adopt_exact_temp() {
 
 fm_config_reread_pending_instructions() {
   local state=$1 pending instruction
-  for pending in "$state"/.fm-inherited-config-reread.*.pending; do
+  for pending in "$state"/.sq-inherited-config-reread.*.pending; do
     [ -f "$pending" ] && [ ! -L "$pending" ] || continue
     instruction=${pending%.pending}
     printf '%s\n' "$instruction"
@@ -758,8 +758,8 @@ fm_config_reread_pending_instructions() {
 
 fm_config_reread_has_pending() {
   local dest_home=$1 state pending
-  state="$dest_home/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
-  for pending in "$state"/.fm-inherited-config-reread.*.pending; do
+  state="$dest_home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  for pending in "$state"/.sq-inherited-config-reread.*.pending; do
     [ -f "$pending" ] && [ ! -L "$pending" ] || continue
     return 0
   done
@@ -768,10 +768,10 @@ fm_config_reread_has_pending() {
 
 fm_config_reread_cleanup_sent() {
   local dest_home=$1 state path paths sorted total remove
-  state="$dest_home/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  state="$dest_home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
   [ -d "$state" ] || return 0
   paths=""
-  for path in "$state"/.fm-inherited-config-reread.*; do
+  for path in "$state"/.sq-inherited-config-reread.*; do
     case "$path" in
       *.pending) continue ;;
     esac
@@ -785,7 +785,7 @@ fm_config_reread_cleanup_sent() {
   [ -n "$paths" ] || return 0
   sorted=$(printf '%s\n' "$paths" | LC_ALL=C sort)
   total=$(printf '%s\n' "$sorted" | wc -l | tr -d ' ')
-  remove=$((total - FM_CONFIG_REREAD_MAX_SENT))
+  remove=$((total - SQUAD_CONFIG_REREAD_MAX_SENT))
   [ "$remove" -gt 0 ] || return 0
   while IFS= read -r path; do
     [ "$remove" -gt 0 ] || break
@@ -803,7 +803,7 @@ fm_config_reread_mark_pending() {
   parent=${pending_path%/*}
   [ -n "$parent" ] && [ "$parent" != "$pending_path" ] || return 1
   mkdir -p "$parent" 2>/dev/null || return 1
-  tmp=$(umask 077; mktemp "$parent/.fm-config-reread-pending.XXXXXX" 2>/dev/null) || return 1
+  tmp=$(umask 077; mktemp "$parent/.sq-config-reread-pending.XXXXXX" 2>/dev/null) || return 1
   if ! printf '%s\n' "$instruction_path" > "$tmp"; then
     rm -f "$tmp"
     return 1
@@ -822,7 +822,7 @@ fm_config_reread_mark_pending() {
 fm_config_reread_publish_stage() {
   local dest_home=$1 stage=$2 state final pending_pointer tmp
   [ -f "$stage" ] && [ ! -L "$stage" ] || return 1
-  state="$dest_home/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  state="$dest_home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
   mkdir -p "$state" 2>/dev/null || return 1
   final="$state/${stage##*/}"
   if [ -f "$final.pending" ] && [ ! -L "$final.pending" ]; then
@@ -832,7 +832,7 @@ fm_config_reread_publish_stage() {
     printf '%s\n' "$final"
     return 0
   fi
-  tmp=$(umask 077; mktemp "$state/.fm-config-reread-publish.XXXXXX" 2>/dev/null) || return 1
+  tmp=$(umask 077; mktemp "$state/.sq-config-reread-publish.XXXXXX" 2>/dev/null) || return 1
   if ! cat "$stage" > "$tmp" || ! chmod 0600 "$tmp" 2>/dev/null || ! mv -f "$tmp" "$final" 2>/dev/null; then
     rm -f "$tmp"
     return 1
@@ -849,7 +849,7 @@ fm_config_reread_send_failure() {
   if ! fm_config_reread_mark_pending "$instruction_path" "$pending_path"; then
     detail="$detail; could not record retry marker"
   fi
-  printf 'CONFIG_REREAD: secondmate %s: send failed: %s\n' "$id" "$detail"
+  printf 'CONFIG_REREAD: XO %s: send failed: %s\n' "$id" "$detail"
   return 1
 }
 
@@ -858,36 +858,36 @@ fm_config_reread_send_pointer() {
   local id=$1 instruction_path=$2 pending_path selector out rc send_bin message pending_pointer
   pending_path="$instruction_path.pending"
   if [ ! -f "$instruction_path" ] || [ -L "$instruction_path" ]; then
-    printf 'CONFIG_REREAD: secondmate %s: send failed: pending instruction file is missing\n' "$id"
+    printf 'CONFIG_REREAD: XO %s: send failed: pending instruction file is missing\n' "$id"
     return 1
   fi
   pending_pointer=$(cat "$pending_path" 2>/dev/null || true)
   if [ "$pending_pointer" != "$instruction_path" ]; then
-    printf 'CONFIG_REREAD: secondmate %s: send failed: pending instruction file is mismatched\n' "$id"
+    printf 'CONFIG_REREAD: XO %s: send failed: pending instruction file is mismatched\n' "$id"
     return 1
   fi
-  selector="fm-$id"
-  send_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-send.sh"
+  selector="sq-$id"
+  send_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sq-send.sh"
   if [ ! -x "$send_bin" ]; then
-    fm_config_reread_send_failure "$id" "$instruction_path" "$pending_path" "fm-send.sh not executable at $send_bin"
+    fm_config_reread_send_failure "$id" "$instruction_path" "$pending_path" "sq-send.sh not executable at $send_bin"
     return 1
   fi
-  if [ -z "${FM_HOME:-}" ]; then
-    fm_config_reread_send_failure "$id" "$instruction_path" "$pending_path" "FM_HOME is not set"
+  if [ -z "${SQUAD_HOME:-}" ]; then
+    fm_config_reread_send_failure "$id" "$instruction_path" "$pending_path" "SQUAD_HOME is not set"
     return 1
   fi
   message="CONFIG_REREAD: $instruction_path"
-  out=$(FM_HOME="$FM_HOME" \
-    FM_ROOT_OVERRIDE="${FM_ROOT_OVERRIDE:-}" \
-    FM_STATE_OVERRIDE="${FM_STATE_OVERRIDE:-}" \
-    FM_SEND_SETTLE="${FM_SEND_SETTLE:-0}" \
+  out=$(SQUAD_HOME="$SQUAD_HOME" \
+    SQUAD_ROOT_OVERRIDE="${SQUAD_ROOT_OVERRIDE:-}" \
+    SQUAD_STATE_OVERRIDE="${SQUAD_STATE_OVERRIDE:-}" \
+    SQUAD_SEND_SETTLE="${SQUAD_SEND_SETTLE:-0}" \
     "$send_bin" "$selector" "$message" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -eq 0 ]; then
     rm -f "$pending_path"
     return 0
   fi
   out=${out%%$'\n'*}
-  [ -n "$out" ] || out="fm-send exited $rc"
+  [ -n "$out" ] || out="sq-send exited $rc"
   fm_config_reread_send_failure "$id" "$instruction_path" "$pending_path" "$out"
   return 1
 }
@@ -895,8 +895,8 @@ fm_config_reread_send_pointer() {
 # fm_config_reread_discard_pending <dest-home>
 fm_config_reread_discard_pending() {
   local dest_home=$1 id=${2:-} source_home=${3:-} state pending instruction retry_dir retry_stage rc=0
-  state="$dest_home/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
-  for pending in "$state"/.fm-inherited-config-reread.*.pending; do
+  state="$dest_home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  for pending in "$state"/.sq-inherited-config-reread.*.pending; do
     [ -f "$pending" ] && [ ! -L "$pending" ] || continue
     instruction=${pending%.pending}
     rm -f "$pending" 2>/dev/null || rc=1
@@ -905,7 +905,7 @@ fm_config_reread_discard_pending() {
   if [ -n "$id" ] && [ -n "$source_home" ]; then
     retry_dir=$(fm_config_reread_retry_dir "$source_home" "$id") || rc=1
     if [ -d "$retry_dir" ]; then
-      for retry_stage in "$retry_dir"/.fm-inherited-config-reread.*; do
+      for retry_stage in "$retry_dir"/.sq-inherited-config-reread.*; do
         [ -f "$retry_stage" ] && [ ! -L "$retry_stage" ] || continue
         rm -f "$retry_stage" 2>/dev/null || rc=1
       done
@@ -917,9 +917,9 @@ fm_config_reread_discard_pending() {
 }
 
 fm_config_reread_quarantine_prune() {
-  local root=$1 keep=${2:-$FM_CONFIG_REREAD_MAX_QUARANTINE} dirs dir oldest path remove
+  local root=$1 keep=${2:-$SQUAD_CONFIG_REREAD_MAX_QUARANTINE} dirs dir oldest path remove
   case "$keep" in
-    ''|*[!0-9]*) keep=$FM_CONFIG_REREAD_MAX_QUARANTINE ;;
+    ''|*[!0-9]*) keep=$SQUAD_CONFIG_REREAD_MAX_QUARANTINE ;;
   esac
   [ -d "$root" ] || return 0
   dirs=""
@@ -954,11 +954,11 @@ fm_config_reread_quarantine_prune() {
 
 fm_config_reread_quarantine_dir() {
   local home=$1 state root quarantine
-  state="$home/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
-  root="$state/.fm-inherited-config-reread-quarantine"
+  state="$home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  root="$state/.sq-inherited-config-reread-quarantine"
   mkdir -p "$root" 2>/dev/null || return 1
   chmod 0700 "$root" 2>/dev/null || return 1
-  fm_config_reread_quarantine_prune "$root" $((FM_CONFIG_REREAD_MAX_QUARANTINE - 1)) || return 1
+  fm_config_reread_quarantine_prune "$root" $((SQUAD_CONFIG_REREAD_MAX_QUARANTINE - 1)) || return 1
   quarantine=$(umask 077; mktemp -d "$root/generation.XXXXXX" 2>/dev/null) || return 1
   chmod 0700 "$quarantine" 2>/dev/null || return 1
   printf '%s\n' "$quarantine"
@@ -968,9 +968,9 @@ fm_config_reread_quarantine_pending() {
   local dest_home=$1 id=${2:-} source_home=${3:-}
   local state pending instruction retry_dir retry_stage dest_quarantine source_quarantine
   local dest_has_artifacts source_has_artifacts rc=0
-  state="$dest_home/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  state="$dest_home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
   dest_has_artifacts=0
-  for pending in "$state"/.fm-inherited-config-reread.*.pending; do
+  for pending in "$state"/.sq-inherited-config-reread.*.pending; do
     [ -f "$pending" ] && [ ! -L "$pending" ] || continue
     dest_has_artifacts=1
     break
@@ -979,7 +979,7 @@ fm_config_reread_quarantine_pending() {
   if [ "$dest_has_artifacts" -eq 1 ]; then
     dest_quarantine=$(fm_config_reread_quarantine_dir "$dest_home" 2>/dev/null || true)
   fi
-  for pending in "$state"/.fm-inherited-config-reread.*.pending; do
+  for pending in "$state"/.sq-inherited-config-reread.*.pending; do
     [ -f "$pending" ] && [ ! -L "$pending" ] || continue
     instruction=${pending%.pending}
     if [ -n "$dest_quarantine" ] && mv -f "$pending" "$dest_quarantine/${pending##*/}" 2>/dev/null; then
@@ -999,7 +999,7 @@ fm_config_reread_quarantine_pending() {
     retry_dir=$(fm_config_reread_retry_dir "$source_home" "$id") || retry_dir=
     source_has_artifacts=0
     if [ -d "$retry_dir" ]; then
-      for retry_stage in "$retry_dir"/.fm-inherited-config-reread.*; do
+      for retry_stage in "$retry_dir"/.sq-inherited-config-reread.*; do
         [ -f "$retry_stage" ] && [ ! -L "$retry_stage" ] || continue
         source_has_artifacts=1
         break
@@ -1010,7 +1010,7 @@ fm_config_reread_quarantine_pending() {
       source_quarantine=$(fm_config_reread_quarantine_dir "$source_home" 2>/dev/null || true)
     fi
     if [ -d "$retry_dir" ]; then
-      for retry_stage in "$retry_dir"/.fm-inherited-config-reread.*; do
+      for retry_stage in "$retry_dir"/.sq-inherited-config-reread.*; do
         [ -f "$retry_stage" ] && [ ! -L "$retry_stage" ] || continue
         if [ -n "$source_quarantine" ] && mv -f "$retry_stage" "$source_quarantine/${retry_stage##*/}" 2>/dev/null; then
           :
@@ -1036,10 +1036,10 @@ fm_config_reread_quarantine_pending() {
 # fm_config_send_reread_nudge <id> <dest-home> <report>
 # After successful propagation, if any allowlisted config item changed for this
 # home, write the exact-byte instruction under the destination home and send a
-# single-line pointers to those files through the routed secondmate path
-# (fm-send). The files contain only changed config paths, clear delimiters, and
+# single-line pointers to those files through the routed XO path
+# (sq-send). The files contain only changed config paths, clear delimiters, and
 # the destination's full exact post-write bytes (or ABSENT) - never summaries,
-# SHA values, selected profiles, or data/captain-shared.md. No-op (return 0) when
+# SHA values, selected profiles, or data/commander-shared.md. No-op (return 0) when
 # nothing changed and no pending delivery exists. On publication or send
 # failure, print a concrete CONFIG_REREAD retry diagnostic to stdout and return
 # non-zero - never claim the live agent reread the values.
@@ -1052,17 +1052,17 @@ fm_config_send_reread_nudge() {
   [ -n "$dest_home" ] || return 1
   [ -n "$report" ] && [ -f "$report" ] || return 1
   dest_home_abs=$(cd "$dest_home" 2>/dev/null && pwd -P) || {
-    printf 'CONFIG_REREAD: secondmate %s: send failed: destination home is not readable\n' "$id"
+    printf 'CONFIG_REREAD: XO %s: send failed: destination home is not readable\n' "$id"
     return 1
   }
-  state="$dest_home_abs/${FM_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
+  state="$dest_home_abs/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
   changed_items=$(fm_config_reread_changed_items "$report")
   pending_paths=""
   stage_paths=""
   retry_report_paths=""
-  if [ "${FM_CONFIG_REREAD_SKIP_PENDING:-0}" != 1 ]; then
+  if [ "${SQUAD_CONFIG_REREAD_SKIP_PENDING:-0}" != 1 ]; then
     pending_paths=$(fm_config_reread_pending_instructions "$state")
-    source_home_abs=$(cd "${FM_HOME:-}" 2>/dev/null && pwd -P || true)
+    source_home_abs=$(cd "${SQUAD_HOME:-}" 2>/dev/null && pwd -P || true)
     if [ -n "$source_home_abs" ]; then
       stage_paths=$(fm_config_reread_pending_stages "$source_home_abs" "$id")
       retry_report_paths=$(fm_config_reread_pending_reports "$source_home_abs" "$id")
@@ -1089,7 +1089,7 @@ fm_config_send_reread_nudge() {
       fi
       stage_paths+="$retry_stage_path"
     else
-      exact_tmp=${FM_CONFIG_REREAD_FAILED_TEMP:-}
+      exact_tmp=${SQUAD_CONFIG_REREAD_FAILED_TEMP:-}
       if [ -n "$exact_tmp" ] \
         && fm_config_reread_adopt_exact_temp "$exact_tmp" "$retry_stage_path"; then
         rm -f "$retry_report_path" 2>/dev/null || send_failures=1
@@ -1098,11 +1098,11 @@ fm_config_send_reread_nudge() {
         fi
         stage_paths+="$retry_stage_path"
       elif [ -n "$exact_tmp" ] && [ -f "$exact_tmp" ]; then
-        printf 'CONFIG_REREAD: secondmate %s: send failed: retained exact retry temporary %s\n' "$id" "$exact_tmp"
+        printf 'CONFIG_REREAD: XO %s: send failed: retained exact retry temporary %s\n' "$id" "$exact_tmp"
         send_failures=1
         break
       else
-        printf 'CONFIG_REREAD: secondmate %s: send failed: could not rebuild retry instruction\n' "$id"
+        printf 'CONFIG_REREAD: XO %s: send failed: could not rebuild retry instruction\n' "$id"
         send_failures=1
         break
       fi
@@ -1115,33 +1115,33 @@ EOF
     return 1
   fi
   if [ -n "$changed_items" ]; then
-    source_home_abs=$(cd "${FM_HOME:-}" 2>/dev/null && pwd -P || true)
+    source_home_abs=$(cd "${SQUAD_HOME:-}" 2>/dev/null && pwd -P || true)
     if [ -z "$source_home_abs" ]; then
-      printf 'CONFIG_REREAD: secondmate %s: send failed: could not reserve retry instruction\n' "$id"
+      printf 'CONFIG_REREAD: XO %s: send failed: could not reserve retry instruction\n' "$id"
       return 1
     fi
     if fm_config_reread_retry_queue_is_full "$source_home_abs" "$id"; then
-      printf 'CONFIG_REREAD: secondmate %s: send failed: retry instruction queue is full\n' "$id"
+      printf 'CONFIG_REREAD: XO %s: send failed: retry instruction queue is full\n' "$id"
       return 1
     fi
     current_stage_path=$(fm_config_reread_new_retry_stage_path "$source_home_abs" "$id") || {
-      printf 'CONFIG_REREAD: secondmate %s: send failed: could not reserve retry instruction\n' "$id"
+      printf 'CONFIG_REREAD: XO %s: send failed: could not reserve retry instruction\n' "$id"
       return 1
     }
     if ! fm_config_write_reread_instruction "$dest_home_abs" "$report" "$current_stage_path"; then
-      exact_tmp=${FM_CONFIG_REREAD_FAILED_TEMP:-}
+      exact_tmp=${SQUAD_CONFIG_REREAD_FAILED_TEMP:-}
       if [ -n "$exact_tmp" ] \
         && fm_config_reread_adopt_exact_temp "$exact_tmp" "$current_stage_path"; then
-        printf 'CONFIG_REREAD: secondmate %s: send failed: could not publish retry instruction; retained exact retry generation %s\n' "$id" "$current_stage_path"
+        printf 'CONFIG_REREAD: XO %s: send failed: could not publish retry instruction; retained exact retry generation %s\n' "$id" "$current_stage_path"
       elif [ -n "$exact_tmp" ] && [ -f "$exact_tmp" ]; then
         rm -f "$current_stage_path" 2>/dev/null || true
-        printf 'CONFIG_REREAD: secondmate %s: send failed: retained exact retry temporary %s\n' "$id" "$exact_tmp"
+        printf 'CONFIG_REREAD: XO %s: send failed: retained exact retry temporary %s\n' "$id" "$exact_tmp"
       elif retry_record_path=$(fm_config_reread_save_retry_report "$report" "$current_stage_path"); then
         rm -f "$current_stage_path" 2>/dev/null || true
-        printf 'CONFIG_REREAD: secondmate %s: send failed: could not write retry instruction; retained retry report %s\n' "$id" "$retry_record_path"
+        printf 'CONFIG_REREAD: XO %s: send failed: could not write retry instruction; retained retry report %s\n' "$id" "$retry_record_path"
       else
         rm -f "$current_stage_path" 2>/dev/null || true
-        printf 'CONFIG_REREAD: secondmate %s: send failed: could not write retry instruction or retain retry report\n' "$id"
+        printf 'CONFIG_REREAD: XO %s: send failed: could not write retry instruction or retain retry report\n' "$id"
       fi
       return 1
     fi
@@ -1163,7 +1163,7 @@ EOF
         delivery_paths="$instruction_path"
       fi
     else
-      printf 'CONFIG_REREAD: secondmate %s: send failed: could not publish retry instruction\n' "$id"
+      printf 'CONFIG_REREAD: XO %s: send failed: could not publish retry instruction\n' "$id"
       send_failures=1
       break
     fi

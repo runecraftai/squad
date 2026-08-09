@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Tear down a finished task: return the treehouse worktree, release the Orca
-# worktree, or retire a secondmate home; kill the recorded runtime endpoint,
+# Tear down a finished task: return the fob worktree, release the Orca
+# worktree, or retire a XO home; kill the recorded runtime endpoint,
 # clear volatile state, refresh/prune the project's clone for PR-based ship
-# tasks, then print a backlog-refresh reminder for ship and scout teardowns
-# (a secondmate teardown prints none, since secondmates are not backlog items).
+# tasks, then print a backlog-refresh reminder for ship and recon teardowns
+# (a XO teardown prints none, since XOs are not backlog items).
 # REFUSES if the worktree holds work that has not LANDED, because cleanup
 # hard-resets/removes the worktree and kills its processes. Work has landed when it is
 # reachable from any remote-tracking branch (a fork counts as a remote, so
 # upstream-contribution PRs pushed to a fork satisfy this in any mode), OR - for a
-# normal ship task whose commits are not so reachable - when its PR is merged and
+# normal strike task whose commits are not so reachable - when its PR is merged and
 # GitHub reports a PR head that contains the current local work, or its content is
 # already present in the up-to-date default branch. This recognizes the common
 # squash-merge-then-delete-branch flow, where the branch's own commits live nowhere
 # on a remote yet the change is fully in main.
 # The PR itself is resolved from the task's recorded pr= when present, or - when
 # no pr= was ever recorded (e.g. a yolo-authorized merge on a repo with no PR CI,
-# where the usual "checks green" fm-pr-check.sh trigger never fires) - by looking
+# where the usual "checks green" sq-pr-check.sh trigger never fires) - by looking
 # up a merged PR whose head branch matches the worktree's branch, fetching its head
 # via refs/pull/<n>/head when the branch itself was deleted. So a missing pr= never
 # by itself causes a false refusal of landed work.
@@ -23,12 +23,12 @@
 # teardown refuses rather than risk discarding unlanded work.
 # Uncommitted changes are never landed.
 # local-only projects additionally accept work merged into the local default
-# branch (firstmate performs that merge after configured approval) as a fallback
+# branch (Squad performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
-# Scout tasks (kind=scout in meta) carve out of that check: their worktree is
+# Recon tasks (kind=recon in meta) carve out of that check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared
-# unresolved-decision completion gate verifies its captain-held inventory.
+# unresolved-decision completion gate verifies its commander-held inventory.
 # Before destructive cleanup, teardown validates task check artifacts and any
 # matching quarantine entries as ordinary single-link files on the state
 # device. It refuses and preserves task state when that proof fails; otherwise
@@ -43,39 +43,39 @@
 # read-only token correlation agrees with that endpoint and pane closure is
 # confirmed. Otherwise the journal stays quarantined for manual inspection.
 # Projected closes share the presentation-order lock, refuse to close the
-# captain's active tab, and restore the exact response-derived pre-close tab
+# commander's active tab, and restore the exact response-derived pre-close tab
 # if Herdr's last-pane cleanup focuses an unrelated neighboring workspace.
-# Secondmates (kind=secondmate in meta) are retired explicitly. Normal
-# teardown refuses while their home has in-flight crewmate meta files; --force
+# XOs (kind=xo in meta) are retired explicitly. Normal
+# teardown refuses while their home has in-flight operator meta files; --force
 # is the approved discard path that prevalidates child removal targets, discards
 # child work, kills child runtime endpoints, and removes the retired home. Removing a
-# leased home releases its durable treehouse lease so the pool slot is freed,
-# never left leased forever. If the treehouse return fails, teardown leaves the
+# leased home releases its durable fob lease so the pool slot is freed,
+# never left leased forever. If the fob return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
-# Usage: fm-teardown.sh <task-id> [--force]
-#   --force skips ordinary-task dirty and landed-work checks, skips scout report
-#   checks, and discards secondmate child work for kind=secondmate. Only use it
-#   when the captain has explicitly said to discard the work.
+# Usage: sq-teardown.sh <task-id> [--force]
+#   --force skips ordinary-task dirty and landed-work checks, skips recon report
+#   checks, and discards XO child work for kind=xo. Only use it
+#   when the commander has explicitly said to discard the work.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
-# non-linked worktree, .git/index.lock) that makes `treehouse return --force` fail
+# non-linked worktree, .git/index.lock) that makes `fob return --force` fail
 # with Unable to create '...index.lock': File exists. That lock is usually transient
 # (the dying process finishes or exits within seconds) and must never be force-deleted
 # while a live git process might still own it - the fix is patience, not rm.
 #
-# On that failure signature only, teardown_treehouse_return:
-#   1. Retries up to FM_TREEHOUSE_RETURN_LOCK_RETRIES times (default 3), waiting
-#      FM_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS (default 1s; falls back to the older
-#      FM_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS name when the new one is unset) between
+# On that failure signature only, teardown_fob_return:
+#   1. Retries up to SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES times (default 3), waiting
+#      SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS (default 1s; falls back to the older
+#      SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS name when the new one is unset) between
 #      attempts. Retries key off the error text, not whether the lock file still
 #      exists after the failed attempt - a lock that self-clears mid-check still
 #      deserves a retry of the return.
-#   2. Other treehouse return failures still abort immediately and loudly (no retry).
+#   2. Other fob return failures still abort immediately and loudly (no retry).
 #   3. If every retry still hits the lock signature and the lock remains, it is removed
 #      and the return tried once more ONLY when the lock is provably stale per
-#      bin/fm-lock-lib.sh's fm_lock_is_provably_stale, passing the worktree dir as the
-#      companion directory and FM_STALE_WORKTREE_LOCK_AGE_SECS (default 30s) as the age
+#      bin/sq-lock-lib.sh's fm_lock_is_provably_stale, passing the worktree dir as the
+#      companion directory and SQUAD_STALE_WORKTREE_LOCK_AGE_SECS (default 30s) as the age
 #      threshold. That shared proof owns the exact lsof-holder, mtime-age, and fail-safe
 #      rules.
 #   4. If retries exhaust and the lock is not provably stale, teardown fails as loudly
@@ -91,18 +91,18 @@
 # refusal above has already passed, and BEFORE any worktree return, branch
 # delete, or backend kill below - a still-active run or a leaked process may
 # own live work in that worktree):
-#   Fix 1 - conclude the task's own no-mistakes run. A ship task's worktree can
+#   Fix 1 - conclude the task's own no-mistakes run. A strike task's worktree can
 #     be torn down while its no-mistakes pipeline run is still PARKED at a gate
 #     (awaiting_approval/fix_review/any awaiting_agent field), with no worker
-#     left to ever answer it - the run then sits there holding a fleet slot
+#     left to ever answer it - the run then sits there holding a unit slot
 #     indefinitely (observed 2026-08-03: runs parked 7h39m and parked at a
 #     post-CI approval gate after the worker was already cleaned up). A run
 #     with an autonomous step still under way (running/fixing/ci) is left
 #     alone: no-mistakes drives those against its own gate-repo clone, not the
 #     crew's worktree, so they are not orphaned by removing the worktree.
 #     conclude_task_no_mistakes_run attributes the active-or-most-recent run to
-#     THIS task only when its branch AND code identity (bin/fm-nm-run-lib.sh's
-#     fm_nm_head_matches_worktree, the same rule bin/fm-crew-state.sh uses) both
+#     THIS task only when its branch AND code identity (bin/sq-nm-run-lib.sh's
+#     fm_nm_head_matches_worktree, the same rule bin/sq-crew-state.sh uses) both
 #     match this worktree, then runs `no-mistakes axi abort --run <id>` for
 #     that verified run instance. A run already terminal
 #     (an outcome is set) or not parked at a gate is left untouched. Idempotent:
@@ -126,52 +126,52 @@
 #     being reachable by Fix 2, because its working directory is wherever it
 #     was launched rather than the task worktree (observed 2026-08-07: 29
 #     workers at ppid 1, 1-2 days old, each still polling and appending to a
-#     log in a pruned no-mistakes gate worktree). bin/fm-remote-job-reap-orphans.sh
+#     log in a pruned no-mistakes gate worktree). bin/sq-remote-job-reap-orphans.sh
 #     owns that sweep and its safety rule; it never touches a worker whose code
 #     root still exists, so the account's healthy LaunchAgent worker and every
-#     live remote secondmate worker are out of scope. Best effort: a sweep
+#     live remote XO worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-SECONDMATE_REG="$DATA/secondmates.md"
-SUB_HOME_MARKER=".fm-secondmate-home"
-SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
-# shellcheck source=bin/fm-tasks-axi-lib.sh
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-backend.sh
-. "$SCRIPT_DIR/fm-backend.sh"
-# shellcheck source=bin/fm-lock-lib.sh
-. "$SCRIPT_DIR/fm-lock-lib.sh"
-# shellcheck source=bin/fm-gate-refuse-lib.sh
-. "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
-# shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-public-followup-lib.sh
-. "$SCRIPT_DIR/fm-public-followup-lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-# shellcheck source=bin/fm-secondmate-parent-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-nm-run-lib.sh
-. "$SCRIPT_DIR/fm-nm-run-lib.sh"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+XO_REG="$DATA/XOs.md"
+SUB_HOME_MARKER=".sq-xo-home"
+SUB_HOME_PARENT_MARKER=".sq-xo-parent"
+# shellcheck source=bin/sq-tasks-axi-lib.sh
+. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-backend.sh
+. "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-lock-lib.sh
+. "$SCRIPT_DIR/sq-lock-lib.sh"
+# shellcheck source=bin/sq-gate-refuse-lib.sh
+. "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-public-followup-lib.sh
+. "$SCRIPT_DIR/sq-public-followup-lib.sh"
+# shellcheck source=bin/sq-xo-registry-lib.sh
+. "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-xo-parent-lib.sh
+. "$SCRIPT_DIR/sq-xo-parent-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-nm-run-lib.sh
+. "$SCRIPT_DIR/sq-nm-run-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
 fi
 ID=$1
 FORCE=${2:-}
-# Fail closed before any fleet mutation: a no-mistakes gate agent must never tear
-# down a worktree (see bin/fm-gate-refuse-lib.sh).
+# Fail closed before any unit mutation: a no-mistakes gate agent must never tear
+# down a worktree (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
-FM_LOCK_LOG_PREFIX=teardown
+SQUAD_LOCK_LOG_PREFIX=teardown
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
@@ -279,26 +279,26 @@ remote_outbox_cleanup() {
   )
 }
 
-remote_secondmate_teardown() {
+remote_XO_teardown() {
   local remote_host remote_root remote_home kind route_host route_root route_home out rc tmp rec phase task_id
   remote_host=$(fm_meta_get "$META" remote_host)
   [ -n "$remote_host" ] || return 3
   kind=$(fm_meta_get "$META" kind)
-  [ "$kind" = secondmate ] || { echo "REFUSED: remote placement metadata is valid only for a secondmate" >&2; return 1; }
+  [ "$kind" = XO ] || { echo "REFUSED: remote placement metadata is valid only for a XO" >&2; return 1; }
   remote_root=$(fm_meta_get "$META" remote_root)
   remote_home=$(fm_meta_get "$META" home)
-  [ -n "$remote_root" ] && [ -n "$remote_home" ] || { echo "REFUSED: remote secondmate metadata is incomplete" >&2; return 1; }
-  secondmate_registry_line_for_id "$SECONDMATE_REG" "$ID" || { echo "REFUSED: remote secondmate route is missing or ambiguous" >&2; return 1; }
-  [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ] || { echo "REFUSED: secondmate registry route is not remote" >&2; return 1; }
-  route_host=$SECONDMATE_REGISTRY_HOST
-  route_root=$SECONDMATE_REGISTRY_ROOT
-  route_home=$SECONDMATE_REGISTRY_HOME
+  [ -n "$remote_root" ] && [ -n "$remote_home" ] || { echo "REFUSED: remote XO metadata is incomplete" >&2; return 1; }
+  XO_registry_line_for_id "$XO_REG" "$ID" || { echo "REFUSED: remote XO route is missing or ambiguous" >&2; return 1; }
+  [ "$XO_REGISTRY_REMOTE" -eq 1 ] || { echo "REFUSED: XO registry route is not remote" >&2; return 1; }
+  route_host=$XO_REGISTRY_HOST
+  route_root=$XO_REGISTRY_ROOT
+  route_home=$XO_REGISTRY_HOME
   [ "$route_host" = "$remote_host" ] && [ "$route_root" = "$remote_root" ] && [ "$route_home" = "$remote_home" ] \
-    || { echo "REFUSED: remote secondmate metadata does not match its registry route" >&2; return 1; }
+    || { echo "REFUSED: remote XO metadata does not match its registry route" >&2; return 1; }
   [ -z "$FORCE" ] || [ "$FORCE" = --force ] || { echo "error: invalid teardown option: $FORCE" >&2; return 2; }
   remote_recovery_paths_validate initial || return 1
   if [ "$FORCE" != --force ] && [ "$REMOTE_OUTBOX_PRESENT" -eq 1 ]; then
-    echo "REFUSED: remote secondmate $ID still has a pending backlog outbox; deliver it or explicitly discard with --force" >&2
+    echo "REFUSED: remote XO $ID still has a pending backlog outbox; deliver it or explicitly discard with --force" >&2
     return 1
   fi
   if [ "$FORCE" != --force ] && [ -d "$STATE/pending-replies" ]; then
@@ -308,26 +308,26 @@ remote_secondmate_teardown() {
       [ "$task_id" = "$ID" ] || continue
       phase=$(fm_meta_get "$rec" phase)
       [ "$phase" = resolved ] || {
-        echo "REFUSED: remote secondmate $ID still has an unresolved routed reply" >&2
+        echo "REFUSED: remote XO $ID still has an unresolved routed reply" >&2
         return 1
       }
     done
   fi
-  "$SCRIPT_DIR/fm-procevent-remote-reply.sh" retire-quiesce-locked "$ID" "$FORCE" >/dev/null 2>&1 || {
-    echo "REFUSED: remote secondmate $ID still has an unhandled captured reply" >&2
+  "$SCRIPT_DIR/sq-procevent-remote-reply.sh" retire-quiesce-locked "$ID" "$FORCE" >/dev/null 2>&1 || {
+    echo "REFUSED: remote XO $ID still has an unhandled captured reply" >&2
     return 1
   }
-  "$FM_ROOT/bin/fm-guard.sh" || true
+  "$SQUAD_ROOT/bin/sq-guard.sh" || true
   if [ "$FORCE" = --force ]; then
-    if out=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-secondmate-control.sh retire "$ID" --force < /dev/null 2>&1); then rc=0; else rc=$?; fi
+    if out=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-XO-control.sh retire "$ID" --force < /dev/null 2>&1); then rc=0; else rc=$?; fi
   else
-    if out=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-secondmate-control.sh retire "$ID" < /dev/null 2>&1); then rc=0; else rc=$?; fi
+    if out=$("$SCRIPT_DIR/sq-on.sh" "$ID" sq-remote-XO-control.sh retire "$ID" < /dev/null 2>&1); then rc=0; else rc=$?; fi
   fi
   if [ "$rc" -ne 0 ]; then
     [ -z "$out" ] || printf '%s\n' "$out" >&2
     if [ "$rc" -eq 255 ]; then
       echo "error: remote retirement completion is unknown; preserving the route and local records for same-host reconciliation" >&2
-    elif ! "$SCRIPT_DIR/fm-procevent-remote-reply.sh" arm-locked "$ID" >/dev/null 2>&1; then
+    elif ! "$SCRIPT_DIR/sq-procevent-remote-reply.sh" arm-locked "$ID" >/dev/null 2>&1; then
       echo "error: remote retirement failed and the reply source could not be re-armed" >&2
     fi
     return "$rc"
@@ -336,7 +336,7 @@ remote_secondmate_teardown() {
     echo "error: remote home retired but local recovery paths changed; preserving the local route for retry" >&2
     return 1
   }
-  "$SCRIPT_DIR/fm-procevent-remote-reply.sh" retire-finalize-locked "$ID" "$FORCE" >/dev/null 2>&1 || {
+  "$SCRIPT_DIR/sq-procevent-remote-reply.sh" retire-finalize-locked "$ID" "$FORCE" >/dev/null 2>&1 || {
     echo "error: remote home retired but reply-source cleanup is incomplete; preserving the local route for retry" >&2
     return 1
   }
@@ -345,36 +345,36 @@ remote_secondmate_teardown() {
   fi
   remote_pending_replies_cleanup \
     || { echo "error: remote pending-reply cleanup failed; preserving the local route for retry" >&2; return 1; }
-  tmp="$SECONDMATE_REG.tmp.$$"
-  grep -vE "^- $ID( |$)" "$SECONDMATE_REG" > "$tmp" || true
-  mv -f -- "$tmp" "$SECONDMATE_REG"
+  tmp="$XO_REG.tmp.$$"
+  grep -vE "^- $ID( |$)" "$XO_REG" > "$tmp" || true
+  mv -f -- "$tmp" "$XO_REG"
   rm -f -- "$STATE/$ID.status" "$STATE/$ID.meta" "$STATE/$ID.turn-ended" \
     "$STATE/.$ID.open-decisions-cursor"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
   return 0
 }
 
-remote_secondmate_teardown_locked() {
+remote_XO_teardown_locked() {
   local rc
   [ -n "$(fm_meta_get "$META" remote_host)" ] || return 3
-  REMOTE_REGISTRY_LOCK=$(secondmate_registry_lock_path "$STATE")
+  REMOTE_REGISTRY_LOCK=$(XO_registry_lock_path "$STATE")
   fm_lock_acquire_wait "$REMOTE_REGISTRY_LOCK" || return 1
   REMOTE_HANDOFF_LOCK="$STATE/.backlog-handoff-$ID.lock"
   fm_lock_acquire_wait "$REMOTE_HANDOFF_LOCK" || {
     remote_teardown_locks_release
     return 1
   }
-  REMOTE_REPLY_LIFECYCLE_LOCK=$(secondmate_reply_lifecycle_lock_path "$STATE" "$ID")
+  REMOTE_REPLY_LIFECYCLE_LOCK=$(XO_reply_lifecycle_lock_path "$STATE" "$ID")
   fm_lock_acquire_wait "$REMOTE_REPLY_LIFECYCLE_LOCK" || {
     remote_teardown_locks_release
     return 1
   }
-  if remote_secondmate_teardown; then rc=0; else rc=$?; fi
+  if remote_XO_teardown; then rc=0; else rc=$?; fi
   remote_teardown_locks_release
   return "$rc"
 }
 
-if remote_secondmate_teardown_locked; then
+if remote_XO_teardown_locked; then
   exit 0
 else
   remote_teardown_rc=$?
@@ -382,22 +382,22 @@ fi
 [ "$remote_teardown_rc" -eq 3 ] || exit "$remote_teardown_rc"
 
 # This is the first cleanup authorization check. It is metadata-only and must
-# complete before fm-guard, a backend command, file removal, branch deletion,
+# complete before sq-guard, a backend command, file removal, branch deletion,
 # worktree return, registry change, or process termination can run.
 fm_backend_validate_task_endpoint "$META" "$ID" || exit 1
-BACKEND=$FM_BACKEND_VALIDATED_BACKEND
-T=$FM_BACKEND_VALIDATED_TARGET
+BACKEND=$SQUAD_BACKEND_VALIDATED_BACKEND
+T=$SQUAD_BACKEND_VALIDATED_TARGET
 WT=$(fm_meta_get "$META" worktree)
 PROJ=$(fm_meta_get "$META" project)
 T_ORCA=
 [ "$BACKEND" != orca ] || T_ORCA=$T
-if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
-  "$FM_ROOT/bin/fm-guard.sh" || true
+if [ "${SQUAD_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
+  "$SQUAD_ROOT/bin/sq-guard.sh" || true
 fi
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
-# tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
-# (/tmp/fm-<id>/); absent for tasks spawned before that change, so tolerate empty.
+# tasktmp is recorded by sq-spawn for tasks that set up a per-task temp root
+# (/tmp/sq-<id>/); absent for tasks spawned before that change, so tolerate empty.
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
 BUSY_GEN=$(fm_meta_get "$META" busy_gen)
 if [ -z "$BUSY_GEN" ]; then
@@ -410,7 +410,7 @@ KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
-PUBLIC_FOLLOWUP_HOME=$FM_HOME
+PUBLIC_FOLLOWUP_HOME=$SQUAD_HOME
 PUBLIC_FOLLOWUP_STATE=$STATE
 PUBLIC_FOLLOWUP_WORK_HOME=main
 PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
@@ -423,36 +423,36 @@ public_followup_canonical_home() {
 }
 public_followup_resolve_primary_home() {
   local parent=$1 child=$2 id=$3 parent_meta registry meta_home
-  fm_pf_home_id_valid "secondmate:$id" || return 1
+  fm_pf_home_id_valid "XO:$id" || return 1
   parent=$(public_followup_canonical_home "$parent") || return 1
   child=$(public_followup_canonical_home "$child") || return 1
   [ "$parent" != "$child" ] || return 1
   parent_meta="$parent/state/$id.meta"
   [ -f "$parent_meta" ] && [ ! -L "$parent_meta" ] || return 1
-  [ "$(fm_meta_get "$parent_meta" kind)" = secondmate ] || return 1
+  [ "$(fm_meta_get "$parent_meta" kind)" = XO ] || return 1
   meta_home=$(fm_meta_get "$parent_meta" home)
   meta_home=$(CDPATH='' cd -- "$meta_home" 2>/dev/null && pwd -P) || return 1
   [ "$meta_home" = "$child" ] || return 1
-  registry="$parent/data/secondmates.md"
-  secondmate_registry_validate_bindings "$registry" secondmate_registry_path_key "$id" "$child" || return 1
+  registry="$parent/data/XOs.md"
+  XO_registry_validate_bindings "$registry" XO_registry_path_key "$id" "$child" || return 1
   printf '%s\n' "$parent"
 }
-if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
-  SECOND_MATE_ID=$(sed -n '1p' "$FM_HOME/$SUB_HOME_MARKER")
+if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
+  SECOND_MATE_ID=$(sed -n '1p' "$SQUAD_HOME/$SUB_HOME_MARKER")
   # The durable parent record (written once at seeding, next to the identity
   # marker) names this home's route to its parent: "local" when they share a
   # filesystem, "remote" when the parent lives on another machine. Absent for
   # a home seeded before this record existed, which preserves today's exact
   # env-var-only behavior for that legacy home rather than guessing its route.
-  PARENT_ROUTE_FILE="$FM_HOME/$SUB_HOME_PARENT_MARKER"
+  PARENT_ROUTE_FILE="$SQUAD_HOME/$SUB_HOME_PARENT_MARKER"
   PARENT_ROUTE_RECORD=absent
   PARENT_ROUTE=
   PARENT_ROUTE_HOME=
   if [ -e "$PARENT_ROUTE_FILE" ] || [ -L "$PARENT_ROUTE_FILE" ]; then
     PARENT_ROUTE_RECORD=invalid
-    if fm_secondmate_parent_record_parse "$PARENT_ROUTE_FILE"; then
-      PARENT_ROUTE=$FM_SECONDMATE_PARENT_ROUTE
-      PARENT_ROUTE_HOME=$FM_SECONDMATE_PARENT_HOME
+    if fm_XO_parent_record_parse "$PARENT_ROUTE_FILE"; then
+      PARENT_ROUTE=$SQUAD_XO_PARENT_ROUTE
+      PARENT_ROUTE_HOME=$SQUAD_XO_PARENT_HOME
       PARENT_ROUTE_RECORD=valid
     fi
   fi
@@ -460,7 +460,7 @@ if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
     PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
   elif [ "$PARENT_ROUTE" = remote ]; then
     # The entire promised-public-reply subsystem is same-filesystem by
-    # construction (bin/fm-public-followup-emit.sh header): a parent recorded
+    # construction (bin/sq-public-followup-emit.sh header): a parent recorded
     # on another machine can never hold a delegated promise for this child, so
     # the delegated-parent path is out of scope and never refuses cleanup on
     # its own. A token committed directly to THIS home's own .env is still a
@@ -468,8 +468,8 @@ if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
     # from the file, never from the process environment, so an unrelated
     # export in the remote host's own login shell cannot trigger it the way
     # fm_pf_relay_active's environment-wins rule would.
-    if [ -f "$FM_HOME/.env" ]; then
-      HOME_ENV_TOKEN=$(fmx_env_get FMX_PAIRING_TOKEN "$FM_HOME/.env")
+    if [ -f "$SQUAD_HOME/.env" ]; then
+      HOME_ENV_TOKEN=$(fmx_env_get SQX_PAIRING_TOKEN "$SQUAD_HOME/.env")
       [ -z "$HOME_ENV_TOKEN" ] || PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
     fi
     if [ "$PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE" = 1 ]; then
@@ -480,11 +480,11 @@ if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
     fi
   elif [ "$PARENT_ROUTE" = local ]; then
     PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
-    PRIMARY_HOME_CANDIDATE=${FM_PUBLIC_FOLLOWUP_PRIMARY_HOME:-$PARENT_ROUTE_HOME}
+    PRIMARY_HOME_CANDIDATE=${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-$PARENT_ROUTE_HOME}
     PARENT_BINDINGS_MATCH=1
-    if [ -n "${FM_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}" ]; then
+    if [ -n "${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}" ]; then
       LIVE_PARENT_HOME=$(public_followup_canonical_home \
-        "$FM_PUBLIC_FOLLOWUP_PRIMARY_HOME") || PARENT_BINDINGS_MATCH=0
+        "$SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME") || PARENT_BINDINGS_MATCH=0
       DURABLE_PARENT_HOME=$(public_followup_canonical_home \
         "$PARENT_ROUTE_HOME") || PARENT_BINDINGS_MATCH=0
       if [ "$PARENT_BINDINGS_MATCH" = 1 ] \
@@ -493,10 +493,10 @@ if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
       fi
     fi
     if [ "$PARENT_BINDINGS_MATCH" = 1 ] \
-      && fm_pf_home_id_valid "secondmate:$SECOND_MATE_ID"; then
-      PUBLIC_FOLLOWUP_WORK_HOME="secondmate:$SECOND_MATE_ID"
+      && fm_pf_home_id_valid "XO:$SECOND_MATE_ID"; then
+      PUBLIC_FOLLOWUP_WORK_HOME="XO:$SECOND_MATE_ID"
       if PUBLIC_FOLLOWUP_HOME=$(public_followup_resolve_primary_home \
-          "$PRIMARY_HOME_CANDIDATE" "$FM_HOME" "$SECOND_MATE_ID"); then
+          "$PRIMARY_HOME_CANDIDATE" "$SQUAD_HOME" "$SECOND_MATE_ID"); then
         PUBLIC_FOLLOWUP_STATE="$PUBLIC_FOLLOWUP_HOME/state"
         PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
         if [ "$FORCE" != "--force" ] \
@@ -511,20 +511,20 @@ if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
   else
     # A home seeded before the durable record existed retains the legacy
     # launch-time binding behavior unchanged.
-    PRIMARY_HOME_CANDIDATE=${FM_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}
+    PRIMARY_HOME_CANDIDATE=${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}
     if [ -n "$PRIMARY_HOME_CANDIDATE" ]; then
       if fm_pf_relay_active "$PRIMARY_HOME_CANDIDATE"; then
         PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
       fi
-    elif fm_pf_relay_active "$FM_HOME"; then
+    elif fm_pf_relay_active "$SQUAD_HOME"; then
       PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
     fi
     if [ "$PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE" = 1 ]; then
       PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
-      if fm_pf_home_id_valid "secondmate:$SECOND_MATE_ID"; then
-        PUBLIC_FOLLOWUP_WORK_HOME="secondmate:$SECOND_MATE_ID"
+      if fm_pf_home_id_valid "XO:$SECOND_MATE_ID"; then
+        PUBLIC_FOLLOWUP_WORK_HOME="XO:$SECOND_MATE_ID"
         if PUBLIC_FOLLOWUP_HOME=$(public_followup_resolve_primary_home \
-            "$PRIMARY_HOME_CANDIDATE" "$FM_HOME" "$SECOND_MATE_ID"); then
+            "$PRIMARY_HOME_CANDIDATE" "$SQUAD_HOME" "$SECOND_MATE_ID"); then
           PUBLIC_FOLLOWUP_STATE="$PUBLIC_FOLLOWUP_HOME/state"
           PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
           if [ "$FORCE" != "--force" ] \
@@ -541,12 +541,12 @@ if [ -f "$FM_HOME/$SUB_HOME_MARKER" ]; then
       PUBLIC_FOLLOWUP_STATE=
     fi
   fi
-elif [ "$KIND" = secondmate ]; then
-  PUBLIC_FOLLOWUP_WORK_HOME="secondmate:$ID"
-  if [ "$FORCE" != "--force" ] && fm_pf_relay_active "$FM_HOME"; then
+elif [ "$KIND" = XO ]; then
+  PUBLIC_FOLLOWUP_WORK_HOME="XO:$ID"
+  if [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_HOME"; then
     PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
   fi
-elif [ "$FORCE" != "--force" ] && fm_pf_relay_active "$FM_HOME"; then
+elif [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_HOME"; then
   PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
 fi
 
@@ -591,7 +591,7 @@ require_orca_terminal() {
   printf '%s\n' "$terminal"
 }
 
-if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" != XO ]; then
   ORCA_WORKTREE_ID=$(require_orca_worktree_id "$META") || exit 1
   T_ORCA=$(meta_value "$META" terminal)
   [ -z "$T_ORCA" ] || T=$T_ORCA
@@ -601,7 +601,7 @@ remove_grok_turnend_auth() {
   local state_dir=$1 id=$2 token hooks_dir
   token=$(cat "$state_dir/$id.grok-turnend-token" 2>/dev/null || true)
   case "$token" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
-  hooks_dir="${GROK_HOME:-$HOME/.grok}/hooks/fm-turn-end.d"
+  hooks_dir="${GROK_HOME:-$HOME/.grok}/hooks/sq-turn-end.d"
   rm -f "$hooks_dir/$token"
 }
 
@@ -609,16 +609,16 @@ remove_kimi_turnend_auth() {
   local state_dir=$1 id=$2 token hooks_dir
   token=$(cat "$state_dir/$id.kimi-turnend-token" 2>/dev/null || true)
   case "$token" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
-  hooks_dir="$HOME/.kimi-code/fm-turn-end.d"
+  hooks_dir="$HOME/.kimi-code/sq-turn-end.d"
   rm -f "$hooks_dir/$token"
 }
 
 retire_busy_state() {
   local state_dir=$1 id=$2 gen=${3:-}
   if [ -n "$gen" ]; then
-    "$SCRIPT_DIR/fm-busy-event.sh" retire "$state_dir" "$id" --gen "$gen"
+    "$SCRIPT_DIR/sq-busy-event.sh" retire "$state_dir" "$id" --gen "$gen"
   elif [ -f "$state_dir/$id.busy-gen" ]; then
-    "$SCRIPT_DIR/fm-busy-event.sh" retire "$state_dir" "$id" --current-gen
+    "$SCRIPT_DIR/sq-busy-event.sh" retire "$state_dir" "$id" --current-gen
   fi
 }
 
@@ -687,7 +687,7 @@ validate_pr_poll_cleanup() {
 remove_pr_poll_artifacts() {
   local state_dir=$1 id=$2 quarantine artifact
   validate_pr_poll_cleanup "$state_dir" "$id" || return 1
-  fm_pr_poll_retirement_recover_one "$state_dir" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" || return 1
+  fm_pr_poll_retirement_recover_one "$state_dir" "$id" "$SCRIPT_DIR/sq-pr-poll.sh" || return 1
   rm -f "$state_dir/$id.check.sh" "$state_dir/$id.pr-poll" \
     "$state_dir/$id.pr-poll-registration" "$state_dir/$id.pr-poll-retirement" \
     "$state_dir/$id.check-trust" || return 1
@@ -839,10 +839,10 @@ work_is_landed() {
 
 backlog_refresh_reminder() {
   local pr done_cmd report_path
-  [ "$KIND" = secondmate ] && return 0
+  [ "$KIND" = XO ] && return 0
   if fm_tasks_axi_backend_available "$CONFIG"; then
     case "$KIND" in
-      scout)
+      recon)
         report_path="data/$ID/report.md"
         done_cmd="tasks-axi done $ID --report $report_path"
         ;;
@@ -926,14 +926,14 @@ retry_wait_secs_is_valid() {
   [[ "$1" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]]
 }
 
-STALE_WORKTREE_LOCK_AGE_SECS=${FM_STALE_WORKTREE_LOCK_AGE_SECS:-30}
+STALE_WORKTREE_LOCK_AGE_SECS=${SQUAD_STALE_WORKTREE_LOCK_AGE_SECS:-30}
 # Bounded patience window for transient index.lock after killing a crew process.
-# New knobs are preferred; FM_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS remains an alias
+# New knobs are preferred; SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS remains an alias
 # for the per-attempt wait so existing tests and operators keep working.
-TREEHOUSE_RETURN_LOCK_RETRIES=${FM_TREEHOUSE_RETURN_LOCK_RETRIES:-3}
-TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=${FM_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS:-${FM_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS:-1}}
+TREEHOUSE_RETURN_LOCK_RETRIES=${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}
+TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=${SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS:-${SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS:-1}}
 if ! retry_wait_secs_is_valid "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"; then
-  echo "teardown: invalid treehouse return lock retry wait '$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
+  echo "teardown: invalid fob return lock retry wait '$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
   TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=1
 fi
 # Compatibility alias used by the safety-check wait path and older call sites.
@@ -942,9 +942,9 @@ TEARDOWN_TREEHOUSE_LOCK_REFUSED=2
 TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED=3
 TEARDOWN_PROCEVENT_RESTORE_FAILED=4
 
-# True when treehouse/git stderr shows the transient index.lock "File exists" race.
+# True when fob/git stderr shows the transient index.lock "File exists" race.
 # Other return failures must not enter the retry path.
-treehouse_return_is_index_lock_error() {
+fob_return_is_index_lock_error() {
   local text=$1
   printf '%s\n' "$text" | grep -Eq "Unable to create ['\"].*index\\.lock['\"]: File exists"
 }
@@ -966,7 +966,7 @@ worktree_git_lock_path() {
 }
 
 # The lock-staleness proof (lsof holder check, mtime age, fail-safe defaults)
-# is owned by bin/fm-lock-lib.sh's fm_lock_is_provably_stale, sourced above.
+# is owned by bin/sq-lock-lib.sh's fm_lock_is_provably_stale, sourced above.
 # Teardown passes the worktree dir as the companion directory and its own
 # STALE_WORKTREE_LOCK_AGE_SECS threshold.
 
@@ -1001,21 +1001,21 @@ cleanup_stale_lock_for_safety_check() {
   return "$TEARDOWN_TREEHOUSE_LOCK_REFUSED"
 }
 
-# Return a worktree/home via `treehouse return --force`, tolerating a transient or
+# Return a worktree/home via `fob return --force`, tolerating a transient or
 # stale git index.lock left by a killed crew process. See the script header.
-teardown_treehouse_return() {
+teardown_fob_return() {
   local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
   local out lock attempt=0 max_retries lock_desc
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
-  if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+  if out=$( ( cd "$cd_dir" && fob return --force "$dir" ) 2>&1 ); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
   fi
   [ -n "$out" ] && printf '%s\n' "$out" >&2
 
-  if ! treehouse_return_is_index_lock_error "$out"; then
+  if ! fob_return_is_index_lock_error "$out"; then
     return 1
   fi
 
@@ -1034,14 +1034,14 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
-    if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+    if out=$( ( cd "$cd_dir" && fob return --force "$dir" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
       return 0
     fi
     [ -n "$out" ] && printf '%s\n' "$out" >&2
 
-    if ! treehouse_return_is_index_lock_error "$out"; then
+    if ! fob_return_is_index_lock_error "$out"; then
       echo "teardown: $label return failed with a non-lock error after retry; aborting" >&2
       return 1
     fi
@@ -1061,7 +1061,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
-      if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+      if out=$( ( cd "$cd_dir" && fob return --force "$dir" ) 2>&1 ); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
         return 0
@@ -1084,7 +1084,7 @@ validate_worktree_teardown_safety() {
   [ -d "$WT" ] || return 0
   [ "$FORCE" != "--force" ] || return 0
   case "$KIND" in
-    secondmate|scout) return 0 ;;
+    XO|recon) return 0 ;;
   esac
 
   if ! dirty_raw=$(git -C "$WT" status --porcelain 2>/dev/null); then
@@ -1092,17 +1092,17 @@ validate_worktree_teardown_safety() {
       return "$TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED"
     fi
     echo "REFUSED: cannot inspect worktree $WT for uncommitted changes." >&2
-    echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
+    echo "Restore the git index state, or get the commander's explicit OK to discard, then --force." >&2
     return 1
   fi
-  dirty=$(printf '%s\n' "$dirty_raw" | grep -vE '^\?\? (\.claude/|\.fm-(grok|kimi)-turnend$)' | head -1 || true)
+  dirty=$(printf '%s\n' "$dirty_raw" | grep -vE '^\?\? (\.claude/|\.sq-(grok|kimi)-turnend$)' | head -1 || true)
 
   if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --remotes -- 2>/dev/null); then
     if worktree_safety_blocked_by_lock "commits not on a remote"; then
       return "$TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED"
     fi
     echo "REFUSED: cannot inspect worktree $WT for commits not on a remote." >&2
-    echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
+    echo "Restore the git index state, or get the commander's explicit OK to discard, then --force." >&2
     return 1
   fi
   unpushed=$(printf '%s\n' "$unpushed_raw" | head -5)
@@ -1114,7 +1114,7 @@ validate_worktree_teardown_safety() {
         return "$TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED"
       fi
       echo "REFUSED: cannot inspect worktree $WT for commits not on $DEFAULT." >&2
-      echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
+      echo "Restore the git index state, or get the commander's explicit OK to discard, then --force." >&2
       return 1
     fi
     unmerged=$(printf '%s\n' "$unmerged_raw" | head -5)
@@ -1122,13 +1122,13 @@ validate_worktree_teardown_safety() {
       echo "REFUSED: local-only worktree $WT has work not yet merged into $DEFAULT and not on any remote." >&2
       [ -n "$dirty" ] && echo "uncommitted changes present" >&2
       [ -n "$unmerged" ] && printf 'commits not yet on %s:\n%s\n' "$DEFAULT" "$unmerged" >&2
-      echo "Merge the branch into local $DEFAULT first (bin/fm-merge-local.sh after the captain approves), or push to a fork/remote, or get the captain's explicit OK to discard, then --force." >&2
+      echo "Merge the branch into local $DEFAULT first (bin/sq-merge-local.sh after the commander approves), or push to a fork/remote, or get the commander's explicit OK to discard, then --force." >&2
       return 1
     fi
   elif [ -n "$dirty" ]; then
     echo "REFUSED: worktree $WT has uncommitted changes." >&2
     echo "uncommitted changes present" >&2
-    echo "Commit them (or get the captain's explicit OK to discard, then --force)." >&2
+    echo "Commit them (or get the commander's explicit OK to discard, then --force)." >&2
     return 1
   elif [ -n "$unpushed" ]; then
     branch=${TEARDOWN_WORKTREE_BRANCH_FOR_SAFETY:-}
@@ -1139,7 +1139,7 @@ validate_worktree_teardown_safety() {
     if ! work_is_landed "$branch"; then
       echo "REFUSED: worktree $WT has work not on any remote and not landed." >&2
       printf 'unpushed commits:\n%s\n' "$unpushed" >&2
-      echo "Push the branch, land its PR, or get the captain's explicit OK to discard, then --force." >&2
+      echo "Push the branch, land its PR, or get the commander's explicit OK to discard, then --force." >&2
       return 1
     fi
   fi
@@ -1149,7 +1149,7 @@ validate_worktree_teardown_safety() {
 # worktree $1 belong to THIS task, and is it parked at a gate awaiting an agent
 # that is about to be removed? Prints nothing; returns 0 only on a genuine
 # match so the caller knows it is safe to abort - never a guess.
-NM_TEARDOWN_TIMEOUT=${FM_TEARDOWN_NM_TIMEOUT:-10}
+NM_TEARDOWN_TIMEOUT=${SQUAD_TEARDOWN_NM_TIMEOUT:-10}
 case "$NM_TEARDOWN_TIMEOUT" in ''|*[!0-9]*) NM_TEARDOWN_TIMEOUT=10 ;; esac
 TASK_RUN_ID=
 task_status_is_own_parked_run() {  # <worktree> <axi-status-output>
@@ -1182,7 +1182,7 @@ task_status_is_own_parked_run() {  # <worktree> <axi-status-output>
 task_run_is_own_parked_run() {  # <worktree>
   local wt=$1 out
   # Accepted best-effort residual: query failures stay fail-open because making
-  # no-mistakes availability a prerequisite would block ship tasks with no run.
+  # no-mistakes availability a prerequisite would block strike tasks with no run.
   out=$(fm_nm_run "$wt" "$NM_TEARDOWN_TIMEOUT" axi status)
   task_status_is_own_parked_run "$wt" "$out"
 }
@@ -1207,8 +1207,8 @@ task_status_is_run_not_found() {  # <status-error> <run-id>
 
 # Abort THIS task's own parked no-mistakes run before the worker that would
 # have answered its gate is removed, so no run is left orphaned holding a
-# fleet slot. Only KIND=ship drives a no-mistakes validation of its own
-# worktree (scouts and secondmates never do, mirroring bin/fm-crew-state.sh);
+# unit slot. Only KIND=ship drives a no-mistakes validation of its own
+# worktree (scouts and XOs never do, mirroring bin/sq-crew-state.sh);
 # a run not attributed to this exact branch+head is left completely alone.
 conclude_task_no_mistakes_run() {  # <worktree>
   local wt=$1 out run_id
@@ -1269,7 +1269,7 @@ EOF
 task_process_identity() {  # <pid>
   local pid=$1 proc_root stat_line starttime value
   local -a stat_fields
-  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  proc_root=${SQUAD_PROC_ROOT_OVERRIDE:-/proc}
   if [ -r "$proc_root/$pid/stat" ]; then
     stat_line=$(cat "$proc_root/$pid/stat" 2>/dev/null) || return 1
     read -r -a stat_fields <<< "${stat_line##*)}"
@@ -1486,9 +1486,9 @@ require_orca_worktree_path_match_if_present() {
   require_orca_worktree_path_match "$worktree_id" "$inspected"
 }
 
-firstmate_home_has_treehouse_slot() {
+squad_home_has_fob_slot() {
   local home=$1
-  worktree_registered_for_project "$FM_ROOT" "$home"
+  worktree_registered_for_project "$SQUAD_ROOT" "$home"
 }
 
 validate_removal_target() {
@@ -1496,37 +1496,37 @@ validate_removal_target() {
   [ -n "$target" ] || return 0
   [ -e "$target" ] || return 0
   abs_target=$(removal_target_abs_path "$target")
-  if abs_home=$(cd "$FM_HOME" 2>/dev/null && pwd -P); then
+  if abs_home=$(cd "$SQUAD_HOME" 2>/dev/null && pwd -P); then
     :
   else
     abs_home=
   fi
-  abs_root=$(cd "$FM_ROOT" && pwd -P)
+  abs_root=$(cd "$SQUAD_ROOT" && pwd -P)
   case "$abs_target" in
     ''|/) echo "REFUSED: unsafe $label removal target $target" >&2; return 1 ;;
   esac
   if [ -n "$abs_home" ] && [ "$abs_target" = "$abs_home" ]; then
-    echo "REFUSED: unsafe $label removal target $target is the active firstmate home" >&2
+    echo "REFUSED: unsafe $label removal target $target is the active Squad home" >&2
     return 1
   fi
   if [ "$abs_target" = "$abs_root" ]; then
-    echo "REFUSED: unsafe $label removal target $target is the firstmate repo" >&2
+    echo "REFUSED: unsafe $label removal target $target is the Squad repo" >&2
     return 1
   fi
   if [ -n "$abs_home" ] && path_is_ancestor_of "$abs_target" "$abs_home"; then
-    echo "REFUSED: unsafe $label removal target $target is an ancestor of the active firstmate home" >&2
+    echo "REFUSED: unsafe $label removal target $target is an ancestor of the active Squad home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_target" "$abs_root"; then
-    echo "REFUSED: unsafe $label removal target $target is an ancestor of the firstmate repo" >&2
+    echo "REFUSED: unsafe $label removal target $target is an ancestor of the Squad repo" >&2
     return 1
   fi
   if [ -n "$abs_home" ] && path_is_ancestor_of "$abs_home" "$abs_target"; then
-    echo "REFUSED: unsafe $label removal target $target is inside the active firstmate home" >&2
+    echo "REFUSED: unsafe $label removal target $target is inside the active Squad home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_root" "$abs_target"; then
-    echo "REFUSED: unsafe $label removal target $target is inside the firstmate repo" >&2
+    echo "REFUSED: unsafe $label removal target $target is inside the Squad repo" >&2
     return 1
   fi
   printf '%s\n' "$abs_target"
@@ -1535,19 +1535,19 @@ validate_removal_target() {
 registered_descendant_home_for_removal() {
   local reg=$1 target=$2 line id registered_home registered_abs
   [ -f "$reg" ] || return 1
-  if ! secondmate_registry_validate_bindings "$reg" secondmate_registry_path_key; then
-    echo "REFUSED: $SECONDMATE_REGISTRY_ERROR" >&2
+  if ! XO_registry_validate_bindings "$reg" XO_registry_path_key; then
+    echo "REFUSED: $XO_REGISTRY_ERROR" >&2
     return 2
   fi
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "- "*)
-        secondmate_registry_parse_line "$line" || {
-          echo "REFUSED: malformed secondmate registry entry: $line" >&2
+        XO_registry_parse_line "$line" || {
+          echo "REFUSED: malformed XO registry entry: $line" >&2
           return 2
         }
-        id=$SECONDMATE_REGISTRY_ID
-        registered_home=$SECONDMATE_REGISTRY_HOME
+        id=$XO_REGISTRY_ID
+        registered_home=$XO_REGISTRY_HOME
         registered_abs=$(removal_target_abs_path "$registered_home" 2>/dev/null || true)
         [ -n "$registered_abs" ] || continue
         [ "$registered_abs" = "$target" ] && continue
@@ -1561,14 +1561,14 @@ registered_descendant_home_for_removal() {
   return 1
 }
 
-validate_firstmate_operational_dirs_for_removal() {
+validate_Squad_operational_dirs_for_removal() {
   local home=$1 label=$2 name dir abs_home abs_dir
   abs_home=$(removal_target_abs_path "$home")
   for name in data state config projects; do
     dir="$home/$name"
     [ -e "$dir" ] || [ -L "$dir" ] || continue
     if [ -L "$dir" ] && [ ! -e "$dir" ]; then
-      echo "REFUSED: unsafe $label $name directory $dir resolves outside the secondmate home" >&2
+      echo "REFUSED: unsafe $label $name directory $dir resolves outside the XO home" >&2
       return 1
     fi
     if [ -d "$dir" ]; then
@@ -1580,7 +1580,7 @@ validate_firstmate_operational_dirs_for_removal() {
       abs_dir=
     fi
     if [ -z "$abs_dir" ] || ! path_is_ancestor_of "$abs_home" "$abs_dir"; then
-      echo "REFUSED: unsafe $label $name directory $dir resolves outside the secondmate home" >&2
+      echo "REFUSED: unsafe $label $name directory $dir resolves outside the XO home" >&2
       return 1
     fi
   done
@@ -1591,15 +1591,15 @@ validate_child_worktree_for_removal() {
   [ -n "$target" ] || return 0
   [ -e "$target" ] || return 0
   abs_target=$(validate_removal_target "$target" "child worktree") || return 1
-  if abs_home=$(cd "$FM_HOME" 2>/dev/null && pwd -P); then
+  if abs_home=$(cd "$SQUAD_HOME" 2>/dev/null && pwd -P); then
     if path_is_ancestor_of "$abs_home" "$abs_target"; then
-      echo "REFUSED: unsafe child worktree removal target $target is inside the active firstmate home" >&2
+      echo "REFUSED: unsafe child worktree removal target $target is inside the active Squad home" >&2
       return 1
     fi
   fi
-  abs_root=$(cd "$FM_ROOT" && pwd -P)
+  abs_root=$(cd "$SQUAD_ROOT" && pwd -P)
   if path_is_ancestor_of "$abs_root" "$abs_target"; then
-    echo "REFUSED: unsafe child worktree removal target $target is inside the firstmate repo" >&2
+    echo "REFUSED: unsafe child worktree removal target $target is inside the Squad repo" >&2
     return 1
   fi
   if ! worktree_registered_for_project "$project" "$target"; then
@@ -1621,43 +1621,43 @@ safe_rm_rf_child_worktree() {
   rm -rf -- "$target"
 }
 
-validate_firstmate_home_for_removal() {
+validate_Squad_home_for_removal() {
   local home=$1 label=$2 expected_id=${3:-} abs_home_path marker_id conflict child_id child_home
   [ -n "$home" ] || return 0
   [ -e "$home" ] || return 0
   abs_home_path=$(validate_removal_target "$home" "$label") || return 1
   if [ ! -f "$abs_home_path/$SUB_HOME_MARKER" ]; then
-    echo "REFUSED: unsafe $label removal target $home is not a seeded secondmate home" >&2
+    echo "REFUSED: unsafe $label removal target $home is not a seeded XO home" >&2
     return 1
   fi
   if [ -n "$expected_id" ]; then
     marker_id=$(cat "$abs_home_path/$SUB_HOME_MARKER" 2>/dev/null || true)
     if [ "$marker_id" != "$expected_id" ]; then
-      echo "REFUSED: unsafe $label removal target $home is marked for secondmate ${marker_id:-unknown}, expected $expected_id" >&2
+      echo "REFUSED: unsafe $label removal target $home is marked for XO ${marker_id:-unknown}, expected $expected_id" >&2
       return 1
     fi
-    if [ -e "$SECONDMATE_REG" ] || [ -L "$SECONDMATE_REG" ]; then
-      if ! secondmate_registry_validate_bindings "$SECONDMATE_REG" secondmate_registry_path_key "$expected_id" "$abs_home_path"; then
-        case "$SECONDMATE_REGISTRY_ERROR" in
-          overlapping\ secondmate\ home\ assignment:*)
-            echo "REFUSED: unsafe $label removal target $home contains registered secondmate home; $SECONDMATE_REGISTRY_ERROR" >&2
+    if [ -e "$XO_REG" ] || [ -L "$XO_REG" ]; then
+      if ! XO_registry_validate_bindings "$XO_REG" XO_registry_path_key "$expected_id" "$abs_home_path"; then
+        case "$XO_REGISTRY_ERROR" in
+          overlapping\ XO\ home\ assignment:*)
+            echo "REFUSED: unsafe $label removal target $home contains registered XO home; $XO_REGISTRY_ERROR" >&2
             ;;
-          *) echo "REFUSED: $SECONDMATE_REGISTRY_ERROR" >&2 ;;
+          *) echo "REFUSED: $XO_REGISTRY_ERROR" >&2 ;;
         esac
         return 1
       fi
     fi
   fi
-  validate_firstmate_operational_dirs_for_removal "$abs_home_path" "$label" || return 1
+  validate_Squad_operational_dirs_for_removal "$abs_home_path" "$label" || return 1
   conflict=
-  if conflict=$(registered_descendant_home_for_removal "$SECONDMATE_REG" "$abs_home_path"); then
+  if conflict=$(registered_descendant_home_for_removal "$XO_REG" "$abs_home_path"); then
     :
   else
     conflict_rc=$?
     [ "$conflict_rc" -eq 1 ] || return 1
   fi
   if [ -z "$conflict" ]; then
-    if conflict=$(registered_descendant_home_for_removal "$abs_home_path/data/secondmates.md" "$abs_home_path"); then
+    if conflict=$(registered_descendant_home_for_removal "$abs_home_path/data/XOs.md" "$abs_home_path"); then
       :
     else
       conflict_rc=$?
@@ -1668,32 +1668,32 @@ validate_firstmate_home_for_removal() {
     IFS=$'\t' read -r child_id child_home <<EOF
 $conflict
 EOF
-    echo "REFUSED: unsafe $label removal target $home contains registered secondmate home $child_home for $child_id" >&2
+    echo "REFUSED: unsafe $label removal target $home contains registered XO home $child_home for $child_id" >&2
     return 1
   fi
   printf '%s\n' "$abs_home_path"
 }
 
-remove_firstmate_home() {
+remove_Squad_home() {
   local home=$1 label=$2 expected_id=${3:-} abs_home_path process_event_backup
   [ -n "$home" ] || return 0
   [ -e "$home" ] || return 0
-  abs_home_path=$(validate_firstmate_home_for_removal "$home" "$label" "$expected_id") || return 1
+  abs_home_path=$(validate_Squad_home_for_removal "$home" "$label" "$expected_id") || return 1
   [ -n "$abs_home_path" ] || return 0
-  process_event_backup=$(snapshot_firstmate_home_process_events "$abs_home_path" "$label") || return 1
-  if ! cleanup_firstmate_home_process_events "$abs_home_path" "$label"; then
-    restore_firstmate_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
+  process_event_backup=$(snapshot_Squad_home_process_events "$abs_home_path" "$label") || return 1
+  if ! cleanup_Squad_home_process_events "$abs_home_path" "$label"; then
+    restore_Squad_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
     return 1
   fi
-  if firstmate_home_has_treehouse_slot "$abs_home_path"; then
-    command -v treehouse >/dev/null 2>&1 || {
-      echo "error: treehouse command not found; cannot return $label $abs_home_path" >&2
-      restore_firstmate_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
+  if squad_home_has_fob_slot "$abs_home_path"; then
+    command -v fob >/dev/null 2>&1 || {
+      echo "error: fob command not found; cannot return $label $abs_home_path" >&2
+      restore_Squad_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
       return 1
     }
-    teardown_treehouse_return "$abs_home_path" "$FM_ROOT" "$label" || {
-      echo "error: treehouse return failed for $label $abs_home_path; lease may still be held" >&2
-      restore_firstmate_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
+    teardown_fob_return "$abs_home_path" "$SQUAD_ROOT" "$label" || {
+      echo "error: fob return failed for $label $abs_home_path; lease may still be held" >&2
+      restore_Squad_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
       return 1
     }
     [ -z "$process_event_backup" ] || rm -rf -- "$process_event_backup"
@@ -1703,18 +1703,18 @@ remove_firstmate_home() {
     [ -z "$process_event_backup" ] || rm -rf -- "$process_event_backup"
     return 0
   fi
-  restore_firstmate_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
+  restore_Squad_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
   return 1
 }
 
-firstmate_home_has_process_events() {
+Squad_home_has_process_events() {
   local home=$1 path owner claim_root
   for path in "$home/state/procevent"/*.source "$home/state/procevent"/*.runner; do
     if [ -e "$path" ] || [ -L "$path" ]; then
       return 0
     fi
   done
-  claim_root=${FM_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/procevent-claims}
+  claim_root=${SQUAD_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/Squad/procevent-claims}
   for path in "$claim_root"/*.claim; do
     [ -f "$path" ] && [ ! -L "$path" ] || continue
     IFS= read -r owner < "$path" 2>/dev/null || continue
@@ -1723,13 +1723,13 @@ firstmate_home_has_process_events() {
   return 1
 }
 
-snapshot_firstmate_home_process_events() {
+snapshot_Squad_home_process_events() {
   local home=$1 label=$2 backup path
-  if ! firstmate_home_has_process_events "$home"; then
+  if ! Squad_home_has_process_events "$home"; then
     printf '\n'
     return 0
   fi
-  backup=$(umask 077; mktemp -d "${home%/*}/.fm-procevent-restore.XXXXXX") || {
+  backup=$(umask 077; mktemp -d "${home%/*}/.sq-procevent-restore.XXXXXX") || {
     echo "REFUSED: cannot stage recoverable process-event state for $label $home" >&2
     return 1
   }
@@ -1744,7 +1744,7 @@ snapshot_firstmate_home_process_events() {
   printf '%s\n' "$backup"
 }
 
-restore_firstmate_home_process_events() {
+restore_Squad_home_process_events() {
   local home=$1 label=$2 backup=$3 reg source tmp runner
   [ -n "$backup" ] || return 0
   [ -d "$backup" ] && [ ! -L "$backup" ] || {
@@ -1776,66 +1776,66 @@ restore_firstmate_home_process_events() {
       return "$TEARDOWN_PROCEVENT_RESTORE_FAILED"
     fi
   done
-  runner="$home/bin/fm-procevent.sh"
+  runner="$home/bin/sq-procevent.sh"
   if [ ! -f "$runner" ] || [ -L "$runner" ] || [ ! -x "$runner" ]; then
-    runner="$SCRIPT_DIR/fm-procevent.sh"
+    runner="$SCRIPT_DIR/sq-procevent.sh"
   fi
-  if ! FM_HOME="$home" FM_ROOT_OVERRIDE="$FM_ROOT" "$runner" reconcile >/dev/null; then
+  if ! SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" "$runner" reconcile >/dev/null; then
     echo "error: process-event restoration could not rearm $label $home; active waits may remain retired; recover registrations from $backup" >&2
     return "$TEARDOWN_PROCEVENT_RESTORE_FAILED"
   fi
   rm -rf -- "$backup"
 }
 
-cleanup_firstmate_home_process_events() {
-  local home=$1 label=$2 runner="$1/bin/fm-procevent.sh"
-  firstmate_home_has_process_events "$home" || return 0
+cleanup_Squad_home_process_events() {
+  local home=$1 label=$2 runner="$1/bin/sq-procevent.sh"
+  Squad_home_has_process_events "$home" || return 0
   if [ ! -f "$runner" ] || [ -L "$runner" ] || [ ! -x "$runner" ]; then
-    echo "REFUSED: $label $home has process-event state but no sweep-capable bin/fm-procevent.sh; restore the home script and rerun teardown" >&2
+    echo "REFUSED: $label $home has process-event state but no sweep-capable bin/sq-procevent.sh; restore the home script and rerun teardown" >&2
     return 1
   fi
-  if ! FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$runner" sweep-home; then
+  if ! SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" "$runner" sweep-home; then
     echo "REFUSED: process-event cleanup is incomplete for $label $home; preserving the home, lease, and retirement records for retry" >&2
     return 1
   fi
-  if firstmate_home_has_process_events "$home"; then
+  if Squad_home_has_process_events "$home"; then
     echo "REFUSED: process-event state remains for $label $home after its bounded sweep; preserving the home, lease, and retirement records for retry" >&2
     return 1
   fi
 }
 
-preflight_firstmate_home_process_events() {
-  local home=$1 label=$2 runner="$1/bin/fm-procevent.sh"
-  firstmate_home_has_process_events "$home" || return 0
+preflight_Squad_home_process_events() {
+  local home=$1 label=$2 runner="$1/bin/sq-procevent.sh"
+  Squad_home_has_process_events "$home" || return 0
   if [ ! -f "$runner" ] || [ -L "$runner" ] || [ ! -x "$runner" ]; then
-    echo "REFUSED: $label $home has process-event state but no sweep-capable bin/fm-procevent.sh; restore the home script and rerun teardown" >&2
+    echo "REFUSED: $label $home has process-event state but no sweep-capable bin/sq-procevent.sh; restore the home script and rerun teardown" >&2
     return 1
   fi
-  if ! FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$runner" sweep-home --preflight >/dev/null; then
+  if ! SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" "$runner" sweep-home --preflight >/dev/null; then
     echo "REFUSED: process-event cleanup cannot safely proceed for $label $home; preserving the home, lease, and retirement records for retry" >&2
     return 1
   fi
 }
 
-preflight_firstmate_home_process_event_tree() {
+preflight_Squad_home_process_event_tree() {
   local home=$1 label=$2 sub_state child_meta child_kind child_home child_wt child_id
   sub_state="$home/state"
   if [ -d "$sub_state" ]; then
     for child_meta in "$sub_state"/*.meta; do
       [ -e "$child_meta" ] || continue
       child_kind=$(meta_value "$child_meta" kind)
-      [ "$child_kind" = secondmate ] || continue
+      [ "$child_kind" = XO ] || continue
       child_id=$(basename "$child_meta" .meta)
       child_wt=$(meta_value "$child_meta" worktree)
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
-      preflight_firstmate_home_process_event_tree "$child_home" "child firstmate home for $child_id" || return 1
+      preflight_Squad_home_process_event_tree "$child_home" "child Squad home for $child_id" || return 1
     done
   fi
-  preflight_firstmate_home_process_events "$home" "$label"
+  preflight_Squad_home_process_events "$home" "$label"
 }
 
-validate_firstmate_home_children_removal() {
+validate_Squad_home_children_removal() {
   local home=$1 sub_state child_meta child_id child_wt child_proj child_kind child_home child_backend child_orca_worktree_id
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
@@ -1846,13 +1846,13 @@ validate_firstmate_home_children_removal() {
     validate_pr_poll_cleanup "$sub_state" "$child_id" || return 1
     child_wt=$(meta_value "$child_meta" worktree)
     child_kind=$(meta_value "$child_meta" kind)
-    [ -n "$child_kind" ] || child_kind=ship
+    [ -n "$child_kind" ] || child_kind=strike
     child_backend=$(fm_backend_of_meta "$child_meta")
-    if [ "$child_kind" = secondmate ]; then
+    if [ "$child_kind" = XO ]; then
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
-      validate_firstmate_home_for_removal "$child_home" "child firstmate home" "$child_id" >/dev/null || return 1
-      validate_firstmate_home_children_removal "$child_home" || return 1
+      validate_Squad_home_for_removal "$child_home" "child Squad home" "$child_id" >/dev/null || return 1
+      validate_Squad_home_children_removal "$child_home" || return 1
     elif [ "$child_backend" = orca ]; then
       child_orca_worktree_id=$(require_orca_worktree_id "$child_meta") || return 1
       if [ -n "$child_wt" ] && [ -e "$child_wt" ]; then
@@ -1910,8 +1910,8 @@ teardown_herdr_require_prerequisites() {  # <task-id>
     fi
   done
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1; then
-    # shellcheck source=bin/fm-wake-lib.sh
-    . "$SCRIPT_DIR/fm-wake-lib.sh"
+    # shellcheck source=bin/sq-stand-to-lib.sh
+    . "$SCRIPT_DIR/sq-stand-to-lib.sh"
   fi
   if ! declare -F fm_lock_try_acquire >/dev/null 2>&1 \
     || ! declare -F fm_lock_release >/dev/null 2>&1; then
@@ -1927,8 +1927,8 @@ teardown_herdr_preflight_target() {  # <target> <task-id>
     echo "error: herdr endpoint $target for $task_id could not be parsed exactly; nothing was changed - repair the endpoint metadata and rerun teardown" >&2
     return 1
   fi
-  session=$FM_BACKEND_HERDR_SESSION
-  pane=$FM_BACKEND_HERDR_PANE
+  session=$SQUAD_BACKEND_HERDR_SESSION
+  pane=$SQUAD_BACKEND_HERDR_PANE
   presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane")
   case "$presence" in
     dead|present) ;;
@@ -1979,7 +1979,7 @@ $session	$lock_path"
   return 1
 }
 
-preflight_firstmate_home_herdr_children() {  # <home>
+preflight_Squad_home_herdr_children() {  # <home>
   local home=$1 sub_state child_meta child_id child_backend child_target child_kind child_home child_wt
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
@@ -1987,23 +1987,23 @@ preflight_firstmate_home_herdr_children() {  # <home>
     [ -e "$child_meta" ] || continue
     child_id=$(basename "$child_meta" .meta)
     fm_backend_validate_task_endpoint "$child_meta" "$child_id" || return 1
-    child_backend=$FM_BACKEND_VALIDATED_BACKEND
-    child_target=$FM_BACKEND_VALIDATED_TARGET
+    child_backend=$SQUAD_BACKEND_VALIDATED_BACKEND
+    child_target=$SQUAD_BACKEND_VALIDATED_TARGET
     if [ "$child_backend" = herdr ]; then
       teardown_herdr_preflight_target "$child_target" "$child_id" || return 1
     fi
     child_kind=$(meta_value "$child_meta" kind)
-    [ -n "$child_kind" ] || child_kind=ship
-    if [ "$child_kind" = secondmate ]; then
+    [ -n "$child_kind" ] || child_kind=strike
+    if [ "$child_kind" = XO ]; then
       child_wt=$(meta_value "$child_meta" worktree)
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
-      preflight_firstmate_home_herdr_children "$child_home" || return 1
+      preflight_Squad_home_herdr_children "$child_home" || return 1
     fi
   done
 }
 
-cleanup_firstmate_home_children() {
+cleanup_Squad_home_children() {
   local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
@@ -2013,14 +2013,14 @@ cleanup_firstmate_home_children() {
     child_wt=$(meta_value "$child_meta" worktree)
     child_proj=$(meta_value "$child_meta" project)
     child_kind=$(meta_value "$child_meta" kind)
-    [ -n "$child_kind" ] || child_kind=ship
+    [ -n "$child_kind" ] || child_kind=strike
     child_backend=$(fm_backend_of_meta "$child_meta")
     if [ "$child_backend" = orca ]; then
       child_t=$(meta_value "$child_meta" terminal)
     else
       child_t=$(fm_backend_target_of_meta "$child_meta")
     fi
-    if [ "$child_backend" = orca ] && [ "$child_kind" != secondmate ]; then
+    if [ "$child_backend" = orca ] && [ "$child_kind" != XO ]; then
       child_orca_worktree_id=$(require_orca_worktree_id "$child_meta") || return 1
       if [ -n "$child_wt" ] && [ -e "$child_wt" ]; then
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
@@ -2029,44 +2029,44 @@ cleanup_firstmate_home_children() {
     if [ -n "$child_t" ]; then
       if [ "$child_backend" = herdr ]; then
         fm_backend_herdr_parse_target "$child_t" || return 1
-        if ! teardown_herdr_session_lock_held "$FM_BACKEND_HERDR_SESSION"; then
+        if ! teardown_herdr_session_lock_held "$SQUAD_BACKEND_HERDR_SESSION"; then
           echo "error: herdr session presentation lock is not held for child $child_id; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
-        fm_backend_herdr_kill_serialized "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE" 2>/dev/null || true
+        fm_backend_herdr_kill_serialized "$SQUAD_BACKEND_HERDR_SESSION" "$SQUAD_BACKEND_HERDR_PANE" 2>/dev/null || true
         if ! fm_backend_herdr_endpoint_confirmed_gone "$child_t"; then
           echo "error: herdr pane $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
           return 1
         fi
       elif [ "$child_backend" = zellij ]; then
-        # Zellij titles are scoped by the owning home tag, so forced secondmate
+        # Zellij titles are scoped by the owning home tag, so forced XO
         # cleanup must verify child tabs as that child home, not the parent.
-        ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" ) 2>/dev/null || true
+        ( unset SQUAD_ROOT_OVERRIDE; SQUAD_HOME=$home SQUAD_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" ) 2>/dev/null || true
       else
-        fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" 2>/dev/null || true
+        fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" 2>/dev/null || true
       fi
     fi
-    if [ "$child_kind" = secondmate ]; then
+    if [ "$child_kind" = XO ]; then
       child_home=$(meta_value "$child_meta" home)
       [ -n "$child_home" ] || child_home=$child_wt
       if [ -n "$child_home" ] && [ -d "$child_home" ]; then
-        cleanup_firstmate_home_children "$child_home" || return $?
-        remove_firstmate_home "$child_home" "child firstmate home" "$child_id" || return $?
+        cleanup_Squad_home_children "$child_home" || return $?
+        remove_Squad_home "$child_home" "child Squad home" "$child_id" || return $?
       fi
     elif [ "$child_backend" = orca ]; then
       if [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
-        rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
-          "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
+        rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/sq-turn-end.js" \
+          "$child_wt/.sq-grok-turnend" "$child_wt/.sq-kimi-turnend"
       fi
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
       validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
-      rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
-        "$child_wt/.opencode/plugins/fm-busy-state.js" \
-        "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
-      if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
-        if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
+      rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/sq-turn-end.js" \
+        "$child_wt/.opencode/plugins/sq-busy-state.js" \
+        "$child_wt/.sq-grok-turnend" "$child_wt/.sq-kimi-turnend"
+      if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v fob >/dev/null 2>&1; then
+        if teardown_fob_return "$child_wt" "$child_proj" "child worktree"; then
           :
         else
           child_return_rc=$?
@@ -2094,63 +2094,63 @@ cleanup_firstmate_home_children() {
   done
 }
 
-remove_secondmate_registry_entry() {
+remove_XO_registry_entry() {
   local id=$1 tmp lock rc=0
-  [ -f "$SECONDMATE_REG" ] || return 0
-  lock=$(secondmate_registry_lock_path "$STATE")
+  [ -f "$XO_REG" ] || return 0
+  lock=$(XO_registry_lock_path "$STATE")
   fm_lock_acquire_wait "$lock" || return 1
-  tmp="$SECONDMATE_REG.tmp.$$"
-  grep -vE "^- $id( |$)" "$SECONDMATE_REG" > "$tmp" || true
-  mv "$tmp" "$SECONDMATE_REG" || rc=$?
+  tmp="$XO_REG.tmp.$$"
+  grep -vE "^- $id( |$)" "$XO_REG" > "$tmp" || true
+  mv "$tmp" "$XO_REG" || rc=$?
   fm_lock_release "$lock"
   return "$rc"
 }
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
-if [ "$KIND" = secondmate ]; then
+if [ "$KIND" = XO ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
-  validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1
+  validate_Squad_home_for_removal "$HOME_PATH" "XO home" "$ID" >/dev/null || exit 1
   if [ "$FORCE" = "--force" ]; then
-    validate_firstmate_home_children_removal "$HOME_PATH" || exit 1
+    validate_Squad_home_children_removal "$HOME_PATH" || exit 1
     if [ "$BACKEND" = herdr ]; then
       teardown_herdr_preflight_target "$T" "$ID" || exit 1
     fi
-    preflight_firstmate_home_herdr_children "$HOME_PATH" || exit 1
+    preflight_Squad_home_herdr_children "$HOME_PATH" || exit 1
   fi
 fi
 
-if [ "$KIND" = secondmate ] && [ "$FORCE" != "--force" ]; then
+if [ "$KIND" = XO ] && [ "$FORCE" != "--force" ]; then
   SUB_STATE="$HOME_PATH/state"
   if [ -d "$SUB_STATE" ]; then
     for child_meta in "$SUB_STATE"/*.meta; do
       [ -e "$child_meta" ] || continue
-      echo "REFUSED: secondmate $ID still has in-flight work in $SUB_STATE." >&2
+      echo "REFUSED: XO $ID still has in-flight work in $SUB_STATE." >&2
       echo "Found $(basename "$child_meta"). Let that home finish or explicitly discard with --force." >&2
       exit 1
     done
   fi
 fi
 
-if [ "$KIND" = secondmate ]; then
-  preflight_firstmate_home_process_event_tree "$HOME_PATH" "secondmate home" || exit 1
+if [ "$KIND" = XO ]; then
+  preflight_Squad_home_process_event_tree "$HOME_PATH" "XO home" || exit 1
 fi
 
-if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
-  cleanup_firstmate_home_children "$HOME_PATH" || exit $?
+if [ "$KIND" = XO ] && [ "$FORCE" = "--force" ]; then
+  cleanup_Squad_home_children "$HOME_PATH" || exit $?
 fi
 
-if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
+if [ "$KIND" = recon ] && [ "$FORCE" != "--force" ]; then
   REPORT="$DATA/$ID/report.md"
   if [ ! -f "$REPORT" ]; then
-    echo "REFUSED: scout task $ID has no report at $REPORT." >&2
-    echo "The report is the work product. Have the crewmate write it, or use --force after explicit discard approval." >&2
+    echo "REFUSED: recon task $ID has no report at $REPORT." >&2
+    echo "The report is the work product. Have the operator write it, or use --force after explicit discard approval." >&2
     exit 1
   fi
-  if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
-      FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-decision-hold.sh" verify "$ID" >/dev/null; then
-    echo "REFUSED: scout task $ID has not passed the unresolved-decision completion gate." >&2
-    echo "Inventory its report and any visual review through bin/fm-decision-hold.sh before teardown." >&2
+  if ! SQUAD_HOME="$SQUAD_HOME" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_DATA_OVERRIDE="$DATA" \
+      SQUAD_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/sq-decision-hold.sh" verify "$ID" >/dev/null; then
+    echo "REFUSED: recon task $ID has not passed the unresolved-decision completion gate." >&2
+    echo "Inventory its report and any visual review through bin/sq-decision-hold.sh before teardown." >&2
     exit 1
   fi
 fi
@@ -2158,28 +2158,28 @@ fi
 # A public commitment is not kept until its final reply lands in the ORIGINAL
 # thread, and this cleanup removes the task records that make the promise
 # reconcilable. Refuse while this home still owes a public reply for exactly this
-# work. Both gates live in bin/fm-public-followup-lib.sh, so a home that never
-# opted into the myfirstmate relay runs one [ -f ] test and nothing else here.
+# work. Both gates live in bin/sq-public-followup-lib.sh, so a home that never
+# opted into the mySquad relay runs one [ -f ] test and nothing else here.
 if [ "$FORCE" != "--force" ] && [ "$PUBLIC_FOLLOWUP_PARENT_UNRESOLVED" = 1 ]; then
-  echo "REFUSED: cannot resolve the primary home for marked secondmate $SECOND_MATE_ID; refusing cleanup without its durable parent binding." >&2
+  echo "REFUSED: cannot resolve the primary home for marked XO $SECOND_MATE_ID; refusing cleanup without its durable parent binding." >&2
   exit 1
 fi
 if [ "$FORCE" != "--force" ] \
   && [ -n "$PUBLIC_FOLLOWUP_STATE" ] \
   && [ "$PUBLIC_FOLLOWUP_RELAY_ACTIVE" = 1 ] \
   && fm_pf_has_registrations "$PUBLIC_FOLLOWUP_STATE"; then
-  if ! PUBLIC_FOLLOWUP_BLOCKING=$(FM_HOME="$PUBLIC_FOLLOWUP_HOME" FM_STATE_OVERRIDE="$PUBLIC_FOLLOWUP_STATE" \
-      "$SCRIPT_DIR/fm-public-followup.sh" guard-work "$PUBLIC_FOLLOWUP_WORK_HOME" "$ID" 2>/dev/null); then
-    echo "REFUSED: task $ID still owes a public reply through the myfirstmate relay." >&2
+  if ! PUBLIC_FOLLOWUP_BLOCKING=$(SQUAD_HOME="$PUBLIC_FOLLOWUP_HOME" SQUAD_STATE_OVERRIDE="$PUBLIC_FOLLOWUP_STATE" \
+      "$SCRIPT_DIR/sq-public-followup.sh" guard-work "$PUBLIC_FOLLOWUP_WORK_HOME" "$ID" 2>/dev/null); then
+    echo "REFUSED: task $ID still owes a public reply through the mySquad relay." >&2
     printf '%s\n' "$PUBLIC_FOLLOWUP_BLOCKING" >&2
-    echo "Deliver it with bin/fm-public-followup.sh deliver <obligation-id>, waive it with tasks-axi public-followup waive, or use --force after explicit discard approval." >&2
+    echo "Deliver it with bin/sq-public-followup.sh deliver <obligation-id>, waive it with tasks-axi public-followup waive, or use --force after explicit discard approval." >&2
     exit 1
   fi
 fi
 
-if [ "$BACKEND" = orca ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$FORCE" != "--force" ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" != recon ] && [ "$KIND" != XO ] && [ "$FORCE" != "--force" ]; then
   if ! inspectable_git_worktree "$WT"; then
-    echo "REFUSED: Orca ship task $ID has no inspectable git worktree at ${WT:-<missing>}." >&2
+    echo "REFUSED: Orca strike task $ID has no inspectable git worktree at ${WT:-<missing>}." >&2
     echo "Cannot verify dirty or unlanded work; restore the worktree path or get explicit OK to discard, then --force." >&2
     exit 1
   fi
@@ -2205,17 +2205,17 @@ fi
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
 # --force, and before ANY destructive step below - a still-parked run or a
 # leaked process can own live work in this exact worktree. Not for
-# kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
-# dedicated process-event and firstmate-home removal machinery further below,
+# kind=xo: a XO home's own runtime lifecycle is owned by the
+# dedicated process-event and Squad-home removal machinery further below,
 # not by task-worktree cleanup.
-if [ "$KIND" != secondmate ]; then
+if [ "$KIND" != XO ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already
 # pruned code root. Best effort - a sweep failure never blocks this teardown.
-"$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
+"$SCRIPT_DIR/sq-remote-job-reap-orphans.sh" >&2 || true
 
 # A Herdr close may reposition shared workspace order, so the whole
 # destructive sequence below (worktree return, pane close, record removal)
@@ -2229,12 +2229,12 @@ TEARDOWN_HERDR_PANE=
 if [ "$BACKEND" = herdr ]; then
   teardown_herdr_preflight_target "$T" "$ID" || exit 1
   fm_backend_herdr_parse_target "$T" || exit 1
-  TEARDOWN_HERDR_SESSION=$FM_BACKEND_HERDR_SESSION
-  TEARDOWN_HERDR_PANE=$FM_BACKEND_HERDR_PANE
+  TEARDOWN_HERDR_SESSION=$SQUAD_BACKEND_HERDR_SESSION
+  TEARDOWN_HERDR_PANE=$SQUAD_BACKEND_HERDR_PANE
 fi
 
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
-if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
+if [ "$BACKEND" = orca ] && [ "$KIND" != XO ]; then
   if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
@@ -2246,13 +2246,13 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
         git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
       fi
     fi
-    rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
-      "$WT/.opencode/plugins/fm-busy-state.js" \
-      "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
+    rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sq-turn-end.js" \
+      "$WT/.opencode/plugins/sq-busy-state.js" \
+      "$WT/.sq-grok-turnend" "$WT/.sq-kimi-turnend"
   fi
-  [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
+  [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "sq-$ID" 2>/dev/null || true
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
-elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
+elif [ -d "$WT" ] && [ "$KIND" != XO ]; then
   branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
   if [ "$branch" != "HEAD" ]; then
     if git -C "$WT" checkout --detach -q 2>/dev/null; then
@@ -2260,18 +2260,18 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
     fi
   fi
   # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
-  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
-    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
+  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sq-turn-end.js" \
+    "$WT/.sq-grok-turnend" "$WT/.sq-kimi-turnend"
   # Kills remaining processes in the worktree (including the agent), resets, returns
-  # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project. teardown_treehouse_return tolerates transient and stale git locks
+  # to pool. fob resolves the pool from the working directory, so run it from
+  # the project. teardown_fob_return tolerates transient and stale git locks
   # left by a killed crew process; see the script header for retry and stale-lock proof.
   post_lock_cleanup_check=
-  if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
+  if [ "$FORCE" != "--force" ] && [ "$KIND" != recon ] && [ "$KIND" != XO ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
-    echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
+  teardown_fob_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
+    echo "error: fob return failed for worktree $WT; teardown aborted" >&2
     exit 1
   }
 fi
@@ -2321,7 +2321,7 @@ elif [ "$BACKEND" = herdr ]; then
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
 elif [ "$BACKEND" != orca ]; then
-  fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
+  fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "sq-$ID" 2>/dev/null || true
 fi
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
   if [ "$(fm_backend_herdr_pane_agent_state "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")" = dead ]; then
@@ -2350,15 +2350,15 @@ if [ "$BACKEND" = herdr ]; then
     exit 1
   fi
 fi
-if [ "$KIND" = secondmate ]; then
+if [ "$KIND" = XO ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
-  remove_firstmate_home "$HOME_PATH" "secondmate home" "$ID" || exit $?
-  remove_secondmate_registry_entry "$ID"
+  remove_Squad_home "$HOME_PATH" "XO home" "$ID" || exit $?
+  remove_XO_registry_entry "$ID"
 fi
 remove_grok_turnend_auth "$STATE" "$ID"
 remove_kimi_turnend_auth "$STATE" "$ID"
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
-# Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
+# Remove the per-task temp root (/tmp/sq-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
@@ -2368,8 +2368,8 @@ rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" \
   "$STATE/.$ID.open-decisions-cursor"
-if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
-  "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
+if [ "$KIND" != recon ] && [ "$KIND" != XO ] && [ "$MODE" != local-only ]; then
+  "$SQUAD_ROOT/bin/sq-unit-sync.sh" "$PROJ" || true
 fi
 echo "teardown $ID complete (window $T, worktree $WT)"
 backlog_refresh_reminder

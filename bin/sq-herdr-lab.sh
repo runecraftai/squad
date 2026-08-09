@@ -3,14 +3,14 @@
 # default session.
 #
 # Usage:
-#   fm-herdr-lab.sh name <label>
-#   fm-herdr-lab.sh prepare <session>
-#   fm-herdr-lab.sh provision <session>
-#   fm-herdr-lab.sh run <session> <herdr arguments...>
-#   fm-herdr-lab.sh stop <session>
-#   fm-herdr-lab.sh teardown <session>
+#   sq-herdr-lab.sh name <label>
+#   sq-herdr-lab.sh prepare <session>
+#   sq-herdr-lab.sh provision <session>
+#   sq-herdr-lab.sh run <session> <herdr arguments...>
+#   sq-herdr-lab.sh stop <session>
+#   sq-herdr-lab.sh teardown <session>
 #
-# Session names must begin with "fm-lab-" and can never be "default".
+# Session names must begin with "sq-lab-" and can never be "default".
 # The name command sanitizes the label, caps it at 16 characters, and appends
 # process/random suffixes to keep generated socket paths short.
 # Every Herdr call made here carries a trailing --session <session>.
@@ -21,31 +21,31 @@
 # delete is available only through teardown.
 # Both paths perform a fresh refuse-default check immediately before each
 # destructive call.
-# Provision records the running default session as a fleet-state tripwire and
+# Provision records the running default session as a unit-state tripwire and
 # teardown requires that record to be identical afterward.
 set -u
 
 fm_herdr_lab_error() {
-  echo "fm-herdr-lab: $*" >&2
+  echo "sq-herdr-lab: $*" >&2
 }
 
 fm_herdr_lab_validate_name() { # <session>
   local name=${1:-}
-  [[ "$name" =~ ^fm-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] && return 0
+  [[ "$name" =~ ^sq-lab-[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] && return 0
   case "$name" in
     default) fm_herdr_lab_error "refusing session name 'default'" ;;
     '') fm_herdr_lab_error "refusing an empty session name" ;;
-    *) fm_herdr_lab_error "session name must start with 'fm-lab-' and contain only letters, digits, underscores, or dashes: $name" ;;
+    *) fm_herdr_lab_error "session name must start with 'sq-lab-' and contain only letters, digits, underscores, or dashes: $name" ;;
   esac
   return 1
 }
 
 fm_herdr_lab_state_dir() {
-  printf '%s' "${FM_HERDR_LAB_STATE_DIR:-${TMPDIR:-/tmp}/fm-herdr-lab-${UID}}"
+  printf '%s' "${SQUAD_HERDR_LAB_STATE_DIR:-${TMPDIR:-/tmp}/sq-herdr-lab-${UID}}"
 }
 
 fm_herdr_lab_tripwire_path() { # <session>
-  printf '%s/%s.fleet-state.json' "$(fm_herdr_lab_state_dir)" "$1"
+  printf '%s/%s.unit-state.json' "$(fm_herdr_lab_state_dir)" "$1"
 }
 
 fm_herdr_lab_raw() { # <session> <herdr arguments...>
@@ -58,10 +58,10 @@ fm_herdr_lab_session_list() { # <session>
   fm_herdr_lab_raw "$1" session list --json
 }
 
-fm_herdr_lab_fleet_state() { # <session>
+fm_herdr_lab_unit_state() { # <session>
   local name=$1 sessions snapshot
   sessions=$(fm_herdr_lab_session_list "$name" 2>/dev/null) || {
-    fm_herdr_lab_error "cannot read Herdr sessions for the fleet-state tripwire"
+    fm_herdr_lab_error "cannot read Herdr sessions for the unit-state tripwire"
     return 1
   }
   snapshot=$(printf '%s' "$sessions" | jq -c '
@@ -72,7 +72,7 @@ fm_herdr_lab_fleet_state() { # <session>
       end
   ' 2>/dev/null)
   [ -n "$snapshot" ] || {
-    fm_herdr_lab_error "fleet-state tripwire requires exactly one running default session"
+    fm_herdr_lab_error "unit-state tripwire requires exactly one running default session"
     return 1
   }
   printf '%s\n' "$snapshot"
@@ -100,7 +100,7 @@ fm_herdr_lab_prepare() { # <session>
     fm_herdr_lab_error "tripwire already exists for '$name'; refusing ambiguous ownership"
     return 1
   }
-  fm_herdr_lab_fleet_state "$name" > "$tripwire" || {
+  fm_herdr_lab_unit_state "$name" > "$tripwire" || {
     rm -f "$tripwire"
     return 1
   }
@@ -181,7 +181,7 @@ fm_herdr_lab_provision() { # <session>
   if printf '%s' "$sessions" | jq -e --arg name "$name" '.sessions[]? | select(.name == $name)' >/dev/null 2>&1; then
     tripwire=$(fm_herdr_lab_tripwire_path "$name")
     [ -f "$tripwire" ] || {
-      fm_herdr_lab_error "missing fleet-state tripwire for existing session '$name'; refusing to adopt it"
+      fm_herdr_lab_error "missing unit-state tripwire for existing session '$name'; refusing to adopt it"
       return 1
     }
     fm_herdr_lab_refuse_if_default "$name" || return 1
@@ -221,13 +221,13 @@ fm_herdr_lab_check_tripwire() { # <session>
   local name=$1 tripwire before after
   tripwire=$(fm_herdr_lab_tripwire_path "$name")
   [ -f "$tripwire" ] || {
-    fm_herdr_lab_error "missing fleet-state tripwire for '$name'; refusing unverified teardown"
+    fm_herdr_lab_error "missing unit-state tripwire for '$name'; refusing unverified teardown"
     return 1
   }
   before=$(cat "$tripwire")
-  after=$(fm_herdr_lab_fleet_state "$name") || return 1
+  after=$(fm_herdr_lab_unit_state "$name") || return 1
   [ "$before" = "$after" ] || {
-    fm_herdr_lab_error "FLEET-STATE TRIPWIRE FAILED: default session changed during lab work"
+    fm_herdr_lab_error "UNIT-STATE TRIPWIRE FAILED: default session changed during lab work"
     fm_herdr_lab_error "before: $before"
     fm_herdr_lab_error "after:  $after"
     return 1
@@ -246,7 +246,7 @@ fm_herdr_lab_stop() { # <session>
   fm_herdr_lab_validate_name "$name" || return 1
   tripwire=$(fm_herdr_lab_tripwire_path "$name")
   [ -f "$tripwire" ] || {
-    fm_herdr_lab_error "missing fleet-state tripwire for '$name'; refusing stop"
+    fm_herdr_lab_error "missing unit-state tripwire for '$name'; refusing stop"
     return 1
   }
   fm_herdr_lab_refuse_if_default "$name" || return 1
@@ -258,7 +258,7 @@ fm_herdr_lab_teardown() { # <session>
   fm_herdr_lab_validate_name "$name" || return 1
   tripwire=$(fm_herdr_lab_tripwire_path "$name")
   [ -f "$tripwire" ] || {
-    fm_herdr_lab_error "missing fleet-state tripwire for '$name'; refusing destructive calls"
+    fm_herdr_lab_error "missing unit-state tripwire for '$name'; refusing destructive calls"
     return 1
   }
   sessions=$(fm_herdr_lab_session_list "$name" 2>/dev/null) || {
@@ -295,7 +295,7 @@ fm_herdr_lab_name() { # <label>
   label=${label:0:16}
   label=${label%-}
   [ -n "$label" ] || label=lab
-  printf 'fm-lab-%s-%s-%s\n' "$label" "$$" "$RANDOM"
+  printf 'sq-lab-%s-%s-%s\n' "$label" "$$" "$RANDOM"
 }
 
 fm_herdr_lab_usage() {

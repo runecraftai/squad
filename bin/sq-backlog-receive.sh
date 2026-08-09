@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Receive one delivered remote-secondmate outbox into this home's backlog.
+# Receive one delivered remote-XO outbox into this home's backlog.
 #
 # Usage:
-#   fm-backlog-receive.sh state/handoff/<secondmate-id>.outbox.md <bytes> <sha256> <generation>
+#   sq-backlog-receive.sh state/handoff/<XO-id>.outbox.md <bytes> <sha256> <generation>
 #
 # The delivered file must be a non-symlink backlog-format scratch file confined
-# to FM_HOME/state/handoff. Every item must be Queued. Keys already present in
+# to SQUAD_HOME/state/handoff. Every item must be Queued. Keys already present in
 # data/backlog.md are skipped; every remaining key moves in one dependency-closed
 # `tasks-axi mv` transaction under tasks-axi's own locks. On an ambiguous caller
 # retry, destination-present classification makes this operation idempotent.
@@ -17,15 +17,15 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DEST="$FM_HOME/data/backlog.md"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+DEST="$SQUAD_HOME/data/backlog.md"
 LOCK_STALE_SECS=30
 
-# shellcheck source=bin/fm-tasks-axi-lib.sh
-. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/sq-tasks-axi-lib.sh
+. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-stand-to-lib.sh
+. "$SCRIPT_DIR/sq-stand-to-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -98,11 +98,11 @@ case "$GENERATION" in ''|*[!0-9]*) die "generation must be a positive integer" ;
 case "$REL" in state/handoff/*.outbox.md) ;; *) die "delivered outbox path is outside state/handoff: $REL" ;; esac
 case "/$REL/" in */../*|*/./*) die "delivered outbox path contains traversal" ;; esac
 case "$REL" in *'//'*) die "delivered outbox path is malformed" ;; esac
-[ -f "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ] \
-  || die "FM_HOME is not a seeded secondmate home"
-[ -f "$FM_HOME/AGENTS.md" ] && [ -d "$FM_HOME/bin" ] || die "FM_HOME is not a Firstmate home"
-HOME_REAL=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || die "FM_HOME cannot be resolved"
-PARENT=$(dirname "$FM_HOME/$REL")
+[ -f "$SQUAD_HOME/.sq-xo-home" ] && [ ! -L "$SQUAD_HOME/.sq-xo-home" ] \
+  || die "SQUAD_HOME is not a seeded XO home"
+[ -f "$SQUAD_HOME/AGENTS.md" ] && [ -d "$SQUAD_HOME/bin" ] || die "SQUAD_HOME is not a Squad home"
+HOME_REAL=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME cannot be resolved"
+PARENT=$(dirname "$SQUAD_HOME/$REL")
 PARENT_REAL=$(CDPATH='' cd -- "$PARENT" 2>/dev/null && pwd -P) || die "delivered outbox parent is unavailable"
 case "$PARENT_REAL" in "$HOME_REAL/state/handoff") ;; *) die "delivered outbox escapes the remote scratch directory" ;; esac
 DELIVERED="$PARENT_REAL/$(basename "$REL")"
@@ -146,7 +146,7 @@ for key in "${KEYS[@]}"; do
   [ "$section" = '## Queued' ] || die "delivered outbox contains non-Queued item $key under $section"
 done
 
-mkdir -p "$FM_HOME/data"
+mkdir -p "$SQUAD_HOME/data"
 DEST_CREATED=0
 if [ ! -f "$DEST" ]; then
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$DEST"
@@ -163,7 +163,7 @@ for key in "${KEYS[@]}"; do
 done
 
 if [ "${#TO_MOVE[@]}" -gt 0 ]; then
-  fm_tasks_axi_compatible || die "a compatible tasks-axi is required for atomic backlog receipt; run bin/fm-bootstrap.sh for the required version"
+  fm_tasks_axi_compatible || die "a compatible tasks-axi is required for atomic backlog receipt; run bin/sq-bootstrap.sh for the required version"
   if ! MOVE_OUT=$(run_move "${TO_MOVE[@]}" 2>&1); then
     recovered=0
     for lock in "$DELIVERED.lock" "$DEST.lock"; do

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-timeout-lib.sh - the single owner of bounded command execution.
+# sq-timeout-lib.sh - the single owner of bounded command execution.
 #
 # Sourced, never executed. Provides one hard-bound runner so no caller has to
 # re-derive the coreutils/BSD/perl selection, and so every bounded call in this
@@ -7,7 +7,7 @@
 #
 #   fm_timeout_mechanism
 #       Prints the mechanism fm_run_timed will use on this host: "timeout",
-#       "gtimeout", "perl", or "bash". Set FM_TIMEOUT_MECHANISM_OVERRIDE=bash
+#       "gtimeout", "perl", or "bash". Set SQUAD_TIMEOUT_MECHANISM_OVERRIDE=bash
 #       to force the dependency-free fallback.
 #
 #   fm_run_timed <seconds> <command> [args...]
@@ -28,7 +28,7 @@
 set -u
 
 fm_timeout_mechanism() {
-  if [ "${FM_TIMEOUT_MECHANISM_OVERRIDE:-}" = bash ]; then
+  if [ "${SQUAD_TIMEOUT_MECHANISM_OVERRIDE:-}" = bash ]; then
     printf 'bash\n'
   elif command -v timeout >/dev/null 2>&1; then
     printf 'timeout\n'
@@ -44,7 +44,7 @@ fm_timeout_mechanism() {
 fm_run_bash_timeout() {
   local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0
   shift
-  command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
+  command_status=$(mktemp "${TMPDIR:-/tmp}/sq-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
   deadline_status="${command_status}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
@@ -89,7 +89,7 @@ fm_run_bash_timeout() {
 fm_run_external_timeout() {
   local runner=$1 seconds=$2 status_file runner_rc command_rc
   shift 2
-  status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 124
+  status_file=$(mktemp "${TMPDIR:-/tmp}/sq-timeout-status.XXXXXX" 2>/dev/null) || return 124
   # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   if "$runner" -k 1 "$seconds" bash -c '
     status_file=$1

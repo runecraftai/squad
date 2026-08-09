@@ -1,81 +1,81 @@
 #!/usr/bin/env bash
-# Shared wake classifier: the common source of truth for captain-relevant status
+# Shared wake classifier: the common source of truth for commander-relevant status
 # tests, declared-external-wait vocabulary, and the working/paused absorb
 # classification that makes no-verb signal and stale-pane wakes safe to absorb.
-# Sourced by BOTH the always-on watcher
-# (bin/fm-watch.sh) and the away-mode daemon (bin/fm-supervise-daemon.sh) so the
+# Sourced by BOTH the always-on sentry
+# (bin/sq-sentry.sh) and the away-mode daemon (bin/sq-supervise-daemon.sh) so the
 # overlapping triage policy lives in one place instead of two copies that can
 # drift apart.
 #
 # Most functions are pure, side-effect-free reads of status files: each takes
 # what it needs as arguments and touches no globals beyond the optional
-# FM_CAPTAIN_RE override. Consumers layer their own dedup/marker state on top (the
-# daemon keeps its escalation-digest seen-markers; the watcher keeps its .seen-*
+# SQUAD_COMMANDER_RE override. Consumers layer their own dedup/marker state on top (the
+# daemon keeps its escalation-digest seen-markers; the sentry keeps its .seen-*
 # signatures).
 #
 # There are two documented exceptions. The absorb classification
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
-# read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
+# read: it reuses bin/sq-crew-state.sh, which may make a bounded no-mistakes call,
 # to decide whether a crew that just stopped its turn or went stale is working,
 # deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
 # stays cheap. status_open_decisions_incremental (see "incremental (cursor-backed)
 # open-decisions fold" below) also writes: it persists a per-status-file byte
-# cursor and folded open-set as a side effect, so a per-drain fleet-wide scan
+# cursor and folded open-set as a side effect, so a per-drain unit-wide scan
 # stays bounded by new appends instead of re-reading each task's whole lifetime
 # log every time.
 
-# Directory of this library, used to locate the sibling fm-crew-state.sh reader.
+# Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
 # bin/ script (which sets its own SCRIPT_DIR) or directly by a test.
-_FM_CLASSIFY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _FM_CLASSIFY_LIB_DIR="."
+_SQUAD_CLASSIFY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _SQUAD_CLASSIFY_LIB_DIR="."
 
 # The crew current-state reader used for the "provably working" decision.
 # Overridable so tests can stub the run-step/pane verdict without a real worktree
 # or no-mistakes install; absent, it points at the real sibling script.
-FM_CREW_STATE_BIN="${FM_CREW_STATE_BIN:-$_FM_CLASSIFY_LIB_DIR/fm-crew-state.sh}"
+SQUAD_CREW_STATE_BIN="${SQUAD_CREW_STATE_BIN:-$_SQUAD_CLASSIFY_LIB_DIR/sq-crew-state.sh}"
 
-# Captain-relevant status verbs. A status line carrying any of these is work
-# firstmate must see. Lines without these verbs are no-verb signals: the watcher
+# Commander-relevant status verbs. A status line carrying any of these is work
+# Squad must see. Lines without these verbs are no-verb signals: the sentry
 # absorbs them only with positive provably-working evidence, while the daemon uses
-# its away-mode classification. FM_CAPTAIN_RE overrides the whole set when a home
+# its away-mode classification. SQUAD_COMMANDER_RE overrides the whole set when a home
 # needs a custom verb vocabulary; absent, this default applies.
 #
 # Free-text tokens (PR ready, checks green, ready in branch, merged) exist only for
-# legacy lines that lack a standard terminal verb. status_is_captain_relevant is
-# verb-aware: a nonterminal working: or paused: line never becomes captain-relevant
+# legacy lines that lack a standard terminal verb. status_is_commander_relevant is
+# verb-aware: a nonterminal working: or paused: line never becomes commander-relevant
 # merely because its prose contains one of those tokens (for example
 # "working: rebased onto merged #76").
-FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
+SQUAD_CLASSIFY_COMMANDER_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
 
-# The deliberate-external-wait verb. A crew (or firstmate steering it) appends
+# The deliberate-external-wait verb. A crew (or Squad steering it) appends
 #   paused: <reason>
 # to declare it is intentionally idling on a KNOWN external dependency - an
 # upstream release, a vendor rate-limit reset, a scheduled window. Unlike
-# `blocked:` (stuck, firstmate must help) an idle `paused:` pane is EXPECTED, so
+# `blocked:` (stuck, Squad must help) an idle `paused:` pane is EXPECTED, so
 # the stale path absorbs it instead of escalating a possible wedge. It is
-# deliberately NOT in the captain-relevant set above: a pause is a "stop
+# deliberately NOT in the commander-relevant set above: a pause is a "stop
 # wedge-nagging this idle pane" signal, not work to keep surfacing. This constant
-# is the ONE definition of the verb; both the watcher and the daemon read it here
+# is the ONE definition of the verb; both the sentry and the daemon read it here
 # (status_is_paused) rather than hardcoding the literal, so the vocabulary cannot
-# drift between the two consumers. FM_CLASSIFY_PAUSED_VERB overrides it.
-FM_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
+# drift between the two consumers. SQUAD_CLASSIFY_PAUSED_VERB overrides it.
+SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 
-# Bounded re-surface cadence for a declared pause or a dead-agent captain hold.
-# Far longer than the wedge threshold (FM_STALE_ESCALATE_SECS, default 240s), it
+# Bounded re-surface cadence for a declared pause or a dead-agent commander hold.
+# Far longer than the wedge threshold (SQUAD_STALE_ESCALATE_SECS, default 240s), it
 # avoids nagging a deliberate wait while ensuring a forgotten hold cannot rot
 # invisibly - it re-surfaces once for a recheck every window. One hour by default;
-# both consumers read FM_PAUSE_RESURFACE_SECS with this default so the cadence has
+# both consumers read SQUAD_PAUSE_RESURFACE_SECS with this default so the cadence has
 # one owner.
-# shellcheck disable=SC2034 # Read by the watcher and daemon (fm-watch.sh, fm-supervise-daemon.sh), not this lib.
-FM_PAUSE_RESURFACE_SECS_DEFAULT=3600
+# shellcheck disable=SC2034 # Read by the sentry and daemon (sq-sentry.sh, sq-supervise-daemon.sh), not this lib.
+SQUAD_PAUSE_RESURFACE_SECS_DEFAULT=3600
 
 # The resolution verb and durable-backlog-transfer verb that CLOSE a keyed
 # status decision opened by needs-decision or blocked. See status_open_decisions
 # below for the status-fold contract. The transfer verb is written only after
-# fm-decision-hold.sh has verified the corresponding captain-held backlog item.
-FM_CLASSIFY_RESOLVE_VERB_DEFAULT='resolved'
-FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT='captain-held'
+# sq-decision-hold.sh has verified the corresponding commander-held backlog item.
+SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT='resolved'
+SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT='commander-held'
 
 # Return the last non-blank line of a status file (empty if missing/blank).
 last_status_line() {
@@ -84,9 +84,9 @@ last_status_line() {
   grep -v '^[[:space:]]*$' "$f" 2>/dev/null | tail -1
 }
 
-# 0 if the given (last) status line's leading verb is a real terminal captain verb
+# 0 if the given (last) status line's leading verb is a real terminal commander verb
 # (done, needs-decision, blocked, failed). Free-text tokens alone never count here;
-# callers that need legacy free-text matching use status_is_captain_relevant.
+# callers that need legacy free-text matching use status_is_commander_relevant.
 status_is_terminal_verb() {
   local line=$1 verb
   [ -n "$line" ] || return 1
@@ -97,51 +97,51 @@ status_is_terminal_verb() {
   esac
 }
 
-# 0 if the given (last) status line matches a captain-relevant verb.
+# 0 if the given (last) status line matches a commander-relevant verb.
 # Verb-aware by default: terminal verbs always match; nonterminal progress verbs
-# (working, resolved, captain-held) and paused never match from free-text prose;
+# (working, resolved, commander-held) and paused never match from free-text prose;
 # only lines without those leading verbs may still match free-text tokens for
 # legacy bare lines such as "merged" or "PR ready".
-status_is_captain_relevant() {
+status_is_commander_relevant() {
   local line=$1 verb
   [ -n "$line" ] || return 1
   status_is_paused "$line" && return 1
   verb=$(status_line_verb "$line")
   case "$verb" in
-    working|resolved|captain-held|"${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}")
+    working|resolved|commander-held|"${SQUAD_CLASSIFY_PAUSED_VERB:-$SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT}")
       return 1
       ;;
   esac
-  if [ -z "${FM_CAPTAIN_RE+x}" ]; then
+  if [ -z "${SQUAD_COMMANDER_RE+x}" ]; then
     case "$verb" in
       done|needs-decision|blocked|failed) return 0 ;;
     esac
   fi
-  printf '%s' "$line" | grep -qiE "${FM_CAPTAIN_RE:-$FM_CLASSIFY_CAPTAIN_RE_DEFAULT}"
+  printf '%s' "$line" | grep -qiE "${SQUAD_COMMANDER_RE:-$SQUAD_CLASSIFY_COMMANDER_RE_DEFAULT}"
 }
 
 # 0 if a status line's leading verb is the pause verb (paused: <reason>). A pure
 # read of the line itself, so the daemon's classify_stale can reuse the last line
-# it already read without a fm-crew-state.sh call. Matches only the verb before the
+# it already read without a sq-crew-state.sh call. Matches only the verb before the
 # first colon, so a reason mentioning "paused" elsewhere does not false-match.
 status_is_paused() {  # <status-line>
   local line=$1 verb
   [ -n "$line" ] || return 1
   verb=$(status_line_verb "$line")
-  [ "$verb" = "${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}" ]
+  [ "$verb" = "${SQUAD_CLASSIFY_PAUSED_VERB:-$SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT}" ]
 }
 
 # 0 if a status line declares either an external-wait pause or a verified
-# captain-held transfer.
+# commander-held transfer.
 # Both declarations can intentionally leave an exited crew's endpoint idle, so
-# the watcher applies its bounded pause cadence when agent death confirms that
+# the sentry applies its bounded pause cadence when agent death confirms that
 # no live decision gate is being silenced.
-status_is_paused_or_captain_held() {  # <status-line>
+status_is_paused_or_commander_held() {  # <status-line>
   local line=$1 verb
   status_is_paused "$line" && return 0
   [ -n "$line" ] || return 1
   verb=$(status_line_verb "$line")
-  [ "$verb" = "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" ]
+  [ "$verb" = "${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}" ]
 }
 
 # --- durable keyed decisions ------------------------------------------------
@@ -152,11 +152,11 @@ status_is_paused_or_captain_held() {  # <status-line>
 # masks a still-open needs-decision. status_open_decisions is the ONE authoritative
 # statement of the status-fold contract that fixes this - a needs-decision/blocked
 # line OPENS a keyed decision, and only an explicit resolution or a verified
-# captain-held backlog transfer referencing that key CLOSES it; a later unrelated
-# terminal line never clears an open captain decision.
-# Who WRITES the closing line is owned elsewhere: the answering firstmate closes
-# at answer time through fm-send's --resolve-key (bin/fm-send.sh header), and a
-# worker self-closes only a blocker that cleared without an answer (bin/fm-brief.sh
+# commander-held backlog transfer referencing that key CLOSES it; a later unrelated
+# terminal line never clears an open commander decision.
+# Who WRITES the closing line is owned elsewhere: the answering Squad closes
+# at answer time through sq-send's --resolve-key (bin/sq-send.sh header), and a
+# worker self-closes only a blocker that cleared without an answer (bin/sq-brief.sh
 # rule 6), so closure never depends on a busy worker's discipline.
 #
 # Decision key grammar (backward-compatible with the existing "<verb>: <note>"
@@ -210,7 +210,7 @@ EOF
   printf '%s' "$out"
 }
 # Fold ONE status line into an existing "<key>\t<verb>\t<note>\n"-per-line open
-# set, applying the same needs-decision/blocked-opens, resolved/captain-held-closes
+# set, applying the same needs-decision/blocked-opens, resolved/commander-held-closes
 # rule status_open_decisions documents above. Pure text transform, no file I/O.
 # This is the ONE place the per-line open/resolved rule is written; both the
 # whole-file fold (status_open_decisions) and the incremental cursor-backed fold
@@ -234,12 +234,12 @@ EOF
 # consumer-side rule on purpose - it protects local and remote writers
 # identically, and it can never fail a whole delta or wedge a stream the way a
 # writer-side rejection would.
-FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply-'
+SQUAD_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply-'
 
 # 0 when <key> is not reserved, or is reserved and <note> speaks its vocabulary.
 _fm_decision_key_transition_allowed() {  # <key> <note>
   local key=$1 note=$2 prefix
-  for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}; do
+  for prefix in ${SQUAD_CLASSIFY_RESERVED_KEY_PREFIXES:-$SQUAD_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}; do
     case "$key" in
       "$prefix"*)
         case "$note" in
@@ -278,8 +278,8 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
 # Fold the WHOLE status stream into the set of decisions still open. Prints one
 # TAB-separated "<key>\t<verb>\t<summary>" line per still-open decision, in
 # most-recently-opened-last order; prints nothing when none are open. Pure read of
-# the file, no globals beyond the optional FM_CLASSIFY_RESOLVE_VERB override. This
-# is the durable open-set the fleet snapshot and any point-in-time consumer must use
+# the file, no globals beyond the optional SQUAD_CLASSIFY_RESOLVE_VERB override. This
+# is the durable open-set the unit snapshot and any point-in-time consumer must use
 # instead of trusting the last status line.
 # The scan_open_decisions wrapper below enumerates a whole directory rather than
 # a single caller-chosen path, so a status file that is itself a symlink (e.g.
@@ -290,15 +290,15 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
 status_open_decisions() {  # <status-file>
   local f=$1 line resolve held open=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}
   while IFS= read -r line || [ -n "$line" ]; do
     open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
   done < "$f"
   printf '%s' "$open"
 }
 
-# Fleet-wide wrapper around status_open_decisions: scans every task's status
+# Unit-wide wrapper around status_open_decisions: scans every task's status
 # log under <state> and prefixes each still-open decision with its owning task
 # id, so a per-wake or per-session surface can print the consolidated open set
 # without re-walking the fold itself. A thin directory scan only - the fold
@@ -326,7 +326,7 @@ EOF
 #
 # status_open_decisions above re-reads and re-folds a status file's ENTIRE
 # lifetime on every call, so its cost grows with total log size. A per-drain
-# fleet-wide scan using that whole-file function would pay that cost for every
+# unit-wide scan using that whole-file function would pay that cost for every
 # task on every wake, which grows unbounded as tasks run longer and accumulate
 # status history. status_open_decisions_incremental and scan_open_decisions_incremental
 # below are the bounded-cost siblings used for that per-drain path: each call
@@ -338,13 +338,13 @@ EOF
 # status file's total lifetime size.
 #
 # Correctness invariant (unchanged from the whole-file fold): an open decision
-# is dropped ONLY by an explicit resolved/captain-held line for its exact key,
+# is dropped ONLY by an explicit resolved/commander-held line for its exact key,
 # never by cursor advancement, age, or being buried under later appends - the
 # persisted open-set carries every still-open key forward across calls
 # regardless of how much new unrelated log content has since been folded in.
 #
 # The cursor format is `version`, `offset`, `ident`, then the folded open set.
-# FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
+# SQUAD_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
 # interpretation is discarded and rebuilt from byte 0.
 #
@@ -371,8 +371,8 @@ EOF
 # side effect (state/.<task>.open-decisions-cursor), the library's second
 # documented exception to the pure-read rule after crew_absorb_class. The write
 # is atomic (temp file + rename), so a crash between calls leaves either the
-# prior cursor or the new one, never a partial one. bin/fm-wake-drain.sh calls
-# this only after releasing the wake-queue lock, so a hypothetical race between
+# prior cursor or the new one, never a partial one. bin/sq-stand-to-drain.sh calls
+# this only after releasing the stand-to queue lock, so a hypothetical race between
 # two overlapping drains can at worst redo a little folding work twice - never
 # drop an open decision - because a losing writer's offset can only ever be
 # equal to or behind an already-recorded byte position, and the next call
@@ -384,7 +384,7 @@ _fm_open_decisions_cursor_path() {  # <status-file>
   printf '%s/.%s.open-decisions-cursor' "$dir" "${base%.status}"
 }
 
-FM_OPEN_DECISIONS_FOLD_VERSION=2
+SQUAD_OPEN_DECISIONS_FOLD_VERSION=2
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
@@ -409,7 +409,7 @@ status_open_decisions_incremental() {  # <status-file>
       case "$first" in
         version=*)
           version=${first#version=}
-          [ "$version" = "$FM_OPEN_DECISIONS_FOLD_VERSION" ] || version=''
+          [ "$version" = "$SQUAD_OPEN_DECISIONS_FOLD_VERSION" ] || version=''
           rest=${cursor_data#*$'\n'}
           offset_line=${rest%%$'\n'*}
           case "$offset_line" in
@@ -474,10 +474,10 @@ status_open_decisions_incremental() {  # <status-file>
     # change): when set, records exactly how many bytes THIS call folded, so a
     # test can assert the incremental path stays bounded by new appends rather
     # than re-reading the whole file, without relying on timing or source text.
-    [ -n "${FM_OPEN_DECISIONS_READ_PROBE:-}" ] \
-      && printf '%s\t%s\n' "$f" "$chunk_size" >> "$FM_OPEN_DECISIONS_READ_PROBE"
-    resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-    held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+    [ -n "${SQUAD_OPEN_DECISIONS_READ_PROBE:-}" ] \
+      && printf '%s\t%s\n' "$f" "$chunk_size" >> "$SQUAD_OPEN_DECISIONS_READ_PROBE"
+    resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}
+    held=${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}
     while IFS= read -r line || [ -n "$line" ]; do
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
     done < "$chunk_file"
@@ -487,7 +487,7 @@ status_open_decisions_incremental() {  # <status-file>
   fi
   if [ "$cursor_dirty" -eq 1 ]; then
     {
-      printf 'version=%s\n' "$FM_OPEN_DECISIONS_FOLD_VERSION"
+      printf 'version=%s\n' "$SQUAD_OPEN_DECISIONS_FOLD_VERSION"
       printf 'offset=%s\n' "$offset"
       printf 'ident=%s\n' "$cur_ident"
       # An `if` (not `[ -n "$open" ] && printf ...`) so the group's exit status
@@ -500,10 +500,10 @@ status_open_decisions_incremental() {  # <status-file>
   printf '%s' "$open"
 }
 
-# Incremental sibling of scan_open_decisions: same fleet-wide directory walk and
+# Incremental sibling of scan_open_decisions: same unit-wide directory walk and
 # output shape ("<task>\t<key>\t<verb>\t<note>" per open decision), but folds
 # each task's status log through status_open_decisions_incremental instead of
-# the whole-file status_open_decisions, so a fleet-wide per-drain scan stays
+# the whole-file status_open_decisions, so a unit-wide per-drain scan stays
 # bounded by new appends rather than total lifetime log size across every task.
 scan_open_decisions_incremental() {  # <state>
   local state=$1 f task open line
@@ -530,12 +530,12 @@ EOF
 # A bare legacy event uses the default key, preserving one-phase behavior.
 # This fold is evidence about whether a parent event was explicitly superseded.
 # It is never authoritative current crew state, and consumers must not let an open
-# phase outrank a structured home snapshot or fm-crew-state result.
+# phase outrank a structured home snapshot or sq-crew-state result.
 _fm_status_open_activities_stream() {
   local line verb key note resolve held open='' stripped pause
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
-  pause=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
+  resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}
+  pause=${SQUAD_CLASSIFY_PAUSED_VERB:-$SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT}
   while IFS= read -r line || [ -n "$line" ]; do
     stripped=${line//[[:space:]]/}
     [ -n "$stripped" ] || continue
@@ -568,9 +568,9 @@ status_open_activities() {  # <status-file-or-dash>
 }
 
 # task id from a recorded window target, falling back to the tmux-shaped
-# "<session>:fm-<id>" form when no metadata state is available.
+# "<session>:sq-<id>" form when no metadata state is available.
 window_to_task() {
-  local w=$1 state=${2:-${STATE:-${FM_STATE_OVERRIDE:-}}} meta mw mt t
+  local w=$1 state=${2:-${STATE:-${SQUAD_STATE_OVERRIDE:-}}} meta mw mt t
   if [ -n "$state" ]; then
     for meta in "$state"/*.meta; do
       [ -e "$meta" ] || continue
@@ -583,11 +583,11 @@ window_to_task() {
       return 0
     done
   fi
-  t="${w##*:}"; t="${t#fm-}"; printf '%s' "$t"
+  t="${w##*:}"; t="${t#sq-}"; printf '%s' "$t"
 }
 
 # 0 (actionable) if ANY status file listed in a "signal:" wake carries a
-# captain-relevant last line; 1 otherwise. Pass the space-separated file list that
+# commander-relevant last line; 1 otherwise. Pass the space-separated file list that
 # follows the "signal:" prefix. Non-.status arguments (e.g. .turn-ended markers,
 # which never carry a verb) are skipped. A 1 here is NOT "benign" on its own: a
 # no-verb signal (a bare turn-end, a working: note) is only benign when the crew is
@@ -599,13 +599,13 @@ signal_reason_is_actionable() {  # <file> ...
     case "$f" in *.status) ;; *) continue ;; esac
     last=$(last_status_line "$f")
     [ -n "$last" ] || continue
-    status_is_captain_relevant "$last" && return 0
+    status_is_commander_relevant "$last" && return 0
   done
   return 1
 }
 
 # Classify WHY an idle/stale crew MIGHT be safely absorbed instead of surfaced,
-# from bin/fm-crew-state.sh's one authoritative current-state line
+# from bin/sq-crew-state.sh's one authoritative current-state line
 # ("state: <s> · source: <src> · <detail>"). Prints exactly one token:
 #   working - an actively-running no-mistakes step (running/fixing/ci) or a busy
 #             pane; the crew is legitimately mid-work on a static-looking pane
@@ -614,16 +614,16 @@ signal_reason_is_actionable() {  # <file> ...
 #             pause (paused:), which is EXPECTED to idle;
 #   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
 #             torn-down/unknown crew, or an unreadable verdict).
-# One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
+# One sq-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: a crew
 # that appended paused: but then STARTED a run reports working, never paused.
-# NOT a pure read: fm-crew-state.sh may make a bounded no-mistakes call, so callers
+# NOT a pure read: sq-crew-state.sh may make a bounded no-mistakes call, so callers
 # run it only on no-verb signal and first-sighting stale paths, never every wake.
-# FM_CREW_STATE_BIN lets tests stub the verdict.
+# SQUAD_CREW_STATE_BIN lets tests stub the verdict.
 crew_absorb_class() {  # <id>
   local id=$1 line state src
   [ -n "$id" ] || { printf 'none'; return; }
-  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
   state=${line#state: }; state=${state%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
@@ -639,7 +639,7 @@ crew_absorb_class() {  # <id>
 # absorb-only-when-provably-working: a no-verb turn-end or stale wake is absorbed
 # ONLY when this returns 0, and SURFACED otherwise (the crew may be done, waiting
 # on a decision, or wedged). For stale panes it is checked before trusting the
-# status log so a pre-validation captain-relevant line does not override an active
+# status log so a pre-validation commander-relevant line does not override an active
 # run. See crew_absorb_class for the exact working/paused/none decision.
 crew_is_provably_working() {  # <id>
   [ "$(crew_absorb_class "$1")" = working ]
@@ -676,26 +676,26 @@ signal_crew_provably_working() {  # <file> ...
 }
 
 # 0 (terminal/actionable) if a stale window's last status line is
-# captain-relevant; 1 otherwise, including the no-status case. A 1 only means
-# "non-terminal"; the always-on watcher then applies crew_is_provably_working,
+# commander-relevant; 1 otherwise, including the no-status case. A 1 only means
+# "non-terminal"; the always-on sentry then applies crew_is_provably_working,
 # while the away-mode daemon applies its persistence recheck.
 stale_is_terminal() {  # <window> <state>
   local win=$1 state=$2 last
   last=$(last_status_line "$state/$(window_to_task "$win" "$state").status")
-  [ -n "$last" ] && status_is_captain_relevant "$last"
+  [ -n "$last" ] && status_is_commander_relevant "$last"
 }
 
 # Print "<file>\t<task>\t<last-line>" for every state/*.status whose last line is
-# captain-relevant. This is the cheap fleet-scan both supervisors run as a
-# catch-all backstop for a captain-relevant status the per-wake path might miss.
+# commander-relevant. This is the cheap unit-scan both supervisors run as a
+# catch-all backstop for a commander-relevant status the per-wake path might miss.
 # No dedup is applied here: each consumer dedupes against its own seen-state (the
-# daemon against .subsuper-seen-status-*, the watcher against .seen-* signatures).
-scan_captain_relevant_statuses() {  # <state>
+# daemon against .subsuper-seen-status-*, the sentry against .seen-* signatures).
+scan_commander_relevant_statuses() {  # <state>
   local state=$1 f last task
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     last=$(last_status_line "$f")
-    status_is_captain_relevant "$last" || continue
+    status_is_commander_relevant "$last" || continue
     task=$(basename "$f"); task="${task%.status}"
     printf '%s\t%s\t%s\n' "$f" "$task" "$last"
   done

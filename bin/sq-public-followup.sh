@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# fm-public-followup.sh - the deterministic consumer and delivery owner for
-# public commitments made through the myfirstmate relay (X and Discord).
+# sq-public-followup.sh - the deterministic consumer and delivery owner for
+# public commitments made through the mySquad relay (X and Discord).
 #
-# THE PROBLEM THIS SOLVES: firstmate promises a public final reply, routes the
+# THE PROBLEM THIS SOLVES: Squad promises a public final reply, routes the
 # work out, and then the conversation compacts or the session restarts. Nothing
 # in memory survives, so the promise is only kept if reconciling it is a disk
 # operation. Every command here reads durable state and nothing else.
 #
 # OWNERSHIP BOUNDARIES (do not re-implement any of these here):
 #   tasks-axi public-followup   the typed obligation and its state machine.
-#   state/x-context/            the private full request context (fm-x-lib.sh).
-#   bin/fm-x-reply.sh           posting to the relay, thread splitting, dry run.
-#   bin/fm-public-followup-lib.sh  the activation gate and private transport.
+#   state/x-context/            the private full request context (sq-x-lib.sh).
+#   bin/sq-x-reply.sh           posting to the relay, thread splitting, dry run.
+#   bin/sq-public-followup-lib.sh  the activation gate and private transport.
 # This script composes them; it never restates their contracts or schemas.
 #
 # ZERO OVERHEAD FOR HOMES THAT DO NOT USE THE RELAY: every subcommand gates
-# first on the authoritative activation contract (a non-empty FMX_PAIRING_TOKEN
-# in $FM_HOME/.env). Read-side and cleanup paths then use an O(1) presence check
+# first on the authoritative activation contract (a non-empty SQX_PAIRING_TOKEN
+# in $SQUAD_HOME/.env). Read-side and cleanup paths then use an O(1) presence check
 # for registrations this home actually created. A relay-disabled home therefore
 # runs one [ -f ] test before any backlog work: no tasks-axi call, no backlog scan,
 # and no file created. Silent read-side commands return without output; commands
@@ -25,12 +25,12 @@
 # for the same cost.
 #
 # Usage:
-#   fm-public-followup.sh active
+#   sq-public-followup.sh active
 #       Silent gate probe. Exit 0 when this home has live public-followup work
 #       worth looking at, 1 otherwise. Safe to call unconditionally.
 #
-#   fm-public-followup.sh register <obligation-id> --relation <relation-id>
-#         --work-home <main|secondmate:<id>> --work-id <task-id> --generation <n>
+#   sq-public-followup.sh register <obligation-id> --relation <relation-id>
+#         --work-home <main|XO:<id>> --work-id <task-id> --generation <n>
 #         [--platform <x|discord>] [--request <request-id>]
 #       Record the binding the relay path just created with `tasks-axi
 #       public-followup add` + `bind-work`. This is the event-driven
@@ -39,12 +39,12 @@
 #       later makes the presence checks O(1) and lets bound work report a typed
 #       terminal result. Refuses when the relay is not active for this home.
 #
-#   fm-public-followup.sh brief <obligation-id>
-#       Print the exact fm-public-followup-emit.sh command line the bound worker
+#   sq-public-followup.sh brief <obligation-id>
+#       Print the exact sq-public-followup-emit.sh command line the bound worker
 #       must run when its work reaches the promised terminal outcome, so the
 #       binding is copied into a brief instead of hand-assembled.
 #
-#   fm-public-followup.sh consume
+#   sq-public-followup.sh consume
 #       Drain every pending typed terminal event: validate its derived identity,
 #       skip anything already accepted, apply `tasks-axi public-followup
 #       work-event`, and quarantine what tasks-axi refuses. Prints one
@@ -53,12 +53,12 @@
 #       refusal. Silent when there is nothing to do. Duplicate events and restart
 #       replay are no-ops.
 #
-#   fm-public-followup.sh pending
+#   sq-public-followup.sh pending
 #       One bounded public-safe line per unresolved commitment, for the session
 #       start digest. Prunes registrations whose obligation is already closed.
 #       Silent when nothing is unresolved.
 #
-#   fm-public-followup.sh deliver <obligation-id> [--text-file <path>]
+#   sq-public-followup.sh deliver <obligation-id> [--text-file <path>]
 #       Post the final public reply into the ORIGINAL thread and close the
 #       obligation. Uses the stored platform and opaque context binding, so the
 #       destination is never guessed. Without --text-file the accepted terminal
@@ -71,19 +71,19 @@
 #       post; an obligation left in delivery-posting by a crash is REFUSED
 #       rather than posted again.
 #
-#   fm-public-followup.sh record-posted <obligation-id> --attempt <n> --chunks <n>
+#   sq-public-followup.sh record-posted <obligation-id> --attempt <n> --chunks <n>
 #       Close an obligation whose post is known to have landed on exactly
 #       attempt <n> with exactly <n> messages, without posting anything. This is
 #       the late-receipt path: use it when a post succeeded but its receipt was
 #       lost, never to paper over an unknown outcome.
 #
-#   fm-public-followup.sh guard-work <work-home-id> <work-id>
+#   sq-public-followup.sh guard-work <work-home-id> <work-id>
 #       Exit 3 when this home has an unresolved public commitment bound to that
 #       exact work, printing one line per blocking obligation. Exit 0 otherwise.
 #       Cleanup paths call this so bound work is never treated as finished while
 #       its public promise is still open.
 #
-#   fm-public-followup.sh retire <obligation-id> [--force]
+#   sq-public-followup.sh retire <obligation-id> [--force]
 #       Drop the registration once its obligation is closed. --force is the
 #       explicit discard-approved escape hatch for an unresolved or missing
 #       obligation.
@@ -91,32 +91,32 @@
 # Requires jq and a compatible tasks-axi for registration, reconciliation,
 # delivery, cleanup guards, and retirement; `active` and `brief` only inspect
 # local state.
-# FM_PF_RETRY_BACKOFF_SECS (default 900) sets the next-attempt time recorded with
+# SQUAD_PF_RETRY_BACKOFF_SECS (default 900) sets the next-attempt time recorded with
 # a retryable delivery error.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
 
-# shellcheck source=bin/fm-public-followup-lib.sh
-. "$SCRIPT_DIR/fm-public-followup-lib.sh"
-# shellcheck source=bin/fm-secondmate-registry-lib.sh
-. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/sq-public-followup-lib.sh
+. "$SCRIPT_DIR/sq-public-followup-lib.sh"
+# shellcheck source=bin/sq-xo-registry-lib.sh
+. "$SCRIPT_DIR/sq-xo-registry-lib.sh"
 
-RETRY_BACKOFF=${FM_PF_RETRY_BACKOFF_SECS:-900}
+RETRY_BACKOFF=${SQUAD_PF_RETRY_BACKOFF_SECS:-900}
 case "$RETRY_BACKOFF" in ''|*[!0-9]*) RETRY_BACKOFF=900 ;; esac
 
 usage() {
-  echo "usage: fm-public-followup.sh <active|register|brief|consume|pending|deliver|record-posted|guard-work|retire> [args]" >&2
+  echo "usage: sq-public-followup.sh <active|register|brief|consume|pending|deliver|record-posted|guard-work|retire> [args]" >&2
 }
 
 # The header comment IS the help text, so the two can never drift apart.
 help() { sed -n '2,/^set -u$/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
-die() { printf 'fm-public-followup: %s\n' "$1" >&2; exit "${2:-2}"; }
+die() { printf 'sq-public-followup: %s\n' "$1" >&2; exit "${2:-2}"; }
 
 PF_TEMP_FILES=()
 pf_cleanup_temp_files() {
@@ -143,8 +143,8 @@ require_tools() {
 }
 
 # Every tasks-axi call runs from the home whose backlog owns the obligation, the
-# same convention bin/fm-decision-hold.sh uses for typed backlog state.
-tx() { (cd "$FM_HOME" && tasks-axi "$@"); }
+# same convention bin/sq-decision-hold.sh uses for typed backlog state.
+tx() { (cd "$SQUAD_HOME" && tasks-axi "$@"); }
 
 # obligation_json <id>: the complete typed obligation payload on stdout, empty
 # when the backlog simply has no such public-followup item, and a non-zero exit
@@ -169,14 +169,14 @@ pf_field() { printf '%s' "$1" | jq -r "$2 // empty" 2>/dev/null; }
 # with no output when this home has no public-followup work, so callers can
 # invoke unconditionally without a relay-disabled home paying anything.
 gate_or_exit() {
-  fm_pf_relay_active "$FM_HOME" || exit 0
+  fm_pf_relay_active "$SQUAD_HOME" || exit 0
   fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE" || exit 0
 }
 
 # --- subcommand: active -----------------------------------------------------
 
 cmd_active() {
-  fm_pf_relay_active "$FM_HOME" || exit 1
+  fm_pf_relay_active "$SQUAD_HOME" || exit 1
   fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE" || exit 1
   exit 0
 }
@@ -201,15 +201,15 @@ cmd_register() {
     shift || true
   done
 
-  fm_pf_relay_active "$FM_HOME" \
-    || die "this home has not opted into the myfirstmate relay, so it cannot own a public commitment" 1
+  fm_pf_relay_active "$SQUAD_HOME" \
+    || die "this home has not opted into the mySquad relay, so it cannot own a public commitment" 1
   require_tools
 
   fm_pf_slug_valid "$id"       || die "unsafe obligation id: $id"
   fm_pf_slug_valid "$relation" || die "unsafe relation id: $relation"
   fm_pf_slug_valid "$work_id"  || die "unsafe work id: $work_id"
   fm_pf_home_id_valid "$work_home" \
-    || die "work home must be 'main' or 'secondmate:<stable-id>', got '$work_home'"
+    || die "work home must be 'main' or 'XO:<stable-id>', got '$work_home'"
   case "$generation" in
     ''|*[!0-9]*) die "generation must be a positive integer, got '$generation'" ;;
   esac
@@ -255,7 +255,7 @@ cmd_brief() {
   local id=${1:-} relation work_home work_id generation
   [ -n "$id" ] || { usage; exit 2; }
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  fm_pf_relay_active "$FM_HOME" || die "the relay is not active for this home" 1
+  fm_pf_relay_active "$SQUAD_HOME" || die "the relay is not active for this home" 1
   [ -f "$(fm_pf_registry_dir "$STATE")/$id" ] \
     || die "no registration for '$id' in this home" 1
 
@@ -268,8 +268,8 @@ cmd_brief() {
 When this work reaches its promised terminal outcome, report it as typed data
 (never as a sentence for someone to parse) by running exactly:
 
-  $FM_ROOT/bin/fm-public-followup-emit.sh \\
-    --home $FM_HOME \\
+  $SQUAD_ROOT/bin/sq-public-followup-emit.sh \\
+    --home $SQUAD_HOME \\
     --obligation $id \\
     --relation $relation \\
     --source-home $work_home \\
@@ -325,7 +325,7 @@ cmd_consume() {
   consumed_dir=$(fm_pf_consumed_dir "$STATE")
   fmx_private_artifact_dir_prepare "$consumed_dir" >/dev/null \
     || die "could not prepare the consumed-event ledger" 1
-  stderr_file=$(mktemp "${TMPDIR:-/tmp}/fm-pf-consume.XXXXXX") \
+  stderr_file=$(mktemp "${TMPDIR:-/tmp}/sq-pf-consume.XXXXXX") \
     || die "could not stage the reconciliation log" 1
   PF_TEMP_FILES+=("$stderr_file")
 
@@ -346,8 +346,8 @@ cmd_consume() {
       continue
     fi
 
-    if [ "$(wc -c < "$file" 2>/dev/null || echo 0)" -gt "$FM_PF_EVENT_BYTES_MAX" ]; then
-      reject_event "$file" "$event_id" "event exceeds $FM_PF_EVENT_BYTES_MAX bytes" || consume_rc=1
+    if [ "$(wc -c < "$file" 2>/dev/null || echo 0)" -gt "$SQUAD_PF_EVENT_BYTES_MAX" ]; then
+      reject_event "$file" "$event_id" "event exceeds $SQUAD_PF_EVENT_BYTES_MAX bytes" || consume_rc=1
       continue
     fi
 
@@ -358,7 +358,7 @@ cmd_consume() {
 
     # The filename, the declared event_id, and the identity tuple must all agree.
     # A mismatch means the file was hand-edited or built by something other than
-    # fm-public-followup-emit.sh, so it is refused before tasks-axi sees it.
+    # sq-public-followup-emit.sh, so it is refused before tasks-axi sees it.
     if [ "$(pf_field "$payload" '.event_id')" != "$event_id" ]; then
       reject_event "$file" "$event_id" "declared event_id does not match the filename" || consume_rc=1
       continue
@@ -418,9 +418,9 @@ cmd_consume() {
     fi
   done
 
-  # A fresh event must be able to wake firstmate again, so drop the surfaced
+  # A fresh event must be able to wake Squad again, so drop the surfaced
   # signature once the inbox has been worked.
-  rm -f -- "$(fm_pf_root "$STATE")/$FM_PF_SURFACED_BASENAME" 2>/dev/null || true
+  rm -f -- "$(fm_pf_root "$STATE")/$SQUAD_PF_SURFACED_BASENAME" 2>/dev/null || true
   return "$consume_rc"
 }
 
@@ -445,11 +445,11 @@ cmd_pending() {
       ' >/dev/null 2>&1; then
     if fm_pf_has_registrations "$STATE"; then
       printf 'cannot read this home'\''s public commitments through tasks-axi; %s registration(s) are still recorded under state/%s/registry\n' \
-        "$(fm_pf_registry_ids "$STATE" | grep -c . || true)" "$FM_PF_DIRNAME"
+        "$(fm_pf_registry_ids "$STATE" | grep -c . || true)" "$SQUAD_PF_DIRNAME"
       printed=1
     fi
     if fm_pf_has_events "$STATE"; then
-      printf 'unconsumed terminal results are waiting; run %s/bin/fm-public-followup.sh consume\n' "$FM_ROOT"
+      printf 'unconsumed terminal results are waiting; run %s/bin/sq-public-followup.sh consume\n' "$SQUAD_ROOT"
       printed=1
     fi
     [ "$printed" -eq 1 ] || exit 0
@@ -495,7 +495,7 @@ EOF
   # Events that arrived while no agent was present are actionable on their own,
   # so surface them even when every registration currently looks settled.
   if fm_pf_has_events "$STATE"; then
-    printf 'unconsumed terminal results are waiting; run %s/bin/fm-public-followup.sh consume\n' "$FM_ROOT"
+    printf 'unconsumed terminal results are waiting; run %s/bin/sq-public-followup.sh consume\n' "$SQUAD_ROOT"
     printed=1
   fi
   [ "$printed" -eq 1 ] || exit 0
@@ -517,19 +517,19 @@ public_followup_registration_valid() {
   case "$generation" in ''|*[!0-9]*) return 1 ;; esac
 }
 
-public_followup_secondmate_home() {
+public_followup_XO_home() {
   local id=$1 meta home marker
-  fm_pf_home_id_valid "secondmate:$id" || return 1
+  fm_pf_home_id_valid "XO:$id" || return 1
   meta="$STATE/$id.meta"
   home=$(fmx_meta_get "$meta" home)
-  if [ -z "$home" ] && [ -f "$DATA/secondmates.md" ] && [ ! -L "$DATA/secondmates.md" ]; then
-    home=$(secondmate_registry_field "$DATA/secondmates.md" "$id" home || true)
+  if [ -z "$home" ] && [ -f "$DATA/XOs.md" ] && [ ! -L "$DATA/XOs.md" ]; then
+    home=$(XO_registry_field "$DATA/XOs.md" "$id" home || true)
   fi
   [ -n "$home" ] || return 1
   case "$home" in /*) ;; *) return 1 ;; esac
   home=$(CDPATH='' cd -- "$home" 2>/dev/null && pwd -P) || return 1
-  [ -f "$home/.fm-secondmate-home" ] && [ ! -L "$home/.fm-secondmate-home" ] || return 1
-  marker=$(sed -n '1p' "$home/.fm-secondmate-home" 2>/dev/null)
+  [ -f "$home/.sq-xo-home" ] && [ ! -L "$home/.sq-xo-home" ] || return 1
+  marker=$(sed -n '1p' "$home/.sq-xo-home" 2>/dev/null)
   [ "$marker" = "$id" ] || return 1
   printf '%s\n' "$home"
 }
@@ -542,17 +542,17 @@ clear_public_followup_link() {
   [ -n "$work_home" ] && [ -n "$work_id" ] || return 1
   case "$work_home" in
     main)
-      home=$FM_HOME
+      home=$SQUAD_HOME
       state=$STATE
       ;;
-    secondmate:*)
-      home=$(public_followup_secondmate_home "${work_home#secondmate:}") || return 1
+    XO:*)
+      home=$(public_followup_XO_home "${work_home#XO:}") || return 1
       state="$home/state"
       ;;
     *) return 1 ;;
   esac
-  FM_HOME="$home" FM_STATE_OVERRIDE="$state" FM_ROOT_OVERRIDE="$FM_ROOT" \
-    "$FM_ROOT/bin/fm-x-followup.sh" --clear "$work_id" >/dev/null
+  SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$state" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    "$SQUAD_ROOT/bin/sq-x-followup.sh" --clear "$work_id" >/dev/null
 }
 
 public_followup_legacy_link_status() {
@@ -575,8 +575,8 @@ public_followup_legacy_link_status() {
   while IFS=$'\t' read -r work_home work_id; do
     [ -n "$work_home" ] && [ -n "$work_id" ] || return 2
     case "$work_home" in
-      main) home=$FM_HOME ;;
-      secondmate:*) home=$(public_followup_secondmate_home "${work_home#secondmate:}") || return 2 ;;
+      main) home=$SQUAD_HOME ;;
+      XO:*) home=$(public_followup_XO_home "${work_home#XO:}") || return 2 ;;
       *) return 2 ;;
     esac
     meta="$home/state/$work_id.meta"
@@ -591,7 +591,7 @@ EOF
 
 record_error() {
   local id=$1 attempt=$2 state=$3 code=$4 next=$5 tmp rc
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-pf-error.XXXXXX") || return 1
+  tmp=$(mktemp "${TMPDIR:-/tmp}/sq-pf-error.XXXXXX") || return 1
   if [ -n "$next" ]; then
     jq -n --argjson a "$attempt" --arg s "$state" --arg c "$code" \
       --arg o "$(now_rfc3339)" --arg n "$next" \
@@ -608,7 +608,7 @@ record_error() {
 
 record_posted() {
   local id=$1 attempt=$2 request=$3 platform=$4 chunks=$5 tmp rc
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-pf-receipt.XXXXXX") || return 1
+  tmp=$(mktemp "${TMPDIR:-/tmp}/sq-pf-receipt.XXXXXX") || return 1
   jq -n --argjson a "$attempt" --arg r "$request" --arg p "$platform" \
     --argjson c "$chunks" --arg t "$(now_rfc3339)" \
     '{state:"posted", request_id:$r, platform:$p, attempt_count:$a,
@@ -632,8 +632,8 @@ cmd_deliver() {
   done
 
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  fm_pf_relay_active "$FM_HOME" \
-    || die "this home has not opted into the myfirstmate relay, so it cannot post a public reply" 1
+  fm_pf_relay_active "$SQUAD_HOME" \
+    || die "this home has not opted into the mySquad relay, so it cannot post a public reply" 1
   require_tools
 
   local payload delivery attempt request platform text tmp_text hash chunks rc receipt receipt_fields receipt_dry_run link_status
@@ -697,9 +697,9 @@ cmd_deliver() {
   fi
   [ -n "$text" ] || die "the reply text is empty" 2
 
-  tmp_text=$(mktemp "${TMPDIR:-/tmp}/fm-pf-text.XXXXXX") || die "could not stage the reply text" 1
+  tmp_text=$(mktemp "${TMPDIR:-/tmp}/sq-pf-text.XXXXXX") || die "could not stage the reply text" 1
   PF_TEMP_FILES+=("$tmp_text")
-  receipt=$(mktemp "${TMPDIR:-/tmp}/fm-pf-postreceipt.XXXXXX") || die "could not stage the post receipt" 1
+  receipt=$(mktemp "${TMPDIR:-/tmp}/sq-pf-postreceipt.XXXXXX") || die "could not stage the post receipt" 1
   PF_TEMP_FILES+=("$receipt")
   printf '%s' "$text" > "$tmp_text"
 
@@ -718,8 +718,8 @@ cmd_deliver() {
   esac
 
   rc=0
-  FMX_REPLY_PLATFORM="$platform" FM_HOME="$FM_HOME" \
-    "$FM_ROOT/bin/fm-x-reply.sh" "$request" --followup --receipt-file "$receipt" \
+  SQX_REPLY_PLATFORM="$platform" SQUAD_HOME="$SQUAD_HOME" \
+    "$SQUAD_ROOT/bin/sq-x-reply.sh" "$request" --followup --receipt-file "$receipt" \
     --text-file "$tmp_text" >/dev/null || rc=$?
 
   if [ "$rc" -eq 0 ]; then
@@ -758,7 +758,7 @@ EOF
     9)  if ! record_error "$id" "$attempt" expired-action-required followup_binding_exhausted ""; then
           die "the relay rejected '$id', and its expired state could not be recorded; the obligation remains mid-delivery and needs explicit reconciliation before retry" 1
         fi
-        die "the relay no longer accepts a follow-up for '$id' (window or cap exhausted); nothing was posted and this needs a captain decision" 1 ;;
+        die "the relay no longer accepts a follow-up for '$id' (window or cap exhausted); nothing was posted and this needs a commander decision" 1 ;;
     *)  if ! record_error "$id" "$attempt" retry-due relay_post_failed "$(next_attempt_rfc3339)"; then
           die "posting the public reply for '$id' failed, and its retryable state could not be recorded; the obligation remains mid-delivery and needs explicit reconciliation before retry" 1
         fi
@@ -784,7 +784,7 @@ cmd_record_posted() {
   case "$attempt" in ''|*[!0-9]*) die "--attempt <n> is required and must be an integer" ;; esac
   case "$chunks" in ''|*[!0-9]*) die "--chunks <n> is required and must be a positive integer" ;; esac
   [ "$chunks" -ge 1 ] 2>/dev/null || die "--chunks <n> is required and must be a positive integer"
-  fm_pf_relay_active "$FM_HOME" || die "the relay is not active for this home" 1
+  fm_pf_relay_active "$SQUAD_HOME" || die "the relay is not active for this home" 1
   public_followup_registration_valid "$id" \
     || die "public-followup registration for '$id' is missing or invalid; reconcile it before recording a receipt so any legacy X link can be cleared" 1
   require_tools
@@ -809,7 +809,7 @@ cmd_record_posted() {
 cmd_guard_work() {
   local work_home=${1:-} work_id=${2:-} bound id payload delivery task_state blocked=0
   [ -n "$work_home" ] && [ -n "$work_id" ] || { usage; exit 2; }
-  fm_pf_relay_active "$FM_HOME" || exit 0
+  fm_pf_relay_active "$SQUAD_HOME" || exit 0
   fm_pf_has_registrations "$STATE" || exit 0
 
   # Reading the registration records needs no tools, so establish whether this
@@ -861,7 +861,7 @@ cmd_retire() {
     shift || true
   done
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  fm_pf_relay_active "$FM_HOME" || exit 0
+  fm_pf_relay_active "$SQUAD_HOME" || exit 0
   require_tools
 
   payload=$(obligation_json "$id") || die "could not read the backlog through tasks-axi" 1

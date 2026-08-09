@@ -3,19 +3,19 @@
 #
 # ONE owner of the "which verified-harness process holds this home's session
 # lock, and does the current process descend from that same harness?" decision.
-# bin/fm-lock.sh uses it to acquire and inspect state/.lock;
-# bin/fm-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
+# bin/sq-lock.sh uses it to acquire and inspect state/.lock;
+# bin/sq-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
 # lock-owning primary session before it may arm or rewake.
 # This file is sourced by scripts and has no side effects on source.
 
 # Known harness command names; extend when a new adapter is verified.
-FM_HARNESS_RE='claude|codex|opencode|grok|kimi|^pi$|^pi-signed$'
+SQUAD_HARNESS_RE='claude|codex|opencode|grok|kimi|^pi$|^pi-signed$'
 
 # The same harnesses as exact executable names. Keep in sync with
-# FM_HARNESS_RE. Used only for the stricter path evidence below, where the
-# loose regex would also match ordinary firstmate paths such as
-# bin/fm-claude-stop-autoarm.sh.
-FM_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi)
+# SQUAD_HARNESS_RE. Used only for the stricter path evidence below, where the
+# loose regex would also match ordinary Squad paths such as
+# bin/sq-claude-stop-autoarm.sh.
+SQUAD_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi)
 
 # Print the exact harness name carried by executable path $1 - its own basename
 # or any directory component - or return 1.
@@ -24,12 +24,12 @@ FM_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi)
 # executable by its version (~/.local/share/claude/versions/2.1.220), so the
 # basename identifies nothing while the install path still says claude. Matching
 # whole path components only is what keeps that widening safe: an ordinary path
-# such as bin/fm-claude-stop-autoarm.sh or ~/.claude/hooks/notify.sh has no
+# such as bin/sq-claude-stop-autoarm.sh or ~/.claude/hooks/notify.sh has no
 # "claude" component and is correctly not a harness process.
 fm_harness_path_name() {  # <path>
   local path=$1 name
   [ -n "$path" ] || return 1
-  for name in "${FM_HARNESS_NAMES[@]}"; do
+  for name in "${SQUAD_HARNESS_NAMES[@]}"; do
     case "/$path/" in
       */"$name"/*) printf '%s' "$name"; return 0 ;;
     esac
@@ -38,35 +38,35 @@ fm_harness_path_name() {  # <path>
 }
 
 # True when the process described by command name $1 and full argument string $2
-# is a verified harness. Sets FM_HARNESS_IS_CLAUDE for the ancestry walk.
+# is a verified harness. Sets SQUAD_HARNESS_IS_CLAUDE for the ancestry walk.
 #
 # Evidence, in order:
-#   1. the basename of the reported command name, against FM_HARNESS_RE.
+#   1. the basename of the reported command name, against SQUAD_HARNESS_RE.
 #   2. an exact harness component in that command path or in argv[0]. Both are
 #      needed because the two platforms report different things: macOS reports
 #      argv[0] in `ps -o comm=`, while procps on Linux reports the kernel exec
 #      name and ignores argv[0] entirely, so a version-named Claude Code binary
 #      is identified by its install path on macOS and by argv[0] on Linux.
 #   3. a bare interpreter (node, python) running a harness script path.
-FM_HARNESS_IS_CLAUDE=0
+SQUAD_HARNESS_IS_CLAUDE=0
 fm_harness_process_matches() {  # <comm> <args>
   local comm=$1 args=$2 base argv0 name
-  FM_HARNESS_IS_CLAUDE=0
+  SQUAD_HARNESS_IS_CLAUDE=0
   base=$(basename -- "$comm")
-  if printf '%s' "$base" | grep -qE "$FM_HARNESS_RE"; then
-    case "$base" in *claude*) FM_HARNESS_IS_CLAUDE=1 ;; esac
+  if printf '%s' "$base" | grep -qE "$SQUAD_HARNESS_RE"; then
+    case "$base" in *claude*) SQUAD_HARNESS_IS_CLAUDE=1 ;; esac
     return 0
   fi
   argv0=${args%% *}
   if name=$(fm_harness_path_name "$comm") || name=$(fm_harness_path_name "$argv0"); then
-    case "$name" in claude) FM_HARNESS_IS_CLAUDE=1 ;; esac
+    case "$name" in claude) SQUAD_HARNESS_IS_CLAUDE=1 ;; esac
     return 0
   fi
   # Bare interpreter (e.g. node): match the harness name in its script path.
   case "$comm" in
     *node*|*python*)
-      if printf '%s' "$args" | grep -qE "$FM_HARNESS_RE"; then
-        case "$args" in *claude*) FM_HARNESS_IS_CLAUDE=1 ;; esac
+      if printf '%s' "$args" | grep -qE "$SQUAD_HARNESS_RE"; then
+        case "$args" in *claude*) SQUAD_HARNESS_IS_CLAUDE=1 ;; esac
         return 0
       fi
       ;;
@@ -100,7 +100,7 @@ fm_harness_ancestry_pids() {
     if fm_harness_process_matches "$comm" "$args"; then
       printf '%s\n' "$pid"
       printed=1
-      [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || break
+      [ "$SQUAD_HARNESS_IS_CLAUDE" -eq 1 ] || break
       extending=1
     elif [ "$extending" -eq 1 ]; then
       break
@@ -140,7 +140,7 @@ fm_harness_pid_alive() {
 
 # True when state dir $1 holds a session lock whose pid is ANY harness ancestor
 # of the current process: this script runs inside the session that owns the
-# home's fleet lock. Membership is the honest test of that question, because the
+# home's unit lock. Membership is the honest test of that question, because the
 # lock owner sits at an unknown depth in a contiguous Claude run - it is the
 # outermost pid when the hook fires inside the session's own nested worker chain,
 # and an inner pid when a harness-named daemon parents the session. A missing
