@@ -7,13 +7,19 @@
 | Milestone | Status | Notes |
 | --- | --- | --- |
 | M0 — Import & Scaffold | ✅ done (baseline documented; 9 env/decision-attributable failures, 0 source defects — see T-M0-05) | T-M0-01..05 all done |
-| M1 — Rebrand Sweep | ⬜ planned | |
+| M1 — Rebrand Sweep | ▶️ in progress | T-M1-01 done; T-M1-02 next (AGENTS.md sweep) |
 | M2 — Deps as Workspace Packages | ⬜ planned | |
 | M3 — Pi Adapters + pr-review | ⬜ planned | |
 | M4 — Publication & CI | ⬜ planned | |
 | M5 — goal-loop-audit + Roadmap note | ⬜ planned | |
 
 ## Task log
+
+### T-M1-01 — Mapping table frozen + guard skeleton ✅
+- design.md §2 rows 1–20 verified against AD-015: all 16 mappings (firstmate→Squad, tagline, captain→commander, first mate→sergeant at arms, crewmate→operator, fleet→unit, ship→strike, scout→recon, secondmate→XO, treehouse→FOB, watch→sentry, wake-queue→stand-to queue, /ahoy→/reporting, /bearings→/sitrep, /stow→/debrief, fm-→sq-, FM_*→SQUAD_*, read-only boundary→the perimeter) + 4 keep-rows (AGENTS.md, CLAUDE.md symlink, .tasks.toml/.no-mistakes.yaml, .claude/skills symlink) match exactly. Table frozen as single source of truth; no edits without a context.md AD update.
+- Drafted `tests/sq-rebrand-guard.test.sh` implementing all §8 guards: 5 content greps (firstmate tokens, upstream authors, \bfm-/\bfmx-, \bFM_, mapped-sense vocabulary patterns per §8.5 allowlist) + keep-list asserts (guard 6). Design choice: all guards accumulate violations and report the FULL hit list in one run (no premature exit), so the T-M1-12 gate shows everything remaining.
+- **Verificado:** `bash -n` clean; guard runs via `bin/fm-test-run.sh` — currently RED by design with exactly the 5 expected violation groups (guards 1–5) and keep-list (guard 6) already green. Exit 1 = correct pre-sweep state; green only at T-M1-12.
+- **Note:** adding this test grows the inventory to 133 sh tests; `--check-coverage` will report it as unpartitioned until T-M1-10 (runner/lane rebrand) — expected mid-sweep state.
 
 ### T-M0-01 — Repo init + gitignore ✅
 - `git init -b main` at `/home/rehem/Projects/squad/`; `.gitignore` copied from `/tmp/firstmate-ref/.gitignore`.
