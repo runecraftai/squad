@@ -28,7 +28,7 @@ That is deliberate: the host-agnostic property is a property of the stored recor
 GitLab runs mostly on self-hosted instances, so a merge request can live under any host.
 A GitLab project also sits under at least one group at no fixed depth, so no owner-and-repository pair can address one the way it can on GitHub.
 The stored record therefore carries `provider`, `url`, `host`, `path`, and `number`, and every consumer rebuilds the URL from those parts and refuses any record that does not reconstruct the stored URL exactly.
-`tests/fm-pr-check-security.test.sh` asserts that neither `bin/fm-pr-lib.sh` nor `bin/fm-pr-poll.sh` contains the string `gitlab.com` at all.
+`tests/sq-pr-check-security.test.sh` asserts that neither `bin/sq-pr-lib.sh` nor `bin/sq-pr-poll.sh` contains the string `gitlab.com` at all.
 
 ## How plain glab is invoked, and why
 
@@ -36,11 +36,11 @@ Two things about plain `glab` were established by running it, because assuming e
 
 First, plain `glab` has no field selector.
 `gh` reads one field with `--json state -q .state`; `glab mr view` offers only `-F, --output string  Format output as: text, json`.
-Its JSON would need a JSON processor, and `jq` is not one of firstmate's common tools, so the state is read from glab's own field output instead.
-Only an exact `merged` wakes firstmate, so a changed output format produces no wake rather than a false merge.
+Its JSON would need a JSON processor, and `jq` is not one of Squad's common tools, so the state is read from glab's own field output instead.
+Only an exact `merged` wakes Squad, so a changed output format produces no wake rather than a false merge.
 
 Second, `glab` cannot take a merge request URL the way `gh pr view` can.
-That form shells out to git for the current repository, and the watcher runs in no repository:
+That form shells out to git for the current repository, and the sentry runs in no repository:
 
 ```
 $ cd /tmp && glab mr view https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/1
@@ -74,11 +74,11 @@ open
 Three tasks were armed, two against the fixture and one against the placeholder host:
 
 ```
-$ fm-pr-check.sh e1 https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/1
+$ sq-pr-check.sh e1 https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/1
 armed: state/e1.check.sh
-$ fm-pr-check.sh e2 https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/2
+$ sq-pr-check.sh e2 https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/2
 armed: state/e2.check.sh
-$ fm-pr-check.sh e3 https://gitlab.example/group/subgroup/project/-/merge_requests/7
+$ sq-pr-check.sh e3 https://gitlab.example/group/subgroup/project/-/merge_requests/7
 armed: state/e3.check.sh
 ```
 
@@ -104,7 +104,7 @@ The provenance record for the non-default host, showing the bumped version tag:
 
 ```
 $ cat state/e3.pr-poll-registration
-fm-pr-poll-registration-v2
+sq-pr-poll-registration-v2
 e3
 gitlab
 https://gitlab.example/group/subgroup/project/-/merge_requests/7
@@ -117,19 +117,19 @@ group/subgroup/project
 70:957244
 ```
 
-Running each published poll the way the watcher does, where an empty result means the poll stayed silent and produced no wake:
+Running each published poll the way the sentry does, where an empty result means the poll stayed silent and produced no wake:
 
 ```
-$ fm-pr-poll.sh --validated $(tr '\n' ' ' < state/e1.pr-poll)
+$ sq-pr-poll.sh --validated $(tr '\n' ' ' < state/e1.pr-poll)
 merged
-$ fm-pr-poll.sh --validated $(tr '\n' ' ' < state/e2.pr-poll)
-$ fm-pr-poll.sh --validated $(tr '\n' ' ' < state/e3.pr-poll)
+$ sq-pr-poll.sh --validated $(tr '\n' ' ' < state/e2.pr-poll)
+$ sq-pr-poll.sh --validated $(tr '\n' ' ' < state/e3.pr-poll)
 ```
 
 The merged fixture merge request produces exactly one `merged` line.
 The open one produces nothing, and the unreachable placeholder host produces nothing rather than a false merge.
 
-The same bytes work in the watcher's sidecar-driven mode, where the published check locates its own record:
+The same bytes work in the sentry's sidecar-driven mode, where the published check locates its own record:
 
 ```
 $ state/e1x.check.sh
@@ -142,14 +142,14 @@ The poll is silent on every error by design, so a missing `glab` would otherwise
 With `glab` removed from `PATH`, the poll stays silent even for the merge request that is genuinely merged:
 
 ```
-$ PATH="$noglab" fm-pr-poll.sh --validated $(tr '\n' ' ' < state/e1.pr-poll)
-$ PATH="$noglab" fm-pr-poll.sh --validated $(tr '\n' ' ' < state/e3.pr-poll)
+$ PATH="$noglab" sq-pr-poll.sh --validated $(tr '\n' ' ' < state/e1.pr-poll)
+$ PATH="$noglab" sq-pr-poll.sh --validated $(tr '\n' ' ' < state/e3.pr-poll)
 ```
 
 Arming is the one point where that can be reported, so it refuses there instead of arming a watch that can never fire:
 
 ```
-$ PATH="$noglab" fm-pr-check.sh e5 https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/1
+$ PATH="$noglab" sq-pr-check.sh e5 https://gitlab.com/KarotKris/gitlab-merge-watch-fixture/-/merge_requests/1
 error: watching a GitLab merge request requires glab on PATH
 $ echo $?
 1
@@ -158,23 +158,23 @@ $ echo $?
 A GitHub task is unaffected by a missing `glab`:
 
 ```
-$ PATH="$noglab" fm-pr-check.sh e6 https://github.com/kunchenguid/firstmate/pull/750
+$ PATH="$noglab" sq-pr-check.sh e6 https://github.com/squad-org/squad/pull/750  # OQ-03 placeholder
 armed: state/e6.check.sh
 ```
 
 ## Upgrade path from an existing armed watch
 
-The stored record gained the provider tag, so its version moved to `fm-pr-poll-registration-v2` and a record written by the previous release no longer parses.
+The stored record gained the provider tag, so its version moved to `sq-pr-poll-registration-v2` and a record written by the previous release no longer parses.
 The existing non-executing migration handles that: it never runs the old artifact, and rebuilds the poll from the task's recorded pull request URL.
 Starting from a poll armed exactly as the previous release wrote it:
 
 ```
 $ head -1 state/t1.pr-poll-registration
-fm-pr-poll-registration-v1
-$ fm-pr-check-migrate.sh --checks-safe
+sq-pr-poll-registration-v1
+$ sq-pr-check-migrate.sh --checks-safe
 PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this home
 $ head -2 state/t1.pr-poll-registration
-fm-pr-poll-registration-v2
+sq-pr-poll-registration-v2
 t1
 $ cat state/.pr-check-migration.log
 task t1: migration outcome tracking started before legacy poll handling
@@ -184,7 +184,7 @@ task t1: canonical legacy poll rebuilt and armed
 The rebuilt poll works, verified against a pull request that is genuinely merged:
 
 ```
-$ fm-pr-poll.sh --validated $(tr '\n' ' ' < state/t1.pr-poll)
+$ sq-pr-poll.sh --validated $(tr '\n' ' ' < state/t1.pr-poll)
 merged
 ```
 
@@ -192,9 +192,9 @@ No armed watch is lost by upgrading.
 
 ## What this change does not cover
 
-`bin/fm-pr-merge.sh` still addresses GitHub only, by owner and repository.
+`bin/sq-pr-merge.sh` still addresses GitHub only, by owner and repository.
 It refuses a GitLab merge request URL rather than sending it to the wrong forge, so merging a merge request stays a deliberate manual step until merge parity lands separately.
 
 A GitLab task records no `pr_head=`.
-`gh` exposes the head commit as a selectable field, while plain `glab` exposes it only inside its JSON output, which would need a JSON processor firstmate does not require.
-Both consumers already treat it as optional: `bin/fm-teardown.sh` reads the head from the forge at teardown rather than from metadata and falls back to its provider-agnostic content check, and `bin/fm-review-diff.sh` resolves the head from the remote when none is recorded.
+`gh` exposes the head commit as a selectable field, while plain `glab` exposes it only inside its JSON output, which would need a JSON processor Squad does not require.
+Both consumers already treat it as optional: `bin/sq-teardown.sh` reads the head from the forge at teardown rather than from metadata and falls back to its provider-agnostic content check, and `bin/sq-review-diff.sh` resolves the head from the remote when none is recorded.

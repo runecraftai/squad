@@ -2,7 +2,7 @@
 
 Audience: maintainer verification.
 
-This record supports two active guarantees for promised public replies made through the myfirstmate relay:
+This record supports two active guarantees for promised public replies made through the mySquad relay:
 
 1. A promised final reply survives compaction and restart, reconciles from disk alone, and lands in the original thread exactly once.
 2. A home that never opted into the relay pays nothing for any of it.
@@ -12,13 +12,13 @@ Task chronology and delivery evidence stay outside this record.
 
 ## Environment
 
-Recorded 2026-07-30 on Darwin 25.5.0 (arm64) with GNU bash 5.3.9, tasks-axi 0.2.3, jq 1.8.1, and ShellCheck 0.11.0 (the version `bin/fm-lint.sh` pins).
+Recorded 2026-07-30 on Darwin 25.5.0 (arm64) with GNU bash 5.3.9, tasks-axi 0.2.3, jq 1.8.1, and ShellCheck 0.11.0 (the version `bin/sq-lint.sh` pins).
 The relay is a fakebin `curl` in every case, so no public post is ever made; `tasks-axi` and `jq` are the real tools, because stubbing the obligation state machine would verify nothing.
 
 ## Restart end-to-end and regressions
 
 ```sh
-bash tests/fm-public-followup.test.sh
+bash tests/sq-public-followup.test.sh
 ```
 
 ```
@@ -41,12 +41,12 @@ ok - typed public-followup records carry only public-safe summaries and delivera
 ```
 
 The first case is the end-to-end proof.
-It reproduces the stranded state first (work bound, no reconciled terminal result, delivery refused with "still waiting on its bound work" and zero posts), then has a secondmate-shaped child report a typed `pr-merged` result, deletes the drained inbox payload, reconciles from disk, and asserts exactly one `connector/followup` call carrying the original `request_id`, a validated `posted` receipt, and a Done obligation.
+It reproduces the stranded state first (work bound, no reconciled terminal result, delivery refused with "still waiting on its bound work" and zero posts), then has an XO-shaped child report a typed `pr-merged` result, deletes the drained inbox payload, reconciles from disk, and asserts exactly one `connector/followup` call carrying the original `request_id`, a validated `posted` receipt, and a Done obligation.
 
 The existing Relay suite is unchanged by this work:
 
 ```sh
-bash tests/fm-x-mode.test.sh | grep -c '^ok -'
+bash tests/sq-x-mode.test.sh | grep -c '^ok -'
 ```
 
 ```
@@ -55,13 +55,13 @@ bash tests/fm-x-mode.test.sh | grep -c '^ok -'
 
 ## Relay-disabled zero overhead
 
-The relay-disabled case in `tests/fm-public-followup.test.sh` invokes every public-followup entry point against a home with no `.env`, logs every `tasks-axi` invocation, and compares the state tree before and after.
+The relay-disabled case in `tests/sq-public-followup.test.sh` invokes every public-followup entry point against a home with no `.env`, logs every `tasks-axi` invocation, and compares the state tree before and after.
 It proves the feature makes no `tasks-axi` call, prints nothing, and creates no `state/public-followup` artifact without coupling that guarantee to session start's independently owned state files.
 
 The whole added cost in that home is the activation predicate, measured over 1000 in-process calls including loop overhead:
 
 ```sh
-. bin/fm-public-followup-lib.sh
+. bin/sq-public-followup-lib.sh
 for i in $(seq 1 1000); do fm_pf_relay_active "$HOME_DIR" || true; done
 ```
 
@@ -69,14 +69,14 @@ for i in $(seq 1 1000); do fm_pf_relay_active "$HOME_DIR" || true; done
 total_ns=69694000 per_call_us=69
 ```
 
-Roughly 0.07 ms per session start, from a single `[ -f "$FM_HOME/.env" ]` test that returns false before anything else runs.
+Roughly 0.07 ms per session start, from a single `[ -f "$SQUAD_HOME/.env" ]` test that returns false before anything else runs.
 
 ## Compatibility axes reviewed
 
 Primary harnesses (`claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`): not applicable after inspection.
 Nothing here reads or renders harness-specific state.
-The only supervision surfaces touched are the session-start digest, which `bin/fm-supervision-instructions.sh` already renders per harness without knowing this section exists, and the wake payload produced by the existing relay poll, which every harness protocol consumes identically.
+The only supervision surfaces touched are the session-start digest, which `bin/sq-supervision-instructions.sh` already renders per harness without knowing this section exists, and the wake payload produced by the existing relay poll, which every harness protocol consumes identically.
 
 Runtime backends (tmux, herdr, zellij, orca, cmux): not applicable after inspection.
 No command here reads `state/<id>.meta`'s backend fields, resolves an endpoint, or captures a pane.
-The one lifecycle integration is `bin/fm-teardown.sh`'s refusal, which runs before any backend command and keys only on the task id, so it behaves identically on every backend.
+The one lifecycle integration is `bin/sq-teardown.sh`'s refusal, which runs before any backend command and keys only on the task id, so it behaves identically on every backend.

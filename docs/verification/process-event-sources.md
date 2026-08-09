@@ -71,21 +71,21 @@ Never at-least-once, no-loss, or lossless.
 
 ## What the runner does prove
 
-Exercised by `tests/fm-procevent.test.sh` against a fake blocking source whose completion is a process event, not a timer; for the two supervision-delivery rows below, by `tests/fm-watch-triage.test.sh` driving a real `bin/fm-watch.sh` over a real capture; and for adapter-owned application, by `tests/fm-remote-reply.test.sh` driving the real remote-reply relay end to end in an isolated home:
+Exercised by `tests/sq-procevent.test.sh` against a fake blocking source whose completion is a process event, not a timer; for the two supervision-delivery rows below, by `tests/sq-sentry-triage.test.sh` driving a real `bin/sq-sentry.sh` over a real capture; and for adapter-owned application, by `tests/sq-remote-reply.test.sh` driving the real remote-reply relay end to end in an isolated home:
 
 | Guarantee | How it is proven |
 | --- | --- |
 | capture before publication | the captured result exists at `0600` and its event names its committed sequence only afterward |
-| proactive delivery of a captured result | a real capture into an isolated home queues its `check` record, and a healthy watcher with a fresh beacon then exits reporting that queued result as an actionable check, before any manual drain |
-| single delivery per source and sequence | after that first proactive wake, a still-unhandled result keeps being re-announced onto the durable queue but never wakes the watcher again; once existing records are drained and the result is acknowledged, it is neither re-announced nor reported |
+| proactive delivery of a captured result | a real capture into an isolated home queues its `check` record, and a healthy sentry with a fresh beacon then exits reporting that queued result as an actionable check, before any manual drain |
+| single delivery per source and sequence | after that first proactive wake, a still-unhandled result keeps being re-announced onto the durable queue but never wakes the sentry again; once existing records are drained and the result is acknowledged, it is neither re-announced nor reported |
 | proactive-delivery crash and drain boundaries | dotted and underscored source ids at the same sequence receive distinct markers; a concurrent drain cannot consume between queue revalidation and marker commit; failed output, failed marker commit, and a crash before marker commit leave replay available, while successful output still ends the actionable cycle and a crash after marker commit suppresses a duplicate |
 | adapter-owned terminal verdict | two fixture adapters - one that ends on any result, one with no terminal knowledge - decide the outcome alone: the first has its registration and claim retired automatically after one capture and is never restarted, the second stays armed |
-| adapter-owned application of a captured result | a remote-secondmate reply captured through the real relay in an isolated home reaches that secondmate's local status mirror, settles its correlated pending-reply expectation, re-arms the next cursor-anchored source, and is acknowledged, with no handler step; for an already-escalated request, that same path closes the exact decision so the open-decision fold clears and remains clear; a capture whose adapter application fails because local storage for a referenced remote document is obstructed is left unacknowledged and untouched, and the handler's own `handle` still applies it in full after storage recovers |
+| adapter-owned application of a captured result | a remote-XO reply captured through the real relay in an isolated home reaches that XO's local status mirror, settles its correlated pending-reply expectation, re-arms the next cursor-anchored source, and is acknowledged, with no handler step; for an already-escalated request, that same path closes the exact decision so the open-decision fold clears and remains clear; a capture whose adapter application fails because local storage for a referenced remote document is obstructed is left unacknowledged and untouched, and the handler's own `handle` still applies it in full after storage recovers |
 | terminal retirement preserves the result | the retired source's captured output, its announced event, its handled acknowledgement, and later explicit `retire` all still behave normally |
 | registration-generation retirement | an old terminal runner preserves a concurrently replaced registration and releases ownership so the replacement runs independently; injected registration-removal failure retains a terminal claim, performs no second poll, and completes idempotently once removal recovers |
 | one `Send & End`, one result | an armed Lavish source driven against a stand-in for the published poll, which delivers the final `session_ended` feedback once and empty ended sessions afterward, polls exactly once, captures exactly one result, publishes one distinct event, and retires itself |
 | bounded re-announcement until handled | a durably captured result with no handled acknowledgement is re-announced by `reconcile` with the same source and sequence on every call - not only the first restart after a crash - and a drained-but-unhandled wake resurfaces identically after a simulated replacement session |
-| handled acknowledgement | `fm-procevent.sh handled <source-id> <sequence>` atomically and idempotently records handling at mode `0600`, fails without leaving a marker when private-mode enforcement fails, reports the first call distinctly from every repeat, stops further re-announcement once recorded, and never authorizes a paired effect twice across repeat calls |
+| handled acknowledgement | `sq-procevent.sh handled <source-id> <sequence>` atomically and idempotently records handling at mode `0600`, fails without leaving a marker when private-mode enforcement fails, reports the first call distinctly from every repeat, stops further re-announcement once recorded, and never authorizes a paired effect twice across repeat calls |
 | publication-and-acknowledgement serialization | a concurrent `reconcile` cannot append a wake after `handled` wins the shared per-source boundary, so an acknowledged result is not re-announced by a publication race |
 | acknowledgement precondition | `handled` is refused, with no marker created, unless matching captured result and adapter records already exist, so a premature or mistyped acknowledgement cannot suppress a future result |
 | immutable adapter identity | a captured result retains its adapter after its mutable registration is removed |
@@ -103,12 +103,12 @@ Exercised by `tests/fm-procevent.test.sh` against a fake blocking source whose c
 | bounded home sweep | a non-mutating full-tree preflight precedes teardown, then registrations and claim-only owned sources retire through the ordinary safe path at each home-removal boundary |
 | sweep refusal | uncertain identity preserves the runner, claim, registration, home, lease, and parent retirement evidence for retry |
 | foreign ownership | sweeping one home removes its registration without signaling or releasing another home's live claim |
-| nested and force cleanup | normal, force, and nested secondmate removal invoke each target home's sweep at its final removal boundary, a failed removal restores and rearms registrations, and failed rearming at any nested level retains and reports its recovery backup with a distinct status |
+| nested and force cleanup | normal, force, and nested XO removal invoke each target home's sweep at its final removal boundary, a failed removal restores and rearms registrations, and failed rearming at any nested level retains and reports its recovery backup with a distinct status |
 | teardown refusal ordering | a later public-followup refusal retains the home and its active process-event registration without invoking its sweep |
 | healthy-home invariance | homes with no registration or owned runner claim retain ordinary registration-only supervision and teardown behavior |
 | source-only supervision | a registered source with no task metadata trips the shared predicate and general guard |
 | argv integrity | an argument containing spaces survives as one argument, a shell-looking argument is passed literally with no interpretation, and an unrepresentable newline is rejected at registration |
-| bounded output | output beyond `FM_PROCEVENT_MAX_OUTPUT_BYTES` is drained while only the bound is staged, then truncated and captured |
+| bounded output | output beyond `SQUAD_PROCEVENT_MAX_OUTPUT_BYTES` is drained while only the bound is staged, then truncated and captured |
 | silent failure handling | a nonzero exit with no output publishes nothing and leaves the source registered for retry |
 | inertness | a home with no registered source generates no state, starts no process, and does not need supervision |
 
@@ -127,7 +127,7 @@ A leader that died while its owned group kept running is not a stale generation,
 Signalling that group is safe precisely because only an absent leader reaches this state: a reused PID leaves the leader alive, which the identity comparison classifies as stale or uncertain, and no group signal follows.
 
 This was found by four orphaned runners, elapsed 6-13 minutes, left by a suite whose fixture source never completed.
-`tests/fm-procevent.test.sh` now covers both paths, and three consecutive suite runs leave zero runners, zero fixture children, and zero stray claims.
+`tests/sq-procevent.test.sh` now covers both paths, and three consecutive suite runs leave zero runners, zero fixture children, and zero stray claims.
 
 ## Portability finding
 
@@ -139,10 +139,10 @@ Without this launcher, reconcile would silently fail to start a runner on macOS 
 ## Scope
 
 The runner is domain-neutral and creates no endpoint, task metadata, or backlog item, so the supported primary harnesses and runtime backends are unaffected except through the `check` wake they already consume.
-Lavish is the first adapter; adding another requires only a new `bin/fm-procevent-<adapter>.sh`, whose `terminal` command is optional and defaults to keeping the source armed.
+Lavish is the first adapter; adding another requires only a new `bin/sq-procevent-<adapter>.sh`, whose `terminal` command is optional and defaults to keeping the source armed.
 Its `autohandle` command is optional in the same way and defaults to leaving the captured result unacknowledged, so it keeps being announced to a handler exactly as before.
 
 Proactive delivery is inside that same boundary.
-The watcher reports a queued process-event result through the one shared actionable-exit path (`wake` in `bin/fm-push-transition-lib.sh`) that every existing signal, stale, and check wake already uses, so it reads no pane, queries no backend, and names no harness.
+The sentry reports a queued process-event result through the one shared actionable-exit path (`wake` in `bin/sq-push-transition-lib.sh`) that every existing signal, stale, and check wake already uses, so it reads no pane, queries no backend, and names no harness.
 Both axes are therefore unaffected by construction rather than by assumption: every supported primary harness re-arms from that same exit, and every runtime backend supplies endpoint state only to the pane paths this change does not touch.
-While `state/.afk` exists the watcher stays one-shot as before, because this delivery ends the cycle exactly like the existing check path and leaves classification to the daemon.
+While `state/.afk` exists the sentry stays one-shot as before, because this delivery ends the cycle exactly like the existing check path and leaves classification to the daemon.

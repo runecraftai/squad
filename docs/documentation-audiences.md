@@ -1,7 +1,7 @@
 # Documentation audiences
 
 [`documentation-audiences.json`](documentation-audiences.json) is the machine-consumed classification owner for every maintained prose surface.
-`bin/fm-doc-audience-check.sh` validates exact inventory coverage, README setup routing, required owner pointers, and local link targets.
+`bin/sq-doc-audience-check.sh` validates exact inventory coverage, README setup routing, required owner pointers, and local link targets.
 Audience metadata is centralized there rather than copied into front matter on every page.
 
 The audience classes have one placement purpose each:
@@ -11,16 +11,16 @@ The audience classes have one placement purpose each:
 - `operator-example` is copyable current setup material.
 - `maintainer-architecture` explains stable ownership, extension points, mechanism boundaries, and safety rationale for contributors.
 - `maintainer-verification` records repeatable evidence for an active guarantee and may include dates, versions, exact commands, and exact output.
-- `agent-runtime` is loaded or rendered as an operating contract for Firstmate agents rather than read as product documentation.
+- `agent-runtime` is loaded or rendered as an operating contract for Squad agents rather than read as product documentation.
 
-The knowledge-placement policy is owned by [`firstmate-coding-guidelines`](../.agents/skills/firstmate-coding-guidelines/SKILL.md).
+The knowledge-placement policy is owned by [`squad-coding-guidelines`](../.agents/skills/squad-coding-guidelines/SKILL.md).
 Task-specific chronology, delivery transcripts, temporary paths, branches, failed hypotheses, and one-off process identifiers stay in private task reports or PR evidence by default.
 Before removing that evidence from a tracked page, distill every unique current fact into its classified owner and retain a focused regression pointer.
 
 Run the structural check directly with:
 
 ```sh
-bin/fm-doc-audience-check.sh
+bin/sq-doc-audience-check.sh
 ```
 
 The check intentionally does not lint dates, versions, commands, paths, incident language, or transcript-like prose.

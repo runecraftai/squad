@@ -1,5 +1,5 @@
 # config/wedge-alarm - active alert channels for the away-mode injection wedge
-# alarm (bin/fm-supervise-daemon.sh's inject_wedge_alarm). Copy this into a
+# alarm (bin/sq-supervise-daemon.sh's inject_wedge_alarm). Copy this into a
 # local, gitignored config/wedge-alarm and edit. One channel directive per
 # non-empty, non-comment line; every listed non-off channel fires, best-effort.
 #
@@ -19,4 +19,4 @@
 # Example: a macOS banner plus a push to a phone via ntfy.sh, so a wedge that
 # happens overnight reaches you even away from the machine.
 osascript
-command: curl -fsS -H "Title: firstmate wedge alarm" -d "$1" https://ntfy.sh/replace-with-your-topic
+command: curl -fsS -H "Title: Squad wedge alarm" -d "$1" https://ntfy.sh/replace-with-your-topic

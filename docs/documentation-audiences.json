@@ -31,11 +31,11 @@
     "docs/zellij-backend.md",
     "docs/orca-backend.md",
     "docs/cmux-backend.md",
-    "docs/remote-secondmates.md"
+    "docs/remote-XOs.md"
   ],
   "requiredOwnerPointers": [
     {
-      "source": ".agents/skills/firstmate-coding-guidelines/SKILL.md",
+      "source": ".agents/skills/squad-coding-guidelines/SKILL.md",
       "target": "docs/documentation-audiences.md"
     },
     {
@@ -71,7 +71,7 @@
       "target": "docs/verification/supervision.md"
     },
     {
-      "source": "docs/watcher-continuity.md",
+      "source": "docs/sentry-continuity.md",
       "target": "docs/verification/supervision.md"
     },
     {
@@ -113,19 +113,15 @@
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/ahoy/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
       "path": ".agents/skills/ask-user-authority/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/bearings/SKILL.md",
+      "path": ".agents/skills/bootstrap-diagnostics/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/bootstrap-diagnostics/SKILL.md",
+      "path": ".agents/skills/debrief/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -134,22 +130,6 @@
     },
     {
       "path": ".agents/skills/diagnostic-reasoning/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/firstmate-codexapp/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/firstmate-coding-guidelines/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/firstmate-orca/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/fmx-respond/SKILL.md",
       "audience": "agent-runtime"
     },
     {
@@ -169,20 +149,72 @@
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/secondmate-provisioning/SKILL.md",
+      "path": ".agents/skills/relay-respond/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/stow/SKILL.md",
+      "path": ".agents/skills/reporting/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/stuck-crewmate-recovery/SKILL.md",
+      "path": ".agents/skills/sitrep/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/updatefirstmate/SKILL.md",
+      "path": ".agents/skills/squad-codexapp/SKILL.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/squad-coding-guidelines/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/squad-orca/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/stuck-operator-recovery/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/updatesquad/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/xo-provisioning/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".specs/features/squad-inception/context.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-inception/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-inception/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-inception/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/handoff-m0.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/project/PROJECT.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/project/ROADMAP.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/project/STATE.md",
+      "audience": "maintainer-architecture"
     },
     {
       "path": "AGENTS.md",
@@ -249,15 +281,7 @@
       "audience": "operator-example"
     },
     {
-      "path": "docs/fm-test-isolation-proof.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/fm-test-portable-shards.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/gitlab-merge-watch.md",
+      "path": "docs/gitlab-merge-sentry.md",
       "audience": "maintainer-verification"
     },
     {
@@ -269,7 +293,7 @@
       "audience": "operator-current"
     },
     {
-      "path": "docs/remote-secondmates.md",
+      "path": "docs/remote-XOs.md",
       "audience": "operator-current"
     },
     {
@@ -277,8 +301,20 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/sentry-continuity.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/sessionstart-nudge.md",
       "audience": "operator-current"
+    },
+    {
+      "path": "docs/sq-test-isolation-proof.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/sq-test-portable-shards.md",
+      "audience": "maintainer-verification"
     },
     {
       "path": "docs/subagent-guard.md",
@@ -321,6 +357,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/verification/debrief-memory.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/dispatch-auth.md",
       "audience": "maintainer-verification"
     },
@@ -341,20 +381,12 @@
       "audience": "maintainer-verification"
     },
     {
-      "path": "docs/verification/stow-memory.md",
-      "audience": "maintainer-verification"
-    },
-    {
       "path": "docs/verification/supervision.md",
       "audience": "maintainer-verification"
     },
     {
       "path": "docs/verification/trace-context.md",
       "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/watcher-continuity.md",
-      "audience": "operator-current"
     },
     {
       "path": "docs/wedge-alarm.md",
@@ -365,7 +397,7 @@
       "audience": "operator-current"
     },
     {
-      "path": "skills/stow/SKILL.md",
+      "path": "skills/debrief/SKILL.md",
       "audience": "public-product"
     }
   ]

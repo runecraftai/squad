@@ -1,7 +1,7 @@
 # Zellij runtime backend
 
 Zellij is an experimental explicit-only session backend.
-It provides the terminal session while Treehouse continues to provide task worktrees.
+It provides the terminal session while FOB continues to provide task worktrees.
 [`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 
 ## Setup
@@ -14,12 +14,12 @@ Prerequisites:
 - `jq` for JSON responses.
 - The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
 
-Select it with local `config/backend` containing `zellij`, `FM_BACKEND=zellij` for one launch, or an explicit request to Firstmate.
+Select it with local `config/backend` containing `zellij`, `SQUAD_BACKEND=zellij` for one launch, or an explicit request to Squad.
 It is never auto-detected.
 A spawn stops before creating a session or acquiring a worktree when Zellij or `jq` is missing or Zellij is below 0.44.
 
-Firstmate uses one shared session named `firstmate` by default.
-`FM_ZELLIJ_SESSION` can select another name for isolated verification.
+Squad uses one shared session named `Squad` by default.
+`SQUAD_ZELLIJ_SESSION` can select another name for isolated verification.
 Attach with:
 
 ```sh
@@ -27,20 +27,20 @@ zellij attach <session-name>
 ```
 
 Routine supervision does not require attachment.
-Use `bin/fm-peek.sh <id>` and `FM_HOME=<home> bin/fm-send.sh <id> '<text>'` against the metadata-routed endpoint.
+Use `bin/sq-peek.sh <id>` and `SQUAD_HOME=<home> bin/sq-send.sh <id> '<text>'` against the metadata-routed endpoint.
 
 Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
 
 ## Task shape and home isolation
 
 Every task receives one tab in the shared Zellij session.
-The caller-facing label remains `fm-<id>`, while the visible title is home-scoped as `fm-<home-label>-<id>`.
-The home label is `firstmate` or `2ndmate-<id>` plus a short stable hash of the resolved Firstmate root.
-This prevents task-id collisions between a primary, secondmates, and separate Firstmate installations sharing one session.
+The caller-facing label remains `sq-<id>`, while the visible title is home-scoped as `sq-<home-label>-<id>`.
+The home label is `Squad` or `2ndmate-<id>` plus a short stable hash of the resolved Squad root.
+This prevents task-id collisions between a primary, XOs, and separate Squad installations sharing one session.
 
 Zellij does not enforce tab-name uniqueness, so the adapter performs its own duplicate check against the scoped title.
-Create, recover, list, and cleanup paths all use the same scoped title owner in `bin/fm-backend-hometag-lib.sh`.
-Moving a Firstmate installation changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
+Create, recover, list, and cleanup paths all use the same scoped title owner in `bin/sq-backend-hometag-lib.sh`.
+Moving a Squad installation changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
 
 A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old unscoped title.
 Multiple old tabs with the same title cause a refusal rather than a guess.
@@ -66,7 +66,7 @@ A pane can still disappear between verification and the operation; downstream su
 
 Every pane operation passes an explicit `--pane-id` because a new session can focus its release-notes plugin pane, whose numeric plugin id is in a separate namespace from terminal pane ids.
 
-`pane_cwd` follows a top-level shell `cd` but not the foreground subshell opened by `treehouse get`.
+`pane_cwd` follows a top-level shell `cd` but not the foreground subshell opened by `fob get`.
 Worktree discovery therefore sends begin and end markers around `pwd`, captures the marked block, and joins wrapped path lines.
 This active probe is scoped to spawn-time worktree discovery and is not advertised as a general live-cwd API.
 
@@ -85,7 +85,7 @@ A short viewport may expose fewer lines than requested.
 
 Closing a pane leaves an empty tab.
 Cleanup resolves and verifies the owning tab, then uses `close-tab-by-id` so both the task pane and tab disappear.
-Real test cleanup uses only an isolated non-`firstmate` session and the guard in `tests/zellij-test-safety.sh`; it never calls all-session deletion commands.
+Real test cleanup uses only an isolated non-`Squad` session and the guard in `tests/zellij-test-safety.sh`; it never calls all-session deletion commands.
 
 ## Active limits
 
@@ -93,7 +93,7 @@ Real test cleanup uses only an isolated non-`firstmate` session and the guard in
 - All homes share one session and tab bar; scoped titles prevent cross-home identity collisions but do not create per-home visual containers.
 - There is no native busy or push-event signal, so supervision uses capture/hash polling for screen changes and each harness adapter's semantic lifecycle for worker state.
   Grok alone retains its isolated rendered-tail fallback.
-- There is no verified agent-process liveness signal, so a dead Zellij secondmate is reported inconclusive rather than auto-respawned.
+- There is no verified agent-process liveness signal, so a dead Zellij XO is reported inconclusive rather than auto-respawned.
 - New-tab focus restoration has a narrow visible race.
 - CLI exit status is not meaningful; a target can still disappear after structural readiness checks.
 - Worktree cwd discovery requires the spawn-time marker probe.
@@ -102,8 +102,8 @@ Real test cleanup uses only an isolated non-`firstmate` session and the guard in
 ## Regression entry points
 
 ```sh
-tests/fm-backend-zellij.test.sh
-tests/fm-backend-zellij-smoke.test.sh
+tests/sq-backend-zellij.test.sh
+tests/sq-backend-zellij-smoke.test.sh
 ```
 
 The real smoke test uses a unique session and guarded deletion.
