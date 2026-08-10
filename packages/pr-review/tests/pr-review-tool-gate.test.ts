@@ -109,6 +109,33 @@ describe("review tool execution gate", () => {
 		}
 	});
 
+	test("pr_review_verify registers a single top-level object schema and enforces run's required fields at runtime", async () => {
+		const h = harness();
+		const tool = h.tools.get("pr_review_verify");
+		// A top-level Type.Union serializes without a top-level "type", which is the
+		// exact defect this schema fix addresses; asserting the real registered shape
+		// (not just the source text) fails again if the union regresses.
+		expect(tool.parameters.type).toBe("object");
+		expect(tool.parameters.additionalProperties).toBe(false);
+
+		h.coordinator.begin(
+			parsePublishMode("/pr-review 7"),
+			resolveAutoPostSetting({ autoPostReviews: false }),
+			"interactive",
+			h.ctx,
+		);
+		const result = await tool.execute(
+			"call-verify",
+			{ action: "run", pr_number: 7, head_sha: "a".repeat(40) },
+			undefined,
+			undefined,
+			h.ctx,
+		);
+		expect(result.isError).toBeTrue();
+		expect(result.details).toEqual({ authorized: false, reason: "missing_required_fields" });
+		expect(result.content[0].text).toContain("pr_review_verify action=run requires pr_number, head_sha, and baseline_name.");
+	});
+
 	test("the config command revokes authority even though extension commands bypass input events", async () => {
 		const h = harness();
 		h.coordinator.begin(
