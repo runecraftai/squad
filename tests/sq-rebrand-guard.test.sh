@@ -53,17 +53,23 @@ record_failure() {  # <label> <detail>
 # marker must stay paren-free for stock macOS Bash 3.2 parsing).
 guard_no_match() {
   local label=$1; shift
-  local pattern file
-  matches=$(tracked_files | while IFS= read -r file; do
+  local pattern file ci hits matches=""
+  # bash 3.2 (stock macOS) cannot parse `case` inside a $(...) substitution,
+  # so the case lives in the function body and only the grep runs in $().
+  while IFS= read -r file; do
     for pattern in "$@"; do
+      ci=0
       case "$pattern" in
-        ci:*) grep -I -i -H -n -E -e "${pattern#ci:}" -- "$ROOT/$file" 2>/dev/null |
-                sed "s|^$ROOT/||" ;;
-        *) grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null |
-             sed "s|^$ROOT/||" ;;
+        ci:*) ci=1; pattern=${pattern#ci:} ;;
       esac
+      if [ "$ci" -eq 1 ]; then
+        hits=$(grep -I -i -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null | sed "s|^$ROOT/||")
+      else
+        hits=$(grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null | sed "s|^$ROOT/||")
+      fi
+      [ -z "$hits" ] || matches="${matches}${matches:+$'\n'}${hits}"
     done
-  done)
+  done < <(tracked_files)
   if [ -n "$matches" ]; then
     record_failure "$label" "$matches"
   else
