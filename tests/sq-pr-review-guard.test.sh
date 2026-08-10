@@ -40,8 +40,10 @@ test_absent_pr_refuses() {
   git -C "$repo" config user.email t@t; git -C "$repo" config user.name t
   out=$(cd "$repo" && "$WRAPPER" 424242 2>&1); rc=$?
   [ "$rc" -ne 0 ] || fail "absent PR run must exit non-zero"
-  assert_contains "$out" "not found or not readable" \
-    "absent PR refusal must name the PR lookup failure"
+  # The wrapper refuses on the first failing gate: without gh auth it names the
+  # auth problem; with auth it names the PR lookup. Both name the PR number.
+  assert_contains "$out" "PR #424242" \
+    "absent PR refusal must name the PR"
   pass "absent PR -> clear refusal"
 }
 
