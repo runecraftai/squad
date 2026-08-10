@@ -1049,35 +1049,37 @@ function combineContexts(shared: string | undefined, specific: string | undefine
 
 const SelfReviewSubagentParams = Type.Object({}, { additionalProperties: false });
 
-const PrReviewVerifyParams = Type.Union([
-	Type.Object(
-		{
-			action: Type.Literal("list", {
-				description: "Discover applicable trusted user-level baseline profile names for the current repository.",
-			}),
-		},
-		{ additionalProperties: false },
-	),
-	Type.Object(
-		{
-			action: Type.Literal("run"),
-			pr_number: Type.Integer({
+// Single top-level object schema (no union): OpenAI-compatible providers reject a
+// top-level union because it serializes without "type": "object", which broke every
+// subagent spawn with "Invalid schema for function 'pr_review_verify'".
+// Per-action requiredness is enforced in execute instead of in the schema.
+const PrReviewVerifyParams = Type.Object(
+	{
+		action: Type.Union([Type.Literal("list"), Type.Literal("run")], {
+			description: "list discovers applicable trusted user-level baseline profile names for the current repository; run executes one by name against an exact PR head.",
+		}),
+		pr_number: Type.Optional(
+			Type.Integer({
 				minimum: 1,
-				description: "GitHub pull request number whose pull ref must be fetched.",
+				description: "GitHub pull request number whose pull ref must be fetched (required for action=run).",
 			}),
-			head_sha: Type.String({
+		),
+		head_sha: Type.Optional(
+			Type.String({
 				pattern: "^[0-9a-f]{40}$",
-				description: "Exact full lowercase headRefOid captured from current PR metadata.",
+				description: "Exact full lowercase headRefOid captured from current PR metadata (required for action=run).",
 			}),
-			baseline_name: Type.String({
+		),
+		baseline_name: Type.Optional(
+			Type.String({
 				pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
-				description: "Exact name returned by action=list. The command and timeout come only from user config.",
+				description: "Exact name returned by action=list (required for action=run). The command and timeout come only from user config.",
 			}),
-		},
-		// Explicitly reject legacy command/timeout override fields and all other extras.
-		{ additionalProperties: false },
-	),
-]);
+		),
+	},
+	// Explicitly reject legacy command/timeout override fields and all other extras.
+	{ additionalProperties: false },
+);
 
 const ReviewSubagentParams = Type.Object({
 	tier: StringEnum(["light", "medium", "heavy"] as const, {
@@ -1307,6 +1309,21 @@ export default function registerPrReviewSubagents(
 			const executionSignal = combineAbortSignals(signal, lease.signal);
 			const config = loadConfig(ctx);
 			if (!loopCoordinator.isLeaseActive(lease, ctx)) return reviewLoopDeniedResult("pr_review_verify");
+			if (
+				params.action === "run" &&
+				(params.pr_number === undefined || params.head_sha === undefined || params.baseline_name === undefined)
+			) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "pr_review_verify action=run requires pr_number, head_sha, and baseline_name.",
+						},
+					],
+					isError: true,
+					details: { authorized: false, reason: "missing_required_fields" },
+				};
+			}
 			if (params.action === "list") {
 				const discovery = await discoverVerificationBaselines(ctx.cwd, config.verificationBaselines, executionSignal, { startupPath: trustedStartupPath });
 				return {

@@ -145,8 +145,11 @@ describe("PR review prompt scheduling policy", () => {
 		const schema = extension.slice(start, end);
 		expect(schema).toContain('Type.Literal("list"');
 		expect(schema).toContain('Type.Literal("run")');
-		expect(schema).toContain("baseline_name: Type.String");
-		expect(schema.match(/additionalProperties: false/g)).toHaveLength(2);
+		expect(schema).toContain("baseline_name: Type.Optional");
+		// Single top-level Type.Object (no union): OpenAI-compatible providers
+		// reject a top-level union because it serializes without "type": "object".
+		expect(schema).toMatch(/const PrReviewVerifyParams = Type\.Object\(/);
+		expect(schema.match(/additionalProperties: false/g)).toHaveLength(1);
 		expect(schema).not.toContain("command: Type.String");
 		expect(schema).not.toContain("timeout_ms:");
 	});
