@@ -275,7 +275,7 @@ drill_effective_ci_step_status() {
 }
 
 # Root cause of the PR #252 incident (2026-07): for a repo where merge is left
-# to the commander, drill' ci step (and therefore top-level status/outcome)
+# to the commander, drill's ci step (and therefore top-level status/outcome)
 # stays "running" for the ENTIRE CI-monitor phase, including long after GitHub
 # reports every check green - it only reaches outcome=passed once the PR is
 # actually merged (or failed/cancelled if closed). `axi status`'s steps[] table

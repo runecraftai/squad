@@ -18,7 +18,7 @@ When any diagnostic needs commander attention, report the plain consequence and 
 
 - `MISSING: <tool> (install: <command>)` - list the missing tools to the commander with a one-line purpose each plus the printed install commands, wait for consent (one approval may cover the list), then run `bin/sq-bootstrap.sh install <approved tools...>`.
   For `fob`, this also covers an installed version whose `fob get` lacks `--lease`; treat it as an upgrade request.
-  For `drill`, this also covers an installed version older than 1.31.2, because operator validation briefs delegate gate mechanics to drill' version-matched guidance.
+  For `drill`, this also covers an installed version older than 1.31.2, because operator validation briefs delegate gate mechanics to drill's version-matched guidance.
   For any axi-family tool - `gh-axi`, `lavish-axi`, `tasks-axi`, `quota-axi` - an installed version below its floor is a plain upgrade request; [`bin/sq-bootstrap.sh`](../../../bin/sq-bootstrap.sh) owns the floor policy, and never argue the floor down to whatever the home happens to have installed.
   For `tasks-axi`, this additionally covers an installed build that fails the separate feature probe (`bin/sq-tasks-axi-lib.sh` owns the definition); `config/backlog-backend=manual` only suppresses the verbose `BOOTSTRAP_INFO: tasks-axi available` fact, not this missing-tool report.
   For `quota-axi`, bootstrap requires it because Squad reads its current output directly before resolving every crew-dispatch profile array; without it, report the missing requirement and do not choose around an unexamined candidate.

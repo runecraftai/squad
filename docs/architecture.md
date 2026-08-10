@@ -33,7 +33,7 @@ Because of that, a per-wake read of only the latest line can bury an earlier sti
 The explicit resolution is written by the actor that answers, not the busy worker: `sq-send`'s `--resolve-key` appends the closing `resolved` line to this home's own copy of the ledger at answer time, which covers operators, local XOs, and remote XOs identically because a remote mate's escalations reach that local copy through the parent-replies ingest and only the answer message itself crosses the transport.
 `bin/sq-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes a drill run, active or terminal, only when it matches the operator's branch and current code identity, then keeps that run-step authoritative even if the pane has closed.
 The script header owns the exact run-head ancestry rules.
-During drill' `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
+During drill's `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
 The most recent recognized ci log marker wins, so checks-green monitoring reports done while a later re-arm, failed-check, or issue marker returns the operator to working.
 Only when no matching run exists does it consult semantic busy state; exact busy reports working, exact idle permits fallback to a status-log event whose verb maps to a recognized run-state, and unknown or a dead pane stays unknown instead of trusting a stale log.
 Decision-only events such as `resolved` never become current state or leak their prose into the current-state detail.
@@ -154,7 +154,7 @@ Squad's own drill gate runs agents inside a checkout that also contains the unit
 The tracked `.drill.yaml` sets `disable_project_settings: true`; drill honors that setting only from the trusted default-branch copy, so a pushed branch cannot enable its own project instructions during validation.
 Independently, `sq-spawn.sh`, `sq-send.sh`, and `sq-teardown.sh` source `bin/sq-gate-refuse-lib.sh` and exit with status 3 before unit mutation when the gate environment marker is present or the current checkout matches the default drill gate-repository topology.
 A normal primary checkout or operator worktree has neither signal and remains unaffected.
-The helper's header owns the exact signal detection, relocated-home limitation, test-harness bypass, and relationship to drill' HEAD-continuity guard.
+The helper's header owns the exact signal detection, relocated-home limitation, test-harness bypass, and relationship to drill's HEAD-continuity guard.
 
 ## Two task shapes
 

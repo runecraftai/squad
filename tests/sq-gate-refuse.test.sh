@@ -46,7 +46,7 @@ PATH_MSG='drill gate worktree'
 # --- shared fixtures --------------------------------------------------------
 
 # make_gate_worktree <root> <home_dir> -> echoes a worktree whose git-common-dir is
-# <root>/<home_dir>/repos/<id>.git, reproducing drill' gate topology
+# <root>/<home_dir>/repos/<id>.git, reproducing drill's gate topology
 # (<home>/repos/<id>.git + <home>/worktrees/<id>/<run>). The <home_dir> is
 # .drill for the current binary and .no-mistakes for the legacy pre-rename
 # binary; both must refuse while the live install still writes the legacy root.
