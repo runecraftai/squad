@@ -98,3 +98,7 @@ squad/
 - **Git:** single squashed import, fresh repo, no history.
 - **Runecraft:** `@runecraft/pr-review` v1 (P1), `@runecraft/goal-loop-audit` v1.1 (P2); both wired via the Pi extension layer + bin scripts.
 - **Specs language:** English.
+
+## Decisions
+
+- **D-2026-08-10 — goal-loop-audit cut:** commander decision — `@runecraft/goal-loop-audit` (Runecraft v1.1; M5 pin 0.28.34) is removed from the distro "for now"; drill/no-mistakes and pr-review stay. `packages/goal-loop-audit/` and `.pi/extensions/sq-goal-loop-audit.ts` deleted; `docs/documentation-audiences.json` entries and `bun.lock` workspace refs removed. This supersedes the v1.1 goal-loop clauses above (G3, runtime-deps table, layout tree) — those remain as charter snapshot text (this spec was frozen at M0 planning; the M6 packages are likewise absent). Re-add path with full provenance (source URL, pin, extraction date) is recorded in ROADMAP.md (M5 section).
