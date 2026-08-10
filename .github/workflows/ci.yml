@@ -57,7 +57,7 @@ jobs:
           set -eu
           # npm install of the folder runs the prepack (tsc build), so the
           # pnpm deps must exist first; build is then a no-op cache hit.
-          (cd packages/tasks-axi && pnpm install --frozen-lockfile && pnpm run build)
+          (cd packages/tasks-axi && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
           npm install -g ./packages/tasks-axi
           # Backward-compat alias: the distro and its tests invoke the backlog
           # backend by the protocol name `tasks-axi`; the fork's own bin is
@@ -97,7 +97,7 @@ jobs:
           set -eu
           # npm install of the folder runs the prepack (tsc build), so the
           # pnpm deps must exist first; build is then a no-op cache hit.
-          (cd packages/tasks-axi && pnpm install --frozen-lockfile && pnpm run build)
+          (cd packages/tasks-axi && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
           npm install -g ./packages/tasks-axi
           # Backward-compat alias: the distro and its tests invoke the backlog
           # backend by the protocol name `tasks-axi`; the fork's own bin is
@@ -157,7 +157,7 @@ jobs:
       - name: Install tasks-axi for backlog-handoff delegation (forked sq-tasks-axi, M2)
         run: |
           set -eu
-          (cd packages/tasks-axi && pnpm install --frozen-lockfile && pnpm run build)
+          (cd packages/tasks-axi && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
           npm install -g ./packages/tasks-axi
           ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
           tasks-axi --version
