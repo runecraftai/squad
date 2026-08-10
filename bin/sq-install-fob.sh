@@ -9,14 +9,14 @@
 # Usage:
 #   sq-install-fob.sh <destination-directory>
 #
-# Pins FOB v2.0.1, the version exercised by the local real-Herdr suite.
+# Pins FOB v2.1.1 (fork version; release asset built by the Squad release pipeline).
 set -eu
 
-SQUAD_FOB_CI_VERSION=2.0.1
+SQUAD_FOB_CI_VERSION=2.1.1
 SQUAD_FOB_CI_TAG="v${SQUAD_FOB_CI_VERSION}"
 # Bounded download ceiling (bytes). Official 2.0.1 archives are under 8 MiB.
 SQUAD_FOB_CI_MAX_BYTES=15000000
-SQUAD_FOB_CI_REPO=runecraftai/squad  # OQ-03 placeholder: Squad org at publication (M4)
+SQUAD_FOB_CI_REPO=runecraftai/squad
 
 die() {
   printf 'sq-install-fob.sh: %s\n' "$*" >&2
@@ -30,7 +30,7 @@ arch=$(uname -m)
 case "${os}-${arch}" in
   Linux-x86_64)
     ARCHIVE=fob-v${SQUAD_FOB_CI_VERSION}-linux-amd64.tar.gz
-    SHA256=1d5a32751ab921670103fd201ddb2b91b47338cb13976f45642b827cf8976af2
+    SHA256=e05a35a7d23464508417237b48b6ebee019f1e68270c8f28ded41e3bfec15e56
     ;;
   Linux-aarch64|Linux-arm64)
     ARCHIVE=fob-v${SQUAD_FOB_CI_VERSION}-linux-arm64.tar.gz
