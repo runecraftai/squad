@@ -89,7 +89,17 @@ start_worker() {
     # shellcheck source=bin/sq-remote-job-lib.sh
     . "$ROOT/bin/sq-remote-job-lib.sh"
     fm_remote_job_start_linux_worker "$root" "$account_home" >&2 || exit 1
-    pgrep -f "^/bin/bash $root/bin/sq-remote-job-worker.sh\$" | head -n 1
+    # Backgrounding the worker returns before its nohup/env/bash exec chain is
+    # guaranteed to show up under pgrep; a single immediate check races that
+    # exec on a loaded runner, so poll instead of sampling once.
+    found=''
+    deadline=$(( $(date +%s) + 20 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      found=$(pgrep -f "^/bin/bash $root/bin/sq-remote-job-worker.sh\$" | head -n 1)
+      [ -n "$found" ] && break
+      sleep 0.1
+    done
+    printf '%s\n' "$found"
   ) || return 1
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
   printf '%s\n' "$pid"
