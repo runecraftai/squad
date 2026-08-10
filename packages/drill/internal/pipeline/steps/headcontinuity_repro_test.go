@@ -1,0 +1,393 @@
+package steps
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/runecraftai/squad/packages/drill/internal/config"
+	"github.com/runecraftai/squad/packages/drill/internal/git"
+	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
+	"github.com/runecraftai/squad/packages/drill/internal/types"
+)
+
+// These tests are the regression for incident run 01KXC3SD5NZYMERGDS68Z1C8ER:
+// the review step committed a CORRECT fix (reviewed head R = incident 04b5f5d),
+// a concurrent process (a sibling worktree sharing the bare repo) then reset the
+// worktree HEAD to a divergent commit D that lacked the fix (incident a876550),
+// and the pipeline's next commit (document) built on D and shipped it. R was not
+// even an ancestor of what shipped.
+//
+// commitAgentFixes must refuse to commit whenever the worktree HEAD is no longer
+// a descendant of the head the pipeline itself recorded, so the reviewed change
+// cannot be silently lost - while still allowing a legitimate forward agent
+// commit (e.g. git rebase --continue).
+
+// TestCommitAgentFixes_RefusesToCommitOnOutOfBandResetHead reproduces the
+// incident shape: a concurrent / divergent-sibling reset. It also proves the
+// anchor integrity requirement - sctx.Run.HeadSHA at the commit point is the
+// reviewed head and is NOT corrupted by the out-of-band reset.
+func TestCommitAgentFixes_RefusesToCommitOnOutOfBandResetHead(t *testing.T) {
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Fixing = true
+
+	guard := filepath.Join(dir, "guard.sh")
+
+	// 1) Review-fix applies the CORRECT change; the pipeline commits it (04b5f5d).
+	if err := os.WriteFile(guard, []byte("FORCE_INCLUDE marker-inversion\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitAgentFixes(sctx, types.StepReview, "guard linked XO homes correctly", "address review findings"); err != nil {
+		t.Fatalf("review-fix commit: %v", err)
+	}
+	reviewedHead := sctx.Run.HeadSHA
+	if reviewedHead == headSHA {
+		t.Fatal("review-fix did not advance head")
+	}
+
+	// 2) Out-of-band clobber: a concurrent sibling worktree resets HEAD to a
+	//    DIVERGENT commit built from base that does not contain the fix (a876550).
+	gitCmd(t, dir, "checkout", "--detach", baseSHA)
+	if err := os.WriteFile(guard, []byte("REMOVE_ONLY\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "operators minimal r2")
+	clobber := gitCmd(t, dir, "rev-parse", "HEAD")
+
+	// Anchor integrity (commander requirement b): the recorded reviewed head is NOT
+	// overwritten by the out-of-band worktree reset - it still names 04b5f5d while
+	// the worktree HEAD now names the clobber.
+	if sctx.Run.HeadSHA != reviewedHead {
+		t.Fatalf("anchor corrupted: recorded head %s != reviewed head %s after clobber", sctx.Run.HeadSHA, reviewedHead)
+	}
+	if clobber == reviewedHead {
+		t.Fatal("test setup: clobber must differ from reviewed head")
+	}
+
+	// 3) Document step edits docs and tries to commit. It MUST refuse loudly.
+	if err := os.WriteFile(filepath.Join(dir, "docs.md"), []byte("corrected docs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := commitAgentFixes(sctx, types.StepDocument, "correct XO guard documentation", "update docs")
+	if err == nil {
+		t.Fatal("expected commitAgentFixes to refuse committing on an out-of-band-reset HEAD, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a descendant") {
+		t.Fatalf("expected a head-divergence error, got: %v", err)
+	}
+
+	// Nothing shipped: the worktree HEAD is still the clobber (no doc commit was
+	// layered on), and the recorded head is unchanged (reviewed fix preserved).
+	if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != clobber {
+		t.Fatalf("guard must not have committed: HEAD moved from %s to %s", clobber, got)
+	}
+	if sctx.Run.HeadSHA != reviewedHead {
+		t.Fatalf("recorded head changed to %s; reviewed head %s must be preserved on refusal", sctx.Run.HeadSHA, reviewedHead)
+	}
+	t.Logf("guard refused divergent clobber: reviewed fix at %s protected", reviewedHead[:8])
+}
+
+// TestCommitAgentFixes_RefusesOnBackwardReset covers the other out-of-band shape
+// (commander requirement d): a reset BACKWARD to an ancestor of the reviewed head.
+// The recorded head is a descendant of the live HEAD, not an ancestor, so the
+// guard must still refuse - a backward reset would also silently drop the fix.
+func TestCommitAgentFixes_RefusesOnBackwardReset(t *testing.T) {
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Fixing = true
+
+	if err := os.WriteFile(filepath.Join(dir, "guard.sh"), []byte("FORCE_INCLUDE\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitAgentFixes(sctx, types.StepReview, "apply fix", "fallback"); err != nil {
+		t.Fatalf("review-fix commit: %v", err)
+	}
+	reviewedHead := sctx.Run.HeadSHA
+
+	// Out-of-band backward reset to base (an ancestor of the reviewed head).
+	gitCmd(t, dir, "reset", "--hard", baseSHA)
+
+	if err := os.WriteFile(filepath.Join(dir, "docs.md"), []byte("docs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := commitAgentFixes(sctx, types.StepDocument, "docs", "fallback")
+	if err == nil {
+		t.Fatal("expected refusal on a backward-reset HEAD, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a descendant") {
+		t.Fatalf("expected a head-divergence error, got: %v", err)
+	}
+	if sctx.Run.HeadSHA != reviewedHead {
+		t.Fatalf("recorded head must be preserved on refusal, got %s", sctx.Run.HeadSHA)
+	}
+}
+
+func TestCommitAgentFixes_RefusesResetDuringCommit(t *testing.T) {
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Fixing = true
+
+	gitDir := gitCmd(t, dir, "rev-parse", "--git-dir")
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	hook := filepath.Join(gitDir, "hooks", "post-commit")
+	hookBody := "#!/bin/sh\ngit reset --hard " + baseSHA + "\n"
+	if err := os.WriteFile(hook, []byte(hookBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("reviewed fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := commitAgentFixes(sctx, types.StepDocument, "update docs", "fallback")
+	if err == nil {
+		t.Fatal("expected refusal when HEAD is reset during commit")
+	}
+	if !strings.Contains(err.Error(), "not a descendant") {
+		t.Fatalf("expected a head-divergence error, got: %v", err)
+	}
+	if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != baseSHA {
+		t.Fatalf("expected hook to reset HEAD to %s, got %s", baseSHA, got)
+	}
+	if sctx.Run.HeadSHA != headSHA {
+		t.Fatalf("recorded head changed to %s; expected %s", sctx.Run.HeadSHA, headSHA)
+	}
+}
+
+// TestCommitAgentFixes_AllowsForwardAgentCommit confirms the guard does not
+// false-positive when an agent legitimately advances HEAD forward (e.g. a
+// `git rebase --continue` during conflict resolution) before the pipeline
+// commits its own fixes: the recorded head stays an ancestor, so committing is
+// allowed.
+func TestCommitAgentFixes_AllowsForwardAgentCommit(t *testing.T) {
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Fixing = true
+
+	// Agent makes its own forward commit (descendant of the recorded head).
+	if err := os.WriteFile(filepath.Join(dir, "agent.txt"), []byte("agent commit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "agent forward commit")
+	forward := gitCmd(t, dir, "rev-parse", "HEAD")
+
+	// Pipeline then commits its own working-tree edits on top - must succeed.
+	if err := os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("pipeline fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitAgentFixes(sctx, types.StepReview, "apply fix", "fallback"); err != nil {
+		t.Fatalf("forward agent commit should be allowed, got: %v", err)
+	}
+	if _, err := git.Run(sctx.Ctx, dir, "merge-base", "--is-ancestor", forward, sctx.Run.HeadSHA); err != nil {
+		t.Fatalf("expected forward commit %s to be an ancestor of new head %s", forward, sctx.Run.HeadSHA)
+	}
+}
+
+func TestPostReviewStepsRefuseHeadClobberAtEntry(t *testing.T) {
+	postReviewSteps := []pipeline.Step{
+		&TestStep{},
+		&DocumentStep{},
+		&LintStep{},
+		&PushStep{},
+		&PRStep{},
+		&CIStep{},
+	}
+	allSteps := types.AllSteps()
+	if len(postReviewSteps) != len(allSteps)-types.StepReview.Order() {
+		t.Fatalf("covered post-review steps = %d, want %d from fixed pipeline order", len(postReviewSteps), len(allSteps)-types.StepReview.Order())
+	}
+	for i, step := range postReviewSteps {
+		want := allSteps[types.StepReview.Order()+i]
+		if step.Name() != want {
+			t.Fatalf("covered post-review step %d = %s, want %s from fixed pipeline order", i, step.Name(), want)
+		}
+	}
+
+	resetHeads := []struct {
+		name string
+		move func(t *testing.T, dir, baseSHA string) string
+	}{
+		{
+			name: "backward_reset",
+			move: func(t *testing.T, dir, baseSHA string) string {
+				gitCmd(t, dir, "reset", "--hard", baseSHA)
+				return baseSHA
+			},
+		},
+		{
+			name: "sibling_reset",
+			move: func(t *testing.T, dir, baseSHA string) string {
+				gitCmd(t, dir, "reset", "--hard", baseSHA)
+				if err := os.WriteFile(filepath.Join(dir, "sibling.txt"), []byte("out-of-band sibling\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				gitCmd(t, dir, "add", "-A")
+				gitCmd(t, dir, "commit", "-m", "out-of-band sibling")
+				return gitCmd(t, dir, "rev-parse", "HEAD")
+			},
+		},
+	}
+
+	for _, step := range postReviewSteps {
+		for _, reset := range resetHeads {
+			t.Run(string(step.Name())+"/"+reset.name, func(t *testing.T) {
+				dir, baseSHA, reviewedHead := setupGitRepo(t)
+				ag := &mockAgent{name: "codex"}
+				sctx := newTestContext(t, ag, dir, baseSHA, reviewedHead, config.Commands{})
+				clobberedHead := reset.move(t, dir, baseSHA)
+
+				_, err := step.Execute(sctx)
+				if err == nil || !strings.Contains(err.Error(), "not a descendant") {
+					t.Fatalf("%s must reject %s at entry, got %v", step.Name(), reset.name, err)
+				}
+				if len(ag.calls) != 0 {
+					t.Fatalf("%s invoked an agent before rejecting %s", step.Name(), reset.name)
+				}
+				if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != clobberedHead {
+					t.Fatalf("%s performed work before rejecting %s: HEAD moved from %s to %s", step.Name(), reset.name, clobberedHead, got)
+				}
+				if sctx.Run.HeadSHA != reviewedHead {
+					t.Fatalf("%s changed recorded reviewed head before rejecting %s: got %s, want %s", step.Name(), reset.name, sctx.Run.HeadSHA, reviewedHead)
+				}
+				t.Logf("%s refused %s before agent, HEAD, or recorded-head mutation: %v", step.Name(), reset.name, err)
+			})
+		}
+	}
+}
+
+func TestPostReviewStepsRefuseUnverifiableRecordedHeadAtEntry(t *testing.T) {
+	postReviewSteps := []pipeline.Step{
+		&TestStep{},
+		&DocumentStep{},
+		&LintStep{},
+		&PushStep{},
+		&PRStep{},
+		&CIStep{},
+	}
+
+	for _, step := range postReviewSteps {
+		t.Run(string(step.Name()), func(t *testing.T) {
+			dir, baseSHA, currentHead := setupGitRepo(t)
+			ag := &mockAgent{name: "codex"}
+			sctx := newTestContext(t, ag, dir, baseSHA, strings.Repeat("f", 40), config.Commands{})
+
+			_, err := step.Execute(sctx)
+			if err == nil || !strings.Contains(err.Error(), "not a descendant") {
+				t.Fatalf("%s must reject an unverifiable recorded head at entry, got %v", step.Name(), err)
+			}
+			if len(ag.calls) != 0 {
+				t.Fatalf("%s invoked an agent before rejecting an unverifiable recorded head", step.Name())
+			}
+			if got := gitCmd(t, dir, "rev-parse", "HEAD"); got != currentHead {
+				t.Fatalf("%s performed work before rejecting an unverifiable recorded head: HEAD moved from %s to %s", step.Name(), currentHead, got)
+			}
+			if sctx.Run.HeadSHA != strings.Repeat("f", 40) {
+				t.Fatalf("%s changed the unverifiable recorded head on refusal: got %s", step.Name(), sctx.Run.HeadSHA)
+			}
+			t.Logf("%s failed closed before agent or HEAD mutation: %v", step.Name(), err)
+		})
+	}
+}
+
+func TestCIGateReconciliationRefusesHeadClobberAtEntry(t *testing.T) {
+	dir, baseSHA, reviewedHead := setupGitRepo(t)
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, reviewedHead, config.Commands{})
+	gitCmd(t, dir, "reset", "--hard", baseSHA)
+
+	reconciled, err := (&CIStep{}).ReconcileApprovalGate(sctx)
+	if err == nil || !strings.Contains(err.Error(), "not a descendant") {
+		t.Fatalf("CI gate reconciliation must reject a backward reset at entry, got reconciled=%v err=%v", reconciled, err)
+	}
+	if !errors.Is(err, pipeline.ErrFatalGateReconciliation) {
+		t.Fatalf("CI gate reconciliation error = %v, want fatal classification", err)
+	}
+	if reconciled {
+		t.Fatal("CI gate reconciliation reported success after a backward reset")
+	}
+	if sctx.Run.HeadSHA != reviewedHead {
+		t.Fatalf("CI gate reconciliation changed recorded reviewed head: got %s, want %s", sctx.Run.HeadSHA, reviewedHead)
+	}
+}
+
+func TestPostReviewStepEntryAllowsEqualAndPipelineDescendantHeads(t *testing.T) {
+	dir, baseSHA, recordedHead := setupGitRepo(t)
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, recordedHead, config.Commands{})
+	postReviewSteps := []types.StepName{
+		types.StepTest,
+		types.StepDocument,
+		types.StepLint,
+		types.StepPush,
+		types.StepPR,
+		types.StepCI,
+	}
+
+	for _, stepName := range postReviewSteps {
+		if err := assertPipelineHeadContinuity(sctx, stepName); err != nil {
+			t.Fatalf("%s rejected equal HEAD: %v", stepName, err)
+		}
+		t.Logf("%s allowed HEAD equal to recorded head %s", stepName, recordedHead)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "pipeline-descendant.txt"), []byte("pipeline work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "pipeline descendant")
+	for _, stepName := range postReviewSteps {
+		if err := assertPipelineHeadContinuity(sctx, stepName); err != nil {
+			t.Fatalf("%s rejected pipeline-descendant HEAD: %v", stepName, err)
+		}
+		t.Logf("%s allowed descendant HEAD while preserving recorded ancestor %s", stepName, recordedHead)
+	}
+}
+
+// TestAssertPipelineHeadContinuity_AnchorIsRecordedReviewedHead directly
+// exercises the guard (commander requirement b): it anchors on the recorded
+// reviewed head (sctx.Run.HeadSHA), NOT on the mutable worktree, and an
+// out-of-band reset leaves that anchor intact so the guard still fires.
+func TestAssertPipelineHeadContinuity_AnchorIsRecordedReviewedHead(t *testing.T) {
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+
+	sctx := newTestContext(t, &mockAgent{name: "codex"}, dir, baseSHA, headSHA, config.Commands{})
+
+	// Record a reviewed head, then clobber the worktree out from under it.
+	sctx.Run.HeadSHA = headSHA
+	gitCmd(t, dir, "checkout", "--detach", baseSHA)
+	if err := os.WriteFile(filepath.Join(dir, "x.txt"), []byte("divergent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "divergent")
+
+	// The recorded anchor is untouched by the worktree reset.
+	if sctx.Run.HeadSHA != headSHA {
+		t.Fatalf("anchor must be the recorded reviewed head %s, got %s", headSHA, sctx.Run.HeadSHA)
+	}
+	// The guard, comparing the recorded anchor against the live (clobbered) HEAD,
+	// refuses.
+	if err := assertPipelineHeadContinuity(sctx, types.StepDocument); err == nil {
+		t.Fatal("expected guard to refuse when live HEAD diverged from the recorded head")
+	}
+
+	// Restoring the worktree to the recorded head makes the guard pass again,
+	// proving it is anchored on that exact recorded SHA.
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+	if err := assertPipelineHeadContinuity(sctx, types.StepDocument); err != nil {
+		t.Fatalf("guard should pass when HEAD equals the recorded head, got %v", err)
+	}
+}

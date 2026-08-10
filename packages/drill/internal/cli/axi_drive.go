@@ -1,0 +1,1195 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	toon "github.com/toon-format/toon-go"
+
+	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
+	"github.com/runecraftai/squad/packages/drill/internal/cimonitor"
+	"github.com/runecraftai/squad/packages/drill/internal/daemon"
+	"github.com/runecraftai/squad/packages/drill/internal/db"
+	"github.com/runecraftai/squad/packages/drill/internal/gate"
+	"github.com/runecraftai/squad/packages/drill/internal/git"
+	"github.com/runecraftai/squad/packages/drill/internal/ipc"
+	"github.com/runecraftai/squad/packages/drill/internal/paths"
+	"github.com/runecraftai/squad/packages/drill/internal/telemetry"
+	"github.com/runecraftai/squad/packages/drill/internal/types"
+	"github.com/spf13/cobra"
+)
+
+// triggerWaitTimeout bounds how long we wait for the daemon to register a run
+// after pushing to the gate before falling back to a rerun.
+const triggerWaitTimeout = 5 * time.Second
+
+// abortStateWaitTimeout bounds the post-cancel wait for the executor to
+// persist its terminal state before AXI renders refreshed custody guidance.
+// It is a variable only so regression tests can shorten the bounded wait;
+// production always uses the default.
+var abortStateWaitTimeout = 10 * time.Second
+
+// terminalStatus reports whether a run has reached a final state.
+func terminalStatus(status string) bool {
+	switch types.RunStatus(status) {
+	case types.RunCompleted, types.RunFailed, types.RunCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// outcomeFor maps a terminal run status onto an agent-facing outcome word.
+func outcomeFor(status string) string {
+	switch types.RunStatus(status) {
+	case types.RunCompleted:
+		return "passed"
+	case types.RunFailed:
+		return "failed"
+	case types.RunCancelled:
+		return "cancelled"
+	default:
+		return status
+	}
+}
+
+func newAxiRunCmd() *cobra.Command {
+	var autoYes bool
+	var skipValue string
+	var intent string
+
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Validate your code changes, blocking until a decision point or the outcome",
+		Long: "Triggers a pipeline run for the current branch and drives it. Without\n" +
+			"--yes it blocks until the first approval gate, CI-ready point, or final outcome and\n" +
+			"prints it. With --yes it auto-resolves every gate (fixing actionable\n" +
+			"findings - including ask-user findings, with no escalation - then\n" +
+			"accepting the result) until a decision point or outcome.\n\n" +
+			"--intent is required when starting a new run: pass what the user set out\n" +
+			"to accomplish (the goal behind the change, not a description of the diff)\n" +
+			"so drill uses it directly instead of inferring it from transcripts.\n\n" +
+			"The calling agent drives AXI approval gates but does not become the pipeline\n" +
+			"agent. The daemon requires a supported native agent binary, the `agent: cursor`\n" +
+			"ACP alias, or an explicit `acp:<target>` through `acpx`, and fails before the\n" +
+			"first step when none can run.\n\n" +
+			preserveGateFixCommitsGuidance,
+		Args:          cobra.NoArgs,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return trackAxiSurface("axi-run", "/axi/run", telemetry.Fields{
+				"auto_yes":   autoYes,
+				"has_intent": strings.TrimSpace(intent) != "",
+				"has_skip":   strings.TrimSpace(skipValue) != "",
+			}, func() error {
+				skipSteps, err := parseSkipSteps(skipValue)
+				if err != nil {
+					return emitError(cmd, 2, err.Error(),
+						"Valid steps: intent, rebase, review, test, document, lint, push, pr, ci")
+				}
+				return runAxiRun(cmd, autoYes, skipSteps, intent)
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "auto-resolve every gate (fix findings, then accept) until a decision point or outcome")
+	cmd.Flags().StringVar(&skipValue, "skip", "", "comma-separated pipeline steps to skip")
+	cmd.Flags().StringVar(&intent, "intent", "", "what the user set out to accomplish (not a description of the diff); used instead of inferring from transcripts (required to start a run)")
+	return cmd
+}
+
+func runAxiRun(cmd *cobra.Command, autoYes bool, skipSteps []types.StepName, intent string) error {
+	ctx := cmd.Context()
+	env, err := openAxiRunEnv()
+	if err != nil {
+		return emitError(cmd, 1, err.Error(), repoInitHelp(err)...)
+	}
+	defer env.close()
+
+	branch, err := git.CurrentBranch(ctx, ".")
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("get current branch: %v", err))
+	}
+	if branch == "HEAD" {
+		return emitError(cmd, 1, "detached HEAD: check out a branch before validating",
+			"Run `git switch -c <branch>` to put your commits on a branch")
+	}
+
+	headSHA, err := git.Run(ctx, ".", "rev-parse", "HEAD")
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("get current HEAD: %v", err))
+	}
+
+	runID := activeRunID(env, branch, headSHA)
+	if runID == "" {
+		if err := configErrorForFreshAxiRun(env, runID); err != nil {
+			return emitError(cmd, 1, err.Error(), repoInitHelp(err)...)
+		}
+		// Intent is mandatory when starting a run: the agent driving this knows
+		// the change's intent, so we take it directly instead of inferring it
+		// from transcripts. Reattaching to an in-flight run does not need it.
+		if strings.TrimSpace(intent) == "" {
+			return emitError(cmd, 2, "--intent is required to start a run",
+				`Pass what the user set out to accomplish: drill axi run --intent "the user's goal"`)
+		}
+		// Starting a fresh run: apply the same pre-flight the human wizard
+		// enforces, but as structured errors the agent acts on rather than
+		// silent auto-branching/auto-committing. The gate validates committed
+		// history, so a wrong branch or uncommitted work would otherwise be
+		// validated incorrectly or not at all.
+		if guard := preflightGuard(ctx, env, branch); guard != nil {
+			return guard(cmd)
+		}
+		var err error
+		runID, err = triggerRun(ctx, env, branch, headSHA, skipSteps, intent)
+		if err != nil {
+			if ownershipErr, ok := err.(*branchOwnershipError); ok {
+				return emitBranchOwnershipError(cmd, ownershipErr)
+			}
+			return emitError(cmd, 1, err.Error())
+		}
+	}
+
+	run, ciReady, err := driveRun(ctx, cmd.ErrOrStderr(), env.client, env.p.Socket(), runID, autoYes)
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("drive run: %v", err))
+	}
+	return renderDriveResult(cmd, run, ciReady)
+}
+
+func configErrorForFreshAxiRun(env *axiEnv, runID string) error {
+	if runID != "" {
+		return nil
+	}
+	return env.globalConfigErr
+}
+
+// activeRunID returns the ID of a non-terminal run for branch and head, or "" if none.
+func activeRunID(env *axiEnv, branch, headSHA string) string {
+	var active ipc.GetActiveRunResult
+	if err := env.client.Call(ipc.MethodGetActiveRun, activeRunLookupParams(env.repo.ID, branch), &active); err != nil {
+		return ""
+	}
+	return activeRunIDForHead(&active, headSHA)
+}
+
+func activeRunIDForHead(active *ipc.GetActiveRunResult, headSHA string) string {
+	run := activeRunInfoForHead(active.Run, headSHA)
+	if run == nil {
+		return ""
+	}
+	return run.ID
+}
+
+func activeRunInfoForHead(run *ipc.RunInfo, headSHA string) *ipc.RunInfo {
+	if run == nil || terminalStatus(string(run.Status)) {
+		return nil
+	}
+	matchesSubmitted := run.SubmittedHeadSHA != nil && *run.SubmittedHeadSHA == headSHA
+	if run.HeadSHA != headSHA && !matchesSubmitted {
+		return nil
+	}
+	return run
+}
+
+// preflightGuard returns an emitter for the first unmet pre-flight condition
+// when starting a new run, or nil when the branch is ready to validate. It
+// mirrors the wizard's branch/commit hygiene as detect-and-guide: refuse the
+// default branch, and refuse an uncommitted working tree, each with the
+// command the agent should run.
+func preflightGuard(ctx context.Context, env *axiEnv, branch string) func(*cobra.Command) error {
+	if env.repo.DefaultBranch != "" && branch == env.repo.DefaultBranch {
+		return func(cmd *cobra.Command) error {
+			return emitError(cmd, 1, fmt.Sprintf("refusing to validate %q: it is the default branch", branch),
+				"Put your changes on a feature branch: `git switch -c <branch>`, then re-run")
+		}
+	}
+	dirty, err := git.HasUncommittedChanges(ctx, ".")
+	if err != nil {
+		return func(cmd *cobra.Command) error {
+			return emitError(cmd, 1, fmt.Sprintf("inspect working tree: %v", err),
+				"Run `git status` to check the repository state, then re-run")
+		}
+	}
+	if dirty {
+		return func(cmd *cobra.Command) error {
+			return emitError(cmd, 1, "uncommitted changes in the working tree",
+				"Commit your work before validating: `git add -A && git commit -m \"...\"`, then re-run",
+				"Run `git status` to see what is uncommitted")
+		}
+	}
+	return nil
+}
+
+// branchOwnershipError carries the shared branch-sync classification that
+// blocked a fresh trigger. Keeping the state intact lets AXI render the exact
+// structured next action instead of reducing the refusal to a Git push error.
+type branchOwnershipError struct {
+	state branchsync.State
+}
+
+func (e *branchOwnershipError) Error() string {
+	if e.state.Error != "" {
+		return e.state.Error
+	}
+	return "the pipeline still owns this branch; no fresh run was started"
+}
+
+func emitBranchOwnershipError(cmd *cobra.Command, ownershipErr *branchOwnershipError) error {
+	state := ownershipErr.state
+	fields := []toon.Field{
+		{Key: "error", Value: ownershipErr.Error()},
+		branchSyncField(state),
+	}
+	if state.NextAction != nil {
+		fields = append(fields, toon.Field{Key: "help", Value: []string{
+			"Run `" + state.NextAction.Command + "`",
+			branchSyncAgentGuidance,
+		}})
+	}
+	emitDoc(cmd, fields...)
+	return &exitError{code: 1}
+}
+
+func inspectAxiBranchSync(ctx context.Context, env *axiEnv) branchsync.State {
+	service := &branchsync.Service{
+		DB:      env.d,
+		Repo:    env.repo,
+		WorkDir: ".",
+		GateDir: env.p.RepoDir(env.repo.ID),
+		Paths:   env.p,
+	}
+	return service.InspectCached(ctx)
+}
+
+func freshRunBranchOwnershipState(ctx context.Context, env *axiEnv) *branchsync.State {
+	state := inspectAxiBranchSync(ctx, env)
+	switch state.State {
+	case branchsync.StatePipelineOwned:
+		// The ownership block exists to keep a fresh push from discarding
+		// pipeline commits that live only in the gate. An ACTIVE run whose
+		// head has not moved yet holds none, so the pre-existing supersede
+		// flow (push new commits over an in-flight run) stays available; a
+		// terminal unmoved run never reaches here because cancellation
+		// releases the branch as user_owned.
+		if branchsync.RunHeadUnmoved(state) {
+			return nil
+		}
+		return &state
+	case branchsync.StatePushInProgress:
+		return &state
+	default:
+		return nil
+	}
+}
+
+// triggerRun starts a fresh run for branch: it pushes the current HEAD through
+// the gate to trigger a pipeline, and falls back to a rerun when the push was a
+// no-op (the gate already had this commit). Callers must check for an existing
+// active run first (see activeRunID) and apply pre-flight guards.
+func triggerRun(ctx context.Context, env *axiEnv, branch, headSHA string, skipSteps []types.StepName, intent string) (string, error) {
+	pushOptions := formatSkipPushOptions(skipSteps)
+	if opt := formatIntentPushOption(intent); opt != "" {
+		pushOptions = append(pushOptions, opt)
+	}
+	priorRunIDs, err := runIDsForHead(env.client, env.repo.ID, branch, headSHA)
+	if err != nil {
+		// An active run can still be found below. Without a baseline, however,
+		// a matching terminal run may predate this push, so do not attach to it.
+		priorRunIDs = nil
+	}
+	if state := freshRunBranchOwnershipState(ctx, env); state != nil {
+		return "", &branchOwnershipError{state: *state}
+	}
+	pushErr := git.PushWithOptions(ctx, ".", gate.RemoteName, "refs/heads/"+branch, "", false, pushOptions)
+	if pushErr != nil {
+		// Close the inspection-to-push race: if the pipeline advanced ownership
+		// after the pre-push check, preserve the structured branch-sync refusal
+		// instead of leaking the resulting Git non-fast-forward.
+		if state := freshRunBranchOwnershipState(ctx, env); state != nil {
+			return "", &branchOwnershipError{state: *state}
+		}
+	}
+
+	if run, _ := waitForTriggeredRunForHead(ctx, env.client, env.repo.ID, branch, headSHA, priorRunIDs, triggerWaitTimeout); run != nil {
+		return run.ID, nil
+	}
+	if !shouldRerunAfterNoActiveRun(pushErr) {
+		return "", fmt.Errorf("push %q to gate: %v", branch, pushErr)
+	}
+
+	// No run appeared: the push was likely up-to-date. Rerun the latest gate
+	// head so `axi run` is still useful when there are no new commits.
+	var rr ipc.RerunResult
+	if err := env.client.Call(ipc.MethodRerun, rerunParams(env.repo.ID, branch, skipSteps, intent), &rr); err != nil {
+		return "", fmt.Errorf("no run started for %q: %v", branch, err)
+	}
+	return rr.RunID, nil
+}
+
+// runIDsForHead snapshots the run IDs already present for a repo's exact branch
+// and head SHA before a push, so waitForTriggeredRunForHead can tell a run this
+// push created apart from a terminal run an earlier push left behind. Scoping to
+// the head keeps this lookup, and the poll that reuses the same method, bounded
+// to the handful of runs for one head rather than the repo's whole history.
+func runIDsForHead(client *ipc.Client, repoID, branch, headSHA string) (map[string]struct{}, error) {
+	runs, err := runsForHead(client, repoID, branch, headSHA)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		ids[run.ID] = struct{}{}
+	}
+	return ids, nil
+}
+
+func runsForHead(client *ipc.Client, repoID, branch, headSHA string) ([]ipc.RunInfo, error) {
+	var result ipc.GetRunsResult
+	if err := client.Call(ipc.MethodGetRunsForHead, &ipc.GetRunsForHeadParams{RepoID: repoID, Branch: branch, HeadSHA: headSHA}, &result); err != nil {
+		return nil, err
+	}
+	return result.Runs, nil
+}
+
+// waitForTriggeredRunForHead waits for the run created by this trigger. The
+// active-run lookup handles normal execution; the head lookup catches a run
+// that fails before it can be observed as active. priorRunIDs prevents an
+// up-to-date push from attaching to a terminal run created by an earlier one.
+func waitForTriggeredRunForHead(ctx context.Context, client *ipc.Client, repoID, branch, headSHA string, priorRunIDs map[string]struct{}, timeout time.Duration) (*ipc.RunInfo, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	poll := time.NewTicker(150 * time.Millisecond)
+	defer poll.Stop()
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var result ipc.GetActiveRunResult
+		if err := client.Call(ipc.MethodGetActiveRun, &ipc.GetActiveRunParams{RepoID: repoID, Branch: branch}, &result); err != nil {
+			return nil, err
+		}
+		if run := activeRunInfoForHead(result.Run, headSHA); run != nil {
+			return run, nil
+		}
+		if priorRunIDs != nil {
+			runs, err := runsForHead(client, repoID, branch, headSHA)
+			if err != nil {
+				return nil, err
+			}
+			for i := range runs {
+				run := &runs[i]
+				if _, existed := priorRunIDs[run.ID]; !existed {
+					return run, nil
+				}
+				break
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, nil
+		case <-poll.C:
+		}
+	}
+}
+
+func shouldRerunAfterNoActiveRun(pushErr error) bool {
+	return pushErr == nil
+}
+
+func activeRunLookupParams(repoID, branch string) *ipc.GetActiveRunParams {
+	return &ipc.GetActiveRunParams{RepoID: repoID, Branch: branch}
+}
+
+func rerunParams(repoID, branch string, skipSteps []types.StepName, intent string) *ipc.RerunParams {
+	return &ipc.RerunParams{RepoID: repoID, Branch: branch, SkipSteps: skipSteps, Intent: intent}
+}
+
+// driveRun subscribes to a run and reconciles authoritative state on transition
+// events until it reaches an approval gate, a terminal state, or CI checks
+// pass, streaming step transitions to progress (stderr). When
+// autoApprove is set it resolves each gate and continues; otherwise it returns
+// at the first gate so the caller can surface it for a human/agent decision.
+//
+// Auto-resolution means "agree to fix every finding": a gate with actionable
+// findings is fixed (every finding selected), and the resulting fix_review is
+// accepted; gates with only non-actionable findings are approved. Each step is
+// fixed at most once so a finding the fix cannot clear converges to an approval
+// instead of looping forever.
+//
+// The CI step monitors an open PR until a human merges or closes it (a live
+// status the TUI shows), so it never reaches a terminal state on its own. An
+// agent driving the run must not block on that human action, so once CI checks
+// pass driveRun returns with ciReady=true: the change is validated and the PR is
+// ready for a human to merge. The daemon keeps monitoring in the background.
+func driveRun(ctx context.Context, progress io.Writer, client *ipc.Client, socketPath, runID string, autoApprove bool) (run *ipc.RunInfo, ciReady bool, err error) {
+	reconciler := newRunReconciler(&ipcRunStateSource{socketPath: socketPath}, runID)
+	defer reconciler.Close()
+	return driveRunWithReconciler(ctx, progress, client, reconciler, runID, autoApprove)
+}
+
+func driveRunWithReconciler(ctx context.Context, progress io.Writer, client *ipc.Client, reconciler *runReconciler, runID string, autoApprove bool) (run *ipc.RunInfo, ciReady bool, err error) {
+	pp := &progressPrinter{w: progress, seen: map[string]string{}}
+	fixedSteps := map[string]bool{}
+	pendingGate := ""
+	for {
+		run, err := reconciler.Next(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		if run == nil {
+			return nil, false, fmt.Errorf("run %s not found", runID)
+		}
+		pp.update(run)
+
+		rv := runViewFromIPC(run)
+		if terminalStatus(rv.Status) {
+			return run, false, nil
+		}
+		if gate, ok := rv.awaitingStep(); ok {
+			if !autoApprove {
+				return run, false, nil
+			}
+			gateKey := gate.Name + "\x00" + gate.Status
+			if pendingGate == gateKey {
+				// Duplicate or delayed events can race persistence after a response.
+				// Keep waiting for an authoritative transition rather than answering
+				// the same gate twice.
+				continue
+			}
+			action, findingIDs := gateResolution(gate, fixedSteps[gate.Name])
+			if action == types.ActionFix {
+				fixedSteps[gate.Name] = true
+			}
+			if err := sendRespond(client, runID, types.StepName(gate.Name), action, findingIDs, nil, nil); err != nil {
+				return nil, false, fmt.Errorf("auto-resolve %s: %w", gate.Name, err)
+			}
+			pendingGate = gateKey
+			continue
+		}
+		pendingGate = ""
+		// CI readiness is established but the PR is unmerged: hand control back
+		// rather than waiting on a human merge. This holds even under autoApprove,
+		// since the agent cannot approve away a human's merge.
+		if ciReadyToMerge(rv) {
+			return run, true, nil
+		}
+	}
+}
+
+// ciReadyToMerge reports whether the CI step is actively monitoring and the
+// daemon has persisted checks-passed readiness.
+func ciReadyToMerge(rv runView) bool {
+	activity := cimonitor.FromAuthoritative(rv.CIReady, rv.CIReadyNoCI, nil)
+	for _, s := range rv.Steps {
+		if s.Name == string(types.StepCI) {
+			return s.Status == string(types.StepStatusRunning) && activity.Ready
+		}
+	}
+	return false
+}
+
+// gateResolution decides how --yes answers an approval gate. A gate with
+// actionable findings (anything other than purely informational "no-op") is
+// fixed with every finding selected, unless this step was already fixed once -
+// in which case the gate is approved so the run converges instead of looping on
+// a finding the fix cannot clear. Gates with only non-actionable findings, no
+// findings, or actionable findings that carry no IDs (which a fix would resolve
+// to zero selections) are approved.
+func gateResolution(gate stepView, alreadyFixed bool) (types.ApprovalAction, []string) {
+	if alreadyFixed || gate.Status == string(types.StepStatusFixReview) {
+		return types.ActionApprove, nil
+	}
+	parsed, err := types.ParseFindingsJSON(gate.FindingsJSON)
+	if err != nil || !types.HasActionableFindings(parsed) {
+		return types.ActionApprove, nil
+	}
+	ids := make([]string, 0, len(parsed.Items))
+	for _, f := range parsed.Items {
+		if f.ID != "" {
+			ids = append(ids, f.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return types.ActionApprove, nil
+	}
+	return types.ActionFix, ids
+}
+
+// waitStepLeavesGate blocks until the named step's status changes away from the
+// gate status we just answered, or the run terminates. This prevents a
+// double-approve race: respond is asynchronous, so without waiting the next
+// event reconciliation could still observe the same gate and approve it twice.
+func waitStepLeavesGate(ctx context.Context, socketPath, runID, step, gateStatus string) error {
+	reconciler := newRunReconciler(&ipcRunStateSource{socketPath: socketPath}, runID)
+	defer reconciler.Close()
+	for {
+		run, err := reconciler.Next(ctx)
+		if err != nil {
+			return err
+		}
+		if run == nil || terminalStatus(string(run.Status)) {
+			return nil
+		}
+		for _, s := range run.Steps {
+			if string(s.StepName) == step {
+				if string(s.Status) != gateStatus {
+					return nil
+				}
+				break
+			}
+		}
+	}
+}
+
+func getRunInfo(client *ipc.Client, runID string) (*ipc.RunInfo, error) {
+	var result ipc.GetRunResult
+	if err := client.Call(ipc.MethodGetRun, &ipc.GetRunParams{RunID: runID}, &result); err != nil {
+		return nil, err
+	}
+	return result.Run, nil
+}
+
+// sendRespond issues an approval action to the daemon for a step.
+func sendRespond(client *ipc.Client, runID string, step types.StepName, action types.ApprovalAction, findingIDs []string, instructions map[string]string, added []types.Finding) error {
+	params := &ipc.RespondParams{
+		RunID:         runID,
+		Step:          step,
+		Action:        action,
+		FindingIDs:    findingIDs,
+		Instructions:  instructions,
+		AddedFindings: added,
+	}
+	var result ipc.RespondResult
+	if err := client.Call(ipc.MethodRespond, params, &result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return fmt.Errorf("daemon rejected the response")
+	}
+	return nil
+}
+
+// renderDriveResult prints the run snapshot plus one of: the active gate (exit
+// 0, a normal decision point), a checks-passed outcome (exit 0, CI readiness is
+// established by green checks or the trusted no_ci declaration and the PR is
+// ready for a human to merge), or the terminal outcome (exit 0 when passed,
+// exit 1 when blocked, failed, or cancelled). Successful outcomes also carry
+// the fixes the pipeline applied and reporting instructions, so the agent
+// closes the loop with the user instead of stopping at "it passed".
+func renderDriveResult(cmd *cobra.Command, run *ipc.RunInfo, ciReady bool) error {
+	rv := runViewFromIPC(run)
+	fields := []toon.Field{runObjectField(rv)}
+	hasBranchSync := false
+	if syncField := cachedBranchSyncField(cmd, run.ID); syncField != nil {
+		fields = append(fields, *syncField)
+		hasBranchSync = true
+	}
+
+	// CI readiness is established but the run is intentionally still monitoring
+	// for a human merge. Report it as a distinct, successful outcome so the
+	// agent stops and asks the user to review and merge instead of waiting.
+	if ciReady {
+		activity := cimonitor.FromAuthoritative(rv.CIReady, rv.CIReadyNoCI, nil)
+		fields = append(fields, toon.Field{Key: "outcome", Value: "checks-passed"})
+		merge := "CI checks passed - the PR is ready. Ask the user to review and merge it."
+		if activity.DeclaredNoCI {
+			merge = "Repository declares no CI (no_ci: true on the trusted default branch) and no checks are registered - treated as all checks passed. Ask the user to review and merge it."
+		}
+		if rv.PRURL != "" {
+			merge = fmt.Sprintf("%s: %s", strings.TrimSuffix(merge, "."), rv.PRURL)
+		}
+		fixes := rv.fixRows()
+		fields = appendFixesField(fields, fixes)
+		help := append([]string{merge}, successReportHelp(fixes)...)
+		if hasBranchSync {
+			help = append(help, branchSyncAgentGuidance)
+		}
+		help = append(help, staleMonitorGuidance)
+		fields = append(fields, toon.Field{Key: "help", Value: help})
+		emitDoc(cmd, fields...)
+		return nil
+	}
+
+	if gate, ok := rv.awaitingStep(); ok {
+		fields = append(fields, gateFields(gate)...)
+		emitDoc(cmd, fields...)
+		return nil
+	}
+
+	fields = append(fields, toon.Field{Key: "outcome", Value: outcomeFor(rv.Status)})
+	if run.Error != nil && *run.Error != "" {
+		fields = append(fields, toon.Field{Key: "error", Value: *run.Error})
+	}
+
+	if rv.Status == string(types.RunCompleted) {
+		fixes := rv.fixRows()
+		fields = appendFixesField(fields, fixes)
+		var help []string
+		if rv.PRURL != "" {
+			help = append(help, fmt.Sprintf("Open the PR: %s", rv.PRURL))
+		}
+		help = append(help, successReportHelp(fixes)...)
+		if hasBranchSync {
+			help = append(help, branchSyncAgentGuidance)
+		}
+		fields = append(fields, toon.Field{Key: "help", Value: help})
+		emitDoc(cmd, fields...)
+		return nil
+	}
+
+	help := []string{preserveGateFixCommitsGuidance}
+	if hasBranchSync {
+		help = append(help, branchSyncAgentGuidance)
+	}
+	if rv.PRURL != "" {
+		help = append([]string{fmt.Sprintf("Open the PR: %s", rv.PRURL)}, help...)
+	}
+	fields = append(fields, toon.Field{Key: "help", Value: help})
+	emitDoc(cmd, fields...)
+	return &exitError{code: 1}
+}
+
+// appendFixesField adds a fixes table when the pipeline applied any fixes.
+func appendFixesField(fields []toon.Field, fixes []fixRow) []toon.Field {
+	if len(fixes) == 0 {
+		return fields
+	}
+	return append(fields, toon.Field{Key: "fixes", Value: fixes})
+}
+
+// successReportHelp returns the reporting instructions for a successful
+// outcome: always summarize the run for the user, and when the pipeline
+// applied fixes, own the misses and list every fix for the user's review.
+func successReportHelp(fixes []fixRow) []string {
+	help := []string{"Summarize this pipeline run for the user in a concise, easily readable format: what was validated and what was found."}
+	if len(fixes) > 0 {
+		help = append(help, "The pipeline fixed findings the original change missed (see `fixes`) - acknowledge the misses and list each fix so the user can review them.")
+	}
+	help = append(help, preserveGateFixCommitsGuidance)
+	return help
+}
+
+func newAxiRespondCmd() *cobra.Command {
+	var action, step, findings, instructions, addFinding string
+	var autoYes bool
+
+	cmd := &cobra.Command{
+		Use:   "respond",
+		Short: "Answer the current approval gate and continue the run",
+		Long: "Sends approve/fix/skip for the step currently awaiting approval, then\n" +
+			"blocks until the next gate, CI-ready decision point, or final outcome.\n\n" +
+			preserveGateFixCommitsGuidance,
+		Args:          cobra.NoArgs,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return trackAxiSurface("axi-respond", "/axi/respond", telemetry.Fields{
+				"action":   sanitizeAxiTelemetryAction(action),
+				"auto_yes": autoYes,
+			}, func() error {
+				return runAxiRespond(cmd, respondArgs{
+					action:       action,
+					step:         step,
+					findings:     findings,
+					instructions: instructions,
+					addFinding:   addFinding,
+					autoYes:      autoYes,
+				})
+			})
+		},
+	}
+	cmd.Flags().StringVar(&action, "action", "", "approve | fix | skip (required)")
+	cmd.Flags().StringVar(&step, "step", "", "step to respond to (default: the step awaiting approval)")
+	cmd.Flags().StringVar(&findings, "findings", "", "comma-separated finding IDs to fix (with --action fix)")
+	cmd.Flags().StringVar(&instructions, "instructions", "", "guidance applied to the selected findings (with --action fix)")
+	cmd.Flags().StringVar(&addFinding, "add-finding", "", "JSON finding object to add and fix (with --action fix)")
+	cmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "auto-resolve every subsequent gate until a decision point or outcome")
+	return cmd
+}
+
+type respondArgs struct {
+	action       string
+	step         string
+	findings     string
+	instructions string
+	addFinding   string
+	autoYes      bool
+}
+
+func runAxiRespond(cmd *cobra.Command, ra respondArgs) error {
+	ctx := cmd.Context()
+
+	act := types.ApprovalAction(strings.TrimSpace(ra.action))
+	switch act {
+	case types.ActionApprove, types.ActionFix, types.ActionSkip:
+	case "":
+		return emitError(cmd, 2, "--action is required",
+			"Run `drill axi respond --action approve|fix|skip`")
+	default:
+		return emitError(cmd, 2, fmt.Sprintf("unknown action %q", ra.action),
+			"Valid actions: approve, fix, skip")
+	}
+
+	env, err := openAxiDaemonEnv()
+	if err != nil {
+		return emitError(cmd, 1, err.Error(), repoInitHelp(err)...)
+	}
+	defer env.close()
+	branch, err := git.CurrentBranch(ctx, ".")
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("get current branch: %v", err))
+	}
+
+	var active ipc.GetActiveRunResult
+	if err := env.client.Call(ipc.MethodGetActiveRun, activeRunLookupParams(env.repo.ID, branch), &active); err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("get active run: %v", err))
+	}
+	if active.Run == nil {
+		return emitError(cmd, 1, "no active run to respond to",
+			"Run `drill axi run --intent \"...\"` to start one")
+	}
+	runID := active.Run.ID
+
+	run, err := getRunInfo(env.client, runID)
+	if err != nil || run == nil {
+		return emitError(cmd, 1, fmt.Sprintf("load run: %v", err))
+	}
+	rv := runViewFromIPC(run)
+
+	stepName := types.StepName(strings.TrimSpace(ra.step))
+	if stepName == "" {
+		gate, ok := rv.awaitingStep()
+		if !ok {
+			return emitError(cmd, 1, "no step is awaiting approval",
+				"Run `drill axi status` to see the run state")
+		}
+		stepName = types.StepName(gate.Name)
+	}
+
+	findingIDs := splitCSV(ra.findings)
+	var instructions map[string]string
+	var added []types.Finding
+
+	if act == types.ActionFix {
+		if len(findingIDs) == 0 && ra.addFinding == "" {
+			return emitError(cmd, 2, "--action fix requires --findings <id,...> or --add-finding <json>",
+				"Run `drill axi status` to list finding IDs")
+		}
+		if note := strings.TrimSpace(ra.instructions); note != "" && len(findingIDs) > 0 {
+			instructions = make(map[string]string, len(findingIDs))
+			for _, id := range findingIDs {
+				instructions[id] = note
+			}
+		}
+		if ra.addFinding != "" {
+			f, err := parseAddFinding(ra.addFinding)
+			if err != nil {
+				return emitError(cmd, 2, fmt.Sprintf("invalid --add-finding: %v", err),
+					`Expected a JSON object, e.g. {"description":"...","action":"auto-fix"}`)
+			}
+			added = append(added, f)
+		}
+	}
+
+	if err := sendRespond(env.client, runID, stepName, act, findingIDs, instructions, added); err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("respond to %s: %v", stepName, err))
+	}
+
+	// Let the executor consume the response before we re-read state, so we
+	// don't immediately observe the same gate we just answered.
+	if err := waitStepLeavesGate(ctx, env.p.Socket(), runID, string(stepName), gateStatusFor(rv, string(stepName))); err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("wait for %s: %v", stepName, err))
+	}
+
+	final, ciReady, err := driveRun(ctx, cmd.ErrOrStderr(), env.client, env.p.Socket(), runID, ra.autoYes)
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("drive run: %v", err))
+	}
+	return renderDriveResult(cmd, final, ciReady)
+}
+
+// gateStatusFor returns the current status of step in rv, defaulting to the
+// awaiting-approval status so the post-respond wait still functions if the step
+// was not found.
+func gateStatusFor(rv runView, step string) string {
+	for _, s := range rv.Steps {
+		if s.Name == step {
+			return s.Status
+		}
+	}
+	return string(types.StepStatusAwaitingApproval)
+}
+
+func newAxiAbortCmd() *cobra.Command {
+	var runID string
+	cmd := &cobra.Command{
+		Use:   "abort",
+		Short: "Cancel the active pipeline run",
+		Long: "Cancel a pipeline run. With no flags, cancels the active run on the\n" +
+			"current branch. Pass --run <id> to cancel a specific run by its id from\n" +
+			"anywhere - including outside its worktree - so an orphaned CI monitor\n" +
+			"(e.g. after a worktree was torn down) can be reaped deterministically.\n\n" +
+			"While a run is active, do NOT abort (or rerun) to go fix a finding\n" +
+			"yourself - that discards the pipeline's in-flight work and forces a full\n" +
+			"re-validation. abort and rerun are for between runs (after a failed or\n" +
+			"cancelled outcome), never to circumvent a gate.\n\n" +
+			preserveGateFixCommitsGuidance,
+		Args:          cobra.NoArgs,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return trackAxiSurface("axi-abort", "/axi/abort", nil, func() error {
+				return runAxiAbort(cmd, strings.TrimSpace(runID))
+			})
+		},
+	}
+	cmd.Flags().StringVar(&runID, "run", "", "cancel this run id directly, without resolving the current branch or worktree")
+	return cmd
+}
+
+func runAxiAbort(cmd *cobra.Command, runID string) error {
+	if runID != "" {
+		return runAxiAbortByRunID(cmd, runID)
+	}
+
+	ctx := cmd.Context()
+	env, err := openAxiDaemonEnv()
+	if err != nil {
+		return emitError(cmd, 1, err.Error(), repoInitHelp(err)...)
+	}
+	defer env.close()
+	branch, err := git.CurrentBranch(ctx, ".")
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("get current branch: %v", err))
+	}
+
+	var active ipc.GetActiveRunResult
+	if err := env.client.Call(ipc.MethodGetActiveRun, activeRunLookupParams(env.repo.ID, branch), &active); err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("get active run: %v", err))
+	}
+
+	if active.Run == nil {
+		// Idempotent: nothing to abort is a successful no-op that still
+		// reports the branch's current structured ownership state, so a
+		// repeated abort returns the same final truth as the aborting call.
+		fields := []toon.Field{
+			{Key: "aborted", Value: false},
+			{Key: "detail", Value: "no active run (no-op)"},
+		}
+		if state := inspectAxiBranchSync(ctx, env); relevantCachedSyncState(state) {
+			fields = append(fields, branchSyncField(state))
+		}
+		emitDoc(cmd, fields...)
+		return nil
+	}
+
+	var result ipc.CancelRunResult
+	if err := env.client.Call(ipc.MethodCancelRun, &ipc.CancelRunParams{RunID: active.Run.ID}, &result); err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("abort run: %v", err))
+	}
+	// Success and the final ownership state may only be reported after the
+	// exact run positively confirmed terminal quiescence; anything else exits
+	// nonzero with the unconfirmed contract.
+	final, confirmed, reason := waitForTerminalRun(ctx, env.client, active.Run.ID, abortStateWaitTimeout)
+	if !confirmed {
+		return emitUnconfirmedAbort(cmd, active.Run.ID, active.Run.Branch, reason, runViewPtrFromIPC(final), true)
+	}
+	fields := []toon.Field{
+		toon.Field{Key: "aborted", Value: true},
+		toon.Field{Key: "run", Value: active.Run.ID},
+		toon.Field{Key: "branch", Value: active.Run.Branch},
+		toon.Field{Key: "run_status", Value: string(final.Status)},
+	}
+	state := inspectAxiBranchSync(ctx, env)
+	if state.Pipeline.RunID == active.Run.ID && relevantCachedSyncState(state) {
+		fields = append(fields, branchSyncField(state))
+	}
+	help := []string{
+		"Run `drill axi sync --check` before any local follow-up commit - a cancelled run can leave unpublished pipeline commits preserved in the local gate, and the check offers the guarded custody recovery",
+	}
+	if state.Pipeline.RunID == active.Run.ID {
+		switch {
+		case state.NextAction != nil:
+			help = []string{
+				"Run `" + state.NextAction.Command + "`",
+				branchSyncAgentGuidance,
+			}
+		case state.State == branchsync.StateUserOwned:
+			help = []string{
+				"Cancellation released this branch: the exact branch and head are yours and immediately usable - no sync action is needed",
+			}
+		}
+	}
+	fields = append(fields,
+		toon.Field{Key: "help", Value: help},
+	)
+	emitDoc(cmd, fields...)
+	return nil
+}
+
+// waitForTerminalRun polls until the exact run reports a terminal status.
+// confirmed is true only when a fresh read positively proved terminal
+// quiescence; a cancelled context, an exhausted bounded wait, or a failed
+// status read returns the last observed run state (possibly nil) with
+// confirmed false and a reason naming what prevented confirmation. Callers
+// must never present a completed abort or authoritative final ownership
+// guidance without confirmed true.
+func waitForTerminalRun(ctx context.Context, client *ipc.Client, runID string, timeout time.Duration) (run *ipc.RunInfo, confirmed bool, reason string) {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	var last *ipc.RunInfo
+	for {
+		remaining := timeout
+		if deadline, ok := waitCtx.Deadline(); ok {
+			remaining = time.Until(deadline)
+			if remaining <= 0 {
+				return last, false, fmt.Sprintf("the run did not report a terminal state within the bounded %s wait", timeout)
+			}
+		}
+		var result ipc.GetRunResult
+		err := client.CallWithContext(waitCtx, ipc.MethodGetRun, &ipc.GetRunParams{RunID: runID}, &result, remaining)
+		if err != nil {
+			switch waitCtx.Err() {
+			case context.Canceled:
+				return last, false, "the in-flight run state read was cancelled before a terminal state was observed"
+			case context.DeadlineExceeded:
+				return last, false, fmt.Sprintf("the in-flight run state read did not complete within the bounded %s wait", timeout)
+			default:
+				var timeoutErr interface{ Timeout() bool }
+				if errors.As(err, &timeoutErr) && timeoutErr.Timeout() {
+					return last, false, fmt.Sprintf("the in-flight run state read did not complete within the bounded %s wait", timeout)
+				}
+				return last, false, fmt.Sprintf("the run state could not be read: %v", err)
+			}
+		}
+		observed := result.Run
+		if observed == nil {
+			return last, false, "the run state response did not identify a run"
+		}
+		if observed.ID != runID {
+			return last, false, fmt.Sprintf("the run state response identified run %s instead of the requested run %s", observed.ID, runID)
+		}
+		last = observed
+		if terminalStatus(string(observed.Status)) {
+			return observed, true, ""
+		}
+		select {
+		case <-waitCtx.Done():
+			if waitCtx.Err() == context.Canceled {
+				return last, false, "the wait was cancelled before a terminal state was observed"
+			}
+			return last, false, fmt.Sprintf("the run did not report a terminal state within the bounded %s wait", timeout)
+		case <-ticker.C:
+		}
+	}
+}
+
+// emitUnconfirmedAbort reports the accepted not-yet-quiescent abort contract:
+// terminal quiescence is unconfirmed, so the command exits nonzero, includes
+// the last structured run state when one is available, and presents no
+// completed-abort claim and no authoritative user-owned or recoverable
+// ownership guidance. requested records whether a cancellation request
+// actually reached the daemon; a daemon-unavailable path never requested one
+// and must not claim it did.
+func emitUnconfirmedAbort(cmd *cobra.Command, runID, branch, reason string, last *runView, requested bool) error {
+	message := fmt.Sprintf("cancellation was requested for run %s, but terminal quiescence is unconfirmed: %s", runID, reason)
+	if !requested {
+		message = fmt.Sprintf("cancellation could not be requested for run %s, and terminal quiescence is unconfirmed: %s", runID, reason)
+	}
+	fields := []toon.Field{
+		{Key: "error", Value: message},
+		{Key: "cancellation_requested", Value: requested},
+		{Key: "terminal_confirmed", Value: false},
+		{Key: "run", Value: runID},
+	}
+	if branch != "" {
+		fields = append(fields, toon.Field{Key: "branch", Value: branch})
+	}
+	if last != nil {
+		fields = append(fields, runObjectFieldWithKey("run_state", *last))
+	}
+	fields = append(fields, toon.Field{Key: "help", Value: []string{
+		"Run `drill axi status --run " + runID + "` to observe the run until it reports a terminal status",
+		"Re-run `drill axi abort` once the daemon is reachable; a repeated abort is an idempotent no-op",
+		"Do not treat the branch as released or recoverable until a terminal status is confirmed",
+	}})
+	emitDoc(cmd, fields...)
+	return &exitError{code: 1}
+}
+
+// runAxiAbortByRunID cancels a run by its id directly via the daemon, without
+// resolving a repo, branch, or worktree. This is how an orphaned monitor run -
+// one whose worktree was torn down before the PR merged - gets reaped from
+// outside. A stopped daemon is never started: the durable database record then
+// decides whether the exact run is terminal, still nonterminal, or unknown.
+// Likewise, a daemon's no-active-run response is resolved through one bounded
+// durable-state read before this command reports success.
+func runAxiAbortByRunID(cmd *cobra.Command, runID string) error {
+	p, err := paths.New()
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("resolve paths: %v", err))
+	}
+	if err := p.EnsureDirs(); err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("create directories: %v", err))
+	}
+
+	if alive, _ := daemon.IsRunning(p); !alive {
+		return resolveDaemonDownAbortTruth(cmd, p, runID)
+	}
+
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		return emitError(cmd, 1, fmt.Sprintf("connect to daemon: %v", err))
+	}
+	defer client.Close()
+
+	var result ipc.CancelRunResult
+	if err := client.Call(ipc.MethodCancelRun, &ipc.CancelRunParams{RunID: runID}, &result); err != nil {
+		// The daemon reports an unknown/inactive run id as "no active run
+		// <id>". That result alone is not terminal truth: resolve the exact
+		// run's durable state before deciding between the idempotent
+		// terminal no-op, the documented unknown-id no-op, and the nonzero
+		// terminal-unconfirmed contract.
+		if strings.Contains(err.Error(), "no active run") {
+			return resolveInactiveAbortTruth(cmd, client, runID)
+		}
+		return emitError(cmd, 1, fmt.Sprintf("abort run: %v", err))
+	}
+	// Explicit --run cancellation carries the same quiescence contract as the
+	// ordinary surface: no completed abort without a positively confirmed
+	// terminal state for the exact run.
+	final, confirmed, reason := waitForTerminalRun(cmd.Context(), client, runID, abortStateWaitTimeout)
+	if !confirmed {
+		return emitUnconfirmedAbort(cmd, runID, "", reason, runViewPtrFromIPC(final), true)
+	}
+	emitDoc(cmd,
+		toon.Field{Key: "aborted", Value: true},
+		toon.Field{Key: "run", Value: runID},
+		toon.Field{Key: "run_status", Value: string(final.Status)},
+	)
+	return nil
+}
+
+// runViewPtrFromIPC adapts an optional IPC run snapshot for the unconfirmed
+// abort emission, which renders whatever last structured state is available.
+func runViewPtrFromIPC(run *ipc.RunInfo) *runView {
+	if run == nil {
+		return nil
+	}
+	view := runViewFromIPC(run)
+	return &view
+}
+
+// resolveInactiveAbortTruth decides what a cancel_run "no active run" result
+// actually means by resolving the exact run's durable state through one
+// bounded, cancellation-aware get_run read: an already-terminal run is an
+// idempotent success carrying its terminal run_status (no new cancellation is
+// fabricated), a positively proven unknown id keeps the documented no-op, and
+// a still-nonterminal or unreadable run is the nonzero terminal-unconfirmed
+// contract.
+func resolveInactiveAbortTruth(cmd *cobra.Command, client *ipc.Client, runID string) error {
+	ctx, cancel := context.WithTimeout(cmd.Context(), abortStateWaitTimeout)
+	defer cancel()
+	var result ipc.GetRunResult
+	err := client.CallWithContext(ctx, ipc.MethodGetRun, &ipc.GetRunParams{RunID: runID}, &result, abortStateWaitTimeout)
+	if err != nil {
+		// The daemon's durable lookup names a genuinely unknown id
+		// explicitly; only that exact proof preserves the documented no-op.
+		if isExactRunNotFound(err, runID) {
+			emitDoc(cmd,
+				toon.Field{Key: "aborted", Value: false},
+				toon.Field{Key: "run", Value: runID},
+				toon.Field{Key: "detail", Value: "no run with that id exists (no-op)"},
+			)
+			return nil
+		}
+		return emitUnconfirmedAbort(cmd, runID, "", fmt.Sprintf("the daemon reported no active run, and the exact run's durable state could not be read: %v", err), nil, true)
+	}
+	run := result.Run
+	if run == nil {
+		return emitUnconfirmedAbort(cmd, runID, "", "the daemon returned a run state response without the requested run", nil, true)
+	}
+	if run.ID != runID {
+		return emitUnconfirmedAbort(cmd, runID, "", fmt.Sprintf("the daemon returned durable state for run %s instead of the requested run %s", run.ID, runID), nil, true)
+	}
+	if terminalStatus(string(run.Status)) {
+		emitDoc(cmd,
+			toon.Field{Key: "aborted", Value: false},
+			toon.Field{Key: "run", Value: runID},
+			toon.Field{Key: "run_status", Value: string(run.Status)},
+			toon.Field{Key: "detail", Value: "run is already terminal (idempotent no-op)"},
+		)
+		return nil
+	}
+	return emitUnconfirmedAbort(cmd, runID, run.Branch, fmt.Sprintf("the daemon reported no active run, but the exact run's durable state is still %s", run.Status), runViewPtrFromIPC(run), true)
+}
+
+// resolveDaemonDownAbortTruth is the consistent daemon-unavailable treatment:
+// nothing can be cancelled without a daemon, so the durable run record alone
+// decides. A recorded terminal run resolves idempotently with its terminal
+// status, an id with no durable record keeps the documented no-op, and a
+// recorded nonterminal or unreadable run is the nonzero terminal-unconfirmed
+// contract - never a claimed cancellation and never a started daemon.
+func resolveDaemonDownAbortTruth(cmd *cobra.Command, p *paths.Paths, runID string) error {
+	database, err := db.Open(p.DB())
+	if err != nil {
+		return emitUnconfirmedAbort(cmd, runID, "", fmt.Sprintf("the daemon is not running and the durable run record could not be opened: %v", err), nil, false)
+	}
+	defer database.Close()
+	run, err := database.GetRun(runID)
+	if err != nil {
+		return emitUnconfirmedAbort(cmd, runID, "", fmt.Sprintf("the daemon is not running and the durable run record could not be read: %v", err), nil, false)
+	}
+	if run == nil {
+		emitDoc(cmd,
+			toon.Field{Key: "aborted", Value: false},
+			toon.Field{Key: "run", Value: runID},
+			toon.Field{Key: "detail", Value: "daemon not running and no run with that id is recorded (no-op)"},
+		)
+		return nil
+	}
+	if run.ID != runID {
+		return emitUnconfirmedAbort(cmd, runID, "", fmt.Sprintf("the durable record identified run %s instead of the requested run %s", run.ID, runID), nil, false)
+	}
+	if terminalStatus(string(run.Status)) {
+		emitDoc(cmd,
+			toon.Field{Key: "aborted", Value: false},
+			toon.Field{Key: "run", Value: runID},
+			toon.Field{Key: "run_status", Value: string(run.Status)},
+			toon.Field{Key: "detail", Value: "daemon not running; run is already terminal (idempotent no-op)"},
+		)
+		return nil
+	}
+	return emitUnconfirmedAbort(cmd, runID, run.Branch, fmt.Sprintf("the daemon is not running, so cancellation cannot be requested, and the durable run record is still %s", run.Status), nil, false)
+}
+
+func isExactRunNotFound(err error, runID string) bool {
+	var rpcErr *ipc.RPCError
+	return errors.As(err, &rpcErr) && rpcErr.Message == "run not found: "+runID
+}
+
+func splitCSV(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}

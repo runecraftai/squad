@@ -1,0 +1,891 @@
+package agent
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/runecraftai/squad/packages/drill/internal/types"
+)
+
+// Agent is the interface for running AI agent tasks.
+type Agent interface {
+	Name() string
+	Run(ctx context.Context, opts RunOpts) (*Result, error)
+	Close() error
+}
+
+// RunOpts configures a single agent invocation.
+type RunOpts struct {
+	Prompt      string
+	CWD         string
+	JSONSchema  json.RawMessage      // structured output schema (optional)
+	OnChunk     func(text string)    // streaming text callback (optional)
+	OnLifecycle func(LifecycleEvent) // native agent lifecycle callback (optional)
+	// Session, when non-nil, asks a session-capable adapter (see
+	// SessionResumer) to start or resume a durable native session. Adapters
+	// without session support ignore it and run cold; the caller detects the
+	// fallback via an empty Result.SessionID.
+	Session *SessionRef
+	// SessionFallback marks this invocation as the fresh-session retry after
+	// a failed resume. Instrumentation only; adapters ignore it.
+	SessionFallback bool
+	// Purpose labels the pipeline duty this invocation serves (review,
+	// review-fix, test-evidence, ...). Instrumentation only; adapters
+	// ignore it.
+	Purpose string
+	// SessionFallbackReason is the low-cardinality reason a failed resume forced
+	// this fresh-session retry (see db.FallbackReason*). Set only when
+	// SessionFallback is true. Instrumentation only; adapters ignore it.
+	SessionFallbackReason string
+	// Workload, when non-nil, records the bounded size of the change this
+	// invocation is working over (files and net lines), so review/fix telemetry
+	// can be normalized without external git archaeology. Instrumentation only;
+	// adapters ignore it.
+	Workload *InvocationWorkload
+	// OnAttempt receives each concrete adapter attempt, including retries and
+	// fallback-provider attempts, after it completes. It is instrumentation
+	// only and must not change invocation behavior.
+	OnAttempt func(Attempt)
+}
+
+// Attempt describes one completed concrete adapter attempt for an agent
+// invocation. An Agent may make several attempts when it retries transient
+// failures or moves to a fallback provider.
+type Attempt struct {
+	Agent           string
+	Result          *Result
+	Err             error
+	StartedAt       time.Time
+	CompletedAt     time.Time
+	Session         *SessionRef
+	SessionFallback bool
+}
+
+// SessionRef identifies a durable adapter-native session for RunOpts.Session.
+type SessionRef struct {
+	// ID is the adapter-native session identity to resume. Empty starts a
+	// new resumable session whose identity is reported via Result.SessionID.
+	ID    string
+	Agent string
+}
+
+// SessionResumer is the optional adapter capability for durable native
+// session resume across invocations. Decorators must forward it; callers use
+// SupportsSessionResume so wrapping never hides the capability.
+type SessionResumer interface {
+	SupportsSessionResume() bool
+}
+
+// SupportsSessionResume reports whether a (possibly wrapped) agent can start
+// and resume durable native sessions.
+func SupportsSessionResume(a Agent) bool {
+	r, ok := a.(SessionResumer)
+	return ok && r.SupportsSessionResume()
+}
+
+// SessionProviderMatcher reports whether an agent can resume sessions minted
+// by a particular provider. Fallback wrappers implement it so callers do not
+// mistake the wrapper's name for the provider that owns a session identity.
+type SessionProviderMatcher interface {
+	SupportsSessionProvider(string) bool
+}
+
+// SupportsSessionProvider reports whether a (possibly wrapped) agent can
+// resume a session minted by provider.
+func SupportsSessionProvider(a Agent, provider string) bool {
+	if provider == "" {
+		return false
+	}
+	if matcher, ok := a.(SessionProviderMatcher); ok {
+		return matcher.SupportsSessionProvider(provider)
+	}
+	return a != nil && a.Name() == provider && SupportsSessionResume(a)
+}
+
+// AttemptReporter is the optional adapter capability for reporting every
+// concrete attempt, including internal retries and fallback providers.
+type AttemptReporter interface {
+	ReportsAgentAttempts() bool
+}
+
+// ReportsAgentAttempts reports whether a (possibly wrapped) agent emits an
+// Attempt callback for each concrete adapter attempt.
+func ReportsAgentAttempts(a Agent) bool {
+	r, ok := a.(AttemptReporter)
+	return ok && r.ReportsAgentAttempts()
+}
+
+// GateInstructionNeutralizer is the optional adapter capability that reports the
+// adapter neutralizes the target repository's project agent-instruction files
+// (AGENTS.md/CLAUDE.md) for this invocation, so they cannot install a governing
+// identity on the gate agent.
+//
+// A gate agent runs with cmd.Dir set to the target checkout and a free shell. If
+// the checkout is itself an agent-orchestration harness (for example another agent harness),
+// its AGENTS.md can otherwise convince the gate agent it is the commander and
+// drive it to spawn operators and reset the branch it is validating (the
+// ambient-authority incident). Only adapters whose suppression knob is
+// empirically verified implement this and return true, and only while that knob
+// is actually in effect for the invocation (an operator override that defeats the
+// knob must report false so the gate fails closed rather than launching
+// unneutralized).
+type GateInstructionNeutralizer interface {
+	NeutralizesGateInstructions() bool
+}
+
+// NeutralizesGateInstructions reports whether a (possibly wrapped) agent
+// neutralizes the target repo's project agent-instruction files during a gate
+// run. It fails closed: an adapter that does not implement the capability, a
+// nil agent, or a wrapper any member of which does not neutralize, is reported
+// as NOT neutralized.
+func NeutralizesGateInstructions(a Agent) bool {
+	if a == nil {
+		return false
+	}
+	n, ok := a.(GateInstructionNeutralizer)
+	return ok && n.NeutralizesGateInstructions()
+}
+
+// EnsureGateNeutralized fails closed when the agent that will run gate steps in
+// the target checkout does not neutralize that checkout's project
+// agent-instruction files. Callers must invoke it before launching any gate
+// agent so an unverified harness is refused with a clear error rather than run
+// unneutralized in the target checkout. Only codex, claude, and pi have a verified
+// neutralization knob today.
+func EnsureGateNeutralized(a Agent) error {
+	if a == nil {
+		return fmt.Errorf("no gate agent configured")
+	}
+	if NeutralizesGateInstructions(a) {
+		return nil
+	}
+	return fmt.Errorf("gate agent %q does not neutralize the target repository's project "+
+		"agent-instruction files (AGENTS.md/CLAUDE.md); refusing to launch it in the target "+
+		"checkout. Only codex, claude, and pi have a verified neutralization knob (and only when it "+
+		"is not overridden by agent_args_override); set 'agent' to codex, claude, or pi in "+
+		"~/.drill/config.yaml", a.Name())
+}
+
+// LifecycleEvent describes process-level activity for an agent invocation.
+// The pipeline records these as step log lines and active-step heartbeats.
+type LifecycleEvent struct {
+	Agent   string
+	Phase   string
+	PID     int
+	Message string
+}
+
+// Result holds the output of an agent invocation.
+type Result struct {
+	// Output is structured JSON returned by the agent. Text-parsed fallback
+	// results are validated before return, and optional fields may be
+	// nullable there.
+	Output json.RawMessage
+	// Text is the raw text output.
+	Text string
+	// Usage tracks token consumption for the invocation.
+	Usage         TokenUsage
+	UsageReported bool
+	// SessionID is the adapter-native session identity of this invocation
+	// when the adapter reports one. Callers persist it to resume later.
+	SessionID string
+	// Resumed reports whether this invocation resumed opts.Session.ID.
+	Resumed bool
+	// Model is the model the adapter reported serving this invocation, when
+	// available. Instrumentation only.
+	Model string
+	// ModelProvider is the provider that served the model (e.g. "openai",
+	// "anthropic"), when the adapter can report it. Instrumentation only.
+	ModelProvider string
+	// Provider is the adapter provider that served this invocation. It lets
+	// fallback wrappers persist a session against the provider that minted it.
+	Provider string
+	// Metrics is the bounded per-invocation activity evidence the adapter
+	// extracted from its event stream (round-trips, tool calls + categories,
+	// subprocess wait time). Nil means the adapter reported nothing, which is
+	// recorded as unknown (NULL) rather than a fabricated zero.
+	Metrics *InvocationMetrics
+	// CacheCreationReported reports whether Usage.CacheCreationTokens is a
+	// meaningful value. Adapters whose provider does not surface cache-creation
+	// cost (codex) leave it false so the field is recorded as unknown instead of
+	// a fabricated zero.
+	CacheCreationReported bool
+	// SessionUsageCumulative reports that Usage accumulates across a resumed
+	// durable session, so round N's counters include rounds 1..N-1. The pipeline
+	// uses it to record correct per-round token deltas (see PerRoundTokens).
+	SessionUsageCumulative bool
+}
+
+// TokenUsage tracks token consumption for an agent invocation.
+type TokenUsage struct {
+	InputTokens         int
+	OutputTokens        int
+	CacheReadTokens     int
+	CacheCreationTokens int
+	// ReasoningTokens is the output tokens the model spent on hidden reasoning,
+	// when the provider reports it separately. Zero when not reported.
+	ReasoningTokens       int
+	Reported              bool
+	CacheCreationReported bool
+}
+
+// InvocationWorkload is the bounded size of the change an invocation works
+// over: changed files and net changed lines. It carries no paths or content.
+type InvocationWorkload struct {
+	Files int
+	Lines int
+}
+
+// Options configures backend-specific agent construction behavior.
+// ACPRegistryOverrides maps acpx target names, including first-class alias
+// targets, to raw ACP agent commands.
+type Options struct {
+	ACPRegistryOverrides map[string]string
+	// DisableProjectSettings, when true, asks a supported adapter (codex,
+	// claude, pi) to launch with the target repo's project-level agent
+	// settings/instructions suppressed. It is the resolved, trusted-only opt-out
+	// from config.Config; adapters without a verified suppression knob ignore it
+	// and are refused separately by EnsureGateNeutralized when the opt-out is on.
+	DisableProjectSettings bool
+}
+
+func finalizeTextResult(agentName, text string, schema json.RawMessage, usage TokenUsage) (*Result, error) {
+	if text == "" {
+		return nil, fmt.Errorf("%s returned no text output", agentName)
+	}
+	if len(schema) == 0 {
+		return &Result{Text: text, Usage: usage, UsageReported: usage.Reported, CacheCreationReported: usage.CacheCreationReported}, nil
+	}
+
+	output, err := parseStructuredTextOutput(text, schema)
+	if err != nil {
+		return nil, fmt.Errorf("%s output parse: %w (output snippet: %q)", agentName, err, outputSnippet(text))
+	}
+
+	return &Result{Output: output, Text: text, Usage: usage, UsageReported: usage.Reported, CacheCreationReported: usage.CacheCreationReported}, nil
+}
+
+// outputSnippet returns a trimmed, length-capped excerpt of agent output for
+// inclusion in parse-failure errors. Without it, errors like "invalid
+// character 'N'" are undiagnosable without separately capturing agent stdout.
+func outputSnippet(text string) string {
+	const max = 200
+	trimmed := strings.TrimSpace(text)
+	runes := []rune(trimmed)
+	if len(runes) > max {
+		return string(runes[:max]) + "…"
+	}
+	return trimmed
+}
+
+func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMessage, error) {
+	validationSchema, err := textValidationSchema(schema)
+	if err != nil {
+		return nil, err
+	}
+
+	output, rawErr := parseStructuredCandidate([]byte(text), validationSchema)
+	if rawErr == nil {
+		return output, nil
+	}
+
+	candidates := fencedJSONCandidates(text)
+	var parsed []json.RawMessage
+	var candidateErr error
+	for _, candidate := range candidates {
+		fenced, err := parseStructuredCandidate([]byte(candidate), validationSchema)
+		if err == nil {
+			parsed = append(parsed, fenced)
+			continue
+		}
+		if candidateErr == nil {
+			candidateErr = err
+		}
+	}
+	switch len(parsed) {
+	case 0:
+	case 1:
+		return parsed[0], nil
+	default:
+		return nil, fmt.Errorf("multiple JSON code fences found in output")
+	}
+
+	if bare, err := lastBareJSONObject(text, validationSchema); err == nil && bare != nil {
+		return bare, nil
+	} else if candidateErr == nil && err != nil {
+		candidateErr = err
+	}
+
+	if candidateErr != nil {
+		return nil, candidateErr
+	}
+	return nil, rawErr
+}
+
+func textValidationSchema(schema json.RawMessage) (json.RawMessage, error) {
+	if len(schema) == 0 {
+		return nil, nil
+	}
+
+	var value any
+	if err := json.Unmarshal(schema, &value); err != nil {
+		return nil, err
+	}
+	allowOptionalSchemaNulls(value)
+	return json.Marshal(value)
+}
+
+// fencedJSONCandidates extracts JSON bodies from ```json ... ``` fences.
+// Fence markers may appear anywhere in the text, including glued to the end
+// of a preceding line (e.g. "...behavior.```json"), which is a shape real
+// codex/GPT-5 output regularly produces.
+func fencedJSONCandidates(text string) []string {
+	var candidates []string
+	rest := text
+	for {
+		start := indexJSONFenceOpen(rest)
+		if start < 0 {
+			return candidates
+		}
+		body := rest[start:]
+		end, next := indexJSONFenceClose(body)
+		if end < 0 {
+			return candidates
+		}
+		candidates = append(candidates, body[:end])
+		rest = body[next:]
+	}
+}
+
+// indexJSONFenceOpen returns the byte offset of the content immediately
+// following an opening ```json fence (the char after the info line's
+// newline), or -1 if no opener exists.
+func indexJSONFenceOpen(text string) int {
+	for searchStart := 0; searchStart < len(text); {
+		i := strings.Index(text[searchStart:], "```")
+		if i < 0 {
+			return -1
+		}
+		i += searchStart
+		contentStart, info := fenceContentStart(text, i)
+		if strings.EqualFold(strings.TrimSpace(info), "json") {
+			return contentStart
+		}
+		next := skipFenceBlock(text[contentStart:])
+		if next < 0 {
+			return -1
+		}
+		searchStart = contentStart + next
+	}
+	return -1
+}
+
+func fenceContentStart(text string, fenceStart int) (int, string) {
+	after := text[fenceStart+3:]
+	lineEnd := strings.IndexByte(after, '\n')
+	if lineEnd < 0 {
+		return fenceStart + 3 + len(after), after
+	}
+	return fenceStart + 3 + lineEnd + 1, after[:lineEnd]
+}
+
+func skipFenceBlock(text string) int {
+	depth := 1
+	for lineStart := 0; lineStart < len(text); {
+		lineEnd := strings.IndexByte(text[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(text)
+		} else {
+			lineEnd += lineStart
+		}
+		line := text[lineStart:lineEnd]
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "```") {
+			if strings.TrimSpace(trimmed[3:]) == "" {
+				depth--
+				if depth == 0 {
+					return lineStart + (len(line) - len(trimmed)) + 3
+				}
+			} else {
+				depth++
+			}
+		}
+		if lineEnd == len(text) {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	return -1
+}
+
+func indexJSONFenceClose(text string) (int, int) {
+	for lineStart := 0; lineStart < len(text); {
+		lineEnd := strings.IndexByte(text[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(text)
+		} else {
+			lineEnd += lineStart
+		}
+		line := text[lineStart:lineEnd]
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "```") {
+			indent := len(line) - len(trimmed)
+			return lineStart, lineStart + indent + 3
+		}
+		if lineEnd == len(text) {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	trimmed := strings.TrimRight(text, " \t\r\n")
+	if strings.HasSuffix(trimmed, "```") {
+		return len(trimmed) - 3, len(trimmed)
+	}
+	return -1, -1
+}
+
+// lastBareJSONObject scans text for balanced {...} substrings that parse
+// as JSON and returns the last one found. This handles models that emit
+// reasoning prose followed by a raw JSON answer, with no code fence.
+func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, error) {
+	var last json.RawMessage
+	var lastErr error
+	for i := 0; i < len(text); i++ {
+		if strings.HasPrefix(text[i:], "```") {
+			contentStart, _ := fenceContentStart(text, i)
+			next := skipFenceBlock(text[contentStart:])
+			if next < 0 {
+				break
+			}
+			i = contentStart + next - 1
+			continue
+		}
+		if text[i] != '{' {
+			continue
+		}
+		end, ok := scanBalancedObject(text, i)
+		if !ok {
+			continue
+		}
+		candidate := text[i:end]
+		obj, err := parseStructuredCandidate([]byte(candidate), schema)
+		if err == nil {
+			last = obj
+			lastErr = nil
+		} else if lastErr == nil {
+			lastErr = err
+		}
+		i = end - 1
+	}
+	if last != nil {
+		return last, nil
+	}
+	return nil, lastErr
+}
+
+// scanBalancedObject returns the exclusive end index of a brace-balanced
+// substring starting at text[start] == '{', or (0, false) if no balanced
+// closing brace exists. It respects JSON string literals so braces inside
+// strings do not affect the depth count.
+func scanBalancedObject(text string, start int) (int, bool) {
+	depth := 0
+	inString := false
+	escape := false
+	for i := start; i < len(text); i++ {
+		c := text[i]
+		if inString {
+			if escape {
+				escape = false
+				continue
+			}
+			switch c {
+			case '\\':
+				escape = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func parseStructuredCandidate(candidate, schema []byte) (json.RawMessage, error) {
+	var output json.RawMessage
+	if err := json.Unmarshal(candidate, &output); err != nil {
+		return nil, err
+	}
+	normalized, err := applySchemaDefaults(output, schema)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateStructuredOutput(normalized, schema); err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+// applySchemaDefaults fills missing object properties that carry a "default"
+// annotation in the schema, then returns the completed output. This is the
+// tolerant-parse contract for structured agent output: a finding that omits
+// "action" (schema default "no-op") or "review_scope" (schema default
+// "source") is completed rather than rejected, while fields the agent did
+// provide keep strict enum/type validation (see validateStructuredOutput).
+// Defaults are opt-in per schema property, so schemas without "default"
+// annotations are returned byte-for-byte unchanged.
+func applySchemaDefaults(output, schema json.RawMessage) (json.RawMessage, error) {
+	if len(schema) == 0 {
+		return output, nil
+	}
+	var parsedSchema any
+	if err := json.Unmarshal(schema, &parsedSchema); err != nil {
+		return nil, err
+	}
+	value, err := decodeJSONValue(output)
+	if err != nil {
+		return nil, err
+	}
+	if !injectSchemaDefaults(value, parsedSchema) {
+		return output, nil
+	}
+	return json.Marshal(value)
+}
+
+// injectSchemaDefaults walks value against schema and fills every missing
+// property that declares a default. It reports whether any default was
+// injected. The walk mirrors validateJSONValue's shape (object properties and
+// array items) so defaults land at the same depth validation enforces.
+func injectSchemaDefaults(value, schema any) bool {
+	schemaMap, ok := schema.(map[string]any)
+	if !ok {
+		return false
+	}
+	changed := false
+	properties, _ := schemaMap["properties"].(map[string]any)
+	if object, ok := value.(map[string]any); ok {
+		for name, propSchema := range properties {
+			if _, present := object[name]; present {
+				if injectSchemaDefaults(object[name], propSchema) {
+					changed = true
+				}
+				continue
+			}
+			if def, hasDefault := propSchema.(map[string]any)["default"]; hasDefault {
+				object[name] = def
+				changed = true
+			}
+		}
+	}
+	if items, ok := schemaMap["items"]; ok {
+		if array, ok := value.([]any); ok {
+			for _, item := range array {
+				if injectSchemaDefaults(item, items) {
+					changed = true
+				}
+			}
+		}
+	}
+	return changed
+}
+
+func validateStructuredOutput(output, schema json.RawMessage) error {
+	if len(schema) == 0 {
+		return nil
+	}
+
+	var parsedSchema any
+	if err := json.Unmarshal(schema, &parsedSchema); err != nil {
+		return err
+	}
+
+	value, err := decodeJSONValue(output)
+	if err != nil {
+		return err
+	}
+
+	if err := validateJSONValue(value, parsedSchema, ""); err != nil {
+		return fmt.Errorf("JSON output %w", err)
+	}
+	return nil
+}
+
+func allowOptionalSchemaNulls(value any) {
+	schema, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+
+	required := requiredSet(schema)
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		for name, property := range properties {
+			allowOptionalSchemaNulls(property)
+			if !required[name] {
+				allowSchemaNull(property)
+			}
+		}
+	}
+	if items, ok := schema["items"]; ok {
+		allowOptionalSchemaNulls(items)
+	}
+}
+
+func decodeJSONValue(raw []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&struct{}{}); err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return value, nil
+}
+
+func validateJSONValue(value, schema any, path string) error {
+	schemaMap, ok := schema.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	if enum, ok := schemaMap["enum"].([]any); ok && !matchesEnum(value, enum) {
+		return fmt.Errorf("%smust match one of the allowed values", formatJSONPath(path))
+	}
+
+	if types, ok := schemaTypes(schemaMap); ok && !matchesAnyType(value, types) {
+		return fmt.Errorf("%smust be %s", formatJSONPath(path), strings.Join(types, " or "))
+	}
+
+	if object, ok := value.(map[string]any); ok {
+		if err := validateJSONObject(object, schemaMap, path); err != nil {
+			return err
+		}
+	}
+	if array, ok := value.([]any); ok {
+		if err := validateJSONArray(array, schemaMap, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateJSONObject(object map[string]any, schema map[string]any, path string) error {
+	required := stringSlice(schema["required"])
+	for _, key := range required {
+		if _, ok := object[key]; !ok {
+			return fmt.Errorf("%smissing required field %q", formatJSONPath(path), key)
+		}
+	}
+
+	properties, _ := schema["properties"].(map[string]any)
+	if additional, ok := schema["additionalProperties"].(bool); ok && !additional {
+		for key := range object {
+			if _, ok := properties[key]; !ok {
+				return fmt.Errorf("%scontains unknown field %q", formatJSONPath(path), key)
+			}
+		}
+	}
+
+	for key, propSchema := range properties {
+		child, ok := object[key]
+		if !ok {
+			continue
+		}
+		if err := validateJSONValue(child, propSchema, joinJSONPath(path, key)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateJSONArray(array []any, schema map[string]any, path string) error {
+	itemsSchema, ok := schema["items"]
+	if !ok {
+		return nil
+	}
+	for i, item := range array {
+		if err := validateJSONValue(item, itemsSchema, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func schemaTypes(schema map[string]any) ([]string, bool) {
+	switch raw := schema["type"].(type) {
+	case string:
+		return []string{raw}, true
+	case []any:
+		types := stringSlice(raw)
+		return types, len(types) > 0
+	default:
+		return nil, false
+	}
+}
+
+func stringSlice(raw any) []string {
+	items, ok := raw.([]any)
+	if !ok {
+		if single, ok := raw.([]string); ok {
+			return single
+		}
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		str, ok := item.(string)
+		if !ok {
+			continue
+		}
+		out = append(out, str)
+	}
+	return out
+}
+
+func matchesAnyType(value any, types []string) bool {
+	for _, typ := range types {
+		if matchesType(value, typ) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesType(value any, typ string) bool {
+	switch typ {
+	case "object":
+		_, ok := value.(map[string]any)
+		return ok
+	case "array":
+		_, ok := value.([]any)
+		return ok
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "integer":
+		number, ok := value.(json.Number)
+		return ok && isJSONInteger(number)
+	case "number":
+		_, ok := value.(json.Number)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "null":
+		return value == nil
+	default:
+		return true
+	}
+}
+
+func isJSONInteger(number json.Number) bool {
+	_, err := number.Int64()
+	return err == nil
+}
+
+func matchesEnum(value any, allowed []any) bool {
+	valueJSON, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	for _, candidate := range allowed {
+		candidateJSON, err := json.Marshal(candidate)
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(valueJSON, candidateJSON) {
+			return true
+		}
+	}
+	return false
+}
+
+func joinJSONPath(path, key string) string {
+	if path == "" {
+		return key
+	}
+	return path + "." + key
+}
+
+func formatJSONPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	return path + " "
+}
+
+// Total returns input + output tokens (the billing-relevant total).
+func (u TokenUsage) Total() int {
+	return u.InputTokens + u.OutputTokens
+}
+
+// Add accumulates another usage into this one.
+func (u *TokenUsage) Add(other TokenUsage) {
+	u.InputTokens += other.InputTokens
+	u.OutputTokens += other.OutputTokens
+	u.CacheReadTokens += other.CacheReadTokens
+	u.CacheCreationTokens += other.CacheCreationTokens
+	u.ReasoningTokens += other.ReasoningTokens
+	u.Reported = u.Reported || other.Reported
+	u.CacheCreationReported = u.CacheCreationReported || other.CacheCreationReported
+}
+
+// New creates an agent by name with the given binary path.
+// For native agents, extraArgs are user CLI flags from agent_args_override that
+// are injected into the underlying tool's argv ahead of drill's managed flags.
+// ACP agents and aliases ignore extraArgs; use NewWithOptions to provide
+// registry overrides.
+func New(name types.AgentName, bin string, extraArgs []string) (Agent, error) {
+	return NewWithOptions(name, bin, extraArgs, Options{})
+}
+
+// NewWithOptions creates an agent by name with additional backend-specific options.
+func NewWithOptions(name types.AgentName, bin string, extraArgs []string, opts Options) (Agent, error) {
+	if target, ok := types.ACPTargetFor(name); ok {
+		rawCommand := types.ACPRawCommand(target, opts.ACPRegistryOverrides)
+		return &acpxAgent{bin: bin, target: target, rawCommand: rawCommand}, nil
+	}
+	switch name {
+	case types.AgentClaude:
+		return &claudeAgent{bin: bin, extraArgs: extraArgs, disableProjectSettings: opts.DisableProjectSettings}, nil
+	case types.AgentCodex:
+		return &codexAgent{bin: bin, extraArgs: extraArgs, disableProjectSettings: opts.DisableProjectSettings}, nil
+	case types.AgentRovoDev:
+		return &rovodevAgent{bin: bin, extraArgs: extraArgs}, nil
+	case types.AgentOpenCode:
+		return &opencodeAgent{bin: bin, extraArgs: extraArgs}, nil
+	case types.AgentPi:
+		return &piAgent{bin: bin, extraArgs: extraArgs, disableProjectSettings: opts.DisableProjectSettings}, nil
+	case types.AgentCopilot:
+		return &copilotAgent{bin: bin, extraArgs: extraArgs}, nil
+	default:
+		return nil, fmt.Errorf("unknown agent %q; valid options: auto, claude, codex, rovodev, opencode, pi, copilot, cursor, acp:<target> (set 'agent' in ~/.drill/config.yaml)", name)
+	}
+}
+
+// NewNoop returns an agent that does nothing. Used for demo mode where
+// mock steps handle all logic without calling a real agent.
+func NewNoop() Agent { return &noopAgent{} }
+
+type noopAgent struct{}
+
+func (n *noopAgent) Name() string                                      { return "noop" }
+func (n *noopAgent) Run(_ context.Context, _ RunOpts) (*Result, error) { return &Result{}, nil }
+func (n *noopAgent) Close() error                                      { return nil }

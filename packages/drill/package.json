@@ -1,0 +1,9 @@
+{
+  "name": "drill",
+  "private": true,
+  "scripts": {
+    "build": "go build -o dist/ ./cmd/drill",
+    "test": "go test ./...",
+    "lint": "go vet ./..."
+  }
+}
