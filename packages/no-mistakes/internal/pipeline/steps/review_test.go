@@ -658,6 +658,100 @@ func TestReviewStep_PathInstructionsLeaveUnconfiguredPromptUnchanged(t *testing.
 	}
 }
 
+// The review prompt must state the exact required per-finding fields (with
+// enums) and a one-line example. Regression: the pi agent (deepseek via pi)
+// produced well-reasoned findings that omitted "action"; the prompt contract
+// exists so the field set is explicit even where the JSON schema is only
+// inlined (pi has no --output-schema flag).
+func TestReviewStep_PromptStatesExactFindingFields(t *testing.T) {
+	t.Parallel()
+	prompt := reviewPromptFor(t, nil)
+	for _, want := range []string{
+		`"severity" (one of "error", "warning", "info")`,
+		`"description" (string)`,
+		`"action" (one of "no-op", "auto-fix", "ask-user")`,
+		`"review_scope" (one of "source", "pipeline-owned-delivery", "external-delivery")`,
+		`"action": "auto-fix", "review_scope": "source"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("review prompt missing finding-field contract %q", want)
+		}
+	}
+}
+
+// TestReviewStep_TolerantParseIncidentEndToEnd walks the review-gate incident
+// end to end: the pi agent produced well-reasoned findings that omitted
+// "action" and "review_scope", which used to kill the gate with "pi output
+// parse: JSON output findings[0] missing required field action". The mock
+// emulates the fixed pi adapter (internal/agent/pi.go) by delivering the
+// completed output the tolerant parse now produces - findings completed with
+// the schema defaults. The step must consume that output: findings carry
+// action=no-op / review_scope=source, the gate decision proceeds by severity
+// instead of dying at parse, and the approved head is captured.
+func TestReviewStep_TolerantParseIncidentEndToEnd(t *testing.T) {
+	t.Parallel()
+	dir, baseSHA, headSHA := setupGitRepo(t)
+
+	// incidentText is the shape of the real failing pi review output: a
+	// well-reasoned finding with no "action" and no "review_scope".
+	const incidentText = `{"findings":[{"severity":"warning","file":"internal/pipeline/steps/review.go","line":42,"description":"possible nil dereference on error return"}],"tested":["go test ./..."],"testing_summary":"all pass","risk_level":"low","risk_rationale":"well-bounded change with tests","risk_scope":"source-or-external"}`
+	// completedOutput is what the fixed adapter's tolerant parse
+	// (finalizeTextResult in internal/agent, covered by that package's tests)
+	// returns for incidentText against reviewFindingsSchema: the same bytes
+	// with the declared defaults injected.
+	const completedOutput = `{"findings":[{"severity":"warning","file":"internal/pipeline/steps/review.go","line":42,"description":"possible nil dereference on error return","action":"no-op","review_scope":"source"}],"tested":["go test ./..."],"testing_summary":"all pass","risk_level":"low","risk_rationale":"well-bounded change with tests","risk_scope":"source-or-external"}`
+
+	ag := &mockAgent{
+		name: "pi",
+		runFn: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+			if string(opts.JSONSchema) != string(reviewFindingsSchema) {
+				t.Errorf("review call must be validated against the review schema")
+			}
+			return &agent.Result{Output: json.RawMessage(completedOutput), Text: incidentText}, nil
+		},
+	}
+
+	sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatalf("review step failed on tolerant-parsed pi output: %v", err)
+	}
+	if len(ag.calls) != 1 {
+		t.Fatalf("expected 1 review call, got %d", len(ag.calls))
+	}
+
+	var got Findings
+	if err := json.Unmarshal([]byte(outcome.Findings), &got); err != nil {
+		t.Fatalf("outcome findings not consumable JSON: %v", err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 finding consumed by the step, got %d", len(got.Items))
+	}
+	if got.Items[0].Action != "no-op" {
+		t.Errorf("consumed finding action = %q, want default no-op", got.Items[0].Action)
+	}
+	if got.Items[0].ReviewScope != "source" {
+		t.Errorf("consumed finding review_scope = %q, want default source", got.Items[0].ReviewScope)
+	}
+	// The gate decision now proceeds on severity (warning blocks) instead of
+	// dying at parse with the reported incident error.
+	if !outcome.NeedsApproval {
+		t.Error("expected warning-severity finding to need approval")
+	}
+	// The defaulted no-op action keeps the finding out of every auto-fix path
+	// (AutoFixableFindings / HasActionableFindings), so yolo/auto-resolve
+	// cannot treat an unclassified pi finding as fixable.
+	if types.HasActionableFindings(got) {
+		t.Error("expected defaulted no-op finding to be non-actionable")
+	}
+	if len(types.AutoFixableFindings(got).Items) != 0 {
+		t.Error("expected defaulted no-op finding to be excluded from auto-fix")
+	}
+	if outcome.ReviewApprovedHeadSHA != sctx.Run.HeadSHA {
+		t.Errorf("approved head = %s, want %s", outcome.ReviewApprovedHeadSHA, sctx.Run.HeadSHA)
+	}
+}
+
 // Only the blocks whose glob matches a changed path reach the reviewer, in
 // config order, each labelled with the scope it was selected for.
 func TestReviewStep_AppendsMatchedPathInstructionsOnly(t *testing.T) {

@@ -532,10 +532,77 @@ func parseStructuredCandidate(candidate, schema []byte) (json.RawMessage, error)
 	if err := json.Unmarshal(candidate, &output); err != nil {
 		return nil, err
 	}
-	if err := validateStructuredOutput(output, schema); err != nil {
+	normalized, err := applySchemaDefaults(output, schema)
+	if err != nil {
 		return nil, err
 	}
-	return output, nil
+	if err := validateStructuredOutput(normalized, schema); err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+// applySchemaDefaults fills missing object properties that carry a "default"
+// annotation in the schema, then returns the completed output. This is the
+// tolerant-parse contract for structured agent output: a finding that omits
+// "action" (schema default "no-op") or "review_scope" (schema default
+// "source") is completed rather than rejected, while fields the agent did
+// provide keep strict enum/type validation (see validateStructuredOutput).
+// Defaults are opt-in per schema property, so schemas without "default"
+// annotations are returned byte-for-byte unchanged.
+func applySchemaDefaults(output, schema json.RawMessage) (json.RawMessage, error) {
+	if len(schema) == 0 {
+		return output, nil
+	}
+	var parsedSchema any
+	if err := json.Unmarshal(schema, &parsedSchema); err != nil {
+		return nil, err
+	}
+	value, err := decodeJSONValue(output)
+	if err != nil {
+		return nil, err
+	}
+	if !injectSchemaDefaults(value, parsedSchema) {
+		return output, nil
+	}
+	return json.Marshal(value)
+}
+
+// injectSchemaDefaults walks value against schema and fills every missing
+// property that declares a default. It reports whether any default was
+// injected. The walk mirrors validateJSONValue's shape (object properties and
+// array items) so defaults land at the same depth validation enforces.
+func injectSchemaDefaults(value, schema any) bool {
+	schemaMap, ok := schema.(map[string]any)
+	if !ok {
+		return false
+	}
+	changed := false
+	properties, _ := schemaMap["properties"].(map[string]any)
+	if object, ok := value.(map[string]any); ok {
+		for name, propSchema := range properties {
+			if _, present := object[name]; present {
+				if injectSchemaDefaults(object[name], propSchema) {
+					changed = true
+				}
+				continue
+			}
+			if def, hasDefault := propSchema.(map[string]any)["default"]; hasDefault {
+				object[name] = def
+				changed = true
+			}
+		}
+	}
+	if items, ok := schemaMap["items"]; ok {
+		if array, ok := value.([]any); ok {
+			for _, item := range array {
+				if injectSchemaDefaults(item, items) {
+					changed = true
+				}
+			}
+		}
+	}
+	return changed
 }
 
 func validateStructuredOutput(output, schema json.RawMessage) error {

@@ -1029,6 +1029,46 @@ func TestReviewFindingsSchema_ActionAtItemLevel(t *testing.T) {
 	}
 }
 
+func TestReviewFindingsSchema_ActionDefaultsToNoOp(t *testing.T) {
+	t.Parallel()
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(reviewFindingsSchema, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	props := parsed["properties"].(map[string]interface{})
+	items := props["findings"].(map[string]interface{})["items"].(map[string]interface{})
+	itemProps := items["properties"].(map[string]interface{})
+	if got := itemProps["action"].(map[string]interface{})["default"]; got != "no-op" {
+		t.Errorf("review action default = %v, want no-op", got)
+	}
+	if got := itemProps["review_scope"].(map[string]interface{})["default"]; got != "source" {
+		t.Errorf("review review_scope default = %v, want source", got)
+	}
+}
+
+func TestFindingsSchemas_ActionDefaultsToNoOp(t *testing.T) {
+	t.Parallel()
+	for name, schema := range map[string]json.RawMessage{
+		"findingsSchema":     findingsSchema,
+		"testFindingsSchema": testFindingsSchema,
+	} {
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(schema, &parsed); err != nil {
+			t.Fatal(err)
+		}
+		props := parsed["properties"].(map[string]interface{})
+		items := props["findings"].(map[string]interface{})["items"].(map[string]interface{})
+		itemProps := items["properties"].(map[string]interface{})
+		action, ok := itemProps["action"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s missing action property", name)
+		}
+		if got := action["default"]; got != "no-op" {
+			t.Errorf("%s action default = %v, want no-op", name, got)
+		}
+	}
+}
+
 func TestReviewFindingsSchema_AllowsTestingMetadata(t *testing.T) {
 	t.Parallel()
 	var parsed map[string]interface{}
