@@ -75,7 +75,7 @@ describe("markdown grammar", () => {
     // Real-corpus coverage: byte-exact on Squad's actual backlog when present
     // (the file is not committed to this public package, so this skips in CI).
     const realPath =
-      "/home/squad/github/squad-org/squad/data/backlog.md";
+      "/home/squad/github/runecraftai/squad/data/backlog.md";
     it.skipIf(!existsSync(realPath))(
       "render(parse(src)) === src on the real backlog",
       () => {

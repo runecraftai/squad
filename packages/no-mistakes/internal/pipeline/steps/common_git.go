@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
 )
 
 // reviewWorkload returns the bounded change size (files + net lines) between

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
 )
 
 // pathInstructionBlock is one trusted rule that matched the change, together

@@ -40,7 +40,7 @@ The sergeant at arms detects and offers to install supported missing tools after
 
 ```sh
 gh auth login
-git clone https://github.com/squad-org/squad
+git clone https://github.com/runecraftai/squad
 cd squad
 ```
 
@@ -93,7 +93,7 @@ Setup guides for tmux (the default) and every other supported backend (herdr, ze
 
 - **One liaison** - you talk only to the sergeant at arms; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
 - **A visible squad** - every operator works in its own tmux window, experimental herdr/zellij tab, cmux workspace, or Orca terminal you can watch or type into; the sergeant at arms reconciles.
-- **Disposable worktrees** - each task runs in a clean [FOB](https://github.com/squad-org/squad/tree/main/packages/fob) (worktree pool) git worktree, or an Orca-managed worktree when `backend=orca`, so parallel work on one repo never collides.
+- **Disposable worktrees** - each task runs in a clean [FOB](https://github.com/runecraftai/squad/tree/main/packages/fob) (worktree pool) git worktree, or an Orca-managed worktree when `backend=orca`, so parallel work on one repo never collides.
 - **Two task shapes** - strike tasks deliver authorized changes; recon tasks leave standalone investigation reports when the intake contract warrants separate research.
 - **Explicit project modes** - each project deploys via `no-mistakes`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.
 - **Optional XOs** - persistent XOs run from isolated Squad homes with their own `SQUAD_HOME`, state, projects, and session lock, locally or as a whole home on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.

@@ -3,7 +3,7 @@
 Thanks for wanting to contribute.
 One rule up front:
 
-**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/squad-org/squad/tree/main/packages/no-mistakes).**  # OQ-03 placeholder
+**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/runecraftai/squad/tree/main/packages/no-mistakes).**  # OQ-03 placeholder
 We require this to reduce the maintainer's burden of reviewing and merging contributions.
 
 `no-mistakes` puts a local git proxy in front of your real remote.
@@ -15,7 +15,7 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
 
 ## Workflow
 
-1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:<squad-org>/squad.git`)  # OQ-03 placeholder.
+1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:runecraftai/squad.git`)  # OQ-03 placeholder.
 2. Create a branch and make your changes.
 3. Initialize the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/squad.git` (Squad expects **no-mistakes v1.31.2+**; without a fork, plain `no-mistakes init` still works for maintainers with push access).
 4. Commit your changes.
@@ -29,7 +29,7 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
    Follow the installed no-mistakes version's SKILL.md and live `axi` help for gate mechanics.
 7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against the parent repo for you.
 
-See the [no-mistakes quick start](https://github.com/squad-org/squad/tree/main/packages/no-mistakes)  # OQ-03 placeholder for the full first-run walkthrough.
+See the [no-mistakes quick start](https://github.com/runecraftai/squad/tree/main/packages/no-mistakes)  # OQ-03 placeholder for the full first-run walkthrough.
 
 ## Repo conventions
 

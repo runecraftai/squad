@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // The fix-review diff is the one piece of gate context that is not persisted

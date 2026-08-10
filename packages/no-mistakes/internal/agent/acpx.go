@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
 )
 
 const acpxScannerMaxTokenSize = 256 * 1024 * 1024

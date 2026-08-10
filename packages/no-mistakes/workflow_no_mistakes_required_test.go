@@ -45,7 +45,7 @@ func TestNoMistakesRequiredWorkflowChecksSignatureMarker(t *testing.T) {
 	}
 	content := string(data)
 
-	marker := "Updates from [git push no-mistakes](https://github.com/squad-org/squad/packages/no-mistakes)"
+	marker := "Updates from [git push no-mistakes](https://github.com/runecraftai/squad/packages/no-mistakes)"
 	if !strings.Contains(content, marker) {
 		t.Fatalf("workflow must grep for the prsummary.go signature marker:\n  %s", marker)
 	}
@@ -104,7 +104,7 @@ func TestNoMistakesRequiredWorkflowTriggersOnRelevantPREvents(t *testing.T) {
 // that survives scheduling.
 func TestNoMistakesRequiredWorkflowExecutesEveryBodyEvent(t *testing.T) {
 	workflow := loadRequiredWorkflow(t)
-	marker := "Updates from [git push no-mistakes](https://github.com/squad-org/squad/packages/no-mistakes)"
+	marker := "Updates from [git push no-mistakes](https://github.com/runecraftai/squad/packages/no-mistakes)"
 	events := []requiredWorkflowEvent{
 		{Action: "opened", Body: "## Pipeline\n\n" + marker, HeadSHA: "same-head", PRNumber: 549, RunID: 29962844999, RunNumber: 586},
 		{Action: "edited", Body: "signature removed", HeadSHA: "same-head", PRNumber: 549, RunID: 29962943078, RunNumber: 587},

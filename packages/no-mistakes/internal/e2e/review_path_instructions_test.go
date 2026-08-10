@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // Instruction text used by the journey below. Each string is distinctive so an

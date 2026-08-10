@@ -12,8 +12,8 @@ import (
 
 	toon "github.com/toon-format/toon-go"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // axiIntent is a distinctive intent string so we can prove it flowed all the

@@ -13,12 +13,12 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 func TestPRStep_GhNotAvailable(t *testing.T) {
@@ -1459,7 +1459,7 @@ func TestFallbackPRContentCapsBodyAfterPrependedIntent(t *testing.T) {
 
 func pipelineMarkdownForTest(rounds ...string) string {
 	var b strings.Builder
-	b.WriteString("## Pipeline\n\nUpdates from [git push no-mistakes](https://github.com/squad-org/squad/packages/no-mistakes)\n\n")
+	b.WriteString("## Pipeline\n\nUpdates from [git push no-mistakes](https://github.com/runecraftai/squad/packages/no-mistakes)\n\n")
 	b.WriteString("<details>\n")
 	b.WriteString("<summary>🔧 **Review** - update rounds</summary>\n\n")
 	for _, round := range rounds {

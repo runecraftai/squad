@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultGitHubAPIURL = "https://api.github.com/repos/squad-org/squad/releases/latest"
+	defaultGitHubAPIURL = "https://api.github.com/repos/runecraftai/squad/releases/latest"
 	cacheFileName       = "update-check.json"
 	checksumsFile       = "checksums.txt"
 	cacheTTL            = 24 * time.Hour

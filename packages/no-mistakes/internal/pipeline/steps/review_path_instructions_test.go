@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
 )
 
 // wantBlock builds the exact rendered block for one rule so assertions compare

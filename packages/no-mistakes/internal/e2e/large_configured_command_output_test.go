@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 const largeCommandMiddleMarker = "OMITTED_SECRET_MIDDLE_MARKER_7f9c"

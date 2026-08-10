@@ -53,7 +53,7 @@
 ## 安装
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/squad-org/squad/main/docs/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/docs/install.sh | sh
 ```
 
 Windows、Go install 以及从源码构建的说明，见[安装指南](https://squad.example/no-mistakes/start-here/installation/)。

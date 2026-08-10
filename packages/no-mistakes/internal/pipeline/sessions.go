@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
 )
 
 // SessionRole identifies which durable review-loop session an invocation

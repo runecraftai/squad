@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 func TestCIStep_MergeConflictDetected_ReturnsNeedsApproval(t *testing.T) {

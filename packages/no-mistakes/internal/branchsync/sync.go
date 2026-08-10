@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gatecontext"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gatecontext"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 const refreshTimeout = 15 * time.Second

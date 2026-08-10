@@ -18,7 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/skill"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/skill"
 )
 
 func main() {

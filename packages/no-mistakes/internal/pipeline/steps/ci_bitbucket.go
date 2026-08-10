@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/bitbucket"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/bitbucket"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
 )
 
 // resolveBitbucketRepoRef parses a Bitbucket repo reference from the upstream

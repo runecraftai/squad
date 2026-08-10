@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/branchsync"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/branchsync"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
 )
 
 func TestCIStep_CommitAndPush(t *testing.T) {

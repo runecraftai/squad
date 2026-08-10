@@ -33,7 +33,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu
-          marker='Updates from [git push no-mistakes](https://github.com/squad-org/squad/tree/main/packages/no-mistakes)'  # OQ-03 placeholder
+          marker='Updates from [git push no-mistakes](https://github.com/runecraftai/squad/tree/main/packages/no-mistakes)'  # OQ-03 placeholder
           if printf '%s' "${PR_BODY:-}" | grep -qF -- "$marker"; then
             echo "Found no-mistakes signature in PR #${PR_NUMBER} body."
             exit 0

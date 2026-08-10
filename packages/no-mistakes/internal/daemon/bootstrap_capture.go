@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/logstore"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/logstore"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 )
 
 type bootstrapCapture struct {

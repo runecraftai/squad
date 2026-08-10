@@ -7,8 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 func TestLogConfiguredCommandOutputKeepsFullFileLogAndBoundsIPC(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
 )
 
 // sessionCall records one invocation the fake adapter received.

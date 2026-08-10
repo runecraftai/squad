@@ -5,7 +5,7 @@ package ipc_test
 import (
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
 )
 
 // TestServe_SecondListenerForLiveSocketDoesNotStealIt is the regression test

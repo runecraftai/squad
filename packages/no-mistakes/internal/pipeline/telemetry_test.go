@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
 )
 
 type recordedTelemetryEvent struct {

@@ -14,7 +14,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 	"golang.org/x/sys/windows"
 )
 

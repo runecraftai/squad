@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
 )
 
 // piAgent spawns the pi CLI for each invocation. Pi reads its prompt from

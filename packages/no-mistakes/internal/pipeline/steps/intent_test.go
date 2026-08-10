@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/intent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/intent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
 )
 
 // newIntentStepContext builds a StepContext backed by a real DB and

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="squad-org/squad"
+REPO="runecraftai/squad"
 INSTALL_DIR="${NO_MISTAKES_INSTALL_DIR:-$HOME/.no-mistakes/bin}"
 LINK_DIR="${NO_MISTAKES_LINK_DIR:-}"
 

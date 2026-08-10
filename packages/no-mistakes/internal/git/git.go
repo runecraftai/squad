@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 )
 
 // EmptyTreeSHA is the well-known SHA of an empty tree in git.

@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo"
 )
 
 const (

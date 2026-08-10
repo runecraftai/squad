@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // TestAxiMutationCommandsEmitPageviews verifies that state-changing axi

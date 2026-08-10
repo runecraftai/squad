@@ -6,10 +6,10 @@ import (
 	"io"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )

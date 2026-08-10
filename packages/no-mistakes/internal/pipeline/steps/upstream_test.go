@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
 )
 
 // minimalStepContext builds a StepContext with just enough fields for the

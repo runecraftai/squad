@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
 	"github.com/spf13/cobra"
 )
 

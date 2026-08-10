@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/e2edaemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/e2edaemon"
 )
 
 // TestMain recovers any stale temporary-daemon inventory left by a prior

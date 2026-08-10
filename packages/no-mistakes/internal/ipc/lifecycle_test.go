@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
 )
 
 func TestServerClose(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 func TestRepoSlug(t *testing.T) {

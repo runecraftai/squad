@@ -4,8 +4,8 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/squad-org/squad/packages/fob/cmd"
-	"github.com/squad-org/squad/packages/fob/internal/updater"
+	"github.com/runecraftai/squad/packages/fob/cmd"
+	"github.com/runecraftai/squad/packages/fob/internal/updater"
 )
 
 var version = ""

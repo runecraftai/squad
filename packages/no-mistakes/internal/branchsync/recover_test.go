@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	gitpkg "github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	pipelinepkg "github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	gitpkg "github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	pipelinepkg "github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 type cancellationRaceStep struct {

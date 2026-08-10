@@ -9,16 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gate"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/wizard"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gate"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/wizard"
 )
 
 var resolveWizardAgent = func(ctx context.Context, cfg *config.Config) error {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 	"gopkg.in/yaml.v3"
 )
 

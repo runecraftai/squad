@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
 )
 
 // socketPath returns a short socket path to stay within macOS 104-byte limit.

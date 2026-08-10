@@ -5,7 +5,7 @@ Thanks for your interest in contributing!
 ## Getting Started
 
 ```sh
-git clone https://github.com/squad-org/squad/packages/fob.git
+git clone https://github.com/runecraftai/squad/packages/fob.git
 cd fob
 make build
 make test
@@ -26,7 +26,7 @@ make test
 
 ## Reporting Issues
 
-Open a [GitHub issue](https://github.com/squad-org/squad/packages/fob/issues) with steps to reproduce. Include your OS, architecture, and fob version (`fob --version`).
+Open a [GitHub issue](https://github.com/runecraftai/squad/packages/fob/issues) with steps to reproduce. Include your OS, architecture, and fob version (`fob --version`).
 
 ## License
 

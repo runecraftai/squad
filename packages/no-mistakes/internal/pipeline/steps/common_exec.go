@@ -9,12 +9,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 )
 
 func envValue(env []string, key string) (string, bool) {

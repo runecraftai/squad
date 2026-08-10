@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
 )
 
 func TestMain(m *testing.M) {

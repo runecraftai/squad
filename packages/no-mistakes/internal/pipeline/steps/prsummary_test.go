@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 const testPipelineHeadSHA = "0123456789abcdef0123456789abcdef01234567"
@@ -44,7 +44,7 @@ func TestBuildPipelineSummary_AllClean(t *testing.T) {
 	if !strings.Contains(md, "## Pipeline") {
 		t.Error("missing Pipeline heading")
 	}
-	if !strings.Contains(md, "[git push no-mistakes](https://github.com/squad-org/squad/packages/no-mistakes)") {
+	if !strings.Contains(md, "[git push no-mistakes](https://github.com/runecraftai/squad/packages/no-mistakes)") {
 		t.Errorf("expected linked tagline, got:\n%s", md)
 	}
 	if strings.Count(md, "<details>") != len(steps) {

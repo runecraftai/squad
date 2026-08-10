@@ -135,7 +135,7 @@ Codex App support is recorded in `docs/codex-app-backend.md`; it is not selectab
 
 ## Worktrees, not branches in your checkout
 
-Operators never intentionally touch your project clone; [fob](https://github.com/squad-org/squad/tree/main/packages/fob  # OQ-03 placeholder: Squad org at publication) pools clean worktrees for tmux, herdr, zellij, and cmux tasks, while Orca creates its own worktrees for `backend=orca`.
+Operators never intentionally touch your project clone; [fob](https://github.com/runecraftai/squad/tree/main/packages/fob  # OQ-03 placeholder: Squad org at publication) pools clean worktrees for tmux, herdr, zellij, and cmux tasks, while Orca creates its own worktrees for `backend=orca`.
 For ship and recon work, `sq-spawn.sh` refuses to launch unless the resolved task path is a real git worktree root that is distinct from the project primary checkout.
 
 The Squad repo has one extra exposure because it can dispatch operators to work on itself.

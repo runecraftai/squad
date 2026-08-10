@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
 )
 
 // gitRunner runs a git subcommand and returns trimmed stdout. Callers bind it

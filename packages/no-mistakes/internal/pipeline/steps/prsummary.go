@@ -14,14 +14,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 const (
 	maxEmbeddedArtifactBytes               = 16 * 1024
 	maxEmbeddedArtifactsTotalBytes         = 32 * 1024
-	noMistakesPRSignature                  = "Updates from [git push no-mistakes](https://github.com/squad-org/squad/packages/no-mistakes)"
+	noMistakesPRSignature                  = "Updates from [git push no-mistakes](https://github.com/runecraftai/squad/packages/no-mistakes)"
 	pipelineAttestationCommentPrefix       = "<!-- no-mistakes-pipeline-attestation:v1 "
 	pipelineAttestationCommentClosingToken = " -->"
 )

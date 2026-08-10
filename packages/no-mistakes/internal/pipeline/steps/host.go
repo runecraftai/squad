@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/bitbucket"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm/azuredevops"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm/github"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm/gitlab"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/bitbucket"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm/azuredevops"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm/github"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm/gitlab"
 )
 
 // buildHost returns a scm.Host for the given provider, wired to sctx's

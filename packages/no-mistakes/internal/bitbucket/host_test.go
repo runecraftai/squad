@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 func TestNormalizePRState(t *testing.T) {

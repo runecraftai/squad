@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // orphanStartTimeTolerance bounds the acceptable difference between the

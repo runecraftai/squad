@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/squad-org/squad/packages/fob/internal/git"
-	"github.com/squad-org/squad/packages/fob/internal/hooks"
-	"github.com/squad-org/squad/packages/fob/internal/process"
+	"github.com/runecraftai/squad/packages/fob/internal/git"
+	"github.com/runecraftai/squad/packages/fob/internal/hooks"
+	"github.com/runecraftai/squad/packages/fob/internal/process"
 )
 
 const (

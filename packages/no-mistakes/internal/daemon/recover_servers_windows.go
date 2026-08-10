@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 )
 
 var taskkillProcessTree = func(pid int) ([]byte, error) {

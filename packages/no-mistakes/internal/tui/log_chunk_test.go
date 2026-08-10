@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 func TestModel_ApplyEvent_LogChunk_PartialLines(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/e2edaemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/e2edaemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // The daemon's exclusive OS lock on NM_HOME is released by the kernel only

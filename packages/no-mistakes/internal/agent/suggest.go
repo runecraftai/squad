@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/conventional"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/conventional"
 )
 
 // branchNameRules and commitSubjectRules are shared between the single-purpose

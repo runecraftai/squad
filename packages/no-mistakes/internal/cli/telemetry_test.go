@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
 )
 
 type recordedTelemetryEvent struct {

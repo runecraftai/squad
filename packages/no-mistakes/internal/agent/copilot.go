@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
 )
 
 // copilotAgent spawns the GitHub Copilot CLI for each invocation. Copilot

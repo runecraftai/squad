@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
 )
 
 // maxTranscriptBytes caps the size of transcript text we send to the

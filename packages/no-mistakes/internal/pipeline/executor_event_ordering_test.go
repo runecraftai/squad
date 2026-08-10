@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // D5: every state-changing event is emitted AFTER its database write.

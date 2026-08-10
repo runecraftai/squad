@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
@@ -44,7 +44,7 @@ func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/repos/squad-org/squad/releases/latest" {
+				if r.URL.Path != "/repos/runecraftai/squad/releases/latest" {
 					t.Fatalf("unexpected path %q", r.URL.Path)
 				}
 				fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}`,
@@ -56,7 +56,7 @@ func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
 			cachePath := filepath.Join(t.TempDir(), "update-check.json")
 			u := &updater{
 				appName:        "no-mistakes",
-				repo:           "squad-org/squad",
+				repo:           "runecraftai/squad",
 				currentVersion: "v1.2.2",
 				platform:       tt.platform,
 				apiBaseURL:     server.URL,
@@ -107,7 +107,7 @@ func TestUpdaterRunReplacesExecutable(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -131,7 +131,7 @@ func TestUpdaterRunReplacesExecutable(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -170,7 +170,7 @@ func TestUpdaterRunResetsDaemonAfterUpdate(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -194,7 +194,7 @@ func TestUpdaterRunResetsDaemonAfterUpdate(t *testing.T) {
 	resetCalled := false
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -229,7 +229,7 @@ func TestUpdaterRunRefusesWithActiveRunsAndListsThem(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -282,7 +282,7 @@ func TestUpdaterRunRefusesWithActiveRunsAndListsThem(t *testing.T) {
 	resetCalled := false
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -385,7 +385,7 @@ func TestUpdaterRunFailsWhenDaemonResetFails(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -410,7 +410,7 @@ func TestUpdaterRunFailsWhenDaemonResetFails(t *testing.T) {
 	stderr := new(bytes.Buffer)
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -460,7 +460,7 @@ func TestUpdaterRunFailsWhenDaemonResetLeavesDaemonOffline(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -484,7 +484,7 @@ func TestUpdaterRunFailsWhenDaemonResetLeavesDaemonOffline(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -530,7 +530,7 @@ func TestUpdaterRunFailsWhenDaemonUsesDifferentExecutable(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -575,7 +575,7 @@ func TestUpdaterRunFailsWhenDaemonUsesDifferentExecutable(t *testing.T) {
 	resetCalled := false
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -625,7 +625,7 @@ func TestUpdaterRunReplacesDaemonWhenDifferentExecutableConfirmed(t *testing.T) 
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -682,7 +682,7 @@ func TestUpdaterRunReplacesDaemonWhenDifferentExecutableConfirmed(t *testing.T) 
 			stderr := new(bytes.Buffer)
 			u := &updater{
 				appName:        "no-mistakes",
-				repo:           "squad-org/squad",
+				repo:           "runecraftai/squad",
 				currentVersion: "v1.2.2",
 				platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 				apiBaseURL:     server.URL,
@@ -741,7 +741,7 @@ func TestUpdaterRunFailsWhenDaemonExecutableCannotBeResolved(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}`,
 				archiveName,
 				server.URL+"/archive",
@@ -782,7 +782,7 @@ func TestUpdaterRunFailsWhenDaemonExecutableCannotBeResolved(t *testing.T) {
 	resetCalled := false
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -818,7 +818,7 @@ func TestUpdaterRunSkipsDaemonExecutableCheckWhenAlreadyUpToDate(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases/latest":
+		case "/repos/runecraftai/squad/releases/latest":
 			fmt.Fprint(w, `{"tag_name":"v1.2.2","assets":[]}`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -850,7 +850,7 @@ func TestUpdaterRunSkipsDaemonExecutableCheckWhenAlreadyUpToDate(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		platform:       platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:     server.URL,
@@ -941,13 +941,13 @@ func TestUpdaterCheckLatestBetaUsesReleasesList(t *testing.T) {
 	archiveName := "no-mistakes-v1.3.0-beta.1-darwin-arm64.tar.gz"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases":
+		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
 				{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
 				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]},
 				{"tag_name":"v1.4.0-draft","draft":true,"prerelease":true,"assets":[]}
 			]`, archiveName)
-		case "/repos/squad-org/squad/tags":
+		case "/repos/runecraftai/squad/tags":
 			fmt.Fprint(w, `[{"name":"v1.3.0-beta.1"},{"name":"v1.2.3"}]`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -957,7 +957,7 @@ func TestUpdaterCheckLatestBetaUsesReleasesList(t *testing.T) {
 
 	u := &updater{
 		appName:            "no-mistakes",
-		repo:               "squad-org/squad",
+		repo:               "runecraftai/squad",
 		currentVersion:     "v1.2.3",
 		platform:           platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:         server.URL,
@@ -989,13 +989,13 @@ func TestUpdaterCheckLatestBetaPicksHighestSemver(t *testing.T) {
 	archiveName := "no-mistakes-v1.3.0-beta.2-darwin-arm64.tar.gz"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases":
+		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
 				{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[]},
 				{"tag_name":"v1.3.0-beta.2","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
 				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]}
 			]`, archiveName)
-		case "/repos/squad-org/squad/tags":
+		case "/repos/runecraftai/squad/tags":
 			fmt.Fprint(w, `[{"name":"v1.3.0-beta.2"},{"name":"v1.3.0-beta.1"},{"name":"v1.2.3"}]`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -1005,7 +1005,7 @@ func TestUpdaterCheckLatestBetaPicksHighestSemver(t *testing.T) {
 
 	u := &updater{
 		appName:            "no-mistakes",
-		repo:               "squad-org/squad",
+		repo:               "runecraftai/squad",
 		currentVersion:     "v1.2.3",
 		platform:           platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:         server.URL,
@@ -1031,14 +1031,14 @@ func TestUpdaterCheckLatestBetaFallsBackToTagsWhenListingStale(t *testing.T) {
 	archiveName := "no-mistakes-v1.3.0-beta.1-darwin-arm64.tar.gz"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases":
+		case "/repos/runecraftai/squad/releases":
 			fmt.Fprint(w, `[
 				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]},
 				{"tag_name":"v1.2.2","draft":false,"prerelease":false,"assets":[]}
 			]`)
-		case "/repos/squad-org/squad/tags":
+		case "/repos/runecraftai/squad/tags":
 			fmt.Fprint(w, `[{"name":"v1.3.0-beta.1"},{"name":"v1.2.3"},{"name":"v1.2.2"}]`)
-		case "/repos/squad-org/squad/releases/tags/v1.3.0-beta.1":
+		case "/repos/runecraftai/squad/releases/tags/v1.3.0-beta.1":
 			fmt.Fprintf(w, `{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}`, archiveName)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -1048,7 +1048,7 @@ func TestUpdaterCheckLatestBetaFallsBackToTagsWhenListingStale(t *testing.T) {
 
 	u := &updater{
 		appName:            "no-mistakes",
-		repo:               "squad-org/squad",
+		repo:               "runecraftai/squad",
 		currentVersion:     "v1.2.3",
 		platform:           platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:         server.URL,
@@ -1081,12 +1081,12 @@ func TestUpdaterCheckLatestBetaChecksListedReleaseAfterMissingTags(t *testing.T)
 	tagFetches := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/squad-org/squad/releases":
+		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
 				{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
 				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]}
 			]`, archiveName)
-		case "/repos/squad-org/squad/tags":
+		case "/repos/runecraftai/squad/tags":
 			fmt.Fprint(w, `[
 				{"name":"v1.3.0-beta.6"},
 				{"name":"v1.3.0-beta.5"},
@@ -1097,7 +1097,7 @@ func TestUpdaterCheckLatestBetaChecksListedReleaseAfterMissingTags(t *testing.T)
 				{"name":"v1.2.3"}
 			]`)
 		default:
-			if strings.HasPrefix(r.URL.Path, "/repos/squad-org/squad/releases/tags/") {
+			if strings.HasPrefix(r.URL.Path, "/repos/runecraftai/squad/releases/tags/") {
 				tagFetches++
 				http.NotFound(w, r)
 				return
@@ -1109,7 +1109,7 @@ func TestUpdaterCheckLatestBetaChecksListedReleaseAfterMissingTags(t *testing.T)
 
 	u := &updater{
 		appName:            "no-mistakes",
-		repo:               "squad-org/squad",
+		repo:               "runecraftai/squad",
 		currentVersion:     "v1.2.3",
 		platform:           platformSpec{GOOS: "darwin", GOARCH: "arm64"},
 		apiBaseURL:         server.URL,

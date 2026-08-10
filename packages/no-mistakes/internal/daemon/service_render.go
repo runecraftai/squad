@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 )
 
 func serviceDefinitionMatchesRoot(data []byte, p *paths.Paths) bool {

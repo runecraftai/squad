@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/squad-org/squad/packages/fob/internal/config"
-	"github.com/squad-org/squad/packages/fob/internal/git"
-	"github.com/squad-org/squad/packages/fob/internal/pool"
-	"github.com/squad-org/squad/packages/fob/internal/ui"
+	"github.com/runecraftai/squad/packages/fob/internal/config"
+	"github.com/runecraftai/squad/packages/fob/internal/git"
+	"github.com/runecraftai/squad/packages/fob/internal/pool"
+	"github.com/runecraftai/squad/packages/fob/internal/ui"
 )
 
 var (

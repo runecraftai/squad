@@ -47,8 +47,8 @@ accepts 'git@192.168.1.10:/srv/git/app.git'
 accepts 'ssh://git@[2001:db8::1]:22/srv/git/app.git'
 accepts '[2001:db8::1]:/srv/git/app.git'
 accepts 'git@[2001:db8::1]:/srv/git/app.git'
-accepts 'https://github.com/squad-org/squad.git'
-accepts 'git@github.com:squad-org/squad.git'
+accepts 'https://github.com/runecraftai/squad.git'
+accepts 'git@github.com:runecraftai/squad.git'
 accepts "file://$TMP_ROOT/source.git"
 accepts "$TMP_ROOT/source.git"
 

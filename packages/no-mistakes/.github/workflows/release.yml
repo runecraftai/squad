@@ -68,7 +68,7 @@ jobs:
           DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           COMMIT="$(git rev-parse --short=7 HEAD)"
           CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-            go build -ldflags "-X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.Version=${TAG} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.Commit=${COMMIT} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.Date=${DATE} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.TelemetryHost=${UMAMI_HOST} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.TelemetryWebsiteID=${UMAMI_WEBSITE_ID}" \
+            go build -ldflags "-X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.Version=${TAG} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.Commit=${COMMIT} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.Date=${DATE} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.TelemetryHost=${UMAMI_HOST} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.TelemetryWebsiteID=${UMAMI_WEBSITE_ID}" \
             -o "dist/no-mistakes" ./cmd/no-mistakes
 
       # Import the Developer ID Application cert into an ephemeral keychain locked
@@ -266,7 +266,7 @@ jobs:
             OUT="dist/${BIN}"
           fi
           CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-            go build -ldflags "-X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.Version=${TAG} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.Commit=${COMMIT} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.Date=${DATE} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.TelemetryHost=${UMAMI_HOST} -X github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo.TelemetryWebsiteID=${UMAMI_WEBSITE_ID}" \
+            go build -ldflags "-X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.Version=${TAG} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.Commit=${COMMIT} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.Date=${DATE} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.TelemetryHost=${UMAMI_HOST} -X github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo.TelemetryWebsiteID=${UMAMI_WEBSITE_ID}" \
             -o "$OUT" ./cmd/no-mistakes
           if [ "$GOOS" = "windows" ]; then
             ARCHIVE="dist/no-mistakes-${TAG}-${GOOS}-${GOARCH}.zip"

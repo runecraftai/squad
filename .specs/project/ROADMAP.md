@@ -74,7 +74,7 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ### Work packages
 
-- **W-M2-01** — Go workspace scaffold: `packages/{fob,no-mistakes}` private stub package.json + turbo wiring + Go module path rename (AD-005: new module path is an open decision; default `github.com/<squad-org>/squad/…` — never `kunchenguid`)
+- **W-M2-01** — Go workspace scaffold: `packages/{fob,no-mistakes}` private stub package.json + turbo wiring + Go module path rename (AD-005: new module path is an open decision; default `github.com/runecraftai/squad/…` — never `kunchenguid`)
 - **W-M2-02** — Fork `fob` (treehouse): copy, module rename, internal identity sweep, tests green
 - **W-M2-03** — Fork `no-mistakes`: copy, module rename, identity sweep (skill/, scripts/, docs, workflows), tests green
 - **W-M2-04** — Fork `tasks-axi`: copy, npm rename + bin rename, package identity sweep, build+test green (pnpm or bun)

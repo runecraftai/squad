@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // stepHasActionableFindings reports whether the step's findings (agent-produced

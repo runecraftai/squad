@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/e2edaemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/e2edaemon"
 )
 
 func TestDaemonRunUsesProvidedRoot(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
 )
 
 // gateOptOutWorktree builds a bare gate repo whose default branch carries the

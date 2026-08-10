@@ -752,8 +752,8 @@ install_cmd() {
   case "$1" in
     tmux|node|git|gh|curl|jq|orca|zellij) echo "brew install $1  # or the platform's package manager" ;;
     cmux) echo "brew install --cask cmux  # or see https://cmux.com" ;;
-    fob) echo "curl -fsSL https://github.com/squad-org/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder" ;;
-    no-mistakes) echo "curl -fsSL https://github.com/squad-org/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder" ;;
+    fob) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder" ;;
+    no-mistakes) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder" ;;
     gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
     tasks-axi|quota-axi) echo "npm install -g $1" ;;
     *) return 1 ;;

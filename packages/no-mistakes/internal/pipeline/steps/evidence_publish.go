@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/evidence"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/evidence"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
 )
 
 // evidenceLinks describes a published evidence commit well enough to turn a

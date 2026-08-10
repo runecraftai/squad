@@ -10,14 +10,14 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/buildinfo"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/buildinfo"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 const (
 	appName            = "no-mistakes"
-	repoName           = "squad-org/squad"
+	repoName           = "runecraftai/squad"
 	backgroundFlag     = "--update-check"
 	noUpdateCheckEnv   = "NO_MISTAKES_NO_UPDATE_CHECK"
 	checksumsAssetName = "checksums.txt"

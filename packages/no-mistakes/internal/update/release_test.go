@@ -74,7 +74,7 @@ func TestFetchLatestRelease_SendsAuthorizationHeaderFromEnvToken(t *testing.T) {
 
 	u := &updater{
 		appName:        "no-mistakes",
-		repo:           "squad-org/squad",
+		repo:           "runecraftai/squad",
 		currentVersion: "v1.2.2",
 		apiBaseURL:     server.URL,
 		httpClient:     server.Client(),

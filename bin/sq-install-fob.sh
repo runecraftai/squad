@@ -16,7 +16,7 @@ SQUAD_FOB_CI_VERSION=2.0.1
 SQUAD_FOB_CI_TAG="v${SQUAD_FOB_CI_VERSION}"
 # Bounded download ceiling (bytes). Official 2.0.1 archives are under 8 MiB.
 SQUAD_FOB_CI_MAX_BYTES=15000000
-SQUAD_FOB_CI_REPO=squad-org/squad  # OQ-03 placeholder: Squad org at publication (M4)
+SQUAD_FOB_CI_REPO=runecraftai/squad  # OQ-03 placeholder: Squad org at publication (M4)
 
 die() {
   printf 'sq-install-fob.sh: %s\n' "$*" >&2

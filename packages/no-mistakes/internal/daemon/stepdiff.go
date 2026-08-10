@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/git"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/git"
 )
 
 // maxStepDiffBytes bounds one fix-review diff response. The IPC transport

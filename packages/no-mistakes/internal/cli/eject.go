@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gate"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gate"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
 	"github.com/spf13/cobra"
 )
 

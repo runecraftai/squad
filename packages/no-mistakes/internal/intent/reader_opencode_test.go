@@ -146,8 +146,8 @@ func TestOpenCodeReader_DiscoverAndLoad(t *testing.T) {
 }
 
 func TestOpenCodeReader_DiscoverAcceptsSameRemoteDifferentCheckout(t *testing.T) {
-	originCWD := initGitRepoWithRemote(t, filepath.Join(t.TempDir(), "origin"), "git@github.com:squad-org/squad/packages/no-mistakes.git")
-	sessionCWD := initGitRepoWithRemote(t, filepath.Join(t.TempDir(), "fob"), "https://github.com/squad-org/squad/packages/no-mistakes.git")
+	originCWD := initGitRepoWithRemote(t, filepath.Join(t.TempDir(), "origin"), "git@github.com:runecraftai/squad/packages/no-mistakes.git")
+	sessionCWD := initGitRepoWithRemote(t, filepath.Join(t.TempDir(), "fob"), "https://github.com/runecraftai/squad/packages/no-mistakes.git")
 	home := buildOpenCodeDB(t, sessionCWD)
 	t.Setenv("XDG_DATA_HOME", "")
 

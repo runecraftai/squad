@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
 )
 
 func TestRefreshRepoURLsSSHToHTTPS(t *testing.T) {

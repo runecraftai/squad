@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/testguidance"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/testguidance"
 )
 
 func TestMarkdownFrontmatter(t *testing.T) {

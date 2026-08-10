@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gate"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/skill"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gate"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/skill"
 	"github.com/spf13/cobra"
 )
 

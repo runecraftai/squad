@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // TestRepoConfigCommandsFromDefaultBranch proves the supply-chain RCE fix

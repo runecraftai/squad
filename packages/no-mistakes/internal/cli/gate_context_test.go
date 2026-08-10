@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gatecontext"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gatecontext"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 func TestGateControlPolicyCoversEveryMutationEntrypoint(t *testing.T) {

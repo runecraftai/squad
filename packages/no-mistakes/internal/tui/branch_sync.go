@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/branchsync"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/branchsync"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
 )
 
 func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int) string {

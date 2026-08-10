@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
 )
 
 // codexAgent spawns the codex CLI for each invocation.

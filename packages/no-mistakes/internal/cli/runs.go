@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
 	"github.com/spf13/cobra"
 )
 

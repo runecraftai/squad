@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
 )
 
 // The subscriber mailbox is the single owner of run-event overflow policy.

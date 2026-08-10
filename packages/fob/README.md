@@ -53,14 +53,14 @@ irm https://squad.example/fob/install.ps1 | iex
 **Nix**
 
 ```sh
-nix run github:squad-org/squad
+nix run github:runecraftai/squad
 ```
 
 Or add to your flake inputs:
 
 ```nix
 fob = {
-  url = "github:squad-org/squad";
+  url = "github:runecraftai/squad";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
@@ -68,13 +68,13 @@ fob = {
 **Go**
 
 ```sh
-go install github.com/squad-org/squad/packages/fob@latest
+go install github.com/runecraftai/squad/packages/fob@latest
 ```
 
 **From source**
 
 ```sh
-git clone https://github.com/squad-org/squad/packages/fob.git
+git clone https://github.com/runecraftai/squad/packages/fob.git
 cd fob
 make install
 ```

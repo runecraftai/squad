@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/fob/internal/process"
+	"github.com/runecraftai/squad/packages/fob/internal/process"
 )
 
 func setupRepo(t *testing.T) (repoDir, poolDir string) {

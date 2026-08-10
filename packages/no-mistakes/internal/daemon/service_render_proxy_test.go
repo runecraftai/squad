@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // TestSystemdUnitProxyEnvRoundTripsThroughRenderer guards the parser that lets

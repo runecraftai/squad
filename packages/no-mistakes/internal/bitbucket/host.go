@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 // Host implements scm.Host for Bitbucket using the REST API client.

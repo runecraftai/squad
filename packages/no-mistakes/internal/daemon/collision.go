@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // daemonProcessInfo describes a running `no-mistakes daemon run --root <root>`

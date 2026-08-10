@@ -4,7 +4,7 @@ Thanks for wanting to contribute.
 tasks-axi is part of the `*-axi` family.
 One rule up front:
 
-**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/squad-org/squad).**
+**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/runecraftai/squad).**
 We require this to reduce the maintainer's burden of reviewing and merging contributions.
 
 `no-mistakes` puts a local git proxy in front of your real remote.
@@ -15,7 +15,7 @@ The release and dependency bots are exempt so their automation keeps working, bu
 
 ## Workflow
 
-1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent repo (`git@github.com:squad-org/squad.git`).
+1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent repo (`git@github.com:runecraftai/squad.git`).
 2. Create a branch and make your change with tests (`test/` mirrors `src/`).
 3. Initialize or refresh the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/tasks-axi.git`.
 4. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, ...) - release-please reads them to cut releases.

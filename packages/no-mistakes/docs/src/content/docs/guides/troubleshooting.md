@@ -301,5 +301,5 @@ Wedged state often means a run is stuck `pending` or `running`, so `daemon stop`
 ## Still stuck
 
 - Check `~/.no-mistakes/logs/daemon.log` at `log_level: debug`
-- File an issue: <https://github.com/squad-org/squad/issues>
+- File an issue: <https://github.com/runecraftai/squad/issues>
 - Discord: <https://discord.gg/Wsy2NpnZDu>

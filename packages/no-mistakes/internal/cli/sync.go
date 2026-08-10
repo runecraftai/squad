@@ -8,8 +8,8 @@ import (
 
 	toON "github.com/toon-format/toon-go"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/branchsync"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/branchsync"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 

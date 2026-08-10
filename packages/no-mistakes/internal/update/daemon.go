@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 type daemonResetError struct {

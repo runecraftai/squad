@@ -11,7 +11,7 @@ export default defineConfig({
       title: "git push no-mistakes",
       customCss: ["./src/styles/custom.css"],
       social: {
-        github: "https://github.com/squad-org/squad/packages/no-mistakes",
+        github: "https://github.com/runecraftai/squad/packages/no-mistakes",
         discord: "https://discord.gg/Wsy2NpnZDu",
       },
       sidebar: [

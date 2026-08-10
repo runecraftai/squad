@@ -81,7 +81,7 @@ The single longest script, `tests/sq-pr-check-security.test.sh` at 199573 ms, is
 Refresh the hints by downloading the per-shard timing artifacts from a green CI run, replacing the `portable_serial_weight_hints` table in `bin/sq-test-run.sh` with the measured `path`/`duration_ms` pairs, and updating the table above:
 
 ```sh
-gh run download <run-id> -R <squad-org>/squad --pattern 'sq-test-timing-portable-serial-*' -D /tmp/sq-serial  # OQ-03 placeholder
+gh run download <run-id> -R runecraftai/squad --pattern 'sq-test-timing-portable-serial-*' -D /tmp/sq-serial  # OQ-03 placeholder
 jq -r '.scripts[] | [.path, .duration_ms] | @tsv' /tmp/sq-serial/*.json | LC_ALL=C sort
 bin/sq-test-run.sh --check-coverage
 ```

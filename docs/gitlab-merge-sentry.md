@@ -158,7 +158,7 @@ $ echo $?
 A GitHub task is unaffected by a missing `glab`:
 
 ```
-$ PATH="$noglab" sq-pr-check.sh e6 https://github.com/squad-org/squad/pull/750  # OQ-03 placeholder
+$ PATH="$noglab" sq-pr-check.sh e6 https://github.com/runecraftai/squad/pull/750  # OQ-03 placeholder
 armed: state/e6.check.sh
 ```
 

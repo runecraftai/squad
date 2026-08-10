@@ -3,9 +3,9 @@ package steps
 import (
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/intent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/pipeline"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/intent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/pipeline"
 )
 
 // userIntentPromptSection returns a prompt fragment describing the user intent

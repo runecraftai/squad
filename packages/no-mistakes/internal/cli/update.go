@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/squad-org/squad/packages/no-mistakes/internal/update"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/update"
 	"github.com/spf13/cobra"
 )
 

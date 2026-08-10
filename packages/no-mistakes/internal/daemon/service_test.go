@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // TestStart_ReinstallsManagedServiceWhenPlistChanged covers the post-upgrade

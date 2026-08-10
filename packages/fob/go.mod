@@ -1,4 +1,4 @@
-module github.com/squad-org/squad/packages/fob
+module github.com/runecraftai/squad/packages/fob
 
 go 1.25.5
 

@@ -5,7 +5,7 @@ package agent
 import (
 	"os/exec"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/winproc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/winproc"
 )
 
 // configureManagedServerCmd suppresses the visible console window Windows would

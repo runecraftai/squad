@@ -53,7 +53,7 @@ Nothing reaches the configured push target until every check is green.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/squad-org/squad/main/docs/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/docs/install.sh | sh
 ```
 
 Windows, Go install, and build-from-source instructions are in the [installation guide](https://squad.example/no-mistakes/start-here/installation/).

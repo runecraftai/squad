@@ -298,7 +298,7 @@ test_bootstrap_reporting() {
     esac
   done <<'ROWS'
 fob --lease support is accepted silently^1^0.2.4^1^manual^empty^^
-fob without --lease reports an upgrade, gh auth is fine^0^0.2.4^1^-^grep^MISSING: fob (install: curl -fsSL https://github.com/squad-org/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder)^NEEDS_GH_AUTH
+fob without --lease reports an upgrade, gh auth is fine^0^0.2.4^1^-^grep^MISSING: fob (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder)^NEEDS_GH_AUTH
 compatible tasks-axi is silent by default^1^0.2.4^1^-^empty^^
 missing tasks-axi is required by default^1^-^1^-^exact^MISSING: tasks-axi (install: npm install -g tasks-axi)^
 incompatible tasks-axi is required by default^1^0.1.0^1^-^exact^MISSING: tasks-axi (install: npm install -g tasks-axi)^
@@ -313,7 +313,7 @@ ROWS
 
 test_no_mistakes_min_version() {
   local label version mode case_dir fakebin out missing n
-  missing='MISSING: no-mistakes (install: curl -fsSL https://github.com/squad-org/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder)'
+  missing='MISSING: no-mistakes (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder)'
   n=0
   while IFS='^' read -r label version mode; do
     [ -n "$label" ] || continue

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 // azPR is the subset of `az repos pr show/list/create` JSON output we consume.

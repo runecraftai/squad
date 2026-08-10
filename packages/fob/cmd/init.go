@@ -8,8 +8,8 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 
-	"github.com/squad-org/squad/packages/fob/internal/config"
-	"github.com/squad-org/squad/packages/fob/internal/git"
+	"github.com/runecraftai/squad/packages/fob/internal/config"
+	"github.com/runecraftai/squad/packages/fob/internal/git"
 )
 
 var initCmd = &cobra.Command{

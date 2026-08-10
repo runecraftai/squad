@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/shellenv"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/shellenv"
 )
 
 // TestSweepReapsSetsidEscapeeThatProcessGroupTeardownCannotReach is the

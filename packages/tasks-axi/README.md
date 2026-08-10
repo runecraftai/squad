@@ -2,12 +2,12 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/tasks-axi"><img alt="npm" src="https://img.shields.io/npm/v/tasks-axi?style=flat-square" /></a>
-  <a href="https://github.com/squad-org/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/squad-org/squad/ci.yml?style=flat-square&label=ci" /></a>
-  <a href="https://github.com/squad-org/squad/actions/workflows/release-please.yml"><img alt="Release" src="https://img.shields.io/github/actions/workflow/status/squad-org/squad/release-please.yml?style=flat-square&label=release" /></a>
+  <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=ci" /></a>
+  <a href="https://github.com/runecraftai/squad/actions/workflows/release-please.yml"><img alt="Release" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/release-please.yml?style=flat-square&label=release" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
 
-Task and backlog manager for agents — designed with [AXI](https://github.com/squad-org/squad) (Agent eXperience Interface).
+Task and backlog manager for agents — designed with [AXI](https://github.com/runecraftai/squad) (Agent eXperience Interface).
 
 tasks-axi makes a tiny structured change to a human-readable backlog at near-zero output-token cost.
 It edits a hand-editable `backlog.md` in place with a byte-exact round-trip, so the markdown stays the source of truth while long task bodies never bloat a `list`.
@@ -26,7 +26,7 @@ Pass `--archive-body` with a body replacement when the superseded body should be
 Install the tasks-axi skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add squad-org/squad --skill tasks-axi -g
+npx skills add runecraftai/squad --skill tasks-axi -g
 ```
 
 That is the entire setup — no npm install needed.
@@ -270,7 +270,7 @@ The installable skill is generated from the same description and help the CLI pr
 ## Contributing
 
 Contributions are welcome.
-Human-authored PRs targeting `main` are raised through the [`no-mistakes`](https://github.com/squad-org/squad) gate, which runs review/test/lint/CI before opening the PR.
+Human-authored PRs targeting `main` are raised through the [`no-mistakes`](https://github.com/runecraftai/squad) gate, which runs review/test/lint/CI before opening the PR.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and repo conventions.
 
 ## License

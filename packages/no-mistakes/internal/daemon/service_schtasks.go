@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // installWindowsTask registers the daemon as a per-user scheduled task.

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 // CmdFactory builds an exec.Cmd in the caller's workdir with the caller's env.

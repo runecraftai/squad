@@ -51,7 +51,7 @@ JSON
   exit 0
 fi
 cat <<'JSON'
-[{"number":9,"title":"Ship the thing","url":"https://github.com/squad-org/squad/pull/9","headRefName":"fm/ship-task","reviewDecision":"APPROVED","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]
+[{"number":9,"title":"Ship the thing","url":"https://github.com/runecraftai/squad/pull/9","headRefName":"fm/ship-task","reviewDecision":"APPROVED","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]
 JSON
 SH
   cat > "$fb/gh-axi" <<'SH'
@@ -113,7 +113,7 @@ write_fixture() {  # <home>
   NOT REQUIRED - superseded 2026-07-11; kept as reference only.
 
 ## Done
-- [x] done-a - Landed thing https://github.com/squad-org/squad/pull/7 (repo: Squad) (kind: ship) (merged 2026-07-10)
+- [x] done-a - Landed thing https://github.com/runecraftai/squad/pull/7 (repo: Squad) (kind: ship) (merged 2026-07-10)
 EOF
   printf '# Recon X\n' > "$home/data/recon-x/report.md"
   fm_write_meta "$home/state/ship-task.meta" \
@@ -123,7 +123,7 @@ EOF
     "harness=claude" \
     "kind=strike" \
     "mode=no-mistakes" \
-    "pr=https://github.com/squad-org/squad/pull/9"
+    "pr=https://github.com/runecraftai/squad/pull/9"
   record_claude_state "$home/state" ship-task busy
   printf 'working: building the thing\n' > "$home/state/ship-task.status"
   fm_write_meta "$home/state/recon-x.meta" \
@@ -166,7 +166,7 @@ EOF
 - [ ] mate-decision-race - Choose subscription order (repo: Squad) (kind: commander) (hold: commander choice pending) (hold-kind: commander)
 
 ## Done
-- [x] mate-landed - XO-managed fix https://github.com/squad-org/squad/pull/50 (repo: Squad) (kind: ship) (merged 2026-07-11)
+- [x] mate-landed - XO-managed fix https://github.com/runecraftai/squad/pull/50 (repo: Squad) (kind: ship) (merged 2026-07-11)
 EOF
   mkdir -p "$mate/projects/mate"
   fm_write_meta "$mate/state/mate.meta" \

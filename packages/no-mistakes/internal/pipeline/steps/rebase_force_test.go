@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
 )
 
 func TestRebaseStep_ForcePushSkipsOriginBranch(t *testing.T) {

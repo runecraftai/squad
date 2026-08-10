@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 // ActiveRuns returns all pending/running pipeline runs from the local state DB.

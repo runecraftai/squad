@@ -1,6 +1,6 @@
 package agent
 
-import "github.com/squad-org/squad/packages/no-mistakes/internal/git"
+import "github.com/runecraftai/squad/packages/no-mistakes/internal/git"
 
 // GateRoleEnvVar is exported into every spawned gate agent's environment as an
 // coarse diagnostic marker that the process is a no-mistakes gate agent (a

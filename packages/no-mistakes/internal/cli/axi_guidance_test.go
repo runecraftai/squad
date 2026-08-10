@@ -10,11 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gatecontext"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/gateguidance"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/ipc"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/skill"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/types"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gatecontext"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/gateguidance"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/ipc"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/skill"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/types"
 )
 
 // canonicalStaleMonitorPhrases are the load-bearing claims of the corrected

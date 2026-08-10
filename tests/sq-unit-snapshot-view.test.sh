@@ -75,7 +75,7 @@ write_fixture() {  # <home>
   cat > "$home/data/backlog.md" <<EOF
 ## In flight
 - [ ] recon-task - Recon Task data/recon-task/report.md (repo: alpha) (kind: recon) (since 2026-07-07)
-- [ ] ship-task - Ship Task https://github.com/squad-org/squad/pull/9 (repo: alpha) (kind: ship) (priority: 2) (since 2026-07-07)
+- [ ] ship-task - Ship Task https://github.com/runecraftai/squad/pull/9 (repo: alpha) (kind: ship) (priority: 2) (since 2026-07-07)
   Preserve this detail for sitrep.
 
 ## Queued
@@ -83,7 +83,7 @@ write_fixture() {  # <home>
 handoff note without canonical syntax
 
 ## Done
-- [x] done-task - Done Task https://github.com/squad-org/squad/pull/7 (repo: alpha) (kind: ship) (merged 2026-07-06)
+- [x] done-task - Done Task https://github.com/runecraftai/squad/pull/7 (repo: alpha) (kind: ship) (merged 2026-07-06)
 EOF
   mkdir -p "$home/data/recon-task"
   printf '# Recon\n' > "$home/data/recon-task/report.md"
@@ -95,7 +95,7 @@ EOF
     "kind=strike" \
     "mode=ship" \
     "yolo=off" \
-    "pr=https://github.com/squad-org/squad/pull/9"
+    "pr=https://github.com/runecraftai/squad/pull/9"
   printf 'needs-decision: choose an API shape\n' > "$home/state/ship-task.status"
   # A working strike task proves it through its own semantic busy-state record
   # (bin/sq-busy-lib.sh), which is what the snapshot's current-state read
@@ -165,7 +165,7 @@ test_fixture_snapshot_json() {
     .tasks[] | select(.id == "ship-task")
     | .current_state.state == "working"
       and .current_state.source == "pane"
-      and .pr.url == "https://github.com/squad-org/squad/pull/9"
+      and .pr.url == "https://github.com/runecraftai/squad/pull/9"
       and .backlog.body_excerpt == "Preserve this detail for sitrep."
       and .hints.pending_decision == false
       and .paths.status_log.kind == "event_history"
@@ -192,7 +192,7 @@ test_fixture_snapshot_json() {
   ' >/dev/null || fail "queued canonical and unstructured backlog records missing"
   printf '%s' "$out" | jq -e '
     .backlog.records[] | select(.id == "done-task")
-    | .state == "done" and .pr_url == "https://github.com/squad-org/squad/pull/7"
+    | .state == "done" and .pr_url == "https://github.com/runecraftai/squad/pull/7"
   ' >/dev/null || fail "done backlog PR row missing"
   pass "fixture snapshot covers task rows, backlog rows, pointers, and stable ordering"
 }
@@ -458,8 +458,8 @@ test_backlog_tasks_axi_forms_and_overrides() {
 - [ ] sample-decision-route - Choose sample route (repo: sample) (kind: commander) (since 2026-07-14) (hold: commander route choice pending) (hold-kind: commander)
 
 ## Done
-- [x] done-comma - Done Comma Task https://github.com/squad-org/squad/pull/42 (repo: gamma, merged 2026-07-09) (kind: ship)
-- [x] done-bracket-pr - Done Bracket PR - <https://github.com/squad-org/squad/pull/43> (repo: gamma, merged 2026-07-12) (kind: ship)
+- [x] done-comma - Done Comma Task https://github.com/runecraftai/squad/pull/42 (repo: gamma, merged 2026-07-09) (kind: ship)
+- [x] done-bracket-pr - Done Bracket PR - <https://github.com/runecraftai/squad/pull/43> (repo: gamma, merged 2026-07-12) (kind: ship)
 - [x] reported-comma - Reported Recon data/reported-comma/report.md (repo: gamma, reported 2026-07-10) (kind: recon)
 - [x] done-note - Done Note local main (repo: delta, done 2026-07-11) (kind: ship)
 EOF
@@ -525,8 +525,8 @@ EOF
     .backlog.records[] | select(.id == "done-bracket-pr")
     | .repo == "gamma"
       and .title == "Done Bracket PR"
-      and .pr_url == "https://github.com/squad-org/squad/pull/43"
-      and .links == ["https://github.com/squad-org/squad/pull/43"]
+      and .pr_url == "https://github.com/runecraftai/squad/pull/43"
+      and .links == ["https://github.com/runecraftai/squad/pull/43"]
       and .completion == {verb:"merged",date:"2026-07-12"}
   ' >/dev/null || fail "bracketed PR artifact did not parse"
   printf '%s' "$out" | jq -e '
@@ -555,7 +555,7 @@ EOF
     "view should render bold in-flight row from snapshot"
   assert_contains "$view" "| blocked-reason | Blocked Reason | beta | ship | queued-comma - waits on queued-comma | - |" \
     "view should render blocked reason without title metadata"
-  assert_contains "$view" "| done-bracket-pr | Done Bracket PR | gamma | ship | - | https://github.com/squad-org/squad/pull/43 |" \
+  assert_contains "$view" "| done-bracket-pr | Done Bracket PR | gamma | ship | - | https://github.com/runecraftai/squad/pull/43 |" \
     "view should render bracketed PR artifact outside the title"
   assert_contains "$view" "| done-note | Done Note | delta | ship | - | local main |" \
     "view should render local-only done artifact outside the title"
@@ -568,11 +568,11 @@ test_view_renders_snapshot() {
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
   view=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$VIEW")
-  assert_contains "$view" "| ship-task | working / pane | strike | alpha | tmux | present | https://github.com/squad-org/squad/pull/9" \
+  assert_contains "$view" "| ship-task | working / pane | strike | alpha | tmux | present | https://github.com/runecraftai/squad/pull/9" \
     "view should render ship row from snapshot"
   assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
     "view should render queued backlog row"
-  assert_contains "$view" "| done-task | Done Task | alpha | ship | - | https://github.com/squad-org/squad/pull/7 |" \
+  assert_contains "$view" "| done-task | Done Task | alpha | ship | - | https://github.com/runecraftai/squad/pull/7 |" \
     "view should render done backlog row"
   assert_contains "$view" "bin/sq-send.sh sq-XO-task" \
     "view should show XO send guidance"

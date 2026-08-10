@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
 )
 
 // fileAtRef reports whether path exists in the tree at ref in the given repo.

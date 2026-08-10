@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/telemetry"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/telemetry"
 )
 
 // TestDoctorListsCopilotAgent exercises the user-facing `no-mistakes doctor`

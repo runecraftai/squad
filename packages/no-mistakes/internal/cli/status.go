@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/branchsync"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/daemon"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/db"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/safeurl"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/branchsync"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/daemon"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/db"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/safeurl"
 	"github.com/spf13/cobra"
 )
 

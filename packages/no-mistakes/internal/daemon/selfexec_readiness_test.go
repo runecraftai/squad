@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 func TestStartDetachedDaemonDetectsChildExitPromptly(t *testing.T) {

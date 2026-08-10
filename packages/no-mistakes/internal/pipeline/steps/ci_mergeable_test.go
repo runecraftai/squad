@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/agent"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/config"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/agent"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/config"
 )
 
 func TestCIStep_TimeoutWithOpenPRNeedsApprovalAndDoesNotSleepPastDeadline(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/squad-org/squad/packages/fob/internal/updater"
+	"github.com/runecraftai/squad/packages/fob/internal/updater"
 	"github.com/spf13/cobra"
 )
 

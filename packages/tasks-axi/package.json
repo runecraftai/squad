@@ -6,11 +6,11 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/squad-org/squad.git"
+    "url": "git+https://github.com/runecraftai/squad.git"
   },
-  "homepage": "https://github.com/squad-org/squad#readme",
+  "homepage": "https://github.com/runecraftai/squad#readme",
   "bugs": {
-    "url": "https://github.com/squad-org/squad/issues"
+    "url": "https://github.com/runecraftai/squad/issues"
   },
   "keywords": [
     "tasks",

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/logstore"
-	"github.com/squad-org/squad/packages/no-mistakes/internal/paths"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/logstore"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/paths"
 )
 
 func TestBootstrapCaptureBoundsDirectProcessOutput(t *testing.T) {

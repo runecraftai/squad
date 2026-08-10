@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/squad-org/squad/packages/no-mistakes/internal/scm"
+	"github.com/runecraftai/squad/packages/no-mistakes/internal/scm"
 )
 
 // outputJSON runs cmd and returns its stdout alone, leaving stderr out of the

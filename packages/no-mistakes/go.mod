@@ -1,4 +1,4 @@
-module github.com/squad-org/squad/packages/no-mistakes
+module github.com/runecraftai/squad/packages/no-mistakes
 
 go 1.25.0
 
