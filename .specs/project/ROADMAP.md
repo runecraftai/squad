@@ -140,6 +140,10 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 - **W-M5-03** — Roadmap note: TS port as future/open item; documentation update
 **Open/optional item (NOT committed — AD-004):** a TS port of the Go deps (`fob` worktree pool, `no-mistakes` gate) is deliberately out of scope ("ou não", commander decision). The Go packages are private workspace packages with turbo tasks and ship via GitHub Releases; revisit this decision only at the commander's explicit request. No design or tasks exist for the port.
 
+**Cut decision (2026-08-10, commander):** `@runecraft/goal-loop-audit` (Runecraft v1.1) is removed from the distro "for now" — `packages/goal-loop-audit/` and `.pi/extensions/sq-goal-loop-audit.ts` deleted; drill/no-mistakes and pr-review stay. This deliberately reverses the M5 vendoring decision; the M5 records above (W-M5-01..03) and the T-M5-01..03 task log in STATE.md stay as history, not as an erasure.
+
+**Re-add path (provenance):** re-vendor `@runecraft/goal-loop-audit` **v0.28.34** (the M5 pin, upstream v1.1) from `https://github.com/runecraft-ai/harness/tree/main/packages/goal-loop-audit` via a tracked-file copy (extraction date 2026-08-09; write `vendor.json` with source URL, tag, sha256 of package.json + source), restore `.pi/extensions/sq-goal-loop-audit.ts` (bootstraps `extensions/loops/goal.ts`), register the package's docs in `docs/documentation-audiences.json`, and re-run the M5 coexistence validation (goal-loop-audit + pr-review in one Pi session). No code changes are required outside those pieces — the root workspace glob, turbo graph, and Pi extension auto-discovery pick it back up unchanged.
+
 
 ---
 

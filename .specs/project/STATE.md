@@ -193,6 +193,10 @@ RISK-M6-01 nested pnpm lockfiles at root bun · RISK-M6-02 lavish-axi repo size 
 ### M6 boundary (unchanged from M4)
 Real npm publish of the new forks and the fob/no-mistakes release channel (404) remain org-gated (OQ-03) — local workspace install is the M6 path; publish recorded as future work.
 
+## Decision — goal-loop-audit cut (2026-08-10)
+
+Commander decision (2026-08-10): remove the vendored `@runecraft/goal-loop-audit` (Runecraft v1.1; M5 pin 0.28.34) from the distro "for now" — `packages/goal-loop-audit/` and `.pi/extensions/sq-goal-loop-audit.ts` deleted, `docs/documentation-audiences.json` entries and the `bun.lock` workspace refs removed. drill/no-mistakes and pr-review stay. The T-M5-01..03 task log and M5 milestone records above stay as the historical integration record (decision, not erasure). Re-add path with full provenance is recorded in ROADMAP.md (M5 section).
+
 
 ## Blockers
 - None.
