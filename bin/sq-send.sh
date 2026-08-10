@@ -72,7 +72,7 @@ SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 # shellcheck source=bin/sq-gate-refuse-lib.sh
 . "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
-# Fail closed before any unit mutation: a no-mistakes gate agent must never steer
+# Fail closed before any unit mutation: a drill gate agent must never steer
 # an operator (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 

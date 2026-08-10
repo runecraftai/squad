@@ -39,7 +39,7 @@
       "target": "docs/documentation-audiences.md"
     },
     {
-      "source": ".no-mistakes.yaml",
+      "source": ".drill.yaml",
       "target": "docs/documentation-audiences.md"
     },
     {
@@ -509,123 +509,123 @@
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/AGENTS.md",
+      "path": "packages/drill/AGENTS.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/no-mistakes/CHANGELOG.md",
+      "path": "packages/drill/CHANGELOG.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/CLAUDE.md",
+      "path": "packages/drill/CLAUDE.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/no-mistakes/CONTRIBUTING.md",
+      "path": "packages/drill/CONTRIBUTING.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/no-mistakes/README.md",
+      "path": "packages/drill/README.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/README.zh-CN.md",
+      "path": "packages/drill/README.zh-CN.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/VISION.md",
+      "path": "packages/drill/VISION.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/concepts/auto-fix.md",
+      "path": "packages/drill/docs/src/content/docs/concepts/auto-fix.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/concepts/daemon.md",
+      "path": "packages/drill/docs/src/content/docs/concepts/daemon.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/concepts/gate-model.md",
+      "path": "packages/drill/docs/src/content/docs/concepts/gate-model.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/concepts/pipeline.md",
+      "path": "packages/drill/docs/src/content/docs/concepts/pipeline.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/guides/agents.md",
+      "path": "packages/drill/docs/src/content/docs/guides/agents.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/guides/configuration.md",
+      "path": "packages/drill/docs/src/content/docs/guides/configuration.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/guides/provider-integration.md",
+      "path": "packages/drill/docs/src/content/docs/guides/provider-integration.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/guides/setup-wizard.md",
+      "path": "packages/drill/docs/src/content/docs/guides/setup-wizard.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/guides/troubleshooting.md",
+      "path": "packages/drill/docs/src/content/docs/guides/troubleshooting.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/guides/tui.md",
+      "path": "packages/drill/docs/src/content/docs/guides/tui.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/index.mdx",
+      "path": "packages/drill/docs/src/content/docs/index.mdx",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/reference/cli.md",
+      "path": "packages/drill/docs/src/content/docs/reference/cli.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/reference/environment.md",
+      "path": "packages/drill/docs/src/content/docs/reference/environment.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/reference/global-config.md",
+      "path": "packages/drill/docs/src/content/docs/reference/global-config.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/reference/pipeline-steps.md",
+      "path": "packages/drill/docs/src/content/docs/reference/pipeline-steps.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/reference/repo-config.md",
+      "path": "packages/drill/docs/src/content/docs/reference/repo-config.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/start-here/installation.md",
+      "path": "packages/drill/docs/src/content/docs/start-here/installation.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/start-here/introduction.md",
+      "path": "packages/drill/docs/src/content/docs/start-here/introduction.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/docs/src/content/docs/start-here/quick-start.md",
+      "path": "packages/drill/docs/src/content/docs/start-here/quick-start.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/no-mistakes/internal/e2e/fixtures/opencode/plain/sse.txt",
+      "path": "packages/drill/internal/e2e/fixtures/opencode/plain/sse.txt",
       "audience": "maintainer-verification"
     },
     {
-      "path": "packages/no-mistakes/internal/e2e/fixtures/opencode/structured/sse.txt",
+      "path": "packages/drill/internal/e2e/fixtures/opencode/structured/sse.txt",
       "audience": "maintainer-verification"
     },
     {
-      "path": "packages/no-mistakes/internal/tui/DESIGN.md",
+      "path": "packages/drill/internal/tui/DESIGN.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/no-mistakes/skills/no-mistakes/SKILL.md",
+      "path": "packages/drill/skills/drill/SKILL.md",
       "audience": "agent-runtime"
     },
     {

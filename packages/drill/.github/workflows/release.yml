@@ -87,9 +87,9 @@ jobs:
             echo "::error::CSC_LINK/CSC_KEY_PASSWORD signing secrets are missing; refusing to publish an unsigned macOS artifact" >&2
             exit 1
           fi
-          KEYCHAIN_PATH="$RUNNER_TEMP/nm-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/drill-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
-          CERT_PATH="$RUNNER_TEMP/nm-developer-id.p12"
+          CERT_PATH="$RUNNER_TEMP/drill-developer-id.p12"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
           # Reconstruct the cert from the base64 secret into RUNNER_TEMP only.
@@ -220,7 +220,7 @@ jobs:
           if [ -n "${KEYCHAIN_PATH:-}" ]; then
             security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           fi
-          rm -f "$RUNNER_TEMP/nm-developer-id.p12" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/drill-developer-id.p12" 2>/dev/null || true
 
   build-and-upload:
     runs-on: ubuntu-latest

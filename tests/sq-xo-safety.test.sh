@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/sq-xo-safety.test.sh - XO home safety invariants:
 # the path-boundary matrices (seed/spawn/teardown), registry/charter/origin
-# validation, fob lease handling, no-mistakes initialization of new
+# validation, fob lease handling, drill initialization of new
 # clones, child-worktree protection, and backlog-handoff safety. The happy-path
 # operator flow lives in sq-xo-lifecycle-e2e.test.sh; this file keeps the
 # destructive-invariant coverage that an e2e run cannot deterministically reach.
@@ -57,9 +57,9 @@ test_fm_home_parameterization() {
   out=$(SQUAD_HOME="$home_one" "$ROOT/bin/sq-project-mode.sh" app)
   [ "$out" = "local-only on" ] || fail "sq-project-mode did not read projects.md from SQUAD_HOME"
   out=$(SQUAD_HOME="$home_two" "$ROOT/bin/sq-project-mode.sh" app 2>/dev/null)
-  [ "$out" = "no-mistakes off" ] || fail "sq-project-mode did not isolate missing registry by home"
+  [ "$out" = "drill off" ] || fail "sq-project-mode did not isolate missing registry by home"
 
-  SQUAD_HOME="$home_one" "$ROOT/bin/sq-brief.sh" task-a app --mode no-mistakes >/dev/null || fail "brief scaffold failed under SQUAD_HOME"
+  SQUAD_HOME="$home_one" "$ROOT/bin/sq-brief.sh" task-a app --mode drill >/dev/null || fail "brief scaffold failed under SQUAD_HOME"
   brief="$home_one/data/task-a/brief.md"
   [ -f "$brief" ] || fail "brief was not written under SQUAD_HOME/data"
   grep -F ">> '$home_one/state/task-a.status'" "$brief" >/dev/null || fail "brief did not shell-quote SQUAD_HOME state path"
@@ -97,7 +97,7 @@ test_lock_status_is_per_home() {
 test_seed_allows_overlapping_clones_and_drops_owner() {
   # A project may appear in several XOs' (non-exclusive) clone lists; the
   # registry never uses the legacy owns: field, and the removed `owner` subcommand
-  # stays gone. The full happy seed - charter copied, clones+origins, no-mistakes
+  # stays gone. The full happy seed - charter copied, clones+origins, drill
   # init, modes preserved - is asserted by sq-xo-lifecycle-e2e.
   local home design other
   home="$TMP_ROOT/overlap-main"
@@ -876,7 +876,7 @@ test_home_seed_refuses_local_only_project() {
   if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed allowed a local-only project into an XO home"
   fi
-  grep -F 'project alpha is local-only; XO routes support only no-mistakes and direct-PR projects' "$err" >/dev/null \
+  grep -F 'project alpha is local-only; XO routes support only drill and direct-PR projects' "$err" >/dev/null \
     || fail "seed did not explain local-only project rejection"
   [ ! -e "$subhome" ] || fail "seed created a subhome before rejecting a local-only project"
   pass "home seeding refuses local-only projects"
@@ -1142,12 +1142,12 @@ test_home_seed_resolves_relative_source_origins() {
   pass "home seeding resolves relative source origins against the source project"
 }
 
-test_home_seed_skips_initialized_existing_no_mistakes_projects() {
+test_home_seed_skips_initialized_existing_drill_projects() {
   local home subhome err fakebin log origin
   home="$TMP_ROOT/existing-initialized-home"
   subhome="$TMP_ROOT/existing-initialized-subhome"
   err="$TMP_ROOT/existing-initialized.err"
-  log="$TMP_ROOT/existing-initialized-no-mistakes.log"
+  log="$TMP_ROOT/existing-initialized-drill.log"
   mkdir -p "$home/projects" "$home/data" "$home/state"
   fm_git_init_commit "$home/projects/alpha"
   fm_git_init_commit "$home/projects/beta"
@@ -1157,32 +1157,32 @@ test_home_seed_skips_initialized_existing_no_mistakes_projects() {
   mkdir -p "$subhome/projects"
   origin=$(git -C "$home/projects/alpha" remote get-url origin)
   git clone --quiet "$origin" "$subhome/projects/alpha"
-  git -C "$subhome/projects/alpha" remote add no-mistakes "$TMP_ROOT/no-mistakes-alpha.git"
+  git -C "$subhome/projects/alpha" remote add drill "$TMP_ROOT/drill-alpha.git"
   printf '%s\n' '- alpha - alpha project (added 2026-06-22)' '- beta - beta project (added 2026-06-22)' > "$home/data/projects.md"
-  fakebin=$(make_recording_no_mistakes "$TMP_ROOT/existing-initialized-fake")
+  fakebin=$(make_recording_drill "$TMP_ROOT/existing-initialized-fake")
   : > "$log"
 
-  if PATH="$fakebin:$PATH" SQUAD_FAKE_NO_MISTAKES_LOG="$log" SQUAD_FAKE_NO_MISTAKES_FAIL_PROJECT=beta \
+  if PATH="$fakebin:$PATH" SQUAD_FAKE_DRILL_LOG="$log" SQUAD_FAKE_DRILL_FAIL_PROJECT=beta \
     SQUAD_HOME="$home" SQUAD_XO_CHARTER='existing init rollback scope' SQUAD_XO_SCOPE='existing init rollback scope' \
     "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha beta >/dev/null 2>"$err"; then
-    fail "seed succeeded even though later no-mistakes initialization failed"
+    fail "seed succeeded even though later drill initialization failed"
   fi
-  grep -F 'failed to initialize no-mistakes for beta' "$err" >/dev/null \
-    || fail "seed did not explain later no-mistakes initialization failure"
+  grep -F 'failed to initialize drill for beta' "$err" >/dev/null \
+    || fail "seed did not explain later drill initialization failure"
   grep -F "$subhome/projects/alpha" "$log" >/dev/null \
-    && fail "seed ran no-mistakes against an initialized existing clone"
-  [ ! -f "$subhome/projects/alpha/.no-mistakes-init" ] || fail "seed mutated initialized existing clone with no-mistakes init"
-  [ ! -f "$subhome/projects/alpha/.no-mistakes-doctor" ] || fail "seed mutated initialized existing clone with no-mistakes doctor"
-  [ ! -e "$subhome/projects/beta" ] || fail "failed seed left a newly cloned project after no-mistakes failure"
-  pass "home seeding skips initialized existing no-mistakes clones"
+    && fail "seed ran drill against an initialized existing clone"
+  [ ! -f "$subhome/projects/alpha/.drill-init" ] || fail "seed mutated initialized existing clone with drill init"
+  [ ! -f "$subhome/projects/alpha/.drill-doctor" ] || fail "seed mutated initialized existing clone with drill doctor"
+  [ ! -e "$subhome/projects/beta" ] || fail "failed seed left a newly cloned project after drill failure"
+  pass "home seeding skips initialized existing drill clones"
 }
 
-test_home_seed_refuses_uninitialized_existing_no_mistakes_project() {
+test_home_seed_refuses_uninitialized_existing_drill_project() {
   local home subhome err fakebin log origin
   home="$TMP_ROOT/existing-uninitialized-home"
   subhome="$TMP_ROOT/existing-uninitialized-subhome"
   err="$TMP_ROOT/existing-uninitialized.err"
-  log="$TMP_ROOT/existing-uninitialized-no-mistakes.log"
+  log="$TMP_ROOT/existing-uninitialized-drill.log"
   mkdir -p "$home/projects" "$home/data" "$home/state"
   fm_git_init_commit "$home/projects/alpha"
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/uninitialized-alpha.git"
@@ -1191,19 +1191,19 @@ test_home_seed_refuses_uninitialized_existing_no_mistakes_project() {
   origin=$(git -C "$home/projects/alpha" remote get-url origin)
   git clone --quiet "$origin" "$subhome/projects/alpha"
   printf '%s\n' '- alpha - alpha project (added 2026-06-22)' > "$home/data/projects.md"
-  fakebin=$(make_recording_no_mistakes "$TMP_ROOT/existing-uninitialized-fake")
+  fakebin=$(make_recording_drill "$TMP_ROOT/existing-uninitialized-fake")
   : > "$log"
 
-  if PATH="$fakebin:$PATH" SQUAD_FAKE_NO_MISTAKES_LOG="$log" \
+  if PATH="$fakebin:$PATH" SQUAD_FAKE_DRILL_LOG="$log" \
     SQUAD_HOME="$home" SQUAD_XO_CHARTER='existing uninitialized scope' \
     "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
-    fail "seed initialized a preexisting no-mistakes clone"
+    fail "seed initialized a preexisting drill clone"
   fi
   grep -F 'refusing to mutate preexisting clone' "$err" >/dev/null \
-    || fail "seed did not explain uninitialized existing no-mistakes clone refusal"
-  [ ! -s "$log" ] || fail "seed ran no-mistakes before refusing an uninitialized existing clone"
-  [ ! -f "$subhome/projects/alpha/.no-mistakes-init" ] || fail "seed mutated uninitialized existing clone"
-  pass "home seeding refuses uninitialized existing no-mistakes clones"
+    || fail "seed did not explain uninitialized existing drill clone refusal"
+  [ ! -s "$log" ] || fail "seed ran drill before refusing an uninitialized existing clone"
+  [ ! -f "$subhome/projects/alpha/.drill-init" ] || fail "seed mutated uninitialized existing clone"
+  pass "home seeding refuses uninitialized existing drill clones"
 }
 
 test_home_seed_refuses_project_destinations_outside_subhome() {
@@ -1915,7 +1915,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-teardown-fake")
@@ -1965,7 +1965,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   printf 'child check\n' > "$subhome/state/child.check.sh"
@@ -2023,7 +2023,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-lock-child-fake")
@@ -2326,7 +2326,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/prevalidate-teardown-fake")
@@ -2371,7 +2371,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-active-descendant-fake")
@@ -2422,7 +2422,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-repo-descendant-fake")
@@ -2467,7 +2467,7 @@ worktree=$childwt
 project=$childproj
 harness=echo
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/unregistered-child-fake")
@@ -2697,8 +2697,8 @@ test_home_seed_refuses_home_overlapping_registered_home
 test_home_seed_refuses_remote_backed_project_without_origin
 test_home_seed_refuses_existing_remote_backed_project_with_wrong_origin
 test_home_seed_resolves_relative_source_origins
-test_home_seed_skips_initialized_existing_no_mistakes_projects
-test_home_seed_refuses_uninitialized_existing_no_mistakes_project
+test_home_seed_skips_initialized_existing_drill_projects
+test_home_seed_refuses_uninitialized_existing_drill_project
 test_home_seed_refuses_project_destinations_outside_subhome
 test_home_seed_refuses_operational_dirs_outside_subhome
 test_home_seed_refuses_unsafe_leaf_files

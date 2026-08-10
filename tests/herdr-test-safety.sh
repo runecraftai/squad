@@ -7,7 +7,7 @@ set -u
 # Herdr backend tests drive the real sq-spawn/sq-teardown but do not source
 # tests/lib.sh, so exempt them from the gate-lifecycle refusal here too (see
 # tests/lib.sh and bin/sq-gate-refuse-lib.sh for why Squad's own suite,
-# which the no-mistakes gate runs from a gate worktree, must be exempt).
+# which the drill gate runs from a gate worktree, must be exempt).
 export SQUAD_GATE_REFUSE_BYPASS=1
 
 HERDR_TEST_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

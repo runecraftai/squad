@@ -64,7 +64,7 @@ func TestIntentJourney(t *testing.T) {
 	invocations := h.AgentInvocations()
 
 	// 1. DB columns populated.
-	intent := readRunIntent(t, h.NMHome, run.ID)
+	intent := readRunIntent(t, h.DrillHome, run.ID)
 	if intent.summary == nil || *intent.summary == "" {
 		t.Logf("agent invocations:\n%s", dumpPrompts(invocations))
 		t.Fatalf("runs.intent is empty; expected canned summary to be persisted")
@@ -106,7 +106,7 @@ func TestIntentJourney(t *testing.T) {
 	// test, etc.) operates from the wrong place even when those steps
 	// pass the right CWD. The fakeagent records os.Getwd() per call, so
 	// this assertion catches the regression generically across backends.
-	wantCWD := canonicalForCompare(t, paths.WithRoot(h.NMHome).WorktreeDir(h.repoID(), run.ID))
+	wantCWD := canonicalForCompare(t, paths.WithRoot(h.DrillHome).WorktreeDir(h.repoID(), run.ID))
 	for i, inv := range invocations {
 		got := canonicalForCompare(t, inv.CWD)
 		if got != wantCWD {

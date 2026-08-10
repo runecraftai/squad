@@ -26,7 +26,7 @@ fi
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-unset NO_MISTAKES_GATE
+unset DRILL_GATE NO_MISTAKES_GATE
 
 TMP_ROOT=$(fm_test_tmproot sq-sessionstart-nudge)
 NUDGE="$ROOT/bin/sq-sessionstart-nudge.sh"
@@ -74,13 +74,13 @@ test_genuine_primary_nudges() {
 test_gate_env_is_silent() {
   local root="$TMP_ROOT/gate-env"
   make_primary "$root"
-  expect_silent_zero "gate env nudge" env NO_MISTAKES_GATE=1 SQUAD_GATE_REFUSE_BYPASS=0 \
+  expect_silent_zero "gate env nudge" env DRILL_GATE=1 SQUAD_GATE_REFUSE_BYPASS=0 \
     SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" "$NUDGE"
-  pass "sq-sessionstart-nudge: NO_MISTAKES_GATE is silent"
+  pass "sq-sessionstart-nudge: DRILL_GATE is silent"
 }
 
 test_gate_common_dir_is_silent() {
-  local source="$TMP_ROOT/gate-source" bare="$TMP_ROOT/.no-mistakes/repos/gate.git"
+  local source="$TMP_ROOT/gate-source" bare="$TMP_ROOT/.drill/repos/gate.git"
   local root="$TMP_ROOT/gate-worktree"
   fm_git_init_commit "$source"
   mkdir -p "$(dirname "$bare")"
@@ -91,7 +91,7 @@ test_gate_common_dir_is_silent() {
   printf 'gate-test\n' > "$root/.sq-xo-home"
   expect_silent_zero "gate common-dir nudge" env SQUAD_GATE_REFUSE_BYPASS=0 \
     SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" "$NUDGE"
-  pass "sq-sessionstart-nudge: .no-mistakes gate common-dir is silent"
+  pass "sq-sessionstart-nudge: .drill gate common-dir is silent"
 }
 
 test_unmarked_linked_worktree_is_silent() {
@@ -368,7 +368,7 @@ test_run_unknown_source_takes_the_helm() {
 test_run_gate_and_scope_are_silent() {
   local root="$TMP_ROOT/run-gate" base="$TMP_ROOT/run-linked-base" linked="$TMP_ROOT/run-linked"
   make_run_primary "$root"
-  expect_silent_zero "gate env run" env NO_MISTAKES_GATE=1 SQUAD_GATE_REFUSE_BYPASS=0 \
+  expect_silent_zero "gate env run" env DRILL_GATE=1 SQUAD_GATE_REFUSE_BYPASS=0 \
     SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" PATH="$RUN_PATH" "$RUN" --source startup
   assert_absent "$root/state/.lock" "a gate agent's session open still took the unit lock"
 

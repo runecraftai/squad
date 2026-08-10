@@ -200,8 +200,8 @@ describe("release-please CI exclusions", () => {
 
     expect(prWorkflows.map((w) => w.name).sort()).toEqual([
       "ci.yml",
+      "drill-required.yml",
       "guard-generated-files.yml",
-      "no-mistakes-required.yml",
     ]);
 
     const failures: string[] = [];
@@ -226,13 +226,13 @@ describe("release-please CI exclusions", () => {
     expect(on!.workflow_dispatch).toBeUndefined();
   });
 
-  it("keeps bot author exemptions on guard and no-mistakes jobs", () => {
+  it("keeps bot author exemptions on guard and drill jobs", () => {
     const guard = readFileSync(
       join(workflowsDir, "guard-generated-files.yml"),
       "utf8",
     );
     const nmr = readFileSync(
-      join(workflowsDir, "no-mistakes-required.yml"),
+      join(workflowsDir, "drill-required.yml"),
       "utf8",
     );
     expect(guard).toContain("github-actions[bot]");
@@ -256,7 +256,7 @@ describe("release-please CI exclusions", () => {
     // #91 keychain isolation, #89 body-events workflow, #87 DNS rebinding.
     const humanPrs: string[][] = [
       [
-        ".no-mistakes/evidence/fm/chrome-keychain-dialog-fix-k1/e2e-transcript.md",
+        ".drill/evidence/fm/chrome-keychain-dialog-fix-k1/e2e-transcript.md",
         "AGENTS.md",
         "README.md",
         "src/bridge.ts",
@@ -264,8 +264,8 @@ describe("release-please CI exclusions", () => {
         "test/keychain-isolation.test.ts",
       ],
       [
-        ".github/workflows/no-mistakes-required.yml",
-        ".no-mistakes/evidence/fm/nm-body-events-sq-browser-r1/workflow-policy-e2e.md",
+        ".github/workflows/drill-required.yml",
+        ".drill/evidence/fm/nm-body-events-sq-browser-r1/workflow-policy-e2e.md",
       ],
       ["src/bridge.ts", "test/bridge.test.ts"],
     ];

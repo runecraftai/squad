@@ -3,6 +3,7 @@ node_modules
 .lavish
 .lavish-axi
 .no-mistakes
+.drill
 lavish-code-review.html
 package-lock.json
 CHANGELOG.md

@@ -13,7 +13,7 @@ set -u
 
 # This suite does not source tests/lib.sh, so exempt its teardown subprocess from
 # the gate-lifecycle refusal (bin/sq-gate-refuse-lib.sh) the way lib.sh does for
-# the rest of the suite: the no-mistakes gate runs this suite from a gate worktree,
+# the rest of the suite: the drill gate runs this suite from a gate worktree,
 # which the guard would otherwise refuse.
 export SQUAD_GATE_REFUSE_BYPASS=1
 
@@ -58,7 +58,7 @@ make_fake_root() {
   ln -s "$ROOT/bin/backends/tmux.sh" "$fake/bin/backends/tmux.sh"
   ln -s "$ROOT/bin/sq-tmux-lib.sh" "$fake/bin/sq-tmux-lib.sh"
   ln -s "$ROOT/bin/sq-composer-lib.sh" "$fake/bin/sq-composer-lib.sh"
-  ln -s "$ROOT/bin/sq-nm-run-lib.sh" "$fake/bin/sq-nm-run-lib.sh"
+  ln -s "$ROOT/bin/sq-drill-run-lib.sh" "$fake/bin/sq-drill-run-lib.sh"
   # sq-lock-lib.sh: teardown sources it for the shared lock-staleness proof.
   ln -s "$ROOT/bin/sq-lock-lib.sh" "$fake/bin/sq-lock-lib.sh"
   # sq-gate-refuse-lib.sh: teardown sources it before any unit mutation.
@@ -99,7 +99,7 @@ worktree=$TMP_ROOT/nonexistent-worktree-$id
 project=$TMP_ROOT/nonexistent-project-$id
 harness=claude
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 tasktmp=$tasktmp
 META
@@ -136,7 +136,7 @@ test_teardown_skips_gracefully_without_tasktmp() {
   ln -s "$ROOT/bin/backends/tmux.sh" "$fake/bin/backends/tmux.sh"
   ln -s "$ROOT/bin/sq-tmux-lib.sh" "$fake/bin/sq-tmux-lib.sh"
   ln -s "$ROOT/bin/sq-composer-lib.sh" "$fake/bin/sq-composer-lib.sh"
-  ln -s "$ROOT/bin/sq-nm-run-lib.sh" "$fake/bin/sq-nm-run-lib.sh"
+  ln -s "$ROOT/bin/sq-drill-run-lib.sh" "$fake/bin/sq-drill-run-lib.sh"
   ln -s "$ROOT/bin/sq-lock-lib.sh" "$fake/bin/sq-lock-lib.sh"
   # sq-gate-refuse-lib.sh: teardown sources it before any unit mutation.
   ln -s "$ROOT/bin/sq-gate-refuse-lib.sh" "$fake/bin/sq-gate-refuse-lib.sh"
@@ -171,7 +171,7 @@ worktree=$TMP_ROOT/nonexistent-wt-$id
 project=$TMP_ROOT/nonexistent-proj-$id
 harness=claude
 kind=strike
-mode=no-mistakes
+mode=drill
 yolo=off
 META
   SQUAD_HOME="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \

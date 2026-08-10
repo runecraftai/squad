@@ -30,7 +30,7 @@ func labRoot(t *testing.T) string {
 	return dir
 }
 
-func buildTestNMBin(t *testing.T) string {
+func buildTestDrillBin(t *testing.T) string {
 	t.Helper()
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -165,7 +165,7 @@ func TestReapAll_NormalCompletion(t *testing.T) {
 	lab := labRoot(t)
 	t.Setenv(EnvInventory, filepath.Join(lab, "inv"))
 	safetyReap(t)
-	bin := buildTestNMBin(t)
+	bin := buildTestDrillBin(t)
 	drillHome := filepath.Join(lab, "nm-e2e-normal", "nmhome")
 	pid := startDetachedTestDaemon(t, bin, drillHome)
 
@@ -197,7 +197,7 @@ func TestReapAll_CallerInterrupt(t *testing.T) {
 	lab := labRoot(t)
 	t.Setenv(EnvInventory, filepath.Join(lab, "inv"))
 	safetyReap(t)
-	bin := buildTestNMBin(t)
+	bin := buildTestDrillBin(t)
 	drillHome := filepath.Join(lab, "nm-e2e-interrupt", "nmhome")
 	pid := startDetachedTestDaemon(t, bin, drillHome)
 
@@ -226,7 +226,7 @@ func TestReapAll_Timeout(t *testing.T) {
 	lab := labRoot(t)
 	t.Setenv(EnvInventory, filepath.Join(lab, "inv"))
 	safetyReap(t)
-	bin := buildTestNMBin(t)
+	bin := buildTestDrillBin(t)
 	drillHome := filepath.Join(lab, "nm-e2e-timeout", "nmhome")
 	pid := startDetachedTestDaemon(t, bin, drillHome)
 
@@ -261,7 +261,7 @@ func TestReapAll_ChildSIGKILL_WrapperReaps(t *testing.T) {
 	invDir := filepath.Join(lab, "inv")
 	t.Setenv(EnvInventory, invDir)
 	safetyReap(t)
-	bin := buildTestNMBin(t)
+	bin := buildTestDrillBin(t)
 	drillHome := filepath.Join(lab, "nm-e2e-sigkill", "nmhome")
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestReapAll_ChildSIGKILL_WrapperReaps$", "-test.count=1")
@@ -396,7 +396,7 @@ func TestReapAll_StaleInventoryRecovery(t *testing.T) {
 	lab := labRoot(t)
 	t.Setenv(EnvInventory, filepath.Join(lab, "inv"))
 	safetyReap(t)
-	bin := buildTestNMBin(t)
+	bin := buildTestDrillBin(t)
 	drillHome := filepath.Join(lab, "nm-e2e-stale", "nmhome")
 	_ = startDetachedTestDaemon(t, bin, drillHome)
 

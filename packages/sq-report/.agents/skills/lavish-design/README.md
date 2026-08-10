@@ -64,7 +64,7 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 **Tone**
 
 - **Calm. Considered. Specific.** When something is technical, name it precisely. When something is a feeling, write it as a feeling.
-- **A wink, occasionally.** _"git push no-mistakes."_ _"For when a rich editor is not rich enough."_ A dry, deadpan sense of humor — never goofy.
+- **A wink, occasionally.** _"git push drill."_ _"For when a rich editor is not rich enough."_ A dry, deadpan sense of humor — never goofy.
 
 **Casing**
 

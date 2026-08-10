@@ -61,7 +61,7 @@ run_spawn() {  # <home> <wt> <fakebin> <spawn-args...>
   # fixed valid one.
   local home=$1 wt=$2 fakebin=$3
   shift 3
-  set -- "$@" --mode no-mistakes --yolo off
+  set -- "$@" --mode drill --yolo off
   SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \

@@ -29,7 +29,7 @@ func TestInventoryRegisterUpdateUnregister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(list) != 1 || list[0].PID != 4242 || list[0].NMHome != filepath.Clean(home) {
+	if len(list) != 1 || list[0].PID != 4242 || list[0].DrillHome != filepath.Clean(home) {
 		t.Fatalf("list = %+v", list)
 	}
 	if err := inv.Unregister("e1"); err != nil {

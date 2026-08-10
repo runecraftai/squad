@@ -51,7 +51,7 @@ func TestPrepareDaemonEnvironment_RemovesClaudeSessionVarsAndAppliesShellEnv(t *
 	}
 }
 
-func TestPrepareDaemonEnvironment_PreservesExistingNMHome(t *testing.T) {
+func TestPrepareDaemonEnvironment_PreservesExistingDrillHome(t *testing.T) {
 	t.Setenv("DRILL_HOME", "/service/root")
 	t.Setenv("PATH", os.Getenv("PATH"))
 

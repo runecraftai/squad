@@ -127,7 +127,7 @@ test_brief_assertion_precedes_branch() {
   local home brief iso br
   home="$TMP_ROOT/brief-home"
   mkdir -p "$home/data"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" tangle-brief-cc3 alpha --mode no-mistakes >/dev/null 2>&1
+  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" tangle-brief-cc3 alpha --mode drill >/dev/null 2>&1
   brief="$home/data/tangle-brief-cc3/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \
@@ -182,7 +182,7 @@ run_spawn() {
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
     PATH="$fakebin:$PATH" \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" codex --mode no-mistakes --yolo off 2>&1
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" codex --mode drill --yolo off 2>&1
 }
 
 test_spawn_isolation_abort() {
@@ -262,7 +262,7 @@ run_spawn_record() {
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
     SQUAD_TMUX_REC="$rec" \
     PATH="$fakebin:$PATH" \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" codex --mode no-mistakes --yolo off 2>&1
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" codex --mode drill --yolo off 2>&1
 }
 
 test_spawn_tmux_window_construction() {

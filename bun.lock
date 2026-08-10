@@ -11,8 +11,8 @@
     "packages/fob": {
       "name": "fob",
     },
-    "packages/no-mistakes": {
-      "name": "no-mistakes",
+    "packages/drill": {
+      "name": "drill",
     },
     "packages/pr-review": {
       "name": "@runecraft/pr-review",
@@ -1094,7 +1094,7 @@
 
     "negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
 
-    "no-mistakes": ["no-mistakes@workspace:packages/no-mistakes"],
+    "drill": ["drill@workspace:packages/drill"],
 
     "node-domexception": ["node-domexception@1.0.0", "", {}, "sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ=="],
 

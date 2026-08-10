@@ -35,7 +35,7 @@ make_case() {
     "worktree=$case_dir/wt" \
     "project=$case_dir/project" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
   # No worktree/project on disk; sq-pr-check.sh tolerates a worktree it cannot
   # stat and simply skips the pr_head lookup via `gh` in that case, so give it
   # one that resolves for cases that want pr_head recorded.

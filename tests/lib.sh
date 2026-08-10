@@ -9,7 +9,7 @@
 # reporters, a self-cleaning temp root, fakebin/PATH-shim helpers, deterministic
 # git identity and fixture builders, state/<id>.meta writers, and the common
 # string/exit-code/file assertions. It deliberately does NOT bundle the
-# behavior-specific fake tmux/fob/no-mistakes mocks: those encode terminal
+# behavior-specific fake tmux/fob/drill mocks: those encode terminal
 # and lifecycle assumptions that differ per suite and belong with the tests that
 # own them.
 #
@@ -26,7 +26,7 @@ fi
 SQUAD_TEST_LIB_SOURCED=1
 
 # Exempt Squad's own test suite from the gate-lifecycle refusal
-# (bin/sq-gate-refuse-lib.sh). The no-mistakes gate runs this suite FROM a gate
+# (bin/sq-gate-refuse-lib.sh). The drill gate runs this suite FROM a gate
 # worktree - the exact environment that guard refuses - so without this every
 # test that drives the real sq-spawn/sq-send/sq-teardown would be refused during
 # Squad's own validation. A confused gate agent never sources this helper, so

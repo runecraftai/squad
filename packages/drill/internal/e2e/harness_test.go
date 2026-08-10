@@ -155,7 +155,7 @@ func TestWaitForRunPrefersNewestRunOnBranch(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	h := &Harness{t: t, NMHome: drillHome, WorkDir: workDir}
+	h := &Harness{t: t, DrillHome: drillHome, WorkDir: workDir}
 	run := h.WaitForRun("feature/e2e", 2*time.Second)
 	if run.ID != "run-new" {
 		t.Fatalf("WaitForRun returned %q, want newest run", run.ID)

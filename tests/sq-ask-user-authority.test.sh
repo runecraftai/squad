@@ -14,7 +14,7 @@ test_primary_and_XO_instruction_generation() {
   mkdir -p "$home/data"
 
   SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
-    "$BRIEF" authority-worker sample --mode no-mistakes >/dev/null 2>&1
+    "$BRIEF" authority-worker sample --mode drill >/dev/null 2>&1
   ship="$home/data/authority-worker/brief.md"
   assert_grep 'ask-user findings are never yours to answer' "$ship" \
     "generated implementation brief lets the worker own an ask-user decision"

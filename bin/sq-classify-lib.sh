@@ -15,7 +15,7 @@
 #
 # There are two documented exceptions. The absorb classification
 # (operator_absorb_class and its working/paused wrappers) is NOT a pure status-file
-# read: it reuses bin/sq-crew-state.sh, which may make a bounded no-mistakes call,
+# read: it reuses bin/sq-crew-state.sh, which may make a bounded drill call,
 # to decide whether an operator that just stopped its turn or went stale is working,
 # deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
@@ -32,7 +32,7 @@ _SQUAD_CLASSIFY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/nul
 
 # The crew current-state reader used for the "provably working" decision.
 # Overridable so tests can stub the run-step/pane verdict without a real worktree
-# or no-mistakes install; absent, it points at the real sibling script.
+# or drill install; absent, it points at the real sibling script.
 SQUAD_CREW_STATE_BIN="${SQUAD_CREW_STATE_BIN:-$_SQUAD_CLASSIFY_LIB_DIR/sq-crew-state.sh}"
 
 # Commander-relevant status verbs. A status line carrying any of these is work
@@ -607,7 +607,7 @@ signal_reason_is_actionable() {  # <file> ...
 # Classify WHY an idle/stale crew MIGHT be safely absorbed instead of surfaced,
 # from bin/sq-crew-state.sh's one authoritative current-state line
 # ("state: <s> · source: <src> · <detail>"). Prints exactly one token:
-#   working - an actively-running no-mistakes step (running/fixing/ci) or a busy
+#   working - an actively-running drill step (running/fixing/ci) or a busy
 #             pane; the operator is legitimately mid-work on a static-looking pane
 #             (e.g. waiting on CI);
 #   paused  - the operator's authoritative current state is a declared external-wait
@@ -617,7 +617,7 @@ signal_reason_is_actionable() {  # <file> ...
 # One sq-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: an operator
 # that appended paused: but then STARTED a run reports working, never paused.
-# NOT a pure read: sq-crew-state.sh may make a bounded no-mistakes call, so callers
+# NOT a pure read: sq-crew-state.sh may make a bounded drill call, so callers
 # run it only on no-verb signal and first-sighting stale paths, never every wake.
 # SQUAD_CREW_STATE_BIN lets tests stub the verdict.
 operator_absorb_class() {  # <id>

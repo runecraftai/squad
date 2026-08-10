@@ -25,7 +25,7 @@
 # session's tab bar with no per-home split, and zellij enforces no tab-name
 # uniqueness at all, two Squad homes whose task ids happen to collide
 # could send/peek/close each other's tabs. This is the exact gap a
-# commander-directed no-mistakes review gate caught for the cmux backend
+# commander-directed drill review gate caught for the cmux backend
 # (docs/cmux-backend.md) and this same tag mechanism (bin/backends/cmux.sh's
 # fm_backend_cmux_scoped_title, now shared via bin/sq-backend-hometag-lib.sh)
 # is ported here for the identical reason. Every NEW tab is created with a

@@ -32,10 +32,10 @@ import (
 type Harness struct {
 	t *testing.T
 
-	NMBin       string // absolute path to the drill binary under test
+	DrillBin    string // absolute path to the drill binary under test
 	FakeAgent   string // absolute path to the fake agent binary
 	BinDir      string // temp dir holding agent symlinks; prepended to PATH
-	NMHome      string // value used as $DRILL_HOME (daemon DB, socket, config)
+	DrillHome   string // value used as $DRILL_HOME (daemon DB, socket, config)
 	HomeDir     string // value used as $HOME so git operations don't read user state
 	UpstreamDir string // bare repo serving as origin for the working clone
 	WorkDir     string // working clone where the user runs `drill init`
@@ -91,10 +91,10 @@ func NewHarness(t *testing.T, opts SetupOpts) *Harness {
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	h := &Harness{
 		t:                 t,
-		NMBin:             drillBin,
+		DrillBin:          drillBin,
 		FakeAgent:         fakeBin,
 		BinDir:            filepath.Join(root, "bin"),
-		NMHome:            filepath.Join(root, "nmhome"),
+		DrillHome:         filepath.Join(root, "nmhome"),
 		HomeDir:           filepath.Join(root, "home"),
 		UpstreamDir:       filepath.Join(root, "upstream.git"),
 		WorkDir:           filepath.Join(root, "work"),
@@ -104,7 +104,7 @@ func NewHarness(t *testing.T, opts SetupOpts) *Harness {
 		allowRepoCommands: opts.AllowRepoCommands,
 	}
 
-	for _, dir := range []string{h.BinDir, h.NMHome, h.HomeDir, h.WorkDir} {
+	for _, dir := range []string{h.BinDir, h.DrillHome, h.HomeDir, h.WorkDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
@@ -129,7 +129,7 @@ func NewHarness(t *testing.T, opts SetupOpts) *Harness {
 	// daemon re-execs itself, also inheriting them.
 	t.Setenv("PATH", h.BinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("HOME", h.HomeDir)
-	t.Setenv("DRILL_HOME", h.NMHome)
+	t.Setenv("DRILL_HOME", h.DrillHome)
 	t.Setenv("FAKEAGENT_LOG", h.AgentLog)
 	if h.Scenario != "" {
 		t.Setenv("FAKEAGENT_SCENARIO", h.Scenario)
@@ -163,7 +163,7 @@ func NewHarness(t *testing.T, opts SetupOpts) *Harness {
 	// Temporary-daemon ownership: inventory + concurrency slot. The suite
 	// wrapper (scripts/e2e.sh) and TestMain reaper recover if Cleanup never
 	// runs (timeout / SIGKILL of the test process).
-	own, err := e2edaemon.Acquire(h.NMHome, h.NMBin, 2*time.Minute)
+	own, err := e2edaemon.Acquire(h.DrillHome, h.DrillBin, 2*time.Minute)
 	if err != nil {
 		t.Fatalf("acquire e2e daemon ownership: %v", err)
 	}
@@ -192,8 +192,8 @@ func shellQuote(value string) string {
 // agent name in PATH (which would also work, but the override removes a
 // confounding variable when something goes wrong).
 func (h *Harness) writeGlobalConfig() {
-	configPath := filepath.Join(h.NMHome, "config.yaml")
-	if err := os.MkdirAll(h.NMHome, 0o755); err != nil {
+	configPath := filepath.Join(h.DrillHome, "config.yaml")
+	if err := os.MkdirAll(h.DrillHome, 0o755); err != nil {
 		h.t.Fatalf("mkdir nm home: %v", err)
 	}
 	binLink := filepath.Join(h.BinDir, h.agentName)
@@ -284,7 +284,7 @@ func (h *Harness) RunInDirWithEnv(dir string, env map[string]string, args ...str
 	h.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.NMBin, args...)
+	cmd := exec.CommandContext(ctx, h.DrillBin, args...)
 	cmd.Dir = dir
 	cmd.Env = mergedEnv(os.Environ(), env)
 	out, err := cmd.CombinedOutput()
@@ -295,10 +295,10 @@ func (h *Harness) RunInDirWithEnv(dir string, env map[string]string, args ...str
 // syncDaemonOwnership records a live daemon PID into the suite inventory when
 // a harness command has (possibly) started or restarted the detached daemon.
 func (h *Harness) syncDaemonOwnership() {
-	if h == nil || h.daemonOwn == nil || h.NMHome == "" {
+	if h == nil || h.daemonOwn == nil || h.DrillHome == "" {
 		return
 	}
-	pid, err := daemon.ReadPID(paths.WithRoot(h.NMHome))
+	pid, err := daemon.ReadPID(paths.WithRoot(h.DrillHome))
 	if err != nil || pid <= 0 {
 		return
 	}
@@ -471,7 +471,7 @@ func (h *Harness) WaitForRunRunning(branch string, timeout time.Duration) *ipc.R
 
 func (h *Harness) Runs() []ipc.RunInfo {
 	h.t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	client, err := ipc.Dial(p.Socket())
 	if err != nil {
 		h.t.Fatalf("dial daemon: %v", err)
@@ -486,7 +486,7 @@ func (h *Harness) Runs() []ipc.RunInfo {
 
 func (h *Harness) RunInfo(runID string) *ipc.RunInfo {
 	h.t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	client, err := ipc.Dial(p.Socket())
 	if err != nil {
 		h.t.Fatalf("dial daemon: %v", err)
@@ -501,7 +501,7 @@ func (h *Harness) RunInfo(runID string) *ipc.RunInfo {
 
 func (h *Harness) ActiveRun(branch string) *ipc.RunInfo {
 	h.t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	client, err := ipc.Dial(p.Socket())
 	if err != nil {
 		h.t.Fatalf("dial daemon: %v", err)
@@ -523,7 +523,7 @@ func (h *Harness) Respond(runID string, step types.StepName, action types.Approv
 
 func (h *Harness) RespondError(runID string, step types.StepName, action types.ApprovalAction) error {
 	h.t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	client, err := ipc.Dial(p.Socket())
 	if err != nil {
 		return fmt.Errorf("dial daemon: %w", err)
@@ -541,7 +541,7 @@ func (h *Harness) RespondError(runID string, step types.StepName, action types.A
 
 func (h *Harness) CancelRun(runID string) {
 	h.t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	client, err := ipc.Dial(p.Socket())
 	if err != nil {
 		h.t.Fatalf("dial daemon: %v", err)
@@ -565,7 +565,7 @@ func (h *Harness) waitForRunStatus(branch string, timeout time.Duration, match f
 		var result ipc.GetRunsResult
 		var ok bool
 		func() {
-			p := paths.WithRoot(h.NMHome)
+			p := paths.WithRoot(h.DrillHome)
 			client, err := ipc.Dial(p.Socket())
 			if err != nil {
 				return
@@ -607,8 +607,8 @@ func (h *Harness) waitForRunStatus(branch string, timeout time.Duration, match f
 // surfaces the actual failure mode instead of just "stuck running".
 func (h *Harness) dumpDebugState() {
 	for _, candidate := range []string{
-		filepath.Join(h.NMHome, "logs", "daemon.log"),
-		filepath.Join(h.NMHome, "daemon.log"),
+		filepath.Join(h.DrillHome, "logs", "daemon.log"),
+		filepath.Join(h.DrillHome, "daemon.log"),
 	} {
 		if data, err := os.ReadFile(candidate); err == nil && len(data) > 0 {
 			h.t.Logf("--- %s (last 8KB) ---\n%s", candidate, tailBytes(data, 8192))
@@ -617,7 +617,7 @@ func (h *Harness) dumpDebugState() {
 	if data, err := os.ReadFile(h.AgentLog); err == nil {
 		h.t.Logf("--- fakeagent.log (%d invocations recorded) ---", bytes.Count(data, []byte("\n")))
 	}
-	logsDir := filepath.Join(h.NMHome, "logs")
+	logsDir := filepath.Join(h.DrillHome, "logs")
 	_ = filepath.Walk(logsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Base(path) == "daemon.log" {
 			return nil
@@ -706,17 +706,17 @@ func (h *Harness) repoID() string {
 // this Cleanup never runs.
 func (h *Harness) shutdown() {
 	if h.daemonOwn != nil {
-		h.daemonOwn.NMBin = h.NMBin
+		h.daemonOwn.DrillBin = h.DrillBin
 		h.daemonOwn.Release()
 		h.daemonOwn = nil
 		return
 	}
-	if _, err := os.Stat(h.NMBin); err != nil {
+	if _, err := os.Stat(h.DrillBin); err != nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.NMBin, "daemon", "stop")
+	cmd := exec.CommandContext(ctx, h.DrillBin, "daemon", "stop")
 	cmd.Dir = h.daemonStopDir()
 	cmd.Env = os.Environ()
 	_ = cmd.Run()

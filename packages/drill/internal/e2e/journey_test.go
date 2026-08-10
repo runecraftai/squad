@@ -95,7 +95,7 @@ func TestAXIControlByteFailureGateRemainsReadable(t *testing.T) {
 		t.Fatalf("full logs retained raw U+001F: %q", logsOut)
 	}
 
-	logPath := filepath.Join(h.NMHome, "logs", run.ID, "test.log")
+	logPath := filepath.Join(h.DrillHome, "logs", run.ID, "test.log")
 	rawLog, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("read durable test log: %v", err)
@@ -585,7 +585,7 @@ func assertDoctor(t *testing.T, h *Harness) {
 		"gh",
 		"ok",
 		"data directory",
-		h.NMHome,
+		h.DrillHome,
 		"database",
 		"will be created on first use",
 		"daemon",
@@ -777,7 +777,7 @@ func assertAttachMissingRun(t *testing.T, h *Harness) {
 
 func assertDaemonNotifyPushUnknownRepo(t *testing.T, h *Harness) {
 	t.Helper()
-	missingGate := filepath.Join(h.NMHome, "repos", "missing-repo.git")
+	missingGate := filepath.Join(h.DrillHome, "repos", "missing-repo.git")
 	out, err := h.Run("daemon", "notify-push", "--gate", missingGate, "--ref", "refs/heads/main", "--old", "aaa", "--new", "bbb")
 	if err == nil {
 		t.Fatalf("daemon notify-push for unknown repo should fail, got output:\n%s", out)
@@ -786,7 +786,7 @@ func assertDaemonNotifyPushUnknownRepo(t *testing.T, h *Harness) {
 		t.Errorf("daemon notify-push unknown repo output should mention 'unknown repo', got:\n%s", out)
 	}
 
-	invalidGate := filepath.Join(h.NMHome, "repos", "not-a-git-suffix")
+	invalidGate := filepath.Join(h.DrillHome, "repos", "not-a-git-suffix")
 	out, err = h.Run("daemon", "notify-push", "--gate", invalidGate, "--ref", "refs/heads/main", "--old", "aaa", "--new", "bbb")
 	if err == nil {
 		t.Fatalf("daemon notify-push for invalid gate path should fail, got output:\n%s", out)
@@ -879,7 +879,7 @@ func assertRunsEmpty(t *testing.T, h *Harness) {
 
 func assertRerunNoPreviousRun(t *testing.T, h *Harness) {
 	t.Helper()
-	gateDir := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	gateDir := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	if out, err := h.runGit(context.Background(), gateDir, "fetch", h.WorkDir, "main:refs/heads/main"); err != nil {
 		t.Fatalf("seed gate main ref before rerun: %v\n%s", err, out)
 	}
@@ -1076,7 +1076,7 @@ func assertAgentEditCommitRun(t *testing.T, h *Harness) {
 	assertPushedHead(t, run.HeadSHA, h.UpstreamBranchSHA("agent-edits"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	gateDir := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	gateDir := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	gateBranchSHA, err := h.runGit(ctx, gateDir, "rev-parse", "refs/heads/agent-edits")
 	if err != nil {
 		t.Fatalf("read agent-edits gate branch ref: %v\n%s", err, gateBranchSHA)
@@ -1118,7 +1118,7 @@ func assertFormatFailureWarningRun(t *testing.T, h *Harness) {
 		t.Fatalf("format-fails run did not complete: status=%s error=%v", run.Status, deref(run.Error))
 	}
 	assertPushedHead(t, run.HeadSHA, h.UpstreamBranchSHA("format-fails"))
-	logPath := filepath.Join(h.NMHome, "logs", run.ID, "push.log")
+	logPath := filepath.Join(h.DrillHome, "logs", run.ID, "push.log")
 	logData, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("read format-fails push log: %v", err)
@@ -1321,12 +1321,12 @@ func assertGateRefDeletionDoesNotCreateRun(t *testing.T, h *Harness, branch stri
 
 func assertConfiguredCommandRun(t *testing.T, h *Harness) {
 	t.Helper()
-	testCommandLog := filepath.Join(h.NMHome, "configured-test-command.log")
+	testCommandLog := filepath.Join(h.DrillHome, "configured-test-command.log")
 	testCommand := filepath.Join(h.BinDir, "nm-test-e2e")
 	if err := os.WriteFile(testCommand, []byte("#!/bin/sh\nprintf test-ran > \""+testCommandLog+"\"\n"), 0o755); err != nil {
 		t.Fatalf("write e2e test command: %v", err)
 	}
-	lintCommandLog := filepath.Join(h.NMHome, "configured-lint-command.log")
+	lintCommandLog := filepath.Join(h.DrillHome, "configured-lint-command.log")
 	lintCommand := filepath.Join(h.BinDir, "nm-lint-e2e")
 	if err := os.WriteFile(lintCommand, []byte("#!/bin/sh\nprintf lint-ran > \""+lintCommandLog+"\"\n"), 0o755); err != nil {
 		t.Fatalf("write e2e lint command: %v", err)
@@ -1385,7 +1385,7 @@ func assertConfiguredCommandRun(t *testing.T, h *Harness) {
 
 func assertInvalidConfigPushCleansWorktree(t *testing.T, h *Harness) {
 	t.Helper()
-	configPath := filepath.Join(h.NMHome, "config.yaml")
+	configPath := filepath.Join(h.DrillHome, "config.yaml")
 	originalConfig, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read original global config: %v", err)
@@ -1408,7 +1408,7 @@ func assertInvalidConfigPushCleansWorktree(t *testing.T, h *Harness) {
 	if run.Error == nil || !strings.Contains(*run.Error, "parse global config") {
 		t.Fatalf("expected invalid-config-cleanup run error to mention parse global config, got %q", deref(run.Error))
 	}
-	worktreeDir := paths.WithRoot(h.NMHome).WorktreeDir(h.repoID(), run.ID)
+	worktreeDir := paths.WithRoot(h.DrillHome).WorktreeDir(h.repoID(), run.ID)
 	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
 		t.Fatalf("expected setup-failure worktree %s to be removed, stat err=%v", worktreeDir, err)
 	}
@@ -2344,7 +2344,7 @@ func assertDaemonStopOutput(t *testing.T, out string) {
 
 func assertDaemonStopWhenNotRunning(t *testing.T, h *Harness) {
 	t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	if err := os.WriteFile(p.PIDFile(), []byte("424242"), 0o644); err != nil {
 		t.Fatalf("write stale daemon pid file: %v", err)
 	}
@@ -2389,7 +2389,7 @@ func assertDaemonRestartWhileRunning(t *testing.T, h *Harness) {
 
 func assertDaemonPIDFile(t *testing.T, h *Harness) {
 	t.Helper()
-	pid, err := daemon.ReadPID(paths.WithRoot(h.NMHome))
+	pid, err := daemon.ReadPID(paths.WithRoot(h.DrillHome))
 	if err != nil {
 		t.Fatalf("read daemon pid file: %v", err)
 	}
@@ -2441,7 +2441,7 @@ func assertStatusActiveRunInDir(t *testing.T, h *Harness, dir string, run *ipc.R
 
 func assertRootDefaultsToHistory(t *testing.T, h *Harness) {
 	t.Helper()
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	database, err := db.Open(p.DB())
 	if err != nil {
 		t.Fatalf("open e2e db for root history: %v", err)
@@ -2509,7 +2509,7 @@ func assertRootDefaultsToHistory(t *testing.T, h *Harness) {
 
 func assertStatusShortHeadSHA(t *testing.T, h *Harness) {
 	t.Helper()
-	database, err := db.Open(paths.WithRoot(h.NMHome).DB())
+	database, err := db.Open(paths.WithRoot(h.DrillHome).DB())
 	if err != nil {
 		t.Fatalf("open e2e db for short head status: %v", err)
 	}
@@ -2551,7 +2551,7 @@ func assertStatusInitializedStopped(t *testing.T, h *Harness) {
 	for _, want := range []string{
 		resolved,
 		h.UpstreamDir,
-		filepath.Join(h.NMHome, "repos", h.repoID()+".git"),
+		filepath.Join(h.DrillHome, "repos", h.repoID()+".git"),
 		"daemon:",
 		"stopped",
 		"no active run",
@@ -2568,7 +2568,7 @@ func assertGateRemotePresent(t *testing.T, h *Harness) {
 	if err != nil {
 		t.Fatalf("drill remote not found: %v\n%s", err, out)
 	}
-	want := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	want := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	if strings.TrimSpace(string(out)) != want {
 		t.Errorf("drill remote URL = %q, want %q", strings.TrimSpace(string(out)), want)
 	}

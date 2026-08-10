@@ -21,9 +21,9 @@ command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 make_fakebin() {  # <dir>
   local fb
   fb=$(fm_fakebin "$1")
-  cat > "$fb/no-mistakes" <<'SH'
+  cat > "$fb/drill" <<'SH'
 #!/usr/bin/env bash
-[ "${FAKE_NM_SLEEP:-0}" = 1 ] && sleep 30
+[ "${FAKE_DRILL_SLEEP:-0}" = 1 ] && sleep 30
 exit 0
 SH
   cat > "$fb/tmux" <<'SH'
@@ -65,7 +65,7 @@ SH
 echo "curl $*" >> "$NET_LOG"
 exit 1
 SH
-  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/sq-gh" "$fb/curl"
+  chmod +x "$fb/drill" "$fb/tmux" "$fb/gh" "$fb/sq-gh" "$fb/curl"
   printf '%s\n' "$fb"
 }
 
@@ -122,7 +122,7 @@ EOF
     "project=Squad" \
     "harness=claude" \
     "kind=strike" \
-    "mode=no-mistakes" \
+    "mode=drill" \
     "pr=https://github.com/runecraftai/squad/pull/9"
   record_claude_state "$home/state" ship-task busy
   printf 'working: building the thing\n' > "$home/state/ship-task.status"
@@ -152,7 +152,7 @@ EOF
     "project=Squad" \
     "harness=claude" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
   record_claude_state "$home/state" external-wait idle
   printf 'paused: declared external-wait for upstream release\n' > "$home/state/external-wait.status"
   # The XO's OWN home backlog records a merge it managed. This lands in the
@@ -171,7 +171,7 @@ EOF
   mkdir -p "$mate/projects/mate"
   fm_write_meta "$mate/state/mate.meta" \
     "window=Squad:sq-mate" "worktree=$mate/projects/mate" "project=Squad" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$mate/state" mate idle
   printf 'needs-decision [key=race]: pick subscribe order\n' > "$mate/state/mate.status"
 }
@@ -343,7 +343,7 @@ test_active_child_overrides_old_parent_event() {
 EOF
   fm_write_meta "$mate/state/phase8.meta" \
     "window=Squad:sq-phase8" "worktree=$mate/projects/phase8" "project=sample" \
-    "harness=codex" "kind=strike" "mode=no-mistakes"
+    "harness=codex" "kind=strike" "mode=drill"
   printf 'working [key=phase8]: implementing Phase 8 parity\nneeds-decision [key=release]: choose release A or B\n' \
     > "$mate/state/phase8.status"
   fakebin=$(make_fakebin "$home")
@@ -383,7 +383,7 @@ test_structured_child_decision_reaches_commanders_call() {
 EOF
   fm_write_meta "$mate/state/phase8.meta" \
     "window=Squad:sq-phase8" "worktree=$mate/projects/phase8" "project=sample" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$mate/state" phase8 idle
   printf 'needs-decision [key=release]: choose release A or B\n' > "$mate/state/phase8.status"
   fakebin=$(make_fakebin "$home")
@@ -468,12 +468,12 @@ test_bad_XO_homes_never_revive_parent_work() {
   printf '## In flight\n- [ ] slow - Slow child (repo: sample) (kind: ship) (since 2026-07-13)\n\n## Queued\n\n## Done\n' > "$timedout/data/backlog.md"
   fm_write_meta "$timedout/state/slow.meta" \
     "window=Squad:sq-slow" "worktree=$wt" "project=sample" \
-    "harness=codex" "kind=strike" "mode=no-mistakes"
+    "harness=codex" "kind=strike" "mode=drill"
   append_XO_registry "$home" timedout "$timedout"
   write_parent_XO_event "$home" timedout "$timedout" "old timed work"
 
   fakebin=$(make_fakebin "$home")
-  json=$(FAKE_NM_SLEEP=1 SQUAD_SNAPSHOT_XO_TIMEOUT=1 run "$home" "$fakebin" --json)
+  json=$(FAKE_DRILL_SLEEP=1 SQUAD_SNAPSHOT_XO_TIMEOUT=1 run "$home" "$fakebin" --json)
   chmod 700 "$unreadable/data"
   printf '%s' "$json" | jq -e '
     (.XOs | length) == 5
@@ -544,7 +544,7 @@ test_XO_and_child_bounds_are_disclosed() {
     printf -- '- [ ] %s - Active %s (repo: sample) (kind: ship) (since 2026-07-13)\n' "$child" "$child" >> "$mate/data/backlog.md"
     fm_write_meta "$mate/state/$child.meta" \
       "window=Squad:sq-$child" "worktree=$mate/projects/$child" "project=sample" \
-      "harness=claude" "kind=strike" "mode=no-mistakes"
+      "harness=claude" "kind=strike" "mode=drill"
     record_claude_state "$mate/state" "$child" busy
     printf 'working [key=%s]: active child %s\n' "$child" "$i" > "$mate/state/$child.status"
     i=$((i + 1))
@@ -654,7 +654,7 @@ EOF
 EOF
   fm_write_meta "$decision/state/$child.meta" \
     "window=Squad:sq-$child" "worktree=$decision/projects/$child" "project=sample" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$decision/state" "$child" idle
   printf 'needs-decision [key=live-route]: choose the current route\n' > "$decision/state/$child.status"
   fakebin=$(make_fakebin "$home")
@@ -707,7 +707,7 @@ test_nonprogressing_child_states_are_explicit() {
 EOF
   fm_write_meta "$mate/state/parked.meta" \
     "window=Squad:sq-parked" "worktree=$mate/projects/parked" "project=sample" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$mate/state" parked idle
   printf 'needs-decision [key=parked]: choose a route\n' > "$mate/state/parked.status"
   fakebin=$(make_fakebin "$home")
@@ -745,10 +745,10 @@ EOF
 EOF
   fm_write_meta "$mate/state/done.meta" \
     "window=Squad:sq-done" "worktree=$mate/projects/done" "project=sample" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   fm_write_meta "$mate/state/failed.meta" \
     "window=Squad:sq-failed" "worktree=$mate/projects/failed" "project=sample" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$mate/state" "done" idle
   record_claude_state "$mate/state" failed idle
   printf 'done: complete\n' > "$mate/state/done.status"
@@ -1484,7 +1484,7 @@ EOF
     "project=Squad" \
     "harness=codex" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
   printf 'working: structured sibling still projects\n' > "$home/state/structured-ship.status"
   fakebin=$(make_fakebin "$home")
   canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
@@ -1528,7 +1528,7 @@ EOF
     "project=Squad" \
     "harness=codex" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
   printf 'working: visible sibling\n' > "$home/state/visible-ship.status"
   fakebin=$(make_fakebin "$home")
   json_before=$(run "$home" "$fakebin" --json)
@@ -1545,7 +1545,7 @@ EOF
     "project=Squad" \
     "harness=codex" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
   printf 'working: orphan now has meta\n' > "$home/state/orphan-ship.status"
   json_after=$(run "$home" "$fakebin" --json)
   printf '%s' "$json_after" | jq -e '
@@ -1586,7 +1586,7 @@ test_mixed_XO_roles_partial_state_and_commander_readiness() {
 EOF
   fm_write_meta "$hibit/state/hibit-worker.meta" \
     "window=Squad:sq-hibit-worker" "worktree=$hibit/projects/worker" "project=hibit" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$hibit/state" hibit-worker busy
   printf 'working: finalizing progress\n' > "$hibit/state/hibit-worker.status"
 
@@ -1601,7 +1601,7 @@ EOF
 EOF
   fm_write_meta "$wheel/state/wheel-worker.meta" \
     "window=Squad:sq-wheel-worker" "worktree=$wheel/projects/worker" "project=wheelhouse" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$wheel/state" wheel-worker busy
   printf 'working: active validation\n' > "$wheel/state/wheel-worker.status"
 
@@ -1617,7 +1617,7 @@ EOF
 EOF
   fm_write_meta "$sshhip/state/unreadable-child.meta" \
     "window=Squad:dead-sshhip-child" "worktree=$sshhip/projects/child" "project=sshhip" \
-    "harness=codex" "kind=strike" "mode=no-mistakes"
+    "harness=codex" "kind=strike" "mode=drill"
 
   cat > "$ha/data/backlog.md" <<'EOF'
 ## In flight
@@ -1631,7 +1631,7 @@ EOF
 EOF
   fm_write_meta "$ha/state/prep.meta" \
     "window=Squad:sq-prep" "worktree=$ha/projects/prep" "project=home-assistant" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$ha/state" prep busy
   printf 'working: preparing canary\n' > "$ha/state/prep.status"
 
@@ -1750,7 +1750,7 @@ EOF
 
   fm_write_meta "$sshhip/state/unreadable-child.meta" \
     "window=Squad:sq-unreadable-child" "worktree=$sshhip/projects/child" "project=sshhip" \
-    "harness=claude" "kind=strike" "mode=no-mistakes"
+    "harness=claude" "kind=strike" "mode=drill"
   record_claude_state "$sshhip/state" unreadable-child busy
   printf 'working: app store submission restored\n' > "$sshhip/state/unreadable-child.status"
   json=$(run "$home" "$fakebin" --json)
@@ -1837,7 +1837,7 @@ test_main_commander_readiness_matches_XO_projection() {
 EOF
   fm_write_meta "$home/state/prep.meta" \
     "window=Squad:sq-prep" "worktree=$home/projects/prep" "project=Squad" \
-    "harness=codex" "kind=strike" "mode=no-mistakes"
+    "harness=codex" "kind=strike" "mode=drill"
   printf 'working: preparing main canary\n' > "$home/state/prep.status"
   fm_write_meta "$home/state/observation.meta" \
     "window=Squad:sq-observation" "worktree=$home/projects/observation" "project=Squad" \

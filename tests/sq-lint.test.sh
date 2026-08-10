@@ -2,9 +2,9 @@
 # Parity guard for Squad's shell-lint definition.
 #
 # bin/sq-lint.sh must be the single owner that BOTH CI
-# (.github/workflows/ci.yml) and the pre-push gate (.no-mistakes.yaml
+# (.github/workflows/ci.yml) and the pre-push gate (.drill.yaml
 # commands.lint) invoke, so the local lint can never diverge from CI again.
-# Regression origin: with no commands.lint configured, the local no-mistakes
+# Regression origin: with no commands.lint configured, the local drill
 # lint step never ran the deterministic
 # `shellcheck bin/*.sh bin/backends/*.sh tests/*.sh`, so PRs passed local
 # validation yet failed that exact check in CI on info/warning findings such as

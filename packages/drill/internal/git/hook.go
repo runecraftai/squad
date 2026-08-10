@@ -163,7 +163,7 @@ case "$GATE_DIR" in
   *) GATE_DIR=$(/bin/pwd -P 2>/dev/null || pwd -P 2>/dev/null || pwd) ;;
 esac
 LOG="$GATE_DIR/notify-push.log"
-nm_ts() { date '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo unknown; }
+drill_ts() { date '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo unknown; }
 notify_failed=0
 while read oldrev newrev refname; do
 	  set -- --gate "$GATE_DIR" \
@@ -181,7 +181,7 @@ while read oldrev newrev refname; do
   if [ $status -ne 0 ]; then
     notify_failed=1
     {
-      printf '[%s] notify-push failed for %s (exit %d)\n' "$(nm_ts)" "$refname" "$status"
+      printf '[%s] notify-push failed for %s (exit %d)\n' "$(drill_ts)" "$refname" "$status"
       printf '%s\n\n' "$out"
     } >> "$LOG"
     {

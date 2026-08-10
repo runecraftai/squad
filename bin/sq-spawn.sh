@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: an operator in a fob or Orca worktree, or a
 # XO in its isolated Squad home.
-# Usage: sq-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: sq-spawn.sh <task-id> <project-dir> --mode <drill|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        sq-spawn.sh <task-id> <project-dir> --recon [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        sq-spawn.sh <task-id> [<Squad-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --xo
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
@@ -14,7 +14,7 @@
 #   scaffolded before that line existed warns once and launches on the flag. When
 #   the explicit mode carries less rigor than the project's standing posture, a
 #   loud one-line deviation notice is printed and the spawn continues.
-#   no-mistakes-prod-only is a registry policy rather than a task mode and is
+#   drill-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
@@ -217,7 +217,7 @@ SUB_HOME_MARKER=".sq-xo-home"
 . "$SCRIPT_DIR/sq-trace-context-lib.sh"
 # shellcheck source=bin/sq-remote-readiness-lib.sh
 . "$SCRIPT_DIR/sq-remote-readiness-lib.sh"
-# Fail closed before any unit mutation: a no-mistakes gate agent must never spawn
+# Fail closed before any unit mutation: a drill gate agent must never spawn
 # a direct report (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 # Skip the sentry guard when re-exec'd for one pair of a batch (SQUAD_SPAWN_NO_GUARD is
@@ -310,7 +310,7 @@ esac
 # and record no delivery posture; XO spawns hardcode theirs.
 if [ "$KIND" = strike ]; then
   [ "$MODE_SET" -eq 1 ] || {
-    echo "error: strike spawns require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
+    echo "error: strike spawns require --mode <drill|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
     exit 1
   }
   [ "$YOLO_SET" -eq 1 ] || {
@@ -318,11 +318,11 @@ if [ "$KIND" = strike ]; then
     exit 1
   }
   case "$MODE" in
-    no-mistakes|direct-PR|local-only) ;;
-    no-mistakes-prod-only)
-      echo "error: no-mistakes-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to no-mistakes or direct-PR at intake" >&2
+    drill|direct-PR|local-only) ;;
+    drill-prod-only)
+      echo "error: drill-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to drill or direct-PR at intake" >&2
       exit 1 ;;
-    *) echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
+    *) echo "error: --mode must be one of drill, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
   esac
   case "$YOLO" in
     on|off) ;;
@@ -1331,7 +1331,7 @@ fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
   case "$1" in
-    no-mistakes) echo 3 ;;
+    drill) echo 3 ;;
     direct-PR) echo 2 ;;
     local-only) echo 1 ;;
     *) echo 0 ;;
@@ -1353,11 +1353,11 @@ if [ "$KIND" = strike ]; then
   fi
   # The registry holds the commander's standing posture, so dropping below it is
   # allowed (a current explicit commander instruction wins) but never silent. An
-  # unregistered project resolves to the same no-mistakes standing default, which
+  # unregistered project resolves to the same drill standing default, which
   # is why the notice names the standing posture rather than the registry line. A
   # conditional policy is excluded: both of its legs are legitimate classifications.
   STANDING_MODE=$("$SQUAD_ROOT/bin/sq-project-mode.sh" --raw "$PROJ_NAME" 2>/dev/null | cut -d' ' -f1) || STANDING_MODE=
-  if [ -n "$STANDING_MODE" ] && [ "$STANDING_MODE" != no-mistakes-prod-only ] \
+  if [ -n "$STANDING_MODE" ] && [ "$STANDING_MODE" != drill-prod-only ] \
      && [ "$(delivery_rigor_rank "$MODE")" -lt "$(delivery_rigor_rank "$STANDING_MODE")" ]; then
     echo "notice: $ID ships mode=$MODE while the standing posture for $PROJ_NAME is $STANDING_MODE - less rigor than the commander's standing posture; proceed only on a current explicit commander instruction or an intake judgment you can state" >&2
   fi
@@ -2143,7 +2143,7 @@ fi
 # validate/merge stages can branch on it. A strike task carries the explicit
 # per-task decision validated above; an XO's posture is fixed; a recon
 # records none at all, because its deliverable is a report rather than a merge
-# (sq-teardown.sh defaults an absent mode to no-mistakes, and sq-promote.sh
+# (sq-teardown.sh defaults an absent mode to drill, and sq-promote.sh
 # requires an explicit mode when a recon is promoted to a strike task).
 if [ "$KIND" = xo ]; then
   MODE=XO

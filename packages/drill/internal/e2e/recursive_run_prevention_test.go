@@ -58,7 +58,7 @@ func runRecursiveIncident(t *testing.T, agentName, executable, expectedPhase str
 	attemptLog := filepath.Join(t.TempDir(), "incident-attempts.log")
 	t.Setenv("DRILL_INCIDENT_LOG", attemptLog)
 	t.Setenv("DRILL_DESCENDANT_REPO", descendantRepo)
-	t.Setenv("DRILL_OUTER_GATE", filepath.Join(h.NMHome, "repos", h.repoID()+".git"))
+	t.Setenv("DRILL_OUTER_GATE", filepath.Join(h.DrillHome, "repos", h.repoID()+".git"))
 
 	// Set all incident fixture variables before init starts the isolated daemon;
 	// validation agents inherit the daemon's startup environment.
@@ -136,7 +136,7 @@ func runRecursiveIncident(t *testing.T, agentName, executable, expectedPhase str
 		t.Fatalf("ordinary forged-marker init did not refresh normally:\n%s", forgedOut)
 	}
 
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	database, err := db.Open(p.DB())
 	if err != nil {
 		t.Fatalf("open isolated db: %v", err)
@@ -161,14 +161,14 @@ func runRecursiveIncident(t *testing.T, agentName, executable, expectedPhase str
 		t.Fatalf("run count = %d, want only outer run; recursive admission partially mutated state", runCount)
 	}
 
-	refs, err := h.runGit(context.Background(), filepath.Join(h.NMHome, "repos", h.repoID()+".git"), "for-each-ref", "--format=%(refname)", "refs/heads")
+	refs, err := h.runGit(context.Background(), filepath.Join(h.DrillHome, "repos", h.repoID()+".git"), "for-each-ref", "--format=%(refname)", "refs/heads")
 	if err != nil {
 		t.Fatalf("list gate refs: %v\n%s", err, refs)
 	}
 	if strings.Contains(string(refs), "incident-direct-bypass") {
 		t.Fatalf("direct-push refusal left a gate ref behind:\n%s", refs)
 	}
-	if _, err := os.Stat(filepath.Join(h.NMHome, "repos", "recursive")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(h.DrillHome, "repos", "recursive")); !os.IsNotExist(err) {
 		t.Fatalf("recursive gate artifact exists after refusal: %v", err)
 	}
 }
@@ -187,7 +187,7 @@ func incidentAttemptSection(output, label string) string {
 
 func installRecursiveIncidentAgent(t *testing.T, h *Harness, agentName, executable string, completes bool) {
 	t.Helper()
-	if err := os.Symlink(h.NMBin, filepath.Join(h.BinDir, "drill")); err != nil {
+	if err := os.Symlink(h.DrillBin, filepath.Join(h.BinDir, "drill")); err != nil {
 		t.Fatalf("symlink drill: %v", err)
 	}
 	realDir := filepath.Join(h.BinDir, "incident-real")
@@ -294,7 +294,7 @@ auto_fix:
   document: 0
   ci: 0
 `, agentName, filepath.Join(h.BinDir, executable))
-	if err := os.WriteFile(filepath.Join(h.NMHome, "config.yaml"), []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.DrillHome, "config.yaml"), []byte(config), 0o644); err != nil {
 		t.Fatalf("write %s config: %v", agentName, err)
 	}
 }

@@ -28,10 +28,10 @@ MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r"\b(?:href|src)=[\"']([^\"']+)[\"']", re.IGNORECASE)
 
 # Subprojects with their own site-rooted link convention (Astro base-path links
-# like /no-mistakes/... are internal site routes, not repository-local links).
+# like /drill/... are internal site routes, not repository-local links).
 # Sources under these prefixes are exempt from the absolute-local-link rule for
 # paths under their own site base.
-SITE_SUBPROJECTS = ("packages/no-mistakes/docs/src/content/docs/",)
+SITE_SUBPROJECTS = ("packages/drill/docs/src/content/docs/",)
 
 # M6-vendored packages carry upstream fork prose whose internal link/attribute
 # conventions (e.g. inline `src=`/`data-*-src=` examples) are not repository-

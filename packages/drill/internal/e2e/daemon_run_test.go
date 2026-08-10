@@ -31,7 +31,7 @@ func TestDaemonRunUsesProvidedRoot(t *testing.T) {
 
 	// Track this secondary root in the suite inventory so interrupt/reaper
 	// paths stop it without relying solely on this test's defer.
-	own, err := e2edaemon.Acquire(wantRoot, h.NMBin, 2*time.Minute)
+	own, err := e2edaemon.Acquire(wantRoot, h.DrillBin, 2*time.Minute)
 	if err != nil {
 		t.Fatalf("acquire ownership for daemon run root: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestDaemonRunUsesProvidedRoot(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.NMBin, "daemon", "run", "--root", wantRoot)
+	cmd := exec.CommandContext(ctx, h.DrillBin, "daemon", "run", "--root", wantRoot)
 	cmd.Dir = h.WorkDir
 	cmd.Env = os.Environ()
 	if runtime.GOOS != "windows" {

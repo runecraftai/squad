@@ -45,13 +45,13 @@ func (inv *Inventory) ReapAll() ReapResult {
 }
 
 func (inv *Inventory) reapEntry(e Entry, result *ReapResult) error {
-	if !isAllowedTempRoot(e.NMHome) {
+	if !isAllowedTempRoot(e.DrillHome) {
 		result.Skipped++
 		// Drop the unsafe inventory row so it cannot be retried forever,
 		// but do not signal or stop anything.
 		_ = inv.Unregister(e.ID)
 		result.Removed++
-		return fmt.Errorf("refusing to reap non-temp root %q", e.NMHome)
+		return fmt.Errorf("refusing to reap non-temp root %q", e.DrillHome)
 	}
 
 	// Prefer graceful stop via the recorded binary when available.
@@ -61,16 +61,16 @@ func (inv *Inventory) reapEntry(e Entry, result *ReapResult) error {
 
 	// Kill only PIDs that still match daemon run --root <exact home>.
 	targets := map[int]struct{}{}
-	if e.PID > 0 && MatchesDaemonRoot(e.PID, e.NMHome) {
+	if e.PID > 0 && MatchesDaemonRoot(e.PID, e.DrillHome) {
 		targets[e.PID] = struct{}{}
 	}
-	if found, err := inv.daemonsForRoot(e.NMHome); err == nil {
+	if found, err := inv.daemonsForRoot(e.DrillHome); err == nil {
 		for _, pid := range found {
 			targets[pid] = struct{}{}
 		}
 	}
 	for pid := range targets {
-		if !MatchesDaemonRoot(pid, e.NMHome) {
+		if !MatchesDaemonRoot(pid, e.DrillHome) {
 			continue
 		}
 		if err := terminateMatched(pid); err != nil {
@@ -79,7 +79,7 @@ func (inv *Inventory) reapEntry(e Entry, result *ReapResult) error {
 		}
 		result.Killed++
 	}
-	found, err := inv.daemonsForRoot(e.NMHome)
+	found, err := inv.daemonsForRoot(e.DrillHome)
 	if err != nil {
 		return fmt.Errorf("confirm daemon exit: %w", err)
 	}
@@ -129,7 +129,7 @@ func isAllowedTempRoot(drillHome string) bool {
 }
 
 func tryDaemonStop(e Entry) bool {
-	bin := e.NMBin
+	bin := e.DrillBin
 	if bin == "" {
 		return false
 	}
@@ -140,7 +140,7 @@ func tryDaemonStop(e Entry) bool {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "daemon", "stop")
 	cmd.Env = append(os.Environ(),
-		"DRILL_HOME="+e.NMHome,
+		"DRILL_HOME="+e.DrillHome,
 		"DRILL_TEST_START_DAEMON=1",
 		"DRILL_TELEMETRY=off",
 		"DRILL_NO_UPDATE_CHECK=1",
@@ -150,11 +150,11 @@ func tryDaemonStop(e Entry) bool {
 	// Consider stop successful when no matching process remains.
 	if e.PID > 0 {
 		alive, _ := processAlive(e.PID)
-		if !alive || !MatchesDaemonRoot(e.PID, e.NMHome) {
+		if !alive || !MatchesDaemonRoot(e.PID, e.DrillHome) {
 			return true
 		}
 	}
-	found, _ := FindDaemonsForRoot(e.NMHome)
+	found, _ := FindDaemonsForRoot(e.DrillHome)
 	return len(found) == 0
 }
 
@@ -172,11 +172,11 @@ func terminateMatched(pid int) error {
 
 // Ownership tracks one harness's inventory entry and concurrency slot.
 type Ownership struct {
-	Inv    *Inventory
-	ID     string
-	NMHome string
-	NMBin  string
-	Slot   *Slot
+	Inv       *Inventory
+	ID        string
+	DrillHome string
+	DrillBin  string
+	Slot      *Slot
 }
 
 // Acquire creates inventory ownership for a temp DRILL_HOME under the suite
@@ -188,7 +188,7 @@ func Acquire(drillHome, drillBin string, slotTimeout time.Duration) (*Ownership,
 		return nil, err
 	}
 	if !isAllowedTempRoot(drillHome) {
-		return nil, fmt.Errorf("e2edaemon: nm_home %q is not an allowed temp root", drillHome)
+		return nil, fmt.Errorf("e2edaemon: drill_home %q is not an allowed temp root", drillHome)
 	}
 	slot, err := inv.AcquireSlot(slotTimeout)
 	if err != nil {
@@ -196,13 +196,13 @@ func Acquire(drillHome, drillBin string, slotTimeout time.Duration) (*Ownership,
 	}
 	id := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
 	own := &Ownership{
-		Inv:    inv,
-		ID:     id,
-		NMHome: filepath.Clean(drillHome),
-		NMBin:  drillBin,
-		Slot:   slot,
+		Inv:       inv,
+		ID:        id,
+		DrillHome: filepath.Clean(drillHome),
+		DrillBin:  drillBin,
+		Slot:      slot,
 	}
-	if err := inv.Register(id, own.NMHome, drillBin, 0, os.Getpid()); err != nil {
+	if err := inv.Register(id, own.DrillHome, drillBin, 0, os.Getpid()); err != nil {
 		slot.Release()
 		return nil, err
 	}
@@ -226,9 +226,9 @@ func (o *Ownership) StopBestEffort() {
 		return
 	}
 	_ = tryDaemonStop(Entry{
-		ID:     o.ID,
-		NMHome: o.NMHome,
-		NMBin:  o.NMBin,
+		ID:        o.ID,
+		DrillHome: o.DrillHome,
+		DrillBin:  o.DrillBin,
 	})
 }
 

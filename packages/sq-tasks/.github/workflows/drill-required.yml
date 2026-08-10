@@ -1,4 +1,4 @@
-name: Require no-mistakes
+name: Require drill
 run-name: "PR #${{ github.event.pull_request.number }} body compliance - ${{ github.event.action }} - event ${{ github.run_number }} (run ${{ github.run_id }})"
 
 on:
@@ -22,34 +22,34 @@ permissions:
 # an immutable per-event group so first-time-fork approvals can never collapse
 # opened/edited checks. Keep synchronize/reopened coalescing as before.
 concurrency:
-  group: no-mistakes-required-${{ github.event.pull_request.number }}-${{ (github.event.action == 'opened' || github.event.action == 'edited') && github.run_id || 'head-change' }}
+  group: drill-required-${{ github.event.pull_request.number }}-${{ (github.event.action == 'opened' || github.event.action == 'edited') && github.run_id || 'head-change' }}
   cancel-in-progress: true
 
 jobs:
   check:
-    name: PR must be raised via no-mistakes
+    name: PR must be raised via drill
     runs-on: ubuntu-latest
     if: >-
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.user.login != 'release-please[bot]'
     steps:
-      - name: Verify no-mistakes signature in PR body
+      - name: Verify drill signature in PR body
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu
-          marker='Updates from [git push no-mistakes](https://github.com/runecraftai/squad)''
+          marker='Updates from [git push drill](https://github.com/runecraftai/squad)''
           if printf '%s' "${PR_BODY:-}" | grep -qF -- "$marker"; then
-            echo "Found no-mistakes signature in PR #${PR_NUMBER} body."
+            echo "Found drill signature in PR #${PR_NUMBER} body."
             exit 0
           fi
           {
-            echo "::error::This PR was not raised through no-mistakes."
+            echo "::error::This PR was not raised through drill."
             echo
-            echo "Contributions to this repository must be submitted via 'git push no-mistakes'."
+            echo "Contributions to this repository must be submitted via 'git push drill'."
             echo "That pipeline runs the required review/test/lint/CI steps and writes a"
             echo "deterministic '## Pipeline' section into the PR body containing:"
             echo

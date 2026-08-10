@@ -31,9 +31,9 @@ const (
 // Entry is one owned temporary E2E daemon root.
 type Entry struct {
 	ID           string    `json:"id"`
-	NMHome       string    `json:"nm_home"`
+	DrillHome    string    `json:"drill_home"`
 	PID          int       `json:"pid"`
-	NMBin        string    `json:"nm_bin,omitempty"`
+	DrillBin     string    `json:"drill_bin,omitempty"`
 	OwnerPID     int       `json:"owner_pid"`
 	RegisteredAt time.Time `json:"registered_at"`
 }
@@ -107,7 +107,7 @@ func (inv *Inventory) Register(id, drillHome, drillBin string, pid, ownerPID int
 	}
 	drillHome = filepath.Clean(drillHome)
 	if drillHome == "" || drillHome == "." {
-		return fmt.Errorf("e2edaemon: invalid nm_home")
+		return fmt.Errorf("e2edaemon: invalid drill_home")
 	}
 	if id == "" {
 		return fmt.Errorf("e2edaemon: empty entry id")
@@ -117,14 +117,14 @@ func (inv *Inventory) Register(id, drillHome, drillBin string, pid, ownerPID int
 	return inv.withLock(func(file *inventoryFile) error {
 		now := time.Now().UTC()
 		for i := range file.Entries {
-			if file.Entries[i].ID == id || sameHome(file.Entries[i].NMHome, drillHome) {
+			if file.Entries[i].ID == id || sameHome(file.Entries[i].DrillHome, drillHome) {
 				file.Entries[i].ID = id
-				file.Entries[i].NMHome = drillHome
+				file.Entries[i].DrillHome = drillHome
 				if pid > 0 {
 					file.Entries[i].PID = pid
 				}
 				if drillBin != "" {
-					file.Entries[i].NMBin = drillBin
+					file.Entries[i].DrillBin = drillBin
 				}
 				if ownerPID > 0 {
 					file.Entries[i].OwnerPID = ownerPID
@@ -137,9 +137,9 @@ func (inv *Inventory) Register(id, drillHome, drillBin string, pid, ownerPID int
 		}
 		file.Entries = append(file.Entries, Entry{
 			ID:           id,
-			NMHome:       drillHome,
+			DrillHome:    drillHome,
 			PID:          pid,
-			NMBin:        drillBin,
+			DrillBin:     drillBin,
 			OwnerPID:     ownerPID,
 			RegisteredAt: now,
 		})

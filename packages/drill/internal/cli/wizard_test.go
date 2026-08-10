@@ -591,7 +591,7 @@ func TestAwaitDaemonRunRegistration_ErrorsWhenNoRunAppears(t *testing.T) {
 	}
 }
 
-func TestAwaitDaemonRunRegistration_UsesNMHomeInTimeoutError(t *testing.T) {
+func TestAwaitDaemonRunRegistration_UsesDrillHomeInTimeoutError(t *testing.T) {
 	drillHome := makeSocketSafeTempDir(t)
 	t.Setenv("DRILL_HOME", drillHome)
 

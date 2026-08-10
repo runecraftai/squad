@@ -91,19 +91,19 @@
 # refusal above has already passed, and BEFORE any worktree return, branch
 # delete, or backend kill below - a still-active run or a leaked process may
 # own live work in that worktree):
-#   Fix 1 - conclude the task's own no-mistakes run. A strike task's worktree can
-#     be torn down while its no-mistakes pipeline run is still PARKED at a gate
+#   Fix 1 - conclude the task's own drill run. A strike task's worktree can
+#     be torn down while its drill pipeline run is still PARKED at a gate
 #     (awaiting_approval/fix_review/any awaiting_agent field), with no worker
 #     left to ever answer it - the run then sits there holding a unit slot
 #     indefinitely (observed 2026-08-03: runs parked 7h39m and parked at a
 #     post-CI approval gate after the worker was already cleaned up). A run
 #     with an autonomous step still under way (running/fixing/ci) is left
-#     alone: no-mistakes drives those against its own gate-repo clone, not the
+#     alone: drill drives those against its own gate-repo clone, not the
 #     crew's worktree, so they are not orphaned by removing the worktree.
-#     conclude_task_no_mistakes_run attributes the active-or-most-recent run to
-#     THIS task only when its branch AND code identity (bin/sq-nm-run-lib.sh's
-#     fm_nm_head_matches_worktree, the same rule bin/sq-crew-state.sh uses) both
-#     match this worktree, then runs `no-mistakes axi abort --run <id>` for
+#     conclude_task_drill_run attributes the active-or-most-recent run to
+#     THIS task only when its branch AND code identity (bin/sq-drill-run-lib.sh's
+#     fm_drill_head_matches_worktree, the same rule bin/sq-crew-state.sh uses) both
+#     match this worktree, then runs `drill axi abort --run <id>` for
 #     that verified run instance. A run already terminal
 #     (an outcome is set) or not parked at a gate is left untouched. Idempotent:
 #     an already-aborted run reads back terminal and is skipped on retry.
@@ -126,7 +126,7 @@
 #     being reachable by Fix 2, because its working directory is wherever it
 #     was launched rather than the task worktree (observed 2026-08-07: 29
 #     workers at ppid 1, 1-2 days old, each still polling and appending to a
-#     log in a pruned no-mistakes gate worktree). bin/sq-remote-job-reap-orphans.sh
+#     log in a pruned drill gate worktree). bin/sq-remote-job-reap-orphans.sh
 #     owns that sweep and its safety rule; it never touches a worker whose code
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote XO worker are out of scope. Best effort: a sweep
@@ -160,15 +160,15 @@ SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 . "$SCRIPT_DIR/sq-xo-parent-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
-# shellcheck source=bin/sq-nm-run-lib.sh
-. "$SCRIPT_DIR/sq-nm-run-lib.sh"
+# shellcheck source=bin/sq-drill-run-lib.sh
+. "$SCRIPT_DIR/sq-drill-run-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
 fi
 ID=$1
 FORCE=${2:-}
-# Fail closed before any unit mutation: a no-mistakes gate agent must never tear
+# Fail closed before any unit mutation: a drill gate agent must never tear
 # down a worktree (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 SQUAD_LOCK_LOG_PREFIX=teardown
@@ -409,7 +409,7 @@ ORCA_PATH_MATCH_VERIFIED=0
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=strike
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
-[ -n "$MODE" ] || MODE=no-mistakes
+[ -n "$MODE" ] || MODE=drill
 PUBLIC_FOLLOWUP_HOME=$SQUAD_HOME
 PUBLIC_FOLLOWUP_STATE=$STATE
 PUBLIC_FOLLOWUP_WORK_HOME=main
@@ -1145,12 +1145,12 @@ validate_worktree_teardown_safety() {
   fi
 }
 
-# Fix 1 (see script header): does the active-or-most-recent no-mistakes run in
+# Fix 1 (see script header): does the active-or-most-recent drill run in
 # worktree $1 belong to THIS task, and is it parked at a gate awaiting an agent
 # that is about to be removed? Prints nothing; returns 0 only on a genuine
 # match so the caller knows it is safe to abort - never a guess.
-NM_TEARDOWN_TIMEOUT=${SQUAD_TEARDOWN_NM_TIMEOUT:-10}
-case "$NM_TEARDOWN_TIMEOUT" in ''|*[!0-9]*) NM_TEARDOWN_TIMEOUT=10 ;; esac
+DRILL_TEARDOWN_TIMEOUT=${SQUAD_TEARDOWN_DRILL_TIMEOUT:-10}
+case "$DRILL_TEARDOWN_TIMEOUT" in ''|*[!0-9]*) DRILL_TEARDOWN_TIMEOUT=10 ;; esac
 TASK_RUN_ID=
 task_status_is_own_parked_run() {  # <worktree> <axi-status-output>
   local wt=$1 out=$2 branch run_id run_branch run_head status outcome awaiting has_gate
@@ -1158,15 +1158,15 @@ task_status_is_own_parked_run() {  # <worktree> <axi-status-output>
   branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null) || return 1
   [ -n "$branch" ] || return 1
   [ -n "$out" ] || return 1
-  run_id=$(fm_nm_strip_quotes "$(fm_nm_field "$out" id)")
+  run_id=$(fm_drill_strip_quotes "$(fm_drill_field "$out" id)")
   [ -n "$run_id" ] || return 1
-  run_branch=$(fm_nm_strip_quotes "$(fm_nm_field "$out" branch)")
+  run_branch=$(fm_drill_strip_quotes "$(fm_drill_field "$out" branch)")
   [ -n "$run_branch" ] && [ "$run_branch" = "$branch" ] || return 1
-  run_head=$(fm_nm_strip_quotes "$(fm_nm_field "$out" head)")
-  fm_nm_head_matches_worktree "$wt" "$run_head" || return 1
-  outcome=$(fm_nm_strip_quotes "$(fm_nm_field "$out" outcome)")
+  run_head=$(fm_drill_strip_quotes "$(fm_drill_field "$out" head)")
+  fm_drill_head_matches_worktree "$wt" "$run_head" || return 1
+  outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$out" outcome)")
   [ -z "$outcome" ] || return 1
-  status=$(fm_nm_strip_quotes "$(fm_nm_field "$out" status)")
+  status=$(fm_drill_strip_quotes "$(fm_drill_field "$out" status)")
   awaiting=$(printf '%s\n' "$out" | grep -E '^[[:space:]]*awaiting_agent:' | head -1 || true)
   has_gate=$(printf '%s\n' "$out" | grep -Eq '^[[:space:]]*gate:[[:space:]]*' && echo 1 || echo 0)
   case "$status" in
@@ -1182,16 +1182,16 @@ task_status_is_own_parked_run() {  # <worktree> <axi-status-output>
 task_run_is_own_parked_run() {  # <worktree>
   local wt=$1 out
   # Accepted best-effort residual: query failures stay fail-open because making
-  # no-mistakes availability a prerequisite would block strike tasks with no run.
-  out=$(fm_nm_run "$wt" "$NM_TEARDOWN_TIMEOUT" axi status)
+  # drill availability a prerequisite would block strike tasks with no run.
+  out=$(fm_drill_run "$wt" "$DRILL_TEARDOWN_TIMEOUT" axi status)
   task_status_is_own_parked_run "$wt" "$out"
 }
 
 task_status_is_terminal_run() {  # <axi-status-output> <run-id>
   local out=$1 expected_id=$2 run_id outcome
-  run_id=$(fm_nm_strip_quotes "$(fm_nm_field "$out" id)")
+  run_id=$(fm_drill_strip_quotes "$(fm_drill_field "$out" id)")
   [ "$run_id" = "$expected_id" ] || return 1
-  outcome=$(fm_nm_strip_quotes "$(fm_nm_field "$out" outcome)")
+  outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$out" outcome)")
   case "$outcome" in
     cancelled|failed|passed|checks-passed) return 0 ;;
   esac
@@ -1200,33 +1200,33 @@ task_status_is_terminal_run() {  # <axi-status-output> <run-id>
 
 task_status_is_run_not_found() {  # <status-error> <run-id>
   local actual expected
-  actual=$(fm_nm_trim "$1")
+  actual=$(fm_drill_trim "$1")
   expected=$(printf 'error: "run \\"%s\\" not found"' "$2")
   [ "$actual" = "$expected" ]
 }
 
-# Abort THIS task's own parked no-mistakes run before the worker that would
+# Abort THIS task's own parked drill run before the worker that would
 # have answered its gate is removed, so no run is left orphaned holding a
-# unit slot. Only KIND=strike drives a no-mistakes validation of its own
+# unit slot. Only KIND=strike drives a drill validation of its own
 # worktree (scouts and XOs never do, mirroring bin/sq-crew-state.sh);
 # a run not attributed to this exact branch+head is left completely alone.
-conclude_task_no_mistakes_run() {  # <worktree>
+conclude_task_drill_run() {  # <worktree>
   local wt=$1 out run_id
   [ "$KIND" = strike ] || return 0
   [ -d "$wt" ] || return 0
-  command -v no-mistakes >/dev/null 2>&1 || return 0
+  command -v drill >/dev/null 2>&1 || return 0
   task_run_is_own_parked_run "$wt" || return 0
   run_id=$TASK_RUN_ID
-  echo "teardown: no-mistakes run for $ID is parked at a gate; aborting before the worker is removed" >&2
+  echo "teardown: drill run for $ID is parked at a gate; aborting before the worker is removed" >&2
   # Accepted best-effort residual: abort supports run-id targeting but no atomic
   # live-state condition; fully closing the resume race needs upstream compare-and-cancel.
-  fm_nm_run_checked "$wt" "$NM_TEARDOWN_TIMEOUT" axi abort --run "$run_id" >/dev/null 2>&1 || true
-  if out=$(fm_nm_run_bounded "$wt" "$NM_TEARDOWN_TIMEOUT" axi status --run "$run_id" 2>&1); then
+  fm_drill_run_checked "$wt" "$DRILL_TEARDOWN_TIMEOUT" axi abort --run "$run_id" >/dev/null 2>&1 || true
+  if out=$(fm_drill_run_bounded "$wt" "$DRILL_TEARDOWN_TIMEOUT" axi status --run "$run_id" 2>&1); then
     task_status_is_terminal_run "$out" "$run_id" && return 0
   elif task_status_is_run_not_found "$out" "$run_id"; then
     return 0
   fi
-  echo "REFUSED: no-mistakes run for $ID is still parked after axi abort; confirm it stopped (no-mistakes axi status) or abort it manually (no-mistakes axi abort --run <id>) before retrying teardown." >&2
+  echo "REFUSED: drill run for $ID is still parked after axi abort; confirm it stopped (drill axi status) or abort it manually (drill axi abort --run <id>) before retrying teardown." >&2
   return 1
 }
 
@@ -1280,7 +1280,7 @@ task_process_identity() {  # <pid>
     return 0
   fi
   value=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || return 1
-  value=$(fm_nm_trim "$value")
+  value=$(fm_drill_trim "$value")
   [ -n "$value" ] || return 1
   case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
   printf 'lstart=%s\n' "$value"
@@ -2209,7 +2209,7 @@ fi
 # dedicated process-event and Squad-home removal machinery further below,
 # not by task-worktree cleanup.
 if [ "$KIND" != xo ]; then
-  conclude_task_no_mistakes_run "$WT"
+  conclude_task_drill_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
 fi
 

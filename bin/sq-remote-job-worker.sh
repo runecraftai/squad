@@ -16,7 +16,7 @@
 # lifecycle.
 #
 # The worker is abandoned when its configured SQUAD_ROOT stops being a genuine
-# Squad checkout - the state a pruned no-mistakes gate worktree, a returned
+# Squad checkout - the state a pruned drill gate worktree, a returned
 # pooled worktree, or a removed test fixture root leaves behind. It can never
 # validate or execute another job from a root that is gone, so both the serving
 # loop and the Linux restart supervisor stop instead of polling forever

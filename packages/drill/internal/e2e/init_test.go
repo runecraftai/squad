@@ -221,7 +221,7 @@ func TestInitInSubmoduleRegistersSubmoduleOwnOrigin(t *testing.T) {
 		t.Fatalf("init in submodule: %v\n%s", err, out)
 	}
 
-	p := paths.WithRoot(h.NMHome)
+	p := paths.WithRoot(h.DrillHome)
 	d, err := db.Open(p.DB())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -252,9 +252,9 @@ func TestInitRollsBackWhenDaemonStartFails(t *testing.T) {
 	}
 
 	h := NewHarness(t, SetupOpts{Agent: "claude"})
-	badNMHome := filepath.Join(t.TempDir(), strings.Repeat("a", 160))
+	badDrillHome := filepath.Join(t.TempDir(), strings.Repeat("a", 160))
 	env := map[string]string{
-		"DRILL_HOME":                         badNMHome,
+		"DRILL_HOME":                            badDrillHome,
 		"DRILL_TEST_DAEMON_START_TIMEOUT":       "200ms",
 		"DRILL_TEST_DAEMON_START_POLL_INTERVAL": "10ms",
 	}
@@ -289,7 +289,7 @@ func TestInitRollsBackWhenDaemonStartFails(t *testing.T) {
 		t.Fatalf("drill remote should be removed after failed init, got %q", out)
 	}
 
-	p := paths.WithRoot(badNMHome)
+	p := paths.WithRoot(badDrillHome)
 	d, err := db.Open(p.DB())
 	if err != nil {
 		t.Fatal(err)

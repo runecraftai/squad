@@ -42,7 +42,7 @@ func TestDaemonStopLeavesNoDaemonProcessOwningTheRoot(t *testing.T) {
 	if alive, err := e2edaemon.ProcessAlive(stopped); err != nil {
 		t.Fatalf("probe stopped daemon pid %d: %v", stopped, err)
 	} else if alive {
-		t.Fatalf("daemon stop reported success while daemon pid %d was still running and still holding the %s lock", stopped, h.NMHome)
+		t.Fatalf("daemon stop reported success while daemon pid %d was still running and still holding the %s lock", stopped, h.DrillHome)
 	}
 	assertNoDaemonProcessesForRoot(t, h, "after daemon stop")
 	t.Logf("daemon stop output: %s; pid %d immediately exited; root owners: none", strings.TrimSpace(out), stopped)
@@ -75,7 +75,7 @@ func TestDaemonRestartReplacesTheDaemonWithExactlyOneOwner(t *testing.T) {
 
 	owners := daemonProcessesForRoot(t, h, "after daemon restart")
 	if len(owners) != 1 || owners[0] != current {
-		t.Fatalf("daemon processes owning %s after restart = %v, want exactly the live daemon [%d]", h.NMHome, owners, current)
+		t.Fatalf("daemon processes owning %s after restart = %v, want exactly the live daemon [%d]", h.DrillHome, owners, current)
 	}
 
 	status, err := h.Run("daemon", "status")
@@ -96,7 +96,7 @@ func TestDaemonRestartReplacesTheDaemonWithExactlyOneOwner(t *testing.T) {
 
 func daemonPIDForRoot(t *testing.T, h *Harness) int {
 	t.Helper()
-	pid, err := daemon.ReadPID(paths.WithRoot(h.NMHome))
+	pid, err := daemon.ReadPID(paths.WithRoot(h.DrillHome))
 	if err != nil {
 		t.Fatalf("read daemon pid file: %v", err)
 	}
@@ -108,7 +108,7 @@ func daemonPIDForRoot(t *testing.T, h *Harness) int {
 
 func daemonProcessesForRoot(t *testing.T, h *Harness, when string) []int {
 	t.Helper()
-	pids, err := e2edaemon.FindDaemonsForRoot(h.NMHome)
+	pids, err := e2edaemon.FindDaemonsForRoot(h.DrillHome)
 	if err != nil {
 		t.Fatalf("enumerate daemon processes %s: %v", when, err)
 	}
@@ -118,6 +118,6 @@ func daemonProcessesForRoot(t *testing.T, h *Harness, when string) []int {
 func assertNoDaemonProcessesForRoot(t *testing.T, h *Harness, when string) {
 	t.Helper()
 	if pids := daemonProcessesForRoot(t, h, when); len(pids) != 0 {
-		t.Fatalf("daemon processes still owning %s %s: %v, want none", h.NMHome, when, pids)
+		t.Fatalf("daemon processes still owning %s %s: %v, want none", h.DrillHome, when, pids)
 	}
 }

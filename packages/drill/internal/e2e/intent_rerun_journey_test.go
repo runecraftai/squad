@@ -53,7 +53,7 @@ func TestRerunIntentProvenanceJourney(t *testing.T) {
 	assertCompletedRerunFixture(t, h, originalInferred, "user wanted Bar() helper added", "claude")
 
 	fresh := runCLIAndWait(t, h, inferredWT, inferredBranch, "rerun")
-	originalInferredIntent := readRunIntent(t, h.NMHome, originalInferred.ID)
+	originalInferredIntent := readRunIntent(t, h.DrillHome, originalInferred.ID)
 	if originalInferredIntent.summary == nil {
 		t.Fatal("inferred original has no intent")
 	}
@@ -88,7 +88,7 @@ func assertCompletedRerunFixture(t *testing.T, h *Harness, run *ipc.RunInfo, wan
 	if run.Status != types.RunCompleted {
 		t.Fatalf("run %s status=%s, want completed", run.ID, run.Status)
 	}
-	intent := readRunIntent(t, h.NMHome, run.ID)
+	intent := readRunIntent(t, h.DrillHome, run.ID)
 	if intent.summary == nil || *intent.summary != wantIntent {
 		t.Fatalf("run %s intent=%v, want %q", run.ID, intent.summary, wantIntent)
 	}

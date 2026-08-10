@@ -66,7 +66,7 @@ export interface Task {
   state: State;
   /** strike | recon | docs | status | roadmap | xo | task | ... */
   kind?: string;
-  /** "Squad", "no-mistakes", "hibit-monorepo" */
+  /** "Squad", "drill", "hibit-monorepo" */
   repo?: string;
   /** The task body, used for full notes and truncated in list/show. */
   body?: string;

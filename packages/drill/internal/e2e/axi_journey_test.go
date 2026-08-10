@@ -227,7 +227,7 @@ func TestAxiRunReattachesAfterManagedFix(t *testing.T) {
 		t.Fatalf("submitting worktree moved to %s, want %s", got, submitted)
 	}
 
-	gateDir := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	gateDir := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	gateHeadBeforeBytes, gitErr := h.runGit(context.Background(), gateDir, "rev-parse", "refs/heads/"+branch)
 	if gitErr != nil {
 		t.Fatalf("gate head before reattach: %v\n%s", gitErr, gateHeadBeforeBytes)
@@ -365,7 +365,7 @@ func TestAxiCustodyRecoveryJourney(t *testing.T) {
 		}
 	}
 
-	gateDir := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	gateDir := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	preservedBytes, err := h.runGit(context.Background(), gateDir, "rev-parse", "refs/heads/feature/recover-journey")
 	if err != nil {
 		t.Fatalf("gate preserved head: %v\n%s", err, preservedBytes)
@@ -563,7 +563,7 @@ func TestAxiCustodyRecoveryAfterRebaseJourney(t *testing.T) {
 		t.Fatalf("run status after abort = %s", run.Status)
 	}
 
-	gateDir := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	gateDir := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	preservedBytes, err := h.runGit(context.Background(), gateDir, "rev-parse", "refs/heads/feature/rebase-recover")
 	if err != nil {
 		t.Fatalf("gate preserved head: %v\n%s", err, preservedBytes)
@@ -666,7 +666,7 @@ func TestAxiPrePushAbortUnmovedHeadCustodyJourney(t *testing.T) {
 
 	// The fixture must model the exact shape: neither the gate branch nor the
 	// operator branch moved off the submitted head.
-	gateDir := filepath.Join(h.NMHome, "repos", h.repoID()+".git")
+	gateDir := filepath.Join(h.DrillHome, "repos", h.repoID()+".git")
 	gateHeadBytes, gitErr := h.runGit(context.Background(), gateDir, "rev-parse", "refs/heads/feature/unmoved-abort")
 	if gitErr != nil || strings.TrimSpace(string(gateHeadBytes)) != submitted {
 		t.Fatalf("gate head = %s (err %v), want unmoved submitted %s", strings.TrimSpace(string(gateHeadBytes)), gitErr, submitted)
@@ -914,7 +914,7 @@ func TestAxiAgentJourney(t *testing.T) {
 	if !anyPromptContains(h, axiIntent) {
 		t.Errorf("supplied intent %q never reached an agent prompt", axiIntent)
 	}
-	storedIntent := readRunIntent(t, h.NMHome, completed.ID)
+	storedIntent := readRunIntent(t, h.DrillHome, completed.ID)
 	if storedIntent.source == nil || *storedIntent.source != "agent" {
 		t.Errorf("runs.intent_source = %v, want agent for explicit --intent", storedIntent.source)
 	}
@@ -1116,7 +1116,7 @@ func TestAxiAttachCommandsIgnoreInvalidConfigWhenDaemonRunning(t *testing.T) {
 		t.Fatal("expected abort branch to be awaiting approval")
 	}
 
-	if err := os.WriteFile(filepath.Join(h.NMHome, "config.yaml"), []byte("agent: [\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.DrillHome, "config.yaml"), []byte("agent: [\n"), 0o644); err != nil {
 		t.Fatalf("write invalid config: %v", err)
 	}
 
@@ -1193,7 +1193,7 @@ func TestAxiRunPreflightGuards(t *testing.T) {
 // readStepLog returns the contents of a step's log file for a run.
 func readStepLog(t *testing.T, h *Harness, runID, step string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(h.NMHome, "logs", runID, step+".log"))
+	data, err := os.ReadFile(filepath.Join(h.DrillHome, "logs", runID, step+".log"))
 	if err != nil {
 		t.Fatalf("read %s log for run %s: %v", step, runID, err)
 	}

@@ -669,7 +669,7 @@ func TestStartFallsBackToDetachedDaemonWhenManagedStartFails(t *testing.T) {
 	_ = os.Remove(p.Socket())
 }
 
-func TestStartDetachedDaemonUsesProvidedRootViaNMHome(t *testing.T) {
+func TestStartDetachedDaemonUsesProvidedRootViaDrillHome(t *testing.T) {
 	p := paths.WithRoot(filepath.Join(t.TempDir(), "nm-home"))
 	if err := p.EnsureDirs(); err != nil {
 		t.Fatal(err)
@@ -1423,7 +1423,7 @@ func TestServiceInstanceSuffixNormalizesCaseOnWindows(t *testing.T) {
 	}
 }
 
-// TestStopDoesNotTouchManagedDaemonOwnedByDifferentNMHome is the structural
+// TestStopDoesNotTouchManagedDaemonOwnedByDifferentDrillHome is the structural
 // regression test for the per-DRILL_HOME scoping. Before scoping, the launchd
 // label / systemd unit / Windows task name were globally unique per user.
 // Any `go test ./internal/daemon` in any checkout - including worktrees
@@ -1434,7 +1434,7 @@ func TestServiceInstanceSuffixNormalizesCaseOnWindows(t *testing.T) {
 // without the testing.Testing() guard), Stop(p) for a tmpdir paths.Paths
 // must still not invoke any destructive service-manager command against
 // artifacts owned by a different DRILL_HOME.
-func TestStopDoesNotTouchManagedDaemonOwnedByDifferentNMHome(t *testing.T) {
+func TestStopDoesNotTouchManagedDaemonOwnedByDifferentDrillHome(t *testing.T) {
 	cleanup := stubServiceRuntime(t)
 	defer cleanup()
 

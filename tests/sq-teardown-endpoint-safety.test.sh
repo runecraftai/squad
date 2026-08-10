@@ -251,7 +251,7 @@ SH
   fm_write_meta "$dir/home/state/$target_id.meta" \
     "window=$session:$target" "endpoint_task_id=$target_id" \
     "worktree=$dir/nonexistent-worktree" "project=$dir/nonexistent-project" \
-    "kind=recon" "mode=no-mistakes"
+    "kind=recon" "mode=drill"
   env -u TMUX -u TMUX_PANE SQUAD_TEST_TMUX_SOCKET="$socket_id" \
     SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_RUNTIME_LOG="$dir/runtime.log" \
     PATH="$dir/fakebin:$PATH" "$TEARDOWN" "$target_id" --force \

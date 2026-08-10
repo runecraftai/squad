@@ -24,7 +24,7 @@ func TestTerminalPRRunDisappearsFromActiveListing(t *testing.T) {
 				t.Fatalf("init: %v\n%s", err, out)
 			}
 
-			p := paths.WithRoot(h.NMHome)
+			p := paths.WithRoot(h.DrillHome)
 			database, err := db.Open(p.DB())
 			if err != nil {
 				t.Fatal(err)

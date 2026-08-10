@@ -82,7 +82,7 @@ The asker being your own commander (owner-only routing) does **not** relax this:
 Never include, in any form:
 
 - Task ids, branch names, worktree paths, PR/issue numbers, or repo-internal identifiers.
-- Tooling/internal vocabulary: operator, recon, ship, XO, harness names, sentry, heartbeat, brief, teardown, no-mistakes, yolo, delivery modes.
+- Tooling/internal vocabulary: operator, recon, ship, XO, harness names, sentry, heartbeat, brief, teardown, drill, yolo, delivery modes.
 - Commander-private material: the commander's name, product strategy, unreleased plans, revenue, internal URLs, file contents, or anything the commander has not made public.
 - Secrets of any kind: tokens, keys, credentials, the pairing token, hostnames.
 

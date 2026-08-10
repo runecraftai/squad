@@ -58,7 +58,7 @@ func configurableFixCommitScenario(t *testing.T) string {
 func TestConfigurableFixCommitMessageJourney(t *testing.T) {
 	h := NewHarness(t, SetupOpts{Agent: "claude", Scenario: configurableFixCommitScenario(t)})
 
-	globalConfig := filepath.Join(h.NMHome, "config.yaml")
+	globalConfig := filepath.Join(h.DrillHome, "config.yaml")
 	globalData, err := os.ReadFile(globalConfig)
 	if err != nil {
 		t.Fatalf("read global config: %v", err)

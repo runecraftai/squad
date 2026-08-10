@@ -31,7 +31,7 @@ run_spawn() {
 # Ship spawns carry an explicit delivery contract (AGENTS.md section 7); the
 # batch path takes one shared pair of flags for every pair.
 run_ship_spawn() {
-  run_spawn "$@" --mode no-mistakes --yolo off
+  run_spawn "$@" --mode drill --yolo off
 }
 
 # Every pair in a batch is dispatched even though the first one fails; the loop
@@ -87,12 +87,12 @@ test_projects_path_scoping() {
     if [ "$use_override" = yes ]; then
       out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' \
         SQUAD_HOME="$home" SQUAD_PROJECTS_OVERRIDE="$projects" SQUAD_SPAWN_NO_GUARD=1 \
-        "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off 2>&1)
+        "$SPAWN" "$id" projects/alpha codex --mode drill --yolo off 2>&1)
     else
       mkdir -p "$home/projects/alpha"
       out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' \
         SQUAD_HOME="$home" SQUAD_SPAWN_NO_GUARD=1 \
-        "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off 2>&1)
+        "$SPAWN" "$id" projects/alpha codex --mode drill --yolo off 2>&1)
     fi
     status=$?
     [ "$status" -ne 0 ] || fail "$label: spawn with missing brief should fail"
