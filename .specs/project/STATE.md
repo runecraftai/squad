@@ -158,6 +158,13 @@ Completed in a second execution session. All remaining genuine rebrand defects f
 - Placeholders que permanecem (decisões de infra): `squad.example` (site docs Astro do no-mistakes + telemetria `a.squad.example`) e Team ID Apple `SQ00000000` — requerem GitHub Pages/umami/conta Apple reais; registrados como M4 inputs. NOTA: o site Astro também referencia `squad.example` — decidir em M4 se Pages da org (`runecraftai.github.io`).
 - Verificado: fob go test 8/8 ok, no-mistakes 36/36 ok (exceto caso procreap ambiental), guard 6/6, lint 0.
 
+
+### CI verde no repo real (session 3) ✅
+- Primeiro CI **100% verde** em `github.com/runecraftai/squad` (push `36e378b`): lint, coverage guard (135), portable parallel 1/2, portable serial 1-4, Herdr (pin 0.8.0/protocol 19), Go build+test ubuntu+macos, tasks-axi fork, macOS Bash 3.2 compat, invariants, timing aggregate. pi-smoke permanece env-gated (vars.PI_SMOKE não setado).
+- Correções que o CI real revelou: pi-smoke job if com `env` → `vars`; tasks-axi install precisa do build pnpm antes do `npm install -g` (npx pnpm nos jobs sem action-setup); Go jobs precisam de bun (packageManager do root); guard test incompatível com bash 3.2 (case fora de `$()`); fob release v2.1.1 criado + pin do sq-install-fob atualizado (sha256 do asset Squad); herdr pin 0.7.4 → 0.8.0; `internal/config` de fob/no-mistakes nunca commitado (regra `config/` genérica do root .gitignore — ancorada); herdr presentation esperava `kind=XO` (spawn escreve `kind=xo`); sweep `2ndmate-` → `xo-` (label de workspace herdr, bin/docs/tests); sq-on worker-probe adaptado ao resolver fork-first (fake `sq-tasks-axi`; prova via check do doctor; side-channel do log removido); entrypoint `DOCTOR_SHA256` pin atualizado (hash upstream pristine estava stale desde o M1) + teste de paridade `sq-entrypoint-doctor-sha`; pr-review-guard absent-PR aceita recusa por auth; timeout do serial 15m → 30m.
+- Verificado: guards 6/6, lint 0, coverage 135 ok, doc-audit 0, CI success.
+
+
 ## Blockers
 - None.
 
