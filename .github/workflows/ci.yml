@@ -427,9 +427,7 @@ jobs:
   pi-smoke:
     name: Headless Pi extension load (optional)
     runs-on: ubuntu-latest
-    if: ${{ env.PI_SMOKE != '' }}
-    env:
-      PI_SMOKE: ${{ vars.PI_SMOKE }}
+    if: ${{ vars.PI_SMOKE != '' }}
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
