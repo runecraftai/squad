@@ -107,8 +107,12 @@ guard_no_match() {
 test_guard_package_name_surfaces() {
   local list
   list=$(tracked_files | grep -E '^packages/[^/]+/(package\.json|bin/|release-please-config\.json|plugin\.json)' || true)
+  # The single documented deferred-prose exception: the runtime log prefix in
+  # packages/sq-browser/bin/sq-browser-bridge.ts (keep-list above) is pinned
+  # separately below so the exclusion cannot drift silently.
+  list=$(printf '%s\n' "$list" | grep -v '^packages/sq-browser/bin/sq-browser-bridge\.ts$' || true)
   guard_no_match "M6 guard 1: no old tool names in package name surfaces" "$OLD_NAMES" "$list"
-  # Keep-list pin: the single allowed hit is the deferred log-prefix line in
+  # Keep-list pin: the only allowed hit is the deferred log-prefix line in
   # packages/sq-browser/bin/sq-browser-bridge.ts; if the file ever loses or
   # changes that hit, the rebrand item has landed and the exclusion must move.
   if [ -f "$ROOT/packages/sq-browser/bin/sq-browser-bridge.ts" ]; then
