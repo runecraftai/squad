@@ -556,9 +556,9 @@ fi
 # projected workspaces that are still live, so this retired one starts them clean.
 : > "$MOVE_CALL_LOG"
 
-SECOND_ONE_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label 2ndmate-alpha --no-focus) \
+SECOND_ONE_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label xo-alpha --no-focus) \
   || fail "could not create the first XO presentation fixture"
-SECOND_TWO_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label 2ndmate-bravo --focus) \
+SECOND_TWO_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label xo-bravo --focus) \
   || fail "could not create the focused XO presentation fixture"
 SECOND_ONE_WSID=$(printf '%s' "$SECOND_ONE_OUT" | jq -r '.result.workspace.workspace_id // empty')
 SECOND_TWO_WSID=$(printf '%s' "$SECOND_TWO_OUT" | jq -r '.result.workspace.workspace_id // empty')
@@ -737,7 +737,7 @@ remember_meta_worktree "$ORDER_B_META" >/dev/null
 
 ORDER_LIST=$(lab workspace list) || fail "could not inspect concurrent presentation ordering"
 CREATED_LABELS=$(projection_labels_from_log "$PROJECTION_ORDER_START")
-EXPECTED_LABELS=$(printf 'Squad\n%s\n%s\n2ndmate-alpha\n2ndmate-bravo' "$PROJECTED_LABEL" "$CREATED_LABELS")
+EXPECTED_LABELS=$(printf 'Squad\n%s\n%s\nxo-alpha\nxo-bravo' "$PROJECTED_LABEL" "$CREATED_LABELS")
 ACTUAL_LABELS=$(printf '%s' "$ORDER_LIST" | jq -r '.result.workspaces[].label')
 [ "$ACTUAL_LABELS" = "$EXPECTED_LABELS" ] || fail "workspace order was not Squad, stable primary block, XOs: $ACTUAL_LABELS"
 PRIMARY_IDS=$(printf '%s' "$ORDER_LIST" | jq -r '
@@ -751,7 +751,7 @@ MOVE_TARGETS=$(cut -f2 "$MOVE_CALL_LOG")
 MOVE_INDEXES=$(cut -f3 "$MOVE_CALL_LOG")
 [ "$MOVE_INDEXES" = $'1\n2\n3' ] \
   || fail "concurrent primary workers did not append stably to the contiguous block: $MOVE_INDEXES"
-SECOND_ORDER_AFTER=$(printf '%s' "$ORDER_LIST" | jq -r '.result.workspaces[] | select(.label | startswith("2ndmate-")) | .workspace_id')
+SECOND_ORDER_AFTER=$(printf '%s' "$ORDER_LIST" | jq -r '.result.workspaces[] | select(.label | startswith("xo-")) | .workspace_id')
 [ "$SECOND_ORDER_AFTER" = "$SECOND_ORDER_BEFORE" ] \
   || fail "primary workspace ordering changed XO relative order"
 [ "$(lab workspace get "$SECOND_TWO_WSID" | jq -r '.result.workspace.focused')" = true ] \
@@ -885,11 +885,11 @@ for ROUND in 1 2 3; do
   assert_focus_is "$COMMANDER_FOCUS" "focus wave $ROUND concurrent spawns"
   assert_raw_presentation_mutations_preserved_since "$WAVE_FOCUS_START" "focus wave $ROUND concurrent spawns"
   WAVE_LABELS=$(projection_labels_from_log "$WAVE_LOG_START")
-  WAVE_EXPECTED=$(printf 'Squad\n%s\n2ndmate-alpha\n2ndmate-bravo' "$WAVE_LABELS")
-  WAVE_ACTUAL=$(lab workspace list | jq -r '.result.workspaces[] | select(.label == "Squad" or (.label | startswith("└ ")) or (.label | startswith("2ndmate-"))) | .label')
+  WAVE_EXPECTED=$(printf 'Squad\n%s\nxo-alpha\nxo-bravo' "$WAVE_LABELS")
+  WAVE_ACTUAL=$(lab workspace list | jq -r '.result.workspaces[] | select(.label == "Squad" or (.label | startswith("└ ")) or (.label | startswith("xo-"))) | .label')
   [ "$WAVE_ACTUAL" = "$WAVE_EXPECTED" ] \
     || fail "focus wave $ROUND lost stable contiguous ordering: $WAVE_ACTUAL"
-  WAVE_SECOND_ORDER=$(lab workspace list | jq -r '.result.workspaces[] | select(.label | startswith("2ndmate-")) | .workspace_id')
+  WAVE_SECOND_ORDER=$(lab workspace list | jq -r '.result.workspaces[] | select(.label | startswith("xo-")) | .workspace_id')
   [ "$WAVE_SECOND_ORDER" = "$SECOND_ORDER_BEFORE" ] \
     || fail "focus wave $ROUND changed XO relative order"
 
@@ -901,7 +901,7 @@ for ROUND in 1 2 3; do
   wait "$WAVE_B_TEARDOWN_PID" || fail "focus wave $ROUND teardown B failed"
   assert_focus_is "$COMMANDER_FOCUS" "focus wave $ROUND concurrent teardowns"
   WAVE_REMAINING=$(lab workspace list | jq -r '.result.workspaces[].label')
-  [ "$WAVE_REMAINING" = $'Squad\n2ndmate-alpha\n2ndmate-bravo' ] \
+  [ "$WAVE_REMAINING" = $'Squad\nxo-alpha\nxo-bravo' ] \
     || fail "focus wave $ROUND cleanup left a projected workspace behind: $WAVE_REMAINING"
 done
 pass "real Herdr lab: three repeated concurrent create/order/cleanup waves have zero active workspace or tab drift"
@@ -910,8 +910,8 @@ pass "real Herdr lab: three repeated concurrent create/order/cleanup waves have 
 # Multi-home topology: real XO SQUAD_HOME spawn paths, inheritance,
 # concurrent cross-home waves, and session-scoped lock contention.
 # ------------------------------------------------------------------
-SECOND_HOME_A="$TMP_ROOT/home-2ndmate-alpha"
-SECOND_HOME_B="$TMP_ROOT/home-2ndmate-bravo"
+SECOND_HOME_A="$TMP_ROOT/home-xo-alpha"
+SECOND_HOME_B="$TMP_ROOT/home-xo-bravo"
 mkdir -p "$SECOND_HOME_A/state" "$SECOND_HOME_A/config" "$SECOND_HOME_A/data" \
   "$SECOND_HOME_B/state" "$SECOND_HOME_B/config" "$SECOND_HOME_B/data"
 printf 'alpha\n' > "$SECOND_HOME_A/.sq-xo-home"
@@ -947,11 +947,11 @@ spawn_XO_task alpha "$SECOND_HOME_A" > "$TMP_ROOT/alpha.out" 2> "$TMP_ROOT/alpha
 [ ! -e "$HOME_DIR/state/alpha.herdr-presentation" ] \
   || fail "XO spawn published a presentation journal"
 SECOND_META="$HOME_DIR/state/alpha.meta"
-[ "$(grep '^kind=' "$SECOND_META" | cut -d= -f2-)" = XO ] \
+[ "$(grep '^kind=' "$SECOND_META" | cut -d= -f2-)" = xo ] \
   || fail "XO spawn did not record kind=xo"
 SECOND_WSID=$(grep '^herdr_workspace_id=' "$SECOND_META" | cut -d= -f2-)
 SECOND_LABEL=$(lab workspace get "$SECOND_WSID" | jq -r '.result.workspace.label')
-[ "$SECOND_LABEL" = 2ndmate-alpha ] \
+[ "$SECOND_LABEL" = xo-alpha ] \
   || fail "XO spawn did not use its flat parent workspace: $SECOND_LABEL"
 [ -z "$(projection_labels_from_log "$SECOND_SPAWN_LOG_START")" ] \
   || fail "XO spawn created a corner projection workspace"
@@ -971,7 +971,7 @@ propagate_inheritable_config "$HOME_DIR/config" "$SECOND_HOME_B/config" \
   || fail "primary presentation setting did not reach XO B"
 pass "real Herdr lab: the primary presentation setting inherits into real XO homes"
 
-# Keep the pre-existing 2ndmate-alpha/bravo workspaces as owning parents and commander focus.
+# Keep the pre-existing xo-alpha/bravo workspaces as owning parents and commander focus.
 assert_focus_is "$COMMANDER_FOCUS" "multi-home commander focus"
 
 mkdir -p "$SECOND_HOME_A/data/a1" "$SECOND_HOME_A/data/a2" \
@@ -1025,16 +1025,16 @@ MULTI_LABELS=$(printf '%s' "$MULTI_LIST" | jq -r '
   .result.workspaces[]
   | select(
       .label == "Squad"
-      or .label == "2ndmate-alpha"
-      or .label == "2ndmate-bravo"
+      or .label == "xo-alpha"
+      or .label == "xo-bravo"
       or (.label | startswith("└ "))
     )
   | .label
 ')
 MULTI_EXPECTED=$(printf '%s\n' \
   Squad "$P1_LABEL" "$P2_LABEL" \
-  2ndmate-alpha "$A1_LABEL" "$A2_LABEL" \
-  2ndmate-bravo "$B1_LABEL" "$B2_LABEL")
+  xo-alpha "$A1_LABEL" "$A2_LABEL" \
+  xo-bravo "$B1_LABEL" "$B2_LABEL")
 [ "$MULTI_LABELS" = "$MULTI_EXPECTED" ] \
   || fail "multi-home topology was not owning-parent grouped: $MULTI_LABELS"
 pass "real Herdr lab: primary and two XO homes each own a top-level contiguous child block"
@@ -1062,8 +1062,8 @@ assert_raw_presentation_mutations_preserved_since "$WAVE_CROSS_FOCUS" "cross-hom
 CROSS_LIST=$(lab workspace list)
 printf '%s' "$CROSS_LIST" | jq -e '
   ([.result.workspaces[].label] | index("Squad")) as $fm
-  | ([.result.workspaces[].label] | index("2ndmate-alpha")) as $a
-  | ([.result.workspaces[].label] | index("2ndmate-bravo")) as $b
+  | ([.result.workspaces[].label] | index("xo-alpha")) as $a
+  | ([.result.workspaces[].label] | index("xo-bravo")) as $b
   | $fm != null and $a != null and $b != null
   and $fm < $a and $a < $b
 ' >/dev/null 2>&1 || fail "cross-home concurrent wave reordered parents"
@@ -1071,8 +1071,8 @@ PCW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$HOME_DIR/state/pc
 ACW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$SECOND_HOME_A/state/acw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
 BCW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$SECOND_HOME_B/state/bcw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
 case "$PCW_LABEL" in $'└ pcw · p:'*|Squad) ;; *) fail "cross-home primary label wrong: $PCW_LABEL" ;; esac
-case "$ACW_LABEL" in $'└ acw · p:'*|2ndmate-alpha) ;; *) fail "cross-home A label wrong: $ACW_LABEL" ;; esac
-case "$BCW_LABEL" in $'└ bcw · p:'*|2ndmate-bravo) ;; *) fail "cross-home B label wrong: $BCW_LABEL" ;; esac
+case "$ACW_LABEL" in $'└ acw · p:'*|xo-alpha) ;; *) fail "cross-home A label wrong: $ACW_LABEL" ;; esac
+case "$BCW_LABEL" in $'└ bcw · p:'*|xo-bravo) ;; *) fail "cross-home B label wrong: $BCW_LABEL" ;; esac
 pass "real Herdr lab: concurrent primary/A/B spawns preserve parent order and exact focus"
 
 # Hold the shared session lock from a different home and force flat fallback.
@@ -1106,7 +1106,7 @@ grep -F "presentation focus lock unavailable; using the ordinary flat layout wit
 remember_meta_worktree "$SECOND_HOME_A/state/aflat.meta" >/dev/null
 AFLAT_WSID=$(grep '^herdr_workspace_id=' "$SECOND_HOME_A/state/aflat.meta" | cut -d= -f2-)
 AFLAT_LABEL=$(lab workspace get "$AFLAT_WSID" | jq -r '.result.workspace.label')
-[ "$AFLAT_LABEL" = 2ndmate-alpha ] \
+[ "$AFLAT_LABEL" = xo-alpha ] \
   || fail "cross-home lock contention did not use the ordinary XO home workspace: $AFLAT_LABEL"
 [ ! -e "$SECOND_HOME_A/state/aflat.herdr-presentation" ] \
   || fail "cross-home lock contention published a projection journal"
@@ -1287,7 +1287,7 @@ LEGACY_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label "Squad/legacy-see
   || fail "could not seed a legacy old-format presentation space"
 LEGACY_WSID=$(printf '%s' "$LEGACY_OUT" | jq -r '.result.workspace.workspace_id // empty')
 [ -n "$LEGACY_WSID" ] || fail "legacy seed returned no workspace id"
-FLAT_TAB_OUT=$(lab tab create --workspace "$(lab workspace list | jq -r '.result.workspaces[] | select(.label == "2ndmate-alpha") | .workspace_id' | head -1)" --cwd "$PROJECT_DIR" --label sq-flat-legacy-tab --no-focus) \
+FLAT_TAB_OUT=$(lab tab create --workspace "$(lab workspace list | jq -r '.result.workspaces[] | select(.label == "xo-alpha") | .workspace_id' | head -1)" --cwd "$PROJECT_DIR" --label sq-flat-legacy-tab --no-focus) \
   || fail "could not seed a flat XO child tab"
 FLAT_TAB_ID=$(printf '%s' "$FLAT_TAB_OUT" | jq -r '.result.tab.tab_id // empty')
 mkdir -p "$HOME_DIR/data/post-legacy"

@@ -239,8 +239,8 @@ test_workspace_label_XO_home_uses_marker_id() {
   home="$TMP_ROOT/XO-home"; mkdir -p "$home"
   printf 'sshhip-h7\n' > "$home/.sq-xo-home"
   out=$( SQUAD_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
-  [ "$out" = "2ndmate-sshhip-h7" ] || fail "an XO home should resolve to '2ndmate-<id>', got '$out'"
-  pass "fm_backend_herdr_workspace_label: an XO home (.sq-xo-home) resolves to '2ndmate-<id>'"
+  [ "$out" = "xo-sshhip-h7" ] || fail "an XO home should resolve to 'xo-<id>', got '$out'"
+  pass "fm_backend_herdr_workspace_label: an XO home (.sq-xo-home) resolves to 'xo-<id>'"
 }
 
 test_workspace_label_XO_marker_trims_whitespace() {
@@ -248,7 +248,7 @@ test_workspace_label_XO_marker_trims_whitespace() {
   home="$TMP_ROOT/XO-home-ws"; mkdir -p "$home"
   printf '  sshhip-h7  \n\n' > "$home/.sq-xo-home"
   out=$( SQUAD_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
-  [ "$out" = "2ndmate-sshhip-h7" ] || fail "the marker id should be trimmed of surrounding whitespace, got '$out'"
+  [ "$out" = "xo-sshhip-h7" ] || fail "the marker id should be trimmed of surrounding whitespace, got '$out'"
   pass "fm_backend_herdr_workspace_label: trims whitespace around the marker's XO id"
 }
 
@@ -267,8 +267,8 @@ test_workspace_label_different_XOs_get_different_labels() {
   home2="$TMP_ROOT/XO-b"; mkdir -p "$home2"; printf 'bravo-b2\n' > "$home2/.sq-xo-home"
   out1=$( SQUAD_HOME="$home1" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
   out2=$( SQUAD_HOME="$home2" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
-  [ "$out1" = "2ndmate-alpha-a1" ] || fail "XO home1 label mismatch: $out1"
-  [ "$out2" = "2ndmate-bravo-b2" ] || fail "XO home2 label mismatch: $out2"
+  [ "$out1" = "xo-alpha-a1" ] || fail "XO home1 label mismatch: $out1"
+  [ "$out2" = "xo-bravo-b2" ] || fail "XO home2 label mismatch: $out2"
   [ "$out1" != "$out2" ] || fail "two different XO homes must not collide on the same label"
   pass "fm_backend_herdr_workspace_label: two different XO homes get two different, non-colliding labels"
 }
@@ -807,12 +807,12 @@ test_container_ensure_uses_XO_home_label() {
   printf '{"client":{"version":"0.7.1","protocol":14}}\n' > "$resp/1.out"
   printf '{"server":{"running":true}}\n' > "$resp/2.out"
   printf '{"result":{"workspaces":[]}}\n' > "$resp/3.out"
-  printf '{"result":{"workspace":{"workspace_id":"w9","label":"2ndmate-sshhip-h7"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/4.out"
+  printf '{"result":{"workspace":{"workspace_id":"w9","label":"xo-sshhip-h7"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/4.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" SQUAD_HERDR_SCRIPT_STATUS=1 HERDR_SESSION=fmtest \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp' "$ROOT" )
   [ "$out" = $'fmtest:w9\tw9:t1' ] || fail "container_ensure did not echo the expected session:workspace_id + seeded default tab id, got '$out'"
-  assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f''/tmp'$'\x1f''--label'$'\x1f''2ndmate-sshhip-h7' \
+  assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f''/tmp'$'\x1f''--label'$'\x1f''xo-sshhip-h7' \
     "container_ensure did not create the workspace under this XO home's own label"
   pass "fm_backend_herdr_container_ensure: creates the workspace under the XO home's own label, not 'Squad'"
 }
@@ -2209,9 +2209,9 @@ test_projection_label_builder_uses_corner_and_strips_owner_prefixes() {
   primary=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_workspace_label Squad/task-p2 '"$token" "$ROOT")
   [ "$primary" = "└ task-p2 · p:$token" ] \
     || fail "Squad/ owner prefix was not stripped: $primary"
-  XO=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_workspace_label 2ndmate-fmdev-f2/child '"$token" "$ROOT")
+  XO=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_workspace_label xo-fmdev-f2/child '"$token" "$ROOT")
   [ "$XO" = "└ child · p:$token" ] \
-    || fail "2ndmate owner prefix was not stripped: $XO"
+    || fail "xo owner prefix was not stripped: $XO"
   primary=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_workspace_label sq-task-p2 '"$token" "$ROOT")
   [ "$primary" = "└ task-p2 · p:$token" ] \
     || fail "presentation sq- owner prefix was not stripped: $primary"
@@ -2224,7 +2224,7 @@ test_projection_order_moves_only_exact_new_workspace_and_preserves_relative_orde
   dir="$TMP_ROOT/projection-order"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; mover_log="$dir/mover.log"
   : > "$log"; : > "$mover_log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":false},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w3","label":"2ndmate-alpha","focused":false},{"workspace_id":"w4","label":"2ndmate-bravo","focused":true},{"workspace_id":"w5","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":false},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w3","label":"xo-alpha","focused":false},{"workspace_id":"w4","label":"xo-bravo","focused":true},{"workspace_id":"w5","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
   printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
   # shellcheck disable=SC2016 # $defs is a literal JSON Schema key.
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
@@ -2232,7 +2232,7 @@ test_projection_order_moves_only_exact_new_workspace_and_preserves_relative_orde
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$SQUAD_FAKE_MOVER_LOG"
-printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"Squad","focused":false},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w5","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false},{"workspace_id":"w3","label":"2ndmate-alpha","focused":false},{"workspace_id":"w4","label":"2ndmate-bravo","focused":true}]}}'
+printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"Squad","focused":false},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w5","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false},{"workspace_id":"w3","label":"xo-alpha","focused":false},{"workspace_id":"w4","label":"xo-bravo","focused":true}]}}'
 SH
   chmod +x "$mover"
   fb=$(make_herdr_fakebin "$dir")
@@ -2255,8 +2255,8 @@ test_projection_order_XO_parent_block() {
   dir="$TMP_ROOT/projection-order-XO"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; mover_log="$dir/mover.log"
   : > "$log"; : > "$mover_log"
-  # Squad, primary child, 2ndmate-A, A-child legacy, 2ndmate-B, human, NEW for A
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"└ primary · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w3","label":"2ndmate-alpha"},{"workspace_id":"w4","label":"2ndmate-alpha/old · p:AbCdEfGhIjKlMnOpQrStU1"},{"workspace_id":"w5","label":"2ndmate-bravo"},{"workspace_id":"wH","label":"human-notes"},{"workspace_id":"w6","label":"└ new-a · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
+  # Squad, primary child, xo-A, A-child legacy, xo-B, human, NEW for A
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"└ primary · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w3","label":"xo-alpha"},{"workspace_id":"w4","label":"xo-alpha/old · p:AbCdEfGhIjKlMnOpQrStU1"},{"workspace_id":"w5","label":"xo-bravo"},{"workspace_id":"wH","label":"human-notes"},{"workspace_id":"w6","label":"└ new-a · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
   printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
   # shellcheck disable=SC2016
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
@@ -2264,13 +2264,13 @@ test_projection_order_XO_parent_block() {
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$SQUAD_FAKE_MOVER_LOG"
-printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"└ primary · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w3","label":"2ndmate-alpha"},{"workspace_id":"w4","label":"2ndmate-alpha/old · p:AbCdEfGhIjKlMnOpQrStU1"},{"workspace_id":"w6","label":"└ new-a · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"w5","label":"2ndmate-bravo"},{"workspace_id":"wH","label":"human-notes"}]}}'
+printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"└ primary · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w3","label":"xo-alpha"},{"workspace_id":"w4","label":"xo-alpha/old · p:AbCdEfGhIjKlMnOpQrStU1"},{"workspace_id":"w6","label":"└ new-a · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"w5","label":"xo-bravo"},{"workspace_id":"wH","label":"human-notes"}]}}'
 SH
   chmod +x "$mover"
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" SQUAD_HERDR_SCRIPT_STATUS=1 \
     SQUAD_BACKEND_HERDR_WORKSPACE_MOVER="$mover" SQUAD_FAKE_MOVER_LOG="$mover_log" \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_focus_snapshot() { printf "w5\tw5:t1"; }; fm_backend_herdr_projection_focus_restore() { return 0; }; fm_backend_herdr_projection_order_best_effort fmtest w6 2ndmate-alpha' "$ROOT" 2>&1)
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_focus_snapshot() { printf "w5\tw5:t1"; }; fm_backend_herdr_projection_focus_restore() { return 0; }; fm_backend_herdr_projection_order_best_effort fmtest w6 xo-alpha' "$ROOT" 2>&1)
   status=$?
   [ "$status" -eq 0 ] || fail "XO parent ordering must not fail the spawn: $out"
   [ -z "$out" ] || fail "successful XO ordering emitted a warning: $out"
@@ -2284,7 +2284,7 @@ test_projection_order_foreign_legacy_child_is_read_only() {
   local dir log resp fb mover out status
   dir="$TMP_ROOT/projection-order-foreign-legacy"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; : > "$log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"2ndmate-alpha"},{"workspace_id":"w3","label":"2ndmate-bravo/foreign · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w4","label":"└ new-alpha · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"xo-alpha"},{"workspace_id":"w3","label":"xo-bravo/foreign · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w4","label":"└ new-alpha · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 echo called > "$SQUAD_FAKE_MOVER_CALLED"
@@ -2294,7 +2294,7 @@ SH
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
     SQUAD_BACKEND_HERDR_WORKSPACE_MOVER="$mover" SQUAD_FAKE_MOVER_CALLED="$dir/called" \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_order_best_effort fmtest w4 2ndmate-alpha' "$ROOT" 2>&1)
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_order_best_effort fmtest w4 xo-alpha' "$ROOT" 2>&1)
   status=$?
   [ "$status" -eq 0 ] || fail "foreign legacy ordering must not fail the spawn"
   assert_contains "$out" "ambiguous workspace layout" "foreign legacy child did not warn"
@@ -2310,7 +2310,7 @@ test_projection_order_allows_intervening_parent_child_block() {
   dir="$TMP_ROOT/projection-order-intervening-parent"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; mover_log="$dir/mover.log"
   : > "$log"; : > "$mover_log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w3","label":"2ndmate-alpha"},{"workspace_id":"w4","label":"2ndmate-bravo"},{"workspace_id":"w5","label":"└ bravo-child · p:QqWwEeRrTtYyUuIiOoPpAa"},{"workspace_id":"w6","label":"└ new-first · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w3","label":"xo-alpha"},{"workspace_id":"w4","label":"xo-bravo"},{"workspace_id":"w5","label":"└ bravo-child · p:QqWwEeRrTtYyUuIiOoPpAa"},{"workspace_id":"w6","label":"└ new-first · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
   printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
   # shellcheck disable=SC2016
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
@@ -2318,7 +2318,7 @@ test_projection_order_allows_intervening_parent_child_block() {
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$SQUAD_FAKE_MOVER_LOG"
-printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w6","label":"└ new-first · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"w3","label":"2ndmate-alpha"},{"workspace_id":"w4","label":"2ndmate-bravo"},{"workspace_id":"w5","label":"└ bravo-child · p:QqWwEeRrTtYyUuIiOoPpAa"}]}}'
+printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv"},{"workspace_id":"w6","label":"└ new-first · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"w3","label":"xo-alpha"},{"workspace_id":"w4","label":"xo-bravo"},{"workspace_id":"w5","label":"└ bravo-child · p:QqWwEeRrTtYyUuIiOoPpAa"}]}}'
 SH
   chmod +x "$mover"
   fb=$(make_herdr_fakebin "$dir")
@@ -2338,7 +2338,7 @@ test_projection_order_human_spaces_never_move_targets() {
   dir="$TMP_ROOT/projection-order-human"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; mover_log="$dir/mover.log"
   : > "$log"; : > "$mover_log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH1","label":"notes"},{"workspace_id":"w1","label":"Squad"},{"workspace_id":"wH2","label":"scratch"},{"workspace_id":"w2","label":"2ndmate-alpha"},{"workspace_id":"w3","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH1","label":"notes"},{"workspace_id":"w1","label":"Squad"},{"workspace_id":"wH2","label":"scratch"},{"workspace_id":"w2","label":"xo-alpha"},{"workspace_id":"w3","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
   printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
   # shellcheck disable=SC2016
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
@@ -2346,7 +2346,7 @@ test_projection_order_human_spaces_never_move_targets() {
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$SQUAD_FAKE_MOVER_LOG"
-printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"wH1","label":"notes"},{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w3","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"wH2","label":"scratch"},{"workspace_id":"w2","label":"2ndmate-alpha"}]}}'
+printf '%s\n' '{"id":"sq-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"wH1","label":"notes"},{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w3","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"wH2","label":"scratch"},{"workspace_id":"w2","label":"xo-alpha"}]}}'
 SH
   chmod +x "$mover"
   fb=$(make_herdr_fakebin "$dir")
@@ -2364,7 +2364,7 @@ test_projection_order_failure_warns_without_cleanup_or_spawn_failure() {
   local dir log resp fb mover out status
   dir="$TMP_ROOT/projection-order-failure"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; : > "$log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":true},{"workspace_id":"w2","label":"2ndmate-alpha","focused":false},{"workspace_id":"w3","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":true},{"workspace_id":"w2","label":"xo-alpha","focused":false},{"workspace_id":"w3","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
   printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
   # shellcheck disable=SC2016 # $defs is a literal JSON Schema key.
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
@@ -2393,7 +2393,7 @@ test_projection_order_ambiguous_existing_block_is_read_only() {
   dir="$TMP_ROOT/projection-order-ambiguous"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; : > "$log"
   # Detached legacy child after the next parent breaks the contiguous block.
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":true},{"workspace_id":"w2","label":"2ndmate-alpha","focused":false},{"workspace_id":"w3","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w4","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":true},{"workspace_id":"w2","label":"xo-alpha","focused":false},{"workspace_id":"w3","label":"Squad/old · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w4","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 echo called > "$SQUAD_FAKE_MOVER_CALLED"
@@ -2465,7 +2465,7 @@ test_projection_order_foreign_new_child_before_parent_is_read_only() {
   local dir log resp fb mover out status
   dir="$TMP_ROOT/projection-order-foreign-new"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; : > "$log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":true},{"workspace_id":"wH","label":"human-notes","focused":false},{"workspace_id":"w2","label":"└ foreign · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w3","label":"2ndmate-alpha","focused":false},{"workspace_id":"w4","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad","focused":true},{"workspace_id":"wH","label":"human-notes","focused":false},{"workspace_id":"w2","label":"└ foreign · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w3","label":"xo-alpha","focused":false},{"workspace_id":"w4","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe","focused":false}]}}' > "$resp/1.out"
   cat > "$mover" <<'SH'
 #!/usr/bin/env bash
 echo called > "$SQUAD_FAKE_MOVER_CALLED"
@@ -2499,7 +2499,7 @@ SH
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
     SQUAD_BACKEND_HERDR_WORKSPACE_MOVER="$mover" SQUAD_FAKE_MOVER_CALLED="$dir/called" \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_order_best_effort fmtest w2 2ndmate-missing' "$ROOT" 2>&1)
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_order_best_effort fmtest w2 xo-missing' "$ROOT" 2>&1)
   status=$?
   [ "$status" -eq 0 ] || fail "missing parent must not fail the spawn"
   assert_contains "$out" "ambiguous workspace layout" "missing parent did not warn"
@@ -2578,7 +2578,7 @@ test_projection_order_rejects_malformed_socket() {
   local dir log resp fb mover out status
   dir="$TMP_ROOT/projection-order-malformed-socket"; mkdir -p "$dir/responses"
   log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; : > "$log"
-  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"wH","label":"2ndmate-alpha"},{"workspace_id":"w2","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"wH","label":"xo-alpha"},{"workspace_id":"w2","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"}]}}' > "$resp/1.out"
   printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
   # shellcheck disable=SC2016
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
@@ -2788,14 +2788,14 @@ test_workspace_find_matches_only_this_homes_own_label() {
   dir="$TMP_ROOT/find-scoped"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   home="$TMP_ROOT/find-scoped-home"; mkdir -p "$home"; printf 'bravo-b2\n' > "$home/.sq-xo-home"
   # A workspace list carrying BOTH the primary's "Squad" space and this
-  # XO's own "2ndmate-bravo-b2" space (as would be true once several
+  # XO's own "xo-bravo-b2" space (as would be true once several
   # homes share one herdr session) - find must pick the one matching THIS
   # home's own label, never the primary's or a sibling XO's.
-  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"2ndmate-bravo-b2"},{"workspace_id":"w3","label":"2ndmate-alpha-a1"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"xo-bravo-b2"},{"workspace_id":"w3","label":"xo-alpha-a1"}]}}\n' > "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_find fmtest' "$ROOT" )
-  [ "$out" = "w2" ] || fail "workspace_find should have matched this home's own label (2ndmate-bravo-b2 -> w2), got '$out'"
+  [ "$out" = "w2" ] || fail "workspace_find should have matched this home's own label (xo-bravo-b2 -> w2), got '$out'"
   pass "fm_backend_herdr_workspace_find: matches only THIS home's own label among several coexisting workspaces"
 }
 
@@ -2806,7 +2806,7 @@ test_list_live_scoped_to_this_homes_workspace_only() {
   dir="$TMP_ROOT/list-live-scoped"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   home="$TMP_ROOT/list-live-scoped-home"; mkdir -p "$home"; printf 'bravo-b2\n' > "$home/.sq-xo-home"
   # 1: workspace_find's `workspace list` - two homes coexist, XO's is w2
-  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"2ndmate-bravo-b2"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"xo-bravo-b2"}]}}\n' > "$resp/1.out"
   # 2: tab list --workspace w2 (this XO's own tabs only)
   printf '{"result":{"tabs":[{"tab_id":"w2:t1","label":"sq-xotask"}]}}\n' > "$resp/2.out"
   # 3: pane_for_tab's `pane list --workspace w2`

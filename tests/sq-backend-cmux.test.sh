@@ -124,7 +124,7 @@ cmux_expected_home_label() {  # [home] [root]
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
-      prefix="2ndmate-$id"
+      prefix="xo-$id"
     else
       prefix="Squad"
     fi

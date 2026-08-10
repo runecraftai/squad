@@ -153,7 +153,7 @@ bin/sq-spawn.sh <id> --xo
 ```
 
 The primary resolves the verified XO harness and optional model and effort, runs the same readiness gate the seed runs, transfers the inherited-material allowlist, and asks the remote host to launch on Herdr in `sq-remote`.
-All remote XOs on one host share `sq-remote` and retain separate `2ndmate-<id>` workspaces inside it.
+All remote XOs on one host share `sq-remote` and retain separate `xo-<id>` workspaces inside it.
 An explicit request for any other backend is refused rather than honored, and the remote host refuses one too.
 An existing remote endpoint recorded in another Herdr session, including `default`, is classified as unverified and left untouched; launch, liveness recovery, control, and retirement refuse it until an operator explicitly migrates it instead of attempting a live cutover.
 A launch after a host has drifted out of readiness fails with the doctor's own gap text instead of leaving a half-created endpoint.
@@ -219,7 +219,7 @@ bin/sq-teardown.sh <id>
 ```
 
 Retirement is executed on the configured host and refuses while the remote home has child work, while the primary has an unfinished backlog outbox, or while a routed reply remains unresolved.
-It closes only the retiring XO's panes or `2ndmate-<id>` workspace in `sq-remote`; it never stops the shared session or removes a sibling XO's workspace or panes.
+It closes only the retiring XO's panes or `xo-<id>` workspace in `sq-remote`; it never stops the shared session or removes a sibling XO's workspace or panes.
 SSH exit 255 preserves both the route and local records because completion is unknown.
 `--force` remains the explicit discard path and requires the same commander authority as local XO discard.
 No generic remote delete or write surface exists: remote writes are confined to inherited allowlist files and backlog handoff scratch files, and remote home removal is reachable only through guarded XO retirement.

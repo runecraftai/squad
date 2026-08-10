@@ -81,7 +81,7 @@ These five sentences are the single owner of the task-selector vocabulary; backe
 `sq-teardown.sh <id>` takes a task id directly and validates the complete metadata-only endpoint identity before any runtime dispatch or cleanup mutation.
 Missing, empty, duplicate, malformed, backend-inconsistent, or task-mismatched endpoint records are preserved and refused.
 Legacy tmux metadata remains cleanup-compatible when its exact window name is `sq-<id>`; opaque non-tmux endpoints require their recorded `endpoint_task_id=` binding.
-`SQUAD_HOME` determines Herdr's home label: the primary home uses `Squad`, and an XO home marked by `.sq-xo-home` uses `2ndmate-<XO-id>`.
+`SQUAD_HOME` determines Herdr's home label: the primary home uses `Squad`, and an XO home marked by `.sq-xo-home` uses `xo-<XO-id>`.
 [`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
 The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
 The setting is inherited into XO homes under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).

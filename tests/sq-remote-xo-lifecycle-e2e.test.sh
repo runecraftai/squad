@@ -1107,7 +1107,7 @@ pass "unreachable remote state remains unknown with no local respawn or failover
 publish_healthy_sentry_identity "$PARENT/state" "$PARENT" "$REMOTE_ROOT/bin/sq-sentry.sh"
 resolve_ios_pending
 SIBLING_CREATE=$("$REMOTE_ROOT/bin/herdr" workspace create --cwd "$REMOTE_ROOT" \
-  --label 2ndmate-macos --no-focus --session sq-remote)
+  --label xo-macos --no-focus --session sq-remote)
 SIBLING_WORKSPACE=$(printf '%s' "$SIBLING_CREATE" | jq -r '.result.workspace.workspace_id')
 SIBLING_PANE=$(printf '%s' "$SIBLING_CREATE" | jq -r '.result.root_pane.pane_id')
 [ -n "$SIBLING_WORKSPACE" ] && [ "$SIBLING_WORKSPACE" != null ] \
@@ -1201,7 +1201,7 @@ assert_absent "$REMOTE_HOME" "remote retirement did not remove the remote home"
 assert_absent "$PARENT/state/ios.meta" "remote retirement did not remove parent metadata"
 assert_no_grep '- ios ' "$PARENT/data/XOs.md" "remote retirement did not remove the registry route"
 jq -e --arg workspace "$SIBLING_WORKSPACE" --arg pane "$SIBLING_PANE" '
-  any(.workspaces[]; .workspace_id == $workspace and .label == "2ndmate-macos")
+  any(.workspaces[]; .workspace_id == $workspace and .label == "xo-macos")
   and any(.tabs[]; .workspace_id == $workspace and .pane_id == $pane)
 ' "$HERDR_STATE" >/dev/null \
   || fail "remote retirement removed the sibling XO workspace or pane from sq-remote"

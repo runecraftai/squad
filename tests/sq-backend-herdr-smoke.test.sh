@@ -195,8 +195,8 @@ pass "real herdr: an XO-shaped home (.sq-xo-home) gets its OWN herdr workspace, 
 
 SM_WSID=${SM_CONTAINER#*:}
 SM_LABEL_REAL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$SM_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
-[ "$SM_LABEL_REAL" = "2ndmate-smoketest-sm1" ] || fail "the XO workspace's real herdr label should be 2ndmate-smoketest-sm1, got '$SM_LABEL_REAL'"
-pass "real herdr: the XO-shaped home's workspace is labeled 2ndmate-<XO-id> in herdr itself"
+[ "$SM_LABEL_REAL" = "xo-smoketest-sm1" ] || fail "the XO workspace's real herdr label should be xo-smoketest-sm1, got '$SM_LABEL_REAL'"
+pass "real herdr: the XO-shaped home's workspace is labeled xo-<XO-id> in herdr itself"
 
 SM_TASK_LABEL="sq-smtask1"
 SM_TASK_IDS=$(SQUAD_HOME="$SM_HOME" fm_backend_herdr_create_task "$SM_CONTAINER" "$SM_TASK_LABEL" /tmp "$SM_SEEDED_TAB_ID") || fail "XO create_task failed"
@@ -236,7 +236,7 @@ fm_backend_herdr_server_ensure "$SESSION" || fail "the isolated session's server
 
 POST_LIST=$(herdr workspace list --session "$SESSION" 2>&1)
 POST_PRIMARY_ID=$(printf '%s' "$POST_LIST" | jq -r '.result.workspaces[]? | select(.label == "Squad") | .workspace_id')
-POST_SM_ID=$(printf '%s' "$POST_LIST" | jq -r --arg l "2ndmate-smoketest-sm1" '.result.workspaces[]? | select(.label == $l) | .workspace_id')
+POST_SM_ID=$(printf '%s' "$POST_LIST" | jq -r --arg l "xo-smoketest-sm1" '.result.workspaces[]? | select(.label == $l) | .workspace_id')
 [ "$POST_PRIMARY_ID" = "${CONTAINER#*:}" ] || fail "the primary workspace id did not survive the restart: before=${CONTAINER#*:} after=$POST_PRIMARY_ID"
 [ "$POST_SM_ID" = "$SM_WSID" ] || fail "the XO workspace id did not survive the restart: before=$SM_WSID after=$POST_SM_ID"
 

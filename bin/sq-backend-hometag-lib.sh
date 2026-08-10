@@ -13,7 +13,7 @@
 # tab titles").
 #
 # fm_backend_hometag() derives a short, stable tag: a readable prefix
-# ("Squad" for the primary home, "2ndmate-<id>" for an XO home
+# ("Squad" for the primary home, "xo-<id>" for an XO home
 # carrying .sq-xo-home) plus a short hash of the resolved SQUAD_ROOT
 # path, so distinct installations - including multiple primaries on one
 # machine - never collide even though they share one backend-global
@@ -33,7 +33,7 @@ fm_backend_hometag() {
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
-      prefix="2ndmate-$id"
+      prefix="xo-$id"
     else
       prefix="Squad"
     fi

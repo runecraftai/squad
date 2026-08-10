@@ -1787,11 +1787,11 @@ printf '%s\n' "$*" >> "${SQUAD_FAKE_HERDR_LOG:?}"
 case "${1:-} ${2:-}" in
   "workspace list")
     if [ -e "${SQUAD_FAKE_HERDR_RESTORED:?}" ]; then
-      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"xo-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"xo-alpha","focused":false}]}}'
     elif [ -e "${SQUAD_FAKE_HERDR_CLOSED:?}" ]; then
-      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":true}]}}'
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"xo-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"xo-alpha","focused":true}]}}'
     else
-      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"Squad/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"Squad/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w2","active_tab_id":"w2:t2","label":"xo-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"xo-alpha","focused":false}]}}'
     fi
     ;;
   "tab list")

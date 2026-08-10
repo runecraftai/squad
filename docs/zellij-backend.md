@@ -35,7 +35,7 @@ Verify setup by spawning a small task and confirming metadata contains `backend=
 
 Every task receives one tab in the shared Zellij session.
 The caller-facing label remains `sq-<id>`, while the visible title is home-scoped as `sq-<home-label>-<id>`.
-The home label is `Squad` or `2ndmate-<id>` plus a short stable hash of the resolved Squad root.
+The home label is `Squad` or `xo-<id>` plus a short stable hash of the resolved Squad root.
 This prevents task-id collisions between a primary, XOs, and separate Squad installations sharing one session.
 
 Zellij does not enforce tab-name uniqueness, so the adapter performs its own duplicate check against the scoped title.

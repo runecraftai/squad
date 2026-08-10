@@ -341,7 +341,7 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
 # label (docs/herdr-backend.md "Default task container shape"). The PRIMARY home (no
 # XO marker) resolves to the constant "Squad", byte-identical to
 # every pre-existing task's recorded label - no forced migration. A XO
-# home resolves to "2ndmate-<XO-id>", so its tasks land in their own
+# home resolves to "xo-<XO-id>", so its tasks land in their own
 # workspace, obviously distinguishable from the primary's (and from every
 # other XO's) in herdr's spaces sidebar. Read fresh from SQUAD_HOME on
 # every call rather than cached at source time: SQUAD_HOME is the home's own
@@ -355,7 +355,7 @@ fm_backend_herdr_workspace_label() {
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
-      printf '2ndmate-%s' "$id"
+      printf 'xo-%s' "$id"
       return 0
     fi
   fi
@@ -626,14 +626,14 @@ fm_backend_herdr_projection_journal_replace_endpoint() {  # <journal> <task-id> 
 
 # fm_backend_herdr_projection_concise_task_label: strip redundant owner
 # prefixes from a task id used only in the presentation workspace label.
-# Removes Squad/, 2ndmate-<id>/, and a presentation-level sq- owner
+# Removes Squad/, xo-<id>/, and a presentation-level sq- owner
 # prefix when present. The ordinary task tab remains sq-<id> and is not
 # built by this helper.
 fm_backend_herdr_projection_concise_task_label() {  # <task-id>
   local task=$1
   case "$task" in
     Squad/*) task=${task#Squad/} ;;
-    2ndmate-*/*) task=${task#*/} ;;
+    xo-*/*) task=${task#*/} ;;
   esac
   case "$task" in
     sq-*) task=${task#sq-} ;;
@@ -1254,7 +1254,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning SQUAD_HOME label (Squad or 2ndmate-<id>).
+# <parent-label> is the owning SQUAD_HOME label (Squad or xo-<id>).
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1262,7 +1262,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # label exactly as before. With a unique label the two select the same
 # workspace, so ordering behavior is unchanged in the ordinary case.
 # New-format └ ... · p:<token> children and, for compatibility only, already
-# adjacent old-format Squad/... or 2ndmate-<id>/... projections may extend
+# adjacent old-format Squad/... or xo-<id>/... projections may extend
 # the block read-only; they are never renamed or moved.
 #
 # This is presentation-only and always returns success.
@@ -1294,13 +1294,13 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       end;
     def is_top_level_parent:
       (.label | type) == "string"
-      and ((.label == "Squad") or (.label | test("^2ndmate-[^/]+$")));
+      and ((.label == "Squad") or (.label | test("^xo-[^/]+$")));
     def is_new_child:
       (.label | type) == "string"
       and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child:
       (.label | type) == "string"
-      and (.label | test("^(Squad|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"));
+      and (.label | test("^(Squad|xo-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"));
     def is_legacy_child_for($owner):
       is_legacy_child and (.label | startswith($owner + "/"));
     def is_child_for($owner):
@@ -2220,7 +2220,7 @@ fm_backend_herdr_projection_live_binding_matches() {  # <session> <token> <works
         and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
       def is_legacy_child_for($owner):
         (.label | type) == "string"
-        and (.label | test("^(Squad|2ndmate-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"))
+        and (.label | test("^(Squad|xo-[^/]+)/.+ · p:[A-Za-z0-9_-]{22}$"))
         and (.label | startswith($owner + "/"));
       (.result.workspaces // null) as $spaces
       | select(($spaces | type) == "array")

@@ -38,7 +38,7 @@ Real harness credential tests remain opt-in rather than part of default CI.
 The ordinary topology puts one task tab per endpoint in the exact workspace of the Squad or XO that launches it.
 When the launcher has no Herdr workspace to inherit, the adapter maintains one durable home-labeled workspace instead.
 The primary home label is `Squad`.
-An XO home label is `2ndmate-<XO-id>`, derived from its validated `.sq-xo-home` marker.
+An XO home label is `xo-<XO-id>`, derived from its validated `.sq-xo-home` marker.
 An XO launched by the primary receives a narrowly scoped home override during container creation.
 
 Attach to the selected named Herdr session and switch to the relevant home workspace to watch its task tabs.
@@ -59,7 +59,7 @@ That covers a missing or unusable socket identity, a closed or unreadable launch
 
 Squad running outside Herdr entirely has no launcher workspace to inherit, so its workers use this home's own labeled workspace, created on first use.
 That path needs the home label to identify exactly one workspace: two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
-Avoid naming a personal workspace `Squad` or `2ndmate-<id>` for that reason, and because the adapter cannot distinguish that label collision from its own container.
+Avoid naming a personal workspace `Squad` or `xo-<id>` for that reason, and because the adapter cannot distinguish that label collision from its own container.
 An older XO workspace using `Squad-<id>` is not migrated automatically; rename it manually before expecting new tasks or recovery to use it.
 Recovery and list-live still scan the first workspace matching the home label, because they address panes they already recorded rather than choosing where new work goes.
 

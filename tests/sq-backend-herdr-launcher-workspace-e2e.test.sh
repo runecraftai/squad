@@ -377,10 +377,10 @@ pass "real herdr E2E: a launcher pane that no longer exists refuses before any w
 # --- 6. an XO launching its own worker gets the same guarantee -------
 
 read -r WS_SM_DECOY _ _ <<EOF
-$(make_workspace "2ndmate-$SM_ID")
+$(make_workspace "xo-$SM_ID")
 EOF
 read -r WS_SM_LAUNCH _ LAUNCH_SM_PANE <<EOF
-$(make_workspace "2ndmate-$SM_ID")
+$(make_workspace "xo-$SM_ID")
 EOF
 [ -n "$WS_SM_DECOY" ] && [ -n "$WS_SM_LAUNCH" ] || fail "could not create the two XO-labeled workspaces"
 WS_SM_DECOY_TABS_BEFORE=$(tab_labels_of_workspace "$WS_SM_DECOY")
@@ -406,8 +406,8 @@ SM2_PANE=$(grep '^herdr_pane_id=' "$SM2_META" | cut -d= -f2-)
 SM2_WS=$(workspace_of_pane "$SM2_PANE")
 [ "$SM2_WS" != "$WS_PRIMARY_DUP" ] \
   || fail "a --xo launch must stand up the XO's own workspace, not join the launcher's"
-[ "$(label_of_workspace "$SM2_WS")" = "2ndmate-$SM2_ID" ] \
-  || fail "a --xo launch should land in '2ndmate-$SM2_ID', got '$(label_of_workspace "$SM2_WS")'"
+[ "$(label_of_workspace "$SM2_WS")" = "xo-$SM2_ID" ] \
+  || fail "a --xo launch should land in 'xo-$SM2_ID', got '$(label_of_workspace "$SM2_WS")'"
 pass "real herdr E2E: a --xo launch still stands up that XO's own workspace instead of inheriting the launcher's"
 
 # --- 8. teardown closes only the worker's own pane --------------------------
