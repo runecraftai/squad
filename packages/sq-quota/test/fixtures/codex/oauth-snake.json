@@ -1,0 +1,20 @@
+{
+  "plan_type": "plus",
+  "email": "person@example.invalid",
+  "account_id": "acct_fixture",
+  "rate_limit": {
+    "primary_window": {
+      "used_percent": 29,
+      "reset_at": 1783374300,
+      "limit_window_seconds": 18000
+    },
+    "secondary_window": {
+      "used_percent": 57,
+      "reset_after_seconds": 3600
+    }
+  },
+  "credits": {
+    "balance": 12,
+    "unlimited": false
+  }
+}

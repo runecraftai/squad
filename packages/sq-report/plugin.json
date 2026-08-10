@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "sq-report",
+  "version": "0.1.48",
+  "description": "HTML is the new markdown. Lavish is the new editor for your HTML artifacts.",
+  "author": {
+    "name": "Squad contributors",
+    "url": "https://github.com/runecraftai/squad"
+  },
+  "homepage": "https://github.com/runecraftai/squad#readme",
+  "repository": "https://github.com/runecraftai/squad",
+  "license": "MIT",
+  "keywords": [
+    "axi",
+    "agent",
+    "cli",
+    "html",
+    "review",
+    "collaboration"
+  ]
+}

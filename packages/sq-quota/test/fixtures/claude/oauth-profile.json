@@ -1,0 +1,10 @@
+{
+  "account": {
+    "uuid": "11111111-2222-4333-8444-555555555555",
+    "email": "person@example.invalid"
+  },
+  "organization": {
+    "uuid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    "name": "Fixture Organization"
+  }
+}

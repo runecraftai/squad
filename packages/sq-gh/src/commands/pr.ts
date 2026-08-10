@@ -1,0 +1,1008 @@
+import { encode } from "@toon-format/toon";
+import type { RepoContext } from "../context.js";
+import { ghJson, ghExec, ghRaw } from "../gh.js";
+import { AxiError } from "../errors.js";
+import { takeBody, truncateBody } from "../body.js";
+import { formatCountLine } from "../format.js";
+import { fetchListTotal, type ListFilter } from "../totals.js";
+import { getSuggestions } from "../suggestions.js";
+import {
+  takeFlag,
+  takeBoolFlag,
+  takeNumber,
+  takeAllFlags,
+  pushRepeated,
+} from "../args.js";
+import { parseFields, type ExtraFieldSpec } from "../fields.js";
+import {
+  field,
+  pluck,
+  lower,
+  boolYesNo,
+  mapEnum,
+  relativeTime,
+  joinArray,
+  custom,
+  renderList,
+  renderDetail,
+  renderHelp,
+  renderError,
+  renderOutput,
+  type FieldDef,
+} from "../toon.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry of `pr view --json statusCheckRollup`. The rollup is a union of two
+ * shapes: a CheckRun (GitHub Actions et al.) reports its verdict in
+ * `conclusion`, while a legacy commit StatusContext has no `conclusion` at all
+ * and reports its verdict in `state`.
+ */
+interface StatusCheck {
+  /** CheckRun: the check run name. */
+  name?: string;
+  /** StatusContext: the commit status context name. */
+  context?: string;
+  /** CheckRun: SUCCESS | FAILURE | SKIPPED | …; absent while still running. */
+  conclusion?: string;
+  /** StatusContext: SUCCESS | PENDING | FAILURE | ERROR | EXPECTED. */
+  state?: string;
+  /** CheckRun: QUEUED | IN_PROGRESS | COMPLETED. Carries no verdict. */
+  status?: string;
+}
+
+interface PrComment {
+  author?: { login: string };
+  body?: string;
+  createdAt?: string;
+}
+
+interface PrItem {
+  number: number;
+  title: string;
+  state: string;
+  author: { login: string };
+  isDraft: boolean;
+  reviewDecision: string;
+  mergedAt?: string;
+  statusCheckRollup?: StatusCheck[];
+  body?: string;
+  comments?: PrComment[];
+  reviews?: unknown[];
+  mergedBy?: { login: string };
+}
+
+interface PrReview {
+  id: number;
+  user?: { login: string };
+  body?: string;
+  state?: string;
+  submitted_at?: string;
+}
+
+interface PrReviewComment {
+  pull_request_review_id?: number;
+  user?: { login: string };
+  path?: string;
+  line?: number | null;
+  original_line?: number | null;
+  body?: string;
+  created_at?: string;
+}
+
+interface RevertResult {
+  number?: number;
+  html_url?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Classify a status check into a simple status category. */
+function classifyCheck(c: StatusCheck): "pass" | "fail" | "skip" | "pending" {
+  const conc = (c.conclusion ?? "").toUpperCase();
+  if (conc === "SUCCESS" || conc === "NEUTRAL") return "pass";
+  if (
+    conc === "FAILURE" ||
+    conc === "TIMED_OUT" ||
+    conc === "ACTION_REQUIRED" ||
+    conc === "STARTUP_FAILURE" ||
+    conc === "STALE" ||
+    conc === "CANCELLED"
+  )
+    return "fail";
+  if (conc === "SKIPPED") return "skip";
+  if (conc) return "pending";
+
+  // No conclusion: either a StatusContext, whose verdict lives in `state`, or a
+  // CheckRun that has not finished yet — a CheckRun's `status` (QUEUED /
+  // IN_PROGRESS / COMPLETED) never carries a verdict, so it stays pending.
+  const state = (c.state ?? "").toUpperCase();
+  if (state === "SUCCESS") return "pass";
+  if (state === "FAILURE" || state === "ERROR") return "fail";
+  if (state === "EXPECTED" || state === "NEUTRAL") return "skip";
+  return "pending";
+}
+
+function prRestPath(
+  ctx: RepoContext | undefined,
+  num: number,
+  suffix: string,
+): string {
+  const repoPath = ctx
+    ? `repos/${ctx.owner}/${ctx.name}`
+    : "repos/{owner}/{repo}";
+  return `${repoPath}/pulls/${num}/${suffix}`;
+}
+
+function flattenPaginated<T>(items: T[] | T[][]): T[] {
+  if (items.length > 0 && Array.isArray(items[0]))
+    return (items as T[][]).flat();
+  return items as T[];
+}
+
+async function ghApiPaginatedArray<T>(path: string): Promise<T[]> {
+  const pages = await ghJson<T[] | T[][]>([
+    "api",
+    path,
+    "--paginate",
+    "--slurp",
+  ]);
+  return flattenPaginated(pages);
+}
+
+// ---------------------------------------------------------------------------
+// Schemas
+// ---------------------------------------------------------------------------
+
+const REVIEW_MAP: Record<string, string> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes_requested",
+  REVIEW_REQUIRED: "required",
+};
+
+const REVIEW_STATE_MAP: Record<string, string> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes_requested",
+  COMMENTED: "commented",
+  DISMISSED: "dismissed",
+  PENDING: "pending",
+};
+
+const listSchema: FieldDef[] = [
+  field("number"),
+  field("title"),
+  lower("state"),
+  pluck("author", "login", "author"),
+  boolYesNo("isDraft", "draft"),
+  mapEnum("reviewDecision", REVIEW_MAP, "none", "review"),
+];
+
+const LIST_JSON_FIELDS = "number,title,state,author,isDraft,reviewDecision";
+
+const PR_LIST_EXTRA_FIELDS: Record<string, ExtraFieldSpec> = {
+  body: { jsonKey: "body", def: field("body") },
+  createdAt: {
+    jsonKey: "createdAt",
+    def: relativeTime("createdAt", "created"),
+  },
+  labels: { jsonKey: "labels", def: joinArray("labels", "name", "labels") },
+  milestone: {
+    jsonKey: "milestone",
+    def: pluck("milestone", "title", "milestone"),
+  },
+  mergedAt: { jsonKey: "mergedAt", def: relativeTime("mergedAt", "merged_at") },
+  url: { jsonKey: "url", def: field("url") },
+};
+
+const viewSchema: FieldDef[] = [
+  field("number"),
+  field("title"),
+  lower("state"),
+  pluck("author", "login", "author"),
+  boolYesNo("isDraft", "draft"),
+  custom("merged", (item: PrItem) => {
+    if ((item.state ?? "").toUpperCase() === "MERGED")
+      return item.mergedAt ?? "yes";
+    return "no";
+  }),
+  custom("checks", (item: PrItem) => {
+    const checks = item.statusCheckRollup;
+    if (!Array.isArray(checks) || checks.length === 0)
+      return "0 passed, 0 failed — this PR has no CI checks configured";
+    const passed = checks.filter(
+      (c: StatusCheck) => classifyCheck(c) === "pass",
+    ).length;
+    const failed = checks.filter(
+      (c: StatusCheck) => classifyCheck(c) === "fail",
+    ).length;
+    const skipped = checks.filter(
+      (c: StatusCheck) => classifyCheck(c) === "skip",
+    ).length;
+    const parts = [`${passed} passed`, `${failed} failed`];
+    if (skipped > 0) parts.push(`${skipped} skipped`);
+    parts.push(`${checks.length} total`);
+    return parts.join(", ");
+  }),
+  custom("body", (item: PrItem) => truncateBody(item.body, 500)),
+];
+
+const viewSchemaFull: FieldDef[] = viewSchema.map((f) =>
+  "as" in f && f.as === "body"
+    ? custom("body", (item: PrItem) =>
+        typeof item.body === "string" ? item.body : "",
+      )
+    : f,
+);
+
+const VIEW_JSON_FIELDS =
+  "number,title,state,author,isDraft,mergedAt,statusCheckRollup,body,comments,reviews";
+
+// ---------------------------------------------------------------------------
+// Help
+// ---------------------------------------------------------------------------
+
+export const PR_HELP = `usage: gh-axi pr <subcommand> [flags]
+subcommands[15]:
+  list, view <number>, create, edit <number>, close <number>, merge <number>, review <number>, checks <number>, diff <number>, checkout <number>, ready <number>, reopen <number>, comment <number>, update-branch <number>, revert <number>
+flags{list}:
+  --state <open|closed|all>, --label (repeatable), --assignee, --author, --base, --head, --draft, --limit <n> (default 30), --fields <a,b,c>
+flags{view}:
+  --comments, --reviews (show review submissions and inline review comments), --full (show complete body without truncation)
+flags{create}:
+  --title <text> (required), --body <text> or --body-file <path>, --base, --head, --draft, --assignee <login> (repeatable), --reviewer <login> (repeatable), --label <name> (repeatable), --milestone, --project <name> (repeatable)
+flags{edit}:
+  --title <text>, --body <text> or --body-file <path>, --add-label <name> (repeatable), --remove-label <name> (repeatable), --add-assignee <login> (repeatable), --remove-assignee <login> (repeatable), --add-reviewer <login> (repeatable), --remove-reviewer <login> (repeatable), --milestone
+flags{merge}:
+  --method <merge|squash|rebase>, --merge, --squash, --rebase, --auto, --delete-branch, --body <text> or --body-file <path>, --subject
+flags{review}:
+  --approve, --request-changes, --comment, --body <text> or --body-file <path>
+flags{comment}:
+  --body <text> or --body-file <path> (required)
+flags{checks}:
+  (none)
+flags{diff}:
+  --full (show complete diff without truncation)
+examples:
+  gh-axi pr list --state open --label bug
+  gh-axi pr view 42 --comments
+  gh-axi pr view 42 --reviews
+  gh-axi pr comment 42 --body-file review.md
+  gh-axi pr merge 42 --squash --delete-branch`;
+
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+async function prList(args: string[], ctx?: RepoContext): Promise<string> {
+  if (args.includes("--search")) {
+    throw new AxiError(
+      'pr list does not support --search. Use `gh-axi search prs "<query>"` instead for full-text search with total counts.',
+      "VALIDATION_ERROR",
+    );
+  }
+  const fieldsArg = takeFlag(args, "--fields");
+  const { extraDefs, extraJsonKeys } = parseFields(
+    fieldsArg,
+    PR_LIST_EXTRA_FIELDS,
+  );
+  const state = takeFlag(args, "--state") ?? "open";
+  const labels = takeAllFlags(args, "--label");
+  const assignee = takeFlag(args, "--assignee");
+  const author = takeFlag(args, "--author");
+  const base = takeFlag(args, "--base");
+  const head = takeFlag(args, "--head");
+  const draft = takeBoolFlag(args, "--draft");
+  const limit = takeFlag(args, "--limit") ?? "30";
+
+  const jsonFields =
+    extraJsonKeys.length > 0
+      ? LIST_JSON_FIELDS + "," + extraJsonKeys.join(",")
+      : LIST_JSON_FIELDS;
+  const ghArgs = [
+    "pr",
+    "list",
+    "--json",
+    jsonFields,
+    "--state",
+    state,
+    "--limit",
+    limit,
+  ];
+  pushRepeated(ghArgs, "--label", labels);
+  if (assignee) ghArgs.push("--assignee", assignee);
+  if (author) ghArgs.push("--author", author);
+  if (base) ghArgs.push("--base", base);
+  if (head) ghArgs.push("--head", head);
+  if (draft) ghArgs.push("--draft");
+
+  const items = await ghJson<PrItem[]>(ghArgs, ctx);
+  const isEmpty = items.length === 0;
+  const limitNum = Number(limit);
+
+  // Only a page truncated by the limit needs a total; a short page already
+  // shows every match.
+  let totalCount: number | undefined;
+  if (items.length === limitNum && ctx) {
+    const filters: ListFilter[] = [];
+    for (const label of labels)
+      filters.push({ key: "label", value: label, list: true });
+    if (assignee) filters.push({ key: "assignee", value: assignee });
+    if (author) filters.push({ key: "author", value: author });
+    if (base) filters.push({ key: "base", value: base });
+    if (head) filters.push({ key: "head", value: head });
+    if (draft) filters.push({ key: "draft", value: "true" });
+
+    totalCount = await fetchListTotal(ctx, "pullRequests", state, filters);
+  }
+  const countLine = formatCountLine({
+    count: items.length,
+    limit: limitNum,
+    totalCount,
+  });
+  const extendedSchema =
+    extraDefs.length > 0 ? [...listSchema, ...extraDefs] : listSchema;
+
+  return renderOutput([
+    countLine,
+    renderList("pull_requests", items, extendedSchema),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "list", isEmpty, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prView(args: string[], ctx?: RepoContext): Promise<string> {
+  const includeComments = takeBoolFlag(args, "--comments");
+  const includeReviews = takeBoolFlag(args, "--reviews");
+  const full = takeBoolFlag(args, "--full");
+  const num = takeNumber(args, "PR");
+
+  // Always fetch comments + review summaries (for count or full rendering)
+  const ghArgs = ["pr", "view", String(num), "--json", VIEW_JSON_FIELDS];
+  const pr = await ghJson<PrItem>(ghArgs, ctx);
+
+  const schema = [...(full ? viewSchemaFull : viewSchema)];
+  if (includeComments && Array.isArray(pr.comments)) {
+    schema.push(
+      custom("comments", (item: PrItem) =>
+        (item.comments ?? []).map((c: PrComment) => ({
+          author: c.author?.login ?? "unknown",
+          body: c.body ?? "",
+          created: c.createdAt ?? "",
+        })),
+      ),
+    );
+  } else {
+    const commentCount = Array.isArray(pr.comments) ? pr.comments.length : 0;
+    schema.push(
+      custom(
+        "comment_count",
+        () => `${commentCount} — use --comments to see full comments`,
+      ),
+    );
+  }
+
+  if (includeReviews) {
+    // gh pr view --json reviews returns GraphQL node IDs, which don't match
+    // the numeric review IDs on inline review comments. Fetch both via REST
+    // so we can correlate inline comments back to their parent review.
+    const reviews = await ghApiPaginatedArray<PrReview>(
+      prRestPath(ctx, num, "reviews"),
+    );
+    let inlineComments: PrReviewComment[] = [];
+    if (reviews.length > 0) {
+      inlineComments = await ghApiPaginatedArray<PrReviewComment>(
+        prRestPath(ctx, num, "comments"),
+      );
+    }
+    const commentsByReview = new Map<number, PrReviewComment[]>();
+    for (const c of inlineComments) {
+      if (typeof c.pull_request_review_id === "number") {
+        const list = commentsByReview.get(c.pull_request_review_id) ?? [];
+        list.push(c);
+        commentsByReview.set(c.pull_request_review_id, list);
+      }
+    }
+    schema.push(
+      custom("reviews", () =>
+        reviews.map((r) => {
+          const stateUpper = (r.state ?? "").toUpperCase();
+          const inline = commentsByReview.get(r.id) ?? [];
+          return {
+            author: r.user?.login ?? "unknown",
+            state:
+              REVIEW_STATE_MAP[stateUpper] ??
+              stateUpper.toLowerCase() ??
+              "unknown",
+            submitted: r.submitted_at ?? "",
+            body: r.body ?? "",
+            inline_comments: inline.map((c) => ({
+              author: c.user?.login ?? "unknown",
+              path: c.path ?? "",
+              line: c.line ?? c.original_line ?? null,
+              body: c.body ?? "",
+              created: c.created_at ?? "",
+            })),
+          };
+        }),
+      ),
+    );
+  } else {
+    const reviewCount = Array.isArray(pr.reviews) ? pr.reviews.length : 0;
+    schema.push(
+      custom(
+        "review_count",
+        () => `${reviewCount} — use --reviews to see full reviews`,
+      ),
+    );
+  }
+
+  return renderOutput([renderDetail("pull_request", pr, schema)]);
+}
+
+async function prCreate(args: string[], ctx?: RepoContext): Promise<string> {
+  const title = takeFlag(args, "--title");
+  if (!title) throw new AxiError("--title is required", "VALIDATION_ERROR");
+  const body = takeBody(args);
+  const base = takeFlag(args, "--base");
+  const head = takeFlag(args, "--head");
+  const draft = takeBoolFlag(args, "--draft");
+  const assignees = takeAllFlags(args, "--assignee");
+  const reviewers = takeAllFlags(args, "--reviewer");
+  const labels = takeAllFlags(args, "--label");
+  const milestone = takeFlag(args, "--milestone");
+  const projects = takeAllFlags(args, "--project");
+
+  const ghArgs = ["pr", "create", "--title", title];
+  if (body !== undefined) ghArgs.push("--body", body);
+  if (base) ghArgs.push("--base", base);
+  if (head) ghArgs.push("--head", head);
+  if (draft) ghArgs.push("--draft");
+  pushRepeated(ghArgs, "--assignee", assignees);
+  pushRepeated(ghArgs, "--reviewer", reviewers);
+  pushRepeated(ghArgs, "--label", labels);
+  if (milestone) ghArgs.push("--milestone", milestone);
+  pushRepeated(ghArgs, "--project", projects);
+
+  const stdout = await ghExec(ghArgs, ctx);
+  // Parse PR number from the emitted URL: https://<host>/OWNER/REPO/pull/123
+  const urlMatch = stdout.match(/\/pull\/(\d+)/);
+  const num = urlMatch ? Number(urlMatch[1]) : undefined;
+  const url = stdout.trim().split("\n").pop()?.trim() ?? "";
+
+  return renderOutput([
+    renderDetail("created", { number: num ?? url, url }, [
+      field("number"),
+      field("url"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "create", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prEdit(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+  const title = takeFlag(args, "--title");
+  const body = takeBody(args);
+  const addLabels = takeAllFlags(args, "--add-label");
+  const removeLabels = takeAllFlags(args, "--remove-label");
+  const addAssignees = takeAllFlags(args, "--add-assignee");
+  const removeAssignees = takeAllFlags(args, "--remove-assignee");
+  const addReviewers = takeAllFlags(args, "--add-reviewer");
+  const removeReviewers = takeAllFlags(args, "--remove-reviewer");
+  const milestone = takeFlag(args, "--milestone");
+  const base = takeFlag(args, "--base");
+
+  const ghArgs = ["pr", "edit", String(num)];
+  if (title) ghArgs.push("--title", title);
+  if (body !== undefined) ghArgs.push("--body", body);
+  pushRepeated(ghArgs, "--add-label", addLabels);
+  pushRepeated(ghArgs, "--remove-label", removeLabels);
+  pushRepeated(ghArgs, "--add-assignee", addAssignees);
+  pushRepeated(ghArgs, "--remove-assignee", removeAssignees);
+  pushRepeated(ghArgs, "--add-reviewer", addReviewers);
+  pushRepeated(ghArgs, "--remove-reviewer", removeReviewers);
+  if (milestone) ghArgs.push("--milestone", milestone);
+  if (base) ghArgs.push("--base", base);
+
+  await ghExec(ghArgs, ctx);
+  return renderOutput([
+    renderDetail("edited", { number: num, status: "ok" }, [
+      field("number"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "edit", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prClose(args: string[], ctx?: RepoContext): Promise<string> {
+  const comment = takeFlag(args, "--comment");
+  const num = takeNumber(args, "PR");
+
+  // Idempotent: check current state
+  const pr = await ghJson<Pick<PrItem, "state">>(
+    ["pr", "view", String(num), "--json", "state"],
+    ctx,
+  );
+  const state = (pr.state ?? "").toUpperCase();
+  if (state === "CLOSED" || state === "MERGED") {
+    return renderOutput([
+      renderDetail(
+        "pull_request",
+        { number: num, state: state.toLowerCase(), already: true },
+        [field("number"), field("state"), field("already")],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "close", id: num, repo: ctx }),
+      ),
+    ]);
+  }
+
+  const ghArgs = ["pr", "close", String(num)];
+  if (comment) ghArgs.push("--comment", comment);
+  await ghExec(ghArgs, ctx);
+
+  return renderOutput([
+    renderDetail("closed", { number: num, status: "ok" }, [
+      field("number"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "close", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+  const explicitMethod = takeFlag(args, "--method");
+  const shorthandMethods = ["merge", "squash", "rebase"].filter((candidate) =>
+    takeBoolFlag(args, `--${candidate}`),
+  );
+  if (shorthandMethods.length > 1) {
+    throw new AxiError(
+      "Choose only one merge method: --merge, --squash, or --rebase",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (
+    explicitMethod &&
+    shorthandMethods.length === 1 &&
+    explicitMethod !== shorthandMethods[0]
+  ) {
+    throw new AxiError(
+      "Choose either --method or a matching merge method shorthand, not both",
+      "VALIDATION_ERROR",
+    );
+  }
+  const method = explicitMethod ?? shorthandMethods[0];
+  if (method && !["merge", "squash", "rebase"].includes(method)) {
+    throw new AxiError(
+      "--method must be one of: merge, squash, rebase",
+      "VALIDATION_ERROR",
+    );
+  }
+  const auto = takeBoolFlag(args, "--auto");
+  const deleteBranch = takeBoolFlag(args, "--delete-branch");
+  const body = takeBody(args);
+  const subject = takeFlag(args, "--subject");
+
+  // Idempotent: check if already merged
+  const pr = await ghJson<Pick<PrItem, "state" | "mergedBy" | "mergedAt">>(
+    ["pr", "view", String(num), "--json", "state,mergedBy,mergedAt"],
+    ctx,
+  );
+  if ((pr.state ?? "").toUpperCase() === "MERGED") {
+    return renderOutput([
+      renderDetail(
+        "pull_request",
+        {
+          number: num,
+          state: "merged",
+          merged_by: pr.mergedBy?.login ?? null,
+          merged_at: pr.mergedAt ?? null,
+        },
+        [
+          field("number"),
+          field("state"),
+          field("merged_by"),
+          field("merged_at"),
+        ],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
+      ),
+    ]);
+  }
+
+  const ghArgs = ["pr", "merge", String(num)];
+  if (method) ghArgs.push("--" + method);
+  if (auto) ghArgs.push("--auto");
+  if (deleteBranch) ghArgs.push("--delete-branch");
+  if (body !== undefined) ghArgs.push("--body", body);
+  if (subject) ghArgs.push("--subject", subject);
+
+  await ghExec(ghArgs, ctx);
+
+  return renderOutput([
+    renderDetail(
+      "merged",
+      { number: num, status: "ok", method: method ?? "default" },
+      [field("number"), field("status"), field("method")],
+    ),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prReview(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+  const approve = takeBoolFlag(args, "--approve");
+  const requestChanges = takeBoolFlag(args, "--request-changes");
+  const commentFlag = takeBoolFlag(args, "--comment");
+  const body = takeBody(args);
+
+  const ghArgs = ["pr", "review", String(num)];
+  if (approve) ghArgs.push("--approve");
+  else if (requestChanges) ghArgs.push("--request-changes");
+  else if (commentFlag) ghArgs.push("--comment");
+  if (body !== undefined) ghArgs.push("--body", body);
+
+  await ghExec(ghArgs, ctx);
+
+  const action = approve
+    ? "approved"
+    : requestChanges
+      ? "changes_requested"
+      : "commented";
+  return renderOutput([
+    renderDetail("review", { number: num, action }, [
+      field("number"),
+      field("action"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "review", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prChecks(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+
+  // Use pr view --json statusCheckRollup instead of pr checks --json which
+  // can error on PRs with unusual check data
+  const pr = await ghJson<Pick<PrItem, "statusCheckRollup">>(
+    ["pr", "view", String(num), "--json", "statusCheckRollup"],
+    ctx,
+  );
+  const checks: StatusCheck[] = Array.isArray(pr.statusCheckRollup)
+    ? pr.statusCheckRollup
+    : [];
+
+  if (checks.length === 0) {
+    return renderOutput([
+      encode({
+        checks: "0 passed, 0 failed — this PR has no CI checks configured",
+      }),
+    ]);
+  }
+
+  // Pre-compute summary counts so agents don't have to count rows
+  const passed = checks.filter(
+    (c: StatusCheck) => classifyCheck(c) === "pass",
+  ).length;
+  const failed = checks.filter(
+    (c: StatusCheck) => classifyCheck(c) === "fail",
+  ).length;
+  const skipped = checks.filter(
+    (c: StatusCheck) => classifyCheck(c) === "skip",
+  ).length;
+  const pending = checks.length - passed - failed - skipped;
+
+  const summaryParts = [`${passed} passed`, `${failed} failed`];
+  if (skipped > 0) summaryParts.push(`${skipped} skipped`);
+  if (pending > 0) summaryParts.push(`${pending} pending`);
+  summaryParts.push(`${checks.length} total`);
+
+  const checksSchema: FieldDef[] = [
+    custom("name", (c: StatusCheck) => c.name ?? c.context ?? "check"),
+    custom("conclusion", (c: StatusCheck) => classifyCheck(c)),
+  ];
+
+  return renderOutput([
+    encode({ summary: summaryParts.join(", ") }),
+    renderList("checks", checks, checksSchema),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "checks", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+const DIFF_TRUNCATE_LIMIT = 4000;
+
+async function prDiff(args: string[], ctx?: RepoContext): Promise<string> {
+  const full = takeBoolFlag(args, "--full");
+  const num = takeNumber(args, "PR");
+  const diff = await ghExec(["pr", "diff", String(num)], ctx);
+
+  const shouldTruncate = !full && diff.length > DIFF_TRUNCATE_LIMIT;
+  const prDiffBlock: Record<string, unknown> = {
+    number: num,
+    diff: shouldTruncate ? diff.slice(0, DIFF_TRUNCATE_LIMIT) : diff,
+  };
+  if (shouldTruncate) {
+    prDiffBlock.truncated = true;
+    prDiffBlock.original_length = diff.length;
+  }
+
+  const suggestions = getSuggestions({
+    domain: "pr",
+    action: "diff",
+    id: num,
+    repo: ctx,
+  });
+  if (shouldTruncate) {
+    const repoArg = ctx && ctx.source !== "git" ? ` -R ${ctx.nwo}` : "";
+    suggestions.unshift(
+      `Run \`gh-axi${repoArg} pr diff ${num} --full\` to see the complete diff`,
+    );
+  }
+
+  return renderOutput([
+    encode({ pr_diff: prDiffBlock }),
+    renderHelp(suggestions),
+  ]);
+}
+
+async function prCheckout(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+  const stdout = await ghExec(["pr", "checkout", String(num)], ctx);
+  // Extract branch name from output
+  const branchMatch = stdout.match(/Switched to branch '([^']+)'/);
+  const branch = branchMatch ? branchMatch[1] : stdout.trim();
+
+  return renderOutput([
+    renderDetail("checkout", { number: num, branch, status: "ok" }, [
+      field("number"),
+      field("branch"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "checkout", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prReady(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+
+  // Idempotent: check if already not a draft
+  const pr = await ghJson<Pick<PrItem, "isDraft">>(
+    ["pr", "view", String(num), "--json", "isDraft"],
+    ctx,
+  );
+  if (!pr.isDraft) {
+    return renderOutput([
+      renderDetail(
+        "pull_request",
+        { number: num, draft: "no", already: true },
+        [field("number"), field("draft"), field("already")],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "ready", id: num, repo: ctx }),
+      ),
+    ]);
+  }
+
+  await ghExec(["pr", "ready", String(num)], ctx);
+  return renderOutput([
+    renderDetail("ready", { number: num, status: "ok" }, [
+      field("number"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "ready", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prReopen(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+
+  // Idempotent: check current state
+  const pr = await ghJson<Pick<PrItem, "state">>(
+    ["pr", "view", String(num), "--json", "state"],
+    ctx,
+  );
+  const state = (pr.state ?? "").toUpperCase();
+  if (state === "OPEN") {
+    return renderOutput([
+      renderDetail(
+        "pull_request",
+        { number: num, state: "open", already: true },
+        [field("number"), field("state"), field("already")],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "reopen", id: num, repo: ctx }),
+      ),
+    ]);
+  }
+
+  await ghExec(["pr", "reopen", String(num)], ctx);
+  return renderOutput([
+    renderDetail("reopened", { number: num, status: "ok" }, [
+      field("number"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "reopen", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prComment(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+  const body = takeBody(args, { required: true });
+
+  await ghExec(["pr", "comment", String(num), "--body", body], ctx);
+  return renderOutput([
+    renderDetail("commented", { number: num, status: "ok" }, [
+      field("number"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({ domain: "pr", action: "comment", id: num, repo: ctx }),
+    ),
+  ]);
+}
+
+async function prUpdateBranch(
+  args: string[],
+  ctx?: RepoContext,
+): Promise<string> {
+  const num = takeNumber(args, "PR");
+  await ghExec(["pr", "update-branch", String(num)], ctx);
+  return renderOutput([
+    renderDetail("updated", { number: num, status: "ok" }, [
+      field("number"),
+      field("status"),
+    ]),
+    renderHelp(
+      getSuggestions({
+        domain: "pr",
+        action: "update-branch",
+        id: num,
+        repo: ctx,
+      }),
+    ),
+  ]);
+}
+
+async function prRevert(args: string[], ctx?: RepoContext): Promise<string> {
+  const num = takeNumber(args, "PR");
+
+  // gh pr revert may not exist in all gh versions; fall back to API
+  const result = await ghRaw(["pr", "revert", String(num)], ctx);
+  if (result.exitCode === 0) {
+    // Try to extract the new PR number/URL from stdout
+    const urlMatch = result.stdout.match(/\/pull\/(\d+)/);
+    const newNum = urlMatch ? Number(urlMatch[1]) : null;
+    return renderOutput([
+      renderDetail(
+        "reverted",
+        { number: num, revert_pr: newNum, status: "ok" },
+        [field("number"), field("revert_pr"), field("status")],
+      ),
+      renderHelp(
+        getSuggestions({
+          domain: "pr",
+          action: "revert",
+          id: newNum ?? num,
+          repo: ctx,
+        }),
+      ),
+    ]);
+  }
+
+  // Fallback: use gh api to create a revert via the REST API
+  const apiResult = await ghRaw(
+    ["api", `repos/{owner}/{repo}/pulls/${num}/revert`, "--method", "POST"],
+    ctx,
+  );
+  if (apiResult.exitCode !== 0) {
+    throw new AxiError(
+      apiResult.stderr.trim().split("\n")[0] || `Failed to revert PR #${num}`,
+      "UNKNOWN",
+    );
+  }
+  let revertData: RevertResult;
+  try {
+    revertData = JSON.parse(apiResult.stdout) as RevertResult;
+  } catch {
+    revertData = {};
+  }
+
+  return renderOutput([
+    renderDetail(
+      "reverted",
+      {
+        number: num,
+        revert_pr: revertData.number ?? null,
+        url: revertData.html_url ?? null,
+        status: "ok",
+      },
+      [field("number"), field("revert_pr"), field("url"), field("status")],
+    ),
+    renderHelp(
+      getSuggestions({
+        domain: "pr",
+        action: "revert",
+        id: revertData.number ?? num,
+        repo: ctx,
+      }),
+    ),
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
+export async function prCommand(
+  args: string[],
+  ctx?: RepoContext,
+): Promise<string> {
+  const sub = args[0];
+  const rest = args.slice(1);
+
+  switch (sub) {
+    case "list":
+      return prList(rest, ctx);
+    case "view":
+      return prView(rest, ctx);
+    case "create":
+      return prCreate(rest, ctx);
+    case "edit":
+      return prEdit(rest, ctx);
+    case "close":
+      return prClose(rest, ctx);
+    case "merge":
+      return prMerge(rest, ctx);
+    case "review":
+      return prReview(rest, ctx);
+    case "checks":
+      return prChecks(rest, ctx);
+    case "diff":
+      return prDiff(rest, ctx);
+    case "checkout":
+      return prCheckout(rest, ctx);
+    case "ready":
+      return prReady(rest, ctx);
+    case "reopen":
+      return prReopen(rest, ctx);
+    case "comment":
+      return prComment(rest, ctx);
+    case "update-branch":
+      return prUpdateBranch(rest, ctx);
+    case "revert":
+      return prRevert(rest, ctx);
+    case "--help":
+    case "-h":
+    case "help":
+    case undefined:
+      return PR_HELP;
+    default:
+      return renderError(`Unknown pr subcommand: ${sub}`, "VALIDATION_ERROR", [
+        "Run `gh-axi pr --help` to see available subcommands",
+      ]);
+  }
+}

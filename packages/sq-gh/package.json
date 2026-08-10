@@ -1,0 +1,59 @@
+{
+  "name": "sq-gh",
+  "version": "0.1.30",
+  "packageManager": "pnpm@11.1.1",
+  "description": "AXI-compliant gh CLI wrapper — token-efficient TOON output, contextual suggestions, idempotent mutations",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runecraftai/squad.git"
+  },
+  "keywords": [
+    "github",
+    "cli",
+    "agent",
+    "axi",
+    "toon",
+    "gh"
+  ],
+  "bin": {
+    "sq-gh": "./dist/bin/sq-gh.js"
+  },
+  "files": [
+    "dist",
+    "skills/sq-gh",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:skill": "tsx scripts/build-skill.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "tsx bin/sq-gh.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@toon-format/toon": "^2.1.0",
+    "axi-sdk-js": "^0.1.10"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^3.0.0",
+    "yaml": "^2.9.0"
+  }
+}

@@ -1,0 +1,414 @@
+import type { RepoContext } from "../context.js";
+import { ghJson } from "../gh.js";
+import { AxiError } from "../errors.js";
+import { getFlag, hasFlag } from "../args.js";
+import {
+  field,
+  lower,
+  pluck,
+  relativeTime,
+  joinArray,
+  custom,
+  renderList,
+  renderHelp,
+  renderOutput,
+  renderError,
+  type FieldDef,
+} from "../toon.js";
+import { formatCountLine } from "../format.js";
+import { getSuggestions } from "../suggestions.js";
+
+const DEFAULT_SEARCH_LIMIT = "1000";
+const DISPLAY_LIMIT = 30;
+const SEARCH_VALUE_FLAGS = new Set([
+  "--repo",
+  "--owner",
+  "--state",
+  "--label",
+  "--assignee",
+  "--author",
+  "--sort",
+  "--limit",
+  "--review",
+  "--language",
+  "--stars",
+]);
+
+export const SEARCH_HELP = `usage: gh-axi search <type> <query> [flags]
+types[5]:
+  issues, prs, repos, commits, code
+flags{common}:
+  --repo, --owner, --state, --label, --assignee, --author, --sort, --limit <n> (default 1000)
+flags{prs}:
+  --draft, --review
+flags{repos}:
+  --language, --stars (e.g. ">100")
+examples:
+  gh-axi search issues "login bug" --repo octo/repo --state open
+  gh-axi search prs "feat" --author alice --sort updated
+  gh-axi search repos "cli tool" --language Go --stars ">50"`;
+
+const issueSchema: FieldDef[] = [
+  field("number"),
+  field("title"),
+  pluck("repository", "nameWithOwner", "repo"),
+  lower("state"),
+  pluck("author", "login", "author"),
+  joinArray("labels", "name", "labels"),
+  relativeTime("createdAt", "created"),
+];
+
+const prSchema: FieldDef[] = [
+  field("number"),
+  field("title"),
+  pluck("repository", "nameWithOwner", "repo"),
+  lower("state"),
+  pluck("author", "login", "author"),
+  relativeTime("createdAt", "created"),
+];
+
+const repoSchema: FieldDef[] = [
+  field("fullName", "name"),
+  field("description"),
+  field("stargazersCount", "stars"),
+  field("forksCount", "forks"),
+  field("language"),
+  relativeTime("updatedAt", "updated"),
+];
+
+const commitSchema: FieldDef[] = [
+  field("sha"),
+  custom("message", (item) => {
+    const commit = item.commit as Record<string, unknown> | undefined;
+    const message = commit?.message;
+    return typeof message === "string" ? message.split("\n")[0] : "";
+  }),
+  pluck("repository", "fullName", "repo"),
+  pluck("author", "login", "author"),
+  custom("date", (item) => {
+    const commit = item.commit as Record<string, unknown> | undefined;
+    const author = commit?.author as Record<string, unknown> | undefined;
+    const d = author?.date;
+    if (!d || typeof d !== "string") return "unknown";
+    const diffMs = Date.now() - new Date(d).getTime();
+    const diffH = Math.floor(diffMs / 3600000);
+    if (diffH < 1) return "just now";
+    if (diffH < 24) return `${diffH}h ago`;
+    const diffD = Math.floor(diffH / 24);
+    return `${diffD}d ago`;
+  }),
+];
+
+function extractQuery(args: string[]): string {
+  // Collect positional args (not flags and not the subcommand)
+  const positionals: string[] = [];
+  let i = 1; // skip subcommand (issues/prs/repos/commits/code)
+  while (i < args.length) {
+    if (args[i].startsWith("--")) {
+      i += args[i].includes("=") || !SEARCH_VALUE_FLAGS.has(args[i]) ? 1 : 2;
+    } else {
+      positionals.push(args[i]);
+      i++;
+    }
+  }
+  return positionals.join(" ");
+}
+
+function getSearchRepo(args: string[], ctx?: RepoContext): string | undefined {
+  return getFlag(args, "--repo") ?? ctx?.nwo;
+}
+
+const COMMON_FILTER_FLAGS = [
+  "--repo",
+  "--owner",
+  "--state",
+  "--label",
+  "--assignee",
+  "--author",
+];
+
+function hasSearchFilters(args: string[], extraFlags: string[] = []): boolean {
+  return [...COMMON_FILTER_FLAGS, ...extraFlags].some(
+    (f) => hasFlag(args, f) || getFlag(args, f) !== undefined,
+  );
+}
+
+async function searchIssues(
+  args: string[],
+  ctx?: RepoContext,
+): Promise<string> {
+  const query = extractQuery(args);
+  if (!query && !hasSearchFilters(args))
+    throw new AxiError(
+      "Search query or filters required: gh-axi search issues <query> [--assignee x] [--state open] ...",
+      "VALIDATION_ERROR",
+    );
+
+  const limit = getFlag(args, "--limit") ?? DEFAULT_SEARCH_LIMIT;
+  const ghArgs = ["search", "issues"];
+  if (query) ghArgs.push(query);
+  ghArgs.push(
+    "--json",
+    "number,title,repository,state,author,labels,createdAt",
+    "--limit",
+    limit,
+  );
+  const repo = getSearchRepo(args, ctx);
+  if (repo) ghArgs.push("--repo", repo);
+  const owner = getFlag(args, "--owner");
+  if (owner) ghArgs.push("--owner", owner);
+  const state = getFlag(args, "--state");
+  if (state) ghArgs.push("--state", state);
+  const label = getFlag(args, "--label");
+  if (label) ghArgs.push("--label", label);
+  const assignee = getFlag(args, "--assignee");
+  if (assignee) ghArgs.push("--assignee", assignee);
+  const author = getFlag(args, "--author");
+  if (author) ghArgs.push("--author", author);
+  const sort = getFlag(args, "--sort");
+  if (sort) ghArgs.push("--sort", sort);
+
+  const results = await ghJson<Record<string, unknown>[]>(ghArgs);
+  const limitNum = parseInt(limit, 10);
+  const displayed = results.slice(0, DISPLAY_LIMIT);
+  const countLine = formatCountLine({
+    count: results.length,
+    limit: limitNum,
+    apiLimitHit: results.length === limitNum,
+    displayLimit: DISPLAY_LIMIT,
+  });
+  const suggestions = getSuggestions({
+    domain: "search",
+    action: "issues",
+    repo: ctx,
+  });
+  return renderOutput([
+    countLine,
+    renderList("issues", displayed, issueSchema),
+    renderHelp(suggestions),
+  ]);
+}
+
+async function searchPrs(args: string[], ctx?: RepoContext): Promise<string> {
+  const query = extractQuery(args);
+  if (!query && !hasSearchFilters(args, ["--draft", "--review"]))
+    throw new AxiError(
+      "Search query or filters required: gh-axi search prs <query> [--assignee x] [--state open] ...",
+      "VALIDATION_ERROR",
+    );
+
+  const limit = getFlag(args, "--limit") ?? DEFAULT_SEARCH_LIMIT;
+  const ghArgs = ["search", "prs"];
+  if (query) ghArgs.push(query);
+  ghArgs.push(
+    "--json",
+    "number,title,repository,state,author,createdAt",
+    "--limit",
+    limit,
+  );
+  const repo = getSearchRepo(args, ctx);
+  if (repo) ghArgs.push("--repo", repo);
+  const owner = getFlag(args, "--owner");
+  if (owner) ghArgs.push("--owner", owner);
+  const state = getFlag(args, "--state");
+  if (state) ghArgs.push("--state", state);
+  const label = getFlag(args, "--label");
+  if (label) ghArgs.push("--label", label);
+  const assignee = getFlag(args, "--assignee");
+  if (assignee) ghArgs.push("--assignee", assignee);
+  const author = getFlag(args, "--author");
+  if (author) ghArgs.push("--author", author);
+  const sort = getFlag(args, "--sort");
+  if (sort) ghArgs.push("--sort", sort);
+  if (hasFlag(args, "--draft")) ghArgs.push("--draft");
+  const review = getFlag(args, "--review");
+  if (review) ghArgs.push("--review", review);
+
+  const results = await ghJson<Record<string, unknown>[]>(ghArgs);
+  const limitNum = parseInt(limit, 10);
+  const displayed = results.slice(0, DISPLAY_LIMIT);
+  const countLine = formatCountLine({
+    count: results.length,
+    limit: limitNum,
+    apiLimitHit: results.length === limitNum,
+    displayLimit: DISPLAY_LIMIT,
+  });
+  const suggestions = getSuggestions({
+    domain: "search",
+    action: "prs",
+    repo: ctx,
+  });
+  return renderOutput([
+    countLine,
+    renderList("prs", displayed, prSchema),
+    renderHelp(suggestions),
+  ]);
+}
+
+async function searchRepos(args: string[], ctx?: RepoContext): Promise<string> {
+  const query = extractQuery(args);
+  if (!query && !hasSearchFilters(args, ["--language", "--stars"]))
+    throw new AxiError(
+      "Search query or filters required: gh-axi search repos <query> [--owner x] [--language y] ...",
+      "VALIDATION_ERROR",
+    );
+
+  const limit = getFlag(args, "--limit") ?? DEFAULT_SEARCH_LIMIT;
+  const ghArgs = ["search", "repos"];
+  if (query) ghArgs.push(query);
+  ghArgs.push(
+    "--json",
+    "fullName,description,stargazersCount,forksCount,language,updatedAt",
+    "--limit",
+    limit,
+  );
+  const owner = getFlag(args, "--owner");
+  if (owner) ghArgs.push("--owner", owner);
+  const language = getFlag(args, "--language");
+  if (language) ghArgs.push("--language", language);
+  const stars = getFlag(args, "--stars");
+  if (stars) ghArgs.push("--stars", stars);
+  const sort = getFlag(args, "--sort");
+  if (sort) ghArgs.push("--sort", sort);
+
+  const results = await ghJson<Record<string, unknown>[]>(ghArgs);
+  const limitNum = parseInt(limit, 10);
+  const displayed = results.slice(0, DISPLAY_LIMIT);
+  const countLine = formatCountLine({
+    count: results.length,
+    limit: limitNum,
+    apiLimitHit: results.length === limitNum,
+    displayLimit: DISPLAY_LIMIT,
+  });
+  const suggestions = getSuggestions({
+    domain: "search",
+    action: "repos",
+    repo: ctx,
+  });
+  return renderOutput([
+    countLine,
+    renderList("repos", displayed, repoSchema),
+    renderHelp(suggestions),
+  ]);
+}
+
+async function searchCommits(
+  args: string[],
+  ctx?: RepoContext,
+): Promise<string> {
+  const query = extractQuery(args);
+  if (!query && !hasSearchFilters(args))
+    throw new AxiError(
+      "Search query or filters required: gh-axi search commits <query> [--repo x] [--author y] ...",
+      "VALIDATION_ERROR",
+    );
+
+  const limit = getFlag(args, "--limit") ?? DEFAULT_SEARCH_LIMIT;
+  const ghArgs = ["search", "commits"];
+  if (query) ghArgs.push(query);
+  ghArgs.push("--json", "sha,commit,repository,author", "--limit", limit);
+  const repo = getSearchRepo(args, ctx);
+  if (repo) ghArgs.push("--repo", repo);
+  const owner = getFlag(args, "--owner");
+  if (owner) ghArgs.push("--owner", owner);
+  const author = getFlag(args, "--author");
+  if (author) ghArgs.push("--author", author);
+  const sort = getFlag(args, "--sort");
+  if (sort) ghArgs.push("--sort", sort);
+
+  const results = await ghJson<Record<string, unknown>[]>(ghArgs);
+  const limitNum = parseInt(limit, 10);
+  const displayed = results.slice(0, DISPLAY_LIMIT);
+  const countLine = formatCountLine({
+    count: results.length,
+    limit: limitNum,
+    apiLimitHit: results.length === limitNum,
+    displayLimit: DISPLAY_LIMIT,
+  });
+  const suggestions = getSuggestions({
+    domain: "search",
+    action: "commits",
+    repo: ctx,
+  });
+  return renderOutput([
+    countLine,
+    renderList("commits", displayed, commitSchema),
+    renderHelp(suggestions),
+  ]);
+}
+
+const codeSchema: FieldDef[] = [
+  field("path"),
+  pluck("repository", "fullName", "repo"),
+  custom("matches", (item) => {
+    const tm = item.textMatches;
+    if (!Array.isArray(tm) || tm.length === 0) return 0;
+    return tm.length;
+  }),
+];
+
+async function searchCode(args: string[], ctx?: RepoContext): Promise<string> {
+  const query = extractQuery(args);
+  if (!query && !hasSearchFilters(args, ["--language"]))
+    throw new AxiError(
+      "Search query or filters required: gh-axi search code <query> [--repo x] [--language y] ...",
+      "VALIDATION_ERROR",
+    );
+
+  const limit = getFlag(args, "--limit") ?? DEFAULT_SEARCH_LIMIT;
+  const ghArgs = ["search", "code"];
+  if (query) ghArgs.push(query);
+  ghArgs.push("--json", "path,repository,textMatches", "--limit", limit);
+  const repo = getSearchRepo(args, ctx);
+  if (repo) ghArgs.push("--repo", repo);
+  const owner = getFlag(args, "--owner");
+  if (owner) ghArgs.push("--owner", owner);
+  const language = getFlag(args, "--language");
+  if (language) ghArgs.push("--language", language);
+
+  const results = await ghJson<Record<string, unknown>[]>(ghArgs);
+  const limitNum = parseInt(limit, 10);
+  const displayed = results.slice(0, DISPLAY_LIMIT);
+  const countLine = formatCountLine({
+    count: results.length,
+    limit: limitNum,
+    apiLimitHit: results.length === limitNum,
+    displayLimit: DISPLAY_LIMIT,
+  });
+  const suggestions = getSuggestions({
+    domain: "search",
+    action: "code",
+    repo: ctx,
+  });
+  return renderOutput([
+    countLine,
+    renderList("results", displayed, codeSchema),
+    renderHelp(suggestions),
+  ]);
+}
+
+export async function searchCommand(
+  args: string[],
+  ctx?: RepoContext,
+): Promise<string> {
+  const sub = args[0];
+
+  if (sub === "--help" || sub === undefined) return SEARCH_HELP;
+
+  switch (sub) {
+    case "issues":
+      return searchIssues(args, ctx);
+    case "prs":
+      return searchPrs(args, ctx);
+    case "repos":
+      return searchRepos(args, ctx);
+    case "commits":
+      return searchCommits(args, ctx);
+    case "code":
+      return searchCode(args, ctx);
+    default:
+      return renderError(`Unknown search type: ${sub}`, "VALIDATION_ERROR", [
+        "Available types: issues, prs, repos, commits, code",
+      ]);
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "package": "sq-quota",
+  "upstream": "quota-axi",
+  "version": "0.1.20",
+  "source": "https://github.com/runecraftai/squad/tree/quota-axi-v0.1.20",
+  "extraction_date": "2026-08-10",
+  "method": "tracked-file copy (git archive) from shallow reference clone /tmp/m6-dep-quota-axi at tag quota-axi-v0.1.20 (commit 1a8110ef56c05d45adcbb011346df044b2aa806c); names-only rename per commander decision CD-M6-02 (prose deferred to roadmap-futuro-rebrand-completo-de-menco-31)",
+  "sha256_package_json": "3a11a2066a5f4826afc5094d93fd0b5fd5726818a3f8fce67346dfd87bb307a4",
+  "sha256_source_tree": "14c4af5a2aba42fe9faea2237b80d208d4c4bb86a69a27d12bdf00c185f3df50",
+  "license": "MIT",
+  "notes": "Squad fork of runecraftai/squad. Install from the workspace: npm install -g ./packages/sq-quota. Upstream sync on-demand per umbrella design.md section 9."
+}

@@ -1,0 +1,81 @@
+{
+  "name": "sq-report",
+  "version": "0.1.48",
+  "packageManager": "pnpm@11.1.1",
+  "description": "HTML is the new markdown. Lavish is the new editor for your HTML artifacts.",
+  "type": "module",
+  "bin": {
+    "sq-report": "dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "plugin.json",
+    "skills/lavish",
+    "lavish-editor-marketing/renders/lavish-editor-marketing.gif",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build:skill": "node scripts/build-skill.js",
+    "build:plugin": "node scripts/build-plugin.js",
+    "check": "npm run build && npm run lint && npm run format:check && npm run typecheck && npm test && node scripts/build-skill.js --check && node scripts/build-plugin.js --check",
+    "start": "node dist/cli.mjs",
+    "lint": "eslint bin src test scripts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepack": "npm run build",
+    "prepare": "npm run build",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tailwindcss/browser": "4.2.4",
+    "axi-sdk-js": "^0.1.8",
+    "chokidar": "^4.0.3",
+    "cross-spawn": "7.0.6",
+    "daisyui": "^5.5.19",
+    "express": "^5.2.1",
+    "open": "^10.2.0",
+    "parse5": "^8.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@excalidraw/excalidraw": "0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+    "@types/node": "^25.6.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
+    "mermaid": "11.12.1",
+    "prettier": "^3.8.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "axi",
+    "agent",
+    "cli",
+    "html",
+    "review",
+    "collaboration"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runecraftai/squad.git"
+  },
+  "bugs": {
+    "url": "https://github.com/runecraftai/squad/issues"
+  },
+  "homepage": "https://github.com/runecraftai/squad#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

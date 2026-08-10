@@ -1,0 +1,12 @@
+{
+  "package": "sq-browser",
+  "upstream": "chrome-devtools-axi",
+  "version": "0.1.29",
+  "source": "https://github.com/runecraftai/squad/tree/chrome-devtools-axi-v0.1.29",
+  "extraction_date": "2026-08-10",
+  "method": "tracked-file copy (git archive) from shallow reference clone /tmp/m6-dep-chrome-devtools-axi at tag chrome-devtools-axi-v0.1.29 (commit 1a91f5fa2a8e381e502b914116e9bafb1a819f48); names-only rename per commander decision CD-M6-02 (prose deferred to roadmap-futuro-rebrand-completo-de-menco-31)",
+  "sha256_package_json": "d60d38afeecd87f04703a832ed739482b79660334e35fa8c41838957658fc3e4",
+  "sha256_source_tree": "a93d528aaeb9522056d3af00ca3eeff49abb1397e5560a38c073dbe8d9153d2f",
+  "license": "MIT",
+  "notes": "Squad fork of runecraftai/squad. Install from the workspace: npm install -g ./packages/sq-browser. Upstream sync on-demand per umbrella design.md section 9."
+}

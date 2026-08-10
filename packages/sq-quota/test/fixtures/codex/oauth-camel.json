@@ -1,0 +1,20 @@
+{
+  "planType": "team",
+  "email": "person@example.invalid",
+  "accountId": "acct_fixture",
+  "rateLimits": {
+    "primary": {
+      "usedPercent": 10,
+      "resetsAt": "2026-07-06T21:45:00Z",
+      "windowDurationMins": 300
+    },
+    "secondary": {
+      "usedPercent": 90,
+      "reset_after_seconds": 7200
+    }
+  },
+  "credits": {
+    "balance": "5",
+    "unlimited": true
+  }
+}

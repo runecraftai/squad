@@ -1,0 +1,52 @@
+{
+  "five_hour": {
+    "utilization": 18,
+    "resets_at": "2026-07-06T22:15:00Z"
+  },
+  "seven_day": {
+    "utilization": 36,
+    "reset_at": "2026-07-10T16:00:00Z"
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 22,
+      "severity": "normal",
+      "resets_at": "2026-07-06T22:15:00.317709+00:00",
+      "scope": null,
+      "is_active": false
+    },
+    {
+      "kind": "weekly_all",
+      "group": "weekly",
+      "percent": 41,
+      "severity": "normal",
+      "resets_at": "2026-07-10T16:00:00.317732+00:00",
+      "scope": null,
+      "is_active": false
+    },
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 63,
+      "severity": "critical",
+      "resets_at": "2026-07-11T09:30:00.318030+00:00",
+      "scope": {
+        "model": {
+          "id": null,
+          "display_name": "Fable"
+        },
+        "surface": null
+      },
+      "is_active": true
+    }
+  ],
+  "extra_usage": {
+    "is_enabled": true,
+    "monthly_limit": 2000,
+    "used_credits": 500,
+    "currency": "USD",
+    "decimal_places": 2
+  }
+}
