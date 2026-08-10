@@ -201,6 +201,82 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": ".specs/features/squad-m6-sq-browser/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-browser/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-browser/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-gh/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-gh/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-gh/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-quota/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-quota/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-quota/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-report/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-report/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-report/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-tasks/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-tasks/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-sq-tasks/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-vendoring/context.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-vendoring/design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-vendoring/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": ".specs/features/squad-m6-vendoring/tasks.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": ".specs/handoff-m0.md",
       "audience": "maintainer-architecture"
     },
@@ -629,35 +705,175 @@
       "audience": "agent-runtime"
     },
     {
-      "path": "packages/tasks-axi/AGENTS.md",
+      "path": "packages/sq-browser/AGENTS.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/tasks-axi/CHANGELOG.md",
+      "path": "packages/sq-browser/CHANGELOG.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/tasks-axi/CLAUDE.md",
+      "path": "packages/sq-browser/CLAUDE.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/tasks-axi/CONTRIBUTING.md",
+      "path": "packages/sq-browser/CONTRIBUTING.md",
       "audience": "maintainer-architecture"
     },
     {
-      "path": "packages/tasks-axi/README.md",
+      "path": "packages/sq-browser/README.md",
       "audience": "public-product"
     },
     {
-      "path": "packages/tasks-axi/skills/tasks-axi/SKILL.md",
+      "path": "packages/sq-browser/VISION.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-browser/skills/sq-browser/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": "packages/tasks-axi/test/fixtures/backlog.md",
+      "path": "packages/sq-gh/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-gh/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-gh/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-gh/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-gh/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-gh/VISION.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-gh/skills/sq-gh/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/sq-quota/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-quota/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-quota/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-quota/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-quota/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-quota/skills/sq-quota/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/sq-report/.agents/skills/lavish-design/README.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/.agents/skills/lavish-design/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/sq-report/.agents/skills/lavish-design/ui_kits/editor/README.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-report/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-report/THIRD-PARTY-NOTICES.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-report/lavish-editor-marketing/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/lavish-editor-marketing/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/lavish-editor-marketing/DESIGN.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-report/skills/lavish/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/sq-report/task-evidence/excalidraw-label-clipping/README.md",
       "audience": "maintainer-verification"
     },
     {
-      "path": "packages/tasks-axi/test/fixtures/squad-backlog.md",
+      "path": "packages/sq-report/task-evidence/mermaid-theme/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/sq-tasks/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-tasks/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-tasks/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-tasks/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-tasks/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/sq-tasks/skills/sq-tasks/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/sq-tasks/test/fixtures/backlog.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/sq-tasks/test/fixtures/squad-backlog.md",
       "audience": "maintainer-verification"
     }
   ]
