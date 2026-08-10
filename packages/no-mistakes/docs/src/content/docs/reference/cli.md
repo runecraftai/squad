@@ -389,7 +389,7 @@ no-mistakes stats --run <id>
 ```
 
 This detailed performance evidence stays local in `state.sqlite`; it is not sent to telemetry.
-The field definitions and their local/remote split are owned by [the environment reference](/reference/environment/#what-stays-local-and-what-leaves-the-machine).
+The field definitions and their local/remote split are owned by [the environment reference](/no-mistakes/reference/environment/#what-stays-local-and-what-leaves-the-machine).
 
 ## no-mistakes doctor
 

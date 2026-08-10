@@ -399,6 +399,266 @@
     {
       "path": "skills/debrief/SKILL.md",
       "audience": "public-product"
+    },
+    {
+      "path": "docs/pr-review.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "packages/fob/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/fob/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/fob/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/fob/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/fob/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/fob/VISION.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/goal-loop-audit/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/goal-loop-audit/INSTALL.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "packages/goal-loop-audit/LIST-PHILOSOPHY.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/goal-loop-audit/PLAN.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/goal-loop-audit/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/goal-loop-audit/audit/LONG-RUNNING-MODES.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/goal-loop-audit/audit/PARKED-IDEAS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/goal-loop-audit/audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/goal-loop-audit/docs/DESIGN.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/goal-loop-audit/examples/example-objective.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "packages/goal-loop-audit/prompts/goal-loop-continuation.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/goal-loop-audit/prompts/goal-loop-draft.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/goal-loop-audit/prompts/goal-loop-forever-draft.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/goal-loop-audit/prompts/goal-loop-forever-metricless.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/goal-loop-audit/prompts/goal-loop-forever.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/goal-loop-audit/tests/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/no-mistakes/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/no-mistakes/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/no-mistakes/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/no-mistakes/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/README.zh-CN.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/VISION.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/concepts/auto-fix.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/concepts/daemon.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/concepts/gate-model.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/concepts/pipeline.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/guides/agents.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/guides/configuration.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/guides/provider-integration.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/guides/setup-wizard.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/guides/troubleshooting.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/guides/tui.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/index.mdx",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/reference/cli.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/reference/environment.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/reference/global-config.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/reference/pipeline-steps.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/reference/repo-config.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/start-here/installation.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/start-here/introduction.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/docs/src/content/docs/start-here/quick-start.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/no-mistakes/internal/e2e/fixtures/opencode/plain/sse.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/no-mistakes/internal/e2e/fixtures/opencode/structured/sse.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/no-mistakes/internal/tui/DESIGN.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/no-mistakes/skills/no-mistakes/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/pr-review/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/pr-review/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/pr-review/RELEASING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/pr-review/prompts/pr-review.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/tasks-axi/AGENTS.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/tasks-axi/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/tasks-axi/CLAUDE.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/tasks-axi/CONTRIBUTING.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/tasks-axi/README.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "packages/tasks-axi/skills/tasks-axi/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "packages/tasks-axi/test/fixtures/backlog.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "packages/tasks-axi/test/fixtures/squad-backlog.md",
+      "audience": "maintainer-verification"
     }
   ]
 }

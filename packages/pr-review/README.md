@@ -13,7 +13,7 @@ Installed automatically as part of `@runecraft/companion`. Standalone:
 ## Docs
 
 - Full guide, quickstart & agent matrix: [root README](../../README.md)
-- Mental model / when to use this vs the other tools: [ROUTING.md](../harness/docs/ROUTING.md)
+- Mental model / when to use this vs the other tools: [docs/architecture.md](../../docs/architecture.md)
 
 ## Relationship to upstream
 

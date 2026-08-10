@@ -26,6 +26,12 @@ from urllib.parse import unquote, urlsplit
 
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r"\b(?:href|src)=[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+# Subprojects with their own site-rooted link convention (Astro base-path links
+# like /no-mistakes/... are internal site routes, not repository-local links).
+# Sources under these prefixes are exempt from the absolute-local-link rule for
+# paths under their own site base.
+SITE_SUBPROJECTS = ("packages/no-mistakes/docs/src/content/docs/",)
 REQUIRED_TRACKED_PATTERNS = ["*.md", "*.mdx", "*.rst", "*.txt", "docs/examples/*"]
 
 
@@ -87,6 +93,9 @@ def resolve_local_target(root: Path, source: Path, raw: str) -> Path | None:
         return source.resolve(strict=False) if split.fragment else None
     decoded = unquote(split.path)
     if decoded.startswith("/"):
+        for sub in SITE_SUBPROJECTS:
+            if str(source.relative_to(root)).startswith(sub) and decoded.startswith("/" + sub.split("/")[1]):
+                return None
         fail(f"absolute local link in {source.relative_to(root)}: {raw}")
     target = (source.parent / decoded).resolve(strict=False)
     try:

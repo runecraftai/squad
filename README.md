@@ -1,48 +1,30 @@
-<h1 align="center">Squad</h1>
 <p align="center">
-  <a
-    href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square"
-    ><img
-      alt="Platform"
-      src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square"
-  /></a>
+  <img alt="Squad — agent distro: talk to one agent, deploy with a squad. The sergeant at arms dispatches visible operators (sq-task-1 strike working, sq-task-2 recon done, sq-task-3 strike queued) that deliver a PR or a recon report to the commander." src="assets/readme/hero.svg" width="100%" />
 </p>
 
-<h3 align="center">Talk to one agent. Deploy with a squad.</h3>
-
 <p align="center">
-  <img alt="Squad - talk to one agent, deploy with a squad" src="assets/banner.png" width="100%" />
+  <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue?style=flat-square" /></a>
 </p>
 
 ## What it is
 
-You can run one coding agent easily.
-But the moment you want three project tasks done in parallel - fixes, investigations, plans, audits - you become a tab-juggler: babysitting sessions, copy-pasting context between repos, forgetting which terminal had the failing test.
+Running one coding agent is easy. The moment you want three project tasks done in parallel - fixes, investigations, plans, audits - you become a tab-juggler: babysitting sessions, copy-pasting context between repos, forgetting which terminal had the failing test.
 
-Squad flips the model.
-You talk to a single agent - the sergeant at arms - and it runs the squad for you: spawning visible operators in a session backend, giving each a clean git worktree, supervising them to completion, and handing you finished PRs, approved local merges, or standalone recon reports.
-For larger units, you can opt in to persistent XOs: operators that are still ordinary direct reports, but run from their own isolated Squad homes on this machine or another SSH-reachable host.
+Squad flips the model. You talk to a single agent - the **sergeant at arms** - and it runs the squad for you: spawning visible operators in a session backend, giving each a clean git worktree, supervising them to completion, and handing you finished PRs, approved local merges, or standalone recon reports. For larger units, you can opt in to persistent XOs: operators that run from their own isolated Squad homes on this machine or another SSH-reachable host.
 
-Squad is not a model, not a harness, not a skill, not an MCP server, and not a CLI.
-Squad is an agent distro for running a squad of agents.
-An agent distro is a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose agent into a specialized one.
-There is no app to install: the cloned repo is the distro - `AGENTS.md`, bundled Squad skills, and helper scripts that any terminal coding agent can follow.
-Launching a supported harness inside it instantiates your sergeant at arms - and makes you the commander.
+Squad is not a model, not a harness, not a skill, not an MCP server, and not a CLI. Squad is an **agent distro**: a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose agent into a specialized one. There is no app to install - the cloned repo is the distro (`AGENTS.md`, bundled Squad skills, and helper scripts that any terminal coding agent can follow). Launching a supported harness inside it instantiates your sergeant at arms - and makes you the commander.
 
-## Features
+## How it works
 
-- **One liaison** - you talk only to the sergeant at arms; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
-- **A visible squad** - every operator works in its own tmux window, experimental herdr/zellij tab, cmux workspace, or Orca terminal you can watch or type into; the sergeant at arms reconciles.
-- **Disposable worktrees** - each task runs in a clean [FOB](https://github.com/squad-org/squad/tree/main/packages/fob) (worktree pool) git worktree, or an Orca-managed worktree when `backend=orca`, so parallel work on one repo never collides.
-- **Two task shapes** - strike tasks deliver authorized changes; recon tasks leave standalone investigation reports when the intake contract warrants separate research.
-- **Explicit project modes** - each project deploys via `no-mistakes`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.
-- **Optional XOs** - opt in to persistent XOs that run from isolated Squad homes with their own `SQUAD_HOME`, state, projects, and session lock, either locally or as a whole home on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.
-- **Event-driven, zero-token supervision** - a bash sentry sleeps on the unit and wakes the sergeant at arms only when something needs you; verified primary harnesses also get a turn-end backstop that blocks or follows up on a blind stop when work is under way and supervision is not live.
-- **Optional Relay** - opt in with one local `.env` pairing token so Squad can answer your public mentions on X and Discord alike, act on normal reversible mention requests through the same lifecycle as chat requests, acknowledge spawned work, and post up to three public-safe completion follow-ups within seven days for genuine milestones and the final outcome without changing non-Relay behavior; a final reply promised in a thread becomes durable state that is reconciled from disk, so a restart or a compacted conversation cannot lose it; dry-run preview records would-be replies and dismissals locally before go-live.
-- **Strict project boundary** - the sergeant at arms is read-only over your projects except for the narrow guarded and commander-approved operations authorized by [hard rule 1](AGENTS.md#1-identity-and-prime-directives), including unit sync's guarded safe branch pruning; operators make every other project change behind the configured merge authority.
-- **Restart-proof** - all state lives on disk and in the active session backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca when explicitly selected); kill the session anytime and the next one reconciles, including confirmed-dead XO agents, and carries on.
+<p align="center">
+  <img alt="Squad flow: the commander chats with the sergeant at arms, which dispatches visible operators in isolated FOB worktrees and supervised session backends; strikes deliver PRs or approved local merges, recons deliver reports, and the sentry wakes the sergeant only on actionable events." src="assets/readme/workflow.svg" width="100%" />
+</p>
 
-Full detail on every feature lives in [docs/architecture.md](docs/architecture.md).
+You chat with the sergeant at arms. It routes each request to an operator in its own session endpoint and git worktree, supervises the unit with a zero-token event-driven sentry, and brings you finished PRs, approved local merges, or recon reports. The sentry sleeps on the unit and wakes the sergeant only when something actually needs you.
+
+Optional XOs extend this to persistent local or whole-home remote XOs; dispatch profiles let you steer which harness handles which task; and opt-in Relay lets the same unit answer public mentions on X and Discord. `codex-app` is not a runtime backend yet - [docs/codex-app-backend.md](docs/codex-app-backend.md) owns that boundary.
+
+Full architecture - the supervision engine, worktree isolation, XOs, dispatch profiles, project modes, optional Relay, unit sync, and self-update - lives in [docs/architecture.md](docs/architecture.md).
 
 ## Quick Start
 
@@ -53,16 +35,6 @@ Full detail on every feature lives in [docs/architecture.md](docs/architecture.m
 - The CLI and dependencies for your selected runtime backend; tmux is the reference default.
 
 The sergeant at arms detects and offers to install supported missing tools after you approve.
-Backend-specific setup is linked in [Documentation](#documentation).
-
-### Recommended harnesses
-
-**Claude Code, Grok, and Pi are equal co-primary recommendations** for running the primary Squad session, with `pi-signed` supported as Pi's distinct signed-wrapper identity.
-Claude Code uses a tracked Stop hook for tokenless sentry re-arm and rewake, Grok uses background-notify wake cycles, and Pi uses its tracked primary sentry extension.
-All three have verified turn-end guard paths when launched with their documented setup.
-Pick whichever one matches your subscription and workflow.
-
-Codex and OpenCode are also verified and supported as primary harnesses; Codex uses bounded foreground checkpoints, and OpenCode uses a TUI plugin, so both carry more harness-specific supervision tradeoffs than the three co-primaries.
 
 ### Install and launch
 
@@ -96,10 +68,7 @@ SQUAD_PI_HARNESS=pi-signed pi-signed
 
 For Grok, `--trust` is needed once per clone so project hooks and the turn-end guard load; `/hooks-trust` inside Grok works too.
 For Pi, approve the project trust prompt once per clone on first launch so the tracked `.pi/extensions/*.ts` files auto-load.
-Pi's `/calm` toggle hides supported transcript chrome, including canonically classified Squad operational user rows, and uses a Calm-only animated working-ship indicator during active runs while preserving all model context and session data.
-The hidden operational inputs remain ordinary user-role messages with unchanged delivery, ordering, authority, persistence, and exports.
-The preference persists for the effective Squad home, and toggling it off restores ordinary rendering.
-[Calm's current behavior and supported limits](docs/calm.md) are separate from its [version-scoped maintainer evidence](docs/calm-mode-feasibility.md).
+Pi's `/calm` toggle hides supported transcript chrome - including canonically classified Squad operational user rows - and uses a Calm-only animated working-ship indicator during active runs while preserving all model context and session data. The preference persists for the effective Squad home, and toggling it off restores ordinary rendering. [Calm's current behavior and limits](docs/calm.md) are separate from its [version-scoped evidence](docs/calm-mode-feasibility.md).
 
 ### Talk to it
 
@@ -120,50 +89,30 @@ The preference persists for the effective Squad home, and toggling it off restor
 
 Setup guides for tmux (the default) and every other supported backend (herdr, zellij, Orca, cmux) are linked in [Documentation](#documentation) below.
 
-## How It Works
+## Features
 
-```
-            you (the commander)
-                  │  chat: requests, decisions, "merge it"
-                  ▼
- ┌─────────────────────────────────────┐
- │ Squad                  (this repo)  │
- │ reads projects/ + Squad routes      │
- │ writes guarded backlog/briefs/state │
- └──┬──────────────┬───────────────┬───┘
-    │ backend sends / status files │
-    ▼              ▼               ▼
- ┌────────┐   ┌────────┐      ┌────────┐
- │sq-task1│   │sq-task2│  ... │sq-taskN│   tmux windows, herdr/zellij tabs, cmux workspaces, or Orca terminals
- │operator│   │operator│      │operator│   one autonomous agent each
- └───┬────┘   └───┬────┘      └───┬────┘
-     ▼            ▼               ▼
-  FOB worktree, Orca worktree, or isolated XO home
-     │
-     ├─ strike: project mode ► PR/local merge ► teardown
-     │
-     └─ recon: report at data/<id>/report.md ► decision inventory ► relay findings ► teardown
-```
-
-You chat with the sergeant at arms.
-It routes each request to an operator in its own session endpoint and git worktree, supervises the unit with a zero-token event-driven sentry, and brings you finished PRs, approved local merges, or recon reports.
-Optional XOs extend this to persistent local or whole-home remote XOs, dispatch profiles let you steer which harness handles which task, and opt-in Relay lets the same unit answer public mentions.
-`codex-app` is not a runtime backend yet; [docs/codex-app-backend.md](docs/codex-app-backend.md) owns the Codex App boundary.
-
-Full architecture - the supervision engine, worktree isolation, XOs, dispatch profiles, project modes, optional Relay, unit sync, and self-update - is in [docs/architecture.md](docs/architecture.md).
+- **One liaison** - you talk only to the sergeant at arms; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
+- **A visible squad** - every operator works in its own tmux window, experimental herdr/zellij tab, cmux workspace, or Orca terminal you can watch or type into; the sergeant at arms reconciles.
+- **Disposable worktrees** - each task runs in a clean [FOB](https://github.com/squad-org/squad/tree/main/packages/fob) (worktree pool) git worktree, or an Orca-managed worktree when `backend=orca`, so parallel work on one repo never collides.
+- **Two task shapes** - strike tasks deliver authorized changes; recon tasks leave standalone investigation reports when the intake contract warrants separate research.
+- **Explicit project modes** - each project deploys via `no-mistakes`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.
+- **Optional XOs** - persistent XOs run from isolated Squad homes with their own `SQUAD_HOME`, state, projects, and session lock, locally or as a whole home on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.
+- **Event-driven, zero-token supervision** - a bash sentry wakes the sergeant at arms only when something needs you; verified primary harnesses also get a turn-end backstop that blocks or follows up on a blind stop when work is under way and supervision is not live.
+- **Optional Relay** - opt in with one local `.env` pairing token so Squad can answer your public mentions on X and Discord, act on normal reversible mention requests through the same lifecycle as chat requests, acknowledge spawned work, and post up to three public-safe completion follow-ups within seven days - all without changing non-Relay behavior. A final reply promised in a thread becomes durable state reconciled from disk, so a restart or compacted conversation cannot lose it.
+- **Strict project boundary** - the sergeant at arms is read-only over your projects except for the narrow guarded and commander-approved operations authorized by [hard rule 1](AGENTS.md#1-identity-and-prime-directives); operators make every other project change behind the configured merge authority.
+- **Restart-proof** - all state lives on disk and in the active session backend (tmux by hard default); kill the session anytime and the next one reconciles - including confirmed-dead XO agents - and carries on.
 
 ## Built-in skills
 
-Squad ships these user-invocable built-in skills.
-Claude and grok use the slash form shown here; codex uses the same names with `$`, such as `$afk`.
+Squad ships these user-invocable built-in skills. Claude and grok use the slash form shown here; codex uses the same names with `$`, such as `$afk`.
 
-| Skill            | What it does                                                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `/afk`           | Enter away-mode supervision: the sub-supervisor self-handles routine notifications in bash, escalates commander-relevant events and bounded declared-external-wait rechecks as batched digests, and actively alerts if delivery gets stuck while you step away |
-| `/reporting`     | Recap visible session events since the prior real commander message plus visibly unanswered commander decisions, falling back to Sitrep when invoked as the session's first real commander message |
-| `/sitrep`        | Generate a concise four-section chat digest from bounded local unit and registered-XO state; use `/sitrep file` to also replace today's dated report in `data/`, and add `include PRs` when live PR enrichment is wanted |
-| `/updatesquad`   | Self-update the running Squad and its XOs to the latest from origin with fast-forward-only pulls, then re-read instructions and nudge XOs |
-| `/debrief`       | Sweep the session for uncaptured durable knowledge, route each finding to its disk home per AGENTS.md, file undone next steps to the backlog, cascade the same sweep to every registered XO against that home's own memory budget, and report what is now safe to reset |
+| Skill          | What it does                                                                                                                                               |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/afk`         | Enter away-mode supervision: the sub-supervisor self-handles routine notifications in bash, escalates commander-relevant events and bounded declared-external-wait rechecks as batched digests, and actively alerts if delivery gets stuck while you step away |
+| `/reporting`   | Recap visible session events since the prior real commander message plus visibly unanswered commander decisions, falling back to Sitrep when invoked as the session's first real commander message |
+| `/sitrep`      | Generate a concise four-section chat digest from bounded local unit and registered-XO state; use `/sitrep file` to also replace today's dated report in `data/`, and add `include PRs` when live PR enrichment is wanted |
+| `/updatesquad` | Self-update the running Squad and its XOs to the latest from origin with fast-forward-only pulls, then re-read instructions and nudge XOs |
+| `/debrief`     | Sweep the session for uncaptured durable knowledge, route each finding to its disk home per AGENTS.md, file undone next steps to the backlog, cascade the same sweep to every registered XO against that home's own memory budget, and report what is now safe to reset |
 
 Sitrep invocation examples:
 
@@ -178,11 +127,8 @@ Agent-only reference skills live under `.agents/skills/` and are loaded by Squad
 
 Squad's skills live in two separate places with different audiences:
 
-- `.agents/skills/` - agent-loaded skills (this section's table, plus Squad's agent-only reference skills). Every one of these assumes a live Squad home and is meaningless, or actively misleading, installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how Squad itself loads them - frontmatter metadata is inert to the agent's own skill loader.
-- `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of Squad.
-  Each one is a self-contained skill with no dependency on Squad's paths, tools, or vocabulary.
-  Today that is `skills/debrief`, a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.debrief-notes.md` fallback in the current directory, and closes with a resume pointer for the next session.
-  It intentionally shares no code with the Squad-internal `.agents/skills/debrief` it is named after, so the two can evolve independently.
+- `.agents/skills/` - agent-loaded skills (the table above, plus Squad's agent-only reference skills). Every one assumes a live Squad home and is meaningless - or actively misleading - installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how Squad itself loads them.
+- `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of Squad. Today that is `skills/debrief`, a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.debrief-notes.md` fallback in the current directory. It intentionally shares no code with the Squad-internal `.agents/skills/debrief` it is named after, so the two can evolve independently.
 
 ## Documentation
 
