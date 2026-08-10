@@ -14,6 +14,16 @@ Squad flips the model. You talk to a single agent - the **sergeant at arms** - a
 
 Squad is not a model, not a harness, not a skill, not an MCP server, and not a CLI. Squad is an **agent distro**: a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose agent into a specialized one. There is no app to install - the cloned repo is the distro (`AGENTS.md`, bundled Squad skills, and helper scripts that any terminal coding agent can follow). Launching a supported harness inside it instantiates your sergeant at arms - and makes you the commander.
 
+## Who it's for
+
+You juggle several projects or repos at once - fixes, investigations, audits - and you're tired of babysitting sessions, copy-pasting context between terminals, and forgetting which repo had the failing test. You want one point of contact that dispatches visible workers, supervises them, and hands you finished PRs and reports.
+
+## Who it's not for
+
+- You want a single agent to be more disciplined and verifiable - that's a per-session concern, not a unit-level one.
+- You have one repo and one task at a time.
+- You're not ready to set up a harness, GitHub auth, and a session backend.
+
 ## How it works
 
 <p align="center">
