@@ -33,7 +33,7 @@
     <text x="0" y="308" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#3FB950">&#9656; PR ready for review, commander: #42</text>
   </g>
 
-  <g id="metadata" transform="translate(56 372)">
+  <g id="metadata" transform="translate(56 392)">
     <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#8B949E">MIT</text>
     <circle cx="52" cy="-6" r="2" fill="#2D3542"/>
     <text x="66" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#8B949E">macOS / Linux</text>

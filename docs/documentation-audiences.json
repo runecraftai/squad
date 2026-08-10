@@ -293,6 +293,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": ".github/pull_request_template.md",
+      "audience": "public-product"
+    },
+    {
       "path": "AGENTS.md",
       "audience": "agent-runtime"
     },
@@ -503,70 +507,6 @@
     {
       "path": "packages/fob/VISION.md",
       "audience": "public-product"
-    },
-    {
-      "path": "packages/goal-loop-audit/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/goal-loop-audit/INSTALL.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "packages/goal-loop-audit/LIST-PHILOSOPHY.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/goal-loop-audit/PLAN.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/goal-loop-audit/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/goal-loop-audit/audit/LONG-RUNNING-MODES.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/goal-loop-audit/audit/PARKED-IDEAS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/goal-loop-audit/audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/goal-loop-audit/docs/DESIGN.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/goal-loop-audit/examples/example-objective.md",
-      "audience": "operator-example"
-    },
-    {
-      "path": "packages/goal-loop-audit/prompts/goal-loop-continuation.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/goal-loop-audit/prompts/goal-loop-draft.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/goal-loop-audit/prompts/goal-loop-forever-draft.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/goal-loop-audit/prompts/goal-loop-forever-metricless.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/goal-loop-audit/prompts/goal-loop-forever.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/goal-loop-audit/tests/README.md",
-      "audience": "maintainer-verification"
     },
     {
       "path": "packages/no-mistakes/AGENTS.md",
