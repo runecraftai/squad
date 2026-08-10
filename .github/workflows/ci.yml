@@ -52,19 +52,19 @@ jobs:
           set -eu
           bin/sq-install-shellcheck.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install tasks-axi (forked sq-tasks-axi, M2)
+      - name: Install sq-tasks (forked tasks-axi, M6 rename)
         run: |
           set -eu
-          # npm install of the folder runs the prepack (tsc build), so the
+          # npm install of the folder packs the already-built dist, so the
           # pnpm deps must exist first; build is then a no-op cache hit.
-          (cd packages/tasks-axi && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
-          npm install -g ./packages/tasks-axi
+          (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
+          npm install -g ./packages/sq-tasks
           # Backward-compat alias: the distro and its tests invoke the backlog
           # backend by the protocol name `tasks-axi`; the fork's own bin is
-          # `sq-tasks-axi` (AD-006).
-          ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
+          # `sq-tasks` (M6).
+          ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
-          sq-tasks-axi --version
+          sq-tasks --version
       - name: Run portable parallel shard 1
         run: |
           set -eu
@@ -92,19 +92,19 @@ jobs:
           set -eu
           bin/sq-install-shellcheck.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install tasks-axi (forked sq-tasks-axi, M2)
+      - name: Install sq-tasks (forked tasks-axi, M6 rename)
         run: |
           set -eu
-          # npm install of the folder runs the prepack (tsc build), so the
+          # npm install of the folder packs the already-built dist, so the
           # pnpm deps must exist first; build is then a no-op cache hit.
-          (cd packages/tasks-axi && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
-          npm install -g ./packages/tasks-axi
+          (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
+          npm install -g ./packages/sq-tasks
           # Backward-compat alias: the distro and its tests invoke the backlog
           # backend by the protocol name `tasks-axi`; the fork's own bin is
-          # `sq-tasks-axi` (AD-006).
-          ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
+          # `sq-tasks` (M6).
+          ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
-          sq-tasks-axi --version
+          sq-tasks --version
       - name: Run portable parallel shard 2
         run: |
           set -eu
@@ -154,14 +154,14 @@ jobs:
             exit 1
           }
           tmux -V
-      - name: Install tasks-axi for backlog-handoff delegation (forked sq-tasks-axi, M2)
+      - name: Install sq-tasks for backlog-handoff delegation (forked tasks-axi, M6 rename)
         run: |
           set -eu
-          (cd packages/tasks-axi && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
-          npm install -g ./packages/tasks-axi
-          ln -s "$(command -v sq-tasks-axi)" "$(dirname "$(command -v sq-tasks-axi)")/tasks-axi"
+          (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
+          npm install -g ./packages/sq-tasks
+          ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
-          sq-tasks-axi --version
+          sq-tasks --version
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
@@ -404,8 +404,8 @@ jobs:
           (cd packages/fob && go test ./...)
           (cd packages/no-mistakes && go test ./...)
 
-  tasks-axi:
-    name: tasks-axi fork build + test
+  sq-tasks:
+    name: sq-tasks fork build + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -418,19 +418,52 @@ jobs:
       - name: Install and build the fork
         run: |
           set -eu
-          cd packages/tasks-axi
+          cd packages/sq-tasks
           pnpm install --frozen-lockfile
           pnpm run build
       - name: Fork test suite
         run: |
           set -eu
-          cd packages/tasks-axi
+          cd packages/sq-tasks
           pnpm run test
       - name: npm pack dry-run (renamed bin + artifacts)
         run: |
           set -eu
-          cd packages/tasks-axi
-          npm pack --dry-run 2>&1 | grep -E 'sq-tasks-axi|dist/bin'
+          cd packages/sq-tasks
+          npm pack --dry-run 2>&1 | grep -E 'sq-tasks|dist/bin'
+
+
+  axi-tools:
+    name: Vendored axi tools (${{ matrix.pkg }})
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [sq-gh, sq-browser, sq-quota, sq-report]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install and build the vendored package
+        run: |
+          set -eu
+          cd packages/${{ matrix.pkg }}
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Upstream test suite in-workspace
+        run: |
+          set -eu
+          cd packages/${{ matrix.pkg }}
+          pnpm run test
+      - name: npm pack dry-run (renamed bin + artifacts)
+        run: |
+          set -eu
+          cd packages/${{ matrix.pkg }}
+          npm pack --dry-run 2>&1 | grep -E "${{ matrix.pkg }}|dist/bin|dist/cli.mjs"
 
   pi-smoke:
     name: Headless Pi extension load (optional)
