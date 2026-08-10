@@ -12,6 +12,7 @@
 | M3 — Pi Adapters + pr-review | ✅ done | see T-M3-01..03 |
 | M4 — Publication & CI | ✅ done (org-gated: releases/publish/CI-green-on-real-PR pending OQ-03) | see T-M4-01..04 |
 | M5 — goal-loop-audit + Roadmap note | ✅ done (coexistence verified; ROADMAP open-item recorded) | see T-M5-01..03 |
+| M6 — Vendoring the AXI Toolchain | ✅ executed 2026-08-10 (branch `fm/m6-executar-vendoring-da-toolchain-no-mo-3b`; delivered as PR for commander review) | see .specs/features/squad-m6-vendoring + squad-m6-sq-{gh,browser,tasks,quota,report} |
 
 ## Task log
 
@@ -163,6 +164,34 @@ Completed in a second execution session. All remaining genuine rebrand defects f
 - Primeiro CI **100% verde** em `github.com/runecraftai/squad` (push `36e378b`): lint, coverage guard (135), portable parallel 1/2, portable serial 1-4, Herdr (pin 0.8.0/protocol 19), Go build+test ubuntu+macos, tasks-axi fork, macOS Bash 3.2 compat, invariants, timing aggregate. pi-smoke permanece env-gated (vars.PI_SMOKE não setado).
 - Correções que o CI real revelou: pi-smoke job if com `env` → `vars`; tasks-axi install precisa do build pnpm antes do `npm install -g` (npx pnpm nos jobs sem action-setup); Go jobs precisam de bun (packageManager do root); guard test incompatível com bash 3.2 (case fora de `$()`); fob release v2.1.1 criado + pin do sq-install-fob atualizado (sha256 do asset Squad); herdr pin 0.7.4 → 0.8.0; `internal/config` de fob/no-mistakes nunca commitado (regra `config/` genérica do root .gitignore — ancorada); herdr presentation esperava `kind=XO` (spawn escreve `kind=xo`); sweep `2ndmate-` → `xo-` (label de workspace herdr, bin/docs/tests); sq-on worker-probe adaptado ao resolver fork-first (fake `sq-tasks-axi`; prova via check do doctor; side-channel do log removido); entrypoint `DOCTOR_SHA256` pin atualizado (hash upstream pristine estava stale desde o M1) + teste de paridade `sq-entrypoint-doctor-sha`; pr-review-guard absent-PR aceita recusa por auth; timeout do serial 15m → 30m.
 - Verificado: guards 6/6, lint 0, coverage 135 ok, doc-audit 0, CI success.
+
+
+## M6 planning records (2026-08-10, planning session)
+
+Planning artifacts (spec/design/tasks/context) live in `.specs/features/squad-m6-vendoring/` (umbrella) and `.specs/features/squad-m6-sq-{gh,browser,tasks,quota,report}/` (per-tool). M0–M5 records above are untouched.
+
+### Commander's FINAL naming table (verbatim, 2026-08-10, 3rd round)
+- gh-axi -> **sq-gh**; chrome-devtools-axi -> **sq-browser**; tasks-axi -> **sq-tasks** (renames the vendored `packages/tasks-axi`: dir -> `packages/sq-tasks`, pkg `sq-tasks-axi` -> `sq-tasks`, bin -> `sq-tasks`, lib `bin/sq-tasks-axi-lib.sh` -> `bin/sq-tasks-lib.sh`; `SQUAD_TASKS_AXI_MIN` env constant is a durable contract and STAYS — belongs to the roadmap-mention item); lavish-axi -> **sq-report**; quota-axi -> **sq-quota**.
+- no-mistakes: **KEPT** (final commander decision). fob: **KEPT** (Squad military vocabulary).
+- Rename scope NOW = names only (package, bin, directory); internal strings/mentions (help/TOON/README/env names/terminology) deferred to **roadmap-futuro-rebrand-completo-de-menco-31**.
+- Destination: runecraftai/squad monorepo (M2 pattern). Sync upstream on-demand ("quando der na telha") — procedure in umbrella design.md §9.
+
+### Pinned vendoring versions (researched 2026-08-10)
+gh-axi v0.1.30 (TS, node>=20) · chrome-devtools-axi v0.1.29 (TS, node>=20, @modelcontextprotocol/sdk) · lavish-axi v0.1.48 (JS, node>=22, ≈76 MB repo) · quota-axi v0.1.20 (TS, node>=22.19) · tasks-axi upstream unchanged at 0.2.5 (fork already at 0.2.5).
+
+### Open decisions (defaults recommended; umbrella context.md OQ-M6-01..06)
+- OQ-M6-01 legacy command aliases after bin rename — default **yes** (aliases `gh-axi`→`sq-gh` etc. until the rebrand item; `tasks-axi` alias mandatory)
+- OQ-M6-02 install mechanics — default **`npm install -g ./packages/<pkg>`** (M2 CI pattern); real publish org-gated (OQ-03), future
+- OQ-M6-03 floor policy — default **bump to vendored versions** (0.1.30 / 0.1.48 / 0.1.20; SQUAD_TASKS_AXI_MIN stays 0.2.4)
+- OQ-M6-04 `bin/sq-quota-axi-lib.sh` — default **rename to `bin/sq-quota-lib.sh`** (mirrors the commander-mandated sq-tasks-lib.sh)
+- OQ-M6-05 CI shape — default **one `axi-tools` matrix job** for the 4 new packages; existing tasks-axi job renamed `sq-tasks`
+- OQ-M6-06 provenance backfill — default **add `vendor.json` to sq-tasks** during the rename (M3/M5 pattern)
+
+### M6 risks (details in umbrella context.md)
+RISK-M6-01 nested pnpm lockfiles at root bun · RISK-M6-02 lavish-axi repo size · RISK-M6-03 node>=22.19 engine floor · RISK-M6-04 deferred prose references dead names until rebrand (mitigated by aliases) · RISK-M6-05 guard keep-list drift (rebrand item retires it) · RISK-M6-06 pinned versions age between on-demand syncs.
+
+### M6 boundary (unchanged from M4)
+Real npm publish of the new forks and the fob/no-mistakes release channel (404) remain org-gated (OQ-03) — local workspace install is the M6 path; publish recorded as future work.
 
 
 ## Blockers

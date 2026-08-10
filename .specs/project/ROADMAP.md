@@ -1,9 +1,9 @@
 # Roadmap — Squad
 
-**Current Milestone:** M0 — Import & Scaffold (PLANNED)
-**Status:** Inception — planning artifacts written; execution not started.
+**Current Milestone:** M6 — Vendoring the AXI Toolchain (DELIVERED)
+**Status:** M0–M6 executed; M6 implemented 2026-08-10 and delivered as a PR for commander review.
 
-Dependency chain: **M0 → M1 → {M2, M3} → M4** · **M5 ∥ M4** (M5 depends on M3's wiring pattern only)
+Dependency chain: **M0 → M1 → {M2, M3} → M4** · **M5 ∥ M4** (M5 depends on M3's wiring pattern only) · **M6** (after M5)
 
 Legend: ✅ done · ▶️ in progress · ⬜ planned
 
@@ -142,6 +142,33 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 
 ---
+
+## M6 — Vendoring the AXI Toolchain — ✅ DONE
+
+**Goal:** The remaining kunchenguid-ecosystem runtime tools are vendored into the monorepo under the commander's FINAL naming convention (no `-axi` anywhere), the M2 `tasks-axi` fork is renamed to `sq-tasks`, bootstrap installs the whole toolchain from the workspace, CI covers the new packages, and the unlanded pr-review fix ships.
+
+**Exit criteria:**
+
+- `packages/{sq-gh, sq-browser, sq-quota, sq-report}` exist (ex gh-axi / chrome-devtools-axi / quota-axi / lavish-axi, pinned), upstream suites green in-workspace, `vendor.json` provenance per package
+- `packages/tasks-axi` renamed → `packages/sq-tasks` (pkg `sq-tasks`, bin `sq-tasks`, lib `bin/sq-tasks-lib.sh`); `SQUAD_TASKS_AXI_MIN` kept as durable contract
+- `sq-bootstrap.sh` detects/installs the toolchain from the workspace (no upstream npm URLs); floors `GH_AXI_MIN=0.1.30`, `LAVISH_AXI_MIN=0.1.48`, `SQUAD_QUOTA_AXI_MIN=0.1.20`; `SQUAD_TASKS_AXI_MIN=0.2.4` unchanged
+- CI: new `axi-tools` matrix job (build+test+pack check for the 4 new packages); `tasks-axi` job renamed `sq-tasks` with the protocol alias kept
+- pr-review fix (`pr_review_verify` schema) committed and verified; sync-on-demand procedure + deferred-rebrand pointer recorded
+- M6 name-surface guard green; old tool names absent from name-surfaces
+
+### Work packages
+
+- **W-M6-01** — Vendor 4 tools: `packages/sq-gh` (gh-axi v0.1.30), `packages/sq-browser` (chrome-devtools-axi v0.1.29), `packages/sq-quota` (quota-axi v0.1.20), `packages/sq-report` (lavish-axi v0.1.48) — M2 pattern + provenance
+- **W-M6-02** — Rename `packages/tasks-axi` → `packages/sq-tasks` (pkg/bin/lib + CI + resolver); floors retargeted
+- **W-M6-03** — Bootstrap wiring (workspace installs) + distro call-site/test sweep
+- **W-M6-04** — CI additions (axi-tools matrix job; sq-tasks job rename)
+- **W-M6-05** — Ship the pr-review fix + M6 name guard + full gates
+- **W-M6-06** — Planning records (this section) + sync-on-demand procedure
+
+**Roadmap note (deferred rebrand):** per commander decision (2026-08-10), M6 renames **names only** (directories, packages, binaries, file paths). Internal prose/strings — help text, TOON output, package READMEs, AGENTS.md/docs mentions, AXI-compliant terminology, env/constant names, `config/backlog-backend=tasks-axi` and the procevent `lavish` protocol ids — are **deferred** to backlog item **roadmap-futuro-rebrand-completo-de-menco-31** ("rebrand completo de menções internas das ferramentas vendored"). That item also retires the M6 name-guard keep-list. No date committed; scheduled after the main M6 delivery.
+
+**Delivered (2026-08-10):** all exit criteria above met — 4 tools vendored with `vendor.json` provenance, `packages/tasks-axi` renamed to `packages/sq-tasks` (pkg/bin/lib + resolver + `vendor.json` backfill), bootstrap installs the whole toolchain from the workspace with floors `GH_AXI_MIN=0.1.30` / `LAVISH_AXI_MIN=0.1.48` / `SQUAD_QUOTA_AXI_MIN=0.1.20` / `SQUAD_TASKS_AXI_MIN=0.2.4` (unchanged), CI `axi-tools` matrix job added and `tasks-axi` job renamed `sq-tasks` (protocol alias kept), pr-review `pr_review_verify` schema fix committed with regression coverage, sync-on-demand procedure recorded in umbrella design.md §9, and `tests/sq-m6-name-guard.test.sh` green. Upstream suites green in-workspace (sq-gh 892, sq-browser 442, sq-quota 411, sq-report 744, sq-tasks 429/1); turbo build/test/lint green; `bin/sq-lint.sh` clean; distro regression batch green. Delivered on branch `fm/m6-executar-vendoring-da-toolchain-no-mo-3b` through the M6 strike pipeline.
+
 
 ## Post-v1.1 (recorded, NOT committed)
 
