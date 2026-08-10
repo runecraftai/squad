@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Shared tasks-axi backend selection and compatibility probe for bootstrap,
 # teardown, and XO backlog handoff.
-# Usage: . bin/sq-tasks-axi-lib.sh
+# Usage: . bin/sq-tasks-lib.sh
 #
 # Compatible means tasks-axi --version reports SQUAD_TASKS_AXI_MIN or newer,
 # `tasks-axi update --help` exposes --archive-body for recoverable note rewrites,
@@ -36,15 +36,15 @@
 
 SQUAD_TASKS_AXI_MIN=0.2.4
 
-# Resolve the tasks-axi backend command: the forked sq-tasks-axi (M2,
+# Resolve the tasks-axi backend command: the forked sq-tasks (M2,
 # T-M2-04) wins when installed; otherwise the legacy tasks-axi name is used
 # so a pre-M2 environment keeps working. The fork keeps the same CLI protocol.
 # Note: runtime call sites keep invoking the bare `tasks-axi` name so PATH
 # shadowing (test fakebin stubs, the CI tasks-axi alias) keeps working; this
 # resolver drives the compatibility probes below.
 fm_tasks_axi_cmd() {
-  if type -P sq-tasks-axi >/dev/null 2>&1; then
-    printf '%s\n' sq-tasks-axi
+  if type -P sq-tasks >/dev/null 2>&1; then
+    printf '%s\n' sq-tasks
   elif type -P tasks-axi >/dev/null 2>&1; then
     printf '%s\n' tasks-axi
   fi

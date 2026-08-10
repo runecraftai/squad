@@ -899,7 +899,7 @@ families_for_changed_path() {
       ;;
     bin/sq-session-start.sh|bin/sq-bootstrap.sh|bin/sq-unit-sync.sh|\
     bin/sq-sessionstart-nudge.sh|bin/sq-startup-network.sh|bin/sq-tangle*|bin/sq-update.sh|\
-    bin/sq-gate-refuse*|bin/sq-lock*|bin/sq-quota-axi-lib.sh)
+    bin/sq-gate-refuse*|bin/sq-lock*|bin/sq-quota-lib.sh)
       printf '%s\n' session-bootstrap
       ;;
     bin/sq-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json|\
@@ -946,7 +946,7 @@ families_for_changed_path() {
     bin/sq-lint.sh|bin/sq-install-shellcheck.sh|\
     bin/sq-brief.sh|bin/sq-ensure-agents-md.sh|bin/sq-crew-state.sh|\
     bin/sq-decision-hold.sh|bin/sq-supervision*|bin/sq-transition-lib.sh|\
-    bin/sq-tmux-lib.sh|bin/sq-marker-lib.sh|bin/sq-operational-input.sh|bin/sq-tasks-axi-lib.sh|\
+    bin/sq-tmux-lib.sh|bin/sq-marker-lib.sh|bin/sq-operational-input.sh|bin/sq-tasks-lib.sh|\
     bin/sq-vendor-auth-probe.sh|\
     bin/sq-primary-scope-lib.sh|bin/sq-project-mode.sh|bin/sq-promote.sh|\
     bin/sq-ff-lib.sh|bin/sq-gotmp*|bin/*pretool*)

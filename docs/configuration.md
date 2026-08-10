@@ -40,7 +40,7 @@ XO handoffs are separate and unconditional: `sq-backlog-handoff.sh` keeps only i
 It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their home for pruning or archiving.
 Handoff item bodies must use at least two leading spaces, and the helper refuses a selected item with a single-space or tab-indented continuation rather than risk orphaning it.
 Because bootstrap requires `tasks-axi` on `PATH` on every profile, that delegation works unit-wide, and the `config/backlog-backend=manual` knob governs Squad's own hand-editing of its backlog, not this validated helper.
-Compatible means the installed build passes the shared version and feature probe owned by [`bin/sq-tasks-axi-lib.sh`](../bin/sq-tasks-axi-lib.sh), including the atomic multi-ID move required by handoff delegation.
+Compatible means the installed build passes the shared version and feature probe owned by [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh), including the atomic multi-ID move required by handoff delegation.
 Bootstrap requires compatible `tasks-axi` on every profile; see "Toolchain" below for missing-tool reporting and silent default-backend behavior.
 Set the local, gitignored `config/backlog-backend` file to `manual` to force manual backlog editing and suppress the verbose `BOOTSTRAP_INFO: tasks-axi available` fact, not missing-tool reporting.
 Absent or `tasks-axi` selects the default tasks-axi backend.
@@ -287,7 +287,7 @@ On session start the sergeant at arms detects what its required toolchain is mis
 It installs automatically supported tools only after you say go; manual-only tools remain for you to install from the printed instructions.
 Required tools come in two parts: a universal toolchain every home needs regardless of backend, and a per-backend delta that follows the runtime backend actually resolved for this home.
 The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, no-mistakes v1.31.2 or newer, compatible gh-axi, chrome-devtools-axi, compatible lavish-axi, compatible tasks-axi per "Backlog backend" above, and compatible quota-axi.
-[`bin/sq-bootstrap.sh`](../bin/sq-bootstrap.sh) owns the axi-family floor policy and the gh-axi and lavish-axi floors, while [`bin/sq-tasks-axi-lib.sh`](../bin/sq-tasks-axi-lib.sh) and [`bin/sq-quota-axi-lib.sh`](../bin/sq-quota-axi-lib.sh) hold their own tools' floor constants.
+[`bin/sq-bootstrap.sh`](../bin/sq-bootstrap.sh) owns the axi-family floor policy and the gh-axi and lavish-axi floors, while [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh) and [`bin/sq-quota-lib.sh`](../bin/sq-quota-lib.sh) hold their own tools' floor constants.
 This section is the single owner of that universal toolchain list; backend guides' prerequisites point here and add only their backend-specific tools.
 In that list, no-mistakes runs the validation pipeline, gh-axi, chrome-devtools-axi, and lavish-axi cover GitHub, browser, and rich-review operations, and tasks-axi plus quota-axi back backlog mutations and quota-aware array dispatch.
 The per-backend delta is required only for the backend resolved from `SQUAD_BACKEND`, then `config/backend`, then runtime auto-detection, then default `tmux`, so a home is never told to install a tool an inactive backend or feature would need.
@@ -521,7 +521,7 @@ SQUAD_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session
 SQUAD_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 SQUAD_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/sq-bootstrap.sh
 SQUAD_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the whole deferred network stage; hitting it prints an actionable NETWORK_CHECKS line
-SQUAD_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/sq-tasks-axi-lib.sh is sourced
+SQUAD_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/sq-tasks-lib.sh is sourced
 SQUAD_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 SQUAD_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; sq-send.sh overrides it to name the requested message specifically
 SQUAD_POLL=15              # seconds between sentry poll cycles

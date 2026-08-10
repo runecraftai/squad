@@ -130,10 +130,10 @@ PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
 CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
-# shellcheck source=bin/sq-tasks-axi-lib.sh disable=SC1091
-. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
-# shellcheck source=bin/sq-quota-axi-lib.sh disable=SC1091
-. "$SCRIPT_DIR/sq-quota-axi-lib.sh"
+# shellcheck source=bin/sq-tasks-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-tasks-lib.sh"
+# shellcheck source=bin/sq-quota-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-quota-lib.sh"
 # shellcheck source=bin/sq-tangle-lib.sh disable=SC1091
 . "$SCRIPT_DIR/sq-tangle-lib.sh"
 # shellcheck source=bin/sq-ff-lib.sh disable=SC1091
@@ -754,8 +754,8 @@ install_cmd() {
     cmux) echo "brew install --cask cmux  # or see https://cmux.com" ;;
     fob) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder" ;;
     no-mistakes) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder" ;;
-    gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
-    tasks-axi|quota-axi) echo "npm install -g $1" ;;
+    sq-gh|sq-browser|sq-report) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1 && $1 setup hooks" ;;
+    sq-quota|sq-tasks) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1" ;;
     *) return 1 ;;
   esac
 }
@@ -781,7 +781,7 @@ missing_tool_diagnostic() {
 # fm_backend_required_tools (bin/sq-backend.sh). So a herdr/zellij/cmux home is
 # never told tmux is missing, and only orca drops fob. A backend value with
 # no verified dependency set is reported before the universal checks continue.
-COMMON_TOOLS="node git gh no-mistakes gh-axi chrome-devtools-axi lavish-axi tasks-axi quota-axi"
+COMMON_TOOLS="node git gh no-mistakes sq-gh sq-browser sq-report sq-quota sq-tasks"
 BACKEND=$(fm_backend_name)
 BACKEND_VALID=1
 if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
@@ -797,8 +797,8 @@ NO_MISTAKES_MIN=1.31.2
 # earliest release that happens to satisfy some depended-on behavior. The
 # tasks-axi feature probes are an independent defense-in-depth concern, not part
 # of its floor.
-GH_AXI_MIN=0.1.29
-LAVISH_AXI_MIN=0.1.46
+GH_AXI_MIN=0.1.30
+LAVISH_AXI_MIN=0.1.48
 
 fob_supports_lease() {
   fob get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
@@ -1143,17 +1143,17 @@ detect_local_tools() {
   if command -v no-mistakes >/dev/null 2>&1 && ! tool_version_at_least no-mistakes "$NO_MISTAKES_MIN"; then
     echo "MISSING: no-mistakes (install: $(install_cmd no-mistakes))"
   fi
-  if command -v gh-axi >/dev/null 2>&1 && ! tool_version_at_least gh-axi "$GH_AXI_MIN"; then
-    echo "MISSING: gh-axi (install: $(install_cmd gh-axi))"
+  if command -v sq-gh >/dev/null 2>&1 && ! tool_version_at_least sq-gh "$GH_AXI_MIN"; then
+    echo "MISSING: sq-gh (install: $(install_cmd sq-gh))"
   fi
-  if command -v lavish-axi >/dev/null 2>&1 && ! tool_version_at_least lavish-axi "$LAVISH_AXI_MIN"; then
-    echo "MISSING: lavish-axi (install: $(install_cmd lavish-axi))"
+  if command -v sq-report >/dev/null 2>&1 && ! tool_version_at_least sq-report "$LAVISH_AXI_MIN"; then
+    echo "MISSING: sq-report (install: $(install_cmd sq-report))"
   fi
-  if command -v quota-axi >/dev/null 2>&1 && ! fm_quota_axi_compatible; then
-    echo "MISSING: quota-axi (install: $(install_cmd quota-axi))"
+  if command -v sq-quota >/dev/null 2>&1 && ! fm_quota_axi_compatible; then
+    echo "MISSING: sq-quota (install: $(install_cmd sq-quota))"
   fi
-  if command -v tasks-axi >/dev/null 2>&1 && ! fm_tasks_axi_compatible; then
-    echo "MISSING: tasks-axi (install: $(install_cmd tasks-axi))"
+  if command -v sq-tasks >/dev/null 2>&1 && ! fm_tasks_axi_compatible; then
+    echo "MISSING: sq-tasks (install: $(install_cmd sq-tasks))"
   fi
 }
 

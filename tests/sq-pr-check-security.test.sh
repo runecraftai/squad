@@ -73,9 +73,9 @@ case " $* " in
     ;;
 esac
 SH
-  cat > "$fakebin/gh-axi" <<'SH'
+  cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$SQUAD_TEST_GH_AXI_LOG"
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
 exit "${SQUAD_TEST_GH_AXI_RC:-0}"
 SH
   # Plain glab, reproducing the real CLI's contract: its field output on stdout
@@ -87,9 +87,9 @@ printf '%s\n' "$*" >> "$SQUAD_TEST_GLAB_LOG"
 [ "${SQUAD_TEST_GLAB_SLEEP:-0}" = 0 ] || sleep "$SQUAD_TEST_GLAB_SLEEP"
 printf 'title:\tfixture merge request\nstate:\t%s\nauthor:\tsomeone\n' "${SQUAD_TEST_GLAB_STATE:-opened}"
 SH
-  chmod +x "$fakebin/gh" "$fakebin/gh-axi" "$fakebin/glab"
+  chmod +x "$fakebin/gh" "$fakebin/sq-gh" "$fakebin/glab"
   : > "$dir/gh.log"
-  : > "$dir/gh-axi.log"
+  : > "$dir/sq-gh.log"
   : > "$dir/glab.log"
   : > "$dir/guard.log"
   printf '%s\n' "$dir"
@@ -237,7 +237,7 @@ run_check_entry() {
   shift
   SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_HOME="$dir/home" \
     SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
-    SQUAD_TEST_GH_AXI_LOG="$dir/gh-axi.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_CHECK" "$@"
 }
@@ -247,7 +247,7 @@ run_merge_entry() {
   shift
   SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_HOME="$dir/home" \
     SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
-    SQUAD_TEST_GH_AXI_LOG="$dir/gh-axi.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_MERGE" "$@"
 }
@@ -507,7 +507,7 @@ test_invalid_entrypoints_have_zero_side_effects() {
   [ "$rc" -ne 0 ] || fail "merge entrypoint accepted zero arguments"
 
   [ ! -s "$dir/gh.log" ] || fail "invalid direct or merge data called gh"
-  [ ! -s "$dir/gh-axi.log" ] || fail "invalid direct or merge data called gh-axi"
+  [ ! -s "$dir/sq-gh.log" ] || fail "invalid direct or merge data called gh-axi"
   [ ! -s "$dir/guard.log" ] || fail "invalid direct or merge data called the guard"
   [ ! -e "$TMP_ROOT/escape.check.sh" ] || fail "task traversal wrote outside state"
   pass "PR and teardown entrypoints reject invalid arguments before every side effect"
@@ -546,10 +546,10 @@ test_valid_recording_and_merge_derivation() {
   count=$(grep -c '^pr_head=' "$dir/home/state/task-a.meta")
   [ "$count" -eq 1 ] || fail "duplicate pr_head metadata was appended"
 
-  : > "$dir/gh-axi.log"
+  : > "$dir/sq-gh.log"
   run_merge_entry "$dir" task-a https://github.com/my-org/repo_name.with-dots/pull/37 -- --merge \
     >/dev/null 2>/dev/null || fail "valid merge wrapper failed"
-  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge' "$dir/gh-axi.log" \
+  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge' "$dir/sq-gh.log" \
     || fail "merge wrapper did not preserve repository derivation and method"
   set +e
   SQUAD_TEST_GH_STATE=MERGED run_sentry_bounded "$dir/home" "$dir/fakebin" > "$dir/merged-watch.out" 2> "$dir/merged-watch.err"
@@ -2880,7 +2880,7 @@ EOF
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "merge wrapper did not refuse a GitLab merge request URL"
-  [ ! -s "$dir/gh-axi.log" ] || fail "merge wrapper reached the GitHub CLI for a GitLab URL"
+  [ ! -s "$dir/sq-gh.log" ] || fail "merge wrapper reached the GitHub CLI for a GitLab URL"
 
   pass "GitLab merge requests are followed on any instance and never wake falsely"
 }

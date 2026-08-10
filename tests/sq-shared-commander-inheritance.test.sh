@@ -219,9 +219,9 @@ SH
 # Version-aware stubs so bootstrap's tool floors stay quiet in fixture PATH.
 add_bootstrap_compatible_tools() {
   local fakebin=$1
-  fm_fake_exit0 "$fakebin" node chrome-devtools-axi gh fob
-  fm_fake_version_tool "$fakebin" lavish-axi SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.46
-  cat > "$fakebin/gh-axi" <<'SH'
+  fm_fake_exit0 "$fakebin" node sq-browser gh fob
+  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.48
+  cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
   printf '%s\n' '0.1.29'
@@ -246,7 +246,7 @@ case "${1:-} ${2:-}" in
 esac
 exit 0
 SH
-  cat > "$fakebin/quota-axi" <<'SH'
+  cat > "$fakebin/sq-quota" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
   printf '%s\n' '0.1.17'
@@ -254,7 +254,7 @@ if [ "${1:-}" = --version ]; then
 fi
 exit 0
 SH
-  chmod +x "$fakebin/gh-axi" "$fakebin/no-mistakes" "$fakebin/tasks-axi" "$fakebin/quota-axi"
+  chmod +x "$fakebin/sq-gh" "$fakebin/no-mistakes" "$fakebin/tasks-axi" "$fakebin/sq-quota"
 }
 
 new_git_world() {

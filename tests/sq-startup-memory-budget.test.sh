@@ -15,19 +15,19 @@ CONFIG_PUSH="$ROOT/bin/sq-config-push.sh"
 make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  fm_fake_exit0 "$fakebin" node chrome-devtools-axi
-  fm_fake_version_tool "$fakebin" lavish-axi SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.46
-  cat > "$fakebin/gh-axi" <<'SH'
+  fm_fake_exit0 "$fakebin" node sq-browser
+  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.48
+  cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' '0.1.29'
+  printf '%s\n' '0.1.30'
 fi
 exit 0
 SH
-  cat > "$fakebin/quota-axi" <<'SH'
+  cat > "$fakebin/sq-quota" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' 'quota-axi 0.1.17 (fake)'
+  printf '%s\n' 'sq-quota 0.1.20 (fake)'
 fi
 exit 0
 SH
@@ -47,7 +47,7 @@ if [ "${1:-}" = --version ]; then
   printf '%s\n' 'no-mistakes version v1.31.2 (fake)'
 fi
 SH
-  cat > "$fakebin/tasks-axi" <<'SH'
+  cat > "$fakebin/sq-tasks" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}:${2:-}" in
   --version:*) printf '%s\n' '0.2.4' ;;

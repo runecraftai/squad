@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# Shared quota-axi compatibility floor for the bootstrap diagnostic.
-# Usage: . bin/sq-quota-axi-lib.sh
+# Shared sq-quota compatibility floor for the bootstrap diagnostic.
+# Usage: . bin/sq-quota-lib.sh
 #
 # SQUAD_QUOTA_AXI_MIN follows the axi-family floor policy owned beside the floor
 # constants in bin/sq-bootstrap.sh.
@@ -9,27 +9,27 @@
 # turns a failing check into the operator-facing MISSING diagnostic, which is
 # what keeps an older build from reaching a dispatch intake at all.
 
-SQUAD_QUOTA_AXI_MIN=0.1.17
+SQUAD_QUOTA_AXI_MIN=0.1.20
 
 fm_quota_axi_compatible() {
   local timeout=${1:-} output parts major minor patch extra
   local min_major min_minor min_patch min_extra
-  command -v quota-axi >/dev/null 2>&1 || return 1
+  command -v sq-quota >/dev/null 2>&1 || return 1
   if [ -n "$timeout" ]; then
     case "$timeout" in
       ''|*[!0-9]*|0) return 1 ;;
     esac
     if command -v timeout >/dev/null 2>&1; then
-      output=$(timeout "$timeout" quota-axi --version 2>/dev/null </dev/null) || return 1
+      output=$(timeout "$timeout" sq-quota --version 2>/dev/null </dev/null) || return 1
     elif command -v gtimeout >/dev/null 2>&1; then
-      output=$(gtimeout "$timeout" quota-axi --version 2>/dev/null </dev/null) || return 1
+      output=$(gtimeout "$timeout" sq-quota --version 2>/dev/null </dev/null) || return 1
     elif command -v perl >/dev/null 2>&1; then
-      output=$(perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$timeout" quota-axi --version 2>/dev/null </dev/null) || return 1
+      output=$(perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$timeout" sq-quota --version 2>/dev/null </dev/null) || return 1
     else
       return 1
     fi
   else
-    output=$(quota-axi --version 2>/dev/null </dev/null) || return 1
+    output=$(sq-quota --version 2>/dev/null </dev/null) || return 1
   fi
   parts=$(printf '%s\n' "$output" |
     sed -n 's/.*\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2 \3/p' |

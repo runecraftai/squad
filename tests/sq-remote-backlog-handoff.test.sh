@@ -51,7 +51,7 @@ trap fm_remote_handoff_teardown EXIT
 printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 cp "$ROOT/bin/sq-remote-entrypoint.sh" "$ROOT/bin/sq-remote-job-lib.sh" \
   "$ROOT/bin/sq-remote-job-worker.sh" "$ROOT/bin/sq-remote-file.sh" \
-  "$ROOT/bin/sq-backlog-receive.sh" "$ROOT/bin/sq-tasks-axi-lib.sh" \
+  "$ROOT/bin/sq-backlog-receive.sh" "$ROOT/bin/sq-tasks-lib.sh" \
   "$ROOT/bin/sq-stand-to-lib.sh" "$REMOTE_ROOT/bin/"
 ln -s "$(command -v tasks-axi)" "$REMOTE_ROOT/bin/tasks-axi"
 ln -s "$(command -v node)" "$REMOTE_ROOT/bin/node"

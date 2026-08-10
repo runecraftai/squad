@@ -54,9 +54,9 @@ cat <<'JSON'
 [{"number":9,"title":"Ship the thing","url":"https://github.com/runecraftai/squad/pull/9","headRefName":"fm/ship-task","reviewDecision":"APPROVED","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]
 JSON
 SH
-  cat > "$fb/gh-axi" <<'SH'
+  cat > "$fb/sq-gh" <<'SH'
 #!/usr/bin/env bash
-echo "gh-axi $*" >> "$NET_LOG"
+echo "sq-gh $*" >> "$NET_LOG"
 [ "${FAKE_GH_FAIL:-0}" = 1 ] && exit 1
 exit 0
 SH
@@ -65,7 +65,7 @@ SH
 echo "curl $*" >> "$NET_LOG"
 exit 1
 SH
-  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/gh-axi" "$fb/curl"
+  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/gh" "$fb/sq-gh" "$fb/curl"
   printf '%s\n' "$fb"
 }
 

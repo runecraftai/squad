@@ -22,8 +22,8 @@ SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
 DEST="$SQUAD_HOME/data/backlog.md"
 LOCK_STALE_SECS=30
 
-# shellcheck source=bin/sq-tasks-axi-lib.sh
-. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-tasks-lib.sh
+. "$SCRIPT_DIR/sq-tasks-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
 

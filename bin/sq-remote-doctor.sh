@@ -54,8 +54,8 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR" && pwd -P)
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}"
 # shellcheck source=bin/sq-remote-job-lib.sh
 . "$SCRIPT_DIR/sq-remote-job-lib.sh"
-# shellcheck source=bin/sq-tasks-axi-lib.sh
-. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-tasks-lib.sh
+. "$SCRIPT_DIR/sq-tasks-lib.sh"
 REQUIRED_TOOLS=(git jq herdr tasks-axi fob)
 HARNESS_TOOLS=(claude codex opencode pi pi-signed grok kimi)
 OPTIONAL_TOOLS=(tmux no-mistakes gh)

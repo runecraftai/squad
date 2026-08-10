@@ -46,9 +46,9 @@ make_case() {
 # headRefOid for sq-pr-check.sh's pr_head lookup. Args: case_dir head_sha
 add_gh_mocks() {
   local case_dir=$1 head=$2
-  cat > "$case_dir/fakebin/gh-axi" <<'SH'
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$SQUAD_TEST_GH_AXI_LOG"
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
 exit 0
 SH
   cat > "$case_dir/fakebin/gh" <<SH
@@ -62,16 +62,16 @@ case "\${1:-} \${2:-}" in
 esac
 exit 0
 SH
-  chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
 }
 
 # gh-axi mock that fails the merge call but succeeds everything else, so a
 # real merge failure is distinguishable from the recording step.
 add_gh_mocks_merge_fails() {
   local case_dir=$1
-  cat > "$case_dir/fakebin/gh-axi" <<'SH'
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$SQUAD_TEST_GH_AXI_LOG"
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
 case "${1:-} ${2:-}" in
   "pr merge") echo "error: pr merge failed" >&2 ; exit 1 ;;
 esac
@@ -81,14 +81,14 @@ SH
 #!/usr/bin/env bash
 exit 0
 SH
-  chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
 }
 
 run_pr_merge() {
   local case_dir=$1 rc; shift
   SQUAD_ROOT_OVERRIDE="$ROOT" \
   SQUAD_STATE_OVERRIDE="$case_dir/state" \
-  SQUAD_TEST_GH_AXI_LOG="$case_dir/gh-axi.log" \
+  SQUAD_TEST_SQ_GH_LOG="$case_dir/sq-gh.log" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_MERGE" "$@"
   rc=$?
@@ -104,7 +104,7 @@ test_records_pr_and_head_before_merging() {
   case_dir=$(make_case records-before-merge)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
@@ -117,7 +117,7 @@ test_records_pr_and_head_before_merging() {
     "records-before-merge: pr= was not recorded"
   assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" \
     "records-before-merge: pr_head= was not recorded"
-  grep -qxF 'pr merge 9 --repo example/repo --squash' "$case_dir/gh-axi.log" \
+  grep -qxF 'pr merge 9 --repo example/repo --squash' "$case_dir/sq-gh.log" \
     || fail "records-before-merge: gh-axi pr merge was not invoked with number, --repo, and default --squash"
   pass "sq-pr-merge records pr= and pr_head= before invoking gh-axi pr merge"
 }
@@ -127,7 +127,7 @@ test_merge_failure_propagates_after_recording() {
   case_dir=$(make_case merge-fails)
   mkdir -p "$case_dir/wt"
   add_gh_mocks_merge_fails "$case_dir"
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/13 \
@@ -146,12 +146,12 @@ test_extra_merge_args_forwarded() {
   case_dir=$(make_case extra-args)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 2222222222222222222222222222222222222222
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/15 -- --squash --delete-branch \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "extra-args: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 15 --repo example/repo --squash --delete-branch' "$case_dir/gh-axi.log" \
+  grep -qxF 'pr merge 15 --repo example/repo --squash --delete-branch' "$case_dir/sq-gh.log" \
     || fail "extra-args: extra gh-axi pr merge flags were not forwarded"
   pass "sq-pr-merge forwards extra flags to gh-axi pr merge after the -- separator"
 }
@@ -162,7 +162,7 @@ test_missing_meta_refuses_before_merge() {
   fakebin="$case_dir/fakebin"
   mkdir -p "$case_dir/state" "$fakebin"
   add_gh_mocks "$case_dir" 3333333333333333333333333333333333333333
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   set +e
   run_pr_merge "$case_dir" missing-x1 https://github.com/example/repo/pull/21 \
@@ -173,7 +173,7 @@ test_missing_meta_refuses_before_merge() {
   expect_code 1 "$rc" "missing-meta: sq-pr-merge should refuse"
   assert_grep 'error: task metadata is unavailable' "$case_dir/stderr" \
     "missing-meta: refusal did not explain missing meta"
-  [ ! -s "$case_dir/gh-axi.log" ] || fail "missing-meta: gh-axi pr merge was invoked"
+  [ ! -s "$case_dir/sq-gh.log" ] || fail "missing-meta: gh-axi pr merge was invoked"
   assert_absent "$case_dir/state/missing-x1.check.sh" \
     "missing-meta: sq-pr-check should not arm a poll for an unknown task"
   pass "sq-pr-merge refuses before merging when task meta is missing"
@@ -184,7 +184,7 @@ test_malformed_url_refuses_before_merge() {
   case_dir=$(make_case malformed-url)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 4444444444444444444444444444444444444444
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   set +e
   run_pr_merge "$case_dir" task-x1 'https://gitlab.com/example/repo/-/merge_requests/1' \
@@ -199,7 +199,7 @@ test_malformed_url_refuses_before_merge() {
     "malformed-url: malformed PR URL was recorded in meta"
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "malformed-url: malformed PR URL armed a merge poll"
-  assert_no_grep 'pr merge' "$case_dir/gh-axi.log" \
+  assert_no_grep 'pr merge' "$case_dir/sq-gh.log" \
     "malformed-url: gh-axi pr merge was invoked for a malformed URL"
   pass "sq-pr-merge refuses malformed PR URLs before calling gh-axi"
 }
@@ -209,7 +209,7 @@ test_rejects_unsafe_url_segments_before_recording() {
   case_dir=$(make_case unsafe-url-segment)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 8888888888888888888888888888888888888888
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   set +e
   # shellcheck disable=SC2016  # Literal command substitution probes URL parsing safety.
@@ -226,7 +226,7 @@ test_rejects_unsafe_url_segments_before_recording() {
     "unsafe-url-segment: unsafe PR URL was recorded in meta"
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "unsafe-url-segment: unsafe PR URL armed a merge poll"
-  assert_no_grep 'pr merge' "$case_dir/gh-axi.log" \
+  assert_no_grep 'pr merge' "$case_dir/sq-gh.log" \
     "unsafe-url-segment: gh-axi pr merge was invoked for an unsafe URL"
   pass "sq-pr-merge refuses unsafe PR URL segments before recording state"
 }
@@ -236,7 +236,7 @@ test_repo_override_args_refuse_before_recording() {
   case_dir=$(make_case repo-override)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 9999999999999999999999999999999999999999
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/right/repo/pull/5 -- --repo wrong/repo \
@@ -251,7 +251,7 @@ test_repo_override_args_refuse_before_recording() {
     "repo-override: PR URL was recorded before rejecting repo override"
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "repo-override: repo override armed a merge poll"
-  assert_no_grep 'pr merge' "$case_dir/gh-axi.log" \
+  assert_no_grep 'pr merge' "$case_dir/sq-gh.log" \
     "repo-override: gh-axi pr merge was invoked despite repo override"
   pass "sq-pr-merge refuses repo override args before recording state"
 }
@@ -261,12 +261,12 @@ test_explicit_merge_method_not_overridden() {
   case_dir=$(make_case explicit-merge-method)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 5555555555555555555555555555555555555555
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/22 -- --merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "explicit-merge-method: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 22 --repo example/repo --merge' "$case_dir/gh-axi.log" \
+  grep -qxF 'pr merge 22 --repo example/repo --merge' "$case_dir/sq-gh.log" \
     || fail "explicit-merge-method: caller --merge was not forwarded without an extra default --squash"
   pass "sq-pr-merge does not add default --squash when the caller passes an explicit merge method"
 }
@@ -276,12 +276,12 @@ test_method_equals_merge_method_not_overridden() {
   case_dir=$(make_case method-equals-merge-method)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 7777777777777777777777777777777777777777
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/23 -- --method=merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "method-equals-merge-method: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 23 --repo example/repo --method=merge' "$case_dir/gh-axi.log" \
+  grep -qxF 'pr merge 23 --repo example/repo --method=merge' "$case_dir/sq-gh.log" \
     || fail "method-equals-merge-method: caller --method=merge was not forwarded without an extra default --squash"
   pass "sq-pr-merge respects --method=<value> as an explicit merge method"
 }
@@ -291,12 +291,12 @@ test_parses_pr_url_for_gh_axi() {
   case_dir=$(make_case url-parsing)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 6666666666666666666666666666666666666666
-  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/sq-gh.log"
 
   run_pr_merge "$case_dir" task-x1 https://github.com/my-org/my-repo/pull/126 \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "url-parsing: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 126 --repo my-org/my-repo --squash' "$case_dir/gh-axi.log" \
+  grep -qxF 'pr merge 126 --repo my-org/my-repo --squash' "$case_dir/sq-gh.log" \
     || fail "url-parsing: gh-axi pr merge was not invoked as number + --repo + default --squash"
   pass "sq-pr-merge parses a GitHub PR URL into gh-axi number and --repo arguments"
 }

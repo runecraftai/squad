@@ -45,7 +45,7 @@ cat > "$REMOTE_ROOT/bin/sq-probe-path.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$PATH"
 SH
-cat > "$REMOTE_ROOT/bin/tasks-axi" <<SH
+cat > "$REMOTE_ROOT/bin/sq-tasks" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "${SQUAD_REMOTE_JOB_ACTIVE:-absent}" >> "$HOME/tool-probe.log"
 case "\${1:-}:\${2:-}" in
@@ -54,10 +54,10 @@ case "\${1:-}:\${2:-}" in
   mv:--help) printf '%s\n' 'usage: tasks-axi mv <id> [<id>...]' ;;
 esac
 SH
+chmod +x "$REMOTE_ROOT/bin/sq-tasks"
+cp "$REMOTE_ROOT/bin/sq-tasks" "$REMOTE_ROOT/bin/tasks-axi"
 chmod +x "$REMOTE_ROOT/bin/tasks-axi"
-cp "$REMOTE_ROOT/bin/tasks-axi" "$REMOTE_ROOT/bin/sq-tasks-axi"
-chmod +x "$REMOTE_ROOT/bin/sq-tasks-axi"
-cp "$ROOT/bin/sq-remote-doctor.sh" "$ROOT/bin/sq-tasks-axi-lib.sh" \
+cp "$ROOT/bin/sq-remote-doctor.sh" "$ROOT/bin/sq-tasks-lib.sh" \
   "$ROOT/bin/sq-backend.sh" "$REMOTE_ROOT/bin/"
 mkdir -p "$REMOTE_ROOT/bin/backends"
 cp "$ROOT/bin/backends/herdr.sh" "$REMOTE_ROOT/bin/backends/herdr.sh"
@@ -66,7 +66,7 @@ cat > "$REMOTE_ROOT/bin/sq-mutate.sh" <<'SH'
 printf 'mutation\n' >> "$1"
 SH
 chmod +x "$REMOTE_ROOT/bin"/*.sh
-chmod +x "$REMOTE_ROOT/bin/tasks-axi"
+chmod +x "$REMOTE_ROOT/bin/sq-tasks"
 git -C "$REMOTE_ROOT" init -q -b main
 git -C "$REMOTE_ROOT" config user.email test@example.com
 git -C "$REMOTE_ROOT" config user.name Test
