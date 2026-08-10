@@ -57,10 +57,10 @@ guard_no_match() {
   matches=$(tracked_files | while IFS= read -r file; do
     for pattern in "$@"; do
       case "$pattern" in
-        ci:*) grep -I -i -H -n -E -e "${pattern#ci:}" -- "$ROOT/$file" 2>/dev/null \
-                | sed "s|^$ROOT/||" ;;
-        *) grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null \
-             | sed "s|^$ROOT/||" ;;
+        ci:*) grep -I -i -H -n -E -e "${pattern#ci:}" -- "$ROOT/$file" 2>/dev/null |
+                sed "s|^$ROOT/||" ;;
+        *) grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null |
+             sed "s|^$ROOT/||" ;;
       esac
     done
   done)
