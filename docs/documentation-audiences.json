@@ -293,6 +293,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": ".github/pull_request_template.md",
+      "audience": "public-product"
+    },
+    {
       "path": "AGENTS.md",
       "audience": "agent-runtime"
     },
