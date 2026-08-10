@@ -48,16 +48,17 @@ record_failure() {  # <label> <detail>
 
 # guard_no_match <label> <pattern>...
 # Records a violation if ANY tracked file matches ANY pattern (fixed -E -I -H -n).
-# A pattern may be written case-insensitive with a leading (?i) marker, which is
-# stripped and applied as a real grep -i flag (grep -E has no inline (?i)).
+# A pattern may be written case-insensitive with a leading ci: marker, which is
+# stripped and applied as a real grep -i flag (grep -E has no inline (?i); the
+# marker must stay paren-free for stock macOS Bash 3.2 parsing).
 guard_no_match() {
   local label=$1; shift
   local pattern file
   matches=$(tracked_files | while IFS= read -r file; do
     for pattern in "$@"; do
       case "$pattern" in
-        '(?i)'*) grep -I -i -H -n -E -e "${pattern#(?i)}" -- "$ROOT/$file" 2>/dev/null \
-                   | sed "s|^$ROOT/||" ;;
+        ci:*) grep -I -i -H -n -E -e "${pattern#ci:}" -- "$ROOT/$file" 2>/dev/null \
+                | sed "s|^$ROOT/||" ;;
         *) grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null \
              | sed "s|^$ROOT/||" ;;
       esac
@@ -72,12 +73,12 @@ guard_no_match() {
 
 test_guard_no_firstmate_tokens() {
   guard_no_match "rebrand guard 1: no firstmate tokens (excluding .specs/)" \
-    '(?i)firstmate|first mate'
+    'ci:firstmate|first mate'
 }
 
 test_guard_no_upstream_authors() {
   guard_no_match "rebrand guard 2: no upstream author identities (excluding .specs/)" \
-    '(?i)kunchenguid|kun chen|@kunchenguid'
+    'ci:kunchenguid|kun chen|@kunchenguid'
 }
 
 test_guard_no_fm_prefix() {

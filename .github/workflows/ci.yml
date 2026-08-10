@@ -393,10 +393,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: packages/fob/go.mod
-      - name: Install Turbo
-        run: npm install -g turbo
+      - uses: oven-sh/setup-bun@v2
+      - name: Install workspace deps (root packageManager is bun)
+        run: bun install
       - name: Build fob + no-mistakes
-        run: npx turbo run build --filter=fob --filter=no-mistakes
+        run: bun x turbo run build --filter=fob --filter=no-mistakes
       - name: Go test per package
         run: |
           set -eu
