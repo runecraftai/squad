@@ -94,7 +94,7 @@ SH
   # number fails. This keeps the landed-work check hermetic (never reaching the real
   # gh-axi) and represents the common "no GitHub PR" baseline. Tests that need a
   # merged PR or a lookup error override this file with the helpers below.
-  cat > "$fakebin/gh-axi" <<'SH'
+  cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in
   "pr list") printf '%s\n' "count: 0 (showing first 0)" "pull_requests[]: []" ; exit 0 ;;
@@ -152,7 +152,7 @@ case "${1:-}" in
 esac
 exit 0
 SH
-  chmod +x "$fakebin/fob" "$fakebin/tmux" "$fakebin/gh-axi" "$fakebin/gh" "$fakebin/no-mistakes"
+  chmod +x "$fakebin/fob" "$fakebin/tmux" "$fakebin/sq-gh" "$fakebin/gh" "$fakebin/no-mistakes"
 
   # Bare origin so the clone has an `origin` remote and origin/HEAD.
   git init -q --bare "$case_dir/origin.git"
@@ -258,7 +258,7 @@ land_on_origin_main() {
 # Override GitHub lookups to report PR 7 as merged with the supplied head.
 add_gh_pr_merged_for_head() {
   local case_dir=$1 head=$2
-  cat > "$case_dir/fakebin/gh-axi" <<'SH'
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in
   "pr list")
@@ -281,7 +281,7 @@ esac
 echo "error: pull request not found" >&2
 exit 1
 SH
-  chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
 }
 
 append_pr_meta_for_current_head() {
@@ -319,9 +319,9 @@ land_equivalent_patch_on_origin_branch() {
 # Override gh-axi so every call fails, simulating an API/network error.
 add_gh_axi_error() {
   local case_dir=$1
-  cat > "$case_dir/fakebin/gh-axi" <<'SH'
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
-echo "error: gh-axi unavailable" >&2
+echo "error: sq-gh unavailable" >&2
 exit 1
 SH
   cat > "$case_dir/fakebin/gh" <<'SH'
@@ -329,7 +329,7 @@ SH
 echo "error: gh unavailable" >&2
 exit 1
 SH
-  chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
 }
 
 # Override fakebin/fob so `fob return --force <wt>` fails with a

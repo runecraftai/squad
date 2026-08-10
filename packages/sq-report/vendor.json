@@ -1,0 +1,12 @@
+{
+  "package": "sq-report",
+  "upstream": "lavish-axi",
+  "version": "0.1.48",
+  "source": "https://github.com/runecraftai/squad/tree/lavish-axi-v0.1.48",
+  "extraction_date": "2026-08-10",
+  "method": "tracked-file copy (git archive) from shallow reference clone /tmp/m6-dep-lavish-axi at tag lavish-axi-v0.1.48 (commit 9a8a80627297ed10f7e4bfec46e87fb760f43a97); names-only rename per commander decision CD-M6-02 (prose deferred to roadmap-futuro-rebrand-completo-de-menco-31); skills/lavish dir kept (product name, no -axi)",
+  "sha256_package_json": "8be55b437cf36651056824ef569240b993932150e82bf5704266c6e9a782aed0",
+  "sha256_source_tree": "714f0424400b679a98bd97209de3ce82b8f7e8aee14cd7842616c872a614b24f",
+  "license": "MIT",
+  "notes": "Squad fork of runecraftai/squad. ~27MB tracked tree (lavish-editor-marketing renders; RISK-M6-02). Install from the workspace: npm install -g ./packages/sq-report. Upstream sync on-demand per umbrella design.md section 9."
+}

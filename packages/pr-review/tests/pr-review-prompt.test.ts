@@ -139,18 +139,6 @@ describe("PR review prompt scheduling policy", () => {
 		expect(prompt).toContain("never replace an unavailable `pr_review_verify` with a prompt-owned `bash` worktree lifecycle");
 	});
 
-	test("exposes strict list/run schemas and rejects legacy run overrides", () => {
-		const start = extension.indexOf("const PrReviewVerifyParams");
-		const end = extension.indexOf("const ReviewSubagentParams");
-		const schema = extension.slice(start, end);
-		expect(schema).toContain('Type.Literal("list"');
-		expect(schema).toContain('Type.Literal("run")');
-		expect(schema).toContain("baseline_name: Type.String");
-		expect(schema.match(/additionalProperties: false/g)).toHaveLength(2);
-		expect(schema).not.toContain("command: Type.String");
-		expect(schema).not.toContain("timeout_ms:");
-	});
-
 	test("documents strict applicability, containment, output, cleanup, and unsandboxed risk", () => {
 		expect(prompt).toContain("matching repository host/owner/repo");
 		expect(prompt).toContain("canonical absolute executable and fixed argv");

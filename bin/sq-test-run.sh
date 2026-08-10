@@ -145,7 +145,8 @@ family_for_basename() {
     sq-supervision-instructions.test.sh|sq-task-delivery.test.sh|\
     sq-tmux-submit-busy.test.sh|sq-trace-context-lib.test.sh|\
     sq-transition-lib.test.sh|\
-    sq-test-run.test.sh|sq-test-isolation-proof.test.sh|sq-rebrand-guard.test.sh)
+    sq-test-run.test.sh|sq-test-isolation-proof.test.sh|sq-rebrand-guard.test.sh|\
+    sq-m6-name-guard.test.sh)
       printf '%s\n' pure-contract-unit
       ;;
     sq-daemon.test.sh|sq-guard-stale-banner.test.sh|sq-pi-watch-extension.test.sh|\
@@ -899,7 +900,7 @@ families_for_changed_path() {
       ;;
     bin/sq-session-start.sh|bin/sq-bootstrap.sh|bin/sq-unit-sync.sh|\
     bin/sq-sessionstart-nudge.sh|bin/sq-startup-network.sh|bin/sq-tangle*|bin/sq-update.sh|\
-    bin/sq-gate-refuse*|bin/sq-lock*|bin/sq-quota-axi-lib.sh)
+    bin/sq-gate-refuse*|bin/sq-lock*|bin/sq-quota-lib.sh)
       printf '%s\n' session-bootstrap
       ;;
     bin/sq-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json|\
@@ -946,7 +947,7 @@ families_for_changed_path() {
     bin/sq-lint.sh|bin/sq-install-shellcheck.sh|\
     bin/sq-brief.sh|bin/sq-ensure-agents-md.sh|bin/sq-crew-state.sh|\
     bin/sq-decision-hold.sh|bin/sq-supervision*|bin/sq-transition-lib.sh|\
-    bin/sq-tmux-lib.sh|bin/sq-marker-lib.sh|bin/sq-operational-input.sh|bin/sq-tasks-axi-lib.sh|\
+    bin/sq-tmux-lib.sh|bin/sq-marker-lib.sh|bin/sq-operational-input.sh|bin/sq-tasks-lib.sh|\
     bin/sq-vendor-auth-probe.sh|\
     bin/sq-primary-scope-lib.sh|bin/sq-project-mode.sh|bin/sq-promote.sh|\
     bin/sq-ff-lib.sh|bin/sq-gotmp*|bin/*pretool*)

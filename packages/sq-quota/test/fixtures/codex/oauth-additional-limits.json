@@ -1,0 +1,46 @@
+{
+  "plan_type": "pro",
+  "email": "person@example.invalid",
+  "account_id": "acct_fixture",
+  "rate_limit": {
+    "primary_window": {
+      "used_percent": 15,
+      "reset_at": 1783374300,
+      "limit_window_seconds": 18000
+    },
+    "secondary_window": {
+      "used_percent": 48,
+      "reset_after_seconds": 3600
+    }
+  },
+  "code_review_rate_limit": {
+    "primary_window": {
+      "used_percent": 5,
+      "reset_after_seconds": 1800
+    },
+    "secondary_window": {
+      "used_percent": 12,
+      "reset_after_seconds": 7200
+    }
+  },
+  "additional_rate_limits": [
+    {
+      "limit_name": "GPT-Preview-Spark",
+      "metered_feature": "codex_previewfeature",
+      "rate_limit": {
+        "primary_window": {
+          "used_percent": 33,
+          "reset_after_seconds": 1200
+        },
+        "secondary_window": {
+          "used_percent": 70,
+          "reset_after_seconds": 5400
+        }
+      }
+    }
+  ],
+  "credits": {
+    "balance": 8,
+    "unlimited": false
+  }
+}

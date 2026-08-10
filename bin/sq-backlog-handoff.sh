@@ -56,8 +56,8 @@ SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
 REG="$DATA/XOs.md"
 MAIN_BACKLOG="$DATA/backlog.md"
-# shellcheck source=bin/sq-tasks-axi-lib.sh disable=SC1091
-. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-tasks-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-tasks-lib.sh"
 # shellcheck source=bin/sq-xo-registry-lib.sh
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh

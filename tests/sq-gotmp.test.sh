@@ -87,9 +87,9 @@ SH
 exit 0
 SH
   chmod +x "$fake/bin/sq-unit-sync.sh"
-  # sq-tasks-axi-lib.sh: stub (teardown sources it). Report no backend so
+  # sq-tasks-lib.sh: stub (teardown sources it). Report no backend so
   # backlog_refresh_reminder takes the plain-message path; no tasks-axi here.
-  cat > "$fake/bin/sq-tasks-axi-lib.sh" <<'SH'
+  cat > "$fake/bin/sq-tasks-lib.sh" <<'SH'
 fm_tasks_axi_backend_available() { return 1; }
 SH
   # Meta with a nonexistent worktree so the dirty/fob blocks skip.
@@ -161,7 +161,7 @@ SH
 exit 0
 SH
   chmod +x "$fake/bin/sq-unit-sync.sh"
-  cat > "$fake/bin/sq-tasks-axi-lib.sh" <<'SH'
+  cat > "$fake/bin/sq-tasks-lib.sh" <<'SH'
 fm_tasks_axi_backend_available() { return 1; }
 SH
   # No tasktmp= line at all.

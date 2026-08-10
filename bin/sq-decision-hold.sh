@@ -48,9 +48,9 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
 # shellcheck source=bin/sq-classify-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/sq-classify-lib.sh"
-# shellcheck source=bin/sq-tasks-axi-lib.sh
+# shellcheck source=bin/sq-tasks-lib.sh
 # shellcheck disable=SC1091
-. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+. "$SCRIPT_DIR/sq-tasks-lib.sh"
 
 usage() {
   awk '

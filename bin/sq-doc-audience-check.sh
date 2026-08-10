@@ -32,6 +32,18 @@ HTML_LINK_RE = re.compile(r"\b(?:href|src)=[\"']([^\"']+)[\"']", re.IGNORECASE)
 # Sources under these prefixes are exempt from the absolute-local-link rule for
 # paths under their own site base.
 SITE_SUBPROJECTS = ("packages/no-mistakes/docs/src/content/docs/",)
+
+# M6-vendored packages carry upstream fork prose whose internal link/attribute
+# conventions (e.g. inline `src=`/`data-*-src=` examples) are not repository-
+# local links. Renaming that prose is deferred to a future rebrand pass, so
+# sources under these prefixes are exempt from local-link resolution.
+VENDORED_PACKAGE_PREFIXES = (
+    "packages/sq-browser/",
+    "packages/sq-gh/",
+    "packages/sq-quota/",
+    "packages/sq-report/",
+    "packages/sq-tasks/",
+)
 REQUIRED_TRACKED_PATTERNS = ["*.md", "*.mdx", "*.rst", "*.txt", "docs/examples/*"]
 
 
@@ -240,6 +252,8 @@ def validate(root: Path, inventory_path: Path) -> tuple[int, int]:
     anchor_cache: dict[Path, set[str]] = {}
     for path in sorted(tracked):
         if Path(path).suffix.lower() not in {".md", ".mdx"}:
+            continue
+        if path.startswith(VENDORED_PACKAGE_PREFIXES):
             continue
         source = root / path
         for raw, target in markdown_local_links(root, source):

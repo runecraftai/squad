@@ -1,0 +1,12 @@
+{
+  "package": "sq-tasks",
+  "upstream": "tasks-axi",
+  "version": "0.2.5",
+  "source": "https://github.com/kunchenguid/tasks-axi/tree/tasks-axi-v0.2.5",
+  "extraction_date": "2026-08-10",
+  "method": "rename of the M2 vendored fork (packages/tasks-axi, imported at commit f946102 with upstream identity sweep sq-tasks-axi -> sq-tasks); provenance backfilled per OQ-M6-06 (a) during the M6 names-only rename",
+  "sha256_package_json": "5e0ccea11f041310d0346b2ccd96cbccf19ce239ffcddb21ab716dd5b6c2056f",
+  "sha256_tree": "fd55453cf18cb6b71d4912deb4d71814a3757cb30c2ba3514a12e20fcb50dd5d",
+  "license": "MIT",
+  "notes": "Squad fork of kunchenguid/tasks-axi. SQUAD_TASKS_AXI_MIN stays 0.2.4 (durable contract). Install from the workspace: npm install -g ./packages/sq-tasks. Upstream sync on-demand per umbrella design.md section 9."
+}

@@ -128,8 +128,8 @@ validate_positive_bound SQUAD_SNAPSHOT_REGISTRY_TIMEOUT "$SQUAD_SNAPSHOT_REGISTR
 # shellcheck source=bin/sq-backend.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/sq-backend.sh"
-# shellcheck source=bin/sq-tasks-axi-lib.sh
-. "$SCRIPT_DIR/sq-tasks-axi-lib.sh"
+# shellcheck source=bin/sq-tasks-lib.sh
+. "$SCRIPT_DIR/sq-tasks-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/sq-classify-lib.sh"

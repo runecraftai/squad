@@ -105,7 +105,7 @@ set -u
 exec "$SQUAD_FAKE_MUSE_VERSIONED" -c 'result=$($SQUAD_FAKE_HARNESS_PROBE); printf "%s" "$result" > "$SQUAD_FAKE_HARNESS_RESULT"'
 SH
   chmod +x "$fakebin/muse"
-  fm_fake_exit0 "$fakebin" fob gh-axi gh
+  fm_fake_exit0 "$fakebin" fob sq-gh gh
   printf '%s\n' "$fakebin"
 }
 

@@ -479,7 +479,7 @@ HLT="$TMP_ROOT/hlt"; new_home "$HLT"
 LAVISH_BIN=$(fm_fakebin "$TMP_ROOT/lavish-stub")
 LAVISH_POLL_COUNT="$TMP_ROOT/lavish-poll-count"
 export LAVISH_POLL_COUNT
-cat > "$LAVISH_BIN/lavish-axi" <<'SH'
+cat > "$LAVISH_BIN/sq-report" <<'SH'
 #!/usr/bin/env bash
 # Stand-in for `lavish-axi poll <file>` around a human `Send & End`: the final
 # feedback is delivered exactly once carrying session_ended, and every later
@@ -493,7 +493,7 @@ else
   printf 'session:\n  file: /review.html\n  status: ended\n  ended_by: user\n'
 fi
 SH
-chmod +x "$LAVISH_BIN/lavish-axi"
+chmod +x "$LAVISH_BIN/sq-report"
 REVIEW_ART="$TMP_ROOT/review.html"
 printf '<h1>review</h1>\n' > "$REVIEW_ART"
 lavish_id=$("$ROOT/bin/sq-procevent-lavish.sh" source-id "$REVIEW_ART")

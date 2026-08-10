@@ -206,17 +206,17 @@ test_agent_state_dispatcher_and_compatibility() {
 make_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  fm_fake_exit0 "$fakebin" node chrome-devtools-axi pi-signed
-  fm_fake_version_tool "$fakebin" lavish-axi SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.46
-  cat > "$fakebin/gh-axi" <<'SH'
+  fm_fake_exit0 "$fakebin" node sq-browser pi-signed
+  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.48
+  cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' '0.1.29'
+  printf '%s\n' '0.1.30'
   exit 0
 fi
 exit 0
 SH
-  chmod +x "$fakebin/gh-axi"
+  chmod +x "$fakebin/sq-gh"
   cat > "$fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -249,7 +249,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tasks-axi"
-  cat > "$fakebin/quota-axi" <<'SH'
+  cat > "$fakebin/sq-quota" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
   printf '%s\n' '0.1.17'
@@ -257,7 +257,7 @@ if [ "${1:-}" = --version ]; then
 fi
 exit 0
 SH
-  chmod +x "$fakebin/quota-axi"
+  chmod +x "$fakebin/sq-quota"
   printf '%s\n' "$fakebin"
 }
 

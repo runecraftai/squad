@@ -39,12 +39,12 @@ STDIN_SENTINEL='SENTINEL-STDIN-MUST-NOT-REACH-VENDOR-CLI'
 make_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/quota-axi" <<'SH'
+  cat > "$fakebin/sq-quota" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_FAKE_QUOTA_LOG"
 exit 0
 SH
-  chmod +x "$fakebin/quota-axi"
+  chmod +x "$fakebin/sq-quota"
 
   cat > "$fakebin/grok" <<'SH'
 #!/usr/bin/env bash

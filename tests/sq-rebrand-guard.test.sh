@@ -20,6 +20,9 @@
 #      .tasks.toml and .no-mistakes.yaml exist, .claude/skills symlink intact
 #   7. .specs/ is the only location allowed to mention the fork origin/legal
 #      caveat (enforced by construction: every guard excludes .specs/)
+#   8. packages/*/vendor.json provenance records name the upstream source
+#      repository and are exempt the same way .specs/ is: provenance metadata
+#      (M3/M5/M6 vendoring pattern), not authorship credit in Squad content.
 #
 # Status: drafted at T-M1-01; RED until the M1 sweep completes; runs green at
 # T-M1-12 (full-suite gate). All guards run in one pass and report the FULL
@@ -28,12 +31,13 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# Files to scan: tracked content, excluding .specs/, this guard file, and
-# binary assets.
+# Files to scan: tracked content, excluding .specs/, this guard file,
+# vendored-package provenance records, and binary assets.
 tracked_files() {
   git -C "$ROOT" ls-files -z | tr '\0' '\n' \
     | grep -v '^\.specs/' \
     | grep -v '^tests/sq-rebrand-guard.test.sh$' \
+    | grep -v '^packages/[^/]*/vendor\.json$' \
     | grep -v '\.png$' \
     | grep -v '\.gif$'
 }

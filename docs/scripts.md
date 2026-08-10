@@ -84,8 +84,8 @@ The shared no-mistakes gate refusal for unit lifecycle entrypoints is summarized
 | `sq-ff-lib.sh`           | Shared guarded fast-forward helper for origin pulls and local XO syncs       |
 | `sq-lock-lib.sh`         | Shared "is this git lock provably abandoned?" proof used by teardown and unit-sync   |
 | `sq-config-inherit-lib.sh` | Shared primary-to-XO inherited local-material propagation and config-reread delivery |
-| `sq-tasks-axi-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe                  |
-| `sq-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor for the bootstrap diagnostic                  |
+| `sq-tasks-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe                  |
+| `sq-quota-lib.sh`    | Shared `quota-axi` compatibility floor for the bootstrap diagnostic                  |
 | `sq-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `sq-stand-to-drain.sh`       | Atomically drain queued sentry wakes, emit bounded best-effort status-event annotations and a unit-wide OPEN DECISIONS section, then assert supervision health |
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |

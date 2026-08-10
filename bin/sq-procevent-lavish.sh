@@ -69,12 +69,12 @@ cmd_source_id() {
 cmd_arm() {
   local artifact=${1-} id real
   [ -n "$artifact" ] || usage
-  command -v lavish-axi >/dev/null 2>&1 || die "lavish-axi is not installed"
+  command -v sq-report >/dev/null 2>&1 || die "lavish-axi is not installed"
   id=$(cmd_source_id "$artifact") || exit 1
   real=$(perl -MCwd=realpath -e '$p = realpath($ARGV[0]); defined($p) or exit 1; print "$p\n"' "$artifact" 2>/dev/null) \
     || die "cannot resolve the artifact path: $artifact"
   # The plain blocking form: no --timeout-ms, so completion is a server event.
-  "$SCRIPT_DIR/sq-procevent.sh" register lavish "$id" -- lavish-axi poll "$real" || exit 1
+  "$SCRIPT_DIR/sq-procevent.sh" register lavish "$id" -- sq-report poll "$real" || exit 1
   printf 'armed: %s\n' "$id"
   printf 'artifact: %s\n' "$real"
 }

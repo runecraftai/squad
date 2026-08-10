@@ -26,7 +26,7 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" fob gh-axi gh
+  fm_fake_exit0 "$fakebin" fob sq-gh gh
   printf '%s\n' "$fakebin"
 }
 

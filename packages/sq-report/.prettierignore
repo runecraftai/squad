@@ -1,0 +1,11 @@
+dist
+node_modules
+.lavish
+.lavish-axi
+.no-mistakes
+lavish-code-review.html
+package-lock.json
+CHANGELOG.md
+plugin.json
+.agents
+.claude/settings.local.json
