@@ -211,7 +211,7 @@ make_toolchain() {
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' '0.1.29'
+  printf '%s\n' '0.1.30'
   exit 0
 fi
 exit 0

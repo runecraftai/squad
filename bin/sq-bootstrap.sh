@@ -1131,6 +1131,12 @@ detect_local_tools() {
       || missing_tool_diagnostic "$t"
   done
   for t in $COMMON_TOOLS; do
+    if [ "$t" = sq-tasks ]; then
+      # sq-tasks keeps the legacy tasks-axi resolver alias (bin/sq-tasks-lib.sh);
+      # a pre-M6 environment with only the legacy binary on PATH is present, not missing.
+      [ -n "$(fm_tasks_axi_cmd)" ] || missing_tool_diagnostic "$t"
+      continue
+    fi
     command -v "$t" >/dev/null || missing_tool_diagnostic "$t"
   done
   # The fob lease-support upgrade check is only relevant when the resolved
