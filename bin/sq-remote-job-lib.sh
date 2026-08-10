@@ -872,8 +872,11 @@ fm_remote_job_probe() { # <account-home>; a fresh worker heartbeat or active job
 }
 
 fm_remote_job_wait_for_probe() { # <remote-root> <account-home>
+  # 1200 x 0.1s = 120s. A loaded CI runner can leave a freshly forked worker
+  # unready far past the 20s this loop used to allow (observed: an otherwise
+  # sub-second start missed a 40s two-attempt budget under heavy contention).
   local root=$1 account_home=$2 i=0
-  while [ "$i" -lt 200 ]; do
+  while [ "$i" -lt 1200 ]; do
     fm_remote_job_probe "$account_home" && fm_remote_job_worker_identity_matches "$root" "$account_home" && return 0
     i=$((i + 1))
     sleep 0.1
