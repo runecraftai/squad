@@ -66,8 +66,7 @@ Agent-driven findings now use an `action` field instead of `requires_human_revie
 - `ask-user` - intent-sensitive or ambiguous issues that pause for approval instead of entering the normal auto-fix loop
 - `no-op` - informational notes that do not need a fix
 
-If an agent or integration omits `action`, no-mistakes fails closed by treating the finding as `ask-user`.
-An unclassified finding is never eligible for automatic fixing.
+Agent output validated against a findings schema is completed at parse time: a finding that omits `action` gets the schema default `no-op`, and a review finding that omits `review_scope` gets `source` (the tolerant-parse contract for the `review`, `test`, and `lint` steps). On non-schema paths (IPC, user-supplied findings, legacy `requires_human_review` payloads), a missing `action` fails closed as `ask-user`. In both cases an unclassified finding is never eligible for automatic fixing.
 
 `ask-user` is meant for findings that need human judgment - for example, questioning an intentional product or design choice, arguing that an intentional addition, removal, or guard should be undone, or reporting that the test step could not produce enough evidence for the available intent. Routine correctness, reliability, or security fixes still stay `auto-fix` even if the smallest fix reintroduces a small amount of previously deleted logic. Agents driving the AXI skill should relay `ask-user` findings to the user unless they have explicit `--yes` consent to resolve gates unattended.
 In the TUI, yolo mode is an explicit override that auto-resolves paused steps by treating `auto-fix` and `ask-user` findings as consent to run one fix round.

@@ -541,6 +541,134 @@ func TestFinalizeTextResult_WithSchemaAllowsNullOptionalFieldsInTextFallback(t *
 	}
 }
 
+// findingsDefaultsSchema mirrors the pipeline's findings-item schema: action is
+// required but carries a "no-op" default, review_scope is required but carries a
+// "source" default. It reproduces the shape the pi adapter's review output is
+// validated against (internal/pipeline/steps/common.go).
+var findingsDefaultsSchema = json.RawMessage(`{
+	"type":"object",
+	"properties":{
+		"findings":{
+			"type":"array",
+			"items":{
+				"type":"object",
+				"properties":{
+					"severity":{"type":"string","enum":["error","warning","info"]},
+					"file":{"type":"string"},
+					"line":{"type":"integer"},
+					"description":{"type":"string"},
+					"action":{"type":"string","enum":["no-op","auto-fix","ask-user"],"default":"no-op"},
+					"review_scope":{"type":"string","enum":["source","pipeline-owned-delivery","external-delivery"],"default":"source"}
+				},
+				"required":["severity","description","action","review_scope"]
+			}
+		},
+		"summary":{"type":"string"}
+	},
+	"required":["findings","summary"]
+}`)
+
+func TestFinalizeTextResult_WithSchemaDefaultsMissingActionToNoOp(t *testing.T) {
+	// Regression: the pi agent (deepseek via pi) produced well-reasoned review
+	// findings that omitted "action", and the strict validator killed the gate.
+	// A finding without action must now parse with the schema default "no-op"
+	// instead of failing with "missing required field".
+	text := `{"findings":[{"severity":"warning","description":"possible nil dereference"}],"summary":"1 issue"}`
+
+	result, err := finalizeTextResult("pi", text, findingsDefaultsSchema, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var parsed struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+			Action   string `json:"action"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(result.Output, &parsed); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(parsed.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(parsed.Findings))
+	}
+	if parsed.Findings[0].Action != "no-op" {
+		t.Errorf("expected defaulted action=no-op, got %q", parsed.Findings[0].Action)
+	}
+}
+
+func TestFinalizeTextResult_WithSchemaDefaultsMissingReviewScopeToSource(t *testing.T) {
+	// Regression: a review finding without review_scope must parse with the
+	// schema default "source" instead of failing.
+	text := `{"findings":[{"severity":"error","description":"secret in log","action":"auto-fix"}],"summary":"1 issue"}`
+
+	result, err := finalizeTextResult("pi", text, findingsDefaultsSchema, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var parsed struct {
+		Findings []struct {
+			Action      string `json:"action"`
+			ReviewScope string `json:"review_scope"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(result.Output, &parsed); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(parsed.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(parsed.Findings))
+	}
+	if parsed.Findings[0].Action != "auto-fix" {
+		t.Errorf("expected present action preserved, got %q", parsed.Findings[0].Action)
+	}
+	if parsed.Findings[0].ReviewScope != "source" {
+		t.Errorf("expected defaulted review_scope=source, got %q", parsed.Findings[0].ReviewScope)
+	}
+}
+
+func TestFinalizeTextResult_WithSchemaDefaultsDoNotMaskEnumViolations(t *testing.T) {
+	// Defaults fill missing fields only; a present field that violates the enum
+	// must still fail strict validation.
+	text := `{"findings":[{"severity":"fatal","description":"x","action":"fix-it"}],"summary":"1 issue"}`
+
+	_, err := finalizeTextResult("pi", text, findingsDefaultsSchema, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected enum violation to fail despite schema defaults")
+	}
+}
+
+func TestFinalizeTextResult_WithSchemaDefaultsUnchangedWhenNoneDeclared(t *testing.T) {
+	// A schema without "default" annotations must leave output byte-for-byte
+	// unchanged (no re-marshaling, no key reordering).
+	text := `{"findings":[{"severity":"warning","description":"x","action":"auto-fix"}],"summary":"1 issue"}`
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"findings":{
+				"type":"array",
+				"items":{
+					"type":"object",
+					"properties":{
+						"severity":{"type":"string"},
+						"description":{"type":"string"},
+						"action":{"type":"string"}
+					},
+					"required":["severity","description","action"]
+				}
+			},
+			"summary":{"type":"string"}
+		},
+		"required":["findings","summary"]
+	}`)
+
+	result, err := finalizeTextResult("codex", text, schema, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result.Output) != text {
+		t.Fatalf("output changed without declared defaults: %s", string(result.Output))
+	}
+}
+
 func TestFinalizeTextResult_WithSchemaParsesCodexRealWorldOutput(t *testing.T) {
 	// Regression: real codex output from pipeline 01KPYD4SD644SR9JCNX6Y.
 	// Reasoning sentences were concatenated with no newlines, and the

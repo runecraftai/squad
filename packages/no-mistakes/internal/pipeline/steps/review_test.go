@@ -658,6 +658,27 @@ func TestReviewStep_PathInstructionsLeaveUnconfiguredPromptUnchanged(t *testing.
 	}
 }
 
+// The review prompt must state the exact required per-finding fields (with
+// enums) and a one-line example. Regression: the pi agent (deepseek via pi)
+// produced well-reasoned findings that omitted "action"; the prompt contract
+// exists so the field set is explicit even where the JSON schema is only
+// inlined (pi has no --output-schema flag).
+func TestReviewStep_PromptStatesExactFindingFields(t *testing.T) {
+	t.Parallel()
+	prompt := reviewPromptFor(t, nil)
+	for _, want := range []string{
+		`"severity" (one of "error", "warning", "info")`,
+		`"description" (string)`,
+		`"action" (one of "no-op", "auto-fix", "ask-user")`,
+		`"review_scope" (one of "source", "pipeline-owned-delivery", "external-delivery")`,
+		`"action": "auto-fix", "review_scope": "source"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("review prompt missing finding-field contract %q", want)
+		}
+	}
+}
+
 // Only the blocks whose glob matches a changed path reach the reviewer, in
 // config order, each labelled with the scope it was selected for.
 func TestReviewStep_AppendsMatchedPathInstructionsOnly(t *testing.T) {

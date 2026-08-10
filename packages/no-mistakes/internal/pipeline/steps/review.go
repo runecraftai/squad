@@ -216,6 +216,10 @@ Rules:
   - "pipeline-owned-delivery": only a finding whose sole claim is that this run's remote branch, push, PR, or CI output is not present yet.
   - "external-delivery": a pre-existing or external PR, third-party artifact, or other lifecycle requirement not owned by this run.
 
+Output shape (every finding object):
+- Every finding must include all four fields: "severity" (one of "error", "warning", "info"), "description" (string), "action" (one of "no-op", "auto-fix", "ask-user"), and "review_scope" (one of "source", "pipeline-owned-delivery", "external-delivery"). Never omit "action" or "review_scope" from any finding.
+- Example finding: {"severity": "warning", "file": "internal/handler.go", "line": 12, "description": "Unchecked error return from db.Query", "action": "auto-fix", "review_scope": "source"}
+
 Risk assessment (after listing all findings):
 - Assess source code, source-verifiable criteria, and enforceable external lifecycle requirements normally, while excluding findings scoped "pipeline-owned-delivery" from risk.
 - Set risk_level to "low" if the change is well-bounded, mostly cosmetic, or straightforward with little ambiguity.
