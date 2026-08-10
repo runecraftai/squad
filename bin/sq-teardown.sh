@@ -104,7 +104,10 @@
 #     THIS task only when its branch AND code identity (bin/sq-drill-run-lib.sh's
 #     fm_drill_head_matches_worktree, the same rule bin/sq-crew-state.sh uses) both
 #     match this worktree, then runs `drill axi abort --run <id>` for
-#     that verified run instance. A run already terminal
+#     that verified run instance (the CLI is resolved with a legacy fallback
+#     to the pre-rename `no-mistakes` binary while the live install still
+#     runs it - documented transition keep, same pattern as
+#     bin/sq-gate-refuse-lib.sh). A run already terminal
 #     (an outcome is set) or not parked at a gate is left untouched. Idempotent:
 #     an already-aborted run reads back terminal and is skipped on retry.
 #   Fix 2 - reap leaked descendant processes. A backgrounded/disowned process
@@ -1214,7 +1217,7 @@ conclude_task_drill_run() {  # <worktree>
   local wt=$1 out run_id
   [ "$KIND" = strike ] || return 0
   [ -d "$wt" ] || return 0
-  command -v drill >/dev/null 2>&1 || return 0
+  fm_drill_bin >/dev/null || return 0
   task_run_is_own_parked_run "$wt" || return 0
   run_id=$TASK_RUN_ID
   echo "teardown: drill run for $ID is parked at a gate; aborting before the worker is removed" >&2

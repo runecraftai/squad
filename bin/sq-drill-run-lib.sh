@@ -11,17 +11,35 @@
 # Bounded call to `drill "$@"` in dir $1, timeout $2 seconds. The bounded
 # form preserves stdout, stderr, and exit status; the checked form discards
 # stderr, while fm_drill_run keeps the fail-open query contract for read-only callers.
+#
+# The CLI is resolved through fm_drill_bin with a legacy fallback to the
+# pre-rename `no-mistakes` binary while the live install still runs it
+# (documented transition keep, mirroring bin/sq-gate-refuse-lib.sh; remove
+# the legacy arm in a follow-up once the environment rename lands).
+fm_drill_bin() {
+  if command -v drill >/dev/null 2>&1; then
+    printf '%s\n' drill
+    return 0
+  fi
+  if command -v no-mistakes >/dev/null 2>&1; then
+    printf '%s\n' no-mistakes
+    return 0
+  fi
+  return 1
+}
+
 fm_drill_run_bounded() {  # <dir> <timeout_secs> <args...>
-  local dir=$1 timeout_secs=$2 have_timeout=none
+  local dir=$1 timeout_secs=$2 have_timeout=none drill_bin
   shift 2
+  drill_bin=$(fm_drill_bin) || return 1
   if command -v timeout >/dev/null 2>&1; then have_timeout=timeout
   elif command -v gtimeout >/dev/null 2>&1; then have_timeout=gtimeout
   elif command -v perl >/dev/null 2>&1; then have_timeout=perl
   fi
   case "$have_timeout" in
-    timeout)  ( cd "$dir" && timeout "$timeout_secs" drill "$@" ) ;;
-    gtimeout) ( cd "$dir" && gtimeout "$timeout_secs" drill "$@" ) ;;
-    perl)     ( cd "$dir" && perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$timeout_secs" drill "$@" ) ;;
+    timeout)  ( cd "$dir" && timeout "$timeout_secs" "$drill_bin" "$@" ) ;;
+    gtimeout) ( cd "$dir" && gtimeout "$timeout_secs" "$drill_bin" "$@" ) ;;
+    perl)     ( cd "$dir" && perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$timeout_secs" "$drill_bin" "$@" ) ;;
     *)        return 1 ;;
   esac
 }
