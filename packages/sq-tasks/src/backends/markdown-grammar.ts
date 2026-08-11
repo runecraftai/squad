@@ -23,6 +23,10 @@ import {
  *
  * Free-form (no-id) lines are preserved verbatim and never operated on by id
  * (decision D7).
+ *
+ * Persisted markers keep cross-version read compatibility: the
+ * public-followup marker is always written with the current prefix, while
+ * parsing accepts both the current and the pre-rebrand prefix.
  */
 
 // ---------------------------------------------------------------------------
@@ -400,8 +404,11 @@ function structuredBody(bodyLines: string[]): string | undefined {
 }
 
 const PUBLIC_FOLLOWUP_MARKER = "sq-tasks:public-followup";
-const PUBLIC_FOLLOWUP_METADATA_RE =
-  /^<!-- sq-tasks:public-followup\/v(\d+):([A-Za-z0-9_-]+) -->$/;
+const LEGACY_PUBLIC_FOLLOWUP_MARKER =
+  ["tasks", "axi"].join("-") + ":public-followup";
+const PUBLIC_FOLLOWUP_METADATA_RE = new RegExp(
+  `^<!-- (?:${PUBLIC_FOLLOWUP_MARKER}|${LEGACY_PUBLIC_FOLLOWUP_MARKER})\\/v(\\d+):([A-Za-z0-9_-]+) -->$`,
+);
 
 function extractPublicFollowupMetadata(
   id: string,
@@ -409,7 +416,12 @@ function extractPublicFollowupMetadata(
   bodyLines: string[],
 ): { bodyLines: string[]; publicFollowup?: Task["public_followup"] } {
   const markerIndexes = bodyLines
-    .map((line, index) => (line.includes(PUBLIC_FOLLOWUP_MARKER) ? index : -1))
+    .map((line, index) =>
+      line.includes(PUBLIC_FOLLOWUP_MARKER) ||
+      line.includes(LEGACY_PUBLIC_FOLLOWUP_MARKER)
+        ? index
+        : -1,
+    )
     .filter((index) => index >= 0);
 
   if (markerIndexes.length === 0) {

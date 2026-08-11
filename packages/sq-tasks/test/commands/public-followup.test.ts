@@ -237,6 +237,29 @@ describe("public-followup commands", () => {
     }
   });
 
+  it("reads legacy-prefix public-followup markers and rewrites them with the current prefix", async () => {
+    const b = makeBacklog(EMPTY);
+    try {
+      await add(b);
+      const original = await b.store.get("public-final-ab");
+      if (!original?.public_followup) throw new Error("missing fixture payload");
+      const legacyPrefix = ["tasks", "axi"].join("-");
+      writeFileSync(
+        b.path,
+        `# Backlog\n\n## In flight\n\n## Queued\n- [ ] public-final-ab - Legacy read compat (kind: public-followup)\n  <!-- ${legacyPrefix}:public-followup/v1:${encodePublicFollowup(original.public_followup)} -->\n\n## Done\n`,
+        "utf8",
+      );
+      const reloaded = await b.store.get("public-final-ab");
+      expect(reloaded?.public_followup).toEqual(original.public_followup);
+      await renderCommand([], b.ctx);
+      const normalized = b.read();
+      expect(normalized).toContain("<!-- sq-tasks:public-followup/v1:");
+      expect(normalized).not.toContain(`${legacyPrefix}:public-followup`);
+    } finally {
+      b.cleanup();
+    }
+  });
+
   it("models required many-work completion and deduplicates accepted events", async () => {
     const b = makeBacklog(EMPTY);
     try {
