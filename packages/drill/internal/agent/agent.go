@@ -369,21 +369,37 @@ func fencedJSONCandidates(text string) []string {
 }
 
 // isFenceOpener reports whether a ``` run at byte i begins a real fence
-// block: everything after the backticks to the end of the line (the info
-// segment) must be empty or a single whitespace-free label. This
-// distinguishes real fences ("```json", "```diff", or an opener glued to the
-// end of a preceding line, "...behavior.```json") from inline-code mentions
-// of fences inside prose ("use ` ```json ` fences"), whose info segment
-// carries sentence text. Treating an inline mention as an opener made the
-// block-skip logic swallow a real ```json fence later in the same text and
-// surface the raw strict-parse error instead of the payload (real pi
-// review-agent output shape).
+// block. A run is an opener only when it is not inline code and its info
+// segment is a plain label:
+//   - a backtick immediately before the run marks inline code ("` ```json`");
+//   - the info segment (everything after the backticks to the end of the
+//     line) must be empty or a single whitespace-free token; sentence text
+//     after the backticks ("` ```json ` opener had no closer") is an
+//     inline-code mention, not a fence;
+//   - the single-token info must itself contain no backtick ("json`" is
+//     inline code, not a fence label).
+//
+// This distinguishes real fences ("```json", "```diff", or an opener glued
+// to the end of a preceding line, "...behavior.```json") from inline-code
+// mentions of fences inside prose. Treating an inline mention as an opener
+// made the block-skip logic swallow a real ```json fence later in the same
+// text and surface the raw strict-parse error instead of the payload (real
+// pi review-agent output shapes).
 func isFenceOpener(text string, i int) bool {
-	lineEnd := strings.IndexByte(text[i+3:], '\n')
-	if lineEnd < 0 {
-		return !strings.ContainsAny(text[i+3:], " \t")
+	if i > 0 && text[i-1] == '`' {
+		return false
 	}
-	return !strings.ContainsAny(text[i+3:i+3+lineEnd], " \t")
+	lineEnd := strings.IndexByte(text[i+3:], '\n')
+	var info string
+	if lineEnd < 0 {
+		info = text[i+3:]
+	} else {
+		info = text[i+3 : i+3+lineEnd]
+	}
+	if strings.ContainsAny(info, " \t") {
+		return false
+	}
+	return !strings.Contains(info, "`")
 }
 
 // indexJSONFenceOpen returns the byte offset of the content immediately

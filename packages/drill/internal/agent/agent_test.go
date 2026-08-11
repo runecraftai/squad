@@ -607,6 +607,50 @@ func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlin
 	}
 }
 
+// TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLineFinalBacktickMention
+// reproduces the second review-path failure shape: the pi review agent's prose
+// itself demonstrates a line-final inline mention "` ```json`" (backtick
+// immediately before the run, whitespace-free info) followed by a real,
+// properly closed ```json fence with the findings payload. The mention was
+// misclassified as a real fence opener and the block-skip swallowed the real
+// fence, surfacing 'invalid character 'I' looking for beginning of value'.
+// A fence opener preceded by a backtick - or whose single-token info carries
+// a backtick - is inline code, not a fence block.
+func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLineFinalBacktickMention(t *testing.T) {
+	text := "I've completed a full review pass. Let me summarize my analysis:\n\n" +
+		"**One residual finding:** a line-final mention like \"` ```json`\" is misclassified as a real fence and skipFenceBlock depth-counts a later real ```json fence + its closer as a nested block, so the payload is swallowed. Concrete path: text = \"The scanner saw ` ```json`\n```json\n{\"done\":true}\n```\".\n\n" +
+		"```json\n" +
+		"{\n" +
+		"  \"findings\": [\n" +
+		"    {\"severity\":\"info\",\"description\":\"residual shape noted\"}\n" +
+		"  ],\n" +
+		"  \"risk_level\": \"low\",\n" +
+		"  \"risk_rationale\": \"well-bounded\",\n" +
+		"  \"risk_scope\": \"source-or-external\"\n" +
+		"}\n" +
+		"```\n"
+
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+		} `json:"findings"`
+		RiskLevel string `json:"risk_level"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(output.Findings) != 1 || output.Findings[0].Severity != "info" {
+		t.Errorf("unexpected findings: %+v", output.Findings)
+	}
+	if output.RiskLevel != "low" {
+		t.Errorf("expected risk_level=low, got %q", output.RiskLevel)
+	}
+}
+
 func TestFinalizeTextResult_WithSchemaRejectsBareJSONMissingRequiredKeys(t *testing.T) {
 	text := `I inspected the diff and found no issues. {"foo":"bar"}`
 	schema := json.RawMessage(`{
