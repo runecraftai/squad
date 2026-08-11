@@ -344,7 +344,11 @@ func textValidationSchema(schema json.RawMessage) (json.RawMessage, error) {
 // fencedJSONCandidates extracts JSON bodies from ```json ... ``` fences.
 // Fence markers may appear anywhere in the text, including glued to the end
 // of a preceding line (e.g. "...behavior.```json"), which is a shape real
-// codex/GPT-5 output regularly produces.
+// codex/GPT-5 output regularly produces. An unclosed ```json opener is not
+// discarded: the remaining text (its body to EOF) is yielded as a candidate,
+// because models occasionally omit the closing fence when the payload is the
+// last thing they emit (real pi fix-agent output shape). The candidate still
+// undergoes strict parse + schema validation downstream.
 func fencedJSONCandidates(text string) []string {
 	var candidates []string
 	rest := text
@@ -356,6 +360,7 @@ func fencedJSONCandidates(text string) []string {
 		body := rest[start:]
 		end, next := indexJSONFenceClose(body)
 		if end < 0 {
+			candidates = append(candidates, body)
 			return candidates
 		}
 		candidates = append(candidates, body[:end])
@@ -461,7 +466,13 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 			contentStart, _ := fenceContentStart(text, i)
 			next := skipFenceBlock(text[contentStart:])
 			if next < 0 {
-				break
+				// Unclosed fence: the opener's body runs to EOF. Do not abort
+				// the whole scan - a JSON object after the opener (e.g. the
+				// payload of an unterminated ```json fence) must still be
+				// recoverable by the balanced-brace scan below. Skip just the
+				// opener and keep scanning from the body start.
+				i = contentStart - 1
+				continue
 			}
 			i = contentStart + next - 1
 			continue
