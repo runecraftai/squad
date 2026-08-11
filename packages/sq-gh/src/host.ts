@@ -11,7 +11,7 @@ export interface HostContext {
  * Priority: explicit --hostname flag > GH_HOST env > github.com.
  *
  * The resolved host feeds two places: the child `gh` process (via the GH_HOST
- * env var, which the child inherits) and the URLs gh-axi parses or builds.
+ * env var, which the child inherits) and the URLs sq-gh parses or builds.
  */
 export function resolveHost(flagValue?: string): string {
   if (flagValue) return flagValue;

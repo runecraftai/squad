@@ -56,7 +56,7 @@ interface ProjectFieldListResult {
 // Help
 // ---------------------------------------------------------------------------
 
-export const PROJECT_HELP = `usage: gh-axi project <subcommand> [flags]
+export const PROJECT_HELP = `usage: sq-gh project <subcommand> [flags]
 subcommands[13]:
   list, view <number>, item-list <number>, field-list <number>, item-add <number>, item-create <number>, item-edit, item-archive <number>, item-delete <number>, create, edit <number>, close <number>, copy <number>
 flags{list}:
@@ -89,11 +89,11 @@ notes:
   --owner defaults to the current repo's owner when run inside a repo, otherwise the authenticated user.
   Requires the \`project\` (or \`read:project\`) OAuth scope - scope errors include the exact \`gh auth refresh -s <scope>\` command to run.
 examples:
-  gh-axi project list --owner my-org
-  gh-axi project view 3 --owner my-org
-  gh-axi project item-add 3 --owner my-org --url https://github.com/my-org/repo/issues/12
-  gh-axi project item-list 3 --owner my-org
-  gh-axi project create --owner my-org --title "Roadmap"`;
+  sq-gh project list --owner my-org
+  sq-gh project view 3 --owner my-org
+  sq-gh project item-add 3 --owner my-org --url https://github.com/my-org/repo/issues/12
+  sq-gh project item-list 3 --owner my-org
+  sq-gh project create --owner my-org --title "Roadmap"`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -453,7 +453,7 @@ async function projectItemAdd(
   const url = takeFlag(args, "--url");
   if (!url)
     throw new AxiError(
-      "--url is required: gh-axi project item-add <number> --url <issue-or-pr-url>",
+      "--url is required: sq-gh project item-add <number> --url <issue-or-pr-url>",
       "VALIDATION_ERROR",
     );
 
@@ -490,7 +490,7 @@ async function projectItemCreate(
   const title = takeFlag(args, "--title");
   if (!title)
     throw new AxiError(
-      '--title is required: gh-axi project item-create <number> --title "..."',
+      '--title is required: sq-gh project item-create <number> --title "..."',
       "VALIDATION_ERROR",
     );
   const body = takeBody(args);
@@ -529,7 +529,7 @@ async function projectItemEdit(args: string[]): Promise<string> {
   const id = takeFlag(args, "--id");
   if (!id)
     throw new AxiError(
-      '--id is required: gh-axi project item-edit --id <item-id> [--field-id <id> --project-id <id> --text "..."]',
+      '--id is required: sq-gh project item-edit --id <item-id> [--field-id <id> --project-id <id> --text "..."]',
       "VALIDATION_ERROR",
     );
   const projectId = takeFlag(args, "--project-id");
@@ -575,7 +575,7 @@ async function projectItemArchive(
   const id = takeFlag(args, "--id");
   if (!id)
     throw new AxiError(
-      "--id is required: gh-axi project item-archive <number> --id <item-id>",
+      "--id is required: sq-gh project item-archive <number> --id <item-id>",
       "VALIDATION_ERROR",
     );
   const undo = takeBoolFlag(args, "--undo");
@@ -619,7 +619,7 @@ async function projectItemDelete(
   const id = takeFlag(args, "--id");
   if (!id)
     throw new AxiError(
-      "--id is required: gh-axi project item-delete <number> --id <item-id>",
+      "--id is required: sq-gh project item-delete <number> --id <item-id>",
       "VALIDATION_ERROR",
     );
 
@@ -659,7 +659,7 @@ async function projectCreate(
   const title = takeFlag(args, "--title");
   if (!title)
     throw new AxiError(
-      '--title is required: gh-axi project create --title "..."',
+      '--title is required: sq-gh project create --title "..."',
       "VALIDATION_ERROR",
     );
 
@@ -785,13 +785,13 @@ async function projectCopy(args: string[], ctx?: RepoContext): Promise<string> {
   const targetOwner = takeFlag(args, "--target-owner");
   if (!targetOwner)
     throw new AxiError(
-      '--target-owner is required: gh-axi project copy <number> --target-owner <login> --title "..."',
+      '--target-owner is required: sq-gh project copy <number> --target-owner <login> --title "..."',
       "VALIDATION_ERROR",
     );
   const title = takeFlag(args, "--title");
   if (!title)
     throw new AxiError(
-      '--title is required: gh-axi project copy <number> --target-owner <login> --title "..."',
+      '--title is required: sq-gh project copy <number> --target-owner <login> --title "..."',
       "VALIDATION_ERROR",
     );
   const drafts = takeBoolFlag(args, "--drafts");
@@ -875,7 +875,7 @@ export async function projectCommand(
       return renderError(
         `Unknown project subcommand: ${sub}`,
         "VALIDATION_ERROR",
-        ["Run `gh-axi project --help` to see available subcommands"],
+        ["Run `sq-gh project --help` to see available subcommands"],
       );
   }
 }

@@ -8,7 +8,7 @@ describe("suggestions", () => {
       globals: { backend: "markdown", file: "other backlog.md" },
     });
     expect(lines).toContain(
-      "Run `tasks-axi show <id> --backend=markdown --file='other backlog.md'` for full notes on a task",
+      "Run `sq-tasks show <id> --backend=markdown --file='other backlog.md'` for full notes on a task",
     );
   });
 
@@ -31,10 +31,10 @@ describe("suggestions", () => {
       globals: { file: "other.md" },
     });
     expect(lines).toContain(
-      "Run `tasks-axi show <id> --file=other.md` for full notes on a task",
+      "Run `sq-tasks show <id> --file=other.md` for full notes on a task",
     );
     expect(lines).toContain(
-      "Run `tasks-axi ready --repo='demo repo' --file=other.md` to see unblocked queued work",
+      "Run `sq-tasks ready --repo='demo repo' --file=other.md` to see unblocked queued work",
     );
   });
 
@@ -44,7 +44,7 @@ describe("suggestions", () => {
       filters: { repo: "bad`repo" },
     });
     expect(lines).toEqual([
-      "Run `tasks-axi show <id>` for full notes on a task",
+      "Run `sq-tasks show <id>` for full notes on a task",
     ]);
   });
 
@@ -54,7 +54,7 @@ describe("suggestions", () => {
       filters: { kind: "docs" },
     });
     expect(lines).toEqual([
-      "Run `tasks-axi show <id>` for full notes on a task",
+      "Run `sq-tasks show <id>` for full notes on a task",
     ]);
   });
 
@@ -65,10 +65,10 @@ describe("suggestions", () => {
       state: "in_flight",
     });
     expect(lines).toEqual([
-      "Run `tasks-axi done x-q1 --pr <url>` when it ships",
-      "Run `tasks-axi block x-q1 --by <other>` to record a dependency",
+      "Run `sq-tasks done x-q1 --pr <url>` when it ships",
+      "Run `sq-tasks block x-q1 --by <other>` to record a dependency",
     ]);
-    expect(lines.some((l) => l.includes("tasks-axi start"))).toBe(false);
+    expect(lines.some((l) => l.includes("sq-tasks start"))).toBe(false);
   });
 
   it("suggests start after a queued add", () => {
@@ -78,14 +78,14 @@ describe("suggestions", () => {
       state: "queued",
     });
     expect(lines).toContain(
-      "Run `tasks-axi start x-q1` to move it to in flight",
+      "Run `sq-tasks start x-q1` to move it to in flight",
     );
   });
 
   it("suggests reopen after re-adding a done task", () => {
     const lines = getSuggestions({ action: "add", id: "x-q1", state: "done" });
     expect(lines).toEqual([
-      "Run `tasks-axi reopen x-q1` to move it back to queued",
+      "Run `sq-tasks reopen x-q1` to move it back to queued",
     ]);
   });
 
@@ -96,7 +96,7 @@ describe("suggestions", () => {
       filters: { repo: "demo repo" },
     });
     expect(lines).toEqual([
-      "Run `tasks-axi list --state queued --repo='demo repo'` to see all queued work (incl. blocked)",
+      "Run `sq-tasks list --state queued --repo='demo repo'` to see all queued work (incl. blocked)",
     ]);
   });
 });

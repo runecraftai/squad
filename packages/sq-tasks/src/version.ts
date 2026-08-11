@@ -30,7 +30,7 @@ function readPackageVersion(): string {
     }
   }
 
-  throw new Error("Could not determine tasks-axi package version");
+  throw new Error("Could not determine sq-tasks package version");
 }
 
 export const VERSION = readPackageVersion();

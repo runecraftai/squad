@@ -62,22 +62,22 @@ type MainOptions = {
   stdout?: CliStdout;
 };
 
-export const TOP_HELP = `usage: tasks-axi [command] [args] [flags]
+export const TOP_HELP = `usage: sq-tasks [command] [args] [flags]
 commands[19]:
   (none)=dashboard, add, list, show, start, done, reopen, update, rm, block, unblock, hold, unhold, ready, public-followup, mv, prune, render, setup
 flags[4]:
   --backend <name> (after command), --file <path> (after command), --json (mutations: machine-readable result), --help, -v/-V/--version
 examples:
-  tasks-axi
-  tasks-axi add homemux-h7 "owns HomeMux end to end" --kind xo --start
-  tasks-axi list --state queued
-  tasks-axi show homemux-h7 --full
-  tasks-axi done sm-idle-handoff-q8 --pr https://github.com/o/r/pull/42
-  tasks-axi block sq-x --by fob-lease-t4
-  tasks-axi hold sq-x --reason "commander decision pending" --kind commander
-  tasks-axi ready
-  tasks-axi public-followup ready --json
-  tasks-axi setup hooks
+  sq-tasks
+  sq-tasks add homemux-h7 "owns HomeMux end to end" --kind xo --start
+  sq-tasks list --state queued
+  sq-tasks show homemux-h7 --full
+  sq-tasks done sm-idle-handoff-q8 --pr https://github.com/o/r/pull/42
+  sq-tasks block sq-x --by fob-lease-t4
+  sq-tasks hold sq-x --reason "commander decision pending" --kind commander
+  sq-tasks ready
+  sq-tasks public-followup ready --json
+  sq-tasks setup hooks
 `;
 
 type CommandFn = (args: string[], ctx?: TasksContext) => Promise<string>;
@@ -137,7 +137,7 @@ const COMMAND_HELP: Record<string, string> = {
 
 export async function main(options: MainOptions = {}): Promise<void> {
   const argv = options.argv ?? process.argv.slice(2);
-  // The noun `task` is optional: `tasks-axi task add ...` === `tasks-axi add ...`.
+  // The noun `task` is optional: `sq-tasks task add ...` === `sq-tasks add ...`.
   const normalized = argv[0] === "task" ? argv.slice(1) : argv;
   if (normalized[0] === "public-followup" && normalized[2] === "--help") {
     const help = publicFollowupSubcommandHelp(normalized[1]);

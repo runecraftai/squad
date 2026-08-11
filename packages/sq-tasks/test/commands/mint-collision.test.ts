@@ -18,7 +18,7 @@ describe("minted id collisions", () => {
 
     const { MarkdownStore } = await import("../../src/backends/markdown.js");
     const { addCommand } = await import("../../src/commands/crud.js");
-    const dir = mkdtempSync(join(tmpdir(), "tasks-axi-mint-"));
+    const dir = mkdtempSync(join(tmpdir(), "sq-tasks-mint-"));
     const path = join(dir, "backlog.md");
     writeFileSync(
       path,

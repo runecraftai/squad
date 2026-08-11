@@ -18,7 +18,7 @@ Fork routing requires `drill` v1.30.1 or newer.
 
 1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent repo (`git@github.com:runecraftai/squad.git`).
 2. Create a branch and make your changes.
-3. Initialize or refresh the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/lavish-axi.git`.
+3. Initialize or refresh the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/sq-report.git`.
 4. Commit your changes.
 5. Push through the gate instead of pushing to `origin`:
 
@@ -37,7 +37,7 @@ See the [drill quick start](https://github.com/runecraftai/squad) for the full f
 - Run `pnpm run check` before pushing.
 - Do not reformat repo-provided `.agents/` skill content; `.prettierignore` excludes it intentionally.
 - Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json`.
-- User-facing telemetry docs should stay minimal: anonymous usage telemetry, no sensitive content, and `LAVISH_AXI_TELEMETRY=0` opt-out.
+- User-facing telemetry docs should stay minimal: anonymous usage telemetry, no sensitive content, and `SQ_REPORT_TELEMETRY=0` opt-out.
 
 ## Questions
 

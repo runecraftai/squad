@@ -62,7 +62,7 @@ interface IssueComment {
 // Help
 // ---------------------------------------------------------------------------
 
-export const ISSUE_HELP = `usage: gh-axi issue <subcommand> [flags]
+export const ISSUE_HELP = `usage: sq-gh issue <subcommand> [flags]
 subcommands[14]:
   list, view <number>, create, edit <number>, close <number>, reopen <number>, comment <number>, delete <number>, lock <number>, unlock <number>, pin <number>, unpin <number>, transfer <number>, subissue <add|remove|list>
 flags{list}:
@@ -82,22 +82,22 @@ flags{transfer}:
 subissue:
   add <parent> <child> [<child> ...], remove <parent> <child>, list <parent>
 examples:
-  gh-axi issue list --state closed --label bug
-  gh-axi issue view 42 --comments
-  gh-axi issue create --title "Fix login" --body "Steps to reproduce..."
-  gh-axi issue comment 42 --body-file comment.md
-  gh-axi issue close 42 --reason completed
-  gh-axi issue transfer 42 -R source/repo --to-repo dest/repo
-  gh-axi issue subissue add 16 20 101 125
-  gh-axi issue subissue list 16`;
+  sq-gh issue list --state closed --label bug
+  sq-gh issue view 42 --comments
+  sq-gh issue create --title "Fix login" --body "Steps to reproduce..."
+  sq-gh issue comment 42 --body-file comment.md
+  sq-gh issue close 42 --reason completed
+  sq-gh issue transfer 42 -R source/repo --to-repo dest/repo
+  sq-gh issue subissue add 16 20 101 125
+  sq-gh issue subissue list 16`;
 
-export const SUBISSUE_HELP = `usage: gh-axi issue subissue <add|remove|list> <parent> [child...]
+export const SUBISSUE_HELP = `usage: sq-gh issue subissue <add|remove|list> <parent> [child...]
 subcommands[3]:
   add <parent> <child> [<child> ...], remove <parent> <child>, list <parent>
 examples:
-  gh-axi issue subissue add 16 20 101 125
-  gh-axi issue subissue remove 16 101
-  gh-axi issue subissue list 16`;
+  sq-gh issue subissue add 16 20 101 125
+  sq-gh issue subissue remove 16 101
+  sq-gh issue subissue list 16`;
 
 // ---------------------------------------------------------------------------
 // Field schemas
@@ -218,7 +218,7 @@ const ISSUE_LIST_EXTRA_FIELDS: Record<string, ExtraFieldSpec> = {
 async function listIssues(args: string[], ctx?: RepoContext): Promise<string> {
   if (hasFlag(args, "--search")) {
     throw new AxiError(
-      'issue list does not support --search. Use `gh-axi search issues "<query>"` instead for full-text search with total counts.',
+      'issue list does not support --search. Use `sq-gh search issues "<query>"` instead for full-text search with total counts.',
       "VALIDATION_ERROR",
     );
   }
@@ -1141,7 +1141,7 @@ async function subissueAdd(args: string[], ctx?: RepoContext): Promise<string> {
   ];
   blocks.push(
     renderHelp([
-      `Run \`gh-axi issue view ${parent.number}\` to see the parent with its sub-issues`,
+      `Run \`sq-gh issue view ${parent.number}\` to see the parent with its sub-issues`,
     ]),
   );
   return renderOutput(blocks);
@@ -1182,7 +1182,7 @@ async function subissueRemove(
   ];
   blocks.push(
     renderHelp([
-      `Run \`gh-axi issue subissue list ${parent.number}\` to see remaining sub-issues`,
+      `Run \`sq-gh issue subissue list ${parent.number}\` to see remaining sub-issues`,
     ]),
   );
   return renderOutput(blocks);
@@ -1271,7 +1271,7 @@ async function subissueCommand(
       return renderError(
         `Unknown subissue subcommand: ${sub}`,
         "VALIDATION_ERROR",
-        ["Run `gh-axi issue subissue --help` for usage"],
+        ["Run `sq-gh issue subissue --help` for usage"],
       );
   }
 }
@@ -1328,7 +1328,7 @@ export async function issueCommand(
       return renderError(
         `Unknown issue subcommand: ${sub}`,
         "VALIDATION_ERROR",
-        ["Run `gh-axi issue --help` for usage"],
+        ["Run `sq-gh issue --help` for usage"],
       );
   }
 }

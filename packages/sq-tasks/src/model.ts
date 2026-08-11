@@ -1,5 +1,5 @@
 /**
- * The tasks-axi data model (report §5).
+ * The sq-tasks data model (report §5).
  *
  * A Task is a small structured record. The model is rich enough for Squad
  * and maps cleanly onto external trackers; the exotic Squad fields live in

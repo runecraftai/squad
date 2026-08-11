@@ -201,7 +201,7 @@ export type ProviderQuota = {
   attempts?: SourceAttempt[];
 };
 
-export type QuotaAxiResponse = {
+export type SqQuotaResponse = {
   generatedAt: string;
   schemaVersion: 3;
   providers: ProviderQuota[];

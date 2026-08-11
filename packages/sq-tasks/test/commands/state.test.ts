@@ -47,7 +47,7 @@ describe("state commands", () => {
       try {
         const out = await startCommand(["cert-cleanup"], b.ctx);
         expect(out).toContain("ok: start cert-cleanup -> In flight");
-        expect(out).toContain("Run `tasks-axi done cert-cleanup --pr <url>`");
+        expect(out).toContain("Run `sq-tasks done cert-cleanup --pr <url>`");
       } finally {
         b.cleanup();
       }
@@ -61,7 +61,7 @@ describe("state commands", () => {
         expect(out).toContain("already: true");
         expect(out).toContain("ok: start cert-cleanup already in flight");
         // Even on a no-op, the hint reflects the post-op state (done, not start).
-        expect(out).toContain("Run `tasks-axi done cert-cleanup --pr <url>`");
+        expect(out).toContain("Run `sq-tasks done cert-cleanup --pr <url>`");
       } finally {
         b.cleanup();
       }
@@ -438,7 +438,7 @@ describe("state commands", () => {
       try {
         const out = await reopenCommand(["lease-core-t4"], b.ctx);
         expect(out).toContain("ok: reopen lease-core-t4 -> Queued");
-        expect(out).toContain("Run `tasks-axi start lease-core-t4`");
+        expect(out).toContain("Run `sq-tasks start lease-core-t4`");
       } finally {
         b.cleanup();
       }
@@ -699,7 +699,7 @@ describe("state commands", () => {
       try {
         const out = await readyCommand(["--repo", "monorepo"], b.ctx);
         expect(out).toContain(
-          "Run `tasks-axi list --state queued --repo=monorepo` to see all queued work (incl. blocked)",
+          "Run `sq-tasks list --state queued --repo=monorepo` to see all queued work (incl. blocked)",
         );
       } finally {
         b.cleanup();
@@ -999,7 +999,7 @@ describe("state commands", () => {
           message: expect.stringContaining("cert-cleanup"),
           suggestions: expect.arrayContaining([
             expect.stringContaining(
-              "tasks-axi unblock cert-cleanup --by owns-widget-h7",
+              "sq-tasks unblock cert-cleanup --by owns-widget-h7",
             ),
           ]),
         });

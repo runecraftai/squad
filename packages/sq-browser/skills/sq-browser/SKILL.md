@@ -1,6 +1,6 @@
 ---
-name: chrome-devtools-axi
-description: "Control a Chrome browser session through the chrome-devtools-axi CLI - navigate, snapshot, click, fill forms, run JavaScript, inspect console and network, take screenshots, audit performance. Use whenever a task needs a real browser: opening or testing a web page, clicking through a flow, extracting page content, or debugging a website."
+name: sq-browser
+description: "Control a Chrome browser session through the sq-browser CLI - navigate, snapshot, click, fill forms, run JavaScript, inspect console and network, take screenshots, audit performance. Use whenever a task needs a real browser: opening or testing a web page, clicking through a flow, extracting page content, or debugging a website."
 user-invocable: false
 author: Squad contributors
 metadata:
@@ -9,22 +9,22 @@ metadata:
     category: automation
 ---
 
-# chrome-devtools-axi
+# sq-browser
 
 Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.
 
-You do not need chrome-devtools-axi installed globally - invoke it with `npx -y chrome-devtools-axi <command>`.
-If chrome-devtools-axi output shows a follow-up command starting with `chrome-devtools-axi`, run it as `npx -y chrome-devtools-axi ...` instead.
+You do not need sq-browser installed globally - invoke it with `npx -y sq-browser <command>`.
+If sq-browser output shows a follow-up command starting with `sq-browser`, run it as `npx -y sq-browser ...` instead.
 
 ## When to use
 
-Use chrome-devtools-axi whenever a task needs a real browser: opening or testing a web page, clicking through a flow, filling forms, extracting page content, debugging console errors or network requests, taking screenshots, or auditing performance.
+Use sq-browser whenever a task needs a real browser: opening or testing a web page, clicking through a flow, filling forms, extracting page content, debugging console errors or network requests, taking screenshots, or auditing performance.
 
 Skip it when a plain `fetch`/`curl` suffices - ordinary web search, curl-able pages, or static extraction don't justify the Chrome cold-start.
 
 ## Workflow
 
-1. Run `npx -y chrome-devtools-axi open <url>` to navigate. Output includes the page's accessibility snapshot; interactive elements carry `uid=` refs.
+1. Run `npx -y sq-browser open <url>` to navigate. Output includes the page's accessibility snapshot; interactive elements carry `uid=` refs.
 2. Interact by ref: `click @<uid>`, `fill @<uid> <text>`, `fillform @<uid>=<val>...`, `hover @<uid>`, `drag @<from> @<to>`, `upload @<uid> <path>`.
 3. Pass refs back exactly as printed, including the `g<N>:` generation prefix. If the page re-rendered since the snapshot, the action fails loudly with `STALE_REF` - run `snapshot` again and retry with fresh refs.
 4. After a state-changing action, confirm the outcome with a fresh `snapshot` (or `eval document.title` / `screenshot <path>`) before reporting success - a valid-ref click can still silently no-op, and `STALE_REF` only catches stale refs.
@@ -46,11 +46,11 @@ commands[35]:
   perf-insight <set> <name>, heap <path>, start, stop, setup hooks
 
 built-in:
-  update: Upgrade chrome-devtools-axi to the latest published npm version
+  update: Upgrade sq-browser to the latest published npm version
   "update --check": Report current vs latest without installing
 ```
 
-Run `npx -y chrome-devtools-axi --help` for flags and environment variables, or `npx -y chrome-devtools-axi <command> --help` for per-command usage.
+Run `npx -y sq-browser --help` for flags and environment variables, or `npx -y sq-browser <command> --help` for per-command usage.
 
 ## Tips
 

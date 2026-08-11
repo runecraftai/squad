@@ -142,7 +142,7 @@ test("the package root is itself a discoverable Agent Plugin", async () => {
 });
 
 test("the plugin declares no MCP servers", async () => {
-  // lavish-axi's agent surface is the CLI itself; an mcp.json would add a second contract.
+  // sq-report's agent surface is the CLI itself; an mcp.json would add a second contract.
   assert.equal(existsSync(path.join(resolvePluginRoot(), "mcp.json")), false);
 });
 
@@ -179,7 +179,7 @@ test("VS Code registration repairs a relocated install without dropping foreign 
   const [updated, changed] = computeVsCodePluginLocationsUpdate(settings, current, "sq-report");
 
   assert.equal(changed, true);
-  assert.equal(updated["chat.pluginLocations"][stale], undefined, "the previous lavish-axi location is dropped");
+  assert.equal(updated["chat.pluginLocations"][stale], undefined, "the previous sq-report location is dropped");
   assert.equal(updated["chat.pluginLocations"][foreign], true, "a different plugin survives");
   assert.equal(updated["chat.pluginLocations"][current], true);
 });

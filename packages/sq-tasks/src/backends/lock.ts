@@ -80,7 +80,7 @@ function lockedError(lockPath: string, staleMs: number): AxiError {
         `backlog lock looks stale: ${lockPath}`,
         "LOCKED",
         [
-          `If no tasks-axi process is running, remove ${lockPath} and retry`,
+          `If no sq-tasks process is running, remove ${lockPath} and retry`,
         ],
       );
     }
@@ -88,7 +88,7 @@ function lockedError(lockPath: string, staleMs: number): AxiError {
     if (errno(error) !== "ENOENT") throw error;
   }
   return new AxiError(
-    "backlog is locked by another tasks-axi process",
+    "backlog is locked by another sq-tasks process",
     "LOCKED",
     ["Wait a moment and retry"],
   );

@@ -18,16 +18,15 @@ describe("resolveSessionName", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    saved.CHROME_DEVTOOLS_AXI_SESSION = process.env.CHROME_DEVTOOLS_AXI_SESSION;
-    delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    saved.SQ_BROWSER_SESSION = process.env.SQ_BROWSER_SESSION;
+    delete process.env.SQ_BROWSER_SESSION;
   });
 
   afterEach(() => {
-    if (saved.CHROME_DEVTOOLS_AXI_SESSION === undefined) {
-      delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+    if (saved.SQ_BROWSER_SESSION === undefined) {
+      delete process.env.SQ_BROWSER_SESSION;
     } else {
-      process.env.CHROME_DEVTOOLS_AXI_SESSION =
-        saved.CHROME_DEVTOOLS_AXI_SESSION;
+      process.env.SQ_BROWSER_SESSION = saved.SQ_BROWSER_SESSION;
     }
   });
 
@@ -36,22 +35,22 @@ describe("resolveSessionName", () => {
   });
 
   it('defaults to "default" when empty or whitespace', () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "   ";
+    process.env.SQ_BROWSER_SESSION = "   ";
     expect(resolveSessionName()).toBe(DEFAULT_SESSION_NAME);
   });
 
   it("trims the configured name", () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "  worker-1  ";
+    process.env.SQ_BROWSER_SESSION = "  worker-1  ";
     expect(resolveSessionName()).toBe("worker-1");
   });
 
   it("throws on a configured-but-unsafe name", () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "../escape";
+    process.env.SQ_BROWSER_SESSION = "../escape";
     expect(() => resolveSessionName()).toThrow(/Invalid/);
   });
 
   it("throws on a dot-only name that would collapse onto the default dir", () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "..";
+    process.env.SQ_BROWSER_SESSION = "..";
     expect(() => resolveSessionName()).toThrow(/Invalid/);
   });
 });
@@ -115,15 +114,15 @@ describe("resolveSessionPort", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    saved.CHROME_DEVTOOLS_AXI_PORT = process.env.CHROME_DEVTOOLS_AXI_PORT;
-    delete process.env.CHROME_DEVTOOLS_AXI_PORT;
+    saved.SQ_BROWSER_PORT = process.env.SQ_BROWSER_PORT;
+    delete process.env.SQ_BROWSER_PORT;
   });
 
   afterEach(() => {
-    if (saved.CHROME_DEVTOOLS_AXI_PORT === undefined) {
-      delete process.env.CHROME_DEVTOOLS_AXI_PORT;
+    if (saved.SQ_BROWSER_PORT === undefined) {
+      delete process.env.SQ_BROWSER_PORT;
     } else {
-      process.env.CHROME_DEVTOOLS_AXI_PORT = saved.CHROME_DEVTOOLS_AXI_PORT;
+      process.env.SQ_BROWSER_PORT = saved.SQ_BROWSER_PORT;
     }
   });
 
@@ -131,15 +130,15 @@ describe("resolveSessionPort", () => {
     expect(resolveSessionPort(DEFAULT_SESSION_NAME)).toBe(DEFAULT_BASE_PORT);
   });
 
-  it("honors an explicit CHROME_DEVTOOLS_AXI_PORT", () => {
-    process.env.CHROME_DEVTOOLS_AXI_PORT = "9999";
+  it("honors an explicit SQ_BROWSER_PORT", () => {
+    process.env.SQ_BROWSER_PORT = "9999";
     expect(resolveSessionPort("worker-1")).toBe(9999);
   });
 
   it("ignores a non-numeric or non-positive override", () => {
-    process.env.CHROME_DEVTOOLS_AXI_PORT = "nope";
+    process.env.SQ_BROWSER_PORT = "nope";
     expect(resolveSessionPort(DEFAULT_SESSION_NAME)).toBe(DEFAULT_BASE_PORT);
-    process.env.CHROME_DEVTOOLS_AXI_PORT = "0";
+    process.env.SQ_BROWSER_PORT = "0";
     expect(resolveSessionPort(DEFAULT_SESSION_NAME)).toBe(DEFAULT_BASE_PORT);
   });
 });
@@ -162,19 +161,19 @@ describe("session state paths", () => {
   });
 });
 
-describe("session paths reject an unsafe CHROME_DEVTOOLS_AXI_SESSION", () => {
-  const saved = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+describe("session paths reject an unsafe SQ_BROWSER_SESSION", () => {
+  const saved = process.env.SQ_BROWSER_SESSION;
 
   afterEach(() => {
     if (saved === undefined) {
-      delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+      delete process.env.SQ_BROWSER_SESSION;
     } else {
-      process.env.CHROME_DEVTOOLS_AXI_SESSION = saved;
+      process.env.SQ_BROWSER_SESSION = saved;
     }
   });
 
   it("throws from the env-default path resolvers instead of collapsing to the default dir", () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "..";
+    process.env.SQ_BROWSER_SESSION = "..";
     expect(() => resolveSessionStateDir()).toThrow(/Invalid/);
     expect(() => resolveSessionPidFile()).toThrow(/Invalid/);
     expect(() => resolveSessionPort()).toThrow(/Invalid/);

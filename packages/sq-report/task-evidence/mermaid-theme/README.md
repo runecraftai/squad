@@ -3,7 +3,7 @@
 Task: make Mermaid diagrams in Lavish artifacts respect the artifact page theme instead of
 rendering in a fixed theme.
 
-All screenshots were captured from the real browser view through the real `lavish-axi` flow
+All screenshots were captured from the real browser view through the real `sq-report` flow
 (served chrome + sandboxed artifact iframe), using the same artifact structure for BEFORE and
 AFTER so only the Mermaid init snippet differs.
 The screenshots demonstrate the visual theming behavior; `after.html` now reproduces the final
@@ -20,7 +20,7 @@ tracks the _page_ background, not the OS setting.
   label boxes: a glaring clash.
 - `before-light.png` - the same fixed cream diagram happens to blend on a light page.
 
-## AFTER (theme-aware init from `lavish-axi design`)
+## AFTER (theme-aware init from `sq-report design`)
 
 - `after-dark.png` - dark page -> dark Mermaid theme (dark nodes, light text). Matches the page.
 - `after-light.png` - fresh load in light -> light Mermaid theme, even though the OS prefers dark.
@@ -32,4 +32,4 @@ tracks the _page_ background, not the OS setting.
 
 `before.html` reproduces the fixed-theme behavior and `after.html` embeds the shipped theme-aware
 snippet verbatim (`src/design-reference.js` `MERMAID_CDN_SNIPPET`). Open either with
-`lavish-axi <file>` and toggle Dark/Light.
+`sq-report <file>` and toggle Dark/Light.

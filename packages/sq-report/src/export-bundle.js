@@ -135,12 +135,12 @@ export async function buildSelfContainedHtml(html, options = {}) {
     resolveAbsolute: typeof options.resolveAbsolute === "function" ? options.resolveAbsolute : () => null,
     maxAssetBytes: resolveBytes(
       options.maxAssetBytes,
-      process.env.LAVISH_AXI_EXPORT_MAX_ASSET_BYTES,
+      process.env.SQ_REPORT_EXPORT_MAX_ASSET_BYTES,
       DEFAULT_MAX_ASSET_BYTES,
     ),
     maxBundleBytes: resolveBytes(
       options.maxBundleBytes,
-      process.env.LAVISH_AXI_EXPORT_MAX_BUNDLE_BYTES,
+      process.env.SQ_REPORT_EXPORT_MAX_BUNDLE_BYTES,
       DEFAULT_MAX_BUNDLE_BYTES,
     ),
     maxDepth: Number.isFinite(options.maxDepth) ? options.maxDepth : DEFAULT_MAX_DEPTH,

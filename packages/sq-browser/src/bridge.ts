@@ -1,5 +1,5 @@
 /**
- * Persistent MCP bridge server for chrome-devtools-axi.
+ * Persistent MCP bridge server for sq-browser.
  *
  * Spawns chrome-devtools-mcp as a child process and maintains a single
  * persistent MCP session. Exposes a simple HTTP API:
@@ -9,7 +9,7 @@
  *   GET  /health?deep=1         → also verifies the attached CDP target; 503 may include reason
  *
  * Writes a PID file to the active session's state dir on startup
- * (~/.chrome-devtools-axi/bridge.pid for the default session; named sessions
+ * (~/.sq-browser/bridge.pid for the default session; named sessions
  * nest under sessions/<name>/ - see src/sessions.ts).
  */
 
@@ -393,13 +393,13 @@ export function createBridgeServer(
 }
 
 function logBridgeMessage(message: string): void {
-  process.stderr.write(`[chrome-devtools-axi] ${message}\n`);
+  process.stderr.write(`[sq-browser] ${message}\n`);
 }
 
 /**
  * Handle a fatal HTTP server error by logging it and exiting non-zero. An
  * EADDRINUSE means another bridge already owns this port (typically because
- * `CHROME_DEVTOOLS_AXI_PORT` was exported globally, forcing every session onto
+ * `SQ_BROWSER_PORT` was exported globally, forcing every session onto
  * one port); it exits with {@link BRIDGE_PORT_IN_USE_EXIT_CODE} so `ensureBridge`
  * can distinguish it from any other early death. Failing loudly prevents
  * `ensureBridge` from silently attaching to the other session's bridge. `exit`
@@ -413,7 +413,7 @@ export function handleBridgeServerError(
   if (error.code === "EADDRINUSE") {
     logBridgeMessage(
       `Port ${port} is already in use (EADDRINUSE) - another bridge is listening there. ` +
-        `Exporting CHROME_DEVTOOLS_AXI_PORT globally forces every session onto one port; ` +
+        `Exporting SQ_BROWSER_PORT globally forces every session onto one port; ` +
         `unset it so each session gets its own, or set it only per-session.`,
     );
     exit(BRIDGE_PORT_IN_USE_EXIT_CODE);
@@ -454,10 +454,10 @@ export const KEYCHAIN_ISOLATION_CHROME_ARGS = [
 export function buildTransportArgs(): string[] {
   const args = ["-y", "chrome-devtools-mcp@latest"];
 
-  const autoConnect = process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT === "1";
-  const browserUrl = process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-  const userDataDir = process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-  const channel = process.env.CHROME_DEVTOOLS_AXI_CHANNEL?.trim();
+  const autoConnect = process.env.SQ_BROWSER_AUTO_CONNECT === "1";
+  const browserUrl = process.env.SQ_BROWSER_BROWSER_URL;
+  const userDataDir = process.env.SQ_BROWSER_USER_DATA_DIR;
+  const channel = process.env.SQ_BROWSER_CHANNEL?.trim();
 
   if (autoConnect) {
     // Chrome 144+ built-in remote debugging via chrome://inspect/#remote-debugging.
@@ -471,22 +471,20 @@ export function buildTransportArgs(): string[] {
     const isWs = /^wss?:\/\//i.test(browserUrl);
     if (isWs) {
       args.push(`--wsEndpoint=${browserUrl}`);
-      const wsHeaders = process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
+      const wsHeaders = process.env.SQ_BROWSER_WS_HEADERS;
       if (wsHeaders) {
         let parsedHeaders: unknown;
         try {
           parsedHeaders = JSON.parse(wsHeaders);
         } catch {
-          throw new Error("CHROME_DEVTOOLS_AXI_WS_HEADERS must be valid JSON");
+          throw new Error("SQ_BROWSER_WS_HEADERS must be valid JSON");
         }
         if (
           parsedHeaders === null ||
           typeof parsedHeaders !== "object" ||
           Array.isArray(parsedHeaders)
         ) {
-          throw new Error(
-            "CHROME_DEVTOOLS_AXI_WS_HEADERS must be a JSON object",
-          );
+          throw new Error("SQ_BROWSER_WS_HEADERS must be a JSON object");
         }
         args.push(`--wsHeaders=${wsHeaders}`);
       }
@@ -500,7 +498,7 @@ export function buildTransportArgs(): string[] {
     } else {
       args.push("--isolated");
     }
-    if (process.env.CHROME_DEVTOOLS_AXI_HEADED !== "1") {
+    if (process.env.SQ_BROWSER_HEADED !== "1") {
       args.push("--headless");
     }
     // Launch modes only: `--chrome-arg` is ignored when chrome-devtools-mcp
@@ -519,7 +517,7 @@ export function buildTransportArgs(): string[] {
     args.push(`--channel=${channel}`);
   }
 
-  const extraChromeArgs = process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
+  const extraChromeArgs = process.env.SQ_BROWSER_CHROME_ARGS;
   if (extraChromeArgs) {
     for (const arg of extraChromeArgs.trim().split(/\s+/)) {
       args.push(`--chrome-arg=${arg}`);
@@ -558,7 +556,7 @@ const DEFAULT_MCP_PATH_PROBE: McpPathProbe = {
  *
  * Returns the resolved path on success, or null if npm is unavailable or the
  * package isn't installed. Used as the auto-fallback in
- * {@link resolveTransportSpec} when `CHROME_DEVTOOLS_AXI_MCP_PATH` isn't set.
+ * {@link resolveTransportSpec} when `SQ_BROWSER_MCP_PATH` isn't set.
  */
 export function detectGlobalMcpPath(
   probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
@@ -582,7 +580,7 @@ export function detectGlobalMcpPath(
  * Resolve the command + args used to spawn the chrome-devtools-mcp transport.
  *
  * Resolution order (most → least specific):
- *   1. `CHROME_DEVTOOLS_AXI_MCP_PATH` env var — explicit override, always wins.
+ *   1. `SQ_BROWSER_MCP_PATH` env var — explicit override, always wins.
  *   2. Auto-detect: probe a globally-installed `chrome-devtools-mcp` via
  *      `$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js`.
  *      If found, spawn `node <path>` directly — starts in ~1-2s vs. the
@@ -596,7 +594,7 @@ export function resolveTransportSpec(
   probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
 ): { command: string; args: string[] } {
   const mcpArgs = buildTransportArgs();
-  const explicit = process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+  const explicit = process.env.SQ_BROWSER_MCP_PATH;
   const mcpPath =
     explicit && explicit.length > 0 ? explicit : detectGlobalMcpPath(probe);
   if (mcpPath) {

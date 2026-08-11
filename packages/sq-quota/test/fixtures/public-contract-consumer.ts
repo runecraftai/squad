@@ -2,10 +2,10 @@ import {
   compareModelsByRunway,
   type ModelQuotaRecord,
   type ModelsResponse,
-  type QuotaAxiResponse,
+  type SqQuotaResponse,
 } from "sq-quota";
 
-const quota: QuotaAxiResponse = {
+const quota: SqQuotaResponse = {
   generatedAt: "2026-08-05T12:00:00.000Z",
   schemaVersion: 3,
   providers: [],

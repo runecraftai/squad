@@ -311,7 +311,7 @@ function Artifact({
     id: "footer",
     tag: "div",
     style: artifactStyles.footer
-  }, /*#__PURE__*/React.createElement("span", null, "lavish-axi \xB7 v0.1.0"), /*#__PURE__*/React.createElement("span", null, "~/projects/landing/index.html"))));
+  }, /*#__PURE__*/React.createElement("span", null, "sq-report \xB7 v0.1.0"), /*#__PURE__*/React.createElement("span", null, "~/projects/landing/index.html"))));
 }
 window.Artifact = Artifact;
 })(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/editor/Artifact.jsx", error: String((e && e.message) || e) }); }

@@ -92,7 +92,7 @@ function matchTaskBullet(
   if (state === "queued") return matchOne(line, QUEUED_RE);
   // In flight: Squad writes the GitHub-style `- [ ] <id>` checkbox (the same
   // bullet as Queued; the section header is what distinguishes the state), while
-  // older tasks-axi output used `- **<id>**`. Recognize both so a file either
+  // older sq-tasks output used `- **<id>**`. Recognize both so a file either
   // tool wrote is readable by the other.
   return matchOne(line, IN_FLIGHT_RE) ?? matchOne(line, QUEUED_RE);
 }
@@ -355,7 +355,7 @@ export function renderTaskLines(task: Task): string[] {
       );
     }
     lines.push(
-      `  <!-- tasks-axi:public-followup/v1:${encodePublicFollowup(task.public_followup)} -->`,
+      `  <!-- sq-tasks:public-followup/v1:${encodePublicFollowup(task.public_followup)} -->`,
     );
   } else if (task.public_followup) {
     throw new AxiError(
@@ -399,9 +399,9 @@ function structuredBody(bodyLines: string[]): string | undefined {
   return bodyLines.slice(0, end).join("\n");
 }
 
-const PUBLIC_FOLLOWUP_MARKER = "tasks-axi:public-followup";
+const PUBLIC_FOLLOWUP_MARKER = "sq-tasks:public-followup";
 const PUBLIC_FOLLOWUP_METADATA_RE =
-  /^<!-- tasks-axi:public-followup\/v(\d+):([A-Za-z0-9_-]+) -->$/;
+  /^<!-- sq-tasks:public-followup\/v(\d+):([A-Za-z0-9_-]+) -->$/;
 
 function extractPublicFollowupMetadata(
   id: string,

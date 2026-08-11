@@ -14,7 +14,7 @@ import {
 import { formatCountLine } from '../format.js';
 import { getSuggestions } from '../suggestions.js';
 
-export const LABEL_HELP = `usage: gh-axi label <subcommand> [flags]
+export const LABEL_HELP = `usage: sq-gh label <subcommand> [flags]
 subcommands[4]:
   list, create, edit <name>, delete <name>
 flags{list}:
@@ -24,9 +24,9 @@ flags{create}:
 flags{edit}:
   --name, --color, --description
 examples:
-  gh-axi label list
-  gh-axi label create --name "priority:high" --color ff0000 --description "High priority"
-  gh-axi label delete "priority:low"`;
+  sq-gh label list
+  sq-gh label create --name "priority:high" --color ff0000 --description "High priority"
+  sq-gh label delete "priority:low"`;
 
 const listSchema: FieldDef[] = [
   field('name'),
@@ -58,9 +58,9 @@ async function listLabels(args: string[], ctx?: RepoContext): Promise<string> {
 
 async function createLabel(args: string[], ctx?: RepoContext): Promise<string> {
   const name = getFlag(args, '--name');
-  if (!name) throw new AxiError('--name is required: gh-axi label create --name "..." --color "..."', 'VALIDATION_ERROR');
+  if (!name) throw new AxiError('--name is required: sq-gh label create --name "..." --color "..."', 'VALIDATION_ERROR');
   const color = getFlag(args, '--color');
-  if (!color) throw new AxiError('--color is required: gh-axi label create --name "..." --color "..."', 'VALIDATION_ERROR');
+  if (!color) throw new AxiError('--color is required: sq-gh label create --name "..." --color "..."', 'VALIDATION_ERROR');
 
   // Idempotent: check if label already exists
   const existing = await ghJson<Record<string, unknown>[]>(
@@ -91,7 +91,7 @@ async function createLabel(args: string[], ctx?: RepoContext): Promise<string> {
 async function editLabel(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const labelName = positionals[1];
-  if (!labelName) throw new AxiError('Label name is required: gh-axi label edit <name>', 'VALIDATION_ERROR');
+  if (!labelName) throw new AxiError('Label name is required: sq-gh label edit <name>', 'VALIDATION_ERROR');
 
   const ghArgs = ['label', 'edit', labelName];
   const newName = getFlag(args, '--name');
@@ -112,7 +112,7 @@ async function editLabel(args: string[], ctx?: RepoContext): Promise<string> {
 async function deleteLabel(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const name = positionals[1];
-  if (!name) throw new AxiError('Label name is required: gh-axi label delete <name>', 'VALIDATION_ERROR');
+  if (!name) throw new AxiError('Label name is required: sq-gh label delete <name>', 'VALIDATION_ERROR');
 
   await ghExec(['label', 'delete', name, '--yes'], ctx);
   const suggestions = getSuggestions({ domain: 'label', action: 'delete', repo: ctx });

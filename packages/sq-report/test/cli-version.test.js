@@ -66,10 +66,10 @@ test("--version prints the version fast and skips telemetry and state-dir init",
 
   const env = {
     ...process.env,
-    LAVISH_AXI_STATE_DIR: stateDir,
-    LAVISH_AXI_TELEMETRY: "1",
-    LAVISH_AXI_UMAMI_WEBSITE_ID: "version-fast-path-test",
-    LAVISH_AXI_UMAMI_HOST: telemetry.host,
+    SQ_REPORT_STATE_DIR: stateDir,
+    SQ_REPORT_TELEMETRY: "1",
+    SQ_REPORT_UMAMI_WEBSITE_ID: "version-fast-path-test",
+    SQ_REPORT_UMAMI_HOST: telemetry.host,
   };
 
   for (const flag of ["--version", "-v", "-V"]) {
@@ -102,10 +102,10 @@ test("a non-version invocation still runs the telemetry init the fast path skips
   await execFileAsync(process.execPath, [BIN, "design"], {
     env: {
       ...process.env,
-      LAVISH_AXI_STATE_DIR: stateDir,
-      LAVISH_AXI_TELEMETRY: "1",
-      LAVISH_AXI_UMAMI_WEBSITE_ID: "version-fast-path-test",
-      LAVISH_AXI_UMAMI_HOST: telemetry.host,
+      SQ_REPORT_STATE_DIR: stateDir,
+      SQ_REPORT_TELEMETRY: "1",
+      SQ_REPORT_UMAMI_WEBSITE_ID: "version-fast-path-test",
+      SQ_REPORT_UMAMI_HOST: telemetry.host,
     },
   });
 

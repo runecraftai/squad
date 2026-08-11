@@ -21,11 +21,11 @@ import {
 import { formatCountLine } from "../format.js";
 import { getSuggestions } from "../suggestions.js";
 
-export const RUN_HELP = `usage: gh-axi run <subcommand> [flags]
+export const RUN_HELP = `usage: sq-gh run <subcommand> [flags]
 subcommands[7]:
   list, view <id>, watch <id>, rerun <id>, cancel <id>, delete <id>, download <id>
 note:
-  manages existing runs; to trigger (dispatch) a workflow, use \`gh-axi workflow run <name> --ref <ref>\`
+  manages existing runs; to trigger (dispatch) a workflow, use \`sq-gh workflow run <name> --ref <ref>\`
 flags{list}:
   --workflow, --branch, --status, --event, --user, --commit, --limit (default 10), --fields <a,b,c>
 flags{view}:
@@ -36,9 +36,9 @@ flags{rerun}:
 flags{download}:
   --name, --dir
 examples:
-  gh-axi run list --workflow ci.yml --status failure
-  gh-axi run view 123456 --log-failed
-  gh-axi run rerun 123456 --failed`;
+  sq-gh run list --workflow ci.yml --status failure
+  sq-gh run view 123456 --log-failed
+  sq-gh run rerun 123456 --failed`;
 
 const listSchema: FieldDef[] = [
   field("databaseId", "id"),
@@ -254,7 +254,7 @@ async function viewRun(args: string[], ctx?: RepoContext): Promise<string> {
   const id = positionals[1]; // positionals[0] is "view"
   if (!id && !jobFlag)
     throw new AxiError(
-      "Run ID is required: gh-axi run view <id>",
+      "Run ID is required: sq-gh run view <id>",
       "VALIDATION_ERROR",
     );
 
@@ -342,7 +342,7 @@ async function watchRun(args: string[], ctx?: RepoContext): Promise<string> {
   const id = positionals[1];
   if (!id)
     throw new AxiError(
-      "Run ID is required: gh-axi run watch <id>",
+      "Run ID is required: sq-gh run watch <id>",
       "VALIDATION_ERROR",
     );
 
@@ -356,7 +356,7 @@ async function rerunRun(args: string[], ctx?: RepoContext): Promise<string> {
   const id = positionals[1];
   if (!id)
     throw new AxiError(
-      "Run ID is required: gh-axi run rerun <id>",
+      "Run ID is required: sq-gh run rerun <id>",
       "VALIDATION_ERROR",
     );
 
@@ -384,7 +384,7 @@ async function cancelRun(args: string[], ctx?: RepoContext): Promise<string> {
   const id = positionals[1];
   if (!id)
     throw new AxiError(
-      "Run ID is required: gh-axi run cancel <id>",
+      "Run ID is required: sq-gh run cancel <id>",
       "VALIDATION_ERROR",
     );
 
@@ -432,7 +432,7 @@ async function deleteRun(args: string[], ctx?: RepoContext): Promise<string> {
   const id = positionals[1];
   if (!id)
     throw new AxiError(
-      "Run ID is required: gh-axi run delete <id>",
+      "Run ID is required: sq-gh run delete <id>",
       "VALIDATION_ERROR",
     );
 
@@ -454,7 +454,7 @@ async function downloadRun(args: string[], ctx?: RepoContext): Promise<string> {
   const id = positionals[1];
   if (!id)
     throw new AxiError(
-      "Run ID is required: gh-axi run download <id>",
+      "Run ID is required: sq-gh run download <id>",
       "VALIDATION_ERROR",
     );
 

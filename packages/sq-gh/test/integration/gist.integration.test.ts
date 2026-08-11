@@ -10,9 +10,9 @@
  * Run locally: GIST_INTEGRATION=1 pnpm test test/integration/gist.integration.test.ts
  *
  * Critically, these go THROUGH `gistCommand` (not hand-built ghExec argv) so
- * they exercise gh-axi's own flag routing end-to-end against real gh. The
+ * they exercise sq-gh's own flag routing end-to-end against real gh. The
  * earlier version called ghExec directly and therefore validated gh's argv
- * contract but none of gh-axi's routing — which is exactly how the TTY-inference
+ * contract but none of sq-gh's routing — which is exactly how the TTY-inference
  * bug (--remove rejected, --add <path> misrouted to stdin) slipped through.
  *
  * Only the stdin *source* is mocked (`readStdin`/`isStdinTTY`): the content a
@@ -106,7 +106,7 @@ describe.skipIf(!RUN)(
     beforeAll(async () => {
       // Create a secret scratch gist with two files so we can test multi-file
       // operations (e.g., the desc-only blocker only reproduces on multi-file gists).
-      gistId = await createGist("gh-axi integration test scratch", {
+      gistId = await createGist("sq-gh integration test scratch", {
         "notes.txt": "original content",
         "second.txt": "second file original",
       });
@@ -181,7 +181,7 @@ describe.skipIf(!RUN)(
       // Without an explicit `-`, --add must read from disk even though the
       // agent stdin is non-TTY. The old code misrouted this to the stdin branch
       // and never read the file.
-      const diskName = `gh-axi-gist-disk-${gistId}.txt`;
+      const diskName = `sq-gh-gist-disk-${gistId}.txt`;
       const before = await fetchGist(gistId);
       expect(before.files[diskName]).toBeUndefined();
 

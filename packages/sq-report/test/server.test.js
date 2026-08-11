@@ -5,8 +5,8 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-process.env.LAVISH_AXI_HOST = "127.0.0.1";
-process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
+process.env.SQ_REPORT_HOST = "127.0.0.1";
+process.env.SQ_REPORT_LINK_HOST = "127.0.0.1";
 
 import {
   allowsAllHosts,
@@ -2404,8 +2404,8 @@ test("POST /api/:key/share publishes the local-inlined artifact to ht-ml.app", a
 
   const requests = [];
   const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
+  const previousApiUrl = process.env.SQ_REPORT_HTML_APP_API_URL;
+  process.env.SQ_REPORT_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
 
   const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
   try {
@@ -2442,7 +2442,7 @@ test("POST /api/:key/share publishes the local-inlined artifact to ht-ml.app", a
   } finally {
     await server.close();
     await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
+    restoreEnv("SQ_REPORT_HTML_APP_API_URL", previousApiUrl);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -2454,8 +2454,8 @@ test("POST /api/:key/share returns unresolved local asset warnings", async () =>
 
   const requests = [];
   const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
+  const previousApiUrl = process.env.SQ_REPORT_HTML_APP_API_URL;
+  process.env.SQ_REPORT_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
 
   const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
   try {
@@ -2487,7 +2487,7 @@ test("POST /api/:key/share returns unresolved local asset warnings", async () =>
   } finally {
     await server.close();
     await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
+    restoreEnv("SQ_REPORT_HTML_APP_API_URL", previousApiUrl);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -2499,8 +2499,8 @@ test("POST /api/:key/share rejects cross-origin browser requests", async () => {
 
   const requests = [];
   const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
+  const previousApiUrl = process.env.SQ_REPORT_HTML_APP_API_URL;
+  process.env.SQ_REPORT_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
 
   const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
   try {
@@ -2525,7 +2525,7 @@ test("POST /api/:key/share rejects cross-origin browser requests", async () => {
   } finally {
     await server.close();
     await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
+    restoreEnv("SQ_REPORT_HTML_APP_API_URL", previousApiUrl);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -2537,8 +2537,8 @@ test("POST /api/:key/share rejects requests without provenance headers", async (
 
   const requests = [];
   const htmlApp = await startFakeHtmlApp(requests);
-  const previousApiUrl = process.env.LAVISH_AXI_HTML_APP_API_URL;
-  process.env.LAVISH_AXI_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
+  const previousApiUrl = process.env.SQ_REPORT_HTML_APP_API_URL;
+  process.env.SQ_REPORT_HTML_APP_API_URL = `http://127.0.0.1:${htmlApp.port}`;
 
   const server = await serve({ port: 0, stateFile: path.join(dir, "state.json"), version: "9.9.9-test" });
   try {
@@ -2563,7 +2563,7 @@ test("POST /api/:key/share rejects requests without provenance headers", async (
   } finally {
     await server.close();
     await htmlApp.close();
-    restoreEnv("LAVISH_AXI_HTML_APP_API_URL", previousApiUrl);
+    restoreEnv("SQ_REPORT_HTML_APP_API_URL", previousApiUrl);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -2583,13 +2583,13 @@ test("POST /shutdown stops the listener so the client can spawn a fresh server",
 
 test("resolveIdleTimeoutMs defaults, parses, and only explicit opt-outs disable", () => {
   assert.equal(resolveIdleTimeoutMs({}), 30 * 60_000);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "" }), 30 * 60_000);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "5000" }), 5000);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "0" }), null);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "off" }), null);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "-1" }), 30 * 60_000);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "30000ms" }), 30 * 60_000);
-  assert.equal(resolveIdleTimeoutMs({ LAVISH_AXI_IDLE_TIMEOUT_MS: "later" }), 30 * 60_000);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "" }), 30 * 60_000);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "5000" }), 5000);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "0" }), null);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "off" }), null);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "-1" }), 30 * 60_000);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "30000ms" }), 30 * 60_000);
+  assert.equal(resolveIdleTimeoutMs({ SQ_REPORT_IDLE_TIMEOUT_MS: "later" }), 30 * 60_000);
 });
 
 async function expectDoneWithin(server, ms) {
@@ -2841,7 +2841,7 @@ test("an agent-initiated end via the file-based route reopens normally without t
       body: JSON.stringify({ file: artifact }),
     });
 
-    // `lavish-axi end <file>` uses the file-based route - agent-initiated.
+    // `sq-report end <file>` uses the file-based route - agent-initiated.
     await fetch(`${base}/api/end`, {
       method: "POST",
       headers: { "content-type": "application/json" },

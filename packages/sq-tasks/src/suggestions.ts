@@ -42,21 +42,21 @@ const table: Entry[] = [
   {
     match: (c) => c.action === "home",
     lines: () => [
-      "Run `tasks-axi list` for the full backlog",
-      "Run `tasks-axi ready` to see unblocked queued work",
-      'Run `tasks-axi add <id> "<title>" --start` to add and start a task',
+      "Run `sq-tasks list` for the full backlog",
+      "Run `sq-tasks ready` to see unblocked queued work",
+      'Run `sq-tasks add <id> "<title>" --start` to add and start a task',
     ],
   },
   {
     match: (c) => c.action === "list" && c.isEmpty === true,
     lines: (c) =>
       compact([
-        suggestionLine('Run `tasks-axi add <id> "<title>"` to add a task', c, [
+        suggestionLine('Run `sq-tasks add <id> "<title>"` to add a task', c, [
           "repo",
           "kind",
         ]),
         suggestionLine(
-          "Run `tasks-axi list --state done` to see completed work",
+          "Run `sq-tasks list --state done` to see completed work",
           c,
           ["repo", "kind"],
         ),
@@ -66,12 +66,10 @@ const table: Entry[] = [
     match: (c) => c.action === "list",
     lines: (c) =>
       compact([
-        "Run `tasks-axi show <id>` for full notes on a task",
-        suggestionLine(
-          "Run `tasks-axi ready` to see unblocked queued work",
-          c,
-          ["repo"],
-        ),
+        "Run `sq-tasks show <id>` for full notes on a task",
+        suggestionLine("Run `sq-tasks ready` to see unblocked queued work", c, [
+          "repo",
+        ]),
       ]),
   },
   {
@@ -79,7 +77,7 @@ const table: Entry[] = [
     lines: (c) =>
       compact([
         suggestionLine(
-          "Run `tasks-axi list --state queued` to see all queued work (incl. blocked)",
+          "Run `sq-tasks list --state queued` to see all queued work (incl. blocked)",
           c,
           ["repo"],
         ),
@@ -87,13 +85,13 @@ const table: Entry[] = [
   },
   {
     match: (c) => c.action === "ready",
-    lines: () => ["Run `tasks-axi start <id>` to dispatch one of these"],
+    lines: () => ["Run `sq-tasks start <id>` to dispatch one of these"],
   },
   {
     match: (c) => c.action === "show" && c.blocked === true,
     lines: (c) => [
-      `Run \`tasks-axi unblock ${c.id} --by <other>\` to clear a blocker`,
-      `Run \`tasks-axi start ${c.id}\` to move it to in flight`,
+      `Run \`sq-tasks unblock ${c.id} --by <other>\` to clear a blocker`,
+      `Run \`sq-tasks start ${c.id}\` to move it to in flight`,
     ],
   },
   {
@@ -101,78 +99,76 @@ const table: Entry[] = [
     // genuinely useful next step is closing it, never "run start".
     match: (c) => c.action === "add" && c.state === "in_flight",
     lines: (c) => [
-      `Run \`tasks-axi done ${c.id} --pr <url>\` when it ships`,
-      `Run \`tasks-axi block ${c.id} --by <other>\` to record a dependency`,
+      `Run \`sq-tasks done ${c.id} --pr <url>\` when it ships`,
+      `Run \`sq-tasks block ${c.id} --by <other>\` to record a dependency`,
     ],
   },
   {
     match: (c) => c.action === "add" && c.state === "done",
-    lines: (c) => [
-      `Run \`tasks-axi reopen ${c.id}\` to move it back to queued`,
-    ],
+    lines: (c) => [`Run \`sq-tasks reopen ${c.id}\` to move it back to queued`],
   },
   {
     match: (c) => c.action === "add",
     lines: (c) => [
-      `Run \`tasks-axi start ${c.id}\` to move it to in flight`,
-      `Run \`tasks-axi block ${c.id} --by <other>\` to record a dependency`,
+      `Run \`sq-tasks start ${c.id}\` to move it to in flight`,
+      `Run \`sq-tasks block ${c.id} --by <other>\` to record a dependency`,
     ],
   },
   {
     match: (c) => c.action === "start",
-    lines: (c) => [`Run \`tasks-axi done ${c.id} --pr <url>\` when it ships`],
+    lines: (c) => [`Run \`sq-tasks done ${c.id} --pr <url>\` when it ships`],
   },
   {
     match: (c) => c.action === "done",
-    lines: () => ["Run `tasks-axi ready` to dispatch work unblocked by this"],
+    lines: () => ["Run `sq-tasks ready` to dispatch work unblocked by this"],
   },
   {
     match: (c) => c.action === "block",
     lines: (c) => [
-      `Run \`tasks-axi unblock ${c.id} --by <other>\` to clear it`,
-      "Run `tasks-axi ready` to see what is still dispatchable",
+      `Run \`sq-tasks unblock ${c.id} --by <other>\` to clear it`,
+      "Run `sq-tasks ready` to see what is still dispatchable",
     ],
   },
   {
     match: (c) => c.action === "unblock",
-    lines: () => ["Run `tasks-axi ready` to see newly unblocked work"],
+    lines: () => ["Run `sq-tasks ready` to see newly unblocked work"],
   },
   {
     match: (c) => c.action === "hold",
     lines: (c) => [
-      `Run \`tasks-axi unhold ${c.id}\` to resume dispatch`,
-      "Run `tasks-axi ready --include-held` to review paused work",
+      `Run \`sq-tasks unhold ${c.id}\` to resume dispatch`,
+      "Run `sq-tasks ready --include-held` to review paused work",
     ],
   },
   {
     match: (c) => c.action === "unhold",
-    lines: () => ["Run `tasks-axi ready` to see dispatchable work"],
+    lines: () => ["Run `sq-tasks ready` to see dispatchable work"],
   },
   {
     match: (c) => c.action === "update",
-    lines: (c) => [`Run \`tasks-axi show ${c.id} --full\` to see the result`],
+    lines: (c) => [`Run \`sq-tasks show ${c.id} --full\` to see the result`],
   },
   {
     match: (c) => c.action === "reopen",
-    lines: (c) => [`Run \`tasks-axi start ${c.id}\` to move it to in flight`],
+    lines: (c) => [`Run \`sq-tasks start ${c.id}\` to move it to in flight`],
   },
   {
     match: (c) => c.action === "rm",
-    lines: () => ["Run `tasks-axi list` to see remaining tasks"],
+    lines: () => ["Run `sq-tasks list` to see remaining tasks"],
   },
   {
     match: (c) => c.action === "prune",
     lines: () => [
-      "Run `tasks-axi list --state done` to see retained Done items",
+      "Run `sq-tasks list --state done` to see retained Done items",
     ],
   },
   {
     match: (c) => c.action === "mv",
-    lines: () => ["Run `tasks-axi list` to see remaining tasks"],
+    lines: () => ["Run `sq-tasks list` to see remaining tasks"],
   },
   {
     match: (c) => c.action === "render",
-    lines: () => ["Run `tasks-axi list` to see the normalized backlog"],
+    lines: () => ["Run `sq-tasks list` to see the normalized backlog"],
   },
 ];
 
@@ -226,7 +222,7 @@ function appendSuffixToCommand(
   if (second === -1) return undefined;
 
   const command = line.slice(first + 1, second);
-  if (command !== "tasks-axi" && !command.startsWith("tasks-axi ")) {
+  if (command !== "sq-tasks" && !command.startsWith("sq-tasks ")) {
     return undefined;
   }
   return `${line.slice(0, second)}${suffix}${line.slice(second)}`;

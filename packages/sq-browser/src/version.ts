@@ -1,5 +1,5 @@
 // Leaf module: node builtins only. The version fast path in
-// bin/chrome-devtools-axi.ts imports this instead of the heavy cli.js graph.
+// bin/sq-browser.ts imports this instead of the heavy cli.js graph.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,7 @@ function readPackageVersion(): string {
     }
   }
 
-  throw new Error("Could not determine chrome-devtools-axi package version");
+  throw new Error("Could not determine sq-browser package version");
 }
 
 export const VERSION = readPackageVersion();

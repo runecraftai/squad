@@ -5,7 +5,7 @@ import type {
   AuthProviderReport,
   ModelsResponse,
   ProviderQuota,
-  QuotaAxiResponse,
+  SqQuotaResponse,
   SourceAttempt,
 } from "./types.js";
 
@@ -14,7 +14,7 @@ export function renderHelp(lines: string[]): string {
 }
 
 export function renderQuotaToon(
-  response: QuotaAxiResponse,
+  response: SqQuotaResponse,
   binPath: string,
   full: boolean,
 ): string {
@@ -177,7 +177,7 @@ export function renderAuthToon(
     }),
     encode({ auth: sources }),
     renderHelp([
-      "Run `quota-axi --allow-keychain-prompt auth` to permit macOS Keychain access",
+      "Run `sq-quota --allow-keychain-prompt auth` to permit macOS Keychain access",
     ]),
   ].join("\n");
 }
@@ -233,17 +233,17 @@ export function renderModelsToon(
   blocks.push(
     renderHelp([
       "Default model order is deterministic and non-preferential (provider, then id)",
-      "Run `quota-axi models --sort runway` for the documented opt-in runway comparator",
-      "Run `quota-axi models --json` for catalog provenance and full quota evidence",
+      "Run `sq-quota models --sort runway` for the documented opt-in runway comparator",
+      "Run `sq-quota models --json` for catalog provenance and full quota evidence",
     ]),
   );
   return blocks.join("\n");
 }
 
 export function redactedResponse(
-  response: QuotaAxiResponse,
+  response: SqQuotaResponse,
   full: boolean,
-): QuotaAxiResponse {
+): SqQuotaResponse {
   if (full) return response;
   return {
     ...response,

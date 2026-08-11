@@ -222,7 +222,7 @@ export function requirePositionals(
 export function requireId(raw: string | undefined, label = "id"): string {
   if (!raw || raw.trim() === "") {
     throw new AxiError(`Missing ${label}`, "VALIDATION_ERROR", [
-      `Pass the task ${label}, e.g. \`tasks-axi show <id>\``,
+      `Pass the task ${label}, e.g. \`sq-tasks show <id>\``,
     ]);
   }
   return validateId(raw);

@@ -41,14 +41,14 @@ import { getSuggestions } from "../suggestions.js";
 import { renderHelp, renderOutput } from "../toon.js";
 import { renderTaskDetail, renderTaskList, showFullTextHint } from "../view.js";
 
-export const START_HELP = `usage: tasks-axi start <id>
+export const START_HELP = `usage: sq-tasks start <id>
 Move a task to In flight (idempotent).
 flags:
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi start sq-fob-lease-adopt`;
+  sq-tasks start sq-fob-lease-adopt`;
 
-export const DONE_HELP = `usage: tasks-axi done <id> [flags]
+export const DONE_HELP = `usage: sq-tasks done <id> [flags]
 aliases: close
 Re-running on an already Done task backfills links/notes without changing the close date.
 flags:
@@ -56,29 +56,29 @@ flags:
   --keep <n> (default from config), --no-prune
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi done sm-idle-handoff-q8 --pr https://github.com/o/r/pull/42
-  tasks-axi done fj-task-q1 --pr https://forgejo.example.com/o/r/pulls/39
-  tasks-axi done pr31-review-r6 --report data/pr31-review-r6/report.md`;
+  sq-tasks done sm-idle-handoff-q8 --pr https://github.com/o/r/pull/42
+  sq-tasks done fj-task-q1 --pr https://forgejo.example.com/o/r/pulls/39
+  sq-tasks done pr31-review-r6 --report data/pr31-review-r6/report.md`;
 
-export const REOPEN_HELP = `usage: tasks-axi reopen <id>
+export const REOPEN_HELP = `usage: sq-tasks reopen <id>
 Move a Done/In flight task back to Queued (idempotent).
 flags:
   --json   print the resulting task as a JSON object`;
 
-export const BLOCK_HELP = `usage: tasks-axi block <id> --by <other>
+export const BLOCK_HELP = `usage: sq-tasks block <id> --by <other>
 Record a blocked-by dependency edge (idempotent).
 The blocker named by --by must already exist.
 flags:
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi block sq-fob-lease-adopt --by fob-lease-t4`;
+  sq-tasks block sq-fob-lease-adopt --by fob-lease-t4`;
 
-export const UNBLOCK_HELP = `usage: tasks-axi unblock <id> --by <other>
+export const UNBLOCK_HELP = `usage: sq-tasks unblock <id> --by <other>
 Clear a blocked-by dependency edge (idempotent).
 flags:
   --json   print the resulting task as a JSON object`;
 
-export const HOLD_HELP = `usage: tasks-axi hold <id> --reason "<text>" [flags]
+export const HOLD_HELP = `usage: sq-tasks hold <id> --reason "<text>" [flags]
 Record a structured dispatch hold (idempotent).
 flags:
   --reason "<text>"   required single-line reason; no parentheses
@@ -86,21 +86,21 @@ flags:
   --kind commander|external|load|parked|future
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi hold sq-x --reason "commander decision pending" --kind commander
-  tasks-axi hold future-q1 --reason "start after launch" --until 2026-07-10`;
+  sq-tasks hold sq-x --reason "commander decision pending" --kind commander
+  sq-tasks hold future-q1 --reason "start after launch" --until 2026-07-10`;
 
-export const UNHOLD_HELP = `usage: tasks-axi unhold <id>
+export const UNHOLD_HELP = `usage: sq-tasks unhold <id>
 Clear a structured dispatch hold (idempotent).
 flags:
   --json   print the resulting task as a JSON object`;
 
-export const READY_HELP = `usage: tasks-axi ready [--repo <name>] [--include-held]
+export const READY_HELP = `usage: sq-tasks ready [--repo <name>] [--include-held]
 List unblocked, unheld queued work dispatchable right now.
 Public-followup obligations are never dispatchable and appear only in the separate
-ready_public_followups group; use tasks-axi public-followup ready for their full payloads.
+ready_public_followups group; use sq-tasks public-followup ready for their full payloads.
 Held work is excluded by default; --include-held shows it in a separate held group.`;
 
-export const MV_HELP = `usage: tasks-axi mv <id> [<id>...] --to <path-or-dir>
+export const MV_HELP = `usage: sq-tasks mv <id> [<id>...] --to <path-or-dir>
 Move one or more tasks to another backlog file in a single atomic transaction.
 Pass a whole connected set (a blocker and its dependents) to move it together;
 their blocked-by links and reason strings are preserved byte-exact.
@@ -110,8 +110,8 @@ file - include the whole set, or move the missing endpoint there first.
 flags:
   --json   print the result as a JSON object
 examples:
-  tasks-axi mv hibit-cert-cleanup --to ../homemux/data/backlog.md
-  tasks-axi mv blocker-b1 dependent-d2 --to ../homemux/data/backlog.md`;
+  sq-tasks mv hibit-cert-cleanup --to ../homemux/data/backlog.md
+  sq-tasks mv blocker-b1 dependent-d2 --to ../homemux/data/backlog.md`;
 
 export async function startCommand(
   rawArgs: string[],

@@ -310,7 +310,7 @@ describe("secretCommand", () => {
     it("rejects an unknown flag instead of dropping it silently", async () => {
       await expect(
         secretCommand(["list", "--visibility", "all"]),
-      ).rejects.toThrow(/unknown flag for gh-axi secret list: --visibility/);
+      ).rejects.toThrow(/unknown flag for sq-gh secret list: --visibility/);
 
       expect(mockedGhJson).not.toHaveBeenCalled();
     });

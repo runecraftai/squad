@@ -31,21 +31,21 @@ function decodedHelp(out: string): string[] {
 
 let dir: string;
 let path: string;
-const savedFile = process.env.TASKS_AXI_FILE;
+const savedFile = process.env.SQ_TASKS_FILE;
 const savedCwd = process.cwd();
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tasks-axi-cli-"));
+  dir = mkdtempSync(join(tmpdir(), "sq-tasks-cli-"));
   path = join(dir, "backlog.md");
   writeFileSync(path, FIXTURE, "utf8");
-  process.env.TASKS_AXI_FILE = path;
+  process.env.SQ_TASKS_FILE = path;
 });
 
 afterEach(() => {
   process.chdir(savedCwd);
   rmSync(dir, { recursive: true, force: true });
-  if (savedFile === undefined) delete process.env.TASKS_AXI_FILE;
-  else process.env.TASKS_AXI_FILE = savedFile;
+  if (savedFile === undefined) delete process.env.SQ_TASKS_FILE;
+  else process.env.SQ_TASKS_FILE = savedFile;
   process.exitCode = undefined;
 });
 
@@ -136,7 +136,7 @@ describe("CLI entrypoint", () => {
     expect(out).toContain("solo-q1");
     expect(out).not.toContain("cert-cleanup");
     expect(decodedHelp(out)).toContain(
-      `Run \`tasks-axi show <id> --file=${quoteSuggestionValue(other)}\` for full notes on a task`,
+      `Run \`sq-tasks show <id> --file=${quoteSuggestionValue(other)}\` for full notes on a task`,
     );
   });
 
@@ -149,7 +149,7 @@ describe("CLI entrypoint", () => {
       stdout: c.stdout,
     });
     expect(decodedHelp(c.read())).toContain(
-      `Run \`tasks-axi show <id> --backend=markdown --file=${quoteSuggestionValue(other)}\` for full notes on a task`,
+      `Run \`sq-tasks show <id> --backend=markdown --file=${quoteSuggestionValue(other)}\` for full notes on a task`,
     );
   });
 
@@ -213,7 +213,7 @@ describe("CLI entrypoint", () => {
   it("returns per-command help with --help", async () => {
     const c = capture();
     await main({ argv: ["done", "--help"], stdout: c.stdout });
-    expect(c.read()).toContain("usage: tasks-axi done");
+    expect(c.read()).toContain("usage: sq-tasks done");
   });
 
   it("returns focused help for a public-followup subcommand", async () => {
@@ -223,7 +223,7 @@ describe("CLI entrypoint", () => {
       stdout: c.stdout,
     });
     expect(c.read()).toBe(
-      "usage: tasks-axi public-followup work-event <id> --event-file <file> [--json]",
+      "usage: sq-tasks public-followup work-event <id> --event-file <file> [--json]",
     );
   });
 
@@ -246,7 +246,7 @@ describe("CLI entrypoint", () => {
       expectedPath,
       JSON.stringify({
         type: "report-ready",
-        project: "tasks-axi",
+        project: "sq-tasks",
         required_deliverables: ["report_path"],
         completion_policy: "all-required",
       }),
@@ -280,7 +280,7 @@ describe("CLI entrypoint", () => {
       },
     });
     expect(readFileSync(path, "utf8")).toContain(
-      "tasks-axi:public-followup/v1:",
+      "sq-tasks:public-followup/v1:",
     );
 
     const listed = capture();

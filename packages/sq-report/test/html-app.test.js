@@ -31,7 +31,7 @@ test("createHtmlAppPayload sends html_content and only adds a password when prov
 
 test("htmlAppApiUrl defaults to ht-ml.app and honors the override env", () => {
   assert.equal(htmlAppApiUrl({}), "https://api.ht-ml.app");
-  assert.equal(htmlAppApiUrl({ LAVISH_AXI_HTML_APP_API_URL: "http://127.0.0.1:9/" }), "http://127.0.0.1:9");
+  assert.equal(htmlAppApiUrl({ SQ_REPORT_HTML_APP_API_URL: "http://127.0.0.1:9/" }), "http://127.0.0.1:9");
 });
 
 test("publishToHtmlApp posts the HTML to /v1/sites and returns the public url and update key", async () => {
@@ -68,7 +68,7 @@ test("publishToHtmlApp posts the HTML to /v1/sites and returns the public url an
 test("publishToHtmlApp sends a bearer token when one is configured", async () => {
   const { fetchImpl, calls } = recordingFetch(jsonResponse(200, { url: "https://x.ht-ml.app/", update_key: "uk" }));
 
-  await publishToHtmlApp("<h1>Hi</h1>", { fetch: fetchImpl, env: { LAVISH_AXI_HTML_APP_TOKEN: "tok_123" } });
+  await publishToHtmlApp("<h1>Hi</h1>", { fetch: fetchImpl, env: { SQ_REPORT_HTML_APP_TOKEN: "tok_123" } });
 
   assert.equal(calls[0].init.headers.authorization, "Bearer tok_123");
 });

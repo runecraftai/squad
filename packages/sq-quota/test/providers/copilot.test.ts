@@ -16,7 +16,7 @@ const originalLocalAppData = process.env.LOCALAPPDATA;
 let tempDir: string | undefined;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), "quota-axi-copilot-"));
+  tempDir = mkdtempSync(join(tmpdir(), "sq-quota-copilot-"));
   process.env.GITHUB_COPILOT_APPS_JSON = join(tempDir, "apps.json");
   process.env.XDG_CACHE_HOME = join(tempDir, "cache");
 });

@@ -6,7 +6,7 @@ function valueRequiredError(noun: "secret" | "variable"): AxiError {
     return new AxiError(
       "secret value is required: pipe the value via stdin",
       "VALIDATION_ERROR",
-      [`echo -n "<value>" | gh-axi secret set <name>`],
+      [`echo -n "<value>" | sq-gh secret set <name>`],
     );
   }
 
@@ -14,8 +14,8 @@ function valueRequiredError(noun: "secret" | "variable"): AxiError {
     "variable value is required: pass --body <value> or pipe the value via stdin",
     "VALIDATION_ERROR",
     [
-      `gh-axi variable set <name> --body <value>`,
-      `echo -n "<value>" | gh-axi variable set <name>`,
+      `sq-gh variable set <name> --body <value>`,
+      `echo -n "<value>" | sq-gh variable set <name>`,
     ],
   );
 }
@@ -35,12 +35,12 @@ export async function resolveValue(
       throw new AxiError(
         "Secret values must be piped via stdin; --body/-b is not accepted for secrets",
         "VALIDATION_ERROR",
-        [`echo -n "<value>" | gh-axi secret set <name>`],
+        [`echo -n "<value>" | sq-gh secret set <name>`],
       );
     }
     if (flagValue.length === 0) {
       throw new AxiError(`--body requires a value`, "VALIDATION_ERROR", [
-        `gh-axi ${noun} set <name> --body <value>`,
+        `sq-gh ${noun} set <name> --body <value>`,
       ]);
     }
     return flagValue;

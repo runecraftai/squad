@@ -7,14 +7,14 @@ import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalCodexHome = process.env.CODEX_HOME;
-const originalCodexBinary = process.env.QUOTA_AXI_CODEX_BINARY;
+const originalCodexBinary = process.env.SQ_QUOTA_CODEX_BINARY;
 const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
 let tempDir: string | undefined;
 
 beforeEach(() => {
   vi.resetModules();
   vi.unstubAllGlobals();
-  tempDir = mkdtempSync(join(tmpdir(), "quota-axi-codex-home-"));
+  tempDir = mkdtempSync(join(tmpdir(), "sq-quota-codex-home-"));
   process.env.CODEX_HOME = tempDir;
   process.env.XDG_CACHE_HOME = join(tempDir, "cache");
   vi.doMock("../../src/lib/process.js", () => ({
@@ -31,8 +31,8 @@ afterEach(() => {
   if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
   else process.env.CODEX_HOME = originalCodexHome;
   if (originalCodexBinary === undefined)
-    delete process.env.QUOTA_AXI_CODEX_BINARY;
-  else process.env.QUOTA_AXI_CODEX_BINARY = originalCodexBinary;
+    delete process.env.SQ_QUOTA_CODEX_BINARY;
+  else process.env.SQ_QUOTA_CODEX_BINARY = originalCodexBinary;
   if (originalXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
   else process.env.XDG_CACHE_HOME = originalXdgCacheHome;
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
@@ -57,7 +57,7 @@ function jwt(payload: Record<string, unknown>): string {
 describe("Codex credential-state reporting", () => {
   it("uses the configured absolute executable for auth inspection and RPC fallback", async () => {
     const binary = join(tempDir!, "pinned", "codex");
-    process.env.QUOTA_AXI_CODEX_BINARY = binary;
+    process.env.SQ_QUOTA_CODEX_BINARY = binary;
     const findCommandPath = vi.fn(async (command: string) => command);
     const terminateChild = vi.fn();
     vi.doMock("../../src/lib/process.js", () => ({
@@ -91,7 +91,7 @@ describe("Codex credential-state reporting", () => {
   });
 
   it("fails closed instead of consulting PATH for a non-absolute override", async () => {
-    process.env.QUOTA_AXI_CODEX_BINARY = "codex-from-path";
+    process.env.SQ_QUOTA_CODEX_BINARY = "codex-from-path";
     const findCommandPath = vi.fn(async () => "/unexpected/codex");
     vi.doMock("../../src/lib/process.js", () => ({
       findCommandPath,
@@ -112,7 +112,7 @@ describe("Codex credential-state reporting", () => {
 
   it("reports an absolute override that is not executable without falling back", async () => {
     const binary = join(tempDir!, "missing", "codex");
-    process.env.QUOTA_AXI_CODEX_BINARY = binary;
+    process.env.SQ_QUOTA_CODEX_BINARY = binary;
     const findCommandPath = vi.fn(async () => undefined);
     vi.doMock("../../src/lib/process.js", () => ({
       findCommandPath,

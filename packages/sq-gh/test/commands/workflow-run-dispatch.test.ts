@@ -75,7 +75,7 @@ describe("workflow run dispatch", () => {
   });
 
   // Regression: gh appends a `gh auth login` hint to its repo-resolution
-  // failure. gh-axi used to substring-match that hint and report AUTH_REQUIRED,
+  // failure. sq-gh used to substring-match that hint and report AUTH_REQUIRED,
   // so a dispatch under a perfectly valid workflow-scoped token looked like an
   // auth gap even though `gh workflow run -R owner/repo` succeeded.
   it("does not report AUTH_REQUIRED when gh only failed to resolve the repo", async () => {

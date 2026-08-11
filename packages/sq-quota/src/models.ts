@@ -11,7 +11,7 @@ import type {
   ProviderId,
   ProviderQuota,
   ProviderStateSummary,
-  QuotaAxiResponse,
+  SqQuotaResponse,
 } from "./types.js";
 
 const INTELLIGENCE_BUCKETS = new Set<IntelligenceBucket>([
@@ -49,7 +49,7 @@ export const MODEL_COMPARATORS: Readonly<
 validateModelCatalog(MODEL_CATALOG);
 
 export function createModelsResponse(
-  quota: QuotaAxiResponse,
+  quota: SqQuotaResponse,
   options: {
     intelligence?: IntelligenceBucket;
     sort?: ModelSortKey;

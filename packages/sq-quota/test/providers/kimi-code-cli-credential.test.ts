@@ -209,7 +209,7 @@ describe("Kimi Code CLI credential discovery", () => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "quota-axi-kimi-code-"));
+  const directory = mkdtempSync(join(tmpdir(), "sq-quota-kimi-code-"));
   temporaryDirectories.push(directory);
   return directory;
 }

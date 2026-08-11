@@ -462,7 +462,7 @@ export class SessionStore {
   }
 
   // `endedBy` distinguishes a human ending review from the browser chrome ("user") from an
-  // agent explicitly closing the loop via `lavish-axi end` ("agent"). Only a user-initiated end
+  // agent explicitly closing the loop via `sq-report end` ("agent"). Only a user-initiated end
   // blocks a plain reopen - see `SessionStore` callers in server.js.
   async endSession(key, endedBy = "agent") {
     return this.runExclusive(async () => {

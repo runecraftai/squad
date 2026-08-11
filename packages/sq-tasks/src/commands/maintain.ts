@@ -10,16 +10,16 @@ import { requireCtx, type TasksContext } from "../context.js";
 import { unsupported } from "../errors.js";
 import { getSuggestions } from "../suggestions.js";
 
-export const PRUNE_HELP = `usage: tasks-axi prune [--keep <n>] [--state done]
+export const PRUNE_HELP = `usage: sq-tasks prune [--keep <n>] [--state done]
 Trim a section to the N most recent tasks, archiving the rest (never deletes).
 flags:
   --keep <n>   tasks to retain (default from config, usually 10)
   --state <queued|in_flight|done>   section to prune (default done)
   --json   print the result as a JSON object
 examples:
-  tasks-axi prune --keep 10`;
+  sq-tasks prune --keep 10`;
 
-export const RENDER_HELP = `usage: tasks-axi render
+export const RENDER_HELP = `usage: sq-tasks render
 Normalize the backlog file: rewrite every id'd task in canonical form.
 Free-form lines are left untouched.
 flags:

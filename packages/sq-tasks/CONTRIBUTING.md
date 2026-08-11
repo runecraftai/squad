@@ -1,7 +1,7 @@
 # Contributing
 
 Thanks for wanting to contribute.
-tasks-axi is part of the `*-axi` family.
+sq-tasks is part of the `*-axi` family.
 One rule up front:
 
 **Human-authored pull requests targeting `main` must be raised through [`drill`](https://github.com/runecraftai/squad).**
@@ -17,7 +17,7 @@ The release and dependency bots are exempt so their automation keeps working, bu
 
 1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent repo (`git@github.com:runecraftai/squad.git`).
 2. Create a branch and make your change with tests (`test/` mirrors `src/`).
-3. Initialize or refresh the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/tasks-axi.git`.
+3. Initialize or refresh the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/sq-tasks.git`.
 4. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, ...) - release-please reads them to cut releases.
 5. Push through the gate instead of pushing to `origin`:
 
@@ -36,7 +36,7 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
 - Run the full gate before pushing: `pnpm build && pnpm lint && pnpm test && pnpm run build:skill -- --check`.
 - The CLI layer only talks to the `Store` interface; backends slot in behind it without touching command code.
 - Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json` - release-please owns them.
-- Do not hand-edit `skills/tasks-axi/SKILL.md` - it is generated from the CLI's own description and help by `pnpm run build:skill`. Regenerate and commit it after changing the description or top-level help; CI fails if it is stale.
+- Do not hand-edit `skills/sq-tasks/SKILL.md` - it is generated from the CLI's own description and help by `pnpm run build:skill`. Regenerate and commit it after changing the description or top-level help; CI fails if it is stale.
 
 ## Release and Packaging
 
@@ -44,11 +44,11 @@ Releases are cut by release-please from Conventional Commits on `main`.
 When a release is created, the release workflow installs dependencies, builds, lints, tests, checks generated skill drift, and publishes with `npm publish --access public --provenance`.
 
 The npm package intentionally ships runtime JavaScript only.
-Keep `package.json` `files` limited to `dist/**/*.js`, `skills/tasks-axi`, `LICENSE`, and `README.md`; TypeScript declarations and source maps stay local for development.
+Keep `package.json` `files` limited to `dist/**/*.js`, `skills/sq-tasks`, `LICENSE`, and `README.md`; TypeScript declarations and source maps stay local for development.
 
 `prepack` runs `npm run build`, so `npm pack`, `npm publish`, and `npm publish --dry-run` rebuild `dist` first.
 From a fresh clone, install dependencies with `pnpm install --frozen-lockfile` before any manual pack or publish, since that build step needs `node_modules` (this matches how CI and the release workflow install).
-Then verify the package with `npm pack --dry-run` and keep the CLI bin as `dist/bin/tasks-axi.js` so npm preserves it without warnings.
+Then verify the package with `npm pack --dry-run` and keep the CLI bin as `dist/bin/sq-tasks.js` so npm preserves it without warnings.
 
 ## Questions
 

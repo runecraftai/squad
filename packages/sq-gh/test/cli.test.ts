@@ -118,7 +118,7 @@ describe("main CLI", () => {
 
   it("documents explicit hook setup in help output", () => {
     expect(TOP_HELP).toContain("setup");
-    expect(TOP_HELP).toContain("gh-axi setup hooks");
+    expect(TOP_HELP).toContain("sq-gh setup hooks");
   });
 
   it("passes bare top-level help argv through to axi-sdk-js", async () => {
@@ -163,16 +163,16 @@ describe("main CLI", () => {
   });
 
   it("does not pass the removed hooks option to axi-sdk-js", async () => {
-    const originalDisableHooks = process.env.GH_AXI_DISABLE_HOOKS;
-    process.env.GH_AXI_DISABLE_HOOKS = "1";
+    const originalDisableHooks = process.env.SQ_GH_DISABLE_HOOKS;
+    process.env.SQ_GH_DISABLE_HOOKS = "1";
 
     try {
       await main();
     } finally {
       if (originalDisableHooks === undefined) {
-        delete process.env.GH_AXI_DISABLE_HOOKS;
+        delete process.env.SQ_GH_DISABLE_HOOKS;
       } else {
-        process.env.GH_AXI_DISABLE_HOOKS = originalDisableHooks;
+        process.env.SQ_GH_DISABLE_HOOKS = originalDisableHooks;
       }
     }
 
@@ -414,9 +414,7 @@ describe("main CLI", () => {
 
     it("documents --hostname in the top-level help", () => {
       expect(TOP_HELP).toContain("--hostname <host>");
-      expect(TOP_HELP).toContain(
-        "gh-axi issue list --hostname git.example.com",
-      );
+      expect(TOP_HELP).toContain("sq-gh issue list --hostname git.example.com");
     });
 
     it("resolves --hostname after the command into GH_HOST", async () => {

@@ -19,7 +19,7 @@ import {
 import { formatCountLine } from '../format.js';
 import { getSuggestions } from '../suggestions.js';
 
-export const REPO_HELP = `usage: gh-axi repo <subcommand> [flags]
+export const REPO_HELP = `usage: sq-gh repo <subcommand> [flags]
 subcommands[6]:
   view [owner/name], create <name>, edit, clone <repo>, fork [repo], list [owner]
 flags{view}:
@@ -33,11 +33,11 @@ flags{fork}:
 flags{list}:
   --limit <n> (default 30), --visibility, --language, --archived
 examples:
-  gh-axi repo view
-  gh-axi repo view --repo owner/name
-  gh-axi repo view owner/name
-  gh-axi repo create my-project --public --description "A new project"
-  gh-axi repo list --visibility public --language TypeScript`;
+  sq-gh repo view
+  sq-gh repo view --repo owner/name
+  sq-gh repo view owner/name
+  sq-gh repo create my-project --public --description "A new project"
+  sq-gh repo list --visibility public --language TypeScript`;
 
 const viewSchema: FieldDef[] = [
   field('name'),
@@ -80,7 +80,7 @@ async function viewRepo(args: string[], ctx?: RepoContext): Promise<string> {
 
   const ghArgs = ['repo', 'view'];
   // gh repo view accepts a positional repository; keep that parity only when
-  // it does not conflict with gh-axi's command-first --repo targeting.
+  // it does not conflict with sq-gh's command-first --repo targeting.
   if (repoArg) ghArgs.push(repoArg);
   else if (ctx) ghArgs.push(ctx.nwo);
   ghArgs.push('--json', 'name,description,defaultBranchRef,stargazerCount,forkCount,issues,pullRequests,visibility,primaryLanguage');
@@ -94,7 +94,7 @@ async function viewRepo(args: string[], ctx?: RepoContext): Promise<string> {
 async function createRepo(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const name = positionals[1];
-  if (!name) throw new AxiError('Repository name is required: gh-axi repo create <name>', 'VALIDATION_ERROR');
+  if (!name) throw new AxiError('Repository name is required: sq-gh repo create <name>', 'VALIDATION_ERROR');
 
   const ghArgs = ['repo', 'create', name];
   if (hasFlag(args, '--public')) ghArgs.push('--public');
@@ -139,7 +139,7 @@ async function editRepo(args: string[], ctx?: RepoContext): Promise<string> {
 async function cloneRepo(args: string[]): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const repo = positionals[1];
-  if (!repo) throw new AxiError('Repository is required: gh-axi repo clone <repo>', 'VALIDATION_ERROR');
+  if (!repo) throw new AxiError('Repository is required: sq-gh repo clone <repo>', 'VALIDATION_ERROR');
 
   await ghExec(['repo', 'clone', repo]);
   const suggestions = getSuggestions({ domain: 'repo', action: 'clone' });

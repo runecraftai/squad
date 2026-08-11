@@ -44,7 +44,7 @@ describe("main CLI runtime", () => {
 
   it("documents explicit hook setup in help output", () => {
     expect(TOP_HELP).toContain("setup hooks");
-    expect(TOP_HELP).not.toContain("CHROME_DEVTOOLS_AXI_DISABLE_HOOKS");
+    expect(TOP_HELP).not.toContain("SQ_BROWSER_DISABLE_HOOKS");
   });
 
   it("passes bare top-level help argv through to axi-sdk-js", async () => {
@@ -95,16 +95,16 @@ describe("main CLI runtime", () => {
   });
 
   it("does not pass the removed hooks option to axi-sdk-js", async () => {
-    const originalDisableHooks = process.env.CHROME_DEVTOOLS_AXI_DISABLE_HOOKS;
-    process.env.CHROME_DEVTOOLS_AXI_DISABLE_HOOKS = "1";
+    const originalDisableHooks = process.env.SQ_BROWSER_DISABLE_HOOKS;
+    process.env.SQ_BROWSER_DISABLE_HOOKS = "1";
 
     try {
       await main();
     } finally {
       if (originalDisableHooks === undefined) {
-        delete process.env.CHROME_DEVTOOLS_AXI_DISABLE_HOOKS;
+        delete process.env.SQ_BROWSER_DISABLE_HOOKS;
       } else {
-        process.env.CHROME_DEVTOOLS_AXI_DISABLE_HOOKS = originalDisableHooks;
+        process.env.SQ_BROWSER_DISABLE_HOOKS = originalDisableHooks;
       }
     }
 

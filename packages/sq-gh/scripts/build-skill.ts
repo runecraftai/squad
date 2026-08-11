@@ -1,5 +1,5 @@
 // Generates skills/sq-gh/SKILL.md from the shared CLI guidance so the
-// installable skill never drifts from what `gh-axi` prints.
+// installable skill never drifts from what `sq-gh` prints.
 //
 //   pnpm run build:skill            # write the file
 //   pnpm run build:skill -- --check # fail (exit 1) if the committed file is stale

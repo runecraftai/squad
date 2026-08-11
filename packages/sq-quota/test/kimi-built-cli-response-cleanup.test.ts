@@ -145,7 +145,7 @@ type IsolatedFixture = {
 };
 
 function isolatedFixture(): IsolatedFixture {
-  const root = mkdtempSync(join(tmpdir(), "quota-axi-kimi-cleanup-"));
+  const root = mkdtempSync(join(tmpdir(), "sq-quota-kimi-cleanup-"));
   temporaryDirectories.push(root);
   chmodSync(root, 0o700);
   const fixture = {

@@ -5,7 +5,7 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - axi-sdk-js
-  - lavish-axi
+  - sq-report
 onlyBuiltDependencies:
   - esbuild
 allowBuilds:

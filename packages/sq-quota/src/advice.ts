@@ -1,12 +1,8 @@
-import type {
-  ProviderQuota,
-  QuotaAxiResponse,
-  SourceAttempt,
-} from "./types.js";
+import type { ProviderQuota, SqQuotaResponse, SourceAttempt } from "./types.js";
 
 export const KEYCHAIN_ACCESS_REASON = "keychain_access_required";
 export const KEYCHAIN_ACCESS_REMEDY_COMMAND =
-  "quota-axi --allow-keychain-prompt";
+  "sq-quota --allow-keychain-prompt";
 export const CREDENTIALS_EXPIRED_REASON = "credentials_expired";
 export const GROK_TOKEN_REFRESH_REMEDY_COMMAND = "grok";
 export const GROK_ACCESS_TOKEN_EXPIRED_ERROR = "Grok access token expired";
@@ -17,8 +13,8 @@ const BLOCKED_CREDENTIAL_ERRORS = new Set([
 ]);
 
 export function annotateQuotaAdvice(
-  response: Omit<QuotaAxiResponse, "schemaVersion">,
-): QuotaAxiResponse {
+  response: Omit<SqQuotaResponse, "schemaVersion">,
+): SqQuotaResponse {
   const providers = response.providers.map(annotateProviderAdvice);
   const help = providers.flatMap(providerHelpLines);
   return {
@@ -29,13 +25,13 @@ export function annotateQuotaAdvice(
   };
 }
 
-export function quotaHelpLines(response: QuotaAxiResponse): string[] {
+export function quotaHelpLines(response: SqQuotaResponse): string[] {
   return [
     ...(response.help ?? []),
     "Default TOON reports effective headroom and usable runway; use --json or --full for reserve diagnostics",
-    "Run `quota-axi --provider claude --json` for JSON output",
-    "Run `quota-axi --full` to include account, source-attempt, and reserve details",
-    "Run `quota-axi auth` to inspect local auth source availability without printing secrets",
+    "Run `sq-quota --provider claude --json` for JSON output",
+    "Run `sq-quota --full` to include account, source-attempt, and reserve details",
+    "Run `sq-quota auth` to inspect local auth source availability without printing secrets",
   ];
 }
 
@@ -121,9 +117,9 @@ function hasGrokTokenRefreshAdvice(provider: ProviderQuota): boolean {
 }
 
 function keychainAccessHelpLine(provider: ProviderQuota): string {
-  return `Tell your user: run \`${KEYCHAIN_ACCESS_REMEDY_COMMAND}\` once and approve Keychain access ("Always Allow") so quota-axi can read ${provider.provider}'s live quota.`;
+  return `Tell your user: run \`${KEYCHAIN_ACCESS_REMEDY_COMMAND}\` once and approve Keychain access ("Always Allow") so sq-quota can read ${provider.provider}'s live quota.`;
 }
 
 function grokTokenRefreshHelpLine(): string {
-  return `Tell your user: open the Grok CLI (\`${GROK_TOKEN_REFRESH_REMEDY_COMMAND}\`) once so it can refresh Grok's local session token. quota-axi does not refresh credentials.`;
+  return `Tell your user: open the Grok CLI (\`${GROK_TOKEN_REFRESH_REMEDY_COMMAND}\`) once so it can refresh Grok's local session token. sq-quota does not refresh credentials.`;
 }

@@ -16,7 +16,7 @@ The release and dependency bots are exempt so their automation keeps working, bu
 
 1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent repo (`git@github.com:runecraftai/squad.git`).
 2. Create a branch and make your changes.
-3. Initialize or refresh the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/quota-axi.git`.
+3. Initialize or refresh the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/sq-quota.git`.
 4. Commit your changes.
 5. Push through the gate instead of pushing to `origin`:
 
@@ -43,9 +43,9 @@ See the [drill quick start](https://github.com/runecraftai/squad) for the full f
   release-please updates it in the release PR.
 - Do not change `release-please-config.json`'s `bootstrap-sha` for ordinary changes.
   It points at commit `9f5dc949c50ab8ac0a441be777e1c3693ee0b612`, the published npm `0.1.0` baseline.
-- Do not hand-edit `skills/quota-axi/SKILL.md`.
+- Do not hand-edit `skills/sq-quota/SKILL.md`.
   It is generated from the shared skill source, including frontmatter metadata; run `pnpm run build:skill` and commit the result.
-- quota-axi is data only: it must never route, recommend, proxy, intercept, log in, import browser cookies, or mutate provider state. Keep changes within that boundary.
+- sq-quota is data only: it must never route, recommend, proxy, intercept, log in, import browser cookies, or mutate provider state. Keep changes within that boundary.
 
 ## Questions
 

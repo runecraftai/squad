@@ -53,7 +53,7 @@ bin: ~/.local/share/mise/installs/node/26.5.0/bin/sq-browser
 description: Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.
 browser: no active session
 help[1]:
-Run `chrome-devtools-axi open <url>` to start browsing.
+Run `sq-browser open <url>` to start browsing.
 ```
 
 The skill is not a user-facing slash command (`user-invocable: false`).
@@ -142,7 +142,7 @@ pnpm link
 ```
 
 - **Persistent bridge** - a detached process keeps the MCP session alive across commands, so Chrome does not restart every invocation
-- **Auto-lifecycle** - the bridge starts on first command, writes a PID file to `~/.chrome-devtools-axi/bridge.pid`, recycles stale CDP targets after a deep health check, and reaps child processes on stop
+- **Auto-lifecycle** - the bridge starts on first command, writes a PID file to `~/.sq-browser/bridge.pid`, recycles stale CDP targets after a deep health check, and reaps child processes on stop
 - **Snapshot parsing** - accessibility tree snapshots are extracted and analyzed for interactive elements (`uid=` refs)
 - **TOON encoding** - structured metadata uses [TOON format](https://www.npmjs.com/package/@toon-format/toon) for compact, token-efficient output
 
@@ -278,64 +278,64 @@ For both commands, `all` or an omitted `--type` returns every item.
 The bridge server port defaults to `9224`. Override it with an environment variable:
 
 ```sh
-export CHROME_DEVTOOLS_AXI_PORT=9225
+export SQ_BROWSER_PORT=9225
 ```
 
 Connect to an existing Chrome instance instead of launching one:
 
 ```sh
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=http://127.0.0.1:9222
+export SQ_BROWSER_BROWSER_URL=http://127.0.0.1:9222
 ```
 
-`CHROME_DEVTOOLS_AXI_BROWSER_URL` accepts both `http://` or `https://` URLs and `ws://` or `wss://` endpoints:
+`SQ_BROWSER_BROWSER_URL` accepts both `http://` or `https://` URLs and `ws://` or `wss://` endpoints:
 
 - `http(s)://` uses `--browserUrl` and fetches `/json/version` to discover the WebSocket URL.
 - `ws(s)://` uses `--wsEndpoint` directly.
 
-For authenticated `ws://` or `wss://` endpoints, pass JSON headers with `CHROME_DEVTOOLS_AXI_WS_HEADERS`:
+For authenticated `ws://` or `wss://` endpoints, pass JSON headers with `SQ_BROWSER_WS_HEADERS`:
 
 ```sh
-export CHROME_DEVTOOLS_AXI_BROWSER_URL=wss://cluster.example.com/launch
-export CHROME_DEVTOOLS_AXI_WS_HEADERS='{"Authorization":"Bearer token"}'
+export SQ_BROWSER_BROWSER_URL=wss://cluster.example.com/launch
+export SQ_BROWSER_WS_HEADERS='{"Authorization":"Bearer token"}'
 ```
 
-Pick which installed Chrome release channel to target with `CHROME_DEVTOOLS_AXI_CHANNEL` - `stable` (the default), `beta`, `canary`, or `dev`:
+Pick which installed Chrome release channel to target with `SQ_BROWSER_CHANNEL` - `stable` (the default), `beta`, `canary`, or `dev`:
 
 ```sh
-export CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1
-export CHROME_DEVTOOLS_AXI_CHANNEL=beta
+export SQ_BROWSER_AUTO_CONNECT=1
+export SQ_BROWSER_CHANNEL=beta
 ```
 
-This selects which Chrome `--autoConnect` attaches to, and which one is launched in the default and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` modes.
-It is ignored when `CHROME_DEVTOOLS_AXI_BROWSER_URL` is set, since that connects to an explicit endpoint regardless of channel.
+This selects which Chrome `--autoConnect` attaches to, and which one is launched in the default and `SQ_BROWSER_USER_DATA_DIR` modes.
+It is ignored when `SQ_BROWSER_BROWSER_URL` is set, since that connects to an explicit endpoint regardless of channel.
 
 ### Keychain isolation
 
-When sq-browser launches Chrome itself, the default `--isolated` mode and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR`, it always passes `--use-mock-keychain` and `--password-store=basic`.
+When sq-browser launches Chrome itself, the default `--isolated` mode and `SQ_BROWSER_USER_DATA_DIR`, it always passes `--use-mock-keychain` and `--password-store=basic`.
 An automation browser has no business reading, writing, or offering to reset your OS password store, so it is kept off it entirely.
 Password autofill and saved-password access are therefore intentionally unavailable inside browsers this tool launches.
 On macOS this also means the browser can never raise the system "Keychain Not Found ... Reset To Defaults" panel, which Chrome triggers when it tries to store its `Chrome Safe Storage` key and no default keychain can be resolved for the process.
 
 Your own externally launched Chrome is unaffected: its saved passwords remain available and untouched because this tool does not read, write, move, or reset the login keychain or its `Chrome Safe Storage` item.
-The isolation flags apply only to browsers this tool starts and are deliberately not sent in the `CHROME_DEVTOOLS_AXI_AUTO_CONNECT`, `CHROME_DEVTOOLS_AXI_BROWSER_URL`, and `wsEndpoint` modes, where the browser belongs to whoever launched it.
+The isolation flags apply only to browsers this tool starts and are deliberately not sent in the `SQ_BROWSER_AUTO_CONNECT`, `SQ_BROWSER_BROWSER_URL`, and `wsEndpoint` modes, where the browser belongs to whoever launched it.
 
-Run multiple isolated bridges at once with `CHROME_DEVTOOLS_AXI_SESSION` - one per agent session, worktree, or test worker:
+Run multiple isolated bridges at once with `SQ_BROWSER_SESSION` - one per agent session, worktree, or test worker:
 
 ```sh
-CHROME_DEVTOOLS_AXI_SESSION=worker-1 sq-browser open https://example.com
-CHROME_DEVTOOLS_AXI_SESSION=worker-2 sq-browser open https://example.org
+SQ_BROWSER_SESSION=worker-1 sq-browser open https://example.com
+SQ_BROWSER_SESSION=worker-2 sq-browser open https://example.org
 ```
 
-Each session name gets its own bridge process, port (auto-derived from the name, or pinned with `CHROME_DEVTOOLS_AXI_PORT`), and on-disk state.
-In the default `--isolated` and `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` launch modes each bridge also launches its own Chrome, so concurrent sessions share neither browser state nor each other's stale-ref tracking.
-Sessions that attach to the same external browser, multiple `CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1` sessions on one running Chrome, or the same `CHROME_DEVTOOLS_AXI_BROWSER_URL`/`wsEndpoint`, drive that shared browser and are isolated only at the bridge level, where the per-session generation counter does not prevent cross-talk.
-A session only isolates the bridge; the connection mode and profile are unchanged, so combine with `CHROME_DEVTOOLS_AXI_USER_DATA_DIR` for a persistent per-session profile.
+Each session name gets its own bridge process, port (auto-derived from the name, or pinned with `SQ_BROWSER_PORT`), and on-disk state.
+In the default `--isolated` and `SQ_BROWSER_USER_DATA_DIR` launch modes each bridge also launches its own Chrome, so concurrent sessions share neither browser state nor each other's stale-ref tracking.
+Sessions that attach to the same external browser, multiple `SQ_BROWSER_AUTO_CONNECT=1` sessions on one running Chrome, or the same `SQ_BROWSER_BROWSER_URL`/`wsEndpoint`, drive that shared browser and are isolated only at the bridge level, where the per-session generation counter does not prevent cross-talk.
+A session only isolates the bridge; the connection mode and profile are unchanged, so combine with `SQ_BROWSER_USER_DATA_DIR` for a persistent per-session profile.
 The default (unset) session keeps port 9224 and the legacy state paths below.
 
-Do not export `CHROME_DEVTOOLS_AXI_PORT` globally when running concurrent sessions: it overrides the per-session derived port and forces every session onto the same port, so the second session fails to start, its bridge cannot bind the already-taken port, and the first session's bridge is rejected as a mismatch rather than silently shared.
-Rely on the per-session default ports instead, or set `CHROME_DEVTOOLS_AXI_PORT` only inline per command.
+Do not export `SQ_BROWSER_PORT` globally when running concurrent sessions: it overrides the per-session derived port and forces every session onto the same port, so the second session fails to start, its bridge cannot bind the already-taken port, and the first session's bridge is rejected as a mismatch rather than silently shared.
+Rely on the per-session default ports instead, or set `SQ_BROWSER_PORT` only inline per command.
 
-State is stored in `~/.chrome-devtools-axi/` (named sessions nest under `sessions/<name>/`):
+State is stored in `~/.sq-browser/` (named sessions nest under `sessions/<name>/`):
 
 | File                  | Purpose                               |
 | --------------------- | ------------------------------------- |

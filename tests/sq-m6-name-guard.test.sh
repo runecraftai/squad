@@ -4,10 +4,10 @@
 # Executed as the final gate of M6 (T-M6-U6) and enforced in CI afterwards.
 # Scans the name surfaces for the old tool names that M6 renamed away:
 #   gh-axi, chrome-devtools-axi, lavish-axi, quota-axi, sq-tasks-axi
-# The names-only boundary (commander decision CD-M6-03) is the rule: NAMES
-# change now; PROSE defers to roadmap-futuro-rebrand-completo-de-menco-31.
-# So every remaining hit in the scanned surfaces must be documented deferred
-# prose, and every file with such prose is pinned on the keep-list below.
+# The names-only boundary (commander decision CD-M6-03) was the M6 rule; the
+# rebrand item (roadmap-futuro-rebrand-completo-de-menco-31) has since retired
+# every packages/ hit, including the sq-browser bridge log prefix that used to
+# be pinned below.
 # .specs/ is exempt (the planning corpus names origins, per M1 §8) and this
 # file is exempt (it legitimately contains the forbidden patterns as the grep
 # expressions).
@@ -20,9 +20,7 @@
 #   4. positive: packages/ has sq-gh sq-browser sq-quota sq-report sq-tasks and
 #      no tasks-axi directory
 #
-# Keep-list (documented deferred prose; the rebrand item must retire these):
-#   packages/sq-browser/bin/sq-browser-bridge.ts
-#     - `[chrome-devtools-axi] Fatal:` runtime log prefix (output prose, deferred)
+# Keep-list (documented deferred prose):
 #   bin/sq-bootstrap.sh
 #     - header comment describing the axi-family floor policy (prose)
 #   bin/sq-brief.sh
@@ -102,24 +100,12 @@ guard_no_match() {
 }
 
 # Guard 1: hard name surfaces - the packaging name surfaces must be clean.
-# The only documented exception is the deferred log-prefix prose in
-# packages/sq-browser/bin/sq-browser-bridge.ts (keep-list above).
+# The M6-era bridge log-prefix exception was retired by the rebrand item, so
+# the pin below no longer exists and the guard is a plain no-match scan.
 test_guard_package_name_surfaces() {
   local list
   list=$(tracked_files | grep -E '^packages/[^/]+/(package\.json|bin/|release-please-config\.json|plugin\.json)' || true)
-  # The single documented deferred-prose exception: the runtime log prefix in
-  # packages/sq-browser/bin/sq-browser-bridge.ts (keep-list above) is pinned
-  # separately below so the exclusion cannot drift silently.
-  list=$(printf '%s\n' "$list" | grep -v '^packages/sq-browser/bin/sq-browser-bridge\.ts$' || true)
   guard_no_match "M6 guard 1: no old tool names in package name surfaces" "$OLD_NAMES" "$list"
-  # Keep-list pin: the only allowed hit is the deferred log-prefix line in
-  # packages/sq-browser/bin/sq-browser-bridge.ts; if the file ever loses or
-  # changes that hit, the rebrand item has landed and the exclusion must move.
-  if [ -f "$ROOT/packages/sq-browser/bin/sq-browser-bridge.ts" ]; then
-    hits=$(grep -I -H -n -E -e "$OLD_NAMES" -- "$ROOT/packages/sq-browser/bin/sq-browser-bridge.ts" \
-      | sed "s|^$ROOT/||" | grep -v '\[chrome-devtools-axi\] Fatal: ' || true)
-    [ -z "$hits" ] || record_failure "M6 guard 1 keep-list" "$hits"
-  fi
 }
 
 # Guard 2: .github/workflows/ci.yml must be clean (job names, install paths,

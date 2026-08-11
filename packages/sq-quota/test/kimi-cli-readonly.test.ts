@@ -330,7 +330,7 @@ type IsolatedFixture = {
 };
 
 function isolatedFixture(): IsolatedFixture {
-  const root = mkdtempSync(join(tmpdir(), "quota-axi-kimi-cli-readonly-"));
+  const root = mkdtempSync(join(tmpdir(), "sq-quota-kimi-cli-readonly-"));
   temporaryDirectories.push(root);
   const fixture = {
     root,

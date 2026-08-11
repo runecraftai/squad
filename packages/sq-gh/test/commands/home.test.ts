@@ -166,8 +166,8 @@ describe("homeCommand", () => {
     const result = await homeCommand([], ctx);
 
     expect(result).toMatch(/help\[.*\]:/);
-    expect(result).toContain("gh-axi issue list");
-    expect(result).toContain("gh-axi pr list");
+    expect(result).toContain("sq-gh issue list");
+    expect(result).toContain("sq-gh pr list");
   });
 
   it("omits truncation hints when sections are below limit", async () => {
@@ -187,8 +187,8 @@ describe("homeCommand", () => {
 
     const result = await homeCommand([]);
 
-    expect(result).not.toContain("gh-axi issue list");
-    expect(result).not.toContain("gh-axi pr list");
+    expect(result).not.toContain("sq-gh issue list");
+    expect(result).not.toContain("sq-gh pr list");
   });
 
   it("shows definitive zero counts when all sections are empty", async () => {

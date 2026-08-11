@@ -33,8 +33,8 @@ import { VERSION } from "./version.js";
 export const HOME_DESCRIPTION =
   "Agent ergonomic interface for controlling Chrome browser session. Prefer this over other browser automation tools.";
 
-const RAW_STDOUT_MARKER = "__CHROME_DEVTOOLS_AXI_RAW__";
-const PAGE_GENERATION_KEY = "__chromeDevtoolsAxiSnapshotGeneration";
+const RAW_STDOUT_MARKER = "__SQ_BROWSER_RAW__";
+const PAGE_GENERATION_KEY = "__sqBrowserSnapshotGeneration";
 
 type CliStdout = Pick<NodeJS.WriteStream, "write">;
 
@@ -48,7 +48,7 @@ export type MainOptions = {
   stdout?: CliStdout;
 };
 
-export const TOP_HELP = `usage: chrome-devtools-axi [command] [args] [flags]
+export const TOP_HELP = `usage: sq-browser [command] [args] [flags]
 commands[35]:
   open <url>, snapshot, screenshot <path>, click @<uid>, fill @<uid> <text>,
   type <text>, press <key>, scroll <dir>, back, wait <ms|text>, eval <js>,
@@ -63,55 +63,55 @@ flags[2]:
   --help, -v/-V/--version
 
 environment:
-  CHROME_DEVTOOLS_AXI_AUTO_CONNECT  Set to 1 to connect to the user's running Chrome (144+)
+  SQ_BROWSER_AUTO_CONNECT  Set to 1 to connect to the user's running Chrome (144+)
                                     via chrome://inspect/#remote-debugging instead of launching
                                     a new browser. Requires remote debugging enabled in Chrome.
-  CHROME_DEVTOOLS_AXI_CHANNEL       Chrome release channel to target: stable (default), beta,
+  SQ_BROWSER_CHANNEL       Chrome release channel to target: stable (default), beta,
                                     canary, or dev. Selects which installed Chrome --autoConnect
                                     attaches to, and which one is launched in the default and
-                                    USER_DATA_DIR modes. Ignored with CHROME_DEVTOOLS_AXI_BROWSER_URL.
-  CHROME_DEVTOOLS_AXI_HEADED        Set to 1 to run Chrome in headed (visible) mode
-  CHROME_DEVTOOLS_AXI_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
+                                    USER_DATA_DIR modes. Ignored with SQ_BROWSER_BROWSER_URL.
+  SQ_BROWSER_HEADED        Set to 1 to run Chrome in headed (visible) mode
+  SQ_BROWSER_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
                                     (no shell-style quoting; flags with spaces are not supported)
                                     e.g. "--enable-gpu --ignore-gpu-blocklist"
-  CHROME_DEVTOOLS_AXI_PORT          Bridge server port (default: 9224)
-  CHROME_DEVTOOLS_AXI_SESSION       Named session for concurrent isolation. Each session name gets
+  SQ_BROWSER_PORT          Bridge server port (default: 9224)
+  SQ_BROWSER_SESSION       Named session for concurrent isolation. Each session name gets
                                     its own bridge process, port (auto-derived from the name, or set
-                                    CHROME_DEVTOOLS_AXI_PORT), and on-disk state, so multiple sessions
+                                    SQ_BROWSER_PORT), and on-disk state, so multiple sessions
                                     run at once without colliding. Connection mode and profile are
                                     unchanged. Defaults to "default" (port 9224, legacy state paths).
-                                    e.g. CHROME_DEVTOOLS_AXI_SESSION=worker-1
-  CHROME_DEVTOOLS_AXI_BROWSER_URL   Connect to an existing Chrome instance instead of launching one.
+                                    e.g. SQ_BROWSER_SESSION=worker-1
+  SQ_BROWSER_BROWSER_URL   Connect to an existing Chrome instance instead of launching one.
                                     http(s):// uses --browserUrl (fetches /json/version).
                                     ws(s):// uses --wsEndpoint (direct WebSocket).
                                     e.g. "http://127.0.0.1:9222" or "wss://cluster.example/launch"
-  CHROME_DEVTOOLS_AXI_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://)
+  SQ_BROWSER_WS_HEADERS    JSON headers for ws(s):// endpoints (only with BROWSER_URL=wss?://)
                                     e.g. '{"Authorization":"Bearer token"}'
-  CHROME_DEVTOOLS_AXI_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
+  SQ_BROWSER_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
                                     e.g. "/path/to/.chrome-profile"
-  CHROME_DEVTOOLS_AXI_MCP_PATH      Absolute path to a chrome-devtools-mcp script. When set, the
+  SQ_BROWSER_MCP_PATH      Absolute path to a chrome-devtools-mcp script. When set, the
                                     bridge spawns 'node \$MCP_PATH' directly instead of
                                     'npx -y chrome-devtools-mcp@latest'. Avoids ~30s npx bootstrap
                                     on slow/cold systems. Recommended:
                                       npm install -g chrome-devtools-mcp
-                                      export CHROME_DEVTOOLS_AXI_MCP_PATH="\$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
-  CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS
+                                      export SQ_BROWSER_MCP_PATH="\$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
+  SQ_BROWSER_BRIDGE_TIMEOUT_MS
                                     Bridge readiness deadline in ms (default: 30000, min: 1000)
 
 gpu:
   Headless Chrome cannot access hardware GPU on most Linux systems.
   For GPU-accelerated WebGL, use headed mode with GPU flags:
-    CHROME_DEVTOOLS_AXI_HEADED=1
-    CHROME_DEVTOOLS_AXI_CHROME_ARGS="--enable-gpu --ignore-gpu-blocklist"
+    SQ_BROWSER_HEADED=1
+    SQ_BROWSER_CHROME_ARGS="--enable-gpu --ignore-gpu-blocklist"
   For WebGPU, Vulkan must also be enabled (required for the Dawn backend):
-    CHROME_DEVTOOLS_AXI_CHROME_ARGS="--enable-gpu --ignore-gpu-blocklist --enable-unsafe-webgpu --enable-features=Vulkan"
+    SQ_BROWSER_CHROME_ARGS="--enable-gpu --ignore-gpu-blocklist --enable-unsafe-webgpu --enable-features=Vulkan"
 
 tips:
   Pipe output through grep/head to extract specific data from large pages.
 `;
 
 const COMMAND_HELP: Record<string, string> = {
-  open: `usage: chrome-devtools-axi open <url> [--full]
+  open: `usage: sq-browser open <url> [--full]
 Navigate to a URL and capture an accessibility snapshot.
 
 args:
@@ -121,10 +121,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi open https://example.com
-  chrome-devtools-axi open https://example.com --full`,
+  sq-browser open https://example.com
+  sq-browser open https://example.com --full`,
 
-  screenshot: `usage: chrome-devtools-axi screenshot <path> [--uid @<uid>] [--full-page] [--format png|jpeg|webp]
+  screenshot: `usage: sq-browser screenshot <path> [--uid @<uid>] [--full-page] [--format png|jpeg|webp]
 Save a screenshot to a file.
 
 args:
@@ -141,21 +141,21 @@ flags:
   --format <fmt>  Image format: png (default), jpeg, or webp
 
 examples:
-  chrome-devtools-axi screenshot ./page.png
-  chrome-devtools-axi screenshot ./element.png --uid @g1:3
-  chrome-devtools-axi screenshot ./full.png --full-page --format jpeg`,
+  sq-browser screenshot ./page.png
+  sq-browser screenshot ./element.png --uid @g1:3
+  sq-browser screenshot ./full.png --full-page --format jpeg`,
 
-  snapshot: `usage: chrome-devtools-axi snapshot [--full]
+  snapshot: `usage: sq-browser snapshot [--full]
 Capture the current page accessibility snapshot.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi snapshot
-  chrome-devtools-axi snapshot --full`,
+  sq-browser snapshot
+  sq-browser snapshot --full`,
 
-  click: `usage: chrome-devtools-axi click @<uid> [--full]
+  click: `usage: sq-browser click @<uid> [--full]
 Click an interactive element by its ref from the snapshot.
 
 args:
@@ -167,10 +167,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi click @g1:1
-  chrome-devtools-axi click @g2:12 --full`,
+  sq-browser click @g1:1
+  sq-browser click @g2:12 --full`,
 
-  fill: `usage: chrome-devtools-axi fill @<uid> <text> [--full]
+  fill: `usage: sq-browser fill @<uid> <text> [--full]
 Fill a form field with text.
 
 args:
@@ -183,10 +183,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi fill @g1:3 "hello world"
-  chrome-devtools-axi fill @g2:3 "search query" --full`,
+  sq-browser fill @g1:3 "hello world"
+  sq-browser fill @g2:3 "search query" --full`,
 
-  type: `usage: chrome-devtools-axi type <text> [--full]
+  type: `usage: sq-browser type <text> [--full]
 Type text at the currently focused element.
 
 args:
@@ -196,10 +196,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi type "hello"
-  chrome-devtools-axi type "search query" --full`,
+  sq-browser type "hello"
+  sq-browser type "search query" --full`,
 
-  press: `usage: chrome-devtools-axi press <key> [--full]
+  press: `usage: sq-browser press <key> [--full]
 Press a keyboard key.
 
 args:
@@ -209,10 +209,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi press Enter
-  chrome-devtools-axi press Tab --full`,
+  sq-browser press Enter
+  sq-browser press Tab --full`,
 
-  scroll: `usage: chrome-devtools-axi scroll <direction> [--full]
+  scroll: `usage: sq-browser scroll <direction> [--full]
 Scroll the page in a direction.
 
 args:
@@ -222,20 +222,20 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi scroll down
-  chrome-devtools-axi scroll top --full`,
+  sq-browser scroll down
+  sq-browser scroll top --full`,
 
-  back: `usage: chrome-devtools-axi back [--full]
+  back: `usage: sq-browser back [--full]
 Navigate back in browser history.
 
 flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi back
-  chrome-devtools-axi back --full`,
+  sq-browser back
+  sq-browser back --full`,
 
-  wait: `usage: chrome-devtools-axi wait <ms|text>
+  wait: `usage: sq-browser wait <ms|text>
 Wait for a duration or for text to appear on the page.
 
 args:
@@ -243,10 +243,10 @@ args:
   <text>  Text to wait for (string)
 
 examples:
-  chrome-devtools-axi wait 2000
-  chrome-devtools-axi wait "Submit"`,
+  sq-browser wait 2000
+  sq-browser wait "Submit"`,
 
-  eval: `usage: chrome-devtools-axi eval <js>
+  eval: `usage: sq-browser eval <js>
 Evaluate a JavaScript expression in the page context and return the result.
 A bare expression is wrapped as () => (<js>); pass a function (arrow or
 function-keyword) for multi-statement logic. No-arg IIFE form (...)() is
@@ -256,11 +256,11 @@ args:
   <js>  JavaScript expression (required)
 
 examples:
-  chrome-devtools-axi eval "document.title"
-  chrome-devtools-axi eval "document.querySelectorAll('a').length"
-  chrome-devtools-axi eval "() => { const rows = [...document.querySelectorAll('tr')]; return rows.map(r => r.textContent) }"`,
+  sq-browser eval "document.title"
+  sq-browser eval "document.querySelectorAll('a').length"
+  sq-browser eval "() => { const rows = [...document.querySelectorAll('tr')]; return rows.map(r => r.textContent) }"`,
 
-  run: `usage: chrome-devtools-axi run <<'EOF'
+  run: `usage: sq-browser run <<'EOF'
   ...script...
   EOF
 
@@ -287,43 +287,43 @@ click and fill accept either @uid refs (from snapshot) or CSS selectors.
 page.eval accepts functions, arrow functions, and bare expression strings; no-arg IIFE strings are unwrapped automatically.
 
 examples:
-  chrome-devtools-axi run <<'EOF'
+  sq-browser run <<'EOF'
   await page.open("https://example.com");
   console.log(await page.eval(() => document.title));
   EOF
 
-  chrome-devtools-axi run <<'EOF'
+  sq-browser run <<'EOF'
   await page.open("https://en.wikipedia.org/wiki/Ada_Lovelace");
   await page.click("a[href='/wiki/Charles_Babbage']");
   await page.wait(".mw-page-title-main");
   console.log(await page.eval(() => document.title));
   EOF
 
-  chrome-devtools-axi run <<'EOF'
+  sq-browser run <<'EOF'
   const { status } = await page.open("https://httpbin.org/status/404");
   console.log("status:", status);
   EOF`,
 
-  start: `usage: chrome-devtools-axi start
+  start: `usage: sq-browser start
 Start the bridge server (launches headless Chrome).
 
 examples:
-  chrome-devtools-axi start`,
+  sq-browser start`,
 
-  stop: `usage: chrome-devtools-axi stop
+  stop: `usage: sq-browser stop
 Stop the bridge server and close the browser.
 
 examples:
-  chrome-devtools-axi stop`,
+  sq-browser stop`,
 
   // Page management
-  pages: `usage: chrome-devtools-axi pages
+  pages: `usage: sq-browser pages
 List all open pages/tabs in the browser.
 
 examples:
-  chrome-devtools-axi pages`,
+  sq-browser pages`,
 
-  newpage: `usage: chrome-devtools-axi newpage <url> [--background] [--full]
+  newpage: `usage: sq-browser newpage <url> [--background] [--full]
 Open a new tab and navigate to a URL.
 
 args:
@@ -334,10 +334,10 @@ flags:
   --full        Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi newpage https://example.com
-  chrome-devtools-axi newpage https://example.com --background`,
+  sq-browser newpage https://example.com
+  sq-browser newpage https://example.com --background`,
 
-  selectpage: `usage: chrome-devtools-axi selectpage <id> [--full]
+  selectpage: `usage: sq-browser selectpage <id> [--full]
 Switch to a tab by page ID.
 
 args:
@@ -347,18 +347,18 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi selectpage 1`,
+  sq-browser selectpage 1`,
 
-  closepage: `usage: chrome-devtools-axi closepage <id>
+  closepage: `usage: sq-browser closepage <id>
 Close a tab by page ID. The last open page cannot be closed.
 
 args:
   <id>  Page ID from the pages command (required)
 
 examples:
-  chrome-devtools-axi closepage 2`,
+  sq-browser closepage 2`,
 
-  resize: `usage: chrome-devtools-axi resize <width> <height>
+  resize: `usage: sq-browser resize <width> <height>
 Resize the browser viewport.
 
 args:
@@ -366,11 +366,11 @@ args:
   <height>  Height in pixels (required)
 
 examples:
-  chrome-devtools-axi resize 1280 720
-  chrome-devtools-axi resize 390 844`,
+  sq-browser resize 1280 720
+  sq-browser resize 390 844`,
 
   // Interaction
-  hover: `usage: chrome-devtools-axi hover @<uid> [--full]
+  hover: `usage: sq-browser hover @<uid> [--full]
 Hover over an element to trigger hover states.
 
 args:
@@ -382,9 +382,9 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi hover @g1:5`,
+  sq-browser hover @g1:5`,
 
-  drag: `usage: chrome-devtools-axi drag @<from> @<to> [--full]
+  drag: `usage: sq-browser drag @<from> @<to> [--full]
 Drag an element onto another element.
 
 args:
@@ -395,9 +395,9 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi drag @g1:3 @g1:7`,
+  sq-browser drag @g1:3 @g1:7`,
 
-  fillform: `usage: chrome-devtools-axi fillform @<uid>=<value>... [--full]
+  fillform: `usage: sq-browser fillform @<uid>=<value>... [--full]
 Fill multiple form fields at once.
 
 args:
@@ -408,10 +408,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi fillform @g1:1="hello" @g1:2="world"
-  chrome-devtools-axi fillform @g2:3="user@email.com" @g2:4="password123"`,
+  sq-browser fillform @g1:1="hello" @g1:2="world"
+  sq-browser fillform @g2:3="user@email.com" @g2:4="password123"`,
 
-  dialog: `usage: chrome-devtools-axi dialog <accept|dismiss> [text]
+  dialog: `usage: sq-browser dialog <accept|dismiss> [text]
 Handle a browser dialog (alert, confirm, prompt).
 
 args:
@@ -419,11 +419,11 @@ args:
   [text]    Optional text to enter into a prompt dialog
 
 examples:
-  chrome-devtools-axi dialog accept
-  chrome-devtools-axi dialog dismiss
-  chrome-devtools-axi dialog accept "confirmed"`,
+  sq-browser dialog accept
+  sq-browser dialog dismiss
+  sq-browser dialog accept "confirmed"`,
 
-  upload: `usage: chrome-devtools-axi upload @<uid> <path> [--full]
+  upload: `usage: sq-browser upload @<uid> <path> [--full]
 Upload a file through a file input element.
 
 args:
@@ -435,10 +435,10 @@ flags:
   --full  Show complete snapshot without truncation
 
 examples:
-  chrome-devtools-axi upload @g1:5 ./photo.jpg`,
+  sq-browser upload @g1:5 ./photo.jpg`,
 
   // Emulation
-  emulate: `usage: chrome-devtools-axi emulate [flags]
+  emulate: `usage: sq-browser emulate [flags]
 Emulate device features on the selected page.
 
 flags:
@@ -450,11 +450,11 @@ flags:
   --user-agent <string>      Custom user agent string
 
 examples:
-  chrome-devtools-axi emulate --viewport "390x844x3,mobile" --color-scheme dark
-  chrome-devtools-axi emulate --network "Slow 3G" --cpu 4`,
+  sq-browser emulate --viewport "390x844x3,mobile" --color-scheme dark
+  sq-browser emulate --network "Slow 3G" --cpu 4`,
 
   // DevTools debugging
-  console: `usage: chrome-devtools-axi console [--type <type>] [--limit <n>] [--page <n>]
+  console: `usage: sq-browser console [--type <type>] [--limit <n>] [--page <n>]
 List console messages for the current page.
 
 flags:
@@ -467,20 +467,20 @@ flags:
   --page <n>     Page number (0-based)
 
 examples:
-  chrome-devtools-axi console
-  chrome-devtools-axi console --type error --limit 50
-  chrome-devtools-axi console --type all`,
+  sq-browser console
+  sq-browser console --type error --limit 50
+  sq-browser console --type all`,
 
-  "console-get": `usage: chrome-devtools-axi console-get <id>
+  "console-get": `usage: sq-browser console-get <id>
 Get a specific console message by ID.
 
 args:
   <id>  Message ID from the console command (required)
 
 examples:
-  chrome-devtools-axi console-get 3`,
+  sq-browser console-get 3`,
 
-  network: `usage: chrome-devtools-axi network [--type <type>] [--limit <n>] [--page <n>]
+  network: `usage: sq-browser network [--type <type>] [--limit <n>] [--page <n>]
 List network requests for the current page.
 
 flags:
@@ -494,11 +494,11 @@ flags:
   --page <n>     Page number (0-based)
 
 examples:
-  chrome-devtools-axi network
-  chrome-devtools-axi network --type fetch --limit 50
-  chrome-devtools-axi network --type all`,
+  sq-browser network
+  sq-browser network --type fetch --limit 50
+  sq-browser network --type all`,
 
-  "network-get": `usage: chrome-devtools-axi network-get [id] [--response-file <path>] [--request-file <path>]
+  "network-get": `usage: sq-browser network-get [id] [--response-file <path>] [--request-file <path>]
 Get a specific network request. If id is omitted, gets the selected request.
 
 args:
@@ -511,11 +511,11 @@ flags:
 Relative output paths resolve against the directory where you run the CLI.
 
 examples:
-  chrome-devtools-axi network-get 42
-  chrome-devtools-axi network-get 42 --response-file ./response.json`,
+  sq-browser network-get 42
+  sq-browser network-get 42 --response-file ./response.json`,
 
   // Performance
-  lighthouse: `usage: chrome-devtools-axi lighthouse [--device <device>] [--mode <mode>] [--output-dir <path>]
+  lighthouse: `usage: sq-browser lighthouse [--device <device>] [--mode <mode>] [--output-dir <path>]
 Run a Lighthouse audit for accessibility, SEO, and best practices.
 
 flags:
@@ -526,10 +526,10 @@ flags:
 Relative output paths resolve against the directory where you run the CLI.
 
 examples:
-  chrome-devtools-axi lighthouse
-  chrome-devtools-axi lighthouse --device mobile --output-dir ./reports`,
+  sq-browser lighthouse
+  sq-browser lighthouse --device mobile --output-dir ./reports`,
 
-  "perf-start": `usage: chrome-devtools-axi perf-start [--no-reload] [--no-auto-stop] [--file <path>]
+  "perf-start": `usage: sq-browser perf-start [--no-reload] [--no-auto-stop] [--file <path>]
 Start a performance trace recording.
 
 flags:
@@ -541,10 +541,10 @@ Relative output paths resolve against the directory where you run the CLI.
 Output reports the resolved absolute path.
 
 examples:
-  chrome-devtools-axi perf-start
-  chrome-devtools-axi perf-start --no-reload --file trace.json.gz`,
+  sq-browser perf-start
+  sq-browser perf-start --no-reload --file trace.json.gz`,
 
-  "perf-stop": `usage: chrome-devtools-axi perf-stop [--file <path>]
+  "perf-stop": `usage: sq-browser perf-stop [--file <path>]
 Stop the active performance trace recording.
 
 flags:
@@ -553,10 +553,10 @@ flags:
 Relative output paths resolve against the directory where you run the CLI.
 
 examples:
-  chrome-devtools-axi perf-stop
-  chrome-devtools-axi perf-stop --file trace.json.gz`,
+  sq-browser perf-stop
+  sq-browser perf-stop --file trace.json.gz`,
 
-  "perf-insight": `usage: chrome-devtools-axi perf-insight <set-id> <insight-name>
+  "perf-insight": `usage: sq-browser perf-insight <set-id> <insight-name>
 Analyze a specific performance insight from a trace.
 
 args:
@@ -564,10 +564,10 @@ args:
   <insight-name>  Insight name, e.g. "DocumentLatency" (required)
 
 examples:
-  chrome-devtools-axi perf-insight set1 DocumentLatency
-  chrome-devtools-axi perf-insight set1 LCPBreakdown`,
+  sq-browser perf-insight set1 DocumentLatency
+  sq-browser perf-insight set1 LCPBreakdown`,
 
-  heap: `usage: chrome-devtools-axi heap <path>
+  heap: `usage: sq-browser heap <path>
 Capture a heap snapshot for memory leak debugging.
 
 args:
@@ -577,13 +577,13 @@ Relative output paths resolve against the directory where you run the CLI.
 Output reports the resolved absolute path.
 
 examples:
-  chrome-devtools-axi heap ./snapshot.heapsnapshot`,
+  sq-browser heap ./snapshot.heapsnapshot`,
 
-  setup: `usage: chrome-devtools-axi setup hooks
-Install or repair agent SessionStart hooks for chrome-devtools-axi ambient context.
+  setup: `usage: sq-browser setup hooks
+Install or repair agent SessionStart hooks for sq-browser ambient context.
 
 examples:
-  chrome-devtools-axi setup hooks`,
+  sq-browser setup hooks`,
 };
 
 export function getCommandHelp(command: string): string | null {
@@ -906,7 +906,7 @@ function wrapStdout(
 function renderUnknownCommand(command: string): string {
   return (
     renderError(`Unknown command: ${command}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi --help` to see available commands",
+      "Run `sq-browser --help` to see available commands",
     ]) + "\n"
   );
 }
@@ -978,7 +978,7 @@ function formatPageOutput(
   const suggestions = getSuggestions({ command, url, snapshot });
   if (tr.truncated) {
     suggestions.push(
-      `Run \`chrome-devtools-axi ${command}${url ? " " + url : ""} --full\` to see complete snapshot`,
+      `Run \`sq-browser ${command}${url ? " " + url : ""} --full\` to see complete snapshot`,
     );
   }
   if (suggestions.length > 0) {
@@ -1030,7 +1030,7 @@ function throwStaleRef(
     `Stale ref @${refRaw}: from snapshot generation ${refGeneration}, current is ${currentGeneration}. Re-snapshot to get fresh refs.`,
     "STALE_REF",
     [
-      "Run `chrome-devtools-axi snapshot` to capture current refs, then retry the action",
+      "Run `sq-browser snapshot` to capture current refs, then retry the action",
     ],
   );
 }
@@ -1127,7 +1127,7 @@ async function handleOpen(args: string[], full: boolean): Promise<string> {
   const url = args[0];
   if (!url) {
     throw new CdpError("Missing URL", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi open https://example.com` to navigate to a page",
+      "Run `sq-browser open https://example.com` to navigate to a page",
     ]);
   }
 
@@ -1156,7 +1156,7 @@ async function handleScreenshot(args: string[]): Promise<string> {
   const parsed = parseScreenshotArgs(args);
   if (!parsed.filePath) {
     throw new CdpError("Missing file path", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi screenshot ./page.png` to save a screenshot",
+      "Run `sq-browser screenshot ./page.png` to save a screenshot",
     ]);
   }
 
@@ -1174,7 +1174,7 @@ async function handleClick(args: string[], full: boolean): Promise<string> {
   const uid = args[0];
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi click @<uid>` — get uid from snapshot",
+      "Run `sq-browser click @<uid>` — get uid from snapshot",
     ]);
   }
 
@@ -1189,12 +1189,12 @@ async function handleFill(args: string[], full: boolean): Promise<string> {
   const value = args.slice(1).join(" ");
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fill @<uid> "text"` — get uid from snapshot',
+      'Run `sq-browser fill @<uid> "text"` — get uid from snapshot',
     ]);
   }
   if (!value) {
     throw new CdpError("Missing fill text", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fill @<uid> "text"` to fill the field',
+      'Run `sq-browser fill @<uid> "text"` to fill the field',
     ]);
   }
 
@@ -1209,7 +1209,7 @@ async function handlePress(args: string[], full: boolean): Promise<string> {
   const key = args[0];
   if (!key) {
     throw new CdpError("Missing key name", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi press Enter` to press a key",
+      "Run `sq-browser press Enter` to press a key",
     ]);
   }
 
@@ -1221,7 +1221,7 @@ async function handleType(args: string[], full: boolean): Promise<string> {
   const text = args.join(" ");
   if (!text) {
     throw new CdpError("Missing text", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi type "hello"` to type text',
+      'Run `sq-browser type "hello"` to type text',
     ]);
   }
 
@@ -1237,7 +1237,7 @@ async function handleScroll(args: string[], full: boolean): Promise<string> {
   const fn = SCROLL_FUNCTIONS[dir];
   if (!fn) {
     throw new CdpError(`Unknown scroll direction: ${dir}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi scroll down` — directions: up, down, top, bottom",
+      "Run `sq-browser scroll down` — directions: up, down, top, bottom",
     ]);
   }
 
@@ -1263,8 +1263,8 @@ async function handleWait(args: string[]): Promise<string> {
       "Missing wait target (milliseconds or text)",
       "VALIDATION_ERROR",
       [
-        "Run `chrome-devtools-axi wait 2000` to wait 2 seconds",
-        'Run `chrome-devtools-axi wait "Submit"` to wait for text to appear',
+        "Run `sq-browser wait 2000` to wait 2 seconds",
+        'Run `sq-browser wait "Submit"` to wait for text to appear',
       ],
     );
   }
@@ -1301,7 +1301,7 @@ async function handleEval(args: string[], full: boolean): Promise<string> {
   const js = args.join(" ");
   if (!js) {
     throw new CdpError("Missing JavaScript expression", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi eval "document.title"` to evaluate JavaScript',
+      'Run `sq-browser eval "document.title"` to evaluate JavaScript',
     ]);
   }
 
@@ -1353,8 +1353,8 @@ async function handlePages(): Promise<string> {
   blocks.push(`${header}\n${rows.join("\n")}`);
   blocks.push(
     renderHelp([
-      "Run `chrome-devtools-axi selectpage <id>` to switch tabs",
-      "Run `chrome-devtools-axi newpage <url>` to open a new tab",
+      "Run `sq-browser selectpage <id>` to switch tabs",
+      "Run `sq-browser newpage <url>` to open a new tab",
     ]),
   );
   return renderOutput(blocks);
@@ -1364,7 +1364,7 @@ async function handleNewPage(args: string[], full: boolean): Promise<string> {
   const url = args.filter((a) => !a.startsWith("--"))[0];
   if (!url) {
     throw new CdpError("Missing URL", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi newpage https://example.com` to open a new tab",
+      "Run `sq-browser newpage https://example.com` to open a new tab",
     ]);
   }
   const background = args.includes("--background");
@@ -1384,13 +1384,13 @@ async function handleSelectPage(
   const id = args[0];
   if (!id) {
     throw new CdpError("Missing page ID", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi selectpage <id>` — get ID from `pages` command",
+      "Run `sq-browser selectpage <id>` — get ID from `pages` command",
     ]);
   }
   const pageId = parseInt(id, 10);
   if (isNaN(pageId)) {
     throw new CdpError(`Invalid page ID: ${id}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi pages` to list available page IDs",
+      "Run `sq-browser pages` to list available page IDs",
     ]);
   }
   await callTool("select_page", { pageId });
@@ -1404,13 +1404,13 @@ async function handleClosePage(args: string[]): Promise<string> {
   const id = args[0];
   if (!id) {
     throw new CdpError("Missing page ID", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi closepage <id>` — get ID from `pages` command",
+      "Run `sq-browser closepage <id>` — get ID from `pages` command",
     ]);
   }
   const pageId = parseInt(id, 10);
   if (isNaN(pageId)) {
     throw new CdpError(`Invalid page ID: ${id}`, "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi pages` to list available page IDs",
+      "Run `sq-browser pages` to list available page IDs",
     ]);
   }
   // Check page count before closing — last page can't be closed
@@ -1422,8 +1422,8 @@ async function handleClosePage(args: string[]): Promise<string> {
     ];
     blocks.push(
       renderHelp([
-        "Run `chrome-devtools-axi newpage <url>` to open another tab first",
-        "Run `chrome-devtools-axi stop` to shut down the browser entirely",
+        "Run `sq-browser newpage <url>` to open another tab first",
+        "Run `sq-browser stop` to shut down the browser entirely",
       ]),
     );
     return renderOutput(blocks);
@@ -1436,14 +1436,14 @@ async function handleResize(args: string[]): Promise<string> {
   const [widthStr, heightStr] = args;
   if (!widthStr || !heightStr) {
     throw new CdpError("Missing width and/or height", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi resize 1280 720` to resize the viewport",
+      "Run `sq-browser resize 1280 720` to resize the viewport",
     ]);
   }
   const width = parseInt(widthStr, 10);
   const height = parseInt(heightStr, 10);
   if (isNaN(width) || isNaN(height)) {
     throw new CdpError("Width and height must be numbers", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi resize 1280 720` to resize the viewport",
+      "Run `sq-browser resize 1280 720` to resize the viewport",
     ]);
   }
   await callTool("resize_page", { width, height });
@@ -1456,7 +1456,7 @@ async function handleHover(args: string[], full: boolean): Promise<string> {
   const uid = args[0];
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi hover @<uid>` — get uid from snapshot",
+      "Run `sq-browser hover @<uid>` — get uid from snapshot",
     ]);
   }
   const snapshot = await callWithSnapshot("hover", {
@@ -1470,7 +1470,7 @@ async function handleDrag(args: string[], full: boolean): Promise<string> {
   const to = args[1];
   if (!from || !to) {
     throw new CdpError("Missing element refs", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi drag @<from> @<to>` — get uids from snapshot",
+      "Run `sq-browser drag @<from> @<to>` — get uids from snapshot",
     ]);
   }
   const snapshot = await callWithSnapshot("drag", {
@@ -1484,7 +1484,7 @@ async function handleFillForm(args: string[], full: boolean): Promise<string> {
   const { entries } = parseFillFormArgs(args);
   if (entries.length === 0) {
     throw new CdpError("No valid field entries", "VALIDATION_ERROR", [
-      'Run `chrome-devtools-axi fillform @g1:1="hello" @g1:2="world"` to fill multiple fields',
+      'Run `sq-browser fillform @g1:1="hello" @g1:2="world"` to fill multiple fields',
     ]);
   }
   const validated = await Promise.all(
@@ -1501,7 +1501,7 @@ async function handleDialog(args: string[]): Promise<string> {
   const action = args[0];
   if (!action || (action !== "accept" && action !== "dismiss")) {
     throw new CdpError("Missing or invalid action", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi dialog accept` or `chrome-devtools-axi dialog dismiss`",
+      "Run `sq-browser dialog accept` or `sq-browser dialog dismiss`",
     ]);
   }
   const params: Record<string, unknown> = { action };
@@ -1516,12 +1516,12 @@ async function handleUpload(args: string[], full: boolean): Promise<string> {
   const filePath = args[1];
   if (!uid) {
     throw new CdpError("Missing element ref", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi upload @<uid> <path>` — get uid from snapshot",
+      "Run `sq-browser upload @<uid> <path>` — get uid from snapshot",
     ]);
   }
   if (!filePath) {
     throw new CdpError("Missing file path", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi upload @<uid> /path/to/file` to upload a file",
+      "Run `sq-browser upload @<uid> /path/to/file` to upload a file",
     ]);
   }
   const snapshot = await callWithSnapshot("upload_file", {
@@ -1545,8 +1545,8 @@ async function handleConsole(args: string[]): Promise<string> {
   const parsed = parseConsoleArgs(args);
   const result = await callTool("list_console_messages", parsed);
   return formatMcpResult("console", result, [
-    "Run `chrome-devtools-axi console-get <id>` to see a specific message",
-    "Run `chrome-devtools-axi console --type error` to filter by type",
+    "Run `sq-browser console-get <id>` to see a specific message",
+    "Run `sq-browser console --type error` to filter by type",
   ]);
 }
 
@@ -1554,7 +1554,7 @@ async function handleConsoleGet(args: string[]): Promise<string> {
   const id = args[0];
   if (!id) {
     throw new CdpError("Missing console message id", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi console-get <id>` — get id from `chrome-devtools-axi console`",
+      "Run `sq-browser console-get <id>` — get id from `sq-browser console`",
     ]);
   }
   const msgid = parseOptionalInteger(id);
@@ -1562,7 +1562,7 @@ async function handleConsoleGet(args: string[]): Promise<string> {
     throw new CdpError(
       `Invalid console message id: ${id}`,
       "VALIDATION_ERROR",
-      ["Run `chrome-devtools-axi console` to list available message ids"],
+      ["Run `sq-browser console` to list available message ids"],
     );
   }
   const result = await callTool("get_console_message", { msgid });
@@ -1573,8 +1573,8 @@ async function handleNetwork(args: string[]): Promise<string> {
   const parsed = parseNetworkArgs(args);
   const result = await callTool("list_network_requests", parsed);
   return formatMcpResult("network", result, [
-    "Run `chrome-devtools-axi network-get <id>` to see request details",
-    "Run `chrome-devtools-axi network --type fetch` to filter by type",
+    "Run `sq-browser network-get <id>` to see request details",
+    "Run `sq-browser network --type fetch` to filter by type",
   ]);
 }
 
@@ -1618,7 +1618,7 @@ async function handlePerfStop(args: string[]): Promise<string> {
   }
   const result = await callTool("performance_stop_trace", toolArgs);
   return formatMcpResult("trace", result, [
-    "Run `chrome-devtools-axi perf-insight <set-id> <insight-name>` to analyze insights",
+    "Run `sq-browser perf-insight <set-id> <insight-name>` to analyze insights",
   ]);
 }
 
@@ -1626,7 +1626,7 @@ async function handlePerfInsight(args: string[]): Promise<string> {
   const [setId, insightName] = args;
   if (!setId || !insightName) {
     throw new CdpError("Missing required arguments", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi perf-insight <set-id> <insight-name>` to analyze an insight",
+      "Run `sq-browser perf-insight <set-id> <insight-name>` to analyze an insight",
     ]);
   }
   const result = await callTool("performance_analyze_insight", {
@@ -1640,7 +1640,7 @@ async function handleHeap(args: string[]): Promise<string> {
   const rawPath = args[0];
   if (!rawPath) {
     throw new CdpError("Missing file path", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi heap ./snapshot.heapsnapshot` to take a heap snapshot",
+      "Run `sq-browser heap ./snapshot.heapsnapshot` to take a heap snapshot",
     ]);
   }
   const filePath = resolveOutputPath(rawPath);
@@ -1651,13 +1651,13 @@ async function handleHeap(args: string[]): Promise<string> {
 async function handleRun(): Promise<string> {
   if (process.stdin.isTTY) {
     throw new CdpError("No script provided on stdin", "VALIDATION_ERROR", [
-      "Pipe a script: chrome-devtools-axi run <<'EOF'\\n...\\nEOF",
+      "Pipe a script: sq-browser run <<'EOF'\\n...\\nEOF",
     ]);
   }
   const content = await readStdin();
   if (!content.trim()) {
     throw new CdpError("Empty script on stdin", "VALIDATION_ERROR", [
-      "Pipe a script: chrome-devtools-axi run <<'EOF'\\n...\\nEOF",
+      "Pipe a script: sq-browser run <<'EOF'\\n...\\nEOF",
     ]);
   }
   const result = await runScript(content, callTool);
@@ -1667,7 +1667,7 @@ async function handleRun(): Promise<string> {
 async function handleSetup(args: string[]): Promise<string> {
   if (args.length !== 1 || args[0] !== "hooks") {
     throw new CdpError("Unknown setup action", "VALIDATION_ERROR", [
-      "Run `chrome-devtools-axi setup hooks`",
+      "Run `sq-browser setup hooks`",
     ]);
   }
 
@@ -1676,7 +1676,7 @@ async function handleSetup(args: string[]): Promise<string> {
   return renderOutput([
     "hooks:\n  status: installed\n  integrations: Claude Code, Codex, OpenCode",
     renderHelp([
-      "Restart your agent session to receive chrome-devtools-axi ambient context",
+      "Restart your agent session to receive sq-browser ambient context",
     ]),
   ]);
 }
@@ -1686,7 +1686,7 @@ async function handleHome(_full: boolean): Promise<string> {
   if (!result) {
     return renderOutput([
       encode({ browser: "no active session" }),
-      renderHelp(["Run `chrome-devtools-axi open <url>` to start browsing"]),
+      renderHelp(["Run `sq-browser open <url>` to start browsing"]),
     ]);
   }
   const snapshot = await stampFresh(stripSnapshotHeader(result));
@@ -1696,9 +1696,9 @@ async function handleHome(_full: boolean): Promise<string> {
   if (title) page.title = title;
   page.refs = refs;
   const help: string[] = [
-    "Run `chrome-devtools-axi snapshot` to see page content",
-    "Run `chrome-devtools-axi open <url>` to navigate to a URL",
-    "Run `chrome-devtools-axi --help` to see full command list",
+    "Run `sq-browser snapshot` to see page content",
+    "Run `sq-browser open <url>` to navigate to a URL",
+    "Run `sq-browser --help` to see full command list",
   ];
   return renderOutput([encode({ page }), renderHelp(help)]);
 }

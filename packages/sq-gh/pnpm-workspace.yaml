@@ -5,7 +5,7 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - axi-sdk-js
-  - gh-axi
+  - sq-gh
 onlyBuiltDependencies:
   - esbuild
 allowBuilds:

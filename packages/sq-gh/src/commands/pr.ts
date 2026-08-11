@@ -246,7 +246,7 @@ const VIEW_JSON_FIELDS =
 // Help
 // ---------------------------------------------------------------------------
 
-export const PR_HELP = `usage: gh-axi pr <subcommand> [flags]
+export const PR_HELP = `usage: sq-gh pr <subcommand> [flags]
 subcommands[15]:
   list, view <number>, create, edit <number>, close <number>, merge <number>, review <number>, checks <number>, diff <number>, checkout <number>, ready <number>, reopen <number>, comment <number>, update-branch <number>, revert <number>
 flags{list}:
@@ -268,11 +268,11 @@ flags{checks}:
 flags{diff}:
   --full (show complete diff without truncation)
 examples:
-  gh-axi pr list --state open --label bug
-  gh-axi pr view 42 --comments
-  gh-axi pr view 42 --reviews
-  gh-axi pr comment 42 --body-file review.md
-  gh-axi pr merge 42 --squash --delete-branch`;
+  sq-gh pr list --state open --label bug
+  sq-gh pr view 42 --comments
+  sq-gh pr view 42 --reviews
+  sq-gh pr comment 42 --body-file review.md
+  sq-gh pr merge 42 --squash --delete-branch`;
 
 // ---------------------------------------------------------------------------
 // Subcommands
@@ -281,7 +281,7 @@ examples:
 async function prList(args: string[], ctx?: RepoContext): Promise<string> {
   if (args.includes("--search")) {
     throw new AxiError(
-      'pr list does not support --search. Use `gh-axi search prs "<query>"` instead for full-text search with total counts.',
+      'pr list does not support --search. Use `sq-gh search prs "<query>"` instead for full-text search with total counts.',
       "VALIDATION_ERROR",
     );
   }
@@ -753,7 +753,7 @@ async function prDiff(args: string[], ctx?: RepoContext): Promise<string> {
   if (shouldTruncate) {
     const repoArg = ctx && ctx.source !== "git" ? ` -R ${ctx.nwo}` : "";
     suggestions.unshift(
-      `Run \`gh-axi${repoArg} pr diff ${num} --full\` to see the complete diff`,
+      `Run \`sq-gh${repoArg} pr diff ${num} --full\` to see the complete diff`,
     );
   }
 
@@ -1002,7 +1002,7 @@ export async function prCommand(
       return PR_HELP;
     default:
       return renderError(`Unknown pr subcommand: ${sub}`, "VALIDATION_ERROR", [
-        "Run `gh-axi pr --help` to see available subcommands",
+        "Run `sq-gh pr --help` to see available subcommands",
       ]);
   }
 }

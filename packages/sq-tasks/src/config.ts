@@ -9,7 +9,7 @@ import { AxiError } from "./errors.js";
  *
  * Override order:
  *   --backend / --file flag > TASKS_AXI_* env > project .tasks.toml >
- *   ~/.tasks-axi/config.toml > defaults (markdown, first existing
+ *   ~/.sq-tasks/config.toml > defaults (markdown, first existing
  *   backlog.md/data/backlog.md, otherwise backlog.md).
  *
  * P1 ships only the markdown backend; the Store seam keeps sqlite/remote
@@ -205,14 +205,14 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
   const cwd = overrides.cwd ?? process.cwd();
   const home = overrides.home ?? homedir();
 
-  const homeToml = loadToml(join(home, ".tasks-axi", "config.toml"));
+  const homeToml = loadToml(join(home, ".sq-tasks", "config.toml"));
   const projectToml = loadToml(resolve(cwd, ".tasks.toml"));
 
   const explicitPath =
     overrides.file !== undefined
       ? validatePathValue(overrides.file, "--file")
-      : env.TASKS_AXI_FILE !== undefined
-        ? validatePathValue(env.TASKS_AXI_FILE, "TASKS_AXI_FILE")
+      : env.SQ_TASKS_FILE !== undefined
+        ? validatePathValue(env.SQ_TASKS_FILE, "SQ_TASKS_FILE")
         : undefined;
   const tomlPath =
     explicitPath !== undefined
@@ -223,7 +223,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ResolvedConfig {
 
   const backend =
     overrides.backend ??
-    env.TASKS_AXI_BACKEND ??
+    env.SQ_TASKS_BACKEND ??
     projectToml.backend ??
     homeToml.backend ??
     "markdown";

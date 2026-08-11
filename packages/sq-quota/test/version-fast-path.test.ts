@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function runTraced(argv: string[]): { modules: string[]; stdout: string } {
-  const root = mkdtempSync(join(tmpdir(), "quota-axi-module-trace-"));
+  const root = mkdtempSync(join(tmpdir(), "sq-quota-module-trace-"));
   temporaryDirectories.push(root);
   const traceFile = join(root, "modules.txt");
   const result = spawnSync(
@@ -34,7 +34,7 @@ function runTraced(argv: string[]): { modules: string[]; stdout: string } {
       timeout: 60_000,
       env: {
         ...process.env,
-        QUOTA_AXI_MODULE_TRACE_FILE: traceFile,
+        SQ_QUOTA_MODULE_TRACE_FILE: traceFile,
       },
     },
   );
@@ -53,7 +53,7 @@ const HEAVY_MODULES = [
   "/@toon-format/toon/",
 ];
 
-describe("quota-axi --version fast path", () => {
+describe("sq-quota --version fast path", () => {
   it("answers a bare version flag without loading the heavy command graph", () => {
     const { modules, stdout } = runTraced(["--version"]);
 

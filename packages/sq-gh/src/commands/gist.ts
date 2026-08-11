@@ -20,7 +20,7 @@ import { parseFields, type ExtraFieldSpec } from "../fields.js";
 import { isStdinTTY, readStdin } from "../stdin.js";
 import { gistIdFromSelector } from "../gistSelector.js";
 
-export const GIST_HELP = `usage: gh-axi gist <subcommand> [flags]
+export const GIST_HELP = `usage: sq-gh gist <subcommand> [flags]
 subcommands[7]:
   list, view <id|url>, edit <id|url>, rename <id|url> <old> <new>, create, delete <id|url>, clone <id|url>
 flags{list}:
@@ -35,22 +35,22 @@ flags{create}:
   --file <path> (repeatable), --filename <name> (for piped content)
   -d/--desc <text>
 examples:
-  gh-axi gist list
-  gh-axi gist list --public --limit 20
-  gh-axi gist list --fields url,owner,created
-  gh-axi gist view 5b0e0062eb8e9654adad7bb1d81cc75f
-  gh-axi gist view https://gist.github.com/octocat/5b0e0062eb8e9654adad7bb1d81cc75f
-  gh-axi gist view 5b0e0062eb8e9654adad7bb1d81cc75f --files
-  echo 'new content' | gh-axi gist edit <id|url> --filename notes.md
-  echo 'new file' | gh-axi gist edit <id|url> --add new.txt -
-  gh-axi gist edit <id|url> --add ./local.txt
-  gh-axi gist edit <id|url> --remove old-file.txt --desc "updated description"
-  gh-axi gist rename <id|url> old.txt new.txt
-  gh-axi gist create notes.md --public --desc "My notes"
-  gh-axi gist create --file a.py --file b.py --secret
-  echo "content" | gh-axi gist create --filename hello.txt --public
-  gh-axi gist delete <id|url>
-  gh-axi gist clone <id|url>`;
+  sq-gh gist list
+  sq-gh gist list --public --limit 20
+  sq-gh gist list --fields url,owner,created
+  sq-gh gist view 5b0e0062eb8e9654adad7bb1d81cc75f
+  sq-gh gist view https://gist.github.com/octocat/5b0e0062eb8e9654adad7bb1d81cc75f
+  sq-gh gist view 5b0e0062eb8e9654adad7bb1d81cc75f --files
+  echo 'new content' | sq-gh gist edit <id|url> --filename notes.md
+  echo 'new file' | sq-gh gist edit <id|url> --add new.txt -
+  sq-gh gist edit <id|url> --add ./local.txt
+  sq-gh gist edit <id|url> --remove old-file.txt --desc "updated description"
+  sq-gh gist rename <id|url> old.txt new.txt
+  sq-gh gist create notes.md --public --desc "My notes"
+  sq-gh gist create --file a.py --file b.py --secret
+  echo "content" | sq-gh gist create --filename hello.txt --public
+  sq-gh gist delete <id|url>
+  sq-gh gist clone <id|url>`;
 
 /** Maximum items per /gists page. Also the per_page ceiling for this endpoint. */
 const PAGE_SIZE = 100;
@@ -267,7 +267,7 @@ async function viewGist(args: string[]): Promise<string> {
     throw new AxiError(
       "gist view requires a gist id or URL",
       "VALIDATION_ERROR",
-      ["Usage: gh-axi gist view <id|url>"],
+      ["Usage: sq-gh gist view <id|url>"],
     );
   }
   if (positionals.length > 1) {
@@ -424,7 +424,7 @@ async function deleteGist(args: string[]): Promise<string> {
 
   if (!selector)
     throw new AxiError(
-      "Gist is required: gh-axi gist delete <id|url>",
+      "Gist is required: sq-gh gist delete <id|url>",
       "VALIDATION_ERROR",
     );
   if (extra)
@@ -449,7 +449,7 @@ async function cloneGist(args: string[]): Promise<string> {
 
   if (!selector)
     throw new AxiError(
-      "Gist is required: gh-axi gist clone <id|url>",
+      "Gist is required: sq-gh gist clone <id|url>",
       "VALIDATION_ERROR",
     );
   if (extra)
@@ -549,11 +549,11 @@ async function createGist(args: string[]): Promise<string> {
       throw new AxiError(
         "--filename requires piped content on stdin; no pipe was detected",
         "VALIDATION_ERROR",
-        [`echo 'content' | gh-axi gist create --filename <name> --public`],
+        [`echo 'content' | sq-gh gist create --filename <name> --public`],
       );
     }
     const content = await readRequiredStdin(
-      `echo 'content' | gh-axi gist create --filename <name> --public`,
+      `echo 'content' | sq-gh gist create --filename <name> --public`,
     );
     ghArgs.push("--filename", filename);
     // No ctx — gist is user-scoped; buildArgs must not append --repo.
@@ -637,7 +637,7 @@ async function editGist(args: string[]): Promise<string> {
   const id = positionals[0];
   if (!id) {
     throw new AxiError(
-      "Gist ID or URL is required: gh-axi gist edit <id|url> [flags]",
+      "Gist ID or URL is required: sq-gh gist edit <id|url> [flags]",
       "VALIDATION_ERROR",
     );
   }
@@ -679,8 +679,8 @@ async function editGist(args: string[]): Promise<string> {
       "stdin content (-) requires --filename <name> or --add <name> to identify the target file",
       "VALIDATION_ERROR",
       [
-        "Replace a file: echo 'content' | gh-axi gist edit <id|url> --filename <name>",
-        "Add a new file: echo 'content' | gh-axi gist edit <id|url> --add <name> -",
+        "Replace a file: echo 'content' | sq-gh gist edit <id|url> --filename <name>",
+        "Add a new file: echo 'content' | sq-gh gist edit <id|url> --add <name> -",
       ],
     );
   }
@@ -693,7 +693,7 @@ async function editGist(args: string[]): Promise<string> {
         "--filename requires content piped via stdin",
         "VALIDATION_ERROR",
         [
-          "Example: echo 'content' | gh-axi gist edit <id|url> --filename <name>",
+          "Example: echo 'content' | sq-gh gist edit <id|url> --filename <name>",
         ],
       );
     }
@@ -703,7 +703,7 @@ async function editGist(args: string[]): Promise<string> {
     const ghArgs = ["gist", "edit", id, "-", "--filename", filenameFlag];
     if (descFlag !== undefined) ghArgs.push("--desc", descFlag);
     const content = await readRequiredStdin(
-      "Example: echo 'content' | gh-axi gist edit <id|url> --filename <name>",
+      "Example: echo 'content' | sq-gh gist edit <id|url> --filename <name>",
     );
     await ghExecWithStdin(ghArgs, content);
   } else if (addFlag !== undefined && wantsStdin) {
@@ -714,13 +714,13 @@ async function editGist(args: string[]): Promise<string> {
       throw new AxiError(
         "--add with the stdin sentinel (-) requires content piped via stdin",
         "VALIDATION_ERROR",
-        ["Example: echo 'content' | gh-axi gist edit <id|url> --add <name> -"],
+        ["Example: echo 'content' | sq-gh gist edit <id|url> --add <name> -"],
       );
     }
     const ghArgs = ["gist", "edit", id, "--add", addFlag, "-"];
     if (descFlag !== undefined) ghArgs.push("--desc", descFlag);
     const content = await readRequiredStdin(
-      "Example: echo 'content' | gh-axi gist edit <id|url> --add <name> -",
+      "Example: echo 'content' | sq-gh gist edit <id|url> --add <name> -",
     );
     await ghExecWithStdin(ghArgs, content);
   } else if (
@@ -779,14 +779,14 @@ async function renameGist(args: string[]): Promise<string> {
 
   if (positionals.length < 3) {
     throw new AxiError(
-      "usage: gh-axi gist rename <id|url> <old> <new>",
+      "usage: sq-gh gist rename <id|url> <old> <new>",
       "VALIDATION_ERROR",
     );
   }
 
   if (positionals.length > 3) {
     throw new AxiError(
-      `too many arguments; expected: gh-axi gist rename <id|url> <old> <new>`,
+      `too many arguments; expected: sq-gh gist rename <id|url> <old> <new>`,
       "VALIDATION_ERROR",
     );
   }

@@ -49,7 +49,7 @@ export function makeBacklog(
   content = FIXTURE,
   now = "2026-07-01",
 ): TempBacklog {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-axi-"));
+  const dir = mkdtempSync(join(tmpdir(), "sq-tasks-"));
   const path = join(dir, "backlog.md");
   writeFileSync(path, content, "utf8");
   const store = new MarkdownStore({ path, now: () => now });

@@ -19,7 +19,7 @@ import type {
   ProviderId,
   ProviderOptions,
   ProviderQuota,
-  QuotaAxiResponse,
+  SqQuotaResponse,
 } from "./types.js";
 
 export type QuotaContext = {
@@ -56,7 +56,7 @@ async function quotaTuiReport(
   flags: QuotaFlags,
   options: ProviderOptions,
 ): Promise<string> {
-  const frame = (response: QuotaAxiResponse, footerHint?: string): string =>
+  const frame = (response: SqQuotaResponse, footerHint?: string): string =>
     renderQuotaTui(redactedResponse(response, flags.full), {
       columns: process.stdout.columns,
       colorDepth: detectTuiColorDepth(
@@ -73,7 +73,7 @@ async function quotaTuiReport(
 
   const refreshSeconds = flags.refreshSeconds ?? DEFAULT_REFRESH_SECONDS;
   const hint = `Press q to quit · refreshing every ${formatInterval(refreshSeconds)}`;
-  const last = await runLiveTui<QuotaAxiResponse>({
+  const last = await runLiveTui<SqQuotaResponse>({
     load: () => loadQuota(flags.providers, options, true),
     render: (response) => frame(response, hint),
     intervalMillis: refreshSeconds * 1000,
@@ -118,7 +118,7 @@ async function loadQuota(
   providers: ProviderId[],
   options: ProviderOptions,
   live: boolean,
-): Promise<QuotaAxiResponse> {
+): Promise<SqQuotaResponse> {
   const response = await fetchQuota(providers, options);
   const allFailed = response.providers.every(isFailed);
   if (allFailed) process.exitCode = 1;
@@ -162,7 +162,7 @@ export async function authCommand(
     throw new AxiError(
       "--tui is only supported by the quota command",
       "VALIDATION_ERROR",
-      ["Run `quota-axi --tui` for the human quota report"],
+      ["Run `sq-quota --tui` for the human quota report"],
     );
   }
   const options: ProviderOptions = {
@@ -182,7 +182,7 @@ export async function authCommand(
 export async function fetchQuota(
   providers: ProviderId[],
   options: ProviderOptions,
-): Promise<QuotaAxiResponse> {
+): Promise<SqQuotaResponse> {
   const generatedAt = nowIso();
   const results = (
     await Promise.all(

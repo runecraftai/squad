@@ -109,7 +109,7 @@ describe("main", () => {
         "evaluate_script",
         {
           function: expect.stringContaining(
-            "__chromeDevtoolsAxiSnapshotGeneration",
+            "__sqBrowserSnapshotGeneration",
           ),
         },
       ],

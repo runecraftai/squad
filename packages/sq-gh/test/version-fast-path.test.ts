@@ -31,7 +31,7 @@ function runBin(args: string[]): Run {
         encoding: "utf8",
         env: {
           ...process.env,
-          GH_AXI_MODULE_TRACE_FILE: traceFile,
+          SQ_GH_MODULE_TRACE_FILE: traceFile,
         },
       },
     );

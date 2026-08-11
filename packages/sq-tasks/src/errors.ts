@@ -24,7 +24,7 @@ export function notFound(id: string, options: NotFoundOptions = {}): AxiError {
   const suggestions =
     options.suggestions ??
     withSuggestionGlobals(
-      ["Run `tasks-axi list` to see existing tasks"],
+      ["Run `sq-tasks list` to see existing tasks"],
       options.globals,
     );
   return new AxiError(

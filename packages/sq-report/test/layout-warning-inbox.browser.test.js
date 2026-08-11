@@ -8,11 +8,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 // The behavioral regression boundary for passive layout triage. Before this change the browser's
-// audit returned straight out of `lavish-axi poll` with no user action, so several individually
+// audit returned straight out of `sq-report poll` with no user action, so several individually
 // reasonable agent fixes produced repeated edit/reload cycles while the user was mid-review. Every
 // assertion here pins the replacement contract in a real browser: detection is passive, the user
 // decides what becomes work, and only a queued batch wakes the agent.
-const runBrowserE2e = process.env.LAVISH_AXI_BROWSER_E2E === "1";
+const runBrowserE2e = process.env.SQ_REPORT_BROWSER_E2E === "1";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = path.join(repoRoot, "test/fixtures/layout-audit");
 
@@ -47,12 +47,12 @@ test(
     const temp = await mkdtemp(path.join(tmpdir(), "lavish-warning-inbox-"));
     const port = await freePort();
     const lavishEnv = {
-      LAVISH_AXI_PORT: String(port),
-      LAVISH_AXI_STATE_DIR: path.join(temp, "state"),
-      LAVISH_AXI_NO_OPEN: "1",
-      LAVISH_AXI_TELEMETRY: "0",
-      LAVISH_AXI_HOST: "127.0.0.1",
-      LAVISH_AXI_LINK_HOST: "127.0.0.1",
+      SQ_REPORT_PORT: String(port),
+      SQ_REPORT_STATE_DIR: path.join(temp, "state"),
+      SQ_REPORT_NO_OPEN: "1",
+      SQ_REPORT_TELEMETRY: "0",
+      SQ_REPORT_HOST: "127.0.0.1",
+      SQ_REPORT_LINK_HOST: "127.0.0.1",
     };
     const chromeEnv = {
       CHROME_DEVTOOLS_AXI_SESSION: `lavish-warning-inbox-${process.pid}`,
@@ -77,10 +77,10 @@ test(
 
     /** Evaluate an expression in the chrome page and return its JSON-decoded result. */
     function evaluate(expression) {
-      const output = run("chrome-devtools-axi", ["eval", expression], chromeEnv);
+      const output = run("sq-browser", ["eval", expression], chromeEnv);
       const raw = output.match(/result:\s*("(?:[^"\\]|\\.)*")/s)?.[1];
       assert.ok(raw, output);
-      // chrome-devtools-axi renders the evaluated value as a JSON string, and the expressions
+      // sq-browser renders the evaluated value as a JSON string, and the expressions
       // here already JSON.stringify their result - so unwrap until it stops being encoded JSON.
       let value = JSON.parse(raw);
       while (typeof value === "string") {
@@ -118,7 +118,7 @@ test(
     // and clears both, so this is called again after every viewport change.
     function instrumentArtifactLoads() {
       run(
-        "chrome-devtools-axi",
+        "sq-browser",
         [
           "eval",
           '() => { window.__lavishArtifactLoads = 0; if (window.__lavishArtifactLoadsWired) return "reset"; window.__lavishArtifactLoadsWired = true; document.getElementById("artifact").addEventListener("load", () => { window.__lavishArtifactLoads += 1; }); return "wired"; }',
@@ -128,13 +128,13 @@ test(
     }
 
     function openReview(url, settleMs = 4500) {
-      run("chrome-devtools-axi", ["open", url], chromeEnv);
-      run("chrome-devtools-axi", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
+      run("sq-browser", ["open", url], chromeEnv);
+      run("sq-browser", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
       instrumentArtifactLoads();
     }
 
     function wait(ms) {
-      run("chrome-devtools-axi", ["wait", String(ms)], chromeEnv, ms + 45_000);
+      run("sq-browser", ["wait", String(ms)], chromeEnv, ms + 45_000);
     }
 
     try {
@@ -144,7 +144,7 @@ test(
       const artifact = path.join(temp, "review.html");
       await copyFile(path.join(fixtures, "control-broken-clipping.html"), artifact);
       const url = openArtifact(artifact);
-      run("chrome-devtools-axi", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
+      run("sq-browser", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
       openReview(url);
 
       const detected = inbox();
@@ -179,7 +179,7 @@ test(
       // ---------------------------------------------------------------------
       // Repeat reports of the same findings do not inflate the count.
       // ---------------------------------------------------------------------
-      run("chrome-devtools-axi", ["eval", '() => window.dispatchEvent(new Event("resize"))'], chromeEnv);
+      run("sq-browser", ["eval", '() => window.dispatchEvent(new Event("resize"))'], chromeEnv);
       wait(3000);
       assert.equal(inbox().badge, "3", "a repeat diagnostic pass deduplicates onto the same records");
 
@@ -219,7 +219,7 @@ test(
       assert.equal(escaped.hidden, true, "Escape closes the drawer");
       assert.equal(escaped.focus, "warningsButton", "focus returns to the trigger");
 
-      run("chrome-devtools-axi", ["emulate", "--viewport", "420x900x1,mobile,touch"], chromeEnv);
+      run("sq-browser", ["emulate", "--viewport", "420x900x1,mobile,touch"], chromeEnv);
       wait(3500);
       instrumentArtifactLoads();
       const narrow = evaluate(
@@ -234,7 +234,7 @@ test(
       assert.equal(narrow.barOverflow, 0, "the top bar still fits at phone width");
       assert.ok(narrow.left >= 0 && narrow.right <= narrow.innerWidth, "the drawer fits the narrow viewport");
       assert.equal(narrow.listOverflow, 0, "the list itself never overflows horizontally");
-      run("chrome-devtools-axi", ["eval", '() => document.getElementById("warningsButton").click()'], chromeEnv);
+      run("sq-browser", ["eval", '() => document.getElementById("warningsButton").click()'], chromeEnv);
 
       // A phone-width pass adds phone-scoped findings without clearing the desktop ones.
       const mobileDetected = inbox();
@@ -244,7 +244,7 @@ test(
         "a mobile pass cannot clear a desktop warning",
       );
 
-      run("chrome-devtools-axi", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
+      run("sq-browser", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
       wait(3500);
       instrumentArtifactLoads();
 
@@ -266,7 +266,7 @@ test(
       assert.equal(selected.selected, "2 selected");
       assert.equal(selected.queueDisabled, false);
 
-      run("chrome-devtools-axi", ["eval", '() => document.getElementById("warningsQueueButton").click()'], chromeEnv);
+      run("sq-browser", ["eval", '() => document.getElementById("warningsQueueButton").click()'], chromeEnv);
       wait(1500);
 
       const afterQueue = inbox();
@@ -286,14 +286,14 @@ test(
 
       // Leave unsent review context in the composer so the batch refresh can be checked against it.
       run(
-        "chrome-devtools-axi",
+        "sq-browser",
         [
           "eval",
           '() => { const el = document.getElementById("chatInput"); el.value = "Also check the footer spacing"; return el.value; }',
         ],
         chromeEnv,
       );
-      run("chrome-devtools-axi", ["eval", '() => document.getElementById("send").click()'], chromeEnv);
+      run("sq-browser", ["eval", '() => document.getElementById("send").click()'], chromeEnv);
       wait(1200);
 
       const feedback = poll(artifact, 8000);
@@ -310,7 +310,7 @@ test(
       // ---------------------------------------------------------------------
       instrumentArtifactLoads();
       run(
-        "chrome-devtools-axi",
+        "sq-browser",
         [
           "eval",
           '() => { document.getElementById("chatInput").value = "Also check the footer spacing"; return "reset"; }',
@@ -401,7 +401,7 @@ test(
 
       // Ordinary annotation feedback still works unchanged alongside the inbox.
       run(
-        "chrome-devtools-axi",
+        "sq-browser",
         [
           "eval",
           '() => { document.getElementById("chatInput").value = "Tighten the summary"; document.getElementById("send").click(); return "sent"; }',
@@ -414,7 +414,7 @@ test(
       assert.doesNotMatch(cleanFeedback, /layout-warnings/);
     } finally {
       run(process.execPath, ["bin/sq-report.js", "stop", "--port", String(port)], lavishEnv, 15_000);
-      run("chrome-devtools-axi", ["stop"], chromeEnv);
+      run("sq-browser", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }
   },
@@ -424,12 +424,12 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
   const temp = await mkdtemp(path.join(tmpdir(), "lavish-review-context-"));
   const port = await freePort();
   const lavishEnv = {
-    LAVISH_AXI_PORT: String(port),
-    LAVISH_AXI_STATE_DIR: path.join(temp, "state"),
-    LAVISH_AXI_NO_OPEN: "1",
-    LAVISH_AXI_TELEMETRY: "0",
-    LAVISH_AXI_HOST: "127.0.0.1",
-    LAVISH_AXI_LINK_HOST: "127.0.0.1",
+    SQ_REPORT_PORT: String(port),
+    SQ_REPORT_STATE_DIR: path.join(temp, "state"),
+    SQ_REPORT_NO_OPEN: "1",
+    SQ_REPORT_TELEMETRY: "0",
+    SQ_REPORT_HOST: "127.0.0.1",
+    SQ_REPORT_LINK_HOST: "127.0.0.1",
   };
   const chromeEnv = {
     CHROME_DEVTOOLS_AXI_SESSION: `lavish-review-context-${process.pid}`,
@@ -438,7 +438,7 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
 
   // Accessibility-tree refs go stale after every action, so always resolve a fresh one.
   function snapshot() {
-    return run("chrome-devtools-axi", ["snapshot"], chromeEnv);
+    return run("sq-browser", ["snapshot"], chromeEnv);
   }
   function ref(pattern) {
     const line = snapshot()
@@ -448,10 +448,10 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
     return line.trim().split(/\s+/)[0].replace(/^uid=/, "");
   }
   function click(pattern) {
-    run("chrome-devtools-axi", ["click", `@${ref(pattern)}`], chromeEnv);
+    run("sq-browser", ["click", `@${ref(pattern)}`], chromeEnv);
   }
   function wait(ms) {
-    run("chrome-devtools-axi", ["wait", String(ms)], chromeEnv, ms + 45_000);
+    run("sq-browser", ["wait", String(ms)], chromeEnv, ms + 45_000);
   }
 
   try {
@@ -460,8 +460,8 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
     const output = run(process.execPath, ["bin/sq-report.js", artifact, "--no-open"], lavishEnv);
     const url = output.match(/url:\s*"([^"]+)"/)?.[1];
     assert.ok(url, output);
-    run("chrome-devtools-axi", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
-    run("chrome-devtools-axi", ["open", url], chromeEnv);
+    run("sq-browser", ["emulate", "--viewport", "1440x1000x1"], chromeEnv);
+    run("sq-browser", ["open", url], chromeEnv);
     wait(4500);
 
     // Lavish-owned answers: a radio and a checkbox inside a data-lavish-question scope.
@@ -470,7 +470,7 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
     // Unsent annotation text on an element the reload will replace.
     click(/Annotate this paragraph/);
     wait(800);
-    run("chrome-devtools-axi", ["type", "Shorten this to one sentence"], chromeEnv);
+    run("sq-browser", ["type", "Shorten this to one sentence"], chromeEnv);
     wait(800);
 
     const before = snapshot();
@@ -489,14 +489,14 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
     click(/button "Queue"/);
     wait(800);
     const pills = run(
-      "chrome-devtools-axi",
+      "sq-browser",
       ["eval", '[...document.querySelectorAll(".pill-preview")].map((pill) => pill.textContent).join("|")'],
       chromeEnv,
     );
     assert.match(pills, /Shorten this to one sentence/);
   } finally {
     run(process.execPath, ["bin/sq-report.js", "stop", "--port", String(port)], lavishEnv, 15_000);
-    run("chrome-devtools-axi", ["stop"], chromeEnv);
+    run("sq-browser", ["stop"], chromeEnv);
     await rm(temp, { recursive: true, force: true });
   }
 });
