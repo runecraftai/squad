@@ -6,7 +6,7 @@
 #
 # A remote job worker (bin/sq-remote-job-worker.sh) is launched from a specific
 # Squad code root: the account's own checkout under the LaunchAgent, a
-# remote XO's checkout, a no-mistakes gate worktree, a pooled task
+# remote XO's checkout, a drill gate worktree, a pooled task
 # worktree, or a test fixture root. When that root is pruned while the worker is
 # running, the worker is reparented to init and, on older builds, keeps polling
 # and logging indefinitely. Current workers stop themselves once their root is

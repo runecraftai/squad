@@ -881,7 +881,7 @@ run_spawn_symlink_case() {  # <label> <physical|logical>
   mkdir -p "$state" "$config"
   log="$TMP_ROOT/symlink-spawn-$label.log"
 
-  out=$(run_spawn_case "$ROOT" "$fb" "$log" "$state" "$data" "$config" "$proj" -- "$id" "$proj" claude --mode no-mistakes --yolo off 2>&1)
+  out=$(run_spawn_case "$ROOT" "$fb" "$log" "$state" "$data" "$config" "$proj" -- "$id" "$proj" claude --mode drill --yolo off 2>&1)
   rc=$?
   expect_code 0 "$rc" "sq-spawn.sh should succeed for a project reached through a symlinked prefix when the backend reports $first_reply cwd"$'\n'"$out"
   assert_contains "$out" "worktree=$wt" \
@@ -968,10 +968,10 @@ test_teardown_conformance_old_vs_new() {
   mkdir -p "$state_old" "$state_new" "$config_old" "$config_new"
 
   fm_write_meta "$state_old/$id.meta" \
-    "window=Squad:sq-$id" "worktree=$wt" "project=$proj" "harness=claude" "kind=recon" "mode=no-mistakes" "yolo=off" \
+    "window=Squad:sq-$id" "worktree=$wt" "project=$proj" "harness=claude" "kind=recon" "mode=drill" "yolo=off" \
     "decisions_reviewed=1" "decision_keys="
   fm_write_meta "$state_new/$id.meta" \
-    "window=Squad:sq-$id" "worktree=$wt" "project=$proj" "harness=claude" "kind=recon" "mode=no-mistakes" "yolo=off" \
+    "window=Squad:sq-$id" "worktree=$wt" "project=$proj" "harness=claude" "kind=recon" "mode=drill" "yolo=off" \
     "decisions_reviewed=1" "decision_keys="
   touch "$state_old/.last-sentry-beat" "$state_new/.last-sentry-beat"
 
@@ -1008,7 +1008,7 @@ test_spawn_refuses_unknown_backend_flag() {
   # graduated to real adapters and have their own spawn tests.
   out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/sq-spawn.sh" nope-backend-z1 projects/none claude --mode no-mistakes --yolo off --backend bogus 2>&1)
+    "$ROOT/bin/sq-spawn.sh" nope-backend-z1 projects/none claude --mode drill --yolo off --backend bogus 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "sq-spawn --backend bogus should refuse"
   assert_contains "$out" "unknown backend 'bogus'" "sq-spawn did not name the rejected backend"
@@ -1019,7 +1019,7 @@ test_spawn_refuses_codex_app_backend_flag() {
   local out status
   out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/sq-spawn.sh" nope-codex-app-z1 projects/none claude --mode no-mistakes --yolo off --backend codex-app 2>&1)
+    "$ROOT/bin/sq-spawn.sh" nope-codex-app-z1 projects/none claude --mode drill --yolo off --backend codex-app 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "sq-spawn --backend codex-app should refuse"
   assert_contains "$out" "unknown backend 'codex-app'" "sq-spawn did not preserve the blocked codex-app contract"
@@ -1030,7 +1030,7 @@ test_spawn_refuses_unknown_fm_backend_env() {
   local out status
   out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_SPAWN_NO_GUARD=1 SQUAD_BACKEND=bogus \
-    "$ROOT/bin/sq-spawn.sh" nope-backend-z2 projects/none claude --mode no-mistakes --yolo off 2>&1)
+    "$ROOT/bin/sq-spawn.sh" nope-backend-z2 projects/none claude --mode drill --yolo off 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "SQUAD_BACKEND=bogus should refuse"
   assert_contains "$out" "unknown backend 'bogus'" "sq-spawn did not name the rejected SQUAD_BACKEND"
@@ -1052,7 +1052,7 @@ test_spawn_default_backend_writes_no_meta_field() {
     SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 TMUX="fake,1,0" \
     SQUAD_TMUX_LOG="$TMP_ROOT/nobackend.log" \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend tmux 2>&1)
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend tmux 2>&1)
   expect_code 0 $? "explicit --backend tmux should spawn successfully"$'\n'"$out"
   assert_no_grep 'backend=' "$state/$id.meta" \
     "an explicit --backend tmux (the default) must not write backend= to meta (P1 compatibility contract)"
@@ -1076,7 +1076,7 @@ test_spawn_explicit_backend_flag_beats_autodetect_herdr_env() {
     SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 TMUX="fake,1,0" HERDR_ENV=1 \
     SQUAD_TMUX_LOG="$TMP_ROOT/explicit-backend.log" \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off --backend tmux 2>&1)
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend tmux 2>&1)
   expect_code 0 $? "explicit --backend tmux should spawn successfully even with HERDR_ENV=1 set"$'\n'"$out"
   assert_no_grep 'backend=' "$state/$id.meta" \
     "an explicit --backend tmux must win over an ambient HERDR_ENV=1 auto-detect marker"
@@ -1103,7 +1103,7 @@ test_spawn_autodetect_nesting_resolves_tmux_silently() {
     SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 TMUX="fake,1,0" HERDR_ENV=1 \
     SQUAD_TMUX_LOG="$TMP_ROOT/nest.log" \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode no-mistakes --yolo off 2>&1)
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off 2>&1)
   expect_code 0 $? "sq-spawn.sh should auto-detect tmux and spawn successfully for nested tmux-in-herdr"$'\n'"$out"
   assert_no_grep 'backend=' "$state/$id.meta" \
     "auto-detected nested tmux-in-herdr must resolve to tmux (missing backend= means tmux)"

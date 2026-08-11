@@ -12,7 +12,7 @@
 # tasks-axi update advertises --archive-body, whether its mv help advertises
 # multi-ID moves, whether quota-axi is on PATH,
 # whether the local backend config opts out of tasks-axi backlog mutations,
-# which no-mistakes version is on PATH, which gh-axi version is on PATH, and
+# which drill version is on PATH, which gh-axi version is on PATH, and
 # which lavish-axi version is on PATH.
 # Dedicated unit-sync cases pin the computed bootstrap timeout, explicit
 # override, blank-env defaulting, partial-output relay, and pre-launch timeout
@@ -76,15 +76,15 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/fob"
-  cat > "$fakebin/no-mistakes" <<'SH'
+  cat > "$fakebin/drill" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' "${SQUAD_FAKE_NO_MISTAKES_VERSION:-no-mistakes version v1.31.2 (fake) 2026-06-27T00:02:18Z}"
+  printf '%s\n' "${SQUAD_FAKE_DRILL_VERSION:-drill version v1.31.2 (fake) 2026-06-27T00:02:18Z}"
   exit 0
 fi
 exit 0
 SH
-  chmod +x "$fakebin/no-mistakes"
+  chmod +x "$fakebin/drill"
   add_tasks_axi "$fakebin" "0.2.4"
   add_quota_axi "$fakebin"
   printf '%s\n' "$fakebin"
@@ -311,20 +311,20 @@ ROWS
   pass "bootstrap reports fob lease + tasks-axi/quota-axi bootstrap contracts"
 }
 
-test_no_mistakes_min_version() {
+test_drill_min_version() {
   local label version mode case_dir fakebin out missing n
-  missing='MISSING: no-mistakes (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder)'
+  missing='MISSING: drill (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/drill-install.sh | sh  # OQ-03 placeholder)'
   n=0
   while IFS='^' read -r label version mode; do
     [ -n "$label" ] || continue
     n=$((n + 1))
-    case_dir="$TMP_ROOT/no-mistakes-$n"
+    case_dir="$TMP_ROOT/drill-$n"
     mkdir -p "$case_dir/home"
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
     out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
-      SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_NO_MISTAKES_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
+      SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_DRILL_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
         [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
@@ -332,13 +332,13 @@ test_no_mistakes_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum no-mistakes version is accepted^no-mistakes version v1.31.2 (fake)^empty
-newer no-mistakes minor is accepted^no-mistakes version v1.32.0 (fake)^empty
-newer no-mistakes major is accepted^no-mistakes version v2.0.0 (fake)^empty
-older no-mistakes patch reports an upgrade^no-mistakes version v1.31.1 (fake)^missing
-unparseable no-mistakes version reports an upgrade^no-mistakes development build^missing
+minimum drill version is accepted^drill version v1.31.2 (fake)^empty
+newer drill minor is accepted^drill version v1.32.0 (fake)^empty
+newer drill major is accepted^drill version v2.0.0 (fake)^empty
+older drill patch reports an upgrade^drill version v1.31.1 (fake)^missing
+unparseable drill version reports an upgrade^drill development build^missing
 ROWS
-  pass "bootstrap enforces no-mistakes minimum version"
+  pass "bootstrap enforces drill minimum version"
 }
 
 test_gh_axi_min_version() {
@@ -1147,7 +1147,7 @@ ROWS
 }
 
 test_bootstrap_reporting
-test_no_mistakes_min_version
+test_drill_min_version
 test_gh_axi_min_version
 test_lavish_axi_min_version
 test_tasks_axi_min_version

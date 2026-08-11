@@ -106,7 +106,7 @@ env -u TMUX -u SQUAD_BACKEND PATH="$PATH" HERDR_ENV=1 \
   SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_DATA_OVERRIDE="$DATA" \
   SQUAD_CONFIG_OVERRIDE="$CONFIG" SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" \
   SQUAD_SPAWN_NO_GUARD=1 \
-  "$ROOT/bin/sq-spawn.sh" "$ID" "$PROJ" "sh -c 'echo autodetect-smoke-ok'" --mode no-mistakes --yolo off \
+  "$ROOT/bin/sq-spawn.sh" "$ID" "$PROJ" "sh -c 'echo autodetect-smoke-ok'" --mode drill --yolo off \
   >"$OUT_FILE" 2>"$ERR_FILE"
 status=$?
 [ "$status" -eq 0 ] || fail "sq-spawn.sh did not succeed auto-detecting herdr"$'\n'"--- stdout ---"$'\n'"$(cat "$OUT_FILE")"$'\n'"--- stderr ---"$'\n'"$(cat "$ERR_FILE")"

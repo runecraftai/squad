@@ -3,7 +3,7 @@
 # suites (sq-xo-lifecycle-e2e and sq-xo-safety).
 #
 # These mocks encode XO-lifecycle behavior (fake tmux that logs window
-# ops, fake fob that leases/returns homes, fake no-mistakes that records
+# ops, fake fob that leases/returns homes, fake drill that records
 # init/doctor), so they live here rather than in the generic tests/lib.sh. The
 # generic git/identity/meta primitives come from lib.sh, which this file pulls in.
 
@@ -99,42 +99,42 @@ SH
   printf '%s\n' "$fakebin"
 }
 
-# A fake no-mistakes that touches .no-mistakes-init / .no-mistakes-doctor markers.
-make_fake_no_mistakes() {
+# A fake drill that touches .drill-init / .drill-doctor markers.
+make_fake_drill() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/no-mistakes" <<'SH'
+  cat > "$fakebin/drill" <<'SH'
 #!/usr/bin/env bash
 set -eu
 case "${1:-}" in
-  init) touch .no-mistakes-init ;;
-  doctor) touch .no-mistakes-doctor ;;
+  init) touch .drill-init ;;
+  doctor) touch .drill-doctor ;;
   *) exit 2 ;;
 esac
 SH
-  chmod +x "$fakebin/no-mistakes"
+  chmod +x "$fakebin/drill"
   printf '%s\n' "$fakebin"
 }
 
-# A fake no-mistakes that records each "<pwd>\t<verb>" call to
-# SQUAD_FAKE_NO_MISTAKES_LOG and fails for the project named SQUAD_FAKE_NO_MISTAKES_FAIL_PROJECT.
-make_recording_no_mistakes() {
+# A fake drill that records each "<pwd>\t<verb>" call to
+# SQUAD_FAKE_DRILL_LOG and fails for the project named SQUAD_FAKE_DRILL_FAIL_PROJECT.
+make_recording_drill() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/no-mistakes" <<'SH'
+  cat > "$fakebin/drill" <<'SH'
 #!/usr/bin/env bash
 set -eu
-printf '%s\t%s\n' "$PWD" "${1:-}" >> "$SQUAD_FAKE_NO_MISTAKES_LOG"
-if [ "$(basename "$PWD")" = "${SQUAD_FAKE_NO_MISTAKES_FAIL_PROJECT:-}" ]; then
+printf '%s\t%s\n' "$PWD" "${1:-}" >> "$SQUAD_FAKE_DRILL_LOG"
+if [ "$(basename "$PWD")" = "${SQUAD_FAKE_DRILL_FAIL_PROJECT:-}" ]; then
   exit 1
 fi
 case "${1:-}" in
-  init) touch .no-mistakes-init ;;
-  doctor) touch .no-mistakes-doctor ;;
+  init) touch .drill-init ;;
+  doctor) touch .drill-doctor ;;
   *) exit 2 ;;
 esac
 SH
-  chmod +x "$fakebin/no-mistakes"
+  chmod +x "$fakebin/drill"
   printf '%s\n' "$fakebin"
 }
 

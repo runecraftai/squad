@@ -104,7 +104,7 @@ make_home() {  # <name> [relay-on|relay-off]
 EOF
   [ "$relay" = relay-off ] || printf 'SQX_PAIRING_TOKEN=test-token\n' > "$home/.env"
   make_fake_curl "$home" >/dev/null
-  fm_fake_exit0 "$home/fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$home/fakebin" tmux fob drill gh sq-gh
   printf '%s\n' "$home"
 }
 
@@ -735,7 +735,7 @@ test_XO_teardown_resolves_parent_from_durable_record_when_env_lost() {
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
   make_fake_curl "$child" >/dev/null
-  fm_fake_exit0 "$child/fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$child/fakebin" tmux fob drill gh sq-gh
 
   assert_local_XO_parent_record "$child" "$parent_resolved"
 
@@ -772,7 +772,7 @@ test_XO_teardown_durable_record_missing_parent_registration_still_refuses() {
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
   make_fake_curl "$child" >/dev/null
-  fm_fake_exit0 "$child/fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$child/fakebin" tmux fob drill gh sq-gh
   assert_local_XO_parent_record "$child" "$parent_resolved"
   fm_write_meta "$child/state/work-child.meta" \
     "window=Squad:sq-work-child" "endpoint_task_id=work-child" \
@@ -803,7 +803,7 @@ test_XO_teardown_durable_record_with_unknown_field_succeeds() {
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
   make_fake_curl "$child" >/dev/null
-  fm_fake_exit0 "$child/fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$child/fakebin" tmux fob drill gh sq-gh
   assert_local_XO_parent_record "$child" "$parent_resolved"
   printf 'some_future_field=value\n' >> "$child/.sq-xo-parent"
   parent_alias="$TMP_ROOT/teardown-durable-clean-parent-alias"
@@ -838,7 +838,7 @@ test_XO_teardown_rejects_conflicting_live_and_durable_parent_bindings() {
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$durable_parent" && pwd -P)
   make_fake_curl "$child" >/dev/null
-  fm_fake_exit0 "$child/fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$child/fakebin" tmux fob drill gh sq-gh
   assert_local_XO_parent_record "$child" "$parent_resolved"
   fm_write_meta "$durable_parent/state/mate.meta" "kind=xo" "home=$child"
   fm_git_init_commit "$child/projects/worktree"
@@ -870,7 +870,7 @@ test_XO_teardown_rejects_unsafe_durable_parent_records() {
       || fail "real XO seeding failed for $case_name"
     child=$(cd "$child" && pwd -P)
     make_fake_curl "$child" >/dev/null
-    fm_fake_exit0 "$child/fakebin" tmux fob no-mistakes gh sq-gh
+    fm_fake_exit0 "$child/fakebin" tmux fob drill gh sq-gh
     fm_write_meta "$child/state/work-child.meta" \
       "window=Squad:sq-work-child" "endpoint_task_id=work-child" \
       "worktree=$child" "project=$child" "kind=strike" "mode=local-only"
@@ -932,7 +932,7 @@ test_XO_teardown_rejects_nul_bearing_durable_parent_record() {
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
   make_fake_curl "$child" >/dev/null
-  fm_fake_exit0 "$child/fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$child/fakebin" tmux fob drill gh sq-gh
   assert_local_XO_parent_record "$child" "$parent_resolved"
   fm_write_meta "$parent/state/mate.meta" "kind=xo" "home=$child"
   fm_git_init_commit "$child/projects/worktree"
@@ -1133,7 +1133,7 @@ test_cleanup_refuses_while_a_public_reply_is_owed() {
     "project=$home/projects/sample" \
     "harness=codex" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
 
   rc=0
   PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \

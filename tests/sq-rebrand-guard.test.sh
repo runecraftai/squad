@@ -17,7 +17,7 @@
 #      (natural-English watch/ship/scout outside these patterns is ALLOWED -
 #      the allowlist is this exact pattern list, never bare-word greps)
 #   6. keep-list asserts: AGENTS.md exists, CLAUDE.md is a symlink to it,
-#      .tasks.toml and .no-mistakes.yaml exist, .claude/skills symlink intact
+#      .tasks.toml and .drill.yaml exist, .claude/skills symlink intact
 #   7. .specs/ is the only location allowed to mention the fork origin/legal
 #      caveat (enforced by construction: every guard excludes .specs/)
 #   8. packages/*/vendor.json provenance records name the upstream source
@@ -127,10 +127,10 @@ test_guard_keep_list() {
   { [ -L "$ROOT/CLAUDE.md" ] && [ "$(readlink "$ROOT/CLAUDE.md")" = AGENTS.md ]; } \
     || record_failure "rebrand guard 6: keep-list" "CLAUDE.md does not point at AGENTS.md"
   [ -f "$ROOT/.tasks.toml" ] || record_failure "rebrand guard 6: keep-list" ".tasks.toml missing"
-  [ -f "$ROOT/.no-mistakes.yaml" ] || record_failure "rebrand guard 6: keep-list" ".no-mistakes.yaml missing"
+  [ -f "$ROOT/.drill.yaml" ] || record_failure "rebrand guard 6: keep-list" ".drill.yaml missing"
   [ -L "$ROOT/.claude/skills" ] || record_failure "rebrand guard 6: keep-list" ".claude/skills is not a symlink"
   if [ -z "$GUARD_FAILURES" ]; then
-    pass "rebrand guard 6: keep-list asserts (AGENTS.md, CLAUDE.md symlink, .tasks.toml, .no-mistakes.yaml, .claude/skills symlink)"
+    pass "rebrand guard 6: keep-list asserts (AGENTS.md, CLAUDE.md symlink, .tasks.toml, .drill.yaml, .claude/skills symlink)"
   fi
 }
 

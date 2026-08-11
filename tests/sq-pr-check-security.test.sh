@@ -103,7 +103,7 @@ write_task_meta() {
     "worktree=$dir/wt" \
     "project=$dir/project" \
     "kind=strike" \
-    "mode=no-mistakes"
+    "mode=drill"
 }
 
 write_poll_meta() {

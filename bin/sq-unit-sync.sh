@@ -304,7 +304,7 @@ sync_project() {
     echo "$label: skipped: not a git repo"
     return 0
   fi
-  mode_line=$("$SQUAD_ROOT/bin/sq-project-mode.sh" "$label" 2>/dev/null || echo "no-mistakes off")
+  mode_line=$("$SQUAD_ROOT/bin/sq-project-mode.sh" "$label" 2>/dev/null || echo "drill off")
   mode=${mode_line%% *}
   if [ "$mode" = "local-only" ]; then
     echo "$label: skipped: local-only project"

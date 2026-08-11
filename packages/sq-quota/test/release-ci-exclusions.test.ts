@@ -183,8 +183,8 @@ describe("release-please CI exclusions", () => {
 
     expect(prWorkflows.map((w) => w.name).sort()).toEqual([
       "ci.yml",
+      "drill-required.yml",
       "guard-generated-files.yml",
-      "no-mistakes-required.yml",
     ]);
 
     const failures: string[] = [];

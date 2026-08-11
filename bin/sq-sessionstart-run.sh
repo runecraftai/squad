@@ -63,7 +63,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# The same two eligibility owners the nudge wrapper uses, so a no-mistakes gate
+# The same two eligibility owners the nudge wrapper uses, so a drill gate
 # agent and an unmarked task worktree can never run a session start for a home
 # they do not own.
 fm_is_gate_agent "$SQUAD_ROOT" && exit 0

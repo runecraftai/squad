@@ -6,7 +6,7 @@ describe("id", () => {
   describe("validateId", () => {
     it("accepts slug-shaped ids", () => {
       expect(validateId("homemux-h7")).toBe("homemux-h7");
-      expect(validateId("nm-release-validation")).toBe("nm-release-validation");
+      expect(validateId("drill-release-validation")).toBe("drill-release-validation");
       expect(validateId("a.b_c-1")).toBe("a.b_c-1");
     });
 

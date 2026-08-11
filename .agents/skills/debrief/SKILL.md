@@ -57,7 +57,7 @@ Never describe the session as reset-safe while the memory total is over budget o
      In an XO home, route a newly discovered shared preference to the main Squad through marked status or a document pointer instead of editing the inherited file.
    - Project-intrinsic knowledge never goes directly into a project's `AGENTS.md`.
      Route it through a normal strike task so an operator records it with `bin/sq-ensure-agents-md.sh` and the project's delivery path.
-   - Knowledge general to every Squad user belongs in this repo's shared tracked material through the normal branch, no-mistakes, PR, and commander-merge path.
+   - Knowledge general to every Squad user belongs in this repo's shared tracked material through the normal branch, drill, PR, and commander-merge path.
    - For task-scoped notes, inspect the item with `tasks-axi show <id> --full`, classify the change as new, duplicate, superseding, or obsolete, then use a considered replacement body through `tasks-axi update <id> --body-file <path>`.
      Use `--archive-body` when recoverability matters.
      Never append.

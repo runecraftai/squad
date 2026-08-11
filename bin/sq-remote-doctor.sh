@@ -58,7 +58,7 @@ SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd "$SCRIPT_DIR/.." && pwd -P)}"
 . "$SCRIPT_DIR/sq-tasks-lib.sh"
 REQUIRED_TOOLS=(git jq herdr tasks-axi fob)
 HARNESS_TOOLS=(claude codex opencode pi pi-signed grok kimi)
-OPTIONAL_TOOLS=(tmux no-mistakes gh)
+OPTIONAL_TOOLS=(tmux drill gh)
 LAUNCH_AGENT_LABEL=dev.Squad.herdr.sq-remote
 # The dedicated remote-XO session. The user's interactive Herdr work
 # remains in the separate default session, which this readiness check never

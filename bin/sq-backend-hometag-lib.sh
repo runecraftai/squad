@@ -7,7 +7,7 @@
 # title/name, two Squad homes (two XOs, a primary plus a
 # XO, or two independent primary installations) whose task ids
 # happen to collide can send/peek/close each other's tabs - the gap a
-# commander-directed no-mistakes review gate caught for cmux
+# commander-directed drill review gate caught for cmux
 # (docs/cmux-backend.md) and this same tag mechanism was later ported to
 # zellij to close for the same reason (docs/zellij-backend.md "Home-scoped
 # tab titles").

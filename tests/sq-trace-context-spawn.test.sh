@@ -119,7 +119,7 @@ run_spawn() {
     SQUAD_FAKE_TRACE_METADATA_APPEND_FAIL="${SQUAD_FAKE_TRACE_METADATA_APPEND_FAIL:-0}" \
     SQUAD_FAKE_META_PATH="$home/state/$1.meta" \
     SQUAD_FAKE_LAUNCH_LOG="$launchlog" PATH="$fakebin:$PATH" \
-    "$SPAWN" "$@" --mode no-mistakes --yolo off 2>&1
+    "$SPAWN" "$@" --mode drill --yolo off 2>&1
 }
 
 # Same, but with an explicit SQUAD_TRACE_CONTEXT override, to prove the env decides.
@@ -133,7 +133,7 @@ run_spawn_tc() {
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
     SQUAD_FAKE_LAUNCH_LOG="$launchlog" PATH="$fakebin:$PATH" \
-    "$SPAWN" "$@" --mode no-mistakes --yolo off 2>&1
+    "$SPAWN" "$@" --mode drill --yolo off 2>&1
 }
 
 start_trace_session() {
@@ -227,7 +227,7 @@ run_two_level() {
     SQUAD_PROJECTS_OVERRIDE="$sm/projects" SQUAD_CONFIG_OVERRIDE="$sm/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wwt" TMUX="fake,1,0" \
     SQUAD_FAKE_LAUNCH_LOG="$wlog" PATH="$wfake:$PATH" \
-    "$SPAWN" "$worker_id" "$wproj" --mode no-mistakes --yolo off >/dev/null 2>&1 || true
+    "$SPAWN" "$worker_id" "$wproj" --mode drill --yolo off >/dev/null 2>&1 || true
 
   TL_WORKER_TP=$(meta_traceparent "$sm/state/$worker_id.meta")
   TL_SM_FILE=absent

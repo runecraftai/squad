@@ -70,7 +70,7 @@ EOF
   while IFS='|' read -r label flags expect; do
     [ -n "$label" ] || continue
     n=$((n + 1))
-    write_brief "$home" "delivery-required-$n" no-mistakes
+    write_brief "$home" "delivery-required-$n" drill
     # shellcheck disable=SC2086  # flags is an intentional word-split arg list
     out=$(run_spawn "$home" "$fakebin" "delivery-required-$n" "$proj" claude $flags)
     status=$?
@@ -79,11 +79,11 @@ EOF
     assert_absent "$home/state/delivery-required-$n.meta" "$label: refused spawn wrote task metadata"
   done <<'ROWS'
 missing both flags||strike spawns require --mode
-missing --yolo|--mode no-mistakes|strike spawns require --yolo
+missing --yolo|--mode drill|strike spawns require --yolo
 missing --mode|--yolo off|strike spawns require --mode
-unknown mode|--mode nope --yolo off|must be one of no-mistakes, direct-PR, local-only
-unknown yolo|--mode no-mistakes --yolo maybe|--yolo must be on or off
-conditional policy as a task mode|--mode no-mistakes-prod-only --yolo off|classify this task's surface
+unknown mode|--mode nope --yolo off|must be one of drill, direct-PR, local-only
+unknown yolo|--mode drill --yolo maybe|--yolo must be on or off
+conditional policy as a task mode|--mode drill-prod-only --yolo off|classify this task's surface
 ROWS
   pass "sq-spawn: a ship spawn requires a valid explicit mode and yolo before anything is created"
 }
@@ -108,7 +108,7 @@ EOF
   [ "$status" -ne 0 ] || fail "a recon spawn carrying --yolo should exit non-zero"
   assert_contains "$out" "--yolo applies only to strike spawns" "recon spawn did not refuse --yolo"
 
-  out=$(run_spawn "$home" "$fakebin" delivery-sm-a2 "$home" --xo --mode no-mistakes --yolo off)
+  out=$(run_spawn "$home" "$fakebin" delivery-sm-a2 "$home" --xo --mode drill --yolo off)
   status=$?
   [ "$status" -ne 0 ] || fail "an XO spawn carrying delivery flags should exit non-zero"
   assert_contains "$out" "applies only to strike spawns" "XO spawn did not refuse the delivery flags"
@@ -124,12 +124,12 @@ test_spawn_refuses_a_brief_mode_mismatch() {
   IFS='|' read -r home proj fakebin <<EOF
 $rec
 EOF
-  write_brief "$home" delivery-mismatch-b1 no-mistakes
+  write_brief "$home" delivery-mismatch-b1 drill
   out=$(run_spawn "$home" "$fakebin" delivery-mismatch-b1 "$proj" claude --mode direct-PR --yolo off)
   status=$?
   [ "$status" -ne 0 ] || fail "a brief/spawn mode mismatch should exit non-zero"
   assert_contains "$out" "delivery mismatch for delivery-mismatch-b1" "mismatch refusal did not name the task"
-  assert_contains "$out" "the brief says mode=no-mistakes but this spawn passed --mode direct-PR" \
+  assert_contains "$out" "the brief says mode=drill but this spawn passed --mode direct-PR" \
     "mismatch refusal did not show both sides of the disagreement"
   assert_absent "$home/state/delivery-mismatch-b1.meta" "mismatched spawn wrote task metadata"
 
@@ -148,7 +148,7 @@ EOF
 
 # The registry is the commander's standing posture, so dropping below its rigor is
 # allowed but never silent, while matching or exceeding it stays quiet. An
-# unregistered project resolves to the same no-mistakes standing default
+# unregistered project resolves to the same drill standing default
 # (AGENTS.md section 7), so a downgrade there is announced too. A conditional
 # policy is excluded because both of its legs are legitimate classifications.
 test_spawn_notices_a_rigor_downgrade_against_the_registry() {
@@ -173,12 +173,12 @@ EOF
           "$label: printed a deviation notice that is not a downgrade" ;;
     esac
   done <<'ROWS'
-no-mistakes project shipped direct-PR|- proj [no-mistakes] - fixture (added 2026-01-01)|direct-PR|notice|no-mistakes
-no-mistakes project shipped local-only|- proj [no-mistakes] - fixture (added 2026-01-01)|local-only|notice|no-mistakes
-no-mistakes project shipped no-mistakes|- proj [no-mistakes] - fixture (added 2026-01-01)|no-mistakes|quiet|no-mistakes
-local-only project shipped no-mistakes|- proj [local-only] - fixture (added 2026-01-01)|no-mistakes|quiet|local-only
-conditional policy shipped direct-PR|- proj [no-mistakes-prod-only] - fixture (added 2026-01-01)|direct-PR|quiet|no-mistakes-prod-only
-unregistered project resolves to the no-mistakes standing default|- other [no-mistakes] - fixture (added 2026-01-01)|direct-PR|notice|no-mistakes
+drill project shipped direct-PR|- proj [drill] - fixture (added 2026-01-01)|direct-PR|notice|drill
+drill project shipped local-only|- proj [drill] - fixture (added 2026-01-01)|local-only|notice|drill
+drill project shipped drill|- proj [drill] - fixture (added 2026-01-01)|drill|quiet|drill
+local-only project shipped drill|- proj [local-only] - fixture (added 2026-01-01)|drill|quiet|local-only
+conditional policy shipped direct-PR|- proj [drill-prod-only] - fixture (added 2026-01-01)|direct-PR|quiet|drill-prod-only
+unregistered project resolves to the drill standing default|- other [drill] - fixture (added 2026-01-01)|direct-PR|notice|drill
 ROWS
   pass "sq-spawn: a rigor downgrade against the registered posture is announced, never blocked"
 }
@@ -222,7 +222,7 @@ test_promote_requires_and_records_the_delivery_contract() {
   [ "$status" -ne 0 ] || fail "promotion without --yolo should exit non-zero"
   assert_contains "$out" "promotion requires --yolo" "promote refusal did not name the missing approval posture"
 
-  out=$(SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode no-mistakes-prod-only --yolo off 2>&1)
+  out=$(SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode drill-prod-only --yolo off 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion on a conditional policy should exit non-zero"
   assert_contains "$out" "classify this task's surface" "promote did not refuse the conditional policy as a task mode"
@@ -246,27 +246,27 @@ test_project_mode_maps_the_conditional_policy() {
   home="$TMP_ROOT/project-mode/home"
   mkdir -p "$home/data"
   cat > "$home/data/projects.md" <<'EOF'
-- prodproj [no-mistakes-prod-only] - fixture (added 2026-01-01)
-- yoloproj [no-mistakes-prod-only +yolo] - fixture (added 2026-01-01)
+- prodproj [drill-prod-only] - fixture (added 2026-01-01)
+- yoloproj [drill-prod-only +yolo] - fixture (added 2026-01-01)
 - flatproj [direct-PR] - fixture (added 2026-01-01)
 - typoproj [no-mistakez] - fixture (added 2026-01-01)
 EOF
   out=$(SQUAD_HOME="$home" "$PROJECT_MODE" prodproj 2>/dev/null)
-  [ "$out" = "no-mistakes off" ] || fail "conditional policy did not map to its most rigorous leg (got '$out')"
+  [ "$out" = "drill off" ] || fail "conditional policy did not map to its most rigorous leg (got '$out')"
   err=$(SQUAD_HOME="$home" "$PROJECT_MODE" prodproj 2>&1 >/dev/null)
   [ -z "$err" ] || fail "a registered conditional policy still warned as unknown: $err"
 
   out=$(SQUAD_HOME="$home" "$PROJECT_MODE" yoloproj 2>/dev/null)
-  [ "$out" = "no-mistakes on" ] || fail "conditional policy dropped its +yolo posture (got '$out')"
+  [ "$out" = "drill on" ] || fail "conditional policy dropped its +yolo posture (got '$out')"
 
   out=$(SQUAD_HOME="$home" "$PROJECT_MODE" --raw prodproj 2>/dev/null)
-  [ "$out" = "no-mistakes-prod-only off" ] || fail "--raw did not expose the registered annotation (got '$out')"
+  [ "$out" = "drill-prod-only off" ] || fail "--raw did not expose the registered annotation (got '$out')"
 
   out=$(SQUAD_HOME="$home" "$PROJECT_MODE" --raw flatproj 2>/dev/null)
   [ "$out" = "direct-PR off" ] || fail "--raw altered a flat registered mode (got '$out')"
 
   out=$(SQUAD_HOME="$home" "$PROJECT_MODE" typoproj 2>/dev/null)
-  [ "$out" = "no-mistakes off" ] || fail "a typo'd mode no longer falls back to the most rigorous default"
+  [ "$out" = "drill off" ] || fail "a typo'd mode no longer falls back to the most rigorous default"
   err=$(SQUAD_HOME="$home" "$PROJECT_MODE" typoproj 2>&1 >/dev/null)
   assert_contains "$err" "unknown mode" "a typo'd registry mode stopped warning"
   pass "sq-project-mode: the conditional policy is accepted, mapped for mechanical callers, and readable raw"

@@ -1,6 +1,9 @@
 /projects/
 /state/
 /data/
+.drill/
+# Legacy local validation state written by the pre-rename binary; removed once
+# the global drill rename lands and no install writes this directory.
 .no-mistakes/
 .lavish/
 .sq-xo-home

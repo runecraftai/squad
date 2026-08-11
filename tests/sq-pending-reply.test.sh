@@ -712,7 +712,7 @@ test_unmarked_commander_input_creates_no_expectation() {
   # Operator target stays unmarked and creates no pending-reply record.
   fm_write_meta "$home/state/build.meta" \
     "window=sess:sq-build" "worktree=$home/wt" "project=$home/p" \
-    "harness=echo" "kind=strike" "mode=no-mistakes" "yolo=off"
+    "harness=echo" "kind=strike" "mode=drill" "yolo=off"
   run_send "$fb" "$home" "$log" "build" "commander says hello"; rc=$?
   expect_code 0 "$rc" "unmarked operator send should succeed"
   [ "$(cat "$log")" = "commander says hello" ] \

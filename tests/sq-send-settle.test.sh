@@ -125,7 +125,7 @@ test_claude_escape_records_interrupt_idle() {
   home="$dir/home"; mkdir -p "$home/state"
   fm_write_meta "$home/state/task.meta" \
     "window=sess:win" "worktree=$home/wt" "project=$home/project" \
-    "harness=claude" "kind=strike" "mode=no-mistakes" "yolo=off"
+    "harness=claude" "kind=strike" "mode=drill" "yolo=off"
   gen=$("$ROOT/bin/sq-busy-event.sh" arm "$home/state" task)
   printf 'busy_gen=%s\n' "$gen" >> "$home/state/task.meta"
   : > "$log"

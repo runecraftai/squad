@@ -17,7 +17,7 @@ When a canonical validated PR poll returns exactly `merged`, the sentry appends 
 The receipt makes retirement safely retryable across restarts: fixed-path recovery revalidates the same evidence, removes the runnable check first, removes its registration and data sidecars, removes the receipt last, and preserves task metadata including `pr=` and `pr_head=`.
 A concurrent replacement remains armed, every non-merged or invalid observation remains unchanged, and retirement never performs task or persistent-XO cleanup.
 `bin/sq-pr-lib.sh` owns the receipt format and strict identity mechanics, while `bin/sq-sentry.sh` owns queue-before-retirement ordering.
-No-verb wakes, such as `working:` notes and bare turn-ended signals, are benign only when `bin/sq-crew-state.sh` reports positive evidence that the operator is still working: an actively running no-mistakes step attributed to that crew's current code, or an exact busy verdict from the semantic busy-state contract.
+No-verb wakes, such as `working:` notes and bare turn-ended signals, are benign only when `bin/sq-crew-state.sh` reports positive evidence that the operator is still working: an actively running drill step attributed to that crew's current code, or an exact busy verdict from the semantic busy-state contract.
 A crew that declares `paused:` for a known external wait is separately absorbed while idle and re-surfaced only on the longer pause cadence, rather than being treated as a possible wedge.
 For an ordinary crew that has stopped, the normal-mode sentry first surfaces one stale wake, then applies that same cadence to an unchanged `paused:` or durable `commander-held` endpoint only when the backend confidently reports its agent dead.
 Live or inconclusive liveness remains fail-open at that initial surface, and the XO idle-endpoint exemption is unchanged.
@@ -31,9 +31,9 @@ A declared external wait trades that silence for one bounded recheck per pause w
 Crew status files are append-only wake-event logs, not current-state fields.
 Because of that, a per-wake read of only the latest line can bury an earlier still-open `needs-decision`/`blocked` under later unrelated appends; `sq-stand-to-drain.sh` prints a separate, unit-wide OPEN DECISIONS section on every drain (including the empty-queue path session-start relies on), built through `sq-classify-lib.sh`'s cursor-backed incremental scan using the authoritative `status_open_decisions` fold semantics so the buried decision keeps surfacing until it is explicitly resolved while each drain reads only new status-log appends.
 The explicit resolution is written by the actor that answers, not the busy worker: `sq-send`'s `--resolve-key` appends the closing `resolved` line to this home's own copy of the ledger at answer time, which covers operators, local XOs, and remote XOs identically because a remote mate's escalations reach that local copy through the parent-replies ingest and only the answer message itself crosses the transport.
-`bin/sq-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes a no-mistakes run, active or terminal, only when it matches the operator's branch and current code identity, then keeps that run-step authoritative even if the pane has closed.
+`bin/sq-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes a drill run, active or terminal, only when it matches the operator's branch and current code identity, then keeps that run-step authoritative even if the pane has closed.
 The script header owns the exact run-head ancestry rules.
-During no-mistakes' `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
+During drill's `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
 The most recent recognized ci log marker wins, so checks-green monitoring reports done while a later re-arm, failed-check, or issue marker returns the operator to working.
 Only when no matching run exists does it consult semantic busy state; exact busy reports working, exact idle permits fallback to a status-log event whose verb maps to a recognized run-state, and unknown or a dead pane stays unknown instead of trusting a stale log.
 Decision-only events such as `resolved` never become current state or leak their prose into the current-state detail.
@@ -148,17 +148,17 @@ Only a named non-default branch checked out in `SQUAD_ROOT` is a worktree tangle
 If another live session holds the unit lock, both surfaces keep the alarm but switch to read-only wording with no repair command.
 Ship briefs also tell the operator to verify `pwd -P` and `git rev-parse --show-toplevel` before creating `fm/<id>`, then stop with a blocked status if it landed in the primary checkout.
 
-## No-mistakes gate authority boundary
+## Drill gate authority boundary
 
-Squad's own no-mistakes gate runs agents inside a checkout that also contains the unit-commander identity in `AGENTS.md`, so gate execution needs an authority boundary separate from ordinary operator worktree isolation.
-The tracked `.no-mistakes.yaml` sets `disable_project_settings: true`; no-mistakes honors that setting only from the trusted default-branch copy, so a pushed branch cannot enable its own project instructions during validation.
-Independently, `sq-spawn.sh`, `sq-send.sh`, and `sq-teardown.sh` source `bin/sq-gate-refuse-lib.sh` and exit with status 3 before unit mutation when the gate environment marker is present or the current checkout matches the default no-mistakes gate-repository topology.
+Squad's own drill gate runs agents inside a checkout that also contains the unit-commander identity in `AGENTS.md`, so gate execution needs an authority boundary separate from ordinary operator worktree isolation.
+The tracked `.drill.yaml` sets `disable_project_settings: true`; drill honors that setting only from the trusted default-branch copy, so a pushed branch cannot enable its own project instructions during validation.
+Independently, `sq-spawn.sh`, `sq-send.sh`, and `sq-teardown.sh` source `bin/sq-gate-refuse-lib.sh` and exit with status 3 before unit mutation when the gate environment marker is present or the current checkout matches the default drill gate-repository topology.
 A normal primary checkout or operator worktree has neither signal and remains unaffected.
-The helper's header owns the exact signal detection, relocated-home limitation, test-harness bypass, and relationship to no-mistakes' HEAD-continuity guard.
+The helper's header owns the exact signal detection, relocated-home limitation, test-harness bypass, and relationship to drill's HEAD-continuity guard.
 
 ## Two task shapes
 
-Strike tasks change projects and ship by project mode (`no-mistakes`, `direct-PR`, or `local-only`); recon tasks leave standalone investigation reports at `data/<id>/report.md` and never push.
+Strike tasks change projects and ship by project mode (`drill`, `direct-PR`, or `local-only`); recon tasks leave standalone investigation reports at `data/<id>/report.md` and never push.
 The intake and authority contract in `AGENTS.md` owns when separate recon research is warranted.
 
 ## Dispatch profiles
@@ -178,7 +178,7 @@ That keeps spawn launch compatible across claude, codex, opencode, pi, pi-signed
 A local route points directly at its home, while a remote route adds an SSH alias and remote Squad code root so the entire home and all of its child work stay on that host.
 Remote placement pins the remote second-mate agent to Herdr while leaving the remote home's worker backend selection independent, and every non-doctor primary-to-remote `sq-on` command runs through the remote account's Squad-owned job worker rather than its SSH process or a Herdr pane.
 [`remote-XOs.md`](remote-XOs.md) owns current setup, supplied-origin provisioning, transport, relay, failure, and retirement behavior.
-`sq-home-seed.sh` provisions a local isolated home, clones the listed PR-based projects into it, initializes newly cloned `no-mistakes` projects, copies the charter to `data/charter.md`, and `sq-spawn.sh --xo` launches it through the same session-provider and status-file path as any direct report.
+`sq-home-seed.sh` provisions a local isolated home, clones the listed PR-based projects into it, initializes newly cloned `drill` projects, copies the charter to `data/charter.md`, and `sq-spawn.sh --xo` launches it through the same session-provider and status-file path as any direct report.
 For a domain whose subject is the Squad repo itself, a deliberate `--no-projects` seed creates a project-less home whose operators take pooled worktrees of that repo instead of separate clones.
 The signal cannot be mixed with project names or omitted accidentally, and a populated home cannot be converted in place; the full seed contract is in [configuration.md](configuration.md#xo-routes-dataxosmd).
 Herdr XO and child placement follows the launcher-binding contract in [Watching and task containers](herdr-backend.md#watching-and-task-containers).
@@ -216,14 +216,14 @@ The `data/XOs.md` line contract is owned by the [`xo-provisioning` skill](../.ag
 
 ## Delivery modes are explicit per task
 
-`no-mistakes` tasks run the full validation pipeline, `direct-PR` tasks open PRs without that pipeline, and `local-only` tasks stay local until Squad performs an approved fast-forward merge.
+`drill` tasks run the full validation pipeline, `direct-PR` tasks open PRs without that pipeline, and `local-only` tasks stay local until Squad performs an approved fast-forward merge.
 Each task's mode and `yolo` posture are Squad's decision at intake and are passed explicitly to `bin/sq-brief.sh`, `bin/sq-spawn.sh`, and `bin/sq-promote.sh`, which refuse a strike task that does not carry them.
 A ship brief records its mode as a fixed machine-readable line and the spawn refuses to launch on a different one, so the worker's instructions and the recorded task delivery cannot diverge.
-`data/projects.md` records each project's standing posture and optional `+yolo` flag as the commander's default and as context for that decision, including the conditional `no-mistakes-prod-only` policy; a ship spawn that drops below the registered rigor prints a deviation notice and continues.
-`bin/sq-project-mode.sh` remains the one registry parser for the mechanical consumers that have no task in hand: unit sync's `local-only` skip and home seeding's refusal and no-mistakes initialization.
+`data/projects.md` records each project's standing posture and optional `+yolo` flag as the commander's default and as context for that decision, including the conditional `drill-prod-only` policy; a ship spawn that drops below the registered rigor prints a deviation notice and continues.
+`bin/sq-project-mode.sh` remains the one registry parser for the mechanical consumers that have no task in hand: unit sync's `local-only` skip and home seeding's refusal and drill initialization.
 When a selected delivery path calls for a diff, `bin/sq-review-diff.sh` refreshes the authoritative base and, when task meta records `pr=`, always fetches and compares against `refs/pull/<n>/head` by default (recorded `pr_head=` is only an offline fallback) before falling back to the local branch with a warning.
-For target project repos shipped through their own no-mistakes pipeline, commits under `.no-mistakes/evidence/` are the pipeline's PR-viewable validation evidence and are expected to stay in the operator branch until the evidence-hosting design changes.
-The Squad repo itself is the exception: its `.no-mistakes/` directory is local state, stays gitignored, and is rejected by CI if tracked.
+For target project repos shipped through their own drill pipeline, commits under `.drill/evidence/` are the pipeline's PR-viewable validation evidence and are expected to stay in the operator branch until the evidence-hosting design changes.
+The Squad repo itself is the exception: its `.drill/` directory is local state, stays gitignored, and is rejected by CI if tracked.
 PR-based task merges go through `bin/sq-pr-merge.sh`, which records `pr=` and any available `pr_head=` through `bin/sq-pr-check.sh` before calling `gh-axi pr merge`.
 The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, invokes `gh-axi pr merge <n> --repo <owner>/<repo>`, defaults to `--squash`, preserves explicit merge-method flags, and rejects malformed URLs or repo override flags before recording merge state; a well-formed GitLab merge request URL (see [docs/gitlab-merge-sentry.md](gitlab-merge-sentry.md)) is refused too, explicitly, rather than sent to the wrong forge.
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
@@ -306,7 +306,7 @@ The mechanics are owned by the `/updatesquad` skill and Squad's operating manual
 
 ## Restart-proof
 
-Unit state lives in each task's session-provider backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca when explicitly selected), no-mistakes run records, status event logs, local markdown under `data/` including `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, and persistent XO homes.
+Unit state lives in each task's session-provider backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca when explicitly selected), drill run records, status event logs, local markdown under `data/` including `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, and persistent XO homes.
 For herdr, respawning after a server-restored layout closes and replaces confirmed no-agent or dead task-tab husks instead of requiring manual tab cleanup.
 At session start, confirmed-dead XO agent endpoints are closed and relaunched through the same XO spawn path, while ambiguous liveness reads are left untouched to avoid duplicate supervisors.
 Use `/debrief` before an intentional reset when the conversation may hold durable knowledge that has not yet been written to disk; after that, the next Squad session can reconcile and carry on.

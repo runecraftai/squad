@@ -1,0 +1,256 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/mattn/go-isatty"
+	"github.com/runecraftai/squad/packages/drill/internal/daemon"
+	"github.com/runecraftai/squad/packages/drill/internal/db"
+	"github.com/runecraftai/squad/packages/drill/internal/ipc"
+	"github.com/runecraftai/squad/packages/drill/internal/telemetry"
+	"github.com/runecraftai/squad/packages/drill/internal/tui"
+	"github.com/runecraftai/squad/packages/drill/internal/types"
+	"github.com/runecraftai/squad/packages/drill/internal/update"
+	"github.com/runecraftai/squad/packages/drill/internal/wizard"
+	"github.com/spf13/cobra"
+)
+
+var runTUI = tui.Run
+var terminalInteractive = isInteractive
+
+// attachRun is the shared logic for attaching to a pipeline run. It's used by
+// both the root command (bare `drill`) and the `attach` subcommand.
+func attachRun(ctx context.Context, w io.Writer, runID string, rootDefault bool, autoYes bool, skipSteps []types.StepName) error {
+	p, d, err := openResources()
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	// When no run ID is given, resolve the repo before starting the daemon
+	// so we fail fast (and avoid orphan daemon processes) when not in a git repo.
+	var repo *db.Repo
+	if runID == "" {
+		repo, err = findRepo(d)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Ensure daemon is running.
+	if err := daemon.EnsureDaemon(p); err != nil {
+		return fmt.Errorf("start daemon: %w", err)
+	}
+
+	// Connect to daemon.
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		return fmt.Errorf("connect to daemon: %w", err)
+	}
+	defer client.Close()
+
+	var run *ipc.RunInfo
+	var repoID string
+	var state *repoState
+	startedViaWizard := false
+
+	if runID != "" {
+		// Fetch specific run.
+		var result ipc.GetRunResult
+		if err := client.Call(ipc.MethodGetRun, &ipc.GetRunParams{RunID: runID}, &result); err != nil {
+			return fmt.Errorf("get run: %w", err)
+		}
+		run = result.Run
+	} else {
+		repoID = repo.ID
+
+		// Detect current state so we can decide between attach and wizard
+		// consistently with what the wizard itself will see.
+		state, err = detectRepoState(ctx, repo)
+		if err != nil {
+			return err
+		}
+
+		// Skip the active-run check entirely when the state clearly calls
+		// for the wizard (detached HEAD, or default branch with pending
+		// changes) — pipelines for the user's current situation don't
+		// match any existing run.
+		if !state.shouldRouteToWizard() {
+			var result ipc.GetActiveRunResult
+			if err := client.Call(ipc.MethodGetActiveRun, &ipc.GetActiveRunParams{RepoID: repo.ID, Branch: activeRunBranch(state, rootDefault)}, &result); err != nil {
+				return fmt.Errorf("get active run: %w", err)
+			}
+			run = result.Run
+		}
+	}
+
+	if run == nil {
+		// No active run - if the user ran bare `drill` in their repo
+		// from a TTY, offer the interactive setup wizard instead of just
+		// dumping a hint. `-y` auto-accepts the wizard; when a TTY is
+		// available we keep the wizard visible, otherwise we fall back to the
+		// existing headless path.
+		interactive := terminalInteractive()
+		if rootDefault && runID == "" && repo != nil && state != nil && (autoYes || interactive) {
+			startedViaWizard = true
+			// waitFn blocks inside the wizard's alt screen until the daemon
+			// has the run registered, so the handoff to runTUI below is
+			// seamless rather than flashing the pre-wizard terminal.
+			waitFn := func(ctx context.Context, branch string) error {
+				return awaitDaemonRunRegistration(ctx, client, repo.ID, branch, 5*time.Second)
+			}
+			var res wizard.Result
+			var wErr error
+			if autoYes {
+				if interactive {
+					res, wErr = runWizardAutoVisible(ctx, p, state, skipSteps, waitFn)
+				} else {
+					res, wErr = runWizardAuto(ctx, p, state, skipSteps, waitFn)
+				}
+			} else {
+				res, wErr = runWizardWithSkip(ctx, p, state, skipSteps, waitFn)
+			}
+			if wErr != nil {
+				return wErr
+			}
+			if res.Success {
+				run, err = waitForActiveRun(ctx, client, repo.ID, res.TargetBranch, 5*time.Second)
+				if err != nil {
+					return fmt.Errorf("wait for active run: %w", err)
+				}
+				if autoYes && run == nil {
+					return fmt.Errorf("no active run appeared after pushing %q", res.TargetBranch)
+				}
+			}
+			if run == nil {
+				if !res.Aborted {
+					printNoActiveRun(w, d, repoID)
+				}
+				return nil
+			}
+		} else {
+			printNoActiveRun(w, d, repoID)
+			return nil
+		}
+	}
+	if len(skipSteps) > 0 && !startedViaWizard {
+		return fmt.Errorf("--skip only applies when starting a new pipeline run")
+	}
+
+	telemetry.Pageview("/tui", telemetry.Fields{
+		"entrypoint":      attachEntrypoint(rootDefault, runID),
+		"run_status":      run.Status,
+		"explicit_run_id": runID != "",
+	})
+
+	return runTUI(p.Socket(), client, run, update.CachedLatestVersion())
+}
+
+func attachEntrypoint(rootDefault bool, runID string) string {
+	if rootDefault && runID == "" {
+		return "root"
+	}
+	return "attach"
+}
+
+func activeRunBranch(state *repoState, rootDefault bool) string {
+	if rootDefault {
+		return state.currentBranch
+	}
+	return ""
+}
+
+// isInteractive reports whether stdin and stdout are both connected to a
+// terminal. The visible wizard needs a real TTY to read keystrokes; without
+// one, the --yes path falls back to the headless auto-accept flow.
+func isInteractive() bool {
+	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+}
+
+const recentRunsLimit = 5
+
+func printNoActiveRun(w io.Writer, d *db.DB, repoID string) {
+	if repoID != "" {
+		runs, err := d.GetRunsByRepo(repoID)
+		if err == nil && len(runs) > 0 {
+			shown := runs
+			if len(shown) > recentRunsLimit {
+				shown = shown[:recentRunsLimit]
+			}
+			fmt.Fprintf(w, "  %s\n", sDim.Render("No active run."))
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "  %s\n", sCyan.Render("Recent runs"))
+			for _, r := range shown {
+				sha := r.HeadSHA
+				if len(sha) > 8 {
+					sha = sha[:8]
+				}
+				age := formatAge(r.CreatedAt)
+				pr := ""
+				if r.PRURL != nil {
+					pr = fmt.Sprintf("  %s", *r.PRURL)
+				}
+				fmt.Fprintf(w, "  %-12s %-20s %s  %s%s\n", runStatusStyle(r.Status), r.Branch, sDim.Render(sha), sDim.Render(age), pr)
+			}
+			if len(runs) > recentRunsLimit {
+				fmt.Fprintf(w, "  %s\n", sDim.Render(fmt.Sprintf("(%d more - run 'drill runs' to see all)", len(runs)-recentRunsLimit)))
+			}
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "  %s\n", sDim.Render("Start a new pipeline:"))
+			fmt.Fprintf(w, "  %s\n", sBold.Render("git push drill <branch>"))
+			return
+		}
+	}
+	fmt.Fprintf(w, "  %s\n", sDim.Render("No active run. Push through the gate to start a pipeline:"))
+	fmt.Fprintf(w, "  %s\n", sBold.Render("git push drill <branch>"))
+}
+
+func formatAge(unixSec int64) string {
+	d := time.Since(time.Unix(unixSec, 0))
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", h)
+	default:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
+}
+
+func newAttachCmd() *cobra.Command {
+	var runID string
+
+	cmd := &cobra.Command{
+		Use:   "attach",
+		Short: "Attach to the active pipeline run",
+		Long: `Opens the TUI to monitor and interact with a pipeline run.
+If no run ID is specified, attaches to the active run for the current repo.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return trackCommand("attach", func() error {
+				return attachRun(cmd.Context(), cmd.OutOrStdout(), runID, false, false, nil)
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&runID, "run", "", "attach to a specific run ID")
+	return cmd
+}

@@ -230,15 +230,15 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/fob"
-  cat > "$fakebin/no-mistakes" <<'SH'
+  cat > "$fakebin/drill" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' 'no-mistakes version v1.31.2 (fake)'
+  printf '%s\n' 'drill version v1.31.2 (fake)'
   exit 0
 fi
 exit 0
 SH
-  chmod +x "$fakebin/no-mistakes"
+  chmod +x "$fakebin/drill"
   cat > "$fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
 case "${1:-} ${2:-}" in

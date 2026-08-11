@@ -3,7 +3,7 @@
 The sergeant at arms drives these; interactive entrypoints work by hand too, while `*-lib.sh` files are sourced helpers.
 Each row is one purpose clause only: the script's own header comment is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
 If you have changed away from the Squad home in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
-The shared no-mistakes gate refusal for unit lifecycle entrypoints is summarized in [architecture.md](architecture.md#no-mistakes-gate-authority-boundary), while `docs/sessionstart-nudge.md` covers the silent session-open hook use; `sq-gate-refuse-lib.sh`'s header owns its exact contract.
+The shared drill gate refusal for unit lifecycle entrypoints is summarized in [architecture.md](architecture.md#drill-gate-authority-boundary), while `docs/sessionstart-nudge.md` covers the silent session-open hook use; `sq-gate-refuse-lib.sh`'s header owns its exact contract.
 
 | Script                   | Purpose                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------ |
@@ -66,7 +66,7 @@ The shared no-mistakes gate refusal for unit lifecycle entrypoints is summarized
 | `sq-pending-reply-lib.sh` | Parent-owned XO pending-reply expectations, recovery, and keyed escalation lifecycle |
 | `sq-xo-report.sh` | Optional helper to append a correlated parent status or document-pointer report       |
 | `sq-procevent-remote-reply.sh` | Relay the remote-XO status stream through non-destructive process-event deltas |
-| `sq-gate-refuse-lib.sh`  | Shared no-mistakes gate-context refusal for unit lifecycle entrypoints               |
+| `sq-gate-refuse-lib.sh`  | Shared drill gate-context refusal for unit lifecycle entrypoints               |
 | `sq-sentry-arm.sh`        | Verified home-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `sq-sentry-checkpoint.sh` | Run one bounded foreground sentry checkpoint for Codex-style supervision            |
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
@@ -76,7 +76,7 @@ The shared no-mistakes gate refusal for unit lifecycle entrypoints is summarized
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
-| `sq-nm-run-lib.sh`       | Shared branch-and-code-identity attribution for no-mistakes runs                    |
+| `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
 | `sq-timing-lib.sh`       | Single owner of the deferred network stage's per-step elapsed-time records, inert unless a run asks for them |

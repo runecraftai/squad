@@ -124,7 +124,7 @@ bin/sq-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<projec
 
 Name each project's origin as `<project>=<origin-url>`.
 Resolve the concrete origin from the commander, the project registry, an existing clone anywhere, the forge, or an explicit paste rather than imposing one URL template.
-Seeding a project this machine has never cloned needs no clone under `projects/`, no `no-mistakes` initialization here, and no unit sync first.
+Seeding a project this machine has never cloned needs no clone under `projects/`, no `drill` initialization here, and no unit sync first.
 A bare `<project>` is still accepted when this machine happens to have `projects/<project>`, whose configured origin is then read instead of being retyped.
 [`bin/sq-project-origin-lib.sh`](../bin/sq-project-origin-lib.sh) owns which URLs are accepted; it decides on structure and safety alone, so no forge, domain, or host is privileged and a self-hosted server works exactly as a hosted one does.
 The primary validates every resolved origin before transport, and the receiving host validates it again before cloning.

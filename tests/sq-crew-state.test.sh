@@ -4,10 +4,10 @@
 #
 # The status file (state/<id>.status) is a best-effort append-only EVENT LOG, so
 # `tail -1` of it reports the last event, not the current state. sq-crew-state
-# reads the AUTHORITATIVE source (a matching no-mistakes run-step, else the
+# reads the AUTHORITATIVE source (a matching drill run-step, else the
 # semantic busy-state contract) and reconciles the possibly-stale log against it. These
 # cases pin every branch of that logic, hermetically, over real throwaway git
-# repos with a fake `no-mistakes` (run-step source) and a fake `tmux` (pane
+# repos with a fake `drill` (run-step source) and a fake `tmux` (pane
 # source):
 #   (a) active run-step is authoritative                          -> run-step
 #   (b) needs-decision/blocked log + resumed run = SUPERSEDED     -> run-step
@@ -49,17 +49,17 @@ make_repo_on_branch() {  # <dir> <branch>
   export SQUAD_FAKE_RUN_HEAD
 }
 
-# A fakebin with a fake `no-mistakes` (serves the env-driven run output) and a
-# fake `tmux` (serves a busy or idle pane). The fake no-mistakes mirrors the real
+# A fakebin with a fake `drill` (serves the env-driven run output) and a
+# fake `tmux` (serves a busy or idle pane). The fake drill mirrors the real
 # command surface the helper uses: `axi status`, `axi status --run <id>` (the
 # `axi` surface - no runs-listing subcommand exists under it, verified against
-# the real CLI), and the actual top-level run-listing command, `no-mistakes
+# the real CLI), and the actual top-level run-listing command, `drill
 # runs --limit N`, which is plain text - no run id, no quoting - serving
 # SQUAD_FAKE_RUNS_LIST verbatim.
 make_fakebin() {  # <dir> -> echoes fakebin path
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
-  cat > "$fb/no-mistakes" <<'SH'
+  cat > "$fb/drill" <<'SH'
 #!/usr/bin/env bash
 set -u
 case "${1:-}" in
@@ -122,7 +122,7 @@ case "${1:-}" in
 esac
 exit 0
 SH
-  chmod +x "$fb/no-mistakes" "$fb/tmux" "$fb/herdr"
+  chmod +x "$fb/drill" "$fb/tmux" "$fb/herdr"
   printf '%s\n' "$fb"
 }
 
@@ -174,7 +174,7 @@ reset_fakes() {
   export SQUAD_FAKE_HERDR_BUSY SQUAD_FAKE_HERDR_MISSING SQUAD_FAKE_HERDR_AGENT_STATUS SQUAD_FAKE_CI_LOGS
 }
 
-# --- run-object fixtures (TOON, as `no-mistakes axi status` emits) -----------
+# --- run-object fixtures (TOON, as `drill axi status` emits) -----------
 
 run_running() {  # <branch>
   cat <<EOF
@@ -686,10 +686,10 @@ test_terminal_failed() {
 
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
 # routine case once more than one crew validates the same underlying repo
-# concurrently - they share ONE no-mistakes repo registration), so the helper
-# falls back to the real top-level `no-mistakes runs` listing to learn whether
+# concurrently - they share ONE drill repo registration), so the helper
+# falls back to the real top-level `drill runs` listing to learn whether
 # THIS branch has an active run of its own. Regression coverage for the
-# 2026-07-02 herdr incident: the old fallback shelled out to `no-mistakes axi`
+# 2026-07-02 herdr incident: the old fallback shelled out to `drill axi`
 # (bare) expecting a `runs[N]{...}:` TOON table that the real CLI never emits
 # (verified against the installed v1.32.2 - the `axi` surface has no
 # runs-listing subcommand at all), so attribution silently failed every time
@@ -703,7 +703,7 @@ test_cross_branch_attribution_via_runs_list() {
   fm_write_meta "$d/state/feat-f.meta" "window=fm:sq-feat-f" "worktree=$d/wt" "kind=strike"
   # The repo-wide active/most-recent run belongs to a different crew's branch.
   SQUAD_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
-  # Real `no-mistakes runs` shape: plain text, newest-first, no run id, no
+  # Real `drill runs` shape: plain text, newest-first, no run id, no
   # quoting - "<status> <branch> <short-sha> <date> [<pr-url>]".
   SQUAD_FAKE_RUNS_LIST="$(cat <<EOF
   running    fm/other-crew aaaaaaa  2026-07-02 22:10
@@ -869,7 +869,7 @@ test_no_run_herdr_unknown_uses_backend_capture() {
 # herdr's agent.get reports generation state ("working" only while the model is
 # actively streaming - docs/herdr-backend.md "Busy state"), not "this crew's
 # turn is still in progress". A crew blocked on its own long-running foreground
-# `no-mistakes axi run` (no --yes; blocks until a gate or outcome) is not
+# `drill axi run` (no --yes; blocks until a gate or outcome) is not
 # generating for that whole span, so agent.get reads idle. The crew's own
 # semantic lifecycle record still says busy for the whole turn, and it outranks
 # the narrower native verdict - so the operator is no longer misread as not-working.
@@ -881,7 +881,7 @@ test_no_run_herdr_idle_agent_status_outranked_by_record() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-herdr-idle.meta" "window=default:w1:p3" "worktree=$d/wt" "kind=strike" \
     "backend=herdr" "harness=claude"
-  # No run attributable (mirrors a no-mistakes run-step lookup that found no
+  # No run attributable (mirrors a drill run-step lookup that found no
   # matching row within the configured runs-list window): the operator's semantic
   # busy state is the only remaining signal.
   SQUAD_FAKE_AXI_STATUS=""
@@ -1090,14 +1090,14 @@ test_no_timeout_uses_perl_bound() {
   d=$(new_case no-timeout)
   make_repo_on_branch "$d/wt" fm/feat-timeout
   make_fakebin "$d" >/dev/null
-  calls_file="$d/no-mistakes.calls"
+  calls_file="$d/drill.calls"
   : > "$calls_file"
-  cat > "$d/fakebin/no-mistakes" <<'SH'
+  cat > "$d/fakebin/drill" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "${SQUAD_FAKE_NM_CALLS:-/dev/null}"
+printf '%s\n' "$*" >> "${SQUAD_FAKE_DRILL_CALLS:-/dev/null}"
 while :; do :; done
 SH
-  chmod +x "$d/fakebin/no-mistakes"
+  chmod +x "$d/fakebin/drill"
   toolbin=$(make_no_timeout_toolbin "$d")
   fm_write_meta "$d/state/feat-timeout.meta" "window=fm:sq-feat-timeout" "worktree=$d/wt" "kind=strike" \
     "harness=claude"
@@ -1106,13 +1106,13 @@ SH
   "$ROOT/bin/sq-busy-event.sh" apply "$d/state" feat-timeout busy --gen "$gen" \
     --source claude-hook --event user-prompt-submit
   start=$SECONDS
-  out=$(SQUAD_FAKE_NM_CALLS="$calls_file" PATH="$d/fakebin:$toolbin" SQUAD_STATE_OVERRIDE="$d/state" SQUAD_CREW_STATE_NM_TIMEOUT=1 "$CREW_STATE" feat-timeout)
+  out=$(SQUAD_FAKE_DRILL_CALLS="$calls_file" PATH="$d/fakebin:$toolbin" SQUAD_STATE_OVERRIDE="$d/state" SQUAD_CREW_STATE_DRILL_TIMEOUT=1 "$CREW_STATE" feat-timeout)
   elapsed=$((SECONDS - start))
-  assert_contains "$out" "state: working" "timed-out no-mistakes falls back to pane"
-  assert_contains "$out" "source: pane" "timed-out no-mistakes -> pane source"
-  [ "$elapsed" -lt 5 ] || fail "perl timeout did not bound no-mistakes calls (elapsed ${elapsed}s)"
+  assert_contains "$out" "state: working" "timed-out drill falls back to pane"
+  assert_contains "$out" "source: pane" "timed-out drill -> pane source"
+  [ "$elapsed" -lt 5 ] || fail "perl timeout did not bound drill calls (elapsed ${elapsed}s)"
   calls=$(awk 'END { print NR + 0 }' "$calls_file" 2>/dev/null || echo 0)
-  [ "$calls" -eq 1 ] || fail "empty no-mistakes status triggered extra lookups ($calls calls)"
+  [ "$calls" -eq 1 ] || fail "empty drill status triggered extra lookups ($calls calls)"
   pass "no timeout command uses perl bound"
 }
 
@@ -1131,7 +1131,7 @@ test_scout_skips_run_lookup() {
   "$ROOT/bin/sq-busy-event.sh" apply "$d/state" recon-j busy --gen "$gen" \
     --source claude-hook --event user-prompt-submit
   local out; out=$(run_crew_state "$d" recon-j)
-  assert_not_contains "$out" "source: run-step" "recon ignores no-mistakes run-step"
+  assert_not_contains "$out" "source: run-step" "recon ignores drill run-step"
   assert_contains "$out" "source: pane" "recon reads its semantic busy state"
   pass "recon skips the run lookup"
 }
@@ -1217,7 +1217,7 @@ test_usage_error() {
 }
 
 # Head-binding: same branch name with a rewritten/diverged worktree tip must not
-# attribute a historical no-mistakes run (multi-stage branch reuse incident).
+# attribute a historical drill run (multi-stage branch reuse incident).
 test_historical_same_branch_rewritten_head_not_current() {
   reset_fakes
   local d old_head new_head out

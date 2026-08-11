@@ -383,7 +383,7 @@ jobs:
           }
 
   go-build-test:
-    name: Go packages build + test (fob, no-mistakes)
+    name: Go packages build + test (fob, drill)
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -396,13 +396,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install workspace deps (root packageManager is bun)
         run: bun install
-      - name: Build fob + no-mistakes
-        run: bun x turbo run build --filter=fob --filter=no-mistakes
+      - name: Build fob + drill
+        run: bun x turbo run build --filter=fob --filter=drill
       - name: Go test per package
         run: |
           set -eu
           (cd packages/fob && go test ./...)
-          (cd packages/no-mistakes && go test ./...)
+          (cd packages/drill && go test ./...)
 
   sq-tasks:
     name: sq-tasks fork build + test
@@ -497,7 +497,7 @@ jobs:
       - name: Personal unit paths must not be tracked
         run: |
           set -eu
-          tracked=$(git ls-files -- data state config projects .no-mistakes)
+          tracked=$(git ls-files -- data state config projects .drill)
           if [ -n "$tracked" ]; then
             echo "::error::Personal unit paths are tracked in git:"
             printf '%s\n' "$tracked"

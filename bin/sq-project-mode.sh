@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
 # Resolve a project's REGISTERED delivery posture from the data/projects.md registry.
 # Prints two words to stdout: "<mode> <yolo>" where mode is one of
-# no-mistakes|direct-PR|local-only and yolo is on|off.
+# drill|direct-PR|local-only and yolo is on|off.
 #
 # MECHANICAL CONSUMERS ONLY. This answers "what posture did the commander register
 # for this project", never "how does this task ship". A task's delivery mode and
 # yolo are resolved by Squad at intake and passed explicitly to
 # bin/sq-brief.sh, bin/sq-spawn.sh, and bin/sq-promote.sh (AGENTS.md section 7).
 # The consumers are bin/sq-unit-sync.sh (skip local-only clones),
-# bin/sq-home-seed.sh (refuse local-only seeding, run no-mistakes init), and
+# bin/sq-home-seed.sh (refuse local-only seeding, run drill init), and
 # bin/sq-spawn.sh's advisory registry-deviation notice.
 #
 # Registry line format (data/projects.md):
-#   - <name> - <desc> (added <date>)                  -> no-mistakes off  (legacy default)
+#   - <name> - <desc> (added <date>)                  -> drill off  (legacy default)
 #   - <name> [<mode>] - <desc> (added <date>)          -> <mode> off
 #   - <name> [<mode> +yolo] - <desc> (added <date>)    -> <mode> on
 #
 # Registered modes:
-#   no-mistakes            full pipeline -> PR -> configured merge authority (default)
+#   drill            full pipeline -> PR -> configured merge authority (default)
 #   direct-PR              push + PR via gh-axi, no pipeline
 #   local-only             local branch, no remote/PR, guarded local merge
-#   no-mistakes-prod-only  a conditional policy, not a task mode: Squad
+#   drill-prod-only  a conditional policy, not a task mode: Squad
 #                          classifies each task's surface at intake (the
 #                          project-management skill owns that classification).
 #                          Mechanical output maps it to its most rigorous leg,
-#                          no-mistakes, so sync, seeding, and init treat such a
+#                          drill, so sync, seeding, and init treat such a
 #                          project as the remote-backed pipeline project it is.
 # yolo (orthogonal) = when on, Squad may make routine approval decisions itself.
 #   AGENTS.md section 7 is the single owner of authority exceptions, including
 #   ask-user contract expansion and stronger commander boundaries.
 #
 # --raw prints the registered annotation unmapped, so a caller that must tell a
-# conditional policy apart from a flat mode sees "no-mistakes-prod-only" itself.
+# conditional policy apart from a flat mode sees "drill-prod-only" itself.
 #
-# An unknown/missing project or unknown mode falls back to "no-mistakes off" and warns
+# An unknown/missing project or unknown mode falls back to "drill off" and warns
 # to stderr, so a typo never silently drops the gate.
 # Usage: sq-project-mode.sh [--raw] <project-name>
 set -eu
@@ -51,15 +51,15 @@ fi
 NAME=${1:?usage: sq-project-mode.sh [--raw] <project-name>}
 
 if [ ! -f "$REG" ]; then
-  echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2
-  echo "no-mistakes off"
+  echo "warn: no registry at $REG; defaulting $NAME to drill off" >&2
+  echo "drill off"
   exit 0
 fi
 
 # awk emits "<mode> <yolo>" (one line) or nothing if the project is absent.
 parsed=$(awk -v n="$NAME" '
   $1=="-" && $2==n {
-    mode="no-mistakes"; yolo="off";
+    mode="drill"; yolo="off";
     if ($3 ~ /^\[/) {
       s="";
       for (i=3; i<=NF; i++) { s = s (s==""?"":" ") $i; if ($i ~ /\]$/) break }
@@ -73,21 +73,21 @@ parsed=$(awk -v n="$NAME" '
 ' "$REG")
 
 if [ -z "$parsed" ]; then
-  echo "warn: project \"$NAME\" not in registry; defaulting to no-mistakes off" >&2
-  echo "no-mistakes off"
+  echo "warn: project \"$NAME\" not in registry; defaulting to drill off" >&2
+  echo "drill off"
   exit 0
 fi
 
 mode=${parsed%% *}
 yolo=${parsed##* }
 case "$mode" in
-  no-mistakes|direct-PR|local-only|no-mistakes-prod-only) ;;
-  *) echo "warn: unknown mode \"$mode\" for $NAME; defaulting to no-mistakes off" >&2; mode=no-mistakes; yolo=off ;;
+  drill|direct-PR|local-only|drill-prod-only) ;;
+  *) echo "warn: unknown mode \"$mode\" for $NAME; defaulting to drill off" >&2; mode=drill; yolo=off ;;
 esac
 case "$yolo" in on|off) ;; *) yolo=off ;; esac
 # A conditional policy is not a task mode. Mechanical callers get its most
 # rigorous leg; --raw callers get the annotation itself (see the header).
-if [ "$RAW" -eq 0 ] && [ "$mode" = no-mistakes-prod-only ]; then
-  mode=no-mistakes
+if [ "$RAW" -eq 0 ] && [ "$mode" = drill-prod-only ]; then
+  mode=drill
 fi
 echo "$mode $yolo"

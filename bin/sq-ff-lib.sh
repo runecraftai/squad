@@ -15,7 +15,7 @@
 # never touches the network. A standalone clone moves through that path only when
 # it already has the target; otherwise it is skipped until the origin path updates it.
 # A tracked-files fast-forward never touches the gitignored operational dirs
-# (data/, state/, config/, projects/, .no-mistakes/), so it cannot disturb a
+# (data/, state/, config/, projects/, .drill/), so it cannot disturb a
 # XO's backlog, projects, or in-flight work.
 # The seeded .sq-xo-home identity marker is gitignored too; the local
 # sync tolerates only that marker during the one-time upgrade of pre-ignore

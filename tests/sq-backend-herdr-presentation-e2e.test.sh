@@ -383,7 +383,7 @@ make_project() {  # <dir>
 spawn_task() {  # <id> <home> <project>
   local id=$1 home=$2 project=$3
   SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$project" "sh -c 'sleep 120'" --mode no-mistakes --yolo off --backend herdr
+    "$ROOT/bin/sq-spawn.sh" "$id" "$project" "sh -c 'sleep 120'" --mode drill --yolo off --backend herdr
 }
 
 spawn_XO_task() {

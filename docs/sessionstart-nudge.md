@@ -50,7 +50,7 @@ The deferred network stage deliberately runs in its own process group under its 
 ## Shared wrapper and safety
 
 `bin/sq-sessionstart-run.sh` and `bin/sq-sessionstart-nudge.sh` share the same two eligibility owners.
-They source `bin/sq-gate-refuse-lib.sh` and stay silent for a no-mistakes gate agent identified by `NO_MISTAKES_GATE` or a `.no-mistakes/repos/*.git` git-common-dir.
+They source `bin/sq-gate-refuse-lib.sh` and stay silent for a drill gate agent identified by `DRILL_GATE` or a `.drill/repos/*.git` git-common-dir.
 They share `bin/sq-primary-scope-lib.sh` with `bin/sq-turnend-guard.sh`, so every hook uses one primary-detection owner.
 The Guard Predicates section of [`turnend-guard.md`](turnend-guard.md#guard-predicates) owns marker validation, plain-checkout detection, and required Squad-shaped paths.
 

@@ -40,8 +40,8 @@ Hard rules, in priority order:
 You may maintain this repo's private operational state directly.
 Shared tracked material is the tracked set enumerated under `CONTRIBUTING.md`'s repo conventions.
 When any operator is live, delegate changes to shared tracked material rather than competing with supervision; when the unit is empty, Squad may change it directly.
-This repo is a shared template, while `.env`, `data/`, `state/`, `config/`, `projects/`, and `.no-mistakes/` are commander-private and gitignored.
-Ship shared tracked changes through this repo's no-mistakes pipeline and PR path, with the same merge authority as any other project.
+This repo is a shared template, while `.env`, `data/`, `state/`, `config/`, `projects/`, and `.drill/` are commander-private and gitignored.
+Ship shared tracked changes through this repo's drill pipeline and PR path, with the same merge authority as any other project.
 Never add an agent name as a commit co-author.
 
 ## 2. Layout and state
@@ -121,7 +121,7 @@ state/               volatile runtime signals; gitignored
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
-.no-mistakes/        local validation state and evidence; gitignored
+.drill/        local validation state and evidence; gitignored
 ```
 
 A `state/<id>.status` line is a wake event, not current-state truth; `bin/sq-crew-state.sh` owns current-state reconciliation.
@@ -272,8 +272,8 @@ Load `diagnostic-reasoning` before scoping a reported bug and before acting on a
 
 Resolve every strike task's concrete delivery mode and yolo posture at intake, and pass both explicitly to the brief, the spawn, and any recon promotion, which all refuse to guess.
 A current explicit commander instruction wins; otherwise the project's registry entry is the commander's standing posture, and dropping below its rigor needs a reason you can state.
-On a `no-mistakes-prod-only` project, classify the task's surface: internal-only tooling, automation, contributor or operator process, and release or submission work deploys via `direct-PR`, while product-facing, mixed, and uncertain work deploys via `no-mistakes`; never infer internal-only from file location or project name.
-An unregistered project or absent registry resolves to `no-mistakes` with yolo off, and the registration gap goes to the commander.
+On a `drill-prod-only` project, classify the task's surface: internal-only tooling, automation, contributor or operator process, and release or submission work deploys via `direct-PR`, while product-facing, mixed, and uncertain work deploys via `drill`; never infer internal-only from file location or project name.
+An unregistered project or absent registry resolves to `drill` with yolo off, and the registration gap goes to the commander.
 Record the resulting mode, yolo, and the one-line reason for any deviation in the backlog item note.
 
 Treat file or subsystem overlap as a risk signal rather than an automatic reason to wait, and dispatch isolated work immediately with no concurrency cap when each change can be independently implemented and validated and the selected delivery path can reconcile ordinary rebases or conflicts.
@@ -296,14 +296,14 @@ Supervise all live work under section 8.
 ### Selected delivery path and approval authority
 
 The selected delivery path owns its own rigor.
-When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path without adding an independent reviewer.
-Never hold work outside no-mistakes for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.
+When drill is selected, drill alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path without adding an independent reviewer.
+Never hold work outside drill for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.
 A separate review or audit is allowed only when the commander explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.
-If fast-path risk needs more rigor, escalate whether to use no-mistakes instead of inventing a manual gate.
+If fast-path risk needs more rigor, escalate whether to use drill instead of inventing a manual gate.
 The path's worker, automated gates, and commander approval remain authoritative:
 
-- **no-mistakes** runs the full pipeline through a PR, then waits for the configured merge authority.
-- **direct-PR** has the worker push and open a PR without the no-mistakes pipeline, then waits for the configured merge authority.
+- **drill** runs the full pipeline through a PR, then waits for the configured merge authority.
+- **direct-PR** has the worker push and open a PR without the drill pipeline, then waits for the configured merge authority.
 - **local-only** has the worker stop with a clean ready branch, then waits for the configured merge authority before Squad uses the guarded fast-forward merge path.
 
 Delivery mode and `yolo` are orthogonal.
@@ -321,13 +321,13 @@ After an autonomous merge, give the commander a one-line full-URL or local-main 
 
 ### Validate
 
-For a no-mistakes strike, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
-The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
-Squad never invokes `no-mistakes axi respond` for an operator-owned run.
+For a drill strike, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
+The task worker that starts a drill run drives the pipeline and owns every `drill axi run` and `drill axi respond` call through the next gate or outcome.
+Squad never invokes `drill axi respond` for an operator-owned run.
 Once validation starts, prefer routing new requirements to follow-up work rather than expanding the current task, unless a new requirement completely invalidates the work being validated; however, the smallest downstream changes needed to keep already accepted product or engineering behavior correct, add behavioral tests where an executable contract exists, or keep documentation accurate remain within the current task even when they touch files not named at intake, and corrections required to satisfy already accepted intent are not new requirements.
 
 Only a current, explicit commander instruction that completely invalidates the work being validated keeps the task with the same worker instead of routing it to follow-up work or handing it to a replacement.
-That worker cancels the active run through no-mistakes axi's supported abort command and confirms through axi status that the run has stopped before changing any code.
+That worker cancels the active run through drill axi's supported abort command and confirms through axi status that the run has stopped before changing any code.
 The worker then follows `branch_sync.next_action` from structured axi status: use axi sync's supported guarded recovery only when its code is `recover_custody`, and otherwise proceed only when structured status confirms that branch ownership is already returned and no recovery is required.
 Custody recovery settles branch ownership, not content: the worker must replace the obsolete work from the correct pre-invalidation base rather than building on top of the recovered-but-obsolete head, keeping the obsolete run's own pipeline-fix commits out of what gets validated and deployed.
 Apart from that single supported abort, do not hand-edit, commit, restart, or start a second validation run while the obsolete run still owns the branch.
@@ -345,9 +345,9 @@ The worker reports the PR when CI first becomes green rather than waiting for me
 
 ### PR ready, landing, and teardown
 
-For PR-based strike tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
+For PR-based strike tasks, the ready signal depends on mode: `drill` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
 Run `bin/sq-pr-check.sh <id> <PR url>` - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the sentry's merge poll.
-Tell the commander the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the no-mistakes risk level when applicable.
+Tell the commander the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the drill risk level when applicable.
 A commander instruction to merge is explicit authority; `yolo` is the only standing routine authority.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when Squad should wake, print nothing otherwise, finish before `SQUAD_CHECK_TIMEOUT`, then bind its current bytes with `bin/sq-check-register.sh <id>` before the sentry may execute it.
 

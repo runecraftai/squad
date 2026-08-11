@@ -95,15 +95,15 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/fob"
-  cat > "$fakebin/no-mistakes" <<'SH'
+  cat > "$fakebin/drill" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' 'no-mistakes version v1.31.2 (fake) 2026-06-27T00:02:18Z'
+  printf '%s\n' 'drill version v1.31.2 (fake) 2026-06-27T00:02:18Z'
   exit 0
 fi
 exit 0
 SH
-  chmod +x "$fakebin/no-mistakes"
+  chmod +x "$fakebin/drill"
   printf '%s\n' manual > "${fakebin%/*}/home-placeholder" 2>/dev/null || true
 }
 
@@ -685,14 +685,14 @@ EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
 
-  printf '%s\n' '- demo [no-mistakes] - a demo project (added 2026-07-01)' > "$home/data/projects.md"
+  printf '%s\n' '- demo [drill] - a demo project (added 2026-07-01)' > "$home/data/projects.md"
   : > "$home/data/commander.md"
   # XOs.md, commander-shared.md, and learnings.md deliberately absent
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
   assert_contains "$out" "data/projects.md" "digest did not label the projects.md section"
-  assert_contains "$out" "- demo [no-mistakes] - a demo project (added 2026-07-01)" "digest did not print projects.md content"
+  assert_contains "$out" "- demo [drill] - a demo project (added 2026-07-01)" "digest did not print projects.md content"
 
   assert_contains "$out" "data/commander.md" "digest did not label the commander.md section"
   assert_contains "$out" "data/commander-shared.md (shared, main-authoritative, read-only in XO homes)" \

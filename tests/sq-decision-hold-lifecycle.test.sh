@@ -29,7 +29,7 @@ make_home() {  # <name>
 ## Done
 EOF
   fakebin=$(fm_fakebin "$home")
-  fm_fake_exit0 "$fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$fakebin" tmux fob drill gh sq-gh
   printf '%s\n' "$home"
 }
 
@@ -428,7 +428,7 @@ test_XO_hold_stays_in_authoritative_home() {
 ## Done
 EOF
   fakebin=$(fm_fakebin "$mate")
-  fm_fake_exit0 "$fakebin" tmux fob no-mistakes gh sq-gh
+  fm_fake_exit0 "$fakebin" tmux fob drill gh sq-gh
   origin=sample-mate-review
   mkdir -p "$mate/data/$origin"
   tasks_in "$mate" add "$origin" "Investigate XO sample" --kind recon --repo sample --start >/dev/null

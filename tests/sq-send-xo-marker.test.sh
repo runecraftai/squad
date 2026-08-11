@@ -150,7 +150,7 @@ test_operator_target_is_not_marked() {
   home=$(setup_home crew)
   fm_write_meta "$home/state/build.meta" \
     "window=sess:sq-build" "worktree=$home/wt" "project=$home/p" \
-    "harness=echo" "kind=strike" "mode=no-mistakes" "yolo=off"
+    "harness=echo" "kind=strike" "mode=drill" "yolo=off"
   run_send "$fb" "$home" "$log" "sq-build" "fix the test"; rc=$?
   expect_code 0 "$rc" "send to a stable-label operator target should succeed"
   got=$(cat "$log")

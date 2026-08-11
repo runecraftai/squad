@@ -64,7 +64,7 @@ flags:
     .join(", ")})
 examples:
   tasks-axi list --state queued
-  tasks-axi list --repo no-mistakes --fields blocked_by,created
+  tasks-axi list --repo drill --fields blocked_by,created
   tasks-axi list --blocked`;
 
 export const SHOW_HELP = `usage: tasks-axi show <id> [--full]
@@ -81,8 +81,8 @@ flags:
   --repo <name>, --kind <name>, --priority <0-4>, --pr <url>, --report <path>
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi show nm-release-validation --full
-  tasks-axi update nm-release-validation --body-file notes.md --archive-body
+  tasks-axi show drill-release-validation --full
+  tasks-axi update drill-release-validation --body-file notes.md --archive-body
   tasks-axi update sq-x --repo Squad --kind strike`;
 
 export const RM_HELP = `usage: tasks-axi rm <id>

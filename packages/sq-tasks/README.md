@@ -104,10 +104,10 @@ tasks-axi ready
 tasks-axi ready --include-held
 
 # edit the body and title: inspect current notes, then replace the body or title deliberately
-tasks-axi show nm-release-validation --full
-tasks-axi update nm-release-validation --body "rewritten notes"
-tasks-axi update nm-release-validation --body-file notes.md --archive-body
-tasks-axi update nm-release-validation --title "clearer title"
+tasks-axi show drill-release-validation --full
+tasks-axi update drill-release-validation --body "rewritten notes"
+tasks-axi update drill-release-validation --body-file notes.md --archive-body
+tasks-axi update drill-release-validation --title "clearer title"
 
 # read the full notes on demand (truncated by default)
 tasks-axi show homemux-h7 --full
@@ -270,7 +270,7 @@ The installable skill is generated from the same description and help the CLI pr
 ## Contributing
 
 Contributions are welcome.
-Human-authored PRs targeting `main` are raised through the [`no-mistakes`](https://github.com/runecraftai/squad) gate, which runs review/test/lint/CI before opening the PR.
+Human-authored PRs targeting `main` are raised through the [`drill`](https://github.com/runecraftai/squad) gate, which runs review/test/lint/CI before opening the PR.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and repo conventions.
 
 ## License

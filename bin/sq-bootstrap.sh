@@ -50,11 +50,11 @@
 #          landed in the primary instead of its own worktree; restore it per the line.
 #          fob is also MISSING when its installed version lacks
 #          "fob get --lease" support.
-#          no-mistakes is also MISSING when its installed version is older than
+#          drill is also MISSING when its installed version is older than
 #          1.31.2.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
 #          LAVISH_AXI_MIN below; the per-tool owners point there. An installed
-#          build below its floor reports MISSING like no-mistakes, so the operator
+#          build below its floor reports MISSING like drill, so the operator
 #          is asked to upgrade rather than silently running an older tool.
 #          tasks-axi feature probes remain a separate defense-in-depth check.
 #          tasks-axi and quota-axi are required bootstrap tools (same class as
@@ -753,7 +753,7 @@ install_cmd() {
     tmux|node|git|gh|curl|jq|orca|zellij) echo "brew install $1  # or the platform's package manager" ;;
     cmux) echo "brew install --cask cmux  # or see https://cmux.com" ;;
     fob) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder" ;;
-    no-mistakes) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/no-mistakes-install.sh | sh  # OQ-03 placeholder" ;;
+    drill) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/drill-install.sh | sh  # OQ-03 placeholder" ;;
     sq-gh|sq-browser|sq-report) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1 && $1 setup hooks" ;;
     sq-quota|sq-tasks) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1" ;;
     *) return 1 ;;
@@ -781,7 +781,7 @@ missing_tool_diagnostic() {
 # fm_backend_required_tools (bin/sq-backend.sh). So a herdr/zellij/cmux home is
 # never told tmux is missing, and only orca drops fob. A backend value with
 # no verified dependency set is reported before the universal checks continue.
-COMMON_TOOLS="node git gh no-mistakes sq-gh sq-browser sq-report sq-quota sq-tasks"
+COMMON_TOOLS="node git gh drill sq-gh sq-browser sq-report sq-quota sq-tasks"
 BACKEND=$(fm_backend_name)
 BACKEND_VALID=1
 if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
@@ -789,7 +789,7 @@ if ! BACKEND_TOOLS=$(fm_backend_required_tools "$BACKEND"); then
   BACKEND_TOOLS=""
 fi
 TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
-NO_MISTAKES_MIN=1.31.2
+DRILL_MIN=1.31.2
 # AXI-FAMILY FLOOR POLICY. Every axi-family floor is the CURRENT LATEST published
 # version of that tool, commander-bumped periodically to keep the whole unit on the
 # newest axi tools. It is NOT the minimum feature-introduced version. These floors
@@ -1146,8 +1146,8 @@ detect_local_tools() {
     && command -v fob >/dev/null 2>&1 && ! fob_supports_lease; then
     echo "MISSING: fob (install: $(install_cmd fob))"
   fi
-  if command -v no-mistakes >/dev/null 2>&1 && ! tool_version_at_least no-mistakes "$NO_MISTAKES_MIN"; then
-    echo "MISSING: no-mistakes (install: $(install_cmd no-mistakes))"
+  if command -v drill >/dev/null 2>&1 && ! tool_version_at_least drill "$DRILL_MIN"; then
+    echo "MISSING: drill (install: $(install_cmd drill))"
   fi
   if command -v sq-gh >/dev/null 2>&1 && ! tool_version_at_least sq-gh "$GH_AXI_MIN"; then
     echo "MISSING: sq-gh (install: $(install_cmd sq-gh))"

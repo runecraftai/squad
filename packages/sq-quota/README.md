@@ -612,7 +612,7 @@ pnpm run dev                    # Run the CLI with tsx
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the no-mistakes PR workflow, generated-file rules, and release-please conventions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the drill PR workflow, generated-file rules, and release-please conventions.
 
 ## License
 

@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Behavior tests for the no-mistakes GATE-agent unit-lifecycle refusal.
+# Behavior tests for the drill GATE-agent unit-lifecycle refusal.
 #
-# A confused no-mistakes gate agent runs inside a Squad checkout, adopts the
+# A confused drill gate agent runs inside a Squad checkout, adopts the
 # commander identity from AGENTS.md, and reaches for sq-spawn/sq-send/sq-teardown.
 # bin/sq-gate-refuse-lib.sh is the Squad capability-removal half: sourced at
 # the top of those three entrypoints and called before any unit mutation, it
 # fails closed on either of two independent signals:
-#   1. NO_MISTAKES_GATE set in the environment (the marker no-mistakes stamps);
-#   2. the current worktree's git-common-dir resolves under a no-mistakes gate
-#      repo (.../.no-mistakes/repos/*.git) - the unspoofable backstop, which
+#   1. DRILL_GATE set in the environment (the marker drill stamps);
+#   2. the current worktree's git-common-dir resolves under a drill gate
+#      repo (.../.drill/repos/*.git) - the unspoofable backstop, which
 #      still refuses even if the marker was tampered/unset.
 # A normal Squad session (real primary, real crew worktree) has NEITHER
 # signal and is completely unaffected.
 #
 # Each entrypoint is exercised in three scenarios, isolating exactly ONE signal:
-#   - env-marker refuse : neutral cwd + NO_MISTAKES_GATE set      -> exit 3, no mutation
+#   - env-marker refuse : neutral cwd + DRILL_GATE set      -> exit 3, no mutation
 #   - path-backstop refuse: gate-worktree cwd + marker UNSET      -> exit 3, no mutation
 #   - no-regression      : neutral cwd + marker UNSET             -> succeeds, no gate error
 # The marker is UNSET explicitly in the no-regression/backstop runs (env -u) and
 # those runs stand in a controlled NON-gate repo, so the suite is hermetic even
-# when it is itself executed inside the real no-mistakes gate (whose process has
-# NO_MISTAKES_GATE=1 and a gate-worktree cwd).
+# when it is itself executed inside the real drill gate (whose process has
+# DRILL_GATE=1 and a gate-worktree cwd).
 #
-# Finally, assert Squad's TRACKED .no-mistakes.yaml parses and sets
+# Finally, assert Squad's TRACKED .drill.yaml parses and sets
 # disable_project_settings: true (the trusted-only opt-out that neutralizes gate
-# agents' project instructions on the no-mistakes side).
+# agents' project instructions on the drill side).
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -39,28 +39,30 @@ TMP=$(fm_test_tmproot sq-gate-refuse)
 fm_git_identity fmtest fmtest@example.invalid
 
 # The env marker's exact stderr fragment (the primary signal).
-ENV_MSG='NO_MISTAKES_GATE set'
+ENV_MSG='DRILL_GATE/NO_MISTAKES_GATE set'
 # The git-common-dir backstop's exact stderr fragment (the unspoofable signal).
-PATH_MSG='no-mistakes gate worktree'
+PATH_MSG='drill gate worktree'
 
 # --- shared fixtures --------------------------------------------------------
 
-# make_gate_worktree <root> -> echoes a worktree whose git-common-dir is
-# <root>/.no-mistakes/repos/<id>.git, reproducing no-mistakes' gate topology
-# (<NM_HOME>/repos/<id>.git + <NM_HOME>/worktrees/<id>/<run>).
+# make_gate_worktree <root> <home_dir> -> echoes a worktree whose git-common-dir is
+# <root>/<home_dir>/repos/<id>.git, reproducing drill's gate topology
+# (<home>/repos/<id>.git + <home>/worktrees/<id>/<run>). The <home_dir> is
+# .drill for the current binary and .no-mistakes for the legacy pre-rename
+# binary; both must refuse while the live install still writes the legacy root.
 make_gate_worktree() {
-  local root=$1 id=016d88035d58 run=01KXC3SD5NZYMERGDS68Z1C8ER seed
-  mkdir -p "$root/.no-mistakes/repos"
+  local root=$1 home_dir=$2 id=016d88035d58 run=01KXC3SD5NZYMERGDS68Z1C8ER seed
+  mkdir -p "$root/$home_dir/repos"
   git init -q --bare "$root/origin.git"
   seed=$(mktemp -d "$TMP/gate-seed.XXXXXX")
   git init -q -b main "$seed"
   git -C "$seed" commit -q --allow-empty -m init
   git -C "$seed" push -q "$root/origin.git" HEAD:refs/heads/main
   rm -rf "$seed"
-  git clone -q --bare "$root/origin.git" "$root/.no-mistakes/repos/$id.git"
-  git -C "$root/.no-mistakes/repos/$id.git" worktree add --detach \
-    "$root/.no-mistakes/worktrees/$id/$run" main >/dev/null 2>&1
-  printf '%s\n' "$root/.no-mistakes/worktrees/$id/$run"
+  git clone -q --bare "$root/origin.git" "$root/$home_dir/repos/$id.git"
+  git -C "$root/$home_dir/repos/$id.git" worktree add --detach \
+    "$root/$home_dir/worktrees/$id/$run" main >/dev/null 2>&1
+  printf '%s\n' "$root/$home_dir/worktrees/$id/$run"
 }
 
 # make_normal_repo <dir> -> echoes a plain (non-gate) git repo to stand in for a
@@ -72,23 +74,25 @@ make_normal_repo() {
   printf '%s\n' "$dir"
 }
 
-GATE_WT=$(make_gate_worktree "$TMP/gate")
+GATE_WT=$(make_gate_worktree "$TMP/gate" .drill)
+LEGACY_GATE_WT=$(make_gate_worktree "$TMP/legacy-gate" .no-mistakes)
 NORMAL_CWD=$(make_normal_repo "$TMP/normal-cwd")
 
 # --- the shared helper, tested directly -------------------------------------
 
 # run_guard_lib <cwd> [set|empty] : from <cwd>, source the lib and call the guard under
-# set -eu in a subshell (proving set -eu safety). NO_MISTAKES_GATE is unset first;
+# set -eu in a subshell (proving set -eu safety). DRILL_GATE is unset first;
 # a literal "set" second argument re-exports it, so callers pick the signal under
 # test. Echoes combined output; the guard's exit is the caller's $?.
 run_guard_lib() {
   local cwd=$1 marker=${2:-unset}
   (
     cd "$cwd" || exit 111
-    unset NO_MISTAKES_GATE SQUAD_GATE_REFUSE_BYPASS
+    unset DRILL_GATE NO_MISTAKES_GATE SQUAD_GATE_REFUSE_BYPASS
     case "$marker" in
-      set) export NO_MISTAKES_GATE=1 ;;
-      empty) export NO_MISTAKES_GATE= ;;
+      set) export DRILL_GATE=1 ;;
+      empty) export DRILL_GATE= ;;
+      legacy) export NO_MISTAKES_GATE=1 ;;
     esac
     set -eu
     # shellcheck source=/dev/null
@@ -102,7 +106,7 @@ test_helper_env_marker_refuses() {
   out=$(run_guard_lib "$NORMAL_CWD" set); rc=$?
   expect_code 3 "$rc" "helper: env marker must exit 3"
   assert_contains "$out" "$ENV_MSG" "helper: env-marker refusal message"
-  pass "sq-gate-refuse-lib: refuses when NO_MISTAKES_GATE is set"
+  pass "sq-gate-refuse-lib: refuses when DRILL_GATE is set"
 }
 
 test_helper_empty_env_marker_refuses() {
@@ -110,7 +114,17 @@ test_helper_empty_env_marker_refuses() {
   out=$(run_guard_lib "$NORMAL_CWD" empty); rc=$?
   expect_code 3 "$rc" "helper: empty env marker must exit 3"
   assert_contains "$out" "$ENV_MSG" "helper: empty env-marker refusal message"
-  pass "sq-gate-refuse-lib: refuses when NO_MISTAKES_GATE is set empty"
+  pass "sq-gate-refuse-lib: refuses when DRILL_GATE is set empty"
+}
+
+test_helper_legacy_env_marker_refuses() {
+  local out rc
+  # The pre-rename binary still stamps NO_MISTAKES_GATE until the live rename
+  # lands; the guard must keep refusing on it.
+  out=$(run_guard_lib "$NORMAL_CWD" legacy); rc=$?
+  expect_code 3 "$rc" "helper: legacy env marker must exit 3"
+  assert_contains "$out" "$ENV_MSG" "helper: legacy env-marker refusal message"
+  pass "sq-gate-refuse-lib: refuses when NO_MISTAKES_GATE (legacy) is set"
 }
 
 test_helper_path_backstop_refuses() {
@@ -121,6 +135,11 @@ test_helper_path_backstop_refuses() {
   assert_contains "$out" "$PATH_MSG" "helper: path-backstop refusal message"
   assert_not_contains "$out" "$ENV_MSG" "helper: backstop must not be attributed to the env marker"
   pass "sq-gate-refuse-lib: refuses from a gate worktree via git-common-dir (marker unset)"
+  # Legacy pre-rename topology must refuse the same way.
+  out=$(run_guard_lib "$LEGACY_GATE_WT"); rc=$?
+  expect_code 3 "$rc" "helper: legacy gate worktree must exit 3 even with the marker unset"
+  assert_contains "$out" "$PATH_MSG" "helper: legacy path-backstop refusal message"
+  pass "sq-gate-refuse-lib: refuses from a legacy .no-mistakes gate worktree"
 }
 
 test_helper_normal_is_noop() {
@@ -161,13 +180,13 @@ run_spawn() {
   local cwd=$1 home=$2 id=$3 proj=$4 pane=$5 fakebin=$6; shift 6
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
-  ( cd "$cwd" && env -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
+  ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
       "SQUAD_ROOT_OVERRIDE=" "SQUAD_HOME=$home" \
       "SQUAD_STATE_OVERRIDE=$home/state" "SQUAD_DATA_OVERRIDE=$home/data" \
       "SQUAD_PROJECTS_OVERRIDE=$home/projects" "SQUAD_CONFIG_OVERRIDE=$home/config" \
       "SQUAD_SPAWN_NO_GUARD=1" "SQUAD_FAKE_PANE_PATH=$pane" "TMUX=fake,1,0" \
       "PATH=$fakebin:$PATH" "$@" \
-      "$SPAWN" "$id" "$proj" codex --mode no-mistakes --yolo off ) 2>&1
+      "$SPAWN" "$id" "$proj" codex --mode drill --yolo off ) 2>&1
 }
 
 test_spawn_refuses_and_admits() {
@@ -179,16 +198,28 @@ test_spawn_refuses_and_admits() {
   git -C "$proj" worktree add -q --detach "$wt" >/dev/null 2>&1
 
   # env-marker refuse: neutral cwd, marker set.
-  out=$(run_spawn "$NORMAL_CWD" "$home" spawn-envmark "$proj" "$wt" "$fakebin" NO_MISTAKES_GATE=1); rc=$?
-  expect_code 3 "$rc" "spawn: NO_MISTAKES_GATE must refuse"
+  out=$(run_spawn "$NORMAL_CWD" "$home" spawn-envmark "$proj" "$wt" "$fakebin" DRILL_GATE=1); rc=$?
+  expect_code 3 "$rc" "spawn: DRILL_GATE must refuse"
   assert_contains "$out" "$ENV_MSG" "spawn: env-marker refusal message"
   assert_absent "$home/state/spawn-envmark.meta" "spawn: refused env-marker launch must not record meta"
+
+  # legacy env-marker refuse: the pre-rename marker must refuse the same way.
+  out=$(run_spawn "$NORMAL_CWD" "$home" spawn-legacy-envmark "$proj" "$wt" "$fakebin" NO_MISTAKES_GATE=1); rc=$?
+  expect_code 3 "$rc" "spawn: NO_MISTAKES_GATE (legacy) must refuse"
+  assert_contains "$out" "$ENV_MSG" "spawn: legacy env-marker refusal message"
+  assert_absent "$home/state/spawn-legacy-envmark.meta" "spawn: refused legacy launch must not record meta"
 
   # path-backstop refuse: gate-worktree cwd, marker UNSET.
   out=$(run_spawn "$GATE_WT" "$home" spawn-backstop "$proj" "$wt" "$fakebin"); rc=$?
   expect_code 3 "$rc" "spawn: gate-worktree cwd must refuse with the marker unset"
   assert_contains "$out" "$PATH_MSG" "spawn: path-backstop refusal message"
   assert_absent "$home/state/spawn-backstop.meta" "spawn: refused backstop launch must not record meta"
+
+  # legacy path-backstop refuse: a legacy .no-mistakes gate worktree, marker UNSET.
+  out=$(run_spawn "$LEGACY_GATE_WT" "$home" spawn-legacy-backstop "$proj" "$wt" "$fakebin"); rc=$?
+  expect_code 3 "$rc" "spawn: legacy gate-worktree cwd must refuse with the marker unset"
+  assert_contains "$out" "$PATH_MSG" "spawn: legacy path-backstop refusal message"
+  assert_absent "$home/state/spawn-legacy-backstop.meta" "spawn: refused legacy backstop launch must not record meta"
 
   # no-regression: neutral cwd, marker UNSET, genuine isolated worktree.
   out=$(run_spawn "$NORMAL_CWD" "$home" spawn-ok "$proj" "$wt" "$fakebin"); rc=$?
@@ -239,7 +270,7 @@ SH
 # run_send <cwd> <home> <fakebin> <log> <target> <text> [ASSIGN...] -> combined output
 run_send() {
   local cwd=$1 home=$2 fakebin=$3 log=$4 target=$5 text=$6; shift 6
-  ( cd "$cwd" && env -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
+  ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
       "PATH=$fakebin:$PATH" "SQUAD_HOME=$home" "SQUAD_ROOT_OVERRIDE=$home" \
       "SQUAD_TMUX_LOG=$log" "SQUAD_SEND_SETTLE=0" "$@" \
       "$SEND" "$target" "$text" ) 2>&1
@@ -254,8 +285,8 @@ test_send_refuses_and_admits() {
 
   # env-marker refuse.
   : > "$log"
-  out=$(run_send "$NORMAL_CWD" "$home" "$fakebin" "$log" sq-lane-ok "hello commander" NO_MISTAKES_GATE=1); rc=$?
-  expect_code 3 "$rc" "send: NO_MISTAKES_GATE must refuse"
+  out=$(run_send "$NORMAL_CWD" "$home" "$fakebin" "$log" sq-lane-ok "hello commander" DRILL_GATE=1); rc=$?
+  expect_code 3 "$rc" "send: DRILL_GATE must refuse"
   assert_contains "$out" "$ENV_MSG" "send: env-marker refusal message"
   [ ! -s "$log" ] || fail "send: refused env-marker send still typed to the endpoint"$'\n'"$(cat "$log")"
 
@@ -278,7 +309,7 @@ test_send_refuses_and_admits() {
 
 # --- sq-teardown ------------------------------------------------------------
 
-# make_teardown_case <name> -> echoes a case dir holding a LANDED no-mistakes ship
+# make_teardown_case <name> -> echoes a case dir holding a LANDED drill ship
 # task (HEAD reachable from origin), so a normal teardown genuinely succeeds and a
 # refused one leaves the task untouched (mirrors tests/sq-teardown make_case).
 make_teardown_case() {
@@ -320,7 +351,7 @@ SH
   fm_write_meta "$case_dir/state/task-x1.meta" \
     "window=Squad:sq-task-x1" "endpoint_task_id=task-x1" \
     "worktree=$case_dir/wt" "project=$case_dir/project" \
-    "kind=strike" "mode=no-mistakes"
+    "kind=strike" "mode=drill"
   touch "$case_dir/state/.last-sentry-beat"
   printf '%s\n' "$case_dir"
 }
@@ -328,7 +359,7 @@ SH
 # run_teardown <cwd> <case_dir> [ASSIGN...] -> combined output
 run_teardown() {
   local cwd=$1 case_dir=$2; shift 2
-  ( cd "$cwd" && env -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
+  ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
       "SQUAD_ROOT_OVERRIDE=$ROOT" "SQUAD_STATE_OVERRIDE=$case_dir/state" \
       "SQUAD_CONFIG_OVERRIDE=$case_dir/config" "PATH=$case_dir/fakebin:$PATH" "$@" \
       "$TEARDOWN" task-x1 ) 2>&1
@@ -339,8 +370,8 @@ test_teardown_refuses_and_admits() {
 
   # env-marker refuse: a genuinely-landed task is still refused; nothing is torn down.
   case_dir=$(make_teardown_case teardown-envmark)
-  out=$(run_teardown "$NORMAL_CWD" "$case_dir" NO_MISTAKES_GATE=1); rc=$?
-  expect_code 3 "$rc" "teardown: NO_MISTAKES_GATE must refuse"
+  out=$(run_teardown "$NORMAL_CWD" "$case_dir" DRILL_GATE=1); rc=$?
+  expect_code 3 "$rc" "teardown: DRILL_GATE must refuse"
   assert_contains "$out" "$ENV_MSG" "teardown: env-marker refusal message"
   assert_present "$case_dir/state/task-x1.meta" "teardown: refused env-marker teardown must leave the task"
 
@@ -363,6 +394,7 @@ test_teardown_refuses_and_admits() {
 
 test_helper_env_marker_refuses
 test_helper_empty_env_marker_refuses
+test_helper_legacy_env_marker_refuses
 test_helper_path_backstop_refuses
 test_helper_normal_is_noop
 test_spawn_refuses_and_admits

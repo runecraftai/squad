@@ -229,10 +229,10 @@ if [ "${1:-}" = --version ]; then
 fi
 exit 0
 SH
-  cat > "$fakebin/no-mistakes" <<'SH'
+  cat > "$fakebin/drill" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  printf '%s\n' 'no-mistakes version v1.31.2 (fake)'
+  printf '%s\n' 'drill version v1.31.2 (fake)'
   exit 0
 fi
 exit 0
@@ -254,7 +254,7 @@ if [ "${1:-}" = --version ]; then
 fi
 exit 0
 SH
-  chmod +x "$fakebin/sq-gh" "$fakebin/no-mistakes" "$fakebin/tasks-axi" "$fakebin/sq-quota"
+  chmod +x "$fakebin/sq-gh" "$fakebin/drill" "$fakebin/tasks-axi" "$fakebin/sq-quota"
 }
 
 new_git_world() {

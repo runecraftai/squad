@@ -6,7 +6,7 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: sq-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+# Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> [--herdr-lab]
 #        sq-brief.sh <task-id> <repo-name> --recon [--herdr-lab]
 #        sq-brief.sh <task-id> --xo {<project>...|--no-projects}
 #   --recon writes the recon contract instead: the deliverable is a report at
@@ -30,11 +30,11 @@
 # For strike tasks, --mode is REQUIRED and shapes the definition of done. Squad
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # commander's standing posture as context, and this script never reads it:
-#   no-mistakes  implement -> /no-mistakes pipeline -> PR -> configured merge authority
+#   drill  implement -> /drill pipeline -> PR -> configured merge authority
 #   direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> configured merge authority
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
 #                the configured merge authority approves, Squad merges to local main
-# no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
+# drill-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable
 # "Delivery contract: mode=<mode>" line. bin/sq-spawn.sh reads that line and refuses
@@ -140,15 +140,15 @@ done
 # missing or invalid value stops the scaffold rather than silently defaulting.
 if [ "$KIND" = strike ]; then
   [ "$MODE_SET" -eq 1 ] || {
-    echo "error: strike briefs require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
+    echo "error: strike briefs require --mode <drill|direct-PR|local-only>; resolve it at intake from the commander's instruction and the project's registered posture in data/projects.md" >&2
     exit 1
   }
   case "$MODE" in
-    no-mistakes|direct-PR|local-only) ;;
-    no-mistakes-prod-only)
-      echo "error: no-mistakes-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to no-mistakes or direct-PR at intake" >&2
+    drill|direct-PR|local-only) ;;
+    drill-prod-only)
+      echo "error: drill-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to drill or direct-PR at intake" >&2
       exit 1 ;;
-    *) echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
+    *) echo "error: --mode must be one of drill, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
   esac
 elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to strike briefs; a recon delivers a report and an XO charter is not a delivery contract" >&2
@@ -332,8 +332,8 @@ The report is the only thing that survives, so anything worth keeping must be in
    append \`needs-decision: {summary of options}\` and stop. Squad will reply with the decision.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Squad's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a Squad reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
-7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
-   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
+7. Never stop, restart, or update the shared \`drill\` daemon - it is one instance serving
+   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
    daemon error, append \`blocked: {the daemon error}\` and stop; only Squad manages the daemon.
 
 # Definition of done
@@ -358,10 +358,10 @@ case "$MODE" in
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=direct-PR
-This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
+This task ships **direct-PR**: you raise the PR yourself, without the drill pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
-Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; Squad relays the outcome.
+Do NOT run /drill. The configured merge authority decides whether to merge the PR; Squad relays the outcome.
 EOF
     ;;
   local-only)
@@ -377,29 +377,29 @@ When it is implemented and committed, append \`done: ready in branch fm/$ID\` to
 The configured merge authority approves the ready branch, then Squad merges it into local \`main\` through the guarded fast-forward path.
 EOF
     ;;
-  *)  # no-mistakes
+  *)  # drill
     SETUP2="
-2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
+2. Run \`drill doctor\`; if it reports the repo is not initialized here, run \`drill init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
-Delivery contract: mode=no-mistakes
+Delivery contract: mode=drill
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Squad will then instruct you to run /no-mistakes to validate and ship a PR.
+Squad will then instruct you to run /drill to validate and ship a PR.
 
-You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Squad requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
+You drive drill by responding to its gates, not by implementing fixes.
+Follow the guidance drill itself provides for the mechanics: it loads when you invoke /drill, and \`drill axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+When starting drill, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Squad requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
 
 Two Squad-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to Squad (rule 6) and stop.
   Squad applies the authority contract in its \`AGENTS.md\` and obtains any required commander decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+  When the decision comes back, feed it to the gate with \`drill axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass Squad's authority check and any required commander escalation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /drill reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
 EOF
     ;;
 esac
@@ -448,8 +448,8 @@ $RULE1
    append \`needs-decision: {summary of options}\` and stop. Squad will apply the configured authority and reply with the decision.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Squad's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a Squad reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
-7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
-   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
+7. Never stop, restart, or update the shared \`drill\` daemon - it is one instance serving
+   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
    daemon error, append \`blocked: {the daemon error}\` and stop; only Squad manages the daemon.
 
 # Project memory

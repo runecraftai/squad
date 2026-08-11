@@ -8,7 +8,7 @@
 # or blocked and the operator resumes (responds to the gate, the pipeline fixes, it
 # re-validates), the log's last line stays stale. This helper never infers the
 # current state from a tail of the log: it reads the authoritative source (a
-# no-mistakes run-step attributed to this crew's branch and current code
+# drill run-step attributed to this crew's branch and current code
 # identity, else the pane busy-signature) and reconciles the possibly-stale log
 # against it.
 #
@@ -20,8 +20,8 @@
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta.
-#   2. Matching no-mistakes run for this crew's branch AND current code identity,
-#      active or terminal (from `axi status`, or the coarse `no-mistakes runs`
+#   2. Matching drill run for this crew's branch AND current code identity,
+#      active or terminal (from `axi status`, or the coarse `drill runs`
 #      fallback)? Branch name alone is not enough: a historical run on a reused
 #      branch whose head was rewritten or diverged must not be attributed.
 #      A run matches when its head equals the worktree HEAD, or the worktree HEAD
@@ -32,7 +32,7 @@
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
-#      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
+#      checks" from "checks green, waiting on merge" (see drill_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
 #      green, so a green PR is never silently read as still-validating.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
@@ -64,18 +64,18 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
 . "$SCRIPT_DIR/sq-classify-lib.sh"
 # shellcheck source=bin/sq-busy-lib.sh
 . "$SCRIPT_DIR/sq-busy-lib.sh"
-# shellcheck source=bin/sq-nm-run-lib.sh
-. "$SCRIPT_DIR/sq-nm-run-lib.sh"
+# shellcheck source=bin/sq-drill-run-lib.sh
+. "$SCRIPT_DIR/sq-drill-run-lib.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: sq-crew-state.sh <id>" >&2; exit 2; }
 
 META="$STATE/$ID.meta"
 LOG="$STATE/$ID.status"
-NM_TIMEOUT=${SQUAD_CREW_STATE_NM_TIMEOUT:-10}
-case "$NM_TIMEOUT" in ''|*[!0-9]*) NM_TIMEOUT=10 ;; esac
-# How many of the most recent `no-mistakes runs` rows the cross-branch fallback
-# (nm_runs_status_for_branch, below) scans. Generous enough to still find a
+DRILL_TIMEOUT=${SQUAD_CREW_STATE_DRILL_TIMEOUT:-10}
+case "$DRILL_TIMEOUT" in ''|*[!0-9]*) DRILL_TIMEOUT=10 ;; esac
+# How many of the most recent `drill runs` rows the cross-branch fallback
+# (drill_runs_status_for_branch, below) scans. Generous enough to still find a
 # branch's own run on a busy multi-crew unit without listing the entire
 # history every call.
 SQUAD_CREW_STATE_RUNS_LIMIT=${SQUAD_CREW_STATE_RUNS_LIMIT:-200}
@@ -168,27 +168,27 @@ operator_busy_verdict() {  # <target>
   fm_busy_classify "$TASK_BACKEND" "$1" "$HARNESS" "$ID" "$STATE" "$tail40"
 }
 
-# --- no-mistakes run lookup (authoritative when a run matches this branch) --
-# trim, strip_quotes, the bounded nm_run call, nm_field's TOON parse, and the
+# --- drill run lookup (authoritative when a run matches this branch) --
+# trim, strip_quotes, the bounded drill_run call, drill_field's TOON parse, and the
 # branch+head attribution rule below are thin wrappers over the ONE owner in
-# bin/sq-nm-run-lib.sh, shared with sq-teardown.sh's pre-teardown run abort.
+# bin/sq-drill-run-lib.sh, shared with sq-teardown.sh's pre-teardown run abort.
 
-trim() { fm_nm_trim "$@"; }
-strip_quotes() { fm_nm_strip_quotes "$@"; }
-nm_run() {  # <args...>
-  fm_nm_run "$WT" "$NM_TIMEOUT" "$@"
+trim() { fm_drill_trim "$@"; }
+strip_quotes() { fm_drill_strip_quotes "$@"; }
+drill_run() {  # <args...>
+  fm_drill_run "$WT" "$DRILL_TIMEOUT" "$@"
 }
 
 # Scalar value of a TOON key in the captured run output ($RUN_OUT).
 RUN_OUT=""
-nm_field() {  # <key>
-  fm_nm_field "$RUN_OUT" "$1"
+drill_field() {  # <key>
+  fm_drill_field "$RUN_OUT" "$1"
 }
 # Finding count from a findings[N]{...} table header; empty when none.
-nm_findings_count() {
+drill_findings_count() {
   printf '%s\n' "$RUN_OUT" | grep -oE 'findings\[[0-9]+\]' | head -1 | grep -oE '[0-9]+'
 }
-nm_gate_step_row() {
+drill_gate_step_row() {
   local row step rest status findings
   row=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,' | head -1)
   [ -n "$row" ] || return 0
@@ -200,7 +200,7 @@ nm_gate_step_row() {
   findings=$(trim "${rest%%,*}")
   printf '%s|%s|%s' "$step" "$status" "$findings"
 }
-nm_gate_status() {
+drill_gate_status() {
   local s row
   s=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$' | head -1)
   if [ -n "$s" ]; then
@@ -208,32 +208,32 @@ nm_gate_status() {
     printf '%s' "$s"
     return
   fi
-  row=$(nm_gate_step_row)
+  row=$(drill_gate_step_row)
   [ -n "$row" ] && { row=${row#*|}; printf '%s' "${row%%|*}"; }
 }
-nm_has_gate() {
+drill_has_gate() {
   printf '%s\n' "$RUN_OUT" | grep -Eq '^[[:space:]]*gate:[[:space:]]*'
 }
-nm_gate_line_name() {
+drill_gate_line_name() {
   local gate step
-  gate=$(strip_quotes "$(nm_field gate)")
+  gate=$(strip_quotes "$(drill_field gate)")
   [ -n "$gate" ] && { printf '%s' "$gate"; return; }
   step=$(printf '%s\n' "$RUN_OUT" | sed -n '/^[[:space:]]*gate:[[:space:]]*$/,/^[^[:space:]][^:]*:/s/^[[:space:]]*step:[[:space:]]*\(.*\)/\1/p' | head -1)
   step=$(strip_quotes "$step")
   [ -n "$step" ] && printf '%s' "$step"
 }
-nm_gate_name() {
+drill_gate_name() {
   local gate row
-  gate=$(nm_gate_line_name)
+  gate=$(drill_gate_line_name)
   [ -n "$gate" ] && { printf '%s' "$gate"; return; }
-  row=$(nm_gate_step_row)
+  row=$(drill_gate_step_row)
   [ -n "$row" ] && printf '%s' "${row%%|*}"
 }
-nm_gate_findings_count() {
+drill_gate_findings_count() {
   local f row rest
-  f=$(nm_findings_count)
+  f=$(drill_findings_count)
   [ -n "$f" ] && { printf '%s' "$f"; return; }
-  row=$(nm_gate_step_row)
+  row=$(drill_gate_step_row)
   [ -n "$row" ] || return 0
   rest=${row#*|}
   rest=${rest#*|}
@@ -249,7 +249,7 @@ log_reports_ci_ready() {
   esac
 }
 
-nm_ci_step_status() {
+drill_ci_step_status() {
   local row rest
   row=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*ci,[[:space:]]*"?(running|fixing)"?[[:space:]]*,' | head -1)
   [ -n "$row" ] || return 0
@@ -258,13 +258,13 @@ nm_ci_step_status() {
   strip_quotes "$(trim "${rest%%,*}")"
 }
 
-nm_effective_ci_step_status() {
+drill_effective_ci_step_status() {
   local step_status
   if [ "${RUN_STATUS:-}" = fixing ]; then
     printf 'fixing'
     return 0
   fi
-  step_status=$(nm_ci_step_status)
+  step_status=$(drill_ci_step_status)
   if [ -n "$step_status" ]; then
     printf '%s' "$step_status"
     return 0
@@ -275,7 +275,7 @@ nm_effective_ci_step_status() {
 }
 
 # Root cause of the PR #252 incident (2026-07): for a repo where merge is left
-# to the commander, no-mistakes' ci step (and therefore top-level status/outcome)
+# to the commander, drill's ci step (and therefore top-level status/outcome)
 # stays "running" for the ENTIRE CI-monitor phase, including long after GitHub
 # reports every check green - it only reaches outcome=passed once the PR is
 # actually merged (or failed/cancelled if closed). `axi status`'s steps[] table
@@ -284,16 +284,16 @@ nm_effective_ci_step_status() {
 # recorded is the ci step's own log text, e.g. "all CI checks passed - still
 # monitoring until merged or closed" or "no CI checks reported - still
 # monitoring until merged or closed" (verified against 360+ real run logs under
-# ~/.no-mistakes/logs/*/ci.log on the installed v1.32.2 binary, including the
+# ~/.drill/logs/*/ci.log on the installed v1.32.2 binary, including the
 # actual PR #252 run). Reads the ci step's log tail via `axi logs` and scans it
 # for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
 # green right now, still only waiting on merge/close.
-nm_ci_checks_state() {
+drill_ci_checks_state() {
   local run_id log_tail marker
-  run_id=$(strip_quotes "$(nm_field id)")
+  run_id=$(strip_quotes "$(drill_field id)")
   [ -n "$run_id" ] || { printf 'unknown'; return; }
-  log_tail=$(nm_run axi logs --step ci --run "$run_id") || true
+  log_tail=$(drill_run axi logs --step ci --run "$run_id") || true
   [ -n "$log_tail" ] || { printf 'unknown'; return; }
   marker=$(printf '%s\n' "$log_tail" \
     | grep -E 'CI checks passed|no CI checks reported - still monitoring|no CI checks reported yet|checks failed|issues detected|CI checks running|base branch advanced.*re-arming CI monitor timeout' \
@@ -304,7 +304,7 @@ nm_ci_checks_state() {
     *) printf 'unknown' ;;
   esac
 }
-# Coarse fallback for cross-branch attribution. `no-mistakes axi status` (bare)
+# Coarse fallback for cross-branch attribution. `drill axi status` (bare)
 # reports the active-or-most-recent run for the CURRENT branch when one
 # exists, else falls back to some other branch's run purely as informational
 # display (verified empirically: querying a worktree with its own active run
@@ -312,7 +312,7 @@ nm_ci_checks_state() {
 # validating operators on the same underlying repo). A crew whose branch genuinely
 # has no run yet therefore sees another branch's answer here.
 #
-# This fallback used to shell out to `no-mistakes axi` (bare, no subcommand)
+# This fallback used to shell out to `drill axi` (bare, no subcommand)
 # expecting a `runs[N]{id,branch,status,...}:` TOON table and re-query the
 # matched id via `axi status --run <id>`. Verified against the real installed
 # CLI (v1.32.2): the `axi` surface exposes only abort/logs/respond/run/status -
@@ -325,8 +325,8 @@ nm_ci_checks_state() {
 # file's history - but this cross-branch path was independently confirmed
 # dead code and is worth having actually work.)
 #
-# The real run-listing command is the top-level `no-mistakes runs` (verified:
-# `no-mistakes --help` lists it separately from `axi`). It is plain, human-
+# The real run-listing command is the top-level `drill runs` (verified:
+# `drill --help` lists it separately from `axi`). It is plain, human-
 # oriented text - no run id, no JSON/TOON, newest-first, columns
 # "<status> <branch> <short-sha> <date> [<pr-url>]" separated by runs of
 # spaces (verified: no quoting, so splitting on the first two whitespace runs
@@ -334,9 +334,9 @@ nm_ci_checks_state() {
 # is a run for THIS branch active right now. Echoes the first (most recent)
 # matching row's status word (running/completed/cancelled/failed), or empty
 # when the branch has no run within SQUAD_CREW_STATE_RUNS_LIMIT rows.
-nm_runs_status_for_branch() {  # <branch>
+drill_runs_status_for_branch() {  # <branch>
   local branch=$1 out row st rest br sha
-  out=$(nm_run runs --limit "$SQUAD_CREW_STATE_RUNS_LIMIT")
+  out=$(drill_run runs --limit "$SQUAD_CREW_STATE_RUNS_LIMIT")
   [ -n "$out" ] || return 0
   while IFS= read -r row; do
     row=$(trim "$row")
@@ -351,7 +351,7 @@ nm_runs_status_for_branch() {  # <branch>
     if [ "$br" = "$branch" ]; then
       # Same code-identity rule as axi status: skip a same-branch row whose
       # short-sha does not match this worktree (rewritten or advanced tip).
-      if ! nm_coarse_head_matches_worktree "$sha"; then
+      if ! drill_coarse_head_matches_worktree "$sha"; then
         continue
       fi
       printf '%s' "$st"
@@ -367,18 +367,18 @@ CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true
 
 # 0 if the active axi-status run's head field matches this worktree's code
 # identity. Branch match is a precondition (caller). Rule owned by
-# fm_nm_head_matches_worktree in bin/sq-nm-run-lib.sh.
-nm_run_head_matches_worktree() {
+# fm_drill_head_matches_worktree in bin/sq-drill-run-lib.sh.
+drill_run_head_matches_worktree() {
   local run_head
-  run_head=$(strip_quotes "$(nm_field head)")
-  fm_nm_head_matches_worktree "$WT" "$run_head"
+  run_head=$(strip_quotes "$(drill_field head)")
+  fm_drill_head_matches_worktree "$WT" "$run_head"
 }
 
 # Coarse runs-list rows are "<status> <branch> <short-sha> ...". 0 if the short
 # sha for this branch row matches the worktree head under the same rules as
-# nm_run_head_matches_worktree (equal, or local is ancestor of run tip).
-nm_coarse_head_matches_worktree() {  # <short-sha>
-  fm_nm_head_matches_worktree "$WT" "$1"
+# drill_run_head_matches_worktree (equal, or local is ancestor of run tip).
+drill_coarse_head_matches_worktree() {  # <short-sha>
+  fm_drill_head_matches_worktree "$WT" "$1"
 }
 
 HAVE_RUN=0
@@ -388,13 +388,13 @@ HAVE_RUN=0
 # run-step block below skips the TOON field parsing entirely for this crew.
 RUN_SOURCE=full
 COARSE_STATUS=""
-# Scouts and XOs never drive a no-mistakes validation of their own
+# Scouts and XOs never drive a drill validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
-if [ "$KIND" = strike ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
-  RUN_OUT=$(nm_run axi status)
+if [ "$KIND" = strike ] && [ -n "$CREW_BRANCH" ] && command -v drill >/dev/null 2>&1; then
+  RUN_OUT=$(drill_run axi status)
   if [ -n "$RUN_OUT" ]; then
-    run_branch=$(strip_quotes "$(nm_field branch)")
-    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] && nm_run_head_matches_worktree; then
+    run_branch=$(strip_quotes "$(drill_field branch)")
+    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] && drill_run_head_matches_worktree; then
       HAVE_RUN=1
     else
       # The active-or-most-recent run is for another branch, or same branch with
@@ -404,7 +404,7 @@ if [ "$KIND" = strike ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev
       # primary call means the CLI itself did not respond, so retrying it
       # immediately with a second bounded call would just double the wait
       # for no better answer.
-      COARSE_STATUS=$(nm_runs_status_for_branch "$CREW_BRANCH")
+      COARSE_STATUS=$(drill_runs_status_for_branch "$CREW_BRANCH")
       if [ -n "$COARSE_STATUS" ]; then
         HAVE_RUN=1
         RUN_SOURCE=coarse
@@ -437,13 +437,13 @@ if [ "$HAVE_RUN" = 1 ]; then
       *)         RUN_STATE=unknown; RUN_DETAIL="runs list status: $COARSE_STATUS" ;;
     esac
   else
-    status=$(strip_quotes "$(nm_field status)")
+    status=$(strip_quotes "$(drill_field status)")
     RUN_STATUS=$status
-    outcome=$(strip_quotes "$(nm_field outcome)")
+    outcome=$(strip_quotes "$(drill_field outcome)")
     awaiting=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*awaiting_agent:' | head -1 || true)
-    gate_status=$(nm_gate_status)
+    gate_status=$(drill_gate_status)
     has_gate=0
-    nm_has_gate && has_gate=1
+    drill_has_gate && has_gate=1
 
     if [ -n "$outcome" ]; then
       case "$outcome" in
@@ -455,15 +455,15 @@ if [ "$HAVE_RUN" = 1 ]; then
       esac
     elif [ -n "$awaiting" ] || [ "$status" = awaiting_approval ] || [ "$status" = fix_review ] || [ -n "$gate_status" ] || [ "$has_gate" = 1 ]; then
       if [ "$has_gate" = 1 ]; then
-        gate=$(nm_gate_line_name)
+        gate=$(drill_gate_line_name)
       else
-        gate=$(nm_gate_name)
+        gate=$(drill_gate_name)
       fi
       [ -n "$gate" ] || gate=$status
       [ -n "$gate" ] || gate=gate
       RUN_STATE=parked
       RUN_DETAIL="parked at $gate"
-      fcount=$(nm_gate_findings_count)
+      fcount=$(drill_gate_findings_count)
       [ -n "$fcount" ] && RUN_DETAIL="$RUN_DETAIL: $fcount finding(s)"
       if printf '%s\n' "$RUN_OUT" | grep -q 'ask-user'; then
         RUN_DETAIL="$RUN_DETAIL (ask-user: authority decision)"
@@ -479,10 +479,10 @@ if [ "$HAVE_RUN" = 1 ]; then
         *)              RUN_STATE=working; RUN_DETAIL="run active ($status)" ;;
       esac
       if [ "$RUN_STATE" = working ]; then
-        CI_STEP_STATUS=$(nm_effective_ci_step_status)
+        CI_STEP_STATUS=$(drill_effective_ci_step_status)
         case "$CI_STEP_STATUS" in
           running)
-            CI_LOG_STATE=$(nm_ci_checks_state)
+            CI_LOG_STATE=$(drill_ci_checks_state)
             if [ "$CI_LOG_STATE" = green ]; then
               RUN_STATE="done"
               RUN_DETAIL="checks green: PR ready for review (still monitoring for merge/close)"
@@ -500,11 +500,11 @@ if [ "$HAVE_RUN" = 1 ]; then
     if [ "$RUN_SOURCE" = coarse ]; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
     fi
-    [ -n "$CI_STEP_STATUS" ] || CI_STEP_STATUS=$(nm_effective_ci_step_status)
+    [ -n "$CI_STEP_STATUS" ] || CI_STEP_STATUS=$(drill_effective_ci_step_status)
     if [ "$RUN_STATUS" = fixing ]; then
       CI_LOG_STATE=not-ready
     elif [ "$CI_STEP_STATUS" = running ] && [ -z "$CI_LOG_STATE" ]; then
-      CI_LOG_STATE=$(nm_ci_checks_state)
+      CI_LOG_STATE=$(drill_ci_checks_state)
     elif [ "$CI_STEP_STATUS" = fixing ]; then
       CI_LOG_STATE=not-ready
     fi

@@ -198,7 +198,7 @@ EOF
   result="$case_dir/harness-result"
   out=$(CLAUDECODE=1 PI_CODING_AGENT=true GROK_AGENT=1 SQUAD_PI_HARNESS=pi-signed \
     SQUAD_FAKE_EXECUTE_MUSE_LAUNCH=1 SQUAD_FAKE_HARNESS_RESULT="$result" \
-    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off)
+    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode drill --yolo off)
   status=$?
   expect_code 0 "$status" "muse spawn from a marked backend should succeed: $out"
   [ -f "$result" ] || fail "the generated muse launch never executed its harness probe"
@@ -215,7 +215,7 @@ test_spawn_launch_shape() {
   IFS='|' read -r case_dir home proj wt fakebin id <<EOF
 $rec
 EOF
-  out=$(run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off)
+  out=$(run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode drill --yolo off)
   status=$?
   expect_code 0 "$status" "muse spawn should succeed"
   assert_contains "$out" "spawned $id harness=muse" "muse spawn did not report success"
@@ -263,7 +263,7 @@ test_spawn_maps_effort_and_model() {
 $rec
 EOF
     run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" \
-      --mode no-mistakes --yolo off --model muse-spark-1.2 --effort "$effort" >/dev/null \
+      --mode drill --yolo off --model muse-spark-1.2 --effort "$effort" >/dev/null \
       || fail "muse spawn with effort $effort failed"
     launch=$(cat "$home/launch.log")
     assert_contains "$launch" "$expect" "muse effort $effort did not map to '$expect'"
@@ -275,7 +275,7 @@ EOF
   IFS='|' read -r case_dir home proj wt fakebin id <<EOF
 $rec
 EOF
-  run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off >/dev/null \
+  run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode drill --yolo off >/dev/null \
     || fail "muse spawn without an effort axis failed"
   launch=$(cat "$home/launch.log")
   assert_not_contains "$launch" '--reasoning-effort' "muse spawn invented an effort when none was chosen"
@@ -293,7 +293,7 @@ $rec
 EOF
   mkdir -p "$home/xdgconfig/muse"
   out=$(SQUAD_TEST_MUSE_KEY='' SQUAD_TEST_MUSE_WORKER_KEY='' run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" \
-    --mode no-mistakes --yolo off)
+    --mode drill --yolo off)
   status=$?
   [ "$status" -ne 0 ] || fail "muse spawn succeeded with no credential available"
   assert_contains "$out" "no worker-reachable credential" "muse spawn did not name the missing credential"
@@ -308,7 +308,7 @@ test_spawn_refuses_caller_only_environment_credential() {
 $rec
 EOF
   out=$(SQUAD_TEST_MUSE_KEY='caller-only-secret' SQUAD_TEST_MUSE_WORKER_KEY='' \
-    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off)
+    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode drill --yolo off)
   status=$?
   [ "$status" -ne 0 ] || fail "muse spawn accepted a caller-only META_API_KEY"
   assert_contains "$out" "set for sq-spawn but cannot be proven present" \
@@ -329,7 +329,7 @@ EOF
   printf '{"schema_version":1}\n' > "$home/xdgconfig/muse/auth.json"
   SQUAD_TEST_MUSE_KEY='' SQUAD_TEST_MUSE_WORKER_KEY='' \
     run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" \
-    --mode no-mistakes --yolo off >/dev/null
+    --mode drill --yolo off >/dev/null
   status=$?
   expect_code 0 "$status" "muse spawn should accept a stored credential"
   pass "muse spawn accepts a stored credential without META_API_KEY"
@@ -347,7 +347,7 @@ EOF
   printf '{"schema_version":1}\n' > "$caller/cfg/muse/auth.json"
   out=$(cd "$caller" && SQUAD_TEST_MUSE_KEY='' SQUAD_TEST_MUSE_WORKER_KEY='' \
     SQUAD_TEST_MUSE_CONFIG_HOME=cfg SQUAD_TEST_MUSE_DATA_HOME=data \
-    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off)
+    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode drill --yolo off)
   status=$?
   expect_code 0 "$status" "muse spawn with relative XDG roots should succeed: $out"
   launch=$(cat "$home/launch.log")
@@ -393,7 +393,7 @@ EOF
   prior=$(write_session_log "$case_dir/xdgdata/muse/sessions" 2026 08 05 prior "$wt" </dev/null)
   prior=$(printf '%s\n' "$prior" | sed 's://*:/:g')
   SQUAD_TEST_MUSE_DATA_HOME="$case_dir/xdgdata" \
-    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off >/dev/null \
+    run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode drill --yolo off >/dev/null \
     || fail "muse spawn failed"
 
   binding="$home/state/$id.muse-session"
@@ -448,7 +448,7 @@ SH
   chmod +x "$fakebin/tmux"
   fm_write_meta "$home/state/$id.meta" \
     "window=sq-send:0" "endpoint_task_id=$id" "worktree=$case_dir" \
-    "project=$case_dir" "harness=$harness" "kind=strike" "mode=no-mistakes" "yolo=off"
+    "project=$case_dir" "harness=$harness" "kind=strike" "mode=drill" "yolo=off"
   printf '%s\n' "$case_dir|$home|$fakebin|$id"
 }
 
