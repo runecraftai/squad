@@ -8,7 +8,7 @@ import { AxiError } from "./errors.js";
  * Backend + path resolution (report §8 config selection).
  *
  * Override order:
- *   --backend / --file flag > TASKS_AXI_* env > project .tasks.toml >
+ *   --backend / --file flag > SQ_TASKS_* env > project .tasks.toml >
  *   ~/.sq-tasks/config.toml > defaults (markdown, first existing
  *   backlog.md/data/backlog.md, otherwise backlog.md).
  *

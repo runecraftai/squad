@@ -55,8 +55,8 @@ test(
       SQ_REPORT_LINK_HOST: "127.0.0.1",
     };
     const chromeEnv = {
-      CHROME_DEVTOOLS_AXI_SESSION: `lavish-warning-inbox-${process.pid}`,
-      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: path.join(temp, "chrome"),
+      SQ_BROWSER_SESSION: `lavish-warning-inbox-${process.pid}`,
+      SQ_BROWSER_USER_DATA_DIR: path.join(temp, "chrome"),
     };
 
     function openArtifact(file, args = []) {
@@ -432,8 +432,8 @@ test("a live reload preserves the review context Lavish owns", { skip: !runBrows
     SQ_REPORT_LINK_HOST: "127.0.0.1",
   };
   const chromeEnv = {
-    CHROME_DEVTOOLS_AXI_SESSION: `lavish-review-context-${process.pid}`,
-    CHROME_DEVTOOLS_AXI_USER_DATA_DIR: path.join(temp, "chrome"),
+    SQ_BROWSER_SESSION: `lavish-review-context-${process.pid}`,
+    SQ_BROWSER_USER_DATA_DIR: path.join(temp, "chrome"),
   };
 
   // Accessibility-tree refs go stale after every action, so always resolve a fresh one.

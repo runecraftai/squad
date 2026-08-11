@@ -50,8 +50,8 @@ test(
       SQ_REPORT_LINK_HOST: "127.0.0.1",
     };
     const chromeEnv = {
-      CHROME_DEVTOOLS_AXI_SESSION: `lavish-layout-${process.pid}`,
-      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: path.join(temp, "chrome"),
+      SQ_BROWSER_SESSION: `lavish-layout-${process.pid}`,
+      SQ_BROWSER_USER_DATA_DIR: path.join(temp, "chrome"),
     };
 
     function openArtifact(file) {
