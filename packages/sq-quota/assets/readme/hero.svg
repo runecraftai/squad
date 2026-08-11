@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="380" viewBox="0 0 1200 380"
+     role="img" aria-labelledby="title desc">
+  <title id="title">sq-quota: local agent-provider quota windows, reported in one call</title>
+  <desc id="desc">Three headroom gauges show Claude at 64 percent remaining, Codex at 47, and Grok at 67, with pace markers and reset labels.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#0a0e14"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="380" rx="26" fill="url(#bg)"/>
+
+  <!-- left: identity block -->
+  <g id="title-block" transform="translate(56 104)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8b949e" letter-spacing="2">PROVIDER QUOTA · LOCAL FIRST</text>
+    <text x="0" y="92" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="92" font-weight="700" fill="#e6edf3">sq-quota</text>
+    <text x="0" y="142" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="23" fill="#c9d1d9">Know your headroom before you spend.</text>
+    <text x="0" y="172" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="23" fill="#c9d1d9">One call, every provider you run.</text>
+    <text x="0" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8b949e">claude · codex · cursor · copilot · grok · kimi</text>
+  </g>
+
+  <!-- right: gauge cards -->
+  <g id="gauges" transform="translate(640 52)">
+    <g id="card-1">
+      <rect width="500" height="84" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+      <text x="24" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#e6edf3">claude</text>
+      <text x="476" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#3fb950" text-anchor="end">64% remaining</text>
+      <rect x="24" y="48" width="380" height="8" rx="4" fill="#21262d"/>
+      <rect x="24" y="48" width="243" height="8" rx="4" fill="#3fb950"/>
+      <rect x="214" y="44" width="3" height="16" rx="1.5" fill="#e6edf3"/>
+      <text x="24" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#8b949e">session 82% · week 64% · pace behind</text>
+    </g>
+    <g id="card-2" transform="translate(0 96)">
+      <rect width="500" height="84" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+      <text x="24" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#e6edf3">codex</text>
+      <text x="476" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#d29922" text-anchor="end">47% remaining</text>
+      <rect x="24" y="48" width="380" height="8" rx="4" fill="#21262d"/>
+      <rect x="24" y="48" width="179" height="8" rx="4" fill="#d29922"/>
+      <rect x="232" y="44" width="3" height="16" rx="1.5" fill="#e6edf3"/>
+      <text x="24" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#8b949e">session 58% · week 47% · pace ahead</text>
+    </g>
+    <g id="card-3" transform="translate(0 192)">
+      <rect width="500" height="84" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+      <text x="24" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#e6edf3">grok</text>
+      <text x="476" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#3fb950" text-anchor="end">67% remaining</text>
+      <rect x="24" y="48" width="380" height="8" rx="4" fill="#21262d"/>
+      <rect x="24" y="48" width="255" height="8" rx="4" fill="#3fb950"/>
+      <rect x="190" y="44" width="3" height="16" rx="1.5" fill="#e6edf3"/>
+      <text x="24" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#8b949e">credits 67% · pace behind · resets monthly</text>
+    </g>
+  </g>
+</svg>

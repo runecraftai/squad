@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="380" viewBox="0 0 1200 380"
+     role="img" aria-labelledby="title desc">
+  <title id="title">sq-gh: the GitHub CLI rebuilt for agents</title>
+  <desc id="desc">A terminal shows sq-gh issue list with three open issues and status dots, plus a next-step hint to view issue 42.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#090d12"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="380" rx="26" fill="url(#bg)"/>
+
+  <!-- left: identity block -->
+  <g id="title-block" transform="translate(64 104)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#8b949e" letter-spacing="2">GITHUB CLI FOR AGENTS</text>
+    <text x="0" y="94" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="96" font-weight="700" fill="#e6edf3">sq-gh</text>
+    <text x="0" y="144" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9d1d9">The gh CLI, rebuilt for agents:</text>
+    <text x="0" y="174" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9d1d9">token-efficient output, next steps included.</text>
+    <text x="0" y="240" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8b949e">sq-gh · wraps gh · --hostname &lt;host&gt;</text>
+  </g>
+
+  <!-- right: terminal card -->
+  <g id="terminal" transform="translate(636 40)">
+    <rect width="510" height="300" rx="14" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+    <circle cx="24" cy="24" r="6" fill="#ff5f57"/>
+    <circle cx="48" cy="24" r="6" fill="#febc2e"/>
+    <circle cx="72" cy="24" r="6" fill="#28c840"/>
+    <text x="112" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#8b949e">sq-gh issue list</text>
+    <line x1="16" y1="48" x2="494" y2="48" stroke="#30363d" stroke-width="1.5"/>
+
+    <text x="24" y="82" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" fill="#e6edf3">$ sq-gh issue list</text>
+
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">
+      <g transform="translate(24 120)">
+        <circle cx="8" cy="7" r="5" fill="#3fb950"/>
+        <text x="22" y="12" fill="#c9d1d9">42  flaky login test      [bug]</text>
+        <text x="462" y="12" fill="#3fb950" text-anchor="end">OPEN</text>
+      </g>
+      <g transform="translate(24 148)">
+        <circle cx="8" cy="7" r="5" fill="#3fb950"/>
+        <text x="22" y="12" fill="#c9d1d9">41  dark mode toggle      [feat]</text>
+        <text x="462" y="12" fill="#3fb950" text-anchor="end">OPEN</text>
+      </g>
+      <g transform="translate(24 176)">
+        <circle cx="8" cy="7" r="5" fill="#3fb950"/>
+        <text x="22" y="12" fill="#c9d1d9">39  cache layer           [perf]</text>
+        <text x="462" y="12" fill="#3fb950" text-anchor="end">OPEN</text>
+      </g>
+    </g>
+
+    <rect x="24" y="206" width="462" height="52" rx="10" fill="#122b24" stroke="#1f4d3d" stroke-width="1.5"/>
+    <text x="40" y="228" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#7ee787">help[1]:</text>
+    <text x="40" y="248" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#7ee787">Run `sq-gh issue view 42` to inspect #42</text>
+  </g>
+</svg>

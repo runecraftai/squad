@@ -6,7 +6,7 @@ description: All install options, prerequisites, update, and uninstall.
 ## macOS / Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/docs/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/packages/drill/docs/install.sh | sh
 ```
 
 The installer keeps the real binary in `~/.drill/bin` and exposes `drill` through a symlink in `~/.local/bin` or `/usr/local/bin`. That keeps future `drill update` runs in a user-owned location instead of rewriting a system binary in place.
@@ -18,7 +18,7 @@ Official release binaries installed this way include the default self-hosted tel
 ## Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/runecraftai/squad/main/docs/install.ps1 | iex
+irm https://raw.githubusercontent.com/runecraftai/squad/main/packages/drill/docs/install.ps1 | iex
 ```
 
 Installs the binary and restarts the background daemon automatically with `drill.exe daemon restart`, preferring a managed Task Scheduler task and falling back to a detached daemon if needed. If the restart fails, the install command fails.
