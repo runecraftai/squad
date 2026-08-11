@@ -1,6 +1,6 @@
 {
   "name": "sq-tasks",
-  "version": "0.2.5",
+  "version": "0.1.0",
   "packageManager": "pnpm@11.1.1",
   "description": "AXI-compliant task/backlog CLI \u2014 token-efficient TOON output, pluggable backends, byte-exact markdown round-trip, idempotent mutations",
   "type": "module",

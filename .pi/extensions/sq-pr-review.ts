@@ -1,7 +1,7 @@
 /**
  * Squad's Pi-side pr-review integration (T-M3-03, REQ-M3-02).
  *
- * Boots the vendored @runecraft/pr-review package extension inside the Squad Pi
+ * Boots the maintained @runecraft/pr-review package extension inside the Squad Pi
  * session: parallel tiered review of strike PRs, COMMENT-only publication
  * (the package default; auto-approve is disabled), findings table surfaced to
  * the commander. Never auto-merges and never self-approves, including under a

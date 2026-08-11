@@ -317,7 +317,7 @@ Without a current explicit commander instruction that states the concrete merge,
 Use `bin/sq-pr-merge.sh` for every task PR merge so merge metadata is recorded, and use `bin/sq-merge-local.sh` for approved local-only landing; never call a lower-level merge command around their guards.
 After an autonomous merge, give the commander a one-line full-URL or local-main outcome.
 
-**Strike PR review (vendored pr-review):** between a strike PR and the commander's merge decision, run the vendored `@runecraft/pr-review` (via `/pr-review <n>` in-session, or `bin/sq-pr-review.sh <n>` for CI/scripting) when the commander requests a review or the task is a knowledge-only review. The review publishes COMMENT-only findings to the commander and never merges or approves; the commander alone decides merges (this section's merge authority rules, including `yolo`, are unchanged — `+yolo` never lets the review self-approve).
+**Strike PR review (maintained pr-review):** between a strike PR and the commander's merge decision, run the maintained `@runecraft/pr-review` (via `/pr-review <n>` in-session, or `bin/sq-pr-review.sh <n>` for CI/scripting) when the commander requests a review or the task is a knowledge-only review. The review publishes COMMENT-only findings to the commander and never merges or approves; the commander alone decides merges (this section's merge authority rules, including `yolo`, are unchanged — `+yolo` never lets the review self-approve).
 
 ### Validate
 

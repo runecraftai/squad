@@ -1,6 +1,6 @@
 {
   "name": "@runecraft/pr-review",
-  "version": "1.11.4",
+  "version": "0.1.0",
   "description": "Parallel AI code review for GitHub pull requests in the Pi coding agent, with model-agnostic tiered subagents, structured findings, optional verification, and safe COMMENT-only publishing.",
   "keywords": [
     "pi-package",
@@ -26,20 +26,11 @@
     "developer-tools"
   ],
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/runecraftai/harness.git"
-  },
-  "homepage": "https://github.com/runecraftai/harness/tree/main/packages/pr-review#readme",
-  "bugs": {
-    "url": "https://github.com/runecraftai/harness/issues"
-  },
   "engines": {
     "node": ">=20"
   },
   "files": [
     "README.md",
-    "CHANGELOG.md",
     "extensions/",
     "lib/",
     "prompts/"

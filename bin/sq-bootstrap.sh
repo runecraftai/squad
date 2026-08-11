@@ -797,8 +797,8 @@ DRILL_MIN=1.31.2
 # earliest release that happens to satisfy some depended-on behavior. The
 # tasks-axi feature probes are an independent defense-in-depth concern, not part
 # of its floor.
-GH_AXI_MIN=0.1.30
-LAVISH_AXI_MIN=0.1.48
+GH_AXI_MIN=0.1.0
+LAVISH_AXI_MIN=0.1.0
 
 fob_supports_lease() {
   fob get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'

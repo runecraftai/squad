@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Squad pr-review wrapper (T-M3-03, REQ-M3-02 AC3): thin manual/CI entry point
-# for the vendored @runecraft/pr-review review of a strike PR. Validates the
+# for the maintained @runecraft/pr-review review of a strike PR. Validates the
 # repo, the PR, and gh auth with clear failure messages; the review itself runs
 # inside the Pi session (extension) — this wrapper exists for CI/scripting and
 # surfaces the same COMMENT-only posture.
@@ -8,7 +8,7 @@ set -u
 
 USAGE='usage: sq-pr-review.sh [<pr-number>]
 
-Reviews the current branch'"'"'s GitHub PR with the vendored @runecraft/pr-review
+Reviews the current branch'"'"'s GitHub PR with the maintained @runecraft/pr-review
 logic (COMMENT-only; never merges, never approves). With no argument, the PR
 number is resolved from the current branch. Run inside a git checkout of the
 repo whose PR is being reviewed.'

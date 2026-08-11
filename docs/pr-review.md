@@ -1,13 +1,13 @@
-# Strike PR review (vendored pr-review)
+# Strike PR review (maintained pr-review)
 
-Squad vendors Runecraft's `@runecraft/pr-review` (v1.11.4, provenance in
-`packages/pr-review/vendor.json`) and wires it into the strike flow between PR
-creation and the commander's merge decision (AGENTS.md section 7).
+Squad maintains `@runecraft/pr-review` (0.1.0) in `packages/pr-review` and
+wires it into the strike flow between PR creation and the commander's merge
+decision (AGENTS.md section 7).
 
 ## Surface
 
 - `.pi/extensions/sq-pr-review.ts` — Squad-named bootstrapper that registers
-  the vendored package extension in the Pi session (`/pr-review <n>`, focus
+  the maintained package extension in the Pi session (`/pr-review <n>`, focus
   viewer, findings table). The package's own `pi` manifest also enables
   auto-discovery through the root workspace.
 - `bin/sq-pr-review.sh [<pr-number>]` — thin wrapper for CI/scripting. It
