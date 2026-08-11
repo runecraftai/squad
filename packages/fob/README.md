@@ -52,7 +52,7 @@ irm https://raw.githubusercontent.com/runecraftai/squad/main/packages/fob/docs/i
 **Nix**
 
 ```sh
-nix build github:runecraftai/squad/packages/fob
+nix build github:runecraftai/squad?dir=packages/fob
 # the binary lands in ./result/bin/fob
 ```
 
@@ -60,7 +60,7 @@ Or add the flake to your inputs:
 
 ```nix
 fob = {
-  url = "github:runecraftai/squad/packages/fob";
+  url = "github:runecraftai/squad?dir=packages/fob";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
