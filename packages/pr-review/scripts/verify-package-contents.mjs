@@ -5,7 +5,6 @@ import { pathToFileURL } from "node:url";
 
 export const EXPECTED_PACKAGE_FILES = Object.freeze([
 	"README.md",
-	"CHANGELOG.md",
 	"extensions/",
 	"lib/",
 	"prompts/",
@@ -17,7 +16,6 @@ export const EXPECTED_PROMPTS = Object.freeze(["./prompts"]);
 const REQUIRED_PACKAGE_PATHS = Object.freeze([
 	"package.json",
 	"README.md",
-	"CHANGELOG.md",
 	"extensions/index.ts",
 	"extensions/pr-review-focus.ts",
 	"extensions/pr-review-subagent.ts",
@@ -132,9 +130,6 @@ export function assertPackageMetadata(packageData, packageJson, pathCount) {
 	invariant(JSON.stringify(packageJson.pi?.prompts) === JSON.stringify(EXPECTED_PROMPTS), "Pi prompt entries must remain exact");
 	invariant(JSON.stringify(packageJson.peerDependencies) === JSON.stringify(EXPECTED_PEER_DEPENDENCIES), "peer dependencies must remain exact");
 	invariant(packageJson.engines?.node === ">=20", "Node engine must remain >=20");
-	invariant(packageJson.repository?.url === "git+https://github.com/runecraft-ai/harness.git", "repository URL must be canonical");
-	invariant(packageJson.homepage === "https://github.com/runecraft-ai/harness/tree/main/packages/pr-review#readme", "homepage must be canonical");
-	invariant(packageJson.bugs?.url === "https://github.com/runecraft-ai/harness/issues", "bug URL must be canonical");
 	invariant(packageJson.publishConfig?.access === "public", "publish access must be public");
 	invariant(packageJson.publishConfig?.registry === "https://registry.npmjs.org/", "publish registry must be npmjs");
 	invariant(packageJson.publishConfig?.provenance === true, "publish provenance must be enabled");

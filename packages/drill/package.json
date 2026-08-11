@@ -1,6 +1,7 @@
 {
   "name": "drill",
   "private": true,
+  "version": "0.1.0",
   "scripts": {
     "build": "go build -o dist/ ./cmd/drill",
     "test": "go test ./...",

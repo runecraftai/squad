@@ -59,7 +59,3 @@ The package caches one validated completed review; `autoPostReviews` and `--comm
 
 - Full guide, quickstart, and agent matrix: [root README](../../README.md)
 - Mental model, and when to use this vs the other tools: [docs/architecture.md](../../docs/architecture.md)
-
-## Relationship to upstream
-
-Fork of `pi-pr-review` (10ego, MIT), pinned at v1.11.4 (SHA `dbb4ad7d7d993e737da26543240d787405683cf8`). Notable divergence: hardcoded upstream references (`pi-pr-review` / 10ego) were fixed in the verify-package-contents step so the packaged artifact validates under the `@runecraft/*` identity.

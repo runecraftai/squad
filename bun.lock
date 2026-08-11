@@ -16,7 +16,7 @@
     },
     "packages/pr-review": {
       "name": "@runecraft/pr-review",
-      "version": "1.11.4",
+      "version": "0.1.0",
       "peerDependencies": {
         "@earendil-works/pi-ai": "*",
         "@earendil-works/pi-coding-agent": ">=0.80.5",
@@ -26,7 +26,7 @@
     },
     "packages/sq-browser": {
       "name": "sq-browser",
-      "version": "0.1.29",
+      "version": "0.1.0",
       "bin": {
         "sq-browser": "dist/bin/sq-browser.js",
       },
@@ -46,7 +46,7 @@
     },
     "packages/sq-gh": {
       "name": "sq-gh",
-      "version": "0.1.30",
+      "version": "0.1.0",
       "bin": {
         "sq-gh": "./dist/bin/sq-gh.js",
       },
@@ -69,7 +69,7 @@
     },
     "packages/sq-quota": {
       "name": "sq-quota",
-      "version": "0.1.20",
+      "version": "0.1.0",
       "bin": {
         "sq-quota": "./dist/bin/sq-quota.js",
       },
@@ -93,7 +93,7 @@
     },
     "packages/sq-report": {
       "name": "sq-report",
-      "version": "0.1.48",
+      "version": "0.1.0",
       "bin": {
         "sq-report": "dist/cli.mjs",
       },
@@ -125,7 +125,7 @@
     },
     "packages/sq-tasks": {
       "name": "sq-tasks",
-      "version": "0.2.5",
+      "version": "0.1.0",
       "bin": {
         "sq-tasks": "dist/bin/sq-tasks.js",
       },

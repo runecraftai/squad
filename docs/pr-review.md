@@ -1,8 +1,8 @@
 # Strike PR review (vendored pr-review)
 
-Squad vendors Runecraft's `@runecraft/pr-review` (v1.11.4, provenance in
-`packages/pr-review/vendor.json`) and wires it into the strike flow between PR
-creation and the commander's merge decision (AGENTS.md section 7).
+Squad maintains `@runecraft/pr-review` (0.1.0) in `packages/pr-review` and
+wires it into the strike flow between PR creation and the commander's merge
+decision (AGENTS.md section 7).
 
 ## Surface
 

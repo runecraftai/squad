@@ -1,6 +1,7 @@
 {
   "name": "fob",
   "private": true,
+  "version": "0.1.0",
   "scripts": {
     "build": "go build -o dist/ .",
     "test": "go test ./...",

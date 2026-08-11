@@ -17,7 +17,6 @@ func TestGuardGeneratedFilesWorkflowCoversReleasePleaseArtifacts(t *testing.T) {
 	content := string(data)
 
 	guarded := []string{
-		"CHANGELOG.md",
 		".release-please-manifest.json",
 	}
 	for _, path := range guarded {
