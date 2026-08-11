@@ -368,6 +368,24 @@ func fencedJSONCandidates(text string) []string {
 	}
 }
 
+// isFenceOpener reports whether a ``` run at byte i begins a real fence
+// block: everything after the backticks to the end of the line (the info
+// segment) must be empty or a single whitespace-free label. This
+// distinguishes real fences ("```json", "```diff", or an opener glued to the
+// end of a preceding line, "...behavior.```json") from inline-code mentions
+// of fences inside prose ("use ` ```json ` fences"), whose info segment
+// carries sentence text. Treating an inline mention as an opener made the
+// block-skip logic swallow a real ```json fence later in the same text and
+// surface the raw strict-parse error instead of the payload (real pi
+// review-agent output shape).
+func isFenceOpener(text string, i int) bool {
+	lineEnd := strings.IndexByte(text[i+3:], '\n')
+	if lineEnd < 0 {
+		return !strings.ContainsAny(text[i+3:], " \t")
+	}
+	return !strings.ContainsAny(text[i+3:i+3+lineEnd], " \t")
+}
+
 // indexJSONFenceOpen returns the byte offset of the content immediately
 // following an opening ```json fence (the char after the info line's
 // newline), or -1 if no opener exists.
@@ -378,6 +396,13 @@ func indexJSONFenceOpen(text string) int {
 			return -1
 		}
 		i += searchStart
+		if !isFenceOpener(text, i) {
+			// Inline-code mention of a fence in prose, not a real fence
+			// block: skip just the backticks and keep searching so a real
+			// ```json fence later in the text is still found.
+			searchStart = i + 3
+			continue
+		}
 		contentStart, info := fenceContentStart(text, i)
 		if strings.EqualFold(strings.TrimSpace(info), "json") {
 			return contentStart
@@ -463,6 +488,12 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 	var lastErr error
 	for i := 0; i < len(text); i++ {
 		if strings.HasPrefix(text[i:], "```") {
+			if !isFenceOpener(text, i) {
+				// Inline-code mention of a fence in prose, not a real fence
+				// block: ignore the backticks and keep scanning so a JSON
+				// object after them is still recoverable.
+				continue
+			}
 			contentStart, _ := fenceContentStart(text, i)
 			next := skipFenceBlock(text[contentStart:])
 			if next < 0 {

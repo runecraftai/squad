@@ -528,6 +528,85 @@ func TestFinalizeTextResult_WithSchemaFixOutputStaysStrictAfterExtraction(t *tes
 	}
 }
 
+// reviewFindingsSchemaShape mirrors the review output schema validated for
+// the review step (internal/pipeline/steps/common.go reviewFindingsSchema),
+// including the PR #7 schema defaults for action/review_scope.
+var reviewFindingsSchemaShape = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"findings": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"severity": {"type": "string", "enum": ["error", "warning", "info"]},
+					"description": {"type": "string"},
+					"action": {"type": "string", "enum": ["no-op", "auto-fix", "ask-user"], "default": "no-op"},
+					"review_scope": {"type": "string", "enum": ["source", "pipeline-owned-delivery", "external-delivery"], "default": "source"}
+				},
+				"required": ["severity", "description", "action", "review_scope"]
+			}
+		},
+		"risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+		"risk_rationale": {"type": "string"},
+		"risk_scope": {"type": "string", "enum": ["source-or-external", "pipeline-owned-delivery"]}
+	},
+	"required": ["findings", "risk_level", "risk_rationale", "risk_scope"]
+}`)
+
+// TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlineFenceMention
+// reproduces the review-path failure: the pi review agent emitted a full prose
+// pass that itself mentions ```json fences inline ("when a ` ```json `
+// opener had no closer") followed by a properly CLOSED ```json fence with the
+// findings payload. The inline mention was mistaken for a fence opener, and
+// the block-skip logic then swallowed the real fence, surfacing the raw
+// strict-parse error ('invalid character 'I' looking for beginning of
+// value'). The shared extractor must skip only the inline mention and still
+// recover the fenced payload, feeding it through the schema-defaults
+// validator (PR #7 contract: a finding that omits action/review_scope is
+// completed from the schema; fields the agent provided stay strict).
+func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlineFenceMention(t *testing.T) {
+	text := "I've completed a full review pass. Let me summarize my verification before returning the structured result:\n\n" +
+		"1. **Root cause confirmed**: in the pre-fix code, `fencedJSONCandidates` returned an empty candidate list when a ` ```json ` opener had no closer, and `lastBareJSONObject` `break`-ed the entire scan at any unclosed fence opener.\n" +
+		"2. **Fix correctness**: traced all three new tests through the code.\n\n" +
+		"```json\n" +
+		"{\n" +
+		"  \"findings\": [\n" +
+		"    {\"id\":\"F1\",\"severity\":\"warning\",\"description\":\"possible nil deref\"}\n" +
+		"  ],\n" +
+		"  \"risk_level\": \"low\",\n" +
+		"  \"risk_rationale\": \"well-bounded change\",\n" +
+		"  \"risk_scope\": \"source-or-external\"\n" +
+		"}\n" +
+		"```\n"
+
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+			Action   string `json:"action"`
+		} `json:"findings"`
+		RiskLevel string `json:"risk_level"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(output.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(output.Findings))
+	}
+	// The schema-defaults contract (PR #7): the agent omitted action and
+	// review_scope, so the extractor must complete them from the schema.
+	if output.Findings[0].Action != "no-op" {
+		t.Errorf("expected defaulted action=no-op, got %q", output.Findings[0].Action)
+	}
+	if output.RiskLevel != "low" {
+		t.Errorf("expected risk_level=low, got %q", output.RiskLevel)
+	}
+}
+
 func TestFinalizeTextResult_WithSchemaRejectsBareJSONMissingRequiredKeys(t *testing.T) {
 	text := `I inspected the diff and found no issues. {"foo":"bar"}`
 	schema := json.RawMessage(`{
