@@ -344,7 +344,11 @@ func textValidationSchema(schema json.RawMessage) (json.RawMessage, error) {
 // fencedJSONCandidates extracts JSON bodies from ```json ... ``` fences.
 // Fence markers may appear anywhere in the text, including glued to the end
 // of a preceding line (e.g. "...behavior.```json"), which is a shape real
-// codex/GPT-5 output regularly produces.
+// codex/GPT-5 output regularly produces. An unclosed ```json opener is not
+// discarded: the remaining text (its body to EOF) is yielded as a candidate,
+// because models occasionally omit the closing fence when the payload is the
+// last thing they emit (real pi fix-agent output shape). The candidate still
+// undergoes strict parse + schema validation downstream.
 func fencedJSONCandidates(text string) []string {
 	var candidates []string
 	rest := text
@@ -356,11 +360,46 @@ func fencedJSONCandidates(text string) []string {
 		body := rest[start:]
 		end, next := indexJSONFenceClose(body)
 		if end < 0 {
+			candidates = append(candidates, body)
 			return candidates
 		}
 		candidates = append(candidates, body[:end])
 		rest = body[next:]
 	}
+}
+
+// isFenceOpener reports whether a ``` run at byte i begins a real fence
+// block. A run is an opener only when it is not inline code and its info
+// segment is a plain label:
+//   - a backtick immediately before the run marks inline code ("` ```json`");
+//   - the info segment (everything after the backticks to the end of the
+//     line) must be empty or a single whitespace-free token; sentence text
+//     after the backticks ("` ```json ` opener had no closer") is an
+//     inline-code mention, not a fence;
+//   - the single-token info must itself contain no backtick ("json`" is
+//     inline code, not a fence label).
+//
+// This distinguishes real fences ("```json", "```diff", or an opener glued
+// to the end of a preceding line, "...behavior.```json") from inline-code
+// mentions of fences inside prose. Treating an inline mention as an opener
+// made the block-skip logic swallow a real ```json fence later in the same
+// text and surface the raw strict-parse error instead of the payload (real
+// pi review-agent output shapes).
+func isFenceOpener(text string, i int) bool {
+	if i > 0 && text[i-1] == '`' {
+		return false
+	}
+	lineEnd := strings.IndexByte(text[i+3:], '\n')
+	var info string
+	if lineEnd < 0 {
+		info = text[i+3:]
+	} else {
+		info = text[i+3 : i+3+lineEnd]
+	}
+	if strings.ContainsAny(info, " \t") {
+		return false
+	}
+	return !strings.Contains(info, "`")
 }
 
 // indexJSONFenceOpen returns the byte offset of the content immediately
@@ -373,6 +412,13 @@ func indexJSONFenceOpen(text string) int {
 			return -1
 		}
 		i += searchStart
+		if !isFenceOpener(text, i) {
+			// Inline-code mention of a fence in prose, not a real fence
+			// block: skip just the backticks and keep searching so a real
+			// ```json fence later in the text is still found.
+			searchStart = i + 3
+			continue
+		}
 		contentStart, info := fenceContentStart(text, i)
 		if strings.EqualFold(strings.TrimSpace(info), "json") {
 			return contentStart
@@ -458,10 +504,22 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 	var lastErr error
 	for i := 0; i < len(text); i++ {
 		if strings.HasPrefix(text[i:], "```") {
+			if !isFenceOpener(text, i) {
+				// Inline-code mention of a fence in prose, not a real fence
+				// block: ignore the backticks and keep scanning so a JSON
+				// object after them is still recoverable.
+				continue
+			}
 			contentStart, _ := fenceContentStart(text, i)
 			next := skipFenceBlock(text[contentStart:])
 			if next < 0 {
-				break
+				// Unclosed fence: the opener's body runs to EOF. Do not abort
+				// the whole scan - a JSON object after the opener (e.g. the
+				// payload of an unterminated ```json fence) must still be
+				// recoverable by the balanced-brace scan below. Skip just the
+				// opener and keep scanning from the body start.
+				i = contentStart - 1
+				continue
 			}
 			i = contentStart + next - 1
 			continue

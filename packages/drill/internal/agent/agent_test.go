@@ -463,6 +463,194 @@ func TestFinalizeTextResult_WithSchemaPrefersLastBareJSON(t *testing.T) {
 	}
 }
 
+// commitSummarySchemaShape mirrors the fix-output schema the review fixer,
+// test-fix, lint-fix, and rebase agents are validated against
+// (internal/pipeline/steps/common_fix.go commitSummarySchema).
+var commitSummarySchemaShape = json.RawMessage(`{
+	"type":"object",
+	"properties":{"summary":{"type":"string"}},
+	"required":["summary"]
+}`)
+
+// TestFinalizeTextResult_WithSchemaParsesFixOutputWithLeadingProse reproduces
+// the integration bug where the pi fix agent (deepseek via pi) emitted leading
+// prose before a ```json fenced payload WITHOUT a closing fence, and the
+// tolerant extraction bailed on the unclosed opener, surfacing the raw strict
+// parse error 'invalid character 'A' looking for beginning of value' and
+// killing the review step ("agent fix: pi output parse: ..."). The fence body
+// and any later bare object must still be recovered and validated.
+func TestFinalizeTextResult_WithSchemaParsesFixOutputWithLeadingProse(t *testing.T) {
+	text := "All fixes applied and verified. Summary of the round:\n\n" +
+		"- **Validated the finding**: PARITY.md confirms B1 is Claude Code-only (agents + Task tool), B7 excludes Copilot, OpenCode overlay agents are B5/B6, codex exec appears only in B7 so the four cited cells did misattribute phases.\n" +
+		"- **Applied option A** in `packages/harness/src/matrix.ts`: dropped `(B1)` from opencode/codex/copilot subagents reasons and `(B7)` from copilot goal-loop reason; kept phase ids on all 12 correctly-attributed cells.\n" +
+		"- Verified: `bun test test/f17-matrix.test.ts` returned 24 pass, 0 fail; no other file asserts the edited reason strings.\n\n" +
+		"```json\n" +
+		`{"summary":"Drop misattributed roadmap phase ids from 4 unsupported-cell reasons"}` + "\n"
+
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output["summary"] != "Drop misattributed roadmap phase ids from 4 unsupported-cell reasons" {
+		t.Errorf("unexpected summary: %v", output["summary"])
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaFailsLoudlyWhenFixOutputHasNoJSON keeps the
+// tolerant extraction honest: prose without any JSON payload still fails with
+// the raw parse error, never a silent empty result.
+func TestFinalizeTextResult_WithSchemaFailsLoudlyWhenFixOutputHasNoJSON(t *testing.T) {
+	text := "All fixes applied and verified. The summary is: everything looks good now."
+	_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected garbage-only fix output to fail")
+	}
+	if !strings.Contains(err.Error(), "output parse") {
+		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaFixOutputStaysStrictAfterExtraction keeps
+// strict schema validation on the EXTRACTED object: an unclosed ```json fence
+// whose payload misses the required "summary" field must still be rejected.
+func TestFinalizeTextResult_WithSchemaFixOutputStaysStrictAfterExtraction(t *testing.T) {
+	text := "All fixes applied.\n\n```json\n" + `{"done":true}` + "\n"
+	_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected extracted fix output missing required summary to fail")
+	}
+	if !strings.Contains(err.Error(), "missing required field") {
+		t.Errorf("expected required-field validation error, got: %v", err)
+	}
+}
+
+// reviewFindingsSchemaShape mirrors the review output schema validated for
+// the review step (internal/pipeline/steps/common.go reviewFindingsSchema),
+// including the PR #7 schema defaults for action/review_scope.
+var reviewFindingsSchemaShape = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"findings": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"severity": {"type": "string", "enum": ["error", "warning", "info"]},
+					"description": {"type": "string"},
+					"action": {"type": "string", "enum": ["no-op", "auto-fix", "ask-user"], "default": "no-op"},
+					"review_scope": {"type": "string", "enum": ["source", "pipeline-owned-delivery", "external-delivery"], "default": "source"}
+				},
+				"required": ["severity", "description", "action", "review_scope"]
+			}
+		},
+		"risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+		"risk_rationale": {"type": "string"},
+		"risk_scope": {"type": "string", "enum": ["source-or-external", "pipeline-owned-delivery"]}
+	},
+	"required": ["findings", "risk_level", "risk_rationale", "risk_scope"]
+}`)
+
+// TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlineFenceMention
+// reproduces the review-path failure: the pi review agent emitted a full prose
+// pass that itself mentions ```json fences inline ("when a ` ```json `
+// opener had no closer") followed by a properly CLOSED ```json fence with the
+// findings payload. The inline mention was mistaken for a fence opener, and
+// the block-skip logic then swallowed the real fence, surfacing the raw
+// strict-parse error ('invalid character 'I' looking for beginning of
+// value'). The shared extractor must skip only the inline mention and still
+// recover the fenced payload, feeding it through the schema-defaults
+// validator (PR #7 contract: a finding that omits action/review_scope is
+// completed from the schema; fields the agent provided stay strict).
+func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlineFenceMention(t *testing.T) {
+	text := "I've completed a full review pass. Let me summarize my verification before returning the structured result:\n\n" +
+		"1. **Root cause confirmed**: in the pre-fix code, `fencedJSONCandidates` returned an empty candidate list when a ` ```json ` opener had no closer, and `lastBareJSONObject` `break`-ed the entire scan at any unclosed fence opener.\n" +
+		"2. **Fix correctness**: traced all three new tests through the code.\n\n" +
+		"```json\n" +
+		"{\n" +
+		"  \"findings\": [\n" +
+		"    {\"id\":\"F1\",\"severity\":\"warning\",\"description\":\"possible nil deref\"}\n" +
+		"  ],\n" +
+		"  \"risk_level\": \"low\",\n" +
+		"  \"risk_rationale\": \"well-bounded change\",\n" +
+		"  \"risk_scope\": \"source-or-external\"\n" +
+		"}\n" +
+		"```\n"
+
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+			Action   string `json:"action"`
+		} `json:"findings"`
+		RiskLevel string `json:"risk_level"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(output.Findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(output.Findings))
+	}
+	// The schema-defaults contract (PR #7): the agent omitted action and
+	// review_scope, so the extractor must complete them from the schema.
+	if output.Findings[0].Action != "no-op" {
+		t.Errorf("expected defaulted action=no-op, got %q", output.Findings[0].Action)
+	}
+	if output.RiskLevel != "low" {
+		t.Errorf("expected risk_level=low, got %q", output.RiskLevel)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLineFinalBacktickMention
+// reproduces the second review-path failure shape: the pi review agent's prose
+// itself demonstrates a line-final inline mention "` ```json`" (backtick
+// immediately before the run, whitespace-free info) followed by a real,
+// properly closed ```json fence with the findings payload. The mention was
+// misclassified as a real fence opener and the block-skip swallowed the real
+// fence, surfacing 'invalid character 'I' looking for beginning of value'.
+// A fence opener preceded by a backtick - or whose single-token info carries
+// a backtick - is inline code, not a fence block.
+func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLineFinalBacktickMention(t *testing.T) {
+	text := "I've completed a full review pass. Let me summarize my analysis:\n\n" +
+		"**One residual finding:** a line-final mention like \"` ```json`\" is misclassified as a real fence and skipFenceBlock depth-counts a later real ```json fence + its closer as a nested block, so the payload is swallowed. Concrete path: text = \"The scanner saw ` ```json`\n```json\n{\"done\":true}\n```\".\n\n" +
+		"```json\n" +
+		"{\n" +
+		"  \"findings\": [\n" +
+		"    {\"severity\":\"info\",\"description\":\"residual shape noted\"}\n" +
+		"  ],\n" +
+		"  \"risk_level\": \"low\",\n" +
+		"  \"risk_rationale\": \"well-bounded\",\n" +
+		"  \"risk_scope\": \"source-or-external\"\n" +
+		"}\n" +
+		"```\n"
+
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Findings []struct {
+			Severity string `json:"severity"`
+		} `json:"findings"`
+		RiskLevel string `json:"risk_level"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(output.Findings) != 1 || output.Findings[0].Severity != "info" {
+		t.Errorf("unexpected findings: %+v", output.Findings)
+	}
+	if output.RiskLevel != "low" {
+		t.Errorf("expected risk_level=low, got %q", output.RiskLevel)
+	}
+}
+
 func TestFinalizeTextResult_WithSchemaRejectsBareJSONMissingRequiredKeys(t *testing.T) {
 	text := `I inspected the diff and found no issues. {"foo":"bar"}`
 	schema := json.RawMessage(`{
