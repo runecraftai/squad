@@ -71,14 +71,14 @@ var returnCmd = &cobra.Command{
 			}
 		}
 		if errors.Is(err, errReturnAborted) {
-			fmt.Fprintln(os.Stderr, "🌳 Aborted.")
+			fmt.Fprintln(os.Stderr, "Aborted.")
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("failed to return worktree: %w", err)
 		}
 
-		fmt.Fprintln(os.Stderr, "🌳 Worktree returned to pool.")
+		fmt.Fprintln(os.Stderr, "Worktree returned to pool.")
 		return nil
 	},
 }
@@ -125,7 +125,7 @@ func resolveWorktreePath(args []string) (string, error) {
 	if len(args) > 0 {
 		return filepath.Abs(args[0])
 	}
-	if env := os.Getenv("TREEHOUSE_DIR"); env != "" {
+	if env := os.Getenv("FOB_DIR"); env != "" {
 		return filepath.Abs(env)
 	}
 	return os.Getwd()

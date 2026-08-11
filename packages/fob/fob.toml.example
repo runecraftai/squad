@@ -1,4 +1,4 @@
-# Treehouse configuration
+# fob configuration
 # Place repo-safe settings at <repo_root>/fob.toml.
 # Place executable hooks only in ~/.config/fob/config.toml.
 

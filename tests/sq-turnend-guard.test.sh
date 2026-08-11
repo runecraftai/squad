@@ -535,7 +535,7 @@ test_hook_silent_in_XO_child_worktree() {
 # remove-only form wrongly exempted. With the marker force-include, its own
 # primary session is GUARDED. The test asserts the fixture really is a linked
 # worktree so it can never silently regress back into a plain-checkout shape.
-test_hook_blocks_in_treehouse_leased_XO_home() {
+test_hook_blocks_in_fob_leased_XO_home() {
   local base dir gd gcd out status
   base="$TMP_ROOT/hook-sm-leased-base"
   dir="$TMP_ROOT/hook-sm-leased-home"
@@ -1624,7 +1624,7 @@ test_hook_silent_in_idle_XO_home
 test_hook_XO_loop_guard_allows_retry
 test_hook_XO_reinvoke_recovery_loop
 test_hook_silent_in_XO_child_worktree
-test_hook_blocks_in_treehouse_leased_XO_home
+test_hook_blocks_in_fob_leased_XO_home
 test_hook_exempts_linked_worktree_with_stray_marker
 test_hook_exempts_linked_worktree_with_non_ascii_marker
 test_hook_silent_in_operator_worktree

@@ -25,14 +25,14 @@ fob keeps a pool of reusable, isolated worktrees per repository, so each agent g
 ```sh
 $ cd myproject                 # start in your repo as usual
 $ fob                    # get a worktree and drop into a subshell
-🌳 Entered worktree at ~/.fob/myproject-a1b2c3/1/myproject. Type 'exit' to return.
+Entered worktree at ~/.fob/myproject-a1b2c3/1/myproject. Type 'exit' to return.
 
 # You're now in an isolated worktree.
 # Run your AI agent, make changes, do whatever you need.
 
 $ exit                         # exit the subshell when you're done
-🌳 Terminated lingering processes: opencode (pid 12345)
-🌳 Worktree returned to pool.
+Terminated lingering processes: opencode (pid 12345)
+Worktree returned to pool.
 ```
 
 ## Install
@@ -149,7 +149,7 @@ fob manages a **pool of git worktrees** per repository, stored under the configu
 | Command   | Flag      | Description                       |
 | --------- | --------- | --------------------------------- |
 | `get`     | `--lease` | Durably lease the worktree without opening a subshell; print only its path to stdout |
-| `get`     | `--lease-holder` | Optional label recorded as the lease holder (defaults to `$TREEHOUSE_LEASE_HOLDER`) |
+| `get`     | `--lease-holder` | Optional label recorded as the lease holder (defaults to `$FOB_LEASE_HOLDER`) |
 | `get`     | `--json` | Print `path`, `lease_id`, `lease_holder`, and `leased_at` as JSON (requires `--lease`) |
 | `enter`   | `--print-path` | Print only the worktree's absolute path to stdout instead of opening a subshell (for `cd "$(fob enter --print-path 1)"`) |
 | `status`  | `--json` | Print worktree status and lease metadata as JSON |
@@ -184,7 +184,7 @@ It acquires a worktree exactly like `get`, but instead of opening a subshell it 
 A leased worktree is never handed out by a later `get` and never removed by `prune`, regardless of whether any process runs inside it, until the lease is explicitly released.
 A bulk `fob destroy <pool> --all` never removes it either; only naming its exact path with `fob destroy <path> --include-leased --yes` will.
 
-Pass `--lease-holder <label>` (or set `$TREEHOUSE_LEASE_HOLDER`) to record who holds the lease; `fob status` then shows it next to the `leased` state.
+Pass `--lease-holder <label>` (or set `$FOB_LEASE_HOLDER`) to record who holds the lease; `fob status` then shows it next to the `leased` state.
 
 Every acquisition receives a new random `lease_id`, including reacquiring the same path with the same holder. Automation can request a stable machine-readable allocation:
 

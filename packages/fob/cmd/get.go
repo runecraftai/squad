@@ -40,7 +40,7 @@ it with 'fob return <path>'.`,
 
 func init() {
 	getCmd.Flags().BoolVar(&getLease, "lease", false, "Durably lease a worktree without opening a subshell; print only its path to stdout")
-	getCmd.Flags().StringVar(&getLeaseHolder, "lease-holder", "", "Optional label recorded as the lease holder (defaults to $TREEHOUSE_LEASE_HOLDER)")
+	getCmd.Flags().StringVar(&getLeaseHolder, "lease-holder", "", "Optional label recorded as the lease holder (defaults to $FOB_LEASE_HOLDER)")
 	getCmd.Flags().BoolVar(&getJSON, "json", false, "Print lease allocation as JSON (requires --lease)")
 	rootCmd.AddCommand(getCmd)
 }
@@ -78,25 +78,25 @@ func getRunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "🌳 Entered worktree at %s. Type 'exit' to return.\n", ui.PrettyPath(wtPath))
+	fmt.Fprintf(os.Stderr, "Entered worktree at %s. Type 'exit' to return.\n", ui.PrettyPath(wtPath))
 
 	env := []string{
-		"TREEHOUSE_DIR=" + wtPath,
+		"FOB_DIR=" + wtPath,
 	}
 	_, err = shell.Spawn(wtPath, env)
 
 	// Subshell exited — handle return
 	if err := git.DetachWorktree(wtPath); err != nil {
-		fmt.Fprintf(os.Stderr, "🌳 Warning: failed to detach worktree HEAD: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to detach worktree HEAD: %v\n", err)
 	}
 
 	dirty, _ := git.IsDirty(wtPath)
 	if dirty {
-		fmt.Fprintf(os.Stderr, "🌳 Worktree has uncommitted changes.\n")
+		fmt.Fprintf(os.Stderr, "Worktree has uncommitted changes.\n")
 
 		ok, promptErr := ui.Confirm("Clean worktree and return to pool?", true)
 		if promptErr != nil || !ok {
-			fmt.Fprintln(os.Stderr, "🌳 Worktree left dirty. Use 'fob return --force' to clean it later.")
+			fmt.Fprintln(os.Stderr, "Worktree left dirty. Use 'fob return --force' to clean it later.")
 			return nil
 		}
 	}
@@ -104,9 +104,9 @@ func getRunE(cmd *cobra.Command, args []string) error {
 	killLingeringProcesses(wtPath)
 
 	if err := pool.Release(poolDir, wtPath); err != nil {
-		fmt.Fprintf(os.Stderr, "🌳 Warning: failed to clean worktree: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to clean worktree: %v\n", err)
 	} else {
-		fmt.Fprintln(os.Stderr, "🌳 Worktree returned to pool.")
+		fmt.Fprintln(os.Stderr, "Worktree returned to pool.")
 	}
 
 	return nil
@@ -118,7 +118,7 @@ func getRunE(cmd *cobra.Command, args []string) error {
 func getLeaseRunE(repoRoot, poolDir string, cfg config.Config) error {
 	holder := getLeaseHolder
 	if holder == "" {
-		holder = os.Getenv("TREEHOUSE_LEASE_HOLDER")
+		holder = os.Getenv("FOB_LEASE_HOLDER")
 	}
 
 	lease, err := pool.AcquireLeaseInfo(repoRoot, poolDir, cfg.MaxTrees, cfg.Hooks.PostCreate, holder)
@@ -126,7 +126,7 @@ func getLeaseRunE(repoRoot, poolDir string, cfg config.Config) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "🌳 Leased worktree at %s. Run 'fob return %s' to release it.\n",
+	fmt.Fprintf(os.Stderr, "Leased worktree at %s. Run 'fob return %s' to release it.\n",
 		ui.PrettyPath(lease.Path), ui.PrettyPath(lease.Path))
 	if getJSON {
 		return json.NewEncoder(os.Stdout).Encode(lease)
@@ -142,7 +142,7 @@ func getLeaseRunE(repoRoot, poolDir string, cfg config.Config) error {
 func killLingeringProcesses(wtPath string) {
 	killed, err := process.TerminateWorktreeProcesses(wtPath, 2*time.Second)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "🌳 Warning: failed to scan for lingering processes: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to scan for lingering processes: %v\n", err)
 		return
 	}
 	if len(killed) == 0 {
@@ -152,5 +152,5 @@ func killLingeringProcesses(wtPath string) {
 	for i, p := range killed {
 		names[i] = p.String()
 	}
-	fmt.Fprintf(os.Stderr, "🌳 Terminated lingering processes: %s\n", strings.Join(names, ", "))
+	fmt.Fprintf(os.Stderr, "Terminated lingering processes: %s\n", strings.Join(names, ", "))
 }

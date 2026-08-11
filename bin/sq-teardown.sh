@@ -65,8 +65,8 @@
 # while a live git process might still own it - the fix is patience, not rm.
 #
 # On that failure signature only, teardown_fob_return:
-#   1. Retries up to SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES times (default 3), waiting
-#      SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS (default 1s; falls back to the older
+#   1. Retries up to SQUAD_FOB_RETURN_LOCK_RETRIES times (default 3), waiting
+#      SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS (default 1s; falls back to the older
 #      SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS name when the new one is unset) between
 #      attempts. Retries key off the error text, not whether the lock file still
 #      exists after the failed attempt - a lock that self-clears mid-check still
@@ -933,15 +933,15 @@ STALE_WORKTREE_LOCK_AGE_SECS=${SQUAD_STALE_WORKTREE_LOCK_AGE_SECS:-30}
 # Bounded patience window for transient index.lock after killing an operator process.
 # New knobs are preferred; SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS remains an alias
 # for the per-attempt wait so existing tests and operators keep working.
-TREEHOUSE_RETURN_LOCK_RETRIES=${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}
-TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=${SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS:-${SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS:-1}}
-if ! retry_wait_secs_is_valid "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"; then
-  echo "teardown: invalid fob return lock retry wait '$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
-  TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=1
+FOB_RETURN_LOCK_RETRIES=${SQUAD_FOB_RETURN_LOCK_RETRIES:-3}
+FOB_RETURN_LOCK_RETRY_WAIT_SECS=${SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS:-${SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS:-1}}
+if ! retry_wait_secs_is_valid "$FOB_RETURN_LOCK_RETRY_WAIT_SECS"; then
+  echo "teardown: invalid fob return lock retry wait '$FOB_RETURN_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
+  FOB_RETURN_LOCK_RETRY_WAIT_SECS=1
 fi
 # Compatibility alias used by the safety-check wait path and older call sites.
-STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS
-TEARDOWN_TREEHOUSE_LOCK_REFUSED=2
+STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=$FOB_RETURN_LOCK_RETRY_WAIT_SECS
+TEARDOWN_FOB_LOCK_REFUSED=2
 TEARDOWN_WORKTREE_SAFETY_LOCK_BLOCKED=3
 TEARDOWN_PROCEVENT_RESTORE_FAILED=4
 
@@ -1001,7 +1001,7 @@ cleanup_stale_lock_for_safety_check() {
   fi
 
   echo "teardown: worktree safety check blocked by git lock $lock that is not provably stale (may belong to a live process); leaving it in place" >&2
-  return "$TEARDOWN_TREEHOUSE_LOCK_REFUSED"
+  return "$TEARDOWN_FOB_LOCK_REFUSED"
 }
 
 # Return a worktree/home via `fob return --force`, tolerating a transient or
@@ -1029,13 +1029,13 @@ teardown_fob_return() {
     lock_desc="index.lock"
   fi
 
-  max_retries=$TREEHOUSE_RETURN_LOCK_RETRIES
+  max_retries=$FOB_RETURN_LOCK_RETRIES
   case "$max_retries" in ''|*[!0-9]*) max_retries=3 ;; esac
 
   while [ "$attempt" -lt "$max_retries" ]; do
     attempt=$(( attempt + 1 ))
-    echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
-    sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
+    echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${FOB_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
+    sleep "$FOB_RETURN_LOCK_RETRY_WAIT_SECS"
 
     if out=$( ( cd "$cd_dir" && fob return --force "$dir" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
@@ -1074,11 +1074,11 @@ teardown_fob_return() {
       return 1
     fi
 
-    echo "teardown: $label return failed: git lock $lock_desc persisted across ${max_retries} retries (waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s each) and is not provably stale (may belong to a live process); leaving it in place" >&2
-    return "$TEARDOWN_TREEHOUSE_LOCK_REFUSED"
+    echo "teardown: $label return failed: git lock $lock_desc persisted across ${max_retries} retries (waiting ${FOB_RETURN_LOCK_RETRY_WAIT_SECS}s each) and is not provably stale (may belong to a live process); leaving it in place" >&2
+    return "$TEARDOWN_FOB_LOCK_REFUSED"
   fi
 
-  echo "teardown: $label return failed: git index.lock signature persisted across ${max_retries} retries (waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s each) even after the lock file disappeared" >&2
+  echo "teardown: $label return failed: git index.lock signature persisted across ${max_retries} retries (waiting ${FOB_RETURN_LOCK_RETRY_WAIT_SECS}s each) even after the lock file disappeared" >&2
   return 1
 }
 
@@ -2073,7 +2073,7 @@ cleanup_Squad_home_children() {
           :
         else
           child_return_rc=$?
-          if [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
+          if [ "$child_return_rc" -eq "$TEARDOWN_FOB_LOCK_REFUSED" ]; then
             return "$child_return_rc"
           fi
           safe_rm_rf_child_worktree "$child_wt" "$child_proj"

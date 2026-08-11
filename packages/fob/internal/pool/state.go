@@ -24,7 +24,7 @@ type WorktreeEntry struct {
 	// false, so pre-lease state files keep today's behavior.
 	Leased bool `json:"leased,omitempty"`
 	// LeaseID is an immutable identity for one acquisition. It is empty only
-	// when loading state written by a Treehouse version that predates lease IDs
+	// when loading state written by an older fob version that predates lease IDs
 	// or when conservatively recovering a corrupt state file.
 	LeaseID string `json:"lease_id,omitempty"`
 	// LeaseHolder is an optional human-readable label for who holds the lease.

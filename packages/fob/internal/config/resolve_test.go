@@ -79,9 +79,9 @@ func TestResolvePoolDir_EnvVarExpansion(t *testing.T) {
 	repoDir := setupGitRepo(t)
 	absRoot := t.TempDir()
 
-	t.Setenv("TEST_TREEHOUSE_ROOT", absRoot)
+	t.Setenv("TEST_FOB_ROOT", absRoot)
 
-	poolDir, err := ResolvePoolDir(repoDir, "$TEST_TREEHOUSE_ROOT")
+	poolDir, err := ResolvePoolDir(repoDir, "$TEST_FOB_ROOT")
 	if err != nil {
 		t.Fatalf("ResolvePoolDir failed: %v", err)
 	}
