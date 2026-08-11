@@ -1,4 +1,9 @@
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="drill: push through a local AI validation gate and land a clean PR" />
+</p>
+
 <h1 align="center"><code>git push drill</code></h1>
+
 <p align="center">
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"
     ><img
@@ -16,10 +21,6 @@
 
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
 
-<p align="center">
-  <!-- demo assets: see Squad release assets (OQ-03 placeholder) -->
-</p>
-
 `drill` puts a local git proxy in front of your real remote.
 Push to `drill` instead of `origin`, and it spins up a disposable worktree, runs an AI-driven validation pipeline, forwards the branch to the configured push target only after every check passes, and opens a clean PR automatically.
 
@@ -29,7 +30,15 @@ Push to `drill` instead of `origin`, and it spins up a disposable worktree, runs
 - **Human stays in charge** - auto-fix or review findings, your call.
 - **Clean PRs by default** - push, open PR, watch CI, and auto-fix failures in one shot.
 
-Full documentation: <https://squad.example/drill/>
+Full documentation: <https://github.com/runecraftai/squad/tree/main/packages/drill/docs>
+
+## Proof
+
+<p align="center">
+  <img src="./demo.gif" alt="drill demo: push a branch through the gate, watch the review pipeline stream in the TUI, fix findings, and land the PR" width="100%" />
+</p>
+
+That is a real recording of the TUI: push through the gate, watch the review pipeline stream, fix what it surfaces, and land the PR.
 
 ## How it works
 
@@ -38,7 +47,7 @@ Full documentation: <https://squad.example/drill/>
             │  git push drill
             ▼
    ┌────────────────────────────────────────────────┐
-   │  disposable worktree — your work stays put     │
+   │  disposable worktree ─ your work stays put     │
    │  review → test → docs → lint → push → PR → CI  │
    └────────────────────────────────────────────────┘
             │  every check green
@@ -53,10 +62,10 @@ Nothing reaches the configured push target until every check is green.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/docs/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/packages/drill/docs/install.sh | sh
 ```
 
-Windows, Go install, and build-from-source instructions are in the [installation guide](https://squad.example/drill/start-here/installation/).
+Windows, Go install, and build-from-source instructions are in the [installation guide](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/installation.md).
 
 ## Quick Start
 
@@ -102,7 +111,7 @@ Every change runs through the same pipeline. Pick the entry point that fits how 
 
 `drill init` installs the `/drill` skill for Claude Code and other agents. Under the hood the skill drives `drill axi`, a non-interactive TOON interface to the same approval flow.
 
-See the [quick start](https://squad.example/drill/start-here/quick-start/) for the full first-run walkthrough.
+See the [quick start](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/quick-start.md) for the full first-run walkthrough.
 
 ## Development
 
@@ -121,4 +130,3 @@ make docs    # Build the Astro docs site in docs/dist
 See `Makefile` for the full target list.
 
 `make e2e-record` overwrites `internal/e2e/fixtures/` from the real `claude`, `codex`, and `opencode` CLIs, spends real API quota, and should be reviewed before committing.
-

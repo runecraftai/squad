@@ -1,25 +1,24 @@
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="fob: a reusable pool of clean git worktrees for your agents" />
+</p>
+
 <h1 align="center">fob</h1>
 
 <p align="center">
-  <a href="#"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
+  <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
   <a href="https://discord.gg/BW4aJuQhTf"><img alt="Discord" src="https://img.shields.io/discord/1439901831038763092?style=flat-square&label=discord" /></a>
 </p>
 
 <h3 align="center">Manage worktrees without managing worktrees.</h3>
 
-Are you still only working on one task at a time? Are you manually juggling between a few clones of the same repo?
+Every agent session needs its own clean copy of the repo.
+Clone it fresh each time and you pay for reinstalls and rebuilds every run.
+Share one working directory and agents step on each other.
+fob keeps a pool of reusable, isolated worktrees per repository, so each agent gets its own environment instantly: no cloning, no conflicts, no coordination overhead.
 
-Or... are you starting a new worktree for every agent session, losing all your installed dependencies and build cache each time, and wondering why your agents are slow?
-
-<p align="center">
-  <!-- demo assets: see Squad release assets (OQ-03 placeholder) -->
-</p>
-
-fob helps you manage a pool of reusable, isolated worktrees so each of your agents gets its own environment instantly — no cloning, no conflicts, no coordination overhead.
-
-- **Instant isolation** — `fob` puts you into a clean worktree with zero hassel.
-- **Reusable worktrees** — worktrees are preserved in a pool when you're done, with dependencies and build cache intact, ready for the next agent.
-- **Conflict-free** — automatic detection of in-use worktrees and your agents never step on each other's toes.
+- **Instant isolation** - `fob` puts you into a clean worktree with zero hassle.
+- **Reusable worktrees** - worktrees are preserved in a pool when you're done, dependencies and build cache intact, ready for the next agent.
+- **Conflict-free** - automatic detection of in-use worktrees means your agents never step on each other's toes.
 
 ## Quick Start
 
@@ -41,48 +40,42 @@ $ exit                         # exit the subshell when you're done
 **macOS / Linux**
 
 ```sh
-curl -fsSL https://squad.example/fob/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/packages/fob/docs/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://squad.example/fob/install.ps1 | iex
+irm https://raw.githubusercontent.com/runecraftai/squad/main/packages/fob/docs/install.ps1 | iex
 ```
 
 **Nix**
 
 ```sh
-nix run github:runecraftai/squad
+nix build github:runecraftai/squad/packages/fob
+# the binary lands in ./result/bin/fob
 ```
 
-Or add to your flake inputs:
+Or add the flake to your inputs:
 
 ```nix
 fob = {
-  url = "github:runecraftai/squad";
+  url = "github:runecraftai/squad/packages/fob";
   inputs.nixpkgs.follows = "nixpkgs";
 };
-```
-
-**Go**
-
-```sh
-go install github.com/runecraftai/squad/packages/fob@latest
 ```
 
 **From source**
 
 ```sh
-git clone https://github.com/runecraftai/squad/packages/fob.git
-cd fob
+git clone https://github.com/runecraftai/squad.git
+cd squad/packages/fob
 make install
 ```
 
 ## How It Works
 
-fob manages a **pool of git worktrees** per repository, stored under the configured fob root.
-The default fob root is `~/.fob/`.
+fob manages a **pool of git worktrees** per repository, stored under the configured fob root (default `~/.fob/`).
 
 ```
   fob
@@ -126,18 +119,13 @@ The default fob root is `~/.fob/`.
   (ready for next agent)
 ```
 
-- **Detached HEAD** — worktrees use detached HEAD mode, reset to whichever of the local or remote default branch is further ahead, avoiding branch name conflicts entirely.
-- **No daemon** - all operations are inline CLI commands.
-  Pool state is a small on-disk file, written under a lock by each command.
-- **In-use detection** — fob scans running processes and short-lived owner reservations to determine which worktrees are in-use. Reservations are persisted only while `get`, `destroy`, and `prune` lifecycle work is running.
-- **Durable leases** - `fob get --lease` reserves a worktree as a persistent home without keeping a process inside it. Each acquisition gets an immutable random lease identity, and the lease is recorded in fob's own state. The worktree is never handed out by a later `get` and never removed by `prune` until you release it with `fob return`. Unlike process-based in-use detection, a lease survives with zero processes running inside the worktree.
-- **State recovery** - fob writes pool state atomically via a temp file and replacement.
-  If an existing state file is empty or truncated, fob warns, rebuilds entries from worktrees still on disk, and marks those entries leased until you verify them with `fob status`.
+- **Detached HEAD** - worktrees use detached HEAD mode, reset to whichever of the local or remote default branch is further ahead, so branch name conflicts never happen.
+- **No daemon** - all operations are inline CLI commands. Pool state is a small on-disk file, written under a lock by each command.
+- **In-use detection** - fob scans running processes and short-lived owner reservations to decide which worktrees are in use. Reservations persist only while `get`, `destroy`, and `prune` lifecycle work is running.
+- **Durable leases** - `fob get --lease` reserves a worktree as a persistent home without keeping a process inside it. Each acquisition gets an immutable random lease identity recorded in fob's state. A leased worktree is never handed out by a later `get` and never removed by `prune` until you release it with `fob return`. Unlike process-based detection, a lease survives with zero processes running inside the worktree.
+- **State recovery** - fob writes pool state atomically via a temp file and replacement. If an existing state file is empty or truncated, fob warns, rebuilds entries from worktrees still on disk, and marks them leased until you verify them with `fob status`.
 - **Dirty detection** - fob treats tracked changes and untracked files as dirty, even when repository config hides untracked files from normal `git status` output.
-- **Safe pruning** - By default, `fob prune` removes only idle managed worktrees whose HEAD is already merged into the default branch and whose working tree is clean.
-  `fob prune --all` applies the same safety checks across every managed pool under the user-level fob root.
-  Backing-repository-missing orphans are reported by default; `--prune-orphans` includes them as unverified prune candidates, and `--yes` is required before deletion.
-  It is a dry run unless you pass `--yes`.
+- **Safe pruning** - `fob prune` removes only idle managed worktrees whose HEAD is already merged into the default branch and whose working tree is clean. It is a dry run unless you pass `--yes`.
 
 ## CLI Reference
 
