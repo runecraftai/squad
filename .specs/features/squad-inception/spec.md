@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-A general-purpose coding agent is only one worker. firstmate (MIT) solves this with an agent-distro pattern — one liaison agent supervising a visible crew in disposable worktrees — but it carries an external identity (nautical theme, `fm-*`/`FM_*` naming, upstream author presence) and its runtime deps (treehouse, no-mistakes, tasks-axi) live in separate upstream repos with upstream authorship. The commander wants the *same mechanics* under a **Squad** identity: military theme, `sq-`/`SQUAD_*` naming, total removal of upstream author mentions, runtime deps forked into the monorepo, and Runecraft's pr-review (v1) + goal-loop-audit (v1.1) wired into the Pi-primary flow. The distro remains clone-based; Go deps keep their Go source with turbo-driven builds; only publication targets change (GitHub Releases for Go, npm for the tasks-axi fork).
+A general-purpose coding agent is only one worker. firstmate (MIT) solves this with an agent-distro pattern — one single point of contact supervising a visible crew in disposable worktrees — but it carries an external identity (nautical theme, `fm-*`/`FM_*` naming, upstream author presence) and its runtime deps (treehouse, no-mistakes, tasks-axi) live in separate upstream repos with upstream authorship. The commander wants the *same mechanics* under a **Squad** identity: military theme, `sq-`/`SQUAD_*` naming, total removal of upstream author mentions, runtime deps forked into the monorepo, and Runecraft's pr-review (v1) + goal-loop-audit (v1.1) wired into the Pi-primary flow. The distro remains clone-based; Go deps keep their Go source with turbo-driven builds; only publication targets change (GitHub Releases for Go, npm for the tasks-axi fork).
 
 ## Goals
 

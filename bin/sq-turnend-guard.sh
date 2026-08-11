@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Turn-end guard for any Squad PRIMARY session: the main home OR a
-# XO's own home. An XO runs its own primary Squad session and
+# Turn-end guard for any Squad PRIMARY session: the main base OR a
+# XO's own base. An XO runs its own primary Squad session and
 # is guarded exactly like the main primary; only child crew/recon worktrees are
 # exempt (see the scoping block below and docs/turnend-guard.md).
 #
@@ -20,12 +20,12 @@
 #
 # Ships with TRACKED harness hook files at the repo root, so this file is
 # checked out into every worktree of this repo: the primary checkout, every
-# XO home (fob-leased or git-cloned), and any operator/recon task
+# XO base (fob-leased or git-cloned), and any operator/recon task
 # worktree spawned to work on Squad itself (the recursive "Squad
-# improving itself" case). An XO home runs its OWN primary Squad
+# improving itself" case). An XO base runs its OWN primary Squad
 # session, so it must be guarded like the main primary; only child crew/recon
 # worktrees are exempt. It must therefore scope itself at runtime to a real
-# primary checkout - the main home or a genuinely marked XO home - and
+# primary checkout - the main base or a genuinely marked XO base - and
 # stay a silent, fast no-op inside child task worktrees.
 #
 # Loop-guard, codex/Grok (default) mode: never block twice in the same turn.
@@ -47,7 +47,7 @@
 # auto-arm (bin/sq-claude-stop-autoarm.sh), which fires on the same Stop event:
 #   1. a live identity-matched sentry with a fresh beacon allows immediately;
 #   2. otherwise wait briefly (SQUAD_CLAUDE_AUTOARM_SYNC_WAIT_MS, default 800ms)
-#      for the auto-arm to claim this home (state/.claude-autoarm.lock owner
+#      for the auto-arm to claim this base (state/.claude-autoarm.lock owner
 #      alive) or to record a fresh actionable exit-2 outcome
 #      (state/.claude-autoarm-epoch) for this event epoch - either proof allows
 #      without consuming a continuation, so one event epoch yields exactly one recovery turn;
@@ -111,7 +111,7 @@ if [ "$CLAUDE_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 # --- scope precisely to a PRIMARY checkout ----------------------------------
-# A genuinely-marked XO home runs its OWN primary Squad session, so
+# A genuinely-marked XO base runs its OWN primary Squad session, so
 # force-INCLUDE it as a guarded primary whether fob leased it as a linked
 # worktree (git-dir != git-common-dir) or it is a git-cloned plain checkout. This
 # mirrors the cd-guard's intent that an XO's own session is a guarded
@@ -121,7 +121,7 @@ fi
 # otherwise), whose git-dir lives under the parent repo's .git/worktrees/<name>
 # and differs from the common (shared) git-dir, while a main, non-worktree
 # checkout has the two equal. Child worktrees never carry the gitignored marker,
-# so this exempts them while guarding every real XO home.
+# so this exempts them while guarding every real XO base.
 fm_primary_scope_matches "$SQUAD_ROOT" "$STATE" || exit 0
 
 # --- the actual predicate ----------------------------------------------------

@@ -38,7 +38,7 @@ SQUAD_CREW_STATE_BIN="${SQUAD_CREW_STATE_BIN:-$_SQUAD_CLASSIFY_LIB_DIR/sq-crew-s
 # Commander-relevant status verbs. A status line carrying any of these is work
 # Squad must see. Lines without these verbs are no-verb signals: the sentry
 # absorbs them only with positive provably-working evidence, while the daemon uses
-# its away-mode classification. SQUAD_COMMANDER_RE overrides the whole set when a home
+# its away-mode classification. SQUAD_COMMANDER_RE overrides the whole set when a base
 # needs a custom verb vocabulary; absent, this default applies.
 #
 # Free-text tokens (PR ready, checks green, ready in branch, merged) exist only for
@@ -530,7 +530,7 @@ EOF
 # A bare legacy event uses the default key, preserving one-phase behavior.
 # This fold is evidence about whether a parent event was explicitly superseded.
 # It is never authoritative current crew state, and consumers must not let an open
-# phase outrank a structured home snapshot or sq-crew-state result.
+# phase outrank a structured base snapshot or sq-crew-state result.
 _fm_status_open_activities_stream() {
   local line verb key note resolve held open='' stripped pause
   resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}

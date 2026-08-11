@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034 # parsed fields are output globals for sourcing callers.
-# Parse the durable parent binding written into a seeded XO home.
+# Parse the durable parent binding written into a seeded XO base.
 #
 # The sq-xo-parent.v1 record contains exactly one schema and route.
 # A local route contains exactly one absolute parent_home and no parent_host.
@@ -24,9 +24,9 @@ fm_XO_parent_record_parse() {
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   # bash's read drops NUL bytes, and different bash generations disagree on the
   # result (3.2 truncates the value at the NUL, 5.x splices the surrounding
-  # bytes together), so a NUL-bearing parent_home can resolve to a home the
+  # bytes together), so a NUL-bearing parent_home can resolve to a base the
   # record's bytes never name contiguously. Reject the whole record as corrupt
-  # before any field parsing instead of letting the interpreter pick a home.
+  # before any field parsing instead of letting the interpreter pick a base.
   [ "$(wc -c < "$file")" -eq "$(LC_ALL=C tr -d '\0' < "$file" | wc -c)" ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in

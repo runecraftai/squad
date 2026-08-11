@@ -11,8 +11,8 @@ the sentry-arm PreToolUse seatbelt (`bin/sq-arm-pretool-check.sh`, `docs/arm-pre
 ## Purpose and boundary
 
 The primary Squad shell persists its working directory across tool calls.
-A stray persistent top-level `cd projects/<clone>` therefore silently relocates the shell, so the next Squad-owned command - a backlog write, an `sq-*` lifecycle call, `tasks-axi` - runs inside a project clone instead of the home.
-That has actually happened: a persistent top-level `cd` caused a Squad-owned backlog write to execute inside a project clone rather than the home.
+A stray persistent top-level `cd projects/<clone>` therefore silently relocates the shell, so the next Squad-owned command - a backlog write, an `sq-*` lifecycle call, `tasks-axi` - runs inside a project clone instead of the base.
+That has actually happened: a persistent top-level `cd` caused a Squad-owned backlog write to execute inside a project clone rather than the base.
 The seatbelt denies exactly that command shape - a cwd change that persists to the primary shell - before it runs.
 
 This guard is not a general sandbox.
@@ -30,7 +30,7 @@ An operator or recon task worktree - the shape `bin/sq-spawn.sh` always hands ou
 The checkout must also carry `AGENTS.md` and `bin/`, and any failure to confirm the primary is treated as inert, never as a block.
 
 The cd-guard does not inspect `.sq-xo-home`.
-It therefore applies in a git-cloned XO home where git-dir equals git-common-dir, but remains inert in a fob-leased XO home that is itself a linked worktree.
+It therefore applies in a git-cloned XO base where git-dir equals git-common-dir, but remains inert in a fob-leased XO base that is itself a linked worktree.
 XO child crew and recon worktrees are likewise inert under the linked-worktree test.
 
 ## Block vs allow
@@ -50,7 +50,7 @@ The guard **allows** everything else, including these safe scoped forms that mus
 - The token `cd` appearing as data: quoted text (`echo "cd projects/foo"`), a comment, a substring of another word (`cdk`, `abcd`, `record`), a `printf` payload, or any later argument word.
 
 An absolute-path `cd` is blocked on purpose: the ALLOW carve-out for absolute paths is for commands that address a target by absolute path, not for `cd`, which relocates the shell itself regardless of whether its argument is relative or absolute.
-Blocking a top-level `cd` is safe in the strong sense: the guard's steady state is "always at the home", so a return-to-home `cd` is redundant rather than necessary, and the block never causes a wrong-directory write.
+Blocking a top-level `cd` is safe in the strong sense: the guard's steady state is "always at the base", so a return-to-base `cd` is redundant rather than necessary, and the block never causes a wrong-directory write.
 
 ### Accepted non-goals
 

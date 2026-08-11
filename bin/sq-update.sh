@@ -3,16 +3,16 @@
 #
 # Mechanical half of the /updatesquad skill. Fast-forwards the running
 # Squad repo's default branch from origin, then fast-forwards every
-# registered XO home. Local homes are fob worktrees or standalone
+# registered XO base. Local bases are fob worktrees or standalone
 # clones; remote routes update their configured code root on that host and then
-# fast-forward the persistent home to that root. FAST-FORWARD ONLY, exactly like
+# fast-forward the persistent base to that root. FAST-FORWARD ONLY, exactly like
 # sq-unit-sync.sh: never force, never create a merge commit, never stash;
 # advance a target only when it is a clean fast-forward, otherwise skip and
 # report. A tracked-files fast-forward never touches the gitignored operational
 # dirs (data/, state/, config/, projects/, .drill/), so an XO's
 # in-flight work is never disrupted. Worktrees of this repo share one object
-# store, so a single fetch refreshes them all; standalone-clone homes are
-# fetched on their own. XO homes are leased at a detached HEAD on the
+# store, so a single fetch refreshes them all; standalone-clone bases are
+# fetched on their own. XO bases are leased at a detached HEAD on the
 # default branch, so a fast-forward there advances HEAD only and never touches
 # any other worktree's checkout or the shared `main` branch.
 #
@@ -69,7 +69,7 @@ FF_SEEN_HOMES=""
 sweep_live_XO_metas "$STATE" origin no
 
 # Registry backstop: an XO registered in data/XOs.md but without
-# a live meta (e.g. between restarts) is still its persistent on-disk home.
+# a live meta (e.g. between restarts) is still its persistent on-disk base.
 if [ -f "$XOS_MD" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in

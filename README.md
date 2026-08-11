@@ -10,7 +10,7 @@
 
 Running one coding agent is easy. The moment you want three project tasks done in parallel - fixes, investigations, plans, audits - you become a tab-juggler: babysitting sessions, copy-pasting context between repos, forgetting which terminal had the failing test.
 
-Squad flips the model. You talk to a single agent - the **sergeant at arms** - and it runs the squad for you: spawning visible operators in a session backend, giving each a clean git worktree, supervising them to completion, and handing you finished PRs, approved local merges, or standalone recon reports. For larger units, you can opt in to persistent XOs: operators that run from their own isolated Squad homes on this machine or another SSH-reachable host.
+Squad flips the model. You talk to a single agent - the **sergeant at arms** - and it runs the squad for you: spawning visible operators in a session backend, giving each a clean git worktree, supervising them to completion, and handing you finished PRs, approved local merges, or standalone recon reports. For larger units, you can opt in to persistent XOs: operators that run from their own isolated Squad bases on this machine or another SSH-reachable host.
 
 Squad is not a model, not a harness, not a skill, not an MCP server, and not a CLI. Squad is an **agent distro**: a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose agent into a specialized one. There is no app to install - the cloned repo is the distro (`AGENTS.md`, bundled Squad skills, and helper scripts that any terminal coding agent can follow). Launching a supported harness inside it instantiates your sergeant at arms - and makes you the commander.
 
@@ -32,7 +32,7 @@ You juggle several projects or repos at once - fixes, investigations, audits - a
 
 You chat with the sergeant at arms. It routes each request to an operator in its own session endpoint and git worktree, supervises the unit with a zero-token event-driven sentry, and brings you finished PRs, approved local merges, or recon reports. The sentry sleeps on the unit and wakes the sergeant only when something actually needs you.
 
-Optional XOs extend this to persistent local or whole-home remote XOs; dispatch profiles let you steer which harness handles which task; and opt-in Relay lets the same unit answer public mentions on X and Discord. `codex-app` is not a runtime backend yet - [docs/codex-app-backend.md](docs/codex-app-backend.md) owns that boundary.
+Optional XOs extend this to persistent local or whole-base remote XOs; dispatch profiles let you steer which harness handles which task; and opt-in Relay lets the same unit answer public mentions on X and Discord. `codex-app` is not a runtime backend yet - [docs/codex-app-backend.md](docs/codex-app-backend.md) owns that boundary.
 
 Full architecture - the supervision engine, worktree isolation, XOs, dispatch profiles, project modes, optional Relay, unit sync, and self-update - lives in [docs/architecture.md](docs/architecture.md).
 
@@ -78,7 +78,7 @@ SQUAD_PI_HARNESS=pi-signed pi-signed
 
 For Grok, `--trust` is needed once per clone so project hooks and the turn-end guard load; `/hooks-trust` inside Grok works too.
 For Pi, approve the project trust prompt once per clone on first launch so the tracked `.pi/extensions/*.ts` files auto-load.
-Pi's `/calm` toggle hides supported transcript chrome - including canonically classified Squad operational user rows - and uses a Calm-only animated working-ship indicator during active runs while preserving all model context and session data. The preference persists for the effective Squad home, and toggling it off restores ordinary rendering. [Calm's current behavior and limits](docs/calm.md) are separate from its [version-scoped evidence](docs/calm-mode-feasibility.md).
+Pi's `/calm` toggle hides supported transcript chrome - including canonically classified Squad operational user rows - and uses a Calm-only animated working-ship indicator during active runs while preserving all model context and session data. The preference persists for the effective Squad base, and toggling it off restores ordinary rendering. [Calm's current behavior and limits](docs/calm.md) are separate from its [version-scoped evidence](docs/calm-mode-feasibility.md).
 
 ### Talk to it
 
@@ -101,12 +101,12 @@ Setup guides for tmux (the default) and every other supported backend (herdr, ze
 
 ## Features
 
-- **One liaison** - you talk only to the sergeant at arms; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
+- **One point of contact** - you talk only to the sergeant at arms; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
 - **A visible squad** - every operator works in its own tmux window, experimental herdr/zellij tab, cmux workspace, or Orca terminal you can watch or type into; the sergeant at arms reconciles.
 - **Disposable worktrees** - each task runs in a clean [FOB](https://github.com/runecraftai/squad/tree/main/packages/fob) (worktree pool) git worktree, or an Orca-managed worktree when `backend=orca`, so parallel work on one repo never collides.
 - **Two task shapes** - strike tasks deliver authorized changes; recon tasks leave standalone investigation reports when the intake contract warrants separate research.
 - **Explicit project modes** - each project deploys via `drill`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.
-- **Optional XOs** - persistent XOs run from isolated Squad homes with their own `SQUAD_HOME`, state, projects, and session lock, locally or as a whole home on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.
+- **Optional XOs** - persistent XOs run from isolated Squad bases with their own `SQUAD_HOME`, state, projects, and session lock, locally or as a whole base on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.
 - **Event-driven, zero-token supervision** - a bash sentry wakes the sergeant at arms only when something needs you; verified primary harnesses also get a turn-end backstop that blocks or follows up on a blind stop when work is under way and supervision is not live.
 - **Optional Relay** - opt in with one local `.env` pairing token so Squad can answer your public mentions on X and Discord, act on normal reversible mention requests through the same lifecycle as chat requests, acknowledge spawned work, and post up to three public-safe completion follow-ups within seven days - all without changing non-Relay behavior. A final reply promised in a thread becomes durable state reconciled from disk, so a restart or compacted conversation cannot lose it.
 - **Strict project boundary** - the sergeant at arms is read-only over your projects except for the narrow guarded and commander-approved operations authorized by [hard rule 1](AGENTS.md#1-identity-and-prime-directives); operators make every other project change behind the configured merge authority.
@@ -122,7 +122,7 @@ Squad ships these user-invocable built-in skills. Claude and grok use the slash 
 | `/reporting`   | Recap visible session events since the prior real commander message plus visibly unanswered commander decisions, falling back to Sitrep when invoked as the session's first real commander message |
 | `/sitrep`      | Generate a concise four-section chat digest from bounded local unit and registered-XO state; use `/sitrep file` to also replace today's dated report in `data/`, and add `include PRs` when live PR enrichment is wanted |
 | `/updatesquad` | Self-update the running Squad and its XOs to the latest from origin with fast-forward-only pulls, then re-read instructions and nudge XOs |
-| `/debrief`     | Sweep the session for uncaptured durable knowledge, route each finding to its disk home per AGENTS.md, file undone next steps to the backlog, cascade the same sweep to every registered XO against that home's own memory budget, and report what is now safe to reset |
+| `/debrief`     | Sweep the session for uncaptured durable knowledge, route each finding to its durable owner per AGENTS.md, file undone next steps to the backlog, cascade the same sweep to every registered XO against that base's own memory budget, and report what is now safe to reset |
 
 Sitrep invocation examples:
 
@@ -137,7 +137,7 @@ Agent-only reference skills live under `.agents/skills/` and are loaded by Squad
 
 Squad's skills live in two separate places with different audiences:
 
-- `.agents/skills/` - agent-loaded skills (the table above, plus Squad's agent-only reference skills). Every one assumes a live Squad home and is meaningless - or actively misleading - installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how Squad itself loads them.
+- `.agents/skills/` - agent-loaded skills (the table above, plus Squad's agent-only reference skills). Every one assumes a live Squad base and is meaningless - or actively misleading - installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how Squad itself loads them.
 - `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of Squad. Today that is `skills/debrief`, a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.debrief-notes.md` fallback in the current directory. It intentionally shares no code with the Squad-internal `.agents/skills/debrief` it is named after, so the two can evolve independently.
 
 ## Packages
@@ -159,7 +159,7 @@ Squad's tooling ships as standalone packages under `packages/`, each with its ow
 
 - [docs/architecture.md](docs/architecture.md) - maintainer architecture for the squad, supervision, worktrees, XOs, and project modes.
 - [docs/configuration.md](docs/configuration.md) - environment variables, `SQUAD_HOME`, runtime backend selection, optional Relay and its X and Discord setup steps, the files you set, and harness support.
-- [docs/remote-XOs.md](docs/remote-XOs.md) - current setup, routing, transfer, recovery, and safety behavior for whole-home remote XOs.
+- [docs/remote-XOs.md](docs/remote-XOs.md) - current setup, routing, transfer, recovery, and safety behavior for whole-base remote XOs.
 - [docs/calm.md](docs/calm.md) - current Pi `/calm` behavior and supported presentation limits.
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.
 - [docs/tmux-backend.md](docs/tmux-backend.md) - current setup and limits for the tmux reference backend.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hand already-identified, in-scope backlog items off from the main Squad
-# backlog to an XO's own home backlog. Use this when an XO is
+# backlog to an XO's own base backlog. Use this when an XO is
 # created (or whenever an existing queued item should become its domain's work)
 # so the XO owns its queue from day one instead of the item staying
 # stranded in the main backlog.
@@ -15,12 +15,12 @@
 # of bug fixed in PR #401 was exactly that drift).
 #
 # What this script still owns (never delegated):
-#   - resolving the XO home from data/XOs.md;
-#   - proving the destination is a genuine seeded XO home
+#   - resolving the XO base from data/XOs.md;
+#   - proving the destination is a genuine seeded XO base
 #     (.sq-xo-home marker, AGENTS.md + bin/), never a project clone, the
-#     active home, or the Squad repo;
+#     active base, or the Squad repo;
 #   - moving only `## Queued` items, refusing `## In flight` and historical
-#     `## Done` records, which must stay with their home for pruning or
+#     `## Done` records, which must stay with their base for pruning or
 #     archiving;
 #   - the multi-key classification and idempotent per-key reporting: a key
 #     already present in the XO backlog is reported and skipped, and if
@@ -547,7 +547,7 @@ fi
 # Seed the destination with Squad's standard three-section scaffold when it
 # does not exist yet, so the moved item lands under the right section. (Left to
 # create the file itself, tasks-axi mv writes its own `# Backlog` title format,
-# which is not Squad's home-backlog convention.)
+# which is not Squad's base-backlog convention.)
 mkdir -p "$SUB_HOME/data"
 SUB_CREATED=0
 if [ ! -f "$SUB_BACKLOG" ]; then

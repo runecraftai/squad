@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Spawn a direct report: an operator in a fob or Orca worktree, or a
-# XO in its isolated Squad home.
+# XO in its isolated Squad base.
 # Usage: sq-spawn.sh <task-id> <project-dir> --mode <drill|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        sq-spawn.sh <task-id> <project-dir> --recon [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        sq-spawn.sh <task-id> [<Squad-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --xo
+#        sq-spawn.sh <task-id> [<Squad-base>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --xo
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --recon and --xo spawns. Squad resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the commander's
@@ -48,9 +48,9 @@
 #   so a label cannot tell two "Squad" workspaces apart). A claimed parent
 #   identity that is unreadable, contradictory, stale, or from another herdr
 #   session stops the spawn before any worker endpoint exists. A launcher
-#   outside herdr has no workspace to inherit and uses this home's own labeled
+#   outside herdr has no workspace to inherit and uses this base's own labeled
 #   workspace, which must then match exactly one. --xo is the deliberate
-#   exception: it stands up that XO home's own workspace.
+#   exception: it stands up that XO base's own workspace.
 #   Herdr additionally uses a presentation-only layout by default when the
 #   selected client and running server meet the Herdr 0.8.0 floor. The local
 #   config/herdr-presentation-spaces file can say off to disable it or on to
@@ -58,7 +58,7 @@
 #   A clean fresh task first writes state/<id>.herdr-presentation atomically,
 #   then creates a disposable
 #   workspace containing only the ordinary task pane. A successful clean create
-#   upgrades its attempt journal with exact home, session, workspace, tab, pane,
+#   upgrades its attempt journal with exact base, session, workspace, tab, pane,
 #   parent, and label bindings. On a same-identity restart, that complete binding
 #   plus authoritative metadata may replace one exact agent-free husk in place.
 #   The journal, visible token, and labels alone are never endpoint or ownership
@@ -67,7 +67,7 @@
 #   metadata are unchanged.
 #   A clean projected create or exact resume makes one bounded attempt to hold
 #   the one session-scoped presentation-order lock (keyed by named session plus
-#   canonical socket, outside any home's state/) through launch handoff. Lock
+#   canonical socket, outside any base's state/) through launch handoff. Lock
 #   contention warns and falls back to the ordinary flat layout before any
 #   projection mutation. The exact response-derived new workspace is inserted
 #   immediately after its owning parent (Squad or xo-<id>) contiguous
@@ -107,8 +107,8 @@
 #   config reread generations because the new agent reads the converged files.
 #   --recon records kind=recon in the task's meta (report deliverable, scratch worktree;
 #   see AGENTS.md task lifecycle); --xo records kind=xo and launches in a
-#   provisioned Squad home; the default is kind=strike.
-#   Before an XO launch, the home is locally fast-forwarded to the primary
+#   provisioned Squad base; the default is kind=strike.
+#   Before an XO launch, the base is locally fast-forwarded to the primary
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
 #   Ship/recon spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
@@ -128,8 +128,8 @@
 #                  turn-end signal rides the launch command, e.g. codex -c notify=[...])
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate)
-#     __PITURNEND__ absolute path to .pi/extensions/sq-primary-turnend-guard.ts in a pi XO home
-#     __PIWATCH__   absolute path to .pi/extensions/sq-primary-pi-watch.ts in a pi XO home
+#     __PITURNEND__ absolute path to .pi/extensions/sq-primary-turnend-guard.ts in a pi XO base
+#     __PIWATCH__   absolute path to .pi/extensions/sq-primary-pi-watch.ts in a pi XO base
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
 # Kimi uses one surgically installed Squad region in $HOME/.kimi-code/config.toml,
@@ -143,16 +143,16 @@
 # A strike task records the explicit mode/yolo it was passed; an XO spawn records
 # mode=xo, yolo=off, home=, and projects=; a recon records neither, and both the
 # success line and state/<id>.meta omit them.
-# When the home session's frozen trace-context decision is enabled (see
+# When the base session's frozen trace-context decision is enabled (see
 # docs/configuration.md and bin/sq-trace-context-lib.sh), the meta also records
 # one W3C traceparent= carrier, the same value injected into the pane as
 # TRACEPARENT; the default-off path writes neither, leaving the generated meta
 # and launch environment unchanged.
 #   --traceparent <carrier> delivers a carrier that a REMOTE parent already
-#   resolved and will record, instead of resolving one from this home's frozen
+#   resolved and will record, instead of resolving one from this base's frozen
 #   decision. It is accepted only for --xo spawns, only as a strictly
 #   validated W3C traceparent, and exists because a remote XO's task
-#   identity is owned by the parent home that holds its task metadata, while the
+#   identity is owned by the parent base that holds its task metadata, while the
 #   pane export happens on the remote host (bin/sq-remote-xo-control.sh).
 #   Local spawns never pass it and resolve their own carrier exactly as before.
 set -eu
@@ -286,7 +286,7 @@ done
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
-# A parent-delivered carrier replaces this home's own resolution, so it is
+# A parent-delivered carrier replaces this base's own resolution, so it is
 # refused unless it is an XO spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
 if [ "$TRACEPARENT_SET" -eq 1 ]; then
@@ -405,7 +405,7 @@ spawn_remote_XO() {
   # A remote second mate always runs on Herdr: its server belongs to the host's
   # own GUI login session, so the endpoint outlives every SSH connection that
   # supervises it. bin/sq-remote-doctor.sh gates that host on the same
-  # requirement, and the remote home's config/backend never overrides it.
+  # requirement, and the remote base's config/backend never overrides it.
   case "${BACKEND_ARG:--}" in
     -|herdr) backend=herdr ;;
     *)
@@ -487,11 +487,11 @@ spawn_remote_XO() {
     fi
     return "$rc"
   fi
-  # This parent home owns the remote XO's task identity because it holds
+  # This parent base owns the remote XO's task identity because it holds
   # the task metadata an observer reads, exactly as for a local spawn: the
   # carrier is resolved against THIS task's own meta (reused verbatim on
   # relaunch, freshly rooted otherwise, never adopting this process's ambient
-  # TRACEPARENT) under this home's frozen decision, then handed to the remote
+  # TRACEPARENT) under this base's frozen decision, then handed to the remote
   # host to export into the agent's pane. Disabled resolves to empty and the
   # remote launch call stays byte-identical to the untraced one.
   remote_traceparent=
@@ -708,9 +708,9 @@ spawn_abort_cleanup() {
 }
 trap spawn_abort_cleanup EXIT
 
-# One bounded lock per live Herdr session/socket, shared across all homes.
+# One bounded lock per live Herdr session/socket, shared across all bases.
 # <session> is required so XO and primary spawns serialize against the
-# same session without writing any other home's state directory.
+# same session without writing any other base's state directory.
 spawn_herdr_presentation_order_lock_acquire() {
   local session=${1:-} attempt lock_path
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
@@ -1280,9 +1280,9 @@ if [ "$KIND" = xo ]; then
   # Local-HEAD sync: before launch, fast-forward this XO's worktree to the
   # PRIMARY checkout's current default-branch commit, so a freshly spawned or
   # recovery-respawned XO always runs the primary's version (AGENTS.md
-  # spawn section). Purely local - no fetch: the home is a worktree of this same
+  # spawn section). Purely local - no fetch: the base is a worktree of this same
   # repo and already holds the commit. ff-only and guarded; a dirty, diverged, or
-  # wrong-branch home is left untouched and launches as-is. The agent re-reads
+  # wrong-branch base is left untouched and launches as-is. The agent re-reads
   # AGENTS.md fresh on launch, so no nudge is needed here.
   if sm_primary_head=$(primary_head_commit "$SQUAD_ROOT"); then
     sm_ff_out=$(ff_target "$PROJ_ABS" "XO $ID" "$sm_primary_head" yes yes 2>&1 || true)
@@ -1312,7 +1312,7 @@ if [ "$KIND" = xo ]; then
     fi
     CONFIG_INHERIT_LOCK_HELD=1
     # Inheritance propagation: push the primary-authoritative live-safe local inheritance
-    # surface into this XO home (sq-config-inherit-lib.sh).
+    # surface into this XO base (sq-config-inherit-lib.sh).
     SQUAD_CONFIG_INHERIT_LIVE=1 \
       propagate_XO_inheritance "$SQUAD_HOME" "$PROJ_ABS" "$CONFIG" "$DATA" \
       || echo "warning: XO $ID inheritance failed for $PROJ_ABS" >&2
@@ -1391,7 +1391,7 @@ real_path_or_raw() {  # <path>
 # left it (same session-name / new-window sequence, see bin/backends/tmux.sh);
 # a herdr spawn goes through the version-gated, workspace-per-HOME,
 # tab-per-task sequence in bin/backends/herdr.sh instead (D4/D5 as refined by
-# docs/herdr-backend.md's "workspace-per-home" pass, AGENTS.md task
+# docs/herdr-backend.md's "workspace-per-base" pass, AGENTS.md task
 # herdr-sm-spaces-k4). Both branches converge on the same $T ("target") string
 # that every downstream operation (send/capture/kill) already treats as opaque
 # per-backend routing (fm_backend_resolve_selector).
@@ -1506,12 +1506,12 @@ case "$BACKEND" in
   herdr)
     # fm_backend_herdr_workspace_label resolves the target workspace from
     # SQUAD_HOME. For every KIND except XO, this process's own SQUAD_HOME is
-    # already the right home (the primary spawning its own operator/recon, or
+    # already the right base (the primary spawning its own operator/recon, or
     # an XO spawning ITS OWN operator/recon from its own process's
     # SQUAD_HOME - the latter needs no glue at all). A --xo spawn is the
     # one case that does: it is the PRIMARY's own sq-spawn.sh process
-    # launching a DIFFERENT home (PROJ_ABS, already validated above as the
-    # XO's home), so SQUAD_HOME here still names the primary. Shadow it
+    # launching a DIFFERENT base (PROJ_ABS, already validated above as the
+    # XO's base), so SQUAD_HOME here still names the primary. Shadow it
     # to PROJ_ABS for just these two calls (bash restores it automatically
     # after each prefixed simple-command call) so the XO's tab lands
     # in the XO's own workspace, not the primary's "Squad" one.
@@ -1520,8 +1520,8 @@ case "$BACKEND" in
     # EXACT herdr workspace this launching process is itself running in, which
     # only its own herdr pane identity can name (a same-labeled sibling
     # workspace must never be adopted). A --xo launch is the exception -
-    # it stands up a DIFFERENT home's own workspace by design - so it asks for
-    # the per-home container instead of inheriting this launcher's.
+    # it stands up a DIFFERENT base's own workspace by design - so it asks for
+    # the per-base container instead of inheriting this launcher's.
     HERDR_LABEL_HOME=$SQUAD_HOME
     HERDR_LAUNCHER_RELATIONSHIP=launcher-home
     if [ "$KIND" = xo ]; then
@@ -2164,10 +2164,10 @@ fi
 # only the cost of reading a few bytes of entropy.
 #
 # The session-start path owns input resolution. Spawn consumes only the frozen
-# home-session state and reuses it for the carrier and XO launch prefix.
+# base-session state and reuses it for the carrier and XO launch prefix.
 #
-# A remote XO launch is the one case where this process is not the home
-# that owns the task's identity: the parent home resolved and will record the
+# A remote XO launch is the one case where this process is not the base
+# that owns the task's identity: the parent base resolved and will record the
 # carrier, and this host only delivers it. The validated --traceparent value
 # then IS the decision, so the enablement snapshot handed to the new XO
 # agrees with the carrier it receives exactly as on the local path.

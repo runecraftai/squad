@@ -9,7 +9,7 @@ Você está assumindo a execução do projeto **Squad** — um harness "agent di
 
 ## Contexto (decisões já fechadas — não re-consultar)
 
-- **Produto:** Squad — fork completo do firstmate (MIT) retematizado: human = *commander*, agente-liaison = *sergeant at arms*, crewmates = *operators*, secondmates = *XOs*. Prefixo `sq-`, env `SQUAD_*`. Tagline: "Talk to one agent. Deploy with a squad."
+- **Produto:** Squad — fork completo do firstmate (MIT) retematizado: human = *commander*, ponto de contato único = *sergeant at arms*, crewmates = *operators*, secondmates = *XOs*. Prefixo `sq-`, env `SQUAD_*`. Tagline: "Talk to one agent. Deploy with a squad."
 - **Local:** `/home/rehem/Projects/squad/` — monorepo Bun + TS + Turborepo; distro na raiz, deps forked em `packages/` (fob=Go, no-mistakes=Go, tasks-axi=TS), integração `@runecraft/pr-review` (v1) e `@runecraft/goal-loop-audit` (v1.1) no fluxo Pi.
 - **Língua:** specs e produto em inglês; você pode conversar com o commander em português.
 - **Licença/atribuição:** MIT mantido, porém **remoção total de menções ao autor upstream** (decisão do commander; desvio legal documentado como RISK-01 nos specs — não reabrir).

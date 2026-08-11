@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tear down a finished task: return the fob worktree, release the Orca
-# worktree, or retire an XO home; kill the recorded runtime endpoint,
+# worktree, or retire an XO base; kill the recorded runtime endpoint,
 # clear volatile state, refresh/prune the project's clone for PR-based ship
 # tasks, then print a backlog-refresh reminder for ship and recon teardowns
 # (an XO teardown prints none, since XOs are not backlog items).
@@ -46,12 +46,12 @@
 # commander's active tab, and restore the exact response-derived pre-close tab
 # if Herdr's last-pane cleanup focuses an unrelated neighboring workspace.
 # XOs (kind=xo in meta) are retired explicitly. Normal
-# teardown refuses while their home has in-flight operator meta files; --force
+# teardown refuses while their base has in-flight operator meta files; --force
 # is the approved discard path that prevalidates child removal targets, discards
-# child work, kills child runtime endpoints, and removes the retired home. Removing a
-# leased home releases its durable fob lease so the pool slot is freed,
+# child work, kills child runtime endpoints, and removes the retired base. Removing a
+# leased base releases its durable fob lease so the pool slot is freed,
 # never left leased forever. If the fob return fails, teardown leaves the
-# leased home and state in place instead of hiding a still-held lease.
+# leased base and state in place instead of hiding a still-held lease.
 # Usage: sq-teardown.sh <task-id> [--force]
 #   --force skips ordinary-task dirty and landed-work checks, skips recon report
 #   checks, and discards XO child work for kind=xo. Only use it
@@ -443,10 +443,10 @@ public_followup_resolve_primary_home() {
 if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
   SECOND_MATE_ID=$(sed -n '1p' "$SQUAD_HOME/$SUB_HOME_MARKER")
   # The durable parent record (written once at seeding, next to the identity
-  # marker) names this home's route to its parent: "local" when they share a
+  # marker) names this base's route to its parent: "local" when they share a
   # filesystem, "remote" when the parent lives on another machine. Absent for
-  # a home seeded before this record existed, which preserves today's exact
-  # env-var-only behavior for that legacy home rather than guessing its route.
+  # a base seeded before this record existed, which preserves today's exact
+  # env-var-only behavior for that legacy base rather than guessing its route.
   PARENT_ROUTE_FILE="$SQUAD_HOME/$SUB_HOME_PARENT_MARKER"
   PARENT_ROUTE_RECORD=absent
   PARENT_ROUTE=
@@ -466,7 +466,7 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
     # construction (bin/sq-public-followup-emit.sh header): a parent recorded
     # on another machine can never hold a delegated promise for this child, so
     # the delegated-parent path is out of scope and never refuses cleanup on
-    # its own. A token committed directly to THIS home's own .env is still a
+    # its own. A token committed directly to THIS base's own .env is still a
     # real, same-filesystem signal, so it is still checked - but read only
     # from the file, never from the process environment, so an unrelated
     # export in the remote host's own login shell cannot trigger it the way
@@ -512,7 +512,7 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
       fi
     fi
   else
-    # A home seeded before the durable record existed retains the legacy
+    # A base seeded before the durable record existed retains the legacy
     # launch-time binding behavior unchanged.
     PRIMARY_HOME_CANDIDATE=${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}
     if [ -n "$PRIMARY_HOME_CANDIDATE" ]; then
@@ -1004,7 +1004,7 @@ cleanup_stale_lock_for_safety_check() {
   return "$TEARDOWN_TREEHOUSE_LOCK_REFUSED"
 }
 
-# Return a worktree/home via `fob return --force`, tolerating a transient or
+# Return a worktree/base via `fob return --force`, tolerating a transient or
 # stale git index.lock left by a killed crew process. See the script header.
 teardown_fob_return() {
   local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
@@ -2042,8 +2042,8 @@ cleanup_Squad_home_children() {
           return 1
         fi
       elif [ "$child_backend" = zellij ]; then
-        # Zellij titles are scoped by the owning home tag, so forced XO
-        # cleanup must verify child tabs as that child home, not the parent.
+        # Zellij titles are scoped by the owning base tag, so forced XO
+        # cleanup must verify child tabs as that child base, not the parent.
         ( unset SQUAD_ROOT_OVERRIDE; SQUAD_HOME=$home SQUAD_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" ) 2>/dev/null || true
       else
         fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" 2>/dev/null || true
@@ -2160,8 +2160,8 @@ fi
 
 # A public commitment is not kept until its final reply lands in the ORIGINAL
 # thread, and this cleanup removes the task records that make the promise
-# reconcilable. Refuse while this home still owes a public reply for exactly this
-# work. Both gates live in bin/sq-public-followup-lib.sh, so a home that never
+# reconcilable. Refuse while this base still owes a public reply for exactly this
+# work. Both gates live in bin/sq-public-followup-lib.sh, so a base that never
 # opted into the mySquad relay runs one [ -f ] test and nothing else here.
 if [ "$FORCE" != "--force" ] && [ "$PUBLIC_FOLLOWUP_PARENT_UNRESOLVED" = 1 ]; then
   echo "REFUSED: cannot resolve the primary home for marked XO $SECOND_MATE_ID; refusing cleanup without its durable parent binding." >&2
@@ -2208,8 +2208,8 @@ fi
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
 # --force, and before ANY destructive step below - a still-parked run or a
 # leaked process can own live work in this exact worktree. Not for
-# kind=xo: an XO home's own runtime lifecycle is owned by the
-# dedicated process-event and Squad-home removal machinery further below,
+# kind=xo: an XO base's own runtime lifecycle is owned by the
+# dedicated process-event and Squad-base removal machinery further below,
 # not by task-worktree cleanup.
 if [ "$KIND" != xo ]; then
   conclude_task_drill_run "$WT"

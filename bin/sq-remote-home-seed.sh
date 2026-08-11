@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Register and provision a whole XO home on an SSH-reachable host.
+# Register and provision a whole XO base on an SSH-reachable host.
 #
 # Usage:
 #   sq-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects}
@@ -9,13 +9,13 @@
 # remote host dimension in data/XOs.md, gates the host on
 # sq-remote-doctor.sh readiness before touching it, sends a bounded provisioning
 # manifest through sq-on.sh, and lets the remote host clone its own Squad
-# home and project origins. No project tree or secret environment is copied.
+# base and project origins. No project tree or secret environment is copied.
 #
 # Each project needs an origin the remote account can clone. Squad resolves
 # that origin and names it as <project>=<origin-url>, so seeding never requires
-# a clone of that project in this home; a bare <project> is accepted only when
-# this home already has projects/<project>, whose origin is then read instead.
-# bin/sq-project-origin-lib.sh owns which URLs are accepted, and this home's
+# a clone of that project in this base; a bare <project> is accepted only when
+# this base already has projects/<project>, whose origin is then read instead.
+# bin/sq-project-origin-lib.sh owns which URLs are accepted, and this base's
 # data/projects.md still owns the project's registered delivery mode, so an
 # unregistered or local-only project is refused rather than provisioned.
 # Seeding writes nothing under projects/ and needs no unit sync first.
@@ -170,7 +170,7 @@ EOF
     *) die "project $project has unsupported delivery mode: $MODE" ;;
   esac
   # An origin named on the command line is authoritative. Reading one from a
-  # clone this home happens to have is only a convenience for the already-cloned
+  # clone this base happens to have is only a convenience for the already-cloned
   # case; it is never a reason to create one.
   if [ -z "$ORIGIN" ] && [ -d "$PROJECTS/$project/.git" ]; then
     ORIGIN=$(git -C "$PROJECTS/$project" remote get-url origin 2>/dev/null || true)
@@ -194,7 +194,7 @@ done
   printf 'id_b64=%s\n' "$(printf '%s' "$ID" | encode)"
   printf 'charter_b64=%s\n' "$(encode < "$TMP/charter.remote")"
   # The SSH alias reaching this host from the parent's own config, carried
-  # only so the remote-provisioned home can record durably that its parent
+  # only so the remote-provisioned base can record durably that its parent
   # lives on another machine (bin/sq-teardown.sh's cleanup gate). It is
   # diagnostic identity, never a route the remote host could use to reach
   # back; the parent's real filesystem path is never sent, since it names
@@ -225,7 +225,7 @@ restore_registry_and_brief() {
 
 # Preflight and, where it can, repair the remote runtime before anything is
 # created on that host. The doctor runs through the same fixed entrypoint as
-# every later call, so it sees the exact PATH the remote home will run under.
+# every later call, so it sees the exact PATH the remote base will run under.
 set +e
 fm_remote_readiness_ensure "$SCRIPT_DIR" "$ID"
 PREFLIGHT_RC=$?

@@ -9,7 +9,7 @@
 # Top-level fields:
 #   schema: stable schema id.
 #   generated: UTC observation time for this fresh command execution.
-#   fm_home: resolved operational home.
+#   fm_home: resolved operational base.
 #   roots: resolved root/config/data/state/projects directories.
 #   backlog: {path,present,records[]} where records are ordered as written in
 #     data/backlog.md and cover In flight, Queued, and Done.
@@ -34,22 +34,22 @@
 #     return-channel supervision data; other tasks use "not_checked".
 #   scout_reports[]: present data/<id>/report.md pointers.
 #   main_inventory: {valid,reason,orphan_in_flight[],unstructured_current_count} -
-#     main-home current-inventory checks shared with XO_home_summary_json
+#     main-base current-inventory checks shared with XO_home_summary_json
 #     (orphan structured in-flight ids with no state/<id>.meta, and unstructured
 #     current backlog rows). Does not invent live tasks; meta remains truth for
 #     workers. Sitrep maps failures into omitted[] disclosure (and a Charted
 #     Next gate line) rather than silent empty Underway.
 #   XO_current: {records[],total,shown,truncated} - bounded current summaries
 #     for registered XOs, selected from validated structured state inside
-#     each home with explicit provenance, freshness, endpoint evidence, and unknown
+#     each base with explicit provenance, freshness, endpoint evidence, and unknown
 #     failure reasons. Parent status and bounded terminal evidence are historical,
-#     untrusted supplements only and never override readable structured-home facts.
-#     Each structured-home record carries active_children, decisions_open, holds,
+#     untrusted supplements only and never override readable structured-base facts.
+#     Each structured-base record carries active_children, decisions_open, holds,
 #     queued, landed, endpoints, counts, and omitted. Actionable commander holds
 #     appear in decisions_open; blocked commander holds remain queued with metadata.
 #   XO_landed: {records[],truncated[],unreadable[],partial[]} - the
 #     compatibility landed-work roll-up derived from XO_current. Readable
-#     structured homes with an unknown current classification are partial, not
+#     structured bases with an unknown current classification are partial, not
 #     unreadable, and retain independently trustworthy structured surfaces.
 #   XO_guidance: return-channel action note for renderers and sitrep.
 #
@@ -75,7 +75,7 @@ else
 fi
 case "$SNAPSHOT_EPOCH" in ''|*[!0-9]*) SNAPSHOT_EPOCH=$(date +%s) ;; esac
 
-# Cross-home bounds are explicit so one broken or unexpectedly large home cannot
+# Cross-base bounds are explicit so one broken or unexpectedly large base cannot
 # hang or explode the parent snapshot.
 SQUAD_SNAPSHOT_XOS=${SQUAD_SNAPSHOT_XOS:-20}
 SQUAD_SNAPSHOT_XO_TIMEOUT=${SQUAD_SNAPSHOT_XO_TIMEOUT:-8}
@@ -605,7 +605,7 @@ task_json_lines() {
   done | jq -s 'sort_by(.id)'
 }
 
-# Main-home current-inventory validity: same orphan / unstructured-current checks
+# Main-base current-inventory validity: same orphan / unstructured-current checks
 # used by XO_home_summary_json, without inventing live task rows.
 # Meta inventory remains the sole source of live workers; this object only
 # discloses backlog↔task inconsistency for renderers (Sitrep omitted/gates).
@@ -633,7 +633,7 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
       }'
 }
 
-# Project one home's canonical structured inventory into the bounded shape a
+# Project one base's canonical structured inventory into the bounded shape a
 # validated parent read needs.
 # This mode never reads parent events or terminal text and never aggregates
 # nested XOs.
@@ -784,7 +784,7 @@ XO_home_summary_json() {  # <backlog-json> <tasks-json>
 }
 
 # Current registered-XO aggregation.
-# The validated home summary is canonical.
+# The validated base summary is canonical.
 # Parent status and bounded terminal capture remain untrusted supplemental evidence
 # with explicit provenance, and can only produce a contradiction or unknown fallback.
 SQUAD_SNAPSHOT_XO_LANDED_PER_HOME=${SQUAD_SNAPSHOT_XO_LANDED_PER_HOME:-10}

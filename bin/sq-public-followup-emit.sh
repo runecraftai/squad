@@ -1,33 +1,33 @@
 #!/usr/bin/env bash
 # sq-public-followup-emit.sh - emit ONE structured terminal work result for work
-# bound to a public commitment, into the owning home's private event inbox.
+# bound to a public commitment, into the owning base's private event inbox.
 #
-# WHY THIS EXISTS: a public promise is kept by the home that owns the relay
-# consent and the thread binding. The home doing the work only has to report a
-# TYPED result. Squad must never recover the source home, work id, outcome,
+# WHY THIS EXISTS: a public promise is kept by the base that owns the relay
+# consent and the thread binding. The base doing the work only has to report a
+# TYPED result. Squad must never recover the source base, work id, outcome,
 # or deliverables by parsing a free-form "done: ..." status sentence, so this
 # script is the structured channel that carries them.
 #
 # WHAT IT DOES NOT DO: it never posts anything, never reads relay credentials,
 # and never resolves a public thread. Outward delivery stays with the owning
-# home (bin/sq-public-followup.sh deliver).
+# base (bin/sq-public-followup.sh deliver).
 #
 # Usage:
-#   sq-public-followup-emit.sh --home <owning-home> \
+#   sq-public-followup-emit.sh --base <owning-base> \
 #     --obligation <obligation-id> --relation <relation-id> \
-#     --source-home <main|XO:<id>> --work-id <task-id> \
+#     --source-base <main|XO:<id>> --work-id <task-id> \
 #     --generation <n> --outcome <outcome-type> \
 #     [--deliverable <key>=<value>]... \
 #     (--outcome-text <text> | --outcome-text-file <path> | --outcome-text -)
 #
 # Options:
-#   --home <path>          The home that owns the public commitment (the primary
+#   --base <path>          The base that owns the public commitment (the primary
 #                          that took the mention). Must already have a
 #                          registration for --obligation; see
 #                          `sq-public-followup.sh register`.
 #   --obligation <id>      tasks-axi public-followup obligation id.
 #   --relation <id>        The relation_id this work fulfills or contributes to.
-#   --source-home <id>     This worker's stable home identity, exactly as bound:
+#   --source-base <id>     This worker's stable base identity, exactly as bound:
 #                          "main" or "XO:<stable-id>".
 #   --work-id <id>         This worker's exact task id, exactly as bound.
 #   --generation <n>       The bound relation generation (integer >= 1).
@@ -47,14 +47,14 @@
 # is a no-op), 2 on a usage or validation error, 1 on a publication failure.
 #
 # IDEMPOTENCY: the event id is a digest of the identity tuple (obligation,
-# relation, source home, work id, generation, outcome type, deliverables), so a
+# relation, source base, work id, generation, outcome type, deliverables), so a
 # retry, a duplicate report, or a rerun after restart resolves to the same file
 # and the first published copy wins. Nothing here needs coordination.
 #
 # SAFETY: the event is published through the shared private-artifact primitive -
 # atomic rename into place, single link, mode 0600 (never executable), inside a
-# 0700 directory this script refuses to create. The owning home must already have
-# registered the obligation, so a home that never opted into the relay can never
+# 0700 directory this script refuses to create. The owning base must already have
+# registered the obligation, so a base that never opted into the relay can never
 # be given public-followup artifacts by a child.
 set -u
 
@@ -155,7 +155,7 @@ while [ "$i" -lt "${#DELIVERABLE_KEYS[@]}" ]; do
   i=$((i + 1))
 done
 
-# Resolve the owning home to a real absolute directory before composing any path
+# Resolve the owning base to a real absolute directory before composing any path
 # under it, so a relative or symlinked argument cannot make the destination
 # ambiguous in a later message or write.
 case "$HOME_DIR" in
@@ -175,7 +175,7 @@ if [ ! -f "$REGISTRY" ] || [ -L "$REGISTRY" ]; then
   die "home '$HOME_DIR' has no public-followup registration for '$OBLIGATION'; the owning home registers a commitment before its work can report one" 1
 fi
 
-# The registration is the owning home's own record of what it bound, so checking
+# The registration is the owning base's own record of what it bound, so checking
 # the identity tuple against it catches a mis-briefed worker at the edge with a
 # clear message. tasks-axi still re-validates everything at consume time and
 # remains the authority; this is a cheap early refusal, not a second gatekeeper.

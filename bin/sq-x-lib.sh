@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared config resolution for the X-mode connector client (sq-x-poll.sh and
 # sq-x-reply.sh). X mode is opt-in: a user drops a non-empty SQX_PAIRING_TOKEN
-# into the Squad home's .env. SQX_ENV_FILE can point direct client calls at
+# into the Squad base's .env. SQX_ENV_FILE can point direct client calls at
 # another .env-style file, but bootstrap activation still checks $SQUAD_HOME/.env.
 # Until then polling is a hard no-op; replies can still run in SQX_DRY_RUN
 # preview mode without a token.

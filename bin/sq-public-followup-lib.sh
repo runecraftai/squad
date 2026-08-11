@@ -6,14 +6,14 @@
 # Discord) asks for work. `tasks-axi public-followup` is the sole owner of that
 # typed obligation and its state machine; state/x-context/ is the sole owner of
 # the private full request context. This library owns only the small Squad
-# side: the activation gate, the private per-home transport directories, and the
+# side: the activation gate, the private per-base transport directories, and the
 # deterministic terminal-event identity.
 #
 # Sourced, never executed. No side effects on source (it creates nothing), which
-# is what keeps a relay-disabled home free of public-followup artifacts.
+# is what keeps a relay-disabled base free of public-followup artifacts.
 # set -u / set -e safe.
 #
-# GATE ORDER - the acceptance criterion for relay-disabled homes:
+# GATE ORDER - the acceptance criterion for relay-disabled bases:
 #   1. fm_pf_relay_active <home>     the authoritative mySquad activation
 #                                    contract, a non-empty SQX_PAIRING_TOKEN in
 #                                    <home>/.env. There is no second flag. When
@@ -21,7 +21,7 @@
 #                                    [ -f ] test and nothing else runs.
 #   2. fm_pf_has_registrations       O(1) presence check on the registry created
 #      / fm_pf_has_events            only by the relay path (sq-public-followup.sh
-#                                    register). Relay-enabled homes with no
+#                                    register). Relay-enabled bases with no
 #                                    public commitments stop here, so no
 #                                    tasks-axi call and no backlog scan happens.
 #
@@ -70,7 +70,7 @@ SQUAD_PF_EVENT_BYTES_MAX=${SQUAD_PF_EVENT_BYTES_MAX:-8192}
 
 # --- gate 1: the authoritative relay activation contract --------------------
 
-# fm_pf_relay_active <home>: 0 when this home has opted into the mySquad
+# fm_pf_relay_active <home>: 0 when this base has opted into the mySquad
 # relay, 1 otherwise. Identical contract to bootstrap's X-mode activation - a
 # non-empty SQX_PAIRING_TOKEN in <home>/.env - so no second activation flag
 # exists to drift. SQX_PAIRING_TOKEN in the environment wins, matching
@@ -121,7 +121,7 @@ fm_pf_active() {
 
 # fm_pf_slug_valid <value>: obligation ids, relation ids, work ids, and request
 # ids all compose filenames. They arrive from tasks-axi, the relay, and child
-# homes, so every one is checked against a conservative slug before use.
+# bases, so every one is checked against a conservative slug before use.
 fm_pf_slug_valid() {
   local v=$1
   case "$v" in
@@ -131,8 +131,8 @@ fm_pf_slug_valid() {
 }
 
 # fm_pf_home_id_valid <home_id>: tasks-axi accepts "main" or
-# "XO:<stable-id>" as a work_ref home. Validate the same shape here so a
-# malformed source home is refused before it reaches a filename or a CLI call.
+# "XO:<stable-id>" as a work_ref base. Validate the same shape here so a
+# malformed source base is refused before it reaches a filename or a CLI call.
 fm_pf_home_id_valid() {
   local v=$1
   case "$v" in
@@ -198,7 +198,7 @@ fm_pf_registry_get() {
 }
 
 # fm_pf_registry_ids <state>: every registered obligation id, one per line.
-# The registry only ever holds this home's live public commitments, so this stays
+# The registry only ever holds this base's live public commitments, so this stays
 # a bounded listing rather than a backlog scan.
 fm_pf_registry_ids() {
   local dir entry
@@ -211,7 +211,7 @@ fm_pf_registry_ids() {
 }
 
 # fm_pf_registry_ids_for_work <state> <work_home_id> <work_id>: the obligations
-# this home registered against one exact work relation. Used by the completion
+# this base registered against one exact work relation. Used by the completion
 # guard so cleanup cannot declare bound work finished while its public promise is
 # still open.
 fm_pf_registry_ids_for_work() {

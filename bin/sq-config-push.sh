@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Push declared inherited local material to live XO homes.
+# Push declared inherited local material to live XO bases.
 # Usage: sq-config-push.sh [--help]
 #
 # Mid-session convergence for inherited local material such as
 # config/crew-dispatch.json, config/backend, or data/commander-shared.md updates.
-# This discovers live XO homes from state/*.meta, backfills
+# This discovers live XO bases from state/*.meta, backfills
 # home= from data/XOs.md for older meta records, and reuses the same
 # propagation machinery as bootstrap, but deliberately does not
 # fast-forward tracked files.
-# After a successful per-home propagation that changes any allowlisted config/*
+# After a successful per-base propagation that changes any allowlisted config/*
 # item, local routes receive the generation-specific literal-content pointer from
 # sq-config-inherit-lib.sh. Remote routes receive one durable marked reread nudge
 # through their SSH route. Unchanged config and data/commander-shared.md-only
-# updates send no reread unless a previous send failure is pending for that home.
+# updates send no reread unless a previous send failure is pending for that base.
 # Warnings-only skips exit 0; real propagation or reread-send errors exit non-zero.
 set -u
 

@@ -6,7 +6,7 @@
 #   sq-remote-file.sh put state/handoff/<id>.outbox.md <max-bytes> <bytes> <sha256> <generation>
 #
 # A get path is relative to SQUAD_HOME, must resolve through ordinary directories
-# to one non-symlink regular file inside that home, and is bounded before output.
+# to one non-symlink regular file inside that base, and is bounded before output.
 # Put is deliberately narrower: it atomically replaces only a backlog handoff
 # scratch file under state/handoff. There is no delete operation and no generic
 # write path; the receiving command owns scratch cleanup after committed ingest.

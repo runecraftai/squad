@@ -31,20 +31,20 @@ Use `bin/sq-peek.sh <id>` and `SQUAD_HOME=<home> bin/sq-send.sh <id> '<text>'` a
 
 Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
 
-## Task shape and home isolation
+## Task shape and base isolation
 
 Every task receives one tab in the shared Zellij session.
-The caller-facing label remains `sq-<id>`, while the visible title is home-scoped as `sq-<home-label>-<id>`.
-The home label is `Squad` or `xo-<id>` plus a short stable hash of the resolved Squad root.
+The caller-facing label remains `sq-<id>`, while the visible title is base-scoped as `sq-<home-label>-<id>`.
+The base label is `Squad` or `xo-<id>` plus a short stable hash of the resolved Squad root.
 This prevents task-id collisions between a primary, XOs, and separate Squad installations sharing one session.
 
 Zellij does not enforce tab-name uniqueness, so the adapter performs its own duplicate check against the scoped title.
 Create, recover, list, and cleanup paths all use the same scoped title owner in `bin/sq-backend-hometag-lib.sh`.
 Moving a Squad installation changes its path hash and leaves old titles unmatched, consistent with worktree paths also becoming stale after a move.
 
-A pre-home-tag task remains reachable through its recorded metadata only when exactly one live tab has the old unscoped title.
+A pre-base-tag task remains reachable through its recorded metadata only when exactly one live tab has the old unscoped title.
 Multiple old tabs with the same title cause a refusal rather than a guess.
-Bulk recovery never adopts unscoped legacy tabs because it has no safe home identity for them.
+Bulk recovery never adopts unscoped legacy tabs because it has no safe base identity for them.
 
 ```text
 backend=zellij
@@ -90,7 +90,7 @@ Real test cleanup uses only an isolated non-`Squad` session and the guard in `te
 ## Active limits
 
 - Zellij is experimental and explicit-only.
-- All homes share one session and tab bar; scoped titles prevent cross-home identity collisions but do not create per-home visual containers.
+- All bases share one session and tab bar; scoped titles prevent cross-base identity collisions but do not create per-base visual containers.
 - There is no native busy or push-event signal, so supervision uses capture/hash polling for screen changes and each harness adapter's semantic lifecycle for worker state.
   Grok alone retains its isolated rendered-tail fallback.
 - There is no verified agent-process liveness signal, so a dead Zellij XO is reported inconclusive rather than auto-respawned.

@@ -30,12 +30,12 @@ Ship and recon spawns reach that site on every spawn backend (`tmux`, `herdr`, `
 ### Remote XO routes
 
 An XO on a [remote route](remote-XOs.md) never reaches that export site in the parent's own process: the parent hands the launch to the configured host, which runs its own `bin/sq-spawn.sh` there.
-The identity is still the parent's, because the parent home holds the task metadata an observer reads.
+The identity is still the parent's, because the parent base holds the task metadata an observer reads.
 The parent therefore resolves the carrier against that task's own metadata under its own frozen decision - reused verbatim on relaunch, freshly rooted otherwise, never adopting the parent process's ambient `TRACEPARENT` - and passes it to the remote host, which exports it at the same unconditional pre-launch site and returns the carrier its endpoint actually holds.
 The parent records that returned value, so an already-alive remote endpoint that was not relaunched reports the identity its agent really received rather than one the parent merely intended.
 The remote host validates the delivered carrier as a strict W3C value before it can reach any pane, and a disabled parent passes nothing, leaving the remote launch identical to the untraced one.
 If the endpoint is already alive, no new launch or injection occurs; the parent still records any carrier that endpoint reports, even when the parent's current decision is `off`, so its metadata does not deny the running agent's actual identity.
-The enablement decision travels with it exactly as on the local path: the remote home inherits `config/trace-context` as declared inherited material and the new XO process receives the parent's frozen `SQUAD_TRACE_CONTEXT=on|off` snapshot.
+The enablement decision travels with it exactly as on the local path: the remote base inherits `config/trace-context` as declared inherited material and the new XO process receives the parent's frozen `SQUAD_TRACE_CONTEXT=on|off` snapshot.
 
 ## Root and recovery semantics
 
@@ -49,34 +49,34 @@ The point of these rules is one trace per task: never merge unrelated tasks, and
   A corrupt recorded value is re-minted as a fresh root rather than propagated.
 
 Because ambient `TRACEPARENT` is never read, the environment a supervisor happens to run under - an XO's launch-time carrier, or an operator shell with a leftover `TRACEPARENT` - cannot leak into new task identities.
-Disabling propagation is an intentional trace boundary: a disabled home injects no carrier into a newly launched or relaunched agent even when the task meta already contains a valid `traceparent=`.
+Disabling propagation is an intentional trace boundary: a disabled base injects no carrier into a newly launched or relaunched agent even when the task meta already contains a valid `traceparent=`.
 An actual disabled relaunch regenerates the task meta without `traceparent=`, so a later enabled relaunch roots a new trace instead of resuming the identity from before the boundary; reusing an already-alive remote endpoint is not a relaunch and preserves the carrier that agent already holds.
 
-### Enablement is home-session-scoped
+### Enablement is base-session-scoped
 
-Each locked `bin/sq-session-start.sh` run resolves that home's `config/trace-context` plus `SQUAD_TRACE_CONTEXT` exactly once into session-scoped effective state.
+Each locked `bin/sq-session-start.sh` run resolves that base's `config/trace-context` plus `SQUAD_TRACE_CONTEXT` exactly once into session-scoped effective state.
 The decision is atomically published through a same-directory temporary file and bound to the current session lock, so a failed publication cannot reactivate a stale `on` record from an earlier session.
-Every spawn from that home reads only the frozen `on` or `off` decision.
-Later config or environment edits are ignored until that home starts a new session.
+Every spawn from that base reads only the frozen `on` or `off` decision.
+Later config or environment edits are ignored until that base starts a new session.
 Missing, stale, unreadable, invalid, or unsuccessfully published effective state defaults safely to `off`.
 
-When the primary launches an XO, local or remote, it propagates `config/trace-context` into the XO home and passes the primary session's frozen decision as a non-empty `SQUAD_TRACE_CONTEXT=on|off` launch override.
-The XO resolves that inherited override when its own home session starts.
-That flag is session-scoped enablement rather than durable configuration, so it is transferred at the launch convergence point - where the frozen decision is handed over with it - and left untouched by live convergence into an already-running home, on local and remote routes alike.
+When the primary launches an XO, local or remote, it propagates `config/trace-context` into the XO base and passes the primary session's frozen decision as a non-empty `SQUAD_TRACE_CONTEXT=on|off` launch override.
+The XO resolves that inherited override when its own base session starts.
+That flag is session-scoped enablement rather than durable configuration, so it is transferred at the launch convergence point - where the frozen decision is handed over with it - and left untouched by live convergence into an already-running base, on local and remote routes alike.
 What propagates is the enablement decision, never trace identity: an XO launched while enabled receives its own task carrier from the primary - the XO agent's identity, reused verbatim when the XO itself is relaunched - and each worker it spawns roots its own per-task trace.
-An XO launched while disabled keeps its workers untraced even if `config/trace-context` is present in its home.
+An XO launched while disabled keeps its workers untraced even if `config/trace-context` is present in its base.
 When enabled, a relaunch reuses the task's valid recorded carrier; a task without one roots a fresh trace.
-A duplicate XO launch is refused before trace-context inheritance, so duplicate-launch preflight does not mutate the XO home.
+A duplicate XO launch is refused before trace-context inheritance, so duplicate-launch preflight does not mutate the XO base.
 
-Changing the setting across the whole unit requires a manual full unit restart so every home starts a new session and freezes the new decision.
-Squad does not monitor setting drift, detect mismatches, refuse launches, or automatically stop or restart any home.
+Changing the setting across the whole unit requires a manual full unit restart so every base starts a new session and freezes the new decision.
+Squad does not monitor setting drift, detect mismatches, refuse launches, or automatically stop or restart any base.
 
 ## Sampling
 
 A new root sets the W3C trace flags to `01` (sampled).
 This is a deliberate, source-owned choice:
 
-- The capability is **opt-in** and default-off, so a home that enables it is asking for its spawns to be traced; an unsampled (`00`) root would produce a trace id that most downstream parent-based samplers drop, yielding nothing for the operator who opted in.
+- The capability is **opt-in** and default-off, so a base that enables it is asking for its spawns to be traced; an unsampled (`00`) root would produce a trace id that most downstream parent-based samplers drop, yielding nothing for the operator who opted in.
 - **A recorded carrier keeps its flags verbatim.**
   Recovery reuses the task's recorded carrier byte-for-byte, flags included, so a task's sampling decision is stable across restarts.
   Squad chooses the flag only when it mints a *root*, which is the only way a new carrier is created.
@@ -109,7 +109,7 @@ This is a deliberate, source-owned choice:
 ## Relationship to OpenTelemetry and later increments
 
 Squad learns nothing about OpenTelemetry, any exporter, collector, storage, or UI.
-It emits a standard W3C carrier and records the same identity; a downstream observer owns everything else and discovers active propagation from the home session's frozen decision or the `traceparent=` field.
+It emits a standard W3C carrier and records the same identity; a downstream observer owns everything else and discovers active propagation from the base session's frozen decision or the `traceparent=` field.
 Native lifecycle-event emission, extra stable IDs, intake metadata, and any embedded OTLP are deliberately deferred until a running observer demonstrates a concrete fidelity gap that the derived artifacts cannot cover.
 
 ## Verification

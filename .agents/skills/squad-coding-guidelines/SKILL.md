@@ -12,7 +12,7 @@ metadata:
 # squad-coding-guidelines
 
 Load this before changing Squad's shared, tracked material, as defined by `AGENTS.md` section 1.
-It exists because `AGENTS.md` grew from 585 to 958 lines between its last two restructures, entirely from conditional detail added inline instead of routed to its right home.
+It exists because `AGENTS.md` grew from 585 to 958 lines between its last two restructures, entirely from conditional detail added inline instead of routed to its right base.
 Applying the rules below on every change is what keeps that from happening again.
 
 ## Knowledge-placement decision tree

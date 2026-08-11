@@ -6,13 +6,13 @@
 
 ## Vision
 
-Squad is an **agent distro**: a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose terminal coding agent into a specialized one — the **sergeant at arms**. The human is the **commander**. The sergeant at arms is the single liaison; it spawns, supervises, and reports on a visible squad of **operators** that execute project work in clean, disposable git worktrees; **XOs** (persistent operators with isolated homes) extend the squad across machines. There is no app to install: the cloned repo *is* the distro.
+Squad is an **agent distro**: a portable directory of instructions, skills, tooling, policies, and state conventions that turns a general-purpose terminal coding agent into a specialized one — the **sergeant at arms**. The human is the **commander**. The sergeant at arms is the single point of contact; it spawns, supervises, and reports on a visible squad of **operators** that execute project work in clean, disposable git worktrees; **XOs** (persistent operators with isolated bases) extend the squad across machines. There is no app to install: the cloned repo *is* the distro.
 
 Squad is a fork/rebrand of [firstmate](https://github.com/kunchenguid/firstmate) (MIT) under a military theme, plus its three runtime dependencies forked as first-class workspace packages, plus two Runecraft packages integrated into the Pi-primary flow. The mechanics, state model, and safety guards are inherited from firstmate and preserved faithfully; only the identity, vocabulary, packaging, and Runecraft integration are Squad's own.
 
 ## For
 
-Developers who run a coding agent (Claude Code, Grok, Pi/pi-signed, Codex, or OpenCode) and want one liaison that runs a parallel squad without tab-juggling: spawning visible operators in tmux/herdr/zellij/orca/cmux endpoints, each in a clean FOB-managed worktree, supervised to completion, handing the commander finished PRs, approved local merges, or standalone recon reports.
+Developers who run a coding agent (Claude Code, Grok, Pi/pi-signed, Codex, or OpenCode) and want one point of contact that runs a parallel squad without tab-juggling: spawning visible operators in tmux/herdr/zellij/orca/cmux endpoints, each in a clean FOB-managed worktree, supervised to completion, handing the commander finished PRs, approved local merges, or standalone recon reports.
 
 ## Goals
 

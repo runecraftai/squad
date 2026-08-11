@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Shared marker-or-plain-checkout predicate for tracked hooks that must act only
-# in a genuine Squad primary home.
+# in a genuine Squad primary base.
 # This file is sourced by hook entrypoints and has no side effects on source.
 
-# Return 0 when $1 carries a genuine XO-home marker.
+# Return 0 when $1 carries a genuine XO-base marker.
 fm_root_is_XO_home() {
   local marker="$1/.sq-xo-home" id LC_ALL=C
   [ -L "$marker" ] && return 1
@@ -18,7 +18,7 @@ fm_root_is_XO_home() {
 }
 
 # Return 0 when $1 is a genuine primary root whose effective state dir is $2.
-# A valid XO marker force-includes a linked XO home.
+# A valid XO marker force-includes a linked XO base.
 # Otherwise only a plain checkout is primary, never a linked task worktree.
 fm_primary_scope_matches() {
   local root=$1 state=$2 git_dir git_common_dir

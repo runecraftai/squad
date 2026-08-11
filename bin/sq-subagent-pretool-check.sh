@@ -11,7 +11,7 @@
 # of living in its own backend session.
 #
 # This scoped PreToolUse guard is the shipped mechanism.
-# Claude primaries should also use an untracked per-home local
+# Claude primaries should also use an untracked per-base local
 # `permissions.deny` list as hardening for known Claude delegation tools,
 # because it removes them from the model's schema entirely.
 # That deny list must not be tracked: it is Claude-only rather than
@@ -41,7 +41,7 @@
 #   ALLOW - exit 0 and no output.
 #   DENY - exit 2, a Claude-shaped deny object on stderr, and a Grok-shaped
 #          deny object on stdout unless --claude was supplied.
-#   INERT - not a genuine primary home (an operator/recon task worktree or a
+#   INERT - not a genuine primary base (an operator/recon task worktree or a
 #           non-Squad repo): exit 0 with no output, exactly like ALLOW.
 #   ESCAPE - SQUAD_ALLOW_SUBAGENT=1 in the environment allows deliberately.
 #   FAIL OPEN - malformed or empty stdin, or missing jq for stdin transport.
@@ -175,18 +175,18 @@ SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." 2>/dev/null
 SQUAD_HOME=${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}
 STATE=${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}
 
-# Scope to a genuine primary home, exactly as the session-start nudge and the
+# Scope to a genuine primary base, exactly as the session-start nudge and the
 # turn-end guard do. fm_primary_scope_matches accepts a plain checkout or a
-# marked XO home - both operate a unit and must dispatch through it -
+# marked XO base - both operate a unit and must dispatch through it -
 # and rejects a linked task worktree, which is the shape bin/sq-spawn.sh always
 # hands an operator. An operator using delegation tools inside its own task
-# worktree is legitimate and stays allowed. Any failure to confirm the home is
+# worktree is legitimate and stays allowed. Any failure to confirm the base is
 # inert (exit 0), never a block, so a broken environment never denies a call.
 # shellcheck source=bin/sq-primary-scope-lib.sh
 . "$SCRIPT_DIR/sq-primary-scope-lib.sh"
 fm_primary_scope_matches "$SQUAD_ROOT" "$STATE" || exit 0
 
-# Name the dedicated recon entry point only when this home carries it; degrade
+# Name the dedicated recon entry point only when this base carries it; degrade
 # to the two-step brief-then-spawn path when it does not, rather than naming a
 # script that is not there.
 if [ -f "$SQUAD_ROOT/bin/sq-recon.sh" ]; then

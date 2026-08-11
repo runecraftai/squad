@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Receive one delivered remote-XO outbox into this home's backlog.
+# Receive one delivered remote-XO outbox into this base's backlog.
 #
 # Usage:
 #   sq-backlog-receive.sh state/handoff/<XO-id>.outbox.md <bytes> <sha256> <generation>

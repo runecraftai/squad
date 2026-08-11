@@ -11,7 +11,7 @@
 #   sq-procevent-remote-reply.sh retire <XO-id>
 #
 # `arm` registers one blocking, non-destructive delta source for the remote
-# home's state/parent-replies.status log. The process-event runner owns blocking,
+# base's state/parent-replies.status log. The process-event runner owns blocking,
 # capture, publication, and one machine-wide source owner. Each captured delta is
 # terminal for that exact registration; `handle` validates and idempotently
 # ingests it, acknowledges the captured generation, then registers the next

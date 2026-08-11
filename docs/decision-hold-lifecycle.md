@@ -6,7 +6,7 @@ This document records the deterministic mechanism, structured surfaces, and priv
 ## Mechanism
 
 `bin/sq-decision-hold.sh` is the only lifecycle command for an investigation or visual review's unresolved commander decisions.
-The command runs tasks-axi in the active `SQUAD_HOME`, so the existing backlog remains the only durable work database and an XO-owned decision stays in the XO home.
+The command runs tasks-axi in the active `SQUAD_HOME`, so the existing backlog remains the only durable work database and an XO-owned decision stays in the XO base.
 It never reads report bodies, review artifacts, terminal output, or chat.
 
 The `hold` subcommand maps an originating work id and stable decision key to `<origin-id>-decision-<decision-key>`.
@@ -32,7 +32,7 @@ A failed intermediate step leaves the hold open.
 
 `bin/sq-unit-snapshot.sh` parses canonical tasks-axi `(hold: ...)` and `(hold-kind: commander)` metadata alongside existing backlog fields.
 It resolves every repeated `blocked-by:` edge against structured Done records, keeps missing blockers unresolved, and classifies only an unblocked commander hold as actionable.
-Its XO-home summary classifies an actionable commander hold as `commander_decision` and preserves blocked commander holds as queued work in the owning home.
+Its XO-base summary classifies an actionable commander hold as `commander_decision` and preserves blocked commander holds as queued work in the owning base.
 
 `bin/sq-sitrep-snapshot.sh` projects actionable commander holds into `decisions_open` and leaves blocked commander holds in ordinary queued gates.
 It excludes completed kind `commander` records from Recently Landed.
@@ -42,7 +42,7 @@ The projection remains read-only and does not inspect historical prose.
 
 Verification date: 2026-07-14.
 Additional quoted `blocked_by` regression verification date: 2026-07-17.
-Plural blocker-readiness and mixed-home projection verification date: 2026-07-22.
+Plural blocker-readiness and mixed-base projection verification date: 2026-07-22.
 
 The focused end-to-end regression uses only synthetic `sample` identities and decision text.
 It begins with a completed investigation and visual review whose genuine unresolved choice exists only in the report.

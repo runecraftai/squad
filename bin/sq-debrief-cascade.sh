@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Enumerate this home's registered XOs for an internal /debrief cascade.
+# Enumerate this base's registered XOs for an internal /debrief cascade.
 # Usage: sq-debrief-cascade.sh [--help]
 #
 # The internal /debrief skill owns curation judgement; this command owns only the
-# mechanical inputs a cascade needs: which homes exist, what each home's own
+# mechanical inputs a cascade needs: which bases exist, what each base's own
 # startup-memory accounting says right now, and how the sweep can reach it.
 #
 # Enumeration comes from data/XOs.md, the registry that already refuses
-# a duplicate id, a duplicate home, and an overlapping home, so each registered
-# XO is emitted exactly once and no home is accounted twice. A home's
-# budget is that home's alone: this command never sums a unit total, because
-# config/startup-memory-budget is a per-home allowance.
+# a duplicate id, a duplicate base, and an overlapping base, so each registered
+# XO is emitted exactly once and no base is accounted twice. A base's
+# budget is that base's alone: this command never sums a unit total, because
+# config/startup-memory-budget is a per-base allowance.
 #
-# Each home is reported as one blank-line-separated key=value stanza:
+# Each base is reported as one blank-line-separated key=value stanza:
 #   XO=<id>
 #   placement=local|remote            (host=<alias> on a remote route)
 #   home=<path>
@@ -20,30 +20,30 @@
 #   transport=agent|direct|deferred|unavailable
 #   reason=<one line>                 (whenever a step did not complete)
 #
-# transport says how the sweep reaches that home:
-#   agent     - a live XO agent owns the home; steer it with
+# transport says how the sweep reaches that base:
+#   agent     - a live XO agent owns the base; steer it with
 #               bin/sq-send.sh so it sweeps its own uncaptured session
 #               knowledge and replies through its marked return channel.
-#   direct    - a local home with no live agent; curate its editable memory
+#   direct    - a local base with no live agent; curate its editable memory
 #               files in place.
-#   deferred  - a remote home with no live agent. There is deliberately no
+#   deferred  - a remote base with no live agent. There is deliberately no
 #               generic remote write path (bin/sq-remote-file.sh put reaches
-#               only the handoff outbox), so that home is accounted read-only
+#               only the handoff outbox), so that base is accounted read-only
 #               and curated by its next cascade once its agent is back.
-#   unavailable - the home's own accounting did not complete, so no transport
+#   unavailable - the base's own accounting did not complete, so no transport
 #               conclusion is safe.
 #
-# Every step that crosses a host, plus each home's own accounting, runs under
+# Every step that crosses a host, plus each base's own accounting, runs under
 # one hard bound (SQUAD_STOW_CASCADE_TIMEOUT seconds, default 60), so a slow or
-# unreachable home reports an exception and the sweep continues instead of
+# unreachable base reports an exception and the sweep continues instead of
 # blocking the primary's own /debrief. A local endpoint probe reads this host's
 # recorded backend in process, like every other caller of that contract.
 #
-# An XO home never cascades: XOs do not own XOs, so this
+# An XO base never cascades: XOs do not own XOs, so this
 # command reports the empty cascade there rather than reaching for a registry.
 #
-# Exit status: 0 every home reported cleanly (or there were none); 3 at least
-# one home reported an exception and every home was still reported; 1 the
+# Exit status: 0 every base reported cleanly (or there were none); 3 at least
+# one base reported an exception and every base was still reported; 1 the
 # cascade input itself is unusable; 2 invalid use.
 set -u
 
@@ -98,7 +98,7 @@ run_step() {
   return "$rc"
 }
 
-# This home's recorded XO endpoint for <id>, if it has one.
+# This base's recorded XO endpoint for <id>, if it has one.
 meta_for() { # <id>
   local meta="$STATE/$1.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
@@ -110,7 +110,7 @@ TRANSPORT=
 TRANSPORT_REASON=
 set_transport() { TRANSPORT=$1; TRANSPORT_REASON=${2:-}; }
 
-# A local home is curated in place when no live agent owns it.
+# A local base is curated in place when no live agent owns it.
 resolve_local_transport() { # <id> <resolved-home>
   local id=$1 home=$2 meta backend target meta_home
   if ! meta=$(meta_for "$id"); then
@@ -136,8 +136,8 @@ resolve_local_transport() { # <id> <resolved-home>
   esac
 }
 
-# A remote home with no live agent is deferred, never direct: this repo has no
-# generic remote write path for a home's own memory files.
+# A remote base with no live agent is deferred, never direct: this repo has no
+# generic remote write path for a base's own memory files.
 resolve_remote_transport() { # <id>
   local id=$1 rc=0
   if ! meta_for "$id" >/dev/null; then
@@ -209,7 +209,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     resolved=$VALIDATED_HOME
     emit "home=$resolved"
     # Every SQUAD_*_OVERRIDE is restated so a caller's own override cannot leak
-    # this home's memory files into the accounting of another home.
+    # this base's memory files into the accounting of another base.
     run_step env \
       SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
       SQUAD_HOME="$resolved" \

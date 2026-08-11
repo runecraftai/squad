@@ -2,7 +2,7 @@
 # Send one line of literal text to an operator endpoint, then Enter.
 # Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>
 #   <target> may be an exact task id, a legacy sq-<id> task label resolved
-#   through this home's state/<id>.meta, or an explicit well-formed backend
+#   through this base's state/<id>.meta, or an explicit well-formed backend
 #   target. sq-send refuses unresolved guesses rather than falling back to a
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
@@ -46,7 +46,7 @@
 # depends on the busy worker writing a matching resolved line. The close is a
 # LOCAL append for every target kind - operator, recon, local XO, and
 # remote XO alike - because the open-decision ledger sq-stand-to-drain
-# folds lives in this home's own state dir (a remote mate's escalations reach
+# folds lives in this base's own state dir (a remote mate's escalations reach
 # it through the parent-replies ingest); only the answer message crosses the
 # backend or remote transport. Each named key must currently be open in that
 # ledger per status_open_decisions (bin/sq-classify-lib.sh) or sq-send refuses
@@ -57,7 +57,7 @@
 # direction). A send without the flag never closes anything: a routine steer,
 # working:, or done: event still cannot clear a commander decision. The flag is
 # refused with --key, with an explicit backend target (no task ledger in this
-# home), and with an empty message.
+# base), and with an empty message.
 #
 # After a successful text submit sq-send pauses SQUAD_SEND_SETTLE seconds (default 1,
 # 0 disables) before returning: submit confirmation only proves the text was
@@ -321,9 +321,9 @@ if [ "$TARGET_BACKEND" != remote ]; then
 fi
 
 # Classify a from-squad -> XO request. Only a task selector resolved
-# through this home's meta whose authoritative kind is XO is marked: the
+# through this base's meta whose authoritative kind is XO is marked: the
 # XO then routes its reply via the status path (see sq-marker-lib.sh).
-# An explicit backend target (the escape hatch for endpoints outside this home)
+# An explicit backend target (the escape hatch for endpoints outside this base)
 # and any operator/recon target are left unmarked, and so is the --key path.
 MARK_FROM_SQUAD=0
 PENDING_REPLY_CORR=
@@ -335,7 +335,7 @@ if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARG
 fi
 
 # Validate the answerer-closes request before any durable mutation or send: the
-# target must have a task ledger in THIS home, the send must carry an answer
+# target must have a task ledger in THIS base, the send must carry an answer
 # message, and every named key must be open right now in that ledger per the
 # ONE authoritative fold (status_open_decisions). Refusing here, before the
 # send, is what keeps a mistyped key loud instead of delivering an answer that
@@ -368,7 +368,7 @@ if [ -n "$RESOLVE_KEYS" ]; then
   done
 fi
 
-# Close each answered decision in this home's ledger, only after delivery is
+# Close each answered decision in this base's ledger, only after delivery is
 # fully confirmed. An append failure exits nonzero with the manual close
 # command; the decision then stays open and re-surfaces, never silently lost.
 fm_send_close_resolved_keys() {  # <answer-text>
@@ -523,7 +523,7 @@ else
       exit 1
     fi
   fi
-  # Delivery is fully confirmed: close each answered decision in this home's
+  # Delivery is fully confirmed: close each answered decision in this base's
   # ledger (answerer-closes; see the header contract).
   if [ -n "$RESOLVE_KEYS" ]; then
     fm_send_close_resolved_keys "$RESOLVE_ANSWER_TEXT" || exit 1

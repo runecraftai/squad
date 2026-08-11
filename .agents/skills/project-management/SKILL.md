@@ -15,19 +15,19 @@ metadata:
 Use this procedure before adding, creating, removing, or initializing a project.
 Cloning or registering a project is add intake and uses the same trigger.
 This skill is the single owner of Squad's project-management procedure.
-It does not replace `xo-provisioning`, which owns project clones inside persistent XO homes.
+It does not replace `xo-provisioning`, which owns project clones inside persistent XO bases.
 
 ## Preconditions and registry
 
 Projects live flat under `projects/`, and `data/projects.md` is the private unit registry.
 Use the registry format and parser contract owned by the header of `bin/sq-project-mode.sh`.
-Keep each registry description useful for identifying the project, but keep delivery posture, commander-private state, and detailed project knowledge in their existing designated homes.
+Keep each registry description useful for identifying the project, but keep delivery posture, commander-private state, and detailed project knowledge in their existing designated bases.
 Do not turn the registry into project documentation.
 
-Before adding, cloning, creating, or registering any project in the main home, inspect the authoritative `data/XOs.md` routing table and judge every existing natural-language `scope:` against the proposed project or domain.
-Apply `AGENTS.md` section 7's authoritative XO routing rules; if an existing scope owns that domain, route the new-project operation or work there instead of creating or registering a duplicate main-home clone.
+Before adding, cloning, creating, or registering any project in the main base, inspect the authoritative `data/XOs.md` routing table and judge every existing natural-language `scope:` against the proposed project or domain.
+Apply `AGENTS.md` section 7's authoritative XO routing rules; if an existing scope owns that domain, route the new-project operation or work there instead of creating or registering a duplicate main-base clone.
 Absence from the main `data/projects.md` registry is never evidence that no second mate owns the domain.
-If the owning second mate cannot accept the route, report that concrete blocker or obtain an explicit commander redirection rather than silently duplicating the project in the main home.
+If the owning second mate cannot accept the route, report that concrete blocker or obtain an explicit commander redirection rather than silently duplicating the project in the main base.
 
 Resolve the project name, destination, delivery posture, and autonomy posture before changing local or remote state.
 Keep a newly added clone and its registry entry consistent, and roll back only artifacts created by the incomplete operation when a later initialization step fails and that rollback is safe.

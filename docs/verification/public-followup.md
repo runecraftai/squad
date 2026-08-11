@@ -5,7 +5,7 @@ Audience: maintainer verification.
 This record supports two active guarantees for promised public replies made through the mySquad relay:
 
 1. A promised final reply survives compaction and restart, reconciles from disk alone, and lands in the original thread exactly once.
-2. A home that never opted into the relay pays nothing for any of it.
+2. A base that never opted into the relay pays nothing for any of it.
 
 [`docs/configuration.md`](../configuration.md#promised-public-replies-statepublic-followup) owns the operator-facing contract, [`docs/architecture.md`](../architecture.md#optional-relay) owns the mechanism boundary, and `tasks-axi public-followup --help` owns the typed obligation schema.
 Task chronology and delivery evidence stay outside this record.
@@ -55,10 +55,10 @@ bash tests/sq-x-mode.test.sh | grep -c '^ok -'
 
 ## Relay-disabled zero overhead
 
-The relay-disabled case in `tests/sq-public-followup.test.sh` invokes every public-followup entry point against a home with no `.env`, logs every `tasks-axi` invocation, and compares the state tree before and after.
+The relay-disabled case in `tests/sq-public-followup.test.sh` invokes every public-followup entry point against a base with no `.env`, logs every `tasks-axi` invocation, and compares the state tree before and after.
 It proves the feature makes no `tasks-axi` call, prints nothing, and creates no `state/public-followup` artifact without coupling that guarantee to session start's independently owned state files.
 
-The whole added cost in that home is the activation predicate, measured over 1000 in-process calls including loop overhead:
+The whole added cost in that base is the activation predicate, measured over 1000 in-process calls including loop overhead:
 
 ```sh
 . bin/sq-public-followup-lib.sh

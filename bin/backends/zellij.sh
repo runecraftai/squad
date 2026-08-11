@@ -13,29 +13,29 @@
 # empirical verification): ONE zellij session (default name "Squad",
 # overridable via SQUAD_ZELLIJ_SESSION for test isolation - mirrors herdr's
 # HERDR_SESSION), ONE tab per task, with caller-facing label "sq-<id>" and a
-# home-scoped actual title. No per-home workspace split (unlike herdr's later
+# base-scoped actual title. No per-base workspace split (unlike herdr's later
 # P3 refinement): zellij has no workspace concept, only sessions/tabs/panes,
 # so this stays exactly the report's original choice. Target string shape:
 # "<zellij-session>:<pane-id>" (pane id is a bare non-negative integer with no
 # embedded colon, so splitting on the FIRST colon is trivially correct and
 # mirrors herdr's target-string convention).
 #
-# Home-scoped tab titles (closes a cross-home collision gap): because every
-# task in every Squad home - primary or XO - shares this ONE
-# session's tab bar with no per-home split, and zellij enforces no tab-name
-# uniqueness at all, two Squad homes whose task ids happen to collide
+# Base-scoped tab titles (closes a cross-base collision gap): because every
+# task in every Squad base - primary or XO - shares this ONE
+# session's tab bar with no per-base split, and zellij enforces no tab-name
+# uniqueness at all, two Squad bases whose task ids happen to collide
 # could send/peek/close each other's tabs. This is the exact gap a
 # commander-directed drill review gate caught for the cmux backend
 # (docs/cmux-backend.md) and this same tag mechanism (bin/backends/cmux.sh's
 # fm_backend_cmux_scoped_title, now shared via bin/sq-backend-hometag-lib.sh)
 # is ported here for the identical reason. Every NEW tab is created with a
-# title tagged with this installation's home label (fm_backend_zellij_scoped_title,
+# title tagged with this installation's base label (fm_backend_zellij_scoped_title,
 # "sq-<hometag>-<id>"); every list/find/recover/kill path is scoped to this
-# home's own tag. A tab created before this change carries the old untagged
+# base's own tag. A tab created before this change carries the old untagged
 # "sq-<id>" title; target_ready, kill, and ad hoc selector fallback still
 # match it, but ONLY when that bare title is unambiguous (exactly one live tab
 # in the session carries it) - see fm_backend_zellij_tab_matches_label and
-# docs/zellij-backend.md "Home-scoped tab titles" for the full migration
+# docs/zellij-backend.md "Base-scoped tab titles" for the full migration
 # posture. Moving/relocating a Squad installation changes its tag
 # (acceptable - recorded worktree paths do not survive a move either).
 #
@@ -84,7 +84,7 @@
 #     (fm_backend_zellij_session_exists, a passive list-sessions query, never
 #     auto-creating), verify the specific pane still appears in list-panes JSON,
 #     and, for metadata-routed task selector operations, verify the pane's tab
-#     still matches the expected caller-facing task label through the home-scoped or
+#     still matches the expected caller-facing task label through the base-scoped or
 #     unambiguous legacy title before use. Kill verifies the session and, when
 #     teardown supplies an expected tab label, verifies a tab id still matches
 #     that label before closing it. Output-SHAPE validation (a bare integer tab
@@ -109,7 +109,7 @@
 # sourcing sq-backend.sh (which sources this file); this exists only so this
 # file's own unit tests, which source it directly, resolve sanely. Mirrors
 # bin/backends/herdr.sh's identical fallback; unlike herdr this adapter still
-# has no per-home CONTAINER split (one shared session for every home), but
+# has no per-base CONTAINER split (one shared session for every base), but
 # SQUAD_HOME/SQUAD_ROOT now also feed fm_backend_zellij_home_label's tab-title tag
 # below.
 SQUAD_BACKEND_ZELLIJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -135,10 +135,10 @@ fm_backend_zellij_session() {
   printf '%s' "${SQUAD_ZELLIJ_SESSION:-Squad}"
 }
 
-# fm_backend_zellij_home_label: readable home prefix plus a short hash of the
+# fm_backend_zellij_home_label: readable base prefix plus a short hash of the
 # resolved SQUAD_ROOT path (bin/sq-backend-hometag-lib.sh). Zellij has one
-# session-global tab namespace shared by every Squad home, so the path
-# hash distinguishes every installation, including multiple primary homes.
+# session-global tab namespace shared by every Squad base, so the path
+# hash distinguishes every installation, including multiple primary bases.
 # Moving an installation changes this tag and old zellij tab titles stop
 # matching; task meta already records absolute worktree paths, so repo
 # relocation is already outside the supported recovery contract.
@@ -147,10 +147,10 @@ fm_backend_zellij_home_label() {
 }
 
 # fm_backend_zellij_scoped_title: the actual tab title a NEW task's tab is
-# created with - the caller-facing "sq-<id>" label, home-tagged as
+# created with - the caller-facing "sq-<id>" label, base-tagged as
 # "sq-<hometag>-<id>" (mirrors bin/backends/cmux.sh's identical
 # fm_backend_cmux_scoped_title). Every list/find/recover/kill path below
-# scopes its own-home matches through this.
+# scopes its own-base matches through this.
 fm_backend_zellij_scoped_title() {  # <sq-task-label>
   local label=$1 rest home
   home=$(fm_backend_zellij_home_label)
@@ -283,16 +283,16 @@ fm_backend_zellij_pane_exists() {  # <session> <pane_id>
 
 # fm_backend_zellij_tab_matches_label: does <tab_id> in <session> carry the
 # tab name Squad expects for the caller-facing task label <label>?
-# Checks the home-scoped, tagged title first (fm_backend_zellij_scoped_title
+# Checks the base-scoped, tagged title first (fm_backend_zellij_scoped_title
 # - what every NEW tab is created with), then falls back to the legacy
 # untagged bare title (the plain <label>, e.g. "sq-<id>") for a tab created
-# before this home-scoping change shipped - but ONLY when that bare name is
+# before this base-scoping change shipped - but ONLY when that bare name is
 # not ambiguous: exactly one live tab in the whole session carries it. A bare
-# name shared by 2+ live tabs (this home's own pre-migration tab plus, say, a
-# same-named tab from a different Squad home sharing this one zellij
+# name shared by 2+ live tabs (this base's own pre-migration tab plus, say, a
+# same-named tab from a different Squad base sharing this one zellij
 # session) refuses rather than silently trusting whichever one happened to
 # match - the migration posture documented in docs/zellij-backend.md
-# "Home-scoped tab titles". One list-tabs call serves every check here (the
+# "Base-scoped tab titles". One list-tabs call serves every check here (the
 # scoped check, the bare check, and the ambiguity count all read the SAME
 # already-fetched JSON), so a caller whose fake-CLI fixture supplies exactly
 # one list-tabs response keeps working unchanged.
@@ -312,9 +312,9 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
 # <session>, refusing an existing <label>. Zellij does NOT enforce tab-name
 # uniqueness itself (verified: two tabs can share a name), so the duplicate
 # check is ours, mirroring both tmux's and herdr's adapters. The tab is
-# always created with the home-scoped, tagged title
+# always created with the base-scoped, tagged title
 # (fm_backend_zellij_scoped_title), never the bare caller-facing label - see
-# the file header's "Home-scoped tab titles" note.
+# the file header's "Base-scoped tab titles" note.
 #
 # Focus-steal mitigation (verified real finding, no upstream suppression
 # flag exists): `new-tab` unconditionally focuses the created tab for every
@@ -555,18 +555,18 @@ fm_backend_zellij_kill() {  # <target> [tab_id] [expected_label]
 }
 
 # fm_backend_zellij_list_live: recovery/orphan discovery. Lists every tab in
-# <session> whose title carries THIS Squad home's own tag
-# (sq-<hometag>-, fm_backend_zellij_home_label) - never any other home's
+# <session> whose title carries THIS Squad base's own tag
+# (sq-<hometag>-, fm_backend_zellij_home_label) - never any other base's
 # tagged tabs, and never a bare untagged "sq-<id>" tab either (this sweep
 # deliberately does NOT attempt the legacy-bare-title fallback
 # fm_backend_zellij_tab_matches_label uses for a single already-known tab:
-# telling apart "our own pre-migration tab" from "another home's same-shaped
+# telling apart "our own pre-migration tab" from "another base's same-shaped
 # bare title" in a bulk, no-numeric-id-in-hand sweep is not something this
-# adapter can do safely - see docs/zellij-backend.md "Home-scoped tab
+# adapter can do safely - see docs/zellij-backend.md "Base-scoped tab
 # titles"). A pre-migration task is still reachable through its recorded
 # window= meta, which target_ready/kill DO accept via that bare-title
 # fallback. One "<session>:<pane_id>\t<plain sq-<id> label>" line per live,
-# in-home task tab (the home tag is stripped back off before printing, so
+# in-base task tab (the base tag is stripped back off before printing, so
 # callers see the same plain label they always have). Read-only: a session
 # that does not exist yet simply lists nothing.
 fm_backend_zellij_list_live() {  # <session>
@@ -588,7 +588,7 @@ fm_backend_zellij_list_live() {  # <session>
 # fm_backend_zellij_resolve_bare_selector: the live-tab-listing fallback for
 # an ad hoc selector with no meta (mirrors tmux's list-windows grep and
 # herdr's equivalent). Searches every active zellij session for a tab
-# matching <name>: the home-scoped, tagged title first
+# matching <name>: the base-scoped, tagged title first
 # (fm_backend_zellij_scoped_title), then falls back to an exact bare <name>
 # match ONLY when unambiguous - exactly one tab across every active session
 # carries it - mirroring fm_backend_zellij_tab_matches_label's migration

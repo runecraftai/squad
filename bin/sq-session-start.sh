@@ -26,9 +26,9 @@
 # ORDERING, and why LOCK now runs before BOOTSTRAP (the old AGENTS.md order
 # was bootstrap-then-lock):
 #
-#   1. lock          - acquire the per-home session lock FIRST, before any
+#   1. lock          - acquire the per-base session lock FIRST, before any
 #                       mutating step runs.
-#   2. bootstrap      - home-local stale Herdr projection cleanup runs only
+#   2. bootstrap      - base-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
 #                       diagnostics always run. Bootstrap's six MUTATING sweeps
 #                       (legacy PR-check migration, XO convergence,
@@ -100,7 +100,7 @@
 #
 # Why lock first: the old documented order (bootstrap, THEN lock) let a
 # SECOND concurrent session run bootstrap's mutating sweeps - converging
-# XO homes, retrying pending handoff outboxes, writing X-mode artifacts,
+# XO bases, retrying pending handoff outboxes, writing X-mode artifacts,
 # and fetching or fast-forwarding every project clone - before ever discovering
 # another session already holds the lock. Two sessions racing those sweeps is
 # exactly the hazard the lock exists to prevent, so locking first closes the
@@ -124,7 +124,7 @@
 # surface, so it carries what this turn can act on and nothing else.
 #   - `done` rows are never listed. Retained completion history belongs to the
 #     reporting surfaces (bin/sq-sitrep-snapshot.sh, /reporting), and at startup it
-#     is pure weight - 10 done rows cost 3.3KB in an observed main-home digest.
+#     is pure weight - 10 done rows cost 3.3KB in an observed main-base digest.
 #   - Every in-flight, held, and blocked row is listed IN FULL, with its
 #     hold_kind/hold_reason and blocked_by. Those are the rows AGENTS.md
 #     sections 7 and 10 make actionable at startup, so they are never bounded
@@ -387,7 +387,7 @@ print_backlog_manual_compact() {
 
 # tasks-axi closes every listing with its own help block. This section composes
 # four listings, so keeping them would repeat the same pointers four times, once
-# per group, each carrying this home's full backlog path. The section prints one
+# per group, each carrying this base's full backlog path. The section prints one
 # equivalent pointer of its own (print_backlog_pointer), so the per-group help
 # blocks stop at their `help[` header instead.
 strip_axi_help() {
@@ -728,7 +728,7 @@ fi
 # Public commitments made through the mySquad relay. A promise to reply in a
 # public thread must survive compaction and restart, so it is surfaced from disk
 # here rather than from conversation memory. sq-public-followup-lib.sh owns both
-# gates: a home that never opted into the relay runs one [ -f ] test, prints no
+# gates: a base that never opted into the relay runs one [ -f ] test, prints no
 # subsection, and never reaches sq-public-followup.sh.
 if fm_pf_relay_active "$SQUAD_HOME" \
   && { fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE"; }; then

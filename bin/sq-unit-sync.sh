@@ -22,8 +22,8 @@
 # Usage: sq-unit-sync.sh [<project-dir-or-name>]
 # The single-project form accepts either a path (absolute, or relative to the
 # caller's cwd) or a bare "<name>"/"projects/<name>" form, resolved against
-# this home's projects dir ($SQUAD_HOME/projects, or $SQUAD_PROJECTS_OVERRIDE).
-# Bare names and "projects/<name>" forms prefer this home's projects dir before
+# this base's projects dir ($SQUAD_HOME/projects, or $SQUAD_PROJECTS_OVERRIDE).
+# Bare names and "projects/<name>" forms prefer this base's projects dir before
 # falling back to an explicit path. Example: from anywhere,
 # `sq-unit-sync.sh dotfiles-private` syncs just that one clone, same as
 # passing its full projects/dotfiles-private path.

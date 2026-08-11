@@ -30,7 +30,7 @@
 # exactly-once effects from the handled acknowledgement alone.
 
 # Machine-wide claim root. Homes can share one underlying source store, so the
-# "one owner per canonical source" rule cannot live inside a single home.
+# "one owner per canonical source" rule cannot live inside a single base.
 fm_procevent_claim_root() {
   printf '%s\n' "${SQUAD_PROCEVENT_CLAIM_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/Squad/procevent-claims}"
 }
@@ -68,7 +68,7 @@ fm_procevent_any_registered() {
 }
 
 # --- ownership --------------------------------------------------------------
-# A claim is a private file recording the home, runner pid, claim generation,
+# A claim is a private file recording the base, runner pid, claim generation,
 # and process identity. Registration and every ownership transition are
 # serialized at one source boundary.
 
@@ -174,7 +174,7 @@ fm_procevent_claim_state_locked() {
 }
 
 # fm_procevent_claim_acquire_locked <source-id> <home> <pid> <registration>
-# 0 acquired, 1 error, 2 held by a live owner (possibly another home).
+# 0 acquired, 1 error, 2 held by a live owner (possibly another base).
 fm_procevent_claim_acquire_locked() {
   local id=$1 home=$2 pid=$3 registration=$4 root claim tmp identity token status claim_state old_home old_token old_reg_dir reg_dir reg_identity stage
   fm_procevent_source_id_valid "$id" || return 1

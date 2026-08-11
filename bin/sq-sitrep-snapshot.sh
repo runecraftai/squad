@@ -23,19 +23,19 @@
 # backlog roles, unresolved blockers, and commander actionability. It never infers
 # decisions from report or visual-review prose or reimplements snapshot semantics.
 #
-# Main-home inventory validity comes from the canonical snapshot's main_inventory
+# Main-base inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
 # Sitrep never invents Underway rows from backlog-only ids; it discloses those
 # gaps in omitted[] and, when invalid, a Charted Next gate line so the four-section
 # chat cannot claim an empty unit while main current state is broken.
 #
-# The landed section merges this home's Done with the canonical snapshot's
+# The landed section merges this base's Done with the canonical snapshot's
 # XO_landed roll-up (sq-unit-snapshot.sh), so merges an XO managed -
 # recorded in ITS OWN backlog, never the main one - are visible. It stays bounded by
-# a per-home cap and an overall cap, with omitted[] disclosure of both and of any
-# XO home whose backlog was unreadable; no GitHub/network call is involved.
-# The default landed baseline is balanced across homes: each home keeps its internal
-# newest-first ordering, homes iterate in deterministic id order, sparse homes do not
+# a per-base cap and an overall cap, with omitted[] disclosure of both and of any
+# XO base whose backlog was unreadable; no GitHub/network call is involved.
+# The default landed baseline is balanced across bases: each base keeps its internal
+# newest-first ordering, bases iterate in deterministic id order, sparse bases do not
 # waste capacity, and --all-landed switches back to the complete global newest-first
 # order.
 #
@@ -47,7 +47,7 @@
 #   --all-in-flight  include every in-flight task
 #   --all-decisions  include every open decision
 #   --all-XOs include every aggregated XO record
-#   --all-landed     include every landed record from every home (default: bounded)
+#   --all-landed     include every landed record from every base (default: bounded)
 #   --all-reports    include the full recon-report inventory (default: relevant only)
 #   --all-queued     include superseded queued items (default: dropped)
 #   --all-recorded-prs include every locally recorded PR

@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Provision and route persistent XO homes.
+# Provision and route persistent XO bases.
 #
 # Usage:
-#   sq-home-seed.sh <id> <home|-> {<project>...|--no-projects}
-#       Provision <home> as an isolated Squad home. If <home> is "-", acquire
+#   sq-home-seed.sh <id> <base|-> {<project>...|--no-projects}
+#       Provision <home> as an isolated Squad base. If <home> is "-", acquire
 #       a fresh Squad worktree via "fob get --lease", which durably
-#       leases the worktree under the XO <id> so the home survives with
+#       leases the worktree under the XO <id> so the base survives with
 #       no live process and is never recycled until the lease is released with
 #       "fob return". Projects are cloned
-#       from the active home into the XO home's projects/ directory.
+#       from the active base into the XO base's projects/ directory.
 #       That project list is non-exclusive provisioning data. Pass --no-projects
-#       instead of a project list to seed a project-less home for a domain whose
+#       instead of a project list to seed a project-less base for a domain whose
 #       subject is the Squad repo itself; it is mutually exclusive with a
 #       project list, and omitting both still fails loudly. A project-less seed
-#       refuses a home with project clones or project-registry entries, so it
-#       never converts populated homes in place. The charter brief
+#       refuses a base with project clones or project-registry entries, so it
+#       never converts populated bases in place. The charter brief
 #       is copied to data/charter.md, newly cloned drill projects are
 #       initialized, an ignored .sq-xo-parent binding is published before
 #       the .sq-xo-home identity marker, and data/XOs.md is updated.
 #       Seeding is transactional: on validation, clone, init, or registry failure,
-#       generated briefs, new homes, new project clones, and registry edits are
-#       rolled back. FOB-acquired homes are returned only when the rollback
+#       generated briefs, new bases, new project clones, and registry edits are
+#       rolled back. FOB-acquired bases are returned only when the rollback
 #       target is safe; a failed return warns because the lease may still be held.
 #       Set SQUAD_XO_CHARTER='<charter>' to seed from inline charter text
 #       when no filled charter brief exists. Set SQUAD_XO_SCOPE='<scope>'
@@ -28,8 +28,8 @@
 #       and scope are derived from the filled charter brief.
 #   sq-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
-#       unsafe registry files when present, non-absolute or unresolvable homes,
-#       duplicate ids or homes, and nested or overlapping homes.
+#       unsafe registry files when present, non-absolute or unresolvable bases,
+#       duplicate ids or bases, and nested or overlapping bases.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -390,7 +390,7 @@ seeded_origin_url() {
 acquire_fob_home() {
   local id=$1 home
   # Durably lease a Squad worktree from the pool. The lease persists with no
-  # live process and is skipped by later get/prune, so the home survives restarts
+  # live process and is skipped by later get/prune, so the base survives restarts
   # until teardown or rollback returns it. fob prints only the worktree path
   # to stdout (banners go to stderr), so command substitution captures the path.
   home=$(cd "$SQUAD_ROOT" && fob get --lease --lease-holder "$id") || {
@@ -804,7 +804,7 @@ seed_home() {
   local filtered=()
   shift 2
   # A deliberate --no-projects signal (anywhere in the project position) seeds a
-  # project-less home; an accidental omission with no signal still fails loudly.
+  # project-less base; an accidental omission with no signal still fails loudly.
   for arg in "$@"; do
     if [ "$arg" = "--no-projects" ]; then
       no_projects=1
@@ -946,7 +946,7 @@ seed_home() {
   cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
 
   projects_csv=$(join_projects "$@")
-  # Durable record of this home's route to its parent, written once here next
+  # Durable record of this base's route to its parent, written once here next
   # to the identity marker: the cleanup check in sq-teardown.sh reads it so a
   # restart that drops the launch-time SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME prefix
   # can still resolve the real parent instead of silently treating its relay

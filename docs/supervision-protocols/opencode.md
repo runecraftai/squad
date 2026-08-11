@@ -13,4 +13,4 @@ When this session owns supervision and away mode is not active:
 9. Do not rely on this plugin in headless `opencode run`; Squad primary supervision targets persistent OpenCode TUI sessions.
 
 OpenCode's persistent TUI plugin runtime is the wake mechanism.
-The plugin applies in the main primary checkout and an XO's own home, and stays silent only in child operator and recon worktrees.
+The plugin applies in the main primary checkout and an XO's own base, and stays silent only in child operator and recon worktrees.

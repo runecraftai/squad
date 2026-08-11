@@ -1,14 +1,14 @@
 # Remote second mates
 
-Remote second mates place a whole persistent Squad home on another SSH-reachable host.
-The primary still owns routing and supervision, while the remote home owns its own projects, backlog, and workers.
+Remote second mates place a whole persistent Squad base on another SSH-reachable host.
+The primary still owns routing and supervision, while the remote base owns its own projects, backlog, and workers.
 Squad does not support placing an individual worker remotely or failing a remote route over to a local replacement.
 
 The remote second-mate agent itself always runs on the [Herdr backend](herdr-backend.md) in the shared `sq-remote` session, and every path that provisions or launches one refuses a host that is not ready for it.
 `sq-remote` is reserved for remote unit work and must not be used for personal work.
 The user's interactive Herdr session remains `default` and is not a remote-XO prerequisite.
 Herdr's remote-session server belongs to the host's own GUI login session rather than to the SSH connection, so the agent's endpoint survives every disconnection the primary's supervision depends on.
-Local second mates are unaffected and keep their ordinary backend and session selection, as do the workers a remote second mate supervises inside its own home.
+Local second mates are unaffected and keep their ordinary backend and session selection, as do the workers a remote second mate supervises inside its own base.
 
 ## Prerequisites
 
@@ -70,7 +70,7 @@ chmod +x ~/.local/bin/tasks-axi
 ```
 
 Replace the placeholder with the remote account's selected nvm version.
-For asdf or mise, use the same shape with the selected version's absolute `bin` directory, one wrapper per tool the remote home actually needs.
+For asdf or mise, use the same shape with the selected version's absolute `bin` directory, one wrapper per tool the remote base actually needs.
 The wrapper must execute that absolute target rather than resolving its own name again through `~/.local/bin`.
 
 ## Readiness, repair, and the human steps
@@ -120,7 +120,7 @@ bin/sq-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<projec
 ```
 
 `<remote-root>` is the remote Squad code clone that supplies tracked scripts.
-`<remote-home>` is a separate absolute path for the persistent XO home and must not overlap the code root.
+`<remote-home>` is a separate absolute path for the persistent XO base and must not overlap the code root.
 
 Name each project's origin as `<project>=<origin-url>`.
 Resolve the concrete origin from the commander, the project registry, an existing clone anywhere, the forge, or an explicit paste rather than imposing one URL template.
@@ -130,14 +130,14 @@ A bare `<project>` is still accepted when this machine happens to have `projects
 The primary validates every resolved origin before transport, and the receiving host validates it again before cloning.
 The project's registered delivery mode still comes from this machine's `data/projects.md`, so an unregistered or `local-only` project is refused rather than provisioned.
 
-The seed records `host:`, `root:`, and `home:` in `data/XOs.md`, gates the host on readiness, sends a bounded manifest, and lets the remote host clone its own Squad home and project origins.
-In the primary home, its durable registration effects are limited to that route and the charter brief under `data/<id>`; launch records are created only when the XO is launched.
+The seed records `host:`, `root:`, and `home:` in `data/XOs.md`, gates the host on readiness, sends a bounded manifest, and lets the remote host clone its own Squad base and project origins.
+In the primary base, its durable registration effects are limited to that route and the charter brief under `data/<id>`; launch records are created only when the XO is launched.
 Readiness starts with a read-only check; when that check reports a gap, it runs `--fix` and then a second read-only check whose verdict decides, so the operator never has to run the repair by hand and a repair is never trusted on its own word.
 A host that stays red prints the doctor's remaining gaps and their operator steps, restores the registry, and creates nothing on the remote host.
 It does not copy project trees or the primary process environment.
 A known provisioning failure rolls back the new route, while SSH exit 255 preserves it because remote completion is unknown and must be reconciled on the same host.
 
-Seeding also writes a durable `.sq-xo-parent` record next to the home's `.sq-xo-home` identity marker, naming this home's route to its parent as `local` or `remote`.
+Seeding also writes a durable `.sq-xo-parent` record next to the base's `.sq-xo-home` identity marker, naming this base's route to its parent as `local` or `remote`.
 The promised-public-reply subsystem is same-filesystem by construction, so a remote route can never carry a delegated public-reply promise; `bin/sq-teardown.sh`'s cleanup gate reads this record to treat a remote parent as out of scope rather than an unresolved binding.
 
 Local XOs keep the existing route form and need no migration.
@@ -169,7 +169,7 @@ SQUAD_HOME=<primary-home> bin/sq-send.sh sq-<id> '<request>'
 ```
 
 Marked requests keep the existing correlation contract.
-The remote charter appends replies to `state/parent-replies.status` in the remote home.
+The remote charter appends replies to `state/parent-replies.status` in the remote base.
 A process-event source performs a non-destructive, cursor-anchored delta read, fetches only referenced `data/*.md` documents through the confined reader, mirrors every content-bearing line at most once into the primary status channel, and does not carry blank separators.
 The channel carries the mate's status and decision model: an uncorrelated progress line and a newly raised `needs-decision` travel the same path as a correlated answer, and reach the parent's open-decision fold identically.
 Correlation is a per-line property that settles a pending request; it is never a gate on the stream, so no single line can stop or wedge the relay or hold the cursor back.
@@ -185,7 +185,7 @@ A shortened or changed prefix stops the relay and surfaces a continuity failure 
 An SSH exit status of 255 always means transport failure or unknown remote completion.
 The transport never retries automatically.
 Semantic callers preserve the route or pending request and require same-host reconciliation rather than resending an operation that may already have happened.
-An unavailable remote home is projected as unknown and is never replaced by a local second mate.
+An unavailable remote base is projected as unknown and is never replaced by a local second mate.
 
 ## Backlog handoff
 
@@ -209,7 +209,7 @@ Changed live routes receive a marked instruction to re-read the transferred file
 The primary records that remote nudge before delivery and retries it during locked startup convergence after a failed send.
 Local XOs retain their generation-specific local pointer contract; remote transfers do not copy those primary-local instruction paths.
 
-`/updatesquad` updates each remote code root from its own origin, then guardedly fast-forwards the persistent remote home to that code-root commit.
+`/updatesquad` updates each remote code root from its own origin, then guardedly fast-forwards the persistent remote base to that code-root commit.
 Dirty, diverged, unavailable, or otherwise unsafe targets are reported and left untouched.
 
 Retire a remote second mate with the normal guarded command:
@@ -218,11 +218,11 @@ Retire a remote second mate with the normal guarded command:
 bin/sq-teardown.sh <id>
 ```
 
-Retirement is executed on the configured host and refuses while the remote home has child work, while the primary has an unfinished backlog outbox, or while a routed reply remains unresolved.
+Retirement is executed on the configured host and refuses while the remote base has child work, while the primary has an unfinished backlog outbox, or while a routed reply remains unresolved.
 It closes only the retiring XO's panes or `xo-<id>` workspace in `sq-remote`; it never stops the shared session or removes a sibling XO's workspace or panes.
 SSH exit 255 preserves both the route and local records because completion is unknown.
 `--force` remains the explicit discard path and requires the same commander authority as local XO discard.
-No generic remote delete or write surface exists: remote writes are confined to inherited allowlist files and backlog handoff scratch files, and remote home removal is reachable only through guarded XO retirement.
+No generic remote delete or write surface exists: remote writes are confined to inherited allowlist files and backlog handoff scratch files, and remote base removal is reachable only through guarded XO retirement.
 
 ## Verification
 

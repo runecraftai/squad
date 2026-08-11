@@ -4,7 +4,7 @@
 # A stray persistent top-level `cd projects/<clone>` in the PRIMARY Squad
 # shell silently relocates the shell, so a later Squad-owned command (a
 # backlog write, an sq-* lifecycle call, tasks-axi) runs inside a project clone
-# instead of the home. This seatbelt denies such a command before it runs.
+# instead of the base. This seatbelt denies such a command before it runs.
 # bin/sq-cd-command-policy.mjs is the sole owner of the block/allow decision; it
 # reuses the shell classifier owned by bin/sq-arm-command-policy.mjs. This
 # wrapper only scopes the guard to the real primary checkout, acquires the
@@ -127,7 +127,7 @@ SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." 2>/dev/null
 # git-common-dir. An operator/recon task worktree - the shape bin/sq-spawn.sh
 # always hands out - is a linked git worktree where the two differ. This guard
 # does not inspect .sq-xo-home, so it applies in a git-cloned XO
-# home but remains inert when the XO home is itself a fob-leased
+# base but remains inert when the XO base is itself a fob-leased
 # linked worktree. docs/cd-guard.md owns this scope; docs/turnend-guard.md owns
 # the turn-end guard's separate marker-aware scope. Any failure to confirm the
 # checkout is inert (exit 0), never a block, so a broken environment never

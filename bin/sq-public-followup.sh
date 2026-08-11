@@ -17,27 +17,27 @@
 # ZERO OVERHEAD FOR HOMES THAT DO NOT USE THE RELAY: every subcommand gates
 # first on the authoritative activation contract (a non-empty SQX_PAIRING_TOKEN
 # in $SQUAD_HOME/.env). Read-side and cleanup paths then use an O(1) presence check
-# for registrations this home actually created. A relay-disabled home therefore
+# for registrations this base actually created. A relay-disabled base therefore
 # runs one [ -f ] test before any backlog work: no tasks-axi call, no backlog scan,
 # and no file created. Silent read-side commands return without output; commands
 # that require an active relay report their configuration error after the same
-# gate. A relay-enabled home with no live commitments stops at the second gate
+# gate. A relay-enabled base with no live commitments stops at the second gate
 # for the same cost.
 #
 # Usage:
 #   sq-public-followup.sh active
-#       Silent gate probe. Exit 0 when this home has live public-followup work
+#       Silent gate probe. Exit 0 when this base has live public-followup work
 #       worth looking at, 1 otherwise. Safe to call unconditionally.
 #
 #   sq-public-followup.sh register <obligation-id> --relation <relation-id>
-#         --work-home <main|XO:<id>> --work-id <task-id> --generation <n>
+#         --work-base <main|XO:<id>> --work-id <task-id> --generation <n>
 #         [--platform <x|discord>] [--request <request-id>]
 #       Record the binding the relay path just created with `tasks-axi
 #       public-followup add` + `bind-work`. This is the event-driven
-#       registration: it creates this home's private public-followup directories
+#       registration: it creates this base's private public-followup directories
 #       (0700) and the bounded public-safe registration record, which is what
 #       later makes the presence checks O(1) and lets bound work report a typed
-#       terminal result. Refuses when the relay is not active for this home.
+#       terminal result. Refuses when the relay is not active for this base.
 #
 #   sq-public-followup.sh brief <obligation-id>
 #       Print the exact sq-public-followup-emit.sh command line the bound worker
@@ -77,8 +77,8 @@
 #       the late-receipt path: use it when a post succeeded but its receipt was
 #       lost, never to paper over an unknown outcome.
 #
-#   sq-public-followup.sh guard-work <work-home-id> <work-id>
-#       Exit 3 when this home has an unresolved public commitment bound to that
+#   sq-public-followup.sh guard-work <work-base-id> <work-id>
+#       Exit 3 when this base has an unresolved public commitment bound to that
 #       exact work, printing one line per blocking obligation. Exit 0 otherwise.
 #       Cleanup paths call this so bound work is never treated as finished while
 #       its public promise is still open.
@@ -142,7 +142,7 @@ require_tools() {
   fm_tasks_axi_cmd >/dev/null 2>&1 || die "tasks-axi is required (install the sq-tasks-axi fork or legacy tasks-axi)" 1
 }
 
-# Every tasks-axi call runs from the home whose backlog owns the obligation, the
+# Every tasks-axi call runs from the base whose backlog owns the obligation, the
 # same convention bin/sq-decision-hold.sh uses for typed backlog state.
 tx() { (cd "$SQUAD_HOME" && tasks-axi "$@"); }
 
@@ -166,8 +166,8 @@ pf_field() { printf '%s' "$1" | jq -r "$2 // empty" 2>/dev/null; }
 # --- gates ------------------------------------------------------------------
 
 # gate_or_exit: the shared silent gate for every read-side subcommand. Exits 0
-# with no output when this home has no public-followup work, so callers can
-# invoke unconditionally without a relay-disabled home paying anything.
+# with no output when this base has no public-followup work, so callers can
+# invoke unconditionally without a relay-disabled base paying anything.
 gate_or_exit() {
   fm_pf_relay_active "$SQUAD_HOME" || exit 0
   fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE" || exit 0
@@ -382,7 +382,7 @@ cmd_consume() {
       continue
     fi
 
-    # tasks-axi is the authority on source home, work id, generation, schema,
+    # tasks-axi is the authority on source base, work id, generation, schema,
     # outcome, and deliverables. Anything it refuses is quarantined verbatim.
     # stderr is captured separately so a warning can never corrupt the JSON that
     # the accepted path parses.

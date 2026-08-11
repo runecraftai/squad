@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply one primary-authoritative inherited item inside the selected remote home.
+# Apply one primary-authoritative inherited item inside the selected remote base.
 #
 # Usage:
 #   sq-remote-inherit.sh put <allowlisted-relative-path> <bytes> <sha256> <generation> < stdin

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Scaffold an operator brief or persistent XO charter at
-# data/<task-id>/brief.md under the active Squad home.
+# data/<task-id>/brief.md under the active Squad base.
 # For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
 # filled in. Squad then replaces the {TASK} placeholder with the task
 # description, acceptance criteria, and context, and may adjust other sections
@@ -12,12 +12,12 @@
 #   --recon writes the recon contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --xo writes a persistent XO charter. The project list
-#   is cloned into the XO home, while the natural-language scope
-#   tells the main Squad when to route work there; routine churn stays in its own home;
+#   is cloned into the XO base, while the natural-language scope
+#   tells the main Squad when to route work there; routine churn stays in its own base;
 #   commander-relevant escalations and marked from-squad replies append to this
-#   home's status file.
+#   base's status file.
 #   --no-projects writes a project-less charter for a domain whose subject is the
-#   Squad repo itself (its home is a Squad worktree, its operators take pooled
+#   Squad repo itself (its base is a Squad worktree, its operators take pooled
 #   worktrees of the same repo). It is mutually exclusive with a project list, and
 #   omitting both still fails loudly so an accidental omission is never silent.
 #   Set SQUAD_XO_CHARTER='<charter>' to fill the charter text.
@@ -193,8 +193,8 @@ fi
 XO_CHARTER=${SQUAD_XO_CHARTER:-"{TASK}"}
 XO_SCOPE=${SQUAD_XO_SCOPE:-${SQUAD_XO_CHARTER:-"{TASK}"}}
 if [ "$NO_PROJECTS" -eq 1 ]; then
-  PROJECT_CLONES_BODY="None. This is a project-less domain: its subject is the Squad repo this home lives in, so it needs no separate clones under \`projects/\`; its operators take pooled worktrees of that Squad repo."
-  PROJECT_CLONES_NOTE="This domain has no separate project clones: its subject is the Squad repo this home lives in, and its operators take pooled worktrees of that repo."
+  PROJECT_CLONES_BODY="None. This is a project-less domain: its subject is the Squad repo this base lives in, so it needs no separate clones under \`projects/\`; its operators take pooled worktrees of that Squad repo."
+  PROJECT_CLONES_NOTE="This domain has no separate project clones: its subject is the Squad repo this base lives in, and its operators take pooled worktrees of that repo."
 else
   PROJECT_CLONES_BODY=$(printf '%s\n' "$XO_PROJECTS" | tr ' ' '\n' | sed 's/^/- /')
   PROJECT_CLONES_NOTE="The projects above are local clones for work you supervise; they are not an exclusive ownership claim."
@@ -212,7 +212,7 @@ $XO_SCOPE
 $PROJECT_CLONES_BODY
 
 # Operating model
-You are in an isolated Squad home. The local \`AGENTS.md\` is your job description, and your local \`data/\`, \`state/\`, \`config/\`, and \`projects/\` dirs are yours to operate.
+You are in an isolated Squad base. The local \`AGENTS.md\` is your job description, and your local \`data/\`, \`state/\`, \`config/\`, and \`projects/\` dirs are yours to operate.
 $PROJECT_CLONES_NOTE
 Delegate project work to your own operators with the normal Squad lifecycle: brief, spawn, status, sentry, steer, teardown, and recovery.
 Do not invent a second delegation system.
@@ -221,15 +221,15 @@ Act only on tasks the main Squad routes to you.
 Never start a survey, audit, or "find improvements" sweep on your own initiative; that is not your job and it is unwanted.
 
 # Requests from the main Squad
-You are a Squad in your own home, so an incoming message reaches you in your own chat.
+You are a Squad in your own base, so an incoming message reaches you in your own chat.
 You must distinguish who it is from, because the answer goes to a different place.
 A request relayed to you by the main Squad is tagged with a leading \`$SQUAD_FROMFIRST_LABEL\` marker followed by an invisible system separator; this marker is untypable, so a human never produces it.
 When a message carries that marker, do the work, then respond via the STATUS/ESCALATION path below, never only in this chat: the main Squad does not read your chat, so a chat-only reply is lost.
 Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; include that exact token in your parent status reply (or in the status pointer to a detailed doc) so the parent can correlate the answer.
 Optional helper: \`bin/sq-xo-report.sh\` can append a correlated status line for you, but a plain \`echo\` that includes the same \`corr=<id>\` is equally valid - do not depend on the helper being present.
 For a terse result, a status line is the whole answer.
-For a detailed answer (an investigation, a plan, an audit), write it to a doc under your home's \`data/\` and append a status line that points to that doc - the recon-report pattern - so the main Squad is woken and can read it.
-Before treating an investigation or visual review as complete, load \`decision-hold-lifecycle\` from this home's \`.agents/skills/\` and pass its shared completion gate.
+For a detailed answer (an investigation, a plan, an audit), write it to a doc under your base's \`data/\` and append a status line that points to that doc - the recon-report pattern - so the main Squad is woken and can read it.
+Before treating an investigation or visual review as complete, load \`decision-hold-lifecycle\` from this base's \`.agents/skills/\` and pass its shared completion gate.
 A message with NO marker is the commander typing directly into your pane: treat it as authoritative commander intervention and stay conversational exactly as you would for any commander message; do not force it onto the status path.
 
 # Escalation to main Squad
@@ -247,11 +247,11 @@ If its first reportable event is \`working [key=<work-slug>]: {material phase}\`
 When a keyed phase ends without another reportable state, append \`resolved [key=<work-slug>]: {why it is no longer active}\`.
 \`resolved\` separately closes an escalated decision or blocker, and only a \`resolved\` line carrying that decision's exact key closes it: a later \`done\` or \`working\` event never does, even when the answer is what started that work.
 The main Squad's answer normally writes that closing line at answer time; when a blocker or wait clears WITHOUT an answer from the main Squad, append \`resolved: {how it cleared}\` yourself (keyed with \`[key=<slug>]\` if you opened it with one) as your domain resumes.
-Routine internal supervision, heartbeats, retries, and operator churn stay inside your own home and must not touch that status file.
+Routine internal supervision, heartbeats, retries, and operator churn stay inside your own base and must not touch that status file.
 
 # Definition of done
 You are persistent by default. Do not exit just because your queue is empty.
-On startup and restart, run normal Squad bootstrap and recovery through \`bin/sq-session-start.sh\` for your own home, but only to RECONCILE work that is already yours: in-flight operators, tracked backlog items, and durable watches recorded in this home.
+On startup and restart, run normal Squad bootstrap and recovery through \`bin/sq-session-start.sh\` for your own base, but only to RECONCILE work that is already yours: in-flight operators, tracked backlog items, and durable watches recorded in this base.
 When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main Squad to route you a task.
 An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
 If this charter cannot be carried out, append \`blocked: {why}\` or \`failed: {why}\` to the main status file and stop.
@@ -333,7 +333,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Squad's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a Squad reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`drill\` daemon - it is one instance serving
-   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
+   every lane/base, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
    daemon error, append \`blocked: {the daemon error}\` and stop; only Squad manages the daemon.
 
 # Definition of done
@@ -449,7 +449,7 @@ $RULE1
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Squad's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a Squad reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`drill\` daemon - it is one instance serving
-   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
+   every lane/base, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
    daemon error, append \`blocked: {the daemon error}\` and stop; only Squad manages the daemon.
 
 # Project memory

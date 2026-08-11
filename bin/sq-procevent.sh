@@ -37,12 +37,12 @@
 #            twice. Until this is called, the result stays eligible for
 #            bounded re-announcement on every reconcile. Marking a result
 #            handled does not retire its source registration or claim.
-# retire     Drop a registration, stop a runner this home owns, release the claim.
+# retire     Drop a registration, stop a runner this base owns, release the claim.
 #            Idempotent, and still the supported explicit path after a source has
 #            already retired itself on its adapter's terminal verdict.
-# sweep-home Retire a bounded snapshot of this home's registrations and owned
+# sweep-home Retire a bounded snapshot of this base's registrations and owned
 #            claims, then refuse unless no registration, runner record, or owned
-#            claim remains. Used by supported Squad home retirement.
+#            claim remains. Used by supported Squad base retirement.
 # list       Show registered sources, owners, and pending captured results.
 #
 # Terminal knowledge is adapter-owned. This runner never inspects a result and
@@ -53,7 +53,7 @@
 #
 # Applying a result is adapter-owned through the same kind of seam. Some results
 # carry no judgement at all - they must simply be applied idempotently to the
-# home's own durable state - and leaving that to an agent that has to remember
+# base's own durable state - and leaving that to an agent that has to remember
 # means it silently does not happen. So after publishing, `start` calls
 # `bin/sq-procevent-<adapter>.sh autohandle <source-id> <sequence> <result-file>`
 # and lets the adapter apply and acknowledge its own result. Exit 0 means the
@@ -63,7 +63,7 @@
 # runner still inspects nothing and still names no adapter-specific condition.
 #
 # Ownership is machine-wide per canonical source, because separate Squad
-# homes can share one underlying source store. A live owner is never displaced;
+# bases can share one underlying source store. A live owner is never displaced;
 # only a claim whose whole generation is gone is reclaimed. A runner leads its
 # own process group, so a crashed leader whose group still has members is not
 # stale: reconcile stops that surviving group and releases its generation before
@@ -432,7 +432,7 @@ cmd_reconcile() {
   local rec id published started=0 stopped=0 uncertain=0 claim owner pid token identity claim_state stop_state
   published=$(publish_pending)
 
-  # Stop a runner this home owns whose source is no longer registered. Without
+  # Stop a runner this base owns whose source is no longer registered. Without
   # this, unregistering a source that never completes leaves its child blocked
   # forever with nothing left to reap it.
   for claim in "$(fm_procevent_claim_root)"/*.claim; do
@@ -506,7 +506,7 @@ cmd_reconcile() {
           # source. Never start a replacement alongside it: stop that group and
           # release its generation first, and if either cannot be proved, keep
           # the claim and retry on a later cycle rather than adding a second
-          # poller. Only the owning home may signal its own group.
+          # poller. Only the owning base may signal its own group.
           owner=$SQUAD_PROCEVENT_CLAIM_HOME
           pid=$SQUAD_PROCEVENT_CLAIM_PID
           token=$SQUAD_PROCEVENT_CLAIM_TOKEN

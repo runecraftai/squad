@@ -71,16 +71,16 @@ Never at-least-once, no-loss, or lossless.
 
 ## What the runner does prove
 
-Exercised by `tests/sq-procevent.test.sh` against a fake blocking source whose completion is a process event, not a timer; for the two supervision-delivery rows below, by `tests/sq-sentry-triage.test.sh` driving a real `bin/sq-sentry.sh` over a real capture; and for adapter-owned application, by `tests/sq-remote-reply.test.sh` driving the real remote-reply relay end to end in an isolated home:
+Exercised by `tests/sq-procevent.test.sh` against a fake blocking source whose completion is a process event, not a timer; for the two supervision-delivery rows below, by `tests/sq-sentry-triage.test.sh` driving a real `bin/sq-sentry.sh` over a real capture; and for adapter-owned application, by `tests/sq-remote-reply.test.sh` driving the real remote-reply relay end to end in an isolated base:
 
 | Guarantee | How it is proven |
 | --- | --- |
 | capture before publication | the captured result exists at `0600` and its event names its committed sequence only afterward |
-| proactive delivery of a captured result | a real capture into an isolated home queues its `check` record, and a healthy sentry with a fresh beacon then exits reporting that queued result as an actionable check, before any manual drain |
+| proactive delivery of a captured result | a real capture into an isolated base queues its `check` record, and a healthy sentry with a fresh beacon then exits reporting that queued result as an actionable check, before any manual drain |
 | single delivery per source and sequence | after that first proactive wake, a still-unhandled result keeps being re-announced onto the durable queue but never wakes the sentry again; once existing records are drained and the result is acknowledged, it is neither re-announced nor reported |
 | proactive-delivery crash and drain boundaries | dotted and underscored source ids at the same sequence receive distinct markers; a concurrent drain cannot consume between queue revalidation and marker commit; failed output, failed marker commit, and a crash before marker commit leave replay available, while successful output still ends the actionable cycle and a crash after marker commit suppresses a duplicate |
 | adapter-owned terminal verdict | two fixture adapters - one that ends on any result, one with no terminal knowledge - decide the outcome alone: the first has its registration and claim retired automatically after one capture and is never restarted, the second stays armed |
-| adapter-owned application of a captured result | a remote-XO reply captured through the real relay in an isolated home reaches that XO's local status mirror, settles its correlated pending-reply expectation, re-arms the next cursor-anchored source, and is acknowledged, with no handler step; for an already-escalated request, that same path closes the exact decision so the open-decision fold clears and remains clear; a capture whose adapter application fails because local storage for a referenced remote document is obstructed is left unacknowledged and untouched, and the handler's own `handle` still applies it in full after storage recovers |
+| adapter-owned application of a captured result | a remote-XO reply captured through the real relay in an isolated base reaches that XO's local status mirror, settles its correlated pending-reply expectation, re-arms the next cursor-anchored source, and is acknowledged, with no handler step; for an already-escalated request, that same path closes the exact decision so the open-decision fold clears and remains clear; a capture whose adapter application fails because local storage for a referenced remote document is obstructed is left unacknowledged and untouched, and the handler's own `handle` still applies it in full after storage recovers |
 | terminal retirement preserves the result | the retired source's captured output, its announced event, its handled acknowledgement, and later explicit `retire` all still behave normally |
 | registration-generation retirement | an old terminal runner preserves a concurrently replaced registration and releases ownership so the replacement runs independently; injected registration-removal failure retains a terminal claim, performs no second poll, and completes idempotently once removal recovers |
 | one `Send & End`, one result | an armed Lavish source driven against a stand-in for the published poll, which delivers the final `session_ended` feedback once and empty ended sessions afterward, polls exactly once, captures exactly one result, publishes one distinct event, and retires itself |
@@ -91,39 +91,39 @@ Exercised by `tests/sq-procevent.test.sh` against a fake blocking source whose c
 | immutable adapter identity | a captured result retains its adapter after its mutable registration is removed |
 | trusted classification boundary | Lavish lifecycle classification reads the leading response envelope, so prompt payload text that resembles a missing-session error cannot override a valid session status |
 | result identity and ordering | each wake names the committed sequence to read, and pending sequences 1, 2, and 10 publish in numeric order |
-| one owner per canonical source | a second home's `start` for the same source id reports `already owned` and publishes nothing |
+| one owner per canonical source | a second base's `start` for the same source id reports `already owned` and publishes nothing |
 | canonical physical identity | a final-component symlink and its target produce the same Lavish source id |
 | isolated public start boundary | direct `start` establishes a new runner-led process group before claiming the source, so retirement cannot signal an unrelated process inherited from the caller's group |
-| stale reclaim without displacement | concurrent contenders replacing one stale claim start exactly one runner, and cross-home replacement removes the old generation's staging file from its recorded state directory |
+| stale reclaim without displacement | concurrent contenders replacing one stale claim start exactly one runner, and cross-base replacement removes the old generation's staging file from its recorded state directory |
 | crashed leader with a live owned group | `SIGKILL` on only the runner leader leaves its blocking child group alive; reconcile then stops that surviving group before any replacement starts, never leaves two source processes running for one canonical source, and a generation with no leader and no surviving group is still reclaimed |
 | PID-reuse safety | retirement refuses to signal a live PID whose identity differs from the claim, and a reused PID never reaches the group-stop path because its leader is alive |
 | coherent ownership reads | a claim replacement held inside the source boundary blocks `list` until one complete generation is visible |
 | retire-start exclusion | a queued start revalidates registration after the serialized retirement boundary and executes no child |
 | uncertain identity | a live owner whose identity probe transiently fails is not signaled or released, and its registration remains for retry |
-| bounded home sweep | a non-mutating full-tree preflight precedes teardown, then registrations and claim-only owned sources retire through the ordinary safe path at each home-removal boundary |
-| sweep refusal | uncertain identity preserves the runner, claim, registration, home, lease, and parent retirement evidence for retry |
-| foreign ownership | sweeping one home removes its registration without signaling or releasing another home's live claim |
-| nested and force cleanup | normal, force, and nested XO removal invoke each target home's sweep at its final removal boundary, a failed removal restores and rearms registrations, and failed rearming at any nested level retains and reports its recovery backup with a distinct status |
-| teardown refusal ordering | a later public-followup refusal retains the home and its active process-event registration without invoking its sweep |
-| healthy-home invariance | homes with no registration or owned runner claim retain ordinary registration-only supervision and teardown behavior |
+| bounded base sweep | a non-mutating full-tree preflight precedes teardown, then registrations and claim-only owned sources retire through the ordinary safe path at each base-removal boundary |
+| sweep refusal | uncertain identity preserves the runner, claim, registration, base, lease, and parent retirement evidence for retry |
+| foreign ownership | sweeping one base removes its registration without signaling or releasing another base's live claim |
+| nested and force cleanup | normal, force, and nested XO removal invoke each target base's sweep at its final removal boundary, a failed removal restores and rearms registrations, and failed rearming at any nested level retains and reports its recovery backup with a distinct status |
+| teardown refusal ordering | a later public-followup refusal retains the base and its active process-event registration without invoking its sweep |
+| healthy-base invariance | bases with no registration or owned runner claim retain ordinary registration-only supervision and teardown behavior |
 | source-only supervision | a registered source with no task metadata trips the shared predicate and general guard |
 | argv integrity | an argument containing spaces survives as one argument, a shell-looking argument is passed literally with no interpretation, and an unrepresentable newline is rejected at registration |
 | bounded output | output beyond `SQUAD_PROCEVENT_MAX_OUTPUT_BYTES` is drained while only the bound is staged, then truncated and captured |
 | silent failure handling | a nonzero exit with no output publishes nothing and leaves the source registered for retry |
-| inertness | a home with no registered source generates no state, starts no process, and does not need supervision |
+| inertness | a base with no registered source generates no state, starts no process, and does not need supervision |
 
 ## Runner lifetime and cleanup
 
 A runner started by `reconcile` is its own process group leader and is reparented to init, so it outlives the shell that started it by design.
-That means nothing about the starting context can reap it: removing a home's state directory does not stop an already-running child, and signalling only the runner leaves the blocking child alive.
+That means nothing about the starting context can reap it: removing a base's state directory does not stop an already-running child, and signalling only the runner leaves the blocking child alive.
 
 Two paths therefore stop a runner, and both verify the runner-owned process group, escalate to `KILL` while that group still exists, and refuse to release ownership until the whole group is gone:
 
-- `retire` resolves the runner PID and identity from this home's machine-wide claim, so retirement still works when the home's state is already gone.
-- `reconcile` stops a runner this home owns whose source registration has been removed, and reports it as `stopped=N`.
+- `retire` resolves the runner PID and identity from this base's machine-wide claim, so retirement still works when the base's state is already gone.
+- `reconcile` stops a runner this base owns whose source registration has been removed, and reports it as `stopped=N`.
 
 The same group rule decides when a claim may be reclaimed, not only when a runner may be signalled.
-A leader that died while its owned group kept running is not a stale generation, so `reconcile` stops that surviving group and releases its generation before starting any replacement, and preserves the claim for a later retry when it cannot prove the group stopped or another home owns it.
+A leader that died while its owned group kept running is not a stale generation, so `reconcile` stops that surviving group and releases its generation before starting any replacement, and preserves the claim for a later retry when it cannot prove the group stopped or another base owns it.
 Signalling that group is safe precisely because only an absent leader reaches this state: a reused PID leaves the leader alive, which the identity comparison classifies as stale or uncertain, and no group signal follows.
 
 This was found by four orphaned runners, elapsed 6-13 minutes, left by a suite whose fixture source never completed.

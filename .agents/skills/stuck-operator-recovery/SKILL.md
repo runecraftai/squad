@@ -27,7 +27,7 @@ A drill run matched to the operator's branch and current code remains authoritat
 
 When no authoritative run accounts for the task, inspect only its recorded backend and worktree inventory.
 Use `fob status` for fob-backed tmux, herdr, zellij, or cmux tasks, and use the recorded `orca_worktree_id=` and `terminal=` for Orca tasks.
-Do not sweep another home's endpoints or infer ownership from a matching window label.
+Do not sweep another base's endpoints or infer ownership from a matching window label.
 
 Before relaunch, prove that no live agent still owns the recorded task and that the existing worktree remains available.
 Preserve its uncommitted changes and commits, keep the same task identity, and resume or relaunch the recorded harness in that existing worktree with the same brief plus a concise progress note.
@@ -39,9 +39,9 @@ If the worktree or ownership cannot be reconciled safely, leave all state intact
 Escalate in order:
 
 1. Peek the pane.
-2. If the operator is waiting on a question its brief already answers, answer in one line via `SQUAD_HOME=<this-Squad-home> bin/sq-send.sh` from an active Squad session unless `SQUAD_HOME` is already set to the active Squad home.
+2. If the operator is waiting on a question its brief already answers, answer in one line via `SQUAD_HOME=<this-Squad-base> bin/sq-send.sh` from an active Squad session unless `SQUAD_HOME` is already set to the active Squad base.
 3. If the operator is confused or looping, interrupt with the adapter's interrupt key, then redirect with one corrective line.
-   For example, for a single-Escape adapter: `SQUAD_HOME=<this-Squad-home> bin/sq-send.sh <window> --key Escape`.
+   For example, for a single-Escape adapter: `SQUAD_HOME=<this-Squad-base> bin/sq-send.sh <window> --key Escape`.
 4. If the operator is genuinely wedged after redirection, exit the agent with the adapter's exit command and relaunch with the same brief plus a `progress so far` note appended to it.
    Genuine wedging means looping, unresponsive, repeating the same obstacle, or truly dead.
    A low context reading is not wedging; modern harnesses auto-compact and keep going.

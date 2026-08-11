@@ -38,8 +38,8 @@ READ_ONLY=${SQUAD_GUARD_READ_ONLY:-0}
 case "$READ_ONLY" in 1|true|TRUE|yes|YES) READ_ONLY=1 ;; *) READ_ONLY=0 ;; esac
 CONTINUE_LINE=${SQUAD_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
 
-# Volatile, home-scoped episode marker: one line = the current stale-episode key.
-# Cleared when the home leaves the unhealthy state so a later episode re-arms.
+# Volatile, base-scoped episode marker: one line = the current stale-episode key.
+# Cleared when the base leaves the unhealthy state so a later episode re-arms.
 STALE_BANNER_MARKER="$STATE/.guard-sentry-stale-banner"
 
 # shellcheck source=bin/sq-stand-to-lib.sh
@@ -122,7 +122,7 @@ fm_guard_clear_stale_banner() {
 # operator's branch/commits landed here instead of in its own isolated worktree,
 # the primary is stranded on a feature branch - surface it loudly on the very next
 # unit action, the same way the sentry-down banner does. Scoped to the primary
-# only: detached HEAD (linked worktrees, XO homes) never trips this.
+# only: detached HEAD (linked worktrees, XO bases) never trips this.
 tangle_branch=$(fm_primary_tangle_branch "$SQUAD_ROOT" || true)
 if [ -n "$tangle_branch" ]; then
   tangle_default=$(fm_default_branch "$SQUAD_ROOT" 2>/dev/null || echo main)

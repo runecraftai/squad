@@ -14,7 +14,7 @@
 # one automatic recovery request asking for a repost through the parent channel,
 # and escalate once if the recovery turn also completes without a correlated
 # report. Never loop, never repeatedly inject, never silently expire unresolved
-# records, and never treat wrong-home or structured-home heuristics as
+# records, and never treat wrong-base or structured-base heuristics as
 # acknowledgement.
 #
 # Record location (parent SQUAD_HOME):
@@ -22,7 +22,7 @@
 # Each record is a key=value file owned by this library. Schema:
 #   schema=sq-pending-reply.v1
 #   corr_id=                privacy-safe correlation token
-#   task_id=                XO task id in the parent home
+#   task_id=                XO task id in the parent base
 #   parent_home=            absolute parent SQUAD_HOME
 #   parent_status=          absolute path of parent state/<task_id>.status
 #   parent_status_scan_signature=
@@ -49,7 +49,7 @@
 #                           lifecycle note below); empty until then
 #   resolved_epoch=
 #   resolved_via=           status | document | helper | empty
-#   wrong_home_hits=        count of corr sightings under the XO home
+#   wrong_home_hits=        count of corr sightings under the XO base
 #   wrong_home_sightings=   comma-separated identities of counted sightings
 #   wrong_home_scan_signature=
 #   grace_secs=             bounded grace before recovery is eligible
@@ -1003,7 +1003,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   return 0
 }
 
-# Detect a correlated report written under the XO home (wrong home)
+# Detect a correlated report written under the XO base (wrong base)
 # without treating it as acknowledgement.
 fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <XO-home>
   local state=$1 corr=$2 sm_home=$3
@@ -1119,7 +1119,7 @@ fm_pending_reply_tick_one() {  # <state-dir> <corr_id> <busy_state> [XO-home]
 
 # Scan every pending record for this parent state. Safe to call every poll.
 # Never scrapes XO conversation; uses only parent status, backend busy
-# state, and optional XO-home wrong-home path checks.
+# state, and optional XO-base wrong-base path checks.
 fm_pending_reply_tick() {  # <state-dir>
   local state=$1 dir rec corr task_id phase delivered meta backend target label busy sm_home harness remote_host
   local observation observation_task found i

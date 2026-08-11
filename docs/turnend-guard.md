@@ -20,7 +20,7 @@ The guard remains a backstop; [`sentry-continuity.md`](sentry-continuity.md) own
 ## Guard predicates
 
 The guard first calls the shared primary scope.
-An XO home runs its own primary Squad session, so a genuine `.sq-xo-home` marker includes it whether the home is a linked worktree or plain clone.
+An XO base runs its own primary Squad session, so a genuine `.sq-xo-home` marker includes it whether the base is a linked worktree or plain clone.
 The marker must be a regular non-symlink file whose whitespace-stripped first line is a non-empty identifier containing only letters, digits, dots, underscores, and dashes.
 An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps operator and recon linked worktrees inert because their git dir differs from their git common dir.
@@ -96,7 +96,7 @@ That warning uses `bin/sq-supervision-instructions.sh --repair-line`, so it alwa
 ## Compatibility limits
 
 - Child operator and recon worktrees are outside scope.
-- A valid XO home is in scope; an idle XO endpoint with no Relay poll remains healthy because it has no supervision need.
+- A valid XO base is in scope; an idle XO endpoint with no Relay poll remains healthy because it has no supervision need.
 - The direct-blocking and bounded passive-follow-up split is limited to the primary integrations listed above.
 - OpenCode headless mode and untrusted Grok project hooks remain fail-open at the host boundary.
 - Kimi Code CLI 0.29.1 exposes only global `[[hooks]]` configuration in `~/.kimi-code/config.toml`, including a `Stop` event with snake_case payload fields `hook_event_name`, `session_id`, `cwd`, and `stop_hook_active`.

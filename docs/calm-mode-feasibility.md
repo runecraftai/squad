@@ -5,7 +5,7 @@ This document owns the version-scoped feasibility evidence, Pi transcript taxono
 
 ## Required extension surface
 
-A qualifying implementation must auto-load from the trusted project, persist the toggle choice for the effective Squad home across Pi session starts and resumes, keep working activity visible, emit no Calm status row, redraw already-rendered controllable rows, remove supported hidden rows without gaps, restore ordinary rendering, and leave delivery, tool execution, model context, session storage, export and share operation, diagnostics, and expansion state unchanged.
+A qualifying implementation must auto-load from the trusted project, persist the toggle choice for the effective Squad base across Pi session starts and resumes, keep working activity visible, emit no Calm status row, redraw already-rendered controllable rows, remove supported hidden rows without gaps, restore ordinary rendering, and leave delivery, tool execution, model context, session storage, export and share operation, diagnostics, and expansion state unchanged.
 The governing presentation policy allows genuine original user prompts, genuine user-facing assistant text, and working activity.
 Working activity may be presented through Pi's stock row or through a supported Calm-owned widget, but Calm must leave the stock row untouched whenever Calm is off.
 Changing persisted context to remove hidden content, filtering provider context, patching installed harness code, or claiming coverage outside a supported renderer does not satisfy that boundary.
@@ -41,7 +41,7 @@ $ pi --version
 
 ### Original transcript cleanup
 
-The pre-cleanup reproduction used a real isolated Pi TUI at 180 columns by 44 rows with the tracked Calm and sentry extensions, an isolated `SQUAD_HOME`, and a live home-owned sentry cycle.
+The pre-cleanup reproduction used a real isolated Pi TUI at 180 columns by 44 rows with the tracked Calm and sentry extensions, an isolated `SQUAD_HOME`, and a live base-owned sentry cycle.
 The model called `fm_watch_arm_pi`, the real tool returned `sentry: started Pi extension arm child 1`, and a `done:` status write caused the sentry extension to inject `SQUAD WATCHER WAKE: signal: ...` followed by the stable drain instruction.
 With Calm off, the captured transcript contained the genuine user prompt, the full sentry tool shell, the synthetic user-role wake, four collapsed `Thinking...` labels, built-in tool rows from wake handling, and the final assistant response.
 With the pre-cleanup implementation's Calm mode on, the existing seven built-in tool rows disappeared, but the sentry tool shell, synthetic wake, and all four `Thinking...` labels remained.
@@ -182,7 +182,7 @@ Compaction and retry loaders remain stock because Pi exposes no supported replac
 `bin/sq-operational-input.sh` owns current cross-language operational-input construction and parsing, while the thin Pi adapter lives at `.pi/extensions/lib/sq-operational-input.ts`.
 Only `genuine-user-prompt`, `genuine-agent-response`, and `working-status` are policy-visible.
 Every other audited class is policy-hidden when Pi exposes a supported presentation boundary, but semantic input is never transformed to enforce that preference.
-The home-local persistence schema is owned by [`docs/configuration.md`](configuration.md#pi-calm-preference-configcalm).
+The base-local persistence schema is owned by [`docs/configuration.md`](configuration.md#pi-calm-preference-configcalm).
 
 Current session-start, sentry, turn-end guard, away supervisor, and launch-brief inputs retain their versioned U+2063 static envelopes.
 The established leading `[sq-from-squad]` plus U+2063 routing carrier remains current so running XO charters remain compatible.

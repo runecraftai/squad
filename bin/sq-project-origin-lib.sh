@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a project origin URL that one home hands to another.
+# Validate a project origin URL that one base hands to another.
 #
 # Squad supplies a project's origin instead of discovering it from a local
 # clone, and the receiving host re-validates whatever reached it, so this file
@@ -31,7 +31,7 @@
 # Refused:
 #   remote-helper transports such as "ext::<command>", which git executes as a
 #   command whenever the cloning host's protocol configuration permits it, and
-#   the sending home cannot see that configuration
+#   the sending base cannot see that configuration
 #   any other unknown scheme
 #   option-shaped values a later command line could absorb as a flag
 #   whitespace and control characters, including embedded newlines

@@ -2,7 +2,7 @@
 # Print the tail of an operator endpoint (bounded, for cheap diagnosis).
 # Usage: sq-peek.sh <target> [lines=40]
 #   <target> may be an exact task id, a legacy sq-<id> task label resolved
-#   through this home's state/<id>.meta, or an explicit backend target.
+#   through this base's state/<id>.meta, or an explicit backend target.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

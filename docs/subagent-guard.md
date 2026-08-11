@@ -2,8 +2,8 @@
 
 This document is the authoritative human-readable contract for the guard that stops a Squad primary from delegating work outside the unit.
 
-The shipped mechanism is `bin/sq-subagent-pretool-check.sh`, a PreToolUse guard that denies a delegation-SHAPED tool name in a genuine primary home.
-Claude primaries should also use an untracked per-home local `permissions.deny` list as hardening for known Claude delegation tools, because it removes them from the model's schema entirely.
+The shipped mechanism is `bin/sq-subagent-pretool-check.sh`, a PreToolUse guard that denies a delegation-SHAPED tool name in a genuine primary base.
+Claude primaries should also use an untracked per-base local `permissions.deny` list as hardening for known Claude delegation tools, because it removes them from the model's schema entirely.
 That deny list must not ship in tracked `.claude/settings.json` because it is Claude-only rather than harness-agnostic, and because tracked project settings propagate into linked worktrees where they disarm legitimate operators.
 
 ## Why this exists
@@ -69,7 +69,7 @@ That future-name behavior is the reason the tracked matcher must match all tools
 
 ## Recommended Local Claude Deny List
 
-Claude primaries should add this deny list in untracked per-home local settings, never in tracked `.claude/settings.json`:
+Claude primaries should add this deny list in untracked per-base local settings, never in tracked `.claude/settings.json`:
 
 ```json
 {
@@ -133,16 +133,16 @@ It costs one line and removes the failure mode where a rename or a rollback sile
 
 ## Scope
 
-The shipped hook fires only in a genuine Squad primary home, using the shared predicate `fm_primary_scope_matches` from `bin/sq-primary-scope-lib.sh`.
+The shipped hook fires only in a genuine Squad primary base, using the shared predicate `fm_primary_scope_matches` from `bin/sq-primary-scope-lib.sh`.
 This is the same predicate `bin/sq-sessionstart-nudge.sh` and `bin/sq-turnend-guard.sh` use, so the three tracked primary-scoped hooks cannot drift apart.
 
-A home is in scope when it has `AGENTS.md`, a `bin/` directory, an existing state directory, and either a plain checkout where git-dir equals git-common-dir or a valid `.sq-xo-home` marker.
-A marked XO home is in scope on purpose: it operates its own unit and must dispatch through it for the same durability reasons.
+A base is in scope when it has `AGENTS.md`, a `bin/` directory, an existing state directory, and either a plain checkout where git-dir equals git-common-dir or a valid `.sq-xo-home` marker.
+A marked XO base is in scope on purpose: it operates its own unit and must dispatch through it for the same durability reasons.
 
 An operator's disposable task worktree is a linked git worktree, which is the shape `bin/sq-spawn.sh` always hands out, so it is out of scope.
 An operator using delegation tools inside its own task worktree is legitimate and stays allowed.
 A non-Squad repo is out of scope.
-Any failure to confirm the home is inert, never a block, so a broken environment can never deny a tool call.
+Any failure to confirm the base is inert, never a block, so a broken environment can never deny a tool call.
 
 A local Claude deny list is upstream of hook scope and removes known Claude delegation tools wherever Claude applies it.
 Do not put that list in tracked project settings, because linked worktrees inherit those settings and would lose legitimate delegation tools.
@@ -170,7 +170,7 @@ A tool removed from the schema stays removed, so a genuinely intended use of a l
 - Malformed or empty stdin, invalid JSON, a payload with no tool name, and missing `jq` for stdin transport all fail open with exit 0 and no output.
 
 The deny message names the real dispatch path.
-When `bin/sq-recon.sh` exists in the home the message first defers to the `AGENTS.md` intake classification, then routes work already classified as a recon there and authorized ship work with its bounded research to `bin/sq-brief.sh` then `bin/sq-spawn.sh`.
+When `bin/sq-recon.sh` exists in the base the message first defers to the `AGENTS.md` intake classification, then routes work already classified as a recon there and authorized ship work with its bounded research to `bin/sq-brief.sh` then `bin/sq-spawn.sh`.
 When that script is absent the message still defers to intake classification and degrades to naming `bin/sq-brief.sh` then `bin/sq-spawn.sh` for dispatched work, rather than pointing at a script that is not there.
 
 ## Harness wiring
@@ -333,12 +333,12 @@ The Workflow tool call was not blocked by a hook. It executed normally: launched
 and completed successfully returning {"result":"ok"}.
 ```
 
-Same hook, same bytes, deny in the primary home and allow in an operator-shaped worktree.
+Same hook, same bytes, deny in the primary base and allow in an operator-shaped worktree.
 This is the scoping contract working end to end rather than a hook that simply never fires.
 
 ### Escape hatch
 
-The same `Workflow` prompt in the scratch primary home, launched as `SQUAD_ALLOW_SUBAGENT=1 claude -p ...`:
+The same `Workflow` prompt in the scratch primary base, launched as `SQUAD_ALLOW_SUBAGENT=1 claude -p ...`:
 
 ```text
 Result: the Workflow tool call was NOT blocked by a hook. It launched and ran to completion.
@@ -353,7 +353,7 @@ The live consequence is confirmed by the shipped-guard result above: Claude hono
 ## Automated validation
 
 `tests/sq-subagent-pretool-check.test.sh` owns the acceptance matrix and is registered in the `pure-contract-unit` family in `bin/sq-test-run.sh`.
-It covers the tracked Claude settings boundary that forbids a `permissions` key; the match-all Claude hook registration; denial of every work-creating delegation tool by shape; denial of twelve hypothetical future tool names that appear on no list; the observe-or-stop, plan-only, and MCP exclusions; the exactness of the plan-only exclusion against six near-miss names a substring or shorter-stem widening would release; the recon-present and recon-absent message variants; the escape hatch including its fail-closed values; inertness in a linked task worktree and in a non-Squad repo; in-scope enforcement for a marked XO home; both stdin transports; the empty-stdout requirement; fail-open transport behavior; and the preserved `Bash` seatbelts and `Stop` guard.
+It covers the tracked Claude settings boundary that forbids a `permissions` key; the match-all Claude hook registration; denial of every work-creating delegation tool by shape; denial of twelve hypothetical future tool names that appear on no list; the observe-or-stop, plan-only, and MCP exclusions; the exactness of the plan-only exclusion against six near-miss names a substring or shorter-stem widening would release; the recon-present and recon-absent message variants; the escape hatch including its fail-closed values; inertness in a linked task worktree and in a non-Squad repo; in-scope enforcement for a marked XO base; both stdin transports; the empty-stdout requirement; fail-open transport behavior; and the preserved `Bash` seatbelts and `Stop` guard.
 
 Run:
 

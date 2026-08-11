@@ -17,7 +17,7 @@ Only `AGENTS.md`, `bin/`, and `.agents/skills/` are a running Squad instruction 
 This skill performs that pull for the running main Squad and every XO, without disturbing any in-flight work.
 
 The update is **fast-forward only** - the same sanctioned self-write as the unit sync Squad already runs.
-For a remote route, it updates the configured Squad code root on that host from its own origin, then guardedly fast-forwards the persistent home to that code-root commit.
+For a remote route, it updates the configured Squad code root on that host from its own origin, then guardedly fast-forwards the persistent base to that code-root commit.
 It never forces, never creates a merge commit, never stashes, and advances a target only on a clean fast-forward; anything dirty, diverged, offline, or on the wrong branch is skipped and reported.
 A tracked-files fast-forward leaves the gitignored operational dirs (data/, state/, config/, projects/, .drill/) untouched, so an XO's in-flight work is never disrupted.
 This touches only the Squad repo and its own worktrees, never anything under `projects/`.
@@ -28,7 +28,7 @@ This touches only the Squad repo and its own worktrees, never anything under `pr
    ```sh
    bin/sq-update.sh
    ```
-   It fast-forwards this Squad repo's default branch from origin, then updates every registered local or remote XO home through its placement-specific guarded path.
+   It fast-forwards this Squad repo's default branch from origin, then updates every registered local or remote XO base through its placement-specific guarded path.
    It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), followed by two action lines that tell you exactly what to do next:
    - `reread-Squad: yes|no`
    - `nudge-XOs: sq-<id>...|none`
@@ -43,14 +43,14 @@ This touches only the Squad repo and its own worktrees, never anything under `pr
    ```sh
    SQUAD_HOME=<this-Squad-home> bin/sq-send.sh <id> 'Squad was updated to the latest - please re-read your AGENTS.md to pick up the new instructions.'
    ```
-   Include `SQUAD_HOME=<this-Squad-home>` unless `SQUAD_HOME` is already set to the active Squad home.
+   Include `SQUAD_HOME=<this-Squad-base>` unless `SQUAD_HOME` is already set to the active Squad base.
    This is a gentle steer, not an interruption: the XO already got a safe tracked-files fast-forward, and the nudge never forces, tears down, or discards its work.
    An XO that was skipped, already current, or has no live metadata is not on the list and needs no nudge.
 
 4. **Report to the commander in plain outcomes.**
    Summarize what landed under `AGENTS.md` section 9 without Squad's internal vocabulary: which parts of the unit are now on the latest, and which were left as-is and why.
    For example: "Commander, Squad and both second mates are now on the latest."
-   Surface any skipped target whose reason needs the commander's attention - for instance a home with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
+   Surface any skipped target whose reason needs the commander's attention - for instance a base with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
 
 ## Safety
 
