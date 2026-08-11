@@ -65,6 +65,8 @@ written raw to <state>/photo.body so tests can assert on the uploaded bytes.
 import argparse
 import json
 import os
+import socket
+import struct
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -124,6 +126,23 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw.decode("utf-8"))
             if os.path.exists(args.state_dir + "/slow-sends"):
                 time.sleep(1.0)
+            if os.path.exists(args.state_dir + "/reset-sends"):
+                with open(args.state_dir + "/reset-hit", "a",
+                          encoding="utf-8") as fh:
+                    fh.write("hit\n")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "999")
+                self.end_headers()
+                try:
+                    self.wfile.write(b'{"ok": true, "res')
+                    self.wfile.flush()
+                    self.connection.setsockopt(
+                        socket.SOL_SOCKET, socket.SO_LINGER,
+                        struct.pack("ii", 1, 0))
+                finally:
+                    self.connection.close()
+                return
             self._record({
                 "method": "sendMessage",
                 "chat_id": body.get("chat_id"),
@@ -786,6 +805,58 @@ test_concurrent_followups_respect_the_cap() {
   pass "concurrent follow-ups cannot exceed the 3-post contract"
 }
 
+test_midread_reset_on_answer_returns_502_and_stays_pending() {
+  local home fake_dir fake_port url rid
+  home="$TMP_ROOT/reset-answer-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/reset-answer-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  feed_updates "$fake_dir" "$(one_update 51 510 "$OWNER_ID" 'rede caiu')"
+  wait_for_request "$url" "$home/body.json"
+  rid="tg-$OWNER_ID-510"
+  touch "$fake_dir/reset-sends"
+  local code
+  code=$(curl -s -m 20 -o "$home/answer.body" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"resposta\"}" \
+    "$url/connector/answer")
+  rm -f "$fake_dir/reset-sends"
+  expect_code 502 "$code" \
+    "a mid-read network failure on send must surface as the 502 contract"
+  jq -e '.error == "telegram_send_failed"' "$home/answer.body" > /dev/null \
+    || fail "the 502 body must carry telegram_send_failed"
+  expect_code 200 "$(bridge_poll "$url" "$home/body.json")" \
+    "the failed answer must leave the request pending"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "$rid" ] \
+    || fail "the same request must be re-offered after the failed answer"
+  expect_code 200 "$(bridge_post "$url" answer \
+    "{\"request_id\":\"$rid\",\"text\":\"resposta\"}")" \
+    "a retry after the network failure must post"
+  local count
+  count=$(jq -s 'length' "$fake_dir/sent.log")
+  expect_code 1 "$count" "only the successful retry may reach Telegram"
+  pass "a mid-read network failure on send returns 502 and keeps the request pending"
+}
+
+test_midread_reset_on_greeting_does_not_kill_poller() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/reset-greet-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/reset-greet-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  touch "$fake_dir/reset-sends"
+  feed_updates "$fake_dir" "$(one_update 52 520 "$OWNER_ID" '/start')"
+  local deadline=$(( $(date +%s) + 10 ))
+  while [ ! -f "$fake_dir/reset-hit" ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "greeting send never hit the reset path"
+    sleep 0.2
+  done
+  rm -f "$fake_dir/reset-sends"
+  feed_updates "$fake_dir" "$(one_update 53 530 "$OWNER_ID" 'sobreviveu')"
+  wait_for_request "$url" "$home/body.json"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-$OWNER_ID-530" ] \
+    || fail "a mid-read failure on the greeting must not kill the poller"
+  pass "a mid-read network failure on the greeting send leaves the poller alive"
+}
+
 # ---------------------------------------------------------------------------
 
 write_fake_telegram
@@ -810,3 +881,5 @@ test_followup_flow_via_squad_client
 test_malformed_telegram_response_does_not_kill_poller
 test_concurrent_answers_post_exactly_once
 test_concurrent_followups_respect_the_cap
+test_midread_reset_on_answer_returns_502_and_stays_pending
+test_midread_reset_on_greeting_does_not_kill_poller

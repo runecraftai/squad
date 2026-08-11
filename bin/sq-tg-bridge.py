@@ -446,6 +446,8 @@ class TelegramClient:
                                 exc.read().decode("utf-8", "replace")) from exc
         except urllib.error.URLError as exc:
             raise TelegramError("network", str(exc.reason)) from exc
+        except OSError as exc:
+            raise TelegramError("network", str(exc)) from exc
         except ValueError as exc:
             raise TelegramError("api", "malformed response: %s" % exc) from exc
         except http.client.HTTPException as exc:
