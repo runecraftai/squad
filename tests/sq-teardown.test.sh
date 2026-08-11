@@ -40,7 +40,7 @@
 #   (q) drill + NO pr= recorded, PR discovered by branch  -> ALLOW  (yolo/no-CI merge)
 #
 # Also covers backlog teardown-lock-race: a git index.lock left in the worktree by a
-# killed crew process (bin/sq-teardown.sh's teardown_treehouse_return).
+# killed crew process (bin/sq-teardown.sh's teardown_fob_return).
 #   (r) provably-stale index.lock (old mtime, no live holder) -> lock removed, ALLOW
 #   (s) index.lock with a live holder, any age                -> lock kept, REFUSE
 #   (t) lsof error while checking index.lock                  -> lock kept, REFUSE
@@ -335,9 +335,9 @@ SH
 # Override fakebin/fob so `fob return --force <wt>` fails with a
 # git "file exists" lock error whenever the worktree's real index.lock is
 # present, and succeeds once it is gone. This drives the lock through
-# sq-teardown.sh's own retry-then-stale-cleanup logic (teardown_treehouse_return
+# sq-teardown.sh's own retry-then-stale-cleanup logic (teardown_fob_return
 # in bin/sq-teardown.sh) rather than hand-simulating that logic in the test.
-add_lock_aware_treehouse() {
+add_lock_aware_fob() {
   local case_dir=$1
   cat > "$case_dir/fakebin/fob" <<'SH'
 #!/usr/bin/env bash
@@ -371,7 +371,7 @@ SH
 # The first failure always reports the lock path even if the file is removed in
 # the same attempt - matching the production race where the lock self-clears
 # between the failed return and the supervisor's existence check.
-add_transient_lock_treehouse() {
+add_transient_lock_fob() {
   local case_dir=$1
   cat > "$case_dir/fakebin/fob" <<'SH'
 #!/usr/bin/env bash
@@ -389,7 +389,7 @@ if [ "${1:-}" = return ]; then
     /*|'') ;;
     *) lock="$wt/$lock" ;;
   esac
-  count_file="${TREEHOUSE_ATTEMPT_FILE:?}"
+  count_file="${FOB_ATTEMPT_FILE:?}"
   count=0
   if [ -f "$count_file" ]; then
     count=$(cat "$count_file")
@@ -416,7 +416,7 @@ SH
 
 # fob return always fails with the lock signature while the lock file
 # remains; used to assert exhausted retries still refuse loudly.
-add_persistent_lock_treehouse() {
+add_persistent_lock_fob() {
   local case_dir=$1
   cat > "$case_dir/fakebin/fob" <<'SH'
 #!/usr/bin/env bash
@@ -959,7 +959,7 @@ test_stale_index_lock_cleared_and_teardown_succeeds() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_lock_aware_treehouse "$case_dir"
+  add_lock_aware_fob "$case_dir"
   add_lsof_no_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -988,7 +988,7 @@ test_live_index_lock_is_never_removed_and_teardown_refuses() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_lock_aware_treehouse "$case_dir"
+  add_lock_aware_fob "$case_dir"
   add_lsof_live_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1020,7 +1020,7 @@ test_lsof_error_never_clears_index_lock() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_lock_aware_treehouse "$case_dir"
+  add_lock_aware_fob "$case_dir"
   add_lsof_error "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1052,7 +1052,7 @@ test_stale_index_lock_cleanup_rechecks_dirty_worktree() {
   git -C "$case_dir/project" fetch -q origin
   printf '%s\n' dirty > "$case_dir/wt/feature.txt"
 
-  add_lock_aware_treehouse "$case_dir"
+  add_lock_aware_fob "$case_dir"
   add_lsof_no_holder "$case_dir"
   add_git_status_lock_failure "$case_dir"
 
@@ -1088,7 +1088,7 @@ test_non_linked_index_lock_path_is_checked_from_worktree() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/wt" fetch -q origin
 
-  add_lock_aware_treehouse "$case_dir"
+  add_lock_aware_fob "$case_dir"
   add_lsof_no_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1117,7 +1117,7 @@ test_index_lock_mtime_read_failure_refuses() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_lock_aware_treehouse "$case_dir"
+  add_lock_aware_fob "$case_dir"
   add_lsof_no_holder "$case_dir"
   add_stat_error "$case_dir"
 
@@ -1151,7 +1151,7 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_transient_lock_treehouse "$case_dir"
+  add_transient_lock_fob "$case_dir"
   add_lsof_no_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1164,9 +1164,9 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds() {
   : > "$attempt_file"
 
   set +e
-  TREEHOUSE_ATTEMPT_FILE="$attempt_file" \
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=2 \
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0 \
+  FOB_ATTEMPT_FILE="$attempt_file" \
+  SQUAD_FOB_RETURN_LOCK_RETRIES=2 \
+  SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS=0 \
   SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
@@ -1191,7 +1191,7 @@ test_persistent_index_lock_exhausts_retries_and_refuses_loudly() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_persistent_lock_treehouse "$case_dir"
+  add_persistent_lock_fob "$case_dir"
   # Fresh lock with a live holder: never provably stale, never force-removed.
   add_lsof_live_holder "$case_dir"
 
@@ -1201,8 +1201,8 @@ test_persistent_index_lock_exhausts_retries_and_refuses_loudly() {
   touch "$lock"
 
   set +e
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=2 \
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0 \
+  SQUAD_FOB_RETURN_LOCK_RETRIES=2 \
+  SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS=0 \
   SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
@@ -1229,7 +1229,7 @@ test_empty_retry_wait_uses_default_without_aborting() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_transient_lock_treehouse "$case_dir"
+  add_transient_lock_fob "$case_dir"
   add_lsof_no_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1240,9 +1240,9 @@ test_empty_retry_wait_uses_default_without_aborting() {
   : > "$attempt_file"
 
   set +e
-  TREEHOUSE_ATTEMPT_FILE="$attempt_file" \
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=1 \
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS='' \
+  FOB_ATTEMPT_FILE="$attempt_file" \
+  SQUAD_FOB_RETURN_LOCK_RETRIES=1 \
+  SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS='' \
   SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS='' \
   SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -1265,7 +1265,7 @@ test_fractional_legacy_retry_wait_refuses_without_arithmetic_error() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_persistent_lock_treehouse "$case_dir"
+  add_persistent_lock_fob "$case_dir"
   add_lsof_live_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1273,8 +1273,8 @@ test_fractional_legacy_retry_wait_refuses_without_arithmetic_error() {
   : > "$lock"
 
   set +e
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=1 \
-  SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS='' \
+  SQUAD_FOB_RETURN_LOCK_RETRIES=1 \
+  SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS='' \
   SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=0.1 \
   SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"

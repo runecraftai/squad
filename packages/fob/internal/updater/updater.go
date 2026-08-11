@@ -29,7 +29,7 @@ const (
 	maxDownloadSize     = 100 << 20 // 100 MB
 	maxBinarySize       = 100 << 20 // 100 MB
 	maxAPIResponseSize  = 5 << 20   // 5 MB
-	fobDir        = ".fob"
+	fobDir              = ".fob"
 )
 
 // githubAPIURL is the endpoint for fetching the latest release.
@@ -164,7 +164,7 @@ func IsCacheStale(currentVersion string) bool {
 }
 
 // SpawnBackgroundCheck spawns a detached child process to check for updates.
-// The child process inherits TREEHOUSE_NO_UPDATE_CHECK=1 to prevent recursive spawning.
+// The child process inherits FOB_NO_UPDATE_CHECK=1 to prevent recursive spawning.
 func SpawnBackgroundCheck(currentVersion string) error {
 	self, err := os.Executable()
 	if err != nil {
@@ -179,7 +179,7 @@ func SpawnBackgroundCheck(currentVersion string) error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
-	cmd.Env = append(os.Environ(), "TREEHOUSE_NO_UPDATE_CHECK=1")
+	cmd.Env = append(os.Environ(), "FOB_NO_UPDATE_CHECK=1")
 
 	devNull, err := os.Open(os.DevNull)
 	if err == nil {

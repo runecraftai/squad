@@ -2231,7 +2231,7 @@ func startCwdHolder(t *testing.T, dir string) *exec.Cmd {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
 	cmd := exec.Command(os.Args[0], "-test.run=TestHoldCwdProbe", "--", ready)
-	cmd.Env = append(os.Environ(), "TREEHOUSE_HOLD_CWD_PROBE=1")
+	cmd.Env = append(os.Environ(), "FOB_HOLD_CWD_PROBE=1")
 	cmd.Dir = dir
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start cwd holder: %v", err)
@@ -2292,7 +2292,7 @@ func waitForProcessExit(t *testing.T, cmd *exec.Cmd, timeout time.Duration) {
 }
 
 func TestHoldCwdProbe(t *testing.T) {
-	if os.Getenv("TREEHOUSE_HOLD_CWD_PROBE") != "1" {
+	if os.Getenv("FOB_HOLD_CWD_PROBE") != "1" {
 		return
 	}
 	argStart := -1

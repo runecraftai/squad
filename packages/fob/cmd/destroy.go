@@ -202,34 +202,34 @@ func printDestroyResult(w io.Writer, result pool.DestroyResult, opts pool.Destro
 	if opts.DryRun {
 		if len(result.Planned) == 0 {
 			if len(result.Skipped) == 0 {
-				fmt.Fprintf(w, "🌳 Nothing to destroy in %s.\n", scope)
+				fmt.Fprintf(w, "Nothing to destroy in %s.\n", scope)
 				return
 			}
-			fmt.Fprintf(w, "🌳 Dry run: nothing disposable to destroy in %s.\n", scope)
+			fmt.Fprintf(w, "Dry run: nothing disposable to destroy in %s.\n", scope)
 			printDestroySkipped(w, result.Skipped)
 			return
 		}
 
-		fmt.Fprintf(w, "🌳 Dry run: would destroy %d %s in %s and reclaim %s.\n",
+		fmt.Fprintf(w, "Dry run: would destroy %d %s in %s and reclaim %s.\n",
 			len(result.Planned), plural("worktree", len(result.Planned)), scope, formatBytes(result.PlannedBytes))
 		printDestroyTargets(w, result.Planned)
 		printDestroySkipped(w, result.Skipped)
-		fmt.Fprintf(w, "🌳 Re-run with %s to destroy %s.\n",
+		fmt.Fprintf(w, "Re-run with %s to destroy %s.\n",
 			destroyExecuteFlags(opts), plural("this worktree", len(result.Planned)))
 		return
 	}
 
 	if len(result.Destroyed) == 0 {
 		if len(result.Skipped) == 0 {
-			fmt.Fprintf(w, "🌳 Nothing to destroy in %s.\n", scope)
+			fmt.Fprintf(w, "Nothing to destroy in %s.\n", scope)
 			return
 		}
-		fmt.Fprintf(w, "🌳 Destroyed 0 worktrees in %s.\n", scope)
+		fmt.Fprintf(w, "Destroyed 0 worktrees in %s.\n", scope)
 		printDestroySkipped(w, result.Skipped)
 		return
 	}
 
-	fmt.Fprintf(w, "🌳 Destroyed %d %s in %s and freed %s.\n",
+	fmt.Fprintf(w, "Destroyed %d %s in %s and freed %s.\n",
 		len(result.Destroyed), plural("worktree", len(result.Destroyed)), scope, formatBytes(result.FreedBytes))
 	printDestroyTargets(w, result.Destroyed)
 	printDestroySkipped(w, result.Skipped)
@@ -264,7 +264,7 @@ func printDestroySkipped(w io.Writer, skipped []pool.DestroySkip) {
 		return
 	}
 
-	fmt.Fprintf(w, "🌳 Skipped %d %s:\n", len(skipped), plural("worktree", len(skipped)))
+	fmt.Fprintf(w, "Skipped %d %s:\n", len(skipped), plural("worktree", len(skipped)))
 	tagWidth := 0
 	tags := make([]string, len(skipped))
 	for i, s := range skipped {

@@ -62,7 +62,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		if len(worktrees) == 0 {
-			fmt.Fprintln(os.Stderr, "🌳 No worktrees in pool.")
+			fmt.Fprintln(os.Stderr, "No worktrees in pool.")
 			return nil
 		}
 

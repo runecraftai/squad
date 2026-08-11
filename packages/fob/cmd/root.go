@@ -19,7 +19,7 @@ func SetVersion(v string) {
 var rootCmd = &cobra.Command{
 	Use:   "fob",
 	Short: "Manage a pool of git worktrees for parallel AI agent workflows",
-	Long: `Treehouse maintains a pool of reusable, pre-warmed git worktrees
+	Long: `fob maintains a pool of reusable, pre-warmed git worktrees
 so that multiple AI coding agents can work on the same repo in parallel.`,
 	Version:       version,
 	SilenceUsage:  true,
@@ -30,7 +30,7 @@ so that multiple AI coding agents can work on the same repo in parallel.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip update check for dev builds, the update command itself,
 		// or when explicitly suppressed via env var.
-		if version == "dev" || os.Getenv("TREEHOUSE_NO_UPDATE_CHECK") == "1" {
+		if version == "dev" || os.Getenv("FOB_NO_UPDATE_CHECK") == "1" {
 			return
 		}
 		if cmd.Name() == "update" {

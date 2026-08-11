@@ -736,7 +736,7 @@ test_current_path_ignores_tilde_prefixed_banner_lines() {
   zellij_pane_response "$dir" 2 7 3
   zellij_pane_response "$dir" 4 7 3
   zellij_pane_response "$dir" 6 7 3
-  printf '%s\n' "🌳 Entered worktree at ~/.fob/scratch-e2e-project/1. Type 'exit' to return." \
+  printf '%s\n' "Entered worktree at ~/.fob/scratch-e2e-project/1. Type 'exit' to return." \
     'scratch-e2e-project HEAD' '__SQUAD_ZELLIJ_CWD_BEGIN__' '/home/fixture/.fob/real-worktree' '__SQUAD_ZELLIJ_CWD_END__' '❯' \
     > "$dir/responses/7.out"
   fb=$(make_zellij_fakebin "$dir")

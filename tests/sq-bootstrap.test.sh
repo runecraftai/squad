@@ -683,7 +683,7 @@ ROWS
   pass "bootstrap: JSON-emitting backends require jq (their genuine dep), never tmux"
 }
 
-test_treehouse_lease_check_follows_resolved_backend() {
+test_fob_lease_check_follows_resolved_backend() {
   local case_dir fakebin out
   # A fob that lacks durable --lease support is only a problem for a backend
   # that actually uses fob. Orca owns its own worktrees, so an old fob
@@ -1160,7 +1160,7 @@ test_herdr_install_requires_manual_action
 test_cmux_bundled_cli_satisfies_dependency
 test_unknown_backend_reports_invalid_configuration
 test_json_backends_require_jq_not_tmux
-test_treehouse_lease_check_follows_resolved_backend
+test_fob_lease_check_follows_resolved_backend
 test_fleet_sync_timeout_scales_with_origin_backed_project_count
 test_fleet_sync_timeout_floor_preserves_small_units
 test_fleet_sync_timeout_explicit_override_wins

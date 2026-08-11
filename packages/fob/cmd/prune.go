@@ -107,13 +107,13 @@ func init() {
 func printPruneResult(w io.Writer, result pool.PruneResult, dryRun bool, pruneOrphans bool, verbose bool) {
 	if dryRun {
 		if len(result.Candidates) == 0 {
-			fmt.Fprintln(w, "🌳 No stale worktrees to prune.")
+			fmt.Fprintln(w, "No stale worktrees to prune.")
 			printPruneSkipped(w, result.Skipped, verbose)
 			printPruneOrphanHint(w, result.Skipped, false, pruneOrphans, false)
 			return
 		}
 
-		fmt.Fprintf(w, "🌳 Dry run: would prune %d %s %s and reclaim %s.\n",
+		fmt.Fprintf(w, "Dry run: would prune %d %s %s and reclaim %s.\n",
 			len(result.Candidates),
 			pruneCandidateKind(result.Candidates),
 			plural("worktree", len(result.Candidates)),
@@ -121,19 +121,19 @@ func printPruneResult(w io.Writer, result pool.PruneResult, dryRun bool, pruneOr
 		)
 		printPruneWorktrees(w, result.Candidates)
 		printPruneSkipped(w, result.Skipped, verbose)
-		fmt.Fprintf(w, "🌳 Re-run with %s to delete these worktrees.\n", pruneDeleteFlags(false, pruneOrphans))
+		fmt.Fprintf(w, "Re-run with %s to delete these worktrees.\n", pruneDeleteFlags(false, pruneOrphans))
 		printPruneOrphanHint(w, result.Skipped, false, pruneOrphans, false)
 		return
 	}
 
 	if len(result.Pruned) == 0 {
-		fmt.Fprintln(w, "🌳 No stale worktrees pruned.")
+		fmt.Fprintln(w, "No stale worktrees pruned.")
 		printPruneSkipped(w, result.Skipped, verbose)
 		printPruneOrphanHint(w, result.Skipped, false, pruneOrphans, true)
 		return
 	}
 
-	fmt.Fprintf(w, "🌳 Pruned %d %s %s and freed %s.\n",
+	fmt.Fprintf(w, "Pruned %d %s %s and freed %s.\n",
 		len(result.Pruned),
 		pruneCandidateKind(result.Pruned),
 		plural("worktree", len(result.Pruned)),
@@ -148,13 +148,13 @@ func printPruneAllResult(w io.Writer, result pool.PruneAllResult, dryRun bool, p
 	poolCount := len(result.Pools)
 	if dryRun {
 		if len(result.Result.Candidates) == 0 {
-			fmt.Fprintf(w, "🌳 No stale worktrees to prune across %d %s.\n", poolCount, plural("pool", poolCount))
+			fmt.Fprintf(w, "No stale worktrees to prune across %d %s.\n", poolCount, plural("pool", poolCount))
 			printPruneSkipped(w, result.Result.Skipped, verbose)
 			printPruneOrphanHint(w, result.Result.Skipped, true, pruneOrphans, false)
 			return
 		}
 
-		fmt.Fprintf(w, "🌳 Dry run: would prune %d %s %s across %d %s and reclaim %s.\n",
+		fmt.Fprintf(w, "Dry run: would prune %d %s %s across %d %s and reclaim %s.\n",
 			len(result.Result.Candidates),
 			pruneCandidateKind(result.Result.Candidates),
 			plural("worktree", len(result.Result.Candidates)),
@@ -164,19 +164,19 @@ func printPruneAllResult(w io.Writer, result pool.PruneAllResult, dryRun bool, p
 		)
 		printPruneWorktrees(w, result.Result.Candidates)
 		printPruneSkipped(w, result.Result.Skipped, verbose)
-		fmt.Fprintf(w, "🌳 Re-run with %s to delete these worktrees.\n", pruneDeleteFlags(true, pruneOrphans))
+		fmt.Fprintf(w, "Re-run with %s to delete these worktrees.\n", pruneDeleteFlags(true, pruneOrphans))
 		printPruneOrphanHint(w, result.Result.Skipped, true, pruneOrphans, false)
 		return
 	}
 
 	if len(result.Result.Pruned) == 0 {
-		fmt.Fprintf(w, "🌳 No stale worktrees pruned across %d %s.\n", poolCount, plural("pool", poolCount))
+		fmt.Fprintf(w, "No stale worktrees pruned across %d %s.\n", poolCount, plural("pool", poolCount))
 		printPruneSkipped(w, result.Result.Skipped, verbose)
 		printPruneOrphanHint(w, result.Result.Skipped, true, pruneOrphans, true)
 		return
 	}
 
-	fmt.Fprintf(w, "🌳 Pruned %d %s %s across %d %s and freed %s.\n",
+	fmt.Fprintf(w, "Pruned %d %s %s across %d %s and freed %s.\n",
 		len(result.Result.Pruned),
 		pruneCandidateKind(result.Result.Pruned),
 		plural("worktree", len(result.Result.Pruned)),
@@ -213,7 +213,7 @@ func printPruneSkipped(w io.Writer, skipped []pool.PruneSkipped, verbose bool) {
 		return
 	}
 
-	fmt.Fprintf(w, "🌳 Skipped %d unsafe idle %s:\n", len(skipped), plural("worktree", len(skipped)))
+	fmt.Fprintf(w, "Skipped %d unsafe idle %s:\n", len(skipped), plural("worktree", len(skipped)))
 	for _, category := range orderedPruneSkipCategories(skipped) {
 		group := pruneSkipGroup(skipped, category)
 		fmt.Fprintf(w, "  %s:\n", category)
@@ -313,14 +313,14 @@ func printPruneOrphanHint(w io.Writer, skipped []pool.PruneSkipped, all bool, pr
 		return
 	}
 	if yes {
-		fmt.Fprintf(w, "🌳 Re-run with %s to delete true orphans whose backing repository is missing.\n", pruneDeleteFlags(all, true))
+		fmt.Fprintf(w, "Re-run with %s to delete true orphans whose backing repository is missing.\n", pruneDeleteFlags(all, true))
 		return
 	}
 	flags := "--prune-orphans"
 	if all {
 		flags = "--all --prune-orphans"
 	}
-	fmt.Fprintf(w, "🌳 Re-run with %s to include true orphans in the dry run; add --yes to delete them.\n", flags)
+	fmt.Fprintf(w, "Re-run with %s to include true orphans in the dry run; add --yes to delete them.\n", flags)
 }
 
 func hasSkippedCategory(skipped []pool.PruneSkipped, category string) bool {

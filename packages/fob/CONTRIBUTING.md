@@ -1,4 +1,4 @@
-# Contributing to Treehouse
+# Contributing to fob
 
 Thanks for your interest in contributing!
 

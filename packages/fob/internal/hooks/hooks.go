@@ -30,7 +30,7 @@ func runOne(command, workDir string, stdout, stderr io.Writer) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		}
-		fmt.Fprintf(stderr, "🌳 hook command failed: %q (exit %d): %v\n", command, exitCode, err)
+		fmt.Fprintf(stderr, "hook command failed: %q (exit %d): %v\n", command, exitCode, err)
 	}
 }
 

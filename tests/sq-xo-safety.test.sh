@@ -265,7 +265,7 @@ EOF
   pass "home seed validation rejects nested home routes"
 }
 
-test_home_seed_uses_treehouse_acquired_home() {
+test_home_seed_uses_fob_acquired_home() {
   local home acquired acquired_abs fakebin log lease out
   home="$TMP_ROOT/dash-home"
   acquired="$TMP_ROOT/dash-acquired-home"
@@ -295,7 +295,7 @@ test_home_seed_uses_treehouse_acquired_home() {
   pass "home seeding durably leases fob-acquired dash homes under the XO id"
 }
 
-test_home_seed_returns_treehouse_acquired_home_on_assignment_failure() {
+test_home_seed_returns_fob_acquired_home_on_assignment_failure() {
   local home acquired acquired_abs fakebin log err
   home="$TMP_ROOT/dash-fail-home"
   acquired="$TMP_ROOT/dash-fail-acquired-home"
@@ -1854,7 +1854,7 @@ EOF
   pass "XO teardown refuses to hide failed leased-home return"
 }
 
-test_XO_teardown_removes_plain_clone_home_without_treehouse_return() {
+test_XO_teardown_removes_plain_clone_home_without_fob_return() {
   local home subhome subhome_abs fakebin log
   home="$TMP_ROOT/plain-clone-teardown-home"
   subhome="$TMP_ROOT/plain-clone-teardown-subhome"
@@ -2669,8 +2669,8 @@ test_home_seed_refuses_unreadable_registry
 test_home_seed_validate_rejects_duplicate_homes
 test_home_seed_validate_rejects_duplicate_ids
 test_home_seed_validate_rejects_nested_homes
-test_home_seed_uses_treehouse_acquired_home
-test_home_seed_returns_treehouse_acquired_home_on_assignment_failure
+test_home_seed_uses_fob_acquired_home
+test_home_seed_returns_fob_acquired_home_on_assignment_failure
 test_home_seed_warns_when_acquired_home_return_fails
 test_home_seed_does_not_return_unsafe_acquired_home
 test_home_seed_rolls_back_failed_clone
@@ -2714,7 +2714,7 @@ test_XO_teardown_preserves_process_events_on_later_refusal
 test_XO_force_teardown_sweeps_nested_homes
 test_XO_force_teardown_preserves_nested_restore_status
 test_XO_teardown_refuses_failed_leased_home_return
-test_XO_teardown_removes_plain_clone_home_without_treehouse_return
+test_XO_teardown_removes_plain_clone_home_without_fob_return
 test_XO_force_teardown_discards_child_work
 test_XO_force_teardown_refuses_child_quarantine_symlink
 test_XO_force_teardown_preserves_child_on_unproven_lock

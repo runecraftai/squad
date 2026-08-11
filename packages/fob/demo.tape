@@ -11,7 +11,7 @@ Set Padding 20
 Set Theme "Catppuccin Mocha"
 
 # Suppress update check
-Env TREEHOUSE_NO_UPDATE_CHECK "1"
+Env FOB_NO_UPDATE_CHECK "1"
 Env SHELL "/bin/bash"
 
 # Setup: create a git repo with a local bare remote, off-screen
@@ -82,6 +82,5 @@ Type "# manage worktrees without managing worktrees. "
 Sleep 1s
 Type "fob "
 Sleep 1s
-Type "🌳"
 Sleep 10s
 
