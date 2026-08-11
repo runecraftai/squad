@@ -56,8 +56,13 @@ func TestTerminateShellCommandGroup_AsksBeforeKilling(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "grandchild.pid")
 	termFile := filepath.Join(dir, "grandchild.term")
+	readyFile := filepath.Join(dir, "grandchild.ready")
 
-	script := "( trap 'echo terminated > " + termFile + "; exit 0' TERM; while :; do sleep 0.1; done ) >/dev/null 2>&1 & " +
+	// The grandchild signals readiness only after installing its TERM trap;
+	// without this handshake TerminateShellCommandGroup could SIGTERM it while
+	// it is still starting up, before the trap exists, and the default
+	// disposition would kill it without ever running the handler.
+	script := "( trap 'echo terminated > " + termFile + "; exit 0' TERM; : > " + readyFile + "; while :; do sleep 0.1; done ) >/dev/null 2>&1 & " +
 		"echo $! > " + pidFile + "; exit 0"
 	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", script)
 	ConfigureShellCommand(cmd)
@@ -65,6 +70,9 @@ func TestTerminateShellCommandGroup_AsksBeforeKilling(t *testing.T) {
 		t.Fatalf("leader Run: %v", err)
 	}
 	grandchild := readPID(t, pidFile, 5*time.Second)
+	if !waitForHelperReady(readyFile, 5*time.Second) {
+		t.Fatalf("grandchild never installed its TERM trap (no ready file %s)", readyFile)
+	}
 
 	TerminateShellCommandGroup(cmd)
 

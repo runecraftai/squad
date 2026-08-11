@@ -20,20 +20,21 @@ import (
 // end-to-end reproduction of the leak this package exists for, with real
 // processes. A pipeline child calls setsid(2), leaving the process group
 // drill isolated it in; the group teardown that runs on every exit path
-// then cannot reach it, and once its parent exits it reparents to init and
-// runs forever. The test asserts both halves: the escapee genuinely survives
+// then cannot reach it, and once its parent exits it reparents (to init or the
+// nearest subreaper) and runs forever. The test asserts both halves: the
+// escapee genuinely survives
 // the group teardown, and the worktree-scoped sweep - the one the daemon runs
 // when a run's goroutine finishes - terminates it.
 func TestSweepReapsSetsidEscapeeThatProcessGroupTeardownCannotReach(t *testing.T) {
 	requireCWDLookup(t)
 	root, wt := newFakeWorktree(t)
 
-	escapee := startEscapeeUnderLeader(t, wt)
+	escapee, leaderPID := startEscapeeUnderLeader(t, wt)
 	if !processAlive(escapee) {
 		t.Fatalf("precondition failed: escapee %d should have survived the process-group teardown", escapee)
 	}
-	if ppid := parentOf(t, escapee); ppid > 1 {
-		t.Fatalf("precondition failed: escapee %d should have reparented to init, has ppid %d", escapee, ppid)
+	if ppid := parentOf(t, escapee); ppid == leaderPID || ppid <= 0 {
+		t.Fatalf("precondition failed: escapee %d should have reparented once its leader exited, has ppid %d (leader %d)", escapee, ppid, leaderPID)
 	}
 
 	victims, err := Sweep(Options{WorktreesRoot: root, Scope: wt, Grace: 5 * time.Second})
@@ -55,7 +56,7 @@ func TestSweepReapsStaleOrphanFromDaemonStartupShape(t *testing.T) {
 	requireCWDLookup(t)
 	root, wt := newFakeWorktree(t)
 
-	escapee := startEscapeeUnderLeader(t, wt)
+	escapee, _ := startEscapeeUnderLeader(t, wt)
 	if !processAlive(escapee) {
 		t.Fatalf("precondition failed: escapee %d should still be alive", escapee)
 	}
@@ -183,25 +184,26 @@ func newFakeWorktree(t *testing.T) (root, worktree string) {
 
 // startEscapeeUnderLeader runs a leader in its own process group, has it spawn
 // a setsid child standing in the worktree, then tears the leader's group down
-// exactly the way the pipeline does. The returned pid is what survived.
-func startEscapeeUnderLeader(t *testing.T, worktree string) int {
+// exactly the way the pipeline does. It returns the pid that survived and the
+// leader's pid.
+func startEscapeeUnderLeader(t *testing.T, worktree string) (escapee, leader int) {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "escaped.ready")
-	leader := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestProcReapHelper$")
-	leader.Dir = worktree
-	leader.Env = append(os.Environ(),
+	leaderCmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^TestProcReapHelper$")
+	leaderCmd.Dir = worktree
+	leaderCmd.Env = append(os.Environ(),
 		"DRILL_PROCREAP_HELPER=leader",
 		"DRILL_PROCREAP_READY="+ready,
 		"DRILL_PROCREAP_WORKDIR="+worktree,
 	)
-	shellenv.ConfigureShellCommand(leader)
-	out, err := shellenv.CombinedOutputShellCommand(leader)
+	shellenv.ConfigureShellCommand(leaderCmd)
+	out, err := shellenv.CombinedOutputShellCommand(leaderCmd)
 	if err != nil {
 		t.Fatalf("leader failed: %v; output %q", err, out)
 	}
 	pid := parseEscapedPID(t, string(out))
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
-	return pid
+	return pid, leaderCmd.Process.Pid
 }
 
 func parseEscapedPID(t *testing.T, output string) int {
