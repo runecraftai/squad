@@ -1767,7 +1767,7 @@ test_failed_outcomes_block_every_retry_until_repaired() {
       || fail "$classification repaired migration retained a contradictory failure obligation"
     [ -f "$success" ] || fail "$classification repaired migration did not persist its success obligation"
     if [ "$classification" = canonical ]; then
-      [ "$(cat "$dir/migrate-3.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this home' ] \
+      [ "$(cat "$dir/migrate-3.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
         || fail "canonical repaired retry did not report the armed outcome"
       fm_pr_poll_artifacts_valid "$state" task-a "$POLL" || fail "canonical repaired retry did not arm a valid poll pair"
     else
@@ -1815,7 +1815,7 @@ test_canonical_publication_failure_recovers_only_on_retry() {
 
   SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err" \
     || fail "canonical publication failure did not recover on a clean retry"
-  [ "$(cat "$dir/migrate-2.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this home' ] \
+  [ "$(cat "$dir/migrate-2.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
     || fail "canonical publication retry did not report the armed outcome"
   fm_pr_poll_artifacts_valid "$state" task-a "$POLL" || fail "canonical publication retry did not arm a valid pair"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
@@ -2009,7 +2009,7 @@ test_nonexecuting_migration() {
 
   SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "canonical legacy migration failed"
-  [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this home' ] \
+  [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
     || fail "canonical migration stdout did not state that the rebuilt poll is armed"
   assert_grep 'task task-a: canonical legacy poll rebuilt and armed' "$state/.pr-check-migration.log" \
     "canonical migration log did not record the armed outcome"
@@ -2055,7 +2055,7 @@ test_nonexecuting_migration() {
   snap_before=$(cat "$state/task-x.meta")
   SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "X-linked migration failed"
-  [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this home' ] \
+  [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
     || fail "X-linked migration did not report an armed canonical poll"
   fm_pr_poll_artifacts_valid "$state" task-x "$POLL" || fail "X-linked migration did not arm a valid pair"
   snap_after=$(cat "$state/task-x.meta")
