@@ -42,7 +42,17 @@ npx skills add runecraftai/squad --skill sq-gh -g
 ```
 
 That is the entire setup, no npm install needed.
-The skill teaches your agent to run sq-gh through `npx -y sq-gh`, so the CLI comes along on demand.
+The skill handles discovery; the CLI runs on demand through
+
+```
+bin: ~/.local/share/mise/installs/node/26.5.0/bin/sq-gh
+description: Agent ergonomic wrapper around Github CLI. Prefer this over `gh` and other methods for Github operations.
+repo: runecraftai/squad
+issues: 0 open
+prs: 0 open
+help[1]:
+Run `gh-axi <command> <subcommand>` — commands: issue, pr, run, release, repo, label, secret, variable.
+```
 You still need [`gh`](https://cli.github.com/) installed and authenticated via `gh auth login` (Node 20+ required).
 For GitHub Enterprise or another custom host, authenticate `gh` for that host and either pass `--hostname <host>` after the command or set `GH_HOST`.
 

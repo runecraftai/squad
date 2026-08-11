@@ -98,7 +98,35 @@ Install the skill in the [Agent Skills](https://agentskills.io) format with [`np
 npx skills add runecraftai/squad --skill sq-quota -g
 ```
 
-The skill teaches your agent to run sq-quota through `npx -y sq-quota` on demand, so nothing needs to be installed ahead of time.
+The skill handles discovery; the CLI runs on demand through
+
+```
+bin: ~/.local/share/mise/installs/node/26.5.0/bin/sq-quota
+description: Report local agent-provider quota windows for routing-aware agents
+generatedAt: "2026-08-11T04:05:09.647Z"
+providers[6]{provider,plan,source,status,authStatus,refreshedAt}:
+claude,pro,oauth,fresh,unknown,"2026-08-11T04:05:10.145Z"
+codex,unknown,unavailable,error,unknown,none
+cursor,unknown,unavailable,auth_required,unknown,none
+copilot,unknown,unavailable,auth_required,unknown,none
+grok,unknown,unavailable,auth_required,unusable,none
+kimi,unknown,unavailable,auth_required,unknown,none
+windows[2]{provider,id,label,percentRemaining,resetsAt,pace,state}:
+claude,five_hour,session,100,unknown,unknown,fresh
+claude,seven_day,week,86,"2026-08-12T02:00:00.045989+00:00",behind,fresh
+effective[6]{provider,scope,effectivePercentRemaining,boundedBy,limitingWindowIds,runway,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId,projectionConfidence,projectionBasis,unmeasurableWindowIds,unresolvedWindowIds,relationshipStatus}:
+claude,all_models,86,five_hour + seven_day,seven_day,through_reset,unknown,unknown,unknown,established,cycle_average,none,none,known
+codex,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
+cursor,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,"",unknown
+copilot,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,"",unknown
+grok,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
+kimi,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
+help[4]:
+Default TOON reports effective headroom and usable runway; use --json or --full for reserve diagnostics
+Run `quota-axi --provider claude --json` for JSON output
+Run `quota-axi --full` to include account, source-attempt, and reserve details
+Run `quota-axi auth` to inspect local auth source availability without printing secrets, so nothing needs to be installed ahead of time.
+```
 `-g` installs the skill for all projects (e.g. `~/.claude/skills/`); drop it to install for the current project only (`.claude/skills/`).
 
 **Direct use**

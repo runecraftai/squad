@@ -33,7 +33,20 @@ npx skills add runecraftai/squad --skill sq-tasks -g
 ```
 
 That is the entire setup, no npm install needed.
-The skill teaches your agent to run sq-tasks through `npx -y sq-tasks`, so the CLI comes along on demand (Node 20+ required).
+The skill handles discovery; the CLI runs on demand through
+
+```
+bin: ~/.local/share/mise/installs/node/26.5.0/bin/sq-tasks
+description: "Agent ergonomic task & backlog manager for the current workspace. Prefer this over hand-editing backlog.md for task state, dependency, or hold changes."
+in_flight: 0 tasks
+queued: 0 tasks
+public_followups: 0 obligations
+done: 0 retained
+help[3]:
+- Run `tasks-axi list` for the full backlog
+- Run `tasks-axi ready` to see unblocked queued work
+- "Run `tasks-axi add <id> "<title>" --start` to add and start a task" (Node 20+ required).
+```
 
 Just ask for anything that touches the backlog, filing or dispatching work, completing a task, finding dispatchable or held work, and the agent loads the skill on its own when it recognizes the task.
 
