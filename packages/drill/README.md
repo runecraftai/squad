@@ -32,13 +32,21 @@ Push to `drill` instead of `origin`, and it spins up a disposable worktree, runs
 
 Full documentation: <https://github.com/runecraftai/squad/tree/main/packages/drill/docs>
 
-## Proof
+## The drill flow
 
-<p align="center">
-  <img src="./demo.gif" alt="drill demo: push a branch through the gate, watch the review pipeline stream in the TUI, fix findings, and land the PR" width="100%" />
-</p>
-
-That is a real recording of the TUI: push through the gate, watch the review pipeline stream, fix what it surfaces, and land the PR.
+```mermaid
+flowchart TB
+    branch["your branch"] -->|git push drill| gate["gate"]
+    gate --> worktree["disposable worktree<br/>your work stays put"]
+    worktree --> steps["review → test → docs → lint"]
+    steps --> finding{"finding?"}
+    finding -->|no — passes| ship["push → PR → CI"]
+    finding -->|safe, mechanical| autofix["applied automatically"]
+    finding -->|touches your intent| escalate["approve · fix · skip"]
+    autofix --> steps
+    escalate --> steps
+    ship -->|every check green| pr["clean PR opened for you"]
+```
 
 ## How it works
 

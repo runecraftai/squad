@@ -33,13 +33,9 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu
-          # TRANSITIONAL: the live binary still writes the legacy marker
-          # 'Updates from [git push no-mistakes](...)' into PR bodies, so keep
-          # checking the legacy string until Squad's post-merge environment
-          # rename lands. TODO: flip to the drill marker
-          # 'Updates from [git push drill](https://github.com/runecraftai/squad/packages/drill)'
-          # (the prsummary.go drillPRSignature) after that rename.
-          marker='Updates from [git push no-mistakes](https://github.com/runecraftai/squad/packages/no-mistakes)'
+          # Must match the literal line internal/pipeline/steps/prsummary.go
+          # (drillPRSignature) writes into the Pipeline section of PR bodies.
+          marker='Updates from [git push drill](https://github.com/runecraftai/squad/packages/drill)'
           if printf '%s' "${PR_BODY:-}" | grep -qF -- "$marker"; then
             echo "Found drill signature in PR #${PR_NUMBER} body."
             exit 0
