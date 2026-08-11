@@ -43,9 +43,9 @@ queued: 0 tasks
 public_followups: 0 obligations
 done: 0 retained
 help[3]:
-- Run `tasks-axi list` for the full backlog
-- Run `tasks-axi ready` to see unblocked queued work
-- "Run `tasks-axi add <id> "<title>" --start` to add and start a task" (Node 20+ required).
+- Run `sq-tasks list` for the full backlog
+- Run `sq-tasks ready` to see unblocked queued work
+- "Run `sq-tasks add <id> "<title>" --start` to add and start a task" (Node 20+ required).
 ```
 
 Just ask for anything that touches the backlog, filing or dispatching work, completing a task, finding dispatchable or held work, and the agent loads the skill on its own when it recognizes the task.
@@ -245,7 +245,7 @@ Single-task `mv` has the same protection; use multi-task `mv` to move its active
 
 ## Configuration
 
-Backend and path are resolved in this order: `--backend` / `--file` flags passed after the command, then `TASKS_AXI_BACKEND` / `TASKS_AXI_FILE` env, then a project `.tasks.toml`, then `~/.tasks-axi/config.toml`, then the defaults.
+Backend and path are resolved in this order: `--backend` / `--file` flags passed after the command, then `SQ_TASKS_BACKEND` / `SQ_TASKS_FILE` env, then a project `.tasks.toml`, then `~/.sq-tasks/config.toml`, then the defaults.
 Without an explicit path, sq-tasks uses `backlog.md` when present, then `data/backlog.md` when present, and otherwise targets `backlog.md` for future writes.
 
 ```toml

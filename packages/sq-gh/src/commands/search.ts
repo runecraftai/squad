@@ -34,7 +34,7 @@ const SEARCH_VALUE_FLAGS = new Set([
   "--stars",
 ]);
 
-export const SEARCH_HELP = `usage: gh-axi search <type> <query> [flags]
+export const SEARCH_HELP = `usage: sq-gh search <type> <query> [flags]
 types[5]:
   issues, prs, repos, commits, code
 flags{common}:
@@ -44,9 +44,9 @@ flags{prs}:
 flags{repos}:
   --language, --stars (e.g. ">100")
 examples:
-  gh-axi search issues "login bug" --repo octo/repo --state open
-  gh-axi search prs "feat" --author alice --sort updated
-  gh-axi search repos "cli tool" --language Go --stars ">50"`;
+  sq-gh search issues "login bug" --repo octo/repo --state open
+  sq-gh search prs "feat" --author alice --sort updated
+  sq-gh search repos "cli tool" --language Go --stars ">50"`;
 
 const issueSchema: FieldDef[] = [
   field("number"),
@@ -140,7 +140,7 @@ async function searchIssues(
   const query = extractQuery(args);
   if (!query && !hasSearchFilters(args))
     throw new AxiError(
-      "Search query or filters required: gh-axi search issues <query> [--assignee x] [--state open] ...",
+      "Search query or filters required: sq-gh search issues <query> [--assignee x] [--state open] ...",
       "VALIDATION_ERROR",
     );
 
@@ -193,7 +193,7 @@ async function searchPrs(args: string[], ctx?: RepoContext): Promise<string> {
   const query = extractQuery(args);
   if (!query && !hasSearchFilters(args, ["--draft", "--review"]))
     throw new AxiError(
-      "Search query or filters required: gh-axi search prs <query> [--assignee x] [--state open] ...",
+      "Search query or filters required: sq-gh search prs <query> [--assignee x] [--state open] ...",
       "VALIDATION_ERROR",
     );
 
@@ -249,7 +249,7 @@ async function searchRepos(args: string[], ctx?: RepoContext): Promise<string> {
   const query = extractQuery(args);
   if (!query && !hasSearchFilters(args, ["--language", "--stars"]))
     throw new AxiError(
-      "Search query or filters required: gh-axi search repos <query> [--owner x] [--language y] ...",
+      "Search query or filters required: sq-gh search repos <query> [--owner x] [--language y] ...",
       "VALIDATION_ERROR",
     );
 
@@ -299,7 +299,7 @@ async function searchCommits(
   const query = extractQuery(args);
   if (!query && !hasSearchFilters(args))
     throw new AxiError(
-      "Search query or filters required: gh-axi search commits <query> [--repo x] [--author y] ...",
+      "Search query or filters required: sq-gh search commits <query> [--repo x] [--author y] ...",
       "VALIDATION_ERROR",
     );
 
@@ -351,7 +351,7 @@ async function searchCode(args: string[], ctx?: RepoContext): Promise<string> {
   const query = extractQuery(args);
   if (!query && !hasSearchFilters(args, ["--language"]))
     throw new AxiError(
-      "Search query or filters required: gh-axi search code <query> [--repo x] [--language y] ...",
+      "Search query or filters required: sq-gh search code <query> [--repo x] [--language y] ...",
       "VALIDATION_ERROR",
     );
 

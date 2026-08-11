@@ -2,7 +2,7 @@ import type {
   EffectiveAvailability,
   ProviderId,
   ProviderQuota,
-  QuotaAxiResponse,
+  SqQuotaResponse,
   QuotaWindow,
 } from "./types.js";
 
@@ -116,7 +116,7 @@ export function detectTuiColorDepth(
 }
 
 export function renderQuotaTui(
-  response: QuotaAxiResponse,
+  response: SqQuotaResponse,
   options: TuiOptions = {},
 ): string {
   const columns = Math.min(
@@ -161,14 +161,14 @@ function isLive(provider: ProviderQuota): boolean {
   return provider.state.status === "fresh" || provider.state.status === "stale";
 }
 
-function headerText(response: QuotaAxiResponse, timeZone?: string): string {
+function headerText(response: SqQuotaResponse, timeZone?: string): string {
   const live = response.providers.filter(isLive).length;
   const signedOut = response.providers.filter(
     (provider) => provider.state.status === "auth_required",
   ).length;
   const failed = response.providers.length - live - signedOut;
   const parts = [
-    "quota-axi",
+    "sq-quota",
     formatHeaderTime(response.generatedAt, timeZone),
     `${live} live`,
     `${signedOut} signed out`,

@@ -18,7 +18,7 @@ import {
   fetchQuota,
   normalizeGrokConsumerPayload,
 } from "../../src/providers/grok.js";
-import type { ProviderQuota, QuotaAxiResponse } from "../../src/types.js";
+import type { ProviderQuota, SqQuotaResponse } from "../../src/types.js";
 
 const CONSUMER_QUOTA_URL =
   "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
@@ -33,7 +33,7 @@ const originalPathExt = process.env.PATHEXT;
 let tempDir: string | undefined;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), "quota-axi-grok-auth-"));
+  tempDir = mkdtempSync(join(tmpdir(), "sq-quota-grok-auth-"));
   process.env.GROK_AUTH_JSON = join(tempDir, "auth.json");
   delete process.env.GROK_AUTH_PATH;
   delete process.env.GROK_AUTH;
@@ -1014,7 +1014,7 @@ describe("Grok expired access-token classification", () => {
     vi.stubGlobal("fetch", vi.fn());
 
     const jsonText = await captureCli(["--provider", "grok", "--json"]);
-    const json = JSON.parse(jsonText) as QuotaAxiResponse;
+    const json = JSON.parse(jsonText) as SqQuotaResponse;
     const grok = json.providers[0];
 
     expect(grok).toMatchObject({
@@ -1044,7 +1044,7 @@ describe("Grok expired access-token classification", () => {
       grok.quotaSemantics?.effectiveAvailability[0]?.effectivePercentRemaining,
     ).toBeUndefined();
     expect(json.help).toContain(
-      "Tell your user: open the Grok CLI (`grok`) once so it can refresh Grok's local session token. quota-axi does not refresh credentials.",
+      "Tell your user: open the Grok CLI (`grok`) once so it can refresh Grok's local session token. sq-quota does not refresh credentials.",
     );
 
     const fullText = await captureCli([
@@ -1053,7 +1053,7 @@ describe("Grok expired access-token classification", () => {
       "--json",
       "--full",
     ]);
-    const full = JSON.parse(fullText) as QuotaAxiResponse;
+    const full = JSON.parse(fullText) as SqQuotaResponse;
     expect(full.providers[0]?.attempts).toEqual([
       {
         source: "auth-json",
@@ -1329,7 +1329,7 @@ describe("Grok dual-source CLI and Pi xAI usability", () => {
     vi.stubGlobal("fetch", vi.fn());
 
     const jsonText = await captureCli(["--provider", "grok", "--json"]);
-    const json = JSON.parse(jsonText) as QuotaAxiResponse;
+    const json = JSON.parse(jsonText) as SqQuotaResponse;
     const grok = json.providers[0];
 
     expect(grok).toMatchObject({
@@ -1367,7 +1367,7 @@ describe("Grok dual-source CLI and Pi xAI usability", () => {
     vi.stubGlobal("fetch", vi.fn());
 
     const jsonText = await captureCli(["--provider", "grok", "--json"]);
-    const json = JSON.parse(jsonText) as QuotaAxiResponse;
+    const json = JSON.parse(jsonText) as SqQuotaResponse;
     expect(json.providers[0]).toMatchObject({
       state: {
         status: "unavailable",
@@ -1458,7 +1458,7 @@ describe("Grok CLI rendering regression", () => {
     );
 
     const jsonText = await captureCli(["--provider", "grok", "--json"]);
-    const json = JSON.parse(jsonText) as QuotaAxiResponse;
+    const json = JSON.parse(jsonText) as SqQuotaResponse;
     expect(json.providers[0]).toMatchObject({
       provider: "grok",
       source: "web",
@@ -1481,7 +1481,7 @@ async function captureCli(argv: string[]): Promise<string> {
   const chunks: string[] = [];
   await main({
     argv,
-    binPath: "quota-axi",
+    binPath: "sq-quota",
     stdout: {
       write(chunk) {
         chunks.push(String(chunk));

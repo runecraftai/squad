@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import pkg from "../package.json" with { type: "json" };
 
 /**
- * Guards the property that made `chrome-devtools-axi --version` slow: the CLI
+ * Guards the property that made `sq-browser --version` slow: the CLI
  * entry point must never pull in the heavy command graph, and the MCP SDK must
  * remain isolated to the bridge subprocess. The assertions observe the module
  * graph the ESM loader actually resolved rather than relying on timing.
@@ -49,7 +49,7 @@ function traceModules(
         env: {
           ...process.env,
           ...env,
-          CHROME_DEVTOOLS_AXI_MODULE_TRACE: tracePath,
+          SQ_BROWSER_MODULE_TRACE: tracePath,
         },
       },
     );
@@ -88,7 +88,7 @@ describe("--version path", () => {
     // pass vacuously. Point the bridge at a nonexistent MCP binary so transport
     // setup fails immediately; the SDK is imported before that failure.
     const { modules, status } = traceModules([BRIDGE_BIN], {
-      CHROME_DEVTOOLS_AXI_MCP_PATH: join(tmpdir(), "no-such-mcp-binary.js"),
+      SQ_BROWSER_MCP_PATH: join(tmpdir(), "no-such-mcp-binary.js"),
     });
     expect(status).not.toBe(0);
     expect(modules.filter(isMcpModule).length).toBeGreaterThan(0);

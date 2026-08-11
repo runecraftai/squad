@@ -1,6 +1,6 @@
 # Vision
 
-`chrome-devtools-axi` is an agent-ergonomic interface to `chrome-devtools-mcp`.
+`sq-browser` is an agent-ergonomic interface to `chrome-devtools-mcp`.
 
 ## Scope
 

@@ -11,7 +11,7 @@ import {
 } from "../src/skill.js";
 
 function skillCommandText(text) {
-  return text.replaceAll("`lavish-axi", "`npx -y lavish-axi");
+  return text.replaceAll("`sq-report", "`npx -y sq-report");
 }
 
 test("createSkillMarkdown emits valid frontmatter naming the lavish skill", () => {
@@ -81,7 +81,7 @@ test("createSkillMarkdown handles explicit /lavish invocation arguments", () => 
 
 test("createSkillMarkdown mirrors the no-args home output", () => {
   const md = createSkillMarkdown();
-  const home = createHomeOutput({ bin: "lavish-axi", sessions: [], includeSessions: false, agent: "static" });
+  const home = createHomeOutput({ bin: "sq-report", sessions: [], includeSessions: false, agent: "static" });
 
   assert.ok(md.includes(skillCommandText(home.description)), "includes the product description");
 
@@ -167,11 +167,11 @@ test("createSkillMarkdown omits setup guidance", () => {
 test("createSkillMarkdown uses non-interactive npx commands", () => {
   const md = createSkillMarkdown();
 
-  assert.match(md, /`npx -y lavish-axi <html-file>`/);
-  assert.match(md, /If lavish-axi output shows a follow-up command starting with `lavish-axi`/);
-  assert.match(md, /run it as `npx -y lavish-axi/);
-  assert.doesNotMatch(md, /`npx lavish-axi/);
-  assert.doesNotMatch(md, /Run `lavish-axi/);
+  assert.match(md, /`npx -y sq-report <html-file>`/);
+  assert.match(md, /If sq-report output shows a follow-up command starting with `sq-report`/);
+  assert.match(md, /run it as `npx -y sq-report/);
+  assert.doesNotMatch(md, /`npx sq-report/);
+  assert.doesNotMatch(md, /Run `sq-report/);
 });
 
 test("createSkillMarkdown documents installed-copy fallback for restricted sandboxes", () => {
@@ -179,7 +179,7 @@ test("createSkillMarkdown documents installed-copy fallback for restricted sandb
 
   assert.match(md, /restricted subprocess sandboxes/);
   assert.match(md, /status 216/);
-  assert.match(md, /`node "\$\(npm root\)\/lavish-axi\/dist\/cli\.mjs" <html-file>`/);
-  assert.match(md, /`node "\$\(npm root -g\)\/lavish-axi\/dist\/cli\.mjs" <html-file>`/);
-  assert.match(md, /bare `lavish-axi <html-file>` bin/);
+  assert.match(md, /`node "\$\(npm root\)\/sq-report\/dist\/cli\.mjs" <html-file>`/);
+  assert.match(md, /`node "\$\(npm root -g\)\/sq-report\/dist\/cli\.mjs" <html-file>`/);
+  assert.match(md, /bare `sq-report <html-file>` bin/);
 });

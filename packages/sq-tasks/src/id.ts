@@ -5,7 +5,7 @@ import { AxiError } from "./errors.js";
 /**
  * Id ownership (decision D6, report §2.2): the caller supplies the id - it is
  * the join key to state/<id>, data/<id>/report.md, and tmux windows - and
- * tasks-axi can optionally mint one in Squad's `slug-xx` style.
+ * sq-tasks can optionally mint one in Squad's `slug-xx` style.
  */
 
 /** Validate a caller-supplied id round-trips through the markdown grammar. */

@@ -79,44 +79,30 @@ describe("buildTransportArgs", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedEnv.CHROME_DEVTOOLS_AXI_HEADED =
-      process.env.CHROME_DEVTOOLS_AXI_HEADED;
-    savedEnv.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
-      process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
-    savedEnv.CHROME_DEVTOOLS_AXI_BROWSER_URL =
-      process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    savedEnv.CHROME_DEVTOOLS_AXI_USER_DATA_DIR =
-      process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT =
-      process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-    savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL =
-      process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
-    delete process.env.CHROME_DEVTOOLS_AXI_HEADED;
-    delete process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
-    delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    delete process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    delete process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-    delete process.env.CHROME_DEVTOOLS_AXI_CHANNEL;
+    savedEnv.SQ_BROWSER_HEADED = process.env.SQ_BROWSER_HEADED;
+    savedEnv.SQ_BROWSER_CHROME_ARGS = process.env.SQ_BROWSER_CHROME_ARGS;
+    savedEnv.SQ_BROWSER_BROWSER_URL = process.env.SQ_BROWSER_BROWSER_URL;
+    savedEnv.SQ_BROWSER_USER_DATA_DIR = process.env.SQ_BROWSER_USER_DATA_DIR;
+    savedEnv.SQ_BROWSER_AUTO_CONNECT = process.env.SQ_BROWSER_AUTO_CONNECT;
+    savedEnv.SQ_BROWSER_WS_HEADERS = process.env.SQ_BROWSER_WS_HEADERS;
+    savedEnv.SQ_BROWSER_CHANNEL = process.env.SQ_BROWSER_CHANNEL;
+    delete process.env.SQ_BROWSER_HEADED;
+    delete process.env.SQ_BROWSER_CHROME_ARGS;
+    delete process.env.SQ_BROWSER_BROWSER_URL;
+    delete process.env.SQ_BROWSER_USER_DATA_DIR;
+    delete process.env.SQ_BROWSER_AUTO_CONNECT;
+    delete process.env.SQ_BROWSER_WS_HEADERS;
+    delete process.env.SQ_BROWSER_CHANNEL;
   });
 
   afterEach(() => {
-    process.env.CHROME_DEVTOOLS_AXI_HEADED =
-      savedEnv.CHROME_DEVTOOLS_AXI_HEADED;
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
-      savedEnv.CHROME_DEVTOOLS_AXI_CHROME_ARGS;
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL =
-      savedEnv.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR =
-      savedEnv.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT =
-      savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      savedEnv.CHROME_DEVTOOLS_AXI_WS_HEADERS;
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL =
-      savedEnv.CHROME_DEVTOOLS_AXI_CHANNEL;
+    process.env.SQ_BROWSER_HEADED = savedEnv.SQ_BROWSER_HEADED;
+    process.env.SQ_BROWSER_CHROME_ARGS = savedEnv.SQ_BROWSER_CHROME_ARGS;
+    process.env.SQ_BROWSER_BROWSER_URL = savedEnv.SQ_BROWSER_BROWSER_URL;
+    process.env.SQ_BROWSER_USER_DATA_DIR = savedEnv.SQ_BROWSER_USER_DATA_DIR;
+    process.env.SQ_BROWSER_AUTO_CONNECT = savedEnv.SQ_BROWSER_AUTO_CONNECT;
+    process.env.SQ_BROWSER_WS_HEADERS = savedEnv.SQ_BROWSER_WS_HEADERS;
+    process.env.SQ_BROWSER_CHANNEL = savedEnv.SQ_BROWSER_CHANNEL;
   });
 
   it("defaults to headless and isolated", () => {
@@ -131,8 +117,8 @@ describe("buildTransportArgs", () => {
     ]);
   });
 
-  it("omits --headless when CHROME_DEVTOOLS_AXI_HEADED=1", () => {
-    process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
+  it("omits --headless when SQ_BROWSER_HEADED=1", () => {
+    process.env.SQ_BROWSER_HEADED = "1";
     const args = buildTransportArgs();
     expect(args).toEqual([
       "-y",
@@ -144,16 +130,14 @@ describe("buildTransportArgs", () => {
   });
 
   it("forwards chrome args via --chrome-arg=", () => {
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
-      "--enable-gpu --ignore-gpu-blocklist";
+    process.env.SQ_BROWSER_CHROME_ARGS = "--enable-gpu --ignore-gpu-blocklist";
     const args = buildTransportArgs();
     expect(args).toContain("--chrome-arg=--enable-gpu");
     expect(args).toContain("--chrome-arg=--ignore-gpu-blocklist");
   });
 
   it("handles tabs, newlines, and extra whitespace in chrome args", () => {
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS =
-      "  --flag-a\t--flag-b\n--flag-c  ";
+    process.env.SQ_BROWSER_CHROME_ARGS = "  --flag-a\t--flag-b\n--flag-c  ";
     const args = buildTransportArgs();
     expect(args).toContain("--chrome-arg=--flag-a");
     expect(args).toContain("--chrome-arg=--flag-b");
@@ -167,15 +151,15 @@ describe("buildTransportArgs", () => {
   });
 
   it("combines headed mode with chrome args", () => {
-    process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS = "--enable-unsafe-webgpu";
+    process.env.SQ_BROWSER_HEADED = "1";
+    process.env.SQ_BROWSER_CHROME_ARGS = "--enable-unsafe-webgpu";
     const args = buildTransportArgs();
     expect(args).not.toContain("--headless");
     expect(args).toContain("--chrome-arg=--enable-unsafe-webgpu");
   });
 
-  it("uses --browserUrl when CHROME_DEVTOOLS_AXI_BROWSER_URL is set", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
+  it("uses --browserUrl when SQ_BROWSER_BROWSER_URL is set", () => {
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args).not.toContain("--isolated");
@@ -183,15 +167,15 @@ describe("buildTransportArgs", () => {
   });
 
   it("passes chrome args alongside --browserUrl", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS = "--some-flag";
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_CHROME_ARGS = "--some-flag";
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args).toContain("--chrome-arg=--some-flag");
   });
 
-  it("uses --userDataDir when CHROME_DEVTOOLS_AXI_USER_DATA_DIR is set", () => {
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
+  it("uses --userDataDir when SQ_BROWSER_USER_DATA_DIR is set", () => {
+    process.env.SQ_BROWSER_USER_DATA_DIR = "/path/to/.chrome-profile";
     const args = buildTransportArgs();
     expect(args).toContain("--userDataDir=/path/to/.chrome-profile");
     expect(args).not.toContain("--isolated");
@@ -199,23 +183,23 @@ describe("buildTransportArgs", () => {
   });
 
   it("respects headed mode with --userDataDir", () => {
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
-    process.env.CHROME_DEVTOOLS_AXI_HEADED = "1";
+    process.env.SQ_BROWSER_USER_DATA_DIR = "/path/to/.chrome-profile";
+    process.env.SQ_BROWSER_HEADED = "1";
     const args = buildTransportArgs();
     expect(args).toContain("--userDataDir=/path/to/.chrome-profile");
     expect(args).not.toContain("--headless");
   });
 
   it("--browserUrl takes precedence over --userDataDir", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_USER_DATA_DIR = "/path/to/.chrome-profile";
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args).not.toContain("--userDataDir=/path/to/.chrome-profile");
   });
 
-  it("uses --autoConnect when CHROME_DEVTOOLS_AXI_AUTO_CONNECT=1", () => {
-    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = "1";
+  it("uses --autoConnect when SQ_BROWSER_AUTO_CONNECT=1", () => {
+    process.env.SQ_BROWSER_AUTO_CONNECT = "1";
     const args = buildTransportArgs();
     expect(args).toContain("--autoConnect");
     expect(args).not.toContain("--isolated");
@@ -223,9 +207,9 @@ describe("buildTransportArgs", () => {
   });
 
   it("--autoConnect takes precedence over --browserUrl and --userDataDir", () => {
-    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = "1";
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
+    process.env.SQ_BROWSER_AUTO_CONNECT = "1";
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_USER_DATA_DIR = "/path/to/.chrome-profile";
     const args = buildTransportArgs();
     expect(args).toContain("--autoConnect");
     expect(args).not.toContain("--browserUrl=http://127.0.0.1:9222");
@@ -233,7 +217,7 @@ describe("buildTransportArgs", () => {
   });
 
   it("ignores AUTO_CONNECT when not set to '1'", () => {
-    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = "true";
+    process.env.SQ_BROWSER_AUTO_CONNECT = "true";
     const args = buildTransportArgs();
     expect(args).not.toContain("--autoConnect");
     expect(args).toContain("--isolated");
@@ -245,15 +229,15 @@ describe("buildTransportArgs", () => {
   });
 
   it("appends --channel to --autoConnect", () => {
-    process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT = "1";
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    process.env.SQ_BROWSER_AUTO_CONNECT = "1";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
     const args = buildTransportArgs();
     expect(args).toContain("--autoConnect");
     expect(args).toContain("--channel=beta");
   });
 
   it("appends --channel in the default launch mode", () => {
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
     const args = buildTransportArgs();
     expect(args).toContain("--channel=beta");
     expect(args).toContain("--isolated");
@@ -261,35 +245,35 @@ describe("buildTransportArgs", () => {
   });
 
   it("appends --channel alongside --userDataDir", () => {
-    process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR = "/path/to/.chrome-profile";
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "canary";
+    process.env.SQ_BROWSER_USER_DATA_DIR = "/path/to/.chrome-profile";
+    process.env.SQ_BROWSER_CHANNEL = "canary";
     const args = buildTransportArgs();
     expect(args).toContain("--userDataDir=/path/to/.chrome-profile");
     expect(args).toContain("--channel=canary");
   });
 
   it("ignores --channel when connecting via --browserUrl", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "beta";
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
   });
 
   it("trims surrounding whitespace from the channel", () => {
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "  beta  ";
+    process.env.SQ_BROWSER_CHANNEL = "  beta  ";
     const args = buildTransportArgs();
     expect(args).toContain("--channel=beta");
   });
 
   it("ignores a blank channel", () => {
-    process.env.CHROME_DEVTOOLS_AXI_CHANNEL = "   ";
+    process.env.SQ_BROWSER_CHANNEL = "   ";
     const args = buildTransportArgs();
     expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
   });
 
   it("routes ws:// BROWSER_URL to --wsEndpoint", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL =
+    process.env.SQ_BROWSER_BROWSER_URL =
       "ws://127.0.0.1:9222/devtools/browser/abc123";
     const args = buildTransportArgs();
     expect(args).toContain(
@@ -303,44 +287,41 @@ describe("buildTransportArgs", () => {
   });
 
   it("routes wss:// BROWSER_URL to --wsEndpoint", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
+    process.env.SQ_BROWSER_BROWSER_URL = "wss://our.cluster.io/launch";
     const args = buildTransportArgs();
     expect(args).toContain("--wsEndpoint=wss://our.cluster.io/launch");
     expect(args).not.toContain("--browserUrl=wss://our.cluster.io/launch");
   });
 
-  it("passes --wsHeaders when CHROME_DEVTOOLS_AXI_WS_HEADERS is set with ws endpoint", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
-    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      '{"Authorization":"Bearer token"}';
+  it("passes --wsHeaders when SQ_BROWSER_WS_HEADERS is set with ws endpoint", () => {
+    process.env.SQ_BROWSER_BROWSER_URL = "wss://our.cluster.io/launch";
+    process.env.SQ_BROWSER_WS_HEADERS = '{"Authorization":"Bearer token"}';
     const args = buildTransportArgs();
     expect(args).toContain("--wsEndpoint=wss://our.cluster.io/launch");
     expect(args).toContain('--wsHeaders={"Authorization":"Bearer token"}');
   });
 
   it("rejects malformed ws headers before launching the transport", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
-    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS = "{";
+    process.env.SQ_BROWSER_BROWSER_URL = "wss://our.cluster.io/launch";
+    process.env.SQ_BROWSER_WS_HEADERS = "{";
 
     expect(() => buildTransportArgs()).toThrow(
-      "CHROME_DEVTOOLS_AXI_WS_HEADERS must be valid JSON",
+      "SQ_BROWSER_WS_HEADERS must be valid JSON",
     );
   });
 
   it("rejects ws headers JSON that is not an object", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "wss://our.cluster.io/launch";
-    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      '["Authorization: Bearer token"]';
+    process.env.SQ_BROWSER_BROWSER_URL = "wss://our.cluster.io/launch";
+    process.env.SQ_BROWSER_WS_HEADERS = '["Authorization: Bearer token"]';
 
     expect(() => buildTransportArgs()).toThrow(
-      "CHROME_DEVTOOLS_AXI_WS_HEADERS must be a JSON object",
+      "SQ_BROWSER_WS_HEADERS must be a JSON object",
     );
   });
 
   it("ignores --wsHeaders without a ws endpoint", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
-    process.env.CHROME_DEVTOOLS_AXI_WS_HEADERS =
-      '{"Authorization":"Bearer token"}';
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_WS_HEADERS = '{"Authorization":"Bearer token"}';
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args.some((a) => a.startsWith("--wsHeaders="))).toBe(false);
@@ -351,21 +332,16 @@ describe("resolveTransportSpec", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedEnv.CHROME_DEVTOOLS_AXI_MCP_PATH =
-      process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
-    savedEnv.CHROME_DEVTOOLS_AXI_HEADED =
-      process.env.CHROME_DEVTOOLS_AXI_HEADED;
-    savedEnv.CHROME_DEVTOOLS_AXI_BROWSER_URL =
-      process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    savedEnv.CHROME_DEVTOOLS_AXI_USER_DATA_DIR =
-      process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    savedEnv.CHROME_DEVTOOLS_AXI_AUTO_CONNECT =
-      process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
-    delete process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
-    delete process.env.CHROME_DEVTOOLS_AXI_HEADED;
-    delete process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL;
-    delete process.env.CHROME_DEVTOOLS_AXI_USER_DATA_DIR;
-    delete process.env.CHROME_DEVTOOLS_AXI_AUTO_CONNECT;
+    savedEnv.SQ_BROWSER_MCP_PATH = process.env.SQ_BROWSER_MCP_PATH;
+    savedEnv.SQ_BROWSER_HEADED = process.env.SQ_BROWSER_HEADED;
+    savedEnv.SQ_BROWSER_BROWSER_URL = process.env.SQ_BROWSER_BROWSER_URL;
+    savedEnv.SQ_BROWSER_USER_DATA_DIR = process.env.SQ_BROWSER_USER_DATA_DIR;
+    savedEnv.SQ_BROWSER_AUTO_CONNECT = process.env.SQ_BROWSER_AUTO_CONNECT;
+    delete process.env.SQ_BROWSER_MCP_PATH;
+    delete process.env.SQ_BROWSER_HEADED;
+    delete process.env.SQ_BROWSER_BROWSER_URL;
+    delete process.env.SQ_BROWSER_USER_DATA_DIR;
+    delete process.env.SQ_BROWSER_AUTO_CONNECT;
   });
 
   afterEach(() => {
@@ -391,8 +367,8 @@ describe("resolveTransportSpec", () => {
     expect(spec.args).toContain("--headless");
   });
 
-  it("spawns node directly when CHROME_DEVTOOLS_AXI_MCP_PATH is set", () => {
-    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH =
+  it("spawns node directly when SQ_BROWSER_MCP_PATH is set", () => {
+    process.env.SQ_BROWSER_MCP_PATH =
       "/opt/mcp/build/src/bin/chrome-devtools-mcp.js";
     const spec = resolveTransportSpec();
     expect(spec.command).toBe(process.execPath);
@@ -406,8 +382,8 @@ describe("resolveTransportSpec", () => {
   });
 
   it("preserves --browserUrl when MCP_PATH and BROWSER_URL are both set", () => {
-    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/opt/mcp.js";
-    process.env.CHROME_DEVTOOLS_AXI_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_MCP_PATH = "/opt/mcp.js";
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
     const spec = resolveTransportSpec();
     expect(spec.command).toBe(process.execPath);
     expect(spec.args[0]).toBe("/opt/mcp.js");
@@ -416,7 +392,7 @@ describe("resolveTransportSpec", () => {
   });
 
   it("treats an empty MCP_PATH as unset", () => {
-    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "";
+    process.env.SQ_BROWSER_MCP_PATH = "";
     const probe = {
       existsSync: () => false,
       getNpmPrefix: () => null,
@@ -462,7 +438,7 @@ describe("resolveTransportSpec", () => {
   });
 
   it("explicit MCP_PATH always wins over auto-detection", () => {
-    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/explicit/override.js";
+    process.env.SQ_BROWSER_MCP_PATH = "/explicit/override.js";
     const probe = {
       existsSync: () => true,
       getNpmPrefix: () => "/usr",
@@ -1007,7 +983,7 @@ describe("handleBridgeServerError", () => {
     expect(BRIDGE_PORT_IN_USE_EXIT_CODE).not.toBe(1);
     expect(stderr).toContain("9225");
     expect(stderr).toContain("EADDRINUSE");
-    expect(stderr).toContain("CHROME_DEVTOOLS_AXI_PORT");
+    expect(stderr).toContain("SQ_BROWSER_PORT");
   });
 
   it("exits non-zero for other fatal server errors", () => {

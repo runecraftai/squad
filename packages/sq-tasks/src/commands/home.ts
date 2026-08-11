@@ -82,11 +82,11 @@ export async function homeCommand(
   const hints: string[] = [];
   if (queued.length > QUEUED_PREVIEW) {
     hints.push(
-      `Run \`tasks-axi list --state queued\` for all ${queued.length} queued tasks`,
+      `Run \`sq-tasks list --state queued\` for all ${queued.length} queued tasks`,
     );
   }
   if (blocked.size > 0) {
-    hints.push("Run `tasks-axi ready` to see only unblocked work");
+    hints.push("Run `sq-tasks ready` to see only unblocked work");
   }
   blocks.push(
     renderHelp([

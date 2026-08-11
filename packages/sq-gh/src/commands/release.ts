@@ -19,7 +19,7 @@ import {
 } from "../toon.js";
 import { getSuggestions } from "../suggestions.js";
 
-export const RELEASE_HELP = `usage: gh-axi release <subcommand> [flags]
+export const RELEASE_HELP = `usage: sq-gh release <subcommand> [flags]
 subcommands[7]:
   list, view <tag>, create <tag>, edit <tag>, delete <tag>, download <tag>, upload <tag>
 flags{list}:
@@ -33,9 +33,9 @@ flags{edit}:
 flags{download}:
   --pattern, --dir
 examples:
-  gh-axi release list --exclude-drafts
-  gh-axi release view v1.2.0 --full
-  gh-axi release create v1.3.0 --body-file notes.md --draft dist/app.zip`;
+  sq-gh release list --exclude-drafts
+  sq-gh release view v1.2.0 --full
+  sq-gh release create v1.3.0 --body-file notes.md --draft dist/app.zip`;
 
 const listSchema: FieldDef[] = [
   field("tagName", "tag"),
@@ -164,7 +164,7 @@ async function listReleases(
   const limitNum = Number(limit);
   const countLine =
     releases.length === limitNum
-      ? `count: ${releases.length} (showing first ${releases.length}; run \`gh-axi repo view\` for total count)`
+      ? `count: ${releases.length} (showing first ${releases.length}; run \`sq-gh repo view\` for total count)`
       : `count: ${releases.length}`;
   const suggestions = getSuggestions({
     domain: "release",
@@ -185,7 +185,7 @@ async function viewRelease(args: string[], ctx?: RepoContext): Promise<string> {
   const tag = positionals[1];
   if (!tag)
     throw new AxiError(
-      "Tag is required: gh-axi release view <tag>",
+      "Tag is required: sq-gh release view <tag>",
       "VALIDATION_ERROR",
     );
 
@@ -230,7 +230,7 @@ async function createRelease(
   const tag = positionals[0];
   if (!tag)
     throw new AxiError(
-      "Tag is required: gh-axi release create <tag>",
+      "Tag is required: sq-gh release create <tag>",
       "VALIDATION_ERROR",
     );
 
@@ -268,7 +268,7 @@ async function editRelease(args: string[], ctx?: RepoContext): Promise<string> {
   const tag = positionals[1];
   if (!tag)
     throw new AxiError(
-      "Tag is required: gh-axi release edit <tag>",
+      "Tag is required: sq-gh release edit <tag>",
       "VALIDATION_ERROR",
     );
 
@@ -298,7 +298,7 @@ async function deleteRelease(
   const tag = positionals[1];
   if (!tag)
     throw new AxiError(
-      "Tag is required: gh-axi release delete <tag>",
+      "Tag is required: sq-gh release delete <tag>",
       "VALIDATION_ERROR",
     );
 
@@ -342,7 +342,7 @@ async function downloadRelease(
   const tag = positionals[1];
   if (!tag)
     throw new AxiError(
-      "Tag is required: gh-axi release download <tag>",
+      "Tag is required: sq-gh release download <tag>",
       "VALIDATION_ERROR",
     );
 
@@ -373,14 +373,14 @@ async function uploadRelease(
   const tag = positionals[1];
   if (!tag)
     throw new AxiError(
-      "Tag is required: gh-axi release upload <tag> <files...>",
+      "Tag is required: sq-gh release upload <tag> <files...>",
       "VALIDATION_ERROR",
     );
 
   const files = positionals.slice(2);
   if (files.length === 0)
     throw new AxiError(
-      "At least one file is required: gh-axi release upload <tag> <files...>",
+      "At least one file is required: sq-gh release upload <tag> <files...>",
       "VALIDATION_ERROR",
     );
 

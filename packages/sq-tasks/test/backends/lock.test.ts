@@ -21,7 +21,7 @@ import {
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tasks-axi-lock-"));
+  dir = mkdtempSync(join(tmpdir(), "sq-tasks-lock-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });

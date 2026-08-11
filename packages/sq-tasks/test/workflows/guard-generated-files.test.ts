@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 function initRepo(): string {
-  const repo = mkdtempSync(join(tmpdir(), "tasks-axi-guard-"));
+  const repo = mkdtempSync(join(tmpdir(), "sq-tasks-guard-"));
   repos.push(repo);
   execFileSync("git", ["init", repo]);
   git(repo, ["config", "user.email", "test@example.com"]);

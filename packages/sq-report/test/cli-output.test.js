@@ -10,8 +10,8 @@ import test from "node:test";
 
 import { AxiError } from "axi-sdk-js";
 
-process.env.LAVISH_AXI_HOST = "127.0.0.1";
-process.env.LAVISH_AXI_LINK_HOST = "127.0.0.1";
+process.env.SQ_REPORT_HOST = "127.0.0.1";
+process.env.SQ_REPORT_LINK_HOST = "127.0.0.1";
 
 import {
   collapseHomeDirectory,
@@ -96,7 +96,7 @@ async function waitForPollListening(base, key, timeoutMs = 10_000) {
 function setupHooksEnv(homeDir, stateDir) {
   // eslint-disable-next-line no-unused-vars
   const { COPILOT_HOME, ...env } = process.env;
-  return { ...env, HOME: homeDir, LAVISH_AXI_STATE_DIR: stateDir };
+  return { ...env, HOME: homeDir, SQ_REPORT_STATE_DIR: stateDir };
 }
 
 function assertObservablePollWakePath(text) {
@@ -148,9 +148,9 @@ test("home output teaches agents when and how to use Lavish Editor", () => {
     output.playbooks.find((item) => item.id === "input")?.use_when,
     "Must be used when the agent needs to collect user input on decisions, choices, preferences, triage, scope, or other structured feedback from within the artifact",
   );
-  assert.ok(output.help.some((item) => item.includes("lavish-axi <html-file>")));
+  assert.ok(output.help.some((item) => item.includes("sq-report <html-file>")));
   assert.ok(output.help.some((item) => item.includes("`.lavish/`")));
-  assert.ok(output.help.some((item) => item.includes("lavish-axi playbook <playbook_id>")));
+  assert.ok(output.help.some((item) => item.includes("sq-report playbook <playbook_id>")));
   assert.ok(output.help.some((item) => item.includes("combines several playbooks")));
   assert.ok(output.help.some((item) => item.includes("MUST open each matching playbook")));
   assert.ok(output.help.some((item) => item.includes("reference other filesystem assets")));
@@ -180,7 +180,7 @@ test("the design-priority rule is single-sourced and keeps its three-step semant
   assert.ok(DESIGN_SYSTEM_HINT.includes(DESIGN_PRIORITY_RULE), "the home/skill hint embeds the rule");
   assert.match(DESIGN_SYSTEM_HINT, /does not auto-inject/);
   assert.match(DESIGN_SYSTEM_HINT, /portable/);
-  assert.match(DESIGN_SYSTEM_HINT, /lavish-axi design/);
+  assert.match(DESIGN_SYSTEM_HINT, /sq-report design/);
   assert.match(DESIGN_SYSTEM_HINT, /state which of the three design sources/);
 });
 
@@ -191,7 +191,7 @@ test("design output is the sole emitted concise explicit-background guidance", (
   assert.equal(output.self_paint_rule, undefined);
 
   const otherAgentSurfaces = [
-    JSON.stringify(createHomeOutput({ bin: "lavish-axi", sessions: [] })),
+    JSON.stringify(createHomeOutput({ bin: "sq-report", sessions: [] })),
     getCommandHelp("design"),
     createSkillMarkdown(),
     ...["diagram", "table", "comparison", "plan", "code", "input", "slides"].map((id) =>
@@ -215,7 +215,7 @@ test("open output flags an artifact that never paints its own page surface", () 
   assert.equal(warned.self_paint_warning, SELF_PAINT_WARNING);
   assert.match(warned.next_step, /^First fix the unpainted page surface flagged in self_paint_warning/);
   assert.match(warned.next_step, /live-reloads the artifact automatically/);
-  assert.match(warned.next_step, /lavish-axi poll \/tmp\/artifact\.html/, "the poll contract stays intact");
+  assert.match(warned.next_step, /sq-report poll \/tmp\/artifact\.html/, "the poll contract stays intact");
 
   const clean = createOpenOutput({
     file: "/tmp/artifact.html",
@@ -260,8 +260,8 @@ test("export and share outputs flag an unpainted page surface before it reaches 
 });
 
 test("home output warns agents that poll needs an observable wake path", () => {
-  const output = createHomeOutput({ bin: "lavish-axi", sessions: [] });
-  const pollHelp = output.help.find((item) => item.includes("lavish-axi poll <html-file>"));
+  const output = createHomeOutput({ bin: "sq-report", sessions: [] });
+  const pollHelp = output.help.find((item) => item.includes("sq-report poll <html-file>"));
 
   assert.ok(pollHelp, "home help mentions the poll command");
   assert.match(pollHelp, /long-poll/);
@@ -279,15 +279,15 @@ test("home output warns agents that poll needs an observable wake path", () => {
 test("ambient and per-artifact output never nags about installing the plugin", () => {
   // Home output loads on every session and open/poll run constantly; setup belongs in the
   // setup surfaces only, so an install prompt here would be pure recurring token cost.
-  const home = createHomeOutput({ bin: "lavish-axi", sessions: [] });
+  const home = createHomeOutput({ bin: "sq-report", sessions: [] });
 
   assert.doesNotMatch(JSON.stringify(home), /setup plugin/);
   assert.doesNotMatch(JSON.stringify(home), /setup hooks/);
 });
 
 test("home output tailors poll guidance when invoked under Codex", () => {
-  const output = createHomeOutput({ bin: "lavish-axi", sessions: [], agent: "codex" });
-  const pollHelp = output.help.find((item) => item.includes("lavish-axi poll <html-file>"));
+  const output = createHomeOutput({ bin: "sq-report", sessions: [], agent: "codex" });
+  const pollHelp = output.help.find((item) => item.includes("sq-report poll <html-file>"));
 
   assertObservablePollWakePath(pollHelp);
   assert.match(pollHelp, /Codex detected/);
@@ -295,8 +295,8 @@ test("home output tailors poll guidance when invoked under Codex", () => {
 });
 
 test("home output keeps static skill poll guidance safe and agent-neutral", () => {
-  const output = createHomeOutput({ bin: "lavish-axi", sessions: [], agent: "static" });
-  const pollHelp = output.help.find((item) => item.includes("lavish-axi poll <html-file>"));
+  const output = createHomeOutput({ bin: "sq-report", sessions: [], agent: "static" });
+  const pollHelp = output.help.find((item) => item.includes("sq-report poll <html-file>"));
 
   assertObservablePollWakePath(pollHelp);
   assert.doesNotMatch(pollHelp, /keep the poll attached to the active turn/i);
@@ -321,17 +321,17 @@ test("top-level help renders static home output without dynamic sessions", async
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         encoding: "utf8",
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir },
+        env: { ...process.env, SQ_REPORT_STATE_DIR: stateDir },
       },
     );
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /playbooks\[7\]/);
-    assert.match(result.stdout, /lavish-axi playbook <playbook_id>/);
+    assert.match(result.stdout, /sq-report playbook <playbook_id>/);
     assert.match(result.stdout, /reference other filesystem assets/);
     assert.match(result.stdout, /same directory as the HTML file/);
     assert.match(result.stdout, /Tailwind CSS browser runtime v4/);
-    assert.match(result.stdout, /lavish-axi design/);
+    assert.match(result.stdout, /sq-report design/);
     assert.match(result.stdout, /strict priority order/);
     assert.match(result.stdout, /never kill it/);
     assert.match(result.stdout, /queued feedback is never lost/);
@@ -430,7 +430,7 @@ test("playbook index output lists known playbooks with concise descriptions", ()
     "Must be used when the agent needs to collect user input on decisions, choices, preferences, triage, scope, or other structured feedback from within the artifact",
   );
   assert.ok(output.playbooks.every((playbook) => playbook.use_when.length > 20));
-  assert.ok(output.help.some((item) => item.includes("lavish-axi playbook <playbook_id>")));
+  assert.ok(output.help.some((item) => item.includes("sq-report playbook <playbook_id>")));
   assert.ok(output.help.some((item) => item.includes("combines several playbooks")));
   assert.ok(output.help.some((item) => item.includes("MUST open each matching playbook")));
 });
@@ -719,7 +719,7 @@ test("unknown playbook ids produce an actionable validation error", () => {
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "VALIDATION_ERROR");
       assert.match(error.message, /Unknown playbook/);
-      assert.ok(error.suggestions.some((item) => item.includes("lavish-axi playbook")));
+      assert.ok(error.suggestions.some((item) => item.includes("sq-report playbook")));
       return true;
     },
   );
@@ -752,7 +752,7 @@ test("open output keeps the user URL in session data and next_step focused on po
   assert.doesNotMatch(output.next_step, /Tell the user (?:to open|to visit)/i);
   assert.doesNotMatch(output.next_step, /http:\/\/localhost:4387\/session\/abc123/);
   assert.match(output.next_step, /Do not respond to the user just yet\. Now you must run/);
-  assert.match(output.next_step, /lavish-axi poll \/tmp\/artifact\.html/);
+  assert.match(output.next_step, /sq-report poll \/tmp\/artifact\.html/);
   assert.match(output.next_step, /Layout issues inbox/);
   assert.doesNotMatch(output.next_step, /layout_warnings/);
   assert.match(output.next_step, /never kill it/);
@@ -788,7 +788,7 @@ test("a user-ended open refuses with a status agents can branch on, not a URL to
   assert.match(output.next_step, /user explicitly ended this Lavish Editor session from the browser/);
   assert.match(output.next_step, /did not reopen it/);
   assert.match(output.next_step, /Do not reopen unless the user asks for further review/);
-  assert.match(output.next_step, /lavish-axi \/tmp\/artifact\.html --reopen/);
+  assert.match(output.next_step, /sq-report \/tmp\/artifact\.html --reopen/);
 });
 
 test("export output reports the written file and reassures it needs no server", () => {
@@ -870,7 +870,7 @@ test("export command writes a portable HTML file next to the artifact", async ()
       [fileURLToPath(new URL("../bin/sq-report.js", import.meta.url)), "export", artifact],
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: dir, LAVISH_AXI_TELEMETRY: "0" },
+        env: { ...process.env, SQ_REPORT_STATE_DIR: dir, SQ_REPORT_TELEMETRY: "0" },
         encoding: "utf8",
       },
     );
@@ -898,7 +898,7 @@ test("export command treats --out value as an option operand, not the source fil
       [fileURLToPath(new URL("../bin/sq-report.js", import.meta.url)), "export", "--out", output, artifact],
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: dir, LAVISH_AXI_TELEMETRY: "0" },
+        env: { ...process.env, SQ_REPORT_STATE_DIR: dir, SQ_REPORT_TELEMETRY: "0" },
         encoding: "utf8",
       },
     );
@@ -1020,9 +1020,9 @@ test("share command publishes the artifact to ht-ml.app and returns the public u
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         env: {
           ...process.env,
-          LAVISH_AXI_STATE_DIR: dir,
-          LAVISH_AXI_TELEMETRY: "0",
-          LAVISH_AXI_HTML_APP_API_URL: `http://127.0.0.1:${htmlApp.port}`,
+          SQ_REPORT_STATE_DIR: dir,
+          SQ_REPORT_TELEMETRY: "0",
+          SQ_REPORT_HTML_APP_API_URL: `http://127.0.0.1:${htmlApp.port}`,
         },
       },
     );
@@ -1065,9 +1065,9 @@ test("share command treats a whitespace-only password as public", async () => {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         env: {
           ...process.env,
-          LAVISH_AXI_STATE_DIR: dir,
-          LAVISH_AXI_TELEMETRY: "0",
-          LAVISH_AXI_HTML_APP_API_URL: `http://127.0.0.1:${htmlApp.port}`,
+          SQ_REPORT_STATE_DIR: dir,
+          SQ_REPORT_TELEMETRY: "0",
+          SQ_REPORT_HTML_APP_API_URL: `http://127.0.0.1:${htmlApp.port}`,
         },
       },
     );
@@ -1119,8 +1119,8 @@ test("poll help is Codex-aware when requested", () => {
 
 test("share help distinguishes public default from password-protected shares", () => {
   const help = getCommandHelp("share");
-  const home = createHomeOutput({ bin: "lavish-axi", sessions: [] });
-  const homeShareHelp = home.help.find((item) => item.includes("lavish-axi share <html-file>"));
+  const home = createHomeOutput({ bin: "sq-report", sessions: [] });
+  const homeShareHelp = home.help.find((item) => item.includes("sq-report share <html-file>"));
 
   assert.match(help, /PUBLIC by default/);
   assert.match(help, /Pass --password to publish a PRIVATE password-protected page/);
@@ -1284,9 +1284,9 @@ test("a poll reporting the session ended by the user tells the agent to stop and
   assert.equal(output.session.ended_by, "user");
   assert.match(output.next_step, /user ended this Lavish Editor session/);
   assert.match(output.next_step, /Stop polling/);
-  assert.match(output.next_step, /do not run `lavish-axi \/tmp\/report\.html` to reopen it/);
+  assert.match(output.next_step, /do not run `sq-report \/tmp\/report\.html` to reopen it/);
   assert.match(output.next_step, /deliver any remaining updates directly in this conversation/i);
-  assert.match(output.next_step, /lavish-axi \/tmp\/report\.html --reopen/);
+  assert.match(output.next_step, /sq-report \/tmp\/report\.html --reopen/);
 });
 
 test("a poll reporting an agent-ended session allows a plain reopen if still needed", () => {
@@ -1297,7 +1297,7 @@ test("a poll reporting an agent-ended session allows a plain reopen if still nee
 
   assert.equal(output.session.ended_by, "agent");
   assert.match(output.next_step, /Stop polling/);
-  assert.match(output.next_step, /lavish-axi \/tmp\/report\.html`\s+to open a fresh session/);
+  assert.match(output.next_step, /sq-report \/tmp\/report\.html`\s+to open a fresh session/);
   assert.doesNotMatch(output.next_step, /--reopen/);
 });
 
@@ -1317,7 +1317,7 @@ test("the final feedback batch before a user end flags session_ended and skips t
   assert.equal(output.session.ended_by, "user");
   assert.match(output.next_step, /last feedback before the user ended the session/);
   assert.match(output.next_step, /Stop polling \/tmp\/report\.html and do not reopen it/);
-  assert.match(output.next_step, /lavish-axi \/tmp\/report\.html --reopen/);
+  assert.match(output.next_step, /sq-report \/tmp\/report\.html --reopen/);
   assert.doesNotMatch(output.next_step, /reload or re-open/);
 });
 
@@ -1336,7 +1336,7 @@ test("the final feedback batch before an agent end preserves ended_by and allows
   assert.equal(output.session.session_ended, true);
   assert.equal(output.session.ended_by, "agent");
   assert.match(output.next_step, /last feedback before the Lavish Editor session ended/);
-  assert.match(output.next_step, /lavish-axi \/tmp\/report\.html`\s+to open a fresh session/);
+  assert.match(output.next_step, /sq-report \/tmp\/report\.html`\s+to open a fresh session/);
   assert.doesNotMatch(output.next_step, /--reopen/);
   assert.doesNotMatch(output.next_step, /user ended this Lavish Editor session/);
 });
@@ -1376,22 +1376,22 @@ test("final agent-ended feedback points a fatal artifact failure at a fresh sess
 
 test("poll wait messages tell watching agents the silence is normal", () => {
   const banner = pollWaitBannerText("/tmp/report.html");
-  assert.match(banner, /\[lavish-axi\]/);
+  assert.match(banner, /\[sq-report\]/);
   assert.match(banner, /Long-polling for user feedback/);
   assert.match(banner, /stays silent/);
   assert.match(banner, /leave it running/i);
   assert.match(banner, /queued feedback is never lost/);
 
   const tick = pollWaitTickText(3 * 60_000);
-  assert.match(tick, /\[lavish-axi\]/);
+  assert.match(tick, /\[sq-report\]/);
   assert.match(tick, /Still waiting for user feedback \(3m\)/);
   assert.match(tick, /leave this running/i);
 
   const interrupted = pollInterruptedText("/tmp/report.html");
-  assert.match(interrupted, /\[lavish-axi\]/);
+  assert.match(interrupted, /\[sq-report\]/);
   assert.match(interrupted, /Poll interrupted/);
   assert.match(interrupted, /user may still be reviewing/);
-  assert.match(interrupted, /lavish-axi poll \/tmp\/report\.html/);
+  assert.match(interrupted, /sq-report poll \/tmp\/report\.html/);
   assert.match(interrupted, /queued feedback is never lost/);
 });
 
@@ -1470,7 +1470,7 @@ test("spawned poll with piped stderr banners once and leaves re-run guidance whe
       [fileURLToPath(new URL("../bin/sq-report.js", import.meta.url)), "poll", artifact],
       {
         cwd: fileURLToPath(new URL("..", import.meta.url)),
-        env: { ...process.env, LAVISH_AXI_STATE_DIR: stateDir, LAVISH_AXI_PORT: String(server.port) },
+        env: { ...process.env, SQ_REPORT_STATE_DIR: stateDir, SQ_REPORT_PORT: String(server.port) },
       },
     );
 
@@ -1511,7 +1511,7 @@ test("waiting next step reassures agents that re-running poll loses nothing", ()
     response: { status: "waiting" },
   });
 
-  assert.match(output.next_step, /lavish-axi poll \/tmp\/report\.html/);
+  assert.match(output.next_step, /sq-report poll \/tmp\/report\.html/);
   assert.match(output.next_step, /without --timeout-ms/);
   assert.match(output.next_step, /queued feedback is never lost/);
 });
@@ -2101,7 +2101,7 @@ test("open can resume a session without opening another browser window", () => {
   assert.equal(shouldOpenBrowser(["--no-open", "artifact.html"], {}), false);
   assert.equal(shouldOpenBrowser(["artifact.html", "--no-open"], {}), false);
   assert.equal(shouldOpenBrowser(["--no-gate", "artifact.html"], {}), true);
-  assert.equal(shouldOpenBrowser(["artifact.html"], { LAVISH_AXI_NO_OPEN: "1" }), false);
+  assert.equal(shouldOpenBrowser(["artifact.html"], { SQ_REPORT_NO_OPEN: "1" }), false);
   assert.equal(shouldOpenBrowser(["artifact.html"], {}), true);
   assert.match(getCommandHelp("open"), /--no-open/);
   assert.match(getCommandHelp("open"), /--no-gate/);
@@ -2112,7 +2112,7 @@ test("open can resume a session without opening another browser window", () => {
   assert.doesNotMatch(getCommandHelp("playbook"), new RegExp(`${"di"}ff, input`));
   assert.doesNotMatch(getCommandHelp("playbook"), /interactive/);
   assert.match(getCommandHelp("design"), /DaisyUI/);
-  assert.match(getCommandHelp("design"), /lavish-axi design/);
+  assert.match(getCommandHelp("design"), /sq-report design/);
   assert.match(getCommandHelp("design"), /portable/);
   assert.ok(getCommandHelp("design").includes(DESIGN_PRIORITY_RULE), "design help embeds the single-sourced rule");
   assert.match(getCommandHelp("design"), /fallback, not the default/i);
@@ -2127,7 +2127,7 @@ test("polling a file without an active session tells the agent to open it first"
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "NOT_FOUND");
       assert.match(error.message, /No active Lavish Editor session/);
-      assert.ok(error.suggestions.some((item) => item.includes("lavish-axi /tmp/report.html")));
+      assert.ok(error.suggestions.some((item) => item.includes("sq-report /tmp/report.html")));
       return true;
     },
   );
@@ -2140,7 +2140,7 @@ test("network fetch failures become structured Lavish server errors", async () =
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "SERVER_ERROR");
       assert.match(error.message, /Lavish Editor server connection failed/);
-      assert.ok(error.suggestions.some((item) => item.includes("lavish-axi server --verbose")));
+      assert.ok(error.suggestions.some((item) => item.includes("sq-report server --verbose")));
       return true;
     },
   );

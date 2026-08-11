@@ -20,8 +20,8 @@ afterEach(() => {
 
 describe("commandExists", () => {
   it("finds executables from PATH without shell probes", async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "quota-axi-path-"));
-    const command = "quota-axi-fixture";
+    tempDir = mkdtempSync(join(tmpdir(), "sq-quota-path-"));
+    const command = "sq-quota-fixture";
     const file =
       process.platform === "win32"
         ? join(tempDir, `${command}.CMD`)
@@ -35,7 +35,7 @@ describe("commandExists", () => {
     process.env.PATHEXT = ".CMD;.EXE";
 
     expect(await commandExists(command)).toBe(true);
-    expect(await commandExists("quota-axi-missing")).toBe(false);
+    expect(await commandExists("sq-quota-missing")).toBe(false);
   });
 });
 

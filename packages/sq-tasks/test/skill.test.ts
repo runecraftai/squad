@@ -22,9 +22,9 @@ describe("skill generation", () => {
 
   it("renders frontmatter and the shared guidance", () => {
     const md = createSkillMarkdown();
-    expect(md).toContain("name: tasks-axi");
+    expect(md).toContain("name: sq-tasks");
     expect(md).toContain(JSON.stringify(SKILL_DESCRIPTION));
-    expect(md).toContain("npx -y tasks-axi");
+    expect(md).toContain("npx -y sq-tasks");
     expect(md).toContain("## Commands");
   });
 

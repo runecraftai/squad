@@ -242,7 +242,7 @@ describe("quota cache", () => {
 });
 
 function useTempCache(): void {
-  tempDir = mkdtempSync(join(tmpdir(), "quota-axi-cache-"));
+  tempDir = mkdtempSync(join(tmpdir(), "sq-quota-cache-"));
   process.env.XDG_CACHE_HOME = tempDir;
 }
 

@@ -15,16 +15,16 @@ import {
 import { getSuggestions } from "../suggestions.js";
 import { resolveValue } from "../secretValue.js";
 
-export const VARIABLE_HELP = `usage: gh-axi variable <subcommand> [flags]
+export const VARIABLE_HELP = `usage: sq-gh variable <subcommand> [flags]
 subcommands[3]:
   list, set <name>, delete <name>
 flags{set}:
   --body/-b <value> (reads from stdin if omitted)
 examples:
-  gh-axi variable list
-  gh-axi variable set NODE_ENV --body production
-  echo -n "production" | gh-axi variable set NODE_ENV
-  gh-axi variable delete NODE_ENV`;
+  sq-gh variable list
+  sq-gh variable set NODE_ENV --body production
+  echo -n "production" | sq-gh variable set NODE_ENV
+  sq-gh variable delete NODE_ENV`;
 
 const listSchema: FieldDef[] = [
   field("name"),
@@ -62,7 +62,7 @@ async function setVariable(args: string[], ctx?: RepoContext): Promise<string> {
   const name = positionals[0];
   if (!name) {
     throw new AxiError(
-      "Variable name is required: gh-axi variable set <name>",
+      "Variable name is required: sq-gh variable set <name>",
       "VALIDATION_ERROR",
     );
   }
@@ -90,7 +90,7 @@ async function deleteVariable(
   const name = positionals[1];
   if (!name) {
     throw new AxiError(
-      "Variable name is required: gh-axi variable delete <name>",
+      "Variable name is required: sq-gh variable delete <name>",
       "VALIDATION_ERROR",
     );
   }

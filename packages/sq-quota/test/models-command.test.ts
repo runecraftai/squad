@@ -165,7 +165,7 @@ async function capture(argv: string[]): Promise<string> {
   const chunks: string[] = [];
   await main({
     argv,
-    binPath: "quota-axi",
+    binPath: "sq-quota",
     stdout: { write: (chunk) => chunks.push(String(chunk)) },
   });
   return chunks.join("");

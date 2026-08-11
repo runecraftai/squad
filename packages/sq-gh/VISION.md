@@ -1,6 +1,6 @@
 # Vision
 
-`gh-axi` is an agent-ergonomic interface to the official GitHub CLI, `gh`.
+`sq-gh` is an agent-ergonomic interface to the official GitHub CLI, `gh`.
 
 ## Scope
 

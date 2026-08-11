@@ -574,7 +574,7 @@ describe("Pi Kimi credential broker", () => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "quota-axi-pi-kimi-"));
+  const directory = mkdtempSync(join(tmpdir(), "sq-quota-pi-kimi-"));
   temporaryDirectories.push(directory);
   return directory;
 }

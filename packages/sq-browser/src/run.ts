@@ -1,5 +1,5 @@
 /**
- * Script runner for `chrome-devtools-axi run`.
+ * Script runner for `sq-browser run`.
  *
  * Reads a script from stdin, provides a minimal `page` global, and executes it.
  * Only the script's own console.log output is visible to the caller.

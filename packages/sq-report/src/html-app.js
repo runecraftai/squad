@@ -10,7 +10,7 @@ const DEFAULT_API_URL = "https://api.ht-ml.app";
 const PUBLISH_TIMEOUT_MS = 30_000;
 
 export function htmlAppApiUrl(env = process.env) {
-  return String(env.LAVISH_AXI_HTML_APP_API_URL || DEFAULT_API_URL).replace(/\/+$/, "");
+  return String(env.SQ_REPORT_HTML_APP_API_URL || DEFAULT_API_URL).replace(/\/+$/, "");
 }
 
 export function createHtmlAppPayload(html, options = {}) {
@@ -26,7 +26,7 @@ export function createHtmlAppPayload(html, options = {}) {
  * @param {object} [options]
  * @param {string} [options.password] Make the site private behind this password.
  * @param {string} [options.token] Optional bearer token (never required to create a site).
- * @param {string} [options.apiUrl] Override the API base (defaults to LAVISH_AXI_HTML_APP_API_URL or ht-ml.app).
+ * @param {string} [options.apiUrl] Override the API base (defaults to SQ_REPORT_HTML_APP_API_URL or ht-ml.app).
  * @param {typeof fetch} [options.fetch] Injected fetch for testing.
  * @param {NodeJS.ProcessEnv} [options.env]
  * @param {number} [options.timeoutMs]
@@ -36,7 +36,7 @@ export async function publishToHtmlApp(html, options = {}) {
   const env = options.env || process.env;
   const apiUrl = (options.apiUrl ? String(options.apiUrl).replace(/\/+$/, "") : "") || htmlAppApiUrl(env);
   const fetchImpl = options.fetch || fetch;
-  const token = optionalString(options.token ?? env.LAVISH_AXI_HTML_APP_TOKEN);
+  const token = optionalString(options.token ?? env.SQ_REPORT_HTML_APP_TOKEN);
 
   const headers = { "content-type": "application/json", "user-agent": "sq-report" };
   if (token) headers.authorization = `Bearer ${token}`;

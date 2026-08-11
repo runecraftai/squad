@@ -243,7 +243,7 @@ describe("release-please CI exclusions", () => {
   });
 
   it("offline filter: latest release PR file set is fully ignored", () => {
-    // chrome-devtools-axi #90 (release 0.1.28) - exact observed release-output set.
+    // sq-browser #90 (release 0.1.28) - exact observed release-output set.
     const releasePrFiles = [
       ".release-please-manifest.json",
       "CHANGELOG.md",

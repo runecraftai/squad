@@ -35,7 +35,7 @@ export function parseFlags(args: string[]): QuotaFlags {
     throw new AxiError(
       "--intelligence and --sort are only supported by the models command",
       "VALIDATION_ERROR",
-      ["Run `quota-axi models --help` for supported models flags"],
+      ["Run `sq-quota models --help` for supported models flags"],
     );
   }
   return flags;
@@ -48,7 +48,7 @@ export function parseModelsFlags(args: string[]): ModelsFlags {
     throw new AxiError(
       "--tui is only supported by the quota command",
       "VALIDATION_ERROR",
-      ["Run `quota-axi --tui` for the human quota report"],
+      ["Run `sq-quota --tui` for the human quota report"],
     );
   }
   const unsupported = flags.providers.find(
@@ -151,7 +151,7 @@ function parseCommonFlags(
       continue;
     }
     throw new AxiError(`unknown argument: ${arg}`, "VALIDATION_ERROR", [
-      "Run `quota-axi --help` for supported commands and flags",
+      "Run `sq-quota --help` for supported commands and flags",
     ]);
   }
 
@@ -160,7 +160,7 @@ function parseCommonFlags(
       "--tui and --json are mutually exclusive output modes",
       "VALIDATION_ERROR",
       [
-        "Run `quota-axi --tui` for the human report or `quota-axi --json` for machine output",
+        "Run `sq-quota --tui` for the human report or `sq-quota --json` for machine output",
       ],
     );
   }
@@ -170,7 +170,7 @@ function parseCommonFlags(
     throw new AxiError(
       `${liveOnlyFlag} is only supported with --tui`,
       "VALIDATION_ERROR",
-      ["Run `quota-axi --tui --refresh 5m` for the live human report"],
+      ["Run `sq-quota --tui --refresh 5m` for the live human report"],
     );
   }
 
@@ -198,7 +198,7 @@ function parseIntelligenceValue(
   throw new AxiError(
     `${flag} requires high, medium, or low`,
     "VALIDATION_ERROR",
-    ["Run `quota-axi models --help` for supported models flags"],
+    ["Run `sq-quota models --help` for supported models flags"],
   );
 }
 

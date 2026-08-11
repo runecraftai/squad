@@ -3,7 +3,7 @@
 // Registered by `module-trace-register.mjs` via `node --import`.
 import { appendFileSync } from "node:fs";
 
-const traceFile = process.env["GH_AXI_MODULE_TRACE_FILE"];
+const traceFile = process.env["SQ_GH_MODULE_TRACE_FILE"];
 
 export async function load(url, context, nextLoad) {
   if (traceFile) {

@@ -218,7 +218,7 @@ describe("public-followup commands", () => {
       });
       const source = b.read();
       expect(source).toContain("(kind: public-followup)");
-      expect(source).toContain("<!-- tasks-axi:public-followup/v1:");
+      expect(source).toContain("<!-- sq-tasks:public-followup/v1:");
       expect(renderBacklog(parseBacklog(source))).toBe(source);
 
       await updateCommand(["public-final-ab", "--repo", "demo-updated"], b.ctx);
@@ -229,11 +229,34 @@ describe("public-followup commands", () => {
       expect(moved?.repo).toBe("demo-updated");
       expect(moved?.public_followup).toEqual(beforeMove?.public_followup);
       expect(readFileSync(target.path, "utf8")).toContain(
-        "<!-- tasks-axi:public-followup/v1:",
+        "<!-- sq-tasks:public-followup/v1:",
       );
     } finally {
       b.cleanup();
       target.cleanup();
+    }
+  });
+
+  it("reads legacy-prefix public-followup markers and rewrites them with the current prefix", async () => {
+    const b = makeBacklog(EMPTY);
+    try {
+      await add(b);
+      const original = await b.store.get("public-final-ab");
+      if (!original?.public_followup) throw new Error("missing fixture payload");
+      const legacyPrefix = ["tasks", "axi"].join("-");
+      writeFileSync(
+        b.path,
+        `# Backlog\n\n## In flight\n\n## Queued\n- [ ] public-final-ab - Legacy read compat (kind: public-followup)\n  <!-- ${legacyPrefix}:public-followup/v1:${encodePublicFollowup(original.public_followup)} -->\n\n## Done\n`,
+        "utf8",
+      );
+      const reloaded = await b.store.get("public-final-ab");
+      expect(reloaded?.public_followup).toEqual(original.public_followup);
+      await renderCommand([], b.ctx);
+      const normalized = b.read();
+      expect(normalized).toContain("<!-- sq-tasks:public-followup/v1:");
+      expect(normalized).not.toContain(`${legacyPrefix}:public-followup`);
+    } finally {
+      b.cleanup();
     }
   });
 
@@ -823,11 +846,11 @@ describe("public-followup commands", () => {
       expect(output.pruned).toBe(1);
       expect(await b.store.get("public-final-ab")).toBeNull();
       expect(b.archive()).toContain("public-final-ab");
-      expect(b.archive()).toContain("tasks-axi:public-followup/v1:");
+      expect(b.archive()).toContain("sq-tasks:public-followup/v1:");
       const archivedLine = b
         .archive()
         .split("\n")
-        .find((line) => line.includes("tasks-axi:public-followup/v1:"));
+        .find((line) => line.includes("sq-tasks:public-followup/v1:"));
       const encoded = archivedLine?.match(/v1:([A-Za-z0-9_-]+)/)?.[1];
       expect(encoded).toBeDefined();
       const decoded = JSON.parse(
@@ -1001,7 +1024,7 @@ describe("public-followup commands", () => {
         missing
           .read()
           .split("\n")
-          .filter((line) => !line.includes("tasks-axi:public-followup"))
+          .filter((line) => !line.includes("sq-tasks:public-followup"))
           .join("\n"),
         "utf8",
       );
@@ -1065,7 +1088,7 @@ describe("public-followup commands", () => {
         b
           .read()
           .replace(
-            /(tasks-axi:public-followup\/v1:[A-Za-z0-9_-]+ -->)/,
+            /(sq-tasks:public-followup\/v1:[A-Za-z0-9_-]+ -->)/,
             "$1\n  private text must stay out of JSON",
           ),
         "utf8",

@@ -1,5 +1,5 @@
 /**
- * HTTP client for the chrome-devtools-axi bridge + bridge lifecycle management.
+ * HTTP client for the sq-browser bridge + bridge lifecycle management.
  */
 
 import { execFileSync, spawn } from "node:child_process";
@@ -24,12 +24,12 @@ const DEEP_HEALTH_TIMEOUT_MS = 5_000;
 /**
  * Resolve the bridge readiness deadline in milliseconds.
  *
- * Honors `CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS` for systems where npx
+ * Honors `SQ_BROWSER_BRIDGE_TIMEOUT_MS` for systems where npx
  * bootstrap or Chrome launch is slow (>30s). Values below 1s are clamped to
  * 1s to avoid pathological retries.
  */
 export function resolveBridgeTimeoutMs(): number {
-  const raw = process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS;
+  const raw = process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS;
   if (!raw) return DEFAULT_BRIDGE_TIMEOUT_MS;
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed <= 0) return DEFAULT_BRIDGE_TIMEOUT_MS;
@@ -158,7 +158,7 @@ function httpPost(
  * With `expectedSession`, a bridge that reports a *different* session name is
  * treated as unhealthy, so a session never silently reuses another session's
  * bridge after a port collision (two sessions pinned to one port via a global
- * `CHROME_DEVTOOLS_AXI_PORT`). A bridge that omits the field (older version) is
+ * `SQ_BROWSER_PORT`). A bridge that omits the field (older version) is
  * accepted, since there is no mismatch to detect.
  *
  * Exported for tests; production code uses it via `ensureBridge`.
@@ -299,8 +299,8 @@ function spawnBridgeProcess(port: number, sessionName: string): SpawnedBridge {
       stdio: "ignore",
       env: {
         ...process.env,
-        CHROME_DEVTOOLS_AXI_PORT: String(port),
-        CHROME_DEVTOOLS_AXI_SESSION: sessionName,
+        SQ_BROWSER_PORT: String(port),
+        SQ_BROWSER_SESSION: sessionName,
       },
       detached: true,
     },
@@ -318,7 +318,7 @@ function spawnBridgeProcess(port: number, sessionName: string): SpawnedBridge {
  * The guidance is attributed by exit code. Only {@link BRIDGE_PORT_IN_USE_EXIT_CODE}
  * (the bridge's EADDRINUSE sentinel) gets the port-in-use explanation; any
  * other early death is a startup failure (npx could not resolve/download
- * chrome-devtools-mcp, a broken `CHROME_DEVTOOLS_AXI_MCP_PATH`, or a
+ * chrome-devtools-mcp, a broken `SQ_BROWSER_MCP_PATH`, or a
  * Chrome launch failure) and gets the generic startup guidance, so a
  * single-session user with a broken install is not misdirected to port advice.
  */
@@ -336,22 +336,22 @@ export function buildBridgeEarlyExitError(
 
   if (code === BRIDGE_PORT_IN_USE_EXIT_CODE) {
     return new CdpError(message, "BRIDGE_NOT_READY", [
-      `Port ${port} is already in use. It may be held by another chrome-devtools-axi session's bridge (a hashed-port collision, or a globally-exported CHROME_DEVTOOLS_AXI_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
-      "Set a distinct CHROME_DEVTOOLS_AXI_PORT for this session, unset a global CHROME_DEVTOOLS_AXI_PORT so every session derives its own, or free whatever is holding the port.",
+      `Port ${port} is already in use. It may be held by another sq-browser session's bridge (a hashed-port collision, or a globally-exported SQ_BROWSER_PORT forcing every session onto one port), by a stale or crashed bridge that could not be reused, or by an unrelated process.`,
+      "Set a distinct SQ_BROWSER_PORT for this session, unset a global SQ_BROWSER_PORT so every session derives its own, or free whatever is holding the port.",
     ]);
   }
 
   const suggestions = [
     "Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@latest --help",
   ];
-  if (process.env.CHROME_DEVTOOLS_AXI_MCP_PATH) {
+  if (process.env.SQ_BROWSER_MCP_PATH) {
     suggestions.push(
-      "Verify CHROME_DEVTOOLS_AXI_MCP_PATH points to a valid chrome-devtools-mcp build.",
+      "Verify SQ_BROWSER_MCP_PATH points to a valid chrome-devtools-mcp build.",
     );
   } else {
     suggestions.push(
       "`npx -y chrome-devtools-mcp@latest` may have failed to resolve/download the package (offline, or a slow cold first run); install it globally and set:",
-      '  export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
+      '  export SQ_BROWSER_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
     );
   }
   suggestions.push(
@@ -465,18 +465,18 @@ export async function ensureBridge(
     );
   }
 
-  const usingNpx = !process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+  const usingNpx = !process.env.SQ_BROWSER_MCP_PATH;
   const suggestions = [
     "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
   ];
   if (usingNpx) {
     suggestions.push(
       "If `npx -y chrome-devtools-mcp@latest` is slow on this machine, install mcp globally and set:",
-      '  export CHROME_DEVTOOLS_AXI_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
+      '  export SQ_BROWSER_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
     );
   }
   suggestions.push(
-    "Or extend the deadline: export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000",
+    "Or extend the deadline: export SQ_BROWSER_BRIDGE_TIMEOUT_MS=60000",
   );
   throw new CdpError(
     `Bridge failed to start within ${seconds}s`,
@@ -510,7 +510,7 @@ export async function callTool(
 export function mapErrorMessage(message: string): CdpError {
   if (message.includes("ECONNREFUSED") || message.includes("ECONNRESET")) {
     return new CdpError("Bridge is not running", "BRIDGE_NOT_READY", [
-      "Run `chrome-devtools-axi open <url>` — the bridge starts automatically",
+      "Run `sq-browser open <url>` — the bridge starts automatically",
     ]);
   }
   if (
@@ -518,12 +518,12 @@ export function mapErrorMessage(message: string): CdpError {
     (message.includes("not found") || message.includes("invalid"))
   ) {
     return new CdpError(message, "REF_NOT_FOUND", [
-      "Run `chrome-devtools-axi snapshot` to see available elements and their @uid refs",
+      "Run `sq-browser snapshot` to see available elements and their @uid refs",
     ]);
   }
   if (message.includes("timeout") || message.includes("timed out")) {
     return new CdpError(message, "TIMEOUT", [
-      "Run `chrome-devtools-axi snapshot` to see current page state",
+      "Run `sq-browser snapshot` to see current page state",
     ]);
   }
   // Try to parse JSON error
@@ -531,7 +531,7 @@ export function mapErrorMessage(message: string): CdpError {
     const parsed = JSON.parse(message);
     if (parsed.error) {
       return new CdpError(parsed.error, "BROWSER_ERROR", [
-        "Run `chrome-devtools-axi snapshot` to see current page state",
+        "Run `sq-browser snapshot` to see current page state",
       ]);
     }
   } catch {
@@ -545,7 +545,7 @@ export function mapErrorMessage(message: string): CdpError {
  *
  * Returns null if the bridge is not running or healthy. This is the ambient
  * home view / SessionStart probe, so it must stay cheap and never throw: an
- * invalid `CHROME_DEVTOOLS_AXI_SESSION` degrades to "no active session" (null)
+ * invalid `SQ_BROWSER_SESSION` degrades to "no active session" (null)
  * here, while action commands (`ensureBridge` / `stopBridge`) still fail loudly.
  */
 export async function getSessionSnapshotIfRunning(): Promise<string | null> {

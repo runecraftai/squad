@@ -10,7 +10,7 @@ import { redactedResponse } from "../src/render.js";
 import type {
   ProviderAdapter,
   ProviderQuota,
-  QuotaAxiResponse,
+  SqQuotaResponse,
 } from "../src/types.js";
 
 const originalClaudeProvider = PROVIDERS.claude;
@@ -122,7 +122,7 @@ describe("CLI flag parsing", () => {
       "--tui is only supported by the quota command",
     );
     await expect(
-      authCommand(["--tui"], { binPath: "quota-axi" }),
+      authCommand(["--tui"], { binPath: "sq-quota" }),
     ).rejects.toThrow("--tui is only supported by the quota command");
   });
 
@@ -185,7 +185,7 @@ describe("argv normalization", () => {
 
 describe("CLI quota rendering", () => {
   it("renders live quota when cache persistence fails", async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "quota-axi-cli-cache-"));
+    tempDir = mkdtempSync(join(tmpdir(), "sq-quota-cli-cache-"));
     const blockedCacheRoot = join(tempDir, "cache-root");
     writeFileSync(blockedCacheRoot, "blocker");
     process.env.XDG_CACHE_HOME = blockedCacheRoot;
@@ -217,7 +217,7 @@ describe("CLI quota rendering", () => {
 
     await main({
       argv: ["--provider", "claude"],
-      binPath: "quota-axi",
+      binPath: "sq-quota",
       stdout: {
         write(chunk) {
           chunks.push(String(chunk));
@@ -241,7 +241,7 @@ describe("CLI quota rendering", () => {
 
     await main({
       argv: ["--provider", "claude,codex"],
-      binPath: "quota-axi",
+      binPath: "sq-quota",
       stdout: {
         write(chunk) {
           chunks.push(String(chunk));
@@ -253,10 +253,10 @@ describe("CLI quota rendering", () => {
     const output = chunks.join("");
     expect(output).toContain("advice[1]{provider,reason,remedyCommand}:");
     expect(output).toContain(
-      "claude,keychain_access_required,quota-axi --allow-keychain-prompt",
+      "claude,keychain_access_required,sq-quota --allow-keychain-prompt",
     );
     expect(output).toContain(
-      'Tell your user: run `quota-axi --allow-keychain-prompt` once and approve Keychain access ("Always Allow") so quota-axi can read claude\'s live quota.',
+      'Tell your user: run `sq-quota --allow-keychain-prompt` once and approve Keychain access ("Always Allow") so sq-quota can read claude\'s live quota.',
     );
     expect(output).not.toContain("codex,keychain_access_required");
   });
@@ -269,7 +269,7 @@ describe("CLI quota rendering", () => {
 
     await main({
       argv: ["--provider", "claude,codex", "--json"],
-      binPath: "quota-axi",
+      binPath: "sq-quota",
       stdout: {
         write(chunk) {
           chunks.push(String(chunk));
@@ -278,7 +278,7 @@ describe("CLI quota rendering", () => {
       },
     });
 
-    const output = JSON.parse(chunks.join("")) as QuotaAxiResponse;
+    const output = JSON.parse(chunks.join("")) as SqQuotaResponse;
     const claude = output.providers.find(
       (provider) => provider.provider === "claude",
     );
@@ -288,7 +288,7 @@ describe("CLI quota rendering", () => {
     expect(output.schemaVersion).toBe(3);
     expect(claude?.state.reason).toBe("keychain_access_required");
     expect(claude?.state.remedyCommand).toBe(
-      "quota-axi --allow-keychain-prompt",
+      "sq-quota --allow-keychain-prompt",
     );
     expect(claude?.quotaSemantics).toMatchObject({
       status: "unknown",
@@ -313,7 +313,7 @@ describe("CLI quota rendering", () => {
         ?.effectivePercentRemaining,
     ).toBeUndefined();
     expect(output.help).toContain(
-      'Tell your user: run `quota-axi --allow-keychain-prompt` once and approve Keychain access ("Always Allow") so quota-axi can read claude\'s live quota.',
+      'Tell your user: run `sq-quota --allow-keychain-prompt` once and approve Keychain access ("Always Allow") so sq-quota can read claude\'s live quota.',
     );
     expect(codex?.state.reason).toBeUndefined();
     expect(codex?.state.remedyCommand).toBeUndefined();
@@ -337,7 +337,7 @@ describe("CLI quota rendering", () => {
 
     await main({
       argv: ["--provider", "claude,codex", "--json"],
-      binPath: "quota-axi",
+      binPath: "sq-quota",
       stdout: {
         write(chunk) {
           chunks.push(String(chunk));
@@ -346,7 +346,7 @@ describe("CLI quota rendering", () => {
       },
     });
 
-    const output = JSON.parse(chunks.join("")) as QuotaAxiResponse;
+    const output = JSON.parse(chunks.join("")) as SqQuotaResponse;
     expect(output.help).toBeUndefined();
     expect(
       output.providers.find((provider) => provider.provider === "claude")?.state
@@ -372,7 +372,7 @@ describe("CLI quota rendering", () => {
 
     await main({
       argv: ["--provider", "claude,codex", "--json"],
-      binPath: "quota-axi",
+      binPath: "sq-quota",
       stdout: {
         write(chunk) {
           chunks.push(String(chunk));
@@ -381,7 +381,7 @@ describe("CLI quota rendering", () => {
       },
     });
 
-    const output = JSON.parse(chunks.join("")) as QuotaAxiResponse;
+    const output = JSON.parse(chunks.join("")) as SqQuotaResponse;
     expect(output.help).toBeUndefined();
     expect(
       output.providers.find((provider) => provider.provider === "claude")?.state
@@ -411,7 +411,7 @@ describe("CLI quota rendering", () => {
 
     await main({
       argv: ["--provider", "claude,codex", "--json"],
-      binPath: "quota-axi",
+      binPath: "sq-quota",
       stdout: {
         write(chunk) {
           chunks.push(String(chunk));
@@ -420,7 +420,7 @@ describe("CLI quota rendering", () => {
       },
     });
 
-    const output = JSON.parse(chunks.join("")) as QuotaAxiResponse;
+    const output = JSON.parse(chunks.join("")) as SqQuotaResponse;
     expect(output.help).toBeUndefined();
     expect(
       output.providers.find((provider) => provider.provider === "claude")?.state
@@ -459,7 +459,7 @@ describe("CLI quota rendering", () => {
 
     const output = JSON.parse(
       await capture(["--provider", "claude", "--json"]),
-    ) as QuotaAxiResponse;
+    ) as SqQuotaResponse;
     expect(
       output.providers[0].quotaSemantics?.effectiveAvailability.find(
         ({ scope }) => scope === "model:fable",
@@ -544,7 +544,7 @@ describe("CLI quota rendering", () => {
 
     const json = JSON.parse(
       await capture(["--provider", "claude,codex", "--json"]),
-    ) as QuotaAxiResponse;
+    ) as SqQuotaResponse;
     expect(json.providers[0]?.windows[0]?.pace?.reservePercentPoints).toBe(-1);
   });
 
@@ -571,7 +571,7 @@ describe("CLI quota rendering", () => {
 
     const json = JSON.parse(
       await capture(["--provider", "kimi", "--json"]),
-    ) as QuotaAxiResponse;
+    ) as SqQuotaResponse;
     expect(json.schemaVersion).toBe(3);
     expect(json.providers).toEqual([
       expect.objectContaining({
@@ -662,13 +662,13 @@ describe("CLI plumbing via the axi SDK", () => {
 
   it("prints the top-level help for --help", async () => {
     const output = await capture(["--help"]);
-    expect(output).toContain("usage: quota-axi [quota|auth|models] [flags]");
+    expect(output).toContain("usage: sq-quota [quota|auth|models] [flags]");
     expect(process.exitCode).toBeUndefined();
   });
 
   it("prints the top-level help for legacy -h", async () => {
     const output = await capture(["auth", "-h"]);
-    expect(output).toContain("usage: quota-axi [quota|auth|models] [flags]");
+    expect(output).toContain("usage: sq-quota [quota|auth|models] [flags]");
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -704,7 +704,7 @@ describe("CLI plumbing via the axi SDK", () => {
 
 describe("response redaction", () => {
   it("hides account identity and attempts unless --full is set", () => {
-    const response: QuotaAxiResponse = {
+    const response: SqQuotaResponse = {
       generatedAt: "2026-07-06T18:10:00Z",
       schemaVersion: 3,
       providers: [
@@ -736,7 +736,7 @@ async function capture(argv: string[]): Promise<string> {
   const chunks: string[] = [];
   await main({
     argv,
-    binPath: "quota-axi",
+    binPath: "sq-quota",
     stdout: {
       write(chunk) {
         chunks.push(String(chunk));
@@ -780,7 +780,7 @@ function providerWithAuth(
 }
 
 function useTempCache(): void {
-  tempDir = mkdtempSync(join(tmpdir(), "quota-axi-cli-cache-"));
+  tempDir = mkdtempSync(join(tmpdir(), "sq-quota-cli-cache-"));
   process.env.XDG_CACHE_HOME = tempDir;
 }
 

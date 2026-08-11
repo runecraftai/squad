@@ -7,7 +7,7 @@
   </g>
   <g fill="#f7f3ea" text-anchor="middle">
     <text x="88" y="60">agent writes</text>
-    <text x="298" y="54">lavish-axi &lt;file&gt;</text>
+    <text x="298" y="54">sq-report &lt;file&gt;</text>
     <text x="298" y="70" fill="#b9c0cf">opens browser UI</text>
     <text x="508" y="54">human annotates</text>
     <text x="508" y="70" fill="#b9c0cf">queues prompts</text>

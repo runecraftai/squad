@@ -4,17 +4,17 @@ import { ghExec } from '../gh.js';
 import { AxiError } from '../errors.js';
 import { cleanBody } from '../body.js';
 
-export const API_HELP = `usage: gh-axi api [<method>] <path>
+export const API_HELP = `usage: sq-gh api [<method>] <path>
 description: Make an authenticated GitHub API request. Defaults to GET if no method specified.
 methods[6]:
   GET, POST, PUT, PATCH, DELETE, HEAD
 flags[5]:
   --field <key=value> (repeatable), --header <key:value> (repeatable), --paginate, --jq <expression>, --template <format>
 examples:
-  gh-axi api /repos/{owner}/{repo}
-  gh-axi api POST /repos/{owner}/{repo}/issues --field title="Bug report"
-  gh-axi api /repos/{owner}/{repo}/pulls --paginate
-  gh-axi api /repos/{owner}/{repo}/issues/1 --jq '[.labels[].name]'`;
+  sq-gh api /repos/{owner}/{repo}
+  sq-gh api POST /repos/{owner}/{repo}/issues --field title="Bug report"
+  sq-gh api /repos/{owner}/{repo}/pulls --paginate
+  sq-gh api /repos/{owner}/{repo}/issues/1 --jq '[.labels[].name]'`;
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']);
 
@@ -49,7 +49,7 @@ interface ParsedApiArgs {
  * unrecognised.
  *
  * Unknown flags used to be skipped along with the following argument, so a flag
- * `gh-axi api` did not implement — `--jq` above all — silently vanished together
+ * `sq-gh api` did not implement — `--jq` above all — silently vanished together
  * with its value and the caller got an unfiltered response that looked plausible.
  * Only flags known to take a value consume the next argument, which also keeps
  * `--paginate <path>` from swallowing the path.
@@ -81,7 +81,7 @@ function parseArgs(args: string[]): ParsedApiArgs {
     }
     if (!REPEATABLE_VALUE_FLAGS.has(name) && !SINGLE_VALUE_FLAGS.has(name)) {
       throw new AxiError(
-        `unknown flag ${name} for gh-axi api. Supported flags: ${SUPPORTED_FLAGS.join(', ')}`,
+        `unknown flag ${name} for sq-gh api. Supported flags: ${SUPPORTED_FLAGS.join(', ')}`,
         'VALIDATION_ERROR',
       );
     }
@@ -130,7 +130,7 @@ export async function apiCommand(args: string[], ctx?: RepoContext): Promise<str
   const { positionals, fields, headers, jq, template, paginate } = parseArgs(args);
 
   const pathRequired = new AxiError(
-    'API path is required: gh-axi api [<method>] <path>',
+    'API path is required: sq-gh api [<method>] <path>',
     'VALIDATION_ERROR',
   );
   if (positionals.length === 0) throw pathRequired;
@@ -140,7 +140,7 @@ export async function apiCommand(args: string[], ctx?: RepoContext): Promise<str
   const methodGiven = HTTP_METHODS.has(positionals[0].toUpperCase());
   if (positionals.length > (methodGiven ? 2 : 1)) {
     throw new AxiError(
-      'too many arguments for gh-axi api: expected [<method>] <path>',
+      'too many arguments for sq-gh api: expected [<method>] <path>',
       'VALIDATION_ERROR',
     );
   }

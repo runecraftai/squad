@@ -6,7 +6,7 @@ import {
   shortWindowLabel,
   thinBar,
 } from "../src/tui.js";
-import type { ProviderQuota, QuotaAxiResponse } from "../src/types.js";
+import type { ProviderQuota, SqQuotaResponse } from "../src/types.js";
 
 const GENERATED_AT = "2026-08-06T23:21:15.000Z";
 const CARD_COLUMNS = 49;
@@ -243,7 +243,7 @@ function signedOutProvider(
   };
 }
 
-function fixtureResponse(): QuotaAxiResponse {
+function fixtureResponse(): SqQuotaResponse {
   return {
     generatedAt: GENERATED_AT,
     schemaVersion: 3,
@@ -320,7 +320,7 @@ describe("renderQuotaTui structure", () => {
   it("summarizes the providers in the dim header with local time", () => {
     const lines = render();
     expect(lines[0]).toBe(
-      "  quota-axi · 2026-08-06 16:21 PDT · 3 live · 3 signed out",
+      "  sq-quota · 2026-08-06 16:21 PDT · 3 live · 3 signed out",
     );
   });
 

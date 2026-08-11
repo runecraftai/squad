@@ -21,7 +21,7 @@ describe("crud commands", () => {
         );
         expect(out).toContain("id: new-q1");
         expect(out).toContain("state: queued");
-        expect(out).toContain("Run `tasks-axi start new-q1`");
+        expect(out).toContain("Run `sq-tasks start new-q1`");
         expect(b.read()).toContain("- [ ] new-q1 - a fresh task");
       } finally {
         b.cleanup();
@@ -48,8 +48,8 @@ describe("crud commands", () => {
           "ok: added new-h1 (strike, repo demo) -> In flight",
         );
         // State-aware hints never suggest the action --start already performed.
-        expect(out).not.toContain("Run `tasks-axi start new-h1`");
-        expect(out).toContain("Run `tasks-axi done new-h1 --pr <url>`");
+        expect(out).not.toContain("Run `sq-tasks start new-h1`");
+        expect(out).toContain("Run `sq-tasks done new-h1 --pr <url>`");
         // In-flight items use Squad's `- [ ]` checkbox form under the header.
         expect(b.read()).toMatch(/## In flight[\s\S]*- \[ \] new-h1/);
       } finally {
@@ -86,8 +86,8 @@ describe("crud commands", () => {
       try {
         const out = await addCommand(["new-q9", "queued task"], b.ctx);
         expect(out).toContain("ok: added new-q9 -> Queued");
-        expect(out).toContain("Run `tasks-axi start new-q9`");
-        expect(out).not.toContain("Run `tasks-axi done new-q9");
+        expect(out).toContain("Run `sq-tasks start new-q9`");
+        expect(out).not.toContain("Run `sq-tasks done new-q9");
       } finally {
         b.cleanup();
       }
@@ -392,7 +392,7 @@ describe("crud commands", () => {
     });
 
     it("exposes usage help text", () => {
-      expect(ADD_HELP).toContain("usage: tasks-axi add");
+      expect(ADD_HELP).toContain("usage: sq-tasks add");
     });
   });
 
@@ -431,7 +431,7 @@ describe("crud commands", () => {
         const out = await listCommand(["--limit", "0"], b.ctx);
         expect(out).toMatch(/count: 0 of \d+ total/);
         expect(out).not.toContain("0 tasks in this backlog");
-        expect(out).toContain("Run `tasks-axi show <id>`");
+        expect(out).toContain("Run `sq-tasks show <id>`");
       } finally {
         b.cleanup();
       }
@@ -535,7 +535,7 @@ describe("crud commands", () => {
       try {
         const out = await listCommand(["--repo", "monorepo"], b.ctx);
         expect(out).toContain(
-          "Run `tasks-axi ready --repo=monorepo` to see unblocked queued work",
+          "Run `sq-tasks ready --repo=monorepo` to see unblocked queued work",
         );
       } finally {
         b.cleanup();
@@ -547,9 +547,9 @@ describe("crud commands", () => {
       try {
         const out = await listCommand(["--kind", "strike"], b.ctx);
         expect(out).toContain(
-          "Run `tasks-axi show <id>` for full notes on a task",
+          "Run `sq-tasks show <id>` for full notes on a task",
         );
-        expect(out).not.toContain("Run `tasks-axi ready");
+        expect(out).not.toContain("Run `sq-tasks ready");
       } finally {
         b.cleanup();
       }
@@ -628,7 +628,7 @@ describe("crud commands", () => {
         ).rejects.toMatchObject({
           code: "NOT_FOUND",
           suggestions: [
-            "Run `tasks-axi list --file='other backlog.md'` to see existing tasks",
+            "Run `sq-tasks list --file='other backlog.md'` to see existing tasks",
           ],
         });
       } finally {
@@ -933,7 +933,7 @@ describe("crud commands", () => {
           message: expect.stringContaining("cert-cleanup"),
           suggestions: expect.arrayContaining([
             expect.stringContaining(
-              "tasks-axi unblock cert-cleanup --by owns-widget-h7",
+              "sq-tasks unblock cert-cleanup --by owns-widget-h7",
             ),
           ]),
         });

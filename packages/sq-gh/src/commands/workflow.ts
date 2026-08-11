@@ -16,7 +16,7 @@ import {
 import { formatCountLine } from '../format.js';
 import { getSuggestions } from '../suggestions.js';
 
-export const WORKFLOW_HELP = `usage: gh-axi workflow <subcommand> [flags]
+export const WORKFLOW_HELP = `usage: sq-gh workflow <subcommand> [flags]
 subcommands[5]:
   list, view <id|name>, run <id|name>, enable <id|name>, disable <id|name>
 flags{list}:
@@ -24,9 +24,9 @@ flags{list}:
 flags{run}:
   --ref <git-ref>, --field <key=val> (repeatable)
 examples:
-  gh-axi workflow list
-  gh-axi workflow run ci.yml --ref main
-  gh-axi workflow disable 12345`;
+  sq-gh workflow list
+  sq-gh workflow run ci.yml --ref main
+  sq-gh workflow disable 12345`;
 
 const listSchema: FieldDef[] = [
   field('id'),
@@ -79,7 +79,7 @@ async function listWorkflows(args: string[], ctx?: RepoContext): Promise<string>
 async function viewWorkflow(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const id = positionals[1];
-  if (!id) throw new AxiError('Workflow ID or name is required: gh-axi workflow view <id|name>', 'VALIDATION_ERROR');
+  if (!id) throw new AxiError('Workflow ID or name is required: sq-gh workflow view <id|name>', 'VALIDATION_ERROR');
 
   const match = await findWorkflow(id, ctx);
 
@@ -89,7 +89,7 @@ async function viewWorkflow(args: string[], ctx?: RepoContext): Promise<string> 
 async function runWorkflow(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const id = positionals[1];
-  if (!id) throw new AxiError('Workflow ID or name is required: gh-axi workflow run <id|name>', 'VALIDATION_ERROR');
+  if (!id) throw new AxiError('Workflow ID or name is required: sq-gh workflow run <id|name>', 'VALIDATION_ERROR');
 
   const ghArgs = ['workflow', 'run', id];
   const ref = getFlag(args, '--ref');
@@ -110,7 +110,7 @@ async function runWorkflow(args: string[], ctx?: RepoContext): Promise<string> {
 async function enableWorkflow(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const id = positionals[1];
-  if (!id) throw new AxiError('Workflow ID or name is required: gh-axi workflow enable <id|name>', 'VALIDATION_ERROR');
+  if (!id) throw new AxiError('Workflow ID or name is required: sq-gh workflow enable <id|name>', 'VALIDATION_ERROR');
 
   // Idempotent: check current state before enabling
   const match = await findWorkflow(id, ctx);
@@ -134,7 +134,7 @@ async function enableWorkflow(args: string[], ctx?: RepoContext): Promise<string
 async function disableWorkflow(args: string[], ctx?: RepoContext): Promise<string> {
   const positionals = args.filter((a) => !a.startsWith('--'));
   const id = positionals[1];
-  if (!id) throw new AxiError('Workflow ID or name is required: gh-axi workflow disable <id|name>', 'VALIDATION_ERROR');
+  if (!id) throw new AxiError('Workflow ID or name is required: sq-gh workflow disable <id|name>', 'VALIDATION_ERROR');
 
   // Idempotent: check current state before disabling
   const match = await findWorkflow(id, ctx);

@@ -1,6 +1,6 @@
-# tasks-axi — agent notes
+# sq-tasks — agent notes
 
-Agent-ergonomic task/backlog CLI in the `*-axi` family, built on `axi-sdk-js` and mirroring `gh-axi`.
+Agent-ergonomic task/backlog CLI in the `*-axi` family, built on `axi-sdk-js` and mirroring `sq-gh`.
 P1 ships only the markdown backend behind a `Store` seam; sqlite (P2) and remote trackers (P3) are deferred.
 
 ## Architecture
@@ -23,7 +23,7 @@ The CLI layer never knows which backend is active — it only talks to the `Stor
 `src/backends/markdown-grammar.ts` is pure parse/render with no I/O; `markdown.ts` adds the lock + atomic write.
 
 - **Byte-exact round-trip (D1).** `render(parse(src)) === src` on any file nobody has mutated. Each entry keeps its exact original `raw` lines and is emitted verbatim unless `dirty`. A mutated task is re-rendered from its structured fields; untouched entries stay byte-exact. `test/fixtures/backlog.md` exercises every grammar feature; `test/fixtures/Squad-backlog.md` mirrors Squad's real `data/backlog.md` shape; a skipped-in-CI test also checks the real Squad backlog when present.
-- **The section header carries the state, not the bullet.** `## In flight`, `## Queued`, `## Done` decide the state. In-flight is recognized as BOTH the legacy `- **id** - …` and Squad's GitHub-style `- [ ] id - …` checkbox; queued is `- [ ] id - …`; done is `- [x] id - …`. Render is unified on Squad's real format: in-flight and queued both normalize to `- [ ] id - …` (done to `- [x] id - …`), so a legacy `- **id**` in-flight line normalizes to `- [ ]` when re-rendered and is **never** rewritten the other way — that keeps a tasks-axi-written file readable by Squad (which assumes `- [ ]`). Byte-exact preservation still holds for untouched lines of either form.
+- **The section header carries the state, not the bullet.** `## In flight`, `## Queued`, `## Done` decide the state. In-flight is recognized as BOTH the legacy `- **id** - …` and Squad's GitHub-style `- [ ] id - …` checkbox; queued is `- [ ] id - …`; done is `- [x] id - …`. Render is unified on Squad's real format: in-flight and queued both normalize to `- [ ] id - …` (done to `- [x] id - …`), so a legacy `- **id**` in-flight line normalizes to `- [ ]` when re-rendered and is **never** rewritten the other way — that keeps a sq-tasks-written file readable by Squad (which assumes `- [ ]`). Byte-exact preservation still holds for untouched lines of either form.
 - **Free-form lines (D7)** - any line whose first token is not a clean slug id followed by the delimiter `space-hyphen-space` is preserved verbatim and never operated on by id. The id must be immediately followed by `space-hyphen-space`. This keeps annotated lines like `go-live (CAPTAIN-GATED) - …` and `PR #31 (contributor) - …` free-form (no false positives).
 - **Trailing-tag extraction.** Canonical tags (`(repo: X)`, `(kind: X)`, `(priority: 0-4)`, `(since DATE)`, `(merged|reported|done|closed DATE)`, `(hold: REASON)`, `(hold-kind: commander|external|load|parked|future)`, `(hold-until: DATE)`, `blocked-by:/parent:/discovered-from:`) are pulled only off the **trailing** tag-region of a line and re-appended in canonical order on render. This is what makes normalization idempotent: a mid-sentence parenthetical (e.g. `report.md (reported 2026-06-22): …`) or a non-date one (`(closed w/ link)`) is left in the prose and never duplicated or relocated. Date tags require an actual `YYYY-MM-DD`.
 - **Dependency edges carry an optional free-text reason.** Squad writes `blocked-by: <id> - <reason>` (e.g. `blocked-by: fix-login-k3 - waits on the login refactor`); the id stops at the first space and the reason runs to end-of-line, captured into `Dep.reason` and preserved across a round-trip. A reason does **not** affect `blocked`/`ready` (the graph keys off the blocker id alone), but a blocked item still stays out of `ready`. **Render-order rule:** a bare edge sits right after the title (before the parentheticals), but an edge **with a reason renders last**, after all `( … )` tags — both to match Squad's real `(repo: …) blocked-by: <id> - <reason>` form and so a re-parse strips the parentheticals first and the reason never swallows a trailing tag (the idempotency trap).
@@ -31,12 +31,12 @@ The CLI layer never knows which backend is active — it only talks to the `Stor
 - **body** = the item block under a bullet: every following indented (2-space) OR blank line, up to the next item header or free-form column-0 content (column-0 `## ` section headings are split earlier). Blank separators between paragraphs and trailing blanks before the next item/section belong to the block and move with it (`mv`/`start`/`done`/etc.). Indented pseudo-headings (e.g. `  ## Intent`) are body, never section boundaries. Owned by `parseEntries` in `markdown-grammar.ts`.
   Note writes are inspect-then-update: `show <id> --full`, then `update --body` or `update --body-file` with a curated replacement.
   Add `--archive-body` when the superseded body should be preserved in `note-archive.md`.
-- **Public-followup metadata** is one reserved `  <!-- tasks-axi:public-followup/v1:<base64url-canonical-json> -->` line immediately below a `kind=public-followup` bullet.
+- **Public-followup metadata** is one reserved `  <!-- sq-tasks:public-followup/v1:<base64url-canonical-json> -->` line immediately below a `kind=public-followup` bullet.
   The grammar validates it strictly on every read, excludes it from the human body, and re-emits it through render, move, transition, prune, and archive.
-  Squad and other callers must use `tasks-axi public-followup` and `--json`, never parse or rewrite the comment.
+  Squad and other callers must use `sq-tasks public-followup` and `--json`, never parse or rewrite the comment.
   Generic worker readiness and lifecycle transitions cannot dispatch, complete, reopen, remove, or change the kind of an active obligation; only a posted receipt or Captain waiver completes it.
 - **Concurrency:** every mutation runs under `withLock` (advisory `<path>.lock`) and fails closed with a `LOCKED` error if another process holds the lock past the bounded timeout.
-  If the lock looks stale, the error tells the user to remove `<path>.lock` only after confirming no `tasks-axi` process is running.
+  If the lock looks stale, the error tells the user to remove `<path>.lock` only after confirming no `sq-tasks` process is running.
   Corruption-safety is guaranteed independently by atomic temp-file + rename writes, and a hand-edit landing between read and write is detected and refused.
   Reads do not lock.
 
@@ -69,30 +69,30 @@ The CLI layer never knows which backend is active — it only talks to the `Stor
 
 ## Entry point & the `--version` fast path
 
-`bin/tasks-axi.ts` answers a bare `-v`/`-V`/`--version` through `axi-sdk-js/fast-path` and only then `await import`s `src/cli.js`, so the heavy command graph never loads for a version query (~31ms -> ~20ms, the node floor).
+`bin/sq-tasks.ts` answers a bare `-v`/`-V`/`--version` through `axi-sdk-js/fast-path` and only then `await import`s `src/cli.js`, so the heavy command graph never loads for a version query (~31ms -> ~20ms, the node floor).
 That makes `src/version.ts` a **leaf**: it may import node builtins and nothing else - importing anything from the command graph silently destroys the speedup. `cli.ts` re-imports `VERSION` from it, so there is still one source of the version string.
 Any argv shape other than exactly one version flag falls through to `runAxiCli`, which remains the sole owner of the general case (e.g. `list --version` is still an unknown-flag error).
 `test/bin/version-fast-path.test.ts` guards this deterministically with an ESM loader module trace (`test/fixtures/module-trace-*.mjs`) plus a negative control; do **not** add a wall-clock timing assertion to CI - it is flaky under runner contention.
 
 ## Build / test / ship
 
-- `pnpm build` (tsc), `pnpm test` (vitest, `test/` mirrors `src/`), `pnpm lint` (eslint), `pnpm run build:skill -- --check` (the generated `skills/tasks-axi/SKILL.md` is built from `DESCRIPTION` + `TOP_HELP` and must not drift — CI runs the check).
-- `skills/tasks-axi/SKILL.md` is generated — regenerate with `pnpm run build:skill` after changing the description or top-level help; never hand-edit it.
+- `pnpm build` (tsc), `pnpm test` (vitest, `test/` mirrors `src/`), `pnpm lint` (eslint), `pnpm run build:skill -- --check` (the generated `skills/sq-tasks/SKILL.md` is built from `DESCRIPTION` + `TOP_HELP` and must not drift — CI runs the check).
+- `skills/sq-tasks/SKILL.md` is generated — regenerate with `pnpm run build:skill` after changing the description or top-level help; never hand-edit it.
 - This repo is drill-gated; ship through `/drill`.
 
 ### Release & packaging (mirrors the `*-axi` siblings)
 
 - **Published to npm as a public package** via `release-please` → `npm publish --access public --provenance` on a release commit (`.github/workflows/release-please.yml`); the commander can also `npm publish` manually. Conventional commits drive the version bump; `release-please-config.json` + `.release-please-manifest.json` own versioning and `CHANGELOG.md`.
 - Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`.release-please-manifest.json`, `CHANGELOG.md`, `package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
-- **The tarball ships runtime JS only.** `package.json` `files` is `dist/**/*.js` (+ `skills/tasks-axi`, `LICENSE`, `README.md`), so the `.d.ts`/`.js.map` that `tsc` emits for local debugging are kept out of the package.
+- **The tarball ships runtime JS only.** `package.json` `files` is `dist/**/*.js` (+ `skills/sq-tasks`, `LICENSE`, `README.md`), so the `.d.ts`/`.js.map` that `tsc` emits for local debugging are kept out of the package.
   `prepack` runs `npm run build`, so `npm pack`/`npm publish` always rebuild `dist` first.
   In a fresh clone, run `pnpm install --frozen-lockfile` before manual pack or publish.
-  Verify with `npm pack --dry-run` (no source/test cruft; bin is `dist/bin/tasks-axi.js` with its shebang preserved by tsc).
+  Verify with `npm pack --dry-run` (no source/test cruft; bin is `dist/bin/sq-tasks.js` with its shebang preserved by tsc).
 - **CI is a 3-OS matrix** (ubuntu/macos/windows) running install → build → lint → test → `build:skill --check`. The `Require drill` and `Guard generated files` checks gate every PR to `main`.
 
 ## Follow-ups (out of P1 scope)
 
-- Migrate Squad's own `backlog.md` onto tasks-axi (a separate Squad-repo change).
+- Migrate Squad's own `backlog.md` onto sq-tasks (a separate Squad-repo change).
 - sqlite backend (P2); github/jira/linear backends (P3) — slot in behind the existing `Store` seam.
 - Optional: count free-form Done lines toward the prune keep, or recognize compound ids (`a / b`).
 

@@ -45,7 +45,7 @@ import { withSuggestionGlobals } from "../suggestions.js";
 import { field, renderDetail, renderHelp, renderOutput } from "../toon.js";
 import { renderTaskList } from "../view.js";
 
-export const PUBLIC_FOLLOWUP_HELP = `usage: tasks-axi public-followup <command> [args] [flags]
+export const PUBLIC_FOLLOWUP_HELP = `usage: sq-tasks public-followup <command> [args] [flags]
 commands:
   add <id> --request-context-file <file> --purpose <type> --expected-final-file <file> --expires-at <rfc3339>
   bind-work <id> --relation-file <file>
@@ -67,30 +67,30 @@ file contracts:
   receipt: posted request/platform, attempt and chunk counts, posted_at, optional retain_until
   error: safe state/error_code, occurred_at, optional retry time and chunk counts
 examples:
-  tasks-axi public-followup add public-final-ab --request-context-file request.json --purpose promised-final --expected-final-file expected.json --expires-at 2026-10-01T00:00:00Z --json
-  tasks-axi public-followup bind-work public-final-ab --relation-file relation.json --json
-  tasks-axi public-followup work-event public-final-ab --event-file event.json --json
-  tasks-axi public-followup ready --json
-  tasks-axi public-followup record-delivery public-final-ab --receipt-file receipt.json --json`;
+  sq-tasks public-followup add public-final-ab --request-context-file request.json --purpose promised-final --expected-final-file expected.json --expires-at 2026-10-01T00:00:00Z --json
+  sq-tasks public-followup bind-work public-final-ab --relation-file relation.json --json
+  sq-tasks public-followup work-event public-final-ab --event-file event.json --json
+  sq-tasks public-followup ready --json
+  sq-tasks public-followup record-delivery public-final-ab --receipt-file receipt.json --json`;
 
 const SUBCOMMAND_HELP: Record<string, string> = {
-  add: "usage: tasks-axi public-followup add <id> --request-context-file <file> --purpose <promised-final|correction|investigation-result|milestone> --expected-final-file <file> --expires-at <rfc3339> [--json]",
+  add: "usage: sq-tasks public-followup add <id> --request-context-file <file> --purpose <promised-final|correction|investigation-result|milestone> --expected-final-file <file> --expires-at <rfc3339> [--json]",
   "bind-work":
-    "usage: tasks-axi public-followup bind-work <id> --relation-file <file> [--json]",
+    "usage: sq-tasks public-followup bind-work <id> --relation-file <file> [--json]",
   "supersede-work":
-    "usage: tasks-axi public-followup supersede-work <id> --relation <relation-id> --successor-file <file> [--json]",
+    "usage: sq-tasks public-followup supersede-work <id> --relation <relation-id> --successor-file <file> [--json]",
   "work-event":
-    "usage: tasks-axi public-followup work-event <id> --event-file <file> [--json]",
-  list: "usage: tasks-axi public-followup list [--delivery-state <state>] [--work-ref <home/task>] [--json]",
-  ready: "usage: tasks-axi public-followup ready [--json]",
+    "usage: sq-tasks public-followup work-event <id> --event-file <file> [--json]",
+  list: "usage: sq-tasks public-followup list [--delivery-state <state>] [--work-ref <home/task>] [--json]",
+  ready: "usage: sq-tasks public-followup ready [--json]",
   "begin-delivery":
-    "usage: tasks-axi public-followup begin-delivery <id> --payload-hash <sha256> [--json]",
+    "usage: sq-tasks public-followup begin-delivery <id> --payload-hash <sha256> [--json]",
   "record-delivery":
-    "usage: tasks-axi public-followup record-delivery <id> --receipt-file <file> [--json]",
+    "usage: sq-tasks public-followup record-delivery <id> --receipt-file <file> [--json]",
   "record-error":
-    "usage: tasks-axi public-followup record-error <id> --error-file <file> [--json]",
+    "usage: sq-tasks public-followup record-error <id> --error-file <file> [--json]",
   waive:
-    "usage: tasks-axi public-followup waive <id> --reason <text> --approved-by commander [--json]",
+    "usage: sq-tasks public-followup waive <id> --reason <text> --approved-by commander [--json]",
 };
 
 export function publicFollowupSubcommandHelp(
@@ -785,7 +785,7 @@ async function publicFollowupReady(
       renderHelp(
         withSuggestionGlobals(
           [
-            "Run `tasks-axi public-followup begin-delivery <id> --payload-hash <sha256>` after semantic preflight",
+            "Run `sq-tasks public-followup begin-delivery <id> --payload-hash <sha256>` after semantic preflight",
           ],
           context?.suggestionGlobals,
         ),
@@ -1186,7 +1186,7 @@ function publicSuggestions(task: Task, context?: TasksContext): string[] {
   const lines: string[] = [];
   if (state === "ready") {
     lines.push(
-      `Run \`tasks-axi public-followup begin-delivery ${task.id} --payload-hash <sha256>\` after semantic preflight`,
+      `Run \`sq-tasks public-followup begin-delivery ${task.id} --payload-hash <sha256>\` after semantic preflight`,
     );
   } else if (
     state === "delivery-posting" ||
@@ -1194,11 +1194,11 @@ function publicSuggestions(task: Task, context?: TasksContext): string[] {
     state === "partial"
   ) {
     lines.push(
-      `Run \`tasks-axi public-followup record-delivery ${task.id} --receipt-file <file>\` after receipt reconciliation`,
+      `Run \`sq-tasks public-followup record-delivery ${task.id} --receipt-file <file>\` after receipt reconciliation`,
     );
   } else if (state !== "posted" && state !== "waived") {
     lines.push(
-      `Run \`tasks-axi public-followup list --work-ref <home/task>\` to reconcile related work`,
+      `Run \`sq-tasks public-followup list --work-ref <home/task>\` to reconcile related work`,
     );
   }
   return withSuggestionGlobals(lines, context?.suggestionGlobals);

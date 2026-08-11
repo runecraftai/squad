@@ -19,7 +19,7 @@ function parseFrontmatter(markdown: string): Record<string, unknown> {
 }
 
 describe("createSkillMarkdown", () => {
-  it("matches the committed skills/chrome-devtools-axi/SKILL.md", () => {
+  it("matches the committed skills/sq-browser/SKILL.md", () => {
     const committed = readFileSync(
       new URL("../skills/sq-browser/SKILL.md", import.meta.url),
       "utf8",
@@ -31,7 +31,7 @@ describe("createSkillMarkdown", () => {
     const markdown = createSkillMarkdown();
     const frontmatter = parseFrontmatter(markdown);
     expect(frontmatter).toEqual({
-      name: "chrome-devtools-axi",
+      name: "sq-browser",
       description: SKILL_DESCRIPTION,
       "user-invocable": false,
       author: SKILL_AUTHOR,
@@ -48,7 +48,7 @@ describe("createSkillMarkdown", () => {
 
   it("teaches npx invocation instead of assuming a global install", () => {
     const markdown = createSkillMarkdown();
-    expect(markdown).toContain("npx -y chrome-devtools-axi");
+    expect(markdown).toContain("npx -y sq-browser");
   });
 });
 

@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { QuotaAxiResponse } from "../src/types.js";
+import type { SqQuotaResponse } from "../src/types.js";
 
 const BUILT_CLI_ENTRYPOINT = resolve("dist/bin/sq-quota.js");
 let temporaryDirectories: string[] = [];
@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe("built Codex CLI weekly window", () => {
   it("renders a primary-only seven-day app-server window as weekly in TOON and JSON", () => {
-    const root = mkdtempSync(join(tmpdir(), "quota-axi-codex-weekly-"));
+    const root = mkdtempSync(join(tmpdir(), "sq-quota-codex-weekly-"));
     temporaryDirectories.push(root);
     const home = join(root, "home");
     const cacheHome = join(root, "cache");
@@ -72,7 +72,7 @@ process.stdin.on("data", (chunk) => {
         env: {
           HOME: home,
           XDG_CACHE_HOME: cacheHome,
-          QUOTA_AXI_CODEX_BINARY: codex,
+          SQ_QUOTA_CODEX_BINARY: codex,
           PATH: process.env.PATH ?? "",
         },
       });
@@ -86,7 +86,7 @@ process.stdin.on("data", (chunk) => {
     expect(toon).toContain("codex,weekly,week,100");
     expect(toon).not.toContain("codex,five_hour,session");
 
-    const json = JSON.parse(run(true)) as QuotaAxiResponse;
+    const json = JSON.parse(run(true)) as SqQuotaResponse;
     expect(json.providers[0]).toMatchObject({
       provider: "codex",
       source: "cli-rpc",

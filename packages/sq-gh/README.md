@@ -51,7 +51,7 @@ repo: runecraftai/squad
 issues: 0 open
 prs: 0 open
 help[1]:
-Run `gh-axi <command> <subcommand>` — commands: issue, pr, run, release, repo, label, secret, variable.
+Run `sq-gh <command> <subcommand>` — commands: issue, pr, run, release, repo, label, secret, variable.
 ```
 You still need [`gh`](https://cli.github.com/) installed and authenticated via `gh auth login` (Node 20+ required).
 For GitHub Enterprise or another custom host, authenticate `gh` for that host and either pass `--hostname <host>` after the command or set `GH_HOST`.

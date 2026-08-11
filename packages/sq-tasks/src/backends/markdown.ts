@@ -411,7 +411,7 @@ export class MarkdownStore implements Store {
       `Task "${id}" is still blocking active tasks: ${dependents.join(", ")}`,
       "VALIDATION_ERROR",
       [
-        `Unblock them first, e.g. \`tasks-axi unblock ${dependents[0]} --by ${id}\``,
+        `Unblock them first, e.g. \`sq-tasks unblock ${dependents[0]} --by ${id}\``,
       ],
     );
   }
@@ -559,7 +559,7 @@ export class MarkdownStore implements Store {
         throw new AxiError(
           "kind=public-followup requires typed public_followup data",
           "VALIDATION_ERROR",
-          ["Use `tasks-axi public-followup add ...`"],
+          ["Use `sq-tasks public-followup add ...`"],
         );
       }
       const publicFollowup = normalizePublicFollowup(input.public_followup);
@@ -608,7 +608,7 @@ export class MarkdownStore implements Store {
           throw new AxiError(
             "New public-followup must start as a revision 1 queued intent",
             "VALIDATION_ERROR",
-            ["Use `tasks-axi public-followup add ...`"],
+            ["Use `sq-tasks public-followup add ...`"],
           );
         }
       }
@@ -711,7 +711,7 @@ export class MarkdownStore implements Store {
           throw new AxiError(
             "Public-followup kind cannot be changed through generic update",
             "VALIDATION_ERROR",
-            ["Use the dedicated `tasks-axi public-followup` commands"],
+            ["Use the dedicated `sq-tasks public-followup` commands"],
           );
         }
         if (task.kind !== kind) {
@@ -921,7 +921,7 @@ export class MarkdownStore implements Store {
           `Task "${id}" is still blocking active tasks: ${stranded.join(", ")}`,
           "VALIDATION_ERROR",
           [
-            `Move them together, or unblock them first, e.g. \`tasks-axi unblock ${stranded[0]} --by ${id}\``,
+            `Move them together, or unblock them first, e.g. \`sq-tasks unblock ${stranded[0]} --by ${id}\``,
           ],
         );
       }
@@ -971,7 +971,7 @@ export class MarkdownStore implements Store {
           "Public-followup state cannot change through generic transitions",
           "VALIDATION_ERROR",
           [
-            "Use `tasks-axi public-followup record-delivery` or `tasks-axi public-followup waive`",
+            "Use `sq-tasks public-followup record-delivery` or `sq-tasks public-followup waive`",
           ],
         );
       }

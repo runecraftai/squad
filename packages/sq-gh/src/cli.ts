@@ -29,20 +29,20 @@ type MainOptions = {
   stdout?: CliStdout;
 };
 
-export const TOP_HELP = `usage: gh-axi [command] [args] [flags]
+export const TOP_HELP = `usage: sq-gh [command] [args] [flags]
 commands[15]:
   (none)=dashboard, issue, pr, run, workflow, release, repo, label, gist, project, secret, variable, search, api, setup
 flags[4]:
   -R/--repo <OWNER/NAME> (after command), --hostname <host> (after command) or GH_HOST env, both flags accept space or equals form, --help, -v/-V/--version
 examples:
-  gh-axi
-  gh-axi issue list --state open
-  gh-axi issue list -R owner/name
-  gh-axi issue list --repo=owner/name
-  gh-axi issue list --hostname git.example.com
-  gh-axi pr view 42
-  gh-axi secret list
-  gh-axi setup hooks
+  sq-gh
+  sq-gh issue list --state open
+  sq-gh issue list -R owner/name
+  sq-gh issue list --repo=owner/name
+  sq-gh issue list --hostname git.example.com
+  sq-gh pr view 42
+  sq-gh secret list
+  sq-gh setup hooks
 `;
 
 const COMMAND_HELP: Record<string, string> = {

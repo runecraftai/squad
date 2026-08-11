@@ -77,7 +77,7 @@ describe("issueCommand", () => {
     it("returns subissue help for subissue --help", async () => {
       const result = await issueCommand(["subissue", "--help"], ctx);
       expect(result).toContain(SUBISSUE_HELP);
-      expect(result).not.toContain("usage: gh-axi issue <subcommand>");
+      expect(result).not.toContain("usage: sq-gh issue <subcommand>");
     });
 
     it("returns help when no subcommand is given", async () => {

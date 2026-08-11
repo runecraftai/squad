@@ -35,7 +35,7 @@ function createFetchSpy(options = {}) {
 
 test("telemetry can be disabled by environment", () => {
   const config = resolveTelemetryConfig({
-    env: { LAVISH_AXI_TELEMETRY: "0" },
+    env: { SQ_REPORT_TELEMETRY: "0" },
     buildHost: "https://build.example",
     buildWebsiteID: "build-id",
   });
@@ -46,8 +46,8 @@ test("telemetry can be disabled by environment", () => {
 test("telemetry uses env values before build-time defaults", () => {
   const config = resolveTelemetryConfig({
     env: {
-      LAVISH_AXI_UMAMI_HOST: " https://env.example ",
-      LAVISH_AXI_UMAMI_WEBSITE_ID: " env-id ",
+      SQ_REPORT_UMAMI_HOST: " https://env.example ",
+      SQ_REPORT_UMAMI_WEBSITE_ID: " env-id ",
     },
     buildHost: "https://build.example",
     buildWebsiteID: "build-id",

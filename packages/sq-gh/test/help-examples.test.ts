@@ -16,7 +16,7 @@ import { TOP_HELP } from "../src/cli.js";
 
 /**
  * Every HELP constant must contain an "examples:" section with at least 2
- * concrete usage examples that start with "gh-axi".
+ * concrete usage examples that start with "sq-gh".
  */
 function assertHelpHasExamples(name: string, help: string) {
   describe(`${name}`, () => {
@@ -24,11 +24,11 @@ function assertHelpHasExamples(name: string, help: string) {
       expect(help).toContain("examples:");
     });
 
-    it('has at least 2 examples starting with "gh-axi"', () => {
+    it('has at least 2 examples starting with "sq-gh"', () => {
       const examplesSection = help.slice(help.indexOf("examples:"));
       const exampleLines = examplesSection
         .split("\n")
-        .filter((line) => line.trim().startsWith("gh-axi"));
+        .filter((line) => line.trim().startsWith("sq-gh"));
       expect(exampleLines.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -36,9 +36,9 @@ function assertHelpHasExamples(name: string, help: string) {
       const examplesSection = help.slice(help.indexOf("examples:"));
       const exampleLines = examplesSection
         .split("\n")
-        .filter((line) => line.trim().startsWith("gh-axi"));
+        .filter((line) => line.trim().startsWith("sq-gh"));
       for (const line of exampleLines) {
-        expect(line).toMatch(/^ {2}gh-axi/);
+        expect(line).toMatch(/^ {2}sq-gh/);
       }
     });
   });

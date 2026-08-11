@@ -11,7 +11,7 @@ let tempDir: string | undefined;
 
 beforeEach(() => {
   vi.resetModules();
-  tempDir = mkdtempSync(join(tmpdir(), "quota-axi-cursor-auth-"));
+  tempDir = mkdtempSync(join(tmpdir(), "sq-quota-cursor-auth-"));
   process.env.CURSOR_STATE_DB = join(tempDir, "state.vscdb");
   process.env.XDG_CACHE_HOME = join(tempDir, "cache");
 });

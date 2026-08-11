@@ -132,7 +132,7 @@ function Artifact({ annotationOn, selectedEl, hoveredEl, onHover, onClick }) {
         </Anno>
 
         <Anno id="footer" tag="div" style={artifactStyles.footer}>
-          <span>lavish-axi · v0.1.0</span>
+          <span>sq-report · v0.1.0</span>
           <span>~/projects/landing/index.html</span>
         </Anno>
       </div>

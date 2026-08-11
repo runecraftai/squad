@@ -58,9 +58,9 @@ describe("getSuggestions", () => {
       repo: { owner: "cli", name: "cli", nwo: "cli/cli", source: "flag" },
     });
     expect(lines.every((l) => l.includes("-R cli/cli"))).toBe(true);
-    expect(lines.every((l) => !l.includes("gh-axi -R"))).toBe(true);
+    expect(lines.every((l) => !l.includes("sq-gh -R"))).toBe(true);
     expect(lines).toContain(
-      "Run `gh-axi issue view <number> -R cli/cli` to view details",
+      "Run `sq-gh issue view <number> -R cli/cli` to view details",
     );
   });
 
@@ -79,8 +79,8 @@ describe("getSuggestions", () => {
     });
 
     expect(lines).toEqual([
-      "Run `gh-axi issue view <number> -R cli/cli --hostname git.example.com` to view details",
-      'Run `gh-axi issue create --title "..." --body-file <path> -R cli/cli --hostname git.example.com` to create',
+      "Run `sq-gh issue view <number> -R cli/cli --hostname git.example.com` to view details",
+      'Run `sq-gh issue create --title "..." --body-file <path> -R cli/cli --hostname git.example.com` to create',
     ]);
   });
 
@@ -118,7 +118,7 @@ describe("getSuggestions", () => {
     );
 
     expect(lines).toContain(
-      "Run `gh-axi issue view <number> --hostname git.example.com` to view details",
+      "Run `sq-gh issue view <number> --hostname git.example.com` to view details",
     );
   });
 
@@ -158,12 +158,12 @@ describe("getSuggestions", () => {
     ];
 
     expect(lines).toEqual([
-      'Run `echo -n "<value>" | gh-axi secret set <name> -R cli/cli` to add or update a secret',
-      'Run `echo -n "<value>" | gh-axi secret set <name> -R cli/cli` to add a secret',
-      "Run `gh-axi secret list -R cli/cli` to see all secrets",
-      "Run `gh-axi secret list -R cli/cli` to see remaining secrets",
+      'Run `echo -n "<value>" | sq-gh secret set <name> -R cli/cli` to add or update a secret',
+      'Run `echo -n "<value>" | sq-gh secret set <name> -R cli/cli` to add a secret',
+      "Run `sq-gh secret list -R cli/cli` to see all secrets",
+      "Run `sq-gh secret list -R cli/cli` to see remaining secrets",
     ]);
-    expect(lines.every((l) => !l.includes("gh-axi -R"))).toBe(true);
+    expect(lines.every((l) => !l.includes("sq-gh -R"))).toBe(true);
   });
 
   it("places explicit repo flags after variable commands", () => {
@@ -192,12 +192,12 @@ describe("getSuggestions", () => {
     ];
 
     expect(lines).toEqual([
-      "Run `gh-axi variable set <name> --body <value> -R cli/cli` to add or update a variable",
-      "Run `gh-axi variable set <name> --body <value> -R cli/cli` to add a variable",
-      "Run `gh-axi variable list -R cli/cli` to see all variables",
-      "Run `gh-axi variable list -R cli/cli` to see remaining variables",
+      "Run `sq-gh variable set <name> --body <value> -R cli/cli` to add or update a variable",
+      "Run `sq-gh variable set <name> --body <value> -R cli/cli` to add a variable",
+      "Run `sq-gh variable list -R cli/cli` to see all variables",
+      "Run `sq-gh variable list -R cli/cli` to see remaining variables",
     ]);
-    expect(lines.every((l) => !l.includes("gh-axi -R"))).toBe(true);
+    expect(lines.every((l) => !l.includes("sq-gh -R"))).toBe(true);
   });
 
   it("returns PR merge suggestions", () => {

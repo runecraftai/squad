@@ -10,7 +10,7 @@ import type {
   EffectiveRunway,
   ModelCatalog,
   ModelQuotaRecord,
-  QuotaAxiResponse,
+  SqQuotaResponse,
 } from "../src/types.js";
 
 const generatedAt = "2026-08-05T12:00:00.000Z";
@@ -117,7 +117,7 @@ describe("model quota join", () => {
   });
 });
 
-function quotaResponse(): QuotaAxiResponse {
+function quotaResponse(): SqQuotaResponse {
   return {
     generatedAt,
     schemaVersion: 3,
@@ -223,7 +223,7 @@ function testCatalogWithRunways(): ModelCatalog {
   };
 }
 
-function quotaResponseWithRunways(): QuotaAxiResponse {
+function quotaResponseWithRunways(): SqQuotaResponse {
   const availability: Array<[string, EffectiveRunway]> = [
     ["longer", { status: "projected_exhaustion", usableRunwaySeconds: 100 }],
     ["same-a", { status: "projected_exhaustion", usableRunwaySeconds: 50 }],

@@ -14,7 +14,7 @@ import {
 import { getSuggestions } from "../suggestions.js";
 import { resolveValue } from "../secretValue.js";
 
-export const SECRET_HELP = `usage: gh-axi secret <subcommand> [flags]
+export const SECRET_HELP = `usage: sq-gh secret <subcommand> [flags]
 subcommands[3]:
   list, set <name>, delete <name>
 flags[1]:
@@ -24,11 +24,11 @@ flags{set}:
 values are never printed: \`list\` only exposes name and update time, matching \`gh secret list\`
 scope: repository (default) or --env <environment>; other gh scopes (--org/--user/--app) are rejected, not silently ignored
 examples:
-  gh-axi secret list
-  gh-axi secret list --env production
-  echo -n "sk-..." | gh-axi secret set OPENAI_API_KEY
-  echo -n "$(cat cert.p12 | base64)" | gh-axi secret set CSC_LINK --env production
-  gh-axi secret delete OPENAI_API_KEY --env production`;
+  sq-gh secret list
+  sq-gh secret list --env production
+  echo -n "sk-..." | sq-gh secret set OPENAI_API_KEY
+  echo -n "$(cat cert.p12 | base64)" | sq-gh secret set CSC_LINK --env production
+  sq-gh secret delete OPENAI_API_KEY --env production`;
 
 const listSchema: FieldDef[] = [
   field("name"),
@@ -40,15 +40,15 @@ type SecretSub = "list" | "set" | "delete";
 function usageFor(sub: SecretSub): string {
   switch (sub) {
     case "list":
-      return "gh-axi secret list [--env <environment>]";
+      return "sq-gh secret list [--env <environment>]";
     case "set":
-      return "gh-axi secret set <name> [--env <environment>]";
+      return "sq-gh secret set <name> [--env <environment>]";
     case "delete":
-      return "gh-axi secret delete <name> [--env <environment>]";
+      return "sq-gh secret delete <name> [--env <environment>]";
   }
 }
 
-// gh secret's non-repo scope flags. Only --env is exposed by gh-axi; the rest
+// gh secret's non-repo scope flags. Only --env is exposed by sq-gh; the rest
 // are surfaced as explicit errors so an unsupported scope fails loudly instead
 // of being silently dropped back to repo scope (the historical bug). --env-file
 // is included because it is an alternate secret-value channel that would bypass
@@ -153,7 +153,7 @@ function conflictingEnvError(sub: SecretSub): AxiError {
 
 function unsupportedScopeError(flag: string, sub: SecretSub): AxiError {
   return new AxiError(
-    `gh-axi secret supports only repository scope and --env (environment) scope; ${flag} is not supported`,
+    `sq-gh secret supports only repository scope and --env (environment) scope; ${flag} is not supported`,
     "VALIDATION_ERROR",
     [usageFor(sub)],
   );
@@ -163,9 +163,9 @@ function unknownFlagError(tok: string, sub: SecretSub): AxiError {
   // Echo the flag name only, never an attached `=value`, so a value cannot leak.
   const flagName = tok.split("=", 1)[0];
   return new AxiError(
-    `unknown flag for gh-axi secret ${sub}: ${flagName}`,
+    `unknown flag for sq-gh secret ${sub}: ${flagName}`,
     "VALIDATION_ERROR",
-    [usageFor(sub), "gh-axi secret --help"],
+    [usageFor(sub), "sq-gh secret --help"],
   );
 }
 
@@ -206,7 +206,7 @@ async function setSecret(args: string[], ctx?: RepoContext): Promise<string> {
     throw new AxiError(
       "Secret values must be piped via stdin; --body/-b is not accepted because flags are visible in process argv",
       "VALIDATION_ERROR",
-      [`echo -n "<value>" | gh-axi secret set <name>`],
+      [`echo -n "<value>" | sq-gh secret set <name>`],
     );
   }
 
@@ -214,7 +214,7 @@ async function setSecret(args: string[], ctx?: RepoContext): Promise<string> {
   const name = positionals[0];
   if (!name) {
     throw new AxiError(
-      "Secret name is required: gh-axi secret set <name>",
+      "Secret name is required: sq-gh secret set <name>",
       "VALIDATION_ERROR",
     );
   }
@@ -242,7 +242,7 @@ async function deleteSecret(
   const name = positionals[0];
   if (!name) {
     throw new AxiError(
-      "Secret name is required: gh-axi secret delete <name>",
+      "Secret name is required: sq-gh secret delete <name>",
       "VALIDATION_ERROR",
     );
   }

@@ -1,6 +1,6 @@
 # Lavish Editor — UI kit
 
-A clickable design reference for the **Lavish Editor chrome** that the `lavish-axi` CLI launches in a browser.
+A clickable design reference for the **Lavish Editor chrome** that the `sq-report` CLI launches in a browser.
 The production chrome in `src/chrome.css`, `src/server.js`, and `src/chrome-client.js` is canonical; it now uses the v2 top bar with an **Annotate** switch, an overflow menu for editing actions, a split **Send to Agent** button with **Send & end session**, and an open-time layout gate that reuses the ended-session card visual language.
 This kit remains useful for token-driven components and interaction exploration, but check the production files before copying exact chrome structure.
 
@@ -13,7 +13,7 @@ Open `index.html` and try:
    The pills clear; a sage "working…" bubble appears; a faked reply lands a second later.
 5. In production, use the **Annotate** switch to leave editing mode and the overflow menu for copy path, reload artifact, copy DOM snapshot, and end session.
 
-Everything is fake — there's no `lavish-axi` server backing it. The reply text is canned. The DOM snapshot is not transmitted anywhere.
+Everything is fake — there's no `sq-report` server backing it. The reply text is canned. The DOM snapshot is not transmitted anywhere.
 
 ## Files
 
@@ -37,4 +37,4 @@ This is a **kit**, not a build of the product. Skipped:
 - DOM snapshot serialization. `lavish.snapshot()` would produce something like the tree in `src/artifact-sdk.js`; we don't.
 - File-path identity, session store, long-polling.
 
-Read `src/server.js`, `src/chrome-client.js`, `src/chrome.css`, and `src/artifact-sdk.js` in the lavish-axi repo for the canonical behaviour.
+Read `src/server.js`, `src/chrome-client.js`, `src/chrome.css`, and `src/artifact-sdk.js` in the sq-report repo for the canonical behaviour.

@@ -7,8 +7,8 @@ import { parseConfigToml, resolveConfig } from "../src/config.js";
 let dir: string;
 let home: string;
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "tasks-axi-cfg-"));
-  home = mkdtempSync(join(tmpdir(), "tasks-axi-home-"));
+  dir = mkdtempSync(join(tmpdir(), "sq-tasks-cfg-"));
+  home = mkdtempSync(join(tmpdir(), "sq-tasks-home-"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -109,14 +109,14 @@ describe("resolveConfig", () => {
     const fromEnv = resolveConfig({
       cwd: dir,
       home,
-      env: { TASKS_AXI_FILE: "/abs/from-env.md" },
+      env: { SQ_TASKS_FILE: "/abs/from-env.md" },
     });
     expect(fromEnv.path).toBe("/abs/from-env.md");
 
     const fromFlag = resolveConfig({
       cwd: dir,
       home,
-      env: { TASKS_AXI_FILE: "/abs/from-env.md" },
+      env: { SQ_TASKS_FILE: "/abs/from-env.md" },
       file: "/abs/from-flag.md",
     });
     expect(fromFlag.path).toBe("/abs/from-flag.md");
@@ -128,14 +128,14 @@ describe("resolveConfig", () => {
     const fromEnv = resolveConfig({
       cwd: dir,
       home,
-      env: { TASKS_AXI_FILE: "/abs/from-env.md" },
+      env: { SQ_TASKS_FILE: "/abs/from-env.md" },
     });
     expect(fromEnv.path).toBe("/abs/from-env.md");
 
     const fromFlag = resolveConfig({
       cwd: dir,
       home,
-      env: { TASKS_AXI_FILE: "/abs/from-env.md" },
+      env: { SQ_TASKS_FILE: "/abs/from-env.md" },
       file: "/abs/from-flag.md",
     });
     expect(fromFlag.path).toBe("/abs/from-flag.md");
@@ -154,11 +154,11 @@ describe("resolveConfig", () => {
   });
 
   it.each(["", "   "])(
-    "rejects an empty TASKS_AXI_FILE value %#",
+    "rejects an empty SQ_TASKS_FILE value %#",
     (value) => {
       expect(() =>
-        resolveConfig({ cwd: dir, home, env: { TASKS_AXI_FILE: value } }),
-      ).toThrow(/TASKS_AXI_FILE/);
+        resolveConfig({ cwd: dir, home, env: { SQ_TASKS_FILE: value } }),
+      ).toThrow(/SQ_TASKS_FILE/);
     },
   );
 

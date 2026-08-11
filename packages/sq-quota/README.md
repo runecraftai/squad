@@ -123,9 +123,9 @@ grok,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unk
 kimi,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
 help[4]:
 Default TOON reports effective headroom and usable runway; use --json or --full for reserve diagnostics
-Run `quota-axi --provider claude --json` for JSON output
-Run `quota-axi --full` to include account, source-attempt, and reserve details
-Run `quota-axi auth` to inspect local auth source availability without printing secrets, so nothing needs to be installed ahead of time.
+Run `sq-quota --provider claude --json` for JSON output
+Run `sq-quota --full` to include account, source-attempt, and reserve details
+Run `sq-quota auth` to inspect local auth source availability without printing secrets, so nothing needs to be installed ahead of time.
 ```
 `-g` installs the skill for all projects (e.g. `~/.claude/skills/`); drop it to install for the current project only (`.claude/skills/`).
 
@@ -233,7 +233,7 @@ The `quota` command's `--json` emits `schemaVersion: 3`.
 
 ### Normalized schema contract
 
-The package publishes TypeScript declarations from its package root, so consumers can use `import type { QuotaAxiResponse, ModelsResponse } from "sq-quota"`. The adapter contract is `ProviderAdapter` in and normalized `ProviderQuota` out: adapters report observed quota data, never rank, mutate provider state, or retain raw responses.
+The package publishes TypeScript declarations from its package root, so consumers can use `import type { SqQuotaResponse, ModelsResponse } from "sq-quota"`. The adapter contract is `ProviderAdapter` in and normalized `ProviderQuota` out: adapters report observed quota data, never rank, mutate provider state, or retain raw responses.
 
 `schemaVersion` is command-specific. Additive optional fields do not bump it. A semantic or incompatible shape change does. The `quota` report is version 3, `auth` is version 1, and `models` is version 1.
 
@@ -401,7 +401,7 @@ Auth source entries can include `credentialPresent` when a non-secret probe conf
 | Provider       | Credential sources read                                                                                                                                                                                                                                                                                                                                      |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Claude         | `$CLAUDE_CONFIG_DIR/.credentials.json` or `~/.claude/.credentials.json`; on macOS, the corresponding default or path-hashed Claude Code Keychain value pinned to Claude Code's validated current-user account, with `--allow-keychain-prompt` or, after a profile-and-account-scoped non-secret access marker exists, on plain calls                          |
-| Codex          | `$CODEX_HOME/auth.json` or `~/.codex/auth.json` before the read-only CLI fallback; `$QUOTA_AXI_CODEX_BINARY` can pin that fallback to an absolute executable path                                                                                                                                                                                             |
+| Codex          | `$CODEX_HOME/auth.json` or `~/.codex/auth.json` before the read-only CLI fallback; `$SQ_QUOTA_CODEX_BINARY` can pin that fallback to an absolute executable path                                                                                                                                                                                             |
 | Cursor         | `$CURSOR_STATE_DB` when set or the platform Cursor state database path                                                                                                                                                                                                                                                                                       |
 | GitHub Copilot | `$GITHUB_COPILOT_APPS_JSON` when set or the local Copilot apps auth file                                                                                                                                                                                                                                                                                     |
 | Grok           | Grok CLI session auth from `$GROK_AUTH_JSON`, inline `$GROK_AUTH`, `$GROK_AUTH_PATH`, or `$GROK_HOME/auth.json` / `~/.grok/auth.json`, plus Pi's independent `$PI_CODING_AGENT_DIR/auth.json` `xai` entry (default `~/.pi/agent/auth.json`) for OAuth or literal API-key model auth                                          |
@@ -423,7 +423,7 @@ Auth source entries can include `credentialPresent` when a non-secret probe conf
 
 - Codex `auth.json` support is OAuth-token only; API key values such as `OPENAI_API_KEY` are treated as invalid for quota usage calls and are not sent to ChatGPT usage endpoints.
 - Access-token JWT usability is authoritative for the OAuth bearer probe. An expired `id_token` alone does not mark `auth-json` expired or skip OAuth; identity-token expiry is diagnostic metadata only. A missing or expired `access_token` still skips OAuth and preserves the read-only CLI fallback.
-- It may run `codex -s read-only -a untrusted app-server` for Codex JSON-RPC fallback. Set `QUOTA_AXI_CODEX_BINARY` to an absolute executable path when the fallback must use a specific Codex installation; an invalid override fails closed instead of consulting `PATH`.
+- It may run `codex -s read-only -a untrusted app-server` for Codex JSON-RPC fallback. Set `SQ_QUOTA_CODEX_BINARY` to an absolute executable path when the fallback must use a specific Codex installation; an invalid override fails closed instead of consulting `PATH`.
 
 **Cursor**
 

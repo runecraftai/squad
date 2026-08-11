@@ -794,7 +794,7 @@ describe("gistCommand", () => {
       mockedGhJson.mockResolvedValue([gist()]);
       const result = await gistCommand(["list"]);
       expect(result).toContain("help[");
-      expect(result).toContain("gh-axi gist view");
+      expect(result).toContain("sq-gh gist view");
     });
 
     it("shows help suggestions when no gists exist", async () => {
@@ -805,12 +805,12 @@ describe("gistCommand", () => {
 
     // Mutation closer #2: hardcoding isEmpty=false sends the non-empty suggestion
     // (which mentions gist view) even when the list is empty; the empty-state
-    // suggestion mentions "gh-axi api /gists`" which is different. Pin it.
+    // suggestion mentions "sq-gh api /gists`" which is different. Pin it.
     it("shows the empty-state suggestion text when no gists exist", async () => {
       mockedGhJson.mockResolvedValue([]);
       const result = await gistCommand(["list"]);
       // The empty-state suggestion points at the raw /gists endpoint, not a specific id.
-      expect(result).toContain("gh-axi api /gists`");
+      expect(result).toContain("sq-gh api /gists`");
     });
 
     // Regression: --limit must cap *displayed rows after filtering*, not the

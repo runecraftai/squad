@@ -45,7 +45,7 @@ describe("collapseHome", () => {
   it("does not collapse relative paths", async () => {
     const { collapseHome } = await importFsWithHome("/Users/kun");
 
-    expect(collapseHome("quota-axi")).toBe("quota-axi");
+    expect(collapseHome("sq-quota")).toBe("sq-quota");
   });
 });
 

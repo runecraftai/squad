@@ -55,28 +55,28 @@ describe("mapErrorMessage", () => {
 });
 
 describe("unsafe session names are rejected on action entry points", () => {
-  const saved = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const saved = process.env.SQ_BROWSER_SESSION;
 
   afterEach(() => {
     if (saved === undefined) {
-      delete process.env.CHROME_DEVTOOLS_AXI_SESSION;
+      delete process.env.SQ_BROWSER_SESSION;
     } else {
-      process.env.CHROME_DEVTOOLS_AXI_SESSION = saved;
+      process.env.SQ_BROWSER_SESSION = saved;
     }
   });
 
   it("stopBridge rejects a dot-only session instead of killing the default bridge", async () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "..";
+    process.env.SQ_BROWSER_SESSION = "..";
     await expect(stopBridge()).rejects.toThrow(/Invalid/);
   });
 
   it("ensureBridge rejects a dot-only session instead of targeting the default bridge", async () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "..";
+    process.env.SQ_BROWSER_SESSION = "..";
     await expect(ensureBridge()).rejects.toThrow(/Invalid/);
   });
 
   it("getSessionSnapshotIfRunning degrades an invalid session to null instead of throwing", async () => {
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "..";
+    process.env.SQ_BROWSER_SESSION = "..";
     await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
   });
 });
@@ -85,15 +85,15 @@ describe("resolveBridgeTimeoutMs", () => {
   let savedTimeout: string | undefined;
 
   beforeEach(() => {
-    savedTimeout = process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS;
-    delete process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS;
+    savedTimeout = process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS;
+    delete process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS;
   });
 
   afterEach(() => {
     if (savedTimeout === undefined) {
-      delete process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS;
+      delete process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS;
     } else {
-      process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = savedTimeout;
+      process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = savedTimeout;
     }
   });
 
@@ -102,24 +102,24 @@ describe("resolveBridgeTimeoutMs", () => {
   });
 
   it("honors a numeric env value", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "60000";
+    process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = "60000";
     expect(resolveBridgeTimeoutMs()).toBe(60_000);
   });
 
   it("clamps tiny values to a 1s floor (avoids pathological retries)", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "10";
+    process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = "10";
     expect(resolveBridgeTimeoutMs()).toBe(1_000);
   });
 
   it("falls back to default when value is non-numeric", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "soon";
+    process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = "soon";
     expect(resolveBridgeTimeoutMs()).toBe(30_000);
   });
 
   it("falls back to default when value is zero or negative", () => {
-    process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "0";
+    process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = "0";
     expect(resolveBridgeTimeoutMs()).toBe(30_000);
-    process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "-100";
+    process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = "-100";
     expect(resolveBridgeTimeoutMs()).toBe(30_000);
   });
 });
@@ -264,14 +264,14 @@ describe("checkBridgeHealth (deep probe)", () => {
 });
 
 describe("buildBridgeEarlyExitError", () => {
-  const savedMcpPath = process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+  const savedMcpPath = process.env.SQ_BROWSER_MCP_PATH;
 
   afterEach(() => {
     const restore = (key: string, value: string | undefined) => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     };
-    restore("CHROME_DEVTOOLS_AXI_MCP_PATH", savedMcpPath);
+    restore("SQ_BROWSER_MCP_PATH", savedMcpPath);
   });
 
   it("names the session, port, exit code, and the port-in-use remedy on the EADDRINUSE code", () => {
@@ -291,7 +291,7 @@ describe("buildBridgeEarlyExitError", () => {
     );
     const suggestions = err.suggestions.join("\n");
     expect(suggestions).toContain("9231");
-    expect(suggestions).toContain("CHROME_DEVTOOLS_AXI_PORT");
+    expect(suggestions).toContain("SQ_BROWSER_PORT");
     // Balanced wording: not over-attributed to a session collision - also
     // names stale/crashed bridges and unrelated processes, with the
     // free-the-port remedy stated directly.
@@ -301,7 +301,7 @@ describe("buildBridgeEarlyExitError", () => {
   });
 
   it("gives generic startup guidance (not port collision) for a non-EADDRINUSE early exit", () => {
-    delete process.env.CHROME_DEVTOOLS_AXI_MCP_PATH;
+    delete process.env.SQ_BROWSER_MCP_PATH;
     const err = buildBridgeEarlyExitError("worker-2", 9231, 1, null);
 
     expect(err.code).toBe("BRIDGE_NOT_READY");
@@ -312,12 +312,12 @@ describe("buildBridgeEarlyExitError", () => {
     expect(suggestions).not.toContain("another session's bridge");
   });
 
-  it("points at CHROME_DEVTOOLS_AXI_MCP_PATH when an explicit path is set", () => {
-    process.env.CHROME_DEVTOOLS_AXI_MCP_PATH = "/opt/mcp.js";
+  it("points at SQ_BROWSER_MCP_PATH when an explicit path is set", () => {
+    process.env.SQ_BROWSER_MCP_PATH = "/opt/mcp.js";
     const err = buildBridgeEarlyExitError("worker-2", 9231, 1, null);
 
     const suggestions = err.suggestions.join("\n");
-    expect(suggestions).toContain("CHROME_DEVTOOLS_AXI_MCP_PATH");
+    expect(suggestions).toContain("SQ_BROWSER_MCP_PATH");
     expect(suggestions).not.toContain("npm prefix -g");
   });
 
@@ -329,10 +329,10 @@ describe("buildBridgeEarlyExitError", () => {
 });
 
 describe("ensureBridge early-exit fast-fail", () => {
-  const savedSession = process.env.CHROME_DEVTOOLS_AXI_SESSION;
+  const savedSession = process.env.SQ_BROWSER_SESSION;
   const savedHome = process.env.HOME;
-  const savedTimeout = process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS;
-  const savedPort = process.env.CHROME_DEVTOOLS_AXI_PORT;
+  const savedTimeout = process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS;
+  const savedPort = process.env.SQ_BROWSER_PORT;
   let tmpHome: string;
 
   const restore = (key: string, value: string | undefined) => {
@@ -345,18 +345,18 @@ describe("ensureBridge early-exit fast-fail", () => {
     // ensureBridge is forced down the spawn-a-new-bridge path.
     tmpHome = mkdtempSync(join(tmpdir(), "axi-ensure-bridge-"));
     process.env.HOME = tmpHome;
-    process.env.CHROME_DEVTOOLS_AXI_SESSION = "early-exit-worker";
-    delete process.env.CHROME_DEVTOOLS_AXI_PORT;
+    process.env.SQ_BROWSER_SESSION = "early-exit-worker";
+    delete process.env.SQ_BROWSER_PORT;
     // A long deadline so the assertion proves the *early-exit* path returns
     // fast, not that it merely hit the timeout.
-    process.env.CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS = "20000";
+    process.env.SQ_BROWSER_BRIDGE_TIMEOUT_MS = "20000";
   });
 
   afterEach(() => {
-    restore("CHROME_DEVTOOLS_AXI_SESSION", savedSession);
+    restore("SQ_BROWSER_SESSION", savedSession);
     restore("HOME", savedHome);
-    restore("CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS", savedTimeout);
-    restore("CHROME_DEVTOOLS_AXI_PORT", savedPort);
+    restore("SQ_BROWSER_BRIDGE_TIMEOUT_MS", savedTimeout);
+    restore("SQ_BROWSER_PORT", savedPort);
     rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -381,7 +381,7 @@ describe("ensureBridge early-exit fast-fail", () => {
     expect((caught as CdpError).code).toBe("BRIDGE_NOT_READY");
     expect((caught as CdpError).message).toContain("before becoming ready");
     expect((caught as CdpError).suggestions.join("\n")).toContain(
-      "CHROME_DEVTOOLS_AXI_PORT",
+      "SQ_BROWSER_PORT",
     );
     // The whole point: detecting the early exit must beat the 20s deadline.
     expect(elapsed).toBeLessThan(5000);
@@ -434,7 +434,7 @@ describe("ensureBridge early-exit fast-fail", () => {
     });
     await new Promise<void>((r) => winner.listen(0, "127.0.0.1", () => r()));
     const winnerPort = (winner.address() as AddressInfo).port;
-    process.env.CHROME_DEVTOOLS_AXI_PORT = String(winnerPort);
+    process.env.SQ_BROWSER_PORT = String(winnerPort);
 
     try {
       const port = await ensureBridge(() => {

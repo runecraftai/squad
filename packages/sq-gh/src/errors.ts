@@ -24,7 +24,7 @@ const patterns: ErrorPattern[] = [
     pattern: /Could not resolve to a Repository with the name '([^']+)'/,
     code: "REPO_NOT_FOUND",
     message: (m) => `Repository "${m[1]}" not found`,
-    suggestions: () => ["Run `gh-axi repo list` to see your repositories"],
+    suggestions: () => ["Run `sq-gh repo list` to see your repositories"],
   },
   {
     pattern: /Could not resolve to an? .+? with the number of (\d+)/,
@@ -48,15 +48,13 @@ const patterns: ErrorPattern[] = [
     pattern: /release with tag "([^"]+)" not found/i,
     code: "NOT_FOUND",
     message: (m) => `Release "${m[1]}" not found`,
-    suggestions: () => [
-      `Run \`gh-axi release list\` to see available releases`,
-    ],
+    suggestions: () => [`Run \`sq-gh release list\` to see available releases`],
   },
   {
     pattern: /run (\d+) not found/i,
     code: "NOT_FOUND",
     message: (m) => `Run ${m[1]} not found`,
-    suggestions: () => [`Run \`gh-axi run list\` to see recent runs`],
+    suggestions: () => [`Run \`sq-gh run list\` to see recent runs`],
   },
   {
     // gh tacks a `gh auth login` hint onto its repo-resolution failure, but the

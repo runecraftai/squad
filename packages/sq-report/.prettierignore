@@ -1,7 +1,7 @@
 dist
 node_modules
 .lavish
-.lavish-axi
+.sq-report
 .no-mistakes
 .drill
 lavish-code-review.html

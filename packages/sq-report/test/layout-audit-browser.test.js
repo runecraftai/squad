@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const runBrowserE2e = process.env.LAVISH_AXI_BROWSER_E2E === "1";
+const runBrowserE2e = process.env.SQ_REPORT_BROWSER_E2E === "1";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = path.join(repoRoot, "test/fixtures/layout-audit");
 
@@ -42,16 +42,16 @@ test(
     const temp = await mkdtemp(path.join(tmpdir(), "lavish-layout-browser-"));
     const port = await freePort();
     const lavishEnv = {
-      LAVISH_AXI_PORT: String(port),
-      LAVISH_AXI_STATE_DIR: path.join(temp, "state"),
-      LAVISH_AXI_NO_OPEN: "1",
-      LAVISH_AXI_TELEMETRY: "0",
-      LAVISH_AXI_HOST: "127.0.0.1",
-      LAVISH_AXI_LINK_HOST: "127.0.0.1",
+      SQ_REPORT_PORT: String(port),
+      SQ_REPORT_STATE_DIR: path.join(temp, "state"),
+      SQ_REPORT_NO_OPEN: "1",
+      SQ_REPORT_TELEMETRY: "0",
+      SQ_REPORT_HOST: "127.0.0.1",
+      SQ_REPORT_LINK_HOST: "127.0.0.1",
     };
     const chromeEnv = {
-      CHROME_DEVTOOLS_AXI_SESSION: `lavish-layout-${process.pid}`,
-      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: path.join(temp, "chrome"),
+      SQ_BROWSER_SESSION: `lavish-layout-${process.pid}`,
+      SQ_BROWSER_USER_DATA_DIR: path.join(temp, "chrome"),
     };
 
     function openArtifact(file) {
@@ -72,7 +72,7 @@ test(
 
     function readInbox() {
       const output = run(
-        "chrome-devtools-axi",
+        "sq-browser",
         [
           "eval",
           'JSON.stringify({ gate: document.body.classList.contains("layout-gate-active"), wrapHidden: document.getElementById("warningsWrap").hidden, badge: document.getElementById("warningsCount").textContent })',
@@ -97,16 +97,16 @@ test(
     // the poll return - only the user queueing a fix does that.
     async function audit(name, viewport, settleMs, expectedCount) {
       const { file, url } = await openFixture(name);
-      run("chrome-devtools-axi", ["emulate", "--viewport", viewport], chromeEnv);
-      run("chrome-devtools-axi", ["open", url], chromeEnv);
-      run("chrome-devtools-axi", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
+      run("sq-browser", ["emulate", "--viewport", viewport], chromeEnv);
+      run("sq-browser", ["open", url], chromeEnv);
+      run("sq-browser", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
       let inbox = readInbox();
       // A busy browser can return from navigation before the refreshed chrome has painted its
       // first diagnostic result. Re-open once when the gate is still checking (or a warning-count
       // assertion is otherwise not ready), then keep the final gate assertion strict.
       if (inbox.gate || (expectedCount > 0 && Number(inbox.badge) !== expectedCount)) {
-        run("chrome-devtools-axi", ["open", url], chromeEnv);
-        run("chrome-devtools-axi", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
+        run("sq-browser", ["open", url], chromeEnv);
+        run("sq-browser", ["wait", String(settleMs)], chromeEnv, settleMs + 45_000);
         inbox = readInbox();
       }
       const poll = run(process.execPath, ["bin/sq-report.js", "poll", file, "--timeout-ms", "600"], lavishEnv);
@@ -155,9 +155,9 @@ test(
       const revalidationFile = path.join(temp, "root-lock-revalidation.html");
       await copyFile(path.join(fixtures, "control-broken-reachability.html"), revalidationFile);
       const revalidation = openArtifact(revalidationFile);
-      run("chrome-devtools-axi", ["emulate", "--viewport", "390x844x1,mobile,touch"], chromeEnv);
-      run("chrome-devtools-axi", ["open", revalidation.url], chromeEnv);
-      run("chrome-devtools-axi", ["wait", "3200"], chromeEnv);
+      run("sq-browser", ["emulate", "--viewport", "390x844x1,mobile,touch"], chromeEnv);
+      run("sq-browser", ["open", revalidation.url], chromeEnv);
+      run("sq-browser", ["wait", "3200"], chromeEnv);
       const detected = readInbox();
       assert.equal(Number(detected.badge), 3);
       assert.equal(detected.gate, false);
@@ -170,14 +170,14 @@ test(
         revalidationFile,
         '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Repaired controls</title></head><body><button>Continue</button></body></html>',
       );
-      run("chrome-devtools-axi", ["wait", "4500"], chromeEnv);
+      run("sq-browser", ["wait", "4500"], chromeEnv);
       const repaired = readInbox();
       assert.equal(Number(repaired.badge), 0);
       assert.equal(repaired.wrapHidden, true);
       assert.equal(repaired.gate, false);
     } finally {
       run(process.execPath, ["bin/sq-report.js", "stop", "--port", String(port)], lavishEnv, 15_000);
-      run("chrome-devtools-axi", ["stop"], chromeEnv);
+      run("sq-browser", ["stop"], chromeEnv);
       await rm(temp, { recursive: true, force: true });
     }
   },

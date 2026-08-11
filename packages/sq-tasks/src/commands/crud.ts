@@ -43,7 +43,7 @@ import {
   showFullTextHint,
 } from "../view.js";
 
-export const ADD_HELP = `usage: tasks-axi add <id> "<title>" [flags]
+export const ADD_HELP = `usage: sq-tasks add <id> "<title>" [flags]
 aliases: create
 flags:
   --kind <strike|recon|docs|...>, --repo <name>, --body <text> or --body-file <path>
@@ -52,28 +52,28 @@ flags:
   --mint [--prefix <p>]   mint a slug-xx id from the title instead of passing one
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi add lavish-foo-q9 "fix summary toggle" --kind strike --repo lavish-axi --start
-  tasks-axi add sq-x "adopt lease" --blocked-by fob-lease-t4
-  tasks-axi add "quick note" --mint`;
+  sq-tasks add lavish-foo-q9 "fix summary toggle" --kind strike --repo sq-report --start
+  sq-tasks add sq-x "adopt lease" --blocked-by fob-lease-t4
+  sq-tasks add "quick note" --mint`;
 
-export const LIST_HELP = `usage: tasks-axi list [flags]
+export const LIST_HELP = `usage: sq-tasks list [flags]
 flags:
   --state <queued|in_flight|done|held>, --repo <name>, --kind <name>, --blocked
   --limit <n>, --fields <a,b,c>  (extra: ${Object.keys(LIST_EXTRA_FIELDS)
     .sort()
     .join(", ")})
 examples:
-  tasks-axi list --state queued
-  tasks-axi list --repo drill --fields blocked_by,created
-  tasks-axi list --blocked`;
+  sq-tasks list --state queued
+  sq-tasks list --repo drill --fields blocked_by,created
+  sq-tasks list --blocked`;
 
-export const SHOW_HELP = `usage: tasks-axi show <id> [--full]
+export const SHOW_HELP = `usage: sq-tasks show <id> [--full]
 aliases: view
 examples:
-  tasks-axi show homemux-h7
-  tasks-axi show homemux-h7 --full`;
+  sq-tasks show homemux-h7
+  sq-tasks show homemux-h7 --full`;
 
-export const UPDATE_HELP = `usage: tasks-axi update <id> [flags]
+export const UPDATE_HELP = `usage: sq-tasks update <id> [flags]
 aliases: edit
 flags:
   --title <text>, --body <text> or --body-file <path>
@@ -81,17 +81,17 @@ flags:
   --repo <name>, --kind <name>, --priority <0-4>, --pr <url>, --report <path>
   --json   print the resulting task as a JSON object
 examples:
-  tasks-axi show drill-release-validation --full
-  tasks-axi update drill-release-validation --body-file notes.md --archive-body
-  tasks-axi update sq-x --repo Squad --kind strike`;
+  sq-tasks show drill-release-validation --full
+  sq-tasks update drill-release-validation --body-file notes.md --archive-body
+  sq-tasks update sq-x --repo Squad --kind strike`;
 
-export const RM_HELP = `usage: tasks-axi rm <id>
+export const RM_HELP = `usage: sq-tasks rm <id>
 aliases: delete
 Fails while active tasks still block on this id.
 flags:
   --json   print the result as a JSON object
 examples:
-  tasks-axi rm stale-task-q1`;
+  sq-tasks rm stale-task-q1`;
 
 function parseDeps(args: string[]): Dep[] {
   return takeAllFlags(args, "--blocked-by").map((id) => ({
@@ -220,7 +220,7 @@ async function mintAvailableId(
   }
 
   throw new AxiError("Could not mint a unique id for this title", "CONFLICT", [
-    'Pass an explicit id, e.g. `tasks-axi add <id> "title"`',
+    'Pass an explicit id, e.g. `sq-tasks add <id> "title"`',
   ]);
 }
 
@@ -255,7 +255,7 @@ export async function addCommand(
     throw new AxiError(
       "--prefix can only be used with --mint",
       "VALIDATION_ERROR",
-      ['Run `tasks-axi add "<title>" --mint --prefix <p>`, or omit --prefix'],
+      ['Run `sq-tasks add "<title>" --mint --prefix <p>`, or omit --prefix'],
     );
   }
   const prefix = requireNonEmptySingleLineFlagValue("--prefix", rawPrefix);
@@ -272,7 +272,7 @@ export async function addCommand(
     title = requireTitle(
       titleFlag ?? positionals[0] ?? "",
       "--mint requires a title",
-      'Run `tasks-axi add "<title>" --mint`',
+      'Run `sq-tasks add "<title>" --mint`',
     );
     id = await mintAvailableId(store, title, prefix);
   } else {
@@ -280,7 +280,7 @@ export async function addCommand(
     title = requireTitle(
       titleFlag ?? positionals[1] ?? "",
       "A title is required",
-      'Run `tasks-axi add <id> "<title>"`',
+      'Run `sq-tasks add <id> "<title>"`',
     );
   }
 

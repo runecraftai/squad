@@ -35,25 +35,25 @@ const LAUNCH_ONLY_ENV_MATRIX: Array<{
   env: Record<string, string>;
 }> = [
   { name: "default isolated mode", env: {} },
-  { name: "headed isolated mode", env: { CHROME_DEVTOOLS_AXI_HEADED: "1" } },
+  { name: "headed isolated mode", env: { SQ_BROWSER_HEADED: "1" } },
   {
     name: "persistent profile mode",
-    env: { CHROME_DEVTOOLS_AXI_USER_DATA_DIR: "/tmp/profile" },
+    env: { SQ_BROWSER_USER_DATA_DIR: "/tmp/profile" },
   },
   {
     name: "headed persistent profile mode",
     env: {
-      CHROME_DEVTOOLS_AXI_USER_DATA_DIR: "/tmp/profile",
-      CHROME_DEVTOOLS_AXI_HEADED: "1",
+      SQ_BROWSER_USER_DATA_DIR: "/tmp/profile",
+      SQ_BROWSER_HEADED: "1",
     },
   },
   {
     name: "isolated mode with a release channel",
-    env: { CHROME_DEVTOOLS_AXI_CHANNEL: "beta" },
+    env: { SQ_BROWSER_CHANNEL: "beta" },
   },
   {
     name: "isolated mode with caller-supplied chrome args",
-    env: { CHROME_DEVTOOLS_AXI_CHROME_ARGS: "--enable-unsafe-webgpu" },
+    env: { SQ_BROWSER_CHROME_ARGS: "--enable-unsafe-webgpu" },
   },
 ];
 
@@ -63,26 +63,26 @@ const ATTACH_ONLY_ENV_MATRIX: Array<{
 }> = [
   {
     name: "autoConnect mode",
-    env: { CHROME_DEVTOOLS_AXI_AUTO_CONNECT: "1" },
+    env: { SQ_BROWSER_AUTO_CONNECT: "1" },
   },
   {
     name: "browserUrl mode",
-    env: { CHROME_DEVTOOLS_AXI_BROWSER_URL: "http://127.0.0.1:9222" },
+    env: { SQ_BROWSER_BROWSER_URL: "http://127.0.0.1:9222" },
   },
   {
     name: "wsEndpoint mode",
-    env: { CHROME_DEVTOOLS_AXI_BROWSER_URL: "ws://127.0.0.1:9222/devtools" },
+    env: { SQ_BROWSER_BROWSER_URL: "ws://127.0.0.1:9222/devtools" },
   },
 ];
 
 const MANAGED_ENV_KEYS = [
-  "CHROME_DEVTOOLS_AXI_HEADED",
-  "CHROME_DEVTOOLS_AXI_CHROME_ARGS",
-  "CHROME_DEVTOOLS_AXI_BROWSER_URL",
-  "CHROME_DEVTOOLS_AXI_USER_DATA_DIR",
-  "CHROME_DEVTOOLS_AXI_AUTO_CONNECT",
-  "CHROME_DEVTOOLS_AXI_CHANNEL",
-  "CHROME_DEVTOOLS_AXI_WS_HEADERS",
+  "SQ_BROWSER_HEADED",
+  "SQ_BROWSER_CHROME_ARGS",
+  "SQ_BROWSER_BROWSER_URL",
+  "SQ_BROWSER_USER_DATA_DIR",
+  "SQ_BROWSER_AUTO_CONNECT",
+  "SQ_BROWSER_CHANNEL",
+  "SQ_BROWSER_WS_HEADERS",
 ] as const;
 
 /** True when these args ask chrome-devtools-mcp to launch its own browser. */
@@ -150,7 +150,7 @@ describe("keychain isolation for launched browsers", () => {
   }
 
   it("survives caller-supplied chrome args without dropping the isolation", () => {
-    process.env.CHROME_DEVTOOLS_AXI_CHROME_ARGS = "--flag-a --flag-b";
+    process.env.SQ_BROWSER_CHROME_ARGS = "--flag-a --flag-b";
     const args = buildTransportArgs();
 
     expect(args).toContain("--chrome-arg=--flag-a");

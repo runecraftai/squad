@@ -230,7 +230,7 @@ describe("Pi xAI credential broker", () => {
 });
 
 function temporaryDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), "quota-axi-pi-xai-"));
+  const directory = mkdtempSync(join(tmpdir(), "sq-quota-pi-xai-"));
   temporaryDirectories.push(directory);
   return directory;
 }

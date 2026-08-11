@@ -35,7 +35,7 @@ const ENDPOINTS = [
 const API_TIMEOUT_MS = 15_000;
 const CLI_TIMEOUT_MS = 15_000;
 const RPC_TIMEOUT_MS = 8_000;
-const CODEX_BINARY_ENV = "QUOTA_AXI_CODEX_BINARY";
+const CODEX_BINARY_ENV = "SQ_QUOTA_CODEX_BINARY";
 
 type CodexBinaryState =
   | { status: "available"; path: string }

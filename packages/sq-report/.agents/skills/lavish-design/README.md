@@ -25,7 +25,7 @@ Lavish is one product wearing two hats:
 
 | Surface                | Audience                                                                  | What it looks like                                                                                                                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **CLI** (`lavish-axi`) | Coding agents (Claude Code, Cursor, etc.) and the developers driving them | A long-polling, AXI-shaped command surface. Output is TOON-serialized. Not visually designed — it's _agent-ergonomic._                                                                                                  |
+| **CLI** (`sq-report`) | Coding agents (Claude Code, Cursor, etc.) and the developers driving them | A long-polling, AXI-shaped command surface. Output is TOON-serialized. Not visually designed — it's _agent-ergonomic._                                                                                                  |
 | **Editor chrome**      | Humans reviewing an agent's HTML artifact                                 | A two-pane browser app: the artifact in an iframe on the left, a conversation panel on the right, a session bar across the top. Click any element or select text in the artifact, queue a prompt, send it to the agent. |
 
 The brand surface this design system serves is **the Editor chrome.** Marketing, docs, decks and screenshots should all feel like they came from the same hand that drew the chrome.
@@ -69,7 +69,7 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 **Casing**
 
 - **Sentence case for most user-facing labels.** Primary action labels may use title case when they read as proper actions (_"Send to Agent"_); menu actions such as _"Reload artifact"_, _"Copy DOM snapshot"_, _"Send & end session"_, and _"End session"_ use sentence case.
-- **lowercase command names** (`lavish-axi`, `pnpm run build`) — never SHOUTY, never `Lavish-Axi`.
+- **lowercase command names** (`sq-report`, `pnpm run build`) — never SHOUTY, never `Sq-Report`.
 - The brand mark **Lavish** is Title Case in prose; in product chrome it's set in a slightly heavier weight (`font-weight: 750`) with a touch of tracking (`letter-spacing: .02em`).
 
 **Pronouns**

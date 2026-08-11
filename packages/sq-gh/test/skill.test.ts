@@ -19,7 +19,7 @@ function parseFrontmatter(markdown: string): Record<string, unknown> {
 }
 
 describe("createSkillMarkdown", () => {
-  it("matches the committed skills/gh-axi/SKILL.md", () => {
+  it("matches the committed skills/sq-gh/SKILL.md", () => {
     const committed = readFileSync(
       new URL("../skills/sq-gh/SKILL.md", import.meta.url),
       "utf8",
@@ -31,7 +31,7 @@ describe("createSkillMarkdown", () => {
     const markdown = createSkillMarkdown();
     const frontmatter = parseFrontmatter(markdown);
     expect(frontmatter).toEqual({
-      name: "gh-axi",
+      name: "sq-gh",
       description: SKILL_DESCRIPTION,
       "user-invocable": false,
       author: SKILL_AUTHOR,
@@ -59,13 +59,13 @@ describe("createSkillMarkdown", () => {
       "projects",
     ]);
     expect(hermes.category).toBe("devops");
-    // gh-axi authenticates via the gh CLI, not an API-key env var.
+    // sq-gh authenticates via the gh CLI, not an API-key env var.
     expect(frontmatter).not.toHaveProperty("required_environment_variables");
   });
 
   it("teaches npx invocation instead of assuming a global install", () => {
     const markdown = createSkillMarkdown();
-    expect(markdown).toContain("npx -y gh-axi");
+    expect(markdown).toContain("npx -y sq-gh");
   });
 
   it("documents the gh prerequisite", () => {

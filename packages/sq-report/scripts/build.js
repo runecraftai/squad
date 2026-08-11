@@ -15,9 +15,9 @@ await esbuild.build({
   format: "esm",
   target: "node22",
   define: {
-    "process.env.LAVISH_AXI_BUILD_UMAMI_HOST": JSON.stringify(process.env.LAVISH_AXI_UMAMI_HOST || ""),
-    "process.env.LAVISH_AXI_BUILD_UMAMI_WEBSITE_ID": JSON.stringify(process.env.LAVISH_AXI_UMAMI_WEBSITE_ID || ""),
-    "process.env.LAVISH_AXI_BUILD_VERSION": JSON.stringify(packageJson.version),
+    "process.env.SQ_REPORT_BUILD_UMAMI_HOST": JSON.stringify(process.env.SQ_REPORT_UMAMI_HOST || ""),
+    "process.env.SQ_REPORT_BUILD_UMAMI_WEBSITE_ID": JSON.stringify(process.env.SQ_REPORT_UMAMI_WEBSITE_ID || ""),
+    "process.env.SQ_REPORT_BUILD_VERSION": JSON.stringify(packageJson.version),
   },
 });
 

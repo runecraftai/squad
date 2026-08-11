@@ -77,7 +77,7 @@ export const BATCH_RELOAD_DEBOUNCE_MS = 900;
 
 // The whiteboard frame bundle (Excalidraw + Mermaid converter + React) is
 // produced by `scripts/build.js` into dist/whiteboard. Packaged runs find it
-// next to the served bundle; source runs (node bin/lavish-axi.js) fall back to
+// next to the served bundle; source runs (node bin/sq-report.js) fall back to
 // the repo's dist output, so `pnpm run build` must have run at least once.
 export function defaultWhiteboardAssetsDir() {
   const packaged = fileURLToPath(new URL("./whiteboard", import.meta.url));
@@ -112,11 +112,11 @@ export function isValidWhiteboardChannelToken(token, secret, now = Date.now()) {
 
 // A detached server should not live forever. When no browser chrome (SSE) and no agent poll
 // are connected for this long, the server shuts itself down so it stops dangling. The next
-// `lavish-axi <file>` invocation re-spawns a fresh server and adopts resumable sessions from
+// `sq-report <file>` invocation re-spawns a fresh server and adopts resumable sessions from
 // state.json. Browser-ended sessions still require the explicit --reopen opt-in. Set
-// LAVISH_AXI_IDLE_TIMEOUT_MS to 0/off to disable, or to a custom millisecond budget.
+// SQ_REPORT_IDLE_TIMEOUT_MS to 0/off to disable, or to a custom millisecond budget.
 export function resolveIdleTimeoutMs(env = process.env) {
-  const raw = env.LAVISH_AXI_IDLE_TIMEOUT_MS?.trim();
+  const raw = env.SQ_REPORT_IDLE_TIMEOUT_MS?.trim();
   if (raw === undefined || raw === "") return DEFAULT_IDLE_TIMEOUT_MS;
   if (raw === "0" || raw.toLowerCase() === "off") return null;
   const value = Number(raw);
@@ -148,7 +148,7 @@ export async function serve({
   // Sessions with at least one warning the user queued that has not been re-checked yet.
   const outstandingRepairBatches = new Set();
   const diagnosticViewportClasses = resolveDiagnosticViewportClasses();
-  const verbose = debug || process.env.LAVISH_AXI_DEBUG === "1";
+  const verbose = debug || process.env.SQ_REPORT_DEBUG === "1";
   const writeLog = typeof log === "function" ? log : (line) => process.stderr.write(`${line}\n`);
   const logEvent = verbose ? (line) => writeLog(`[lavish] ${line}`) : null;
   let publicPort = port;
@@ -164,11 +164,11 @@ export async function serve({
   // never one of the hostnames this server answers to.
   //
   // Loopback names are always accepted. Binding to a concrete interface
-  // (LAVISH_AXI_HOST) or naming a link host (LAVISH_AXI_LINK_HOST) adds that host,
+  // (SQ_REPORT_HOST) or naming a link host (SQ_REPORT_LINK_HOST) adds that host,
   // so an operator who intentionally exposes the server on a specific interface
   // keeps rebinding protection while their chosen hostname works. Additional
   // names (a reverse-proxy hostname, extra interfaces) are an explicit opt-in via
-  // LAVISH_AXI_ALLOWED_HOSTS; a lone "*" there disables the guard for operators
+  // SQ_REPORT_ALLOWED_HOSTS; a lone "*" there disables the guard for operators
   // who front the server with their own authentication. When a reverse proxy sits
   // in front, X-Forwarded-Host is validated too (see isAllowedRequestHost).
   const allowedHostnames = buildAllowedHostnames({ host, linkHost: linkHostName, allowedHosts });
@@ -215,9 +215,9 @@ export async function serve({
       const existing = await store.findByKey(key);
       // A user-initiated end (ending or send-and-ending from the browser) means the human
       // deliberately closed the review surface. Silently reopening it on the next
-      // `lavish-axi <file>` is the exact behavior this route exists to prevent - require an
+      // `sq-report <file>` is the exact behavior this route exists to prevent - require an
       // explicit `reopen` opt-in instead of reviving it automatically. Agent-initiated ends
-      // (`lavish-axi end`) keep reviving on the next open, same as before this change.
+      // (`sq-report end`) keep reviving on the next open, same as before this change.
       if (existing?.status === "ended" && existing.ended_by === "user" && !reopen) {
         logEvent?.(`session open blocked (user-ended) key=${key} file=${file}`);
         res.json({ key, file, url: existing.url, status: "user-ended" });
@@ -346,7 +346,7 @@ export async function serve({
   });
 
   // Passive detection. A diagnostic pass updates the warning inbox and notifies open browser
-  // chromes - it never emits "feedback", so it can never make `lavish-axi poll` return and can
+  // chromes - it never emits "feedback", so it can never make `sq-report poll` return and can
   // never wake an agent. Only the user's explicit "Queue selected fixes" does that, through the
   // ordinary prompt queue.
   app.post("/api/:key/layout-diagnostics", async (req, res, next) => {
@@ -1109,7 +1109,7 @@ function encodeRfc5987Value(value) {
 const WILDCARD_BIND_HOSTS = new Set(["0.0.0.0", "::"]);
 
 // The set of Host header hostnames this server answers to: loopback names plus
-// the resolved bind and link host and any explicit LAVISH_AXI_ALLOWED_HOSTS
+// the resolved bind and link host and any explicit SQ_REPORT_ALLOWED_HOSTS
 // extras, minus wildcard binds and the "*" sentinel. Lowercased for
 // case-insensitive comparison against the incoming Host.
 export function buildAllowedHostnames({ host, linkHost: linkHostName, allowedHosts = [] }) {
@@ -1124,7 +1124,7 @@ export function buildAllowedHostnames({ host, linkHost: linkHostName, allowedHos
   );
 }
 
-// A lone "*" in LAVISH_AXI_ALLOWED_HOSTS is an explicit opt-out of the Host
+// A lone "*" in SQ_REPORT_ALLOWED_HOSTS is an explicit opt-out of the Host
 // allowlist, for operators who front the server with their own auth/proxy.
 export function allowsAllHosts(allowedHosts = []) {
   return allowedHosts.some((value) => String(value).trim() === "*");
@@ -1169,7 +1169,7 @@ export function isAllowedHostHeader(hostHeader, allowedHostnames) {
 // header is required and must be allowlisted. When an X-Forwarded-Host is present
 // - a reverse proxy in front of the loopback server - its outermost (last) value
 // must ALSO be allowlisted, so a proxy works once its public hostname is added to
-// LAVISH_AXI_ALLOWED_HOSTS. This is an AND check: a client-spoofed forwarded host
+// SQ_REPORT_ALLOWED_HOSTS. This is an AND check: a client-spoofed forwarded host
 // can only narrow access (Host is still checked), never widen it into a bypass. A
 // blank forwarded host is treated as absent, matching how proxies omit it.
 /**
@@ -1261,7 +1261,7 @@ export async function resolveWatchTarget(session) {
         scope: "directory",
         options: {
           ...baseOptions,
-          ignored: /(^|[/\\])(\.git|node_modules|dist|build|\.lavish-axi)([/\\]|$)/,
+          ignored: /(^|[/\\])(\.git|node_modules|dist|build|\.sq-report)([/\\]|$)/,
         },
       };
     }
