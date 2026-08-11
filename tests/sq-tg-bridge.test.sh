@@ -64,6 +64,7 @@ written raw to <state>/photo.body so tests can assert on the uploaded bytes.
 """
 import argparse
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -95,6 +96,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if "/getUpdates" in self.path:
             time.sleep(0.5)  # bound the poll rate like a real long-poll hold
+            garbage = args.state_dir + "/garbage.response"
+            if os.path.exists(garbage):
+                with open(garbage, "rb") as fh:
+                    raw = fh.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             try:
                 with open(args.state_dir + "/updates.json", encoding="utf-8") as fh:
                     result = json.load(fh).get("result", [])
@@ -111,6 +122,8 @@ class Handler(BaseHTTPRequestHandler):
         mid = counter["n"]
         if "/sendMessage" in self.path:
             body = json.loads(raw.decode("utf-8"))
+            if os.path.exists(args.state_dir + "/slow-sends"):
+                time.sleep(1.0)
             self._record({
                 "method": "sendMessage",
                 "chat_id": body.get("chat_id"),
@@ -675,6 +688,104 @@ test_followup_flow_via_squad_client() {
   pass "the full client flow - link, answer, follow-up - resolves platform and budget end to end"
 }
 
+test_malformed_telegram_response_does_not_kill_poller() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/garbage-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/garbage-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  printf 'not-json' > "$fake_dir/garbage.response"
+  local deadline=$(( $(date +%s) + 10 ))
+  while ! grep -q "getUpdates failed" "$home/bridge.out" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "bridge never hit the malformed response"
+    sleep 0.2
+  done
+  rm -f "$fake_dir/garbage.response"
+  feed_updates "$fake_dir" "$(one_update 40 400 "$OWNER_ID" 'apos a falha')"
+  local deadline2=$(( $(date +%s) + 15 ))
+  while :; do
+    bridge_poll "$url" "$home/body.json" | grep -q 200 && break
+    [ "$(date +%s)" -lt "$deadline2" ] || fail "poller never recovered after a malformed response"
+    sleep 0.2
+  done
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-$OWNER_ID-400" ] \
+    || fail "a malformed response must not lose later updates"
+  pass "a malformed Telegram response backs off instead of killing the poller"
+}
+
+test_concurrent_answers_post_exactly_once() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/race-answer-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/race-answer-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  feed_updates "$fake_dir" "$(one_update 41 410 "$OWNER_ID" 'corrida')"
+  local deadline=$(( $(date +%s) + 10 ))
+  while :; do
+    bridge_poll "$url" "$home/body.json" | grep -q 200 && break
+    [ "$(date +%s)" -lt "$deadline" ] || fail "bridge never offered the request"
+    sleep 0.2
+  done
+  local rid="tg-$OWNER_ID-410" c1pid c2pid
+  touch "$fake_dir/slow-sends"
+  (curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"resposta\"}" \
+    "$url/connector/answer" > "$home/c1.code") & c1pid=$!
+  (curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"resposta\"}" \
+    "$url/connector/answer" > "$home/c2.code") & c2pid=$!
+  wait "$c1pid" "$c2pid"
+  rm -f "$fake_dir/slow-sends"
+  expect_code 200 "$(cat "$home/c1.code")" "first concurrent answer"
+  expect_code 200 "$(cat "$home/c2.code")" "second concurrent answer must be the idempotent 2xx"
+  local count
+  count=$(jq -s 'length' "$fake_dir/sent.log")
+  expect_code 1 "$count" "concurrent answers to one pending request must post exactly one thread"
+  pass "concurrent answers cannot double-post a thread"
+}
+
+test_concurrent_followups_respect_the_cap() {
+  local home fake_dir fake_port url n
+  home="$TMP_ROOT/race-followup-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/race-followup-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  feed_updates "$fake_dir" "$(one_update 42 420 "$OWNER_ID" 'maratona')"
+  local deadline=$(( $(date +%s) + 10 ))
+  while :; do
+    bridge_poll "$url" "$home/body.json" | grep -q 200 && break
+    [ "$(date +%s)" -lt "$deadline" ] || fail "bridge never offered the request"
+    sleep 0.2
+  done
+  local rid="tg-$OWNER_ID-420" c1pid c2pid
+  expect_code 200 "$(bridge_post "$url" answer \
+    "{\"request_id\":\"$rid\",\"text\":\"na ativa\"}")" "answer must bind the request"
+  for n in 1 2; do
+    expect_code 200 "$(bridge_post "$url" followup \
+      "{\"request_id\":\"$rid\",\"text\":\"marco $n\"}")" \
+      "follow-up $n must post"
+  done
+  touch "$fake_dir/slow-sends"
+  (curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"marco 3\"}" \
+    "$url/connector/followup" > "$home/c1.code") & c1pid=$!
+  (curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"marco 4\"}" \
+    "$url/connector/followup" > "$home/c2.code") & c2pid=$!
+  wait "$c1pid" "$c2pid"
+  rm -f "$fake_dir/slow-sends"
+  local codes
+  codes=$(printf '%s %s\n' "$(cat "$home/c1.code")" "$(cat "$home/c2.code")" \
+    | tr ' ' '\n' | sort -n | tr '\n' ' ')
+  [ "$codes" = "200 409 " ] \
+    || fail "concurrent follow-ups at the cap must yield one 200 and one 409 (got: $codes)"
+  local count
+  count=$(jq -s 'length' "$fake_dir/sent.log")
+  expect_code 4 "$count" "answer plus at most 3 follow-ups may reach Telegram"
+  pass "concurrent follow-ups cannot exceed the 3-post contract"
+}
+
 # ---------------------------------------------------------------------------
 
 write_fake_telegram
@@ -696,3 +807,6 @@ test_restart_does_not_duplicate_and_offset_advances
 test_request_context_endpoint
 test_image_answer_posts_sendphoto
 test_followup_flow_via_squad_client
+test_malformed_telegram_response_does_not_kill_poller
+test_concurrent_answers_post_exactly_once
+test_concurrent_followups_respect_the_cap

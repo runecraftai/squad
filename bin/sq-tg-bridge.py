@@ -106,6 +106,7 @@ Run `bin/sq-tg-bridge.py --help` for the full flag list.
 import argparse
 import base64
 import hmac
+import http.client
 import http.server
 import json
 import os
@@ -267,6 +268,7 @@ class RequestStore:
         self.now_fn = now_fn
         self.log = log_fn
         self.lock = threading.Lock()
+        self._locks = {}
         self.offset = 0
         self.requests = {}
         self._load()
@@ -282,7 +284,8 @@ class RequestStore:
                     self.requests[rid] = rec
         except FileNotFoundError:
             pass
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, TypeError, json.JSONDecodeError,
+                AttributeError) as exc:
             self.log("state file %s unreadable (%s); starting empty"
                      % (self.path, exc))
             self.offset = 0
@@ -333,6 +336,14 @@ class RequestStore:
     def get(self, rid):
         with self.lock:
             return self.requests.get(rid)
+
+    def lock_for(self, rid):
+        with self.lock:
+            lk = self._locks.get(rid)
+            if lk is None:
+                lk = threading.Lock()
+                self._locks[rid] = lk
+            return lk
 
     def pending_ids(self):
         with self.lock:
@@ -435,6 +446,10 @@ class TelegramClient:
                                 exc.read().decode("utf-8", "replace")) from exc
         except urllib.error.URLError as exc:
             raise TelegramError("network", str(exc.reason)) from exc
+        except ValueError as exc:
+            raise TelegramError("api", "malformed response: %s" % exc) from exc
+        except http.client.HTTPException as exc:
+            raise TelegramError("network", "truncated response: %s" % exc) from exc
         if not payload.get("ok"):
             raise TelegramError(payload.get("error_code", "api"),
                                 payload.get("description", "unknown error"))
@@ -572,6 +587,9 @@ class ConnectorHandler(http.server.BaseHTTPRequestHandler):
             return
         rid = pending[0]
         rec = bridge.store.get(rid)
+        if rec is None:
+            self._deny(204)
+            return
         self._json(200, {
             "request_id": rid,
             "text": rec.get("text", ""),
@@ -607,53 +625,56 @@ class ConnectorHandler(http.server.BaseHTTPRequestHandler):
                              "reply_max_chars": REPLY_MAX_CHARS})
             return
         if path == "/connector/dismiss":
-            if bridge.store.remove(rid):
-                bridge.log("dismissed %s" % rid)
+            with bridge.store.lock_for(rid):
+                if bridge.store.remove(rid):
+                    bridge.log("dismissed %s" % rid)
             self._deny(200)
             return
-        if path == "/connector/followup":
-            binding_ok = (rec is not None
-                          and rec.get("status") == "answered"
-                          and isinstance(rec.get("answered_at"), int)
-                          and bridge.config.now() - rec["answered_at"]
-                              < FOLLOWUP_WINDOW_SECS
-                          and int(rec.get("followups") or 0)
-                              < FOLLOWUP_MAX_COUNT)
-            if not binding_ok:
-                self._json(409, {"error": "followup_unavailable"})
+        with bridge.store.lock_for(rid):
+            rec = bridge.store.get(rid)
+            if path == "/connector/followup":
+                binding_ok = (rec is not None
+                              and rec.get("status") == "answered"
+                              and isinstance(rec.get("answered_at"), int)
+                              and bridge.config.now() - rec["answered_at"]
+                                  < FOLLOWUP_WINDOW_SECS
+                              and int(rec.get("followups") or 0)
+                                  < FOLLOWUP_MAX_COUNT)
+                if not binding_ok:
+                    self._json(409, {"error": "followup_unavailable"})
+                    return
+            elif rec is None:
+                self._json(404, {"error": "unknown_request"})
                 return
-        elif rec is None:
-            self._json(404, {"error": "unknown_request"})
-            return
-        elif rec.get("status") == "answered":
-            self._deny(200)  # idempotent re-answer: already posted, send nothing
-            return
-        chunks = body.get("texts")
-        if not isinstance(chunks, list) \
-                or not all(isinstance(c, str) and c for c in chunks):
-            text = body.get("text")
-            chunks = [text] if isinstance(text, str) and text else []
-        if not chunks:
-            self._json(400, {"error": "empty_text"})
-            return
-        image = self._decode_image(body.get("image"))
-        try:
-            self._send_thread(rec["chat_id"], chunks, image,
-                              rec["message_id"])
-        except TelegramError as exc:
-            bridge.log("telegram send failed for %s: %s" % (rid, exc))
-            self._json(502, {"error": "telegram_send_failed",
-                             "detail": "%s: %s" % (exc.code,
-                                                   exc.description)})
-            return
-        if path == "/connector/followup":
-            bridge.store.bump_followups(rid)
-            bridge.log("follow-up %d/3 posted for %s" % (
-                int(rec.get("followups") or 0) + 1, rid))
-        else:
-            bridge.store.mark_answered(rid, bridge.config.now())
-            bridge.log("answered %s" % rid)
-        self._deny(200)
+            elif rec.get("status") == "answered":
+                self._deny(200)  # idempotent re-answer: already posted, send nothing
+                return
+            chunks = body.get("texts")
+            if not isinstance(chunks, list) \
+                    or not all(isinstance(c, str) and c for c in chunks):
+                text = body.get("text")
+                chunks = [text] if isinstance(text, str) and text else []
+            if not chunks:
+                self._json(400, {"error": "empty_text"})
+                return
+            image = self._decode_image(body.get("image"))
+            try:
+                self._send_thread(rec["chat_id"], chunks, image,
+                                  rec["message_id"])
+            except TelegramError as exc:
+                bridge.log("telegram send failed for %s: %s" % (rid, exc))
+                self._json(502, {"error": "telegram_send_failed",
+                                 "detail": "%s: %s" % (exc.code,
+                                                       exc.description)})
+                return
+            if path == "/connector/followup":
+                bridge.store.bump_followups(rid)
+                bridge.log("follow-up %d/3 posted for %s" % (
+                    int(rec.get("followups") or 0) + 1, rid))
+            else:
+                bridge.store.mark_answered(rid, bridge.config.now())
+                bridge.log("answered %s" % rid)
+            self._deny(200)
 
 
 class Bridge:
