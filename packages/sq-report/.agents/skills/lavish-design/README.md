@@ -69,7 +69,7 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 **Casing**
 
 - **Sentence case for most user-facing labels.** Primary action labels may use title case when they read as proper actions (_"Send to Agent"_); menu actions such as _"Reload artifact"_, _"Copy DOM snapshot"_, _"Send & end session"_, and _"End session"_ use sentence case.
-- **lowercase command names** (`sq-report`, `pnpm run build`) — never SHOUTY, never `Lavish-Axi`.
+- **lowercase command names** (`sq-report`, `pnpm run build`) — never SHOUTY, never `Sq-Report`.
 - The brand mark **Lavish** is Title Case in prose; in product chrome it's set in a slightly heavier weight (`font-weight: 750`) with a touch of tracking (`letter-spacing: .02em`).
 
 **Pronouns**
