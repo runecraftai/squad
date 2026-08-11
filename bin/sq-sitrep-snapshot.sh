@@ -110,12 +110,12 @@ Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
-landed merges this home's Done with registered XO homes' Done, bounded by
-  a per-home cap (SQUAD_BEARINGS_LANDED_PER_HOME) and an overall cap (SQUAD_BEARINGS_LANDED),
-  with omitted[] disclosure. Default selection is balanced across deterministic home
-  order while preserving each home's internal newest-first order; sparse homes do
+landed merges this base's Done with registered XO bases' Done, bounded by
+  a per-base cap (SQUAD_BEARINGS_LANDED_PER_HOME) and an overall cap (SQUAD_BEARINGS_LANDED),
+  with omitted[] disclosure. Default selection is balanced across deterministic base
+  order while preserving each base's internal newest-first order; sparse bases do
   not waste capacity. --all-landed reveals the full global newest-first set.
-For every registered XO, readable structured facts from its own home are
+For every registered XO, readable structured facts from its own base are
   authoritative, including independently trustworthy surfaces from a partial summary.
   Parent events and bounded terminal reads are labeled fallback or contradiction
   evidence and never become current work.

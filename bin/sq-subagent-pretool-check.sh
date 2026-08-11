@@ -88,14 +88,14 @@ Usage: sq-subagent-pretool-check.sh [--tool <tool-name>] [--claude]
 
 With no --tool, reads a PreToolUse-style JSON payload on stdin (Claude/Codex
 tool_name, or Grok toolName).
-Denies a delegation-SHAPED tool name in a genuine primary home.
-Claude primaries may also add an untracked per-home permissions.deny list that
+Denies a delegation-SHAPED tool name in a genuine primary base.
+Claude primaries may also add an untracked per-base permissions.deny list that
 removes known delegation tools from the model schema before this hook is needed.
 Do not ship that Claude-only list in tracked project settings, because linked
 worktrees inherit it and legitimate operators would lose their delegation tools.
 This hook remains as the shipped guard for future delegation-shaped names
 outside any local fixed list.
-Fires only in a genuine Squad primary home; it is a silent no-op in a
+Fires only in a genuine Squad primary base; it is a silent no-op in a
 operator/recon task worktree or any non-Squad repo, where a worker using
 delegation tools is legitimate.
 Exits 0 to allow and 2 to deny, naming the real operator dispatch path instead.
