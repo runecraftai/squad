@@ -7,11 +7,11 @@ DOTENV_UMAMI_HOST := $(shell [ -f .env ] && perl -ne 'next if /^\s*(?:\#|$$)/; s
 DOTENV_UMAMI_WEBSITE_ID := $(shell [ -f .env ] && perl -ne 'next if /^\s*(?:\#|$$)/; s/^\s*export\s+//; next unless /^\s*DRILL_UMAMI_WEBSITE_ID\s*=\s*(.*)$$/; $$v=$$1; $$v =~ s/^\s+|\s+$$//g; if ($$v =~ /^(["\x27])(.*)\1$$/) { $$v=$$2; } else { $$v =~ s/\s+\#.*$$//; $$v =~ s/\s+$$//; } $$out=$$v; END { print $$out if defined $$out }' .env)
 override UMAMI_HOST := $(if $(DOTENV_UMAMI_HOST),$(DOTENV_UMAMI_HOST),$(if $(UMAMI_HOST),$(UMAMI_HOST),$(DEFAULT_UMAMI_HOST)))
 override UMAMI_WEBSITE_ID := $(if $(DOTENV_UMAMI_WEBSITE_ID),$(DOTENV_UMAMI_WEBSITE_ID),$(if $(UMAMI_WEBSITE_ID),$(UMAMI_WEBSITE_ID),$(DEFAULT_UMAMI_WEBSITE_ID)))
-LDFLAGS := -X github.com/squad-org/squad/packages/drill/internal/buildinfo.Version=$(VERSION) \
-           -X github.com/squad-org/squad/packages/drill/internal/buildinfo.Commit=$(COMMIT) \
-           -X github.com/squad-org/squad/packages/drill/internal/buildinfo.Date=$(DATE) \
-           -X github.com/squad-org/squad/packages/drill/internal/buildinfo.TelemetryHost=$(UMAMI_HOST) \
-           -X github.com/squad-org/squad/packages/drill/internal/buildinfo.TelemetryWebsiteID=$(UMAMI_WEBSITE_ID)
+LDFLAGS := -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.Version=$(VERSION) \
+           -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.Commit=$(COMMIT) \
+           -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.Date=$(DATE) \
+           -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.TelemetryHost=$(UMAMI_HOST) \
+           -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.TelemetryWebsiteID=$(UMAMI_WEBSITE_ID)
 
 .PHONY: build dist install test e2e e2e-record lint fmt clean docs docs-build docs-preview demo skill skill-check
 
