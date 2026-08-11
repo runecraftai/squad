@@ -7,7 +7,7 @@
 # isolated tests), the bounded job record, worker installation, and the remote
 # runtime PATH.
 #
-# A job directory is mode 0700 and contains root, home, argv (NUL-delimited),
+# A job directory is mode 0700 and contains root, base, argv (NUL-delimited),
 # stdin, stdout, stderr, queue_deadline, timeout, deadline, exit, and state.
 # Stage writes state=queued last. The worker atomically claims a job with
 # .claim, establishes its execution deadline, changes state to running, writes

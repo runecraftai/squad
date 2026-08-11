@@ -18,7 +18,7 @@
 # dismiss did not land and can fall back to leaving the inbox file for a later
 # pass.
 #
-# Live post config (home .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN
+# Live post config (base .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN
 # (required), SQX_RELAY_URL (default https://mySquad.io). Auth:
 # Authorization: Bearer <token>.
 #

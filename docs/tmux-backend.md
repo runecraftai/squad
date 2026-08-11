@@ -1,6 +1,6 @@
 # tmux runtime backend
 
-tmux is Squad's verified reference runtime backend and the fully supported baseline for XO homes.
+tmux is Squad's verified reference runtime backend and the fully supported baseline for XO bases.
 [`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) owns shared backend selection and metadata semantics.
 
 ## Setup
@@ -93,7 +93,7 @@ Ambiguous pending text never receives the busy-queue conversion.
 
 ## Limits and regression entry points
 
-- tmux is the reference path and supports XO homes.
+- tmux is the reference path and supports XO bases.
 - The OpenCode busy-queue exception is tmux-specific; Herdr retains its separately documented gap.
 
 ```sh

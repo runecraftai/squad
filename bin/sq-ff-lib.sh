@@ -10,7 +10,7 @@
 #     on startup) follows the PRIMARY checkout's current default-branch commit:
 #     base_mode is that local commit, with NO fetch and no origin dependency.
 #
-# A linked-worktree XO home already holds the primary's commit in the
+# A linked-worktree XO base already holds the primary's commit in the
 # shared object store, so its local-HEAD sync is a purely local fast-forward that
 # never touches the network. A standalone clone moves through that path only when
 # it already has the target; otherwise it is skipped until the origin path updates it.
@@ -19,7 +19,7 @@
 # XO's backlog, projects, or in-flight work.
 # The seeded .sq-xo-home identity marker is gitignored too; the local
 # sync tolerates only that marker during the one-time upgrade of pre-ignore
-# linked-worktree homes.
+# linked-worktree bases.
 # Homes are leased at a detached HEAD on the
 # default branch, so the fast-forward advances HEAD only and never moves the
 # shared default branch or any other worktree's checkout.
@@ -233,10 +233,10 @@ dirty_status() {
   fi
 }
 
-# List this home's LIVE XO direct reports from state/<id>.meta records.
+# List this base's LIVE XO direct reports from state/<id>.meta records.
 # The meta file is the liveness signal; data/XOs.md is only the fallback
 # for durable fields such as home= when an older/incomplete meta lacks them.
-# Output is pipe-delimited: id|home|window|meta-file.
+# Output is pipe-delimited: id|base|window|meta-file.
 live_XO_meta_records() {
   local state=$1 registry=${2:-} meta id home window
   [ -d "$state" ] || return 0
@@ -365,16 +365,16 @@ ff_target() {
 FF_NUDGE_WINDOWS=""
 FF_SEEN_HOMES=""
 
-# Validate and fast-forward one XO home, accumulating its stable
+# Validate and fast-forward one XO base, accumulating its stable
 # sq-<id> task selector into FF_NUDGE_WINDOWS when it should be live-converged.
 # Args:
-#   id home window base_mode nudge_requires_instr
-# A home is nudged only when it ACTUALLY advanced (FF_STATUS=updated) and has a
+#   id base window base_mode nudge_requires_instr
+# A base is nudged only when it ACTUALLY advanced (FF_STATUS=updated) and has a
 # live window. With nudge_requires_instr=yes the advance must also have changed
-# the instruction surface (FF_INSTR non-empty): an already-current home, or one
+# the instruction surface (FF_INSTR non-empty): an already-current base, or one
 # whose only change was non-instruction tracked files, is left undisturbed. The
 # Squad repo itself (SQUAD_ROOT) is never processed as its own XO, and
-# each resolved home is processed at most once.
+# each resolved base is processed at most once.
 process_XO() {
   local id=$1 home=$2 window=${3:-} base_mode=$4 nudge_requires_instr=${5:-no} home_real fm_root_real
   [ -n "$id" ] || return 0
@@ -405,7 +405,7 @@ process_XO() {
   fi
 }
 
-# Sweep this home's LIVE XO direct reports - state/<id>.meta files with
+# Sweep this base's LIVE XO direct reports - state/<id>.meta files with
 # kind=xo - fast-forwarding each to base_mode. Passes base_mode and
 # nudge_requires_instr through to process_XO. Accumulates into
 # FF_NUDGE_WINDOWS / FF_SEEN_HOMES, which the caller resets before and reads after.

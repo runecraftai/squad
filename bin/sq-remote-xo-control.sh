@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Host-local lifecycle control for the remote XO home selected by sq-on.
+# Host-local lifecycle control for the remote XO base selected by sq-on.
 #
 # Usage:
 #   sq-remote-xo-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
@@ -15,20 +15,20 @@
 #
 # Remote placement ends here, but the second-mate agent always runs on the
 # Herdr backend in the dedicated sq-remote session, so launch refuses any other
-# selection rather than reading this home's config/backend. The interactive
+# selection rather than reading this base's config/backend. The interactive
 # default session remains for the user's work.
 # sq-spawn/sq-send/sq-teardown keep owning the local endpoint mechanics.
-# The home's own workers keep their ordinary backend selection.
+# The base's own workers keep their ordinary backend selection.
 # bin/sq-remote-doctor.sh owns that host's readiness for Herdr.
 # docs/remote-XOs.md owns why.
 # A private parent-route state directory stores only the remote XO
-# agent's endpoint record; the home's own
+# agent's endpoint record; the base's own
 # state/*.meta remains reserved for workers the XO supervises.
 # Retirement closes only this XO's panes or workspace and never
 # stops sq-remote or removes a sibling XO's workspace or panes.
 #
 # The optional launch traceparent is the per-task W3C trace-context carrier the
-# PARENT home resolved for this XO; this host only delivers it to the
+# PARENT base resolved for this XO; this host only delivers it to the
 # pane, and sq-spawn validates it (bin/sq-trace-context-lib.sh). Omitting it is
 # the default-off path. print_route echoes the carrier the endpoint actually
 # holds, including for an already-alive endpoint that was not relaunched, so the

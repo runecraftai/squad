@@ -1,7 +1,7 @@
 # Pi Calm mode
 
 Calm is a Pi-only conversation presentation toggle.
-It is off by default, and the last `/calm` choice persists for the effective Squad home across Pi session starts and resumes.
+It is off by default, and the last `/calm` choice persists for the effective Squad base across Pi session starts and resumes.
 
 While Calm is active and an agent run is under way, Calm hides Pi's built-in `Working...` row and shows a small two-row animated boat in its place, and no separate Calm status row is added.
 The water fills the usable width in standard ANSI blue and the complete boat is standard ANSI yellow.

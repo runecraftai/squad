@@ -4,7 +4,7 @@ Audience: maintainer verification.
 
 This record contains reusable version-scoped evidence for active runtime guarantees.
 The backend guides own current setup, safety boundaries, and limitations.
-Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
+Exact task chronology, branch names, temporary bases, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
 ## tmux
 
@@ -295,16 +295,16 @@ ok - real herdr E2E: teardown closes only the worker's own pane and leaves the l
 That suite's headline case runs `bin/sq-spawn.sh` inside a real Herdr pane, so the parent identity comes from Herdr's own injection rather than a composed environment.
 Cross-session and contradictory bindings are covered deterministically in `tests/sq-backend-herdr.test.sh`, which can script a second server's socket without provisioning one.
 
-### Per-home and presentation topology
+### Per-base and presentation topology
 
-Per-home behavior is owned by:
+Per-base behavior is owned by:
 
 ```sh
 HERDR_LAB_HELPER=bin/sq-herdr-lab.sh \
   tests/sq-backend-herdr-workspace-per-home-e2e.test.sh
 ```
 
-Observed guarantee: the primary and XO used distinct home workspaces, a child launched by the XO stayed in that XO workspace, list-live remained home-scoped, and exact cleanup did not affect sibling homes.
+Observed guarantee: the primary and XO used distinct base workspaces, a child launched by the XO stayed in that XO workspace, list-live remained base-scoped, and exact cleanup did not affect sibling bases.
 
 The complete projection suite ran on 2026-07-21 against Herdr 0.7.4 protocol 16:
 
@@ -359,8 +359,8 @@ ok - real Herdr lab: the primary presentation setting inherits into real XO home
 ok - real Herdr lab validation completed on Herdr 0.8.0 with the default-session tripwire intact
 ```
 
-The projected spawn in that run used the historical empty opt-in file, so a home that had already enabled the projection keeps it without any migration step.
-One concurrent cross-home recovery case refused under contention on a loaded machine and passed on an immediate rerun; recovery-path presentation lock contention is a deliberate hard refusal rather than a flat fallback, which default-on now makes reachable from any Herdr home.
+The projected spawn in that run used the historical empty opt-in file, so a base that had already enabled the projection keeps it without any migration step.
+One concurrent cross-base recovery case refused under contention on a loaded machine and passed on an immediate rerun; recovery-path presentation lock contention is a deliberate hard refusal rather than a flat fallback, which default-on now makes reachable from any Herdr base.
 That run measured the default-on projection on Herdr 0.8.0 only, while the focus-flash regression below was last run on 0.7.5 before the flip, so neither run covered a defective release under default-on projection; the version floor and the focus-flash suite's Part C close that gap.
 
 The restored-shell session-start cleanup ran on 2026-07-24 against Herdr 0.7.5 protocol 17:
@@ -370,7 +370,7 @@ HERDR_LAB_HELPER=bin/sq-herdr-lab.sh \
   tests/sq-herdr-session-cleanup-e2e.test.sh
 ```
 
-Observed guarantee: one exact home-local, journal-correlated, one-tab and one-pane childless idle shell was closed after restoration while the exact non-target focus and default unit session remained unchanged, and a repeat run was a no-op.
+Observed guarantee: one exact base-local, journal-correlated, one-tab and one-pane childless idle shell was closed after restoration while the exact non-target focus and default unit session remained unchanged, and a repeat run was a no-op.
 
 ### Workspace-removal focus safety
 
@@ -442,7 +442,7 @@ The classifier itself, the config preference it composes with, and the one-warni
 tests/sq-backend-herdr.test.sh
 ```
 
-Observed guarantees: every measured release classifies as the table records; either the protocol or the version signal alone carries an at-or-above verdict, and each divergent pair flips once the carrying signal is removed; client and running selected-session server verdicts compose conservatively, an unreadable server-running state and losing both release signals report indeterminate and fall back flat, the default is rechecked after server ensure before projection publication, an unconfigured home is projected only at or above the floor, an explicit `on`, including the historical empty opt-in file, is honored below it, and the below-floor warning is emitted once per home per detected release rather than once per spawn.
+Observed guarantees: every measured release classifies as the table records; either the protocol or the version signal alone carries an at-or-above verdict, and each divergent pair flips once the carrying signal is removed; client and running selected-session server verdicts compose conservatively, an unreadable server-running state and losing both release signals report indeterminate and fall back flat, the default is rechecked after server ensure before projection publication, an unconfigured base is projected only at or above the floor, an explicit `on`, including the historical empty opt-in file, is honored below it, and the below-floor warning is emitted once per base per detected release rather than once per spawn.
 
 The whole real-Herdr lane was run on 2026-08-05 against both the CI-pinned Herdr 0.7.4 protocol 16, which is below the floor, and Herdr 0.8.0 protocol 19, which is at it:
 
@@ -451,7 +451,7 @@ HERDR_LAB_HELPER=bin/sq-herdr-lab.sh bin/sq-test-run.sh --lane real-herdr-gated
 ```
 
 Both runs reported `family=real-herdr-gated count=11 failed=0`.
-The projection suite's unconfigured-home case is release-aware rather than pinned to one outcome, so it proves the projected default on 0.8.0 and the flat fallback with its naming warning on 0.7.4:
+The projection suite's unconfigured-base case is release-aware rather than pinned to one outcome, so it proves the projected default on 0.8.0 and the flat fallback with its naming warning on 0.7.4:
 
 ```text
 ok - real Herdr lab: a home that configured nothing is projected by default on herdr 0.8.0

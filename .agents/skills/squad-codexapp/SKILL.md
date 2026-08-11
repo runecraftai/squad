@@ -60,7 +60,7 @@ That makes status writes a verified return-channel requirement, not a fact to as
 For a Squad-managed task, include an explicit status instruction:
 
 ```text
-Append supervisor-visible status lines to <absolute-Squad-home>/state/<task-id>.status.
+Append supervisor-visible status lines to <absolute-Squad-base>/state/<task-id>.status.
 Use only these prefixes for status changes: working:, needs-decision:, blocked:, paused:, done:, failed:.
 Use paused: only for a deliberate known external wait that should be rechecked later, never for a blocker that needs Squad to act.
 Before doing substantive work, append "working: Codex Desktop thread started".

@@ -1133,10 +1133,10 @@ if [ "$migration_failed" -ne 0 ]; then
 fi
 
 if [ "$canonical_rebuilt" -eq 1 ]; then
-  echo "PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this home"
+  echo "PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base"
 fi
 if [ "$validated_rearmed" -eq 1 ]; then
-  echo "PR_CHECK_MIGRATION: validated replacement polls armed; resume supervision for this home"
+  echo "PR_CHECK_MIGRATION: validated replacement polls armed; resume supervision for this base"
 fi
 if [ "$quarantined_unarmed" -eq 1 ]; then
   echo "PR_CHECK_MIGRATION: quarantined polls remain unarmed; review state/.pr-check-migration.log before rearming"
@@ -1144,5 +1144,5 @@ fi
 if [ "$canonical_rebuilt" -eq 0 ] && [ "$validated_rearmed" -eq 0 ] \
   && [ "$quarantined_unarmed" -eq 0 ] \
   && [ "$stopped_sentry" -eq 1 ]; then
-  echo "PR_CHECK_MIGRATION: migration completed safely; resume supervision for this home"
+  echo "PR_CHECK_MIGRATION: migration completed safely; resume supervision for this base"
 fi

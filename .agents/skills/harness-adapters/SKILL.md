@@ -62,7 +62,7 @@ muse is OPERATOR/RECON ONLY and has no primary integration at all: its plugin en
 `bin/sq-spawn.sh` refuses a `--xo` launch on muse for that reason.
 The exact hook files, commands, scoping rules, and fail-open tradeoffs are owned by `docs/turnend-guard.md`.
 `docs/verification/supervision.md` "Turn-end guard" owns active validation evidence.
-When changing any primary turn-end hook, validate the real harness behavior in a scratch project or throwaway home before trusting it, then update that doc and the relevant concise fact below.
+When changing any primary turn-end hook, validate the real harness behavior in a scratch project or throwaway base before trusting it, then update that doc and the relevant concise fact below.
 
 ## Primary pre-arm (PreToolUse) seatbelt
 
@@ -74,8 +74,8 @@ When changing any sentry-arm PreToolUse hook, validate the real harness behavior
 ## Primary delegation-shape guard
 
 Claude exposes built-in delegation, scheduling, and worktree tools that a primary session can use to create work with no `state/<id>.meta`, which makes the whole guard stack inert because every guard counts that metadata.
-The shipped mechanism is `bin/sq-subagent-pretool-check.sh`, a primary-home PreToolUse guard that denies a delegation-SHAPED tool name.
-Claude primaries should also use an untracked per-home local `permissions.deny` list as hardening for known Claude delegation tools, because it removes them from the model's schema so they are never offered.
+The shipped mechanism is `bin/sq-subagent-pretool-check.sh`, a primary-base PreToolUse guard that denies a delegation-SHAPED tool name.
+Claude primaries should also use an untracked per-base local `permissions.deny` list as hardening for known Claude delegation tools, because it removes them from the model's schema so they are never offered.
 That deny list must not ship in tracked `.claude/settings.json` because it is Claude-only rather than harness-agnostic, and because tracked project settings propagate into linked worktrees where they disarm legitimate operators.
 `docs/subagent-guard.md` owns the full contract, the local deny-list recommendation, the `SQUAD_ALLOW_SUBAGENT=1` escape hatch, and the per-harness applicability review.
 
@@ -177,7 +177,7 @@ The shared symptom is a healthy-looking pane with no work in progress, so each a
 
 First launch in a fresh worktree, or first ever on a machine, may show a trust or bypass-permissions confirmation.
 After every spawn, peek the pane within about 20 seconds.
-If such a dialog is showing, accept it from an active Squad session using `SQUAD_HOME=<this-Squad-home> bin/sq-send.sh <window> --key Enter`, or the choice the dialog requires, unless `SQUAD_HOME` is already set to the active Squad home; verify the brief started processing.
+If such a dialog is showing, accept it from an active Squad session using `SQUAD_HOME=<this-Squad-base> bin/sq-send.sh <window> --key Enter`, or the choice the dialog requires, unless `SQUAD_HOME` is already set to the active Squad base; verify the brief started processing.
 
 Claude renders a predicted-next-prompt suggestion as dim/faint text inside an otherwise-empty composer after a turn completes.
 A plain `tmux capture-pane` cannot tell that ghost text apart from typed text.
@@ -194,7 +194,7 @@ The Squad PRIMARY's own `.claude/settings.json` registers two Stop hooks: `bin/s
 Claude Code's stdin payload to a Stop hook carries a `stop_hook_active` boolean that is `true` when the current stop attempt follows ANY stop-hook-driven continuation, including `asyncRewake` rewakes; the primary guard therefore ignores it in `--claude` mode and uses the cooperative claim/epoch check plus a bounded re-block budget instead, while the codex-mode default still treats it as a one-block loop guard.
 A project-level `.claude/settings.json` only takes effect when Claude Code's project root is that exact directory - it does not walk up from a subdirectory looking for one, so Squad launches the primary from the repo root.
 After those settings are loaded, hook command resolution is still cwd-sensitive because Claude Code runs commands through `/bin/sh` against the session's current cwd; keep the tracked commands anchored through `"$CLAUDE_PROJECT_DIR"/bin/...` and see `docs/turnend-guard.md` for the verified Stop-hook details.
-Claude Code's primary sentry protocol is Stop-owned: the auto-arm hook fires on every Stop and foregrounds `bin/sq-sentry-arm.sh` when the home is eligible and still needs supervision, and its exit-2 `asyncRewake` rewake is the wake; the model drains and handles wakes but never runs a routine re-arm command.
+Claude Code's primary sentry protocol is Stop-owned: the auto-arm hook fires on every Stop and foregrounds `bin/sq-sentry-arm.sh` when the base is eligible and still needs supervision, and its exit-2 `asyncRewake` rewake is the wake; the model drains and handles wakes but never runs a routine re-arm command.
 
 ## codex (VERIFIED 2026-06-11, codex-cli 0.139.0)
 
@@ -295,7 +295,7 @@ Without `deliverAs: "followUp"`, Pi rejects the send while the agent is still pr
 Pi's primary sentry protocol also requires the tracked `.pi/extensions/sq-primary-pi-watch.ts` extension, same trust-once discovery as the turn-end guard.
 The model arms through `fm_watch_arm_pi`, never a foreground bash arm; the sentry tool result and clean-exit fallback are owned by `docs/supervision-protocols/pi.md`.
 `bin/sq-session-start.sh` reports when the live Pi-family session has not loaded both the turn-end guard and sentry extensions, and points at the selected executable after project trust as the fix, with `-e` as a trust-free fallback.
-When an XO is launched on Pi or pi-signed, `sq-spawn.sh --xo` launches the selected executable with both `-e .pi/extensions/sq-primary-turnend-guard.ts` and `-e .pi/extensions/sq-primary-pi-watch.ts`, both already present in the XO home's git worktree.
+When an XO is launched on Pi or pi-signed, `sq-spawn.sh --xo` launches the selected executable with both `-e .pi/extensions/sq-primary-turnend-guard.ts` and `-e .pi/extensions/sq-primary-pi-watch.ts`, both already present in the XO base's git worktree.
 
 ## grok (VERIFIED 2026-06-29, grok 0.2.73; slash-submit re-verified 2026-07-03 on 0.2.82; reasoning-effort ceiling re-verified 2026-07-13 on 0.2.99; exit paths re-verified 2026-07-19 on grok 0.2.103)
 

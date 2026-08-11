@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Acquire or inspect the per-home Squad session lock.
+# Acquire or inspect the per-base Squad session lock.
 # Writes the harness (agent) process PID found by walking the shell's ancestry,
 # which lives as long as the Squad session - unlike the transient subshell
 # PID of any one tool call, which is dead moments after it is written.

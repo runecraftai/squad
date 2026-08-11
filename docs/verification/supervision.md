@@ -99,7 +99,7 @@ finished=1786048723
 
 The worker started before the harness exited and published 6s after it was gone.
 
-The latency this buys was re-measured on 2026-08-06 against default-branch tip `8398d31`, in a throwaway home holding one remote XO whose host hangs 25s per SSH connection (an `SQUAD_SSH_BIN`-shaped stub; no real host was contacted).
+The latency this buys was re-measured on 2026-08-06 against default-branch tip `8398d31`, in a throwaway base holding one remote XO whose host hangs 25s per SSH connection (an `SQUAD_SSH_BIN`-shaped stub; no real host was contacted).
 Both runs used the same fixture and the same `bin/sq-session-start.sh` invocation, differing only in which checkout supplied the script:
 
 ```text
@@ -188,7 +188,7 @@ The direct and passive mechanisms were validated across all five harnesses on 20
 | Pi | 0.80.5 | Passive `agent_settled` callback | Exactly one guard follow-up ran for an unhealthy cycle, with no recursion across tool turns. |
 | Grok | 0.2.112 native and 0.2.73 pre-native | Running-payload adaptive `Stop` | Native false-to-true continuation stayed in one process with two model turns and zero resume launches; the field-absent pre-native process launched exactly one guarded resume. |
 
-The Grok adaptive matrix ran on 2026-07-28 with separate scratch repositories and homes, dedicated tmux sockets, one target plus one control window, ambient tmux variables removed, and a socket-bound wrapper first in `PATH`.
+The Grok adaptive matrix ran on 2026-07-28 with separate scratch repositories and bases, dedicated tmux sockets, one target plus one control window, ambient tmux variables removed, and a socket-bound wrapper first in `PATH`.
 
 ```sh
 SQUAD_GROK_STOP_LIVE_E2E=1 \
@@ -209,7 +209,7 @@ The same run proved the Claude-compatible Stop entries stay inert under `GROK_AG
 That inertness result is scoped to the builds it exercised: it did not establish that `GROK_AGENT` reaches a Grok HOOK process, and on grok 1.0.0 it does not, so the marker set was widened to `GROK_HOOK_EVENT` as well (docs/turnend-guard.md "Harness integrations").
 `tests/sq-turnend-guard.test.sh` now pins every tracked `.claude/settings.json` hook entry against a real grok 1.0.0 hook environment so the inertness contract is covered deterministically rather than only by the opt-in live matrix.
 
-The XO-home scope and manual-repair wake path were measured with Claude Code 2.1.207 on 2026-07-12, when a native background completion re-invoked the idle model with no human input.
+The XO-base scope and manual-repair wake path were measured with Claude Code 2.1.207 on 2026-07-12, when a native background completion re-invoked the idle model with no human input.
 The current Stop-owned main/XO inclusion and child-worktree exclusion are covered deterministically by `tests/sq-claude-stop-autoarm.test.sh`.
 Session-lock ownership in `bin/sq-session-lock-lib.sh` is decided against a session's whole contiguous harness ancestry rather than one chosen pid, so the Stop auto-arm reaches its lock owner wherever that owner sits: the outermost pid of Claude Code's multi-level `bg-spare` hook worker chain, or an inner pid when a harness-named daemon parents the session.
 Harness identity is read from the executable path and `argv[0]` as well as the command basename, because Claude Code's native installer names the per-session executable by its version (`.../share/claude/versions/2.1.220`): `ps -o comm=` reports that path on macOS and the bare version string on Linux, and neither basename names a harness.
@@ -271,7 +271,7 @@ sq-doc-audience-check: ok surfaces=64 local_links=188
 SQUAD_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=80078
 ```
 
-The broader relevant regression pass was rerun on 2026-08-02 without live-home or daemon mutation.
+The broader relevant regression pass was rerun on 2026-08-02 without live-base or daemon mutation.
 
 ```sh
 bin/sq-test-run.sh tests/sq-sentry-triage.test.sh tests/sq-sentry-lock.test.sh tests/sq-afk-inject-e2e.test.sh tests/sq-afk-return.test.sh tests/sq-x-mode.test.sh tests/sq-backend.test.sh tests/sq-backend-tmux-smoke.test.sh tests/sq-xo-safety.test.sh
@@ -297,7 +297,7 @@ sq-claude-stop-autoarm: ok
 
 ## Sentry continuity
 
-The cross-harness evidence combines the 2026-07-17 live pass with Claude's replacement Stop-owned path revalidated on 2026-07-24, all against isolated project and home state.
+The cross-harness evidence combines the 2026-07-17 live pass with Claude's replacement Stop-owned path revalidated on 2026-07-24, all against isolated project and base state.
 No credential material was copied into a fixture.
 
 ```text

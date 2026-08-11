@@ -7,7 +7,7 @@
 # the receiving bin/sq-remote-inherit.sh enforces, so the two implementations in
 # one code revision cannot drift silently. Different local and remote revisions
 # fail closed as documented by that owner. SQUAD_CONFIG_INHERIT_LIVE=1 marks a live
-# convergence push into an already-running home and skips session-scoped items,
+# convergence push into an already-running base and skips session-scoped items,
 # exactly as the local propagation path does.
 set -eu
 

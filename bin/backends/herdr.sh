@@ -5,7 +5,7 @@
 # decisions D1-D6) and the empirical verification recorded in
 # data/sq-backend-design-d7/herdr-verification-p2.md (real herdr v0.7.1,
 # protocol 14, macOS aarch64), refined by docs/herdr-backend.md's
-# "workspace-per-home" pass (AGENTS.md task herdr-sm-spaces-k4). Herdr is a
+# "workspace-per-base" pass (AGENTS.md task herdr-sm-spaces-k4). Herdr is a
 # session provider ONLY (D3): the worktree provider stays fob, exactly
 # like tmux. Sourced only through bin/sq-backend.sh's fm_backend_source in
 # normal operation; the unit tests source it directly, so the SQUAD_HOME fallback
@@ -15,16 +15,16 @@
 # herdr-verification-p2.md "Task container shape", refined by
 # docs/herdr-backend.md "Default task container shape"): ONE herdr workspace PER
 # SQUAD HOME (the primary, and each XO, gets its own), ONE herdr TAB
-# per task inside its home's workspace. The default-on presentation projection
-# creates a disposable workspace for a clean fresh task instead unless the home
+# per task inside its base's workspace. The default-on presentation projection
+# creates a disposable workspace for a clean fresh task instead unless the base
 # opts out. That
 # workspace is a non-authoritative visual projection containing only the normal
 # task pane. Its random token and mutable label never authorize lookup,
 # adoption, reuse, closure, deletion, task ownership, or endpoint selection.
 # A version 2 journal can participate in replacing only its exact same-identity
-# endpoint after metadata, home, session, workspace, tab, pane, parent, shape,
+# endpoint after metadata, base, session, workspace, tab, pane, parent, shape,
 # focus, and agent-absence checks all agree under the session lock.
-# Every ambiguous recovered launch uses the default flat home workspace when
+# Every ambiguous recovered launch uses the default flat base workspace when
 # duplicate-agent risk is independently absent.
 # Target resolution stays parallel to the tmux adapter in both layouts.
 # Projected create, move, and cleanup operations capture the named session's
@@ -65,9 +65,9 @@
 # global before sourcing sq-backend.sh (which sources this file), so this
 # never overrides a real invocation. It exists only so this file's own unit
 # tests, which source it directly without that preamble, resolve to a sane
-# default (the Squad repo root - never a XO home, so
+# default (the Squad repo root - never a XO base, so
 # fm_backend_herdr_workspace_label falls through to "Squad" exactly like
-# pre-P3 behavior when a test does not care about home-specific labeling).
+# pre-P3 behavior when a test does not care about base-specific labeling).
 SQUAD_BACKEND_HERDR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_HERDR_ROOT}}"
 SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
@@ -107,7 +107,7 @@ SQUAD_BACKEND_HERDR_MIN_WORKSPACE_MOVE_PROTOCOL=16
 # that shell (gitstatusd, a zsh-async worker, direnv) makes the plan fall back
 # to the plain explicit close, which steals focus on every release without the
 # two upstream focus fixes (PR #1877 commit 165dca45, PR #1912 commit a979916).
-# Herdr 0.8.0 is the first release carrying both, so a home that configured
+# Herdr 0.8.0 is the first release carrying both, so a base that configured
 # nothing is projected only at or above it. An explicit "on" is still honored
 # below the floor.
 # Protocol 19 is the structural signal for that floor, measured against the real
@@ -129,31 +129,31 @@ SQUAD_BACKEND_HERDR_PRESENTATION_FLOOR_MARKER_PREFIX=".herdr-presentation-floor-
 # blocked pane. Mirrors bin/sq-sentry.sh's .stale-<key> naming.
 SQUAD_BACKEND_HERDR_ESCALATED_PREFIX=".herdr-escalated-"
 # .sq-xo-home is written by bin/sq-home-seed.sh (AGENTS.md section 6)
-# at a seeded XO home's root, containing exactly that XO's id.
-# The primary Squad home never carries this marker.
+# at a seeded XO base's root, containing exactly that XO's id.
+# The primary Squad base never carries this marker.
 SQUAD_BACKEND_HERDR_XO_MARKER=".sq-xo-home"
 # The presentation projection is intentionally separate from the authoritative
 # task endpoint record.
 # A per-task journal lives under state/ as <id>.herdr-presentation.
 # Version 1 records only the attempted projection's random correlator.
-# Version 2 additionally binds the successful projection's exact home,
+# Version 2 additionally binds the successful projection's exact base,
 # session, workspace, tab, pane, parent, and presentation labels so a resumed
 # spawn can replace one verified agent-free husk under the session lock.
 # No send, capture, FOB, or general task-ownership path reads it.
 SQUAD_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
 
-# The config item a home writes to opt out of, or explicitly in to, the
+# The config item a base writes to opt out of, or explicitly in to, the
 # projection.
 SQUAD_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
 
 # fm_backend_herdr_presentation_preference <config-dir>: the single owner of
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
 # (a deliberate opt-in, honored even below the version floor), or "default"
-# (this home configured nothing, so the floor decides).
+# (this base configured nothing, so the floor decides).
 # Values are read with the whole-file whitespace-stripped convention the other
 # scalar config items already use (config/backlog-backend, config/crew-harness),
 # plus case folding. An empty file is the historical presence-based opt-in form
-# and still means an explicit "on", so no home that deliberately enabled the
+# and still means an explicit "on", so no base that deliberately enabled the
 # projection can lose it. An unrecognized value warns and falls back to the
 # default rather than failing a spawn over a purely visual setting, so a typo is
 # visible instead of silently deciding anything.
@@ -277,7 +277,7 @@ fm_backend_herdr_presentation_release_supported() {  # [<session>]
 }
 
 # fm_backend_herdr_presentation_floor_warn <state-dir> <verdict>: emit the one
-# clear below-floor warning, deduplicated per home per detected release when a
+# clear below-floor warning, deduplicated per base per detected release when a
 # usable state dir is given. Without one the warning is emitted every call,
 # which is what a one-shot caller wants.
 fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
@@ -307,7 +307,7 @@ fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
 
 # fm_backend_herdr_presentation_default_supported <state-dir> [<session>]:
 # compose the applicable release verdict and the shared warning contract for
-# one unconfigured home.
+# one unconfigured base.
 fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
   local state_dir=${1:-} session=${2:-} verdict=0
   fm_backend_herdr_presentation_release_supported "$session" || verdict=$?
@@ -317,10 +317,10 @@ fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
 }
 
 # fm_backend_herdr_presentation_enabled <config-dir> [<state-dir>]: the one gate
-# bin/sq-spawn.sh consults before projecting this home's children into
+# bin/sq-spawn.sh consults before projecting this base's children into
 # disposable one-task workspaces (docs/herdr-backend.md "Presentation spaces"
 # owns the full contract). An explicit "off" or "on" is obeyed as written; a
-# home that configured nothing is projected only at or above the version floor,
+# base that configured nothing is projected only at or above the version floor,
 # and otherwise falls back to the flat layout with one warning. Sets
 # SQUAD_BACKEND_HERDR_PRESENTATION_PREFERENCE for the new-projection boundary to
 # distinguish an unconfigured default from an explicit opt-in.
@@ -338,16 +338,16 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
 }
 
 # fm_backend_herdr_workspace_label: the per-Squad-HOME herdr workspace
-# label (docs/herdr-backend.md "Default task container shape"). The PRIMARY home (no
+# label (docs/herdr-backend.md "Default task container shape"). The PRIMARY base (no
 # XO marker) resolves to the constant "Squad", byte-identical to
 # every pre-existing task's recorded label - no forced migration. A XO
-# home resolves to "xo-<XO-id>", so its tasks land in their own
+# base resolves to "xo-<XO-id>", so its tasks land in their own
 # workspace, obviously distinguishable from the primary's (and from every
 # other XO's) in herdr's spaces sidebar. Read fresh from SQUAD_HOME on
-# every call rather than cached at source time: SQUAD_HOME is the home's own
+# every call rather than cached at source time: SQUAD_HOME is the base's own
 # durable identity, not env plumbing threaded through a call chain, so the
 # label is automatically stable across every respawn/recovery for the life of
-# that home. sq-spawn.sh briefly shadows SQUAD_HOME to a XO's own home
+# that base. sq-spawn.sh briefly shadows SQUAD_HOME to a XO's own base
 # when the PRIMARY spawns that XO (its own process's SQUAD_HOME still
 # names the primary at that point) - see sq-spawn.sh's herdr case arm.
 fm_backend_herdr_workspace_label() {
@@ -650,10 +650,10 @@ fm_backend_herdr_projection_workspace_label() {  # <task-id> <projection-id>
 }
 
 # fm_backend_herdr_presentation_session_lock_path: one machine-private lock
-# path per live named Herdr session/socket, shared across every Squad home
+# path per live named Herdr session/socket, shared across every Squad base
 # that uses that session.
-# The path is never under any one home's state/ and XOs never write the
-# primary home. Returns non-zero when the named session's socket cannot be
+# The path is never under any one base's state/ and XOs never write the
+# primary base. Returns non-zero when the named session's socket cannot be
 # resolved unambiguously.
 fm_backend_herdr_presentation_lock_namespace() {
   printf '%s' '/tmp/Squad-herdr-presentation'
@@ -944,10 +944,10 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
 # where every removal primitive preserves focus and the proof stops being
 # load-bearing. That floor has ONE owner, the spawn-time gate
 # fm_backend_herdr_presentation_enabled, so every new projection is either on a
-# supported release or is a home's deliberate below-floor opt-in. Session-start
+# supported release or is a base's deliberate below-floor opt-in. Session-start
 # cleanup deliberately retires a leftover projection husk on every release,
 # including below the floor. The accepted exposure is limited to the rare
-# downgrade path where a home projected on Herdr 0.8.0 or newer and then moved
+# downgrade path where a base projected on Herdr 0.8.0 or newer and then moved
 # to a 0.7.x release, and occurs once per leftover workspace at session start
 # rather than once per task teardown; the exact prior-tab restore bounds it.
 # Refusing that close below the floor would leak workspaces that nothing else
@@ -1257,7 +1257,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # <parent-label> is the owning SQUAD_HOME label (Squad or xo-<id>).
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
-# anchors the owning parent by id, so two workspaces sharing the home label no
+# anchors the owning parent by id, so two workspaces sharing the base label no
 # longer make the whole layout ambiguous; when omitted the parent is located by
 # label exactly as before. With a unique label the two select the same
 # workspace, so ordering behavior is unchanged in the ordinary case.
@@ -1466,11 +1466,11 @@ fm_backend_herdr_server_ensure() {  # <session>
 # one per line, in herdr's own list order (normally creation order, oldest
 # first). Empty when none match. Never creates anything.
 #
-# Single owner of the home-label workspace query. Herdr enforces no workspace
+# Single owner of the base-label workspace query. Herdr enforces no workspace
 # label uniqueness at all (docs/herdr-backend.md "Label collisions"), so this
 # can legitimately return MORE THAN ONE id: a commander-owned workspace can
 # collide by label, a cwd-basename-derived label can coincide, and concurrent
-# first spawns can mint two same-labeled home workspaces. Callers decide what a
+# first spawns can mint two same-labeled base workspaces. Callers decide what a
 # duplicate means for them - fm_backend_herdr_workspace_ensure refuses to guess
 # which one is the caller's, while the read-only recovery path below keeps its
 # historical first-match behavior.
@@ -1526,7 +1526,7 @@ fm_backend_herdr_workspace_find() {  # <session>
 #   0 - one exact, self-consistent launcher pane/tab/workspace in <session>.
 #   2 - this process is NOT running in a herdr pane (no HERDR_PANE_ID at all),
 #       so there is no launcher workspace to inherit and the caller falls back
-#       to its per-home container. HERDR_ENV=1 on its own is only a backend
+#       to its per-base container. HERDR_ENV=1 on its own is only a backend
 #       SELECTION marker (bin/sq-backend.sh's fm_backend_detect), never a
 #       parent binding - herdr always injects the pane id alongside it.
 #   1 - a launcher pane IS claimed but its binding is missing, stale,
@@ -1713,7 +1713,7 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #                                      distinguish an explicitly
 #                                      `--label`-created workspace from one
 #                                      whose label only coincidentally
-#                                      matches this home's own, e.g. a
+#                                      matches this base's own, e.g. a
 #                                      cwd-basename-derived label). An
 #                                      ADOPTED workspace's tabs are NEVER
 #                                      inspected or identified as prunable by
@@ -1728,20 +1728,20 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 # attach to). --no-focus is passed unconditionally anyway, for defense in
 # depth and because it is a no-op in the already-safe case.
 #
-# <launcher-relationship> (3rd arg, default "launcher-home") says whether the
-# container being ensured belongs to the SAME Squad home as the process
+# <launcher-relationship> (3rd arg, default "launcher-base") says whether the
+# container being ensured belongs to the SAME Squad base as the process
 # calling this:
-#   launcher-home - a operator or recon for the caller's own home. When the
+#   launcher-base - a operator or recon for the caller's own base. When the
 #                   caller is itself running in a herdr pane, the worker MUST
 #                   land in that exact workspace
 #                   (fm_backend_herdr_launcher_identity), never in whichever
 #                   same-labeled workspace happens to sort first.
-#   other-home    - a --XO launch, which stands up a DIFFERENT home's
-#                   own per-home workspace by design. The launcher's workspace
+#   other-base    - a --XO launch, which stands up a DIFFERENT base's
+#                   own per-base workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
-# the per-home label lookup below stays the resolver - but it must then resolve
-# to exactly ONE workspace. Two same-labeled home workspaces with no launcher
+# the per-base label lookup below stays the resolver - but it must then resolve
+# to exactly ONE workspace. Two same-labeled base workspaces with no launcher
 # identity to disambiguate them is an unresolvable placement, and adopting
 # either one is the very defect this refuses.
 #
@@ -3222,10 +3222,10 @@ EOF
 # fm_backend_herdr_list_live: recovery/orphan discovery. Lists every tab whose
 # label looks like a Squad task window (sq-<id>) in <session>'s, THIS
 # HOME'S OWN workspace (fm_backend_herdr_workspace_label - never another
-# home's), by LABEL - never by trusting a stored pane id, since ids are not
+# base's), by LABEL - never by trusting a stored pane id, since ids are not
 # guaranteed stable across every server lifecycle (see herdr-verification-p2.md
-# "ID stability"). A caller running as a given home (e.g. a XO
-# recovering its own in-flight work) naturally scopes to that home's own
+# "ID stability"). A caller running as a given base (e.g. a XO
+# recovering its own in-flight work) naturally scopes to that base's own
 # workspace because SQUAD_HOME already names it - no glue needed, unlike the
 # primary-spawns-a-XO path in sq-spawn.sh. Read-only: a session/
 # workspace that does not exist yet simply lists nothing. One
@@ -3248,7 +3248,7 @@ fm_backend_herdr_list_live() {  # <session>
 # The push half of the immediate blocked-state escalation (AGENTS.md section 8,
 # docs/herdr-backend.md "Native pane.agent_status_changed push escalation").
 # fm_backend_herdr_wait_transition is the sentry's bounded wait primitive for
-# herdr homes: instead of a blind sleep, it blocks on herdr's native event
+# herdr bases: instead of a blind sleep, it blocks on herdr's native event
 # stream and returns the instant a subscribed pane transitions to `blocked`, so
 # an operator waiting on the human wakes its supervisor sub-second instead of after
 # the ~240s stale-pane wedge timer. Everything not `blocked` is streamed too

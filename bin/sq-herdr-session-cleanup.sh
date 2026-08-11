@@ -3,15 +3,15 @@
 #
 # Usage: sq-herdr-session-cleanup.sh
 #
-# The caller must already own this Squad home's session lock. This script is
-# home-local and considers only the current named Herdr session and ordinary
+# The caller must already own this Squad base's session lock. This script is
+# base-local and considers only the current named Herdr session and ordinary
 # state/*.herdr-presentation journals in the effective SQUAD_HOME. Each candidate
 # is additionally serialized by the existing state/.spawn-<task>.lock and the
 # shared named-session Herdr presentation lock, in that order.
 #
 # A visible title is discovery only. Cleanup requires the exact current
 # "└ <concise-task> · p:<22-char-token>" grammar, one token occurrence across
-# the named-session snapshot, exactly one matching home-local journal, one tab,
+# the named-session snapshot, exactly one matching base-local journal, one tab,
 # one pane, absent task metadata, no registered agent, and a process proof that
 # the pane contains only one idle recognized shell with no child process. A
 # version 2 journal must also bind the exact workspace, tab, and pane.

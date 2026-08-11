@@ -621,11 +621,11 @@ heartbeat_scan_finds_actionable() {
   return 1
 }
 
-# event_wait_or_sleep: the terminal wait of each supervision cycle. For a home
+# event_wait_or_sleep: the terminal wait of each supervision cycle. For a base
 # with push-capable windows (herdr), it replaces the blind `sleep POLL` with a
 # bounded wait on the backend's native transition stream, so an operator going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
-# wedge timer. For every other home - no push-capable window, backend not
+# wedge timer. For every other base - no push-capable window, backend not
 # capable, or the event path proven unreliable this process - it sleeps POLL,
 # byte-for-byte today's behavior. The poll loop above still runs every cycle, so
 # this only ever SHORTENS latency; it can never drop an escalation (the poll
@@ -645,7 +645,7 @@ event_wait_or_sleep() {
     [ "$(window_kind "$w")" = xo ] && continue
     session=${w%%:*}
     if [ -z "$first_backend" ]; then first_backend=$b; first_session=$session; fi
-    # One socket connection covers one backend+session; a home normally has a
+    # One socket connection covers one backend+session; a base normally has a
     # single herdr session. A window in a different backend/session stays on the
     # poll path this cycle.
     if [ "$b" != "$first_backend" ] || [ "$session" != "$first_session" ]; then
@@ -1120,7 +1120,7 @@ EOF
     fi
   fi
 
-  # Terminal wait: a bounded native-event wait for push-capable homes (herdr),
+  # Terminal wait: a bounded native-event wait for push-capable bases (herdr),
   # else the blind poll sleep. See event_wait_or_sleep.
   event_wait_or_sleep
 done

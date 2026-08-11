@@ -2,7 +2,7 @@
 
 The sergeant at arms drives these; interactive entrypoints work by hand too, while `*-lib.sh` files are sourced helpers.
 Each row is one purpose clause only: the script's own header comment is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
-If you have changed away from the Squad home in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
+If you have changed away from the Squad base in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
 The shared drill gate refusal for unit lifecycle entrypoints is summarized in [architecture.md](architecture.md#drill-gate-authority-boundary), while `docs/sessionstart-nudge.md` covers the silent session-open hook use; `sq-gate-refuse-lib.sh`'s header owns its exact contract.
 
 | Script                   | Purpose                                                                              |
@@ -17,13 +17,13 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-unit-snapshot.sh`   | Print the read-only structured unit snapshot JSON (schema `sq-unit-snapshot.v1`)   |
 | `sq-unit-view.sh`       | Render the unit snapshot as a human Markdown view                                   |
 | `sq-sitrep-snapshot.sh` | Project the unit snapshot to the compact TOON sitrep view; local-only unless `--include-prs` |
-| `sq-update.sh`           | Fast-forward-only self-update of Squad and local or remote XO homes       |
-| `sq-on.sh`               | Execute one tracked Squad command in a configured remote XO home, using its job worker except for the doctor bootstrap |
+| `sq-update.sh`           | Fast-forward-only self-update of Squad and local or remote XO bases       |
+| `sq-on.sh`               | Execute one tracked Squad command in a configured remote XO base, using its job worker except for the doctor bootstrap |
 | `sq-remote-job-lib.sh`   | Shared bounded remote job queue, worker readiness, LaunchAgent contract, and filesystem-composed PATH |
 | `sq-remote-job-worker.sh` | Long-lived remote queue worker for tracked `sq-*.sh` commands in the account runtime |
 | `sq-remote-job-reap-orphans.sh` | Stop remote job workers left running by a pruned code root, never one whose checkout still exists |
 | `sq-remote-doctor.sh`    | Check, and with `--fix` repair, one remote account's second-mate readiness (remote job worker, Herdr, Aqua launch agents, PATH, and required tools) |
-| `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO home               |
+| `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
 | `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
 | `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs   |
@@ -35,7 +35,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
 | `sq-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` symlink, and the canonical self-governance section |
 | `sq-guard.sh`            | Warn on primary-checkout tangles, pending queued wakes, and unhealthy supervision    |
-| `sq-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
+| `sq-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-base predicate for tracked hooks             |
 | `sq-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for sq-lock.sh and the Claude Stop auto-arm |
 | `sq-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless sentry continuity with single-flight exit-2 rewake (docs/sentry-continuity.md) |
 | `sq-turnend-guard.sh`    | Shared primary turn-end guard predicate so no turn ends blind (docs/turnend-guard.md) |
@@ -43,15 +43,15 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
 | `sq-arm-pretool-check.sh` | Stable PreToolUse transport for the sentry-arm command policy (docs/arm-pretool-check.md) |
 | `sq-arm-command-policy.mjs` | Semantic owner of the sentry-arm PreToolUse policy (docs/arm-pretool-check.md)   |
-| `sq-subagent-pretool-check.sh` | Primary-home delegation-shape PreToolUse guard (docs/subagent-guard.md) |
+| `sq-subagent-pretool-check.sh` | Primary-base delegation-shape PreToolUse guard (docs/subagent-guard.md) |
 | `sq-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
-| `sq-home-seed.sh`        | Transactionally provision a local XO home and maintain `data/XOs.md` |
-| `sq-remote-home-seed.sh` | Register and provision a whole XO home on an SSH-reachable host              |
+| `sq-home-seed.sh`        | Transactionally provision a local XO base and maintain `data/XOs.md` |
+| `sq-remote-home-seed.sh` | Register and provision a whole XO base on an SSH-reachable host              |
 | `sq-remote-readiness-lib.sh` | Shared remote second-mate readiness gate: check and, when needed, repair then re-check through `sq-remote-doctor.sh` |
 | [`sq-project-origin-lib.sh`](../bin/sq-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
 | `sq-spawn.sh`            | Spawn operators, scouts, `id=repo` batches, and XOs on the resolved harness and runtime backend |
 | `sq-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
-| `sq-backend-hometag-lib.sh` | Shared per-installation home-tag derivation for zellij tab and cmux workspace titles |
+| `sq-backend-hometag-lib.sh` | Shared per-installation base-tag derivation for zellij tab and cmux workspace titles |
 | `sq-composer-lib.sh`     | Single unit-wide owner of composer-content classification for all backends          |
 | `backends/tmux.sh`       | Verified tmux session-provider adapter                                               |
 | `backends/herdr.sh`      | Experimental herdr session-provider adapter                                          |
@@ -59,7 +59,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `backends/orca.sh`       | Experimental Orca backend adapter owning both worktree and terminal                  |
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
 | `sq-config-push.sh`      | Push declared inherited local material to live local or remote XOs and send the placement-specific config reread when changed |
-| `sq-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for unit sync and home seeding |
+| `sq-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for unit sync and base seeding |
 | `sq-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `sq-review-diff.sh`      | Review an operator branch or resolved PR head against the authoritative base          |
 | `sq-marker-lib.sh`       | Compatibility entry point for the from-squad carrier owned by `sq-operational-input.sh` |
@@ -67,7 +67,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-xo-report.sh` | Optional helper to append a correlated parent status or document-pointer report       |
 | `sq-procevent-remote-reply.sh` | Relay the remote-XO status stream through non-destructive process-event deltas |
 | `sq-gate-refuse-lib.sh`  | Shared drill gate-context refusal for unit lifecycle entrypoints               |
-| `sq-sentry-arm.sh`        | Verified home-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
+| `sq-sentry-arm.sh`        | Verified base-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `sq-sentry-checkpoint.sh` | Run one bounded foreground sentry checkpoint for Codex-style supervision            |
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
@@ -103,9 +103,9 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
-| `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO homes |
+| `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |
-| `sq-lock.sh`             | Per-home Squad session lock                                                      |
+| `sq-lock.sh`             | Per-base Squad session lock                                                      |
 | `sq-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |
 | `sq-x-poll.sh`           | One bounded Relay poll: stash newly offered mentions and emit their once-only wake   |
 | `sq-x-reply.sh`          | Post or dry-run preview a composed Relay reply or follow-up                          |
@@ -114,4 +114,4 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-x-followup.sh`       | Detect, post, and cap completion follow-ups for a Relay-linked task                  |
 | `sq-public-followup-lib.sh` | Shared relay-activation gate, O(1) presence checks, and private transport paths for promised public replies |
 | `sq-public-followup.sh`  | Reconcile typed terminal work results into a public commitment and deliver its final reply once |
-| `sq-public-followup-emit.sh` | Report one typed terminal work result into the home that owes the public reply    |
+| `sq-public-followup-emit.sh` | Report one typed terminal work result into the base that owes the public reply    |

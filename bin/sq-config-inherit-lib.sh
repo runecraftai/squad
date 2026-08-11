@@ -1,13 +1,13 @@
 # shellcheck shell=bash
 # Inheritance propagation: the PRIMARY Squad pushes a declared, extensible
-# set of LOCAL (gitignored) config items down into each XO home's
+# set of LOCAL (gitignored) config items down into each XO base's
 # config/, so an XO's OWN operators inherit the primary's settings
 # (e.g. primary config/crew-dispatch.json makes an XO use the same dispatch
 # profile rules, primary config/crew-harness=codex makes an XO's operators
-# spawn on codex too, primary config/backlog-backend=manual makes that home
-# hand-edit backlog files too, primary config/backend pins that home's local
+# spawn on codex too, primary config/backlog-backend=manual makes that base
+# hand-edit backlog files too, primary config/backend pins that base's local
 # runtime-backend default for future spawns, primary config/startup-memory-budget
-# bounds that home's startup-memory curation, and primary
+# bounds that base's startup-memory curation, and primary
 # config/herdr-presentation-spaces carries the same Herdr presentation-projection
 # preference - an absent primary file and an absent destination file both mean
 # the same unconfigured default, so the generic absence mirror below converges
@@ -15,11 +15,11 @@
 # "off" preferences propagate as files. Primary
 # config/trace-context is copied at the launch convergence point as part of the
 # default-off W3C trace-context setup, while live convergence leaves it unchanged.
-# The primary passes its frozen home-session decision into a newly launched
+# The primary passes its frozen base-session decision into a newly launched
 # XO; see docs/trace-context.md.
 # It also pushes
 # the one primary-authoritative shared commander-preference file,
-# data/commander-shared.md, into each XO home's data/ as a read-only copy.
+# data/commander-shared.md, into each XO base's data/ as a read-only copy.
 #
 # Usage: . bin/sq-config-inherit-lib.sh   (no SQUAD_* setup required)
 #
@@ -44,7 +44,7 @@
 #
 # That single declaration is also the ONE owner of the inherited-material
 # allowlist for remote routes: bin/sq-remote-inherit-push.sh (sender) and
-# bin/sq-remote-inherit.sh (receiver, executing inside the remote home) both
+# bin/sq-remote-inherit.sh (receiver, executing inside the remote base) both
 # derive their item set from fm_config_inherit_items rather than restating it,
 # so a new inheritable item cannot be accepted by one side and refused by the
 # other. A local and remote code root that disagree about this list must be
@@ -65,10 +65,10 @@ SQUAD_SHARED_COMMANDER_MODE="444"
 # environment only in tests. Items must not contain whitespace.
 SQUAD_INHERITABLE_CONFIG="${SQUAD_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context}"
 
-# Items whose value is a home-SESSION enablement decision rather than durable
+# Items whose value is a base-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where
 # the primary also hands the new process its frozen on/off decision, and left
-# untouched by live convergence into an already-running home, whose decision is
+# untouched by live convergence into an already-running base, whose decision is
 # already frozen for its current session (bin/sq-trace-context-lib.sh).
 SQUAD_SESSION_SCOPED_INHERITABLE_CONFIG="trace-context"
 
@@ -81,7 +81,7 @@ fm_config_inherit_item_session_scoped() {  # <item>
   return 1
 }
 
-# The complete declared inherited-material set as home-relative paths, one per
+# The complete declared inherited-material set as base-relative paths, one per
 # line, in propagation order: every SQUAD_INHERITABLE_CONFIG item under config/,
 # then the one shared data file. This is what remote senders and receivers
 # derive from, so both ends of a transfer agree by construction.
@@ -171,7 +171,7 @@ destination_allows_inherited_item() {
 
 # propagate_inheritable_config <src-config-dir> <dest-config-dir>
 # Copy each declared inheritable item from the primary's config dir (src) into a
-# XO home's config dir (dest). SILENT on stdout - callers parse stdout,
+# XO base's config dir (dest). SILENT on stdout - callers parse stdout,
 # so this writes nothing there. It emits concise stderr diagnostics only for
 # notable events: a guard skip or a copy/remove error. A source item that is
 # present is copied only when its content differs (idempotent: a re-run never
@@ -179,7 +179,7 @@ destination_allows_inherited_item() {
 # destination item, so clearing the primary's value clears it downstream too
 # (primary-authoritative). The destination dir is created lazily, only when there
 # is actually something to write, so a primary with no inherited config item set is a
-# complete no-op (it leaves the XO home exactly as it was - the
+# complete no-op (it leaves the XO base exactly as it was - the
 # backward-compatible path). When SQUAD_CONFIG_INHERIT_REPORT points at a writable
 # file, one tab-separated line per item is appended there:
 #   <item> <status> <reason>
@@ -537,9 +537,9 @@ propagate_inheritable_config() {
   return "$rc"
 }
 
-# Relative prefix of per-home instruction files written after a successful
+# Relative prefix of per-base instruction files written after a successful
 # config push so the live XO can re-read exact post-write bytes.
-# Kept under state/ (gitignored operational dir) so it never dirties the home.
+# Kept under state/ (gitignored operational dir) so it never dirties the base.
 SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL="state/.sq-inherited-config-reread"
 SQUAD_CONFIG_REREAD_MAX_SENT=16
 SQUAD_CONFIG_REREAD_RETRY_ROOT_REL="state/.sq-inherited-config-reread-retry"
@@ -678,7 +678,7 @@ fm_config_reread_save_retry_report() {
   printf '%s\n' "$report_path"
 }
 
-# fm_config_write_reread_instruction <dest-home> <report> <instruction-path>
+# fm_config_write_reread_instruction <dest-base> <report> <instruction-path>
 # After successful propagation, write one instruction from the validated
 # destination state. Includes only changed allowlisted config files, each with
 # relative path, begin/end delimiters, and either the destination file's full
@@ -892,7 +892,7 @@ fm_config_reread_send_pointer() {
   return 1
 }
 
-# fm_config_reread_discard_pending <dest-home>
+# fm_config_reread_discard_pending <dest-base>
 fm_config_reread_discard_pending() {
   local dest_home=$1 id=${2:-} source_home=${3:-} state pending instruction retry_dir retry_stage rc=0
   state="$dest_home/${SQUAD_CONFIG_REREAD_INSTRUCTION_PREFIX_REL%/*}"
@@ -1033,9 +1033,9 @@ fm_config_reread_quarantine_pending() {
   return "$rc"
 }
 
-# fm_config_send_reread_nudge <id> <dest-home> <report>
+# fm_config_send_reread_nudge <id> <dest-base> <report>
 # After successful propagation, if any allowlisted config item changed for this
-# home, write the exact-byte instruction under the destination home and send a
+# base, write the exact-byte instruction under the destination base and send a
 # single-line pointers to those files through the routed XO path
 # (sq-send). The files contain only changed config paths, clear delimiters, and
 # the destination's full exact post-write bytes (or ABSENT) - never summaries,

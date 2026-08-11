@@ -16,8 +16,8 @@
 #   sq-xo-report.sh --doc "$STATUS" done abcdef0123456789 data/x/report.md "see report"
 #
 # The status file must be the absolute parent route from the XO charter
-# (state/<id>.status under the PARENT home), never a path relative to this
-# XO home. Writing under the wrong home is detected as supporting
+# (state/<id>.status under the PARENT base), never a path relative to this
+# XO base. Writing under the wrong base is detected as supporting
 # evidence by the parent pending-reply guard and does not acknowledge the
 # request.
 set -eu

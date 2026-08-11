@@ -12,7 +12,7 @@
 # tmux/herdr/zellij do - there is just "the app" (one running GUI instance).
 # ONE cmux workspace PER TASK (mirrors tmux's one-window-per-task / zellij's
 # one-tab-per-task), with exactly one surface inside it. cmux has no session
-# layer, so workspace titles are scoped by Squad home and installation
+# layer, so workspace titles are scoped by Squad base and installation
 # path inside this adapter.
 #
 # Target string shape: "<workspace_uuid>:<surface_uuid>" - both bare UUIDs
@@ -80,8 +80,8 @@
 #   6. NO title uniqueness enforcement for workspaces OR surfaces/tabs -
 #      verified live (two workspaces, and two surfaces in one workspace, all
 #      created successfully sharing one title). The duplicate check below is
-#      ours, mirroring every other adapter, and uses home-scoped titles so a
-#      shared cmux app cannot cross-match another Squad home's task.
+#      ours, mirroring every other adapter, and uses base-scoped titles so a
+#      shared cmux app cannot cross-match another Squad base's task.
 #
 #   Unanticipated finding, load-bearing for this adapter: the control socket
 #   defaults to `socketControlMode=cmuxOnly`, which REJECTS any CLI process
@@ -292,7 +292,7 @@ fm_backend_cmux_ensure_running() {
 }
 
 # fm_backend_cmux_container_ensure: the full spawn-time container-ensure
-# sequence (version gate, reachability/launch-if-needed). No per-home
+# sequence (version gate, reachability/launch-if-needed). No per-base
 # container to stand up - cmux has no session layer (unlike herdr/zellij),
 # the app itself is the only container. Nothing to echo; callers proceed
 # straight to fm_backend_cmux_create_task.
@@ -302,15 +302,15 @@ fm_backend_cmux_container_ensure() {
   return 0
 }
 
-# fm_backend_cmux_home_label: readable home prefix plus a short hash of the
+# fm_backend_cmux_home_label: readable base prefix plus a short hash of the
 # resolved SQUAD_ROOT path. cmux has one app-global workspace namespace, so the
 # path hash distinguishes every Squad installation, including multiple
-# primary homes. Moving an installation changes this tag and old cmux titles
+# primary bases. Moving an installation changes this tag and old cmux titles
 # stop matching; task meta already records absolute worktree paths, so repo
 # relocation is already outside the supported recovery contract. Derivation
 # itself lives in bin/sq-backend-hometag-lib.sh, shared with zellij's
 # identical shared-namespace collision fix (docs/zellij-backend.md
-# "Home-scoped tab titles").
+# "Base-scoped tab titles").
 fm_backend_cmux_home_label() {
   fm_backend_hometag
 }
@@ -655,7 +655,7 @@ fm_backend_cmux_kill() {  # <target> [unused] [expected-label]
 }
 
 # fm_backend_cmux_list_live: recovery/orphan discovery. Lists every workspace
-# whose title is scoped to this Squad home, by TITLE - never by trusting a
+# whose title is scoped to this Squad base, by TITLE - never by trusting a
 # stored uuid, since workspace ids do NOT survive an app relaunch (finding #5).
 # One "<workspace_id>:<surface_id>\t<sq-id>" line per live task workspace.
 # Read-only: an unreachable cmux simply lists nothing.

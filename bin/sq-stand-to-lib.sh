@@ -116,7 +116,7 @@ fm_sentry_healthy() {
 }
 
 # fm_sentry_healthy above is the PID-STRICT primitive: true only when a live,
-# identity-matched sentry PROCESS holds this home's lock with a fresh beacon. The
+# identity-matched sentry PROCESS holds this base's lock with a fresh beacon. The
 # arm layer (bin/sq-sentry-arm.sh, bin/sq-claude-stop-autoarm.sh) needs exactly
 # that - it decides whether to start, attach to, or replace a real sentry
 # process, so a leftover beacon must never satisfy it. bin/sq-turnend-guard.sh
@@ -126,7 +126,7 @@ fm_sentry_healthy() {
 # different, model-aware question:
 
 # fm_supervision_model
-# Print the supervision model of this home's PRIMARY harness:
+# Print the supervision model of this base's PRIMARY harness:
 #   autoarm     Claude Stop-hook auto-arm: the sentry is armed at each turn end
 #               and exits on its wake, so it runs only BETWEEN turns. Mid-turn a
 #               fresh beacon with no live sentry process is the healthy state.
@@ -148,7 +148,7 @@ fm_supervision_model() {
   esac
 }
 
-# fm_sentry_supervision_verdict <state> <watch-path> [grace] [home]
+# fm_sentry_supervision_verdict <state> <watch-path> [grace] [base]
 # Model-aware "is supervision healthy right now" verdict for the pull warning
 # guard (bin/sq-guard.sh), NOT the arm layer or the turn-end guard. Sets:
 #   SQUAD_SENTRY_VERDICT_OK      true when supervision is healthy for this model
@@ -600,7 +600,7 @@ fm_wake_print_deduped() {
   ' "$file"
 }
 
-# Map one structurally valid signal key to its home-local status filename.
+# Map one structurally valid signal key to its base-local status filename.
 # Queue payload text is intentionally ignored: it is display data, not a path
 # authority. The caller still verifies the resulting regular file immediately
 # before its bounded read.

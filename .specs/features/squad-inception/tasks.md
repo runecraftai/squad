@@ -96,7 +96,7 @@
 ### T-M1-12 — Private-material seeds + full gate (REQ-M1-11, REQ-M1-06 AC3/AC4)
 - [ ] `sq-home-seed.sh`-created names: `data/commander.md`, `commander-shared.md`, `XOs.md`, `learnings.md`, `projects.md`, `backlog.md`; `.tasks.toml` content refs; `config/` seed names per design.md §3
 - [ ] Run full suite via `sq-test-run.sh` in a throwaway `SQUAD_HOME`; fix only identity-related failures (re-run sweep tools); then run `tests/sq-rebrand-guard.test.sh` (grep guards §8)
-- [ ] **Verificar:** full suite green (same pass-set as M0 baseline); `sq-test-run.sh --check-coverage` exit 0; all §8 guards pass; seed run in throwaway home produces the renamed private files
+- [ ] **Verificar:** full suite green (same pass-set as M0 baseline); `sq-test-run.sh --check-coverage` exit 0; all §8 guards pass; seed run in throwaway base produces the renamed private files
 
 ---
 

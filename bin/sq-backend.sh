@@ -294,7 +294,7 @@ fm_backend_validate_spawn() {  # <name>
   return 1
 }
 
-# fm_backend_required_tools: the backend-SPECIFIC CLI tools a Squad home on
+# fm_backend_required_tools: the backend-SPECIFIC CLI tools a Squad base on
 # <backend> genuinely requires, beyond Squad's universal toolchain (owned by
 # docs/configuration.md "Toolchain" and bootstrap's COMMON list). This is the
 # single owner of the per-backend dependency delta, so bootstrap follows the
@@ -637,7 +637,7 @@ fm_backend_source() {  # <name>
 # fm_backend_resolve_selector: resolve a raw sq-send.sh/sq-peek.sh style
 # selector to a live session-provider target. Four forms, in order:
 #   target with ":"   used as-is (the escape hatch for a window/pane outside
-#                      this Squad home) - backend-independent, a literal string.
+#                      this Squad base) - backend-independent, a literal string.
 #   exact task id      routed through <state-dir>/<id>.meta's backend target
 #                      (`window=` normally, `terminal=` for Orca) -
 #                      backend-independent, a stored value, NOT re-verified

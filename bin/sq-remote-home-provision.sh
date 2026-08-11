@@ -8,14 +8,14 @@
 # base64 parent SSH alias, and one base64 project record per line. Each project
 # record's origin is the URL the parent resolved and named, so this host clones
 # from it and re-validates it through bin/sq-project-origin-lib.sh instead of
-# trusting the sender. The remote code root is cloned into an absent home,
+# trusting the sender. The remote code root is cloned into an absent base,
 # project origins are cloned on this host, the project registry and charter are
-# published, the durable .sq-xo-parent record names this home's route to its parent as
+# published, the durable .sq-xo-parent record names this base's route to its parent as
 # "remote" - read by bin/sq-teardown.sh's cleanup gate so a delegated public
 # reply promise, which the subsystem can only carry on the parent's own
 # filesystem, is never mistaken for one this child could hold - and the
 # .sq-xo-home marker commits the complete seed last.
-# A newly created home is removed on failure. An existing matching seeded home
+# A newly created base is removed on failure. An existing matching seeded base
 # is converged only through guarded ordinary-file updates and new project clones.
 set -eu
 

@@ -7,7 +7,7 @@
 # it auto-loads Squad's AGENTS.md, adopts the commander identity, and - seeing
 # crew "in flight" - reaches for sq-spawn.sh/sq-send.sh/sq-teardown.sh to
 # "delegate" and "reconcile" the shared worktree. It has real capability because
-# those entrypoints self-locate their home and never knew a gate context existed.
+# those entrypoints self-locate their base and never knew a gate context existed.
 #
 # drill owns the authority-removal half (it neutralizes the project
 # instructions and stamps DRILL_GATE into the gate agent's environment).
@@ -28,7 +28,7 @@
 #      location, which the agent cannot relocate without breaking the gate's
 #      own git operations, so it still refuses even if the agent tampered the
 #      env marker away. Its limit: the literal-path match only fires for the
-#      default home root (~/.drill, legacy ~/.no-mistakes); a relocated home
+#      default base root (~/.drill, legacy ~/.no-mistakes); a relocated base
 #      root is covered by signal 1.
 #
 # The legacy markers are a documented transition keep: the live binary rename

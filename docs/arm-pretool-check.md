@@ -29,7 +29,7 @@ It tokenizes the bytes and classifies lexical execution positions only.
 - `--claude` to preserve Claude's stderr-only deny requirement.
 
 The wrapper discovers the code root from its own location.
-The active Squad home is `${SQUAD_HOME:-<code-root>}`.
+The active Squad base is `${SQUAD_HOME:-<code-root>}`.
 It passes both roots and the exact command string to the Node policy owner.
 
 The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain the `sq-sentry` byte sequence even after the classifier's decoders run.
@@ -99,8 +99,8 @@ Approved setup nodes are:
 - `source <x-mode path>` or `. <x-mode path>`.
 - `[ -f <x-mode path> ] && source <x-mode path>` and the equivalent dot form.
 
-The allowed x-mode paths are `config/x-mode.env`, `./config/x-mode.env`, and an absolute path that normalizes to `<active-Squad-home>/config/x-mode.env`.
-An absolute x-mode path outside the active home is not an approved setup node.
+The allowed x-mode paths are `config/x-mode.env`, `./config/x-mode.env`, and an absolute path that normalizes to `<active-Squad-base>/config/x-mode.env`.
+An absolute x-mode path outside the active base is not an approved setup node.
 
 Approved nodes may be separated by `;`, a real newline, or `&&`.
 `&&` is accepted after setup so a failed `cd`, `export`, or source prevents the protected call from running under the wrong setup.

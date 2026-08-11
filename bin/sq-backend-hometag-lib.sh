@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# bin/sq-backend-hometag-lib.sh - shared per-installation home-tag derivation
+# bin/sq-backend-hometag-lib.sh - shared per-installation base-tag derivation
 # for session-provider backends whose container has ONE namespace shared by
-# every Squad home on the machine, with no native per-home split (cmux's
+# every Squad base on the machine, with no native per-base split (cmux's
 # one app-global workspace list, zellij's one shared "Squad" session's
-# tab bar). Without a per-home discriminator embedded in the actual
-# title/name, two Squad homes (two XOs, a primary plus a
+# tab bar). Without a per-base discriminator embedded in the actual
+# title/name, two Squad bases (two XOs, a primary plus a
 # XO, or two independent primary installations) whose task ids
 # happen to collide can send/peek/close each other's tabs - the gap a
 # commander-directed drill review gate caught for cmux
 # (docs/cmux-backend.md) and this same tag mechanism was later ported to
-# zellij to close for the same reason (docs/zellij-backend.md "Home-scoped
+# zellij to close for the same reason (docs/zellij-backend.md "Base-scoped
 # tab titles").
 #
 # fm_backend_hometag() derives a short, stable tag: a readable prefix
-# ("Squad" for the primary home, "xo-<id>" for an XO home
+# ("Squad" for the primary base, "xo-<id>" for an XO base
 # carrying .sq-xo-home) plus a short hash of the resolved SQUAD_ROOT
 # path, so distinct installations - including multiple primaries on one
 # machine - never collide even though they share one backend-global

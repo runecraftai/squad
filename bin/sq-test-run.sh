@@ -912,7 +912,7 @@ families_for_changed_path() {
       ;;
     bin/sq-timeout-lib.sh)
       # The shared hard bound: session start's runtime bound, the unit/sitrep
-      # snapshots, the vendor auth probe, and the debrief cascade's per-home step
+      # snapshots, the vendor auth probe, and the debrief cascade's per-base step
       # all depend on it.
       printf '%s\n' session-bootstrap
       printf '%s\n' snapshot-sitrep

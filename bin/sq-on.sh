@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Execute one tracked Squad command in a configured remote XO home.
+# Execute one tracked Squad command in a configured remote XO base.
 #
 # Usage:
 #   sq-on.sh <XO-id|unambiguous-ssh-alias> <sq-command> [args...]

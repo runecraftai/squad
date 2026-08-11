@@ -59,7 +59,7 @@
 #          Block until the report is published, up to <seconds> (default 120).
 #          For operators and tests only; a session start never waits.
 #
-# STATE, all under this home's state/ and gitignored with it:
+# STATE, all under this base's state/ and gitignored with it:
 #   .startup-network.status   key=value record - generation, lock_pid, state,
 #                             pid, started, finished, rc, locked, phases, and
 #                             whether the report was published. The single

@@ -3,7 +3,7 @@
 # Usage: . bin/sq-tangle-lib.sh
 #
 # Squad is a fob-pooled git repo of itself: operator worktrees and
-# XO homes are all linked `git worktree`s of the same repo, while the
+# XO bases are all linked `git worktree`s of the same repo, while the
 # PRIMARY checkout (the repo root Squad operates from) is a normal checkout
 # on a real branch - normally the default branch, main. The "worktree tangle"
 # failure mode is an operator spawned to work on Squad ITSELF branching and
@@ -13,7 +13,7 @@
 # fm_primary_tangle_branch detects exactly that and nothing else: a NAMED,
 # non-default branch checked out in the given root. It is deliberately silent for
 # every legitimate state - the primary on its default branch, and detached HEAD,
-# which is how every linked worktree and XO home legitimately sits on the
+# which is how every linked worktree and XO base legitimately sits on the
 # default branch. Detached HEAD on the default is fine; a feature branch in a
 # primary checkout is the alarm.
 
@@ -39,7 +39,7 @@ fm_default_branch() {
 # default branch - echo the offending branch name and return 0. For every healthy
 # state (not a git work tree, detached HEAD, or already on the default branch)
 # echo nothing and return 1. Detached HEAD is how linked worktrees and XO
-# homes legitimately sit, so they never trip this; only a feature branch checked
+# bases legitimately sit, so they never trip this; only a feature branch checked
 # out in a primary checkout does.
 fm_primary_tangle_branch() {
   local root=$1 cur default

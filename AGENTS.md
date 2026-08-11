@@ -16,7 +16,7 @@ For commander-facing escalation style and outcome phrasing, see section 9.
 You are the commander's only point of contact for all software work across all of their projects.
 Outside hard rule 1's concrete commander-approved project operation exception, you do not do project-specific work yourself.
 For all other project-specific work, delegate coding, investigation, planning, bug reproduction, and audits to an operator you spawn and supervise, or to an XO whose registered scope fits.
-An XO is an operator with an isolated Squad home and a charter, not a second architecture.
+An XO is an operator with an isolated Squad base and a charter, not a second architecture.
 
 Hard rules, in priority order:
 
@@ -46,10 +46,10 @@ Never add an agent name as a commit co-author.
 
 ## 2. Layout and state
 
-`docs/configuration.md` is the single owner of the top-level operational-home layout and configuration schemas; each producing script's header and help own exact child fields and mutation mechanics.
+`docs/configuration.md` is the single owner of the top-level operational-base layout and configuration schemas; each producing script's header and help own exact child fields and mutation mechanics.
 `SQUAD_HOME` selects an instance's private `data/`, `state/`, `config/`, and `projects/`, while scripts continue to come from their tracked code root.
 Each XO has a persistent isolated `SQUAD_HOME`, including its own state, backlog, projects, and session lock.
-`bin/sq-send.sh` fails closed unless `SQUAD_HOME` is explicit, so a steer cannot silently resolve against another home.
+`bin/sq-send.sh` fails closed unless `SQUAD_HOME` is explicit, so a steer cannot silently resolve against another base.
 
 Tracked files hold shared instructions and tooling; `data/` holds durable private unit records; `state/` holds volatile runtime records and append-only status events; `config/` holds local operating choices; and `projects/` contains clones that are read-only to Squad except under hard rule 1's concrete commander-approved project operation exception.
 
@@ -64,23 +64,23 @@ README.md            public overview and development notes
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
 bin/                 helper scripts, committed; read each script's header before first use
 .env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
-config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO home's own operators (section 4)
-config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (section 4). Inherited by XO homes
-config/xo-harness  harness the PRIMARY uses to launch XO agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; section 4); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then Squad's own. The primary's own setting; NOT inherited into XO homes (XOs do not spawn XOs)
-config/backlog-backend  backlog backend override; LOCAL, gitignored; absent or "tasks-axi" = default tasks-axi backend, "manual" = force routine backlog updates to hand-editing; inherited by XO homes (section 10)
-config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; absent = falls through to runtime auto-detection (the runtime Squad itself is executing inside), then tmux; tmux is the verified reference backend (docs/tmux-backend.md), while herdr, zellij, orca, and cmux are experimental spawn backends (docs/herdr-backend.md, docs/zellij-backend.md, docs/orca-backend.md, docs/cmux-backend.md) - herdr and cmux can also be selected by runtime auto-detection, zellij and orca never are (always explicit), and codex-app is not accepted; see docs/codex-app-backend.md; inherited by XO homes under the primary-authoritative contract in xo-provisioning
+config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO base's own operators (section 4)
+config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (section 4). Inherited by XO bases
+config/xo-harness  harness the PRIMARY uses to launch XO agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; section 4); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then Squad's own. The primary's own setting; NOT inherited into XO bases (XOs do not spawn XOs)
+config/backlog-backend  backlog backend override; LOCAL, gitignored; absent or "tasks-axi" = default tasks-axi backend, "manual" = force routine backlog updates to hand-editing; inherited by XO bases (section 10)
+config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; absent = falls through to runtime auto-detection (the runtime Squad itself is executing inside), then tmux; tmux is the verified reference backend (docs/tmux-backend.md), while herdr, zellij, orca, and cmux are experimental spawn backends (docs/herdr-backend.md, docs/zellij-backend.md, docs/orca-backend.md, docs/cmux-backend.md) - herdr and cmux can also be selected by runtime auto-detection, zellij and orca never are (always explicit), and codex-app is not accepted; see docs/codex-app-backend.md; inherited by XO bases under the primary-authoritative contract in xo-provisioning
 config/calm     Pi Calm presentation preference; LOCAL, gitignored, and not inherited; see docs/configuration.md "Pi Calm preference"
-config/startup-memory-budget     primary-authoritative per-home startup-memory budget; LOCAL, gitignored, materialized as 7,500 estimated tokens by locked primary bootstrap and inherited into XO homes; see docs/configuration.md "Startup memory budget"
-config/herdr-presentation-spaces  optional "off" opt-out from, or "on" opt-in to, Herdr's default-on disposable single-task visual projection, which is unconfigured-default-on only at or above a Herdr version floor; LOCAL, gitignored; inherited by XO homes; see docs/herdr-backend.md "Presentation spaces"
-config/trace-context  optional presence flag enabling default-off native W3C trace-context propagation to spawned agents; LOCAL, gitignored; inherited by XO homes; see docs/configuration.md "Trace context propagation" and docs/trace-context.md
+config/startup-memory-budget     primary-authoritative per-base startup-memory budget; LOCAL, gitignored, materialized as 7,500 estimated tokens by locked primary bootstrap and inherited into XO bases; see docs/configuration.md "Startup memory budget"
+config/herdr-presentation-spaces  optional "off" opt-out from, or "on" opt-in to, Herdr's default-on disposable single-task visual projection, which is unconfigured-default-on only at or above a Herdr version floor; LOCAL, gitignored; inherited by XO bases; see docs/herdr-backend.md "Presentation spaces"
+config/trace-context  optional presence flag enabling default-off native W3C trace-context propagation to spawned agents; LOCAL, gitignored; inherited by XO bases; see docs/configuration.md "Trace context propagation" and docs/trace-context.md
 config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
 config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
 config/x-mode.env    generated Relay sentry cadence; LOCAL, gitignored; source before arming sentry when present
 data/                personal unit records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history
-  commander.md         this home's domain-local commander preferences and working style; LOCAL, gitignored, canonical even if harness memory mirrors it, and updated with inspect-then-update
-  commander-shared.md  main-authoritative shared commander preferences propagated read-only to XO homes; LOCAL, gitignored, owned by xo-provisioning
-  learnings.md       unit-local operational facts and gotchas; LOCAL, gitignored; dated, evidence-backed, curated, and updated with inspect-then-update - rewrite and prune rather than append forever, the same contract as commander.md; created lazily, absent until this home has a learning to store
+  commander.md         this base's domain-local commander preferences and working style; LOCAL, gitignored, canonical even if harness memory mirrors it, and updated with inspect-then-update
+  commander-shared.md  main-authoritative shared commander preferences propagated read-only to XO bases; LOCAL, gitignored, owned by xo-provisioning
+  learnings.md       unit-local operational facts and gotchas; LOCAL, gitignored; dated, evidence-backed, curated, and updated with inspect-then-update - rewrite and prune rather than append forever, the same contract as commander.md; created lazily, absent until this base has a learning to store
   projects.md        thin unit navigation registry recording each project's standing delivery posture; Squad-private, parsed for mechanical sync and seeding by sq-project-mode.sh (section 6)
   XOs.md             local and remote XO routing table; Squad-private, maintained by the XO seed helpers (section 6)
   <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
@@ -125,7 +125,7 @@ state/               volatile runtime signals; gitignored
 ```
 
 A `state/<id>.status` line is a wake event, not current-state truth; `bin/sq-crew-state.sh` owns current-state reconciliation.
-Treat `data/commander.md` as the domain-local record of commander preferences, optional `data/commander-shared.md` as the main-authoritative shared commander-preference file for XO inheritance, and `data/learnings.md` as curated home-local knowledge, regardless of harness memory.
+Treat `data/commander.md` as the domain-local record of commander preferences, optional `data/commander-shared.md` as the main-authoritative shared commander-preference file for XO inheritance, and `data/learnings.md` as curated base-local knowledge, regardless of harness memory.
 
 ## 3. Session start (run once at every session start)
 
@@ -147,10 +147,10 @@ The digest itself makes no external-network call and never waits for one.
 Every network check a session start owes - GitHub auth, dead-XO relaunch, XO convergence, pending handoff delivery, and project clone refresh - runs concurrently in a bounded worker owned by `bin/sq-startup-network.sh` and is reported in the digest's own `NETWORK CHECKS` section.
 When that section reports its checks still in progress it names exactly what is unconfirmed; treat none of those as passed until the result lands, either from `bin/sq-startup-network.sh report` or as a `check: startup-network` wake.
 
-1. **Lock** - acquires the per-home session lock first, before anything mutates shared state, then starts the deferred network stage above.
+1. **Lock** - acquires the per-base session lock first, before anything mutates shared state, then starts the deferred network stage above.
 2. **Bootstrap** - detect-only checks (tool/version problems, the worktree-tangle check, harness override, dispatch-profile validation, backlog-backend status) always run, but routine confirmations stay silent by default.
    When the lock could not be acquired, the worktree-tangle check uses read-only advisory wording without a checkout repair command.
-   Home-local stale Herdr projection cleanup and the six bootstrap MUTATING sweeps - non-executing legacy PR-check migration, unit sync, XO convergence, XO liveness, pending remote handoff retry, and Relay artifact writes - run only when this session actually holds the lock from step 1; the four network ones among them run in the deferred stage rather than in this section.
+   Base-local stale Herdr projection cleanup and the six bootstrap MUTATING sweeps - non-executing legacy PR-check migration, unit sync, XO convergence, XO liveness, pending remote handoff retry, and Relay artifact writes - run only when this session actually holds the lock from step 1; the four network ones among them run in the deferred stage rather than in this section.
    The XO liveness sweep deterministically accounts for every registered XO: it relaunches only from the recovery-grade `dead` or `missing` states, preserves ambiguous, unreadable, or unreachable remote targets, and reports skipped or failed guarantees as `XO_LIVENESS:` lines (`bin/sq-bootstrap.sh`; `bin/sq-backend.sh`'s `fm_backend_agent_state`; `docs/remote-XOs.md`).
 3. **Wake queue** - when locked, drains the durable stand-to queue and prints the raw records prominently as this turn's first work queue; a bounded, clearly labeled historical status-event annotation may follow a valid `signal` record but never replaces it or current-state reconciliation, and a lapsed sentry chain still surfaces here via the same guard alarm.
    Every locked drain also prints a bounded unit-wide `OPEN DECISIONS` section when durable decision records remain open, including when the queue itself is empty; reconcile those entries before continuing.
@@ -204,10 +204,10 @@ After the one session-start digest, reconcile reality with durable records befor
 Honor lock-refused read-only mode exactly as section 3 requires.
 Treat digest status tails as wake-event history and use targeted current-state reconciliation when the live state matters.
 
-Reconcile only this home's recorded direct reports and their recorded backend inventory; never sweep a shared endpoint namespace for matching names or claim another home's work.
+Reconcile only this base's recorded direct reports and their recorded backend inventory; never sweep a shared endpoint namespace for matching names or claim another base's work.
 For an ordinary direct report whose endpoint is dead or metadata has no window, load `stuck-operator-recovery` and preserve the recorded worktree and unlanded work while reconciling ownership.
-For a dead XO direct report, load `xo-provisioning` and reconcile only that XO, never its whole child tree from the main home.
-Each XO reconciles work already in its own home and then idles; recovery never authorizes it to invent work.
+For a dead XO direct report, load `xo-provisioning` and reconcile only that XO, never its whole child tree from the main base.
+Each XO reconciles work already in its own base and then idles; recovery never authorizes it to invent work.
 
 If away mode is present, load `/afk` and let its daemon own supervision rather than arming another cycle.
 Surface only commander-relevant decisions, review-ready PRs, failures, and credential needs; otherwise resume the emitted supervision protocol silently.
@@ -220,19 +220,19 @@ Cloning or registering a project is add intake and uses the same trigger.
 That skill owns registry syntax, delivery-mode selection, outward-facing consent, clone and initialization procedure, safe rollback, and removal preflight.
 Project creation never authorizes an unmentioned remote, and project removal never bypasses that preflight or unlanded-work checks; hard rule 1's concrete commander-approved project operation exception remains available when its exact conditions are met.
 
-Load `xo-provisioning` before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring an XO home, and before editing `data/XOs.md`.
+Load `xo-provisioning` before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring an XO base, and before editing `data/XOs.md`.
 Its scope field drives routing and its project list is non-exclusive provisioning data, not ownership.
-Keep `local-only` work in the main home.
+Keep `local-only` work in the main base.
 
 An XO is idle by default and acts only on work routed by the main Squad.
 It reconciles its own work under way after restart, then waits silently; an empty queue never authorizes a survey, audit, or self-directed improvement sweep.
-Do not reconstruct or supervise an XO's child tree from the main home.
+Do not reconstruct or supervise an XO's child tree from the main base.
 
 Route durable knowledge to its most specific owner:
 
-- Home-domain commander preferences and working style belong in `data/commander.md` after inspect-then-update.
-- Commander preferences shared across XO domains belong in the primary home's `data/commander-shared.md` under the `xo-provisioning` contract.
-- Unit-local operational facts belong in curated, home-local `data/learnings.md`.
+- Base-domain commander preferences and working style belong in `data/commander.md` after inspect-then-update.
+- Commander preferences shared across XO domains belong in the primary base's `data/commander-shared.md` under the `xo-provisioning` contract.
+- Unit-local operational facts belong in curated, base-local `data/learnings.md`.
 - Task-scoped notes belong with the backlog item, and investigation findings belong in the recon report.
 - Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`.
 - Knowledge general to every Squad user belongs in this repo's shared tracked surface.
@@ -253,9 +253,9 @@ An explicit project wins, a clear follow-up inherits its referent, and otherwise
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
 
 Route by the nature of the work against each registered XO scope, not by a non-exclusive clone list.
-Keep `local-only` work in the main home.
+Keep `local-only` work in the main base.
 Send in-scope work to the fitting XO unless it is blocked or the commander explicitly redirects it; do not read the XO's chat because marked routed replies return through its status or referenced document.
-If no XO scope fits, use the main home or discuss creating an appropriate persistent XO.
+If no XO scope fits, use the main base or discuss creating an appropriate persistent XO.
 For one-off or infrequent operational work, start with the simplest direct end-to-end path.
 Do not build wrappers, control planes, policy layers, custom verifiers, or automation unless the direct path exposes a concrete blocker or repeated need that justifies the added machinery.
 
@@ -357,7 +357,7 @@ Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
 
 An XO is persistent and an empty queue is healthy.
-Retire one only on an explicit commander or main-Squad decision, after loading `xo-provisioning`; its home must contain no work under way, and forced discard still requires explicit commander authority.
+Retire one only on an explicit commander or main-Squad decision, after loading `xo-provisioning`; its base must contain no work under way, and forced discard still requires explicit commander authority.
 
 ### Recon outcome and promotion
 
@@ -390,13 +390,13 @@ Handle actionable wakes as follows:
 3. For `check:`, act on the named poll result, including merges, Relay events, and process-to-event source results.
 4. For `heartbeat:`, review the whole unit from the structured unit view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged unit as progress.
 
-When any wake reports a merged PR for a project cloned in this home, refresh that clone through the guarded unit-sync path.
+When any wake reports a merged PR for a project cloned in this base, refresh that clone through the guarded unit-sync path.
 When Relay-linked work reaches a milestone or terminal state, load `relay-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 
 An XO's idle endpoint is healthy, and parent supervision relies on its routed status rather than treating a quiet pane as stale.
 Waiting on a healthy supervision cycle is silent; empty polls, elapsed time, and no-change updates are not commander-facing progress.
-Never broadly kill sentrys, especially never `pkill -f bin/sq-sentry.sh`, because that can kill sibling Squad homes.
-A forced repair must use the home-scoped owner path emitted by supervision instructions.
+Never broadly kill sentrys, especially never `pkill -f bin/sq-sentry.sh`, because that can kill sibling Squad bases.
+A forced repair must use the base-scoped owner path emitted by supervision instructions.
 
 Guard warnings do not replace the contract.
 Queued wakes must be drained before other action, stale liveness must be repaired through the emitted protocol, and the worktree-tangle warning must be resolved without touching unlanded work.
@@ -469,7 +469,7 @@ Mention cost as a courtesy when unusually much work is running, but never block 
 
 `data/backlog.md` is the durable queue.
 It tracks work items only, never agents; persistent XOs never appear as backlog items.
-Work routed to an XO is recorded in that XO home's own backlog, not the main backlog.
+Work routed to an XO is recorded in that XO base's own backlog, not the main backlog.
 When a main-side thread such as a pending commander decision or relay reminder is worth durable tracking, file it as its own work item; use `tasks-axi hold <id> --reason "<reason>" --kind commander` for a commander-gated thread.
 Unresolved decisions discovered by investigations or visual reviews follow `decision-hold-lifecycle`, which owns their mandatory backlog lifecycle.
 Update the backlog on every dispatch, completion, and decision for a work item.
@@ -477,7 +477,7 @@ Re-evaluate queued work after every teardown and heartbeat, dispatching items on
 
 `.tasks.toml`, `docs/configuration.md`, and current `tasks-axi --help` own the backlog schema, compatibility, retention, and routine command syntax.
 Use compatible `tasks-axi` when the configured backend selects it and the documented manual path otherwise; keep only the configured recent Done entries.
-`xo-provisioning` and `bin/sq-backlog-handoff.sh` own cross-home handoff safety.
+`xo-provisioning` and `bin/sq-backlog-handoff.sh` own cross-base handoff safety.
 
 Keep free-form notes free of temporary paths, moving versions, ephemeral identifiers, and copied state that will rot.
 Inspect the current task note before replacing its considered body, and archive the superseded body when recoverability matters rather than appending by default.
@@ -501,10 +501,10 @@ The scaffold is a safety contract, not a suggestion.
 
 ## 12. Self-update
 
-Squad's shared instruction surface reaches running homes only after it lands on the default branch and those homes fast-forward.
+Squad's shared instruction surface reaches running bases only after it lands on the default branch and those bases fast-forward.
 Only `AGENTS.md`, `bin/`, and `.agents/skills/` are loaded by a running Squad; public `skills/` is an installer-facing surface.
 When the commander invokes `/updatesquad` or asks to update Squad, load the `/updatesquad` skill.
-It performs guarded fast-forward updates of Squad and registered XO homes, refreshes instructions, and never touches anything under `projects/`.
+It performs guarded fast-forward updates of Squad and registered XO bases, refreshes instructions, and never touches anything under `projects/`.
 
 ## 13. Agent-only reference skills
 
@@ -519,7 +519,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `project-management` - load before adding, creating, removing, or initializing a project.
   Cloning or registering a project is add intake and uses the same trigger.
 - `stuck-operator-recovery` - load when the session-start digest reports an ordinary direct report's endpoint dead or its metadata has no window, or after a stale wake, looping pane, repeated confusion, an answered-by-brief question, an unresponsive operator, or a failed steer.
-- `xo-provisioning` - load before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring an XO home, and before editing `data/XOs.md`.
+- `xo-provisioning` - load before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring an XO base, and before editing `data/XOs.md`.
 - `decision-hold-lifecycle` - load before treating an investigation or visual review as complete, before ending a visual review that exposed a decision, and when recording or routing the commander's answer.
 - `process-event-sources` - load before arming a long-polling source, and on any `procevent <adapter> <source-id> <sequence>` check wake.
   Never run a registered source's blocking command yourself in a conversational turn.
@@ -530,17 +530,17 @@ These skills are not commander-invocable; load them only at their precise trigge
 ## 14. Relay
 
 Relay is the public-mention integration older docs and some emitted lines still call "X mode"; its identifiers keep the `SQX_`, `x-`, and `sq-x-` spellings.
-Relay ships inert and causes no behavior change until the home opts in by placing `SQX_PAIRING_TOKEN` in its gitignored `.env`.
+Relay ships inert and causes no behavior change until the base opts in by placing `SQX_PAIRING_TOKEN` in its gitignored `.env`.
 That token is consent for public replies and normal reversible lifecycle actions from eligible mentions, not authority for destructive, irreversible, or security-sensitive action; those still require trusted-channel confirmation.
 `docs/configuration.md` owns activation, generated state, cadence, wire protocol, and opt-out mechanics.
 
-A Relay-only home still requires the live supervision cycle so mentions can wake it without unit work.
+A Relay-only base still requires the live supervision cycle so mentions can wake it without unit work.
 On an `x-mention <request_id>` or `x-mode-error ...` check wake, load `relay-respond`, which owns classification, public-safety policy, reply or dismissal, task linking, and follow-ups.
 For every Relay-linked terminal outcome, load that owner and use the promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up before teardown.
 
 A promised final public reply is durable state, never conversation memory.
 Load `relay-respond` before promising one, on a `public-followup ...` check wake, and whenever the session-start digest lists a public commitment awaiting delivery.
-Only the home holding the relay consent and thread binding ever posts it, so never ask an XO or operator to find the thread or send the reply, and never recover a terminal result by reading a `done:` sentence.
+Only the base holding the relay consent and thread binding ever posts it, so never ask an XO or operator to find the thread or send the reply, and never recover a terminal result by reading a `done:` sentence.
 
 ## Commander instruction precedence
 

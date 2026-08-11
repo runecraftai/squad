@@ -3,13 +3,13 @@ Mode: Claude Stop-hook-owned supervision.
 When this session owns supervision and away mode is not active:
 1. Drain first with `bin/sq-stand-to-drain.sh`.
 2. Routine sentry arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/sq-claude-stop-autoarm.sh`), never by you.
-   Every turn end while supervision is needed launches or attaches one home-scoped sentry cycle with no model command and no model tokens.
+   Every turn end while supervision is needed launches or attaches one base-scoped sentry cycle with no model command and no model tokens.
    An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
 3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/sq-stand-to-drain.sh` first and handle the wake.
    Do not run `bin/sq-sentry-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
    Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` entries, or a real sentry reason line.
 4. On the one `Stop hook feedback` automatic-mechanism failure notice (`Squad sentry auto-arm FAILED ...`), drain, inspect the automatic mechanism failure, and do not turn the notice into a repeating manual-arm loop.
-5. If the Stop hook does not claim the home or reports an exhausted failure, inspect its registration and sentry startup path before ending blind.
+5. If the Stop hook does not claim the base or reports an exhausted failure, inspect its registration and sentry startup path before ending blind.
    Keep the Stop-owned automatic mechanism as the only Claude arm owner.
 6. Treat `sentry: started ...` and `sentry: attached ...` inside automatic arm output as proof that one live cycle exists.
    On attach, the arm follows verified identity-matched successors instead of exiting when the first cycle ends.

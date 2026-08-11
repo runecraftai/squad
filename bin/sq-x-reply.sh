@@ -71,7 +71,7 @@
 # opener. If --image is present, the relay attaches it to this opener. At most
 # SQX_X_THREAD_MAX messages (default 25) are produced.
 #
-# Live post config (home .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN
+# Live post config (base .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN
 # (required), SQX_RELAY_URL (default https://mySquad.io). Auth:
 # Authorization: Bearer <token>.
 #

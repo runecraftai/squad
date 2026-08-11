@@ -64,7 +64,7 @@ while [ $# -gt 0 ]; do
 done
 
 # The same two eligibility owners the nudge wrapper uses, so a drill gate
-# agent and an unmarked task worktree can never run a session start for a home
+# agent and an unmarked task worktree can never run a session start for a base
 # they do not own.
 fm_is_gate_agent "$SQUAD_ROOT" && exit 0
 fm_primary_scope_matches "$SQUAD_ROOT" "$STATE" || exit 0

@@ -5,10 +5,10 @@
 # "asyncRewake": true and an explicit multi-hour timeout. Claude Code fires it
 # in the background on EVERY Stop of a Claude primary session, with no
 # deduplication across firings. It owns routine tokenless sentry continuity
-# for Claude primaries (main home and marked XO homes):
+# for Claude primaries (main base and marked XO bases):
 #
 #   - Scope: only a genuine primary checkout (plain checkout or validly marked
-#     XO home) with AGENTS.md, bin/, and the effective state dir - the
+#     XO base) with AGENTS.md, bin/, and the effective state dir - the
 #     exact sq-turnend-guard.sh scope. Child crew/recon worktrees stay inert.
 #   - Identity: only when THIS session's harness ancestor holds state/.lock.
 #     When an existing numeric owner fails the shared harness-liveness predicate,
@@ -19,8 +19,8 @@
 #     this hook exits 0 and NEVER rewakes the primary (checked again at
 #     translation time so a mid-cycle AFK transition is honored).
 #   - Need: arms only while work is in flight (state/*.meta) or X mode has a
-#     relay poll to run (state/x-sentry.check.sh); an idle home exits 0.
-#   - Single-flight: Claude does not dedupe async hooks, so a home-scoped owner
+#     relay poll to run (state/x-sentry.check.sh); an idle base exits 0.
+#   - Single-flight: Claude does not dedupe async hooks, so a base-scoped owner
 #     lock (state/.claude-autoarm.lock) admits exactly one owner; every other
 #     concurrent firing exits 0 without translating, which keeps one event
 #     epoch on exactly one recovery turn.
@@ -90,7 +90,7 @@ fm_primary_scope_matches "$SQUAD_ROOT" "$STATE" || exit 0
 # A prior session may have died after leaving its numeric harness pid in .lock.
 # Use the shared liveness predicate to recognize only that stale-owner case.
 # Defer the mutating claim until after the unchanged AFK and need gates, so an
-# idle or away home remains byte-for-byte inert. Missing or malformed locks are
+# idle or away base remains byte-for-byte inert. Missing or malformed locks are
 # uncertainty rather than stale-owner evidence and remain inert.
 RECOVER_SESSION_LOCK=0
 if ! fm_session_lock_owned_by_self "$STATE"; then
@@ -187,7 +187,7 @@ while [ "$attempt" -lt "$AUTOARM_ATTEMPTS" ]; do
   [ "$ACTIONABLE" -eq 1 ] && break
 
   # A non-actionable close is benign when another verified sentry already owns
-  # this home and is still beating within the shared grace window.
+  # this base and is still beating within the shared grace window.
   if fm_sentry_healthy "$STATE" "$SCRIPT_DIR/sq-sentry.sh" "$GRACE" "$SQUAD_HOME"; then
     HEALTHY=1
     break

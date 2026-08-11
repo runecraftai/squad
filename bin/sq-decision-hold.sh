@@ -13,8 +13,8 @@
 # A hold identity is <origin-id>-decision-<decision-key>. Origin ids and decision
 # keys must already be privacy-safe slugs. Repeating `hold` with the same identity
 # is idempotent. A different decision key creates a different backlog identity.
-# All backlog mutations run in the active SQUAD_HOME, which keeps main-home and
-# XO-home ownership aligned with the work that discovered the decision.
+# All backlog mutations run in the active SQUAD_HOME, which keeps main-base and
+# XO-base ownership aligned with the work that discovered the decision.
 #
 # Usage:
 #   sq-decision-hold.sh id <origin-id> <decision-key>

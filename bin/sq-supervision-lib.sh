@@ -2,7 +2,7 @@
 # Shared "supervision missing" predicate.
 # Usage: . bin/sq-supervision-lib.sh
 #
-# Reports whether a Squad home needs supervision because it has in-flight
+# Reports whether a Squad base needs supervision because it has in-flight
 # work (a state/<id>.meta exists) or an X-mode relay poll
 # (state/x-sentry.check.sh), and whether its sentry has a fresh liveness beacon
 # (state/.last-sentry-beat, touched every poll cycle, within the grace window).
@@ -77,7 +77,7 @@ fm_supervision_status() {
 }
 
 # fm_supervision_needed <state-dir> [grace-seconds]
-# Exit 0 (true) exactly when the home needs a sentry.
+# Exit 0 (true) exactly when the base needs a sentry.
 fm_supervision_needed() {
   fm_supervision_status "$@"
   [ "$SQUAD_SUP_NEEDED" = true ]

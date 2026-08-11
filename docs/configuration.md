@@ -6,9 +6,9 @@ The files and environment variables you set to operate Squad.
 
 The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it like any prompt when the unit is empty, or dispatch shared-repo edits to an operator while tasks are in flight.
 
-## Operational home layout and state
+## Operational base layout and state
 
-This section is the single owner of the top-level operational-home layout; producer script headers and their help own exact child-file fields and mutation contracts.
+This section is the single owner of the top-level operational-base layout; producer script headers and their help own exact child-file fields and mutation contracts.
 The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `SQUAD_HOME` contains private operational directories.
 `data/` holds durable private unit records such as the project and XO registries, commander preferences, optional shared commander preferences, learnings, backlog, briefs, and recon reports.
 `state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, sentry and stand-to queue coordination, away-mode state, generated Relay artifacts, private XO config-reread generations with their retry and quarantine state, and parent-owned XO pending-reply records under `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
@@ -26,18 +26,18 @@ Ordinary dead-direct-report recovery is owned by `stuck-operator-recovery`, whil
 
 ## Pi Calm preference (config/calm)
 
-The Pi Calm extension stores the commander's home-local presentation choice in gitignored `config/calm` under the effective Squad home, resolved from `SQUAD_HOME`, then `SQUAD_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `SQUAD_CONFIG_OVERRIDE` when that test and specialized-setup override is present.
+The Pi Calm extension stores the commander's base-local presentation choice in gitignored `config/calm` under the effective Squad base, resolved from `SQUAD_HOME`, then `SQUAD_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `SQUAD_CONFIG_OVERRIDE` when that test and specialized-setup override is present.
 The only values it writes are `on` and `off`, each followed by one newline; an absent, unreadable, or unrecognized value defaults to off.
 The `/calm` command replaces the file atomically before changing live presentation, so a failed write leaves the current choice unchanged rather than claiming persistence.
 The extension reloads this preference on every Pi `session_start`, including startup, new, resume, fork, and reload reasons.
-This preference is local to each Squad home and is not part of XO inherited configuration.
+This preference is local to each Squad base and is not part of XO inherited configuration.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 
 The tracked `.tasks.toml` pins the default `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
 When the default backend is selected and compatible `tasks-axi` is on `PATH`, Squad uses its verbs for routine backlog mutations.
 XO handoffs are separate and unconditional: `sq-backlog-handoff.sh` keeps only its own unit-level validation and always delegates the item move to `tasks-axi mv`, the single owner of the backlog format.
-It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their home for pruning or archiving.
+It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their base for pruning or archiving.
 Handoff item bodies must use at least two leading spaces, and the helper refuses a selected item with a single-space or tab-indented continuation rather than risk orphaning it.
 Because bootstrap requires `tasks-axi` on `PATH` on every profile, that delegation works unit-wide, and the `config/backlog-backend=manual` knob governs Squad's own hand-editing of its backlog, not this validated helper.
 Compatible means the installed build passes the shared version and feature probe owned by [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh), including the atomic multi-ID move required by handoff delegation.
@@ -81,19 +81,19 @@ These five sentences are the single owner of the task-selector vocabulary; backe
 `sq-teardown.sh <id>` takes a task id directly and validates the complete metadata-only endpoint identity before any runtime dispatch or cleanup mutation.
 Missing, empty, duplicate, malformed, backend-inconsistent, or task-mismatched endpoint records are preserved and refused.
 Legacy tmux metadata remains cleanup-compatible when its exact window name is `sq-<id>`; opaque non-tmux endpoints require their recorded `endpoint_task_id=` binding.
-`SQUAD_HOME` determines Herdr's home label: the primary home uses `Squad`, and an XO home marked by `.sq-xo-home` uses `xo-<XO-id>`.
+`SQUAD_HOME` determines Herdr's base label: the primary base uses `Squad`, and an XO base marked by `.sq-xo-home` uses `xo-<XO-id>`.
 [`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
-The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
-The setting is inherited into XO homes under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
+The local `config/herdr-presentation-spaces` file instead opts a base out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
+The setting is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
 For normal herdr operations, `HERDR_SESSION` selects the named session, but destructive test cleanup must not rely on `HERDR_SESSION` alone.
 Use the explicit guarded cleanup path described in [`docs/herdr-backend.md`](herdr-backend.md) instead of `herdr server stop`.
 For normal zellij operations, `SQUAD_ZELLIJ_SESSION` selects the named session and defaults to `Squad`.
-Zellij has no per-home workspace split: primary and XO tasks share that one session, and visible tab titles are scoped by the active `SQUAD_HOME` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<home-label>-<id>`.
+Zellij has no per-base workspace split: primary and XO tasks share that one session, and visible tab titles are scoped by the active `SQUAD_HOME` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<home-label>-<id>`.
 Use the guarded cleanup path described in [`docs/zellij-backend.md`](zellij-backend.md) instead of `kill-all-sessions` or `delete-all-sessions`.
 cmux has no session layer at all - one workspace per task, in whatever cmux window is open - and its socket password (when configured) is read from local, gitignored `config/cmux-socket-password` under the effective config directory, never committed.
 The caller-facing label remains `sq-<id>`, but the actual cmux workspace title is scoped by the active `SQUAD_HOME` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<home-label>-<id>`.
 Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), never enumerate-and-close every workspace.
-`config/backend` is inherited into XO homes under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
+`config/backend` is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
 
 ## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
 
@@ -120,10 +120,10 @@ See [`wedge-alarm.md`](wedge-alarm.md) for the current channel reference, [`veri
 
 The optional local, gitignored `config/trace-context` presence flag enables default-off native W3C trace-context propagation.
 `SQUAD_TRACE_CONTEXT` overrides the file: `1`/`on`/`true`/`yes` enables, any other non-empty value disables, and unset or empty defers to the file.
-Each locked home session resolves those inputs once, and all spawns from that home use the frozen decision until a new session starts.
-When launching an XO, the primary copies the presence flag into its home and passes the primary session's frozen decision as a non-empty `SQUAD_TRACE_CONTEXT=on|off` override for the XO's own session start.
+Each locked base session resolves those inputs once, and all spawns from that base use the frozen decision until a new session starts.
+When launching an XO, the primary copies the presence flag into its base and passes the primary session's frozen decision as a non-empty `SQUAD_TRACE_CONTEXT=on|off` override for the XO's own session start.
 An XO on a remote route is covered the same way: the primary resolves and records that task's carrier, and the configured host exports it and receives the same enablement snapshot.
-The presence flag is session-scoped enablement, so it transfers at launch and is left unchanged by live convergence into a running home.
+The presence flag is session-scoped enablement, so it transfers at launch and is left unchanged by live convergence into a running base.
 See [`trace-context.md`](trace-context.md) for carrier semantics, supported routes, the manual unit-restart requirement, the session boundary, and safety limits; `bin/sq-trace-context-lib.sh`'s header owns the exact mechanics, and [`verification/trace-context.md`](verification/trace-context.md) records repeatable evidence.
 
 ## Gate defaults (.drill.yaml)
@@ -136,10 +136,10 @@ Portable shard evidence and coverage rules are in [sq-test-portable-shards.md](s
 
 ## Commander Preferences (data/commander.md / data/commander-shared.md)
 
-Domain-local preferences for one commander's unit live locally in each home's `data/commander.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/XOs.md`.
+Domain-local preferences for one commander's unit live locally in each base's `data/commander.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/XOs.md`.
 Before changing it, inspect the current file and rewrite or prune the matching bullet in place; add a new bullet only for a genuinely new durable preference.
-Shared commander preferences that apply across XO domains live only in the primary home's optional `data/commander-shared.md`.
-`xo-provisioning` owns its propagation contract, including the required header, read-only XO copies, quarantine diagnostics, and the rollout rule that existing homes trim `data/commander.md` by hand after first propagation rather than deleting private content automatically.
+Shared commander preferences that apply across XO domains live only in the primary base's optional `data/commander-shared.md`.
+`xo-provisioning` owns its propagation contract, including the required header, read-only XO copies, quarantine diagnostics, and the rollout rule that existing bases trim `data/commander.md` by hand after first propagation rather than deleting private content automatically.
 
 ## Operational learnings (data/learnings.md)
 
@@ -149,60 +149,60 @@ There is no shared learnings file by commander decision.
 
 ## Startup memory budget (config/startup-memory-budget)
 
-`config/startup-memory-budget` is the primary-authoritative per-home allowance for the startup prompt-memory surface: `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md` together.
-The locked mutable bootstrap path materializes its visible default of `7500` estimated tokens in a primary home when the file is absent.
-To select another allowance, replace the primary home's file with one valid positive value in the exact format below; the next locked bootstrap convergence or `bin/sq-config-push.sh` propagates it to registered XOs.
+`config/startup-memory-budget` is the primary-authoritative per-base allowance for the startup prompt-memory surface: `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md` together.
+The locked mutable bootstrap path materializes its visible default of `7500` estimated tokens in a primary base when the file is absent.
+To select another allowance, replace the primary base's file with one valid positive value in the exact format below; the next locked bootstrap convergence or `bin/sq-config-push.sh` propagates it to registered XOs.
 An XO does not create an independent default and instead receives the primary value through the inherited-local-material contract in [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
 The file must be one positive base-10 integer followed by exactly one newline in a regular, single-linked file beneath a non-symlinked `config/` directory.
 Malformed, multi-line, symlinked, hardlinked, special, or otherwise unsafe values are rejected rather than treated as a default.
 Use `bin/sq-startup-memory-budget.sh read` to validate and print the effective value, or `bin/sq-startup-memory-budget.sh report` to account for the three files.
 The stable local estimate is `ceil(UTF-8 bytes / 3)` per file, a conservative portable approximation rather than a provider-exact tokenizer.
 An inherited `data/commander-shared.md` counts in an XO's total but remains primary-owned and read-only there.
-The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns curation and its automatic XO cascade, which accounts every home against this same per-home allowance separately rather than against a unit total.
+The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns curation and its automatic XO cascade, which accounts every base against this same per-base allowance separately rather than against a unit total.
 The helper's header owns exact parsing, publication, and report output mechanics.
 
 ## XO routes (data/XOs.md)
 
 Persistent XO routes live locally in `data/XOs.md`.
 The concise single-line route contract is owned by the [`xo-provisioning` skill](../.agents/skills/xo-provisioning/SKILL.md#routing-table), including the parser-compatible fields, one-sentence summary requirement, `home:` pointer to the seeded charter, and limit on extra registry prose.
-A remote route adds `host:` and `root:` before the existing fields and places the whole XO home on that SSH host; it does not make ordinary workers remotely placeable.
+A remote route adds `host:` and `root:` before the existing fields and places the whole XO base on that SSH host; it does not make ordinary workers remotely placeable.
 [`remote-XOs.md`](remote-XOs.md) owns current remote setup, operation, and safety behavior.
 Use `sq-home-seed.sh validate` to check the complete operational registry contract documented by the command itself.
 The main sergeant at arms routes by reading those scopes with judgment; the project list is provisioning data, not exclusive ownership.
-Use `sq-home-seed.sh <id> - {<project>...|--no-projects}` to lease a fresh local Squad worktree for the XO home.
+Use `sq-home-seed.sh <id> - {<project>...|--no-projects}` to lease a fresh local Squad worktree for the XO base.
 For remote provisioning, including supplied project origins, follow [Remote second mates](remote-XOs.md#provision-a-route).
 Use the deliberate `--no-projects` signal only for a Squad-repo domain that needs no separate project clones.
 It cannot be combined with a project list, and omitting both still fails loudly.
-A project-less seed requires no existing project clones or `data/projects.md` entries in the home, so it refuses a populated-home conversion without changing that home.
+A project-less seed requires no existing project clones or `data/projects.md` entries in the base, so it refuses a populated-base conversion without changing that base.
 A preexisting project-bearing charter is also refused until it is re-scaffolded with `--no-projects` or removed.
-The lease is held under the XO id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the home.
-Teardown of a leased home fails closed if `fob return` cannot release the lease; plain-clone homes with no fob pool slot are removed directly.
+The lease is held under the XO id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the base.
+Teardown of a leased base fails closed if `fob return` cannot release the lease; plain-clone bases with no fob pool slot are removed directly.
 XO routes cover `drill` and `direct-PR` projects; `local-only` projects remain main-Squad work.
-For `drill` projects, seeding initializes only projects newly cloned into an XO home and refuses to mutate a preexisting clone that is not already initialized.
-After creating an XO, move existing main-backlog queued items that you have judged in-scope with `sq-backlog-handoff.sh <XO-id> <item-key>...`; it is idempotent and refuses In flight, Done, or non-XO homes.
+For `drill` projects, seeding initializes only projects newly cloned into an XO base and refuses to mutate a preexisting clone that is not already initialized.
+After creating an XO, move existing main-backlog queued items that you have judged in-scope with `sq-backlog-handoff.sh <XO-id> <item-key>...`; it is idempotent and refuses In flight, Done, or non-XO bases.
 Set `SQUAD_XO_CHARTER` to seed from inline charter text when no filled charter brief exists; set `SQUAD_XO_SCOPE` when the routing scope should differ from the charter text.
-The seeded home's `data/charter.md` owns the standard XO lifecycle and escalation contract; the route file points to it through the existing `home:` field instead of adding another pointer.
-Each seed writes an `.sq-xo-home` identity marker at the home root, alongside a durable `.sq-xo-parent` record of the home's route to its parent (see "Provision a route" in [`docs/remote-XOs.md`](remote-XOs.md)).
-The tracked root `.gitignore` ignores both markers, so validation can read them without making a freshly seeded home appear dirty to porcelain-based safety checks.
+The seeded base's `data/charter.md` owns the standard XO lifecycle and escalation contract; the route file points to it through the existing `home:` field instead of adding another pointer.
+Each seed writes an `.sq-xo-home` identity marker at the base root, alongside a durable `.sq-xo-parent` record of the base's route to its parent (see "Provision a route" in [`docs/remote-XOs.md`](remote-XOs.md)).
+The tracked root `.gitignore` ignores both markers, so validation can read them without making a freshly seeded base appear dirty to porcelain-based safety checks.
 This does not relax protection for any other untracked file.
-An existing linked-worktree home that predates this rule advances through its marker-only state during its next bootstrap or spawn local sync, after which Git ignores the marker normally.
-A standalone-clone home cannot receive a primary-local commit through that no-fetch sync, so it receives the rule through `/updatesquad`'s origin refresh instead.
+An existing linked-worktree base that predates this rule advances through its marker-only state during its next bootstrap or spawn local sync, after which Git ignores the marker normally.
+A standalone-clone base cannot receive a primary-local commit through that no-fetch sync, so it receives the rule through `/updatesquad`'s origin refresh instead.
 
 ## SQUAD_HOME
 
-`SQUAD_HOME` selects the operational home for one Squad instance.
-When it is unset, most scripts use the repo root as the home; when it is set, scripts still run from this repo's `bin/`, but `state/`, `data/`, `config/`, and `projects/` come from `$SQUAD_HOME`.
+`SQUAD_HOME` selects the operational base for one Squad instance.
+When it is unset, most scripts use the repo root as the base; when it is set, scripts still run from this repo's `bin/`, but `state/`, `data/`, `config/`, and `projects/` come from `$SQUAD_HOME`.
 `SQUAD_ROOT_OVERRIDE` overrides the Squad repo root used by scripts, including the primary checkout watched by the worktree-tangle guard.
 When `SQUAD_HOME` is unset, it also behaves as the old whole-root override.
-`bin/sq-send.sh` is intentionally stricter than that general fallback: it requires `SQUAD_HOME` to be set before resolving a target, so operator steers cannot silently resolve against the wrong home.
+`bin/sq-send.sh` is intentionally stricter than that general fallback: it requires `SQUAD_HOME` to be set before resolving a target, so operator steers cannot silently resolve against the wrong base.
 `SQUAD_STATE_OVERRIDE`, `SQUAD_DATA_OVERRIDE`, `SQUAD_PROJECTS_OVERRIDE`, and `SQUAD_CONFIG_OVERRIDE` override individual operational directories for tests and specialized harness setup.
 Before `sq-brief.sh`, `sq-spawn.sh`, or `sq-afk-launch.sh` persists a path or passes it to another process, it resolves each applicable relative `SQUAD_HOME`, `SQUAD_STATE_OVERRIDE`, or `SQUAD_DATA_OVERRIDE` directory against the caller's working directory, preserves absolute spellings unchanged, and rejects an unresolvable relative directory with the offending variable named.
-Bootstrap applies the same relative `SQUAD_HOME` resolution only when embedding that home in the generated Relay poll shim; other transient consumers retain their existing shell-relative behavior.
+Bootstrap applies the same relative `SQUAD_HOME` resolution only when embedding that base in the generated Relay poll shim; other transient consumers retain their existing shell-relative behavior.
 For the herdr backend, `SQUAD_HOME` also determines the workspace label used by the adapter.
-For the zellij backend, `SQUAD_HOME` does not split containers, but it determines the readable home prefix embedded in visible tab titles; use `SQUAD_ZELLIJ_SESSION` when a separate zellij session is needed.
-The full zellij home label also includes a short hash of the resolved `SQUAD_ROOT` path.
-For the cmux backend, `SQUAD_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `SQUAD_HOME` determines the default config path and readable home prefix embedded in workspace titles.
-The full cmux home label also includes a short hash of the resolved `SQUAD_ROOT` path, and there is no per-home container split.
+For the zellij backend, `SQUAD_HOME` does not split containers, but it determines the readable base prefix embedded in visible tab titles; use `SQUAD_ZELLIJ_SESSION` when a separate zellij session is needed.
+The full zellij base label also includes a short hash of the resolved `SQUAD_ROOT` path.
+For the cmux backend, `SQUAD_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `SQUAD_HOME` determines the default config path and readable base prefix embedded in workspace titles.
+The full cmux base label also includes a short hash of the resolved `SQUAD_ROOT` path, and there is no per-base container split.
 
 ## Harness support
 
@@ -237,7 +237,7 @@ For Kimi operators, `sq-spawn.sh` runs `sq-kimi-turnend-hook.sh install`, drops 
 Kimi continues to use the commander's normal Kimi home, including the existing config, skills, and memory; Squad does not create an isolated Kimi home.
 The Kimi installer requires an existing regular non-symlink `~/.kimi-code/config.toml`, `python3` with `tomllib`, and `jq`; it validates but never serializes the commander's TOML and refuses before writing when the config is missing, malformed, or surprising or when either tool requirement is unavailable.
 Its `remove` action excises only the marker-delimited Squad region and removes Squad's hook files.
-For Pi and pi-signed XO launches, `sq-spawn.sh` starts the selected executable with `-e` pointed at the XO home's own tracked `.pi/extensions/sq-primary-pi-watch.ts` and `.pi/extensions/sq-primary-turnend-guard.ts`, both already present from the XO home's git worktree.
+For Pi and pi-signed XO launches, `sq-spawn.sh` starts the selected executable with `-e` pointed at the XO base's own tracked `.pi/extensions/sq-primary-pi-watch.ts` and `.pi/extensions/sq-primary-turnend-guard.ts`, both already present from the XO base's git worktree.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
@@ -279,23 +279,23 @@ When the file exists, bootstrap validates it with `jq`.
 Valid files stay silent by default; with `SQUAD_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
 Malformed JSON, an empty or malformed rule/default array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 While the file remains present, no operator or recon spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
-XO homes inherit this file from the primary, so an XO's own operators apply the same dispatch profile behavior.
+XO bases inherit this file from the primary, so an XO's own operators apply the same dispatch profile behavior.
 
 ## Toolchain
 
 On session start the sergeant at arms detects what its required toolchain is missing or too old and lists each problem with either an exact install command or manual instructions.
 It installs automatically supported tools only after you say go; manual-only tools remain for you to install from the printed instructions.
-Required tools come in two parts: a universal toolchain every home needs regardless of backend, and a per-backend delta that follows the runtime backend actually resolved for this home.
+Required tools come in two parts: a universal toolchain every base needs regardless of backend, and a per-backend delta that follows the runtime backend actually resolved for this base.
 The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, drill v1.31.2 or newer, compatible gh-axi, chrome-devtools-axi, compatible lavish-axi, compatible tasks-axi per "Backlog backend" above, and compatible quota-axi.
 [`bin/sq-bootstrap.sh`](../bin/sq-bootstrap.sh) owns the axi-family floor policy and the gh-axi and lavish-axi floors, while [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh) and [`bin/sq-quota-lib.sh`](../bin/sq-quota-lib.sh) hold their own tools' floor constants.
 This section is the single owner of that universal toolchain list; backend guides' prerequisites point here and add only their backend-specific tools.
 In that list, drill runs the validation pipeline, gh-axi, chrome-devtools-axi, and lavish-axi cover GitHub, browser, and rich-review operations, and tasks-axi plus quota-axi back backlog mutations and quota-aware array dispatch.
-The per-backend delta is required only for the backend resolved from `SQUAD_BACKEND`, then `config/backend`, then runtime auto-detection, then default `tmux`, so a home is never told to install a tool an inactive backend or feature would need.
+The per-backend delta is required only for the backend resolved from `SQUAD_BACKEND`, then `config/backend`, then runtime auto-detection, then default `tmux`, so a base is never told to install a tool an inactive backend or feature would need.
 That delta is owned in code by `fm_backend_required_tools` in `bin/sq-backend.sh`: the resolved backend's own session-provider CLI (`tmux`, `herdr`, `zellij`, `orca`, or `cmux`), `jq` for the JSON-emitting experimental adapters (`herdr`, `zellij`, `cmux`) whose spawn and liveness paths parse the backend's JSON output, and the `fob` worktree provider for every session-provider-only backend (`tmux`, `herdr`, `zellij`, `cmux`).
 Backend tool availability uses the adapter's own executable resolver, so bootstrap and spawn agree on supported non-`PATH` locations such as cmux's bundled CLI.
 An unknown resolved backend emits `BACKEND_INVALID` and blocks dispatch instead of silently dropping its dependency delta or falling back to tmux.
 Orca provides both the task worktree and terminal endpoint (see "Runtime backend" above), so `backend=orca` requires only `orca` on top of the universal toolchain and skips both `fob` and every other backend's session CLI.
-A herdr, zellij, or cmux home is therefore never told `tmux` is missing, and the `fob` durable-lease upgrade check runs only for the backends that actually use fob.
+A herdr, zellij, or cmux base is therefore never told `tmux` is missing, and the `fob` durable-lease upgrade check runs only for the backends that actually use fob.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
 When Relay is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
 `tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`.
@@ -312,16 +312,16 @@ If bootstrap kills a timed-out refresh, it replays any completed `sq-unit-sync.s
 A killed refresh (or a teardown process kill) can leave an orphaned `.git/packed-refs.lock` in a clone, which makes the next refresh's fetch fail with Git's `Unable to create '...packed-refs.lock': File exists`.
 On that signature only, `sq-unit-sync.sh` retries the fetch with a bounded wait for the lock to self-clear, then removes the lock and retries once more only when it can prove the lock stale, exactly like the `sq-teardown.sh` `index.lock` recovery.
 It never removes a live lock, leaves any other failure shape untouched, and prints every wait, retry, and removal to stderr plus a one-line `recovered:` summary to stdout on success so that this session-start relay still surfaces the recovery.
-The same deferred network stage runs bootstrap's guarded XO sync for recorded live homes, then propagates declared inherited local material into each validated live home.
+The same deferred network stage runs bootstrap's guarded XO sync for recorded live bases, then propagates declared inherited local material into each validated live base.
 Local routes use direct guarded filesystem operations, while remote routes delegate sync and allowlisted transfer through their configured SSH host without probing any unconfigured unit.
-It emits `XO_SYNC:` only when a home was skipped for an actionable sync reason, inheritance failed, or a divergent shared commander-preference copy was quarantined.
-When a running home advances and its loaded instruction surface (`AGENTS.md`, `bin/`, or `.agents/skills/`) changed, bootstrap sends the re-read nudge itself through the stable `sq-<id>` selector and reports the exact completed send as `BOOTSTRAP_INFO:`.
+It emits `XO_SYNC:` only when a base was skipped for an actionable sync reason, inheritance failed, or a divergent shared commander-preference copy was quarantined.
+When a running base advances and its loaded instruction surface (`AGENTS.md`, `bin/`, or `.agents/skills/`) changed, bootstrap sends the re-read nudge itself through the stable `sq-<id>` selector and reports the exact completed send as `BOOTSTRAP_INFO:`.
 If that send fails, bootstrap keeps an idempotent retry marker and emits `NUDGE_XOS:` with the failure reason.
 The same bootstrap run emits `XO_LIVENESS:` only when a registered XO is skipped or its relaunch fails; already-live and successfully relaunched XOs are handled silently.
 For a mid-session inherited local-material edit where tracked-file sync is not needed, run `bin/sq-config-push.sh`.
-It uses the same live XO discovery and propagation helper as bootstrap, prints each live home's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, and `data/commander-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
-When an allowlisted config item changes for an already-running local home, it sends the literal-content reread pointer described in [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md); unchanged allowlisted config sends no pointer unless a previous delivery is pending.
-A changed remote home instead receives one durably recorded marked re-read instruction after the allowlisted bytes have transferred because primary-local generation paths are not meaningful on another host.
+It uses the same live XO discovery and propagation helper as bootstrap, prints each live base's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, and `data/commander-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
+When an allowlisted config item changes for an already-running local base, it sends the literal-content reread pointer described in [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md); unchanged allowlisted config sends no pointer unless a previous delivery is pending.
+A changed remote base instead receives one durably recorded marked re-read instruction after the allowlisted bytes have transferred because primary-local generation paths are not meaningful on another host.
 The locked bootstrap inheritance pass uses the same placement-specific behavior; see `xo-provisioning` for the single contract owner.
 That live discovery starts from `state/*.meta` records with `kind=xo`; `data/XOs.md` only backfills `home=` for older or incomplete meta records.
 Skipped items, such as a destination checkout that does not yet gitignore the item, are visible warnings but not hard failures.
@@ -331,10 +331,10 @@ Skipped items, such as a destination checkout that does not yet gitignore the it
 Relay lets a Squad instance answer public mentions and act on normal reversible mention requests through Squad's normal lifecycle.
 It covers both public surfaces the relay supports: `@mySquad` mentions on X, and mentions of the mySquad bot in a Discord server where it is installed.
 Both surfaces are the same opt-in and the same machinery - one pairing token, one relay poll, and one reply path - so everything below applies to Discord mentions unless a line names a platform explicitly.
-It is off unless the Squad home's gitignored `.env` contains a non-empty `SQX_PAIRING_TOKEN`.
+It is off unless the Squad base's gitignored `.env` contains a non-empty `SQX_PAIRING_TOKEN`.
 The pairing token both identifies the relay tenant and records opt-in consent for autonomous public replies and eligible lifecycle actions.
 Destructive, irreversible, or security-sensitive asks are flagged for trusted-channel confirmation instead of being executed from a public mention.
-The relay uses owner-only routing: a mention delivered to a home is from that home's owner/commander, while parent-thread context may still include other public accounts.
+The relay uses owner-only routing: a mention delivered to a base is from that base's owner/commander, while parent-thread context may still include other public accounts.
 `SQX_RELAY_URL` is optional and defaults to `https://mySquad.io`, mainly for developers pointing at a local relay.
 For direct client invocations, environment values override `.env`; bootstrap activation still keys off `.env` presence so sentry artifacts are explicit local opt-in state.
 `SQX_ENV_FILE` can point direct poll/reply client invocations at another `.env`-style file, but it does not change bootstrap activation.
@@ -343,21 +343,21 @@ To turn it on:
 
 1. Sign in at [mySquad.io](https://mySquad.io) with X or Discord.
 2. For the Discord surface, use the dashboard's install link to add the mySquad bot to a server you administer; the X surface needs no install step.
-3. Copy the pairing token from the dashboard into this Squad home's gitignored `.env` as `SQX_PAIRING_TOKEN=<token>`.
+3. Copy the pairing token from the dashboard into this Squad base's gitignored `.env` as `SQX_PAIRING_TOKEN=<token>`.
 4. Start a new Squad session so bootstrap picks the token up, then mention `@mySquad` on X or mention the bot in a server where it is installed.
 
-The dashboard owns account creation, identity linking, bot installation, and token issuance; this document owns only what the local Squad home does with the token once it is in `.env`.
+The dashboard owns account creation, identity linking, bot installation, and token issuance; this document owns only what the local Squad base does with the token once it is in `.env`.
 
 The locked session-start bootstrap step turns the token into local generated state.
-It writes `state/x-sentry.check.sh`, a byte-static identity shim for `bin/sq-x-poll.sh`, and `config/x-mode.env`, which exports `SQUAD_CHECK_INTERVAL=30` for sentry processes in that home.
+It writes `state/x-sentry.check.sh`, a byte-static identity shim for `bin/sq-x-poll.sh`, and `config/x-mode.env`, which exports `SQUAD_CHECK_INTERVAL=30` for sentry processes in that base.
 The sentry accepts the shim only when its bytes match the expected generated content, then invokes the trusted repository poll script directly instead of executing state-file source.
-This section is the single owner of the Relay cadence contract: a Relay instance polls every 30 seconds instead of the default 300, only a Relay instance speeds up because a non-Relay home has no `config/x-mode.env`, and the session-start supervision operating block includes the cadence instruction when that file exists.
+This section is the single owner of the Relay cadence contract: a Relay instance polls every 30 seconds instead of the default 300, only a Relay instance speeds up because a non-Relay base has no `config/x-mode.env`, and the session-start supervision operating block includes the cadence instruction when that file exists.
 The active primary-harness supervision protocol owns how that sourced cadence reaches the sentry process.
-Because `bin/sq-sentry.sh` reads `SQUAD_CHECK_INTERVAL` only at process start, a cadence transition - opt-in while a sentry is already running, or opt-out - is applied by restarting the home-scoped sentry through the emitted harness protocol; bootstrap deliberately never restarts the sentry itself.
+Because `bin/sq-sentry.sh` reads `SQUAD_CHECK_INTERVAL` only at process start, a cadence transition - opt-in while a sentry is already running, or opt-out - is applied by restarting the base-scoped sentry through the emitted harness protocol; bootstrap deliberately never restarts the sentry itself.
 While away mode is active the daemon owns the sentry and its default cadence applies; away-mode Relay cadence is a deferred follow-up.
 When the token is removed or empty, the next locked session-start bootstrap step removes those artifacts.
 Steady-state off is silent and writes nothing.
-Relay remains additive to non-Relay lifecycle behavior: homes without the generated artifacts keep the default sentry cadence and do not run the Relay poll.
+Relay remains additive to non-Relay lifecycle behavior: bases without the generated artifacts keep the default sentry cadence and do not run the Relay poll.
 Its request handling remains in Relay-specific `bin/` scripts and the `relay-respond` skill, while the sentry owns authenticated dispatch from the generated local identity shim.
 
 `bin/sq-x-poll.sh` calls `GET /connector/poll` with `Authorization: Bearer <SQX_PAIRING_TOKEN>`.
@@ -418,18 +418,18 @@ That promise is a typed `kind=public-followup` obligation owned entirely by `tas
 `bin/sq-public-followup.sh` is Squad's side: it registers a commitment, reconciles typed terminal work results into it, and posts the final reply through `bin/sq-x-reply.sh --followup`.
 Run `bin/sq-public-followup.sh --help` for the exact subcommands and flags.
 
-Registration is what creates this home's private transport under `state/public-followup/` (mode 0700): `registry/` for the bounded public-safe binding of each live commitment, `events/` for typed terminal results awaiting reconciliation, `consumed/` for the accepted-event ledger, `rejected/` for refusals kept with a one-line reason, and `surfaced` for the poll's last-surfaced signature.
-The home that owns the commitment also owns the outward post, because only it holds the relay consent, the request context, and the opaque thread binding.
-Work routed elsewhere reports a typed terminal result with `bin/sq-public-followup-emit.sh` and never looks for the thread; that emitter refuses to write into a home with no registration for the named obligation.
+Registration is what creates this base's private transport under `state/public-followup/` (mode 0700): `registry/` for the bounded public-safe binding of each live commitment, `events/` for typed terminal results awaiting reconciliation, `consumed/` for the accepted-event ledger, `rejected/` for refusals kept with a one-line reason, and `surfaced` for the poll's last-surfaced signature.
+The base that owns the commitment also owns the outward post, because only it holds the relay consent, the request context, and the opaque thread binding.
+Work routed elsewhere reports a typed terminal result with `bin/sq-public-followup-emit.sh` and never looks for the thread; that emitter refuses to write into a base with no registration for the named obligation.
 A terminal event's id is derived from its identity tuple, so a duplicate report, a retry, or a replay after restart resolves to the same event and changes nothing.
 
 Activation is the same `.env` `SQX_PAIRING_TOKEN` contract as the rest of Relay, with no second flag.
-A home without that token runs one file test and stops: no `tasks-axi` call, no backlog or request-context scan, and no `state/public-followup/` directory.
+A base without that token runs one file test and stops: no `tasks-axi` call, no backlog or request-context scan, and no `state/public-followup/` directory.
 Ordinary startup, polling, cleanup, and silent read-side subcommands also produce no output; commands that require an active relay report that configuration error after the same gate.
-A relay-enabled home with no registered commitment stops at an O(1) directory presence check, so the empty state costs no CLI call and adds no periodic scan.
+A relay-enabled base with no registered commitment stops at an O(1) directory presence check, so the empty state costs no CLI call and adds no periodic scan.
 Unreconciled terminal results ride the existing 30-second relay poll rather than a new process or timer: `bin/sq-x-poll.sh` compares the pending-event signature against `surfaced` and wakes Squad once per new result set.
-The session-start digest separately prints an "Public commitments awaiting delivery" subsection from disk when, and only when, this home is relay-active and still owes a reply, so compaction and restart are non-events.
-`bin/sq-teardown.sh` refuses to clean up a task while this home still owes a public reply for exactly that work, unless `--force` carries explicit discard approval.
+The session-start digest separately prints an "Public commitments awaiting delivery" subsection from disk when, and only when, this base is relay-active and still owes a reply, so compaction and restart are non-events.
+`bin/sq-teardown.sh` refuses to clean up a task while this base still owes a public reply for exactly that work, unless `--force` carries explicit discard approval.
 `SQUAD_PF_RETRY_BACKOFF_SECS` (default 900) sets the next-attempt time recorded with a retryable delivery error.
 See [verification/public-followup.md](verification/public-followup.md) for the current maintainer evidence behind the restart end-to-end and the relay-disabled zero-overhead guarantee.
 
@@ -446,8 +446,8 @@ Delivery is reported at most once per captured source and sequence while any rec
 A durable handled acknowledgement stops future re-announcement, while a record already queued remains under the durable queue's authority until the ordinary drain consumes it.
 
 Discovery is never a timer.
-Each registered source has its own child process blocking on that source, and the sentry's per-cycle `reconcile` republishes every captured result with no durable handled acknowledgement yet - regardless of any earlier publication - restarts a source whose owner is gone, and stops this home's runner when reconciliation runs after its registration disappeared unexpectedly.
-In supported steady state, a home with no registered source runs nothing, generates no state, and keeps its ordinary cadence.
+Each registered source has its own child process blocking on that source, and the sentry's per-cycle `reconcile` republishes every captured result with no durable handled acknowledgement yet - regardless of any earlier publication - restarts a source whose owner is gone, and stops this base's runner when reconciliation runs after its registration disappeared unexpectedly.
+In supported steady state, a base with no registered source runs nothing, generates no state, and keeps its ordinary cadence.
 
 Whether a captured result ends its source is adapter knowledge, never the runner's.
 After attempting publication the runner calls `bin/sq-procevent-<adapter>.sh terminal <result-file>` and retires the registration on exit 0 alone, dropping only the exact registration generation captured by its claim and releasing that claim only after removal succeeds under one source boundary; a missing command, an error, or any other exit keeps the source armed, so an adapter with no notion of ending needs no change.
@@ -455,15 +455,15 @@ A failed terminal removal stays durably terminal and is completed by ordinary re
 A source that has ended therefore captures at most one terminal result, is never restarted, and leaves no recurring poll work, while explicit `retire` stays the supported and idempotent path afterwards.
 For Lavish that verdict covers an ended session, a missing session, and the final feedback of a `Send & End` review, which the published poll marks with `session_ended` before it returns only empty ended sessions.
 
-Applying a captured result is adapter knowledge too, and some results carry no judgement at all: they must simply be applied idempotently to this home's own durable state.
+Applying a captured result is adapter knowledge too, and some results carry no judgement at all: they must simply be applied idempotently to this base's own durable state.
 Leaving that to a handler means it can silently not happen, so immediately after the terminal check above the runner calls `bin/sq-procevent-<adapter>.sh autohandle <source-id> <sequence> <result-file>` only when this capture's own wake was successfully appended to the durable queue, then lets the adapter apply and acknowledge its own result.
 That call runs strictly after terminal retirement, because a handling adapter re-arms its own next source and retiring afterwards would drop that fresh registration and leave the source silently dead.
 Failed publication skips the call, and exit 0 means the adapter fully applied and acknowledged the result; failed publication, a missing command, an error, or any other exit is not a capture failure but leaves the result unacknowledged and therefore still eligible for re-announcement, so a handler receives it exactly as before and an adapter with no such command needs no change.
 The remote-XO reply adapter implements it, so a captured reply reaches its local status mirror and settles its correlated pending-reply expectation without any handler step; the published wake still reaches Squad, and handling that wake through the adapter again is idempotent.
 
-Ownership is machine-wide per canonical source, because separate homes can share one underlying source store.
+Ownership is machine-wide per canonical source, because separate bases can share one underlying source store.
 Claims live under `$XDG_STATE_HOME/Squad/procevent-claims` (override with `SQUAD_PROCEVENT_CLAIM_ROOT`).
-Each claim binds its home and runner PID to a process identity, unique claim generation, and exact registration-file generation.
+Each claim binds its base and runner PID to a process identity, unique claim generation, and exact registration-file generation.
 Registration, acquisition, replacement, retirement, and generation-bound release are serialized at one machine-wide boundary per source.
 A live identity-matched owner is never displaced, and release removes only the exact generation the caller acquired.
 Retirement and orphan reconciliation signal a runner process group only while its recorded process identity still matches, or when the recorded leader is gone and only its own owned group survives.
@@ -471,13 +471,13 @@ A runner leads its own process group, so a claim counts as reclaimable only when
 If identity cannot be established for a live PID, or a surviving owned group cannot be proved stopped, the operation preserves the registration and claim for safe retry rather than adding a second owner.
 A live PID whose identity no longer matches is a reused PID, so it is treated as stale and its process group is never signalled.
 
-Supported XO retirement preflights each target home's bounded `sweep-home` command before destructive teardown, snapshots its registrations outside the target, then runs the sweep at that home's final deletion or return boundary.
+Supported XO retirement preflights each target base's bounded `sweep-home` command before destructive teardown, snapshots its registrations outside the target, then runs the sweep at that base's final deletion or return boundary.
 If deletion or return fails, teardown restores those registrations and reconciles them before returning the refusal.
 If restoration or rearming also fails, teardown returns a distinct status and reports the retained registration backup path for manual recovery instead of hiding the retired waits.
-The sweep retires local registrations and machine-wide claims physically owned by that home through the same identity-checked, generation-bound retirement path, and leaves foreign-home claims untouched.
-Teardown refuses with the home, lease, routing evidence, registrations, claims, and runners retained when identity is uncertain, ownership is unreadable or unreleased, or relevant state exists without a sweep-capable child script.
-Raw manual deletion of a Squad home is unsupported because it can orphan a blocking child.
-To recover, restore that home's tracked `bin/sq-procevent.sh`, run `SQUAD_HOME=<home> <home>/bin/sq-procevent.sh sweep-home`, then rerun the supported teardown.
+The sweep retires local registrations and machine-wide claims physically owned by that base through the same identity-checked, generation-bound retirement path, and leaves foreign-base claims untouched.
+Teardown refuses with the base, lease, routing evidence, registrations, claims, and runners retained when identity is uncertain, ownership is unreadable or unreleased, or relevant state exists without a sweep-capable child script.
+Raw manual deletion of a Squad base is unsupported because it can orphan a blocking child.
+To recover, restore that base's tracked `bin/sq-procevent.sh`, run `SQUAD_HOME=<home> <home>/bin/sq-procevent.sh sweep-home`, then rerun the supported teardown.
 
 `SQUAD_PROCEVENT_MAX_OUTPUT_BYTES` (default 1048576) bounds a single captured result while the source runs; oversized output is drained but truncated with a stderr notice rather than staged or published whole or dropped.
 

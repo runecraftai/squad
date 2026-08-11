@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Push declared inherited local material to live XO homes.
+# Push declared inherited local material to live XO bases.
 # Usage: sq-config-push.sh [--help]
 #
 # Mid-session convergence for inherited local material such as
 # config/crew-dispatch.json, config/backend, or data/commander-shared.md updates.
-# This discovers live XO homes from state/*.meta, backfills
+# This discovers live XO bases from state/*.meta, backfills
 # home= from data/XOs.md for older meta records, and reuses the same
 # propagation machinery as bootstrap, but deliberately does not
 # fast-forward tracked files.
-# After a successful per-home propagation that changes any allowlisted config/*
+# After a successful per-base propagation that changes any allowlisted config/*
 # item, local routes receive the generation-specific literal-content pointer from
 # sq-config-inherit-lib.sh. Remote routes receive one durable marked reread nudge
 # through their SSH route. Unchanged config and data/commander-shared.md-only
-# updates send no reread unless a previous send failure is pending for that home.
+# updates send no reread unless a previous send failure is pending for that base.
 # Warnings-only skips exit 0; real propagation or reread-send errors exit non-zero.
 set -u
 
@@ -20,24 +20,24 @@ usage() {
   cat <<'EOF'
 Usage: sq-config-push.sh [--help]
 
-Push the primary Squad home's declared inherited local material into each
-live XO home.
+Push the primary Squad base's declared inherited local material into each
+live XO base.
 
 This is local-material-only:
   - does not fast-forward tracked files
   - after successful config/* changes, sends a local literal-content pointer or
     one durable marked remote reread nudge
     (no message when config is unchanged unless a previous send failure is pending)
-  - reports each live home and each inheritable item as pushed, unchanged,
+  - reports each live base and each inheritable item as pushed, unchanged,
     skipped, or error
   - exits non-zero for real propagation errors or reread-send failures
 
-Live homes come from state/*.meta records with kind=xo.
+Live bases come from state/*.meta records with kind=xo.
 data/XOs.md is only a fallback for missing home= fields in older or
 incomplete meta records.
 
 Environment overrides follow the rest of Squad:
-  SQUAD_HOME            active Squad home
+  SQUAD_HOME            active Squad base
   SQUAD_ROOT_OVERRIDE  Squad repo root
   SQUAD_STATE_OVERRIDE state dir
   SQUAD_DATA_OVERRIDE  data dir

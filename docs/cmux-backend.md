@@ -67,7 +67,7 @@ The spawn refusal explains how to finish cmux setup or opt back into tmux.
 
 Each task owns one cmux workspace with one surface.
 The caller-facing label remains `sq-<id>`, while the visible workspace title is `sq-<home-label>-<id>`.
-The home label is `Squad` or `xo-<id>` plus a stable short hash of the resolved Squad root.
+The base label is `Squad` or `xo-<id>` plus a stable short hash of the resolved Squad root.
 cmux does not enforce title uniqueness, so create, recovery, list, and cleanup paths all validate this scoped title.
 Relocating the Squad installation changes the hash and leaves old titles unmatched, consistent with recorded worktree paths also becoming stale.
 
@@ -114,7 +114,7 @@ Real tests share the commander's running app rather than creating an isolated cm
 
 - cmux is experimental, macOS-only, GUI-first, and requires the app running.
 - Socket access requires a one-time manual Settings change.
-- XO spawns are unsupported until a per-home lifecycle design is verified.
+- XO spawns are unsupported until a per-base lifecycle design is verified.
 - There is no native busy or push-event signal.
 - A target can disappear after structural readiness and before the operation.
 - The only-workspace cleanup path leaves a fresh default workspace and cannot close the window.

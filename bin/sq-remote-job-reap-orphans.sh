@@ -20,7 +20,7 @@
 # and no healthy worker can present a missing root. The account's healthy
 # LaunchAgent worker, a live remote XO's worker, and any worker whose
 # checkout still exists are therefore never candidates, with no dependence on
-# log paths, process age, or which home is sweeping.
+# log paths, process age, or which base is sweeping.
 #
 # Only this user's processes are inspected, and this process, its own process
 # group, and any ancestor are never signalled. Each candidate is stopped through

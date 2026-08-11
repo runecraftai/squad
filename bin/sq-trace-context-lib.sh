@@ -31,7 +31,7 @@
 # Public entry points:
 #   fm_trace_context_session_start <config-dir> <effective-state-file>
 #     Resolves config/trace-context plus SQUAD_TRACE_CONTEXT once and atomically
-#     writes the normalized on/off decision bound to the locked home session.
+#     writes the normalized on/off decision bound to the locked base session.
 #   fm_trace_context_session_effective <effective-state-file>
 #     Echoes the normalized frozen decision only when its session binding matches
 #     the current lock, defaulting to off when the state is absent, stale, or invalid.
@@ -43,21 +43,21 @@
 #     fresh root is minted, never derived from this process's environment.
 #
 # Enablement (see docs/configuration.md for the schema):
-#   config/trace-context   presence flag under the home's config dir enables it.
+#   config/trace-context   presence flag under the base's config dir enables it.
 #   SQUAD_TRACE_CONTEXT        env override: 1/on/true/yes enables, any other
 #                           non-empty value disables, and unset OR empty defers
 #                           to the file.
-#   Each locked home session resolves these inputs once into
+#   Each locked base session resolves these inputs once into
 #   state/.trace-context-effective. The record is atomically published through a
 #   same-directory temporary file and bound to state/.lock; a failed publication
 #   cannot reactivate a stale on decision. Every spawn reads only that frozen
 #   on/off value, so later config and environment edits take effect only after a
-#   new home session starts.
+#   new base session starts.
 #   At launch, the primary propagates config/trace-context into the XO
-#   home (SQUAD_INHERITABLE_CONFIG in bin/sq-config-inherit-lib.sh) and passes its
+#   base (SQUAD_INHERITABLE_CONFIG in bin/sq-config-inherit-lib.sh) and passes its
 #   frozen on/off decision into the new process as a non-empty SQUAD_TRACE_CONTEXT
 #   value in the launch prefix (bin/sq-spawn.sh). The XO freezes that
-#   inherited decision when its own home session starts.
+#   inherited decision when its own base session starts.
 #   A REMOTE XO route resolves here too, in the PARENT process that owns
 #   that task's meta: sq-spawn's spawn_remote_XO resolves the carrier,
 #   hands it to the configured host through sq-spawn's --traceparent, and records
@@ -120,7 +120,7 @@ fm_trace_context_hex() {  # <byte-count>
   printf '%s' "$hex"
 }
 
-# True when the capability is enabled for this home. The env override wins so a
+# True when the capability is enabled for this base. The env override wins so a
 # spawn can be forced on or off without touching the file; otherwise the
 # presence of config/trace-context decides, and its absence is the default-off.
 fm_trace_context_enabled() {  # <config-dir>
@@ -137,7 +137,7 @@ fm_trace_context_enabled() {  # <config-dir>
   [ -f "$config_dir/trace-context" ]
 }
 
-# Echo the lock pid that owns the effective-state file's home, or fail when the
+# Echo the lock pid that owns the effective-state file's base, or fail when the
 # adjacent session lock is absent or malformed. Binding the decision to this
 # token makes a prior session's record inactive even if publication cannot
 # replace or remove that stale file.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Safe, home-scoped (re-)arm of the Squad sentry, with honest verification.
+# Safe, base-scoped (re-)arm of the Squad sentry, with honest verification.
 #
 # The sentry (bin/sq-sentry.sh) blocks until it has an actionable wake to
 # surface, then prints one reason line and exits. While state/.afk exists the
@@ -51,13 +51,13 @@
 # state/.sentry-triage.log remains exclusively the sentry's absorbed-wake debug
 # log and is never written here.
 #
-# --restart: stop ONLY this SQUAD_HOME's sentry (the pid recorded in THIS home's
+# --restart: stop ONLY this SQUAD_HOME's sentry (the pid recorded in THIS base's
 # state/.sentry.lock) and own a fresh cycle, or attach if a verified live peer
 # wins the singleton while the duplicate child stands down. It
-# resolves and signals exactly that pid, so it can never touch another home's
+# resolves and signals exactly that pid, so it can never touch another base's
 # sentry. NEVER `pkill -f
-# bin/sq-sentry.sh`: that pattern matches every Squad home's sentry
-# (XO homes run the same script) and would kill siblings.
+# bin/sq-sentry.sh`: that pattern matches every Squad base's sentry
+# (XO bases run the same script) and would kill siblings.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -234,7 +234,7 @@ clear_stale_recorded_sentry_lock() {
 }
 
 # A sentry is "healthy" iff the lock names a live process that is genuinely THIS
-# home's sentry (the identity match guards against a recycled/reused pid) AND the
+# base's sentry (the identity match guards against a recycled/reused pid) AND the
 # liveness beacon is fresh within GRACE. Sets HEALTHY_PID on success. This is the
 # single honesty gate: a dead pid, a reused pid, or a stale beacon all fail it, so
 # this script can never report a sentry that is not really there.
@@ -380,7 +380,7 @@ case "${1:-}" in
 esac
 
 if [ "$mode" = restart ]; then
-  # Home-scoped stop: only the sentry pid recorded in THIS home's lock.
+  # Base-scoped stop: only the sentry pid recorded in THIS base's lock.
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   if fm_pid_alive "$lock_pid"; then
     if fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$SQUAD_HOME"; then
@@ -402,7 +402,7 @@ fi
 # If a genuinely live+fresh sentry already holds the lock, do not start a second
 # one - attach to that cycle and wait until it ends so the harness notify fires
 # then, not as an immediate empty wake. (--restart skips this: it just stopped
-# this home's sentry and wants a fresh one.)
+# this base's sentry and wants a fresh one.)
 if [ "$mode" = arm ] && healthy_sentry; then
   cycle_mark_predecessor_successor "attached:$HEALTHY_PID"
   cycle_begin "$HEALTHY_PID" attached "$HEALTHY_IDENTITY"

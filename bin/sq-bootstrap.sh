@@ -22,20 +22,20 @@
 #          When a RUNNING local XO worktree is fast-forwarded to
 #          Squad's own current default-branch commit, that update is a
 #          purely local fast-forward and never an origin fetch. Remote routes
-#          instead converge the persistent home to their configured remote code
+#          instead converge the persistent base to their configured remote code
 #          root. If either placement changes its loaded instruction surface
 #          (AGENTS.md, bin/, or .agents/skills/), bootstrap immediately nudges it
-#          via SQUAD_HOME=<active-home> bin/sq-send.sh sq-<id> so meta resolves the
+#          via SQUAD_HOME=<active-base> bin/sq-send.sh sq-<id> so meta resolves the
 #          current route and the standard from-squad marker is applied. A
 #          successful send prints one BOOTSTRAP_INFO line with the exact target
 #          and message sent; a failed send leaves an idempotent retry marker
 #          under state/.XO-nudge-pending/ and prints an actionable
 #          NUDGE_XOS line.
-#          Already-current or no-instruction-change homes are silently left alone.
+#          Already-current or no-instruction-change bases are silently left alone.
 #          The XO sweep also propagates declared inherited local material
-#          into each validated live XO home.
+#          into each validated live XO base.
 #          XO_SYNC lines report actionable skipped placement-specific
-#          syncs or inheritance failures for live XO homes, plus
+#          syncs or inheritance failures for live XO bases, plus
 #          quarantine diagnostics for divergent shared commander-preference
 #          copies; no-op/current and successful updates stay quiet.
 #          XO_LIVENESS lines report only actionable failures from the
@@ -62,9 +62,9 @@
 #          quota-axi is required for the agent-owned dispatch-profile array
 #          procedure in AGENTS.md section 4 and
 #          .agents/skills/quota-array-dispatch/SKILL.md.
-#          On a primary home, the locked mutable path materializes the visible
+#          On a primary base, the locked mutable path materializes the visible
 #          default config/startup-memory-budget=7500 when absent. It never
-#          guesses at malformed or unsafe existing files, and XO homes
+#          guesses at malformed or unsafe existing files, and XO bases
 #          await the primary-authoritative inherited value instead of creating
 #          their own.
 #          X mode is OPTIONAL and inert unless SQUAD_HOME/.env has a non-empty
@@ -87,7 +87,7 @@
 #          checkout command. Used by
 #          sq-session-start.sh's read-only path when another live session holds
 #          the unit lock, so a second concurrent session never race-mutates
-#          PR-check artifacts, XO homes, pending handoff outboxes,
+#          PR-check artifacts, XO bases, pending handoff outboxes,
 #          X-mode artifacts, project clones, or repair instructions.
 #          Unset/0 (the default) runs every sweep exactly as before - this flag
 #          is purely additive.
@@ -269,9 +269,9 @@ fleet_sync() {
 XO_sync() {
   # shellcheck source=bin/sq-stand-to-lib.sh disable=SC1091
   . "$SCRIPT_DIR/sq-stand-to-lib.sh"
-  # Placement-specific XO sync: local homes fast-forward to the primary
+  # Placement-specific XO sync: local bases fast-forward to the primary
   # checkout's current default-branch commit. That path is purely LOCAL - no
-  # fetch, no origin dependency: a linked-worktree home already holds the primary's
+  # fetch, no origin dependency: a linked-worktree base already holds the primary's
   # commit (sq-ff-lib.sh), while a standalone clone without it is skipped until
   # /updatesquad refreshes it from origin. Startup sends reread nudges only
   # for RUNNING XOs whose instruction surface (AGENTS.md, bin/, or
@@ -414,11 +414,11 @@ XO_sync() {
   rm -f "$tmp"
   unset -f fm_ff_after_instruction_update
   # Inheritance propagation: push the primary-authoritative local inheritance
-  # surface into every VALIDATED live XO home swept above.
+  # surface into every VALIDATED live XO base swept above.
   # FF_SEEN_HOMES is exactly that set, and sq-config-inherit-lib.sh owns the
   # declared config items plus data/commander-shared.md.
   # After a successful push that changes allowlisted config/* for an already-
-  # running home, send its literal-content reread instruction pointer so the
+  # running base, send its literal-content reread instruction pointer so the
   # live agent does not keep applying stale defaults. Spawn/respawn already
   # re-reads at launch and needs no redundant nudge unless files changed after launch.
   local id home home_real home_lock propagated_homes report reread_out reread_skip_pending
@@ -580,7 +580,7 @@ XO_liveness_sweep() {
   # adding the missing-session path the original bare-shell and Herdr-husk sweep
   # lacked.
   # A meta with no window remains owned by xo-provisioning recovery.
-  # XO homes never contain kind=xo meta, so this is naturally a
+  # XO bases never contain kind=xo meta, so this is naturally a
   # primary-only no-op there. Mid-session liveness remains explicitly out of
   # scope and requires a separate periodic signal.
   [ -d "$STATE" ] || return 0
@@ -777,8 +777,8 @@ missing_tool_diagnostic() {
 }
 
 # Required-tool detection follows the RESOLVED backend, not a one-size default:
-# a universal toolchain every home needs plus the backend-specific delta owned by
-# fm_backend_required_tools (bin/sq-backend.sh). So a herdr/zellij/cmux home is
+# a universal toolchain every base needs plus the backend-specific delta owned by
+# fm_backend_required_tools (bin/sq-backend.sh). So a herdr/zellij/cmux base is
 # never told tmux is missing, and only orca drops fob. A backend value with
 # no verified dependency set is reported before the universal checks continue.
 COMMON_TOOLS="node git gh drill sq-gh sq-browser sq-report sq-quota sq-tasks"
@@ -881,7 +881,7 @@ x_mode_remove_artifact() {
   ! x_mode_artifact_present "$artifact"
 }
 
-# X mode (opt-in): when this home's .env carries a non-empty SQX_PAIRING_TOKEN,
+# X mode (opt-in): when this base's .env carries a non-empty SQX_PAIRING_TOKEN,
 # wire the relay poll into the existing authenticated sentry dispatch.
 # Drops two idempotent, gitignored artifacts:
 #   state/x-sentry.check.sh - byte-static identity shim; the sentry validates
@@ -1141,7 +1141,7 @@ detect_local_tools() {
   done
   # The fob lease-support upgrade check is only relevant when the resolved
   # backend actually requires fob (every backend except orca, which owns its
-  # own worktrees); an orca home must not be told to upgrade a provider it never uses.
+  # own worktrees); an orca base must not be told to upgrade a provider it never uses.
   if fm_backend_list_contains "$TOOLS" fob \
     && command -v fob >/dev/null 2>&1 && ! fob_supports_lease; then
     echo "MISSING: fob (install: $(install_cmd fob))"
@@ -1166,7 +1166,7 @@ detect_local_tools() {
 detect_local_config() {
   # Worktree-tangle check: the Squad primary checkout (SQUAD_ROOT) must sit on its
   # default branch, not a feature branch (see sq-tangle-lib.sh). Scoped to the
-  # primary only; detached-HEAD worktrees and XO homes never trip it.
+  # primary only; detached-HEAD worktrees and XO bases never trip it.
   tangle_branch=$(fm_primary_tangle_branch "$SQUAD_ROOT" 2>/dev/null || true)
   if [ -n "$tangle_branch" ]; then
     tangle_default=$(fm_default_branch "$SQUAD_ROOT" 2>/dev/null || echo main)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared session-lock harness identity.
 #
-# ONE owner of the "which verified-harness process holds this home's session
+# ONE owner of the "which verified-harness process holds this base's session
 # lock, and does the current process descend from that same harness?" decision.
 # bin/sq-lock.sh uses it to acquire and inspect state/.lock;
 # bin/sq-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
@@ -140,7 +140,7 @@ fm_harness_pid_alive() {
 
 # True when state dir $1 holds a session lock whose pid is ANY harness ancestor
 # of the current process: this script runs inside the session that owns the
-# home's unit lock. Membership is the honest test of that question, because the
+# base's unit lock. Membership is the honest test of that question, because the
 # lock owner sits at an unknown depth in a contiguous Claude run - it is the
 # outermost pid when the hook fires inside the session's own nested worker chain,
 # and an inner pid when a harness-named daemon parents the session. A missing

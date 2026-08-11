@@ -2,7 +2,7 @@
 # One short-poll of the relay connector for a pending X-mode mention.
 #
 # Inert by default: a HARD no-op (exit 0, no output) unless X mode is configured
-# via a non-empty SQX_PAIRING_TOKEN (from the home's .env or the environment).
+# via a non-empty SQX_PAIRING_TOKEN (from the base's .env or the environment).
 # The sentry invokes this trusted repository script directly only after
 # state/x-sentry.check.sh matches the expected byte-static identity shim.
 # Its contract is "output => wake Squad, silence => keep sleeping", so the
@@ -22,16 +22,16 @@
 #       reply is surfaced through this same wake path
 #
 # The public-followup line rides here rather than on a new poll of its own: this
-# check only exists in a home that opted into the relay, and it is an O(1)
+# check only exists in a base that opted into the relay, and it is an O(1)
 # directory presence test plus a signature compare, with no tasks-axi call and no
-# backlog scan. A home with no pending terminal results pays nothing for it.
+# backlog scan. A base with no pending terminal results pays nothing for it.
 # The full object is stashed verbatim, so any conversation context the relay
 # includes (in_reply_to: {author_handle, text}, null for a fresh mention) is
 # preserved for relay-respond to handle follow-ups with continuity. The durable
 # context record lets a delayed follow-up recover the ORIGINAL platform/budget
 # even after this inbox file is drained.
 #
-# Config (home .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN (required),
+# Config (base .env, SQX_ENV_FILE, or env): SQX_PAIRING_TOKEN (required),
 # SQX_RELAY_URL (default https://mySquad.io). Auth: Authorization: Bearer
 # <token>.
 set -u

@@ -10,7 +10,7 @@ Each adapter starts the next arm before delivering the wake prompt, checks curre
 A failed follow-up never cancels continuity restoration.
 Pi same-process session replacement follows the generation-owner contract in `.pi/extensions/sq-primary-pi-watch.ts`.
 Claude's `.claude/settings.json` Stop `asyncRewake` hook (`bin/sq-claude-stop-autoarm.sh`) owns routine tokenless re-arm.
-The hook fires on every Stop, and an eligible primary with supervision need admits one home-scoped owner that foregrounds `bin/sq-sentry-arm.sh` inside the hook-owned process tree.
+The hook fires on every Stop, and an eligible primary with supervision need admits one base-scoped owner that foregrounds `bin/sq-sentry-arm.sh` inside the hook-owned process tree.
 A numeric session-lock owner that fails the shared `fm_harness_pid_alive` predicate is reclaimed through `bin/sq-lock.sh` before auto-arm state changes, while a live owner, absent lock, or malformed lock keeps the competing hook inert.
 The stale-owner claim occurs only after the existing AFK and supervision-need gates pass.
 After each non-actionable arm close, the hook rechecks the identity-matched sentry lock and fresh beacon before retrying a bounded number of times.
@@ -44,7 +44,7 @@ The turn-end guard remains the final backstop rather than the normal continuity 
 
 `bin/sq-sentry-arm.sh` never returns a clean empty success.
 An actionable child output returns that reason normally.
-A zero/empty child return rechecks the home lock and beacon, attaches to a verified healthy successor when one exists, or resolves the close against the sentry's bounded terminal-delivery ledger.
+A zero/empty child return rechecks the base lock and beacon, attaches to a verified healthy successor when one exists, or resolves the close against the sentry's bounded terminal-delivery ledger.
 An attached arm follows verified identity-matched successors and resolves the same way when that chain ends without one, because it holds no handle on the sentry's stdout and cannot read the reason line itself.
 Before releasing its singleton lock after printing an actionable reason, the sentry records that reason with its PID and process identity in `state/.watch-deliveries.log`.
 A matching PID and identity lets an attached arm report the delivered reason and exit zero even after the durable stand-to queue was drained, while an unrelated queue producer or a recycled PID cannot satisfy the match.
