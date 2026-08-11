@@ -301,7 +301,7 @@ fob --lease support is accepted silently^1^0.2.4^1^manual^empty^^
 fob without --lease reports an upgrade, gh auth is fine^0^0.2.4^1^-^grep^MISSING: fob (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder)^NEEDS_GH_AUTH
 compatible tasks-axi is silent by default^1^0.2.4^1^-^empty^^
 missing tasks-axi is required by default^1^-^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
-incompatible tasks-axi is required by default^1^0.1.0^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
+incompatible tasks-axi is required by default^1^0.0.9^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
 tasks-axi without archive-body is required by default^1^0.2.4:noarchive^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
 tasks-axi without multi-id mv is required by default^1^0.2.4:nomulti^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
 missing quota-axi is required by default^1^0.2.4^0^manual^exact^MISSING: sq-quota (install: (cd packages/sq-quota && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-quota)^
@@ -361,12 +361,12 @@ test_gh_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum gh-axi version is accepted^0.1.30^empty
+minimum gh-axi version is accepted^0.1.0^empty
 newer gh-axi patch is accepted^0.1.31^empty
 newer gh-axi minor is accepted^0.2.0^empty
 newer gh-axi major is accepted^1.0.0^empty
-older gh-axi patch reports an upgrade^0.1.29^missing
-much older gh-axi minor reports an upgrade^0.0.9^missing
+older gh-axi patch reports an upgrade^0.0.9^missing
+much older gh-axi minor reports an upgrade^0.0.1^missing
 unparseable gh-axi version reports an upgrade^gh-axi development build^missing
 ROWS
   pass "bootstrap enforces gh-axi minimum version"
@@ -392,12 +392,12 @@ test_lavish_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum lavish-axi version is accepted^0.1.48^empty
+minimum lavish-axi version is accepted^0.1.0^empty
 newer lavish-axi patch is accepted^0.1.49^empty
 newer lavish-axi minor is accepted^0.2.0^empty
 newer lavish-axi major is accepted^1.0.0^empty
-the patch just below the floor reports an upgrade^0.1.47^missing
-much older lavish-axi minor reports an upgrade^0.0.9^missing
+below the floor reports an upgrade^0.0.9^missing
+much older lavish-axi minor reports an upgrade^0.0.1^missing
 unparseable lavish-axi version reports an upgrade^lavish-axi development build^missing
 ROWS
   pass "bootstrap enforces lavish-axi minimum version"
@@ -438,15 +438,15 @@ test_tasks_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum tasks-axi version is accepted^0.2.4^empty
+minimum tasks-axi version is accepted^0.1.0^empty
 newer tasks-axi patch is accepted^0.2.5^empty
 newer tasks-axi minor is accepted^0.3.0^empty
 newer tasks-axi major is accepted^1.0.0^empty
-older tasks-axi with features reports an upgrade^0.1.1^missing
-the patch just below the floor reports an upgrade^0.2.3^missing
+older tasks-axi with features reports an upgrade^0.0.9^missing
+below the floor reports an upgrade^0.0.1^missing
 unparseable tasks-axi version reports an upgrade^tasks-axi development build^missing
-tasks-axi at floor without archive-body reports an upgrade^0.2.4:noarchive^missing
-tasks-axi at floor without multi-id reports an upgrade^0.2.4:nomulti^missing
+tasks-axi at floor without archive-body reports an upgrade^0.1.0:noarchive^missing
+tasks-axi at floor without multi-id reports an upgrade^0.1.0:nomulti^missing
 ROWS
   pass "bootstrap enforces tasks-axi minimum version"
 }
@@ -473,12 +473,12 @@ test_quota_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum quota-axi version is accepted^0.1.20^empty
+minimum quota-axi version is accepted^0.1.0^empty
 newer quota-axi patch is accepted^0.1.21^empty
 newer quota-axi minor is accepted^0.2.0^empty
 newer quota-axi major is accepted^1.0.0^empty
-the patch just below the floor reports an upgrade^0.1.19^missing
-much older quota-axi minor reports an upgrade^0.0.9^missing
+below the floor reports an upgrade^0.0.9^missing
+much older quota-axi minor reports an upgrade^0.0.1^missing
 unparseable quota-axi version reports an upgrade^quota-axi development build^missing
 ROWS
   pass "bootstrap enforces quota-axi minimum version"

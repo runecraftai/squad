@@ -34,7 +34,7 @@
 # Both layers are bounded by process lifetime, so a tasks-axi install or upgrade
 # is picked up by the next process rather than being cached to disk.
 
-SQUAD_TASKS_AXI_MIN=0.2.4
+SQUAD_TASKS_AXI_MIN=0.1.0
 
 # Resolve the tasks-axi backend command: the forked sq-tasks (M2,
 # T-M2-04) wins when installed; otherwise the legacy tasks-axi name is used
