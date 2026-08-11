@@ -29,7 +29,7 @@ Every `opened` or `edited` event gets an independent run, including first-time-f
 6. Run `drill` to attach to the pipeline, watch findings, and auto-fix or review as needed.
 7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against the parent repo for you.
 
-See the [quick start](https://squad.example/drill/start-here/quick-start/) for the full first-run walkthrough.
+See the [quick start](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/quick-start.md) for the full first-run walkthrough.
 
 ## Repo conventions
 

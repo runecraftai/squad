@@ -16,10 +16,6 @@
 
 <p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
 
-<p align="center">
-  <!-- demo assets: see Squad release assets (OQ-03 placeholder) -->
-</p>
-
 `drill` 在你真实的远端前面放了一个本地 git 代理。
 把分支推给 `drill` 而不是 `origin`，它会拉起一个用完即弃的 worktree，跑一条 AI 驱动的校验流水线，**只有每一项检查都通过后**才把分支转发到配置的推送目标，并自动开出一个干净的 PR。
 
@@ -29,7 +25,7 @@
 - **人始终说了算** —— 自动修复，还是逐条审查 findings，你决定。
 - **默认就是干净 PR** —— 推送、开 PR、盯 CI、自动修复失败，一气呵成。
 
-完整文档：<https://squad.example/drill/>
+完整文档：<https://github.com/runecraftai/squad/tree/main/packages/drill/docs>
 
 ## 工作原理
 
@@ -53,10 +49,10 @@
 ## 安装
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/docs/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/packages/drill/docs/install.sh | sh
 ```
 
-Windows、Go install 以及从源码构建的说明，见[安装指南](https://squad.example/drill/start-here/installation/)。
+Windows、Go install 以及从源码构建的说明，见[安装指南](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/installation.md)。
 
 ## 快速上手
 
@@ -102,7 +98,7 @@ $ drill
 
 `drill init` 会为 Claude Code 及其他 agent 安装 `/drill` skill。底层上这个 skill 驱动的是 `drill axi` —— 同一套审批流程的非交互式 TOON 接口。
 
-完整的首次运行走查见[快速上手](https://squad.example/drill/start-here/quick-start/)。
+完整的首次运行走查见[快速上手](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/quick-start.md)。
 
 ## 开发
 

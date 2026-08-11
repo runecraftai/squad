@@ -28,7 +28,7 @@ The release and dependency bots are exempt so their automation keeps working, bu
 6. Run `drill` to attach to the pipeline, watch findings, and auto-fix or review as needed.
 7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against this parent repo for you.
 
-See the [drill quick start](https://squad.example/drill/start-here/quick-start/) for the full first-run walkthrough.
+See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/quick-start.md) for the full first-run walkthrough.
 
 ## Repo Conventions
 
