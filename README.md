@@ -140,6 +140,21 @@ Squad's skills live in two separate places with different audiences:
 - `.agents/skills/` - agent-loaded skills (the table above, plus Squad's agent-only reference skills). Every one assumes a live Squad home and is meaningless - or actively misleading - installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how Squad itself loads them.
 - `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of Squad. Today that is `skills/debrief`, a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.debrief-notes.md` fallback in the current directory. It intentionally shares no code with the Squad-internal `.agents/skills/debrief` it is named after, so the two can evolve independently.
 
+## Packages
+
+Squad's tooling ships as standalone packages under `packages/`, each with its own README.
+
+| Package    | What it does                                                                                                        | README                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| drill      | A git push proxy that runs an AI-driven validation pipeline in a disposable worktree and opens a clean PR once every check passes | [README](packages/drill/README.md)   |
+| fob        | Manages a pool of reusable, isolated git worktrees so each agent gets a clean environment instantly                  | [README](packages/fob/README.md)             |
+| pr-review  | Runs parallel, tiered code review of GitHub pull requests with validated findings and a severity verdict              | [README](packages/pr-review/README.md)       |
+| sq-tasks   | Task and backlog manager for agents that edits a hand-editable markdown backlog in place at near-zero token cost     | [README](packages/sq-tasks/README.md)        |
+| sq-gh      | GitHub CLI wrapper for agents with token-efficient output, next-step suggestions, and structured errors              | [README](packages/sq-gh/README.md)           |
+| sq-browser | Agent-ergonomic browser automation that wraps chrome-devtools-mcp with a token-efficient CLI                        | [README](packages/sq-browser/README.md)      |
+| sq-quota   | Reports local Claude, Codex, Cursor, GitHub Copilot, Grok, and Kimi quota windows in one data-only call              | [README](packages/sq-quota/README.md)        |
+| sq-report  | Opens agent-generated HTML in a local browser editor so you can annotate elements and send feedback to the agent    | [README](packages/sq-report/README.md)       |
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) - maintainer architecture for the squad, supervision, worktrees, XOs, and project modes.
