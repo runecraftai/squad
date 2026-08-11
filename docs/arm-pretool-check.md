@@ -99,7 +99,7 @@ Approved setup nodes are:
 - `source <x-mode path>` or `. <x-mode path>`.
 - `[ -f <x-mode path> ] && source <x-mode path>` and the equivalent dot form.
 
-The allowed x-mode paths are `config/x-mode.env`, `./config/x-mode.env`, and an absolute path that normalizes to `<active-Squad-home>/config/x-mode.env`.
+The allowed x-mode paths are `config/x-mode.env`, `./config/x-mode.env`, and an absolute path that normalizes to `<active-Squad-base>/config/x-mode.env`.
 An absolute x-mode path outside the active base is not an approved setup node.
 
 Approved nodes may be separated by `;`, a real newline, or `&&`.

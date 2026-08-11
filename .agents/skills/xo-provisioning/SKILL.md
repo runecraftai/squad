@@ -129,7 +129,7 @@ For a local base, after each successful allowlisted config write, both the locke
 Each changed path is printed with clear begin/end delimiters and the destination file's full exact new bytes unparsed, or the explicit token `ABSENT` when propagation removed the destination copy.
 The instruction uses only minimal framing that these are defaults/rules and do not remove judgment; it never includes SHA values, selected profiles, parsed summaries, or any other generated interpretation.
 `data/commander-shared.md` is not a config file and is never inlined into this instruction file or message.
-Homes whose allowlisted config files were all unchanged receive no config-reread message when no retry is pending.
+Bases whose allowlisted config files were all unchanged receive no config-reread message when no retry is pending.
 Different bases may receive different changed-file sets based on their pre-push destination bytes.
 Delivery uses the existing routed XO path (`sq-send`) with only a single-line `CONFIG_REREAD: <absolute generation-specific instruction path>` pointer; a failed instruction publication retains the generated exact bytes in a bounded private retry queue when possible, legacy retry reports remain recoverable, a failed publication or retry-marker write retains the exact generation until it can be delivered, a failed send records a per-generation durable retry marker when possible, and all failures surface a concrete `CONFIG_REREAD:` diagnostic without claiming the live agent already re-read the values.
 The propagation, generation publication, and pointer-delivery sequence holds one per-base inheritance lock, so concurrent mid-session pushes cannot deliver an older generation after a newer one.
