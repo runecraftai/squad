@@ -1332,7 +1332,7 @@ writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, "999999\n");
 await hooks.event(event);
 // The idle event arms asynchronously; await the shared coordinator path so the
 // foreign-lock decision is settled before the lock is rewritten. This removes
-// any wall-clock dependence on how long the plugin's git/ps checks take.
+// any wall-clock dependence on how long the plugin takes for git/ps checks.
 if ((await globalThis.__SquadOpenCodeWatchArm.ensureArmed("session-test", client)) !== "read-only") {
   console.error("watch arm did not decline a foreign session lock");
   process.exit(1);
