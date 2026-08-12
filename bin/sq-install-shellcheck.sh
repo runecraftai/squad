@@ -25,7 +25,13 @@ trap 'rm -rf "$TMP"' EXIT
 # itself with bounded exponential backoff (2, 4, 8, 16s), and the outer loop
 # adds a second, wider retry horizon with jitter so parallel CI shards do not
 # re-hit the CDN in lockstep.
-DOWNLOAD_ATTEMPTS=4
+#
+# Regression: on 2026-08-12 CI burned the whole then-43s budget on a release-CDN
+# 503 storm (every request of all four attempts returned 503) and the install
+# step failed outright. The outer horizon now spans about five minutes with
+# exponential backoff capped at 60s plus jitter, so a multi-minute CDN outage
+# is ridden out instead of failing the job.
+DOWNLOAD_ATTEMPTS=8
 download_attempt=1
 while ! curl -fsSL --retry 4 --retry-all-errors --retry-connrefused \
     --retry-delay 2 --connect-timeout 15 --max-time 120 \
@@ -35,8 +41,11 @@ while ! curl -fsSL --retry 4 --retry-all-errors --retry-connrefused \
     exit 1
   }
   printf 'sq-install-shellcheck.sh: download attempt %s failed; retrying\n' "$download_attempt" >&2
-  # Exponential backoff with jitter: 1-3s, 2-4s, 4-6s, then 8-10s.
-  sleep "$((2 ** (download_attempt - 1) + RANDOM % 3))"
+  # Exponential backoff with jitter, capped at 60s: 4-8s, 8-12s, 16-20s,
+  # 32-36s, then 60-64s per wait, so a long outage costs bounded CI time.
+  sleep_secs=$((2 ** (download_attempt + 1) + RANDOM % 5))
+  [ "$sleep_secs" -le 60 ] || sleep_secs=60
+  sleep "$sleep_secs"
   download_attempt=$((download_attempt + 1))
 done
 ACTUAL_SHA256=$(sha256sum "$TMP/$ARCHIVE" | awk '{print $1}')

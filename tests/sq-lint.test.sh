@@ -356,6 +356,66 @@ SH
   pass "ShellCheck installer rides out a burst of transient download failures"
 }
 
+test_installer_rides_out_a_503_storm() {
+  # Regression: on 2026-08-12 CI hit a release-CDN 503 storm that outlasted the
+  # then-4-attempt budget (~43s of wall time) and the install step failed
+  # outright. Six consecutive HTTP-503-equivalent failures (curl exit 22 under
+  # -f) must still land the pinned binary on attempt 7.
+  local tmp fakebin destination out
+  tmp=$(fm_test_tmproot sq-shellcheck-503)
+  fakebin=$(fm_fakebin "$tmp")
+  destination="$tmp/bin"
+
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+count=0
+[ ! -f "$CURL_COUNT" ] || count=$(cat "$CURL_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" > "$CURL_COUNT"
+[ "$count" -gt 6 ] || exit 22
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    : > "$2"
+    exit 0
+  fi
+  shift
+done
+exit 2
+SH
+  cat > "$fakebin/sha256sum" <<'SH'
+#!/usr/bin/env bash
+printf '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  %s\n' "$1"
+SH
+  cat > "$fakebin/tar" <<'SH'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-C" ]; then
+    mkdir -p "$2/shellcheck-v0.11.0"
+    cat > "$2/shellcheck-v0.11.0/shellcheck" <<'EOF'
+#!/usr/bin/env bash
+printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+EOF
+    chmod +x "$2/shellcheck-v0.11.0/shellcheck"
+    exit 0
+  fi
+  shift
+done
+exit 2
+SH
+  cat > "$fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fakebin/curl" "$fakebin/sha256sum" "$fakebin/tar" "$fakebin/sleep"
+
+  out=$(CURL_COUNT="$tmp/curl-count" PATH="$fakebin:$PATH" "$INSTALLER" "$destination" 2>&1) \
+    || fail "installer gave up under a release-CDN 503 storm"$'\n'"$out"
+  [ "$(cat "$tmp/curl-count")" -eq 7 ] || fail "installer did not keep retrying through the 503 storm"
+  assert_contains "$out" "download attempt 6 failed; retrying" "installer did not disclose retry 6"
+  [ -x "$destination/shellcheck" ] || fail "installer did not install ShellCheck after the 503 storm"
+  pass "ShellCheck installer rides out a release-CDN 503 storm"
+}
+
 test_installer_asks_curl_to_retry_transient_errors() {
   # The burst regression only works because curl itself is told to retry
   # non-fatal transfer errors; assert the flags that enable it survive.
@@ -743,6 +803,7 @@ test_list_files_reports_the_shell_inventory
 test_pins_an_explicit_version
 test_installer_retries_transient_download_failure
 test_installer_rides_out_a_burst_of_transient_failures
+test_installer_rides_out_a_503_storm
 test_installer_asks_curl_to_retry_transient_errors
 test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
