@@ -20,21 +20,23 @@ DESTINATION=${1:?usage: sq-install-shellcheck.sh <destination-directory>}
 TMP=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sq-shellcheck.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
-# GitHub release downloads transiently return 503 under load (observed on CI:
-# three consecutive 503s within four seconds). curl's own --retry absorbs short
-# lived HTTP failures inside one invocation, and the outer loop below keeps
-# trying across longer outages with exponential backoff; both stay bounded so
-# the step cannot hang forever.
-DOWNLOAD_ATTEMPTS=6
+# The release CDN intermittently drops mid-transfer connections (curl error 56
+# after its own five reconnect tries). curl retries those transient failures
+# itself with bounded exponential backoff (2, 4, 8, 16s), and the outer loop
+# adds a second, wider retry horizon with jitter so parallel CI shards do not
+# re-hit the CDN in lockstep.
+DOWNLOAD_ATTEMPTS=4
 download_attempt=1
-while ! curl -fsSL --retry 3 --retry-delay 3 --connect-timeout 15 --max-time 120 \
-  "$URL" -o "$TMP/$ARCHIVE"; do
+while ! curl -fsSL --retry 4 --retry-all-errors --retry-connrefused \
+    --retry-delay 2 --connect-timeout 15 --max-time 120 \
+    "$URL" -o "$TMP/$ARCHIVE"; do
   [ "$download_attempt" -lt "$DOWNLOAD_ATTEMPTS" ] || {
     printf 'sq-install-shellcheck.sh: download failed after %s attempts\n' "$DOWNLOAD_ATTEMPTS" >&2
     exit 1
   }
   printf 'sq-install-shellcheck.sh: download attempt %s failed; retrying\n' "$download_attempt" >&2
-  sleep $((2 ** download_attempt))
+  # Exponential backoff with jitter: 1-3s, 2-4s, 4-6s, then 8-10s.
+  sleep "$((2 ** (download_attempt - 1) + RANDOM % 3))"
   download_attempt=$((download_attempt + 1))
 done
 ACTUAL_SHA256=$(sha256sum "$TMP/$ARCHIVE" | awk '{print $1}')

@@ -295,14 +295,14 @@ SH
   pass "ShellCheck installer retries a transient download failure"
 }
 
-# Regression: CI observed a sustained GitHub release outage (three consecutive
-# HTTP 503s within four seconds) that the old 3-attempt budget gave up on, so
-# the pinned ShellCheck step failed before any test ran. The installer must
-# survive the same sustained outage and still install the pinned build once
-# the source recovers. curl exits 22 on a 503 under -f, matching the CI log.
-test_installer_survives_sustained_outage() {
+test_installer_rides_out_a_burst_of_transient_failures() {
+  # Regression: CI hit three consecutive `curl: (56) Connection died` failures
+  # on the release CDN and the old 3-attempt budget gave up after ~4 seconds.
+  # The installer must survive a burst of transient failures and still land
+  # the pinned binary, and it must ask curl itself to retry (--retry-all-errors
+  # is what makes error 56 count as transient, not fatal).
   local tmp fakebin destination out
-  tmp=$(fm_test_tmproot sq-shellcheck-outage)
+  tmp=$(fm_test_tmproot sq-shellcheck-burst)
   fakebin=$(fm_fakebin "$tmp")
   destination="$tmp/bin"
 
@@ -312,7 +312,7 @@ count=0
 [ ! -f "$CURL_COUNT" ] || count=$(cat "$CURL_COUNT")
 count=$((count + 1))
 printf '%s\n' "$count" > "$CURL_COUNT"
-[ "$count" -gt 3 ] || exit 22
+[ "$count" -gt 3 ] || exit 35
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then
     : > "$2"
@@ -349,11 +349,70 @@ SH
   chmod +x "$fakebin/curl" "$fakebin/sha256sum" "$fakebin/tar" "$fakebin/sleep"
 
   out=$(CURL_COUNT="$tmp/curl-count" PATH="$fakebin:$PATH" "$INSTALLER" "$destination" 2>&1) \
-    || fail "installer did not survive a sustained download outage"$'\n'"$out"
-  [ "$(cat "$tmp/curl-count")" -eq 4 ] || fail "installer gave up before the outage ended"
-  assert_contains "$out" "download attempt 3 failed; retrying" "installer did not disclose the later retries"
-  [ -x "$destination/shellcheck" ] || fail "installer did not install ShellCheck after the outage"
-  pass "ShellCheck installer survives a sustained download outage"
+    || fail "installer gave up under a burst of transient download failures"$'\n'"$out"
+  [ "$(cat "$tmp/curl-count")" -eq 4 ] || fail "installer did not keep retrying through the failure burst"
+  assert_contains "$out" "download attempt 3 failed; retrying" "installer did not disclose retry 3"
+  [ -x "$destination/shellcheck" ] || fail "installer did not install ShellCheck after the burst"
+  pass "ShellCheck installer rides out a burst of transient download failures"
+}
+
+test_installer_asks_curl_to_retry_transient_errors() {
+  # The burst regression only works because curl itself is told to retry
+  # non-fatal transfer errors; assert the flags that enable it survive.
+  local tmp fakebin destination out
+  tmp=$(fm_test_tmproot sq-shellcheck-flags)
+  fakebin=$(fm_fakebin "$tmp")
+  destination="$tmp/bin"
+
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CURL_FLAGS"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    : > "$2"
+    exit 0
+  fi
+  shift
+done
+exit 2
+SH
+  cat > "$fakebin/sha256sum" <<'SH'
+#!/usr/bin/env bash
+printf '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  %s\n' "$1"
+SH
+  cat > "$fakebin/tar" <<'SH'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-C" ]; then
+    mkdir -p "$2/shellcheck-v0.11.0"
+    cat > "$2/shellcheck-v0.11.0/shellcheck" <<'EOF'
+#!/usr/bin/env bash
+printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+EOF
+    chmod +x "$2/shellcheck-v0.11.0/shellcheck"
+    exit 0
+  fi
+  shift
+done
+exit 2
+SH
+  cat > "$fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fakebin/curl" "$fakebin/sha256sum" "$fakebin/tar" "$fakebin/sleep"
+
+  out=$(CURL_COUNT="$tmp/curl-count" CURL_FLAGS="$tmp/curl-flags" PATH="$fakebin:$PATH" \
+    "$INSTALLER" "$destination" 2>&1) \
+    || fail "installer failed under the recorded-flag stub"$'\n'"$out"
+  grep -Fxq -- '--retry-all-errors' "$tmp/curl-flags" \
+    || fail "installer did not ask curl to retry all transient errors"$'\n'"flags: $(cat "$tmp/curl-flags")"
+  grep -Fxq -- '--retry' "$tmp/curl-flags" \
+    || fail "installer did not bound curl's retry count"$'\n'"flags: $(cat "$tmp/curl-flags")"
+  grep -Fxq -- '--retry-delay' "$tmp/curl-flags" \
+    || fail "installer did not give curl a retry delay"$'\n'"flags: $(cat "$tmp/curl-flags")"
+  [ -x "$destination/shellcheck" ] || fail "installer did not install ShellCheck under the flag stub"
+  pass "ShellCheck installer asks curl to retry transient errors"
 }
 
 test_rejects_wrong_shellcheck_version() {
@@ -683,7 +742,8 @@ SH
 test_list_files_reports_the_shell_inventory
 test_pins_an_explicit_version
 test_installer_retries_transient_download_failure
-test_installer_survives_sustained_outage
+test_installer_rides_out_a_burst_of_transient_failures
+test_installer_asks_curl_to_retry_transient_errors
 test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
 test_ignores_ambient_shellcheck_opts
