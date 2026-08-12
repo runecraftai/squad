@@ -300,6 +300,16 @@ worker_stop_active_execution() {
 worker_shutdown() {
   trap - HUP INT TERM
   worker_publish_quarantine || {
+    if [ ! -d "$WORKER_LOCK" ] || [ -L "$WORKER_LOCK" ]; then
+      # The lock this quarantine would guard is gone (state cleanup removed it
+      # or the whole state root). Looping on would serve unlocked and stay
+      # immortal to TERM: the serve loop's reap_stale recreates the state root
+      # while the lock stays absent, so the next heartbeat succeeds and every
+      # later TERM hits the same failed publish. Exit like a heartbeat failure
+      # so the supervisor respawns the serve child under a fresh lock.
+      worker_error "cannot guard worker ownership for shutdown because the worker lock is gone"
+      exit 1
+    fi
     worker_error "cannot guard worker ownership for shutdown"
     trap worker_shutdown HUP INT TERM
     return 0

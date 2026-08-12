@@ -303,6 +303,26 @@ fm_remote_job_worker_identity_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
   || fail "the replacement worker did not publish the current code identity"
 pass "a partial quarantine temp cannot wedge worker ownership reclaim"
 
+# A serve child whose lock directory disappears (state cleanup removing it or
+# the whole state root) must still die on TERM. The serve loop keeps
+# heartbeating from the still-present state root while the shutdown quarantine
+# can never be published into the missing lock, which used to leave the child
+# immortal to TERM and the supervisor's wait stuck forever.
+STALE_SERVE_PID=$(cat "$STATE_ROOT/worker.pid")
+rm -rf -- "$STATE_ROOT/worker.lock"
+kill -TERM "$STALE_SERVE_PID" 2>/dev/null || true
+for _ in $(seq 1 200); do
+  kill -0 "$STALE_SERVE_PID" 2>/dev/null || break
+  sleep 0.05
+done
+kill -0 "$STALE_SERVE_PID" 2>/dev/null \
+  && fail "the serve child survived its lock directory being removed (TERM-immortal)"
+fm_remote_job_ensure_worker "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "$SQUAD_REMOTE_JOB_ERROR"
+fm_remote_job_worker_identity_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "the replacement worker did not publish the current code identity"
+pass "a serve child whose lock directory was removed still dies on TERM and is replaced"
+
 SQUAD_REMOTE_JOB_TIMEOUT=1
 fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" sq-timeout-job.sh < /dev/null > /dev/null
 JOB_ID=$SQUAD_REMOTE_JOB_ID
