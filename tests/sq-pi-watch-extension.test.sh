@@ -1327,17 +1327,25 @@ const hooks = await mod.FmPrimaryWatchArm({
   worktree: process.env.WORKTREE,
 });
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, "999999\n");
 await hooks.event(event);
-await new Promise((resolve) => setTimeout(resolve, 120));
+// The idle event arms asynchronously; await the shared coordinator path so the
+// foreign-lock decision is settled before the lock is rewritten. This removes
+// any wall-clock dependence on how long the plugin's git/ps checks take.
+if ((await globalThis.__SquadOpenCodeWatchArm.ensureArmed("session-test", client)) !== "read-only") {
+  console.error("watch arm did not decline a foreign session lock");
+  process.exit(1);
+}
 if (existsSync(process.env.SQUAD_ARM_LOG)) {
   console.error("watch arm ran without owning the session lock");
   process.exit(1);
 }
 writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
+await globalThis.__SquadOpenCodeWatchArm.ensureArmed("session-test", client);
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await sleep(20);
 }
 if (!existsSync(process.env.SQUAD_ARM_LOG)) {
   console.error("watch arm did not run after the session lock matched");
