@@ -117,7 +117,9 @@ state/               volatile runtime signals; gitignored
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
-  .hash-* .count-* .stale-* .stale-since-* .paused-* .wedge-escalations-* .seen-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
+  .hash-* .count-*   sentry internals; never touch
+  .stale-* .stale-since-* .wedge-escalations-* .seen-*   sentry internals; never touch manually - teardown retires them for the released window, and housekeeping also retires .seen-* when the window is gone
+  .paused-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
