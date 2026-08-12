@@ -158,7 +158,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {},
 };
@@ -225,7 +225,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {},
 };
@@ -285,7 +285,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {},
 };
@@ -356,7 +356,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {
     rowsAtDelivery = existsSync(process.env.SQUAD_ARM_LOG)
@@ -428,7 +428,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async (message) => {
     prompt += message;
@@ -500,7 +500,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async (message) => {
     prompt += message;
@@ -577,7 +577,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async (message) => {
     prompts.push(message);
@@ -659,7 +659,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {
     prompts += 1;
@@ -714,7 +714,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async (message) => {
     prompt += message;
@@ -767,7 +767,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async (message) => {
     prompt += message;
@@ -822,7 +822,7 @@ const pi = {
   on() {},
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {},
 };
@@ -911,7 +911,7 @@ function makePi() {
     },
     registerCommand() {},
     registerTool(candidate) {
-      if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+      if (candidate.name === "sq_watch_arm_pi") tool = candidate;
     },
     sendUserMessage: async () => {},
     events: { on() {} },
@@ -1136,7 +1136,7 @@ const pi = {
   },
   registerCommand() {},
   registerTool(candidate) {
-    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    if (candidate.name === "sq_watch_arm_pi") tool = candidate;
   },
   sendUserMessage: async () => {},
 };

@@ -141,7 +141,7 @@ repair_line() {
       printf '%s%s%s%s\n' "$prefix" 'repair missing sentry supervision with a foreground checkpoint: bin/sq-sentry-checkpoint.sh --seconds ' "$checkpoint_seconds" '.'
       ;;
     pi|pi-signed)
-      printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed sentry cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
+      printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed sentry cycle with the Pi tool sq_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
       ;;
     opencode)
       printf '%s%s\n' "$prefix" 'repair missing sentry supervision by letting the OpenCode TUI plugin arm after idle; use bin/sq-sentry-arm.sh only as a manual recovery probe if the plugin reports failure.'

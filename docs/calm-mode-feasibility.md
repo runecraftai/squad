@@ -42,14 +42,14 @@ $ pi --version
 ### Original transcript cleanup
 
 The pre-cleanup reproduction used a real isolated Pi TUI at 180 columns by 44 rows with the tracked Calm and sentry extensions, an isolated `SQUAD_HOME`, and a live base-owned sentry cycle.
-The model called `fm_watch_arm_pi`, the real tool returned `sentry: started Pi extension arm child 1`, and a `done:` status write caused the sentry extension to inject `SQUAD WATCHER WAKE: signal: ...` followed by the stable drain instruction.
+The model called `sq_watch_arm_pi`, the real tool returned `sentry: started Pi extension arm child 1`, and a `done:` status write caused the sentry extension to inject `SQUAD WATCHER WAKE: signal: ...` followed by the stable drain instruction.
 With Calm off, the captured transcript contained the genuine user prompt, the full sentry tool shell, the synthetic user-role wake, four collapsed `Thinking...` labels, built-in tool rows from wake handling, and the final assistant response.
 With the pre-cleanup implementation's Calm mode on, the existing seven built-in tool rows disappeared, but the sentry tool shell, synthetic wake, and all four `Thinking...` labels remained.
 The final screenshot-scale regression reproduced the same transcript after the cleanup and verified that Calm removed those remaining controlled rows while retaining the genuine prompt, a sentry-shaped genuine near-miss prompt, and the genuine assistant responses.
 
 The original proven comparison path was a built-in text tool.
 Calm owned both of that tool's supported renderer slots and switched its shell to `renderShell: "self"`, so returning empty components removed the complete row and `setToolsExpanded` redrew existing tool components.
-Adding supported empty renderer slots to a scratch copy of `fm_watch_arm_pi` likewise removed its row while the real sentry still started and the model still returned `PROBE_COMPLETE`.
+Adding supported empty renderer slots to a scratch copy of `sq_watch_arm_pi` likewise removed its row while the real sentry still started and the model still returned `PROBE_COMPLETE`.
 Legacy synthetic presentation entries use `CustomEntryComponent`, whose host adds spacing only when its renderer returns content, so an undefined Calm renderer result removes the complete row and can later restore it through the ordinary expansion redraw.
 The later duplicate-turn evidence below supersedes custom-message rerouting as an acceptable implementation for current operational input.
 
@@ -205,7 +205,7 @@ The test fixture enumerates every class below through the centralized policy, an
 | `genuine-user-prompt` | `UserMessageComponent` | Visible, including every tested operational near miss. |
 | `genuine-agent-response` | Assistant text in `AssistantMessageComponent` | Visible. |
 | `assistant-thinking` | Thinking content in `AssistantMessageComponent` | Collapsed reasoning is removed from the shallow presentation copy before layout and occupies zero rows; explicit expansion renders the original reasoning. |
-| `assistant-tool-call` | `ToolExecutionComponent` | Seven built-ins and `fm_watch_arm_pi` hidden; arbitrary custom tools remain an unsupported boundary. |
+| `assistant-tool-call` | `ToolExecutionComponent` | Seven built-ins and `sq_watch_arm_pi` hidden; arbitrary custom tools remain an unsupported boundary. |
 | `tool-result` | `ToolExecutionComponent` | Text results for the controlled tools hidden; arbitrary custom results remain an unsupported boundary. |
 | `tool-image` | Image children appended outside tool renderer slots | Unsupported boundary; remains visible. |
 | `user-bash` | `BashExecutionComponent` for `!` and `!!` | Unsupported boundary; remains visible. |
@@ -260,7 +260,7 @@ Only Pi's Calm presentation implementation changed; every producer and non-Pi tr
 
 ## Regression coverage
 
-`tests/sq-calm-pi-extension.test.sh` compares wrapped and stock renderers, verifies all seven built-ins plus `fm_watch_arm_pi`, exercises redraw of already-rendered tool, thinking, current operational-user, and legacy synthetic rows, and covers every policy class.
+`tests/sq-calm-pi-extension.test.sh` compares wrapped and stock renderers, verifies all seven built-ins plus `sq_watch_arm_pi`, exercises redraw of already-rendered tool, thinking, current operational-user, and legacy synthetic rows, and covers every policy class.
 It covers persisted preference restoration across every session-start reason and a real restart, proves the working-ship presentation and Calm-off stock `Working...` row through a delayed deterministic provider, asserts no Calm status row, verifies operational messages remain exact ordinary user-role session entries and complete exports, and drives genuine 100 by 44, 160 by 36, and 180 by 44 terminal fixtures.
 A native deterministic `/skill:reporting` turn produces thinking, tool-call, and tool-result blocks, asserts that the collapsed skill-to-final gap equals the two-row visible-only baseline, expands and re-collapses original thinking, restores Calm-off rendering, verifies persisted hidden history, and repeats the geometry assertion after restart with `terminal.clearOnShrink` explicitly off.
 The operational provider path covers Calm loaded on, loaded off, default preference, extension absent, exact sentry delivery, narrow bare-marker legacy input, persisted restart replay, a genuine commander prompt, and adjacent notifications coalesced into one intended processing turn.
