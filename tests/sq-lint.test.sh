@@ -295,6 +295,67 @@ SH
   pass "ShellCheck installer retries a transient download failure"
 }
 
+# Regression: CI observed a sustained GitHub release outage (three consecutive
+# HTTP 503s within four seconds) that the old 3-attempt budget gave up on, so
+# the pinned ShellCheck step failed before any test ran. The installer must
+# survive the same sustained outage and still install the pinned build once
+# the source recovers. curl exits 22 on a 503 under -f, matching the CI log.
+test_installer_survives_sustained_outage() {
+  local tmp fakebin destination out
+  tmp=$(fm_test_tmproot sq-shellcheck-outage)
+  fakebin=$(fm_fakebin "$tmp")
+  destination="$tmp/bin"
+
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+count=0
+[ ! -f "$CURL_COUNT" ] || count=$(cat "$CURL_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" > "$CURL_COUNT"
+[ "$count" -gt 3 ] || exit 22
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    : > "$2"
+    exit 0
+  fi
+  shift
+done
+exit 2
+SH
+  cat > "$fakebin/sha256sum" <<'SH'
+#!/usr/bin/env bash
+printf '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  %s\n' "$1"
+SH
+  cat > "$fakebin/tar" <<'SH'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-C" ]; then
+    mkdir -p "$2/shellcheck-v0.11.0"
+    cat > "$2/shellcheck-v0.11.0/shellcheck" <<'EOF'
+#!/usr/bin/env bash
+printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+EOF
+    chmod +x "$2/shellcheck-v0.11.0/shellcheck"
+    exit 0
+  fi
+  shift
+done
+exit 2
+SH
+  cat > "$fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fakebin/curl" "$fakebin/sha256sum" "$fakebin/tar" "$fakebin/sleep"
+
+  out=$(CURL_COUNT="$tmp/curl-count" PATH="$fakebin:$PATH" "$INSTALLER" "$destination" 2>&1) \
+    || fail "installer did not survive a sustained download outage"$'\n'"$out"
+  [ "$(cat "$tmp/curl-count")" -eq 4 ] || fail "installer gave up before the outage ended"
+  assert_contains "$out" "download attempt 3 failed; retrying" "installer did not disclose the later retries"
+  [ -x "$destination/shellcheck" ] || fail "installer did not install ShellCheck after the outage"
+  pass "ShellCheck installer survives a sustained download outage"
+}
+
 test_rejects_wrong_shellcheck_version() {
   # Version-independent: a fake shellcheck reporting a different version must be
   # refused before any lint, proving local and CI cannot silently diverge.
@@ -622,6 +683,7 @@ SH
 test_list_files_reports_the_shell_inventory
 test_pins_an_explicit_version
 test_installer_retries_transient_download_failure
+test_installer_survives_sustained_outage
 test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
 test_ignores_ambient_shellcheck_opts
