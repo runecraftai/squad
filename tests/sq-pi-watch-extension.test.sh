@@ -417,7 +417,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_PI_ARM_READY_TIMEOUT_MS=250 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -441,7 +441,7 @@ writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-hung-successor", {}, undefined, undefined, {});
-for (let i = 0; i < 500 && !prompt; i += 1) {
+for (let i = 0; i < 1000 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.SQUAD_ARM_LOG)
@@ -489,7 +489,7 @@ printf 'arm=%s\n' "$$" >> "${SQUAD_ARM_LOG:?}"
 while [ ! -e "$SQUAD_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_PI_ARM_READY_TIMEOUT_MS=250 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -567,7 +567,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/sq-sentry-arm.sh"
-    out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_PI_ARM_READY_TIMEOUT_MS=250 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1579,7 +1579,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=250 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1603,7 +1603,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 500 && !prompt; i += 1) {
+for (let i = 0; i < 1000 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 const rows = existsSync(process.env.SQUAD_ARM_LOG)
@@ -1653,7 +1653,7 @@ printf 'arm=%s\n' "$$" >> "${SQUAD_ARM_LOG:?}"
 while [ ! -e "$SQUAD_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=250 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1733,7 +1733,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/sq-sentry-arm.sh"
-    out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=250 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
