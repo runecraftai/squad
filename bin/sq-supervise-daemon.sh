@@ -999,8 +999,10 @@ housekeeping() {  # <state>
     # legacy fallback for old markers that predate meta lookup.
     win=$(window_for_task "$key" "$state" 2>/dev/null || true)
     if [ -z "$win" ]; then
-      # Window gone (task torn down): drop the marker, nothing to escalate.
-      rm -f "$marker"; continue
+      # Window gone (task torn down): drop the marker and the sentry's
+      # task-keyed .seen-* signatures, nothing to escalate.
+      rm -f "$marker" "$state/.seen-${key}_status" "$state/.seen-${key}_turn-ended"
+      continue
     fi
     task=$(window_to_task "$win" "$state")
     last=$(last_status_line "$state/$task.status")
@@ -1031,7 +1033,10 @@ housekeeping() {  # <state>
     key="${marker##*.subsuper-paused-}"
     win=$(window_for_task "$key" "$state" 2>/dev/null || true)
     if [ -z "$win" ]; then
-      rm -f "$marker"; continue
+      # Window gone (task torn down): drop the marker and the sentry's
+      # task-keyed .seen-* signatures, nothing to escalate.
+      rm -f "$marker" "$state/.seen-${key}_status" "$state/.seen-${key}_turn-ended"
+      continue
     fi
     task=$(window_to_task "$win" "$state")
     last=$(last_status_line "$state/$task.status")

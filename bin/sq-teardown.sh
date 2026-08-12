@@ -33,7 +33,9 @@
 # matching quarantine entries as ordinary single-link files on the state
 # device. It refuses and preserves task state when that proof fails; otherwise
 # it removes the task's check, trust record, PR sidecar, publication record, and
-# quarantine entries with the rest of the volatile state.
+# quarantine entries with the rest of the volatile state, and retires the
+# watcher's per-window markers for the released window (state/.stale-*,
+# .stale-since-*, .wedge-escalations-*, .seen-*) so it leaves no marker residue.
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
@@ -203,6 +205,26 @@ remote_teardown_locks_release() {
   fi
 }
 
+# Retire the watcher's (sentry) per-window internal markers for a released
+# task so a torn-down window stops leaving residue that can generate phantom
+# stale wakes. The window-keyed families (.stale-*, .stale-since-*,
+# .wedge-escalations-*) use the same ':/.' -> '_' key transform the sentry
+# applies to the recorded backend target (window=, terminal= for Orca); the
+# .seen-* signatures are keyed by the task status/turn-ended basenames. All
+# four are inert once the task's meta and status files are gone, but until the
+# meta is removed the watcher can still poll the released window and re-fire
+# stale for it, so the markers are retired together with the volatile state.
+# Defined before the remote-XO main-flow call below (bash resolves functions
+# at call time, and that call site runs before the later helper block).
+retire_watcher_markers() {  # <state-dir> <task-id> <window>
+  local state=$1 id=$2 win=$3 key sfx
+  [ -n "$win" ] || return 0
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  sfx=$(printf '%s' "$id" | tr '.' '_')
+  rm -f "$state/.stale-$key" "$state/.stale-since-$key" "$state/.wedge-escalations-$key" \
+    "$state/.seen-${sfx}_status" "$state/.seen-${sfx}_turn-ended"
+}
+
 remote_recovery_paths_validate() {
   local mode=${1:-initial} handoff_dir outbox pending_dir real rec
   handoff_dir="$DATA/handoff"
@@ -351,6 +373,7 @@ remote_XO_teardown() {
   tmp="$XO_REG.tmp.$$"
   grep -vE "^- $ID( |$)" "$XO_REG" > "$tmp" || true
   mv -f -- "$tmp" "$XO_REG"
+  retire_watcher_markers "$STATE" "$ID" "$(fm_backend_target_of_meta "$META")"
   rm -f -- "$STATE/$ID.status" "$STATE/$ID.meta" "$STATE/$ID.turn-ended" \
     "$STATE/.$ID.open-decisions-cursor"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
@@ -2366,6 +2389,7 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
+retire_watcher_markers "$STATE" "$ID" "$T"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \

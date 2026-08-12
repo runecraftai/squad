@@ -313,6 +313,28 @@ test_housekeeping_migrates_sentry_unpaused_marker_to_clear() {
   pass "housekeeping clears an already-resumed sentry pause across both supervisors"
 }
 
+test_housekeeping_retires_sentry_seen_markers_for_torn_down_task() {
+  local dir state key
+  dir=$(make_supercase housekeeping-seen-retire)
+  state="$dir/state"
+  key=$(printf '%s' 'task-gone' | tr ':/.' '___')
+  # A torn-down task: the daemon stale marker (task-id keyed) still exists, no
+  # meta or live window resolves it, and the sentry's task-keyed .seen-*
+  # signatures linger as residue. A live task's .seen-* must be left alone.
+  echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  : > "$state/.seen-${key}_status"
+  : > "$state/.seen-${key}_turn-ended"
+  : > "$state/.seen-still-live_status"
+
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
+
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "torn-down stale marker was not dropped"
+  [ ! -e "$state/.seen-${key}_status" ] || fail "torn-down .seen-*_status was not retired"
+  [ ! -e "$state/.seen-${key}_turn-ended" ] || fail "torn-down .seen-*_turn-ended was not retired"
+  [ -e "$state/.seen-still-live_status" ] || fail "a live task's .seen-* marker was retired by mistake"
+  pass "housekeeping retires the sentry's .seen-* markers for a torn-down window"
+}
+
 test_housekeeping_seeds_pause_marker_from_status() {
   local dir state key win
   dir=$(make_supercase seed-paused-status)
@@ -1843,6 +1865,7 @@ test_handle_wake_paused_signal_records_pause_marker
 test_handle_wake_terminal_signal_clears_pause_tracking
 test_housekeeping_migrates_sentry_pause_marker
 test_housekeeping_migrates_sentry_unpaused_marker_to_clear
+test_housekeeping_retires_sentry_seen_markers_for_torn_down_task
 test_housekeeping_seeds_pause_marker_from_status
 test_housekeeping_persistent_stale_escalates
 test_housekeeping_resumed_stale_cleared
