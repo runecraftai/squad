@@ -83,18 +83,26 @@ classify() {  # <harness> <id> <state-dir>
 
 # drive_pi_ext <ext-path> <mode>: load the generated Pi extension in a plain
 # Node host and fire one lifecycle handler. Modes: agent-start, settle-idle,
-# settle-continuing, turn-end.
+# settle-continuing, settle-stale-ctx, turn-end.
 drive_pi_ext() {
   EXT_PATH="$1" MODE="$2" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.EXT_PATH).href);
 const handlers = {};
 mod.default({ on: (name, fn) => { handlers[name] = fn; } });
-const ctx = { isIdle: () => process.env.MODE !== "settle-continuing" };
+const ctx = { isIdle: () => {
+  if (process.env.MODE === "settle-stale-ctx") {
+    throw new Error("This extension ctx is stale after session replacement or reload");
+  }
+  return process.env.MODE !== "settle-continuing";
+} };
 switch (process.env.MODE) {
   case "agent-start": await handlers["agent_start"]({}, ctx); break;
-  case "settle-idle": await handlers["agent_settled"]({}, ctx); break;
-  case "settle-continuing": await handlers["agent_settled"]({}, ctx); break;
+  case "settle-idle":
+  case "settle-continuing":
+  case "settle-stale-ctx":
+    await handlers["agent_settled"]({}, ctx);
+    break;
   case "settle-then-start":
     await handlers["agent_settled"]({}, ctx);
     await handlers["agent_start"]({}, ctx);
@@ -175,6 +183,22 @@ test_pi_extension_stale_incarnation_rejected() {
   out=$(classify pi "$id" "$state")
   [ "$out" = "busy sq-spawn" ] || fail "a stale extension event must not change state, got '$out'"
   pass "pi extension events from a superseded incarnation are rejected as stale"
+}
+
+test_pi_extension_stale_ctx_settles_idle() {
+  local rec id=busy-pi-3 out state ext
+  rec=$(make_spawn_case pi-stale-ctx pi "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "pi spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  ext="$state/$id.pi-ext.ts"
+  # A stale ctx (session replacement or reload) throws on use; the settle
+  # event still fired, so the extension must survive and classify idle.
+  out=$(drive_pi_ext "$ext" settle-stale-ctx) || fail "stale-ctx settle drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "idle pi-ext" ] || fail "a stale-ctx settle must classify 'idle pi-ext', got '$out'"
+  pass "pi extension treats a stale ctx isIdle throw as a settled idle"
 }
 
 # drive_oc_plugin <plugin-path> <events-json-lines...>: load the generated
@@ -345,6 +369,7 @@ test_kimi_and_grok_install_no_unverified_wiring() {
 test_pi_extension_semantic_lifecycle
 test_pi_extension_serializes_settle_before_next_start
 test_pi_extension_stale_incarnation_rejected
+test_pi_extension_stale_ctx_settles_idle
 test_kimi_and_grok_install_no_unverified_wiring
 test_opencode_plugin_semantic_lifecycle
 test_claude_hooks_semantic_lifecycle
