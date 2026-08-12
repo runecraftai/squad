@@ -281,6 +281,28 @@ wait "$OTHER_PID" 2>/dev/null || true
 OTHER_PID=
 pass "stale ownership is reclaimed without signaling a reused pid"
 
+# A worker killed between its quarantine temp's creation and its publish
+# (SIGKILL mid-shutdown) leaves a .quarantine.* temp in the lock dir. The
+# next ensure must clear it with the rest of the stale lock instead of
+# wedging on the non-empty directory (observed under load in CI).
+PARTIAL_LOCK="$STATE_ROOT/worker.lock"
+STALE_WORKER_PID=$(cat "$STATE_ROOT/worker.pid")
+fm_remote_job_stop_worker_tree "$STALE_WORKER_PID" \
+  || fail "the running worker could not be stopped for the partial-quarantine fixture"
+rm -rf -- "$PARTIAL_LOCK"
+mkdir "$PARTIAL_LOCK"
+printf 'partial\n' > "$PARTIAL_LOCK/.quarantine.partial"
+touch -t 200001010000 "$PARTIAL_LOCK" "$PARTIAL_LOCK/.quarantine.partial"
+fm_remote_job_ensure_worker "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "$SQUAD_REMOTE_JOB_ERROR"
+[ -d "$PARTIAL_LOCK" ] && [ ! -L "$PARTIAL_LOCK" ] \
+  || fail "worker ownership lock is missing after a partial-quarantine reclaim"
+[ ! -e "$PARTIAL_LOCK/.quarantine.partial" ] \
+  || fail "a partial quarantine temp wedged worker ownership reclaim"
+fm_remote_job_worker_identity_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+  || fail "the replacement worker did not publish the current code identity"
+pass "a partial quarantine temp cannot wedge worker ownership reclaim"
+
 SQUAD_REMOTE_JOB_TIMEOUT=1
 fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" sq-timeout-job.sh < /dev/null > /dev/null
 JOB_ID=$SQUAD_REMOTE_JOB_ID

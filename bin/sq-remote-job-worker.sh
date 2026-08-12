@@ -164,6 +164,12 @@ worker_acquire_lock() {
     fi
     [ ! -L "$WORKER_LOCK/pid" ] && [ ! -L "$WORKER_LOCK/start" ] && [ ! -L "$WORKER_LOCK/command" ] || return 1
     rm -f -- "$WORKER_LOCK/pid" "$WORKER_LOCK/start" "$WORKER_LOCK/command" || return 1
+    # A worker killed between its quarantine temp's creation and its publish
+    # (SIGKILL mid-shutdown) leaves a .quarantine.* temp in the lock dir. The
+    # owner is provably gone (checked above), so clear the temp with the rest
+    # of the stale lock; otherwise rmdir fails forever and every replacement
+    # worker wedges on the non-empty directory (observed under load).
+    rm -f -- "$WORKER_LOCK"/.quarantine.* 2>/dev/null || true
     rmdir "$WORKER_LOCK" || return 1
   done
   return 1
