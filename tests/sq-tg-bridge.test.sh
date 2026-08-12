@@ -100,6 +100,9 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.5)  # bound the poll rate like a real long-poll hold
             garbage = args.state_dir + "/garbage.response"
             if os.path.exists(garbage):
+                with open(args.state_dir + "/garbage-hit", "a",
+                          encoding="utf-8") as fh:
+                    fh.write("hit\n")
                 with open(garbage, "rb") as fh:
                     raw = fh.read()
                 self.send_response(200)
@@ -627,6 +630,27 @@ test_restart_does_not_duplicate_and_offset_advances() {
   pass "restart keeps the offset, never duplicates a request, and keeps pending work"
 }
 
+test_state_file_with_wrong_shape_records_starts_clean() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/badstate-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/badstate-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  cat > "$home/bridge-state.json" <<EOF
+{"offset": 900, "requests": {
+  "tg-1-1": {"chat_id": 1, "message_id": 1, "text": "ok", "created_at": 100, "status": "pending", "answered_at": null, "followups": 0},
+  "tg-1-2": {"status": "pending"},
+  "tg-1-3": {"chat_id": "1", "message_id": 3, "text": "x", "status": "answered", "answered_at": 100, "followups": 0}
+}}
+EOF
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  expect_code 404 "$(bridge_post "$url" answer '{"request_id":"tg-1-2","text":"oi"}')" \
+    "a record without chat_id must be dropped at load time"
+  expect_code 404 "$(bridge_post "$url" answer '{"request_id":"tg-1-3","text":"oi"}')" \
+    "a record with a non-integer chat_id must be dropped at load time"
+  expect_code 200 "$(bridge_post "$url" answer '{"request_id":"tg-1-1","text":"oi"}')" \
+    "a well-shaped record must still answer"
+  pass "wrong-shape state records are dropped at load instead of crashing handlers"
+}
+
 test_request_context_endpoint() {
   local home fake_dir fake_port url body
   home="$TMP_ROOT/ctx-home"; setup_home "$home"
@@ -890,6 +914,25 @@ test_non_object_json_response_does_not_kill_poller() {
   pass "a JSON body that is not an object backs off instead of killing the poller"
 }
 
+test_non_list_result_does_not_kill_poller() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/nonlist-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/nonlist-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  printf '{"ok":true,"result":42}' > "$fake_dir/garbage.response"
+  local deadline=$(( $(date +%s) + 10 ))
+  while [ ! -f "$fake_dir/garbage-hit" ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "bridge never hit the non-list result"
+    sleep 0.2
+  done
+  rm -f "$fake_dir/garbage.response"
+  feed_updates "$fake_dir" "$(one_update 65 650 "$OWNER_ID" 'apos o result invalido')"
+  wait_for_request "$url" "$home/body.json"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-$OWNER_ID-650" ] \
+    || fail "a non-list getUpdates result must not lose later updates"
+  pass "a non-list getUpdates result leaves the poller alive"
+}
+
 test_error_status_with_reset_body_returns_502_and_stays_pending() {
   local home fake_dir fake_port url rid code
   home="$TMP_ROOT/error-reset-answer-home"; setup_home "$home"
@@ -959,6 +1002,7 @@ test_dismiss_drops_pending_request
 test_followup_posts_within_cap_then_409
 test_followup_window_expiry_survives_restart
 test_restart_does_not_duplicate_and_offset_advances
+test_state_file_with_wrong_shape_records_starts_clean
 test_request_context_endpoint
 test_image_answer_posts_sendphoto
 test_followup_flow_via_squad_client
@@ -968,5 +1012,6 @@ test_concurrent_followups_respect_the_cap
 test_midread_reset_on_answer_returns_502_and_stays_pending
 test_midread_reset_on_greeting_does_not_kill_poller
 test_non_object_json_response_does_not_kill_poller
+test_non_list_result_does_not_kill_poller
 test_error_status_with_reset_body_returns_502_and_stays_pending
 test_error_status_with_reset_body_on_greeting_does_not_kill_poller

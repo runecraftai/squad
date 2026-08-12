@@ -280,7 +280,9 @@ class RequestStore:
             self.offset = int(data.get("offset") or 0)
             for rid, rec in (data.get("requests") or {}).items():
                 if isinstance(rid, str) and isinstance(rec, dict) \
-                        and rec.get("status") in ("pending", "answered"):
+                        and rec.get("status") in ("pending", "answered") \
+                        and isinstance(rec.get("chat_id"), int) \
+                        and isinstance(rec.get("message_id"), int):
                     self.requests[rid] = rec
         except FileNotFoundError:
             pass
@@ -469,7 +471,8 @@ class TelegramClient:
             "allowed_updates": json.dumps(["message"])})
         url = "%s/getUpdates?%s" % (self.base, params)
         req = urllib.request.Request(url, method="GET")
-        return self._open(req)
+        result = self._open(req)
+        return result if isinstance(result, list) else []
 
     def send_message(self, chat_id, text, reply_to_message_id=None):
         params = {"chat_id": chat_id, "text": text}
