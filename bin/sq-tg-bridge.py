@@ -282,7 +282,11 @@ class RequestStore:
                 if isinstance(rid, str) and isinstance(rec, dict) \
                         and rec.get("status") in ("pending", "answered") \
                         and isinstance(rec.get("chat_id"), int) \
-                        and isinstance(rec.get("message_id"), int):
+                        and isinstance(rec.get("message_id"), int) \
+                        and (rec.get("followups") is None
+                             or isinstance(rec.get("followups"), int)) \
+                        and (rec.get("created_at") is None
+                             or isinstance(rec.get("created_at"), int)):
                     self.requests[rid] = rec
         except FileNotFoundError:
             pass
@@ -719,10 +723,15 @@ class Bridge:
             return None
         user_id = sender.get("id")
         chat_id = chat.get("id")
+        if not isinstance(user_id, int):
+            return None
         if user_id not in self.config.allowed_chat_ids:
             log("ignoring message from non-whitelisted user %r" % (user_id,))
             return None
-        text = (message.get("text") or message.get("caption") or "").strip()
+        text = message.get("text") or message.get("caption") or ""
+        if not isinstance(text, str):
+            return None
+        text = text.strip()
         if not text:
             return None
         if text == "/start" or text.startswith("/start@"):

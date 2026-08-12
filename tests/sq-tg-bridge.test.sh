@@ -638,14 +638,24 @@ test_state_file_with_wrong_shape_records_starts_clean() {
 {"offset": 900, "requests": {
   "tg-1-1": {"chat_id": 1, "message_id": 1, "text": "ok", "created_at": 100, "status": "pending", "answered_at": null, "followups": 0},
   "tg-1-2": {"status": "pending"},
-  "tg-1-3": {"chat_id": "1", "message_id": 3, "text": "x", "status": "answered", "answered_at": 100, "followups": 0}
+  "tg-1-3": {"chat_id": "1", "message_id": 3, "text": "x", "status": "answered", "answered_at": 100, "followups": 0},
+  "tg-1-4": {"chat_id": 1, "message_id": 4, "text": "x", "created_at": "ontem", "status": "pending", "answered_at": null, "followups": 0},
+  "tg-1-5": {"chat_id": 1, "message_id": 5, "text": "x", "created_at": 100, "status": "answered", "answered_at": $(date +%s), "followups": "abc"}
 }}
 EOF
   start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  expect_code 200 "$(bridge_poll "$url" "$home/body.json")" \
+    "poll must not crash on a non-integer created_at"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-1-1" ] \
+    || fail "poll must offer only the well-shaped record"
   expect_code 404 "$(bridge_post "$url" answer '{"request_id":"tg-1-2","text":"oi"}')" \
     "a record without chat_id must be dropped at load time"
   expect_code 404 "$(bridge_post "$url" answer '{"request_id":"tg-1-3","text":"oi"}')" \
     "a record with a non-integer chat_id must be dropped at load time"
+  expect_code 404 "$(bridge_post "$url" answer '{"request_id":"tg-1-4","text":"oi"}')" \
+    "a record with a non-integer created_at must be dropped at load time"
+  expect_code 409 "$(bridge_post "$url" followup '{"request_id":"tg-1-5","text":"oi"}')" \
+    "a record with a non-integer followups must be dropped at load time"
   expect_code 200 "$(bridge_post "$url" answer '{"request_id":"tg-1-1","text":"oi"}')" \
     "a well-shaped record must still answer"
   pass "wrong-shape state records are dropped at load instead of crashing handlers"
@@ -914,6 +924,24 @@ test_non_object_json_response_does_not_kill_poller() {
   pass "a JSON body that is not an object backs off instead of killing the poller"
 }
 
+test_non_string_text_does_not_kill_poller() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/nonstring-text-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/nonstring-text-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  feed_updates "$fake_dir" "{\"ok\":true,\"result\":[{\"update_id\":71,\"message\":{\"message_id\":710,\"from\":{\"id\":$OWNER_ID},\"chat\":{\"id\":$OWNER_ID},\"text\":42}},{\"update_id\":72,\"message\":{\"message_id\":720,\"from\":{\"id\":{\"malformed\":true}},\"chat\":{\"id\":$OWNER_ID},\"text\":\"oi\"}}]}"
+  local deadline=$(( $(date +%s) + 10 ))
+  while [ "$(jq -r '.offset' "$home/bridge-state.json" 2>/dev/null)" != "72" ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "bridge never processed the malformed updates"
+    sleep 0.2
+  done
+  feed_updates "$fake_dir" "$(one_update 73 730 "$OWNER_ID" 'apos o texto invalido')"
+  wait_for_request "$url" "$home/body.json"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-$OWNER_ID-730" ] \
+    || fail "a non-string text or sender id must not kill the poller or create a request"
+  pass "non-string text and sender id fields are ignored and the poller stays alive"
+}
+
 test_non_list_result_does_not_kill_poller() {
   local home fake_dir fake_port url
   home="$TMP_ROOT/nonlist-home"; setup_home "$home"
@@ -1013,5 +1041,6 @@ test_midread_reset_on_answer_returns_502_and_stays_pending
 test_midread_reset_on_greeting_does_not_kill_poller
 test_non_object_json_response_does_not_kill_poller
 test_non_list_result_does_not_kill_poller
+test_non_string_text_does_not_kill_poller
 test_error_status_with_reset_body_returns_502_and_stays_pending
 test_error_status_with_reset_body_on_greeting_does_not_kill_poller
