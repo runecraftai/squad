@@ -143,6 +143,20 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     self.connection.close()
                 return
+            if os.path.exists(args.state_dir + "/error-reset-sends"):
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "999")
+                self.end_headers()
+                try:
+                    self.wfile.write(b'{"ok": false, "desc')
+                    self.wfile.flush()
+                    self.connection.setsockopt(
+                        socket.SOL_SOCKET, socket.SO_LINGER,
+                        struct.pack("ii", 1, 0))
+                finally:
+                    self.connection.close()
+                return
             self._record({
                 "method": "sendMessage",
                 "chat_id": body.get("chat_id"),
@@ -857,6 +871,76 @@ test_midread_reset_on_greeting_does_not_kill_poller() {
   pass "a mid-read network failure on the greeting send leaves the poller alive"
 }
 
+test_non_object_json_response_does_not_kill_poller() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/notobject-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/notobject-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  printf '[]' > "$fake_dir/garbage.response"
+  local deadline=$(( $(date +%s) + 10 ))
+  while ! grep -q "getUpdates failed" "$home/bridge.out" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "bridge never hit the non-object response"
+    sleep 0.2
+  done
+  rm -f "$fake_dir/garbage.response"
+  feed_updates "$fake_dir" "$(one_update 61 610 "$OWNER_ID" 'apos o corpo invalido')"
+  wait_for_request "$url" "$home/body.json"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-$OWNER_ID-610" ] \
+    || fail "a non-object JSON body must not lose later updates"
+  pass "a JSON body that is not an object backs off instead of killing the poller"
+}
+
+test_error_status_with_reset_body_returns_502_and_stays_pending() {
+  local home fake_dir fake_port url rid code
+  home="$TMP_ROOT/error-reset-answer-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/error-reset-answer-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  feed_updates "$fake_dir" "$(one_update 62 620 "$OWNER_ID" 'erro 500')"
+  wait_for_request "$url" "$home/body.json"
+  rid="tg-$OWNER_ID-620"
+  touch "$fake_dir/error-reset-sends"
+  code=$(curl -s -m 20 -o "$home/answer.body" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"resposta\"}" \
+    "$url/connector/answer")
+  rm -f "$fake_dir/error-reset-sends"
+  expect_code 502 "$code" \
+    "an unreadable error-status body on send must surface as the 502 contract"
+  jq -e '.error == "telegram_send_failed"' "$home/answer.body" > /dev/null \
+    || fail "the 502 body must carry telegram_send_failed"
+  expect_code 200 "$(bridge_poll "$url" "$home/body.json")" \
+    "the failed answer must leave the request pending"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "$rid" ] \
+    || fail "the same request must be re-offered after the failed answer"
+  expect_code 200 "$(bridge_post "$url" answer \
+    "{\"request_id\":\"$rid\",\"text\":\"resposta\"}")" \
+    "a retry after the failed send must post"
+  local count
+  count=$(jq -s 'length' "$fake_dir/sent.log")
+  expect_code 1 "$count" "only the successful retry may reach Telegram"
+  pass "an unreadable error-status body returns 502 and keeps the request pending"
+}
+
+test_error_status_with_reset_body_on_greeting_does_not_kill_poller() {
+  local home fake_dir fake_port url
+  home="$TMP_ROOT/error-reset-greet-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/error-reset-greet-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  touch "$fake_dir/error-reset-sends"
+  feed_updates "$fake_dir" "$(one_update 63 630 "$OWNER_ID" '/start')"
+  local deadline=$(( $(date +%s) + 10 ))
+  while ! grep -q "greeting send failed" "$home/bridge.out" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "greeting send never hit the failed error body"
+    sleep 0.2
+  done
+  rm -f "$fake_dir/error-reset-sends"
+  feed_updates "$fake_dir" "$(one_update 64 640 "$OWNER_ID" 'sobreviveu')"
+  wait_for_request "$url" "$home/body.json"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "tg-$OWNER_ID-640" ] \
+    || fail "a failed greeting send must not kill the poller"
+  pass "an unreadable error body on the greeting leaves the poller alive"
+}
+
 # ---------------------------------------------------------------------------
 
 write_fake_telegram
@@ -883,3 +967,6 @@ test_concurrent_answers_post_exactly_once
 test_concurrent_followups_respect_the_cap
 test_midread_reset_on_answer_returns_502_and_stays_pending
 test_midread_reset_on_greeting_does_not_kill_poller
+test_non_object_json_response_does_not_kill_poller
+test_error_status_with_reset_body_returns_502_and_stays_pending
+test_error_status_with_reset_body_on_greeting_does_not_kill_poller

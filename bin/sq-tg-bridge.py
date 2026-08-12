@@ -442,8 +442,11 @@ class TelegramClient:
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise TelegramError(exc.code,
-                                exc.read().decode("utf-8", "replace")) from exc
+            try:
+                detail = exc.read().decode("utf-8", "replace")
+            except (OSError, http.client.HTTPException) as read_exc:
+                detail = "error body unreadable: %s" % read_exc
+            raise TelegramError(exc.code, detail) from exc
         except urllib.error.URLError as exc:
             raise TelegramError("network", str(exc.reason)) from exc
         except OSError as exc:
@@ -452,6 +455,8 @@ class TelegramClient:
             raise TelegramError("api", "malformed response: %s" % exc) from exc
         except http.client.HTTPException as exc:
             raise TelegramError("network", "truncated response: %s" % exc) from exc
+        if not isinstance(payload, dict):
+            raise TelegramError("api", "malformed response: not an object")
         if not payload.get("ok"):
             raise TelegramError(payload.get("error_code", "api"),
                                 payload.get("description", "unknown error"))
@@ -551,12 +556,19 @@ class ConnectorHandler(http.server.BaseHTTPRequestHandler):
         if image is not None:
             result = self.server.bridge.tg.send_photo(
                 chat_id, image["data"], image["media_type"], last_id)
-            last_id = result["message_id"]
+            last_id = self._sent_message_id(result, "sendPhoto")
         for chunk in chunks:
             result = self.server.bridge.tg.send_message(
                 chat_id, chunk, last_id)
-            last_id = result["message_id"]
+            last_id = self._sent_message_id(result, "sendMessage")
         return last_id
+
+    @staticmethod
+    def _sent_message_id(result, method):
+        if not isinstance(result, dict) or not isinstance(
+                result.get("message_id"), int):
+            raise TelegramError("api", "malformed %s result" % method)
+        return result["message_id"]
 
     def _decode_image(self, image):
         if not isinstance(image, dict):
