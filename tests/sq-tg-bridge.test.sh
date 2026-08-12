@@ -661,6 +661,29 @@ EOF
   pass "wrong-shape state records are dropped at load instead of crashing handlers"
 }
 
+test_null_created_at_does_not_crash_poll() {
+  local home fake_dir fake_port url rid
+  home="$TMP_ROOT/nullcreated-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/nullcreated-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  cat > "$home/bridge-state.json" <<EOF
+{"offset": 900, "requests": {
+  "tg-1-1": {"chat_id": 1, "message_id": 1, "text": "recente", "created_at": null, "status": "pending", "answered_at": null, "followups": 0},
+  "tg-1-2": {"chat_id": 1, "message_id": 2, "text": "antiga", "created_at": 100, "status": "pending", "answered_at": null, "followups": 0}
+}}
+EOF
+  start_bridge "$home" "$fake_port"; url=$BRIDGE_URL
+  expect_code 200 "$(bridge_poll "$url" "$home/body.json")" \
+    "poll must not crash when a pending record has an explicitly null created_at"
+  rid=$(jq -r '.request_id' "$home/body.json")
+  case "$rid" in
+    tg-1-1|tg-1-2) : ;;
+    *) fail "poll must offer one of the loaded pending records, got $rid" ;;
+  esac
+  expect_code 200 "$(bridge_post "$url" answer "{\"request_id\":\"$rid\",\"text\":\"oi\"}")" \
+    "a record loaded alongside a null created_at must still answer"
+  pass "an explicitly null created_at sorts safely and does not crash poll"
+}
+
 test_request_context_endpoint() {
   local home fake_dir fake_port url body
   home="$TMP_ROOT/ctx-home"; setup_home "$home"
@@ -1031,6 +1054,7 @@ test_followup_posts_within_cap_then_409
 test_followup_window_expiry_survives_restart
 test_restart_does_not_duplicate_and_offset_advances
 test_state_file_with_wrong_shape_records_starts_clean
+test_null_created_at_does_not_crash_poll
 test_request_context_endpoint
 test_image_answer_posts_sendphoto
 test_followup_flow_via_squad_client

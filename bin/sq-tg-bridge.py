@@ -355,7 +355,7 @@ class RequestStore:
         with self.lock:
             pending = [rid for rid, rec in self.requests.items()
                        if rec.get("status") == "pending"]
-            pending.sort(key=lambda rid: (self.requests[rid].get("created_at", 0),
+            pending.sort(key=lambda rid: (self.requests[rid].get("created_at") or 0,
                                           self.requests[rid].get("message_id", 0)))
             return pending
 
