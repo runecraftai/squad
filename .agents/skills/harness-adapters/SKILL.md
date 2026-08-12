@@ -293,7 +293,7 @@ Pi sets `PI_CODING_AGENT=true` for its children; this is its harness-detection e
 The Squad PRIMARY's own `.pi/extensions/sq-primary-turnend-guard.ts` listens for logical-run `agent_settled`, not per-tool-loop `turn_end`, and uses `pi.sendUserMessage(..., { deliverAs: "followUp" })` to force one guarded follow-up when `bin/sq-turnend-guard.sh` returns 2.
 Without `deliverAs: "followUp"`, Pi rejects the send while the agent is still processing.
 Pi's primary sentry protocol also requires the tracked `.pi/extensions/sq-primary-pi-watch.ts` extension, same trust-once discovery as the turn-end guard.
-The model arms through `fm_watch_arm_pi`, never a foreground bash arm; the sentry tool result and clean-exit fallback are owned by `docs/supervision-protocols/pi.md`.
+The model arms through `sq_watch_arm_pi`, never a foreground bash arm; the sentry tool result and clean-exit fallback are owned by `docs/supervision-protocols/pi.md`.
 `bin/sq-session-start.sh` reports when the live Pi-family session has not loaded both the turn-end guard and sentry extensions, and points at the selected executable after project trust as the fix, with `-e` as a trust-free fallback.
 When an XO is launched on Pi or pi-signed, `sq-spawn.sh --xo` launches the selected executable with both `-e .pi/extensions/sq-primary-turnend-guard.ts` and `-e .pi/extensions/sq-primary-pi-watch.ts`, both already present in the XO base's git worktree.
 

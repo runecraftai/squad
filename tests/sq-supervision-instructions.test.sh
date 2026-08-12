@@ -66,7 +66,7 @@ test_repair_lines() {
   assert_contains "$out" "session holding the unit lock" "read-only repair line missing"
 
   out=$(SQUAD_HOME="$home" "$RENDER" --harness pi --repair-line)
-  assert_contains "$out" "Pi tool fm_watch_arm_pi" "pi repair line does not direct the model to the extension-owned tool"
+  assert_contains "$out" "Pi tool sq_watch_arm_pi" "pi repair line does not direct the model to the extension-owned tool"
   assert_not_contains "$out" "extension command /sq-sentry-arm-pi" "pi repair line still directs the model to the human slash command"
   pass "renderer repair-line mode is harness-aware and honors conditional state"
 }
@@ -77,9 +77,9 @@ test_cross_harness_ordinary_continuation_and_repair_matrix() {
   out=$("$RENDER" --harness pi)
   ordinary=$(printf '%s\n' "$out" | grep -F -- '- Ordinary wake:')
   assert_contains "$ordinary" "Pi extension already owns sentry continuity" "pi ordinary-wake line does not leave continuity to the extension"
-  assert_not_contains "$ordinary" "fm_watch_arm_pi" "pi ordinary-wake line incorrectly calls the recovery tool"
+  assert_not_contains "$ordinary" "sq_watch_arm_pi" "pi ordinary-wake line incorrectly calls the recovery tool"
   out=$("$RENDER" --harness pi --repair-line)
-  assert_contains "$out" "fm_watch_arm_pi" "pi recovery line lost the extension-owned repair tool"
+  assert_contains "$out" "sq_watch_arm_pi" "pi recovery line lost the extension-owned repair tool"
 
   out=$("$RENDER" --harness opencode)
   ordinary=$(printf '%s\n' "$out" | grep -F -- '- Ordinary wake:')
@@ -131,7 +131,7 @@ test_pi_signed_preserves_identity_with_pi_supervision_protocol() {
   assert_contains "$ordinary" "Pi extension already owns sentry continuity" \
     "pi-signed ordinary-wake semantics diverged from Pi"
   out=$("$RENDER" --harness pi-signed --repair-line)
-  assert_contains "$out" "Pi tool fm_watch_arm_pi" \
+  assert_contains "$out" "Pi tool sq_watch_arm_pi" \
     "pi-signed repair semantics diverged from Pi"
   pass "pi-signed keeps its identity while sharing Pi's supervision protocol"
 }

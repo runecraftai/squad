@@ -96,7 +96,7 @@ const armReadyTimeoutMs = positiveInteger(
   process.platform === "win32" ? 35000 : 12000,
 );
 const armRetireTimeoutMs = positiveInteger("SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
-const repairOnlyHint = "call fm_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
+const repairOnlyHint = "call sq_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
 const shuttingDownMessage = "sentry: not armed - Pi session is shutting down";
 
 let nextGenerationId = 0;
@@ -346,7 +346,7 @@ export default function (pi: ExtensionAPI) {
     if (ownership === "missing") {
       return {
         ok: false,
-        message: "sentry: not armed - no live session holds the lock; run bin/sq-session-start.sh to reclaim it, then call fm_watch_arm_pi to re-arm",
+        message: "sentry: not armed - no live session holds the lock; run bin/sq-session-start.sh to reclaim it, then call sq_watch_arm_pi to re-arm",
       };
     }
     markLoaded();
@@ -471,22 +471,22 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool?.({
-    name: "fm_watch_arm_pi",
+    name: "sq_watch_arm_pi",
     label: "Arm Squad sentry",
     description: "Start the first required Pi sentry cycle, or repair one only after a notification says the cycle is missing, failed, or unhealthy. Do not call after ordinary work or ordinary notifications; the Pi extension re-arms automatically. Never run bin/sq-sentry-arm.sh through bash.",
     promptSnippet: "Start the first required Pi sentry cycle or repair a cycle reported missing, failed, or unhealthy; ordinary re-arming is automatic.",
     promptGuidelines: [
-      "Call fm_watch_arm_pi only for the first required cycle or after a notification says the cycle is missing, failed, or unhealthy. Do not call it after ordinary work, turn completion, or ordinary signal, stale, check, or heartbeat handling because the Pi extension owns re-arming. Never run bin/sq-sentry-arm.sh through bash.",
+      "Call sq_watch_arm_pi only for the first required cycle or after a notification says the cycle is missing, failed, or unhealthy. Do not call it after ordinary work, turn completion, or ordinary signal, stale, check, or heartbeat handling because the Pi extension owns re-arming. Never run bin/sq-sentry-arm.sh through bash.",
     ],
     parameters: Type.Object({}),
     renderShell: "self",
     renderCall: (_args, theme, context) => {
       if (calmHides("assistant-tool-call")) return new Container();
       if (calmPresentation.stockExportRendering) {
-        return new Text(theme.fg("toolTitle", theme.bold("fm_watch_arm_pi")), 0, 0);
+        return new Text(theme.fg("toolTitle", theme.bold("sq_watch_arm_pi")), 0, 0);
       }
       const state = context.state as WatchToolShellState;
-      state.call = new Text(theme.fg("toolTitle", theme.bold("fm_watch_arm_pi")), 0, 0);
+      state.call = new Text(theme.fg("toolTitle", theme.bold("sq_watch_arm_pi")), 0, 0);
       return refreshWatchToolShell(state, theme, context);
     },
     renderResult: (result, _options, theme, context) => {

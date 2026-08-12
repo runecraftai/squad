@@ -913,8 +913,8 @@ const watchPi = {
 };
 const watchExtension = await import(`${pathToFileURL(process.env.WATCH_EXT).href}?test=${Date.now()}`);
 watchExtension.default(watchPi);
-const watchTool = tools.find((tool) => tool.name === "fm_watch_arm_pi");
-if (!watchTool) throw new Error("Squad sentry extension did not register fm_watch_arm_pi");
+const watchTool = tools.find((tool) => tool.name === "sq_watch_arm_pi");
+if (!watchTool) throw new Error("Squad sentry extension did not register sq_watch_arm_pi");
 const stockWatchTool = { ...watchTool };
 delete stockWatchTool.renderCall;
 delete stockWatchTool.renderResult;
@@ -926,7 +926,7 @@ const watchResult = {
   isError: false,
 };
 const watchBaseline = new ToolExecutionComponent(
-  "fm_watch_arm_pi",
+  "sq_watch_arm_pi",
   "watch-baseline",
   watchArgs,
   { showImages: false },
@@ -935,7 +935,7 @@ const watchBaseline = new ToolExecutionComponent(
   process.cwd(),
 );
 const watchActual = new ToolExecutionComponent(
-  "fm_watch_arm_pi",
+  "sq_watch_arm_pi",
   "watch-actual",
   watchArgs,
   { showImages: false },
@@ -1204,7 +1204,7 @@ async function assertStockHtmlRendering(command, submitData) {
   });
   const exportCases = [
     ...cases.filter(([toolName]) => toolName === "grep" || toolName === "find"),
-    ["fm_watch_arm_pi", watchArgs, watchResult],
+    ["sq_watch_arm_pi", watchArgs, watchResult],
   ];
   for (const [name, args, result] of exportCases) {
     const toolCallId = `${command}-${name}`;
@@ -1255,7 +1255,7 @@ if (!customRow.render(100).join("\n").includes("CUSTOM_CALL")) {
   throw new Error("calm mode incorrectly claimed or applied generic custom-tool coverage");
 }
 if (watchActual.render(100).length !== 0) {
-  throw new Error("Calm left the fm_watch_arm_pi call/result shell visible");
+  throw new Error("Calm left the sq_watch_arm_pi call/result shell visible");
 }
 if (assistantThinkingTool.render(100).length !== 0) {
   throw new Error("Calm-hidden thinking beside a tool call retained vertical height");
@@ -1299,7 +1299,7 @@ if (JSON.stringify(imageRow.render(100)) !== JSON.stringify(imageVisibleBefore))
   throw new Error("built-in read image row did not restore its ordinary call shell and image output");
 }
 if (JSON.stringify(watchActual.render(100)) !== JSON.stringify(watchBaseline.render(100))) {
-  throw new Error("fm_watch_arm_pi did not restore its stock call/result shell");
+  throw new Error("sq_watch_arm_pi did not restore its stock call/result shell");
 }
 if (workingVisible !== true || hiddenThinkingLabel !== undefined || statuses.get("Squad-calm") !== undefined) {
   throw new Error("turning Calm off did not restore stock presentation controls");
@@ -3042,8 +3042,8 @@ TS
 {"type":"message","id":"a0000004","parentId":"a0000003","timestamp":"$now","message":{"role":"assistant","content":[{"type":"thinking","thinking":"second internal reasoning block"},{"type":"toolCall","id":"call_grep_e2e","name":"grep","arguments":{"pattern":"CALM_EXPORT_GREP","path":"."}},{"type":"toolCall","id":"call_find_e2e","name":"find","arguments":{"pattern":"CALM_EXPORT_FIND*","path":"."}}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":2,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":4}}
 {"type":"message","id":"a0000005","parentId":"a0000004","timestamp":"$now","message":{"role":"toolResult","toolCallId":"call_grep_e2e","toolName":"grep","content":[{"type":"text","text":"sample.txt:1:CALM_EXPORT_GREP"}],"details":{},"isError":false,"timestamp":5}}
 {"type":"message","id":"a0000006","parentId":"a0000005","timestamp":"$now","message":{"role":"toolResult","toolCallId":"call_find_e2e","toolName":"find","content":[{"type":"text","text":"CALM_EXPORT_FIND.txt"}],"details":{},"isError":false,"timestamp":6}}
-{"type":"message","id":"a0000007","parentId":"a0000006","timestamp":"$now","message":{"role":"assistant","content":[{"type":"thinking","thinking":"third internal reasoning block"},{"type":"toolCall","id":"call_watch_e2e","name":"fm_watch_arm_pi","arguments":{}}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":2,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":7}}
-{"type":"message","id":"a0000008","parentId":"a0000007","timestamp":"$now","message":{"role":"toolResult","toolCallId":"call_watch_e2e","toolName":"fm_watch_arm_pi","content":[{"type":"text","text":"sentry: started Pi extension arm child 1"}],"details":{"ok":true,"message":"sentry: started Pi extension arm child 1"},"isError":false,"timestamp":8}}
+{"type":"message","id":"a0000007","parentId":"a0000006","timestamp":"$now","message":{"role":"assistant","content":[{"type":"thinking","thinking":"third internal reasoning block"},{"type":"toolCall","id":"call_watch_e2e","name":"sq_watch_arm_pi","arguments":{}}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":2,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":7}}
+{"type":"message","id":"a0000008","parentId":"a0000007","timestamp":"$now","message":{"role":"toolResult","toolCallId":"call_watch_e2e","toolName":"sq_watch_arm_pi","content":[{"type":"text","text":"sentry: started Pi extension arm child 1"}],"details":{"ok":true,"message":"sentry: started Pi extension arm child 1"},"isError":false,"timestamp":8}}
 {"type":"custom","id":"a0000009","parentId":"a0000008","timestamp":"$now","customType":"Squad-synthetic-input-presentation","data":{"content":"SQUAD WATCHER WAKE: signal: /tmp/probe.status\\n\\nRun bin/sq-stand-to-drain.sh first and handle the queued wake. Watcher continuity is extension-owned.","kind":"sentry"}}
 {"type":"custom_message","id":"a0000010","parentId":"a0000009","timestamp":"$now","customType":"Squad-synthetic-input","content":"SQUAD WATCHER WAKE: signal: /tmp/probe.status\\n\\nRun bin/sq-stand-to-drain.sh first and handle the queued wake. Watcher continuity is extension-owned.","display":false,"details":{"kind":"sentry"}}
 {"type":"message","id":"a0000011","parentId":"a0000010","timestamp":"$now","message":{"role":"user","content":[{"type":"text","text":"SQUAD WATCHER WAKE: can you explain this phrase?"}],"timestamp":11}}
@@ -3059,7 +3059,7 @@ JSON
   wait_for_text "$default_snapshot" "The deterministic tool example is complete." \
     || fail "Pi calm E2E did not reach the restored session transcript"
   assert_contains "$(cat "$default_snapshot")" "CALM_E2E_OUTPUT" "calm mode was not off by default"
-  assert_contains "$(cat "$default_snapshot")" "fm_watch_arm_pi" "Calm-off transcript did not show the Squad sentry tool"
+  assert_contains "$(cat "$default_snapshot")" "sq_watch_arm_pi" "Calm-off transcript did not show the Squad sentry tool"
   assert_contains "$(cat "$default_snapshot")" "SQUAD WATCHER WAKE: signal: /tmp/probe.status" "Calm-off transcript did not show the synthetic Squad presentation row"
   assert_contains "$(cat "$default_snapshot")" "Thinking..." "reasoning fixture did not render Pi's collapsed thinking label"
   assert_contains "$(cat "$default_snapshot")" "sq-calm.ts" "project-local Pi calm extension did not auto-load"
@@ -3114,7 +3114,7 @@ JSON
   assert_contains "$(cat "$hidden_snapshot")" "CALM_EXPORT_GREP" "a pre-activation grep row unexpectedly hid; the documented bound regressed"
   assert_contains "$(cat "$hidden_snapshot")" "CALM_EXPORT_FIND" "a pre-activation find row unexpectedly hid; the documented bound regressed"
   assert_not_contains "$(cat "$hidden_snapshot")" "Thinking..." "/calm left collapsed thinking labels in the transcript"
-  assert_not_contains "$(cat "$hidden_snapshot")" "fm_watch_arm_pi" "/calm left the Squad sentry tool call shell in the transcript"
+  assert_not_contains "$(cat "$hidden_snapshot")" "sq_watch_arm_pi" "/calm left the Squad sentry tool call shell in the transcript"
   assert_not_contains "$(cat "$hidden_snapshot")" "sentry: started Pi extension arm child" "/calm left the Squad sentry tool result in the transcript"
   assert_not_contains "$(cat "$hidden_snapshot")" "SQUAD WATCHER WAKE: signal: /tmp/probe.status" "/calm left a synthetic Squad user-role presentation in the transcript"
   assert_not_contains "$(cat "$hidden_snapshot")" "Tool activity is hidden where supported" "/calm appended its own command-status row"
@@ -3296,7 +3296,7 @@ JS
     || fail "second /calm did not restore tool result output"
   wait_for_text "$restored_snapshot" "/tmp/active-probe.status" \
     || fail "second /calm did not restore a synthetic row received while Calm was active"
-  assert_contains "$(cat "$restored_snapshot")" "fm_watch_arm_pi" "second /calm did not restore the Squad sentry tool shell"
+  assert_contains "$(cat "$restored_snapshot")" "sq_watch_arm_pi" "second /calm did not restore the Squad sentry tool shell"
   assert_contains "$(cat "$restored_snapshot")" "SQUAD WATCHER WAKE: signal: /tmp/probe.status" "second /calm did not restore the synthetic Squad user row"
   for restored in \
     CURRENT_WATCHER_E2E \
@@ -3626,7 +3626,7 @@ JS
   wait_for_text "$restarted_snapshot" "CALM_WORKING_E2E_RESPONSE" \
     || fail "Pi did not restore the persisted session after restart"
   assert_not_contains "$(cat "$restarted_snapshot")" "CALM_E2E_OUTPUT" "restart/resume reset Calm and restored a tool row"
-  assert_not_contains "$(cat "$restarted_snapshot")" "fm_watch_arm_pi" "restart/resume reset Calm and restored the Squad sentry tool"
+  assert_not_contains "$(cat "$restarted_snapshot")" "sq_watch_arm_pi" "restart/resume reset Calm and restored the Squad sentry tool"
   assert_not_contains "$(cat "$restarted_snapshot")" "SQUAD WATCHER WAKE: signal: /tmp/probe.status" "restart/resume reset Calm and restored a legacy presentation row"
   for hidden in \
     CURRENT_WATCHER_E2E \

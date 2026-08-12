@@ -304,7 +304,7 @@ send_prompt "/calm"
 sleep 0.2
 
 : > "$HOME_DIR/state/pi-e2e.meta"
-send_prompt "Start supervision with fm_watch_arm_pi and never use bash to arm supervision. After the sentry wake arrives, run bin/sq-stand-to-drain.sh and reply exactly HANDLED."
+send_prompt "Start supervision with sq_watch_arm_pi and never use bash to arm supervision. After the sentry wake arrives, run bin/sq-stand-to-drain.sh and reply exactly HANDLED."
 wait_for_text "sentry: started Pi extension arm child 1" || fail "Pi did not render the initial sentry tool result"
 
 printf 'done: pi live e2e sentry fire\n' > "$HOME_DIR/state/pi-e2e.status"
