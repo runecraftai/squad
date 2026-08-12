@@ -433,6 +433,26 @@ The session-start digest separately prints an "Public commitments awaiting deliv
 `SQUAD_PF_RETRY_BACKOFF_SECS` (default 900) sets the next-attempt time recorded with a retryable delivery error.
 See [verification/public-followup.md](verification/public-followup.md) for the current maintainer evidence behind the restart end-to-end and the relay-disabled zero-overhead guarantee.
 
+## Telegram bridge (config/telegram-bridge.env)
+
+The Telegram bridge is an optional local relay that implements the connector contract of the Relay section above and translates it to the Telegram Bot API.
+It is the "local relay" `SQX_RELAY_URL` can point at: the base's `.env` needs only `SQX_RELAY_URL=http://127.0.0.1:8787` next to the existing `SQX_PAIRING_TOKEN`, and the running Squad base needs no code changes.
+Only the commander's Telegram user id is accepted as a mention author, and the connector listens on 127.0.0.1 by default.
+
+To set it up:
+
+1. Create a bot with @BotFather and copy its token.
+2. Write the token and the commander's Telegram user id to this base's gitignored `config/telegram-bridge.env`:
+   `TG_BOT_TOKEN=<bot token>`
+   `TG_ALLOWED_CHAT_IDS=<commander Telegram user id>`
+3. Put `SQX_PAIRING_TOKEN=<token>` in the base's gitignored `.env` (the same token already there when Relay is on) and set `SQX_RELAY_URL=http://127.0.0.1:8787`.
+4. Run `python3 bin/sq-tg-bridge.py`; it needs only the Python 3 standard library, binds 127.0.0.1, and logs to stderr (the script header and `--help` own the exact flags and config keys).
+
+Run it as a long-lived process under the service manager of your choice; the bridge restarts non-lossy because its runtime state is persisted.
+The bridge reports the client-resolved `discord` platform with an explicit `reply_max_chars` of 4096.
+The Squad relay client resolves only the `x` and `discord` platforms for its follow-up fail-safe, and an explicit limit always wins over the platform default, so replies still split at Telegram's 4096-character message budget and completion follow-ups pass the fail-safe.
+Runtime request state (the pending queue, follow-up bindings, and the Telegram update offset) lives in `state/telegram-bridge/state.json` (gitignored) and survives bridge restarts.
+
 ## Process-to-event sources (state/procevent)
 
 A long-polling external process is registered as a *source* through its adapter, whose header and `--help` own the commands and flags.
@@ -545,6 +565,12 @@ SQX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; val
 SQX_X_THREAD_MAX=25     # maximum messages in one auto-split reply thread
 SQX_FOLLOWUP_MAX_AGE_SECS=604800   # local window for posting Relay completion follow-ups (7 days)
 SQX_FOLLOWUP_MAX_COUNT=3   # local cap on Relay completion follow-ups per linked mention
+TG_BOT_TOKEN=            # Telegram bridge: bot token from @BotFather (config/telegram-bridge.env)
+TG_ALLOWED_CHAT_IDS=     # Telegram bridge: comma-separated commander Telegram user ids allowed to send requests
+TG_BRIDGE_BIND=127.0.0.1   # Telegram bridge: connector listen address
+TG_BRIDGE_PORT=8787     # Telegram bridge: connector listen port (0 = ephemeral)
+TG_BRIDGE_CONFIG=        # Telegram bridge: alternate env file (default <SQUAD_HOME>/config/telegram-bridge.env)
+TG_BRIDGE_STATE_FILE=    # Telegram bridge: alternate runtime state file (default <SQUAD_HOME>/state/telegram-bridge/state.json)
 SQUAD_PF_RETRY_BACKOFF_SECS=900   # seconds before the next attempt after a retryable promised-public-reply delivery error
 SQUAD_LOCK_STALE_AFTER=2   # seconds before dead-pid lock records can be reclaimed; mid-acquire locks keep at least 2s grace
 SQUAD_GUARD_GRACE=300      # seconds before guard warnings, arm health checks, and the primary turn-end guard treat a sentry beacon as stale
