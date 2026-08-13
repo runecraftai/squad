@@ -54,7 +54,7 @@ make_XO_fixture() {
 # tasks. git-dir and git-common-dir differ, so the guard must be inert.
 make_child_worktree_fixture() {
   local base=$1 dir=$2
-  fm_git_worktree "$base" "$dir" fm/cd-guard-test-branch
+  fm_git_worktree "$base" "$dir" sq/cd-guard-test-branch
   : > "$dir/AGENTS.md"
   install_cd_scripts "$dir"
   printf '%s\n' "$dir"

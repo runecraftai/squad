@@ -1369,7 +1369,7 @@ test_opencode_watch_arm_coordinator_respects_primary_scope() {
   repo="$TMP_ROOT/opencode-coordinator-wt"
   home="$TMP_ROOT/opencode-coordinator-home"
   log="$TMP_ROOT/opencode-coordinator.log"
-  fm_git_worktree "$base" "$repo" fm/opencode-coordinator
+  fm_git_worktree "$base" "$repo" sq/opencode-coordinator
   mkdir -p "$repo/bin" "$home/state" "$home/config"
   : > "$repo/AGENTS.md"
   : > "$home/state/task.meta"

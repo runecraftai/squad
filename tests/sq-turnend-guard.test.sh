@@ -152,7 +152,7 @@ make_XO_dir() {
 # git-common-dir differ here, unlike a plain checkout.
 make_operator_worktree_dir() {
   local base=$1 dir=$2
-  fm_git_worktree "$base" "$dir" fm/turnend-guard-test-branch
+  fm_git_worktree "$base" "$dir" sq/turnend-guard-test-branch
   mkdir -p "$dir/state"
   : > "$dir/AGENTS.md"
   install_guard_scripts "$dir"
@@ -166,7 +166,7 @@ make_operator_worktree_dir() {
 # it stays exempt through the linked-worktree git-dir test.
 make_XO_child_worktree_dir() {
   local home=$1 dir=$2
-  git -C "$home" worktree add --quiet -b fm/turnend-XO-child "$dir"
+  git -C "$home" worktree add --quiet -b sq/turnend-XO-child "$dir"
   mkdir -p "$dir/state"
   : > "$dir/AGENTS.md"
   install_guard_scripts "$dir"
@@ -180,7 +180,7 @@ make_XO_child_worktree_dir() {
 # as a guarded primary via the marker, not exempt it as a linked worktree.
 make_XO_linked_home_dir() {
   local base=$1 dir=$2
-  fm_git_worktree "$base" "$dir" fm/turnend-XO-linked-home
+  fm_git_worktree "$base" "$dir" sq/turnend-XO-linked-home
   mkdir -p "$dir/state"
   : > "$dir/AGENTS.md"
   install_guard_scripts "$dir"

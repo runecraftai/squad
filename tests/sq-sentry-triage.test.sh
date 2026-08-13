@@ -130,10 +130,10 @@ test_signal_reason_is_actionable_classifier() {
 test_stale_is_terminal_classifier() {
   local dir state
   dir=$(make_case classify-stale); state="$dir/state"
-  printf 'done: ready in branch fm/x\n' > "$state/term.status"
+  printf 'done: ready in branch sq/x\n' > "$state/term.status"
   stale_is_terminal "sess:sq-term" "$state" || fail "terminal stale status not classified terminal"
   fm_write_meta "$state/herdr-term.meta" "window=default:w1:p2" "backend=herdr"
-  printf 'done: ready in branch fm/herdr\n' > "$state/herdr-term.status"
+  printf 'done: ready in branch sq/herdr\n' > "$state/herdr-term.status"
   stale_is_terminal "default:w1:p2" "$state" || fail "terminal herdr stale status not resolved through metadata"
   printf 'working: compiling\n' > "$state/nonterm.status"
   stale_is_terminal "sess:sq-nonterm" "$state" && fail "non-terminal stale classified terminal"

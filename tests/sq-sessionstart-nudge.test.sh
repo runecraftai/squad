@@ -96,7 +96,7 @@ test_gate_common_dir_is_silent() {
 
 test_unmarked_linked_worktree_is_silent() {
   local base="$TMP_ROOT/worktree-base" root="$TMP_ROOT/worktree-child"
-  fm_git_worktree "$base" "$root" fm/sessionstart-linked
+  fm_git_worktree "$base" "$root" sq/sessionstart-linked
   mkdir -p "$root/bin" "$root/state"
   : > "$root/AGENTS.md"
   expect_silent_zero "linked worktree nudge" run_nudge "$root"
@@ -105,7 +105,7 @@ test_unmarked_linked_worktree_is_silent() {
 
 test_linked_XO_primary_nudges() {
   local base="$TMP_ROOT/XO-base" root="$TMP_ROOT/XO-home" out status=0
-  fm_git_worktree "$base" "$root" fm/sessionstart-XO
+  fm_git_worktree "$base" "$root" sq/sessionstart-XO
   mkdir -p "$root/bin" "$root/state"
   : > "$root/AGENTS.md"
   printf 'sessionstart-sm\n' > "$root/.sq-xo-home"
@@ -372,7 +372,7 @@ test_run_gate_and_scope_are_silent() {
     SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$root" PATH="$RUN_PATH" "$RUN" --source startup
   assert_absent "$root/state/.lock" "a gate agent's session open still took the unit lock"
 
-  fm_git_worktree "$base" "$linked" fm/run-linked
+  fm_git_worktree "$base" "$linked" sq/run-linked
   mkdir -p "$linked/bin" "$linked/state"
   : > "$linked/AGENTS.md"
   expect_silent_zero "linked worktree run" run_hook "$linked" --source startup

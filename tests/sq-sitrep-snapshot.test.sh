@@ -46,12 +46,12 @@ if [ "${FAKE_GH_FAIL:-0}" = 1 ]; then exit 1; fi
 if [ "${FAKE_GH_SLEEP:-0}" = 1 ]; then sleep 30; fi
 if [ "${FAKE_GH_MANY:-0}" = 1 ]; then
   cat <<'JSON'
-[{"number":1,"title":"One","url":"https://github.com/acme/repo/pull/1","headRefName":"fm/one","reviewDecision":"","mergeable":"MERGEABLE","statusCheckRollup":[]},{"number":2,"title":"Two","url":"https://github.com/acme/repo/pull/2","headRefName":"fm/two","reviewDecision":"","mergeable":"MERGEABLE","statusCheckRollup":[]},{"number":3,"title":"Three","url":"https://github.com/acme/repo/pull/3","headRefName":"fm/three","reviewDecision":"","mergeable":"MERGEABLE","statusCheckRollup":[]}]
+[{"number":1,"title":"One","url":"https://github.com/acme/repo/pull/1","headRefName":"sq/one","reviewDecision":"","mergeable":"MERGEABLE","statusCheckRollup":[]},{"number":2,"title":"Two","url":"https://github.com/acme/repo/pull/2","headRefName":"sq/two","reviewDecision":"","mergeable":"MERGEABLE","statusCheckRollup":[]},{"number":3,"title":"Three","url":"https://github.com/acme/repo/pull/3","headRefName":"sq/three","reviewDecision":"","mergeable":"MERGEABLE","statusCheckRollup":[]}]
 JSON
   exit 0
 fi
 cat <<'JSON'
-[{"number":9,"title":"Ship the thing","url":"https://github.com/runecraftai/squad/pull/9","headRefName":"fm/ship-task","reviewDecision":"APPROVED","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]
+[{"number":9,"title":"Ship the thing","url":"https://github.com/runecraftai/squad/pull/9","headRefName":"sq/ship-task","reviewDecision":"APPROVED","mergeable":"MERGEABLE","statusCheckRollup":[{"conclusion":"SUCCESS","status":"COMPLETED"}]}]
 JSON
 SH
   cat > "$fb/sq-gh" <<'SH'
@@ -464,7 +464,7 @@ test_bad_XO_homes_never_revive_parent_work() {
   make_valid_XO_home timedout "$timedout"
   wt="$timedout/projects/slow"
   fm_git_init_commit "$wt"
-  git -C "$wt" checkout -q -b fm/slow
+  git -C "$wt" checkout -q -b sq/slow
   printf '## In flight\n- [ ] slow - Slow child (repo: sample) (kind: ship) (since 2026-07-13)\n\n## Queued\n\n## Done\n' > "$timedout/data/backlog.md"
   fm_write_meta "$timedout/state/slow.meta" \
     "window=Squad:sq-slow" "worktree=$wt" "project=sample" \

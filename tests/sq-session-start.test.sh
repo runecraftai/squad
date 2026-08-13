@@ -732,7 +732,7 @@ EOF
   mkdir -p "$home/other-XO/state"
   fm_write_XO_meta "$home/state/sm-x.meta" "$home/other-XO" "Squad:sq-sm-x" alpha
   append_wake "$home/state" signal sm-x "done: surfaced before refusal" || fail "seed wake failed"
-  git -C "$root" checkout -q -B fm/read-only-tangle
+  git -C "$root" checkout -q -B sq/read-only-tangle
 
   sleep 300 &
   holder_pid=$!
@@ -750,7 +750,7 @@ EOF
   assert_contains "$out" "skipped (read-only session)" "stand-to queue section did not report itself skipped"
   assert_contains "$out" "WATCHER DOWN - SUPERVISION IS OFF" "read-only guard did not surface sentry-liveness alarm"
   assert_contains "$out" "queued wakes pending - left untouched because this session lacks verified unit-lock ownership" "read-only guard did not leave queued wakes untouched without verified lock ownership"
-  assert_contains "$out" "TANGLE: primary checkout on feature branch 'fm/read-only-tangle'" "read-only bootstrap did not surface the tangle diagnostic"
+  assert_contains "$out" "TANGLE: primary checkout on feature branch 'sq/read-only-tangle'" "read-only bootstrap did not surface the tangle diagnostic"
   assert_contains "$out" "read-only session must leave restore work" "read-only tangle diagnostic did not explain restore ownership"
   assert_contains "$out" "Stay read-only: do not arm" "read-only next step did not block direct sentry repair"
   assert_not_contains "$out" "drain them with bin/sq-stand-to-drain.sh" "read-only guard printed a mutating drain instruction"
@@ -1975,7 +1975,7 @@ $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
-  git -C "$root" checkout -q -B fm/reemit-tangle
+  git -C "$root" checkout -q -B sq/reemit-tangle
 
   reemit=$(SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
     env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \

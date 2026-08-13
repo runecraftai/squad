@@ -167,7 +167,7 @@ SH
   git clone -q "$case_dir/origin.git" "$case_dir/project"
   git -C "$case_dir/project" remote set-head origin main 2>/dev/null || true
   # Add a worktree on a fresh task branch; that branch is where the operator commits.
-  git -C "$case_dir/project" worktree add -q -b fm/task-x1 "$case_dir/wt" main
+  git -C "$case_dir/project" worktree add -q -b sq/task-x1 "$case_dir/wt" main
 
   # Fresh sentry beacon so sq-guard stays quiet.
   touch "$case_dir/state/.last-sentry-beat"
@@ -226,7 +226,7 @@ add_fork_with_pushed_branch() {
   git -C "$case_dir/project" remote add fork "$case_dir/fork.git"
   # Push the task branch from the worktree to the fork, then fetch into project
   # so refs/remotes/fork/sq-task-x1 is visible from the worktree (shared object db).
-  git -C "$case_dir/wt" push -q fork fm/task-x1
+  git -C "$case_dir/wt" push -q fork sq/task-x1
   git -C "$case_dir/project" fetch -q fork
 }
 
@@ -661,7 +661,7 @@ test_drill_origin_remote_allows() {
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
   # Push the task branch to origin and fetch so the worktree sees it.
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   set +e
@@ -747,7 +747,7 @@ test_no_pr_recorded_discovers_merged_pr_by_branch_allows() {
   # happened): a branch with a commit, a drill auto-fix commit pushed on
   # top that never made it back into the local worktree, a squash merge onto
   # main under a brand-new SHA, and the head branch deleted (simulated here by
-  # never pushing fm/task-x1 at all, so no refs/remotes/origin/fm/task-x1
+  # never pushing sq/task-x1 at all, so no refs/remotes/origin/sq/task-x1
   # exists to make HEAD "reachable").
   wt_commit_file "$case_dir" feature.txt hello "add feature"
   local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
@@ -775,8 +775,8 @@ test_squash_merged_pr_allows_replayed_unpushed_patch() {
   write_meta "$case_dir" drill strike
   wt_commit_file "$case_dir" local-parent.txt parent "local parent"
   parent_head=$(git -C "$case_dir/wt" rev-parse HEAD)
-  git -C "$case_dir/wt" push -q origin "$parent_head:refs/heads/fm/task-x1"
-  git -C "$case_dir/project" fetch -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin "$parent_head:refs/heads/sq/task-x1"
+  git -C "$case_dir/project" fetch -q origin sq/task-x1
   wt_commit_file "$case_dir" feature.txt hello "add feature"
   append_pr_meta_url "$case_dir"
   pr_head=$(land_equivalent_patch_on_origin_branch "$case_dir" pr-head feature.txt hello "add feature")
@@ -958,7 +958,7 @@ test_stale_index_lock_cleared_and_teardown_succeeds() {
   case_dir=$(make_case stale-index-lock)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_lock_aware_fob "$case_dir"
@@ -987,7 +987,7 @@ test_live_index_lock_is_never_removed_and_teardown_refuses() {
   case_dir=$(make_case live-index-lock)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_lock_aware_fob "$case_dir"
@@ -1019,7 +1019,7 @@ test_lsof_error_never_clears_index_lock() {
   case_dir=$(make_case lsof-error-index-lock)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_lock_aware_fob "$case_dir"
@@ -1050,7 +1050,7 @@ test_stale_index_lock_cleanup_rechecks_dirty_worktree() {
   case_dir=$(make_case stale-lock-dirty-recheck)
   write_meta "$case_dir" drill strike
   wt_commit_file "$case_dir" feature.txt landed "landed work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
   printf '%s\n' dirty > "$case_dir/wt/feature.txt"
 
@@ -1084,10 +1084,10 @@ test_non_linked_index_lock_path_is_checked_from_worktree() {
   case_dir=$(make_case non-linked-index-lock)
   git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
   git clone -q "$case_dir/origin.git" "$case_dir/wt"
-  git -C "$case_dir/wt" checkout -q -b fm/task-x1
+  git -C "$case_dir/wt" checkout -q -b sq/task-x1
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable normal clone work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/wt" fetch -q origin
 
   add_lock_aware_fob "$case_dir"
@@ -1116,7 +1116,7 @@ test_index_lock_mtime_read_failure_refuses() {
   case_dir=$(make_case mtime-error-index-lock)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_lock_aware_fob "$case_dir"
@@ -1150,7 +1150,7 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds() {
   case_dir=$(make_case transient-index-lock-retry)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_transient_lock_fob "$case_dir"
@@ -1190,7 +1190,7 @@ test_persistent_index_lock_exhausts_retries_and_refuses_loudly() {
   case_dir=$(make_case persistent-index-lock)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_persistent_lock_fob "$case_dir"
@@ -1228,7 +1228,7 @@ test_empty_retry_wait_uses_default_without_aborting() {
   case_dir=$(make_case empty-retry-wait)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_transient_lock_fob "$case_dir"
@@ -1264,7 +1264,7 @@ test_fractional_legacy_retry_wait_refuses_without_arithmetic_error() {
   case_dir=$(make_case fractional-legacy-retry-wait)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_persistent_lock_fob "$case_dir"
@@ -1296,7 +1296,7 @@ test_fob_return_lock_legacy_alias_wait_still_supported() {
   case_dir=$(make_case fob-legacy-alias-retry-wait)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_persistent_lock_fob "$case_dir"
@@ -1330,7 +1330,7 @@ test_fob_return_lock_legacy_alias_retry_budget_still_applies() {
   case_dir=$(make_case fob-legacy-alias-retry-budget)
   write_meta "$case_dir" drill strike
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 
   add_transient_lock_fob "$case_dir" 3
@@ -1580,7 +1580,7 @@ SH
     : > "$release"; fail "herdr-orphan-refusal: the contended refusal still returned the isolated copy: $(cat "$thlog")"
   fi
   [ -d "$case_dir/wt" ] || { : > "$release"; fail "herdr-orphan-refusal: the contended refusal removed the isolated copy"; }
-  if [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "fm/task-x1" ]; then
+  if [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "sq/task-x1" ]; then
     : > "$release"; fail "herdr-orphan-refusal: the contended refusal dropped the task branch before refusing"
   fi
   if grep -q "teardown task-x1 complete" "$case_dir/stdout"; then
@@ -1673,7 +1673,7 @@ SH
   assert_grep "nothing was changed" "$case_dir/stderr" \
     "herdr-preflight-$mode: the retryable pre-return refusal was not explained visibly"
   [ -d "$case_dir/wt" ] || fail "herdr-preflight-$mode: refusal removed the isolated copy"
-  [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "fm/task-x1" ] \
+  [ "$(git -C "$case_dir/wt" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "sq/task-x1" ] \
     || fail "herdr-preflight-$mode: refusal dropped the task branch"
   [ -e "$case_dir/state/task-x1.meta" ] \
     || fail "herdr-preflight-$mode: refusal erased the durable endpoint metadata"
@@ -2057,7 +2057,7 @@ EOF
 land_shippable_commit() {
   local case_dir=$1
   wt_commit "$case_dir" "shippable work"
-  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/wt" push -q origin sq/task-x1
   git -C "$case_dir/project" fetch -q origin
 }
 
@@ -2069,7 +2069,7 @@ test_parked_own_run_is_aborted_before_teardown() {
   head=$(git -C "$case_dir/wt" rev-parse HEAD)
 
   local rc=0
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/task-x1 "$head")" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -2091,8 +2091,8 @@ test_mismatched_run_after_abort_refuses_unconfirmed() {
   head=$(git -C "$case_dir/wt" rev-parse HEAD)
 
   rc=0
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head" 01RUN)" \
-  SQUAD_FAKE_AXI_STATUS_AFTER_ABORT="$(parked_axi_status_toon fm/task-x1 "$head" 02RUN)" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/task-x1 "$head" 01RUN)" \
+  SQUAD_FAKE_AXI_STATUS_AFTER_ABORT="$(parked_axi_status_toon sq/task-x1 "$head" 02RUN)" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -2111,7 +2111,7 @@ test_empty_status_after_abort_refuses_unconfirmed() {
   head=$(git -C "$case_dir/wt" rev-parse HEAD)
 
   rc=0
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/task-x1 "$head")" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
   SQUAD_FAKE_DRILL_EMPTY_AFTER_ABORT=1 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -2129,7 +2129,7 @@ test_not_found_status_after_abort_confirms_completion() {
   head=$(git -C "$case_dir/wt" rev-parse HEAD)
 
   rc=0
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/task-x1 "$head")" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
   SQUAD_FAKE_DRILL_NOT_FOUND_AFTER_ABORT=1 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -2155,7 +2155,7 @@ EOF
   chmod +x "$case_dir/fakebin/fob"
 
   rc=0
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/task-x1 "$head")" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
   SQUAD_FAKE_DRILL_ABORT_NOOP=1 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -2184,7 +2184,7 @@ test_another_branchs_parked_run_is_never_touched() {
   # A parked run reported for a DIFFERENT branch - e.g. another crew's task
   # still validating on the shared gate - must never be aborted by this task's
   # teardown.
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/some-other-task deadbeef)" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/some-other-task deadbeef)" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -2204,7 +2204,7 @@ test_own_autonomous_run_is_left_alone() {
   head=$(git -C "$case_dir/wt" rev-parse HEAD)
 
   rc=0
-  SQUAD_FAKE_AXI_STATUS="$(running_axi_status_toon fm/task-x1 "$head")" \
+  SQUAD_FAKE_AXI_STATUS="$(running_axi_status_toon sq/task-x1 "$head")" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$case_dir/drill-abort.log" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -2589,7 +2589,7 @@ EOF
   chmod +x "$case_dir/fakebin/fob"
 
   rc=0
-  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  SQUAD_FAKE_AXI_STATUS="$(parked_axi_status_toon sq/task-x1 "$head")" \
   SQUAD_FAKE_DRILL_ABORT_LOG="$abort_log" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "abort-then-reap-then-remove-order: teardown should still succeed"

@@ -36,7 +36,7 @@ make_case() {
 
   git clone -q "$case_dir/origin.git" "$case_dir/project"
   git -C "$case_dir/project" remote set-head origin main 2>/dev/null || true
-  git -C "$case_dir/project" worktree add -q -b fm/task-x1 "$case_dir/wt" main
+  git -C "$case_dir/project" worktree add -q -b sq/task-x1 "$case_dir/wt" main
 
   touch "$case_dir/state/.last-sentry-beat"
   printf '%s\n' "$case_dir"
@@ -64,7 +64,7 @@ stale_and_pr_commits() {
   git -C "$case_dir/wt" commit -qm "pipeline fix on PR"
   PR_SHA=$(git -C "$case_dir/wt" rev-parse HEAD)
 
-  git -C "$case_dir/wt" checkout -q fm/task-x1
+  git -C "$case_dir/wt" checkout -q sq/task-x1
 }
 
 run_review_diff() {
@@ -97,7 +97,7 @@ test_stale_recorded_pr_head_loses_to_fetched_pull_head() {
   local case_dir out stale_sha
   case_dir=$(make_case stale-recorded)
   stale_and_pr_commits "$case_dir"
-  stale_sha=$(git -C "$case_dir/wt" rev-parse fm/task-x1)
+  stale_sha=$(git -C "$case_dir/wt" rev-parse sq/task-x1)
   # Remote PR head is newer (pipeline fix); meta still points at the older local tip.
   git -C "$case_dir/wt" push -q origin "pr-head-tmp:refs/pull/9/head"
   write_task_meta "$case_dir" \
