@@ -160,9 +160,9 @@ test_guard_alias_allowlist_is_exact() {
   local line stripped
   for line in \
     'export SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=3' \
-    'FOB_RETURN_LOCK_RETRIES=${SQUAD_FOB_RETURN_LOCK_RETRIES:-${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}}' \
+    "FOB_RETURN_LOCK_RETRIES=\${SQUAD_FOB_RETURN_LOCK_RETRIES:-\${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}}" \
     'SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0.1' \
-    '`SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS` remains a compatible fallback'; do
+    "\`SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS\` remains a compatible fallback"; do
     stripped=$(printf '%s\n' "$line" | sed "$TREEHOUSE_LEGACY_ALIAS_SED")
     if printf '%s\n' "$stripped" | grep -qi -E -e "$pattern"; then
       fail "guard 5 allowlist: exact documented alias still flagged: $line"
