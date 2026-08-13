@@ -298,7 +298,7 @@ test_bootstrap_reporting() {
     esac
   done <<'ROWS'
 fob --lease support is accepted silently^1^0.2.4^1^manual^empty^^
-fob without --lease reports an upgrade, gh auth is fine^0^0.2.4^1^-^grep^MISSING: fob (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder)^NEEDS_GH_AUTH
+fob without --lease reports an upgrade, gh auth is fine^0^0.2.4^1^-^grep^MISSING: fob (install: bin/sq-install-fob.sh ~/.local/bin  # build the vendored packages/fob)^NEEDS_GH_AUTH
 compatible tasks-axi is silent by default^1^0.2.4^1^-^empty^^
 missing tasks-axi is required by default^1^-^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
 incompatible tasks-axi is required by default^1^0.0.9^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^

@@ -29,8 +29,8 @@ An auto-detected Herdr spawn prints an opt-out notice.
 Spawn stops before creating a Herdr container or acquiring a task worktree when `herdr`, `jq`, or the protocol floor is unavailable.
 No separate first-run provisioning is required.
 
-The required CI lane uses the pinned installers in `bin/sq-install-herdr.sh` and `bin/sq-install-fob.sh`.
-Those script headers own release assets, checksums, download bounds, and post-install gates.
+The required CI lane installs Herdr from its pinned release and fob from the vendored source via `bin/sq-install-herdr.sh` and `bin/sq-install-fob.sh`.
+Those script headers own their exact install contracts (release assets, checksums, download bounds, build prerequisites, and post-install gates).
 Real harness credential tests remain opt-in rather than part of default CI.
 
 ## Watching and task containers
