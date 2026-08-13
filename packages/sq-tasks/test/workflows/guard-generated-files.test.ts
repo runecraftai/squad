@@ -19,7 +19,9 @@ const repos: string[] = [];
 
 afterEach(() => {
   for (const repo of repos.splice(0)) {
-    rmSync(repo, { recursive: true, force: true });
+    // Retry on transient ENOTEMPTY/EBUSY while recursively removing .git;
+    // Node's rm retries EBUSY/EMFILE/ENFILE/ENOTEMPTY/EPERM when recursive.
+    rmSync(repo, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 
