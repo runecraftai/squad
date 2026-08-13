@@ -111,7 +111,7 @@ test_unset_fm_home_fails() {
   dir="$TMP_ROOT/nohome"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
 
-  env -u SQUAD_BASE -u SQUAD_BASE PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$dir" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env -u SQUAD_BASE -u SQUAD_HOME PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$dir" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" sess:win "hello" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "unset SQUAD_BASE and legacy SQUAD_HOME should fail"
   assert_contains "$(cat "$err")" "SQUAD_BASE is not set" "unset SQUAD_BASE diagnostic should be explicit"
