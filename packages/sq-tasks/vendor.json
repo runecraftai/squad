@@ -8,5 +8,5 @@
   "sha256_package_json": "5e0ccea11f041310d0346b2ccd96cbccf19ce239ffcddb21ab716dd5b6c2056f",
   "sha256_tree": "fd55453cf18cb6b71d4912deb4d71814a3757cb30c2ba3514a12e20fcb50dd5d",
   "license": "MIT",
-  "notes": "Squad fork of kunchenguid/tasks-axi. SQUAD_TASKS_AXI_MIN stays 0.2.4 (durable contract). Install from the workspace: npm install -g ./packages/sq-tasks. Upstream sync on-demand per umbrella design.md section 9."
+  "notes": "Squad fork of kunchenguid/tasks-axi. SQUAD_TASKS_AXI_MIN is 0.1.0 (clean-baseline reset, PR #16 — the earlier durable 0.2.4 claim was superseded; floor owner: bin/sq-tasks-lib.sh). Install from the workspace: npm install -g ./packages/sq-tasks. Upstream sync on-demand per umbrella design.md section 9."
 }

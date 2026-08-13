@@ -77,3 +77,38 @@ All six open questions resolved by the commander with the recommended defaults:
 | OQ-M6-06 | (a) — `vendor.json` added during the sq-tasks rename |
 
 Execution authorized by the commander ("autorizo") including: building fob/no-mistakes locally from the vendored sources as the interim install until the OQ-03 release channel publishes, and dispatching the M6 implementation through the standard strike pipeline (isolated copy, no-mistakes validation, PR for commander review).
+
+## Post-delivery review (2026-08-13, commander decision)
+
+M6 shipped as planned (2026-08-10, branch `fm/m6-executar-vendoring-da-toolchain-no-mo-3b`). The review below re-verifies every assumption, task, and OQ against the live repo state after the follow-on PRs landed. Historical planning records above stay intact; this section is the current-facts delta.
+
+### Current repo state (verified 2026-08-13)
+
+- `packages/` = `drill fob pr-review sq-browser sq-gh sq-quota sq-report sq-tasks` — all five Squad-named tools vendored, `packages/tasks-axi` gone, `packages/no-mistakes` gone (renamed to `drill`), `packages/goal-loop-audit` gone (cut per commander decision 2026-08-10).
+- **0.1.0 baseline reset (PR #16, 2026-08-11):** every workspace package (incl. the five sq-* forks and pr-review) was reset to a clean `0.1.0` version; CHANGELOGs dropped; `.release-please-manifest.json` and sq-report `plugin.json` zeroed. `vendor.json` provenance still records the upstream pinned version (0.1.30 / 0.1.29 / 0.1.48 / 0.1.20 / 0.2.5) — package.json version and provenance version are intentionally different now.
+- **Floors reset to 0.1.0:** `GH_AXI_MIN=0.1.0`, `LAVISH_AXI_MIN=0.1.0` (sq-bootstrap.sh), `SQUAD_QUOTA_AXI_MIN=0.1.0` (sq-quota-lib.sh), `SQUAD_TASKS_AXI_MIN=0.1.0` (sq-tasks-lib.sh). The planned bump to vendored versions (OQ-M6-03 (a)) and the "durable 0.2.4" SQUAD_TASKS_AXI_MIN claim are superseded by the PR #16 reset; the sq-tasks `vendor.json` note originally claiming "SQUAD_TASKS_AXI_MIN stays 0.2.4" was corrected in this review to the 0.1.0 baseline fact.
+- **no-mistakes renamed to drill (PR #8, 2026-08-10):** `packages/no-mistakes` → `packages/drill`, `.no-mistakes.yaml` → `.drill.yaml`, `bin/sq-nm-run-lib.sh` → `bin/sq-drill-run-lib.sh`, `no-mistakes-required.yml` → `drill-required.yml`; `COMMON_TOOLS="node git gh drill sq-gh sq-browser sq-report sq-quota sq-tasks"`; `DRILL_MIN=1.31.2`. The root `.no-mistakes.yaml` survived the PR #8 rename untouched since M1 with zero consumers (no Go source, script, or workflow reads it; the M6 name guard does not scan root dotfiles) and was removed as an orphan on 2026-08-13 — the root `.drill.yaml` alone is the active config, and the guard/docs do not need the leftover file.
+- **pr-review is maintained, not vendored (PR #16):** dropped `vendor.json` and upstream identity fields (repository/homepage/bugs, README upstream section); version 0.1.0; docs/pr-review.md reads "Squad maintains @runecraft/pr-review (0.1.0)". The `pr_review_verify` fix is committed (single Object schema + runtime required-field validation) with its regression test green; the package suite is 250 pass / 2 fail — the two failures are README-content assertions that drifted when the READMEs were beautified (PR #11), unrelated to the schema fix.
+- **SQUAD_HOME → SQUAD_BASE (PR #22, 2026-08-13):** env contract renamed with a permanent read shim; this repo's session-start now runs from the new base.
+- **fob built from source (PR #26, 2026-08-13):** `bin/sq-install-fob.sh ~/.local/bin` builds the vendored `packages/fob`; the OQ-03 release-channel 404 no longer blocks the local install.
+- **Skills scrub (PR #25, 2026-08-13):** packaged skill dirs renamed to the Squad names (`sq-gh/skills/sq-gh`, `sq-browser/skills/sq-browser`, `sq-quota/skills/sq-quota`, `sq-tasks/skills/sq-tasks`; `sq-report/skills/lavish` kept as the product name). `skills/` public dir holds only `debrief`; `.agents/skills/` holds the 19 agent-loaded internal skills.
+- **Name guard:** `tests/sq-m6-name-guard.test.sh` exists and passes; its keep-list now retires every packages/ hit (incl. the former sq-browser bridge log-prefix pin) and documents the remaining deferred-prose keep-list (sq-brief.sh "Use gh-axi…", etc.).
+- **CI:** `axi-tools` matrix job (sq-gh, sq-browser, sq-quota, sq-report) exists; `tasks-axi` job renamed `sq-tasks`; install steps use `./packages/sq-tasks` and the `tasks-axi` protocol alias only.
+
+### OQ-M6-01..06 re-stated with current facts
+
+| OQ | Planned resolution | Current fact |
+| --- | --- | --- |
+| OQ-M6-01 | (a) — aliases for all five renamed tools + mandatory `tasks-axi` alias | **Partially landed.** Only the mandatory `tasks-axi` → `sq-tasks` protocol alias exists (CI + resolver fallback). The four optional legacy aliases (`gh-axi`→`sq-gh`, `chrome-devtools-axi`→`sq-browser`, `lavish-axi`→`sq-report`, `quota-axi`→`sq-quota`) were NOT created. Deferred prose that names the old tools (sq-brief.sh, comments) stays in the guard keep-list; the rebrand item must retire it or the prose must be updated. |
+| OQ-M6-02 | (a) — `npm install -g ./packages/<pkg>` | **Landed.** install_cmd branches install from the workspace; drill stays on its OQ-03 release placeholder. |
+| OQ-M6-03 | (a) — floors bumped to vendored versions | **Superseded by PR #16.** All four floors are 0.1.0 now (the clean-baseline reset), operands are the new bins. |
+| OQ-M6-04 | (a) — `bin/sq-quota-axi-lib.sh` → `bin/sq-quota-lib.sh` | **Landed.** `bin/sq-quota-lib.sh` probes `sq-quota`; sources (sq-bootstrap.sh, sq-test-run.sh lane) updated. |
+| OQ-M6-05 | (a) — one `axi-tools` matrix job; `tasks-axi` job renamed `sq-tasks` | **Landed.** Matrix job present; sq-tasks job + protocol alias present. |
+| OQ-M6-06 | (a) — `vendor.json` during the sq-tasks rename | **Landed.** `packages/sq-tasks/vendor.json` present (upstream tag v0.2.5 provenance). |
+
+### Risks re-scored
+
+- RISK-M6-04 (deferred prose references dead names) — **materialized for the four tools:** no legacy aliases exist, so deferred prose naming `gh-axi`/`chrome-devtools-axi`/`lavish-axi`/`quota-axi` points at names that are not on PATH. Mitigation: the rebrand item (roadmap-futuro-rebrand-completo-de-menco-31) is the owner; until then operators follow the sq-* names. The `tasks-axi` protocol alias is unaffected (mandatory, kept).
+- RISK-M6-05 (guard keep-list drift) — partially retired by PR #25; the remaining keep-list is the bin/ and tests/ deferred-prose set documented in the guard file itself.
+- RISK-M6-02 (lavish/sq-report repo size) — the marketing renders shipped in the tracked copy; no pruning decision made (recorded future option).
+- RISK-M6-01/M6-03/M6-06 — no adverse findings; root bun tolerates the nested pnpm lockfiles, CI pins node 22, on-demand sync procedure stands (design.md §9).

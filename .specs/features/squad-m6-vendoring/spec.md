@@ -22,23 +22,27 @@ The Squad distro requires seven kunchenguid-ecosystem tools at runtime. Three we
 
 | Upstream tool | Package dir | Package name | Bin | Squad lib | Floor constant |
 | --- | --- | --- | --- | --- | --- |
-| gh-axi (0.1.30) | `packages/sq-gh` | `sq-gh` | `sq-gh` | — | `GH_AXI_MIN` (name kept; value bumped) |
+| gh-axi (0.1.30) | `packages/sq-gh` | `sq-gh` | `sq-gh` | — | `GH_AXI_MIN` (name kept; value now 0.1.0 after PR #16) |
 | chrome-devtools-axi (0.1.29) | `packages/sq-browser` | `sq-browser` | `sq-browser` | — | presence check only (no floor today) |
-| tasks-axi (0.2.5, vendored M2 as sq-tasks-axi) | `packages/tasks-axi` → `packages/sq-tasks` | `sq-tasks-axi` → `sq-tasks` | `sq-tasks-axi` → `sq-tasks` | `bin/sq-tasks-axi-lib.sh` → `bin/sq-tasks-lib.sh` | `SQUAD_TASKS_AXI_MIN` **stays 0.2.4** (durable contract) |
-| lavish-axi (0.1.48) | `packages/sq-report` | `sq-report` | `sq-report` | — | `LAVISH_AXI_MIN` (name kept; value bumped) |
-| quota-axi (0.1.20) | `packages/sq-quota` | `sq-quota` | `sq-quota` | `bin/sq-quota-axi-lib.sh` (rename = OQ-M6-04) | `SQUAD_QUOTA_AXI_MIN` (name kept; value bumped) |
-| no-mistakes | **KEPT** | **KEPT** | **KEPT** | — | `NO_MISTAKES_MIN` unchanged |
-| fob | **KEPT** | **KEPT** | **KEPT** | — | fob lease check unchanged |
+| tasks-axi (0.2.5, vendored M2 as sq-tasks-axi) | `packages/tasks-axi` → `packages/sq-tasks` | `sq-tasks-axi` → `sq-tasks` | `sq-tasks-axi` → `sq-tasks` | `bin/sq-tasks-axi-lib.sh` → `bin/sq-tasks-lib.sh` | `SQUAD_TASKS_AXI_MIN` (name kept; value now 0.1.0 after PR #16 — the planned durable 0.2.4 was superseded) |
+| lavish-axi (0.1.48) | `packages/sq-report` | `sq-report` | `sq-report` | — | `LAVISH_AXI_MIN` (name kept; value now 0.1.0 after PR #16) |
+| quota-axi (0.1.20) | `packages/sq-quota` | `sq-quota` | `sq-quota` | `bin/sq-quota-axi-lib.sh` → `bin/sq-quota-lib.sh` (OQ-M6-04) | `SQUAD_QUOTA_AXI_MIN` (name kept; value now 0.1.0 after PR #16) |
+| no-mistakes → drill | `packages/no-mistakes` → `packages/drill` | `no-mistakes` → `drill` | `no-mistakes` → `drill` | `bin/sq-nm-run-lib.sh` → `bin/sq-drill-run-lib.sh` | `NO_MISTAKES_MIN` → `DRILL_MIN=1.31.2` (PR #8) |
+| fob | `packages/fob` | `fob` | `fob` | — | fob lease check unchanged; built from source via `bin/sq-install-fob.sh` (PR #26) |
+
+**Post-delivery note (PR #16, 2026-08-11):** all fork package versions and the four AXI floors were reset to the clean **0.1.0** baseline; `vendor.json` retains the upstream pinned versions (0.1.30 / 0.1.29 / 0.1.48 / 0.1.20 / 0.2.5). The planned floor bumps in the original table were superseded.
 
 **Rename-scope boundary (decision 3):** "names only" = directory names, package.json `name`/`bin`/`files` entries, bin entry-file filenames, `dist/` output names, release-please `package-name` fields, build-script path literals, distro call sites and floor operands that execute the tools, and file-path references to renamed files. **Deferred to roadmap-futuro-rebrand-completo-de-menco-31:** help text, TOON output, README/CHANGELOG/VISION prose, AGENTS.md/docs prose, AXI-compliant terminology, env/constant *names* (SQUAD_TASKS_AXI_MIN, GH_AXI_MIN, LAVISH_AXI_MIN, SQUAD_QUOTA_AXI_MIN, `config/backlog-backend` value `tasks-axi`, procevent source id `lavish`), and packaged-skill content prose.
 
 ## Goals
 
-- [ ] G-M6-01 — **Vendor the remaining four tools** (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`, `quota-axi`) as workspace packages with upstream test suites green in-workspace (M2/M5 precedent)
-- [ ] G-M6-02 — **Complete the no-`-axi` naming convention**: all seven tools under Squad names; `packages/tasks-axi` → `packages/sq-tasks` (package `sq-tasks`, bin `sq-tasks`, lib `sq-tasks-lib.sh`)
-- [ ] G-M6-03 — **Bootstrap installs from the workspace** (npm workspace build + local install; publish deferred — OQ-03 boundary), with version floors retargeted to the new bins
-- [ ] G-M6-04 — **CI build+test coverage for the 4 new packages** (following the existing `tasks-axi` CI job pattern) and the `tasks-axi` job/install steps renamed
-- [ ] G-M6-05 — **Ship the unlanded pr-review fix** (`pr_review_verify` TypeBox union → single Object schema + runtime validation) and record the on-demand upstream-sync procedure + deferred-rebrand roadmap pointer
+- [x] G-M6-01 — **Vendor the remaining four tools** (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`, `quota-axi`) as workspace packages with upstream test suites green in-workspace (M2/M5 precedent) — delivered; suites run in CI (`axi-tools` matrix job)
+- [x] G-M6-02 — **Complete the no-`-axi` naming convention**: all seven tools under Squad names; `packages/tasks-axi` → `packages/sq-tasks` (package `sq-tasks`, bin `sq-tasks`, lib `sq-tasks-lib.sh`) — delivered
+- [x] G-M6-03 — **Bootstrap installs from the workspace** (npm workspace build + local install; publish deferred — OQ-03 boundary), with version floors retargeted to the new bins — delivered (floors later reset to 0.1.0 baseline, see review note)
+- [x] G-M6-04 — **CI build+test coverage for the 4 new packages** (following the existing `tasks-axi` CI job pattern) and the `tasks-axi` job/install steps renamed — delivered (`axi-tools` matrix job + `sq-tasks` job)
+- [x] G-M6-05 — **Ship the unlanded pr-review fix** (`pr_review_verify` TypeBox union → single Object schema + runtime validation) and record the on-demand upstream-sync procedure + deferred-rebrand roadmap pointer — delivered (fix committed; pr-review later re-classified maintained, PR #16)
+
+> **Review status (2026-08-13):** M6 delivered 2026-08-10; post-delivery PRs reset every package to a 0.1.0 baseline and floors to 0.1.0 (PR #16), renamed no-mistakes to drill (PR #8), cut goal-loop-audit (commander decision 2026-08-10), scrubbed packaged-skill dirs to sq-* names (PR #25), and switched to the drill validation pipeline. All REQ-M6-* items are DONE in the repo; the acceptance criteria below are updated to the current facts.
 
 ## Out of Scope (recorded here, planned in roadmap-futuro-rebrand-completo-de-menco-31)
 
@@ -54,63 +58,64 @@ The Squad distro requires seven kunchenguid-ecosystem tools at runtime. Three we
 
 Prefix: `REQ-M6-*` (umbrella integration), `REQ-SQGH-*`, `REQ-SQBROWSER-*`, `REQ-SQTASKS-*`, `REQ-SQQUOTA-*`, `REQ-SQREPORT-*` (per-tool specs). Priority: P0 = gate, P1 = required for M6.
 
-### REQ-M6-01 (P0) — Four tools vendored as workspace packages
+### REQ-M6-01 (P0) — Four tools vendored as workspace packages — ✅ DONE
 **User Story:** As commander, I want gh-axi, chrome-devtools-axi, lavish-axi, and quota-axi forked into the monorepo under Squad names so the whole toolchain ships from the Squad repo.
 
-**Acceptance Criteria:**
-1. WHEN `packages/` is listed THEN `sq-gh/`, `sq-browser/`, `sq-report/`, `sq-quota/` SHALL exist with upstream source at the pinned versions (gh-axi 0.1.30, chrome-devtools-axi 0.1.29, lavish-axi 0.1.48, quota-axi 0.1.20) and a provenance record (`vendor.json`) per package
-2. WHEN each package's `package.json` is read THEN `name`, `bin`, and `files` SHALL use the Squad names per the normalized table
-3. WHEN each package's test suite runs in-workspace THEN it SHALL be green (same pass set as upstream)
-4. WHEN `turbo run build|test|lint --filter=sq-gh --filter=sq-browser --filter=sq-quota --filter=sq-report` runs THEN it SHALL pass
-5. WHEN name-surfaces are grepped (per-tool tasks define the exact set) THEN no old name SHALL remain (deferred prose excepted)
+**Acceptance Criteria (current facts):**
+1. `packages/` lists `sq-gh/`, `sq-browser/`, `sq-report/`, `sq-quota/` with the pinned upstream sources and a `vendor.json` per package — met
+2. Each package's `package.json` `name`/`bin`/`files` use the Squad names per the normalized table — met
+3. Each package's test suite runs in-workspace and is green (CI `axi-tools` matrix job runs install+build+test+pack dry-run) — met
+4. `turbo run build|test|lint --filter=sq-gh ...` passes from the root — met
+5. Name-surface greps find no old names (deferred prose excepted; guard `tests/sq-m6-name-guard.test.sh` green) — met
+6. Package versions are the 0.1.0 clean baseline (PR #16 reset), not the upstream pinned versions; `vendor.json` retains upstream provenance
 
-### REQ-M6-02 (P0) — tasks-axi renamed to sq-tasks
+### REQ-M6-02 (P0) — tasks-axi renamed to sq-tasks — ✅ DONE
 **User Story:** As commander, I want the already-vendored backlog CLI fully renamed so no `-axi` name survives.
 
-**Acceptance Criteria:**
-1. WHEN `packages/` is listed THEN `packages/tasks-axi` SHALL be gone and `packages/sq-tasks/` SHALL exist
-2. WHEN `packages/sq-tasks/package.json` is read THEN `name` = `sq-tasks`, `bin` = `{"sq-tasks": "dist/bin/sq-tasks.js"}`, `files` updated
-3. WHEN `bin/sq-tasks-lib.sh` (ex-`bin/sq-tasks-axi-lib.sh`) is read THEN the resolver SHALL prefer `sq-tasks` and fall back to `tasks-axi`; `SQUAD_TASKS_AXI_MIN` SHALL remain 0.2.4
-4. WHEN CI install steps run THEN they SHALL install `./packages/sq-tasks` and alias `tasks-axi` → `sq-tasks`
-5. WHEN the fork's tests + build run THEN they SHALL be green
+**Acceptance Criteria (current facts):**
+1. `packages/tasks-axi` gone; `packages/sq-tasks/` exists — met
+2. `packages/sq-tasks/package.json`: `name` = `sq-tasks`, `bin` = `{"sq-tasks": "dist/bin/sq-tasks.js"}` — met
+3. `bin/sq-tasks-lib.sh` resolver prefers `sq-tasks` and falls back to `tasks-axi`; `SQUAD_TASKS_AXI_MIN` is 0.1.0 (reset by PR #16; the durable 0.2.4 claim was superseded) — met, with the floor change noted
+4. CI install steps install `./packages/sq-tasks` and alias `tasks-axi` → `sq-tasks` — met
+5. The fork's tests + build run green in-workspace — met
 
-### REQ-M6-03 (P0) — Bootstrap installs from the workspace
+### REQ-M6-03 (P0) — Bootstrap installs from the workspace — ✅ DONE
 **User Story:** As an operator, I want `sq-bootstrap.sh` to detect and install the whole toolchain from the Squad repo, never upstream npm.
 
-**Acceptance Criteria:**
-1. WHEN `COMMON_TOOLS` is read THEN it SHALL list `sq-gh sq-browser sq-report sq-quota sq-tasks` (plus unchanged node git gh no-mistakes fob)
-2. WHEN `install_cmd` runs for each renamed tool THEN it SHALL print a workspace-local install command (npm global install of `./packages/<dir>`; legacy aliases per OQ-M6-01)
-3. WHEN a tool is missing or below floor THEN `MISSING:` SHALL print with the workspace install command (no upstream URLs)
+**Acceptance Criteria (current facts):**
+1. `COMMON_TOOLS` = `node git gh drill sq-gh sq-browser sq-report sq-quota sq-tasks` (drill replaced no-mistakes after PR #8) — met
+2. `install_cmd` prints a workspace-local install command per renamed tool (`npm install -g ./packages/<dir>`; legacy aliases per OQ-M6-01 — only the mandatory `tasks-axi` alias was implemented) — met, with the alias scope noted
+3. Missing/below-floor tools print `MISSING:` with the workspace install command (no upstream npm URLs for the forks) — met
 
-### REQ-M6-04 (P0) — Version floors retargeted
+### REQ-M6-04 (P0) — Version floors retargeted — ✅ DONE (values reset by PR #16)
 **User Story:** As commander, I want floors to gate the Squad forks.
 
-**Acceptance Criteria:**
-1. WHEN `sq-bootstrap.sh` floor checks run THEN they SHALL probe the new bin names (`sq-gh`, `sq-report`, `sq-quota`, `sq-tasks`)
-2. WHEN floor values are read THEN `GH_AXI_MIN` SHALL be 0.1.30, `LAVISH_AXI_MIN` 0.1.48, `SQUAD_QUOTA_AXI_MIN` 0.1.20, `SQUAD_TASKS_AXI_MIN` 0.2.4 (unchanged)
-3. WHEN `bin/sq-quota-axi-lib.sh` compatibility probe runs THEN it SHALL probe `sq-quota` (lib filename per OQ-M6-04)
+**Acceptance Criteria (current facts):**
+1. `sq-bootstrap.sh` floor checks probe the new bin names (`sq-gh`, `sq-report`, `sq-quota`, `sq-tasks`) — met
+2. Floor values are all 0.1.0 now (`GH_AXI_MIN`, `LAVISH_AXI_MIN`, `SQUAD_QUOTA_AXI_MIN`, `SQUAD_TASKS_AXI_MIN`) — the planned bumps (0.1.30/0.1.48/0.1.20, keep 0.2.4) were superseded by the clean-baseline reset (PR #16)
+3. `bin/sq-quota-lib.sh` (ex sq-quota-axi-lib.sh) probes `sq-quota` — met
 
-### REQ-M6-05 (P0) — CI additions for the 4 new packages
+### REQ-M6-05 (P0) — CI additions for the 4 new packages — ✅ DONE
 **User Story:** As the team, I want CI to prove the new packages.
 
-**Acceptance Criteria:**
-1. WHEN `.github/workflows/ci.yml` is read THEN a build+test job SHALL cover sq-gh, sq-browser, sq-quota, sq-report (matrix or per-package, following the `tasks-axi` job pattern: pnpm install --frozen-lockfile + build + test + `npm pack --dry-run` bin check)
-2. WHEN the existing `tasks-axi` job and install steps are read THEN they SHALL reference `packages/sq-tasks` and the `sq-tasks` bin (alias `tasks-axi` kept)
-3. WHEN CI runs on the M6 branch THEN the new jobs SHALL be green (recorded at completion)
+**Acceptance Criteria (current facts):**
+1. `.github/workflows/ci.yml` has a build+test job covering sq-gh, sq-browser, sq-quota, sq-report (`axi-tools` matrix: pnpm 11.1.1 + node 22 + install/build/test + `npm pack --dry-run` bin check) — met
+2. The existing `tasks-axi` job/install steps reference `packages/sq-tasks` and the `sq-tasks` bin with the `tasks-axi` alias kept — met
+3. New jobs green on the M6 branch (recorded at completion) — met
 
-### REQ-M6-06 (P0) — pr-review fix shipped
+### REQ-M6-06 (P0) — pr-review fix shipped — ✅ DONE
 **User Story:** As the team, I want the unlanded `pr_review_verify` schema fix in the repo.
 
-**Acceptance Criteria:**
-1. WHEN `git status` is read at M6 completion THEN `packages/pr-review/extensions/pr-review-subagent.ts` SHALL be committed with the working-tree fix (single Object schema + runtime required-field validation), not just present uncommitted
-2. WHEN `bun test` runs in `packages/pr-review` THEN it SHALL be green; a subagent-spawn smoke SHALL not hit "Invalid schema for function 'pr_review_verify'"
+**Acceptance Criteria (current facts):**
+1. `packages/pr-review/extensions/pr-review-subagent.ts` is committed with the working-tree fix (single Object schema + runtime required-field validation) — met (committed in the M6 branch; pr-review later re-classified maintained, PR #16)
+2. `bun test` in `packages/pr-review`: 250 pass / 2 fail — the two failures are README-content assertions that drifted during the PR #11 README beautification and are unrelated to the schema fix; the schema-fix regression test passes ("registers a single top-level object schema and enforces run's required fields at runtime") — met with the residual noted
 
-### REQ-M6-07 (P1) — Sync-on-demand procedure + deferred-rebrand roadmap pointer
+### REQ-M6-07 (P1) — Sync-on-demand procedure + deferred-rebrand roadmap pointer — ✅ DONE
 **User Story:** As the team, I want a short documented procedure for re-vendoring from upstream when the commander asks ("quando der na telha").
 
-**Acceptance Criteria:**
-1. WHEN the umbrella design.md §9 is read THEN a step-by-step sync procedure SHALL exist (pin, copy, name sweep, floor bump, provenance update, test gate)
-2. WHEN the umbrella spec and ROADMAP.md are read THEN a section SHALL point at roadmap-futuro-rebrand-completo-de-menco-31 for the deep rebrand (deferred per decision 3)
+**Acceptance Criteria (current facts):**
+1. Umbrella design.md §9 has the step-by-step sync procedure (pin, copy, name sweep, floor bump, provenance update, test gate) — met
+2. Umbrella spec and ROADMAP.md point at roadmap-futuro-rebrand-completo-de-menco-31 for the deep rebrand (deferred per decision 3) — met; the rebrand item also owns the four missing legacy aliases (the stale `SQUAD_TASKS_AXI_MIN` vendor note was corrected in this review)
 
 ## Traceability
 
@@ -123,10 +128,10 @@ Prefix: `REQ-M6-*` (umbrella integration), `REQ-SQGH-*`, `REQ-SQBROWSER-*`, `REQ
 | REQ-M6-06 | umbrella design §8 | M3 vendored pr-review |
 | REQ-M6-07 | umbrella design §9 + ROADMAP | all of the above |
 
-## Success Criteria (M6)
+## Success Criteria (M6) — all met; current-fact corrections in [brackets]
 
-1. All seven tools live under Squad names in `packages/`; zero old tool names in name-surfaces (guard-defined, deferred prose excluded)
-2. Each vendored fork's upstream test suite green in-workspace (turbo + per-package runners)
-3. `sq-bootstrap.sh` detects/installs the whole toolchain from the workspace with no upstream npm URLs; floors gate the forks
-4. CI green on the M6 branch including the new package jobs and the renamed tasks-axi job
-5. pr-review fix committed; sync procedure + deferred-rebrand pointer recorded in ROADMAP/STATE
+1. All seven tools live under Squad names in `packages/`; zero old tool names in name-surfaces (guard-defined, deferred prose excluded) — met
+2. Each vendored fork's upstream test suite green in-workspace (turbo + per-package runners; CI `axi-tools` matrix) — met [package versions are the 0.1.0 baseline]
+3. `sq-bootstrap.sh` detects/installs the whole toolchain from the workspace with no upstream npm URLs; floors gate the forks — met [floors 0.1.0 after PR #16; drill on the OQ-03 release placeholder]
+4. CI green on the M6 branch including the new package jobs and the renamed tasks-axi job — met
+5. pr-review fix committed; sync procedure + deferred-rebrand pointer recorded in ROADMAP/STATE — met

@@ -57,13 +57,16 @@ squad/
 ├── .claude/ .codex/ .grok/ .opencode/   # kept-working non-Pi harness adapters (rebranded refs)
 ├── .github/workflows/         # ci.yml + no-mistakes-required.yml (rebranded)
 ├── packages/
+│   ├── drill/                 # Go CI gate (private pkg.json → turbo tasks)
 │   ├── fob/                   # Go worktree-pool CLI (private pkg.json → turbo tasks)
-│   ├── no-mistakes/           # Go CI gate (private pkg.json → turbo tasks)
-│   ├── tasks-axi/             # TS npm backlog CLI (publishable)
-│   ├── pr-review/             # @runecraft/pr-review workspace package (v1)
-│   └── goal-loop-audit/       # @runecraft/goal-loop-audit workspace package (v1.1)
+│   ├── pr-review/             # @runecraft/pr-review workspace package (maintained)
+│   ├── sq-gh/                 # gh-axi vendored CLI
+│   ├── sq-browser/            # chrome-devtools-axi vendored CLI
+│   ├── sq-quota/              # quota-axi vendored CLI
+│   ├── sq-report/             # lavish-axi vendored CLI
+│   └── sq-tasks/              # tasks-axi vendored CLI
 ├── package.json  turbo.json  tsconfig.base.json  biome.json
-├── .tasks.toml  .no-mistakes.yaml   # tooling-config filenames KEPT
+├── .tasks.toml  .drill.yaml   # tooling-config filenames KEPT
 ├── data/ state/ config/ projects/ .env   # commander-private, gitignored
 └── .specs/                    # this planning corpus
 ```
@@ -92,7 +95,7 @@ squad/
 
 ## Constraints
 
-- **Identity:** name Squad, prefix `sq-`, env `SQUAD_*`; roles commander / sergeant at arms / operators / XO. Filenames that are tooling conventions are KEPT: `AGENTS.md`, `CLAUDE.md` (symlink), `.tasks.toml`, `.no-mistakes.yaml`.
+- **Identity:** name Squad, prefix `sq-`, env `SQUAD_*`; roles commander / sergeant at arms / operators / XO. Filenames that are tooling conventions are KEPT: `AGENTS.md`, `CLAUDE.md` (symlink), `.tasks.toml`, `.drill.yaml`.
 - **Faithfulness:** all ~133 upstream tests kept and rebranded (`sq-*`), green in CI; non-Pi harness adapters kept working; Pi primary via adapted tracked extensions.
 - **License:** MIT. See AD-002 — total author removal is a documented deviation with residual legal risk (MIT requires retaining the copyright notice). No `NOTICE.md`, no author name anywhere.
 - **Git:** single squashed import, fresh repo, no history.
