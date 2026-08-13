@@ -69,9 +69,10 @@
 # On that failure signature only, teardown_fob_return:
 #   1. Retries up to SQUAD_FOB_RETURN_LOCK_RETRIES times (default 3), waiting
 #      SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS (default 1s; falls back to the older
-#      SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS name when the new one is unset) between
-#      attempts. Retries key off the error text, not whether the lock file still
-#      exists after the failed attempt - a lock that self-clears mid-check still
+#      SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS and then
+#      SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS names when the new one is unset)
+#      between attempts. Retries key off the error text, not whether the lock file
+#      still exists after the failed attempt - a lock that self-clears mid-check still
 #      deserves a retry of the return.
 #   2. Other fob return failures still abort immediately and loudly (no retry).
 #   3. If every retry still hits the lock signature and the lock remains, it is removed
@@ -954,10 +955,12 @@ retry_wait_secs_is_valid() {
 
 STALE_WORKTREE_LOCK_AGE_SECS=${SQUAD_STALE_WORKTREE_LOCK_AGE_SECS:-30}
 # Bounded patience window for transient index.lock after killing an operator process.
-# New knobs are preferred; SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS remains an alias
-# for the per-attempt wait so existing tests and operators keep working.
-FOB_RETURN_LOCK_RETRIES=${SQUAD_FOB_RETURN_LOCK_RETRIES:-3}
-FOB_RETURN_LOCK_RETRY_WAIT_SECS=${SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS:-${SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS:-1}}
+# New knobs are preferred; SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES and
+# SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS remain legacy aliases, and
+# SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS remains an alias for the per-attempt wait,
+# so existing tests and operators keep working.
+FOB_RETURN_LOCK_RETRIES=${SQUAD_FOB_RETURN_LOCK_RETRIES:-${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}}
+FOB_RETURN_LOCK_RETRY_WAIT_SECS=${SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS:-${SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS:-${SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS:-1}}}
 if ! retry_wait_secs_is_valid "$FOB_RETURN_LOCK_RETRY_WAIT_SECS"; then
   echo "teardown: invalid fob return lock retry wait '$FOB_RETURN_LOCK_RETRY_WAIT_SECS'; using 1s" >&2
   FOB_RETURN_LOCK_RETRY_WAIT_SECS=1

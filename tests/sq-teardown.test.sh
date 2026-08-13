@@ -366,13 +366,13 @@ SH
   chmod +x "$case_dir/fakebin/fob"
 }
 
-# fob return fails once with the index.lock signature, then clears the lock
-# (simulating a dying crew git process finishing) so the next retry succeeds.
-# The first failure always reports the lock path even if the file is removed in
-# the same attempt - matching the production race where the lock self-clears
-# between the failed return and the supervisor's existence check.
+# fob return fails the first fail_count attempts with the index.lock signature,
+# then clears the lock (simulating a dying crew git process finishing) so the
+# next retry succeeds. Each failing attempt reports the lock path when it can be
+# resolved - matching the production race where the lock self-clears between the
+# failed return and the supervisor's existence check.
 add_transient_lock_fob() {
-  local case_dir=$1
+  local case_dir=$1 fail_count=${2:-1}
   cat > "$case_dir/fakebin/fob" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = return ]; then
@@ -396,7 +396,7 @@ if [ "${1:-}" = return ]; then
   fi
   count=$(( count + 1 ))
   printf '%s\n' "$count" > "$count_file"
-  if [ "$count" -eq 1 ]; then
+  if [ "$count" -le __FAIL_COUNT__ ]; then
     # Emit the real git signature, then drop the lock so a lock-existence-only
     # recovery path would wrongly abort without retrying.
     if [ -n "$lock" ]; then
@@ -411,6 +411,8 @@ if [ "${1:-}" = return ]; then
 fi
 exit 0
 SH
+  sed -i.bak "s/__FAIL_COUNT__/$fail_count/" "$case_dir/fakebin/fob"
+  rm -f "$case_dir/fakebin/fob.bak"
   chmod +x "$case_dir/fakebin/fob"
 }
 
@@ -1287,6 +1289,81 @@ test_fractional_legacy_retry_wait_refuses_without_arithmetic_error() {
   assert_not_contains "$(cat "$case_dir/stderr")" "syntax error" \
     "fractional-legacy-retry-wait: teardown hit an arithmetic error"
   pass "fractional legacy retry wait remains supported without arithmetic"
+}
+
+test_fob_return_lock_legacy_alias_wait_still_supported() {
+  local case_dir rc lock
+  case_dir=$(make_case fob-legacy-alias-retry-wait)
+  write_meta "$case_dir" drill strike
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+
+  add_persistent_lock_fob "$case_dir"
+  add_lsof_live_holder "$case_dir"
+
+  lock=$(git_index_lock_path "$case_dir/wt")
+  mkdir -p "$(dirname "$lock")"
+  : > "$lock"
+
+  set +e
+  SQUAD_FOB_RETURN_LOCK_RETRIES='' \
+  SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS='' \
+  SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=1 \
+  SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0.1 \
+  SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS='' \
+  SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "fob-legacy-alias-retry-wait: teardown should fail only for the persistent lock"
+  assert_grep "waiting 0.1s each" "$case_dir/stderr" \
+    "fob-legacy-alias-retry-wait: teardown did not preserve the pre-fob legacy fractional wait"
+  assert_not_contains "$(cat "$case_dir/stderr")" "syntax error" \
+    "fob-legacy-alias-retry-wait: teardown hit an arithmetic error"
+  pass "pre-fob legacy alias fractional retry wait remains supported without arithmetic"
+}
+
+test_fob_return_lock_legacy_alias_retry_budget_still_applies() {
+  local case_dir rc lock attempt_file
+  case_dir=$(make_case fob-legacy-alias-retry-budget)
+  write_meta "$case_dir" drill strike
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+
+  add_transient_lock_fob "$case_dir" 3
+  add_lsof_no_holder "$case_dir"
+
+  lock=$(git_index_lock_path "$case_dir/wt")
+  mkdir -p "$(dirname "$lock")"
+  : > "$lock"
+  # Fresh lock: not old enough for the force-remove path; patience must win.
+  touch "$lock"
+
+  attempt_file="$case_dir/fob-attempts"
+  : > "$attempt_file"
+
+  set +e
+  FOB_ATTEMPT_FILE="$attempt_file" \
+  SQUAD_FOB_RETURN_LOCK_RETRIES='' \
+  SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS='' \
+  SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=2 \
+  SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0 \
+  SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS='' \
+  SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "fob-legacy-alias-retry-budget: teardown should exhaust the legacy retry budget and refuse"
+  assert_grep "even after the lock file disappeared" "$case_dir/stderr" \
+    "fob-legacy-alias-retry-budget: teardown did not exhaust the legacy retry budget before giving up"
+  [ "$(cat "$attempt_file")" = 3 ] \
+    || fail "fob-legacy-alias-retry-budget: expected exactly 3 fob return attempts, got $(cat "$attempt_file")"
+  assert_absent "$lock" "fob-legacy-alias-retry-budget: lock should remain cleared after the fob attempts"
+  pass "pre-fob legacy alias retry budget still applies end to end"
 }
 
 test_local_only_force_overrides_unpushed() {
@@ -2568,6 +2645,8 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds
 test_persistent_index_lock_exhausts_retries_and_refuses_loudly
 test_empty_retry_wait_uses_default_without_aborting
 test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
+test_fob_return_lock_legacy_alias_wait_still_supported
+test_fob_return_lock_legacy_alias_retry_budget_still_applies
 test_parked_own_run_is_aborted_before_teardown
 test_parked_own_run_refuses_when_abort_is_unconfirmed
 test_mismatched_run_after_abort_refuses_unconfirmed

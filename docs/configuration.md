@@ -602,6 +602,8 @@ SQUAD_FLEET_PRUNE=1        # set to 0 to skip pruning local branches whose upstr
 SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=30       # min mtime age before sq-teardown.sh treats a leftover worktree git index.lock as provably stale
 SQUAD_FOB_RETURN_LOCK_RETRIES=3        # retries after a fob return fails on the transient git index.lock signature
 SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS=1 # seconds sq-teardown.sh waits before each retry after that signature
+SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=   # legacy alias for SQUAD_FOB_RETURN_LOCK_RETRIES when the new variable is unset
+SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS= # legacy alias for SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS when the new variable is unset
 SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=   # legacy alias for SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS when the new variable is unset
 SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_RETRIES=3        # fetch retries after sq-unit-sync.sh hits the orphaned .git/packed-refs.lock signature
 SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=1 # seconds sq-unit-sync.sh waits before each of those retries
@@ -637,9 +639,10 @@ SQUAD_LOG_KEEP_LINES=2000             # daemon log lines kept when trimming
 ```
 
 `sq-teardown.sh` retries only Git's `Unable to create '...index.lock': File exists` return failure up to `SQUAD_FOB_RETURN_LOCK_RETRIES` times.
-`SQUAD_FOB_RETURN_LOCK_RETRIES` accepts a nonnegative integer, and an unset, blank, or invalid value uses the default of 3.
+`SQUAD_FOB_RETURN_LOCK_RETRIES` accepts a nonnegative integer, and an invalid value uses the default of 3.
 `SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS` accepts nonnegative whole or fractional seconds between attempts.
-When it is unset or blank, `SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS` remains a compatible fallback, and a blank fallback uses the 1-second default.
+When it is unset or blank, `SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS` remains a compatible fallback, then `SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS`, and a blank fallback uses the 1-second default.
+When `SQUAD_FOB_RETURN_LOCK_RETRIES` is unset or blank, `SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES` remains a compatible fallback, and a blank fallback uses the default of 3.
 An invalid nonblank wait falls back to 1 second rather than interrupting teardown.
 Teardown never removes a lock during the retry window, and after that window it attempts stale-lock cleanup only for a still-present lock that passes the configured age and live-holder checks.
 
