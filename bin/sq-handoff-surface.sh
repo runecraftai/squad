@@ -45,7 +45,7 @@ fm_handoff_kind_label() {  # <kind> <result-var>
 # key<TAB>kind<TAB>payload lines into the result variable. Nothing is emitted
 # when no record was pending, so a concurrent surfaver cannot double-print.
 fm_handoff_surface_mark() {
-  local result_var=$1 collected='' ts seq kind key state payload tmp changed=0
+  local result_var=$1 collected='' write_ok=1 ts seq kind key state payload tmp changed=0
   [ -f "$SQUAD_HANDOFF_QUEUE" ] || {
     printf -v "$result_var" '%s' ''
     return 0
@@ -62,8 +62,13 @@ fm_handoff_surface_mark() {
       changed=1
       collected="${collected}${key}"$'\t'"${kind}"$'\t'"${payload}"$'\n'
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$key" "$state" "$payload" >> "$tmp"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$key" "$state" "$payload" >> "$tmp" || write_ok=0
   done < "$SQUAD_HANDOFF_QUEUE"
+  if [ "$write_ok" -eq 0 ]; then
+    rm -f "$tmp" 2>/dev/null || true
+    fm_lock_release "$SQUAD_HANDOFF_LOCK"
+    return 1
+  fi
   if [ "$changed" -eq 1 ]; then
     chmod 600 "$tmp" 2>/dev/null || true
     if ! mv -f "$tmp" "$SQUAD_HANDOFF_QUEUE"; then

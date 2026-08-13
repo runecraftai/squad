@@ -111,13 +111,16 @@ fm_handoff_add() {  # <kind> <key> <payload>
     return 1
   fi
   ts=$(date +%s 2>/dev/null || printf '0')
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$key" pending "$payload" >> "$SQUAD_HANDOFF_QUEUE"
+  if ! printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$key" pending "$payload" >> "$SQUAD_HANDOFF_QUEUE"; then
+    fm_lock_release "$SQUAD_HANDOFF_LOCK"
+    return 1
+  fi
   fm_lock_release "$SQUAD_HANDOFF_LOCK"
   return 0
 }
 
 fm_handoff_resolve() {  # <key>
-  local key=$1 found=0 tmp ts seq kind rkey state payload
+  local key=$1 found=0 write_ok=1 tmp ts seq kind rkey state payload
   fm_handoff_key_valid "$key" || return 2
   fm_lock_try_acquire "$SQUAD_HANDOFF_LOCK" || return 1
   tmp=$(mktemp "$STATE/.handoff-queue.XXXXXX") || {
@@ -130,8 +133,13 @@ fm_handoff_resolve() {  # <key>
       state=resolved
       found=1
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$rkey" "$state" "$payload" >> "$tmp"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$rkey" "$state" "$payload" >> "$tmp" || write_ok=0
   done < "$SQUAD_HANDOFF_QUEUE"
+  if [ "$write_ok" -eq 0 ]; then
+    rm -f "$tmp" 2>/dev/null || true
+    fm_lock_release "$SQUAD_HANDOFF_LOCK"
+    return 1
+  fi
   if [ "$found" -eq 1 ]; then
     chmod 600 "$tmp" 2>/dev/null || true
     if ! mv -f "$tmp" "$SQUAD_HANDOFF_QUEUE"; then
@@ -150,7 +158,7 @@ fm_handoff_resolve() {  # <key>
 fm_handoff_list() {  # <filter: all|pending|surfaced|open>
   local filter=$1 ts seq kind key state payload
   [ -f "$SQUAD_HANDOFF_QUEUE" ] || return 0
-  while IFS=$'\t' read -r ts seq kind key state payload || [ -n "$key" ]; do
+  sort -t $'\t' -k2,2 -rn "$SQUAD_HANDOFF_QUEUE" 2>/dev/null | while IFS=$'\t' read -r ts seq kind key state payload || [ -n "$key" ]; do
     [ -n "$key" ] || continue
     case "$filter" in
       pending) [ "$state" = pending ] || continue ;;
@@ -158,7 +166,7 @@ fm_handoff_list() {  # <filter: all|pending|surfaced|open>
       open) [ "$state" = resolved ] && continue ;;
     esac
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$seq" "$kind" "$key" "$state" "$payload"
-  done < "$SQUAD_HANDOFF_QUEUE"
+  done
 }
 
 fm_handoff_usage() {
