@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="380" viewBox="0 0 1200 380"
      role="img" aria-labelledby="title desc">
-  <title id="title">sq-report: Lavish Editor, a review surface for agent-generated HTML artifacts</title>
+  <title id="title">sq-report: a review surface for agent-generated HTML artifacts</title>
   <desc id="desc">An HTML artifact card shows a plan heading, a paragraph with an annotated selection, a small diagram, and a queue-feedback bar; an annotation pin marks the selection.</desc>
 
   <defs>
@@ -19,14 +19,14 @@
     <text x="0" y="92" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="84" font-weight="700" fill="#efe7dd">sq-report</text>
     <text x="0" y="142" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#d9cfc2">HTML is the new markdown.</text>
     <text x="0" y="172" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#d9cfc2">Review rich artifacts, send feedback back.</text>
-    <text x="0" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#a99f92">Lavish Editor · annotate · poll · share</text>
+    <text x="0" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#a99f92">sq-report · annotate · poll · share</text>
   </g>
 
   <!-- right: artifact card -->
   <g id="artifact" transform="translate(636 40)">
     <rect width="510" height="300" rx="14" fill="#211b16" stroke="#3a3129" stroke-width="1.5"/>
     <text x="24" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#d9cfc2">artifact.html</text>
-    <text x="486" y="30" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="14" fill="#a99f92" text-anchor="end">Lavish Editor</text>
+    <text x="486" y="30" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="14" fill="#a99f92" text-anchor="end">sq-report</text>
     <line x1="16" y1="46" x2="494" y2="46" stroke="#3a3129" stroke-width="1.5"/>
 
     <text x="24" y="78" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" font-weight="600" fill="#efe7dd">Product plan, Q3</text>
