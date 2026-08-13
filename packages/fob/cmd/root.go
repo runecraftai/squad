@@ -28,9 +28,12 @@ so that multiple AI coding agents can work on the same repo in parallel.`,
 		return getRunE(cmd, args)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// Skip update check for dev builds, the update command itself,
-		// or when explicitly suppressed via env var.
-		if version == "dev" || os.Getenv("FOB_NO_UPDATE_CHECK") == "1" {
+		// Skip update checks for builds that are not release versions (dev
+		// builds and bare git hashes from git describe in tag-less checkouts),
+		// the update command itself, or when explicitly suppressed via env var.
+		// Only semver builds could have come from the OQ-03 release channel, so
+		// non-semver builds never nag or spawn update-check network calls.
+		if !updater.IsSemver(version) || os.Getenv("FOB_NO_UPDATE_CHECK") == "1" {
 			return
 		}
 		if cmd.Name() == "update" {
