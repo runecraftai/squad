@@ -338,12 +338,13 @@ func parseVersion(v string) semver {
 	return result
 }
 
-// IsSemver reports whether version is a semver (or partial semver) release
-// string. Bare git hashes ("4b21c14", "4b21c14-dirty") and "dev" fail, so a
-// locally built binary is never treated as a release version that the
-// updater should compare, nag about, or spawn network checks for. The OQ-03
-// release channel stays a boundary: only versions that could have come from
-// it may reach the updater.
+// IsSemver reports whether version is a three-part semver release string
+// (major.minor.patch, optionally v-prefixed and with a pre-release suffix),
+// the only form the OQ-03 release channel produces. Bare git hashes
+// ("4b21c14", "1234567", "4b21c14-dirty"), partial versions ("v2", "2.1"),
+// and "dev" fail, so a locally built binary is never treated as a release
+// version that the updater should compare, nag about, or spawn network
+// checks for.
 func IsSemver(version string) bool {
 	v := strings.TrimSpace(version)
 	v = strings.TrimPrefix(v, "v")
@@ -357,7 +358,7 @@ func IsSemver(version string) bool {
 	}
 
 	parts := strings.Split(v, ".")
-	if len(parts) < 1 || len(parts) > 3 {
+	if len(parts) != 3 {
 		return false
 	}
 	for _, part := range parts {
