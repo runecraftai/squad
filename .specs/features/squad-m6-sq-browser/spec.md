@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-`chrome-devtools-axi` (kunchenguid/chrome-devtools-axi, v0.1.29 — "the most agent-ergonomic browser automation") is the browser-automation tool the distro requires at runtime (`COMMON_TOOLS`; operator guidance in `bin/sq-brief.sh` prose, deferred) and installs from upstream npm (`sq-bootstrap.sh install_cmd`). M6 vendors it as `packages/sq-browser` (package `sq-browser`, bin `sq-browser`) with upstream tests green in-workspace.
+`chrome-devtools-axi` (kunchenguid/chrome-devtools-axi, v0.1.29 — "the most agent-ergonomic browser automation") is the browser-automation tool the distro requires at runtime (`COMMON_TOOLS`; operator guidance in `bin/sq-brief.sh` prose, deferred); `sq-bootstrap.sh install_cmd` installs it from the workspace (`packages/sq-browser`). M6 vendored it as `packages/sq-browser` (package `sq-browser`, bin `sq-browser`) with upstream tests green in-workspace.
 
 ## Rename Table (single source of truth for this tool)
 

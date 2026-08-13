@@ -79,4 +79,4 @@ T-M6-U7 (ROADMAP/STATE records) ✓
 - [x] CI matrix extended (axi-tools) + tasks-axi job renamed sq-tasks
 - [x] pr-review fix committed + verified; sync procedure + rebrand pointer recorded
 
-**No remaining open tasks in M6.** Follow-on ownership: rebrand item roadmap-futuro-rebrand-completo-de-menco-31 (deferred prose, missing optional legacy aliases, stale SQUAD_TASKS_AXI_MIN vendor note).
+**No remaining open tasks in M6.** Follow-on ownership: rebrand item roadmap-futuro-rebrand-completo-de-menco-31 (deferred prose, missing optional legacy aliases; the stale SQUAD_TASKS_AXI_MIN vendor note was corrected in this review).

@@ -178,6 +178,6 @@ Legend: ✅ done · ▶️ in progress · ⬜ planned
 
 ## Post-v1.1 (recorded, NOT committed)
 
-- **TS port of Go deps** (`fob`, `no-mistakes`) — explicitly "ou não": recorded as open/optional; no design, no tasks, no dates.
+- **TS port of Go deps** (`fob`, `drill` — renamed from `no-mistakes` in PR #8) — explicitly "ou não": recorded as open/optional; no design, no tasks, no dates.
 - Upstream sync process — blocked by total-removal fork (diff noise); open risk, revisit if upstream adopts useful mechanics.
 - New squad mechanics (backends, task shapes) — out of scope by design; inherit, don't extend.

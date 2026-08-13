@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-The M2 fork of tasks-axi (v0.2.5) lives at `packages/tasks-axi` under the interim Squad name `sq-tasks-axi`. The commander's final naming convention bans `-axi` everywhere: the fork becomes `packages/sq-tasks` (package `sq-tasks`, bin `sq-tasks`), and Squad's own backlog lib `bin/sq-tasks-axi-lib.sh` becomes `bin/sq-tasks-lib.sh`. The `SQUAD_TASKS_AXI_MIN` env constant is a durable contract and STAYS (it belongs to the roadmap-mention item). Rename scope is names only (CD-M6-03); internal prose defers to roadmap-futuro-rebrand-completo-de-menco-31.
+The M2 fork of tasks-axi (v0.2.5) lived at `packages/tasks-axi` under the interim Squad name `sq-tasks-axi`; the commander's final naming convention bans `-axi` everywhere, so the fork became `packages/sq-tasks` (package `sq-tasks`, bin `sq-tasks`) and Squad's own backlog lib `bin/sq-tasks-axi-lib.sh` became `bin/sq-tasks-lib.sh`. The `SQUAD_TASKS_AXI_MIN` env constant NAME stays (it belongs to the roadmap-mention item; the value is the 0.1.0 baseline after the PR #16 reset). Rename scope is names only (CD-M6-03); internal prose defers to roadmap-futuro-rebrand-completo-de-menco-31.
 
 ## Rename Table (single source of truth for this tool)
 
@@ -60,4 +60,4 @@ The M2 fork of tasks-axi (v0.2.5) lives at `packages/tasks-axi` under the interi
 2. Umbrella name-guard shows `\bsq-tasks-axi\b` absent from name-surfaces — met (guard green 2026-08-13)
 
 ## Traceability
-REQ-SQTASKS-01..05 ↔ umbrella REQ-M6-02 (AC1–AC5), REQ-M6-03/04 (floors/CI), REQ-M6-06 (provenance backfill, OQ-M6-06). **Status: DONE (reviewed 2026-08-13).** Post-delivery deltas: `SQUAD_TASKS_AXI_MIN` is 0.1.0 (PR #16 reset — the durable 0.2.4 claim was superseded, and the sq-tasks `vendor.json` note saying it stays 0.2.4 is stale, owned by the rebrand item); packaged skill dir now `skills/sq-tasks` (PR #25 scrub); `config/backlog-backend=tasks-axi` protocol value unchanged (deferred).
+REQ-SQTASKS-01..05 ↔ umbrella REQ-M6-02 (AC1–AC5), REQ-M6-03/04 (floors/CI), REQ-M6-06 (provenance backfill, OQ-M6-06). **Status: DONE (reviewed 2026-08-13).** Post-delivery deltas: `SQUAD_TASKS_AXI_MIN` is 0.1.0 (PR #16 reset — the durable 0.2.4 claim was superseded; the sq-tasks `vendor.json` note originally claiming 0.2.4 was corrected in this review to the 0.1.0 fact); packaged skill dir now `skills/sq-tasks` (PR #25 scrub); `config/backlog-backend=tasks-axi` protocol value unchanged (deferred).

@@ -11,7 +11,7 @@
 4. **Packaged skill dir:** `skills/tasks-axi` → `skills/sq-tasks` (directory-name rule, A-M6-01); content prose defers. **Done** (PR #25 scrub).
 5. **release-please-config.json** `package-name` → `sq-tasks`; `.release-please-manifest.json` `".": "0.1.0"` (baseline reset). **Done.**
 6. **src name literals:** `src/version.ts` name check + fixtures encoding `sq-tasks-axi` → `sq-tasks`; prose defers. **Done.**
-7. **vendor.json (OQ-M6-06 (a)):** added for the M2 copy (upstream tag v0.2.5 provenance) — closes the M2 gap. **Done.** Note: its note "SQUAD_TASKS_AXI_MIN stays 0.2.4" is stale since PR #16 reset the floor to 0.1.0 — rebrand-item/follow-up ownership.
+7. **vendor.json (OQ-M6-06 (a)):** added for the M2 copy (upstream tag v0.2.5 provenance) — closes the M2 gap. **Done.** Note: its notes field originally claimed "SQUAD_TASKS_AXI_MIN stays 0.2.4"; corrected during this review (2026-08-13) to the 0.1.0 baseline fact (PR #16).
 
 ## Distro lib rename (commander-mandated) — ALL DONE
 

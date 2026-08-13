@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-`gh-axi` (kunchenguid/gh-axi, v0.1.30 — "GitHub CLI for agents") is the agent-facing GitHub CLI the distro executes for PR merge/list (`bin/sq-pr-merge.sh`, `bin/sq-teardown.sh`) and installs from upstream npm (`sq-bootstrap.sh install_cmd`). M6 vendors it as `packages/sq-gh` (package `sq-gh`, bin `sq-gh`) with upstream tests green in-workspace and the distro executing the new name.
+`gh-axi` (kunchenguid/gh-axi, v0.1.30 — "GitHub CLI for agents") is the agent-facing GitHub CLI the distro executes for PR merge/list (`bin/sq-pr-merge.sh`, `bin/sq-teardown.sh`); `sq-bootstrap.sh install_cmd` installs it from the workspace (`packages/sq-gh`). M6 vendored it as `packages/sq-gh` (package `sq-gh`, bin `sq-gh`) with upstream tests green in-workspace and the distro executing the new name.
 
 ## Rename Table (single source of truth for this tool)
 

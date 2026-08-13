@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-`lavish-axi` (kunchenguid/lavish-axi, v0.1.48 — "HTML is the new markdown; the editor for your HTML artifacts") powers the procevent feedback loop (`bin/sq-procevent-lavish.sh` executes `lavish-axi poll`) and is a required bootstrap tool gated by `LAVISH_AXI_MIN`. M6 vendors it as `packages/sq-report` (package `sq-report`, bin `sq-report`) with upstream tests green in-workspace. It is the odd one out: plain JavaScript (no tsc), `node>=22`, ~76 MB repo (marketing renders), build via `node scripts/build.js`, and its packaged skill dir is already `skills/lavish` (no `-axi` → KEPT, product name defers).
+`lavish-axi` (kunchenguid/lavish-axi, v0.1.48 — "HTML is the new markdown; the editor for your HTML artifacts") powers the procevent feedback loop (`bin/sq-procevent-lavish.sh` executes `sq-report poll`; register id `lavish` kept) and is a required bootstrap tool gated by `LAVISH_AXI_MIN`. M6 vendored it as `packages/sq-report` (package `sq-report`, bin `sq-report`) with upstream tests green in-workspace. It is the odd one out: plain JavaScript (no tsc), `node>=22`, ~76 MB repo (marketing renders), build via `node scripts/build.js`, and its packaged skill dir is already `skills/lavish` (no `-axi` → KEPT, product name defers).
 
 ## Rename Table (single source of truth for this tool)
 

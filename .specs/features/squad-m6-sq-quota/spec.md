@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-`quota-axi` (kunchenguid/quota-axi, v0.1.20 — "let agents see LLM subscription quota windows") backs the agent-owned dispatch-profile array (AGENTS.md §4) and is a required bootstrap tool gated by `SQUAD_QUOTA_AXI_MIN` (owner: `bin/sq-quota-axi-lib.sh`). M6 vendors it as `packages/sq-quota` (package `sq-quota`, bin `sq-quota`); the distro lib probes `sq-quota` and the floor is bumped to the vendored version.
+`quota-axi` (kunchenguid/quota-axi, v0.1.20 — "let agents see LLM subscription quota windows") backs the agent-owned dispatch-profile array (AGENTS.md §4) and is a required bootstrap tool gated by `SQUAD_QUOTA_AXI_MIN` (owner: `bin/sq-quota-lib.sh`, ex-`sq-quota-axi-lib.sh`). M6 vendored it as `packages/sq-quota` (package `sq-quota`, bin `sq-quota`); the distro lib probes `sq-quota` and the floor is the 0.1.0 clean-baseline reset (PR #16 — the planned bump to the vendored version was superseded).
 
 ## Rename Table (single source of truth for this tool)
 

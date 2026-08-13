@@ -115,7 +115,7 @@ Prefix: `REQ-M6-*` (umbrella integration), `REQ-SQGH-*`, `REQ-SQBROWSER-*`, `REQ
 
 **Acceptance Criteria (current facts):**
 1. Umbrella design.md §9 has the step-by-step sync procedure (pin, copy, name sweep, floor bump, provenance update, test gate) — met
-2. Umbrella spec and ROADMAP.md point at roadmap-futuro-rebrand-completo-de-menco-31 for the deep rebrand (deferred per decision 3) — met; the rebrand item also owns the stale `SQUAD_TASKS_AXI_MIN` note and the four missing legacy aliases
+2. Umbrella spec and ROADMAP.md point at roadmap-futuro-rebrand-completo-de-menco-31 for the deep rebrand (deferred per decision 3) — met; the rebrand item also owns the four missing legacy aliases (the stale `SQUAD_TASKS_AXI_MIN` vendor note was corrected in this review)
 
 ## Traceability
 
