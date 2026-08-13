@@ -1062,9 +1062,15 @@ var reservedAgentArgs = map[string]map[string]bool{
 		"--print-logs": true,
 	},
 	string(types.AgentPi): {
-		"--mode":        true,
-		"--no-session":  true,
-		"--session-id":  true,
+		"--mode":       true,
+		"--no-session": true,
+		"--session-id": true,
+		"--session":    true,
+		"-r":           true,
+		"--resume":     true,
+		"-c":           true,
+		"--continue":   true,
+		"--fork":       true,
 	},
 	string(types.AgentCopilot): {
 		"-p":              true,

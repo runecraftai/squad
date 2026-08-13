@@ -173,7 +173,7 @@ User-supplied flags are normally inserted ahead of drill's managed flags, so you
 | `codex`    | `exec`, `resume`, `--resume`, `--session`, `--session-id`, `--thread`, `--thread-id`, `--last`, `--json`, `--color` |
 | `rovodev`  | `rovodev`, `serve`, `--disable-session-token`                                                               |
 | `opencode` | `serve`, `--hostname`, `--port`, `--print-logs`                                                             |
-| `pi`       | `--mode`, `--no-session`, `--session-id`                                                     |
+| `pi`       | `--mode`, `--no-session`, `--session-id`, `--session`, `-r`, `--resume`, `-c`, `--continue`, `--fork` |
 | `copilot`  | `-p`, `--prompt`, `--output-format`, `--no-color`                                                          |
 
 For structured `codex` runs, drill also appends its own `--output-schema <tempfile>` after your overrides. Treat that flag as managed even though config validation does not currently reject it.
