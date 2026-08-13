@@ -1359,6 +1359,35 @@ SH
   pass "herdr teardown removes pane-owned escalation dedupe state"
 }
 
+test_teardown_retires_watcher_markers() {
+  local case_dir key
+  case_dir=$(make_case watcher-markers)
+  write_meta "$case_dir" local-only strike
+  # Seed the watcher's marker families exactly as the sentry keys them: the
+  # window-keyed stale/wedge set uses the recorded window with ':/.' -> '_',
+  # and the task-keyed .seen-* signatures use the status/turn-ended basenames.
+  key=$(printf '%s' 'Squad:sq-task-x1' | tr ':/.' '___')
+  : > "$case_dir/state/.stale-$key"
+  : > "$case_dir/state/.stale-since-$key"
+  : > "$case_dir/state/.wedge-escalations-$key"
+  : > "$case_dir/state/.seen-task-x1_status"
+  : > "$case_dir/state/.seen-task-x1_turn-ended"
+
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "watcher-markers: forced teardown failed: $(cat "$case_dir/stderr")"
+  [ ! -e "$case_dir/state/.stale-$key" ] \
+    || fail "watcher-markers: teardown left .stale-* behind"
+  [ ! -e "$case_dir/state/.stale-since-$key" ] \
+    || fail "watcher-markers: teardown left .stale-since-* behind"
+  [ ! -e "$case_dir/state/.wedge-escalations-$key" ] \
+    || fail "watcher-markers: teardown left .wedge-escalations-* behind"
+  [ ! -e "$case_dir/state/.seen-task-x1_status" ] \
+    || fail "watcher-markers: teardown left .seen-*_status behind"
+  [ ! -e "$case_dir/state/.seen-task-x1_turn-ended" ] \
+    || fail "watcher-markers: teardown left .seen-*_turn-ended behind"
+  pass "teardown retires the watcher's stale/wedge/seen markers for the released window"
+}
+
 # Flat (non-projected) Herdr endpoint whose fake pane exists until a locked
 # close removes it. The socket path is case-local so the derived presentation
 # lock never collides with another test or a real unit session.
@@ -2508,6 +2537,7 @@ test_drill_truly_unpushed_refuses
 test_local_only_force_overrides_unpushed
 test_teardown_missing_busy_sidecar_completes
 test_herdr_teardown_clears_escalation_marker
+test_teardown_retires_watcher_markers
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_preflight_refuses_before_changes
