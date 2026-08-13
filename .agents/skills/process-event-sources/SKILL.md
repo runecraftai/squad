@@ -80,7 +80,7 @@ Supported by tests:
 
 **Not true, and never to be claimed:** at-least-once, no-loss, or lossless delivery, and no generic exactly-once effect either - the handled acknowledgement only stops re-announcement, it says nothing about whether a paired external effect performed before the acknowledgement call actually completed, so a crash between that effect and the call can still repeat the effect on the next replay.
 
-The currently published `lavish-axi poll` destructively clears feedback before returning it.
+The currently published `sq-report poll` destructively clears feedback before returning it.
 A result lost after that clearing and before the runner reads the process output is unrecoverable, and no Squad wrapper can close that source-side window.
 The remote-reply adapter removes that particular pre-capture window by never consuming its source, but it cannot recover bytes truly lost from the remote log itself.
 Say these boundaries plainly wherever the behavior is described.

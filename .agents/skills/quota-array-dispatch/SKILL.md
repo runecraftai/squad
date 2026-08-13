@@ -2,7 +2,7 @@
 name: quota-array-dispatch
 description: >-
   Agent-only decision procedure for resolving a matched crew-dispatch profile
-  array from current quota-axi output, including effective headroom and usable-runway evidence.
+  array from current sq-quota output, including effective headroom and usable-runway evidence.
   Load when a dispatch rule or default resolves to more than one profile candidate.
 user-invocable: false
 metadata:
@@ -14,14 +14,14 @@ metadata:
 This skill is the single owner of the completion-aware profile-array selection procedure.
 `AGENTS.md` section 4 owns the always-loaded intake boundary, load trigger, malformed-config refusal, every-candidate accounting, and strongest-reasoning/tie safety rules.
 `harness-adapters` owns harness verification, model/provider discovery, and effort fallback.
-`quota-axi` remains data-only, reports whatever granularity the vendor supplies, and never recommends, selects, ranks, or infers a route.
+`sq-quota` remains data-only, reports whatever granularity the vendor supplies, and never recommends, selects, ranks, or infers a route.
 Do not add a daemon, opaque composite score, routing wrapper, hard-coded model-specific policy, or producer-side route recommendation.
 Deterministic shell owns only schema, configuration, and version validation plus concrete spawn safeguards; every model-to-provider, provider-to-credential, and quota-applicability relation is yours to establish transparently and to show your evidence for.
 
 ## Collect facts
 
-Run `quota-axi --json` once per intake and reuse that snapshot for every candidate.
-Do not take a second snapshot to settle a candidate, and read `quota-axi auth --json` when a candidate's credential surface is in question.
+Run `sq-quota --json` once per intake and reuse that snapshot for every candidate.
+Do not take a second snapshot to settle a candidate, and read `sq-quota auth --json` when a candidate's credential surface is in question.
 For each candidate, preserve explicit `harness`, `model`, and `provider`; `harness-adapters` owns identity, and model/provider never infer harness:
 
 - task/profile fit and required reasoning class
@@ -53,13 +53,13 @@ Name the evidence for each relation you assert so the conclusion is inspectable.
 ## Authentication is scoped to the selected surface
 
 A candidate authenticates through its own tuple's surface; another harness's CLI can never gate it, and `harness=pi` with `model=xai/grok-*` is Pi using xAI rather than the standalone Grok CLI.
-`quota-axi auth --json` lists each provider's credential sources independently, so read the one source the candidate actually uses rather than collapsing a provider to a single status.
+`sq-quota auth --json` lists each provider's credential sources independently, so read the one source the candidate actually uses rather than collapsing a provider to a single status.
 A provider can carry a healthy source beside a missing or expired one; the unused source's state is not the candidate's state.
 A Pi-hosted family may authenticate through the vendor's own store with no `pi:`-prefixed source at all, which is normal and never evidence against the candidate.
 
 Uncertainty and ineligibility are different findings:
 
-- No model-level window, no matching auth source, an absent `state.authStatus`, an unmeasurable or `unknown` scope, or a surface quota-axi does not model at all is disclosed uncertainty.
+- No model-level window, no matching auth source, an absent `state.authStatus`, an unmeasurable or `unknown` scope, or a surface sq-quota does not model at all is disclosed uncertainty.
   Keep the candidate eligible, state the unknown, and prefer known sustainable evidence when otherwise comparable.
 - An expired credential is a short-lived session token the owning vendor renews on next use, not a sign-out.
 - Only concrete contradictory evidence blocks: an authoritative catalog proving the model unsupported, or proof that the credential the candidate actually selects is unusable.
@@ -77,7 +77,7 @@ Negative reserve means usage is ahead of reset pace and creates conservation pre
 Positive reserve means usage is behind reset pace.
 `on_pace` is neutral.
 Conservation pressure is present for effective pace status `ahead`, effective pace status is `mixed` and any `aheadWindowIds` remain, or a bounding window is `ahead`.
-`unknown` is valid explicit uncertainty from quota-axi, not parser failure or permission to assume health.
+`unknown` is valid explicit uncertainty from sq-quota, not parser failure or permission to assume health.
 
 ## Selection order
 
@@ -85,7 +85,7 @@ Apply only among candidates satisfying required fit and strongest reasoning clas
 Never use headroom, runway, pace, or reserve to silently replace that reasoning class.
 
 1. Concrete contradictory evidence or malformed configuration: stop and report the tuple and that evidence.
-   Unmeasurable quota, a missing model-level window, an absent runway field, and a credential surface quota-axi does not model are uncertainty, never this rule.
+   Unmeasurable quota, a missing model-level window, an absent runway field, and a credential surface sq-quota does not model are uncertainty, never this rule.
 2. Honor any explicit commander instruction that sets a floor for that candidate before the generic comparison.
    Do not invent a generic percentage floor or treat a low percentage as an automatic failure.
 3. Keep the strongest-reasoning class when every candidate is tight or completion evidence is poor.

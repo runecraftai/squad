@@ -72,7 +72,7 @@ Provision a whole remote base through its configured SSH host with:
 bin/sq-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects}
 ```
 
-You resolve each project's origin yourself - from the commander, the project registry, a clone that exists elsewhere, `gh-axi`, or an explicit paste - and name it as `<project>=<origin-url>`; the seed validates and transports what you supply.
+You resolve each project's origin yourself - from the commander, the project registry, a clone that exists elsewhere, `sq-gh`, or an explicit paste - and name it as `<project>=<origin-url>`; the seed validates and transports what you supply.
 A remote seed therefore creates nothing in this base beyond the route, the charter brief, and a launch record once it is launched: never clone a project into `projects/`, initialize drill here, or run a unit sync just to seed a remote XO.
 A bare `<project>` remains a convenience for a project this base already has cloned, whose configured origin is read instead.
 [`docs/remote-XOs.md`](../../../docs/remote-XOs.md#provision-a-route) owns the rest of the operator contract, and [`bin/sq-project-origin-lib.sh`](../../../bin/sq-project-origin-lib.sh) owns the accepted origin forms.
@@ -187,10 +187,10 @@ bin/sq-backlog-handoff.sh <XO-id> <item-key>...
 
 After seeding, run this handoff for the new XO's in-scope queued items.
 For an existing or inherited domain, complete record intake first so no already-shipped plan row is handed off as open work.
-For a local route, the helper resolves and validates the XO base from `data/XOs.md`, then delegates the item move to `tasks-axi mv` (the single owner of the backlog format), which moves each named item - and a whole connected set, blocker plus dependents, atomically - from the main `data/backlog.md` into the XO base's `data/backlog.md`.
+For a local route, the helper resolves and validates the XO base from `data/XOs.md`, then delegates the item move to `sq-tasks mv` (the single owner of the backlog format), which moves each named item - and a whole connected set, blocker plus dependents, atomically - from the main `data/backlog.md` into the XO base's `data/backlog.md`.
 For a remote route, the same helper first moves the dependency-closed set atomically from the main backlog into `data/handoff/<id>.outbox.md`, then transfers that backlog-format outbox through `sq-on.sh` and lets the remote base's `sq-backlog-receive.sh` move every not-already-present key under the destination lock.
 The outbox is the whole recovery record: its presence means delivery is unfinished, `--resume-pending` safely re-delivers it, and confirmed receipt removes it.
-There is no two-phase handoff journal and no tasks-axi release beyond the already-required atomic `mv` capability.
+There is no two-phase handoff journal and no sq-tasks release beyond the already-required atomic `mv` capability.
 Bootstrap retries pending outboxes when mutation is authorized and emits `XO_HANDOFF:` for any that remain.
 This delegated route remains required when `config/backlog-backend=manual`, which controls only routine Squad backlog edits.
 It moves each queued item's whole block - the `- [ ] <id> ...` header plus every following two-or-more-space-indented body line and blank separator, up to the next item or column-0 section heading - byte-exact under the same section, treating an indented `## ...` line as body rather than a section boundary, so neither the header nor its body is duplicated or orphaned.

@@ -64,7 +64,7 @@ A `local-only` project may have no remote and skips drill initialization.
 
 Creating a GitHub repository is outward-facing.
 Before making that remote change, propose the repository name, owner or organization, visibility, and delivery posture, defaulting visibility to private and the posture to `drill-prod-only`, then obtain the commander's explicit consent for those exact values; a stated default never replaces that consent.
-Use `gh-axi` for the approved GitHub operation and consult its current help rather than relying on remembered flags.
+Use `sq-gh` for the approved GitHub operation and consult its current help rather than relying on remembered flags.
 After remote creation succeeds, clone it locally, add the registry entry, and initialize it according to its delivery posture.
 
 For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
