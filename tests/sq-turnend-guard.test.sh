@@ -1083,6 +1083,67 @@ EOF
   pass ".pi primary extension: delivery failure resets the logical-run latch"
 }
 
+test_pi_extension_surfaces_handoff_once() {
+  local repo home ext out status
+  repo="$TMP_ROOT/pi-handoff-root"
+  home="$TMP_ROOT/pi-handoff-home"
+  ext="$repo/.pi/extensions/sq-primary-turnend-guard.ts"
+  mkdir -p "$repo/.pi/extensions/lib" "$repo/bin" "$home/state"
+  cp "$ROOT/.pi/extensions/sq-primary-turnend-guard.ts" "$ext"
+  cp "$ROOT/.pi/extensions/lib/sq-operational-input.ts" "$repo/.pi/extensions/lib/sq-operational-input.ts"
+  cp "$ROOT/bin/sq-handoff-request.sh" "$repo/bin/"
+  cp "$ROOT/bin/sq-handoff-surface.sh" "$repo/bin/"
+  cp "$ROOT/bin/sq-operational-input.sh" "$repo/bin/"
+  cp "$ROOT/bin/sq-primary-scope-lib.sh" "$repo/bin/"
+  cp "$ROOT/bin/sq-stand-to-lib.sh" "$repo/bin/"
+  # The surfacer scopes to a real primary checkout; give the fake repo one.
+  git init -q -b main "$repo"
+  printf '# Squad\n' > "$repo/AGENTS.md"
+  # A pass-through guard so only the handoff surface fires.
+  cat > "$repo/bin/sq-turnend-guard.sh" <<'SH'
+#!/usr/bin/env bash
+cat >/dev/null
+exit 0
+SH
+  chmod +x "$repo/bin/"*.sh
+  SQUAD_BASE="$home" "$ROOT/bin/sq-handoff-request.sh" add pr-merged pr-9 "M9 landed" \
+    || fail "could not seed a pending handoff request"
+
+  out=$(PLUGIN="$ext" SQUAD_BASE="$home" node --input-type=module 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const handlers = new Map();
+let injections = [];
+const pi = {
+  on(event, handler) {
+    handlers.set(event, handler);
+  },
+  async sendUserMessage(message, options) {
+    injections.push({ message, options });
+  },
+};
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+const settled = handlers.get("agent_settled");
+if (!settled) throw new Error("agent_settled handler was not registered");
+
+await settled({ type: "agent_settled" }, {});
+if (injections.length !== 1) throw new Error(`expected exactly one handoff injection, saw ${injections.length}`);
+const card = injections[0];
+if (card.options?.deliverAs !== "followUp") throw new Error("handoff card was not a follow-up");
+if (!card.message.startsWith("\u2063SQUAD_OP: v1 handoff-request: ")) throw new Error(`card lost its handoff-request kind: ${card.message.slice(0, 60)}`);
+if (!card.message.includes("M9 landed")) throw new Error("card lost the milestone context");
+
+await settled({ type: "agent_settled" }, {});
+if (injections.length !== 1) throw new Error(`second settle re-injected the card (${injections.length} injections)`);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi extension must surface the handoff card exactly once"
+  [ -z "$out" ] || fail "Pi handoff surface test printed output: $out"
+  pass ".pi primary extension: surfaces a pending handoff card exactly once as a typed handoff-request follow-up"
+}
+
 # --- --claude cooperative mode -----------------------------------------------
 # In --claude mode the guard ignores stop_hook_active (Claude marks every stop
 # after ANY stop-hook continuation true, including asyncRewake rewake turns) and
@@ -1644,6 +1705,7 @@ test_codex_hook_ignores_nested_git_root_guard
 test_opencode_plugin_anchors_guard_to_worktree
 test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
+test_pi_extension_surfaces_handoff_once
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive

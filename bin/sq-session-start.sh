@@ -742,6 +742,31 @@ if fm_pf_relay_active "$SQUAD_BASE" \
   fi
 fi
 
+# Durable new-session handoff requests (docs/handoff-request.md). At a milestone
+# close - a merged milestone PR or a drained flight queue - Squad records a
+# pending request; whichever surface runs first, this digest or the Pi turn-end
+# extension, marks it surfaced and prints the card exactly once. The read-only
+# path never mutates, so it only lists. The still-open set (pending or surfaced,
+# not yet resolved) stays visible across restarts so a presented-but-unanswered
+# question is never silently dropped.
+HANDOFF_OPEN=$("$SCRIPT_DIR/sq-handoff-request.sh" list --open 2>/dev/null) || HANDOFF_OPEN=
+HANDOFF_CARD=
+if [ "$READ_ONLY" -eq 0 ]; then
+  HANDOFF_CARD=$("$SCRIPT_DIR/sq-handoff-surface.sh" 2>/dev/null) || HANDOFF_CARD=
+fi
+if [ -n "$HANDOFF_CARD" ] || [ -n "$HANDOFF_OPEN" ]; then
+  subsection "HANDOFF REQUESTS"
+  if [ -n "$HANDOFF_CARD" ]; then
+    printf '%s\n' "$HANDOFF_CARD"
+    printf '\nEach card above is surfaced exactly once per milestone. Present it and ask\n'
+    printf 'whether to start a new session; the commander owns the /new decision.\n'
+  fi
+  if [ -n "$HANDOFF_OPEN" ]; then
+    printf '\nStill open (presented or pending, commander has not answered yet):\n'
+    printf '%s\n' "$HANDOFF_OPEN"
+  fi
+fi
+
 # --- 7. network checks ------------------------------------------------------
 # Deliberately here and not later: these lines are actionable (a stuck clone, a
 # XO that could not be relaunched, broken GitHub auth), and the section

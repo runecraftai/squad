@@ -28,7 +28,7 @@ SQUAD_OPERATIONAL_MARK=$'\xE2\x81\xA3'
 SQUAD_OPERATIONAL_PREFIX="${SQUAD_OPERATIONAL_MARK}SQUAD_OP: "
 SQUAD_OPERATIONAL_VERSION=v1
 SQUAD_OPERATIONAL_HEADER_PREFIX="${SQUAD_OPERATIONAL_PREFIX}${SQUAD_OPERATIONAL_VERSION} "
-SQUAD_OPERATIONAL_KINDS='session-start sentry turn-end-guard away-supervisor launch-brief'
+SQUAD_OPERATIONAL_KINDS='session-start sentry turn-end-guard away-supervisor launch-brief handoff-request'
 
 # Compatibility name retained for the away-mode owner and its tests.
 # shellcheck disable=SC2034 # Public source-library variable used by callers.
@@ -203,7 +203,7 @@ Usage:
   bin/sq-operational-input.sh body           # current input on stdin
 
 Current construction kinds:
-  session-start sentry turn-end-guard away-supervisor from-squad launch-brief
+  session-start sentry turn-end-guard away-supervisor from-squad launch-brief handoff-request
 
 The from-squad kind uses its established live-charter-compatible carrier.
 EOF

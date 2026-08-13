@@ -122,6 +122,38 @@ async function injectSessionstart(pi: ExtensionAPI, source: string): Promise<voi
   }
 }
 
+// New-session handoff surface (docs/handoff-request.md). At a milestone close
+// Squad records a durable handoff request; this surface presents the handoff
+// card exactly once per milestone by running bin/sq-handoff-surface.sh on every
+// agent settle. That script owns the once-per-milestone atomic mark under the
+// handoff-queue lock, so whichever surface runs first - this extension or the
+// session-start digest - presents the card and every later call stays silent.
+// The card is delivered as a typed handoff-request operational wake so
+// Reporting does not mistake an injected card for a commander message.
+function runHandoffSurface(): Promise<string> {
+  return new Promise((resolveResult) => {
+    const child = spawn(`${root}/bin/sq-handoff-surface.sh`, {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    child.on("error", () => resolveResult(""));
+    child.on("close", () => resolveResult(Buffer.concat(chunks).toString("utf8").trim()));
+  });
+}
+
+async function surfaceHandoff(pi: ExtensionAPI): Promise<void> {
+  const card = await runHandoffSurface();
+  if (!card) return;
+  try {
+    const content = encodeSquadOperationalInput("handoff-request", card);
+    await pi.sendUserMessage(content, { deliverAs: "followUp" });
+  } catch {
+  }
+}
+
 function runGuard(): Promise<{ code: number; stderr: string }> {
   return new Promise((resolveResult) => {
     const child = spawn(`${root}/bin/sq-turnend-guard.sh`, {
@@ -195,6 +227,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async () => {
+    await surfaceHandoff(pi);
+
     if (guardFollowupActive) {
       guardFollowupActive = false;
       return;
