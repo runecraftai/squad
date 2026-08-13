@@ -13,7 +13,7 @@
    - `plugin.json`: verify at execute — rename only fields that encode the `lavish-axi` NAME (e.g., manifest `name`/`id`); display names and version JSONPath stay (prose/branding defer).
    - src name literals (cli.js/plugin.js/skill.js bin references) follow the new name where they encode the NAME; prose defers.
    - `skills/lavish` KEPT (no `-axi`; "Lavish" is the product/brand name — deferred rebrand). `files[]` entries unchanged.
-4. **Keep** pnpm@11.1.1, engines node>=22 (CI node 22 OK), JS toolchain (no tsc; `tsconfig.json` exists for typecheck in `check`), `THIRD-PARTY-NOTICES.md` (legal, untouched).
+4. **Keep** pnpm@11.1.1, engines node>=22 (CI node 22 OK), JS toolchain (no tsc; `tsconfig.json` exists for typecheck in `check`), `THIRD-PARTY-NOTICES.md` (legal; trimmed to minimal required attribution).
 5. **Tests:** `pnpm build && pnpm test` (vitest, ~24 suites incl. server/whiteboard/mermaid/html-app/export-bundle/telemetry). Browser-tagged suites may need the same env handling as upstream CI — verify at execute. Fix only environment/strictness breaks, documented.
 6. **Turbo lint mapping (verify at execute):** upstream has NO `lint` script (has `format`/`format:check` via prettier). Map turbo `lint` to `format:check` or declare lint=none for this package so `turbo run lint` stays green.
 
