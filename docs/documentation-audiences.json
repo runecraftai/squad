@@ -521,6 +521,10 @@
       "audience": "public-product"
     },
     {
+      "path": "packages/drill/README.pt-BR.md",
+      "audience": "public-product"
+    },
+    {
       "path": "packages/drill/README.zh-CN.md",
       "audience": "public-product"
     },
