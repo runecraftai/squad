@@ -38,7 +38,7 @@ function traceModules(
   args: string[],
   env: NodeJS.ProcessEnv = {},
 ): { modules: string[]; status: number | null } {
-  const dir = mkdtempSync(join(tmpdir(), "cdt-axi-trace-"));
+  const dir = mkdtempSync(join(tmpdir(), "sq-browser-trace-"));
   const tracePath = join(dir, "modules.txt");
   try {
     const result = spawnSync(
