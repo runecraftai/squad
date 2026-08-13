@@ -32,7 +32,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
 1. **Gather live unit state with one deterministic command.**
    Run `bin/sq-sitrep-snapshot.sh` at invocation time and read its compact output.
    It is the single bounded, deterministic unit-state source for Sitrep and renders TOON by default.
-   Do not create or consult a second unit-state reader, parser contract, status-event-tail interpretation, visible-session recap, ad-hoc project probe, or ad-hoc `gh-axi`/`gh` query.
+   Do not create or consult a second unit-state reader, parser contract, status-event-tail interpretation, visible-session recap, ad-hoc project probe, or ad-hoc `sq-gh`/`gh` query.
    The command's header and `--help` output own its exact fields, bounds, opt-ins, and output contract.
    Keep the default local-only read unless the commander asks to include PRs.
    For registered XOs, use the snapshot's structured-base classification and provenance.
@@ -62,7 +62,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.lavish/*.html` boards).
    - **Charted Next** - queued or gated work, including any main-inventory integrity warning, with each item's blocker, date, or integrity reason.
    After writing the file, return the concise four-section chat digest and include the report path or link without adding a fifth section.
-   For a richer review surface, optionally offer a Lavish board with `lavish-axi` when the report has enough structure to deserve one, but only after the required digest is ready.
+   For a richer review surface, optionally offer a Lavish board with `sq-report` when the report has enough structure to deserve one, but only after the required digest is ready.
 
 ## Chat-response contract
 

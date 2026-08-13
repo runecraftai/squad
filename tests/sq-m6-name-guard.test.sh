@@ -55,10 +55,6 @@
 #     - header comments naming the gh-axi mock (prose)
 #   tests/sq-procevent.test.sh
 #     - comment describing the `lavish-axi poll` stand-in (prose)
-#   tests/sq-quota-array-dispatch-live-e2e.test.sh
-#     - drives the public skill-loading interface whose deferred skill prose
-#       still instructs `quota-axi --json`; the quota-axi fakebin stands in for
-#       the OQ-M6-01 legacy alias (prose-consistency fixture)
 #   tests/sq-sitrep-snapshot.test.sh
 #     - comments/fail messages naming the gh-axi fakebin (prose)
 #   tests/sq-teardown.test.sh
@@ -155,7 +151,6 @@ test_guard_tests() {
     'tests/sq-pr-merge.test.sh' \
     'tests/sq-procevent.test.sh' \
     'tests/sq-public-followup.test.sh' \
-    'tests/sq-quota-array-dispatch-live-e2e.test.sh' \
     'tests/sq-sitrep-snapshot.test.sh' \
     'tests/sq-teardown.test.sh' \
     'tests/sq-vendor-auth-probe.test.sh' \

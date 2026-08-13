@@ -209,11 +209,11 @@ The follow-up budget above is a courtesy.
 A **promised final reply** - "I'll report back when this lands" - is a commitment, and forgetting it is publicly visible.
 Never carry one in your head: the moment you promise a specific outcome in a public thread, turn it into durable state and let the scripts reconcile it.
 This section is the sole owner of that procedure.
-`tasks-axi public-followup --help` owns the typed obligation, its states, and its file contracts; `bin/sq-public-followup.sh --help` owns Squad's flags; do not restate either here.
+`sq-tasks public-followup --help` owns the typed obligation, its states, and its file contracts; `bin/sq-public-followup.sh --help` owns Squad's flags; do not restate either here.
 
 **When you promise a final:**
 
-1. Create the typed obligation with `tasks-axi public-followup add` and bind the work with `bind-work`, keeping the public-safe summary and the opaque thread binding in the obligation and the full request context where the poll already put it.
+1. Create the typed obligation with `sq-tasks public-followup add` and bind the work with `bind-work`, keeping the public-safe summary and the opaque thread binding in the obligation and the full request context where the poll already put it.
 2. Register it with `bin/sq-public-followup.sh register <obligation-id> --relation <relation-id> --work-home <main|XO:<id>> --work-id <task-id> --generation <n>`.
    This is what makes the commitment reconcilable without you.
 3. Put `bin/sq-public-followup.sh brief <obligation-id>` output straight into the worker's brief.

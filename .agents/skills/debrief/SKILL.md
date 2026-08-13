@@ -58,7 +58,7 @@ Never describe the session as reset-safe while the memory total is over budget o
    - Project-intrinsic knowledge never goes directly into a project's `AGENTS.md`.
      Route it through a normal strike task so an operator records it with `bin/sq-ensure-agents-md.sh` and the project's delivery path.
    - Knowledge general to every Squad user belongs in this repo's shared tracked material through the normal branch, drill, PR, and commander-merge path.
-   - For task-scoped notes, inspect the item with `tasks-axi show <id> --full`, classify the change as new, duplicate, superseding, or obsolete, then use a considered replacement body through `tasks-axi update <id> --body-file <path>`.
+   - For task-scoped notes, inspect the item with `sq-tasks show <id> --full`, classify the change as new, duplicate, superseding, or obsolete, then use a considered replacement body through `sq-tasks update <id> --body-file <path>`.
      Use `--archive-body` when recoverability matters.
      Never append.
    - File each undone next step as a queued backlog item with a genuine `blocked-by` dependency when applicable.

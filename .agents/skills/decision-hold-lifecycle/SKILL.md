@@ -32,7 +32,7 @@ Sitrep reads the resulting structured state and must never compensate by scrapin
 3. For each choice, choose a stable key and use the script's `hold` command with a concise title, reason, and repository.
 4. Run the script's `complete` command with the full unresolved-key inventory for that review pass.
 5. Relay the choices to the commander as decisions from Sitrep' Commander's Call section under `AGENTS.md` section 9; do not use the word hold in commander chat.
-6. After the commander decides, record dependent work with normal tasks-axi commands and block it by the hold identity.
+6. After the commander decides, record dependent work with normal sq-tasks commands and block it by the hold identity.
 7. Put the commander's exact durable decision in a file and use the script's `resolve` command with every routed task.
 8. Confirm Sitrep no longer shows the closed hold and that routed work remains in structured backlog state.
 
