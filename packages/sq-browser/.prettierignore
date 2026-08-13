@@ -3,6 +3,5 @@ CHANGELOG.md
 .release-please-manifest.json
 skills/sq-browser/SKILL.md
 .agents/skills/drill/SKILL.md
-.agents/skills/no-mistakes/SKILL.md
 # Local (untracked) agent settings.
 .claude/settings.local.json

@@ -2,7 +2,6 @@ dist
 node_modules
 .lavish
 .sq-report
-.no-mistakes
 .drill
 lavish-code-review.html
 package-lock.json
