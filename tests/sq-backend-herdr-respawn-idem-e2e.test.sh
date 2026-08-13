@@ -70,7 +70,7 @@ fm_backend_herdr_version_check || fail "version_check failed against the real in
 # fm_backend_herdr_create_task is the ONE function both bin/sq-spawn.sh's
 # ordinary operator/recon path and its --xo path call, so exercising
 # it directly here covers both paths identically - already proven distinct
-# only in SQUAD_HOME-shadowing (tests/sq-backend-herdr-workspace-per-home-e2e.test.sh),
+# only in SQUAD_BASE-shadowing (tests/sq-backend-herdr-workspace-per-home-e2e.test.sh),
 # never in this duplicate-guard logic, which has no home-specific branching.
 
 PROJ_CWD="$SCRATCH/proj"

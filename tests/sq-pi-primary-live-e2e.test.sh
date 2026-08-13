@@ -189,7 +189,7 @@ run_native_ahoy_regressions() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -u' \
-    'file="${SQUAD_HOME:?}/state/session-start-count"' \
+    'file="${SQUAD_BASE:?}/state/session-start-count"' \
     'count=0' \
     '[ ! -f "$file" ] || count=$(sed -n "1p" "$file")' \
     'count=$((count + 1))' \
@@ -217,7 +217,7 @@ run_native_ahoy_regressions() {
 
   first_out=$(
     cd "$AHOY_PROJECT" &&
-      SQUAD_HOME="$first_home" pi --print --approve --no-session --no-context-files --no-extensions \
+      SQUAD_BASE="$first_home" pi --print --approve --no-session --no-context-files --no-extensions \
         -e .pi/extensions/sq-primary-turnend-guard.ts \
         --no-skills --skill .agents/skills \
         --model openai-codex/gpt-5.6-sol --thinking low \
@@ -230,7 +230,7 @@ run_native_ahoy_regressions() {
 
   later_out=$(
     cd "$AHOY_PROJECT" &&
-      SQUAD_HOME="$later_home" pi --print --approve --no-session --no-context-files --no-extensions \
+      SQUAD_BASE="$later_home" pi --print --approve --no-session --no-context-files --no-extensions \
         -e .pi/extensions/sq-primary-turnend-guard.ts \
         --no-skills --skill .agents/skills \
         --model openai-codex/gpt-5.6-sol --thinking low \
@@ -264,7 +264,7 @@ chmod +x "$PROJECT/bin/sq-operational-input.sh"
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
 
 "$TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -c "$PROJECT" \
-  "env SQUAD_HOME='$HOME_DIR' SQUAD_ROOT_OVERRIDE='$PROJECT' SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=0 SQUAD_HEARTBEAT=600 bash -lc 'printf \"%s\\n\" \"\$\$\" > \"\$SQUAD_HOME/state/.lock\"; pi --approve --no-session --no-context-files --no-extensions -e .pi/extensions/sq-calm.ts -e .pi/extensions/sq-primary-turnend-guard.ts -e .pi/extensions/sq-primary-pi-watch.ts --model openai-codex/gpt-5.6-sol --thinking low; rc=\$?; printf \"PI_EXIT=%s\\n\" \"\$rc\"; sleep 300'"
+  "env SQUAD_BASE='$HOME_DIR' SQUAD_ROOT_OVERRIDE='$PROJECT' SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=0 SQUAD_HEARTBEAT=600 bash -lc 'printf \"%s\\n\" \"\$\$\" > \"\$SQUAD_BASE/state/.lock\"; pi --approve --no-session --no-context-files --no-extensions -e .pi/extensions/sq-calm.ts -e .pi/extensions/sq-primary-turnend-guard.ts -e .pi/extensions/sq-primary-pi-watch.ts --model openai-codex/gpt-5.6-sol --thinking low; rc=\$?; printf \"PI_EXIT=%s\\n\" \"\$rc\"; sleep 300'"
 
 i=0
 while [ "$i" -lt 120 ]; do

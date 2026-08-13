@@ -6,7 +6,7 @@ This document records the deterministic mechanism, structured surfaces, and priv
 ## Mechanism
 
 `bin/sq-decision-hold.sh` is the only lifecycle command for an investigation or visual review's unresolved commander decisions.
-The command runs tasks-axi in the active `SQUAD_HOME`, so the existing backlog remains the only durable work database and an XO-owned decision stays in the XO base.
+The command runs tasks-axi in the active `SQUAD_BASE`, so the existing backlog remains the only durable work database and an XO-owned decision stays in the XO base.
 It never reads report bodies, review artifacts, terminal output, or chat.
 
 The `hold` subcommand maps an originating work id and stable decision key to `<origin-id>-decision-<decision-key>`.

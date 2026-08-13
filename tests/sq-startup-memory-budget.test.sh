@@ -88,7 +88,7 @@ new_bootstrap_world() {
 
 run_bootstrap() {
   local root=$1 home=$2 fakebin=$3
-  PATH="$fakebin:$BASE_PATH" SQUAD_BACKEND=tmux SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BACKEND=tmux SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" \
     "$BOOTSTRAP"
 }
 
@@ -103,7 +103,7 @@ test_primary_bootstrap_materializes_visible_default() {
   [ -z "$out" ] || fail "default materialization should stay quiet, got: $out"
   [ "$(<"$home/config/startup-memory-budget")" = 7500 ] \
     || fail "bootstrap did not materialize the visible 7500 default"
-  [ "$(SQUAD_HOME="$home" "$BUDGET" read)" = 7500 ] \
+  [ "$(SQUAD_BASE="$home" "$BUDGET" read)" = 7500 ] \
     || fail "read command did not expose the generated default"
 
   printf '321\n' > "$home/config/startup-memory-budget"
@@ -123,7 +123,7 @@ test_primary_bootstrap_materializes_visible_default() {
 expect_rejected_read() {
   local home=$1 expected=$2 out rc
   set +e
-  out=$(SQUAD_HOME="$home" "$BUDGET" read 2>&1)
+  out=$(SQUAD_BASE="$home" "$BUDGET" read 2>&1)
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "unsafe budget unexpectedly parsed: $expected"
@@ -135,7 +135,7 @@ test_safe_parser_rejects_ambiguous_and_unsafe_values() {
   home="$TMP_ROOT/parser-home"
   mkdir -p "$home/config" "$home/data"
   printf '42\n' > "$home/config/startup-memory-budget"
-  [ "$(SQUAD_HOME="$home" "$BUDGET" read)" = 42 ] || fail "valid positive decimal budget was rejected"
+  [ "$(SQUAD_BASE="$home" "$BUDGET" read)" = 42 ] || fail "valid positive decimal budget was rejected"
 
   printf '0\n' > "$home/config/startup-memory-budget"
   expect_rejected_read "$home" 'value must be one positive decimal integer'
@@ -173,7 +173,7 @@ test_budget_accounting_reports_all_three_files_and_safe_failure() {
   printf 'abc\n' > "$home/data/commander.md"
   printf 'abcdef\n' > "$home/data/commander-shared.md"
 
-  out=$(SQUAD_HOME="$home" "$BUDGET" report)
+  out=$(SQUAD_BASE="$home" "$BUDGET" report)
   assert_contains "$out" 'estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate' \
     "report did not name the stable estimator"
   assert_contains "$out" 'file=data/commander.md bytes=4 estimated_tokens=2 status=present' \
@@ -186,7 +186,7 @@ test_budget_accounting_reports_all_three_files_and_safe_failure() {
   assert_contains "$out" 'budget_status=within-budget' "report did not classify the initial total"
 
   printf 'abcdefabcdefabcdefabcdef\n' > "$home/data/learnings.md"
-  out=$(SQUAD_HOME="$home" "$BUDGET" report)
+  out=$(SQUAD_BASE="$home" "$BUDGET" report)
   assert_contains "$out" 'budget_status=over-budget' "report did not surface an over-budget total"
 
   outside="$TMP_ROOT/accounting-outside"
@@ -194,7 +194,7 @@ test_budget_accounting_reports_all_three_files_and_safe_failure() {
   rm -f "$home/data/commander.md"
   ln -s "$outside" "$home/data/commander.md"
   set +e
-  out=$(SQUAD_HOME="$home" "$BUDGET" report 2>&1)
+  out=$(SQUAD_BASE="$home" "$BUDGET" report 2>&1)
   rc=$?
   set -e
   expect_code 2 "$rc" "unsafe memory input should fail the accounting command"
@@ -242,7 +242,7 @@ latest_reread_instruction() {
 
 run_config_push() {
   local root=$1 home=$2 fakebin=$3 log=$4
-  PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" SQUAD_SEND_SETTLE=0 \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" SQUAD_SEND_SETTLE=0 \
     SQUAD_FAKE_TMUX_LOG="$log" "$CONFIG_PUSH"
 }
 

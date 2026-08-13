@@ -145,7 +145,7 @@ set -u
 
 SQUAD_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SQUAD_DAEMON_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # Shared tmux pane primitives for supervisor injection (busy/composer detection
 # + verify-retry submit). Sourced at top level so BOTH the executed daemon and
@@ -224,9 +224,9 @@ LOG_KEEP_LINES_DEFAULT=2000
 AFK_FLAG_NAME=".afk"
 
 # Resolve the effective state dir. SQUAD_STATE_OVERRIDE wins (testing); otherwise
-# $SQUAD_HOME/state. Kept as a function so the pure
+# $SQUAD_BASE/state. Kept as a function so the pure
 # classifiers can take an explicit state arg without depending on globals.
-_state_root() { printf '%s' "${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"; }
+_state_root() { printf '%s' "${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"; }
 
 # --- portable stat (same trap as sq-sentry.sh: no `stat -f || stat -c`) -------
 if [ "$(uname)" = Darwin ]; then
@@ -689,7 +689,7 @@ wedge_alarm_configured_channels() {
     printf '%s\n' "$SQUAD_WEDGE_ALARM_CHANNEL"
     return 0
   fi
-  cfg="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}/wedge-alarm"
+  cfg="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}/wedge-alarm"
   if [ -f "$cfg" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       line="${line#"${line%%[![:space:]]*}"}"

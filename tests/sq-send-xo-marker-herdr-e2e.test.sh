@@ -6,7 +6,7 @@
 # It exercises the end-user command shape against metadata written by a real
 # sq-spawn.sh --xo launch, captures Pi's before_agent_start prompt bytes,
 # and proves both sides of the routing boundary:
-#   - exact task id through explicit SQUAD_HOME receives exactly one marker;
+#   - exact task id through explicit SQUAD_BASE receives exactly one marker;
 #   - direct terminal input remains unmarked.
 #
 # Every Herdr call, including calls made inside the production backend adapter,
@@ -115,7 +115,7 @@ printf '#!/usr/bin/env bash\nexec %q -e %q "$@"\n' "$REAL_PI" "$CAPTURE_EXTENSIO
 chmod +x "$FAKEBIN/pi"
 
 "$LAB_HELPER" provision "$SESSION"
-PATH="$FAKEBIN:$ORIGINAL_PATH" SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_HOME="$SENDER_HOME" HERDR_SESSION="$SESSION" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_BASE="$SENDER_HOME" HERDR_SESSION="$SESSION" \
   "$ROOT/bin/sq-spawn.sh" "$ID" "$SECOND_HOME" --xo --harness pi --backend herdr >/dev/null
 
 META="$SENDER_HOME/state/$ID.meta"
@@ -163,14 +163,14 @@ wait_for_prompt 'Isolated marker capture XO' \
   || fail "real Pi before_agent_start capture did not load for the startup charter"
 wait_for_idle || fail "real Pi did not become idle after the startup capture"
 
-PATH="$FAKEBIN:$ORIGINAL_PATH" SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_HOME="$SENDER_HOME" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_BASE="$SENDER_HOME" \
   "$ROOT/bin/sq-send.sh" "$ID" "$REQUEST" >/dev/null
 wait_for_prompt "$REQUEST" || fail "real Pi did not receive the exact-id sq-send request"
 GOT=$(jq -r --arg needle "$REQUEST" 'select(.prompt | contains($needle)) | .prompt' "$CAPTURE" | tail -1)
 [ "$GOT" = "${SQUAD_FROMFIRST_MARK}${REQUEST}" ] \
   || fail "real Pi exact-id prompt did not contain exactly one terminal-safe marker"$'\n'"--- bytes ---"$'\n'"$(printf '%s' "$GOT" | od -An -tx1)"
 printf 'evidence: exact-id received-hex=%s\n' "$(printf '%s' "$GOT" | od -An -tx1 | tr -d ' \n')"
-pass "real Pi/Herdr: exact-id SQUAD_HOME send delivers exactly one from-squad marker"
+pass "real Pi/Herdr: exact-id SQUAD_BASE send delivers exactly one from-squad marker"
 wait_for_idle || fail "real Pi did not become idle after the exact-id capture"
 
 # Direct terminal input bypasses sq-send's metadata-routed transformation and

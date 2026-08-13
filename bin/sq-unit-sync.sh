@@ -22,7 +22,7 @@
 # Usage: sq-unit-sync.sh [<project-dir-or-name>]
 # The single-project form accepts either a path (absolute, or relative to the
 # caller's cwd) or a bare "<name>"/"projects/<name>" form, resolved against
-# this base's projects dir ($SQUAD_HOME/projects, or $SQUAD_PROJECTS_OVERRIDE).
+# this base's projects dir ($SQUAD_BASE/projects, or $SQUAD_PROJECTS_OVERRIDE).
 # Bare names and "projects/<name>" forms prefer this base's projects dir before
 # falling back to an explicit path. Example: from anywhere,
 # `sq-unit-sync.sh dotfiles-private` syncs just that one clone, same as
@@ -31,8 +31,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_BASE/projects}"
 # shellcheck source=bin/sq-lock-lib.sh
 . "$SCRIPT_DIR/sq-lock-lib.sh"
 # Inert unless SQUAD_TIMING_LOG names a file; only the deferred network stage sets it.

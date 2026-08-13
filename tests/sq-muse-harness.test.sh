@@ -128,7 +128,7 @@ make_spawn_case() {
 run_muse_spawn() {  # <home> <proj> <wt> <fakebin> <id> [extra args...]
   local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5
   shift 5
-  SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -372,7 +372,7 @@ test_spawn_refuses_XO() {
   id="muse-XO-x1"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$case_dir/muse"
   printf 'charter\n' > "$home/data/$id/brief.md"
-  out=$(cd "$case_dir" && SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  out=$(cd "$case_dir" && SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 TMUX="fake,1,0" META_API_KEY=test-key \
@@ -408,7 +408,7 @@ EOF
   assert_absent "$home/state/$id.busy-gen" "muse spawn armed a busy record it can never clear"
   printf 'binding_id=retired\nsession_log=%s\n' "$prior" > "$home/state/$id.muse-session-current"
 
-  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" \
+  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" \
     PATH="$fakebin:$PATH" "$TEARDOWN" "$id" --force >/dev/null 2>&1 \
     || fail "muse teardown failed"
   assert_absent "$binding" "muse session binding survived teardown"
@@ -453,7 +453,7 @@ SH
 }
 
 run_send_key() {  # <home> <fakebin> <id> <key> <keylog>
-  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$1" SQUAD_STATE_OVERRIDE="$1/state" \
+  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$1" SQUAD_STATE_OVERRIDE="$1/state" \
     SQUAD_FAKE_KEY_LOG="$5" PATH="$2:$PATH" \
     "$ROOT/bin/sq-send.sh" "$3" --key "$4" 2>&1
 }

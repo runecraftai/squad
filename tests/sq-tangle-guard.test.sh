@@ -64,7 +64,7 @@ ROWS
 
 run_guard() {
   # Scope the guard to a temp repo as the primary checkout; state lives under it.
-  SQUAD_ROOT_OVERRIDE="$1" SQUAD_HOME="$1" "$ROOT/bin/sq-guard.sh" 2>&1
+  SQUAD_ROOT_OVERRIDE="$1" SQUAD_BASE="$1" "$ROOT/bin/sq-guard.sh" 2>&1
 }
 
 test_guard_banner() {
@@ -94,7 +94,7 @@ test_guard_banner() {
 
 run_bootstrap() {
   # No projects/ under the home keeps unit sync inert; grep isolates the line.
-  SQUAD_ROOT_OVERRIDE="$1" SQUAD_HOME="$1" "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null
+  SQUAD_ROOT_OVERRIDE="$1" SQUAD_BASE="$1" "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null
 }
 
 test_bootstrap_line() {
@@ -112,7 +112,7 @@ test_bootstrap_line() {
   out=$(run_bootstrap "$repo" | grep '^TANGLE:' || true)
   assert_contains "$out" "fm/tangle-bb2" "bootstrap did not report the tangled branch"
   assert_contains "$out" "checkout main" "bootstrap TANGLE line lacked the restore remediation"
-  out=$(SQUAD_ROOT_OVERRIDE="$repo" SQUAD_HOME="$repo" SQUAD_BOOTSTRAP_DETECT_ONLY=1 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null | grep '^TANGLE:' || true)
+  out=$(SQUAD_ROOT_OVERRIDE="$repo" SQUAD_BASE="$repo" SQUAD_BOOTSTRAP_DETECT_ONLY=1 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null | grep '^TANGLE:' || true)
   assert_contains "$out" "fm/tangle-bb2" "detect-only bootstrap did not report the tangled branch"
   assert_contains "$out" "read-only session must leave restore work" "detect-only bootstrap did not explain restore ownership"
   assert_not_contains "$out" "checkout main" "detect-only bootstrap printed a state-changing restore command"
@@ -127,7 +127,7 @@ test_brief_assertion_precedes_branch() {
   local home brief iso br
   home="$TMP_ROOT/brief-home"
   mkdir -p "$home/data"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" tangle-brief-cc3 alpha --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" tangle-brief-cc3 alpha --mode drill >/dev/null 2>&1
   brief="$home/data/tangle-brief-cc3/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \
@@ -177,7 +177,7 @@ run_spawn() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
-  SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
@@ -256,7 +256,7 @@ run_spawn_record() {
   local home=$1 id=$2 proj=$3 pane=$4 fakebin=$5 rec=$6
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
-  SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \

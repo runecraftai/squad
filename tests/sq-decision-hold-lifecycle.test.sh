@@ -35,13 +35,13 @@ EOF
 
 run_bearings() {  # <home>
   local home=$1
-  PATH="$home/fakebin:$PATH" SQUAD_HOME="$home" SQUAD_BEARINGS_NOW=2026-07-14T12:00:00Z \
+  PATH="$home/fakebin:$PATH" SQUAD_BASE="$home" SQUAD_BEARINGS_NOW=2026-07-14T12:00:00Z \
     "$SITREP" --json
 }
 
 run_teardown() {  # <home> <id>
   local home=$1 id=$2
-  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id"
 }
@@ -105,7 +105,7 @@ run_decisions() {  # <home> <command args...>
   local home=$1
   shift
   PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" \
-    SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
+    SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/sq-decision-hold.sh" "$@"
 }
 
@@ -217,8 +217,8 @@ EOF
   cat > "$home/fakebin/tasks-axi" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = unblock ] && [ "${2:-}" = sample-route-implementation ] \
-  && [ ! -f "$SQUAD_HOME/unblock-failed-once" ]; then
-  : > "$SQUAD_HOME/unblock-failed-once"
+  && [ ! -f "$SQUAD_BASE/unblock-failed-once" ]; then
+  : > "$SQUAD_BASE/unblock-failed-once"
   exit 1
 fi
 exec "$REAL_TASKS_AXI" "$@"

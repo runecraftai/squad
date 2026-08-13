@@ -219,7 +219,7 @@ start_bridge() { # <home> <fake_port> [env...]: sets BRIDGE_URL
   local home=$1 fake_port=$2 out pid port
   shift 2
   out="$home/bridge.out"
-  env "$@" SQUAD_HOME="$home" python3 "$ROOT/bin/sq-tg-bridge.py" --port 0 \
+  env "$@" SQUAD_BASE="$home" python3 "$ROOT/bin/sq-tg-bridge.py" --port 0 \
     --telegram-api-url "http://127.0.0.1:$fake_port" \
     --state-file "$home/bridge-state.json" > "$out" 2>&1 &
   pid=$!
@@ -393,7 +393,7 @@ test_poll_wakes_squad_client_once_and_records_context() {
   feed_updates "$fake_dir" "$(one_update 6 50 "$OWNER_ID" 'qual o status?')"
   local deadline=$(( $(date +%s) + 10 ))
   while :; do
-    out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+    out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
     case "$out" in
       x-mention*) break ;;
     esac
@@ -410,7 +410,7 @@ test_poll_wakes_squad_client_once_and_records_context() {
     || fail "the durable reply context must record Telegram's budget"
   [ "$(jq -r '.platform' "$home/state/x-context/$rid.json")" = "discord" ] \
     || fail "the durable reply context must record the client-resolved platform"
-  out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+  out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
   [ -z "$out" ] || fail "a re-offer must stay silent after the durable claim (got: $out)"
   pass "the real poll client wakes exactly once and records the reply context"
 }
@@ -423,7 +423,7 @@ test_answer_posts_to_telegram_via_squad_client() {
   feed_updates "$fake_dir" "$(one_update 7 60 "$OWNER_ID" 'verifique o PR')"
   local deadline=$(( $(date +%s) + 10 ))
   while :; do
-    out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+    out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
     case "$out" in
       x-mention*) break ;;
     esac
@@ -431,7 +431,7 @@ test_answer_posts_to_telegram_via_squad_client() {
     sleep 0.2
   done
   local rid=${out#x-mention }
-  out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" \
+  out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" \
     "$ROOT/bin/sq-x-reply.sh" "$rid" "roger, verificando")
   expect_code 0 "$?" "squad answer exit"
   [ "$out" = "$rid" ] || fail "answer must echo the request_id (got: $out)"
@@ -452,7 +452,7 @@ test_answer_splits_long_thread_chained() {
   feed_updates "$fake_dir" "$(one_update 8 70 "$OWNER_ID" 'relatorio longo')"
   local deadline=$(( $(date +%s) + 10 ))
   while :; do
-    out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+    out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
     case "$out" in
       x-mention*) break ;;
     esac
@@ -461,7 +461,7 @@ test_answer_splits_long_thread_chained() {
   done
   local rid=${out#x-mention }
   long=$(printf 'a%.0s' $(seq 1 9000))
-  SQUAD_HOME="$home" SQX_RELAY_URL="$url" \
+  SQUAD_BASE="$home" SQX_RELAY_URL="$url" \
     "$ROOT/bin/sq-x-reply.sh" "$rid" --text-file <(printf '%s\n' "$long") >/dev/null
   expect_code 0 "$?" "long answer exit"
   local count
@@ -494,7 +494,7 @@ test_dismiss_drops_pending_request() {
   feed_updates "$fake_dir" "$(one_update 9 80 "$OWNER_ID" 'obrigado')"
   local deadline=$(( $(date +%s) + 10 ))
   while :; do
-    out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+    out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
     case "$out" in
       x-mention*) break ;;
     esac
@@ -502,7 +502,7 @@ test_dismiss_drops_pending_request() {
     sleep 0.2
   done
   local rid=${out#x-mention }
-  out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" \
+  out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" \
     "$ROOT/bin/sq-x-dismiss.sh" "$rid")
   expect_code 0 "$?" "squad dismiss exit"
   [ "$out" = "$rid" ] || fail "dismiss must echo the request_id (got: $out)"
@@ -717,7 +717,7 @@ test_image_answer_posts_sendphoto() {
   feed_updates "$fake_dir" "$(one_update 31 310 "$OWNER_ID" 'manda a imagem')"
   local deadline=$(( $(date +%s) + 10 ))
   while :; do
-    out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+    out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
     case "$out" in
       x-mention*) break ;;
     esac
@@ -726,7 +726,7 @@ test_image_answer_posts_sendphoto() {
   done
   local rid=${out#x-mention }
   printf '\211PNG\r\n\032\nSquad-test-png' > "$home/test.png"
-  SQUAD_HOME="$home" SQX_RELAY_URL="$url" \
+  SQUAD_BASE="$home" SQX_RELAY_URL="$url" \
     "$ROOT/bin/sq-x-reply.sh" "$rid" --image "$home/test.png" "aqui está" >/dev/null
   expect_code 0 "$?" "image answer exit"
   assert_grep 'sendPhoto' "$fake_dir/sent.log" "the image must be posted as a photo"
@@ -746,7 +746,7 @@ test_followup_flow_via_squad_client() {
   feed_updates "$fake_dir" "$(one_update 32 320 "$OWNER_ID" 'investigue a falha')"
   local deadline=$(( $(date +%s) + 10 ))
   while :; do
-    out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
+    out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" "$ROOT/bin/sq-x-poll.sh")
     case "$out" in
       x-mention*) break ;;
     esac
@@ -757,18 +757,18 @@ test_followup_flow_via_squad_client() {
   mkdir -p "$home/state"
   printf 'window=w\nworktree=/wt\nkind=strike\nmode=drill\nyolo=off\n' \
     > "$home/state/task-f.meta"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-x-link.sh" task-f "$rid" >/dev/null
+  SQUAD_BASE="$home" "$ROOT/bin/sq-x-link.sh" task-f "$rid" >/dev/null
   expect_code 0 "$?" "link exit"
   meta="$home/state/task-f.meta"
   assert_grep "x_platform=discord" "$meta" \
     "the link must record the bridge's client-resolved platform"
   assert_grep "x_reply_max_chars=4096" "$meta" \
     "the link must record Telegram's budget"
-  SQUAD_HOME="$home" SQX_RELAY_URL="$url" \
+  SQUAD_BASE="$home" SQX_RELAY_URL="$url" \
     "$ROOT/bin/sq-x-reply.sh" "$rid" "recebido, na investigação" >/dev/null
   expect_code 0 "$?" "acknowledgement exit"
   rm -f "$home/state/x-inbox/$rid.json"
-  out=$(SQUAD_HOME="$home" SQX_RELAY_URL="$url" \
+  out=$(SQUAD_BASE="$home" SQX_RELAY_URL="$url" \
     "$ROOT/bin/sq-x-followup.sh" task-f - <<<"achado o culpado")
   expect_code 0 "$?" "follow-up exit"
   [ "$out" = "$rid" ] || fail "follow-up must echo the request_id (got: $out)"

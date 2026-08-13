@@ -8,7 +8,7 @@
 # "workspace-per-base" pass (AGENTS.md task herdr-sm-spaces-k4). Herdr is a
 # session provider ONLY (D3): the worktree provider stays fob, exactly
 # like tmux. Sourced only through bin/sq-backend.sh's fm_backend_source in
-# normal operation; the unit tests source it directly, so the SQUAD_HOME fallback
+# normal operation; the unit tests source it directly, so the SQUAD_BASE fallback
 # below keeps that path sane without sq-backend.sh's preamble.
 #
 # Default container shape (D4, decided empirically - see
@@ -60,8 +60,8 @@
 # through fm_backend_required_tools only when herdr is the resolved backend;
 # this adapter also gates them again before spawning.
 
-# SQUAD_HOME fallback: every real caller (sq-spawn.sh, sq-peek.sh, sq-send.sh,
-# sq-teardown.sh, sq-sentry.sh, sq-crew-state.sh) already sets SQUAD_HOME as a
+# SQUAD_BASE fallback: every real caller (sq-spawn.sh, sq-peek.sh, sq-send.sh,
+# sq-teardown.sh, sq-sentry.sh, sq-crew-state.sh) already sets SQUAD_BASE as a
 # global before sourcing sq-backend.sh (which sources this file), so this
 # never overrides a real invocation. It exists only so this file's own unit
 # tests, which source it directly without that preamble, resolve to a sane
@@ -70,7 +70,7 @@
 # pre-P3 behavior when a test does not care about base-specific labeling).
 SQUAD_BACKEND_HERDR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_HERDR_ROOT}}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # Shared composer-content classifier (empty|pending|unknown, and the unit-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/sq-composer-lib.sh, reused by
@@ -343,15 +343,15 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
 # every pre-existing task's recorded label - no forced migration. A XO
 # base resolves to "xo-<XO-id>", so its tasks land in their own
 # workspace, obviously distinguishable from the primary's (and from every
-# other XO's) in herdr's spaces sidebar. Read fresh from SQUAD_HOME on
-# every call rather than cached at source time: SQUAD_HOME is the base's own
+# other XO's) in herdr's spaces sidebar. Read fresh from SQUAD_BASE on
+# every call rather than cached at source time: SQUAD_BASE is the base's own
 # durable identity, not env plumbing threaded through a call chain, so the
 # label is automatically stable across every respawn/recovery for the life of
-# that base. sq-spawn.sh briefly shadows SQUAD_HOME to a XO's own base
-# when the PRIMARY spawns that XO (its own process's SQUAD_HOME still
+# that base. sq-spawn.sh briefly shadows SQUAD_BASE to a XO's own base
+# when the PRIMARY spawns that XO (its own process's SQUAD_BASE still
 # names the primary at that point) - see sq-spawn.sh's herdr case arm.
 fm_backend_herdr_workspace_label() {
-  local marker="$SQUAD_HOME/$SQUAD_BACKEND_HERDR_XO_MARKER" id
+  local marker="$SQUAD_BASE/$SQUAD_BACKEND_HERDR_XO_MARKER" id
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
@@ -1254,7 +1254,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning SQUAD_HOME label (Squad or xo-<id>).
+# <parent-label> is the owning SQUAD_BASE label (Squad or xo-<id>).
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the base label no
@@ -3226,7 +3226,7 @@ EOF
 # guaranteed stable across every server lifecycle (see herdr-verification-p2.md
 # "ID stability"). A caller running as a given base (e.g. a XO
 # recovering its own in-flight work) naturally scopes to that base's own
-# workspace because SQUAD_HOME already names it - no glue needed, unlike the
+# workspace because SQUAD_BASE already names it - no glue needed, unlike the
 # primary-spawns-a-XO path in sq-spawn.sh. Read-only: a session/
 # workspace that does not exist yet simply lists nothing. One
 # "<session>:<pane_id>\t<label>" line per live task tab.

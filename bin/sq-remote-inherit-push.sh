@@ -13,9 +13,9 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
 # shellcheck source=bin/sq-xo-registry-lib.sh
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"

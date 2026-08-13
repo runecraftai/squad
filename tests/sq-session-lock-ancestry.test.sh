@@ -10,7 +10,7 @@
 # in how the per-session process is named and what its parent is. Those trees are
 # orphaned before the hook fires, so the ancestry walk terminates inside the
 # fixture and can never escape into the session running this suite.
-# shellcheck disable=SC2016 # single quotes are deliberate: $SQUAD_HOME and $$ expand inside the fixture child
+# shellcheck disable=SC2016 # single quotes are deliberate: $SQUAD_BASE and $$ expand inside the fixture child
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -234,7 +234,7 @@ install_autoarm_scripts() {
   chmod +x "$dir/bin/sq-claude-stop-autoarm.sh" "$dir/bin/sq-lock.sh"
   cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
 printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 printf 'stale: fixture-win actionable\n'
 exit 0
@@ -263,10 +263,10 @@ if [ "${SQUAD_FIXTURE_ORPHAN_HERE:-0}" = 1 ]; then
     i=$((i + 1))
   done
 fi
-printf '%s\n' "$$" > "$SQUAD_HOME/state/session-pid"
-printf '%s\n' "$$" > "$SQUAD_HOME/state/.lock"
-"$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh" </dev/null > "$SQUAD_HOME/state/hook.out" 2>&1
-printf '%s\n' "$?" > "$SQUAD_HOME/state/hook.rc"
+printf '%s\n' "$$" > "$SQUAD_BASE/state/session-pid"
+printf '%s\n' "$$" > "$SQUAD_BASE/state/.lock"
+"$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh" </dev/null > "$SQUAD_BASE/state/hook.out" 2>&1
+printf '%s\n' "$?" > "$SQUAD_BASE/state/hook.rc"
 SH
   cat > "$dir/daemon.sh" <<'SH'
 #!/usr/bin/env bash
@@ -275,8 +275,8 @@ while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 
   sleep 0.05
   i=$((i + 1))
 done
-printf '%s\n' "$$" > "$SQUAD_HOME/state/daemon-pid"
-"$SQUAD_SESSION_BIN" "$SQUAD_HOME/session.sh"
+printf '%s\n' "$$" > "$SQUAD_BASE/state/daemon-pid"
+"$SQUAD_SESSION_BIN" "$SQUAD_BASE/session.sh"
 exit 0
 SH
   chmod +x "$dir/session.sh" "$dir/daemon.sh"
@@ -289,10 +289,10 @@ SH
 run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
   local dir=$1 session_bin=$2 daemon_bin=${3:-} i
   if [ -n "$daemon_bin" ]; then
-    SQUAD_HOME="$dir" SQUAD_SESSION_BIN="$session_bin" SQUAD_FIXTURE_ORPHAN_HERE=0 \
+    SQUAD_BASE="$dir" SQUAD_SESSION_BIN="$session_bin" SQUAD_FIXTURE_ORPHAN_HERE=0 \
       bash -c '"$0" "$1" &' "$daemon_bin" "$dir/daemon.sh"
   else
-    SQUAD_HOME="$dir" SQUAD_FIXTURE_ORPHAN_HERE=1 \
+    SQUAD_BASE="$dir" SQUAD_FIXTURE_ORPHAN_HERE=1 \
       bash -c '"$0" "$1" &' "$session_bin" "$dir/session.sh"
   fi
   i=0

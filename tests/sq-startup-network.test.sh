@@ -25,7 +25,7 @@ TMP_ROOT=$(fm_test_tmproot sq-startup-network-tests)
 SQUAD_TEST_CLEANUP_DIRS+=("$TMP_ROOT")
 trap fm_test_cleanup EXIT
 
-# new_world <name>: an SQUAD_HOME plus a fake code root whose bin/ is a real
+# new_world <name>: an SQUAD_BASE plus a fake code root whose bin/ is a real
 # Squad bin/ except for sq-bootstrap.sh, which is replaced by a scriptable
 # stand-in. The stage's contract is about WHEN and WHETHER the network half runs
 # and how its result is published; bin/sq-bootstrap.sh's own behavior is owned by
@@ -115,7 +115,7 @@ run_stage() {  # <home> <root> <args...>
   local home=$1 root=$2
   shift 2
   PATH="$root/bin:$PATH" SQUAD_FAKE_HARNESS_PID="${SQUAD_FAKE_HARNESS_PID_OVERRIDE:-$$}" \
-    SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" "$root/bin/sq-startup-network.sh" "$@"
+    SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" "$root/bin/sq-startup-network.sh" "$@"
 }
 
 wait_for_startup_network_wake() {  # <home> [tenths]
@@ -447,7 +447,7 @@ EOF
   started=$(date +%s)
   rc=0
   out=$(PATH="$root/bin:$PATH" SQUAD_FAKE_HARNESS_PID="$next_owner" \
-    SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" "$root/bin/sq-lock.sh" 2>&1) || rc=$?
+    SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" "$root/bin/sq-lock.sh" 2>&1) || rc=$?
   elapsed=$(( $(date +%s) - started ))
   [ "$rc" -ne 0 ] || fail "lock takeover succeeded while the prior sweep was mutating"
   [ "$elapsed" -lt 4 ] || fail "lock takeover blocked ${elapsed}s behind deferred network work"
@@ -458,7 +458,7 @@ EOF
 
   run_stage "$home" "$root" wait 30 >/dev/null || fail "the leased sweep never settled"
   out=$(PATH="$root/bin:$PATH" SQUAD_FAKE_HARNESS_PID="$next_owner" \
-    SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" "$root/bin/sq-lock.sh" 2>&1) \
+    SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" "$root/bin/sq-lock.sh" 2>&1) \
     || fail "lock takeover still failed after the sweep released its lease"
   new_owner=$(cat "$home/state/.lock")
   assert_contains "$out" "lock acquired: harness pid $new_owner" \

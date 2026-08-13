@@ -32,7 +32,7 @@ test_conditional_stanzas() {
   home="$TMP_ROOT/conditional-home"
   config="$TMP_ROOT/conditional-config"
   mkdir -p "$home/state" "$home/config" "$config"
-  out=$(SQUAD_HOME="$home" SQUAD_CONFIG_OVERRIDE="$config" "$RENDER" --harness codex --read-only 1 --afk 1 --x-mode 1)
+  out=$(SQUAD_BASE="$home" SQUAD_CONFIG_OVERRIDE="$config" "$RENDER" --harness codex --read-only 1 --afk 1 --x-mode 1)
   assert_contains "$out" "- Lock: read-only" "read-only stanza missing"
   assert_contains "$out" "- Away mode: active" "afk stanza missing"
   assert_contains "$out" "- X mode: active" "x-mode stanza missing"
@@ -46,10 +46,10 @@ test_repair_lines() {
   local home out
   home="$TMP_ROOT/repair-home"
   mkdir -p "$home/state" "$home/config"
-  out=$(SQUAD_HOME="$home" SQUAD_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --repair-line)
+  out=$(SQUAD_BASE="$home" SQUAD_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --repair-line)
   assert_contains "$out" "bin/sq-sentry-checkpoint.sh --seconds 7" "codex repair line did not use checkpoint helper and env override"
 
-  out=$(SQUAD_HOME="$home" "$RENDER" --harness claude --queue-pending 1 --repair-line)
+  out=$(SQUAD_BASE="$home" "$RENDER" --harness claude --queue-pending 1 --repair-line)
   assert_contains "$out" "After draining queued wakes" "queue-pending prefix missing"
   assert_contains "$out" "sentry supervision needs Stop-owned automatic recovery" "claude pre-verification repair line is not neutral"
   assert_not_contains "$out" "is broken" "claude pre-verification repair line claimed a verified mechanism failure"
@@ -58,14 +58,14 @@ test_repair_lines() {
   assert_not_contains "$out" "bin/sq-sentry-arm.sh" "claude pre-verification repair line directed an arm command"
 
   : > "$home/config/x-mode.env"
-  out=$(SQUAD_HOME="$home" SQUAD_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --x-mode 1 --repair-line)
+  out=$(SQUAD_BASE="$home" SQUAD_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --x-mode 1 --repair-line)
   assert_contains "$out" "source '$home/config/x-mode.env' first" "x-mode repair line did not source the effective cadence config"
   assert_contains "$out" "bin/sq-sentry-checkpoint.sh --seconds 7" "x-mode codex repair line lost the checkpoint helper"
 
-  out=$(SQUAD_HOME="$home" "$RENDER" --harness opencode --read-only 1 --repair-line)
+  out=$(SQUAD_BASE="$home" "$RENDER" --harness opencode --read-only 1 --repair-line)
   assert_contains "$out" "session holding the unit lock" "read-only repair line missing"
 
-  out=$(SQUAD_HOME="$home" "$RENDER" --harness pi --repair-line)
+  out=$(SQUAD_BASE="$home" "$RENDER" --harness pi --repair-line)
   assert_contains "$out" "Pi tool sq_watch_arm_pi" "pi repair line does not direct the model to the extension-owned tool"
   assert_not_contains "$out" "extension command /sq-sentry-arm-pi" "pi repair line still directs the model to the human slash command"
   pass "renderer repair-line mode is harness-aware and honors conditional state"
@@ -155,7 +155,7 @@ test_grok_command_sources_effective_config() {
   home="$TMP_ROOT/grok-home"
   config="$TMP_ROOT/grok-config"
   mkdir -p "$home/state" "$config"
-  out=$(SQUAD_HOME="$home" SQUAD_CONFIG_OVERRIDE="$config" "$RENDER" --harness grok --x-mode 1)
+  out=$(SQUAD_BASE="$home" SQUAD_CONFIG_OVERRIDE="$config" "$RENDER" --harness grok --x-mode 1)
   assert_contains "$out" "[ -f '$config/x-mode.env' ] && . '$config/x-mode.env'; exec bin/sq-sentry-arm.sh" "grok arm command did not use the effective x-mode config path"
   pass "grok rendered command sources the effective x-mode config"
 }
@@ -166,7 +166,7 @@ test_pi_snippet_uses_effective_extension_path() {
   turnend="$ROOT/.pi/extensions/sq-primary-turnend-guard.ts"
   watch="$ROOT/.pi/extensions/sq-primary-pi-watch.ts"
   mkdir -p "$home/state" "$home/config"
-  out=$(SQUAD_HOME="$home" "$RENDER" --harness pi)
+  out=$(SQUAD_BASE="$home" "$RENDER" --harness pi)
   assert_contains "$out" "-e $turnend -e $watch" "pi snippet did not render both effective extension launch paths"
   assert_contains "$out" "The turn-end guard extension lives at \`$turnend\`" "pi snippet did not render the turn-end guard extension path"
   assert_contains "$out" "The sentry extension lives at \`$watch\`" "pi snippet did not render the sentry extension path"

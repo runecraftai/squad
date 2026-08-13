@@ -22,17 +22,17 @@ install_runner() {  # <case-dir>
   cat > "$dir/bin/sq-afk-launch.sh" <<'SH'
 #!/usr/bin/env bash
 [ "${1:-}" = stop ] || exit 2
-printf 'stop\n' >> "$SQUAD_HOME/stop.log"
-rm -f "$SQUAD_HOME/state/.afk"
-if [ -e "$SQUAD_HOME/state/.fail-terminal-stop-once" ]; then
-  rm -f "$SQUAD_HOME/state/.fail-terminal-stop-once"
+printf 'stop\n' >> "$SQUAD_BASE/stop.log"
+rm -f "$SQUAD_BASE/state/.afk"
+if [ -e "$SQUAD_BASE/state/.fail-terminal-stop-once" ]; then
+  rm -f "$SQUAD_BASE/state/.fail-terminal-stop-once"
   exit 1
 fi
-rm -f "$SQUAD_HOME/state/.afk-daemon-terminal"
+rm -f "$SQUAD_BASE/state/.afk-daemon-terminal"
 SH
   cat > "$dir/bin/sq-stand-to-drain.sh" <<'SH'
 #!/usr/bin/env bash
-file="$SQUAD_HOME/state/.fake-drain"
+file="$SQUAD_BASE/state/.fake-drain"
 [ -f "$file" ] && cat "$file"
 : > "$file"
 SH
@@ -41,7 +41,7 @@ SH
 
 run_return() {  # <case-dir> <mode>
   local dir=$1 mode=$2
-  SQUAD_HOME="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" "$mode" 2>&1
+  SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" "$mode" 2>&1
 }
 
 seed_live_blocker() {  # <case-dir> <backend> <key>
@@ -89,7 +89,7 @@ test_return_gate_orders_catchup_before_bearings() {
   # The exact incident regression: Sitrep is an ordinary request and must
   # refuse before reading/rendering while this shared gate remains open.
   set +e
-  out=$(SQUAD_HOME="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/sq-sitrep-snapshot.sh" --json 2>&1)
+  out=$(SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/sq-sitrep-snapshot.sh" --json 2>&1)
   rc=$?
   set -e
   [ "$rc" -eq 3 ] || fail "Sitrep should refuse behind the return gate (rc=$rc): $out"
@@ -175,7 +175,7 @@ test_away_reentry_refuses_pending_return_gate() {
   mkdir -p "$dir/home/state" "$dir/home/data" "$dir/home/config"
   printf 'schema\tsq-afk-return.v1\nphase\tblocked\n' > "$dir/home/state/.afk-return-catchup"
   set +e
-  out=$(SQUAD_HOME="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/sq-afk-launch.sh" start-native 2>&1)
+  out=$(SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/sq-afk-launch.sh" start-native 2>&1)
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "away re-entry succeeded while return catch-up was pending"

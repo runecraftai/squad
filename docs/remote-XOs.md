@@ -165,7 +165,7 @@ Startup liveness recovery relaunches a dead or missing remote second mate throug
 Send routed requests normally:
 
 ```sh
-SQUAD_HOME=<primary-home> bin/sq-send.sh sq-<id> '<request>'
+SQUAD_BASE=<primary-home> bin/sq-send.sh sq-<id> '<request>'
 ```
 
 Marked requests keep the existing correlation contract.

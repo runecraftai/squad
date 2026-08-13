@@ -76,11 +76,11 @@ written atomically with mode 0600 under a 0700 directory and the bridge refuses
 a symlinked state file.
 
 Config (env wins over file; file wins over default):
-  SQUAD_HOME                 base home for .env and config lookups
+  SQUAD_BASE                 base home for .env and config lookups
                              (default: this repo root; same resolution as the
                              sq-x-* client scripts)
-  <SQUAD_HOME>/.env          SQX_PAIRING_TOKEN (shared with the Squad base)
-  <SQUAD_HOME>/config/telegram-bridge.env   TG_BOT_TOKEN, TG_ALLOWED_CHAT_IDS,
+  <SQUAD_BASE>/.env          SQX_PAIRING_TOKEN (shared with the Squad base)
+  <SQUAD_BASE>/config/telegram-bridge.env   TG_BOT_TOKEN, TG_ALLOWED_CHAT_IDS,
                              TG_BRIDGE_BIND, TG_BRIDGE_PORT
   TG_BOT_TOKEN               Telegram bot token from @BotFather (required)
   TG_ALLOWED_CHAT_IDS        comma-separated Telegram user ids allowed to send
@@ -89,7 +89,7 @@ Config (env wins over file; file wins over default):
   TG_BRIDGE_PORT             connector listen port (default 8787; 0 = ephemeral)
   TG_BRIDGE_CONFIG           alternate bridge env file
   TG_BRIDGE_STATE_FILE       alternate runtime state file (default
-                             <SQUAD_HOME>/state/telegram-bridge/state.json)
+                             <SQUAD_BASE>/state/telegram-bridge/state.json)
   TG_BRIDGE_NOW_OVERRIDE     test seam: epoch seconds replacing the wall clock
                              for follow-up window math (same role as
                              SQX_NOW_OVERRIDE in bin/sq-x-lib.sh)
@@ -173,7 +173,7 @@ class BridgeConfig:
 
     def __init__(self, args):
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.squad_home = os.environ.get("SQUAD_HOME") or os.path.dirname(script_dir)
+        self.squad_home = os.environ.get("SQUAD_BASE") or os.environ.get("SQUAD_HOME") or os.path.dirname(script_dir)
         base_env = load_env_file(os.path.join(self.squad_home, ".env"))
         bridge_file = args.config or os.environ.get("TG_BRIDGE_CONFIG") \
             or os.path.join(self.squad_home, "config", "telegram-bridge.env")
@@ -812,7 +812,7 @@ def build_arg_parser():
                     "connector contract (see the script header).")
     parser.add_argument("--config", metavar="FILE",
                         help="bridge env file (default: "
-                             "<SQUAD_HOME>/config/telegram-bridge.env)")
+                             "<SQUAD_BASE>/config/telegram-bridge.env)")
     parser.add_argument("--bind", metavar="ADDR",
                         help="connector listen address (default 127.0.0.1)")
     parser.add_argument("--port", metavar="N",
@@ -823,7 +823,7 @@ def build_arg_parser():
                              "(default https://api.telegram.org)")
     parser.add_argument("--state-file", metavar="FILE",
                         help="runtime state file (default "
-                             "<SQUAD_HOME>/state/telegram-bridge/state.json)")
+                             "<SQUAD_BASE>/state/telegram-bridge/state.json)")
     return parser
 
 

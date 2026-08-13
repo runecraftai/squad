@@ -51,7 +51,7 @@ fm_git_identity fmtest fmtest@example.invalid
 
 # new_world <name>: a real, throwaway git repo on `main` (so the worktree-tangle
 # and default-branch checks behave exactly as they do against the real
-# Squad repo) to use as SQUAD_ROOT_OVERRIDE, plus an empty SQUAD_HOME with
+# Squad repo) to use as SQUAD_ROOT_OVERRIDE, plus an empty SQUAD_BASE with
 # state/, data/, config/, and a fakebin. Echoes "<root-dir>|<home-dir>|<fakebin>".
 new_world() {
   local name=$1 w root home fakebin
@@ -510,11 +510,11 @@ run_session_start() {
   local home=$1 root=$2 path=$3 pi_harness=${4:-}
   if [ -n "$pi_harness" ]; then
     env -u CLAUDECODE -u GROK_AGENT PI_CODING_AGENT=true SQUAD_PI_HARNESS="$pi_harness" \
-      SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$path" \
+      SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$path" \
       "$SESSION_START"
   else
     env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
-      SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$path" \
+      SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$path" \
       "$SESSION_START"
   fi
 }
@@ -614,7 +614,7 @@ run_session_start_herdr_XO() {
 # here instead of straight off the digest's own output.
 wait_for_network_stage() {
   local home=$1 root=$2 limit=${3:-30}
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" \
     "$ROOT/bin/sq-startup-network.sh" wait "$limit"
 }
 
@@ -630,7 +630,7 @@ wait_for_network_wake() {
 
 network_stage_report() {
   local home=$1 root=$2
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" "$ROOT/bin/sq-startup-network.sh" report
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" "$ROOT/bin/sq-startup-network.sh" report
 }
 
 hash_file_for_test() {
@@ -886,7 +886,7 @@ SH
       while [ "$(find "$ready" -type f | wc -l | tr -d ' ')" -lt 40 ]; do
         sleep 0.01
       done
-      if SQUAD_HOME="$home" SQUAD_FAKE_LOCK_STATE="$home/state" \
+      if SQUAD_BASE="$home" SQUAD_FAKE_LOCK_STATE="$home/state" \
         SQUAD_FAKE_HARNESS_PID="$harness_pid" PATH="$fakebin:$BASE_PATH" \
         "$ROOT/bin/sq-lock.sh" >/dev/null 2>&1; then
         printf '%s\n' "$harness_pid" >> "$winners"
@@ -1758,7 +1758,7 @@ EOF
   # deferred network stage's own - because a truncated digest must not kill work
   # it was never waiting for. So the guarantee asserted here is the one that
   # actually matters: once BOTH deadlines have passed, nothing hung is left.
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" SQUAD_STARTUP_NETWORK_TIMEOUT=2 \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" SQUAD_STARTUP_NETWORK_TIMEOUT=2 \
     "$ROOT/bin/sq-startup-network.sh" wait 30 >/dev/null || true
   sleep 1
   stray=$(pgrep -f "$fakebin/git" 2>/dev/null | wc -l | tr -d ' ')
@@ -1878,7 +1878,7 @@ SH
 
   # shellcheck disable=SC2016 # $$ must expand in the launched shell, not here.
   out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
-    SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
     bash -c 'export SQUAD_FAKE_HARNESS_PID=$$; exec "$1" 8 "$2"' _ "$nest" "$SESSION_START")
 
   assert_contains "$out" "lock acquired: harness pid" \
@@ -1912,7 +1912,7 @@ EOF
     "the full startup fixture did not exercise a mutating sweep"
 
   append_wake "$home/state" signal task-r "done: queued after the re-emit too" || fail "seed second wake failed"
-  reemit=$(SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" SQUAD_FAKE_HARNESS_PID=$$ PATH="$fakebin:$BASE_PATH" \
+  reemit=$(SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" SQUAD_FAKE_HARNESS_PID=$$ PATH="$fakebin:$BASE_PATH" \
     env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
     "$SESSION_START" --reemit)
 
@@ -1937,7 +1937,7 @@ EOF
   make_fake_ps_claude "$fakebin"
   git -C "$root" checkout -q -B fm/reemit-tangle
 
-  reemit=$(SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+  reemit=$(SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
     env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
     "$SESSION_START" --reemit)
 
@@ -1952,7 +1952,7 @@ EOF
   sleep 300 &
   holder_pid=$!
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  readonly_out=$(SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+  readonly_out=$(SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
     env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
     "$SESSION_START" --reemit)
   kill "$holder_pid" 2>/dev/null || true

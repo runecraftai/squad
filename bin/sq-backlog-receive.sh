@@ -5,7 +5,7 @@
 #   sq-backlog-receive.sh state/handoff/<XO-id>.outbox.md <bytes> <sha256> <generation>
 #
 # The delivered file must be a non-symlink backlog-format scratch file confined
-# to SQUAD_HOME/state/handoff. Every item must be Queued. Keys already present in
+# to SQUAD_BASE/state/handoff. Every item must be Queued. Keys already present in
 # data/backlog.md are skipped; every remaining key moves in one dependency-closed
 # `tasks-axi mv` transaction under tasks-axi's own locks. On an ambiguous caller
 # retry, destination-present classification makes this operation idempotent.
@@ -18,8 +18,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-DEST="$SQUAD_HOME/data/backlog.md"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+DEST="$SQUAD_BASE/data/backlog.md"
 LOCK_STALE_SECS=30
 
 # shellcheck source=bin/sq-tasks-lib.sh
@@ -98,11 +98,11 @@ case "$GENERATION" in ''|*[!0-9]*) die "generation must be a positive integer" ;
 case "$REL" in state/handoff/*.outbox.md) ;; *) die "delivered outbox path is outside state/handoff: $REL" ;; esac
 case "/$REL/" in */../*|*/./*) die "delivered outbox path contains traversal" ;; esac
 case "$REL" in *'//'*) die "delivered outbox path is malformed" ;; esac
-[ -f "$SQUAD_HOME/.sq-xo-home" ] && [ ! -L "$SQUAD_HOME/.sq-xo-home" ] \
-  || die "SQUAD_HOME is not a seeded XO home"
-[ -f "$SQUAD_HOME/AGENTS.md" ] && [ -d "$SQUAD_HOME/bin" ] || die "SQUAD_HOME is not a Squad home"
-HOME_REAL=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME cannot be resolved"
-PARENT=$(dirname "$SQUAD_HOME/$REL")
+[ -f "$SQUAD_BASE/.sq-xo-home" ] && [ ! -L "$SQUAD_BASE/.sq-xo-home" ] \
+  || die "SQUAD_BASE is not a seeded XO home"
+[ -f "$SQUAD_BASE/AGENTS.md" ] && [ -d "$SQUAD_BASE/bin" ] || die "SQUAD_BASE is not a Squad home"
+HOME_REAL=$(CDPATH='' cd -- "$SQUAD_BASE" 2>/dev/null && pwd -P) || die "SQUAD_BASE cannot be resolved"
+PARENT=$(dirname "$SQUAD_BASE/$REL")
 PARENT_REAL=$(CDPATH='' cd -- "$PARENT" 2>/dev/null && pwd -P) || die "delivered outbox parent is unavailable"
 case "$PARENT_REAL" in "$HOME_REAL/state/handoff") ;; *) die "delivered outbox escapes the remote scratch directory" ;; esac
 DELIVERED="$PARENT_REAL/$(basename "$REL")"
@@ -146,7 +146,7 @@ for key in "${KEYS[@]}"; do
   [ "$section" = '## Queued' ] || die "delivered outbox contains non-Queued item $key under $section"
 done
 
-mkdir -p "$SQUAD_HOME/data"
+mkdir -p "$SQUAD_BASE/data"
 DEST_CREATED=0
 if [ ! -f "$DEST" ]; then
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$DEST"

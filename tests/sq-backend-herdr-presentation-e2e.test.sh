@@ -382,19 +382,19 @@ make_project() {  # <dir>
 
 spawn_task() {  # <id> <home> <project>
   local id=$1 home=$2 project=$3
-  SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/sq-spawn.sh" "$id" "$project" "sh -c 'sleep 120'" --mode drill --yolo off --backend herdr
 }
 
 spawn_XO_task() {
   local id=$1 home=$2
-  SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$HOME_DIR" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$HOME_DIR" SQUAD_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/sq-spawn.sh" "$id" "$home" "sh -c 'sleep 120'" --xo --backend herdr
 }
 
 teardown_task() {  # <id> <home>
   local id=$1 home=$2
-  SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_GATE_REFUSE_BYPASS=1 SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_CONFIG_OVERRIDE="$home/config" \
     "$ROOT/bin/sq-teardown.sh" "$id" --force
@@ -646,7 +646,7 @@ rm -rf "$ACTIVE_SEEDED_CONTROL"
 ACTIVE_SEEDED_CLEANUP_FOCUS_START=$(focus_audit_line_count)
 ACTIVE_SEEDED_LOCK=$(session_presentation_lock_path) \
   || fail "could not resolve the session presentation lock for active-seeded cleanup"
-PATH="$FAKEBIN:$PATH" SQUAD_HOME="$HOME_DIR" bash -c '
+PATH="$FAKEBIN:$PATH" SQUAD_BASE="$HOME_DIR" bash -c '
   . "$0/bin/sq-stand-to-lib.sh"
   . "$0/bin/backends/herdr.sh"
   lock=$1
@@ -907,7 +907,7 @@ done
 pass "real Herdr lab: three repeated concurrent create/order/cleanup waves have zero active workspace or tab drift"
 
 # ------------------------------------------------------------------
-# Multi-home topology: real XO SQUAD_HOME spawn paths, inheritance,
+# Multi-home topology: real XO SQUAD_BASE spawn paths, inheritance,
 # concurrent cross-home waves, and session-scoped lock contention.
 # ------------------------------------------------------------------
 SECOND_HOME_A="$TMP_ROOT/home-xo-alpha"

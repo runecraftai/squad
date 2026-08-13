@@ -213,13 +213,13 @@ run_bootstrap_timeout_case() {
     export -f sleep
     export -f git
     if [ "$override" = __unset__ ]; then
-      PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$fake_root" \
+      PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$fake_root" \
         SQUAD_FAKE_UNIT_SYNC_STARTED_MARKER="$started_marker" \
         SQUAD_FAKE_GIT_SYNC_STARTED_RECORD="$git_record" \
         SQUAD_FAKE_GIT_WAIT_FOR_FLEET_START="$wait_for_marker" \
         SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null
     else
-      PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$fake_root" \
+      PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$fake_root" \
         SQUAD_UNIT_SYNC_BOOTSTRAP_TIMEOUT="$override" \
         SQUAD_FAKE_UNIT_SYNC_STARTED_MARKER="$started_marker" \
         SQUAD_FAKE_GIT_SYNC_STARTED_RECORD="$git_record" \
@@ -282,7 +282,7 @@ test_bootstrap_reporting() {
     # SQUAD_ROOT_OVERRIDE points the worktree-tangle check at the non-git home dir so
     # it stays inert: this suite pins tool detection, not the tangle guard, and the
     # ambient checkout (CI runs on a feature branch) must not leak a TANGLE line in.
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP="$lease" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
@@ -323,7 +323,7 @@ test_drill_min_version() {
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_DRILL_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
@@ -352,7 +352,7 @@ test_gh_axi_min_version() {
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_GH_AXI_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
@@ -383,7 +383,7 @@ test_lavish_axi_min_version() {
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_LAVISH_AXI_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
@@ -429,7 +429,7 @@ test_tasks_axi_min_version() {
         ;;
     esac
     add_tasks_axi "$fakebin" "$version" "$archive_body" "$multi_id"
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
@@ -464,7 +464,7 @@ test_quota_axi_min_version() {
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_QUOTA_AXI_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
@@ -503,7 +503,7 @@ git() {
 }
 SH
 
-  out=$(PATH="$fakebin:$BASE_PATH" BASH_ENV="$bash_env" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" BASH_ENV="$bash_env" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   expected="MISSING: git (install: brew install git  # or the platform's package manager)"
   [ "$out" = "$expected" ] || fail "missing git should report the supported install instruction, got: $out"
@@ -519,7 +519,7 @@ test_orca_backend_gates_orca_tool_only_when_selected() {
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
   printf '%s\n' orca > "$case_dir/home/config/backend"
   fakebin=$(make_fake_toolchain "$case_dir")
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   [ "$out" = "$missing_orca" ] || fail "backend=orca should require only the Orca-specific missing tool, got: $out"
 
@@ -527,7 +527,7 @@ test_orca_backend_gates_orca_tool_only_when_selected() {
   mkdir -p "$case_dir/home/config"
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
   fakebin=$(make_fake_toolchain "$case_dir")
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   assert_not_contains "$out" "MISSING: orca" "bootstrap should not require orca unless backend=orca is selected"
   pass "bootstrap: backend=orca gates the Orca CLI without requiring it on the default backend"
@@ -559,7 +559,7 @@ test_session_provider_backends_do_not_require_tmux() {
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     printf '%s\n' "$backend" > "$case_dir/home/config/backend"
     fakebin=$(make_fake_toolchain_no_tmux "$case_dir" "$cli")
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
     [ -z "$out" ] || fail "backend=$backend with tmux absent but its own deps present should be silent, got: $out"
   done <<'ROWS'
@@ -582,7 +582,7 @@ test_session_provider_backends_gate_own_cli_not_tmux() {
     printf '%s\n' "$backend" > "$case_dir/home/config/backend"
     # Toolchain has jq + fob but NOT the session CLI and NOT tmux.
     fakebin=$(make_fake_toolchain_no_tmux "$case_dir")
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
     if [ "$backend" = herdr ]; then
       missing="MISSING_MANUAL: herdr (instructions: https://herdr.dev)"
@@ -622,7 +622,7 @@ test_cmux_bundled_cli_satisfies_dependency() {
   fakebin=$(make_fake_toolchain_no_tmux "$case_dir")
   fm_fake_exit0 "$case_dir/bundle" cmux
   bundle="$case_dir/bundle/cmux"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_BACKEND_CMUX_BUNDLE_BIN="$bundle" SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   [ -z "$out" ] || fail "a usable bundled cmux CLI should satisfy bootstrap without a PATH shim, got: $out"
   pass "bootstrap: the bundled cmux CLI satisfies the active backend dependency"
@@ -635,7 +635,7 @@ test_unknown_backend_reports_invalid_configuration() {
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
   printf '%s\n' bogus > "$case_dir/home/config/backend"
   fakebin=$(make_fake_toolchain "$case_dir")
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$out" "BACKEND_INVALID: bogus (known: tmux herdr zellij orca cmux)" \
     "bootstrap should report an unknown resolved backend"
@@ -671,7 +671,7 @@ jq() {
   return 127
 }
 SH
-    out=$(PATH="$fakebin:$BASE_PATH" BASH_ENV="$bash_env" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" BASH_ENV="$bash_env" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
     assert_contains "$out" "MISSING: jq" "backend=$backend must fail closed on missing jq"
     assert_not_contains "$out" "MISSING: tmux" "backend=$backend must not demand tmux when jq is missing"
@@ -696,7 +696,7 @@ test_fob_lease_check_follows_resolved_backend() {
   rm -f "$fakebin/tmux"
   fm_fake_exit0 "$fakebin" orca
   # SQUAD_FAKE_FOB_LEASE_HELP unset: the fake fob advertises NO --lease.
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     "$ROOT/bin/sq-bootstrap.sh")
   [ -z "$out" ] || fail "backend=orca must not require fob (even lease-less) or tmux, got: $out"
 
@@ -707,7 +707,7 @@ test_fob_lease_check_follows_resolved_backend() {
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
   printf '%s\n' herdr > "$case_dir/home/config/backend"
   fakebin=$(make_fake_toolchain_no_tmux "$case_dir" herdr)
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$out" "MISSING: fob" "backend=herdr must still require fob with durable lease support"
   assert_not_contains "$out" "MISSING: tmux" "backend=herdr must not demand tmux even when fob is too old"
@@ -861,7 +861,7 @@ run_routine_bootstrap_fixture() {
   fixture=${fixture#*|}
   home=${fixture%%|*}
   fakebin=${fixture#*|}
-  PATH="$fakebin:$BASE_PATH" SQUAD_BACKEND=tmux SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BACKEND=tmux SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 \
     "$shell" "$ROOT/bin/sq-bootstrap.sh"
 }
@@ -901,17 +901,17 @@ exit 1
 SH
   chmod +x "$fakebin/gh"
 
-  all_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  all_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$all_out" "MISSING: node (install:" "the unsplit run lost its local diagnostic"
   assert_contains "$all_out" "NEEDS_GH_AUTH" "the unsplit run lost its network diagnostic"
 
-  skip_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  skip_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=skip "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$skip_out" "MISSING: node (install:" "the local half lost its own diagnostic"
   assert_not_contains "$skip_out" "NEEDS_GH_AUTH" "the local half still made a network call"
 
-  only_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  only_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=only "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$only_out" "NEEDS_GH_AUTH" "the network half lost its own diagnostic"
   assert_not_contains "$only_out" "MISSING: node" "the network half repeated the local half's work"
@@ -922,7 +922,7 @@ SH
 
   # A typo must never silently drop a safety sweep, so anything unrecognized
   # resolves to the complete run.
-  [ "$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  [ "$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=sikp "$ROOT/bin/sq-bootstrap.sh")" = "$all_out" ] \
     || fail "an unrecognized SQUAD_BOOTSTRAP_NETWORK value did not fall back to the complete run"
   pass "bootstrap: SQUAD_BOOTSTRAP_NETWORK partitions one run into local and network halves"
@@ -944,7 +944,7 @@ test_network_sweeps_recheck_lock_ownership() {
 SH
   chmod +x "$fake_root/bin/sq-unit-sync.sh"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$fake_root" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$fake_root" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=only \
     SQUAD_BOOTSTRAP_NETWORK_LOCK_PID=111111 SQUAD_FAKE_UNIT_SYNC_STARTED_MARKER="$marker" \
     "$ROOT/bin/sq-bootstrap.sh")
@@ -995,7 +995,7 @@ test_network_phases_record_per_step_elapsed_times() {
   fm_write_XO_meta "$case_dir/home/state/mate-a.meta" "$case_dir/home"
 
   log="$case_dir/timings.tsv"
-  PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=only \
     SQUAD_BOOTSTRAP_NETWORK_LOCK_PID=$$ SQUAD_TIMING_LOG="$log" SQUAD_TIMING_EPOCH_MS=0 \
     "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
@@ -1020,7 +1020,7 @@ test_network_phases_record_per_step_elapsed_times() {
   # And an ordinary run - the local half, or any caller that never asked for
   # timings - writes nothing anywhere.
   rm -f "$log"
-  PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=only \
     SQUAD_BOOTSTRAP_NETWORK_LOCK_PID=$$ \
     "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
@@ -1044,14 +1044,14 @@ SH
 
   # Without the handoff, the incompatible stub is probed and reported.
   : > "$log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_TASKS_AXI_LOG="$log" SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$out" "MISSING: sq-tasks (install:" "the unaided run did not probe sq-tasks"
   assert_grep '--version' "$log" "the unaided run never ran the probe"
 
   # With it, the probe is skipped entirely and the handed-in verdict is used.
   : > "$log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_TASKS_AXI_LOG="$log" SQUAD_FAKE_FOB_LEASE_HELP=1 \
     SQUAD_TASKS_AXI_COMPATIBLE=1 "$ROOT/bin/sq-bootstrap.sh")
   assert_not_contains "$out" "MISSING: sq-tasks" "the handed-in verdict was ignored"
@@ -1059,7 +1059,7 @@ SH
 
   # A malformed value is not a verdict.
   : > "$log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_TASKS_AXI_LOG="$log" SQUAD_FAKE_FOB_LEASE_HELP=1 \
     SQUAD_TASKS_AXI_COMPATIBLE=yes "$ROOT/bin/sq-bootstrap.sh")
   assert_contains "$out" "MISSING: sq-tasks (install:" "a malformed handoff value was trusted"
@@ -1081,11 +1081,11 @@ test_crew_dispatch_active_rules_are_verbose_bootstrap_info() {
   fakebin=$(make_fake_toolchain "$case_dir")
   add_real_jq "$fakebin"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
   [ -z "$out" ] || fail "active dispatch profile should be silent by default, got: $out"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_BOOTSTRAP_VERBOSE_FACTS=1 SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
 
   expect=$'BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json\nBOOTSTRAP_INFO: crew dispatch rule: fresh news -> grok\nBOOTSTRAP_INFO: crew dispatch rule: big feature -> quota-balanced[claude/claude-sonnet-5/high, codex/gpt-5.5/high]\nBOOTSTRAP_INFO: crew dispatch rule: legacy feature -> quota-balanced[claude, codex]\nBOOTSTRAP_INFO: crew dispatch default: quota-balanced[pi/anthropic/claude-sonnet-5/high, grok/grok-4.5/high]'
@@ -1105,7 +1105,7 @@ test_crew_dispatch_validation() {
     printf '%s\n' "$body" > "$case_dir/home/config/crew-dispatch.json"
     fakebin=$(make_fake_toolchain "$case_dir")
     add_real_jq "$fakebin"
-    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)

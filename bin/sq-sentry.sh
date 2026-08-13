@@ -60,8 +60,8 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 mkdir -p "$STATE"
 
 # The native event fast-path and only its true dependencies have one narrow
@@ -744,7 +744,7 @@ trap 'exit 1' HUP INT TERM
 # ${BASHPID:-$$} from this same main shell). Read directly, never via a command
 # substitution, so it matches the stored holder pid for the self-eviction check.
 WATCHER_PID=${BASHPID:-$$}
-printf '%s\n' "$SQUAD_HOME" > "$WATCH_LOCK/sq-home" || true
+printf '%s\n' "$SQUAD_BASE" > "$WATCH_LOCK/sq-home" || true
 printf '%s\n' "$WATCH_PATH" > "$WATCH_LOCK/sentry-path" || true
 SQUAD_WATCH_DELIVERY_PID=$WATCHER_PID
 SQUAD_WATCH_DELIVERY_IDENTITY=$(fm_pid_identity "$WATCHER_PID" 2>/dev/null || true)
@@ -788,7 +788,7 @@ while :; do
   # only republishes results already captured durably and restarts a source
   # whose owner is gone. It is a no-op with nothing registered.
   if [ -d "$STATE/procevent" ]; then
-    SQUAD_HOME="$SQUAD_HOME" "$SCRIPT_DIR/sq-procevent.sh" reconcile >/dev/null 2>&1 || true
+    SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-procevent.sh" reconcile >/dev/null 2>&1 || true
   fi
   # Then deliver any queued-but-unsurfaced result, including one a runner
   # published while this sentry was between cycles.
@@ -807,9 +807,9 @@ while :; do
       [ -e "$c" ] || continue
       is_pr_poll=0
       if [ "$(basename "$c")" = x-sentry.check.sh ]; then
-        if fmx_poll_shim_valid "$c" "$SQUAD_HOME" "$SQUAD_ROOT" \
+        if fmx_poll_shim_valid "$c" "$SQUAD_BASE" "$SQUAD_ROOT" \
           && [ -f "$SQUAD_ROOT/bin/sq-x-poll.sh" ] && [ ! -L "$SQUAD_ROOT/bin/sq-x-poll.sh" ]; then
-          SQUAD_HOME="$SQUAD_HOME" run_check_capture "$SQUAD_ROOT/bin/sq-x-poll.sh" || exit 1
+          SQUAD_BASE="$SQUAD_BASE" run_check_capture "$SQUAD_ROOT/bin/sq-x-poll.sh" || exit 1
           out=$SQUAD_CHECK_RESULT
         else
           rejected_checks="$rejected_checks $c"

@@ -62,9 +62,9 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 GRACE=${SQUAD_GUARD_GRACE:-300}
 WATCH="$SCRIPT_DIR/sq-sentry.sh"
 CLAUDE_MODE=0
@@ -146,7 +146,7 @@ if [ "$SQUAD_SUP_NEEDED" = false ]; then
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
-if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
+if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE"; then
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
   fm_failure_episode_reset "$STATE" && exit 0
   exit 2
@@ -239,7 +239,7 @@ budget_account_current_epoch() {
 
 autoarm_owns_recovery() {
   local pid role outcome age
-  fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME" && return 0
+  fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE" && return 0
   pid=$(cat "$OWNER_LOCK/pid" 2>/dev/null || true)
   role=$(fm_lock_role "$OWNER_LOCK" 2>/dev/null || true)
   if fm_pid_alive "$pid" && [ "$role" = autoarm ]; then
@@ -307,7 +307,7 @@ terminal_fail_open() {
     fm_lock_release "$OWNER_LOCK"
     return 1
   fi
-  if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
+  if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE"; then
     if ! fm_failure_episode_reset "$STATE" held; then
       fm_lock_release "$BUDGET_LOCK"
       fm_lock_release "$OWNER_LOCK"
@@ -341,7 +341,7 @@ failure_episode_verified() {
 i=0
 while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   if autoarm_owns_recovery; then
-    if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
+    if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE"; then
       fm_failure_episode_reset "$STATE" || exit 2
     fi
     exit 0
@@ -350,7 +350,7 @@ while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   i=$((i + 1))
 done
 if autoarm_owns_recovery; then
-  if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"; then
+  if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE"; then
     fm_failure_episode_reset "$STATE" || exit 2
   fi
   exit 0

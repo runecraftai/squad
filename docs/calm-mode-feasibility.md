@@ -41,7 +41,7 @@ $ pi --version
 
 ### Original transcript cleanup
 
-The pre-cleanup reproduction used a real isolated Pi TUI at 180 columns by 44 rows with the tracked Calm and sentry extensions, an isolated `SQUAD_HOME`, and a live base-owned sentry cycle.
+The pre-cleanup reproduction used a real isolated Pi TUI at 180 columns by 44 rows with the tracked Calm and sentry extensions, an isolated `SQUAD_BASE`, and a live base-owned sentry cycle.
 The model called `sq_watch_arm_pi`, the real tool returned `sentry: started Pi extension arm child 1`, and a `done:` status write caused the sentry extension to inject `SQUAD WATCHER WAKE: signal: ...` followed by the stable drain instruction.
 With Calm off, the captured transcript contained the genuine user prompt, the full sentry tool shell, the synthetic user-role wake, four collapsed `Thinking...` labels, built-in tool rows from wake handling, and the final assistant response.
 With the pre-cleanup implementation's Calm mode on, the existing seven built-in tool rows disappeared, but the sentry tool shell, synthetic wake, and all four `Thinking...` labels remained.
@@ -55,7 +55,7 @@ The later duplicate-turn evidence below supersedes custom-message rerouting as a
 
 ### Hidden-block height regression
 
-The 2026-07-23 end-user-aligned reproduction used the installed Pi 0.81.1 TUI at 100 columns by 44 rows, an isolated project and `SQUAD_HOME`, the real `/skill:reporting` command path, and a deterministic provider that produced five thinking-bearing read calls, five tool results, final hidden thinking, and a visible final response.
+The 2026-07-23 end-user-aligned reproduction used the installed Pi 0.81.1 TUI at 100 columns by 44 rows, an isolated project and `SQUAD_BASE`, the real `/skill:reporting` command path, and a deterministic provider that produced five thinking-bearing read calls, five tool results, final hidden thinking, and a visible final response.
 With Calm on and Pi's thinking display collapsed, the completed turn left 14 empty rows between the visible collapsed `[skill] reporting` content row and the first final assistant row.
 With Calm off, the same sequence rendered all six `Thinking...` labels and all five read rows instead of an empty field.
 A controlled baseline containing only the skill row and final response had two standard visible-row separators.

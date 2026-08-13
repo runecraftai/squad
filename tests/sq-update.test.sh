@@ -89,7 +89,7 @@ bump_origin() {
 
 run_update() {
   local w=$1
-  SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_HOME="$w/home" "$UPDATE" 2>/dev/null
+  SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_BASE="$w/home" "$UPDATE" 2>/dev/null
 }
 
 # --- T1: main + XO behind, instruction change; FF, not a merge ------

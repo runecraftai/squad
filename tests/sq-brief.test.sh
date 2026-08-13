@@ -202,7 +202,7 @@ test_ship_modes_generate_clean_briefs() {
   for id_mode in "brief-drill-a1:drill" "brief-directpr-a2:direct-PR" "brief-localonly-a3:local-only"; do
     id=${id_mode%%:*}
     mode=${id_mode##*:}
-    SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1; status=$?
+    SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1; status=$?
     expect_code 0 "$status" "sq-brief.sh $id --mode $mode should exit 0"
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
@@ -230,7 +230,7 @@ test_ship_mode_is_required_and_closed_set() {
     [ -n "$label" ] || continue
     id=$((id + 1))
     # shellcheck disable=SC2086  # flag is an intentional word-split arg list (may be empty)
-    out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "brief-required-$id" some-proj $flag 2>&1)
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "brief-required-$id" some-proj $flag 2>&1)
     status=$?
     [ "$status" -ne 0 ] || fail "$label: expected a non-zero exit"
     assert_contains "$out" "$expect" "$label: refusal did not explain the contract"
@@ -251,7 +251,7 @@ test_ship_mode_is_explicit_not_registry() {
   local home brief
   home="$TMP_ROOT/explicit-over-registry-home"
   write_registry "$home"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a5 direct-proj --mode drill >/dev/null 2>&1 \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a5 direct-proj --mode drill >/dev/null 2>&1 \
     || fail "explicit drill brief on a direct-PR project should scaffold"
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=drill" "$brief" \
@@ -260,7 +260,7 @@ test_ship_mode_is_explicit_not_registry() {
     "explicit drill brief did not render the pipeline definition of done"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a6 never-registered --mode local-only >/dev/null 2>&1 \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a6 never-registered --mode local-only >/dev/null 2>&1 \
     || fail "unregistered project should still scaffold from the explicit mode"
   grep -qx "Delivery contract: mode=local-only" "$home/data/brief-explicit-a6/brief.md" \
     || fail "unregistered project did not honour the explicit --mode"
@@ -277,7 +277,7 @@ test_delivery_flags_are_refused_where_they_do_not_apply() {
   while IFS='|' read -r label args expect; do
     [ -n "$label" ] || continue
     # shellcheck disable=SC2086  # args is an intentional word-split arg list
-    out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" $args 2>&1)
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" $args 2>&1)
     status=$?
     [ "$status" -ne 0 ] || fail "$label: expected a non-zero exit"
     assert_contains "$out" "$expect" "$label: refusal did not explain why"
@@ -295,14 +295,14 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   home="$TMP_ROOT/configured-authority-home"
   write_registry "$home"
   id="brief-direct-authority-a4"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority decides whether to merge the PR; Squad relays the outcome." "$brief" \
     "direct-PR brief lost configured merge authority"
   assert_no_grep "The commander reviews and merges the PR" "$brief" \
     "direct-PR brief hard-coded commander-only authority"
   id="brief-local-authority-a4"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" local-proj --mode local-only >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" local-proj --mode local-only >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority approves the ready branch, then Squad merges it into local \`main\` through the guarded fast-forward path." "$brief" \
     "local-only brief lost configured merge authority and guarded landing"
@@ -313,7 +313,7 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "local-only brief must not include the drill --intent contract"
   id="brief-direct-intent-a4"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "direct-PR brief must not include the drill --intent contract"
   pass "sq-brief.sh: faster paths use configured authority without stacked review"
@@ -326,7 +326,7 @@ test_drill_dod_wording() {
   home="$TMP_ROOT/wording-home"
   mkdir -p "$home/data"
   id="brief-wording-b1"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "drill itself provides for the mechanics" "$brief" \
@@ -359,7 +359,7 @@ test_ship_project_memory_wording() {
   home="$TMP_ROOT/project-memory-home"
   mkdir -p "$home/data"
   id="brief-memory-c1"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "Record only project knowledge useful to almost every future session." "$brief" \
@@ -376,7 +376,7 @@ test_herdr_lab_contract_is_explicit_and_complete() {
   home="$TMP_ROOT/herdr-lab-home"
   mkdir -p "$home/data"
   id="brief-herdr-lab-d1"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill --herdr-lab >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill --herdr-lab >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "Herdr lab brief was not scaffolded"
   assert_grep "# Herdr isolation - HARD SAFETY CONTRACT" "$brief" \
@@ -410,7 +410,7 @@ test_herdr_lab_contract_quotes_foreign_Squad_path() {
   id="brief-herdr-lab-foreign-d2"
   helper=$(printf '%s' "$foreign_root/bin/sq-herdr-lab.sh" | sed "s/'/'\\\\''/g")
   helper="'$helper'"
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/sq-brief.sh" "$id" foreign --recon --herdr-lab >/dev/null 2>&1
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/sq-brief.sh" "$id" foreign --recon --herdr-lab >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "HERDR_LAB_HELPER=$helper" "$brief" \
     "Herdr lab brief must shell-quote an absolute Squad helper path"
@@ -426,9 +426,9 @@ test_herdr_lab_omission_is_loud_for_ship_and_scout() {
   for kind in ship recon; do
     id="brief-herdr-gate-$kind"
     if [ "$kind" = recon ]; then
-      SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --recon >/dev/null 2>&1
+      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --recon >/dev/null 2>&1
     else
-      SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill >/dev/null 2>&1
+      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill >/dev/null 2>&1
     fi
     brief="$home/data/$id/brief.md"
     assert_grep "# Herdr lifecycle declaration - NOT ENABLED" "$brief" \
@@ -446,7 +446,7 @@ test_XO_no_projects_charter() {
 
   # The deliberate --no-projects signal scaffolds a valid project-less charter for
   # a domain whose subject is the Squad repo itself (no clones needed).
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-brief.sh" fdev --xo --no-projects >/dev/null 2>&1; status=$?
   expect_code 0 "$status" "--no-projects XO brief should exit 0"
@@ -470,16 +470,16 @@ test_XO_no_projects_charter() {
   fi
 
   # Accidental omission (no projects, no signal) still fails loudly, writing nothing.
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER='x' "$ROOT/bin/sq-brief.sh" oops --xo >/dev/null 2>&1; status=$?
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='x' "$ROOT/bin/sq-brief.sh" oops --xo >/dev/null 2>&1; status=$?
   expect_code 1 "$status" "XO brief with no projects and no --no-projects must fail"
   assert_absent "$home/data/oops/brief.md" "loud-failure XO brief still wrote a file"
 
   # --no-projects is mutually exclusive with a project list.
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER='x' "$ROOT/bin/sq-brief.sh" oops2 --xo --no-projects alpha >/dev/null 2>&1; status=$?
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='x' "$ROOT/bin/sq-brief.sh" oops2 --xo --no-projects alpha >/dev/null 2>&1; status=$?
   expect_code 1 "$status" "--no-projects combined with a project list must fail"
 
   # --no-projects applies only to XO charters, never a ship/recon brief.
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" oops3 somerepo --no-projects >/dev/null 2>&1; status=$?
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" oops3 somerepo --no-projects >/dev/null 2>&1; status=$?
   expect_code 1 "$status" "--no-projects on a ship brief must fail"
 
   pass "sq-brief.sh: --no-projects scaffolds a project-less charter and guards misuse"
@@ -489,7 +489,7 @@ test_XO_marked_request_reporting_contract() {
   local home brief
   home="$TMP_ROOT/marked-request-reporting-home"
   mkdir -p "$home/data"
-  SQUAD_HOME="$home" SQUAD_CLASSIFY_PAUSED_VERB=paused \
+  SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=paused \
     SQUAD_XO_CHARTER='Handle routed domain work.' \
     "$ROOT/bin/sq-brief.sh" marked-request-reporting --xo --no-projects >/dev/null 2>&1
   brief="$home/data/marked-request-reporting/brief.md"
@@ -539,30 +539,30 @@ test_XO_directory_paths_are_absolute_and_output_is_stable() {
     "$root/cdpath/data-override" "$root/cdpath/state-override"
 
   brief="$home/data/relative-home/brief.md"
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER=x \
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER=x \
     "$ROOT/bin/sq-brief.sh" relative-home --xo --no-projects >/dev/null 2>&1
   baseline="$root/absolute-home-charter"
   cp "$brief" "$baseline"
   rm -f "$brief"
   (
     cd "$root" || exit 1
-    CDPATH="$root/cdpath" SQUAD_HOME=home SQUAD_XO_CHARTER=x \
+    CDPATH="$root/cdpath" SQUAD_BASE=home SQUAD_XO_CHARTER=x \
       "$ROOT/bin/sq-brief.sh" relative-home --xo --no-projects >/dev/null 2>&1
   )
   cmp -s "$baseline" "$brief" \
-    || fail "relative SQUAD_HOME changed charter bytes compared with the same absolute home"
+    || fail "relative SQUAD_BASE changed charter bytes compared with the same absolute home"
   assert_grep ">> '$home/state/relative-home.status'" "$brief" \
-    "relative SQUAD_HOME did not render an absolute XO status path"
+    "relative SQUAD_BASE did not render an absolute XO status path"
 
   brief="$home/data/relative-state/brief.md"
-  SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$state_override" SQUAD_XO_CHARTER=x \
+  SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$state_override" SQUAD_XO_CHARTER=x \
     "$ROOT/bin/sq-brief.sh" relative-state --xo --no-projects >/dev/null 2>&1
   baseline="$root/absolute-state-charter"
   cp "$brief" "$baseline"
   rm -f "$brief"
   (
     cd "$root" || exit 1
-    CDPATH="$root/cdpath" SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE=state-override SQUAD_XO_CHARTER=x \
+    CDPATH="$root/cdpath" SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE=state-override SQUAD_XO_CHARTER=x \
       "$ROOT/bin/sq-brief.sh" relative-state --xo --no-projects >/dev/null 2>&1
   )
   cmp -s "$baseline" "$brief" \
@@ -571,14 +571,14 @@ test_XO_directory_paths_are_absolute_and_output_is_stable() {
     "relative SQUAD_STATE_OVERRIDE did not render an absolute XO status path"
 
   brief="$data_override/relative-data/brief.md"
-  SQUAD_HOME="$home" SQUAD_DATA_OVERRIDE="$data_override" SQUAD_XO_CHARTER=x \
+  SQUAD_BASE="$home" SQUAD_DATA_OVERRIDE="$data_override" SQUAD_XO_CHARTER=x \
     "$ROOT/bin/sq-brief.sh" relative-data --xo --no-projects >/dev/null 2>&1
   baseline="$root/absolute-data-charter"
   cp "$brief" "$baseline"
   rm -f "$brief"
   (
     cd "$root" || exit 1
-    CDPATH="$root/cdpath" SQUAD_HOME="$home" SQUAD_DATA_OVERRIDE=data-override SQUAD_XO_CHARTER=x \
+    CDPATH="$root/cdpath" SQUAD_BASE="$home" SQUAD_DATA_OVERRIDE=data-override SQUAD_XO_CHARTER=x \
       "$ROOT/bin/sq-brief.sh" relative-data --xo --no-projects >/dev/null 2>&1
   )
   cmp -s "$baseline" "$brief" \
@@ -589,16 +589,16 @@ test_XO_directory_paths_are_absolute_and_output_is_stable() {
   err="$root/unresolved.err"
   (
     cd "$root" || exit 1
-    SQUAD_HOME=missing-home SQUAD_XO_CHARTER=x \
+    SQUAD_BASE=missing-home SQUAD_XO_CHARTER=x \
       "$ROOT/bin/sq-brief.sh" unresolved-home --xo --no-projects >/dev/null 2>"$err"
   ); status=$?
-  expect_code 1 "$status" "an unresolved relative SQUAD_HOME must fail"
-  assert_grep "SQUAD_HOME directory cannot be resolved: missing-home" "$err" \
-    "unresolved relative SQUAD_HOME did not fail loudly"
+  expect_code 1 "$status" "an unresolved relative SQUAD_BASE must fail"
+  assert_grep "SQUAD_BASE directory cannot be resolved: missing-home" "$err" \
+    "unresolved relative SQUAD_BASE did not fail loudly"
 
   (
     cd "$root" || exit 1
-    SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE=missing-state SQUAD_XO_CHARTER=x \
+    SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE=missing-state SQUAD_XO_CHARTER=x \
       "$ROOT/bin/sq-brief.sh" unresolved-state --xo --no-projects >/dev/null 2>"$err"
   ); status=$?
   expect_code 1 "$status" "an unresolved relative SQUAD_STATE_OVERRIDE must fail"
@@ -607,7 +607,7 @@ test_XO_directory_paths_are_absolute_and_output_is_stable() {
 
   (
     cd "$root" || exit 1
-    SQUAD_HOME="$home" SQUAD_DATA_OVERRIDE=missing-data SQUAD_XO_CHARTER=x \
+    SQUAD_BASE="$home" SQUAD_DATA_OVERRIDE=missing-data SQUAD_XO_CHARTER=x \
       "$ROOT/bin/sq-brief.sh" unresolved-data --xo --no-projects >/dev/null 2>"$err"
   ); status=$?
   expect_code 1 "$status" "an unresolved relative SQUAD_DATA_OVERRIDE must fail"
@@ -621,12 +621,12 @@ test_herdr_lab_contract_applies_to_scouts_but_not_XOs() {
   local home brief status=0
   home="$TMP_ROOT/herdr-kind-home"
   mkdir -p "$home/data"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" herdr-recon Squad --recon --herdr-lab >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" herdr-recon Squad --recon --herdr-lab >/dev/null 2>&1
   brief="$home/data/herdr-recon/brief.md"
   assert_grep "# Herdr isolation - HARD SAFETY CONTRACT" "$brief" \
     "recon --herdr-lab brief missing the contract"
 
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER=ops "$ROOT/bin/sq-brief.sh" herdr-XO --xo Squad --herdr-lab >/dev/null 2>&1 || status=$?
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER=ops "$ROOT/bin/sq-brief.sh" herdr-XO --xo Squad --herdr-lab >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "XO --herdr-lab must be rejected"
   assert_absent "$home/data/herdr-XO/brief.md" \
     "rejected XO --herdr-lab still wrote a brief"
@@ -642,15 +642,15 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
     id="brief-pause-verb-$kind"
     case "$kind" in
       ship)
-        SQUAD_HOME="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
+        SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
           "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill >/dev/null 2>&1
         ;;
       recon)
-        SQUAD_HOME="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
+        SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
           "$ROOT/bin/sq-brief.sh" "$id" Squad --recon >/dev/null 2>&1
         ;;
       XO)
-        SQUAD_HOME="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
+        SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
           "$ROOT/bin/sq-brief.sh" "$id" --xo --no-projects >/dev/null 2>&1
         ;;
     esac
@@ -675,14 +675,14 @@ test_scout_and_XO_load_decision_hold_policy() {
   local home recon charter
   home="$TMP_ROOT/decision-policy-home"
   mkdir -p "$home/data"
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/sq-brief.sh" sample-investigation sample --recon >/dev/null 2>&1
   recon="$home/data/sample-investigation/brief.md"
   assert_grep "$ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md" "$recon" \
     "recon brief did not load the unresolved-decision policy before done"
   assert_grep "pass its shared completion gate for the report and any visual review" "$recon" \
     "recon brief did not cross-reference visual-review completion"
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_XO_CHARTER='sample reviews' \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_XO_CHARTER='sample reviews' \
     "$ROOT/bin/sq-brief.sh" sample-mate --xo --no-projects >/dev/null 2>&1
   charter="$home/data/sample-mate/brief.md"
   assert_grep "load \`decision-hold-lifecycle\`" "$charter" \
@@ -693,7 +693,7 @@ test_scout_and_XO_load_decision_hold_policy() {
 # Recon and XO paths still scaffold well-formed briefs.
 test_scout_and_XO_scaffold() {
   local brief
-  SQUAD_HOME="$BRIEF_HOME" "$ROOT/bin/sq-brief.sh" brief-recon-q6 alpha --recon >/dev/null 2>&1 \
+  SQUAD_BASE="$BRIEF_HOME" "$ROOT/bin/sq-brief.sh" brief-recon-q6 alpha --recon >/dev/null 2>&1 \
     || fail "sq-brief.sh recon scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-recon-q6/brief.md"
   assert_present "$brief" "recon brief was not scaffolded"
@@ -701,7 +701,7 @@ test_scout_and_XO_scaffold() {
   assert_grep "report.md" "$brief" "recon brief must point at the report deliverable"
 
   SQUAD_XO_CHARTER='Supervise the alpha domain.' \
-    SQUAD_HOME="$BRIEF_HOME" "$ROOT/bin/sq-brief.sh" brief-sm-q6 --xo alpha >/dev/null 2>&1 \
+    SQUAD_BASE="$BRIEF_HOME" "$ROOT/bin/sq-brief.sh" brief-sm-q6 --xo alpha >/dev/null 2>&1 \
     || fail "sq-brief.sh XO scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-sm-q6/brief.md"
   assert_present "$brief" "XO charter was not scaffolded"

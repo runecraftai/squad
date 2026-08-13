@@ -70,7 +70,7 @@ EOF
 
 phase_seed() {
   local out
-  out=$(PATH="$FAKEBIN:$PATH" SQUAD_HOME="$HOME_DIR" \
+  out=$(PATH="$FAKEBIN:$PATH" SQUAD_BASE="$HOME_DIR" \
     "$ROOT/bin/sq-home-seed.sh" design "$SUB" alpha beta gamma) \
     || fail "seed failed"
   SUB_ABS=$(cd "$SUB" && pwd -P)
@@ -101,18 +101,18 @@ phase_seed() {
   assert_no_grep 'owns:' "$HOME_DIR/data/XOs.md" "registry used the legacy owns field"
 
   # Delivery modes preserved in the subhome registry; validation passes.
-  [ "$(SQUAD_HOME="$SUB" "$ROOT/bin/sq-project-mode.sh" alpha)" = "direct-PR on" ] \
+  [ "$(SQUAD_BASE="$SUB" "$ROOT/bin/sq-project-mode.sh" alpha)" = "direct-PR on" ] \
     || fail "alpha delivery mode not preserved in the subhome"
-  [ "$(SQUAD_HOME="$SUB" "$ROOT/bin/sq-project-mode.sh" beta)" = "direct-PR off" ] \
+  [ "$(SQUAD_BASE="$SUB" "$ROOT/bin/sq-project-mode.sh" beta)" = "direct-PR off" ] \
     || fail "beta delivery mode not preserved in the subhome"
-  SQUAD_HOME="$HOME_DIR" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null || fail "registry validation failed after seed"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null || fail "registry validation failed after seed"
 
   pass "seed: registry scope+projects, charter copied, clones+origins, drill init in subhome only"
 }
 
 phase_spawn() {
   : > "$LOG"
-  PATH="$FAKEBIN:$PATH" SQUAD_HOME="$HOME_DIR" SQUAD_CONFIG_OVERRIDE="$HOME_DIR/parent-config" \
+  PATH="$FAKEBIN:$PATH" SQUAD_BASE="$HOME_DIR" SQUAD_CONFIG_OVERRIDE="$HOME_DIR/parent-config" \
     SQUAD_FAKE_TMUX_LOG="$LOG" SQUAD_FAKE_TMUX_CAPTURE="$PANE" \
     "$ROOT/bin/sq-spawn.sh" design "$SUB" codex --xo >/dev/null \
     || fail "XO spawn failed"
@@ -123,7 +123,7 @@ phase_spawn() {
   assert_grep 'projects=alpha, beta, gamma' "$meta" "spawn meta did not record the project list"
   # Launch ran in the subhome, with the persistent charter and cleared overrides,
   # and never ran a project-style fob get.
-  assert_grep "SQUAD_HOME='$SUB_ABS'" "$LOG" "XO launch did not set SQUAD_HOME to the subhome"
+  assert_grep "SQUAD_BASE='$SUB_ABS'" "$LOG" "XO launch did not set SQUAD_BASE to the subhome"
   assert_grep 'SQUAD_ROOT_OVERRIDE= SQUAD_STATE_OVERRIDE= SQUAD_DATA_OVERRIDE= SQUAD_PROJECTS_OVERRIDE=' "$LOG" "launch did not clear operational overrides"
   assert_grep 'SQUAD_CONFIG_OVERRIDE=' "$LOG" "launch did not clear the config override"
   assert_grep "$SUB_ABS/data/charter.md" "$LOG" "launch did not use the persistent charter"
@@ -138,7 +138,7 @@ phase_send() {
   : > "$PANE"
   # The meta window (Squad:sq-design) must win over a foreign same-named
   # window returned by list-windows.
-  PATH="$FAKEBIN:$PATH" SQUAD_HOME="$HOME_DIR" SQUAD_FAKE_TMUX_WINDOW="other-session:sq-design" \
+  PATH="$FAKEBIN:$PATH" SQUAD_BASE="$HOME_DIR" SQUAD_FAKE_TMUX_WINDOW="other-session:sq-design" \
     SQUAD_FAKE_TMUX_LOG="$LOG" SQUAD_FAKE_TMUX_CAPTURE="$PANE" \
     "$ROOT/bin/sq-send.sh" sq-design 'route this work' >/dev/null 2>&1 \
     || fail "sq-send failed for a bare Squad window with home metadata"
@@ -171,7 +171,7 @@ phase_handoff() {
 - [x] old-task - shipped thing - local main (merged 2026-06-19)
 EOF
   local out before
-  out=$(SQUAD_HOME="$HOME_DIR" "$ROOT/bin/sq-backlog-handoff.sh" design feat-x feat-y) \
+  out=$(SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-backlog-handoff.sh" design feat-x feat-y) \
     || fail "handoff failed for in-scope items"
   assert_contains "$out" "handed off 2 item(s) to design" "handoff did not report the moved items"
 
@@ -187,7 +187,7 @@ EOF
 
   # Idempotent: a second handoff neither errors nor duplicates, and leaves main alone.
   before=$(cat "$HOME_DIR/data/backlog.md")
-  SQUAD_HOME="$HOME_DIR" "$ROOT/bin/sq-backlog-handoff.sh" design feat-x feat-y >/dev/null 2>&1 \
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-backlog-handoff.sh" design feat-x feat-y >/dev/null 2>&1 \
     || fail "idempotent re-run failed"
   [ "$(grep -cF -- '- [ ] feat-x - add feature x (repo: alpha)' "$SUB/data/backlog.md")" -eq 1 ] \
     || fail "idempotent re-run duplicated feat-x in the subhome backlog"
@@ -199,7 +199,7 @@ phase_recovery() {
   # Simulate a restart: drop the live meta, then respawn from the registry +
   # persistent home (no explicit home argument).
   rm -f "$HOME_DIR/state/design.meta"
-  PATH="$FAKEBIN:$PATH" SQUAD_HOME="$HOME_DIR" SQUAD_FAKE_TMUX_LOG="$LOG" SQUAD_FAKE_TMUX_CAPTURE="$PANE" \
+  PATH="$FAKEBIN:$PATH" SQUAD_BASE="$HOME_DIR" SQUAD_FAKE_TMUX_LOG="$LOG" SQUAD_FAKE_TMUX_CAPTURE="$PANE" \
     "$ROOT/bin/sq-spawn.sh" design "echo relaunch" --xo >/dev/null 2>&1 \
     || fail "recovery respawn failed"
   local meta="$HOME_DIR/state/design.meta"
@@ -212,7 +212,7 @@ phase_recovery() {
 phase_teardown() {
   local teardown_out
   : > "$LOG"
-  teardown_out=$(PATH="$FAKEBIN:$PATH" SQUAD_HOME="$HOME_DIR" SQUAD_FAKE_TMUX_LOG="$LOG" SQUAD_FAKE_TMUX_CAPTURE="$PANE" \
+  teardown_out=$(PATH="$FAKEBIN:$PATH" SQUAD_BASE="$HOME_DIR" SQUAD_FAKE_TMUX_LOG="$LOG" SQUAD_FAKE_TMUX_CAPTURE="$PANE" \
     "$ROOT/bin/sq-teardown.sh" design 2>&1) \
     || fail "teardown failed for the empty XO home"
   printf '%s\n' "$teardown_out" | grep -F 'Backlog:' >/dev/null \

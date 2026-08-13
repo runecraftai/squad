@@ -13,7 +13,7 @@ test_primary_and_XO_instruction_generation() {
   home="$TMP_ROOT/home"
   mkdir -p "$home/data"
 
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     "$BRIEF" authority-worker sample --mode drill >/dev/null 2>&1
   ship="$home/data/authority-worker/brief.md"
   assert_grep 'ask-user findings are never yours to answer' "$ship" \
@@ -25,7 +25,7 @@ test_primary_and_XO_instruction_generation() {
   assert_no_grep 'the commander, not you, owns the ask-user decisions' "$ship" \
     "generated implementation brief retained conflicting commander-only wording"
 
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_XO_CHARTER='Handle sample work.' \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_XO_CHARTER='Handle sample work.' \
     "$BRIEF" authority-mate --xo --no-projects >/dev/null 2>&1
   charter="$home/data/authority-mate/brief.md"
   # shellcheck disable=SC2016 # Backticks are literal generated Markdown.

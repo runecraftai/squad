@@ -76,8 +76,8 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
@@ -279,7 +279,7 @@ cmd_start() {
     fm_procevent_source_lock_release "$id"
     die "registration argv is unreadable: $id"
   fi
-  fm_procevent_claim_acquire_locked "$id" "$SQUAD_HOME" "$$" "$(source_file "$id")"
+  fm_procevent_claim_acquire_locked "$id" "$SQUAD_BASE" "$$" "$(source_file "$id")"
   claimed=$?
   fm_procevent_source_lock_release "$id"
   case "$claimed" in
@@ -288,7 +288,7 @@ cmd_start() {
     *) die "cannot claim source: $id" ;;
   esac
   CLAIM_ID=$id
-  CLAIM_HOME=$SQUAD_HOME
+  CLAIM_HOME=$SQUAD_BASE
   CLAIM_PID=$$
   CLAIM_TOKEN=$SQUAD_PROCEVENT_CLAIM_TOKEN
   CLAIM_REG_IDENTITY=$SQUAD_PROCEVENT_CLAIM_REG_IDENTITY
@@ -453,7 +453,7 @@ cmd_reconcile() {
     pid=$SQUAD_PROCEVENT_CLAIM_PID
     token=$SQUAD_PROCEVENT_CLAIM_TOKEN
     identity=$SQUAD_PROCEVENT_CLAIM_IDENTITY
-    if [ "$owner" != "$SQUAD_HOME" ]; then
+    if [ "$owner" != "$SQUAD_BASE" ]; then
       fm_procevent_source_lock_release "$id"
       continue
     fi
@@ -492,7 +492,7 @@ cmd_reconcile() {
           owner=$SQUAD_PROCEVENT_CLAIM_HOME
           pid=$SQUAD_PROCEVENT_CLAIM_PID
           token=$SQUAD_PROCEVENT_CLAIM_TOKEN
-          if [ "$owner" = "$SQUAD_HOME" ] \
+          if [ "$owner" = "$SQUAD_BASE" ] \
             && rm -f -- "$(source_file "$id")" \
             && [ ! -e "$(source_file "$id")" ] \
             && [ ! -L "$(source_file "$id")" ] \
@@ -512,7 +512,7 @@ cmd_reconcile() {
           token=$SQUAD_PROCEVENT_CLAIM_TOKEN
           identity=$SQUAD_PROCEVENT_CLAIM_IDENTITY
           stop_state=2
-          if [ "$owner" = "$SQUAD_HOME" ]; then
+          if [ "$owner" = "$SQUAD_BASE" ]; then
             stop_runner_pid "$pid" "$identity"
             stop_state=$?
           fi
@@ -611,7 +611,7 @@ cmd_retire() {
       fm_procevent_source_lock_release "$id"
       die "cannot safely read source ownership: $id"
     fi
-    if [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$SQUAD_HOME" ]; then
+    if [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$SQUAD_BASE" ]; then
       owner=$SQUAD_PROCEVENT_CLAIM_HOME
       pid=$SQUAD_PROCEVENT_CLAIM_PID
       token=$SQUAD_PROCEVENT_CLAIM_TOKEN
@@ -653,7 +653,7 @@ sweep_relevant_state() {
   for path in "$(fm_procevent_claim_root)"/*.claim; do
     [ -f "$path" ] && [ ! -L "$path" ] || continue
     IFS= read -r owner < "$path" 2>/dev/null || continue
-    [ "$owner" = "$SQUAD_HOME" ] && return 0
+    [ "$owner" = "$SQUAD_BASE" ] && return 0
   done
   return 1
 }
@@ -666,7 +666,7 @@ sweep_source_preflight() {
       fm_procevent_source_lock_release "$id"
       return 1
     fi
-    if [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$SQUAD_HOME" ]; then
+    if [ "$SQUAD_PROCEVENT_CLAIM_HOME" = "$SQUAD_BASE" ]; then
       fm_procevent_pid_state "$SQUAD_PROCEVENT_CLAIM_PID" "$SQUAD_PROCEVENT_CLAIM_IDENTITY"
       state=$?
       if [ "$state" -eq 2 ]; then
@@ -695,7 +695,7 @@ cmd_sweep_home() {
   for path in "$(fm_procevent_claim_root)"/*.claim; do
     [ -f "$path" ] && [ ! -L "$path" ] || continue
     IFS= read -r owner < "$path" 2>/dev/null || continue
-    [ "$owner" = "$SQUAD_HOME" ] || continue
+    [ "$owner" = "$SQUAD_BASE" ] || continue
     id=${path##*/}; id=${id%.claim}
     if fm_procevent_source_id_valid "$id"; then
       sweep_add_id "$id"
@@ -731,7 +731,7 @@ cmd_sweep_home() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     attempted=$((attempted + 1))
-    if ! SQUAD_HOME="$SQUAD_HOME" SQUAD_STATE_OVERRIDE="$STATE" \
+    if ! SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" \
         "$SCRIPT_DIR/sq-procevent.sh" retire "$id"; then
       failed=$((failed + 1))
     fi

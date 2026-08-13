@@ -53,7 +53,7 @@ unit_clear_stale() {
   : > "$st/state/.stand-to-queue"          # durable queue must be untouched
   # Source sq-afk-start.sh inside a child bash (it sets `set -eu` and would
   # otherwise leak that into this test shell) and call the clear helper.
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" \
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" \
     bash -c '. "$1"; fm_afk_clear_stale_artifacts "$2"' _ "$START" "$st/state"
   if [ ! -e "$st/state/.subsuper-escalations" ] \
      && [ ! -e "$st/state/.subsuper-escalations.since" ] \
@@ -78,18 +78,31 @@ unit_relative_paths_are_absolute_before_daemon_launch() {
   state="$home/state"
   out=$(
     cd "$root" || exit 1
-    CDPATH="$root/cdpath" SQUAD_HOME=home SQUAD_STATE_OVERRIDE=home/state \
-      bash -c '. "$1"; printf "%s\n%s\n" "$SQUAD_HOME" "$SQUAD_AFK_LAUNCH_STATE"' _ "$LAUNCH"
+    CDPATH="$root/cdpath" SQUAD_BASE=home SQUAD_STATE_OVERRIDE=home/state \
+      bash -c '. "$1"; printf "%s\n%s\n" "$SQUAD_BASE" "$SQUAD_AFK_LAUNCH_STATE"' _ "$LAUNCH"
   )
   if [ "$out" = "$home"$'\n'"$state" ]; then
     pass "launcher paths: relative home and state ignore CDPATH before daemon command construction"
   else
     fail "launcher paths: relative home or state remained cwd-dependent ($out)"
   fi
+  # Permanent read shim: a legacy SQUAD_HOME-only environment (no SQUAD_BASE)
+  # must resolve to the exact same absolute home.
+  out=$(
+    cd "$root" || exit 1
+    # shellcheck disable=SC2016 # $SQUAD_BASE is resolved inside the sourced launcher, never in this shell.
+    env -u SQUAD_BASE CDPATH="$root/cdpath" SQUAD_HOME=home SQUAD_STATE_OVERRIDE=home/state \
+      bash -c '. "$1"; printf "%s\n%s\n" "$SQUAD_BASE" "$SQUAD_AFK_LAUNCH_STATE"' _ "$LAUNCH"
+  )
+  if [ "$out" = "$home"$'\n'"$state" ]; then
+    pass "launcher paths: legacy SQUAD_HOME-only input resolves through the permanent shim"
+  else
+    fail "launcher paths: legacy SQUAD_HOME-only input did not resolve ($out)"
+  fi
   linked_home="$root/home-link"
   ln -s "$root/home" "$linked_home"
-  out=$(SQUAD_HOME="$linked_home" SQUAD_STATE_OVERRIDE="$linked_home/state" \
-    bash -c '. "$1"; printf "%s\n%s\n" "$SQUAD_HOME" "$SQUAD_AFK_LAUNCH_STATE"' _ "$LAUNCH")
+  out=$(SQUAD_BASE="$linked_home" SQUAD_STATE_OVERRIDE="$linked_home/state" \
+    bash -c '. "$1"; printf "%s\n%s\n" "$SQUAD_BASE" "$SQUAD_AFK_LAUNCH_STATE"' _ "$LAUNCH")
   if [ "$out" = "$linked_home"$'\n'"$linked_home/state" ]; then
     pass "launcher paths: absolute symlink spellings are preserved"
   else
@@ -97,17 +110,17 @@ unit_relative_paths_are_absolute_before_daemon_launch() {
   fi
   out=$(
     cd "$root" || exit 1
-    SQUAD_HOME=missing-home "$LAUNCH" help 2>&1
+    SQUAD_BASE=missing-home "$LAUNCH" help 2>&1
   )
   status=$?
-  if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -F "SQUAD_HOME directory cannot be resolved: missing-home" >/dev/null; then
-    pass "launcher paths: unresolved relative SQUAD_HOME fails loudly"
+  if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -F "SQUAD_BASE directory cannot be resolved: missing-home" >/dev/null; then
+    pass "launcher paths: unresolved relative SQUAD_BASE fails loudly"
   else
-    fail "launcher paths: unresolved relative SQUAD_HOME did not name the bad input ($out)"
+    fail "launcher paths: unresolved relative SQUAD_BASE did not name the bad input ($out)"
   fi
   out=$(
     cd "$root" || exit 1
-    SQUAD_HOME=home SQUAD_STATE_OVERRIDE=missing-state "$LAUNCH" help 2>&1
+    SQUAD_BASE=home SQUAD_STATE_OVERRIDE=missing-state "$LAUNCH" help 2>&1
   )
   status=$?
   if [ "$status" -ne 0 ] && printf '%s\n' "$out" | grep -F "SQUAD_STATE_OVERRIDE directory cannot be resolved: missing-state" >/dev/null; then
@@ -136,7 +149,7 @@ unit_fresh_vs_refresh() {
   mkdir -p "$lock"
   printf '%s' "$sleep_pid" > "$lock/pid"
   ( . "$ROOT/bin/sq-stand-to-lib.sh"; fm_pid_identity "$sleep_pid" > "$lock/pid-identity" 2>/dev/null ) || true
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$START" >/dev/null 2>&1
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$START" >/dev/null 2>&1
   if [ -e "$st/state/.subsuper-escalations" ] && [ -e "$st/state/.subsuper-inject-wedged" ]; then
     pass "refresh: daemon already alive - stale artifacts preserved (current session's buffer kept)"
   else
@@ -168,7 +181,7 @@ unit_stop_ordering() {
   printf '%s' "$daemon_pid" > "$lock/pid"
   ( . "$ROOT/bin/sq-stand-to-lib.sh"; fm_pid_identity "$daemon_pid" > "$lock/pid-identity" 2>/dev/null ) || true
   printf 'none\t-\tnative\n' > "$st/state/.afk-daemon-terminal"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
   if [ "$(cat "$marker" 2>/dev/null || echo missing)" = present ]; then
     pass "stop-ordering: daemon SIGTERM'd while .afk still present (flush is not a no-op)"
   else
@@ -200,7 +213,7 @@ unit_stop_rejects_reused_pid() {
   mkdir -p "$lock"
   printf '%s' "$sleeper_pid" > "$lock/pid"
   printf 'different-process-identity' > "$lock/pid-identity"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
   if kill -0 "$sleeper_pid" 2>/dev/null; then
     pass "stop identity: stale lock cannot signal an unrelated live process"
   else
@@ -217,7 +230,7 @@ unit_failed_start_rolls_back_state() {
   mkdir -p "$st/state"
   printf 'pending\n' > "$st/state/.subsuper-escalations"
   printf 'wedged\n' > "$st/state/.subsuper-inject-wedged"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET=unused \
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET=unused \
     SQUAD_SUPERVISOR_BACKEND=unsupported "$LAUNCH" start >/dev/null 2>&1; then
     fail "failed start: unsupported backend unexpectedly succeeded"
   elif [ ! -e "$st/state/.afk" ] \
@@ -238,9 +251,9 @@ unit_concurrent_start_serialized() {
   tmux new-session -d -s "$cap_session" 2>/dev/null || { fail "concurrent start: commander session creation failed"; rm -rf "$st"; return 0; }
   TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $cap_session"
   cap_pane=$(tmux display-message -p -t "$cap_session" '#{pane_id}')
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET="$cap_pane" \
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET="$cap_pane" \
     SQUAD_SUPERVISOR_BACKEND=tmux SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start >/dev/null 2>&1 & first=$!
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET="$cap_pane" \
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET="$cap_pane" \
     SQUAD_SUPERVISOR_BACKEND=tmux SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start >/dev/null 2>&1 & second=$!
   wait "$first"; wait "$second"
   rec=$(cut -f2 "$st/state/.afk-daemon-terminal" 2>/dev/null || true)
@@ -251,7 +264,7 @@ unit_concurrent_start_serialized() {
   else
     fail "concurrent start: leaked or lost daemon terminal (count $count, record $rec)"
   fi
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
   tmux kill-session -t "$cap_session" 2>/dev/null || true
   rm -rf "$st"
 }
@@ -272,7 +285,7 @@ unit_lock_initialization_grace() {
     fi
   ) &
   initializer=$!
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_lock_acquire
     fm_afk_launch_lock_release
@@ -289,7 +302,7 @@ unit_signal_exits_with_lock_cleanup() {
   local st marker child
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-signal.XXXXXX")
   marker="$st/resumed"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_start() { sleep 30; }
     fm_afk_launch_main start
@@ -325,7 +338,7 @@ unit_herdr_partial_create_recovery() {
   local st recorded
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-herdr-partial.XXXXXX")
   recorded="$st/recorded"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_AFK_LAUNCH_ENTRY=/bin/true \
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_AFK_LAUNCH_ENTRY=/bin/true \
     SQUAD_AFK_LAUNCH_LABEL=afk-exact-label RECORDED="$recorded" bash -c '
     . "$1"
     fm_backend_source() { return 0; }
@@ -354,7 +367,7 @@ unit_herdr_partial_create_recovery() {
 unit_herdr_error_with_exact_ids_closes_exact() {
   local st
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-herdr-error-exact.XXXXXX")
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_backend_source() { return 0; }
     fm_backend_herdr_server_ensure() { return 0; }
@@ -381,7 +394,7 @@ unit_herdr_error_with_exact_ids_closes_exact() {
 unit_herdr_run_failure_preserves_unconfirmed_record() {
   local st
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-herdr-run-fail.XXXXXX")
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_backend_source() { return 0; }
     fm_backend_herdr_server_ensure() { return 0; }
@@ -411,7 +424,7 @@ unit_record_failure_closes_terminal() {
   local st closed
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-record-fail.XXXXXX")
   closed="$st/closed"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" CLOSED="$closed" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" CLOSED="$closed" bash -c '
     . "$1"
     fm_afk_launch_record_write() { return 1; }
     fm_afk_launch_close_terminal() { printf "%s:%s" "$1" "$2" > "$CLOSED"; }
@@ -429,7 +442,7 @@ unit_readiness_failure_rolls_back_terminal() {
   local st closed
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-not-ready.XXXXXX")
   closed="$st/closed"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" CLOSED="$closed" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" CLOSED="$closed" bash -c '
     . "$1"
     fm_afk_launch_wait_ready() { return 1; }
     fm_afk_launch_close_terminal() { printf "%s:%s" "$1" "$2" > "$CLOSED"; }
@@ -448,7 +461,7 @@ unit_readiness_failure_rolls_back_terminal() {
 unit_readiness_failure_preserves_unconfirmed_record() {
   local st
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-not-ready-unconfirmed.XXXXXX")
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_wait_ready() { return 1; }
     fm_afk_launch_close_terminal() { return 1; }
@@ -466,7 +479,7 @@ unit_readiness_failure_preserves_unconfirmed_record() {
 unit_tmux_absence_distinguishes_probe_failure() {
   local st
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tmux-probe.XXXXXX")
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() { printf "%s" "can'\''t find session: exact-session" >&2; return 1; }
     fm_afk_launch_terminal_absent tmux exact-session
@@ -485,7 +498,7 @@ unit_native_lifecycle() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-native.XXXXXX")
   mkdir -p "$st/state"
   : > "$st/state/.subsuper-escalations"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 \
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(cut -f1 "$st/state/.afk-daemon-terminal")" = none ] \
     && [ -e "$st/state/.afk" ] \
     && [ ! -e "$st/state/.subsuper-escalations" ]; then
@@ -493,7 +506,7 @@ unit_native_lifecycle() {
   else
     fail "native lifecycle: state preparation or no-terminal record failed"
   fi
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
   if [ ! -e "$st/state/.afk" ] && [ ! -e "$st/state/.afk-daemon-terminal" ]; then
     pass "native lifecycle: uniform stop clears state without closing a terminal"
   else
@@ -508,7 +521,7 @@ unit_native_entry_preserves_prepared_state() {
   mkdir -p "$st/state"
   : > "$st/state/.afk"
   : > "$st/state/.subsuper-escalations"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_AFK_STATE_PREPARED=1 bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_AFK_STATE_PREPARED=1 bash -c '
     . "$1"
     SQUAD_AFK_DAEMON=/bin/true
     fm_afk_start_main
@@ -526,7 +539,7 @@ unit_close_failure_preserves_record() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-close-fail.XXXXXX")
   mkdir -p "$st/state"
   printf 'tmux\texact-session\towned\n' > "$st/state/.afk-daemon-terminal"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_close_terminal() { return 1; }
     fm_afk_launch_terminal_absent() { return 1; }
@@ -545,7 +558,7 @@ unit_record_publication_atomic() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-record-atomic.XXXXXX")
   mkdir -p "$st/state"
   printf 'tmux\told-session\towned\n' > "$st/state/.afk-daemon-terminal"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     mv() { return 1; }
     ! fm_afk_launch_record_write tmux new-session owned
@@ -565,7 +578,7 @@ unit_malformed_record_fails_closed() {
   mkdir -p "$st/state"
   printf 'tmux\tonly-two-fields\n' > "$st/state/.afk-daemon-terminal"
   acted="$st/acted"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" ACTED="$acted" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" ACTED="$acted" bash -c '
     . "$1"
     fm_afk_launch_close_terminal() { : > "$ACTED"; }
     ! fm_afk_launch_reconcile
@@ -584,7 +597,7 @@ unit_stop_malformed_record_fails_closed() {
   mkdir -p "$st/state"
   : > "$st/state/.afk"
   printf 'tmux\tonly-two-fields\n' > "$st/state/.afk-daemon-terminal"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     ! fm_afk_launch_stop
   ' _ "$LAUNCH" && [ -e "$st/state/.afk" ] && [ -e "$st/state/.afk-daemon-terminal" ]; then
@@ -599,15 +612,15 @@ unit_tmux_planned_record_and_collision() {
   local st first second
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tmux-plan.XXXXXX")
   mkdir -p "$st/state"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
       if [ "$1" = new-session ]; then
         [ -s "$SQUAD_AFK_LAUNCH_RECORD" ] || return 9
-        printf "%s" "$4" > "$SQUAD_HOME/created-name"
+        printf "%s" "$4" > "$SQUAD_BASE/created-name"
         return 1
       fi
-      [ "$1" != kill-session ] || : > "$SQUAD_HOME/killed"
+      [ "$1" != kill-session ] || : > "$SQUAD_BASE/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux commander:0 tmux
@@ -621,11 +634,11 @@ unit_tmux_planned_record_and_collision() {
 
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tmux-unique.XXXXXX")
   mkdir -p "$st/state"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
-      [ "$1" != new-session ] || { printf "%s" "$4" > "$SQUAD_HOME/created-name"; return 1; }
-      [ "$1" != kill-session ] || : > "$SQUAD_HOME/killed"
+      [ "$1" != new-session ] || { printf "%s" "$4" > "$SQUAD_BASE/created-name"; return 1; }
+      [ "$1" != kill-session ] || : > "$SQUAD_BASE/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux commander:0 tmux
@@ -652,7 +665,7 @@ unit_stop_validates_before_signal() {
   mkdir -p "$st/state/.supervise-daemon.lock"
   printf '%s' "$sleeper_pid" > "$st/state/.supervise-daemon.lock/pid"
   ( . "$ROOT/bin/sq-stand-to-lib.sh"; fm_pid_identity "$sleeper_pid" > "$st/state/.supervise-daemon.lock/pid-identity" )
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1 || true
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1 || true
   if kill -0 "$sleeper_pid" 2>/dev/null && [ -e "$st/state/.afk" ]; then
     pass "stop validation: malformed record causes no daemon or state side effects"
   else
@@ -667,7 +680,7 @@ unit_lock_requires_complete_metadata() {
   local st
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-lock-metadata.XXXXXX")
   mkdir -p "$st/state"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_pid_identity() { return 1; }
     ! fm_afk_launch_lock_acquire
@@ -684,7 +697,7 @@ unit_stop_surfaces_afk_removal_failure() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-stop-remove.XXXXXX")
   mkdir -p "$st/state"
   : > "$st/state/.afk"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     rm() { local last=${!#}; [ "$last" != "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; }
     ! fm_afk_launch_stop
@@ -706,7 +719,7 @@ unit_stop_confirms_daemon_exit() {
   daemon_pid=$!
   printf '%s' "$daemon_pid" > "$st/state/.supervise-daemon.lock/pid"
   ( . "$ROOT/bin/sq-stand-to-lib.sh"; fm_pid_identity "$daemon_pid" > "$st/state/.supervise-daemon.lock/pid-identity" )
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     seq() { printf "1\n"; }
     sleep() { :; }
@@ -737,7 +750,7 @@ unit_refresh_validates_record() {
   sleep 30 & daemon_pid=$!
   printf '%s' "$daemon_pid" > "$st/state/.supervise-daemon.lock/pid"
   ( . "$ROOT/bin/sq-stand-to-lib.sh"; fm_pid_identity "$daemon_pid" > "$st/state/.supervise-daemon.lock/pid-identity" )
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET=unused \
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" SQUAD_SUPERVISOR_TARGET=unused \
     SQUAD_SUPERVISOR_BACKEND=tmux bash -c '
       . "$1"
       ! fm_afk_launch_start && ! fm_afk_launch_start_native
@@ -756,7 +769,7 @@ unit_clear_failure_aborts_entry() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-clear-fail.XXXXXX")
   mkdir -p "$st/state"
   : > "$st/state/.subsuper-escalations"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_reconcile() { return 0; }
     fm_afk_clear_stale_artifacts() { return 1; }
@@ -774,7 +787,7 @@ unit_confirmed_absence_succeeds() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-confirmed-absent.XXXXXX")
   mkdir -p "$st/state"
   printf 'tmux\texact-session\towned\n' > "$st/state/.afk-daemon-terminal"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_close_terminal() { return 1; }
     fm_afk_launch_terminal_absent() { return 0; }
@@ -793,7 +806,7 @@ unit_incomplete_restore_retains_backup() {
   mkdir -p "$st/state"
   backup=$(mktemp -d "$st/state/.afk-launch-backup.XXXXXX")
   printf 'prior\n' > "$backup/.afk"
-  if SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     cp() { return 1; }
     ! fm_afk_launch_restore_backup "$2" 1
@@ -809,7 +822,7 @@ unit_flag_write_failure_aborts() {
   local st
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-flag-fail.XXXXXX")
   mkdir -p "$st/state"
-  SQUAD_HOME="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     fm_afk_launch_flag_write() { return 1; }
     ! fm_afk_launch_start_native
@@ -839,7 +852,7 @@ e2e_herdr() {
   export HERDR_SESSION="$SESSION"
   home_tmp=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-e2e-home.XXXXXX")
   E2E_HERDR_CLEANUP() {
-    SQUAD_HOME="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
+    SQUAD_BASE="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
       SQUAD_SUPERVISOR_TARGET="$target" SQUAD_SUPERVISOR_BACKEND=herdr "$LAUNCH" stop >/dev/null 2>&1 || true
     herdr_safe_stop_and_delete "$SESSION" >/dev/null 2>&1 || true
     rm -rf "$home_tmp" 2>/dev/null || true
@@ -857,7 +870,7 @@ e2e_herdr() {
   before=$(fm_backend_herdr_cli "$SESSION" pane list --workspace "$cap_ws" 2>/dev/null | jq --arg t "$cap_tab" '[.result.panes[]?|select(.tab_id==$t)]|length')
   ws_before=$(fm_backend_herdr_cli "$SESSION" workspace list 2>/dev/null | jq '[.result.workspaces[]?]|length')
 
-  SQUAD_HOME="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
+  SQUAD_BASE="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
     SQUAD_SUPERVISOR_TARGET="$target" SQUAD_SUPERVISOR_BACKEND=herdr SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" \
     "$LAUNCH" start >/dev/null 2>&1
 
@@ -871,7 +884,7 @@ e2e_herdr() {
   if [ -n "$dtab" ] && [ "$dtab" != "$cap_tab" ]; then pass "herdr e2e: daemon pane is NOT in the commander's tab"; else fail "herdr e2e: daemon pane shares the commander tab ($dtab)"; fi
   case "$dtgt" in "$SESSION":*) pass "herdr e2e: daemon terminal scoped to the lab session" ;; *) fail "herdr e2e: daemon terminal not in the lab session ($dtgt)" ;; esac
 
-  SQUAD_HOME="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
+  SQUAD_BASE="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
     SQUAD_SUPERVISOR_TARGET="$target" SQUAD_SUPERVISOR_BACKEND=herdr "$LAUNCH" stop >/dev/null 2>&1
 
   after=$(fm_backend_herdr_cli "$SESSION" pane list --workspace "$cap_ws" 2>/dev/null | jq --arg t "$cap_tab" '[.result.panes[]?|select(.tab_id==$t)]|length')
@@ -897,7 +910,7 @@ e2e_tmux() {
   cap_pane=$(tmux display-message -p -t "$cap_session" '#{pane_id}')
   before=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')
 
-  SQUAD_HOME="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
+  SQUAD_BASE="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
     SQUAD_SUPERVISOR_TARGET="$cap_pane" SQUAD_SUPERVISOR_BACKEND=tmux SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" \
     "$LAUNCH" start >/dev/null 2>&1
 
@@ -907,7 +920,7 @@ e2e_tmux() {
   if [ "$before" = "$during" ]; then pass "tmux e2e: commander window pane count unchanged after start (no split-window)"; else fail "tmux e2e: commander window pane count changed ($before -> $during)"; fi
   if [ -n "$rec" ] && tmux has-session -t "$rec" 2>/dev/null && [ "$rec" != "$cap_session" ]; then pass "tmux e2e: daemon launched in a separate detached session"; else fail "tmux e2e: no separate daemon session ($rec)"; fi
 
-  SQUAD_HOME="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
+  SQUAD_BASE="$home_tmp" SQUAD_STATE_OVERRIDE="$home_tmp/state" \
     SQUAD_SUPERVISOR_TARGET="$cap_pane" SQUAD_SUPERVISOR_BACKEND=tmux "$LAUNCH" stop >/dev/null 2>&1
 
   after=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')

@@ -608,10 +608,10 @@ test_peek_output_is_escape_free() {
   # A pane full of styling, including dim ghost text. The plain peek path must
   # surface NONE of these escape codes into Squad's context.
   printf 'normal output line\n\xe2\x9d\xaf \033[2mpredicted next prompt\033[0m\n' > "$capture"
-  # Empty SQUAD_HOME so sq-guard.sh finds no in-flight task and stays silent.
+  # Empty SQUAD_BASE so sq-guard.sh finds no in-flight task and stays silent.
   home="$dir/home"; mkdir -p "$home/state"
   # Pass an explicit session:window so resolution needs no metadata.
-  out=$(PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_STYLED="$capture" \
+  out=$(PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_STYLED="$capture" \
         "$PEEK" "sess:win" 2>/dev/null)
   case "$out" in
     *"$ESC"*) fail "sq-peek surfaced ANSI escape codes into LLM-facing output" ;;

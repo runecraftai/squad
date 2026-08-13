@@ -33,7 +33,7 @@ HOME_N=0
 
 # --- fixtures ---------------------------------------------------------------
 
-# new_home: fresh isolated SQUAD_HOME with an empty projects/ dir. Each test gets its
+# new_home: fresh isolated SQUAD_BASE with an empty projects/ dir. Each test gets its
 # own so the whole-unit form never sees another test's clones.
 new_home() {
   HOME_N=$((HOME_N + 1))
@@ -87,7 +87,7 @@ head_sha() { git -C "$1" rev-parse HEAD; }
 run_sync() {
   local home=$1
   shift
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-unit-sync.sh" "$@" 2>/dev/null
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-unit-sync.sh" "$@" 2>/dev/null
 }
 
 # --- packed-refs.lock fixtures ----------------------------------------------
@@ -190,7 +190,7 @@ run_sync_guarded() {
   shift 4
   realgit=$(command -v git)
   PATH="$fakebin:$PATH" REAL_GIT_FOR_TEST="$realgit" \
-  SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/sq-unit-sync.sh" "$@" >"$outf" 2>"$errf"
 }
 
@@ -463,7 +463,7 @@ test_bootstrap_relays_recovered_and_stuck() {
 
   # Full bootstrap: no state/ dir -> XO sync no-ops; no .env -> X mode off.
   # We only assert the unit-sync relay lines; other detect lines are irrelevant.
-  out=$(SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
+  out=$(SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
   assert_contains "$out" "UNIT_SYNC: stuck-clone: STUCK:" "bootstrap relays the STUCK outcome"
   assert_contains "$out" "UNIT_SYNC: rec-clone: recovered:" "bootstrap relays the recovered outcome"

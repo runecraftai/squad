@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Shared fast-forward machinery for Squad self-sync.
-# Usage: . bin/sq-ff-lib.sh   (after SQUAD_ROOT and SQUAD_HOME are set)
+# Usage: . bin/sq-ff-lib.sh   (after SQUAD_ROOT and SQUAD_BASE are set)
 #
 # This is the one implementation of "advance a Squad checkout to a base by a
 # clean fast-forward, never forcing, merging, or stashing" used by every sync
@@ -129,7 +129,7 @@ validate_XO_home() {
     VALIDATION_ERROR="not a directory"
     return 1
   }
-  abs_active_home=$(resolved_existing_dir "$SQUAD_HOME") || {
+  abs_active_home=$(resolved_existing_dir "$SQUAD_BASE") || {
     VALIDATION_ERROR="active Squad home is not a directory"
     return 1
   }
@@ -411,7 +411,7 @@ process_XO() {
 # FF_NUDGE_WINDOWS / FF_SEEN_HOMES, which the caller resets before and reads after.
 # The registry argument is only for home= fallback on older or incomplete meta records.
 sweep_live_XO_metas() {
-  local state=$1 base_mode=$2 nudge_requires_instr=${3:-no} registry=${4:-$SQUAD_HOME/data/XOs.md} id home window meta
+  local state=$1 base_mode=$2 nudge_requires_instr=${3:-no} registry=${4:-$SQUAD_BASE/data/XOs.md} id home window meta
   [ -d "$state" ] || return 0
   while IFS='|' read -r id home window meta; do
     if grep -q '^remote_host=.' "$meta" 2>/dev/null; then continue; fi

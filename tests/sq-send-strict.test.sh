@@ -3,7 +3,7 @@
 #
 # A send that cannot be tied to a recorded task/lane or to an explicit
 # well-formed backend target must fail loudly. These tests pin the historical
-# silent-fallback failures: missing SQUAD_HOME, unresolved selectors, prefixless
+# silent-fallback failures: missing SQUAD_BASE, unresolved selectors, prefixless
 # herdr pane ids, dead explicit endpoints, and the healthy exact/sq-id paths.
 # They also verify that a key send reports whether delivery actually succeeded.
 set -u
@@ -97,7 +97,7 @@ test_exact_lane_id_send_still_works() {
   fb=$(make_stubs "$dir"); home=$(setup_home exact); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
   fm_write_meta "$home/state/mpf-lane-m8.meta" "window=sess:sq-mpf-lane-m8" "kind=strike"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" mpf-lane-m8 "lost dispatch" >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "exact task id send should succeed when metadata exists"
   got=$(cat "$log")
@@ -111,12 +111,12 @@ test_unset_fm_home_fails() {
   dir="$TMP_ROOT/nohome"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
 
-  env -u SQUAD_HOME PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$dir" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env -u SQUAD_BASE -u SQUAD_HOME PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$dir" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" sess:win "hello" >/dev/null 2>"$err"; rc=$?
-  [ "$rc" -ne 0 ] || fail "unset SQUAD_HOME should fail"
-  assert_contains "$(cat "$err")" "SQUAD_HOME is not set" "unset SQUAD_HOME diagnostic should be explicit"
-  [ ! -s "$log" ] || fail "unset SQUAD_HOME still attempted a send"$'\n'"$(cat "$log")"
-  pass "sq-send strict: unset SQUAD_HOME fails before target resolution"
+  [ "$rc" -ne 0 ] || fail "unset SQUAD_BASE and legacy SQUAD_HOME should fail"
+  assert_contains "$(cat "$err")" "SQUAD_BASE is not set" "unset SQUAD_BASE diagnostic should be explicit"
+  [ ! -s "$log" ] || fail "unset SQUAD_BASE and legacy SQUAD_HOME still attempted a send"$'\n'"$(cat "$log")"
+  pass "sq-send strict: unset SQUAD_BASE and legacy SQUAD_HOME fails before target resolution"
 }
 
 test_unresolvable_target_does_not_tmux_fallback() {
@@ -124,7 +124,7 @@ test_unresolvable_target_does_not_tmux_fallback() {
   dir="$TMP_ROOT/unresolved"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); home=$(setup_home unresolved); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_FAKE_TMUX_WINDOW=lost-target SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_FAKE_TMUX_WINDOW=lost-target SQUAD_SEND_SETTLE=0 \
     "$SEND" lost-target "hello" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "unresolvable target should fail"
   assert_contains "$(cat "$err")" "not resolvable" "unresolvable diagnostic should be loud"
@@ -141,7 +141,7 @@ test_prefixless_herdr_pane_id_fails() {
   fm_write_meta "$home/state/nudge.meta" \
     "window=default:wB:p2" "backend=herdr" "herdr_session=default" "herdr_pane_id=wB:p2" "kind=strike"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" wB:p2 "nudge" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "prefixless herdr pane id should fail"
   assert_contains "$(cat "$err")" "matches herdr_pane_id" "herdr pane diagnostic should name the meta match"
@@ -156,7 +156,7 @@ test_unmatched_single_colon_target_must_exist() {
   dir="$TMP_ROOT/dead-explicit"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); home=$(setup_home deadexplicit); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_FAKE_TMUX_DEAD_TARGET=sess:missing SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_FAKE_TMUX_DEAD_TARGET=sess:missing SQUAD_SEND_SETTLE=0 \
     "$SEND" sess:missing "hello" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "dead explicit tmux-shaped target should fail"
   assert_contains "$(cat "$err")" "not a live tmux endpoint" "dead explicit target diagnostic should name the assumed backend"
@@ -172,7 +172,7 @@ test_fm_prefixed_herdr_session_is_an_explicit_target() {
   : > "$log"
   : > "$herdr_log"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_HERDR_LOG="$herdr_log" SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_HERDR_LOG="$herdr_log" SQUAD_SEND_SETTLE=0 \
     "$SEND" sq-remote:w1:p2 --key Enter >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "an sq-prefixed Herdr session target should be accepted as explicit"
   assert_grep 'pane get w1:p2 --session sq-remote' "$herdr_log" "sq-prefixed Herdr target was not verified in its session"
@@ -187,7 +187,7 @@ test_healthy_fm_id_send_still_works() {
   fb=$(make_stubs "$dir"); home=$(setup_home healthy); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
   fm_write_meta "$home/state/lane-ok.meta" "window=sess:sq-lane-ok" "kind=strike" "harness=codex"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" sq-lane-ok "hello commander" >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "healthy sq-id send should succeed"
   got=$(cat "$log")
@@ -210,13 +210,13 @@ test_key_send_exit_status_follows_delivery() {
   fb=$(make_stubs "$dir"); home=$(setup_home keyexit); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
   fm_write_meta "$home/state/lane-key.meta" "window=sess:sq-lane-key" "kind=strike"
 
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" lane-key --key Escape >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "a delivered --key interrupt should report success"
   assert_contains "$(cat "$log")" "target=sess:sq-lane-key literal=0 arg=Escape" "the delivered case should send the named key"
 
   : > "$log"
-  PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
     SQUAD_FAKE_TMUX_SEND_KEY_FAIL=Escape \
     "$SEND" lane-key --key Escape >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "an undelivered --key interrupt reported success"
@@ -225,8 +225,28 @@ test_key_send_exit_status_follows_delivery() {
   pass "sq-send --key: exit status follows delivery, and an undelivered key never reports success"
 }
 
+# The SQUAD_HOME -> SQUAD_BASE rebrand keeps a permanent read shim: an
+# environment that sets only the legacy SQUAD_HOME (SQUAD_BASE unset) must
+# resolve the base and deliver exactly like the primary path. This is the
+# fallback half of the resolution contract.
+test_legacy_squad_home_only_still_resolves() {
+  local dir fb home err log rc got
+  dir="$TMP_ROOT/legacy-home"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home legacyhome); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-legacy.meta" "window=sess:sq-lane-legacy" "kind=strike" "harness=codex"
+
+  env -u SQUAD_BASE PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    "$SEND" sq-lane-legacy "legacy home hello" >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "SQUAD_HOME-only send should resolve through the permanent shim"
+  got=$(cat "$log")
+  assert_contains "$got" "target=sess:sq-lane-legacy literal=1 arg=legacy home hello" "SQUAD_HOME-only send should type literal text to the meta target"
+  assert_contains "$got" "target=sess:sq-lane-legacy literal=0 arg=Enter" "SQUAD_HOME-only send should submit with Enter"
+  pass "sq-send strict: legacy SQUAD_HOME-only environment still resolves and sends"
+}
+
 test_exact_lane_id_send_still_works
 test_key_send_exit_status_follows_delivery
+test_legacy_squad_home_only_still_resolves
 test_unset_fm_home_fails
 test_unresolvable_target_does_not_tmux_fallback
 test_prefixless_herdr_pane_id_fails

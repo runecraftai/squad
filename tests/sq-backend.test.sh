@@ -650,7 +650,7 @@ run_send_case() {  # <bin-root> <fakebin> <log> <home> -- <send args...>
   local bin=$1 fb=$2 log=$3 home=$4; shift 4
   [ "${1:-}" = -- ] && shift
   : > "$log"
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$bin" SQUAD_HOME="$home" SQUAD_TMUX_LOG="$log" \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$bin" SQUAD_BASE="$home" SQUAD_HOME="$home" SQUAD_TMUX_LOG="$log" \
     SQUAD_SEND_SETTLE=0 SQUAD_SEND_SLEEP=0 \
     "$bin/bin/sq-send.sh" "$@" >/dev/null 2>&1
 }
@@ -745,10 +745,10 @@ test_peek_conformance_old_vs_new() {
   neutral_root="$TMP_ROOT/peek-neutral-root"; mkdir -p "$neutral_root"
 
   : > "$log_old"
-  out_old=$(PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$neutral_root" SQUAD_HOME="$home" SQUAD_TMUX_LOG="$log_old" \
+  out_old=$(PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$neutral_root" SQUAD_BASE="$home" SQUAD_HOME="$home" SQUAD_TMUX_LOG="$log_old" \
     "$old_bin/bin/sq-peek.sh" "sess:win" 25 2>/dev/null)
   : > "$log_new"
-  out_new=$(PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$neutral_root" SQUAD_HOME="$home" SQUAD_TMUX_LOG="$log_new" \
+  out_new=$(PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$neutral_root" SQUAD_BASE="$home" SQUAD_HOME="$home" SQUAD_TMUX_LOG="$log_new" \
     "$ROOT/bin/sq-peek.sh" "sess:win" 25 2>/dev/null)
 
   [ "$out_old" = "$out_new" ] || fail "sq-peek output differs old vs new"$'\n'"--- old ---"$'\n'"$out_old"$'\n'"--- new ---"$'\n'"$out_new"
@@ -1006,7 +1006,7 @@ test_spawn_refuses_unknown_backend_flag() {
   local out status
   # bogus names a backend with no adapter at all; zellij and orca both
   # graduated to real adapters and have their own spawn tests.
-  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
+  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_BASE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/sq-spawn.sh" nope-backend-z1 projects/none claude --mode drill --yolo off --backend bogus 2>&1)
   status=$?
@@ -1017,7 +1017,7 @@ test_spawn_refuses_unknown_backend_flag() {
 
 test_spawn_refuses_codex_app_backend_flag() {
   local out status
-  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
+  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_BASE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/sq-spawn.sh" nope-codex-app-z1 projects/none claude --mode drill --yolo off --backend codex-app 2>&1)
   status=$?
@@ -1028,7 +1028,7 @@ test_spawn_refuses_codex_app_backend_flag() {
 
 test_spawn_refuses_unknown_fm_backend_env() {
   local out status
-  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
+  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_BASE='' SQUAD_HOME='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_SPAWN_NO_GUARD=1 SQUAD_BACKEND=bogus \
     "$ROOT/bin/sq-spawn.sh" nope-backend-z2 projects/none claude --mode drill --yolo off 2>&1)
   status=$?

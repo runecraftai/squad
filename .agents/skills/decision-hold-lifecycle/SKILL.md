@@ -19,7 +19,7 @@ The agent performs the semantic inventory because scripts must not infer decisio
 Give each distinct unresolved decision a stable privacy-safe key, register it through `bin/sq-decision-hold.sh hold`, and use the same key on retry so registration is idempotent while different decisions retain different durable identities.
 After inventorying the whole report and review surface, run `bin/sq-decision-hold.sh complete` with every unresolved key, or with `--none` only when the reviewed surface contains no unresolved commander decision.
 A completed investigation and an ended visual review use this same owner and completion command; a visual tool, including Lavish, never owns a parallel completion policy.
-Run the command in the originating work's authoritative `SQUAD_HOME`; main-base work creates main-base holds, and XO-owned work creates holds in that XO base's backlog rather than copying them into the main backlog.
+Run the command in the originating work's authoritative `SQUAD_BASE`; main-base work creates main-base holds, and XO-owned work creates holds in that XO base's backlog rather than copying them into the main backlog.
 Do not close a hold merely because the originating investigation completed, its report was archived, its visual review ended, or its task was torn down.
 The hold remains the authoritative Commander's Call item until the commander's answer is durably recorded, dependent work is created in the same backlog and blocked by that hold, and `bin/sq-decision-hold.sh resolve` routes the answer by clearing those dependency edges before closing the hold.
 Resolved findings, recommendations that need no commander choice, and prose that merely sounds decision-like do not create holds.

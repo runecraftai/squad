@@ -37,7 +37,7 @@ Under the Claude Stop auto-arm model a beacon fresh within grace is healthy even
 Under every persistent-sentry harness a live identity-matched sentry with a fresh beacon is still required, so the pull guard keeps the same strict semantics there.
 Its banner names the true failing condition, either a missing live sentry process or a genuinely stale beacon with its real age, and keys the once-per-episode dedup on that condition rather than the beacon mtime.
 
-`SQUAD_STATE_OVERRIDE` wins over `SQUAD_HOME/state`, and `SQUAD_HOME` wins over repository-root `state/`.
+`SQUAD_STATE_OVERRIDE` wins over `SQUAD_BASE/state`, and `SQUAD_BASE` wins over repository-root `state/`.
 `SQUAD_GUARD_GRACE` controls beacon freshness and defaults to 300 seconds.
 If `jq` is missing or hook stdin is empty, the guard exits 0 because it cannot safely read loop-guard fields.
 
@@ -110,7 +110,7 @@ That warning uses `bin/sq-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Regression coverage
 
-`tests/sq-turnend-guard.test.sh` covers the predicate, main and XO primary scope, child-worktree exclusion, `SQUAD_HOME` and `SQUAD_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
+`tests/sq-turnend-guard.test.sh` covers the predicate, main and XO primary scope, child-worktree exclusion, `SQUAD_BASE` and `SQUAD_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/sq-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the auto-arm model's healthy fresh-beacon-without-a-sentry case and its stale-beacon alarm, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
 `tests/sq-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/sq-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.

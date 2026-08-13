@@ -1630,7 +1630,7 @@ else
       set +e
       export TMPDIR="$work/tmp"
       export TMP="$work/tmp"
-      unset SQUAD_HOME SQUAD_STATE_OVERRIDE SQUAD_DATA_OVERRIDE SQUAD_ROOT_OVERRIDE \
+      unset SQUAD_BASE SQUAD_HOME SQUAD_STATE_OVERRIDE SQUAD_DATA_OVERRIDE SQUAD_ROOT_OVERRIDE \
         SQUAD_PROJECTS_OVERRIDE SQUAD_CONFIG_OVERRIDE SQUAD_BACKEND 2>/dev/null || true
       cd "$ROOT" || exit 1
       begin_ms=$(now_ms)

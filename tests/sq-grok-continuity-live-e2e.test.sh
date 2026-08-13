@@ -73,7 +73,7 @@ mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
 printf 'project=fixture\n' > "$HOME_DIR/state/grok-e2e.meta"
 
 "$TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -c "$PROJECT" \
-  "env SQUAD_HOME='$HOME_DIR' SQUAD_ROOT_OVERRIDE='$PROJECT' SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=0 SQUAD_HEARTBEAT=600 bash -lc 'printf \"%s\\n\" \"\$\$\" > \"\$SQUAD_HOME/state/.lock\"; grok --trust --always-approve --reasoning-effort low; rc=\$?; printf \"GROK_EXIT=%s\\n\" \"\$rc\"; sleep 300'"
+  "env SQUAD_BASE='$HOME_DIR' SQUAD_ROOT_OVERRIDE='$PROJECT' SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=0 SQUAD_HEARTBEAT=600 bash -lc 'printf \"%s\\n\" \"\$\$\" > \"\$SQUAD_BASE/state/.lock\"; grok --trust --always-approve --reasoning-effort low; rc=\$?; printf \"GROK_EXIT=%s\\n\" \"\$rc\"; sleep 300'"
 
 wait_for_text "Grok Build" 180 || fail "Grok did not reach its ready composer"
 sleep 1

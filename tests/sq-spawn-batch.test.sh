@@ -19,7 +19,7 @@ export SQUAD_BACKEND=tmux
 # Clear ambient Squad overrides so the behavior test owns its environment.
 run_spawn() {
   SQUAD_ROOT_OVERRIDE='' \
-    SQUAD_HOME='' \
+    SQUAD_BASE='' \
     SQUAD_STATE_OVERRIDE='' \
     SQUAD_DATA_OVERRIDE='' \
     SQUAD_PROJECTS_OVERRIDE='' \
@@ -86,12 +86,12 @@ test_projects_path_scoping() {
     mkdir -p "$home/data" "$projects/alpha"
     if [ "$use_override" = yes ]; then
       out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' \
-        SQUAD_HOME="$home" SQUAD_PROJECTS_OVERRIDE="$projects" SQUAD_SPAWN_NO_GUARD=1 \
+        SQUAD_BASE="$home" SQUAD_PROJECTS_OVERRIDE="$projects" SQUAD_SPAWN_NO_GUARD=1 \
         "$SPAWN" "$id" projects/alpha codex --mode drill --yolo off 2>&1)
     else
       mkdir -p "$home/projects/alpha"
       out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' \
-        SQUAD_HOME="$home" SQUAD_SPAWN_NO_GUARD=1 \
+        SQUAD_BASE="$home" SQUAD_SPAWN_NO_GUARD=1 \
         "$SPAWN" "$id" projects/alpha codex --mode drill --yolo off 2>&1)
     fi
     status=$?
@@ -102,7 +102,7 @@ test_projects_path_scoping() {
     printf '%s\n' "$out" | grep -F 'cd: projects/alpha' >/dev/null \
       && fail "$label: spawn resolved projects/alpha from the caller cwd"
   done <<'ROWS'
-SQUAD_HOME scopes projects/|no|nope-home-z7
+SQUAD_BASE scopes projects/|no|nope-home-z7
 SQUAD_PROJECTS_OVERRIDE scopes projects/|yes|nope-override-z8
 ROWS
   pass "projects/ paths are scoped through the Squad home for single-task spawn"

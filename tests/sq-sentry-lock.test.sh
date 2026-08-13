@@ -423,7 +423,7 @@ test_watch_restart_rejects_reused_pid() {
   printf '%s\n' "$dir" > "$state/.sentry.lock/sq-home"
   printf '%s\n' "$WATCH" > "$state/.sentry.lock/sentry-path"
   printf '%s\n' "stale sentry identity" > "$state/.sentry.lock/pid-identity"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" --restart > "$out" &
+  PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" --restart > "$out" &
   pid=$!
   # The honest arm forks the fresh sentry as a tracked child and waits on it, so
   # the lock now names that child, not the arm invocation. The property is the
@@ -474,7 +474,7 @@ test_watch_restart_attaches_to_healthy_peer() {
   printf '%s\n' "$WATCH" > "$state/.sentry.lock/sentry-path"
   printf '%s\n' "$identity" > "$state/.sentry.lock/pid-identity"
   touch "$state/.last-sentry-beat"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 SQUAD_ARM_ATTACH_POLL=0.1 SQUAD_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" &
+  PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 SQUAD_ARM_ATTACH_POLL=0.1 SQUAD_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" &
   armpid=$!
   i=0
   while [ "$i" -lt 80 ]; do
@@ -655,7 +655,7 @@ test_arm_starts_and_self_heals() {
       printf '%s\n' "dead sentry identity" > "$state/.sentry.lock/pid-identity"
       touch "$state/.last-sentry-beat"
     fi
-    PATH="$fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+    PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
     armpid=$!
     i=0
     while [ "$i" -lt 80 ]; do
@@ -683,7 +683,7 @@ test_arm_hup_cleans_child_and_temp_output() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   armout="$dir/arm.out"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+  PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
   armpid=$!
   i=0
   while [ "$i" -lt 80 ]; do
@@ -750,7 +750,7 @@ test_arm_waits_for_peer_beacon_after_child_stands_down() {
   printf '%s\n' "$dir" > "$state/.sentry.lock/sq-home"
   printf '%s\n' "$WATCH" > "$state/.sentry.lock/sentry-path"
   printf '%s\n' "$identity" > "$state/.sentry.lock/pid-identity"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 SQUAD_ARM_CONFIRM_TIMEOUT=1 SQUAD_ARM_ATTACH_POLL=0.1 "$WATCH_ARM" > "$armout" &
+  PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 SQUAD_ARM_CONFIRM_TIMEOUT=1 SQUAD_ARM_ATTACH_POLL=0.1 "$WATCH_ARM" > "$armout" &
   armpid=$!
   # Synchronize on the owned child declining the live peer lock before making
   # the peer healthy. Sleeping for the same one-second budget as the arm made
@@ -885,7 +885,7 @@ test_stopped_sentry_is_live_but_stale_then_exit_is_classified() {
   fakebin="$dir/fakebin"
   armout="$dir/arm.out"
   mark_pr_check_migration_complete "$state"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
+  PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_POLL=5 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
   armpid=$!
   i=0
   while [ "$i" -lt 80 ]; do
@@ -900,7 +900,7 @@ test_stopped_sentry_is_live_but_stale_then_exit_is_classified() {
   touch -t 200001010000 "$state/.last-sentry-beat"
   SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_pid_alive "$2"' _ "$LIB" "$sentry_pid" \
     || fail "SIGSTOP sentry was not classified as a live pid"
-  if SQUAD_HOME="$dir" SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_sentry_healthy "$2" "$3" 300 "$4"' _ "$LIB" "$state" "$WATCH" "$dir"; then
+  if SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_sentry_healthy "$2" "$3" 300 "$4"' _ "$LIB" "$state" "$WATCH" "$dir"; then
     fail "SIGSTOP sentry with a stale beacon was classified healthy"
   fi
 

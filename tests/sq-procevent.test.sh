@@ -33,7 +33,7 @@ printf '%s\n' "$@"
 SH
 chmod +x "$BLOCKER"
 
-pe() { SQUAD_HOME="$1" "$ROOT/bin/sq-procevent.sh" "${@:2}"; }
+pe() { SQUAD_BASE="$1" "$ROOT/bin/sq-procevent.sh" "${@:2}"; }
 
 # Every source this suite registers is tracked so teardown can stop its runner.
 # A runner started by reconcile is detached and reparented, so a source that
@@ -55,7 +55,7 @@ procevent_teardown() {
       *$'\n'"$home"$'\n'*) continue ;;
     esac
     seen+="$home"$'\n'
-    SQUAD_HOME="$home" "$ROOT/bin/sq-procevent.sh" sweep-home >/dev/null 2>&1 || true
+    SQUAD_BASE="$home" "$ROOT/bin/sq-procevent.sh" sweep-home >/dev/null 2>&1 || true
   done
   fm_test_cleanup
 }
@@ -89,7 +89,7 @@ wait_for() {  # <file> [tries]
 
 hold_source_lock() {  # <source-id> <ready-file> <release-file>
   local id=$1 ready=$2 release=$3 parent=$$
-  SQUAD_HOME="$TMP_ROOT/lock-helper-home" bash -c '
+  SQUAD_BASE="$TMP_ROOT/lock-helper-home" bash -c '
     . "$1/bin/sq-pr-lib.sh"
     . "$1/bin/sq-stand-to-lib.sh"
     . "$1/bin/sq-procevent-lib.sh"
@@ -106,7 +106,7 @@ hold_source_lock() {  # <source-id> <ready-file> <release-file>
 
 hold_source_lock_then_handle() {  # <home> <source-id> <sequence> <ready-file> <release-file>
   local home=$1 id=$2 seq=$3 ready=$4 release=$5 parent=$$
-  SQUAD_HOME="$home" bash -c '
+  SQUAD_BASE="$home" bash -c '
     . "$1/bin/sq-pr-lib.sh"
     . "$1/bin/sq-stand-to-lib.sh"
     . "$1/bin/sq-procevent-lib.sh"
@@ -217,7 +217,7 @@ waitpid($sibling, 0);
 exit 0;
 PL
 pe_register "$HPG" lavish shared-src -- "$BLOCKER" "$SHARED_TRIGGER" "shared result" >/dev/null
-SQUAD_HOME="$HPG" perl "$SHARED_LAUNCHER" "$SHARED_SIBLING" \
+SQUAD_BASE="$HPG" perl "$SHARED_LAUNCHER" "$SHARED_SIBLING" \
   "$ROOT/bin/sq-procevent.sh" start shared-src > "$TMP_ROOT/shared-start.out" &
 shared_launcher=$!
 wait_for "$SHARED_SIBLING" || fail "shared caller group never started its unrelated sibling"
@@ -343,7 +343,7 @@ cat > "$ADAPTER_ROOT/bin/sq-procevent-applying.sh" <<'SH'
 #!/usr/bin/env bash
 case "${1-}" in
   autohandle)
-    printf '%s %s\n' "$2" "$3" >> "$SQUAD_HOME/state/applied"
+    printf '%s %s\n' "$2" "$3" >> "$SQUAD_BASE/state/applied"
     "$SQUAD_PROCEVENT_UNDER_TEST" handled "$2" "$3" >/dev/null
     ;;
   *) exit 2 ;;
@@ -356,7 +356,7 @@ pe_adapter() {  # <home> <command>...: run the runner against the fixture adapte
   local home=$1
   shift
   SQUAD_ROOT_OVERRIDE="$ADAPTER_ROOT" SQUAD_PROCEVENT_UNDER_TEST="$ROOT/bin/sq-procevent.sh" \
-    SQUAD_HOME="$home" "$ROOT/bin/sq-procevent.sh" "$@"
+    SQUAD_BASE="$home" "$ROOT/bin/sq-procevent.sh" "$@"
 }
 
 HPUBLISH="$TMP_ROOT/hpublish"; new_home "$HPUBLISH"
@@ -371,7 +371,7 @@ rmdir "$HPUBLISH/state/.stand-to-queue"
 out=$(pe_adapter "$HPUBLISH" reconcile)
 assert_contains "$out" "published=1" "the unpublished capture was not announced on later reconciliation"
 assert_contains "$(wake_payloads "$HPUBLISH")" "procevent applying publish-src 1" "later reconciliation did not deliver the capture to a handler"
-SQUAD_HOME="$HPUBLISH" SQUAD_PROCEVENT_UNDER_TEST="$ROOT/bin/sq-procevent.sh" \
+SQUAD_BASE="$HPUBLISH" SQUAD_PROCEVENT_UNDER_TEST="$ROOT/bin/sq-procevent.sh" \
   "$ADAPTER_ROOT/bin/sq-procevent-applying.sh" autohandle publish-src 1 \
     "$HPUBLISH/state/procevent-inbox/publish-src.1.result"
 assert_grep 'publish-src 1' "$HPUBLISH/state/applied" "the handler could not apply the later announcement"
@@ -498,7 +498,7 @@ REVIEW_ART="$TMP_ROOT/review.html"
 printf '<h1>review</h1>\n' > "$REVIEW_ART"
 lavish_id=$("$ROOT/bin/sq-procevent-lavish.sh" source-id "$REVIEW_ART")
 PE_TRACKED+=("$HLT|$lavish_id")
-PATH="$LAVISH_BIN:$PATH" SQUAD_HOME="$HLT" "$ROOT/bin/sq-procevent-lavish.sh" arm "$REVIEW_ART" >/dev/null
+PATH="$LAVISH_BIN:$PATH" SQUAD_BASE="$HLT" "$ROOT/bin/sq-procevent-lavish.sh" arm "$REVIEW_ART" >/dev/null
 for _ in $(seq 1 6); do
   PATH="$LAVISH_BIN:$PATH" pe "$HLT" reconcile >/dev/null
   sleep 0.3
@@ -514,7 +514,7 @@ assert_absent "$HLT/state/procevent/$lavish_id.source" "the ended review source 
 assert_absent "$SQUAD_PROCEVENT_CLAIM_ROOT/$lavish_id.claim" "the ended review releases its owned claim"
 LAVISH_RESULT=$(first_result "$HLT" "$lavish_id" || true)
 assert_grep 'ship it' "$LAVISH_RESULT" "automatic retirement retains the human's final feedback"
-out=$(PATH="$LAVISH_BIN:$PATH" SQUAD_HOME="$HLT" "$ROOT/bin/sq-procevent-lavish.sh" retire "$REVIEW_ART")
+out=$(PATH="$LAVISH_BIN:$PATH" SQUAD_BASE="$HLT" "$ROOT/bin/sq-procevent-lavish.sh" retire "$REVIEW_ART")
 assert_contains "$out" "retired: $lavish_id" "explicit adapter retirement stays supported after automatic retirement"
 pass "one Send & End yields exactly one captured result, automatic retirement, and no recurring poll"
 
@@ -590,7 +590,7 @@ expected=$(printf '%s\n' \
   "$HP/state/procevent-inbox/ordered-src.10.result")
 [ "$pending" = "$expected" ] || fail "pending results were not emitted in numeric sequence order: $pending"
 pe "$HP" reconcile >/dev/null
-deduped=$(SQUAD_HOME="$HP" bash -c '
+deduped=$(SQUAD_BASE="$HP" bash -c '
   . "$1/bin/sq-stand-to-lib.sh"
   fm_wake_print_deduped "$2/state/.stand-to-queue" | awk -F "\t" "{print \$5}"
 ' _ "$ROOT" "$HP")
@@ -966,7 +966,7 @@ pass "nonzero exit with no output stays armed and silent"
 HF="$TMP_ROOT/hf"; new_home "$HF"
 # shellcheck disable=SC2016  # single quotes are deliberate: the child shell expands this.
 pe_register "$HF" lavish big-src -- /bin/sh -c 'printf "x%.0s" $(seq 1 5000)' >/dev/null
-SQUAD_PROCEVENT_MAX_OUTPUT_BYTES=100 SQUAD_HOME="$HF" "$ROOT/bin/sq-procevent.sh" start big-src >/dev/null 2>&1
+SQUAD_PROCEVENT_MAX_OUTPUT_BYTES=100 SQUAD_BASE="$HF" "$ROOT/bin/sq-procevent.sh" start big-src >/dev/null 2>&1
 RB=$(first_result "$HF" big-src || true)
 [ -n "$RB" ] || fail "bounded output was not captured at all"
 [ "$(wc -c < "$RB" | tr -d ' ')" -le 100 ] || fail "output bound was not enforced"
@@ -1016,13 +1016,13 @@ pass "invalid output bounds fail closed"
 # --- the Lavish adapter uses the published poll shape -----------------------
 ART="$TMP_ROOT/artifact.html"
 printf '<h1>fixture</h1>\n' > "$ART"
-sid=$(SQUAD_HOME="$TMP_ROOT/hg" "$ROOT/bin/sq-procevent-lavish.sh" source-id "$ART")
+sid=$(SQUAD_BASE="$TMP_ROOT/hg" "$ROOT/bin/sq-procevent-lavish.sh" source-id "$ART")
 case "$sid" in lavish-*) : ;; *) fail "adapter source id has an unexpected shape: $sid" ;; esac
-sid2=$(SQUAD_HOME="$TMP_ROOT/hg" "$ROOT/bin/sq-procevent-lavish.sh" source-id "$ART")
+sid2=$(SQUAD_BASE="$TMP_ROOT/hg" "$ROOT/bin/sq-procevent-lavish.sh" source-id "$ART")
 [ "$sid" = "$sid2" ] || fail "adapter source id is not stable"
 ART_ALIAS="$TMP_ROOT/artifact-alias.html"
 ln -s "$ART" "$ART_ALIAS"
-sid3=$(SQUAD_HOME="$TMP_ROOT/hg" "$ROOT/bin/sq-procevent-lavish.sh" source-id "$ART_ALIAS")
+sid3=$(SQUAD_BASE="$TMP_ROOT/hg" "$ROOT/bin/sq-procevent-lavish.sh" source-id "$ART_ALIAS")
 [ "$sid" = "$sid3" ] || fail "a final-component symlink produced a second source id"
 ART_NEWLINE="$TMP_ROOT/line-ending"$'\n'
 printf '<h1>newline fixture</h1>\n' > "$ART_NEWLINE"
@@ -1036,7 +1036,7 @@ pass "the adapter derives physical identity without newline path corruption"
 HS="$TMP_ROOT/hs"; new_home "$HS"
 mkdir -p "$HS/state/procevent"
 : > "$HS/state/procevent/source-only.source"
-guard_out=$(SQUAD_ROOT_OVERRIDE="$TMP_ROOT/guard-root" SQUAD_HOME="$HS" SQUAD_GUARD_GRACE=1 \
+guard_out=$(SQUAD_ROOT_OVERRIDE="$TMP_ROOT/guard-root" SQUAD_BASE="$HS" SQUAD_GUARD_GRACE=1 \
   "$ROOT/bin/sq-guard.sh" 2>&1)
 assert_contains "$guard_out" "WATCHER DOWN - SUPERVISION IS OFF" \
   "the general guard warns when only a process-event source needs supervision"

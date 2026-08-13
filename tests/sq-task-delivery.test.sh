@@ -52,7 +52,7 @@ write_brief() {  # <home> <id> [<recorded-mode>]
 run_spawn() {  # <home> <fakebin> <spawn-args...>
   local home=$1 fakebin=$2
   shift 2
-  SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/projects-unused" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_BACKEND=tmux PATH="$fakebin:$PATH" \
@@ -211,23 +211,23 @@ test_promote_requires_and_records_the_delivery_contract() {
   }
 
   write_scout_meta
-  out=$(SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 2>&1)
+  out=$(SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion without --mode should exit non-zero"
   assert_contains "$out" "promotion requires --mode" "promote refusal did not name the missing mode"
   assert_grep 'kind=recon' "$meta" "refused promotion still changed the task record"
 
-  out=$(SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR 2>&1)
+  out=$(SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion without --yolo should exit non-zero"
   assert_contains "$out" "promotion requires --yolo" "promote refusal did not name the missing approval posture"
 
-  out=$(SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode drill-prod-only --yolo off 2>&1)
+  out=$(SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode drill-prod-only --yolo off 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion on a conditional policy should exit non-zero"
   assert_contains "$out" "classify this task's surface" "promote did not refuse the conditional policy as a task mode"
 
-  out=$(SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR --yolo on 2>&1)
+  out=$(SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR --yolo on 2>&1)
   status=$?
   expect_code 0 "$status" "a promotion carrying both flags should succeed"
   assert_grep 'kind=strike' "$meta" "promotion did not restore ship teardown protection"
@@ -251,23 +251,23 @@ test_project_mode_maps_the_conditional_policy() {
 - flatproj [direct-PR] - fixture (added 2026-01-01)
 - typoproj [no-mistakez] - fixture (added 2026-01-01)
 EOF
-  out=$(SQUAD_HOME="$home" "$PROJECT_MODE" prodproj 2>/dev/null)
+  out=$(SQUAD_BASE="$home" "$PROJECT_MODE" prodproj 2>/dev/null)
   [ "$out" = "drill off" ] || fail "conditional policy did not map to its most rigorous leg (got '$out')"
-  err=$(SQUAD_HOME="$home" "$PROJECT_MODE" prodproj 2>&1 >/dev/null)
+  err=$(SQUAD_BASE="$home" "$PROJECT_MODE" prodproj 2>&1 >/dev/null)
   [ -z "$err" ] || fail "a registered conditional policy still warned as unknown: $err"
 
-  out=$(SQUAD_HOME="$home" "$PROJECT_MODE" yoloproj 2>/dev/null)
+  out=$(SQUAD_BASE="$home" "$PROJECT_MODE" yoloproj 2>/dev/null)
   [ "$out" = "drill on" ] || fail "conditional policy dropped its +yolo posture (got '$out')"
 
-  out=$(SQUAD_HOME="$home" "$PROJECT_MODE" --raw prodproj 2>/dev/null)
+  out=$(SQUAD_BASE="$home" "$PROJECT_MODE" --raw prodproj 2>/dev/null)
   [ "$out" = "drill-prod-only off" ] || fail "--raw did not expose the registered annotation (got '$out')"
 
-  out=$(SQUAD_HOME="$home" "$PROJECT_MODE" --raw flatproj 2>/dev/null)
+  out=$(SQUAD_BASE="$home" "$PROJECT_MODE" --raw flatproj 2>/dev/null)
   [ "$out" = "direct-PR off" ] || fail "--raw altered a flat registered mode (got '$out')"
 
-  out=$(SQUAD_HOME="$home" "$PROJECT_MODE" typoproj 2>/dev/null)
+  out=$(SQUAD_BASE="$home" "$PROJECT_MODE" typoproj 2>/dev/null)
   [ "$out" = "drill off" ] || fail "a typo'd mode no longer falls back to the most rigorous default"
-  err=$(SQUAD_HOME="$home" "$PROJECT_MODE" typoproj 2>&1 >/dev/null)
+  err=$(SQUAD_BASE="$home" "$PROJECT_MODE" typoproj 2>&1 >/dev/null)
   assert_contains "$err" "unknown mode" "a typo'd registry mode stopped warning"
   pass "sq-project-mode: the conditional policy is accepted, mapped for mechanical callers, and readable raw"
 }

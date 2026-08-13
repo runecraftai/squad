@@ -9,7 +9,7 @@ The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it 
 ## Operational base layout and state
 
 This section is the single owner of the top-level operational-base layout; producer script headers and their help own exact child-file fields and mutation contracts.
-The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `SQUAD_HOME` contains private operational directories.
+The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `SQUAD_BASE` contains private operational directories.
 `data/` holds durable private unit records such as the project and XO registries, commander preferences, optional shared commander preferences, learnings, backlog, briefs, and recon reports.
 `state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, sentry and stand-to queue coordination, away-mode state, generated Relay artifacts, private XO config-reread generations with their retry and quarantine state, and parent-owned XO pending-reply records under `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `config/` holds local gitignored operating choices, and `projects/` holds the local project clones that Squad reads but changes only through the narrow guarded and concrete commander-approved exceptions in `AGENTS.md`.
@@ -26,7 +26,7 @@ Ordinary dead-direct-report recovery is owned by `stuck-operator-recovery`, whil
 
 ## Pi Calm preference (config/calm)
 
-The Pi Calm extension stores the commander's base-local presentation choice in gitignored `config/calm` under the effective Squad base, resolved from `SQUAD_HOME`, then `SQUAD_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `SQUAD_CONFIG_OVERRIDE` when that test and specialized-setup override is present.
+The Pi Calm extension stores the commander's base-local presentation choice in gitignored `config/calm` under the effective Squad base, resolved from `SQUAD_BASE`, then legacy `SQUAD_HOME`, then `SQUAD_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `SQUAD_CONFIG_OVERRIDE` when that test and specialized-setup override is present.
 The only values it writes are `on` and `off`, each followed by one newline; an absent, unreadable, or unrecognized value defaults to off.
 The `/calm` command replaces the file atomically before changing live presentation, so a failed write leaves the current choice unchanged rather than claiming persistence.
 The extension reloads this preference on every Pi `session_start`, including startup, new, resume, fork, and reload reasons.
@@ -81,17 +81,17 @@ These five sentences are the single owner of the task-selector vocabulary; backe
 `sq-teardown.sh <id>` takes a task id directly and validates the complete metadata-only endpoint identity before any runtime dispatch or cleanup mutation.
 Missing, empty, duplicate, malformed, backend-inconsistent, or task-mismatched endpoint records are preserved and refused.
 Legacy tmux metadata remains cleanup-compatible when its exact window name is `sq-<id>`; opaque non-tmux endpoints require their recorded `endpoint_task_id=` binding.
-`SQUAD_HOME` determines Herdr's base label: the primary base uses `Squad`, and an XO base marked by `.sq-xo-home` uses `xo-<XO-id>`.
+`SQUAD_BASE` determines Herdr's base label: the primary base uses `Squad`, and an XO base marked by `.sq-xo-home` uses `xo-<XO-id>`.
 [`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
 The local `config/herdr-presentation-spaces` file instead opts a base out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
 The setting is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
 For normal herdr operations, `HERDR_SESSION` selects the named session, but destructive test cleanup must not rely on `HERDR_SESSION` alone.
 Use the explicit guarded cleanup path described in [`docs/herdr-backend.md`](herdr-backend.md) instead of `herdr server stop`.
 For normal zellij operations, `SQUAD_ZELLIJ_SESSION` selects the named session and defaults to `Squad`.
-Zellij has no per-base workspace split: primary and XO tasks share that one session, and visible tab titles are scoped by the active `SQUAD_HOME` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<home-label>-<id>`.
+Zellij has no per-base workspace split: primary and XO tasks share that one session, and visible tab titles are scoped by the active `SQUAD_BASE` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<base-label>-<id>`.
 Use the guarded cleanup path described in [`docs/zellij-backend.md`](zellij-backend.md) instead of `kill-all-sessions` or `delete-all-sessions`.
 cmux has no session layer at all - one workspace per task, in whatever cmux window is open - and its socket password (when configured) is read from local, gitignored `config/cmux-socket-password` under the effective config directory, never committed.
-The caller-facing label remains `sq-<id>`, but the actual cmux workspace title is scoped by the active `SQUAD_HOME` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<home-label>-<id>`.
+The caller-facing label remains `sq-<id>`, but the actual cmux workspace title is scoped by the active `SQUAD_BASE` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<base-label>-<id>`.
 Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), never enumerate-and-close every workspace.
 `config/backend` is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
 
@@ -188,20 +188,21 @@ This does not relax protection for any other untracked file.
 An existing linked-worktree base that predates this rule advances through its marker-only state during its next bootstrap or spawn local sync, after which Git ignores the marker normally.
 A standalone-clone base cannot receive a primary-local commit through that no-fetch sync, so it receives the rule through `/updatesquad`'s origin refresh instead.
 
-## SQUAD_HOME
+## SQUAD_BASE
 
-`SQUAD_HOME` selects the operational base for one Squad instance.
-When it is unset, most scripts use the repo root as the base; when it is set, scripts still run from this repo's `bin/`, but `state/`, `data/`, `config/`, and `projects/` come from `$SQUAD_HOME`.
+`SQUAD_BASE` selects the operational base for one Squad instance.
+When it is unset, most scripts use the repo root as the base; when it is set, scripts still run from this repo's `bin/`, but `state/`, `data/`, `config/`, and `projects/` come from `$SQUAD_BASE`.
+`SQUAD_HOME` remains accepted as a permanent legacy read fallback: when `SQUAD_BASE` is unset or empty, scripts resolve `SQUAD_HOME` instead, and `SQUAD_BASE` always takes precedence when both are set.
 `SQUAD_ROOT_OVERRIDE` overrides the Squad repo root used by scripts, including the primary checkout watched by the worktree-tangle guard.
-When `SQUAD_HOME` is unset, it also behaves as the old whole-root override.
-`bin/sq-send.sh` is intentionally stricter than that general fallback: it requires `SQUAD_HOME` to be set before resolving a target, so operator steers cannot silently resolve against the wrong base.
+When neither `SQUAD_BASE` nor `SQUAD_HOME` is set, `SQUAD_ROOT_OVERRIDE` behaves as the old whole-root override.
+`bin/sq-send.sh` is intentionally stricter than that general fallback: it requires `SQUAD_BASE` (or legacy `SQUAD_HOME`) to be set before resolving a target, so operator steers cannot silently resolve against the wrong base.
 `SQUAD_STATE_OVERRIDE`, `SQUAD_DATA_OVERRIDE`, `SQUAD_PROJECTS_OVERRIDE`, and `SQUAD_CONFIG_OVERRIDE` override individual operational directories for tests and specialized harness setup.
-Before `sq-brief.sh`, `sq-spawn.sh`, or `sq-afk-launch.sh` persists a path or passes it to another process, it resolves each applicable relative `SQUAD_HOME`, `SQUAD_STATE_OVERRIDE`, or `SQUAD_DATA_OVERRIDE` directory against the caller's working directory, preserves absolute spellings unchanged, and rejects an unresolvable relative directory with the offending variable named.
-Bootstrap applies the same relative `SQUAD_HOME` resolution only when embedding that base in the generated Relay poll shim; other transient consumers retain their existing shell-relative behavior.
-For the herdr backend, `SQUAD_HOME` also determines the workspace label used by the adapter.
-For the zellij backend, `SQUAD_HOME` does not split containers, but it determines the readable base prefix embedded in visible tab titles; use `SQUAD_ZELLIJ_SESSION` when a separate zellij session is needed.
+Before `sq-brief.sh`, `sq-spawn.sh`, or `sq-afk-launch.sh` persists a path or passes it to another process, it resolves each applicable relative `SQUAD_BASE` (or legacy `SQUAD_HOME`), `SQUAD_STATE_OVERRIDE`, or `SQUAD_DATA_OVERRIDE` directory against the caller's working directory, preserves absolute spellings unchanged, and rejects an unresolvable relative directory with the offending variable named.
+Bootstrap applies the same relative `SQUAD_BASE` resolution only when embedding that base in the generated Relay poll shim; other transient consumers retain their existing shell-relative behavior.
+For the herdr backend, `SQUAD_BASE` also determines the workspace label used by the adapter.
+For the zellij backend, `SQUAD_BASE` does not split containers, but it determines the readable base prefix embedded in visible tab titles; use `SQUAD_ZELLIJ_SESSION` when a separate zellij session is needed.
 The full zellij base label also includes a short hash of the resolved `SQUAD_ROOT` path.
-For the cmux backend, `SQUAD_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `SQUAD_HOME` determines the default config path and readable base prefix embedded in workspace titles.
+For the cmux backend, `SQUAD_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `SQUAD_BASE` determines the default config path and readable base prefix embedded in workspace titles.
 The full cmux base label also includes a short hash of the resolved `SQUAD_ROOT` path, and there is no per-base container split.
 
 ## Harness support
@@ -497,7 +498,7 @@ If restoration or rearming also fails, teardown returns a distinct status and re
 The sweep retires local registrations and machine-wide claims physically owned by that base through the same identity-checked, generation-bound retirement path, and leaves foreign-base claims untouched.
 Teardown refuses with the base, lease, routing evidence, registrations, claims, and runners retained when identity is uncertain, ownership is unreadable or unreleased, or relevant state exists without a sweep-capable child script.
 Raw manual deletion of a Squad base is unsupported because it can orphan a blocking child.
-To recover, restore that base's tracked `bin/sq-procevent.sh`, run `SQUAD_HOME=<home> <home>/bin/sq-procevent.sh sweep-home`, then rerun the supported teardown.
+To recover, restore that base's tracked `bin/sq-procevent.sh`, run `SQUAD_BASE=<base> <base>/bin/sq-procevent.sh sweep-home`, then rerun the supported teardown.
 
 `SQUAD_PROCEVENT_MAX_OUTPUT_BYTES` (default 1048576) bounds a single captured result while the source runs; oversized output is drained but truncated with a stderr notice rather than staged or published whole or dropped.
 
@@ -514,8 +515,9 @@ Never describe this path as at-least-once, no-loss, or lossless.
 Runtime tuning via environment variables (defaults shown):
 
 ```sh
-SQUAD_HOME=                 # optional operational home for most scripts, unset means this repo root; sq-send requires it explicitly
-SQUAD_ROOT_OVERRIDE=        # override Squad repo root, tangle-guard target, and zellij/cmux home-title hash; also legacy whole-root override when SQUAD_HOME is unset
+SQUAD_BASE=                 # optional operational base for most scripts, unset falls back to legacy SQUAD_HOME, then this repo root; sq-send requires it explicitly
+SQUAD_HOME=                 # legacy alias for SQUAD_BASE, accepted when SQUAD_BASE is unset
+SQUAD_ROOT_OVERRIDE=        # override Squad repo root, tangle-guard target, and zellij/cmux base-title hash; also legacy whole-root override when SQUAD_BASE is unset
 SQUAD_STATE_OVERRIDE=       # alternate state dir, mainly for tests
 SQUAD_DATA_OVERRIDE=        # alternate data dir, mainly for tests
 SQUAD_PROJECTS_OVERRIDE=    # alternate projects dir, mainly for tests
@@ -558,7 +560,7 @@ SQUAD_CREW_STATE_RUNS_LIMIT=200  # recent drill run rows scanned when axi status
 SQUAD_CREW_STATE_BIN=bin/sq-crew-state.sh   # test override for the current-state reader used by working/paused sentry triage
 SQX_PAIRING_TOKEN=      # Relay pairing token; .env opt-in authorizes replies and eligible lifecycle actions
 SQX_RELAY_URL=https://mySquad.io   # optional Relay endpoint override, mainly for local relay development
-SQX_ENV_FILE=           # optional alternate .env file for direct Relay client invocations; bootstrap still checks $SQUAD_HOME/.env
+SQX_ENV_FILE=           # optional alternate .env file for direct Relay client invocations; bootstrap still checks $SQUAD_BASE/.env
 SQX_DRY_RUN=            # truthy previews Relay replies and dismissals to state/x-outbox/ without posting or requiring a token
 SQX_X_REPLY_MAX_CHARS=280   # X reply per-message split budget; values below 50 clamp to 50
 SQX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
@@ -569,8 +571,8 @@ TG_BOT_TOKEN=            # Telegram bridge: bot token from @BotFather (config/te
 TG_ALLOWED_CHAT_IDS=     # Telegram bridge: comma-separated commander Telegram user ids allowed to send requests
 TG_BRIDGE_BIND=127.0.0.1   # Telegram bridge: connector listen address
 TG_BRIDGE_PORT=8787     # Telegram bridge: connector listen port (0 = ephemeral)
-TG_BRIDGE_CONFIG=        # Telegram bridge: alternate env file (default <SQUAD_HOME>/config/telegram-bridge.env)
-TG_BRIDGE_STATE_FILE=    # Telegram bridge: alternate runtime state file (default <SQUAD_HOME>/state/telegram-bridge/state.json)
+TG_BRIDGE_CONFIG=        # Telegram bridge: alternate env file (default <SQUAD_BASE>/config/telegram-bridge.env)
+TG_BRIDGE_STATE_FILE=    # Telegram bridge: alternate runtime state file (default <SQUAD_BASE>/state/telegram-bridge/state.json)
 SQUAD_PF_RETRY_BACKOFF_SECS=900   # seconds before the next attempt after a retryable promised-public-reply delivery error
 SQUAD_LOCK_STALE_AFTER=2   # seconds before dead-pid lock records can be reclaimed; mid-acquire locks keep at least 2s grace
 SQUAD_GUARD_GRACE=300      # seconds before guard warnings, arm health checks, and the primary turn-end guard treat a sentry beacon as stale

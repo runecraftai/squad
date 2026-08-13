@@ -141,10 +141,10 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 XO_REG="$DATA/XOs.md"
 SUB_HOME_MARKER=".sq-xo-home"
 SUB_HOME_PARENT_MARKER=".sq-xo-parent"
@@ -437,7 +437,7 @@ KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=strike
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=drill
-PUBLIC_FOLLOWUP_HOME=$SQUAD_HOME
+PUBLIC_FOLLOWUP_HOME=$SQUAD_BASE
 PUBLIC_FOLLOWUP_STATE=$STATE
 PUBLIC_FOLLOWUP_WORK_HOME=main
 PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
@@ -464,14 +464,14 @@ public_followup_resolve_primary_home() {
   XO_registry_validate_bindings "$registry" XO_registry_path_key "$id" "$child" || return 1
   printf '%s\n' "$parent"
 }
-if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
-  SECOND_MATE_ID=$(sed -n '1p' "$SQUAD_HOME/$SUB_HOME_MARKER")
+if [ -f "$SQUAD_BASE/$SUB_HOME_MARKER" ]; then
+  SECOND_MATE_ID=$(sed -n '1p' "$SQUAD_BASE/$SUB_HOME_MARKER")
   # The durable parent record (written once at seeding, next to the identity
   # marker) names this base's route to its parent: "local" when they share a
   # filesystem, "remote" when the parent lives on another machine. Absent for
   # a base seeded before this record existed, which preserves today's exact
   # env-var-only behavior for that legacy base rather than guessing its route.
-  PARENT_ROUTE_FILE="$SQUAD_HOME/$SUB_HOME_PARENT_MARKER"
+  PARENT_ROUTE_FILE="$SQUAD_BASE/$SUB_HOME_PARENT_MARKER"
   PARENT_ROUTE_RECORD=absent
   PARENT_ROUTE=
   PARENT_ROUTE_HOME=
@@ -495,8 +495,8 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
     # from the file, never from the process environment, so an unrelated
     # export in the remote host's own login shell cannot trigger it the way
     # fm_pf_relay_active's environment-wins rule would.
-    if [ -f "$SQUAD_HOME/.env" ]; then
-      HOME_ENV_TOKEN=$(fmx_env_get SQX_PAIRING_TOKEN "$SQUAD_HOME/.env")
+    if [ -f "$SQUAD_BASE/.env" ]; then
+      HOME_ENV_TOKEN=$(fmx_env_get SQX_PAIRING_TOKEN "$SQUAD_BASE/.env")
       [ -z "$HOME_ENV_TOKEN" ] || PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
     fi
     if [ "$PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE" = 1 ]; then
@@ -523,7 +523,7 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
       && fm_pf_home_id_valid "XO:$SECOND_MATE_ID"; then
       PUBLIC_FOLLOWUP_WORK_HOME="XO:$SECOND_MATE_ID"
       if PUBLIC_FOLLOWUP_HOME=$(public_followup_resolve_primary_home \
-          "$PRIMARY_HOME_CANDIDATE" "$SQUAD_HOME" "$SECOND_MATE_ID"); then
+          "$PRIMARY_HOME_CANDIDATE" "$SQUAD_BASE" "$SECOND_MATE_ID"); then
         PUBLIC_FOLLOWUP_STATE="$PUBLIC_FOLLOWUP_HOME/state"
         PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
         if [ "$FORCE" != "--force" ] \
@@ -543,7 +543,7 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
       if fm_pf_relay_active "$PRIMARY_HOME_CANDIDATE"; then
         PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
       fi
-    elif fm_pf_relay_active "$SQUAD_HOME"; then
+    elif fm_pf_relay_active "$SQUAD_BASE"; then
       PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
     fi
     if [ "$PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE" = 1 ]; then
@@ -551,7 +551,7 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
       if fm_pf_home_id_valid "XO:$SECOND_MATE_ID"; then
         PUBLIC_FOLLOWUP_WORK_HOME="XO:$SECOND_MATE_ID"
         if PUBLIC_FOLLOWUP_HOME=$(public_followup_resolve_primary_home \
-            "$PRIMARY_HOME_CANDIDATE" "$SQUAD_HOME" "$SECOND_MATE_ID"); then
+            "$PRIMARY_HOME_CANDIDATE" "$SQUAD_BASE" "$SECOND_MATE_ID"); then
           PUBLIC_FOLLOWUP_STATE="$PUBLIC_FOLLOWUP_HOME/state"
           PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
           if [ "$FORCE" != "--force" ] \
@@ -570,10 +570,10 @@ if [ -f "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
   fi
 elif [ "$KIND" = xo ]; then
   PUBLIC_FOLLOWUP_WORK_HOME="XO:$ID"
-  if [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_HOME"; then
+  if [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_BASE"; then
     PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
   fi
-elif [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_HOME"; then
+elif [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_BASE"; then
   PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
 fi
 
@@ -1525,7 +1525,7 @@ validate_removal_target() {
   [ -n "$target" ] || return 0
   [ -e "$target" ] || return 0
   abs_target=$(removal_target_abs_path "$target")
-  if abs_home=$(cd "$SQUAD_HOME" 2>/dev/null && pwd -P); then
+  if abs_home=$(cd "$SQUAD_BASE" 2>/dev/null && pwd -P); then
     :
   else
     abs_home=
@@ -1620,7 +1620,7 @@ validate_child_worktree_for_removal() {
   [ -n "$target" ] || return 0
   [ -e "$target" ] || return 0
   abs_target=$(validate_removal_target "$target" "child worktree") || return 1
-  if abs_home=$(cd "$SQUAD_HOME" 2>/dev/null && pwd -P); then
+  if abs_home=$(cd "$SQUAD_BASE" 2>/dev/null && pwd -P); then
     if path_is_ancestor_of "$abs_home" "$abs_target"; then
       echo "REFUSED: unsafe child worktree removal target $target is inside the active Squad home" >&2
       return 1
@@ -1809,7 +1809,7 @@ restore_Squad_home_process_events() {
   if [ ! -f "$runner" ] || [ -L "$runner" ] || [ ! -x "$runner" ]; then
     runner="$SCRIPT_DIR/sq-procevent.sh"
   fi
-  if ! SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" "$runner" reconcile >/dev/null; then
+  if ! SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" "$runner" reconcile >/dev/null; then
     echo "error: process-event restoration could not rearm $label $home; active waits may remain retired; recover registrations from $backup" >&2
     return "$TEARDOWN_PROCEVENT_RESTORE_FAILED"
   fi
@@ -1823,7 +1823,7 @@ cleanup_Squad_home_process_events() {
     echo "REFUSED: $label $home has process-event state but no sweep-capable bin/sq-procevent.sh; restore the home script and rerun teardown" >&2
     return 1
   fi
-  if ! SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" "$runner" sweep-home; then
+  if ! SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" "$runner" sweep-home; then
     echo "REFUSED: process-event cleanup is incomplete for $label $home; preserving the home, lease, and retirement records for retry" >&2
     return 1
   fi
@@ -1840,7 +1840,7 @@ preflight_Squad_home_process_events() {
     echo "REFUSED: $label $home has process-event state but no sweep-capable bin/sq-procevent.sh; restore the home script and rerun teardown" >&2
     return 1
   fi
-  if ! SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$home" "$runner" sweep-home --preflight >/dev/null; then
+  if ! SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" "$runner" sweep-home --preflight >/dev/null; then
     echo "REFUSED: process-event cleanup cannot safely proceed for $label $home; preserving the home, lease, and retirement records for retry" >&2
     return 1
   fi
@@ -2070,7 +2070,7 @@ cleanup_Squad_home_children() {
       elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning base tag, so forced XO
         # cleanup must verify child tabs as that child base, not the parent.
-        ( unset SQUAD_ROOT_OVERRIDE; SQUAD_HOME=$home SQUAD_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" ) 2>/dev/null || true
+        ( unset SQUAD_ROOT_OVERRIDE; SQUAD_BASE=$home SQUAD_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" ) 2>/dev/null || true
       else
         fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" 2>/dev/null || true
       fi
@@ -2176,7 +2176,7 @@ if [ "$KIND" = recon ] && [ "$FORCE" != "--force" ]; then
     echo "The report is the work product. Have the operator write it, or use --force after explicit discard approval." >&2
     exit 1
   fi
-  if ! SQUAD_HOME="$SQUAD_HOME" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_DATA_OVERRIDE="$DATA" \
+  if ! SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_DATA_OVERRIDE="$DATA" \
       SQUAD_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/sq-decision-hold.sh" verify "$ID" >/dev/null; then
     echo "REFUSED: recon task $ID has not passed the unresolved-decision completion gate." >&2
     echo "Inventory its report and any visual review through bin/sq-decision-hold.sh before teardown." >&2
@@ -2197,7 +2197,7 @@ if [ "$FORCE" != "--force" ] \
   && [ -n "$PUBLIC_FOLLOWUP_STATE" ] \
   && [ "$PUBLIC_FOLLOWUP_RELAY_ACTIVE" = 1 ] \
   && fm_pf_has_registrations "$PUBLIC_FOLLOWUP_STATE"; then
-  if ! PUBLIC_FOLLOWUP_BLOCKING=$(SQUAD_HOME="$PUBLIC_FOLLOWUP_HOME" SQUAD_STATE_OVERRIDE="$PUBLIC_FOLLOWUP_STATE" \
+  if ! PUBLIC_FOLLOWUP_BLOCKING=$(SQUAD_BASE="$PUBLIC_FOLLOWUP_HOME" SQUAD_STATE_OVERRIDE="$PUBLIC_FOLLOWUP_STATE" \
       "$SCRIPT_DIR/sq-public-followup.sh" guard-work "$PUBLIC_FOLLOWUP_WORK_HOME" "$ID" 2>/dev/null); then
     echo "REFUSED: task $ID still owes a public reply through the mySquad relay." >&2
     printf '%s\n' "$PUBLIC_FOLLOWUP_BLOCKING" >&2

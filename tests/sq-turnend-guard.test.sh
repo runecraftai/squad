@@ -191,7 +191,7 @@ make_XO_linked_home_dir() {
 run_hook() {
   local dir=$1 stop_active=$2 home
   home=$(cd "$dir" && pwd)
-  printf '{"stop_hook_active":%s}' "$stop_active" | CLAUDECODE=1 SQUAD_HOME="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1
+  printf '{"stop_hook_active":%s}' "$stop_active" | CLAUDECODE=1 SQUAD_BASE="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1
 }
 
 nonexistent_pid() {
@@ -305,7 +305,7 @@ test_hook_non_claude_health_ignores_claude_budget_contention() {
   mkdir -p "$dir/state/.turnend-claude-blocks.lock"
   printf '%s\n' "$holder" > "$dir/state/.turnend-claude-blocks.lock/pid"
   while IFS='|' read -r harness payload; do
-    out=$(printf '%s' "$payload" | SQUAD_HOME="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
+    out=$(printf '%s' "$payload" | SQUAD_BASE="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
     expect_code 0 "$status" "$harness healthy path must ignore Claude budget-lock contention"
     [ -z "$out" ] || fail "$harness healthy path produced output: $out"
     [ "$(cat "$dir/state/.turnend-claude-blocks")" = $'session=claude-episode\ncount=3\nepoch=9' ] \
@@ -368,10 +368,10 @@ test_hook_blocks_from_fm_home_state() {
   home="$TMP_ROOT/hook-sq-home-op"
   mkdir -p "$home/state"
   : > "$home/state/task1.meta"
-  out=$(printf '{"stop_hook_active":false}' | CLAUDECODE=1 SQUAD_HOME="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
-  expect_code 2 "$status" "hook must inspect the active SQUAD_HOME state dir"
+  out=$(printf '{"stop_hook_active":false}' | CLAUDECODE=1 SQUAD_BASE="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "hook must inspect the active SQUAD_BASE state dir"
   assert_contains "$out" "$REQUIRED_REASON" "block reason must contain the exact required instruction"
-  pass "sq-turnend-guard: blocks from active SQUAD_HOME state, not only repo-root state"
+  pass "sq-turnend-guard: blocks from active SQUAD_BASE state, not only repo-root state"
 }
 
 test_hook_x_mode_reason_sources_cadence() {
@@ -403,10 +403,10 @@ test_hook_ignores_repo_state_when_fm_home_set() {
   home="$TMP_ROOT/hook-sq-home-quiet"
   mkdir -p "$home/state"
   : > "$dir/state/task1.meta"
-  out=$(printf '{"stop_hook_active":false}' | SQUAD_HOME="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
-  expect_code 0 "$status" "hook must ignore repo-root state when SQUAD_HOME selects another state dir"
-  [ -z "$out" ] || fail "hook produced output from stale repo-root state despite SQUAD_HOME: $out"
-  pass "sq-turnend-guard: ignores stale repo-root state when SQUAD_HOME is set"
+  out=$(printf '{"stop_hook_active":false}' | SQUAD_BASE="$home" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
+  expect_code 0 "$status" "hook must ignore repo-root state when SQUAD_BASE selects another state dir"
+  [ -z "$out" ] || fail "hook produced output from stale repo-root state despite SQUAD_BASE: $out"
+  pass "sq-turnend-guard: ignores stale repo-root state when SQUAD_BASE is set"
 }
 
 test_hook_uses_state_override() {
@@ -416,10 +416,10 @@ test_hook_uses_state_override() {
   state="$TMP_ROOT/hook-state-override-active"
   mkdir -p "$home/state" "$state"
   : > "$state/task1.meta"
-  out=$(printf '{"stop_hook_active":false}' | CLAUDECODE=1 SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$state" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
-  expect_code 2 "$status" "hook must let SQUAD_STATE_OVERRIDE win over SQUAD_HOME/state"
+  out=$(printf '{"stop_hook_active":false}' | CLAUDECODE=1 SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$state" bash "$dir/bin/sq-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "hook must let SQUAD_STATE_OVERRIDE win over SQUAD_BASE/state"
   assert_contains "$out" "$REQUIRED_REASON" "block reason must contain the exact required instruction"
-  pass "sq-turnend-guard: uses SQUAD_STATE_OVERRIDE ahead of SQUAD_HOME/state"
+  pass "sq-turnend-guard: uses SQUAD_STATE_OVERRIDE ahead of SQUAD_BASE/state"
 }
 
 test_hook_loop_guard_allows_retry() {
@@ -989,7 +989,7 @@ SH
 exit 0
 SH
   chmod +x "$repo/bin/sq-turnend-guard.sh" "$repo/bin/sq-arm-pretool-check.sh"
-  out=$(PLUGIN="$ext" SQUAD_HOME="$home" SQUAD_GUARD_LOG="$log" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$ext" SQUAD_BASE="$home" SQUAD_GUARD_LOG="$log" node --input-type=module 2>&1 <<'EOF'
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1054,7 +1054,7 @@ SH
 exit 0
 SH
   chmod +x "$repo/bin/sq-turnend-guard.sh" "$repo/bin/sq-arm-pretool-check.sh"
-  out=$(PLUGIN="$ext" SQUAD_HOME="$home" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$ext" SQUAD_BASE="$home" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 
 const handlers = new Map();
@@ -1092,7 +1092,7 @@ EOF
 run_hook_claude() {
   local dir=$1 stop_active=$2 home
   home=$(cd "$dir" && pwd)
-  printf '{"stop_hook_active":%s,"session_id":"sess-claude-mode"}' "$stop_active" | CLAUDECODE=1 SQUAD_HOME="$home" bash "$dir/bin/sq-turnend-guard.sh" --claude 2>&1
+  printf '{"stop_hook_active":%s,"session_id":"sess-claude-mode"}' "$stop_active" | CLAUDECODE=1 SQUAD_BASE="$home" bash "$dir/bin/sq-turnend-guard.sh" --claude 2>&1
 }
 
 seed_claude_failure() {
@@ -1129,11 +1129,11 @@ install_integrated_autoarm() {
 run_integrated_autoarm() {
   local dir=$1 home
   home=$(cd "$dir" && pwd)
-  # shellcheck disable=SC2016 # the fake harness expands SQUAD_HOME inside its child shell.
+  # shellcheck disable=SC2016 # the fake harness expands SQUAD_BASE inside its child shell.
   printf '{"session_id":"sess-claude-mode","stop_hook_active":false}\n' \
-    | SQUAD_HOME="$home" "$dir/fake-claude" -c '
-        printf "%s\n" "$$" > "$SQUAD_HOME/state/.lock"
-        "$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh"
+    | SQUAD_BASE="$home" "$dir/fake-claude" -c '
+        printf "%s\n" "$$" > "$SQUAD_BASE/state/.lock"
+        "$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh"
       ' 2>&1
 }
 
@@ -1267,7 +1267,7 @@ SH
         SQUAD_TERMINAL_READY="$ready" \
         SQUAD_TERMINAL_RELEASE="$release" \
         SQUAD_TERMINAL_ONCE="$once" \
-        CLAUDECODE=1 SQUAD_HOME="$dir" bash "$dir/bin/sq-turnend-guard.sh" --claude \
+        CLAUDECODE=1 SQUAD_BASE="$dir" bash "$dir/bin/sq-turnend-guard.sh" --claude \
           > "$guard_out" 2>&1
     printf '%s\n' "$?" > "$guard_status"
   ) &

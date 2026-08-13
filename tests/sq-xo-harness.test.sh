@@ -434,7 +434,7 @@ spawn_XO() {
   [ -n "$harness" ] && spawn_args+=("$harness")
   spawn_args+=(--xo)
   PATH="$fakebin:$BASE_PATH" TMUX='' CLAUDECODE=1 \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$world/home" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$world/home" \
     SQUAD_STATE_OVERRIDE="$world/home/state" SQUAD_DATA_OVERRIDE="$world/home/data" \
     SQUAD_PROJECTS_OVERRIDE="$world/home/projects" SQUAD_CONFIG_OVERRIDE="$world/home/config" \
     SQUAD_SPAWN_NO_GUARD=1 \
@@ -547,7 +547,7 @@ test_spawn_unverified_XO_harness_refused() {
   err="$w/spawn.err"
   rc=0
   PATH="$fakebin:$BASE_PATH" TMUX='' CLAUDECODE=1 \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$w/home" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$w/home" \
     SQUAD_STATE_OVERRIDE="$w/home/state" SQUAD_DATA_OVERRIDE="$w/home/data" \
     SQUAD_PROJECTS_OVERRIDE="$w/home/projects" SQUAD_CONFIG_OVERRIDE="$w/home/config" \
     SQUAD_SPAWN_NO_GUARD=1 \
@@ -617,7 +617,7 @@ spawn_XO_capture() {
   fakebin=$(make_launch_capturing_tmux "$world/tmux-$id")
   : > "$launchlog"
   PATH="$fakebin:$BASE_PATH" TMUX='' CLAUDECODE=1 \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$world/home" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$world/home" \
     SQUAD_STATE_OVERRIDE="$world/home/state" SQUAD_DATA_OVERRIDE="$world/home/data" \
     SQUAD_PROJECTS_OVERRIDE="$world/home/projects" SQUAD_CONFIG_OVERRIDE="$world/home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_LAUNCH_LOG="$launchlog" \
@@ -905,7 +905,7 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   printf 'brief\n' > "$home/data/$id/brief.md"
   : > "$launchlog"
   PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" SQUAD_FAKE_LAUNCH_LOG="$launchlog" \
@@ -1063,11 +1063,11 @@ run_bootstrap() {
   local w=$1 fakebin log=${2:-}
   fakebin=$(make_fake_toolchain "$w")
   if [ -n "$log" ]; then
-    PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+    PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
       SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
       "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null
   else
-    PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+    PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
       SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null
   fi
 }
@@ -1076,11 +1076,11 @@ run_config_push() {
   local w=$1 fakebin log=${2:-}
   fakebin=$(make_fake_toolchain "$w")
   if [ -n "$log" ]; then
-    PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+    PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
       SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
       "$ROOT/bin/sq-config-push.sh"
   else
-    PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+    PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
       SQUAD_SEND_SETTLE=0 \
       "$ROOT/bin/sq-config-push.sh"
   fi
@@ -1798,7 +1798,7 @@ test_config_reread_isolation_and_absent_and_send_failure() {
   printf 'claude\n' > "$w/home/config/crew-harness"
   err="$w/config-reread-send-fail.err"
   out=$(PATH="$(make_fake_toolchain "$w"):$BASE_PATH" \
-    SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_SEND_SETTLE=0 \
+    SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_SEND_SETTLE=0 \
     SQUAD_FAKE_TMUX_FAIL_LITERAL=1 \
     "$ROOT/bin/sq-config-push.sh" 2>"$err"); status=$?
   expect_code 1 "$status" "send failure should make config-push exit non-zero"
@@ -1819,7 +1819,7 @@ test_config_reread_isolation_and_absent_and_send_failure() {
   printf 'pi\n' > "$w/home/config/crew-harness"
   err="$w/config-reread-send-fail-second.err"
   out2=$(PATH="$(make_fake_toolchain "$w"):$BASE_PATH" \
-    SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_SEND_SETTLE=0 \
+    SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_SEND_SETTLE=0 \
     SQUAD_FAKE_TMUX_FAIL_LITERAL=1 \
     "$ROOT/bin/sq-config-push.sh" 2>"$err"); status2=$?
   expect_code 1 "$status2" "second send failure should make config-push exit non-zero"
@@ -1871,7 +1871,7 @@ esac
 exec "$real_mv" "\$@"
 SH
   chmod +x "$fakebin/mv"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-config-push.sh" 2>&1); status=$?
   expect_code 1 "$status" "publication failure should remain diagnostic"
   assert_contains "$out" "CONFIG_REREAD: XO" "publication failure diagnostic missing"
@@ -1928,7 +1928,7 @@ esac
 exec "$real_mv" "\$@"
 SH
   chmod +x "$fakebin/mv"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-config-push.sh" 2>&1); status=$?
   expect_code 1 "$status" "instruction-write failure should remain diagnostic"
   assert_contains "$out" "retained exact retry generation" \
@@ -1993,7 +1993,7 @@ esac
 exec "$real_cp" "\$@"
 SH
   chmod +x "$fakebin/cp"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-config-push.sh" 2>&1); status=$?
   expect_code 1 "$status" "exact temporary fallback failure should remain diagnostic"
   assert_contains "$out" "retained exact retry temporary" \
@@ -2058,7 +2058,7 @@ SH
 
   first_out="$w/first-push.out"
   (
-    PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+    PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
       SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
       "$ROOT/bin/sq-config-push.sh" > "$first_out" 2>&1
   ) &
@@ -2072,7 +2072,7 @@ SH
     || fail "first concurrent push did not publish its generation"
   printf 'two\n' > "$w/home/config/crew-harness"
   second_out="$w/second-push.out"
-  PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-config-push.sh" > "$second_out" 2>&1
   second_status=$?
@@ -2108,7 +2108,7 @@ test_config_reread_full_retry_queue_drains_before_new_push() {
   done
   fakebin=$(make_fake_toolchain "$w")
   log="$w/config-reread-full-queue.tmux.log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-config-push.sh" 2>&1); status=$?
   expect_code 0 "$status" "a full retry queue should drain before a new push"
@@ -2154,7 +2154,7 @@ SH
   chmod +x "$fakebin/tmux"
   report="$w/empty-reread.report"
   : > "$report"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 fm_config_send_reread_nudge sm "$w/sm" "$report" 2>&1); status=$?
   expect_code 1 "$status" "mixed delivery failure should remain diagnostic"
   assert_contains "$out" "CONFIG_REREAD: XO sm: send failed" \
@@ -2200,7 +2200,7 @@ SH
   report="$w/empty-reread.report"
   : > "$report"
   log="$w/config-reread-order.tmux.log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     fm_config_send_reread_nudge sm "$w/sm" "$report" 2>&1); status=$?
   expect_code 1 "$status" "an older failed generation should remain diagnostic"
@@ -2218,7 +2218,7 @@ test_bootstrap_detect_only_does_not_create_state() {
   w=$(new_world bootstrap-detect-only)
   detect_state="$w/detect-state"
   fakebin=$(make_fake_toolchain "$w")
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_STATE_OVERRIDE="$detect_state" SQUAD_BOOTSTRAP_DETECT_ONLY=1 \
     "$ROOT/bin/sq-bootstrap.sh" 2>&1); status=$?
   expect_code 0 "$status" "detect-only bootstrap should succeed"
@@ -2301,7 +2301,7 @@ test_config_reread_bootstrap_path_and_spawn_flexibility() {
 
   fakebin=$(make_fake_toolchain "$w")
   log="$w/bootstrap-reread.tmux.log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
   [ "$(cat "$w/sm/config/crew-harness")" = codex ] || fail "bootstrap did not push harness"
@@ -2377,7 +2377,7 @@ case "\$*" in
 esac
 SH
   chmod +x "$fakebin/tmux"
-  PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
   assert_contains "$(cat "$log")" "spawn" \
@@ -2428,7 +2428,7 @@ SH
   chmod +x "$fakebin/rm"
   launchlog="$w/spawn-quarantine.launch.log"
   out=$(PATH="$fakebin:$BASE_PATH" TMUX='' CLAUDECODE=1 \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$w/home" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$w/home" \
     SQUAD_STATE_OVERRIDE="$w/home/state" SQUAD_DATA_OVERRIDE="$w/home/data" \
     SQUAD_PROJECTS_OVERRIDE="$w/home/projects" SQUAD_CONFIG_OVERRIDE="$w/home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_LAUNCH_LOG="$launchlog" \

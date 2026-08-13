@@ -11,8 +11,8 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 TEMPLATE="$SCRIPT_DIR/sq-pr-poll.sh"
 LOG="$STATE/.pr-check-migration.log"
 QUARANTINE="$STATE/.pr-check-quarantine"
@@ -81,7 +81,7 @@ current_checks_authenticated() {
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
     if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
+      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -250,7 +250,7 @@ migration_complete() {
 x_shim_locked_scan_needed() {
   local shim="$STATE/x-sentry.check.sh"
   [ -e "$shim" ] || [ -L "$shim" ] || return 1
-  fmx_poll_shim_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" && return 1
+  fmx_poll_shim_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT" && return 1
   return 0
 }
 
@@ -267,7 +267,7 @@ fi
 stopped_sentry=0
 pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
 if fm_pid_alive "$pid"; then
-  if ! fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$pid" "$SQUAD_HOME"; then
+  if ! fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$pid" "$SQUAD_BASE"; then
     echo "PR_CHECK_MIGRATION: sentry ownership is ambiguous; review state/.sentry.lock before rearming polls" >&2
     exit 1
   fi
@@ -340,18 +340,18 @@ if ! fm_pr_poll_retirement_recover_all "$STATE" "$TEMPLATE"; then
 fi
 refresh_v1_x_shim() {
   local shim="$STATE/x-sentry.check.sh"
-  fmx_poll_shim_v1_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" "$STATE_DEVICE" || return 0
+  fmx_poll_shim_v1_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT" "$STATE_DEVICE" || return 0
   fm_pr_regular_destination_on_device_or_absent "$shim" "$STATE_DEVICE" || return 1
   MIGRATION_X_SHIM_TMP=$(mktemp "$STATE/.sq-x-sentry.XXXXXX") || return 1
-  fmx_poll_shim_content "$SQUAD_HOME" "$SQUAD_ROOT" > "$MIGRATION_X_SHIM_TMP" || return 1
+  fmx_poll_shim_content "$SQUAD_BASE" "$SQUAD_ROOT" > "$MIGRATION_X_SHIM_TMP" || return 1
   chmod 0700 "$MIGRATION_X_SHIM_TMP" || return 1
-  fmx_poll_shim_valid "$MIGRATION_X_SHIM_TMP" "$SQUAD_HOME" "$SQUAD_ROOT" || return 1
-  fmx_poll_shim_v1_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT" "$STATE_DEVICE" || return 1
+  fmx_poll_shim_valid "$MIGRATION_X_SHIM_TMP" "$SQUAD_BASE" "$SQUAD_ROOT" || return 1
+  fmx_poll_shim_v1_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT" "$STATE_DEVICE" || return 1
   mv -f -- "$MIGRATION_X_SHIM_TMP" "$shim" || return 1
   MIGRATION_X_SHIM_TMP=
   [ "$(fm_pr_file_device "$shim")" = "$STATE_DEVICE" ] || return 1
   [ "$(fm_pr_file_mode "$shim")" = 700 ] || return 1
-  fmx_poll_shim_valid "$shim" "$SQUAD_HOME" "$SQUAD_ROOT"
+  fmx_poll_shim_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT"
 }
 if ! refresh_v1_x_shim; then
   echo "PR_CHECK_MIGRATION: authenticated X poll shim could not be refreshed; migration did not complete safely" >&2
@@ -375,7 +375,7 @@ migration_needed() {
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
     if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
+      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -392,7 +392,7 @@ unsafe_checks_absent() {
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
     if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
+      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)
@@ -1024,7 +1024,7 @@ if migration_needed; then
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
     if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_HOME" "$SQUAD_ROOT"; then
+      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
       continue
     fi
     id=$(basename "$check" .check.sh)

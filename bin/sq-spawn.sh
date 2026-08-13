@@ -171,7 +171,7 @@ case "${1:-}" in
 esac
 
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 resolve_directory_input() {
   local name=$1 path=$2 resolved
@@ -185,17 +185,17 @@ resolve_directory_input() {
   printf '%s\n' "$resolved"
 }
 
-SQUAD_HOME=$(resolve_directory_input SQUAD_HOME "$SQUAD_HOME") || exit 1
+SQUAD_BASE=$(resolve_directory_input SQUAD_BASE "$SQUAD_BASE") || exit 1
 if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
   SQUAD_STATE_OVERRIDE=$(resolve_directory_input SQUAD_STATE_OVERRIDE "$SQUAD_STATE_OVERRIDE") || exit 1
 fi
 if [ -n "${SQUAD_DATA_OVERRIDE:-}" ]; then
   SQUAD_DATA_OVERRIDE=$(resolve_directory_input SQUAD_DATA_OVERRIDE "$SQUAD_DATA_OVERRIDE") || exit 1
 fi
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
-PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_BASE/projects}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 SUB_HOME_MARKER=".sq-xo-home"
 # shellcheck source=bin/sq-ff-lib.sh
 . "$SCRIPT_DIR/sq-ff-lib.sh"
@@ -1175,7 +1175,7 @@ path_is_ancestor_of() {
 validate_Squad_home_for_spawn() {
   local id=$1 home=$2 abs_home abs_active_home abs_root marker_id
   abs_home=$(resolved_existing_dir "$home") || return 1
-  abs_active_home=$(resolved_existing_dir "$SQUAD_HOME")
+  abs_active_home=$(resolved_existing_dir "$SQUAD_BASE")
   abs_root=$(resolved_existing_dir "$SQUAD_ROOT")
   if [ "$abs_home" = "/" ]; then
     echo "error: XO home cannot be the filesystem root: $home" >&2
@@ -1314,7 +1314,7 @@ if [ "$KIND" = xo ]; then
     # Inheritance propagation: push the primary-authoritative live-safe local inheritance
     # surface into this XO base (sq-config-inherit-lib.sh).
     SQUAD_CONFIG_INHERIT_LIVE=1 \
-      propagate_XO_inheritance "$SQUAD_HOME" "$PROJ_ABS" "$CONFIG" "$DATA" \
+      propagate_XO_inheritance "$SQUAD_BASE" "$PROJ_ABS" "$CONFIG" "$DATA" \
       || echo "warning: XO $ID inheritance failed for $PROJ_ABS" >&2
   fi
   if [ -f "$PROJ_ABS/data/charter.md" ]; then
@@ -1505,13 +1505,13 @@ case "$BACKEND" in
     ;;
   herdr)
     # fm_backend_herdr_workspace_label resolves the target workspace from
-    # SQUAD_HOME. For every KIND except XO, this process's own SQUAD_HOME is
+    # SQUAD_BASE. For every KIND except XO, this process's own SQUAD_BASE is
     # already the right base (the primary spawning its own operator/recon, or
     # an XO spawning ITS OWN operator/recon from its own process's
-    # SQUAD_HOME - the latter needs no glue at all). A --xo spawn is the
+    # SQUAD_BASE - the latter needs no glue at all). A --xo spawn is the
     # one case that does: it is the PRIMARY's own sq-spawn.sh process
     # launching a DIFFERENT base (PROJ_ABS, already validated above as the
-    # XO's base), so SQUAD_HOME here still names the primary. Shadow it
+    # XO's base), so SQUAD_BASE here still names the primary. Shadow it
     # to PROJ_ABS for just these two calls (bash restores it automatically
     # after each prefixed simple-command call) so the XO's tab lands
     # in the XO's own workspace, not the primary's "Squad" one.
@@ -1522,7 +1522,7 @@ case "$BACKEND" in
     # workspace must never be adopted). A --xo launch is the exception -
     # it stands up a DIFFERENT base's own workspace by design - so it asks for
     # the per-base container instead of inheriting this launcher's.
-    HERDR_LABEL_HOME=$SQUAD_HOME
+    HERDR_LABEL_HOME=$SQUAD_BASE
     HERDR_LAUNCHER_RELATIONSHIP=launcher-home
     if [ "$KIND" = xo ]; then
       HERDR_LABEL_HOME=$PROJ_ABS
@@ -1532,7 +1532,7 @@ case "$BACKEND" in
     HERDR_PROJECTED=0
     if [ "$KIND" != xo ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
       HERDR_SES=$(fm_backend_herdr_session)
-      HERDR_PARENT_LABEL=$(SQUAD_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
+      HERDR_PARENT_LABEL=$(SQUAD_BASE="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
       if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
         fm_backend_herdr_server_ensure "$HERDR_SES" || {
           echo "error: herdr presentation recovery could not ensure its exact named session" >&2
@@ -1549,7 +1549,7 @@ case "$BACKEND" in
           "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" || exit 1
         if [ "${HERDR_RECOVERY_BACKEND:-}" = herdr ]; then
           set +e
-          SQUAD_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_reclaim_task \
+          SQUAD_BASE="$HERDR_LABEL_HOME" fm_backend_herdr_projection_reclaim_task \
             "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" "$HERDR_LABEL_HOME" \
             "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID" \
             "$HERDR_PARENT_LABEL" "$W" "$PROJ_ABS"
@@ -1605,7 +1605,7 @@ case "$BACKEND" in
           else
             HERDR_PROJECTION_ID=$(fm_backend_herdr_projection_journal_create "$STATE" "$ID") || exit 1
             HERDR_PROJECTION_LABEL=$(fm_backend_herdr_projection_workspace_label "$ID" "$HERDR_PROJECTION_ID")
-            if ! SQUAD_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_create_task \
+            if ! SQUAD_BASE="$HERDR_LABEL_HOME" fm_backend_herdr_projection_create_task \
               "$PROJ_ABS" "$HERDR_PROJECTION_LABEL" "$W"; then
               if [ "${SQUAD_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE:-0}" = 1 ]; then
                 HERDR_PROJECTION_ABORT_CLEANUP=1
@@ -1648,7 +1648,7 @@ case "$BACKEND" in
       fi
     fi
     if [ "$HERDR_PROJECTED" -ne 1 ]; then
-      HERDR_CONTAINER_RAW=$(SQUAD_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_LAUNCHER_RELATIONSHIP") || exit 1
+      HERDR_CONTAINER_RAW=$(SQUAD_BASE="$HERDR_LABEL_HOME" fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_LAUNCHER_RELATIONSHIP") || exit 1
       # fm_backend_herdr_container_ensure echoes "<session>:<workspace_id>\t<seeded_default_tab_id>"
       # (the second field empty when this call ADOPTED a pre-existing workspace
       # rather than creating a fresh one). Split on the guaranteed single tab
@@ -1659,7 +1659,7 @@ case "$BACKEND" in
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(SQUAD_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+      HERDR_TASK_IDS=$(SQUAD_BASE="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
@@ -2263,7 +2263,7 @@ if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
 fi
 if [ "$KIND" = xo ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
-  sq_primary_home=$(shell_quote "$SQUAD_HOME")
+  sq_primary_home=$(shell_quote "$SQUAD_BASE")
   case "$HARNESS" in
     claude) supervision_model=autoarm ;;
     *) supervision_model=persistent ;;
@@ -2275,7 +2275,7 @@ if [ "$KIND" = xo ]; then
   # not enable them across the launch boundary (bin/sq-trace-context-lib.sh header).
   # Reuse the single frozen decision from the carrier resolution above so the
   # injected carrier and this on/off snapshot are guaranteed to agree.
-  LAUNCH="SQUAD_ROOT_OVERRIDE= SQUAD_STATE_OVERRIDE= SQUAD_DATA_OVERRIDE= SQUAD_PROJECTS_OVERRIDE= SQUAD_CONFIG_OVERRIDE= SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME=$sq_primary_home SQUAD_HOME=$sq_home SQUAD_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE SQUAD_SUPERVISION_MODEL=$supervision_model $LAUNCH"
+  LAUNCH="SQUAD_ROOT_OVERRIDE= SQUAD_STATE_OVERRIDE= SQUAD_DATA_OVERRIDE= SQUAD_PROJECTS_OVERRIDE= SQUAD_CONFIG_OVERRIDE= SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME=$sq_primary_home SQUAD_BASE=$sq_home SQUAD_HOME=$sq_home SQUAD_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE SQUAD_SUPERVISION_MODEL=$supervision_model $LAUNCH"
 fi
 # Export GOTMPDIR into the operator's pane shell so the agent and every child
 # process (go build, go test, ...) inherit it. Sent before the launch command so
@@ -2330,11 +2330,11 @@ if [ "$HARNESS" = kimi ]; then
   fi
 fi
 if [ "$KIND" = xo ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
-  if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$SQUAD_HOME"; then
-    if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$SQUAD_HOME"; then
-      echo "CONFIG_REREAD: XO $ID: quarantined pre-relaunch generations after cleanup failure (destination=$PROJ_ABS/state/.sq-inherited-config-reread-quarantine source=$SQUAD_HOME/state/.sq-inherited-config-reread-quarantine)" >&2
+  if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$SQUAD_BASE"; then
+    if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$SQUAD_BASE"; then
+      echo "CONFIG_REREAD: XO $ID: quarantined pre-relaunch generations after cleanup failure (destination=$PROJ_ABS/state/.sq-inherited-config-reread-quarantine source=$SQUAD_BASE/state/.sq-inherited-config-reread-quarantine)" >&2
     else
-      echo "CONFIG_REREAD: XO $ID: cleanup failed; pre-relaunch generations were force-cleared where possible (destination=$PROJ_ABS source=$SQUAD_HOME)" >&2
+      echo "CONFIG_REREAD: XO $ID: cleanup failed; pre-relaunch generations were force-cleared where possible (destination=$PROJ_ABS source=$SQUAD_BASE)" >&2
     fi
   fi
 fi

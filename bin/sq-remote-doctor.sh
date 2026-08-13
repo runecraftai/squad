@@ -340,7 +340,7 @@ report_required_tools() {
 report_required_tools_from_worker() {
   local job_id probe_stdout probe_stderr probe_exit line fact name value
   local expected=6 count=0 valid=1 seen=' '
-  if ! job_id=$(fm_remote_job_stage "${HOME:-}" "$SQUAD_ROOT" "${SQUAD_HOME:-}" \
+  if ! job_id=$(fm_remote_job_stage "${HOME:-}" "$SQUAD_ROOT" "${SQUAD_BASE:-${SQUAD_HOME:-}}" \
     sq-remote-doctor.sh --worker-tool-probe </dev/null); then
     set_check remote-job-probe "fixable: the remote job worker could not accept the required-tool probe" \
       "rerun this command with --fix to restart the worker"

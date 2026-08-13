@@ -178,7 +178,7 @@ EOF
 
 run() {  # <home> <fakebin> <args...>
   local home=$1 fakebin=$2; shift 2
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_BEARINGS_NOW=2026-07-11T18:00:00Z NET_LOG="$home/net.log" "$SITREP" "$@"
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_BEARINGS_NOW=2026-07-11T18:00:00Z NET_LOG="$home/net.log" "$SITREP" "$@"
 }
 
 # End-to-end Domain Alpha regression fixture.
@@ -229,7 +229,7 @@ test_domain_alpha_stale_parent_event_does_not_become_current_work() {
       and (.gates | any(.[]; .id == "legal-release" and .owner == "domain-alpha"))
       and (.landed | any(.[]; .id == "phase7" and .owner == "domain-alpha"))
   ' >/dev/null || fail "stale parent Phase 7 event overrode authoritative Domain Alpha state: $json"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_NOW_EPOCH=1783792800 SQUAD_SNAPSHOT_TERMINAL_LINES=2 SQUAD_SNAPSHOT_TERMINAL_BYTES=64 \
     NET_LOG="$home/net.log" FAKE_GH_FAIL=1 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
@@ -276,7 +276,7 @@ case "$1 $2" in
 esac
 SH
   chmod +x "$fakebin/uname" "$fakebin/stat"
-  canonical=$(PATH="$fakebin:$PATH" STAT_LOG="$stat_log" SQUAD_HOME="$home" \
+  canonical=$(PATH="$fakebin:$PATH" STAT_LOG="$stat_log" SQUAD_BASE="$home" \
     SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z SQUAD_SNAPSHOT_NOW_EPOCH=1783792800 \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
@@ -305,7 +305,7 @@ test_parent_activity_evidence_is_bounded_and_disclosed() {
     i=$((i + 1))
   done
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_PARENT_ACTIVITY_LINES=4 SQUAD_SNAPSHOT_PARENT_ACTIVITY_BYTES=4096 \
     SQUAD_SNAPSHOT_PARENT_ACTIVITIES=2 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
@@ -353,7 +353,7 @@ EOF
       and (.doing | contains("release A or B") | not)))
       and (.decisions_open | any(.owner == "domain-alpha") | not)
   ' >/dev/null || fail "status-only child decision leaked into Sitrep: $json"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "domain-alpha") | .endpoints[] | select(.id == "phase8")
@@ -551,7 +551,7 @@ test_XO_and_child_bounds_are_disclosed() {
   done
   printf '\n## Queued\n\n## Done\n' >> "$mate/data/backlog.md"
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_XOS=2 SQUAD_SNAPSHOT_XO_CHILDREN=2 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.total_registered == 3
@@ -587,7 +587,7 @@ test_parent_decision_is_untrusted_contradiction_only() {
   fm_write_XO_meta "$home/state/authority.meta" "$mate" "Squad:sq-authority" sample
   printf 'needs-decision [key=stale]: old parent question\n' > "$home/state/authority.status"
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "authority")
@@ -658,7 +658,7 @@ EOF
   record_claude_state "$decision/state" "$child" idle
   printf 'needs-decision [key=live-route]: choose the current route\n' > "$decision/state/$child.status"
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     (.XO_current.records[] | select(.id == "hold")
@@ -711,7 +711,7 @@ EOF
   record_claude_state "$mate/state" parked idle
   printf 'needs-decision [key=parked]: choose a route\n' > "$mate/state/parked.status"
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "states")
@@ -726,7 +726,7 @@ EOF
 
 ## Done
 EOF
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "states")
@@ -754,7 +754,7 @@ EOF
   printf 'done: complete\n' > "$mate/state/done.status"
   printf 'failed: stopped\n' > "$mate/state/failed.status"
   rm "$mate/state/parked.meta" "$mate/state/parked.status"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "states")
@@ -775,7 +775,7 @@ test_registry_unavailability_and_bounds_are_explicit() {
   fm_write_XO_meta "$home/state/hidden.meta" "$mate" "Squad:sq-hidden" sample
   chmod 000 "$home/data/XOs.md"
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   json=$(run "$home" "$fakebin" --json)
   chmod 600 "$home/data/XOs.md"
@@ -798,7 +798,7 @@ test_registry_unavailability_and_bounds_are_explicit() {
     append_XO_registry "$home" "$id" "$mate"
   done
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_REGISTRY_RECORDS=2 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.registry
@@ -807,7 +807,7 @@ test_registry_unavailability_and_bounds_are_explicit() {
       and .records_in_window == 3 and (.records | length) == 2
       and (.reasons | index("record_limit") != null)
   ' >/dev/null || fail "registry record bound was not enforced or disclosed: $canonical"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_REGISTRY_LINES=2 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.registry
@@ -815,7 +815,7 @@ test_registry_unavailability_and_bounds_are_explicit() {
       and .lines_in_window == 2 and (.records | length) == 2
       and .reasons == ["line_limit"]
   ' >/dev/null || fail "registry line bound was not enforced or disclosed: $canonical"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_REGISTRY_BYTES=100 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.registry
@@ -823,7 +823,7 @@ test_registry_unavailability_and_bounds_are_explicit() {
       and .records_in_window < 3
   ' >/dev/null || fail "registry byte bound was not enforced or disclosed: $canonical"
   boundary=$(LC_ALL=C head -n 1 "$home/data/XOs.md" | wc -c | tr -d ' ')
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_REGISTRY_BYTES="$((boundary - 1))" "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.registry
@@ -838,7 +838,7 @@ test_registry_unavailability_and_bounds_are_explicit() {
   make_valid_XO_home z-hidden "$mate"
   append_XO_registry "$home" z-hidden "$mate"
   fm_write_XO_meta "$home/state/z-hidden.meta" "$mate" "Squad:sq-z-hidden" sample
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     SQUAD_SNAPSHOT_REGISTRY_RECORDS=3 "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.registry.complete == false
@@ -884,7 +884,7 @@ test_default_is_bounded_and_local_only() {
   # Bound: well under the ~50 KB tool-display limit.
   [ "${#toon}" -lt 50000 ] || fail "default TOON must stay under the display bound, got ${#toon}"
   # TOON is materially smaller than the canonical snapshot it projects.
-  local canon; canon=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$ROOT/bin/sq-unit-snapshot.sh" --json)
+  local canon; canon=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$ROOT/bin/sq-unit-snapshot.sh" --json)
   [ "${#toon}" -lt "${#canon}" ] || fail "projection must be smaller than the canonical snapshot"
   # Local-only: no GitHub/network call on the default path.
   [ ! -s "$home/net.log" ] || fail "default run must make no gh/gh-axi call, got: $(cat "$home/net.log")"
@@ -1006,7 +1006,7 @@ test_perl_fallback_bounds_github_call() {
     ln -s "$(command -v "$cmd")" "$toolbin/$cmd"
   done
   started=$(date +%s)
-  json=$(PATH="$fakebin:$toolbin" SQUAD_HOME="$home" SQUAD_BEARINGS_NOW=2026-07-11T18:00:00Z \
+  json=$(PATH="$fakebin:$toolbin" SQUAD_BASE="$home" SQUAD_BEARINGS_NOW=2026-07-11T18:00:00Z \
     SQUAD_BEARINGS_PR_TIMEOUT=1 NET_LOG="$home/net.log" FAKE_GH_SLEEP=1 "$SITREP" --include-prs --json)
   elapsed=$(( $(date +%s) - started ))
   [ "$elapsed" -lt 10 ] || fail "Perl fallback did not bound a stalled gh call (${elapsed}s)"
@@ -1408,7 +1408,7 @@ test_commanders_call_anti_leak() {
   home=$(make_home anti-leak); write_fixture "$home"
   fakebin=$(make_fakebin "$home")
   json=$(run "$home" "$fakebin" --json)
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$ROOT/bin/sq-unit-snapshot.sh" --json)
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$ROOT/bin/sq-unit-snapshot.sh" --json)
   jq -n -e --argjson sitrep "$json" --argjson canonical "$canonical" '
     ([$sitrep.decisions_open[].id] == ["mate/mate-decision-race"])
       and ($canonical.XO_current.records[] | select(.id == "mate")
@@ -1441,7 +1441,7 @@ test_main_orphan_in_flight_is_disclosed_not_invented() {
 ## Done
 EOF
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .main_inventory.valid == false
@@ -1487,7 +1487,7 @@ EOF
     "mode=drill"
   printf 'working: structured sibling still projects\n' > "$home/state/structured-ship.status"
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .main_inventory.valid == false
@@ -1636,7 +1636,7 @@ EOF
   printf 'working: preparing canary\n' > "$ha/state/prep.status"
 
   fakebin=$(make_fakebin "$home")
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     (.XO_current.records[] | select(.id == "hibit")
@@ -1694,7 +1694,7 @@ EOF
 - [ ] ordinary-orphan - Unowned release task (repo: sshhip) (kind: ship)' \
     "$sshhip/data/backlog.md" > "$sshhip/data/backlog.next"
   mv "$sshhip/data/backlog.next" "$sshhip/data/backlog.md"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "sshhip")
@@ -1714,7 +1714,7 @@ EOF
 
   sed '/unreadable-child/d' "$sshhip/data/backlog.md" > "$sshhip/data/backlog.next"
   mv "$sshhip/data/backlog.next" "$sshhip/data/backlog.md"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "sshhip")
@@ -1739,7 +1739,7 @@ EOF
     "harness=claude" "kind=recon" "mode=recon"
   record_claude_state "$wheel/state" production-observation idle
   printf 'paused: observation is deliberately held\n' > "$wheel/state/production-observation.status"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "wheel")
@@ -1802,7 +1802,7 @@ EOF
 
   sed 's/(kind: program)/(kind: mystery)/' "$hibit/data/backlog.md" > "$hibit/data/backlog.next"
   mv "$hibit/data/backlog.next" "$hibit/data/backlog.md"
-  canonical=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+  canonical=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/sq-unit-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     .XO_current.records[] | select(.id == "hibit")

@@ -38,7 +38,7 @@ tmux select-window -t <session-name>:sq-<id>
 ```
 
 Typing into an attached task window is authoritative direct intervention.
-Routine supervision does not require attachment: `bin/sq-peek.sh <id>` captures a bounded tail and `SQUAD_HOME=<home> bin/sq-send.sh <id> '<text>'` steers the recorded endpoint.
+Routine supervision does not require attachment: `bin/sq-peek.sh <id>` captures a bounded tail and `SQUAD_BASE=<home> bin/sq-send.sh <id> '<text>'` steers the recorded endpoint.
 
 Verify setup by spawning a small task and confirming its `sq-<id>` window appears in the selected session.
 

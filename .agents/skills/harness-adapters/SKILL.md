@@ -177,7 +177,7 @@ The shared symptom is a healthy-looking pane with no work in progress, so each a
 
 First launch in a fresh worktree, or first ever on a machine, may show a trust or bypass-permissions confirmation.
 After every spawn, peek the pane within about 20 seconds.
-If such a dialog is showing, accept it from an active Squad session using `SQUAD_HOME=<this-Squad-base> bin/sq-send.sh <window> --key Enter`, or the choice the dialog requires, unless `SQUAD_HOME` is already set to the active Squad base; verify the brief started processing.
+If such a dialog is showing, accept it from an active Squad session using `SQUAD_BASE=<this-Squad-base> bin/sq-send.sh <window> --key Enter`, or the choice the dialog requires, unless `SQUAD_BASE` is already set to the active Squad base; verify the brief started processing.
 
 Claude renders a predicted-next-prompt suggestion as dim/faint text inside an otherwise-empty composer after a turn completes.
 A plain `tmux capture-pane` cannot tell that ghost text apart from typed text.

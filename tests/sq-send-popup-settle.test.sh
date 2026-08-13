@@ -101,7 +101,7 @@ first_settle() {  # <expected> <label> <harness|--explicit> <message> [selector-
   fi
   : > "$log"
   env SQUAD_SEND_SETTLE=0 PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SLEEP_LOG="$log" \
+    SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
     "$SEND" "$target" "$msg" 2>/dev/null; rc=$?
   expect_code 0 "$rc" "$label: send should succeed"
   first=$(head -1 "$log")

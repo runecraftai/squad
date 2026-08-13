@@ -56,9 +56,9 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 GRACE=${SQUAD_GUARD_GRACE:-300}
 OWNER_LOCK="$STATE/.claude-autoarm.lock"
 EPOCH="$STATE/.claude-autoarm-epoch"
@@ -188,7 +188,7 @@ while [ "$attempt" -lt "$AUTOARM_ATTEMPTS" ]; do
 
   # A non-actionable close is benign when another verified sentry already owns
   # this base and is still beating within the shared grace window.
-  if fm_sentry_healthy "$STATE" "$SCRIPT_DIR/sq-sentry.sh" "$GRACE" "$SQUAD_HOME"; then
+  if fm_sentry_healthy "$STATE" "$SCRIPT_DIR/sq-sentry.sh" "$GRACE" "$SQUAD_BASE"; then
     HEALTHY=1
     break
   fi

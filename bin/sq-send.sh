@@ -76,18 +76,19 @@ SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 # an operator (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
 
-if [ -z "${SQUAD_HOME+x}" ] || [ -z "${SQUAD_HOME:-}" ]; then
-  echo "error: SQUAD_HOME is not set; sq-send refuses to resolve targets without an explicit Squad home" >&2
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-}}"
+if [ -z "$SQUAD_BASE" ]; then
+  echo "error: SQUAD_BASE is not set (legacy SQUAD_HOME is also accepted); sq-send refuses to resolve targets without an explicit Squad base" >&2
   exit 1
 fi
 
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-if [ ! -d "$SQUAD_HOME" ]; then
-  echo "error: SQUAD_HOME '$SQUAD_HOME' is not a directory; sq-send cannot resolve this home's state" >&2
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+if [ ! -d "$SQUAD_BASE" ]; then
+  echo "error: SQUAD_BASE '$SQUAD_BASE' is not a directory; sq-send cannot resolve this base's state" >&2
   exit 1
 fi
 if [ ! -d "$STATE" ]; then
-  echo "error: state dir '$STATE' is missing; sq-send cannot resolve targets for SQUAD_HOME '$SQUAD_HOME'" >&2
+  echo "error: state dir '$STATE' is missing; sq-send cannot resolve targets for SQUAD_BASE '$SQUAD_BASE'" >&2
   exit 1
 fi
 
@@ -434,7 +435,7 @@ else
         echo "error: cannot create pending-reply expectation without a resolvable XO task id" >&2
         exit 1
       fi
-      PENDING_REPLY_CORR=$(fm_pending_reply_create "$SQUAD_HOME" "$STATE" "$TARGET_TASK_ID" "$MESSAGE") \
+      PENDING_REPLY_CORR=$(fm_pending_reply_create "$SQUAD_BASE" "$STATE" "$TARGET_TASK_ID" "$MESSAGE") \
         || { echo "error: failed to create parent pending-reply expectation for $TARGET_TASK_ID" >&2; exit 1; }
       PENDING_REPLY_CREATED=1
     fi

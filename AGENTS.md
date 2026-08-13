@@ -47,9 +47,10 @@ Never add an agent name as a commit co-author.
 ## 2. Layout and state
 
 `docs/configuration.md` is the single owner of the top-level operational-base layout and configuration schemas; each producing script's header and help own exact child fields and mutation mechanics.
-`SQUAD_HOME` selects an instance's private `data/`, `state/`, `config/`, and `projects/`, while scripts continue to come from their tracked code root.
-Each XO has a persistent isolated `SQUAD_HOME`, including its own state, backlog, projects, and session lock.
-`bin/sq-send.sh` fails closed unless `SQUAD_HOME` is explicit, so a steer cannot silently resolve against another base.
+`SQUAD_BASE` selects an instance's private `data/`, `state/`, `config/`, and `projects/`, while scripts continue to come from their tracked code root.
+The legacy `SQUAD_HOME` name remains accepted as a permanent read fallback when `SQUAD_BASE` is unset, and `SQUAD_BASE` always takes precedence when both are set.
+Each XO has a persistent isolated `SQUAD_BASE`, including its own state, backlog, projects, and session lock.
+`bin/sq-send.sh` fails closed unless `SQUAD_BASE` (or legacy `SQUAD_HOME`) is explicit, so a steer cannot silently resolve against another base.
 
 Tracked files hold shared instructions and tooling; `data/` holds durable private unit records; `state/` holds volatile runtime records and append-only status events; `config/` holds local operating choices; and `projects/` contains clones that are read-only to Squad except under hard rule 1's concrete commander-approved project operation exception.
 

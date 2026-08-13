@@ -16,7 +16,7 @@
 # persistent-sentry harness a live identity-matched sentry with a fresh beacon
 # is required. The banner names the true failing condition (a missing live
 # sentry process vs a genuinely stale beacon). The full banner is emitted once
-# per distinct down-episode in this SQUAD_HOME (keyed to the failing condition, not
+# per distinct down-episode in this SQUAD_BASE (keyed to the failing condition, not
 # the beacon mtime, which a healthy between-turns sentry advances every poll);
 # later guarded commands in the same episode print a one-line reminder instead.
 # Episode state lives only under state/.guard-sentry-stale-banner (volatile,
@@ -28,9 +28,9 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 WATCH="$SCRIPT_DIR/sq-sentry.sh"
 GRACE=${SQUAD_GUARD_GRACE:-300}
 queue_pending=false
@@ -152,7 +152,7 @@ in_flight=$SQUAD_SUP_IN_FLIGHT
 sources=$SQUAD_SUP_SOURCES
 needed=$SQUAD_SUP_NEEDED
 beacon_desc=$SQUAD_SUP_BEACON_DESC
-fm_sentry_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME"
+fm_sentry_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE"
 sentry_healthy=$SQUAD_SENTRY_VERDICT_OK
 sentry_down_reason=$SQUAD_SENTRY_VERDICT_REASON
 if [ "$needed" = false ]; then

@@ -16,7 +16,7 @@
 #
 # ZERO OVERHEAD FOR HOMES THAT DO NOT USE THE RELAY: every subcommand gates
 # first on the authoritative activation contract (a non-empty SQX_PAIRING_TOKEN
-# in $SQUAD_HOME/.env). Read-side and cleanup paths then use an O(1) presence check
+# in $SQUAD_BASE/.env). Read-side and cleanup paths then use an O(1) presence check
 # for registrations this base actually created. A relay-disabled base therefore
 # runs one [ -f ] test before any backlog work: no tasks-axi call, no backlog scan,
 # and no file created. Silent read-side commands return without output; commands
@@ -97,9 +97,9 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
 # shellcheck source=bin/sq-public-followup-lib.sh
 . "$SCRIPT_DIR/sq-public-followup-lib.sh"
@@ -144,7 +144,7 @@ require_tools() {
 
 # Every tasks-axi call runs from the base whose backlog owns the obligation, the
 # same convention bin/sq-decision-hold.sh uses for typed backlog state.
-tx() { (cd "$SQUAD_HOME" && tasks-axi "$@"); }
+tx() { (cd "$SQUAD_BASE" && tasks-axi "$@"); }
 
 # obligation_json <id>: the complete typed obligation payload on stdout, empty
 # when the backlog simply has no such public-followup item, and a non-zero exit
@@ -169,14 +169,14 @@ pf_field() { printf '%s' "$1" | jq -r "$2 // empty" 2>/dev/null; }
 # with no output when this base has no public-followup work, so callers can
 # invoke unconditionally without a relay-disabled base paying anything.
 gate_or_exit() {
-  fm_pf_relay_active "$SQUAD_HOME" || exit 0
+  fm_pf_relay_active "$SQUAD_BASE" || exit 0
   fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE" || exit 0
 }
 
 # --- subcommand: active -----------------------------------------------------
 
 cmd_active() {
-  fm_pf_relay_active "$SQUAD_HOME" || exit 1
+  fm_pf_relay_active "$SQUAD_BASE" || exit 1
   fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE" || exit 1
   exit 0
 }
@@ -201,7 +201,7 @@ cmd_register() {
     shift || true
   done
 
-  fm_pf_relay_active "$SQUAD_HOME" \
+  fm_pf_relay_active "$SQUAD_BASE" \
     || die "this home has not opted into the mySquad relay, so it cannot own a public commitment" 1
   require_tools
 
@@ -255,7 +255,7 @@ cmd_brief() {
   local id=${1:-} relation work_home work_id generation
   [ -n "$id" ] || { usage; exit 2; }
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  fm_pf_relay_active "$SQUAD_HOME" || die "the relay is not active for this home" 1
+  fm_pf_relay_active "$SQUAD_BASE" || die "the relay is not active for this home" 1
   [ -f "$(fm_pf_registry_dir "$STATE")/$id" ] \
     || die "no registration for '$id' in this home" 1
 
@@ -269,7 +269,7 @@ When this work reaches its promised terminal outcome, report it as typed data
 (never as a sentence for someone to parse) by running exactly:
 
   $SQUAD_ROOT/bin/sq-public-followup-emit.sh \\
-    --home $SQUAD_HOME \\
+    --home $SQUAD_BASE \\
     --obligation $id \\
     --relation $relation \\
     --source-home $work_home \\
@@ -542,7 +542,7 @@ clear_public_followup_link() {
   [ -n "$work_home" ] && [ -n "$work_id" ] || return 1
   case "$work_home" in
     main)
-      home=$SQUAD_HOME
+      home=$SQUAD_BASE
       state=$STATE
       ;;
     XO:*)
@@ -551,7 +551,7 @@ clear_public_followup_link() {
       ;;
     *) return 1 ;;
   esac
-  SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$state" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+  SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$state" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
     "$SQUAD_ROOT/bin/sq-x-followup.sh" --clear "$work_id" >/dev/null
 }
 
@@ -575,7 +575,7 @@ public_followup_legacy_link_status() {
   while IFS=$'\t' read -r work_home work_id; do
     [ -n "$work_home" ] && [ -n "$work_id" ] || return 2
     case "$work_home" in
-      main) home=$SQUAD_HOME ;;
+      main) home=$SQUAD_BASE ;;
       XO:*) home=$(public_followup_XO_home "${work_home#XO:}") || return 2 ;;
       *) return 2 ;;
     esac
@@ -632,7 +632,7 @@ cmd_deliver() {
   done
 
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  fm_pf_relay_active "$SQUAD_HOME" \
+  fm_pf_relay_active "$SQUAD_BASE" \
     || die "this home has not opted into the mySquad relay, so it cannot post a public reply" 1
   require_tools
 
@@ -718,7 +718,7 @@ cmd_deliver() {
   esac
 
   rc=0
-  SQX_REPLY_PLATFORM="$platform" SQUAD_HOME="$SQUAD_HOME" \
+  SQX_REPLY_PLATFORM="$platform" SQUAD_BASE="$SQUAD_BASE" \
     "$SQUAD_ROOT/bin/sq-x-reply.sh" "$request" --followup --receipt-file "$receipt" \
     --text-file "$tmp_text" >/dev/null || rc=$?
 
@@ -784,7 +784,7 @@ cmd_record_posted() {
   case "$attempt" in ''|*[!0-9]*) die "--attempt <n> is required and must be an integer" ;; esac
   case "$chunks" in ''|*[!0-9]*) die "--chunks <n> is required and must be a positive integer" ;; esac
   [ "$chunks" -ge 1 ] 2>/dev/null || die "--chunks <n> is required and must be a positive integer"
-  fm_pf_relay_active "$SQUAD_HOME" || die "the relay is not active for this home" 1
+  fm_pf_relay_active "$SQUAD_BASE" || die "the relay is not active for this home" 1
   public_followup_registration_valid "$id" \
     || die "public-followup registration for '$id' is missing or invalid; reconcile it before recording a receipt so any legacy X link can be cleared" 1
   require_tools
@@ -809,7 +809,7 @@ cmd_record_posted() {
 cmd_guard_work() {
   local work_home=${1:-} work_id=${2:-} bound id payload delivery task_state blocked=0
   [ -n "$work_home" ] && [ -n "$work_id" ] || { usage; exit 2; }
-  fm_pf_relay_active "$SQUAD_HOME" || exit 0
+  fm_pf_relay_active "$SQUAD_BASE" || exit 0
   fm_pf_has_registrations "$STATE" || exit 0
 
   # Reading the registration records needs no tools, so establish whether this
@@ -861,7 +861,7 @@ cmd_retire() {
     shift || true
   done
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  fm_pf_relay_active "$SQUAD_HOME" || exit 0
+  fm_pf_relay_active "$SQUAD_BASE" || exit 0
   require_tools
 
   payload=$(obligation_json "$id") || die "could not read the backlog through tasks-axi" 1

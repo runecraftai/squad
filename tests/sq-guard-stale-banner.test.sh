@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regression tests for sq-guard's sentry-down banner deduplication.
 #
-# The first stale command in one SQUAD_HOME must print the full actionable sentry
+# The first stale command in one SQUAD_BASE must print the full actionable sentry
 # banner.
 # Repeated commands in that same stale episode should print only a concise
 # reminder, while unrelated alarms such as queued wakes stay independent.
@@ -47,7 +47,7 @@ record_live_sentry() {
 run_guard_case() {
   local dir=$1
   SQUAD_ROOT_OVERRIDE="$(case_root "$dir")" \
-    SQUAD_HOME="$(case_home "$dir")" \
+    SQUAD_BASE="$(case_home "$dir")" \
     SQUAD_GUARD_GRACE=999 \
     SQUAD_SUPERVISION_MODEL=persistent \
     "$ROOT/bin/sq-guard.sh" 2>&1
@@ -56,7 +56,7 @@ run_guard_case() {
 run_guard_case_read_only() {
   local dir=$1
   SQUAD_ROOT_OVERRIDE="$(case_root "$dir")" \
-    SQUAD_HOME="$(case_home "$dir")" \
+    SQUAD_BASE="$(case_home "$dir")" \
     SQUAD_GUARD_GRACE=999 \
     SQUAD_SUPERVISION_MODEL=persistent \
     SQUAD_GUARD_READ_ONLY=1 \
@@ -68,7 +68,7 @@ run_guard_case_read_only() {
 run_guard_case_autoarm() {
   local dir=$1
   SQUAD_ROOT_OVERRIDE="$(case_root "$dir")" \
-    SQUAD_HOME="$(case_home "$dir")" \
+    SQUAD_BASE="$(case_home "$dir")" \
     SQUAD_GUARD_GRACE=999 \
     SQUAD_SUPERVISION_MODEL=autoarm \
     "$ROOT/bin/sq-guard.sh" 2>&1
@@ -198,7 +198,7 @@ test_home_isolation() {
     || fail "home B first stale call was suppressed by home A: $out_b1"
   assert_contains "$out_a2" "full banner already printed this episode" \
     "home A repeated stale call did not remember its own episode"
-  pass "sq-guard stale banner: deduplication is isolated per SQUAD_HOME"
+  pass "sq-guard stale banner: deduplication is isolated per SQUAD_BASE"
 }
 
 test_queued_wake_warning_stays_independent() {

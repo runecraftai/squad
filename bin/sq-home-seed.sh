@@ -34,10 +34,10 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
-PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_BASE/projects}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 REG="$DATA/XOs.md"
 SUB_HOME_MARKER=".sq-xo-home"
 SUB_HOME_PARENT_MARKER=".sq-xo-parent"
@@ -220,7 +220,7 @@ resolved_path() {
 refuse_active_home_path() {
   local home=$1 abs_home abs_active_home abs_root
   abs_home=$(resolved_path "$home")
-  abs_active_home=$(resolved_path "$SQUAD_HOME")
+  abs_active_home=$(resolved_path "$SQUAD_BASE")
   abs_root=$(resolved_path "$SQUAD_ROOT")
   if [ "$abs_home" = "/" ]; then
     echo "error: XO home cannot be the filesystem root: $home" >&2
@@ -261,7 +261,7 @@ validate_operational_dir() {
   fi
   abs_home=$(resolved_path "$home")
   abs_dir=$(resolved_path "$dir")
-  abs_active_home=$(resolved_path "$SQUAD_HOME")
+  abs_active_home=$(resolved_path "$SQUAD_BASE")
   abs_root=$(resolved_path "$SQUAD_ROOT")
   if ! path_is_ancestor_of "$abs_home" "$abs_dir"; then
     echo "error: XO $name directory must resolve inside the XO home: $dir" >&2
@@ -317,7 +317,7 @@ validate_existing_parent_binding() {
   [ "$SQUAD_XO_PARENT_ROUTE" = local ] || return 0
 
   recorded_parent=$(resolved_path "$SQUAD_XO_PARENT_HOME")
-  requested_parent=$(resolved_path "$SQUAD_HOME")
+  requested_parent=$(resolved_path "$SQUAD_BASE")
   [ "$recorded_parent" = "$requested_parent" ] && return 0
   printf 'error: XO home is bound to parent %s, not requested parent %s\n' \
     "$recorded_parent" "$requested_parent" >&2
@@ -331,7 +331,7 @@ validate_project_destination() {
   abs_home=$(resolved_path "$home")
   abs_projects=$(resolved_path "$projects_dir")
   abs_dst=$(resolved_path "$dst")
-  abs_active_home=$(resolved_path "$SQUAD_HOME")
+  abs_active_home=$(resolved_path "$SQUAD_BASE")
   abs_root=$(resolved_path "$SQUAD_ROOT")
   if ! path_is_ancestor_of "$abs_home" "$abs_projects"; then
     echo "error: XO projects directory must resolve inside the XO home: $projects_dir" >&2
@@ -463,7 +463,7 @@ clone_project() {
   [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
   git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
   read -r mode _ <<EOF
-$(SQUAD_HOME="$SQUAD_HOME" SQUAD_DATA_OVERRIDE="$DATA" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
+$(SQUAD_BASE="$SQUAD_BASE" SQUAD_DATA_OVERRIDE="$DATA" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
     echo "error: project $project is local-only; XO routes support only drill and direct-PR projects" >&2
@@ -490,7 +490,7 @@ validate_seed_project() {
   [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
   git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
   read -r mode _ <<EOF
-$(SQUAD_HOME="$SQUAD_HOME" SQUAD_DATA_OVERRIDE="$DATA" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
+$(SQUAD_BASE="$SQUAD_BASE" SQUAD_DATA_OVERRIDE="$DATA" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
     echo "error: project $project is local-only; XO routes support only drill and direct-PR projects" >&2
@@ -546,7 +546,7 @@ seed_rollback_target() {
   [ -n "$target" ] || return 1
   [ "$target" != "/" ] || { echo "REFUSED: unsafe $label rollback target $target" >&2; return 1; }
   abs_target=$(resolved_path "$target")
-  abs_home=$(resolved_path "$SQUAD_HOME")
+  abs_home=$(resolved_path "$SQUAD_BASE")
   abs_root=$(resolved_path "$SQUAD_ROOT")
   if [ "$abs_target" = "$abs_home" ]; then
     echo "REFUSED: unsafe $label rollback target $target is the active Squad home" >&2
@@ -673,7 +673,7 @@ registry_line_for_project() {
 project_mode_in_home() {
   local home=$1 project=$2 mode
   read -r mode _ <<EOF
-$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_HOME="$home" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
+$(SQUAD_ROOT_OVERRIDE='' SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' SQUAD_PROJECTS_OVERRIDE='' SQUAD_CONFIG_OVERRIDE='' SQUAD_BASE="$home" "$SQUAD_ROOT/bin/sq-project-mode.sh" "$project")
 EOF
   printf '%s\n' "$mode"
 }
@@ -954,7 +954,7 @@ seed_home() {
   {
     printf 'schema=sq-xo-parent.v1\n'
     printf 'route=local\n'
-    printf 'parent_home=%s\n' "$(resolved_path "$SQUAD_HOME")"
+    printf 'parent_home=%s\n' "$(resolved_path "$SQUAD_BASE")"
   } > "$home/$SUB_HOME_PARENT_MARKER.tmp.$$"
   mv -f -- "$home/$SUB_HOME_PARENT_MARKER.tmp.$$" "$home/$SUB_HOME_PARENT_MARKER"
   printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER.tmp.$$"

@@ -48,7 +48,7 @@ make_primary() {
 
 run_nudge() {
   local root=$1
-  SQUAD_GATE_REFUSE_BYPASS=0 SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" "$NUDGE"
+  SQUAD_GATE_REFUSE_BYPASS=0 SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$root" "$NUDGE"
 }
 
 expect_silent_zero() {
@@ -75,7 +75,7 @@ test_gate_env_is_silent() {
   local root="$TMP_ROOT/gate-env"
   make_primary "$root"
   expect_silent_zero "gate env nudge" env DRILL_GATE=1 SQUAD_GATE_REFUSE_BYPASS=0 \
-    SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" "$NUDGE"
+    SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$root" "$NUDGE"
   pass "sq-sessionstart-nudge: DRILL_GATE is silent"
 }
 
@@ -90,7 +90,7 @@ test_gate_common_dir_is_silent() {
   : > "$root/AGENTS.md"
   printf 'gate-test\n' > "$root/.sq-xo-home"
   expect_silent_zero "gate common-dir nudge" env SQUAD_GATE_REFUSE_BYPASS=0 \
-    SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" "$NUDGE"
+    SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$root" "$NUDGE"
   pass "sq-sessionstart-nudge: .drill gate common-dir is silent"
 }
 
@@ -190,7 +190,7 @@ make_run_primary() {
 run_hook() {  # <root> [args...]
   local root=$1
   shift
-  SQUAD_GATE_REFUSE_BYPASS=0 SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" PATH="$RUN_PATH" "$RUN" "$@"
+  SQUAD_GATE_REFUSE_BYPASS=0 SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$root" PATH="$RUN_PATH" "$RUN" "$@"
 }
 
 # Every run-tier assertion keys off the digest banner, which sq-session-start.sh
@@ -295,7 +295,7 @@ SH
   chmod +x "$fixture/bin/"*.sh
 
   out=$(EXT="$fixture/.pi/extensions/sq-primary-turnend-guard.ts" \
-    SQUAD_HOME="$fixture" SQUAD_ROOT_OVERRIDE="$fixture" SQUAD_GATE_REFUSE_BYPASS=1 \
+    SQUAD_BASE="$fixture" SQUAD_ROOT_OVERRIDE="$fixture" SQUAD_GATE_REFUSE_BYPASS=1 \
     node --input-type=module 2>&1 <<'JS'
 import { pathToFileURL } from "node:url";
 const handlers = new Map();
@@ -369,7 +369,7 @@ test_run_gate_and_scope_are_silent() {
   local root="$TMP_ROOT/run-gate" base="$TMP_ROOT/run-linked-base" linked="$TMP_ROOT/run-linked"
   make_run_primary "$root"
   expect_silent_zero "gate env run" env DRILL_GATE=1 SQUAD_GATE_REFUSE_BYPASS=0 \
-    SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$root" PATH="$RUN_PATH" "$RUN" --source startup
+    SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$root" PATH="$RUN_PATH" "$RUN" --source startup
   assert_absent "$root/state/.lock" "a gate agent's session open still took the unit lock"
 
   fm_git_worktree "$base" "$linked" fm/run-linked

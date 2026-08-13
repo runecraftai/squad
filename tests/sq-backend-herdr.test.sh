@@ -229,7 +229,7 @@ test_version_check_refuses_missing_herdr() {
 test_workspace_label_primary_home_no_marker() {
   local home
   home="$TMP_ROOT/primary-home-no-marker"; mkdir -p "$home"
-  out=$( SQUAD_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  out=$( SQUAD_BASE="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
   [ "$out" = "Squad" ] || fail "a primary home (no .sq-xo-home marker) should resolve to label 'Squad', got '$out'"
   pass "fm_backend_herdr_workspace_label: a primary home (no marker) resolves to 'Squad'"
 }
@@ -238,7 +238,7 @@ test_workspace_label_XO_home_uses_marker_id() {
   local home
   home="$TMP_ROOT/XO-home"; mkdir -p "$home"
   printf 'sshhip-h7\n' > "$home/.sq-xo-home"
-  out=$( SQUAD_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  out=$( SQUAD_BASE="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
   [ "$out" = "xo-sshhip-h7" ] || fail "an XO home should resolve to 'xo-<id>', got '$out'"
   pass "fm_backend_herdr_workspace_label: an XO home (.sq-xo-home) resolves to 'xo-<id>'"
 }
@@ -247,7 +247,7 @@ test_workspace_label_XO_marker_trims_whitespace() {
   local home
   home="$TMP_ROOT/XO-home-ws"; mkdir -p "$home"
   printf '  sshhip-h7  \n\n' > "$home/.sq-xo-home"
-  out=$( SQUAD_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  out=$( SQUAD_BASE="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
   [ "$out" = "xo-sshhip-h7" ] || fail "the marker id should be trimmed of surrounding whitespace, got '$out'"
   pass "fm_backend_herdr_workspace_label: trims whitespace around the marker's XO id"
 }
@@ -256,7 +256,7 @@ test_workspace_label_empty_marker_falls_back_to_primary() {
   local home
   home="$TMP_ROOT/XO-home-empty"; mkdir -p "$home"
   : > "$home/.sq-xo-home"
-  out=$( SQUAD_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  out=$( SQUAD_BASE="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
   [ "$out" = "Squad" ] || fail "an empty/unreadable marker should fall back to 'Squad', got '$out'"
   pass "fm_backend_herdr_workspace_label: an empty marker file falls back to the primary label 'Squad'"
 }
@@ -265,8 +265,8 @@ test_workspace_label_different_XOs_get_different_labels() {
   local home1 home2 out1 out2
   home1="$TMP_ROOT/XO-a"; mkdir -p "$home1"; printf 'alpha-a1\n' > "$home1/.sq-xo-home"
   home2="$TMP_ROOT/XO-b"; mkdir -p "$home2"; printf 'bravo-b2\n' > "$home2/.sq-xo-home"
-  out1=$( SQUAD_HOME="$home1" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
-  out2=$( SQUAD_HOME="$home2" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  out1=$( SQUAD_BASE="$home1" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  out2=$( SQUAD_BASE="$home2" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
   [ "$out1" = "xo-alpha-a1" ] || fail "XO home1 label mismatch: $out1"
   [ "$out2" = "xo-bravo-b2" ] || fail "XO home2 label mismatch: $out2"
   [ "$out1" != "$out2" ] || fail "two different XO homes must not collide on the same label"
@@ -809,7 +809,7 @@ test_container_ensure_uses_XO_home_label() {
   printf '{"result":{"workspaces":[]}}\n' > "$resp/3.out"
   printf '{"result":{"workspace":{"workspace_id":"w9","label":"xo-sshhip-h7"},"tab":{"tab_id":"w9:t1"},"root_pane":{"pane_id":"w9:p1"}}}\n' > "$resp/4.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" SQUAD_HERDR_SCRIPT_STATUS=1 HERDR_SESSION=fmtest \
+  out=$( PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" SQUAD_HERDR_SCRIPT_STATUS=1 HERDR_SESSION=fmtest \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp' "$ROOT" )
   [ "$out" = $'fmtest:w9\tw9:t1' ] || fail "container_ensure did not echo the expected session:workspace_id + seeded default tab id, got '$out'"
   assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f''/tmp'$'\x1f''--label'$'\x1f''xo-sshhip-h7' \
@@ -2793,7 +2793,7 @@ test_workspace_find_matches_only_this_homes_own_label() {
   # home's own label, never the primary's or a sibling XO's.
   printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"Squad"},{"workspace_id":"w2","label":"xo-bravo-b2"},{"workspace_id":"w3","label":"xo-alpha-a1"}]}}\n' > "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
+  out=$( PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_find fmtest' "$ROOT" )
   [ "$out" = "w2" ] || fail "workspace_find should have matched this home's own label (xo-bravo-b2 -> w2), got '$out'"
   pass "fm_backend_herdr_workspace_find: matches only THIS home's own label among several coexisting workspaces"
@@ -2812,7 +2812,7 @@ test_list_live_scoped_to_this_homes_workspace_only() {
   # 3: pane_for_tab's `pane list --workspace w2`
   printf '{"result":{"panes":[{"pane_id":"w2:p1","tab_id":"w2:t1"}]}}\n' > "$resp/3.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
+  out=$( PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_list_live fmtest' "$ROOT" )
   [ "$out" = $'fmtest:w2:p1\tsq-xotask' ] || fail "list_live should report only this home's own tab, got '$out'"
   assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''list'$'\x1f''--workspace'$'\x1f''w2' \
@@ -3668,7 +3668,7 @@ SH
     "sq-peek did not route the explicit stale target through herdr capture"
 
   : > "$log"
-  PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_HOME="$neutral" SQUAD_STATE_OVERRIDE="$state" \
+  PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_BASE="$neutral" SQUAD_STATE_OVERRIDE="$state" \
     SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
     "$ROOT/bin/sq-send.sh" default:w1:p2 --key Escape >/dev/null 2>&1
   expect_code 0 $? "sq-send --key should route an explicit metadata-matched target through herdr"

@@ -25,7 +25,7 @@
 #          instead converge the persistent base to their configured remote code
 #          root. If either placement changes its loaded instruction surface
 #          (AGENTS.md, bin/, or .agents/skills/), bootstrap immediately nudges it
-#          via SQUAD_HOME=<active-base> bin/sq-send.sh sq-<id> so meta resolves the
+#          via SQUAD_BASE=<active-base> bin/sq-send.sh sq-<id> so meta resolves the
 #          current route and the standard from-squad marker is applied. A
 #          successful send prints one BOOTSTRAP_INFO line with the exact target
 #          and message sent; a failed send leaves an idempotent retry marker
@@ -67,7 +67,7 @@
 #          guesses at malformed or unsafe existing files, and XO bases
 #          await the primary-authoritative inherited value instead of creating
 #          their own.
-#          X mode is OPTIONAL and inert unless SQUAD_HOME/.env has a non-empty
+#          X mode is OPTIONAL and inert unless SQUAD_BASE/.env has a non-empty
 #          SQX_PAIRING_TOKEN. When opted in, bootstrap requires curl+jq, writes
 #          the relay poll shim and 30s cadence config, and prints an SQX line.
 #          Unit sync fetches, fast-forwards safe default-branch states, reports
@@ -125,11 +125,11 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_BASE/projects}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 # shellcheck source=bin/sq-tasks-lib.sh disable=SC1091
 . "$SCRIPT_DIR/sq-tasks-lib.sh"
 # shellcheck source=bin/sq-quota-lib.sh disable=SC1091
@@ -318,7 +318,7 @@ XO_sync() {
       echo "NUDGE_XOS: XO $id: send failed: cannot record retry marker"
       return 0
     fi
-    if out=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
+    if out=$(SQUAD_BASE="$SQUAD_BASE" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
       rm -f "$marker"
       echo "BOOTSTRAP_INFO: nudged $selector with '$SECOND_MATE_NUDGE_MESSAGE'"
     else
@@ -391,7 +391,7 @@ XO_sync() {
         echo "NUDGE_XOS: XO $id: send failed: retry target is not at recorded instruction commit"
         continue
       }
-      if out=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
+      if out=$(SQUAD_BASE="$SQUAD_BASE" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-send.sh" "$selector" "$SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
         rm -f "$marker"
         echo "BOOTSTRAP_INFO: nudged $selector with '$SECOND_MATE_NUDGE_MESSAGE'"
       else
@@ -452,9 +452,9 @@ XO_sync() {
       *" $id "*) reread_skip_pending=1 ;;
     esac
     if [ "$reread_skip_pending" -eq 0 ] \
-      && fm_config_reread_retry_queue_is_full "$SQUAD_HOME" "$id"; then
+      && fm_config_reread_retry_queue_is_full "$SQUAD_BASE" "$id"; then
       fm_config_reread_retry_pending "$id" "$home_real" || true
-      if fm_config_reread_retry_queue_is_full "$SQUAD_HOME" "$id"; then
+      if fm_config_reread_retry_queue_is_full "$SQUAD_BASE" "$id"; then
         echo "CONFIG_REREAD: XO $id: send failed: retry instruction queue is full"
         fm_lock_release "$home_lock" || true
         continue
@@ -466,12 +466,12 @@ XO_sync() {
       continue
     }
     if SQUAD_CONFIG_INHERIT_REPORT="$report" SQUAD_CONFIG_INHERIT_LIVE=1 \
-      propagate_XO_inheritance "$SQUAD_HOME" "$home_real" "$CONFIG" "$DATA"; then
+      propagate_XO_inheritance "$SQUAD_BASE" "$home_real" "$CONFIG" "$DATA"; then
       :
     else
       echo "XO_SYNC: XO $id: skipped: inheritance failed"
     fi
-    if ! reread_out=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    if ! reread_out=$(SQUAD_BASE="$SQUAD_BASE" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
       SQUAD_STATE_OVERRIDE="$STATE" \
       SQUAD_CONFIG_REREAD_SKIP_PENDING="$reread_skip_pending" \
       fm_config_send_reread_nudge "$id" "$home_real" "$report" 2>&1); then
@@ -533,7 +533,7 @@ XO_sync() {
     fi
     [ "$remote_pending" -eq 0 ] || nudge_needed=1
     if [ "$converged" -eq 1 ] && [ "$nudge_needed" -eq 1 ]; then
-      if out=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" \
+      if out=$(SQUAD_BASE="$SQUAD_BASE" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" \
         "$SCRIPT_DIR/sq-send.sh" "sq-$id" "$REMOTE_SECOND_MATE_NUDGE_MESSAGE" 2>&1); then
         rm -f "$remote_marker"
         [ "${SQUAD_BOOTSTRAP_VERBOSE_FACTS:-0}" != 1 ] || echo "BOOTSTRAP_INFO: nudged remote sq-$id after convergence"
@@ -897,7 +897,7 @@ x_mode_remove_artifact() {
 # the emitted harness-aware supervision repair instruction.
 x_mode_setup() {
   local env_file token shim cadence shim_body cadence_body tool missing shim_home
-  env_file="$SQUAD_HOME/.env"
+  env_file="$SQUAD_BASE/.env"
   shim="$STATE/x-sentry.check.sh"
   cadence="$CONFIG/x-mode.env"
 
@@ -959,10 +959,10 @@ x_mode_setup() {
 
   mkdir -p "$STATE" "$CONFIG" 2>/dev/null || { fmx_arm_failed; return 0; }
 
-  case "$SQUAD_HOME" in
-    /*) shim_home=$SQUAD_HOME ;;
+  case "$SQUAD_BASE" in
+    /*) shim_home=$SQUAD_BASE ;;
     *)
-      shim_home=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) \
+      shim_home=$(CDPATH='' cd -- "$SQUAD_BASE" 2>/dev/null && pwd -P) \
         || { fmx_arm_failed; return 0; }
       ;;
   esac
@@ -1086,7 +1086,7 @@ startup_memory_budget_setup() {
   # Primary bootstrap owns default publication. An XO is deliberately
   # passive here because its setting must converge from the primary through the
   # inherited-local-material contract rather than becoming a local authority.
-  if [ -e "$SQUAD_HOME/.sq-xo-home" ] || [ -L "$SQUAD_HOME/.sq-xo-home" ]; then
+  if [ -e "$SQUAD_BASE/.sq-xo-home" ] || [ -L "$SQUAD_BASE/.sq-xo-home" ]; then
     return 0
   fi
   if ! fm_startup_memory_budget_materialize "$CONFIG"; then

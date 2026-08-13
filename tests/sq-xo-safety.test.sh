@@ -33,11 +33,11 @@ case "${1:-}" in
       exit 0
     fi
     [ "$#" -eq 1 ] || exit 2
-    printf '%s\n' "$SQUAD_HOME" >> "$SQUAD_FAKE_PROCEVENT_SWEEP_LOG"
-    rm -f -- "$SQUAD_HOME"/state/procevent/*.source "$SQUAD_HOME"/state/procevent/*.runner
+    printf '%s\n' "$SQUAD_BASE" >> "$SQUAD_FAKE_PROCEVENT_SWEEP_LOG"
+    rm -f -- "$SQUAD_BASE"/state/procevent/*.source "$SQUAD_BASE"/state/procevent/*.runner
     ;;
   reconcile)
-    printf '%s\n' "$SQUAD_HOME" >> "$SQUAD_FAKE_PROCEVENT_REARM_LOG"
+    printf '%s\n' "$SQUAD_BASE" >> "$SQUAD_FAKE_PROCEVENT_REARM_LOG"
     [ -z "${SQUAD_FAKE_PROCEVENT_REARM_FAIL:-}" ] || exit 1
     ;;
   *) exit 2 ;;
@@ -54,31 +54,31 @@ test_fm_home_parameterization() {
   mkdir -p "$home_one/data" "$home_one/state" "$home_two/data" "$home_two/state"
   printf '%s\n' '- app [local-only +yolo] - test app (added 2026-06-22)' > "$home_one/data/projects.md"
 
-  out=$(SQUAD_HOME="$home_one" "$ROOT/bin/sq-project-mode.sh" app)
-  [ "$out" = "local-only on" ] || fail "sq-project-mode did not read projects.md from SQUAD_HOME"
-  out=$(SQUAD_HOME="$home_two" "$ROOT/bin/sq-project-mode.sh" app 2>/dev/null)
+  out=$(SQUAD_BASE="$home_one" "$ROOT/bin/sq-project-mode.sh" app)
+  [ "$out" = "local-only on" ] || fail "sq-project-mode did not read projects.md from SQUAD_BASE"
+  out=$(SQUAD_BASE="$home_two" "$ROOT/bin/sq-project-mode.sh" app 2>/dev/null)
   [ "$out" = "drill off" ] || fail "sq-project-mode did not isolate missing registry by home"
 
-  SQUAD_HOME="$home_one" "$ROOT/bin/sq-brief.sh" task-a app --mode drill >/dev/null || fail "brief scaffold failed under SQUAD_HOME"
+  SQUAD_BASE="$home_one" "$ROOT/bin/sq-brief.sh" task-a app --mode drill >/dev/null || fail "brief scaffold failed under SQUAD_BASE"
   brief="$home_one/data/task-a/brief.md"
-  [ -f "$brief" ] || fail "brief was not written under SQUAD_HOME/data"
-  grep -F ">> '$home_one/state/task-a.status'" "$brief" >/dev/null || fail "brief did not shell-quote SQUAD_HOME state path"
+  [ -f "$brief" ] || fail "brief was not written under SQUAD_BASE/data"
+  grep -F ">> '$home_one/state/task-a.status'" "$brief" >/dev/null || fail "brief did not shell-quote SQUAD_BASE state path"
 
-  SQUAD_HOME="$home_one" "$ROOT/bin/sq-brief.sh" task-b app --recon >/dev/null || fail "recon brief scaffold failed under SQUAD_HOME"
+  SQUAD_BASE="$home_one" "$ROOT/bin/sq-brief.sh" task-b app --recon >/dev/null || fail "recon brief scaffold failed under SQUAD_BASE"
   brief="$home_one/data/task-b/brief.md"
-  grep -F ">> '$home_one/state/task-b.status'" "$brief" >/dev/null || fail "recon brief did not shell-quote SQUAD_HOME state path"
+  grep -F ">> '$home_one/state/task-b.status'" "$brief" >/dev/null || fail "recon brief did not shell-quote SQUAD_BASE state path"
 
-  SQUAD_HOME="$home_one" SQUAD_XO_CHARTER='ops domain' "$ROOT/bin/sq-brief.sh" task-c --xo app >/dev/null \
-    || fail "XO brief scaffold failed under SQUAD_HOME"
+  SQUAD_BASE="$home_one" SQUAD_XO_CHARTER='ops domain' "$ROOT/bin/sq-brief.sh" task-c --xo app >/dev/null \
+    || fail "XO brief scaffold failed under SQUAD_BASE"
   brief="$home_one/data/task-c/brief.md"
-  grep -F ">> '$home_one/state/task-c.status'" "$brief" >/dev/null || fail "XO brief did not shell-quote SQUAD_HOME state path"
+  grep -F ">> '$home_one/state/task-c.status'" "$brief" >/dev/null || fail "XO brief did not shell-quote SQUAD_BASE state path"
 
   printf 'project=x\n' > "$home_one/state/task-a.meta"
-  SQUAD_HOME="$home_one" SQUAD_GUARD_GRACE=999999 "$ROOT/bin/sq-pr-check.sh" task-a https://github.com/example/repo/pull/1 >/dev/null 2>/dev/null \
-    || fail "sq-pr-check failed under SQUAD_HOME"
-  [ -f "$home_one/state/task-a.check.sh" ] || fail "pr check was not written under SQUAD_HOME/state"
+  SQUAD_BASE="$home_one" SQUAD_GUARD_GRACE=999999 "$ROOT/bin/sq-pr-check.sh" task-a https://github.com/example/repo/pull/1 >/dev/null 2>/dev/null \
+    || fail "sq-pr-check failed under SQUAD_BASE"
+  [ -f "$home_one/state/task-a.check.sh" ] || fail "pr check was not written under SQUAD_BASE/state"
   [ ! -e "$home_two/state/task-a.check.sh" ] || fail "pr check leaked into another home"
-  pass "SQUAD_HOME parameterizes data and state paths"
+  pass "SQUAD_BASE parameterizes data and state paths"
 }
 
 test_lock_status_is_per_home() {
@@ -87,9 +87,9 @@ test_lock_status_is_per_home() {
   home_two="$TMP_ROOT/lock-two"
   mkdir -p "$home_one/state" "$home_two/state"
   printf '999999\n' > "$home_one/state/.lock"
-  out=$(SQUAD_HOME="$home_one" "$ROOT/bin/sq-lock.sh" status)
+  out=$(SQUAD_BASE="$home_one" "$ROOT/bin/sq-lock.sh" status)
   printf '%s\n' "$out" | grep -F 'lock: stale' >/dev/null || fail "home one lock status did not read its own lock"
-  out=$(SQUAD_HOME="$home_two" "$ROOT/bin/sq-lock.sh" status)
+  out=$(SQUAD_BASE="$home_two" "$ROOT/bin/sq-lock.sh" status)
   [ "$out" = "lock: free" ] || fail "home two lock status was affected by home one"
   pass "sq-lock status is scoped per home"
 }
@@ -113,7 +113,7 @@ test_seed_allows_overlapping_clones_and_drops_owner() {
 - beta [direct-PR] - beta project (added 2026-06-22)
 EOF
 
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER='feature design for alpha beta' \
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='feature design for alpha beta' \
     SQUAD_XO_SCOPE='feature design for alpha beta' \
     "$ROOT/bin/sq-home-seed.sh" design "$design" alpha beta >/dev/null \
     || fail "initial seed failed"
@@ -122,14 +122,14 @@ EOF
   assert_no_grep 'owns:' "$home/data/XOs.md" "registry used the legacy owns field"
 
   # beta is shared with a second XO of a different scope (overlap allowed).
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER='issue triage for beta' \
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='issue triage for beta' \
     SQUAD_XO_SCOPE='issue triage for beta' \
     "$ROOT/bin/sq-home-seed.sh" other "$other" beta >/dev/null 2>&1 \
     || fail "seed refused overlapping project clones across different scopes"
   assert_grep '- other - issue triage for beta' "$home/data/XOs.md" "overlapping registry line missing"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null || fail "registry validation rejected overlapping clones"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null || fail "registry validation rejected overlapping clones"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" owner alpha >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" owner alpha >/dev/null 2>&1; then
     fail "owner subcommand still succeeded after routing moved to scopes"
   fi
   pass "seed allows overlapping project clone lists and drops the owns/owner routing"
@@ -141,7 +141,7 @@ test_home_seed_validate_rejects_unparseable_registry_entry() {
   err="$TMP_ROOT/unparseable-registry.err"
   mkdir -p "$home/data"
   printf '%s\n' '- broken - prose (home: /tmp/child; scope: missing projects and date)' > "$home/data/XOs.md"
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
     fail "home-seed validation accepted an operationally unparseable registry record"
   fi
   grep -F 'malformed XO registry entry' "$err" >/dev/null \
@@ -157,12 +157,12 @@ test_home_seed_refuses_broken_registry_symlink() {
   target="$home/data/missing-XOs.md"
   mkdir -p "$home/data" "$home/state" "$home/projects"
   ln -s "$target" "$home/data/XOs.md"
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
     fail "home-seed validation accepted a broken registry symlink"
   fi
   grep -F 'XO registry is unavailable or unsafe' "$err" >/dev/null \
     || fail "home-seed validation did not explain the broken registry symlink"
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='design domain' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='design domain' \
     "$ROOT/bin/sq-home-seed.sh" design "$sub" alpha >/dev/null 2>"$err"; then
     fail "home seeding accepted a broken registry symlink"
   fi
@@ -182,7 +182,7 @@ test_home_seed_refuses_unreadable_registry() {
   mkdir -p "$home/data" "$home/state" "$home/projects"
   printf '%s\n' '- design - design domain (home: /tmp/design; scope: design; projects: alpha; added 2026-07-30)' > "$registry"
   chmod 000 "$registry"
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
     chmod 600 "$registry"
     fail "home-seed validation accepted an unreadable registry"
   fi
@@ -190,7 +190,7 @@ test_home_seed_refuses_unreadable_registry() {
     chmod 600 "$registry"
     fail "home-seed validation did not explain the unreadable registry"
   }
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='design domain' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='design domain' \
     "$ROOT/bin/sq-home-seed.sh" design "$sub" alpha >/dev/null 2>"$err"; then
     chmod 600 "$registry"
     fail "home seeding accepted an unreadable registry"
@@ -213,7 +213,7 @@ test_home_seed_validate_rejects_duplicate_homes() {
 - triage - triage domain (home: $subhome_abs; scope: issue triage; projects: beta; added 2026-06-22)
 EOF
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
     fail "registry validation accepted two XOs with the same home"
   fi
   grep -F 'duplicate XO home assignment' "$err" >/dev/null \
@@ -235,7 +235,7 @@ test_home_seed_validate_rejects_duplicate_ids() {
 - design - design domain (home: $second_abs; scope: design work; projects: beta; added 2026-06-22)
 EOF
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
     fail "registry validation accepted two homes for the same XO id"
   fi
   grep -F 'duplicate XO id assignment' "$err" >/dev/null \
@@ -257,7 +257,7 @@ test_home_seed_validate_rejects_nested_homes() {
 - triage - triage domain (home: $descendant_abs; scope: issue triage; projects: beta; added 2026-06-22)
 EOF
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null 2>"$err"; then
     fail "registry validation accepted nested XO homes"
   fi
   grep -F 'overlapping XO home assignment' "$err" >/dev/null \
@@ -278,7 +278,7 @@ test_home_seed_uses_fob_acquired_home() {
   log="$TMP_ROOT/dash-fake/tmux.log"
   lease="$TMP_ROOT/dash-fake/lease"
 
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_FOB_HOME="$acquired" SQUAD_FAKE_TMUX_LOG="$log" \
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_FOB_HOME="$acquired" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_FOB_LEASE_FILE="$lease" \
     SQUAD_XO_CHARTER='dash acquired scope' SQUAD_XO_SCOPE='dash acquired scope' \
     "$ROOT/bin/sq-home-seed.sh" dash - alpha) \
@@ -310,7 +310,7 @@ test_home_seed_returns_fob_acquired_home_on_assignment_failure() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/dash-fail-fake")
   log="$TMP_ROOT/dash-fail-fake/tmux.log"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_FOB_HOME="$acquired" SQUAD_FAKE_TMUX_LOG="$log" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_FOB_HOME="$acquired" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_XO_CHARTER='dash acquired scope' SQUAD_XO_SCOPE='dash acquired scope' \
     "$ROOT/bin/sq-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed reused an acquired home marked for another XO"
@@ -340,7 +340,7 @@ test_home_seed_warns_when_acquired_home_return_fails() {
   log="$TMP_ROOT/dash-return-fail-fake/tmux.log"
   lease="$TMP_ROOT/dash-return-fail-fake/lease"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_FOB_HOME="$acquired" SQUAD_FAKE_TMUX_LOG="$log" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_FOB_HOME="$acquired" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_FOB_LEASE_FILE="$lease" SQUAD_FAKE_FOB_RETURN_FAIL=1 \
     SQUAD_XO_CHARTER='dash acquired scope' SQUAD_XO_SCOPE='dash acquired scope' \
     "$ROOT/bin/sq-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
@@ -367,7 +367,7 @@ test_home_seed_does_not_return_unsafe_acquired_home() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/dash-active-fake")
   log="$TMP_ROOT/dash-active-fake/tmux.log"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_FOB_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_FOB_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed accepted an acquired home matching the active Squad home"
   fi
@@ -378,7 +378,7 @@ test_home_seed_does_not_return_unsafe_acquired_home() {
   [ -d "$home/projects/alpha" ] || fail "unsafe acquired-home rollback removed the active home"
 
   : > "$log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_FOB_HOME="$descendant" SQUAD_FAKE_TMUX_LOG="$log" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_FOB_HOME="$descendant" SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-home-seed.sh" dash - alpha >/dev/null 2>"$err"; then
     fail "seed accepted an acquired home inside the active Squad home"
   fi
@@ -406,7 +406,7 @@ test_home_seed_rolls_back_failed_clone() {
 - beta [direct-PR] - beta project (added 2026-06-22)
 EOF
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='rollback scope' SQUAD_XO_SCOPE='rollback scope' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='rollback scope' SQUAD_XO_SCOPE='rollback scope' \
     "$ROOT/bin/sq-home-seed.sh" rollback "$subhome" alpha beta >/dev/null 2>"$err"; then
     fail "seed succeeded even though the second project clone failed"
   fi
@@ -433,7 +433,7 @@ test_home_seed_refuses_missing_filled_charter() {
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/missing-charter-alpha.git"
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted a direct seed without a filled charter"
   fi
   grep -F 'no filled XO charter brief' "$err" >/dev/null \
@@ -452,10 +452,10 @@ test_home_seed_refuses_placeholder_charter() {
   fm_git_init_commit "$home/projects/alpha"
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/placeholder-charter-alpha.git"
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-brief.sh" design --xo alpha >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" design --xo alpha >/dev/null \
     || fail "placeholder charter scaffold failed"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted an unfilled placeholder charter"
   fi
   grep -F 'still contains {TASK}' "$err" >/dev/null \
@@ -475,7 +475,7 @@ test_home_seed_refuses_empty_charter_fields() {
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/empty-charter-alpha.git"
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='   ' "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='   ' "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted a whitespace-only charter"
   fi
   grep -F 'empty Charter section' "$err" >/dev/null \
@@ -485,7 +485,7 @@ test_home_seed_refuses_empty_charter_fields() {
   rm -rf "$home/data/design" "$subhome" "$err"
   SQUAD_XO_SCOPE='   ' scaffold_XO_charter "$home" design 'filled charter' alpha \
     || fail "empty scope fixture scaffold failed"
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted an empty routing scope"
   fi
   grep -F 'empty Routing scope section' "$err" >/dev/null \
@@ -505,7 +505,7 @@ test_home_seed_no_projects_end_to_end() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/no-projects-fake")
   log="$TMP_ROOT/no-projects-fake/tmux.log"
 
-  out=$(SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  out=$(SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects) \
     || fail "project-less seed failed"
@@ -519,12 +519,12 @@ test_home_seed_no_projects_end_to_end() {
   [ "$(cat "$sub/.sq-xo-home")" = fdev ] || fail "project-less seed did not mark the subhome"
   assert_present "$sub/data/charter.md" "project-less seed did not copy the charter"
   [ -z "$(ls -A "$sub/projects" 2>/dev/null)" ] || fail "project-less seed cloned a project"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null || fail "registry validation failed after project-less seed"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null || fail "registry validation failed after project-less seed"
 
   # Spawn tolerates the empty projects field: the home resolves from the registry
   # and the projects meta is recorded empty rather than breaking the launch.
   : > "$log"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/no-projects-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" fdev "$sub" codex --xo >/dev/null 2>&1 \
     || fail "project-less XO spawn failed"
@@ -548,11 +548,11 @@ test_XO_spawn_resolves_punctuated_registry_projects() {
   sub_abs=$(cd "$sub" && pwd -P)
   printf -- '- punctuated - launch notes (parenthetical) (home: %s; scope: launch (child); semicolon is valid; projects: alpha, beta; added 2026-07-30)' \
     "$sub_abs" > "$home/data/XOs.md"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null \
     || fail "home-seed validation rejected punctuated registry fields before spawn"
   fakebin=$(make_fake_tmux "$TMP_ROOT/punctuated-spawn-fake")
   log="$TMP_ROOT/punctuated-spawn-fake/tmux.log"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/punctuated-spawn-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" punctuated codex --xo >/dev/null 2>&1 \
     || fail "XO spawn failed for punctuated registry fields"
@@ -604,14 +604,14 @@ EOF
       fm_write_XO_meta "$home/state/domain.meta" "$sub"
       meta_before="$TMP_ROOT/spawn-binding-$case_name.meta.before"
       cp "$home/state/domain.meta" "$meta_before"
-      if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+      if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
         SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-binding-$case_name-fake/pane.txt" \
         "$ROOT/bin/sq-spawn.sh" domain codex --xo >/dev/null 2>"$err"; then
         fail "XO spawn accepted $case_name registry binding"
       fi
       cmp -s "$meta_before" "$home/state/domain.meta" || fail "XO spawn changed metadata after $case_name refusal"
     else
-      if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+      if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
         SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-binding-$case_name-fake/pane.txt" \
         "$ROOT/bin/sq-spawn.sh" domain "$sub" codex --xo >/dev/null 2>"$err"; then
         fail "XO spawn accepted $case_name registry binding"
@@ -639,7 +639,7 @@ test_home_seed_refuses_projectful_reused_charter_for_projectless_home() {
   scaffold_XO_charter "$home" reusable 'Squad self-development' --no-projects \
     || fail "project-less charter scaffold failed"
   printf '\n# Custom note\nThe projects above are local clones for work you supervise.\n' >> "$home/data/reusable/brief.md"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" reusable "$reusable_sub" --no-projects >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" reusable "$reusable_sub" --no-projects >/dev/null \
     || fail "project-less seed rejected a reused project-less charter"
   assert_grep 'None. This is a project-less domain' "$reusable_sub/data/charter.md" \
     "reused project-less charter was not copied"
@@ -650,7 +650,7 @@ test_home_seed_refuses_projectful_reused_charter_for_projectless_home() {
     "$stale_brief" > "$stale_brief_before"
   mv "$stale_brief_before" "$stale_brief"
   cp "$stale_brief" "$stale_brief_before"
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" stale "$stale_sub" --no-projects >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" stale "$stale_sub" --no-projects >/dev/null 2>"$err"; then
     fail "project-less seed accepted a reused charter with project clones"
   fi
   grep -F 'existing charter brief' "$err" >/dev/null \
@@ -681,7 +681,7 @@ test_home_seed_refuses_projectless_conversion_of_populated_home() {
 EOF
   registry_before=$(cat "$sub/data/projects.md")
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects >/dev/null 2>"$err"; then
     fail "project-less seed converted a populated XO home"
@@ -714,7 +714,7 @@ test_home_seed_refuses_projectless_home_with_uninspectable_projects() {
   fm_git_init_commit "$sub/projects/hidden-clone"
   chmod 311 "$sub/projects"
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects >/dev/null 2>"$err"; then
     chmod 700 "$sub/projects"
@@ -747,7 +747,7 @@ test_home_seed_refuses_projectless_home_with_symlinked_projects() {
   ln -s "$target" "$sub/projects"
   chmod 311 "$target"
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects >/dev/null 2>"$err"; then
     chmod 700 "$target"
@@ -781,7 +781,7 @@ test_home_seed_refuses_projectless_home_with_non_directory_projects() {
   printf '%s\n' 'retained project path' > "$sub/projects"
   projects_before=$(cat "$sub/projects")
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects >/dev/null 2>"$err"; then
     fail "project-less seed accepted a home whose projects path is not a directory"
@@ -812,7 +812,7 @@ test_home_seed_refuses_projectless_home_with_uninspectable_registry() {
   registry_before=$(cat "$sub/data/projects.md")
   chmod 000 "$sub/data/projects.md"
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='Squad self-development' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='Squad self-development' \
     SQUAD_XO_SCOPE='Squad repo work' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects >/dev/null 2>"$err"; then
     chmod 600 "$sub/data/projects.md"
@@ -845,7 +845,7 @@ test_home_seed_refuses_missing_projects_without_signal() {
   err="$TMP_ROOT/missing-projects.err"
   mkdir -p "$home/projects" "$home/data" "$home/state"
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='some scope' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='some scope' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" >/dev/null 2>"$err"; then
     fail "seed accepted a project-less home without the deliberate --no-projects signal"
   fi
@@ -855,7 +855,7 @@ test_home_seed_refuses_missing_projects_without_signal() {
   fi
 
   # The deliberate signal is mutually exclusive with a project list.
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='some scope' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='some scope' \
     "$ROOT/bin/sq-home-seed.sh" fdev "$sub" --no-projects alpha >/dev/null 2>"$err"; then
     fail "seed accepted --no-projects combined with a project list"
   fi
@@ -873,7 +873,7 @@ test_home_seed_refuses_local_only_project() {
   fm_git_init_commit "$home/projects/alpha"
   printf '%s\n' '- alpha [local-only] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed allowed a local-only project into an XO home"
   fi
   grep -F 'project alpha is local-only; XO routes support only drill and direct-PR projects' "$err" >/dev/null \
@@ -892,7 +892,7 @@ test_home_seed_refuses_registry_delimiter_home() {
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/delimiter-alpha.git"
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='delimiter charter' "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='delimiter charter' "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted a home path with registry delimiters"
   fi
   grep -F 'XO home path contains registry delimiters' "$err" >/dev/null \
@@ -921,34 +921,34 @@ test_home_seed_refuses_active_home_and_root() {
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for active-home seed test"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$home" alpha >/dev/null 2>"$err"; then
-    fail "seed allowed XO home to reuse active SQUAD_HOME"
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$home" alpha >/dev/null 2>"$err"; then
+    fail "seed allowed XO home to reuse active SQUAD_BASE"
   fi
   grep -F 'XO home cannot be the active Squad home' "$err" >/dev/null \
-    || fail "seed did not explain active SQUAD_HOME rejection"
+    || fail "seed did not explain active SQUAD_BASE rejection"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$active_descendant" alpha >/dev/null 2>"$err"; then
-    fail "seed allowed XO home inside active SQUAD_HOME"
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$active_descendant" alpha >/dev/null 2>"$err"; then
+    fail "seed allowed XO home inside active SQUAD_BASE"
   fi
   grep -F 'XO home cannot be inside the active Squad home' "$err" >/dev/null \
-    || fail "seed did not explain active SQUAD_HOME descendant rejection"
-  [ ! -e "$home/nested" ] || fail "seed created a directory inside active SQUAD_HOME before descendant rejection"
+    || fail "seed did not explain active SQUAD_BASE descendant rejection"
+  [ ! -e "$home/nested" ] || fail "seed created a directory inside active SQUAD_BASE before descendant rejection"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$active_ancestor" alpha >/dev/null 2>"$err"; then
-    fail "seed allowed XO home to contain active SQUAD_HOME"
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$active_ancestor" alpha >/dev/null 2>"$err"; then
+    fail "seed allowed XO home to contain active SQUAD_BASE"
   fi
   grep -F 'XO home cannot be an ancestor of the active Squad home' "$err" >/dev/null \
-    || fail "seed did not explain active SQUAD_HOME ancestor rejection"
-  [ ! -f "$active_ancestor/.sq-xo-home" ] || fail "seed marked an ancestor of active SQUAD_HOME"
+    || fail "seed did not explain active SQUAD_BASE ancestor rejection"
+  [ ! -f "$active_ancestor/.sq-xo-home" ] || fail "seed marked an ancestor of active SQUAD_BASE"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$ROOT" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$ROOT" alpha >/dev/null 2>"$err"; then
     fail "seed allowed XO home to reuse SQUAD_ROOT"
   fi
   grep -F 'XO home cannot be the Squad repo' "$err" >/dev/null \
     || fail "seed did not explain SQUAD_ROOT rejection"
 
   git clone --quiet "$ROOT" "$root_clone"
-  if SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root_clone" "$ROOT/bin/sq-home-seed.sh" design "$root_descendant" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root_clone" "$ROOT/bin/sq-home-seed.sh" design "$root_descendant" alpha >/dev/null 2>"$err"; then
     fail "seed allowed XO home inside SQUAD_ROOT"
   fi
   grep -F 'XO home cannot be inside the Squad repo' "$err" >/dev/null \
@@ -957,7 +957,7 @@ test_home_seed_refuses_active_home_and_root() {
 
   git clone --quiet "$ROOT" "$root_ancestor"
   git clone --quiet "$ROOT" "$root_inside"
-  if SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root_inside" "$ROOT/bin/sq-home-seed.sh" design "$root_ancestor" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root_inside" "$ROOT/bin/sq-home-seed.sh" design "$root_ancestor" alpha >/dev/null 2>"$err"; then
     fail "seed allowed XO home to contain SQUAD_ROOT"
   fi
   grep -F 'XO home cannot be an ancestor of the Squad repo' "$err" >/dev/null \
@@ -979,7 +979,7 @@ test_home_seed_refuses_home_marked_for_another_id() {
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for marked-home seed test"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed reused a home marked for another XO"
   fi
   grep -F 'already marked for other' "$err" >/dev/null || fail "seed did not explain marked-home rejection"
@@ -1001,7 +1001,7 @@ test_home_seed_refuses_home_registered_to_another_id() {
   printf '%s\n' '- other - other domain (home: '"$subhome_abs"'; scope: other domain; projects: beta; added 2026-06-22)' > "$home/data/XOs.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for registered-home seed test"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed reused a home registered to another XO"
   fi
   grep -F 'already registered to other' "$err" >/dev/null || fail "seed did not explain registered-home rejection"
@@ -1020,12 +1020,12 @@ test_home_seed_refuses_reassigning_existing_id_to_different_home() {
   fm_git_add_origin "$home/projects/alpha" "$TMP_ROOT/remotes/reassign-alpha.git"
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
 
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER='design domain' SQUAD_XO_SCOPE='design domain' \
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='design domain' SQUAD_XO_SCOPE='design domain' \
     "$ROOT/bin/sq-home-seed.sh" design "$first" alpha >/dev/null \
     || fail "initial seed failed for reassigning-id test"
   first_abs=$(cd "$first" && pwd -P)
 
-  if SQUAD_HOME="$home" SQUAD_XO_CHARTER='design domain' SQUAD_XO_SCOPE='design domain' \
+  if SQUAD_BASE="$home" SQUAD_XO_CHARTER='design domain' SQUAD_XO_SCOPE='design domain' \
     "$ROOT/bin/sq-home-seed.sh" design "$second" alpha >/dev/null 2>"$err"; then
     fail "seed reassigned an existing XO id to a different home"
   fi
@@ -1060,14 +1060,14 @@ test_home_seed_refuses_home_overlapping_registered_home() {
 - child - child domain (home: $registered_child; scope: child domain; projects: gamma; added 2026-06-22)
 EOF
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$nested" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$nested" alpha >/dev/null 2>"$err"; then
     fail "seed accepted a home inside a registered XO home"
   fi
   grep -F 'overlaps registered XO home' "$err" >/dev/null \
     || fail "seed did not explain registered ancestor overlap"
   [ ! -e "$nested" ] || fail "seed created a nested home inside a registered home"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$parent" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$parent" alpha >/dev/null 2>"$err"; then
     fail "seed accepted a home containing a registered XO home"
   fi
   grep -F 'overlaps registered XO home' "$err" >/dev/null \
@@ -1086,7 +1086,7 @@ test_home_seed_refuses_remote_backed_project_without_origin() {
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for no-origin seed test"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed allowed remote-backed project without origin"
   fi
   grep -F 'project alpha is direct-PR but has no origin remote' "$err" >/dev/null || fail "seed did not explain missing origin for remote-backed project"
@@ -1108,7 +1108,7 @@ test_home_seed_refuses_existing_remote_backed_project_with_wrong_origin() {
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for wrong-origin seed test"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed accepted existing remote-backed project with wrong origin"
   fi
   expected=$(git -C "$home/projects/alpha" remote get-url origin)
@@ -1130,14 +1130,14 @@ test_home_seed_resolves_relative_source_origins() {
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for relative origin seed test"
 
-  out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha)
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha)
   subhome_abs=$(cd "$subhome" && pwd -P)
   expected=$(cd "$home/remotes/relative-alpha.git" && pwd -P)
   printf '%s\n' "$out" | grep -F "home=$subhome_abs" >/dev/null || fail "seed did not report relative-origin subhome"
   [ -d "$subhome/projects/alpha/.git" ] || fail "relative source origin was not cloned"
   actual=$(git -C "$subhome/projects/alpha" remote get-url origin)
   [ "$actual" = "$expected" ] || fail "relative source origin was not cloned through the resolved path"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null \
     || fail "relative source origin did not compare equal on reseed"
   pass "home seeding resolves relative source origins against the source project"
 }
@@ -1163,7 +1163,7 @@ test_home_seed_skips_initialized_existing_drill_projects() {
   : > "$log"
 
   if PATH="$fakebin:$PATH" SQUAD_FAKE_DRILL_LOG="$log" SQUAD_FAKE_DRILL_FAIL_PROJECT=beta \
-    SQUAD_HOME="$home" SQUAD_XO_CHARTER='existing init rollback scope' SQUAD_XO_SCOPE='existing init rollback scope' \
+    SQUAD_BASE="$home" SQUAD_XO_CHARTER='existing init rollback scope' SQUAD_XO_SCOPE='existing init rollback scope' \
     "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha beta >/dev/null 2>"$err"; then
     fail "seed succeeded even though later drill initialization failed"
   fi
@@ -1195,7 +1195,7 @@ test_home_seed_refuses_uninitialized_existing_drill_project() {
   : > "$log"
 
   if PATH="$fakebin:$PATH" SQUAD_FAKE_DRILL_LOG="$log" \
-    SQUAD_HOME="$home" SQUAD_XO_CHARTER='existing uninitialized scope' \
+    SQUAD_BASE="$home" SQUAD_XO_CHARTER='existing uninitialized scope' \
     "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed initialized a preexisting drill clone"
   fi
@@ -1221,7 +1221,7 @@ test_home_seed_refuses_project_destinations_outside_subhome() {
   printf '%s\n' '- alpha [direct-PR] - alpha project (added 2026-06-22)' > "$home/data/projects.md"
   scaffold_XO_charter "$home" design 'design domain' alpha || fail "charter scaffold failed for symlink destination seed test"
 
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
     fail "seed followed a subhome projects symlink outside the subhome"
   fi
   grep -F 'XO projects directory must resolve inside the XO home' "$err" >/dev/null \
@@ -1249,7 +1249,7 @@ test_home_seed_refuses_operational_dirs_outside_subhome() {
     mkdir -p "$sink"
     rm -rf "${subhome:?}/${opdir:?}"
     ln -s "$sink" "$subhome/$opdir"
-    if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+    if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
       fail "seed accepted a subhome with $opdir symlinked outside the subhome"
     fi
     grep -F "XO $opdir directory must resolve inside the XO home" "$err" >/dev/null \
@@ -1281,7 +1281,7 @@ test_home_seed_refuses_unsafe_leaf_files() {
     fi
     printf '%s\n' "$expected" > "$sink"
     ln -s "$sink" "$subhome/$leaf"
-    if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+    if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
       fail "seed accepted symlinked leaf file $leaf"
     fi
     grep -F 'XO leaf file must not be a symlink:' "$err" >/dev/null \
@@ -1295,7 +1295,7 @@ test_home_seed_refuses_unsafe_leaf_files() {
     rm -rf "$subhome"
     git clone --quiet "$ROOT" "$subhome"
     mkdir -p "$subhome/$leaf"
-    if SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
+    if SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
       fail "seed accepted directory leaf $leaf"
     fi
     grep -F 'XO leaf file must be a regular file:' "$err" >/dev/null \
@@ -1317,7 +1317,7 @@ test_home_seed_preserves_existing_parent_binding() {
   mkdir -p "$parent_a/data" "$parent_a/state" "$parent_a/projects" \
     "$parent_b/data" "$parent_b/state" "$parent_b/projects" "$before/data"
 
-  SQUAD_HOME="$parent_a" SQUAD_XO_CHARTER='Durable parent reseed charter.' \
+  SQUAD_BASE="$parent_a" SQUAD_XO_CHARTER='Durable parent reseed charter.' \
     SQUAD_XO_SCOPE='durable parent reseed scope' \
     "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
     || fail "initial durable-parent seed failed"
@@ -1329,7 +1329,7 @@ test_home_seed_preserves_existing_parent_binding() {
     cp "$child/$leaf" "$before/$leaf"
   done
 
-  if SQUAD_HOME="$parent_b" SQUAD_XO_CHARTER='Replacement parent charter.' \
+  if SQUAD_BASE="$parent_b" SQUAD_XO_CHARTER='Replacement parent charter.' \
     SQUAD_XO_SCOPE='replacement parent scope' \
     "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects > /dev/null 2>"$err"; then
     fail "reseed replaced a valid durable parent binding"
@@ -1345,7 +1345,7 @@ test_home_seed_preserves_existing_parent_binding() {
   [ ! -e "$parent_b/data/XOs.md" ] \
     || fail "mismatched-parent reseed registered the child to the replacement parent"
 
-  out=$(SQUAD_HOME="$parent_a" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects) \
+  out=$(SQUAD_BASE="$parent_a" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects) \
     || fail "matching-parent reseed failed"
   printf '%s\n' "$out" | grep -F "home=$child_abs" >/dev/null \
     || fail "matching-parent reseed did not report success"
@@ -1383,7 +1383,7 @@ SH
   log="$TMP_ROOT/spawn-validate-fake/tmux.log"
   err="$TMP_ROOT/spawn-validate.err"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$subhome" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted an unseeded home"
   fi
@@ -1394,7 +1394,7 @@ SH
   grep -F 'new-window' "$log" >/dev/null && fail "spawn created a window before validation"
 
   printf 'other\n' > "$wronghome/.sq-xo-home"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$wronghome" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a home marked for another XO"
   fi
@@ -1402,27 +1402,27 @@ SH
 
   printf 'domain\n' > "$marker_only/.sq-xo-home"
   printf 'charter\n' > "$marker_only/data/charter.md"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$marker_only" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a marked home missing AGENTS.md"
   fi
   grep -F 'not a Squad home (missing AGENTS.md)' "$err" >/dev/null || fail "spawn did not explain missing AGENTS.md"
 
   printf '# Squad\n' > "$marker_only/AGENTS.md"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$marker_only" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a marked home missing bin"
   fi
   grep -F 'not a Squad home (missing bin/)' "$err" >/dev/null || fail "spawn did not explain missing bin"
 
   printf 'domain\n' > "$home/.sq-xo-home"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$home" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted the active home"
   fi
   grep -F 'XO home cannot be the active Squad home' "$err" >/dev/null || fail "spawn did not reject active home"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$ROOT" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted the Squad repo root"
   fi
@@ -1430,7 +1430,7 @@ SH
 
   printf 'domain\n' > "$active_descendant/.sq-xo-home"
   printf 'charter\n' > "$active_descendant/data/charter.md"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$active_descendant" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a home inside the active Squad home"
   fi
@@ -1438,7 +1438,7 @@ SH
 
   printf 'domain\n' > "$active_ancestor/.sq-xo-home"
   printf 'charter\n' > "$active_ancestor/data/charter.md"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$ancestor_active_home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$ancestor_active_home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$active_ancestor" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a home containing the active Squad home"
   fi
@@ -1446,7 +1446,7 @@ SH
 
   printf 'domain\n' > "$root_descendant/.sq-xo-home"
   printf 'charter\n' > "$root_descendant/data/charter.md"
-  if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fakeroot" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fakeroot" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$root_descendant" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a home inside the Squad repo"
   fi
@@ -1454,7 +1454,7 @@ SH
 
   printf 'domain\n' > "$root_ancestor/.sq-xo-home"
   printf 'charter\n' > "$root_ancestor/data/charter.md"
-  if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$root_inside" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$root_inside" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-validate-fake/pane.txt" \
     "$ROOT/bin/sq-spawn.sh" domain "$root_ancestor" codex --xo >/dev/null 2>"$err"; then
     fail "XO spawn accepted a home containing the Squad repo"
   fi
@@ -1484,7 +1484,7 @@ test_XO_spawn_refuses_operational_dirs_outside_subhome() {
       printf 'charter\n' > "$sink/charter.md"
     fi
     : > "$log"
-    if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-opdir-fake/pane.txt" \
+    if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/spawn-opdir-fake/pane.txt" \
       "$ROOT/bin/sq-spawn.sh" domain "$subhome" codex --xo >/dev/null 2>"$err"; then
       fail "XO spawn accepted a subhome with $opdir symlinked outside the subhome"
     fi
@@ -1508,7 +1508,7 @@ test_fm_send_refuses_bare_window_without_home_meta() {
   log="$TMP_ROOT/send-fake/tmux.log"
   err="$TMP_ROOT/send-fake/send.err"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_WINDOW="other-session:sq-missing" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/send-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_WINDOW="other-session:sq-missing" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/send-fake/pane.txt" \
     "$ROOT/bin/sq-send.sh" sq-missing 'wrong home' >/dev/null 2>"$err"; then
     fail "sq-send sent to a bare Squad window without home metadata"
   fi
@@ -1545,7 +1545,7 @@ EOF
   log="$TMP_ROOT/teardown-fake/tmux.log"
   lease="$TMP_ROOT/teardown-fake/lease"
   printf 'domain\n' > "$lease"
-  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
     SQUAD_FAKE_FOB_LEASE_FILE="$lease" \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "teardown failed for empty XO home"
@@ -1591,7 +1591,7 @@ EOF
     fakebin=$(make_fake_tmux "$TMP_ROOT/teardown-binding-$case_name-fake")
     log="$TMP_ROOT/teardown-binding-$case_name-fake/tmux.log"
     err="$TMP_ROOT/teardown-binding-$case_name.err"
-    if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+    if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
       SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-binding-$case_name-fake/pane.txt" \
       "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
       fail "XO teardown accepted $case_name registry binding"
@@ -1621,7 +1621,7 @@ test_XO_teardown_sweeps_process_events_before_removal() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/procevent-teardown-fake")
   log="$TMP_ROOT/procevent-teardown-fake/tmux.log"
 
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-teardown-fake/pane.txt" \
     SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>/dev/null \
@@ -1648,7 +1648,7 @@ test_XO_teardown_refuses_process_events_without_sweep_script() {
   fakebin=$(make_fake_tmux "$TMP_ROOT/procevent-refusal-fake")
   log="$TMP_ROOT/procevent-refusal-fake/tmux.log"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_PROCEVENT_CLAIM_ROOT="$claim_root" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_PROCEVENT_CLAIM_ROOT="$claim_root" \
       SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-refusal-fake/pane.txt" \
       "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
     fail "force teardown removed process-event state without a sweep-capable child script"
@@ -1686,7 +1686,7 @@ exit 1
 SH
   chmod +x "$fakebin/tasks-axi"
 
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
       SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-later-refusal-fake/pane.txt" \
       SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" \
       "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>"$err"; then
@@ -1726,7 +1726,7 @@ EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/procevent-force-fake")
   log="$TMP_ROOT/procevent-force-fake/tmux.log"
 
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-force-fake/pane.txt" \
     SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>/dev/null \
@@ -1771,7 +1771,7 @@ EOF
   log="$TMP_ROOT/procevent-nested-fail-fake/tmux.log"
 
   set +e
-  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-nested-fail-fake/pane.txt" \
     SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" SQUAD_FAKE_PROCEVENT_REARM_LOG="$rearm_log" \
     SQUAD_FAKE_FOB_RETURN_FAIL=1 SQUAD_FAKE_PROCEVENT_REARM_FAIL=1 \
@@ -1822,7 +1822,7 @@ EOF
   log="$TMP_ROOT/teardown-return-fail-fake/tmux.log"
 
   set +e
-  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-return-fail-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-return-fail-fake/pane.txt" \
     SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" SQUAD_FAKE_PROCEVENT_REARM_LOG="$rearm_log" \
     SQUAD_FAKE_FOB_RETURN_FAIL=1 \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>"$err"
@@ -1839,7 +1839,7 @@ EOF
   grep -F -- '- domain ' "$home/data/XOs.md" >/dev/null || fail "teardown removed registry route after leased home return failed"
 
   set +e
-  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-return-fail-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-return-fail-fake/pane.txt" \
     SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" SQUAD_FAKE_PROCEVENT_REARM_LOG="$rearm_log" \
     SQUAD_FAKE_FOB_RETURN_FAIL=1 SQUAD_FAKE_PROCEVENT_REARM_FAIL=1 \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>"$err"
@@ -1877,7 +1877,7 @@ EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/plain-clone-teardown-fake")
   log="$TMP_ROOT/plain-clone-teardown-fake/tmux.log"
 
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/plain-clone-teardown-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/plain-clone-teardown-fake/pane.txt" \
     SQUAD_FAKE_FOB_RETURN_FAIL=1 \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "teardown failed for plain-clone XO home"
@@ -1920,11 +1920,11 @@ yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-teardown-fake")
   log="$TMP_ROOT/force-teardown-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>&1; then
     fail "teardown allowed an XO with in-flight child work"
   fi
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>/dev/null \
     || fail "force teardown failed to discard child work"
   [ ! -d "$subhome" ] || fail "force teardown did not remove the retired XO home"
@@ -1976,7 +1976,7 @@ EOF
   log="$TMP_ROOT/force-quarantine-fake/tmux.log"
 
   set +e
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" \
     SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-quarantine-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2> "$err"
   rc=$?
@@ -2065,7 +2065,7 @@ SH
   touch -t 200001010000 "$lock"
 
   set +e
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-lock-child-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-lock-child-fake/pane.txt" \
     SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=0 SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=1 \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"
   rc=$?
@@ -2105,7 +2105,7 @@ EOF
     printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/XOs.md"
     fakebin=$(make_fake_tmux "$TMP_ROOT/symlink-inside-teardown-fake-$opdir")
     log="$TMP_ROOT/symlink-inside-teardown-fake-$opdir/tmux.log"
-    PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/symlink-inside-teardown-fake-$opdir/pane.txt" \
+    PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/symlink-inside-teardown-fake-$opdir/pane.txt" \
       "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err" \
       || fail "force teardown refused $opdir symlinked inside the XO home"
     [ ! -e "$subhome" ] || fail "force teardown did not remove subhome with inside $opdir symlink"
@@ -2138,7 +2138,7 @@ EOF
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/XOs.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/symlink-state-teardown-fake")
   log="$TMP_ROOT/symlink-state-teardown-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/symlink-state-teardown-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/symlink-state-teardown-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
     fail "force teardown accepted a symlinked XO state directory"
   fi
@@ -2195,7 +2195,7 @@ SH
     fakebin=$(make_fake_tmux "$base/fake")
     log="$base/fake/tmux.log"
     err="$base/teardown.err"
-    if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_HOME="$home" \
+    if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fmroot" SQUAD_BASE="$home" \
       SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$base/fake/pane.txt" \
       "$ROOT/bin/sq-teardown.sh" "$tid" >/dev/null 2>"$err"; then
       fail "teardown ($row) accepted a hazardous XO home"
@@ -2251,7 +2251,7 @@ EOF
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/nested-teardown-fake")
   log="$TMP_ROOT/nested-teardown-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/nested-teardown-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/nested-teardown-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>"$err"; then
     fail "teardown removed a home containing another registered XO home"
   fi
@@ -2288,7 +2288,7 @@ EOF
   printf '%s\n' '- nested - nested domain (home: '"$nested"'; scope: nested domain; projects: beta; added 2026-06-22)' > "$subhome/data/XOs.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-registry-teardown-fake")
   log="$TMP_ROOT/child-registry-teardown-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/child-registry-teardown-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/child-registry-teardown-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>"$err"; then
     fail "teardown removed a home containing a child-registry XO home"
   fi
@@ -2331,7 +2331,7 @@ yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/prevalidate-teardown-fake")
   log="$TMP_ROOT/prevalidate-teardown-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/prevalidate-teardown-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/prevalidate-teardown-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
     fail "force teardown discarded child work before validating subhome"
   fi
@@ -2376,9 +2376,9 @@ yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-active-descendant-fake")
   log="$TMP_ROOT/child-active-descendant-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/child-active-descendant-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/child-active-descendant-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
-    fail "force teardown removed a child worktree inside active SQUAD_HOME"
+    fail "force teardown removed a child worktree inside active SQUAD_BASE"
   fi
   [ -d "$home/data" ] || fail "force teardown removed active home data"
   [ -d "$subhome" ] || fail "force teardown removed subhome after child validation refusal"
@@ -2427,7 +2427,7 @@ yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-repo-descendant-fake")
   log="$TMP_ROOT/child-repo-descendant-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fakeroot" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/child-repo-descendant-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$fakeroot" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/child-repo-descendant-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
     fail "force teardown removed a child worktree inside SQUAD_ROOT"
   fi
@@ -2472,7 +2472,7 @@ yolo=off
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/unregistered-child-fake")
   log="$TMP_ROOT/unregistered-child-fake/tmux.log"
-  if PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/unregistered-child-fake/pane.txt" \
+  if PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_LOG="$log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/unregistered-child-fake/pane.txt" \
     "$ROOT/bin/sq-teardown.sh" domain --force >/dev/null 2>"$err"; then
     fail "force teardown removed an unregistered child worktree"
   fi
@@ -2501,7 +2501,7 @@ projects=alpha
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/watch-fake")
   out="$TMP_ROOT/watch-fake/watch.out"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_LOG="$TMP_ROOT/watch-fake/tmux.log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/watch-fake/pane.txt" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_LOG="$TMP_ROOT/watch-fake/tmux.log" SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/watch-fake/pane.txt" \
     SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" &
   pid=$!
   if ! wait_live "$pid" 25; then
@@ -2565,7 +2565,7 @@ EOF
 
   # A key matching neither backlog aborts atomically: nothing moves.
   before=$(cat "$home/data/backlog.md")
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design bug-z no-such-key >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design bug-z no-such-key >/dev/null 2>&1; then
     fail "handoff succeeded despite an unmatched key"
   fi
   [ "$before" = "$(cat "$home/data/backlog.md")" ] || fail "handoff with an unmatched key still mutated the main backlog"
@@ -2573,7 +2573,7 @@ EOF
 
   # An in-flight item is refused (active ownership lives in tmux + state too).
   before=$(cat "$home/data/backlog.md")
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design live-task >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design live-task >/dev/null 2>&1; then
     fail "handoff accepted an in-flight backlog item"
   fi
   [ "$before" = "$(cat "$home/data/backlog.md")" ] || fail "handoff with an in-flight key mutated the main backlog"
@@ -2581,7 +2581,7 @@ EOF
   [ ! -e "$subhome/data/backlog.md" ] || ! grep -F 'live-task' "$subhome/data/backlog.md" >/dev/null     || fail "in-flight refusal copied the live task into the XO backlog"
 
   # An unregistered XO id is refused.
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" ghost bug-z >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" ghost bug-z >/dev/null 2>&1; then
     fail "handoff accepted an unregistered XO id"
   fi
   pass "sq-backlog-handoff aborts atomically on unmatched, in-flight, and unregistered targets"
@@ -2606,7 +2606,7 @@ test_backlog_handoff_refuses_done_items_and_non_XO_homes() {
   before_sub="$TMP_ROOT/handoff-safety-sub.before"
   cp "$home/data/backlog.md" "$before_main"
   cp "$subhome/data/backlog.md" "$before_sub"
-  if out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" archive shipped-task 2>&1); then
+  if out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" archive shipped-task 2>&1); then
     fail "handoff accepted a Done backlog item"
   fi
   printf '%s\n' "$out" | grep -F 'shipped-task' >/dev/null \
@@ -2623,7 +2623,7 @@ test_backlog_handoff_refuses_done_items_and_non_XO_homes() {
   fm_git_init_commit "$projhome"
   projhome_abs=$(cd "$projhome" && pwd -P)
   printf -- '- proj-sm - bogus (home: %s; scope: bogus; projects: alpha; added 2026-06-22)\n' "$projhome_abs" >> "$home/data/XOs.md"
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" proj-sm shipped-task >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" proj-sm shipped-task >/dev/null 2>&1; then
     fail "handoff wrote into a destination that is not a seeded XO home"
   fi
   [ ! -e "$projhome/data/backlog.md" ] || fail "handoff created a backlog inside a non-XO home"
@@ -2636,7 +2636,7 @@ test_backlog_handoff_refuses_done_items_and_non_XO_homes() {
 ## Queued
 - [ ] marker-task - should not move (repo: alpha)
 EOF
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" marker-sm marker-task >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" marker-sm marker-task >/dev/null 2>&1; then
     fail "handoff accepted a marker-only directory as an XO home"
   fi
   [ ! -e "$markerhome/data/backlog.md" ] || fail "handoff wrote into a marker-only directory"
@@ -2652,7 +2652,7 @@ EOF
 ## Queued
 - [ ] symlink-task - should not move (repo: alpha)
 EOF
-  if SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" symlink-sm symlink-task >/dev/null 2>&1; then
+  if SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" symlink-sm symlink-task >/dev/null 2>&1; then
     fail "handoff accepted an XO home with data outside the home"
   fi
   [ ! -e "$outside/backlog.md" ] || fail "handoff wrote through a symlinked XO data directory"

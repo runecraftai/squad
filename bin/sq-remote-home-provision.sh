@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provision the SQUAD_HOME selected by the fixed remote entrypoint.
+# Provision the SQUAD_BASE selected by the fixed remote entrypoint.
 #
 # Usage:
 #   sq-remote-home-provision.sh < manifest
@@ -21,7 +21,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-}}"
+: "${SQUAD_BASE:?SQUAD_BASE is required (legacy SQUAD_HOME is also accepted)}"
 MAX_MANIFEST_BYTES=1048576
 
 # shellcheck source=bin/sq-project-origin-lib.sh
@@ -60,7 +61,7 @@ release_provision_lock() {
   fi
 }
 restore_owned_file() { # <relative-path>
-  local rel=$1 dest="$SQUAD_HOME/$1" backup="$TMP/before/$1"
+  local rel=$1 dest="$SQUAD_BASE/$1" backup="$TMP/before/$1"
   if [ -f "$backup.present" ]; then
     mkdir -p "$(dirname "$dest")" || return 1
     cp -p -- "$backup" "$dest.tmp.rollback.$$" || return 1
@@ -73,16 +74,16 @@ rollback() {
   local status=$? project
   if [ "$status" -ne 0 ] && [ "$PUBLISHED" -eq 0 ]; then
     if [ "$CREATED_HOME" -eq 1 ]; then
-      rm -rf -- "$SQUAD_HOME"
+      rm -rf -- "$SQUAD_BASE"
     elif [ "$EXISTING_HOME" -eq 1 ]; then
       while IFS= read -r project; do
-        [ -n "$project" ] && rm -rf -- "$SQUAD_HOME/projects/$project"
+        [ -n "$project" ] && rm -rf -- "$SQUAD_BASE/projects/$project"
       done < "$CREATED_PROJECTS"
       restore_owned_file data/charter.md || true
       restore_owned_file data/projects.md || true
       restore_owned_file .sq-xo-home || true
       restore_owned_file .sq-xo-parent || true
-      [ "$CREATED_BACKLOG" -eq 0 ] || rm -f -- "$SQUAD_HOME/data/backlog.md"
+      [ "$CREATED_BACKLOG" -eq 0 ] || rm -f -- "$SQUAD_BASE/data/backlog.md"
     fi
   fi
   release_provision_lock
@@ -118,7 +119,7 @@ case "$COUNT" in ''|*[!0-9]*) die "manifest project count is invalid" ;; esac
 RECORDS=$(grep -c '^project=' "$TMP/manifest" 2>/dev/null || true)
 [ "$RECORDS" -eq "$COUNT" ] || die "manifest project count does not match its records"
 
-HOME_PARENT=$(dirname "$SQUAD_HOME")
+HOME_PARENT=$(dirname "$SQUAD_BASE")
 HOME_PARENT_REAL=$(CDPATH='' cd -- "$HOME_PARENT" 2>/dev/null && pwd -P) \
   || die "remote home parent is unavailable"
 [ "$HOME_PARENT_REAL" = "$HOME_PARENT" ] || die "remote home parent is not canonical"
@@ -132,9 +133,9 @@ else
     || die "cannot create remote provisioning lock root"
 fi
 if command -v shasum >/dev/null 2>&1; then
-  HOME_LOCK_KEY=$(printf '%s' "$SQUAD_HOME" | shasum -a 256 | awk '{print $1}')
+  HOME_LOCK_KEY=$(printf '%s' "$SQUAD_BASE" | shasum -a 256 | awk '{print $1}')
 elif command -v sha256sum >/dev/null 2>&1; then
-  HOME_LOCK_KEY=$(printf '%s' "$SQUAD_HOME" | sha256sum | awk '{print $1}')
+  HOME_LOCK_KEY=$(printf '%s' "$SQUAD_BASE" | sha256sum | awk '{print $1}')
 else
   die "no SHA-256 tool is available for provisioning serialization"
 fi
@@ -145,12 +146,12 @@ PROVISION_LOCK="$STATE/.remote-home-provision-$HOME_LOCK_KEY.lock"
 fm_lock_acquire_wait "$PROVISION_LOCK"
 PROVISION_LOCK_HELD=1
 
-if [ -e "$SQUAD_HOME" ] || [ -L "$SQUAD_HOME" ]; then
-  [ -d "$SQUAD_HOME" ] && [ ! -L "$SQUAD_HOME" ] || die "remote home exists but is not a safe directory"
-  [ -f "$SQUAD_HOME/AGENTS.md" ] && [ ! -L "$SQUAD_HOME/AGENTS.md" ] \
-    && [ -d "$SQUAD_HOME/bin" ] && [ ! -L "$SQUAD_HOME/bin" ] || die "existing remote home is not a safe Squad checkout"
+if [ -e "$SQUAD_BASE" ] || [ -L "$SQUAD_BASE" ]; then
+  [ -d "$SQUAD_BASE" ] && [ ! -L "$SQUAD_BASE" ] || die "remote home exists but is not a safe directory"
+  [ -f "$SQUAD_BASE/AGENTS.md" ] && [ ! -L "$SQUAD_BASE/AGENTS.md" ] \
+    && [ -d "$SQUAD_BASE/bin" ] && [ ! -L "$SQUAD_BASE/bin" ] || die "existing remote home is not a safe Squad checkout"
   for operational_dir in data state config projects; do
-    operational_path="$SQUAD_HOME/$operational_dir"
+    operational_path="$SQUAD_BASE/$operational_dir"
     if [ -e "$operational_path" ] || [ -L "$operational_path" ]; then
       [ -d "$operational_path" ] && [ ! -L "$operational_path" ] \
         || die "remote home has unsafe operational directory: $operational_dir"
@@ -158,7 +159,7 @@ if [ -e "$SQUAD_HOME" ] || [ -L "$SQUAD_HOME" ]; then
   done
   mkdir -p "$TMP/before/data"
   for rel in data/charter.md data/projects.md .sq-xo-home .sq-xo-parent; do
-    existing="$SQUAD_HOME/$rel"
+    existing="$SQUAD_BASE/$rel"
     if [ -e "$existing" ] || [ -L "$existing" ]; then
       [ -f "$existing" ] && [ ! -L "$existing" ] || die "existing remote home has unsafe owned file: $rel"
       mkdir -p "$(dirname "$TMP/before/$rel")"
@@ -167,17 +168,17 @@ if [ -e "$SQUAD_HOME" ] || [ -L "$SQUAD_HOME" ]; then
     fi
   done
   EXISTING_HOME=1
-  if [ -f "$SQUAD_HOME/.sq-xo-home" ]; then
-    [ "$(cat "$SQUAD_HOME/.sq-xo-home")" = "$ID" ] || die "existing remote home belongs to another XO"
-  elif find "$SQUAD_HOME/data" "$SQUAD_HOME/state" "$SQUAD_HOME/projects" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+  if [ -f "$SQUAD_BASE/.sq-xo-home" ]; then
+    [ "$(cat "$SQUAD_BASE/.sq-xo-home")" = "$ID" ] || die "existing remote home belongs to another XO"
+  elif find "$SQUAD_BASE/data" "$SQUAD_BASE/state" "$SQUAD_BASE/projects" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
     die "unmarked existing remote home contains operational data"
   fi
 else
   CREATED_HOME=1
-  git clone --quiet -- "$SQUAD_ROOT" "$SQUAD_HOME" || die "could not clone the remote Squad home"
+  git clone --quiet -- "$SQUAD_ROOT" "$SQUAD_BASE" || die "could not clone the remote Squad home"
 fi
 for operational_dir in data state config projects; do
-  operational_path="$SQUAD_HOME/$operational_dir"
+  operational_path="$SQUAD_BASE/$operational_dir"
   if [ -e "$operational_path" ] || [ -L "$operational_path" ]; then
     [ -d "$operational_path" ] && [ ! -L "$operational_path" ] \
       || die "remote home has unsafe operational directory: $operational_dir"
@@ -185,11 +186,11 @@ for operational_dir in data state config projects; do
     mkdir "$operational_path" || die "cannot create remote operational directory: $operational_dir"
   fi
 done
-if [ -e "$SQUAD_HOME/data/backlog.md" ] || [ -L "$SQUAD_HOME/data/backlog.md" ]; then
-  [ -f "$SQUAD_HOME/data/backlog.md" ] && [ ! -L "$SQUAD_HOME/data/backlog.md" ] \
+if [ -e "$SQUAD_BASE/data/backlog.md" ] || [ -L "$SQUAD_BASE/data/backlog.md" ]; then
+  [ -f "$SQUAD_BASE/data/backlog.md" ] && [ ! -L "$SQUAD_BASE/data/backlog.md" ] \
     || die "remote backlog is not a safe regular file"
 else
-  printf '## In flight\n\n## Queued\n\n## Done\n' > "$SQUAD_HOME/data/backlog.md"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$SQUAD_BASE/data/backlog.md"
   CREATED_BACKLOG=1
 fi
 
@@ -221,7 +222,7 @@ EOF
   fm_project_origin_safe "$ORIGIN" || die "project $NAME origin is not an accepted clone URL: $ORIGIN"
   case "$MODE" in drill|direct-PR) ;; *) die "project $NAME has unsupported remote mode: $MODE" ;; esac
   case "$REGISTRY_LINE" in "- $NAME "*) ;; *) die "project $NAME registry line is malformed" ;; esac
-  DEST="$SQUAD_HOME/projects/$NAME"
+  DEST="$SQUAD_BASE/projects/$NAME"
   if [ -e "$DEST" ] || [ -L "$DEST" ]; then
     [ -d "$DEST" ] && [ ! -L "$DEST" ] && [ -d "$DEST/.git" ] \
       || die "project destination exists but is not a safe clone: $DEST"
@@ -239,21 +240,21 @@ EOF
   printf '%s\n' "$REGISTRY_LINE" >> "$PROJECT_REG"
 done < <(grep '^project=' "$TMP/manifest")
 
-cp "$TMP/charter" "$SQUAD_HOME/data/charter.md.tmp.$$"
-chmod 600 "$SQUAD_HOME/data/charter.md.tmp.$$"
-mv -f -- "$SQUAD_HOME/data/charter.md.tmp.$$" "$SQUAD_HOME/data/charter.md"
-cp "$PROJECT_REG" "$SQUAD_HOME/data/projects.md.tmp.$$"
-mv -f -- "$SQUAD_HOME/data/projects.md.tmp.$$" "$SQUAD_HOME/data/projects.md"
+cp "$TMP/charter" "$SQUAD_BASE/data/charter.md.tmp.$$"
+chmod 600 "$SQUAD_BASE/data/charter.md.tmp.$$"
+mv -f -- "$SQUAD_BASE/data/charter.md.tmp.$$" "$SQUAD_BASE/data/charter.md"
+cp "$PROJECT_REG" "$SQUAD_BASE/data/projects.md.tmp.$$"
+mv -f -- "$SQUAD_BASE/data/projects.md.tmp.$$" "$SQUAD_BASE/data/projects.md"
 {
   printf 'schema=sq-xo-parent.v1\n'
   printf 'route=remote\n'
   [ -z "$PARENT_HOST" ] || printf 'parent_host=%s\n' "$PARENT_HOST"
-} > "$SQUAD_HOME/.sq-xo-parent.tmp.$$"
-mv -f -- "$SQUAD_HOME/.sq-xo-parent.tmp.$$" "$SQUAD_HOME/.sq-xo-parent"
-printf '%s\n' "$ID" > "$SQUAD_HOME/.sq-xo-home.tmp.$$"
-mv -f -- "$SQUAD_HOME/.sq-xo-home.tmp.$$" "$SQUAD_HOME/.sq-xo-home"
+} > "$SQUAD_BASE/.sq-xo-parent.tmp.$$"
+mv -f -- "$SQUAD_BASE/.sq-xo-parent.tmp.$$" "$SQUAD_BASE/.sq-xo-parent"
+printf '%s\n' "$ID" > "$SQUAD_BASE/.sq-xo-home.tmp.$$"
+mv -f -- "$SQUAD_BASE/.sq-xo-home.tmp.$$" "$SQUAD_BASE/.sq-xo-home"
 PUBLISHED=1
 release_provision_lock
 trap - EXIT
 rm -rf -- "$TMP"
-printf 'provisioned: %s projects=%s\n' "$SQUAD_HOME" "$COUNT"
+printf 'provisioned: %s projects=%s\n' "$SQUAD_BASE" "$COUNT"

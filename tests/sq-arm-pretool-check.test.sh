@@ -34,14 +34,14 @@ matrix_case A05 allow 'exec bin/sq-sentry-checkpoint.sh --seconds 180'
 matrix_case A06 allow "$ROOT/bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A07 allow "cd '$ROOT'; exec bin/sq-sentry-arm.sh"
 matrix_case A08 allow "cd '../Squad'; bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case A09 allow "export SQUAD_HOME='$ROOT'; bin/sq-sentry-checkpoint.sh --seconds 180"
+matrix_case A09 allow "export SQUAD_BASE='$ROOT'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A10 allow 'source config/x-mode.env; bin/sq-sentry-checkpoint.sh --seconds 180'
 matrix_case A11 allow "source 'config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A12 allow "source './config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A13 allow "source '$ROOT/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A14 allow "[ -f 'config/x-mode.env' ] && source 'config/x-mode.env'; exec bin/sq-sentry-arm.sh"
 matrix_case A15 allow "cd $ROOT && exec bin/sq-sentry-arm.sh"
-matrix_case A16 allow "export SQUAD_HOME=$ROOT && bin/sq-sentry-checkpoint.sh --seconds 180"
+matrix_case A16 allow "export SQUAD_BASE=$ROOT && bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A17 allow $'source "config/x-mode.env"\nbin/sq-sentry-checkpoint.sh --seconds 180'
 
 matrix_case R01 allow "pgrep -fl '/bin/sq-sentry.sh' || true"
@@ -109,11 +109,11 @@ matrix_case D42 deny 'bin/sq-sentry-{arm,checkpoint}.sh &'
 matrix_case D43 deny 'bin/sq-sentry-arm.sh* &'
 matrix_case D44 deny "pattern='sq-sentry'; pkill -f \"\$pattern\""
 matrix_case D45 deny "p=\$(pgrep -f '/bin/sq-sentry.sh'); q=\$p; kill \$q"
-matrix_case D46 deny '$SQUAD_HOME/bin/sq-sentry-arm.sh &'
+matrix_case D46 deny '$SQUAD_BASE/bin/sq-sentry-arm.sh &'
 matrix_case D47 deny '$HOME/Squad/bin/sq-sentry-arm.sh | cat'
 matrix_case D48 deny '~/Squad/bin/sq-sentry-arm.sh &'
 matrix_case D49 deny 'bin/sq-sentry.sh'
-matrix_case D50 deny '$SQUAD_HOME/bin/sq-sentry.sh'
+matrix_case D50 deny '$SQUAD_BASE/bin/sq-sentry.sh'
 matrix_case D51 deny '~/Squad/bin/sq-sentry.sh --restart'
 matrix_case D52 deny "bin/sq-\$'\x73'entry-arm.sh &"
 matrix_case D53 deny 'bin/sq-$"sentry"-arm.sh &'
@@ -127,8 +127,8 @@ matrix_case E01 allow "bin/sq-sentry-checkpoint.sh --seconds '180;still-one-arg'
 matrix_case E02 allow "bin/sq-sentry-checkpoint.sh --label 'sq-sentry-arm.sh; literal argument'"
 matrix_case E03 allow 'bin/sq-sentry-arm.sh # output > file &'
 matrix_case E04 allow $'# setup comment with sq-sentry.sh; && >\nsource "config/x-mode.env"\nbin/sq-sentry-checkpoint.sh --seconds 180'
-matrix_case E05 deny "SQUAD_HOME=$ROOT bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case E06 deny "env SQUAD_HOME=$ROOT bin/sq-sentry-arm.sh"
+matrix_case E05 deny "SQUAD_BASE=$ROOT bin/sq-sentry-checkpoint.sh --seconds 180"
+matrix_case E06 deny "env SQUAD_BASE=$ROOT bin/sq-sentry-arm.sh"
 matrix_case E07 deny "source '/tmp/not-Squad/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case E08 deny "bash -lc 'bin/sq-sentry-checkpoint.sh --seconds 180'"
 matrix_case E09 deny '(bin/sq-sentry-checkpoint.sh --seconds 180)'
@@ -136,8 +136,8 @@ matrix_case E10 deny "eval 'bin/sq-sentry-arm.sh &'"
 matrix_case E11 deny "exec bash -lc 'bin/sq-sentry-arm.sh &'"
 matrix_case E12 allow 'bash -lc "$WATCHER_COMMAND" # sq-sentry-arm.sh'
 matrix_case E13 allow "printf '%s\\n' 'argument has ; and sq-sentry-arm.sh and &&'"
-matrix_case E14 allow '$SQUAD_HOME/bin/sq-teardown.sh &'
-matrix_case E15 allow '$SQUAD_HOME/bin/sq-sentry-arm.sh'
+matrix_case E14 allow '$SQUAD_BASE/bin/sq-teardown.sh &'
+matrix_case E15 allow '$SQUAD_BASE/bin/sq-sentry-arm.sh'
 matrix_case E16 allow '~/Squad/bin/sq-sentry-checkpoint.sh --seconds 180'
 matrix_case E17 allow 'for f in 1; do echo sq-sentry; done'
 
@@ -226,12 +226,12 @@ test_direct_policy_contract() {
   assert_policy direct-unclassifiable $'deny\tunclassifiable-protected-command' "bin/sq-sentry-arm.sh 'unterminated"
   assert_policy direct-unsupported $'deny\tunclassifiable-protected-command' 'if true; then bin/sq-sentry-arm.sh; fi'
   assert_policy direct-constructed-payload $'deny\tsentry-nested' "WATCHER='bin/sq-sentry-arm.sh &'; bash -lc \"\$WATCHER\""
-  assert_policy direct-parameter-export allow 'export SQUAD_HOME=${HOME}; bin/sq-sentry-checkpoint.sh --seconds 180'
-  assert_policy direct-expanded-arm-blessed allow '$SQUAD_HOME/bin/sq-sentry-arm.sh'
-  assert_policy direct-expanded-arm-background $'deny\tsentry-background' '$SQUAD_HOME/bin/sq-sentry-arm.sh &'
+  assert_policy direct-parameter-export allow 'export SQUAD_BASE=${HOME}; bin/sq-sentry-checkpoint.sh --seconds 180'
+  assert_policy direct-expanded-arm-blessed allow '$SQUAD_BASE/bin/sq-sentry-arm.sh'
+  assert_policy direct-expanded-arm-background $'deny\tsentry-background' '$SQUAD_BASE/bin/sq-sentry-arm.sh &'
   assert_policy direct-expanded-arm-pipeline $'deny\tsentry-pipeline' '$HOME/Squad/bin/sq-sentry-arm.sh | cat'
   assert_policy direct-watch-not-blessed $'deny\tsentry-direct' 'bin/sq-sentry.sh'
-  assert_policy direct-watch-expanded $'deny\tsentry-direct' '$SQUAD_HOME/bin/sq-sentry.sh'
+  assert_policy direct-watch-expanded $'deny\tsentry-direct' '$SQUAD_BASE/bin/sq-sentry.sh'
   assert_policy direct-watch-safe-shape $'deny\tsentry-direct' 'cd /tmp; bin/sq-sentry.sh'
   heredoc_data=$'cat <<\'EOF\'\nbin/sq-sentry-arm.sh &\nEOF'
   heredoc_sentry=$'bin/sq-sentry-arm.sh <<\'EOF\'\ndata only\nEOF'
@@ -337,7 +337,7 @@ test_prefilter_is_strict_superset() {
   [ "$rc" -eq 2 ] || fail "prefilter must delegate a locale-string-encoded protected path, not fast-allow it, got exit $rc"
   # The marker is specifically $ followed by a quote, not any $ expansion: an
   # ordinary $VAR that is not a sentry reference still takes the fast path.
-  "$CHECK" --command '$SQUAD_HOME/bin/sq-teardown.sh &' >/dev/null 2>&1
+  "$CHECK" --command '$SQUAD_BASE/bin/sq-teardown.sh &' >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] || fail "a benign \$VAR non-sentry command must still fast-allow, got exit $rc"
   "$CHECK" --command 'echo "$HOME/scratch" && ls -la' >/dev/null 2>&1

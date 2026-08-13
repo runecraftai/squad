@@ -88,7 +88,7 @@ run_spawn() {
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
   # A test opts in to the set case via SQUAD_TEST_CLAUDE_CONFIG_DIR.
-  SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -145,7 +145,7 @@ test_relative_home_overrides_launch_with_absolute_cross_process_paths() {
 
   out=$(
     cd "$CASE_DIR" || exit 1
-    CDPATH="$CASE_DIR/cdpath" SQUAD_ROOT_OVERRIDE='' SQUAD_HOME=home \
+    CDPATH="$CASE_DIR/cdpath" SQUAD_ROOT_OVERRIDE='' SQUAD_BASE=home \
       SQUAD_STATE_OVERRIDE=home/state SQUAD_DATA_OVERRIDE=home/data \
       SQUAD_PROJECTS_OVERRIDE=home/projects SQUAD_CONFIG_OVERRIDE=home/config \
       SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
@@ -174,7 +174,7 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
   : > "$LAUNCH_LOG"
   out=$(
     cd "$CASE_DIR" || exit 1
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME=home \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE=home \
       SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
       SQUAD_PROJECTS_OVERRIDE=home/projects SQUAD_CONFIG_OVERRIDE=home/config \
       SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
@@ -183,18 +183,18 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
       "$SPAWN" "$relative_id" "$PROJ_DIR" --mode drill --yolo off 2>&1
   )
   status=$?
-  expect_code 0 "$status" "spawn with relative SQUAD_HOME defaults should succeed"
+  expect_code 0 "$status" "spawn with relative SQUAD_BASE defaults should succeed"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "-e '$home_real/state/$relative_id.pi-ext.ts'" \
-    "relative SQUAD_HOME leaked into Pi's default cross-process extension path"
+    "relative SQUAD_BASE leaked into Pi's default cross-process extension path"
   assert_contains "$launch" "< '$home_real/data/$relative_id/brief.md'" \
-    "relative SQUAD_HOME leaked into the default cross-process brief path"
+    "relative SQUAD_BASE leaked into the default cross-process brief path"
 
   linked_home="$CASE_DIR/home-link"
   ln -s "$HOME_DIR" "$linked_home"
   : > "$LAUNCH_LOG"
   out=$(
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$linked_home" \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$linked_home" \
       SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
       SQUAD_PROJECTS_OVERRIDE="$linked_home/projects" SQUAD_CONFIG_OVERRIDE="$linked_home/config" \
       SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
@@ -203,13 +203,13 @@ test_home_defaults_preserve_absolute_or_resolve_relative_paths() {
       "$SPAWN" "$absolute_id" "$PROJ_DIR" --mode drill --yolo off 2>&1
   )
   status=$?
-  expect_code 0 "$status" "spawn with absolute symlink-spelled SQUAD_HOME defaults should succeed"
+  expect_code 0 "$status" "spawn with absolute symlink-spelled SQUAD_BASE defaults should succeed"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "-e '$linked_home/state/$absolute_id.pi-ext.ts'" \
-    "absolute SQUAD_HOME spelling changed in Pi's default cross-process extension path"
+    "absolute SQUAD_BASE spelling changed in Pi's default cross-process extension path"
   assert_contains "$launch" "< '$linked_home/data/$absolute_id/brief.md'" \
-    "absolute SQUAD_HOME spelling changed in the default cross-process brief path"
-  pass "SQUAD_HOME defaults resolve relative paths and preserve absolute spellings"
+    "absolute SQUAD_BASE spelling changed in the default cross-process brief path"
+  pass "SQUAD_BASE defaults resolve relative paths and preserve absolute spellings"
 }
 
 test_absolute_override_spelling_is_preserved_in_launch_paths() {
@@ -222,7 +222,7 @@ test_absolute_override_spelling_is_preserved_in_launch_paths() {
   : > "$LAUNCH_LOG"
 
   out=$(
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$linked_home" \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$linked_home" \
       SQUAD_STATE_OVERRIDE="$linked_home/state" SQUAD_DATA_OVERRIDE="$linked_home/data" \
       SQUAD_PROJECTS_OVERRIDE="$linked_home/projects" SQUAD_CONFIG_OVERRIDE="$linked_home/config" \
       SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
@@ -248,18 +248,18 @@ test_unresolvable_relative_overrides_fail_loudly() {
 
   out=$(
     cd "$CASE_DIR" || exit 1
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME=missing-home \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE=missing-home \
       SQUAD_STATE_OVERRIDE='' SQUAD_DATA_OVERRIDE='' \
       "$SPAWN" "$id" "$PROJ_DIR" --mode drill --yolo off 2>&1
   )
   status=$?
   expect_code 1 "$status" "spawn with an unresolvable relative home should fail"
-  assert_contains "$out" "SQUAD_HOME directory cannot be resolved: missing-home" \
-    "spawn did not name the unresolvable SQUAD_HOME"
+  assert_contains "$out" "SQUAD_BASE directory cannot be resolved: missing-home" \
+    "spawn did not name the unresolvable SQUAD_BASE"
 
   out=$(
     cd "$CASE_DIR" || exit 1
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME=home \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE=home \
       SQUAD_STATE_OVERRIDE=missing-state SQUAD_DATA_OVERRIDE=home/data \
       "$SPAWN" "$id" "$PROJ_DIR" --mode drill --yolo off 2>&1
   )
@@ -270,7 +270,7 @@ test_unresolvable_relative_overrides_fail_loudly() {
 
   out=$(
     cd "$CASE_DIR" || exit 1
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME=home \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE=home \
       SQUAD_STATE_OVERRIDE=home/state SQUAD_DATA_OVERRIDE=missing-data \
       "$SPAWN" "$id" "$PROJ_DIR" --mode drill --yolo off 2>&1
   )
@@ -550,7 +550,7 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata() {
   rm -f "$FAKEBIN_DIR/pi-signed"
   : > "$LAUNCH_LOG"
 
-  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$HOME_DIR" \
+  out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$HOME_DIR" \
     SQUAD_STATE_OVERRIDE="$HOME_DIR/state" SQUAD_DATA_OVERRIDE="$HOME_DIR/data" \
     SQUAD_PROJECTS_OVERRIDE="$HOME_DIR/projects" SQUAD_CONFIG_OVERRIDE="$HOME_DIR/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \

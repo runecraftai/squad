@@ -274,7 +274,7 @@ test_sweep_nudge_requires_instruction_change() {
   bump_primary "$w" readme
   base=$(primary_head_commit "$w/main")
 
-  SQUAD_ROOT="$w/main" SQUAD_HOME="$w/home"
+  SQUAD_ROOT="$w/main" SQUAD_BASE="$w/home"
   FF_NUDGE_WINDOWS=""
   FF_SEEN_HOMES=""
   sweep_live_XO_metas "$w/home/state" "$base" yes >/dev/null
@@ -309,7 +309,7 @@ if [ -n "${SQUAD_FAKE_TMUX_LOG:-}" ]; then
 fi
 case "$*" in
   list-windows*)
-    sed -n 's/^window=[^:]*://p' "${SQUAD_HOME:?}"/state/*.meta
+    sed -n 's/^window=[^:]*://p' "${SQUAD_BASE:?}"/state/*.meta
     exit 0
     ;;
   *display-message*'#{pane_current_command}'*) printf '%s\n' codex; exit 0 ;;
@@ -393,7 +393,7 @@ test_bootstrap_sweep_nudges_only_instruction_change() {
 
   fakebin=$(make_fake_toolchain "$w")
   log="$w/tmux.log"
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
@@ -432,14 +432,14 @@ test_bootstrap_nudge_send_uses_state_override() {
   fakebin=$(make_fake_toolchain "$w")
   log="$w/tmux.log"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_STATE_OVERRIDE="$override_state" SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
   assert_contains "$out" "BOOTSTRAP_INFO: nudged sq-sm-instr with" \
     "nudge send should resolve sq-sm-instr through the effective state dir"
   assert_not_contains "$out" "NUDGE_XOS:" \
-    "effective-state nudge should not fail through SQUAD_HOME/state"
+    "effective-state nudge should not fail through SQUAD_BASE/state"
   assert_contains "$(cat "$log")" "[sq-from-squad]" \
     "effective-state nudge should still use XO marker metadata"
   marker="$override_state/.XO-nudge-pending/sm-instr.pending"
@@ -472,7 +472,7 @@ test_bootstrap_nudge_retry_rejects_malformed_marker_id() {
   fakebin=$(make_fake_toolchain "$w")
   log="$w/tmux.log"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_LOG="$log" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
@@ -493,7 +493,7 @@ test_bootstrap_nudge_failure_records_retry_marker() {
   bump_primary "$w" instr
   fakebin=$(make_fake_toolchain "$w")
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_FAIL_LITERAL=1 \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
@@ -515,7 +515,7 @@ test_bootstrap_nudge_retry_is_idempotent() {
   bump_primary "$w" instr
   fakebin=$(make_fake_toolchain "$w")
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_FAIL_LITERAL=1 \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
   assert_contains "$out" "NUDGE_XOS: XO sm-instr: send failed:" \
@@ -523,13 +523,13 @@ test_bootstrap_nudge_retry_is_idempotent() {
   marker="$w/home/state/.XO-nudge-pending/sm-instr.pending"
   assert_present "$marker" "precondition: failed nudge should leave marker"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
   assert_contains "$out" "BOOTSTRAP_INFO: nudged sq-sm-instr with" \
     "retry should send the pending nudge once the endpoint works"
   assert_absent "$marker" "successful retry should clear the marker"
 
-  out2=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out2=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
   [ -z "$out2" ] || fail "idempotent retry should converge to silence, got: $out2"
   pass "T8d bootstrap nudge retry is idempotent after success"
@@ -543,7 +543,7 @@ test_bootstrap_nudge_retry_refuses_changed_home() {
   bump_primary "$w" instr
   fakebin=$(make_fake_toolchain "$w")
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 SQUAD_FAKE_TMUX_FAIL_LITERAL=1 \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
   assert_contains "$out" "NUDGE_XOS: XO sm-instr: send failed:" \
@@ -558,7 +558,7 @@ test_bootstrap_nudge_retry_refuses_changed_home() {
     sed -i "s|^home=.*|home=$other|" "$w/home/state/sm-instr.meta"
   rm -f "$w/home/state/sm-instr.meta.bak"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     SQUAD_SEND_SETTLE=0 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
   assert_contains "$out" "NUDGE_XOS: XO sm-instr: send failed: retry target home changed" \
     "retry must not infer a nudge target outside the recorded failed home"
@@ -637,7 +637,7 @@ test_nudge_retry_uses_fresh_herdr_endpoint_after_respawn() {
 #!/usr/bin/env bash
 set -u
 id=\${1:-}
-meta="\$SQUAD_HOME/state/\$id.meta"
+meta="\$SQUAD_BASE/state/\$id.meta"
 [ -f "\$meta" ] || exit 1
 sed -i.bak "s/^window=.*/window=$fresh/" "\$meta" 2>/dev/null || \
   sed -i "s/^window=.*/window=$fresh/" "\$meta"
@@ -655,7 +655,7 @@ SH
   fi
   out=$(PATH="$herdrfb:$toolchain:$BASE_PATH" HERDR_ENV=1 SQUAD_BACKEND=herdr \
     SQUAD_SEND_SETTLE=0 \
-    SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+    SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
   assert_contains "$out" "NUDGE_XOS: XO sm-instr: send failed:" \
@@ -695,7 +695,7 @@ test_bootstrap_sweep_surfaces_skipped_home() {
   before=$(head_of "$w/sm-dirty")
 
   fakebin=$(make_fake_toolchain "$w")
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$w/home" SQUAD_ROOT_OVERRIDE="$w/main" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
   skip_line=$(printf '%s\n' "$out" | grep '^XO_SYNC: XO sm-dirty: skipped:' || true)
@@ -730,7 +730,7 @@ SH
   chmod +x "$fakebin/tmux"
 
   PATH="$fakebin:$BASE_PATH" TMUX='' \
-    SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_HOME="$w/home" \
+    SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_BASE="$w/home" \
     SQUAD_STATE_OVERRIDE="$w/home/state" SQUAD_DATA_OVERRIDE="$w/home/data" \
     SQUAD_PROJECTS_OVERRIDE="$w/home/projects" SQUAD_CONFIG_OVERRIDE="$w/home/config" \
     SQUAD_SPAWN_NO_GUARD=1 \
@@ -764,7 +764,7 @@ SH
   chmod +x "$fakebin/tmux"
 
   PATH="$fakebin:$BASE_PATH" TMUX='' \
-    SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_HOME="$w/home" \
+    SQUAD_ROOT_OVERRIDE="$w/main" SQUAD_BASE="$w/home" \
     SQUAD_STATE_OVERRIDE="$w/home/state" SQUAD_DATA_OVERRIDE="$w/home/data" \
     SQUAD_PROJECTS_OVERRIDE="$w/home/projects" SQUAD_CONFIG_OVERRIDE="$w/home/config" \
     SQUAD_SPAWN_NO_GUARD=1 \

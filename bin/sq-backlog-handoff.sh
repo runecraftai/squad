@@ -52,8 +52,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 REG="$DATA/XOs.md"
 MAIN_BACKLOG="$DATA/backlog.md"
 # shellcheck source=bin/sq-tasks-lib.sh disable=SC1091
@@ -153,7 +153,7 @@ validate_operational_dirs() {
 validate_XO_home() {
   local id=$1 home=$2 abs_home abs_active_home abs_root marker_id
   abs_home=$(resolved_existing_dir "$home") || return 1
-  abs_active_home=$(resolved_existing_dir "$SQUAD_HOME")
+  abs_active_home=$(resolved_existing_dir "$SQUAD_BASE")
   abs_root=$(resolved_existing_dir "$SQUAD_ROOT")
   if [ "$abs_home" = "/" ]; then
     echo "error: XO home cannot be the filesystem root: $home" >&2

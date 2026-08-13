@@ -60,9 +60,9 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 REGISTRY="$DATA/XOs.md"
 BUDGET_CMD=sq-startup-memory-budget.sh
 SUB_HOME_MARKER="${SUB_HOME_MARKER:-.sq-xo-home}"
@@ -159,7 +159,7 @@ resolve_remote_transport() { # <id>
   esac
 }
 
-if [ -e "$SQUAD_HOME/$SUB_HOME_MARKER" ] || [ -L "$SQUAD_HOME/$SUB_HOME_MARKER" ]; then
+if [ -e "$SQUAD_BASE/$SUB_HOME_MARKER" ] || [ -L "$SQUAD_BASE/$SUB_HOME_MARKER" ]; then
   emit 'role=xo'
   emit 'XOs=0'
   emit 'reason=an XO home stows its own memory only and never cascades'
@@ -212,7 +212,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     # this base's memory files into the accounting of another base.
     run_step env \
       SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
-      SQUAD_HOME="$resolved" \
+      SQUAD_BASE="$resolved" \
       SQUAD_STATE_OVERRIDE="$resolved/state" \
       SQUAD_DATA_OVERRIDE="$resolved/data" \
       SQUAD_CONFIG_OVERRIDE="$resolved/config" \

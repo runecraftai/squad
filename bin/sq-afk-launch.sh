@@ -47,13 +47,13 @@ set -u
 
 SQUAD_AFK_LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SQUAD_AFK_LAUNCH_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-case "$SQUAD_HOME" in
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+case "$SQUAD_BASE" in
   /*) ;;
   *)
-    SQUAD_AFK_LAUNCH_HOME_INPUT=$SQUAD_HOME
-    SQUAD_HOME=$(CDPATH='' cd -- "$SQUAD_AFK_LAUNCH_HOME_INPUT" 2>/dev/null && pwd -P) || {
-      echo "error: SQUAD_HOME directory cannot be resolved: $SQUAD_AFK_LAUNCH_HOME_INPUT" >&2
+    SQUAD_AFK_LAUNCH_HOME_INPUT=$SQUAD_BASE
+    SQUAD_BASE=$(CDPATH='' cd -- "$SQUAD_AFK_LAUNCH_HOME_INPUT" 2>/dev/null && pwd -P) || {
+      echo "error: SQUAD_BASE directory cannot be resolved: $SQUAD_AFK_LAUNCH_HOME_INPUT" >&2
       exit 1
     }
     ;;
@@ -70,7 +70,7 @@ if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
       ;;
   esac
 fi
-SQUAD_AFK_LAUNCH_STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_AFK_LAUNCH_STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 SQUAD_AFK_LAUNCH_RECORD="$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal"
 SQUAD_AFK_LAUNCH_LOCK="$SQUAD_AFK_LAUNCH_STATE/.afk-launch.lock"
 SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
@@ -393,7 +393,7 @@ fm_afk_launch_create_herdr() {  # <commander-target> <commander-backend>
   fm_backend_source herdr || return 1
   fm_backend_herdr_server_ensure "$session" || { fm_afk_launch_log "herdr server not ready for session '$session'"; return 1; }
   label=${SQUAD_AFK_LAUNCH_LABEL:-"$SQUAD_AFK_LAUNCH_WS_LABEL-$$-${RANDOM:-0}-$(date '+%s')"}
-  out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$SQUAD_HOME" --label "$label" --no-focus 2>/dev/null)
+  out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$SQUAD_BASE" --label "$label" --no-focus 2>/dev/null)
   create_result=$?
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   pane=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
@@ -416,8 +416,8 @@ fm_afk_launch_create_herdr() {  # <commander-target> <commander-backend>
     IFS=$'\t' read -r wsid pane <<< "$recovered"
   fi
   entry=$(fm_afk_launch_entry_cmd)
-  cmd=$(printf 'exec env SQUAD_HOME=%q SQUAD_SUPERVISOR_TARGET=%q SQUAD_SUPERVISOR_BACKEND=%q %q' \
-    "$SQUAD_HOME" "$commander_target" "$commander_backend" "$entry")
+  cmd=$(printf 'exec env SQUAD_BASE=%q SQUAD_HOME=%q SQUAD_SUPERVISOR_TARGET=%q SQUAD_SUPERVISOR_BACKEND=%q %q' \
+    "$SQUAD_BASE" "$SQUAD_BASE" "$commander_target" "$commander_backend" "$entry")
   if ! fm_afk_launch_record_write herdr "$session:$pane" "$wsid"; then
     fm_afk_launch_log "failed to persist herdr daemon terminal record; closing $session:$pane"
     fm_afk_launch_close_terminal herdr "$session:$pane"
@@ -439,12 +439,12 @@ fm_afk_launch_create_herdr() {  # <commander-target> <commander-backend>
 # commander pane by its %id from this separate session.
 fm_afk_launch_create_tmux() {  # <commander-target> <commander-backend>
   local commander_target=$1 commander_backend=$2 session entry cmd hash nonce
-  hash=$(printf '%s' "$SQUAD_HOME" | cksum | cut -d' ' -f1)
+  hash=$(printf '%s' "$SQUAD_BASE" | cksum | cut -d' ' -f1)
   nonce="$$-${RANDOM:-0}-$(date '+%s')"
   session="sq-afk-daemon-$hash-$nonce"
   entry=$(fm_afk_launch_entry_cmd)
-  cmd=$(printf 'exec env SQUAD_HOME=%q SQUAD_SUPERVISOR_TARGET=%q SQUAD_SUPERVISOR_BACKEND=%q %q' \
-    "$SQUAD_HOME" "$commander_target" "$commander_backend" "$entry")
+  cmd=$(printf 'exec env SQUAD_BASE=%q SQUAD_HOME=%q SQUAD_SUPERVISOR_TARGET=%q SQUAD_SUPERVISOR_BACKEND=%q %q' \
+    "$SQUAD_BASE" "$SQUAD_BASE" "$commander_target" "$commander_backend" "$entry")
   if ! fm_afk_launch_record_write tmux "$session" ""; then
     fm_afk_launch_log "failed to persist planned tmux daemon session '$session'"
     return 1

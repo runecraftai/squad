@@ -92,7 +92,7 @@ run_send() {
   local fb=$1 home=$2 log=$3; shift 3
   : > "$log"
   env PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" "$@" 2>/dev/null
 }
 
@@ -187,7 +187,7 @@ test_not_open_key_refuses_before_send() {
 
   : > "$log"
   env PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" t4 --resolve-key mistyped "the answer" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "a not-open key should refuse"
   assert_contains "$(cat "$err")" "--resolve-key 'mistyped'" "the refusal should name the bad key"
@@ -212,7 +212,7 @@ test_failed_send_does_not_close() {
 
   : > "$log"
   env PATH="$fb:$PATH" SQUAD_FAKE_TMUX_SEND_FAIL=1 \
-    SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" t5 --resolve-key creds "token is in the vault now" >/dev/null 2>&1; rc=$?
   [ "$rc" -ne 0 ] || fail "a failed backend send should exit nonzero"
   if grep -F 'resolved' "$home/state/t5.status" >/dev/null; then
@@ -313,7 +313,7 @@ test_remote_XO_answer_closes_locally() {
 
   : > "$log"
   env PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     SQUAD_SSH_BIN="$fb/fake-ssh" SQUAD_SSH_LOG="$ssh_log" SQUAD_FAKE_SSH_RC=0 \
     "$SEND" rsm --resolve-key upgrade-window "the weekend, freeze Friday" >/dev/null 2>&1; rc=$?
   expect_code 0 "$rc" "a remote XO answer send should succeed"
@@ -337,7 +337,7 @@ test_remote_transport_failure_does_not_close() {
 
   : > "$log"
   env PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     SQUAD_SSH_BIN="$fb/fake-ssh" SQUAD_SSH_LOG="$ssh_log" SQUAD_FAKE_SSH_RC=1 \
     "$SEND" rsm --resolve-key quota "quota refreshed, resume" >/dev/null 2>&1; rc=$?
   [ "$rc" -ne 0 ] || fail "a failed remote transport should exit nonzero"
@@ -360,30 +360,30 @@ test_flag_misuse_refuses() {
 
   # --resolve-key with --key (both orders) is refused: an answer is text.
   : > "$log"
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" t7 --resolve-key k --key Enter >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "--resolve-key before --key should refuse"
   assert_contains "$(cat "$err")" "cannot accompany --key" "the --key refusal should be explicit"
   : > "$log"
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" t7 --key Enter --resolve-key k >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "--resolve-key after --key should refuse instead of being silently dropped"
   assert_contains "$(cat "$err")" "cannot accompany --key" "the trailing --resolve-key refusal should be explicit"
 
   # An empty answer message is refused.
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" t7 --resolve-key k >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "an empty answer message should refuse"
   assert_contains "$(cat "$err")" "nonempty answer message" "the empty-message refusal should be explicit"
 
   # An explicit backend target has no task ledger in this home.
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" sess:elsewhere --resolve-key k "answer" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "an explicit backend target should refuse --resolve-key"
   assert_contains "$(cat "$err")" "no decision ledger" "the explicit-target refusal should be explicit"
 
   # A malformed key is refused before anything else.
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" t7 --resolve-key 'bad key!' "answer" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "a malformed key should refuse"
   assert_contains "$(cat "$err")" "not a valid decision key" "the malformed-key refusal should be explicit"

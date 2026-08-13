@@ -49,7 +49,7 @@ cleanup() {
   local rc=$?
   trap - EXIT
   if [ "$DAEMON_STARTED" -eq 1 ]; then
-    PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+    PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
       SQUAD_SUPERVISOR_BACKEND=herdr SQUAD_SUPERVISOR_TARGET="$PRIMARY_TARGET" \
       "$ROOT/bin/sq-afk-launch.sh" stop >/dev/null 2>&1 || true
   fi
@@ -133,7 +133,7 @@ WORKSPACE=$(printf '%s' "$PRIMARY_OUT" | jq -r '.result.workspace.workspace_id')
 PRIMARY_PANE=$(printf '%s' "$PRIMARY_OUT" | jq -r '.result.root_pane.pane_id')
 PRIMARY_TARGET="$SESSION:$PRIMARY_PANE"
 EXT="$CAPTURE_EXT"
-PI_CMD=$(printf 'exec env PI_CODING_AGENT_DIR=%q SQUAD_HOME=%q SQUAD_PI_CAPTURE_PATH=%q pi -e %q --no-context-files --no-session' "$PI_DIR" "$HOME_DIR" "$CAPTURE" "$EXT")
+PI_CMD=$(printf 'exec env PI_CODING_AGENT_DIR=%q SQUAD_BASE=%q SQUAD_PI_CAPTURE_PATH=%q pi -e %q --no-context-files --no-session' "$PI_DIR" "$HOME_DIR" "$CAPTURE" "$EXT")
 "$LAB_HELPER" run "$SESSION" pane run "$PRIMARY_PANE" "$PI_CMD" >/dev/null
 
 wait_for_idle() {
@@ -190,7 +190,7 @@ cat > "$HOME_DIR/data/backlog.md" <<'EOF'
 ## Done
 EOF
 
-PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   SQUAD_SUPERVISOR_BACKEND=herdr SQUAD_SUPERVISOR_TARGET="$PRIMARY_TARGET" SQUAD_AFK_LAUNCH_ENTRY="$TMP_ROOT/daemon-entry" \
   "$ROOT/bin/sq-afk-launch.sh" start >/dev/null
 DAEMON_STARTED=1
@@ -259,7 +259,7 @@ assert_blocker_open 'before return catch-up'
 [ -f "$STATE/repair-task.meta" ] || fail "live blocker metadata disappeared before return catch-up"
 
 set +e
-RETURN_OUT=$(PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+RETURN_OUT=$(PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   SQUAD_SUPERVISOR_BACKEND=herdr SQUAD_SUPERVISOR_TARGET="$PRIMARY_TARGET" "$ROOT/bin/sq-afk-return.sh" begin 2>&1)
 RETURN_RC=$?
 set -e
@@ -267,7 +267,7 @@ DAEMON_STARTED=0
 [ "$RETURN_RC" -eq 3 ] || fail "return catch-up did not gate the still-live blocker (rc=$RETURN_RC): $RETURN_OUT"
 assert_contains "$RETURN_OUT" 'Squad-actionable blocker: repair-task [key=synthetic-dependency]' "return gate did not assign remediation"
 set +e
-BEARINGS_OUT=$(PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+BEARINGS_OUT=$(PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   "$ROOT/bin/sq-sitrep-snapshot.sh" --json 2>&1)
 BEARINGS_RC=$?
 set -e
@@ -275,18 +275,18 @@ set -e
 pass "real unmarked Pi return opens catch-up and blocks Sitrep before the unresolved blocker can be deferred"
 
 printf 'resolved [key=synthetic-dependency]: refreshed the synthetic token and resumed the task\n' >> "$STATE/repair-task.status"
-PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   "$ROOT/bin/sq-afk-return.sh" check >/dev/null || fail "remediated blocker did not clear return catch-up"
-PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   "$ROOT/bin/sq-sitrep-snapshot.sh" --json >/dev/null || fail "Sitrep remained gated after blocker remediation"
 
 # A clean re-entry creates no stale delivery or alert, and an immediate return is
 # idempotently clear because the keyed blocker is resolved.
-PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   SQUAD_SUPERVISOR_BACKEND=herdr SQUAD_SUPERVISOR_TARGET="$PRIMARY_TARGET" SQUAD_AFK_LAUNCH_ENTRY="$TMP_ROOT/daemon-entry" \
   "$ROOT/bin/sq-afk-launch.sh" start >/dev/null
 DAEMON_STARTED=1
-PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_HOME="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
+PATH="$FAKEBIN:$ORIGINAL_PATH" HERDR_SESSION="$SESSION" SQUAD_ROOT_OVERRIDE="$PROJECT" SQUAD_BASE="$HOME_DIR" SQUAD_STATE_OVERRIDE="$STATE" \
   SQUAD_SUPERVISOR_BACKEND=herdr SQUAD_SUPERVISOR_TARGET="$PRIMARY_TARGET" "$ROOT/bin/sq-afk-return.sh" begin >/dev/null \
   || fail "clean away re-entry/return was not idempotent"
 DAEMON_STARTED=0

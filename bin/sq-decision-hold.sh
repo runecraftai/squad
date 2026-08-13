@@ -13,7 +13,7 @@
 # A hold identity is <origin-id>-decision-<decision-key>. Origin ids and decision
 # keys must already be privacy-safe slugs. Repeating `hold` with the same identity
 # is idempotent. A different decision key creates a different backlog identity.
-# All backlog mutations run in the active SQUAD_HOME, which keeps main-base and
+# All backlog mutations run in the active SQUAD_BASE, which keeps main-base and
 # XO-base ownership aligned with the work that discovered the decision.
 #
 # Usage:
@@ -41,9 +41,9 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
 # shellcheck source=bin/sq-classify-lib.sh
 # shellcheck disable=SC1091
@@ -97,7 +97,7 @@ hold_id() {  # <origin-id> <decision-key>
 }
 
 tasks_axi() {
-  (cd "$SQUAD_HOME" && tasks-axi "$@")
+  (cd "$SQUAD_BASE" && tasks-axi "$@")
 }
 
 require_tasks_axi() {
@@ -159,7 +159,7 @@ origin_open_decisions() {  # <origin-id>
 
 verify_hold_active() {  # <hold-id>
   local id=$1 show state held kind hold_kind
-  show=$(task_show "$id") || fail "commander hold $id is absent from $SQUAD_HOME/data/backlog.md"
+  show=$(task_show "$id") || fail "commander hold $id is absent from $SQUAD_BASE/data/backlog.md"
   state=$(show_field "$show" state)
   held=$(show_field "$show" held)
   kind=$(show_field "$show" kind)
@@ -186,7 +186,7 @@ verify_hold_resolved() {  # <hold-id>
 
 verify_hold_durable() {  # <hold-id>
   local id=$1 show state held kind hold_kind body
-  show=$(task_show "$id") || fail "commander decision $id is absent from $SQUAD_HOME/data/backlog.md"
+  show=$(task_show "$id") || fail "commander decision $id is absent from $SQUAD_BASE/data/backlog.md"
   state=$(show_field "$show" state)
   held=$(show_field "$show" held)
   kind=$(show_field "$show" kind)
@@ -247,7 +247,7 @@ command_hold() {
   validate_one_line reason "$reason"
   case "$reason" in *'('*|*')'*) fail "reason must not contain parentheses (tasks-axi hold contract)" ;; esac
   require_tasks_axi
-  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_HOME"
+  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_BASE"
   id=$(hold_id "$origin" "$key")
   if show=$(task_show "$id"); then
     state=$(show_field "$show" state)
@@ -282,7 +282,7 @@ command_complete() {
   meta="$STATE/$origin.meta"
   [ -f "$meta" ] && has_meta=1
   require_tasks_axi
-  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_HOME"
+  origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_BASE"
   if [ "$#" -eq 1 ] && [ "$1" = --none ]; then
     supplied=''
   else
