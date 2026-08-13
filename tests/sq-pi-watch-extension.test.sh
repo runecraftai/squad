@@ -1281,8 +1281,8 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-// Content poll for the same reason as the effective-state test: the arm's >>
-// open() creates the log before its line lands, so existence alone races.
+// Content poll for the same reason as the effective-state test: the arm opens
+// the log with >> (O_CREAT) before its line lands, so existence alone races.
 let text = "";
 for (let i = 0; i < 250 && !text.includes("poll=7"); i += 1) {
   if (existsSync(process.env.SQUAD_ARM_LOG)) {
