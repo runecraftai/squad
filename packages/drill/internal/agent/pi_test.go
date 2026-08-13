@@ -13,7 +13,7 @@ import (
 
 func TestPiAgent_BuildArgs(t *testing.T) {
 	pa := &piAgent{bin: "pi"}
-	args := pa.buildArgs()
+	args := pa.buildArgs(false, "")
 
 	expected := []string{"--mode", "json", "--no-session"}
 
@@ -29,7 +29,7 @@ func TestPiAgent_BuildArgs(t *testing.T) {
 
 func TestPiAgent_BuildArgs_PrependsExtraArgs(t *testing.T) {
 	pa := &piAgent{bin: "pi", extraArgs: []string{"--provider", "google"}}
-	args := pa.buildArgs()
+	args := pa.buildArgs(false, "")
 
 	expected := []string{"--provider", "google", "--mode", "json", "--no-session"}
 
@@ -45,7 +45,7 @@ func TestPiAgent_BuildArgs_PrependsExtraArgs(t *testing.T) {
 
 func TestPiAgent_BuildArgs_OptOutAddsNoContextFiles(t *testing.T) {
 	pa := &piAgent{bin: "pi", extraArgs: []string{"--system-prompt"}, disableProjectSettings: true}
-	args := pa.buildArgs()
+	args := pa.buildArgs(false, "")
 	expected := []string{"--no-context-files", "--system-prompt", "--mode", "json", "--no-session"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
@@ -59,7 +59,7 @@ func TestPiAgent_BuildArgs_OptOutAddsNoContextFiles(t *testing.T) {
 
 func TestPiAgent_BuildArgs_OptOutDoesNotDuplicateNoContextFiles(t *testing.T) {
 	pa := &piAgent{bin: "pi", extraArgs: []string{"--provider", "google", "-nc"}, disableProjectSettings: true}
-	args := pa.buildArgs()
+	args := pa.buildArgs(false, "")
 	expected := []string{"-nc", "--provider", "google", "--mode", "json", "--no-session"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
@@ -73,7 +73,7 @@ func TestPiAgent_BuildArgs_OptOutDoesNotDuplicateNoContextFiles(t *testing.T) {
 
 func TestPiAgent_BuildArgs_OptOutPreservesNoContextFilesOptionValue(t *testing.T) {
 	pa := &piAgent{bin: "pi", extraArgs: []string{"--system-prompt", "-nc"}, disableProjectSettings: true}
-	args := pa.buildArgs()
+	args := pa.buildArgs(false, "")
 	expected := []string{"--no-context-files", "--system-prompt", "-nc", "--mode", "json", "--no-session"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
@@ -82,6 +82,56 @@ func TestPiAgent_BuildArgs_OptOutPreservesNoContextFilesOptionValue(t *testing.T
 		if args[i] != want {
 			t.Errorf("arg[%d]: expected %q, got %q", i, want, args[i])
 		}
+	}
+}
+
+func TestPiAgent_BuildArgs_SessionResume(t *testing.T) {
+	pa := &piAgent{bin: "pi"}
+	args := pa.buildArgs(true, "019f4d4d-5dc0-75c1-8efe-adf4531bd733")
+
+	expected := []string{"--mode", "json", "--session-id", "019f4d4d-5dc0-75c1-8efe-adf4531bd733"}
+	if len(args) != len(expected) {
+		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+	}
+	for i, want := range expected {
+		if args[i] != want {
+			t.Errorf("arg[%d]: expected %q, got %q", i, want, args[i])
+		}
+	}
+	for _, a := range args {
+		if a == "--no-session" {
+			t.Fatalf("resume must not pass --no-session: %v", args)
+		}
+	}
+}
+
+func TestPiAgent_BuildArgs_SessionFresh(t *testing.T) {
+	pa := &piAgent{bin: "pi"}
+	args := pa.buildArgs(true, "")
+
+	expected := []string{"--mode", "json"}
+	if len(args) != len(expected) {
+		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+	}
+	for i, want := range expected {
+		if args[i] != want {
+			t.Errorf("arg[%d]: expected %q, got %q", i, want, args[i])
+		}
+	}
+	// A fresh resumable session drops --no-session so pi mints and persists a
+	// project session id for later rounds.
+}
+
+func TestPiParser_CapturesSessionEventID(t *testing.T) {
+	pp := &piParser{}
+	events := `{"type":"session","version":3,"id":"019ffd65-8e8a-7b63-bff9-bc592a6d98f3","cwd":"/tmp"}
+{"type":"agent_end","messages":[{"role":"assistant","content":"ok"}]}
+`
+	if err := pp.parse(context.Background(), strings.NewReader(events)); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if pp.sessionID != "019ffd65-8e8a-7b63-bff9-bc592a6d98f3" {
+		t.Fatalf("sessionID = %q, want the session event id", pp.sessionID)
 	}
 }
 
@@ -164,6 +214,108 @@ printf '%s\n' '{"type":"agent_end","messages":[{"role":"assistant","content":"ok
 		t.Fatalf("pi argv = %q, want %q", got, want)
 	}
 	t.Logf("pi received argv: %s", got)
+}
+
+func TestPiAgent_RunSessionReuseReportsIdentity(t *testing.T) {
+	workDir := t.TempDir()
+	bin := writeFakePi(t, t.TempDir(), `#!/bin/sh
+printf '%s\n' "$*" > pi-argv.txt
+cat > /dev/null
+printf '%s\n' '{"type":"session","id":"sess-pi-7"}'
+printf '%s\n' '{"type":"agent_end","messages":[{"role":"assistant","content":"ok"}]}'
+`, strings.Join([]string{
+		"@echo off",
+		"echo %* > pi-argv.txt",
+		"more > nul",
+		"echo {\"type\":\"session\",\"id\":\"sess-pi-7\"}",
+		"echo {\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":\"ok\"}]}",
+	}, "\r\n"))
+
+	pa := &piAgent{bin: bin}
+	result, err := pa.Run(context.Background(), RunOpts{Prompt: "fix", CWD: workDir, Session: &SessionRef{}})
+	if err != nil {
+		t.Fatalf("run pi: %v", err)
+	}
+	if result.SessionID != "sess-pi-7" {
+		t.Fatalf("SessionID = %q, want the session event id", result.SessionID)
+	}
+	if result.Resumed {
+		t.Fatal("fresh session must not report Resumed")
+	}
+
+	argv, err := os.ReadFile(filepath.Join(workDir, "pi-argv.txt"))
+	if err != nil {
+		t.Fatalf("read captured pi argv: %v", err)
+	}
+	got := strings.TrimSpace(string(argv))
+	if strings.Contains(got, "--no-session") {
+		t.Fatalf("reuse argv must not contain --no-session: %q", got)
+	}
+}
+
+func TestPiAgent_RunSessionResumePassesID(t *testing.T) {
+	workDir := t.TempDir()
+	bin := writeFakePi(t, t.TempDir(), `#!/bin/sh
+printf '%s\n' "$*" > pi-argv.txt
+cat > /dev/null
+printf '%s\n' '{"type":"session","id":"sess-pi-9"}'
+printf '%s\n' '{"type":"agent_end","messages":[{"role":"assistant","content":"ok"}]}'
+`, strings.Join([]string{
+		"@echo off",
+		"echo %* > pi-argv.txt",
+		"more > nul",
+		"echo {\"type\":\"session\",\"id\":\"sess-pi-9\"}",
+		"echo {\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":\"ok\"}]}",
+	}, "\r\n"))
+
+	pa := &piAgent{bin: bin}
+	result, err := pa.Run(context.Background(), RunOpts{
+		Prompt:  "fix",
+		CWD:     workDir,
+		Session: &SessionRef{ID: "sess-pi-9"},
+	})
+	if err != nil {
+		t.Fatalf("run pi: %v", err)
+	}
+	if result.SessionID != "sess-pi-9" {
+		t.Fatalf("SessionID = %q, want the resumed id", result.SessionID)
+	}
+	if !result.Resumed {
+		t.Fatal("resume invocation must report Resumed")
+	}
+
+	argv, err := os.ReadFile(filepath.Join(workDir, "pi-argv.txt"))
+	if err != nil {
+		t.Fatalf("read captured pi argv: %v", err)
+	}
+	got := strings.TrimSpace(string(argv))
+	want := "--mode json --session-id sess-pi-9"
+	if got != want {
+		t.Fatalf("pi argv = %q, want %q", got, want)
+	}
+}
+
+func TestPiAgent_RunColdDoesNotReportSession(t *testing.T) {
+	workDir := t.TempDir()
+	bin := writeFakePi(t, t.TempDir(), `#!/bin/sh
+cat > /dev/null
+printf '%s\n' '{"type":"session","id":"sess-ephemeral"}'
+printf '%s\n' '{"type":"agent_end","messages":[{"role":"assistant","content":"ok"}]}'
+`, strings.Join([]string{
+		"@echo off",
+		"more > nul",
+		"echo {\"type\":\"session\",\"id\":\"sess-ephemeral\"}",
+		"echo {\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":\"ok\"}]}",
+	}, "\r\n"))
+
+	pa := &piAgent{bin: bin}
+	result, err := pa.Run(context.Background(), RunOpts{Prompt: "review", CWD: workDir})
+	if err != nil {
+		t.Fatalf("run pi: %v", err)
+	}
+	if result.SessionID != "" {
+		t.Fatalf("cold run must not report a session identity, got %q", result.SessionID)
+	}
 }
 
 func TestPiAgent_RunParsesAssistantContentAndUsage(t *testing.T) {

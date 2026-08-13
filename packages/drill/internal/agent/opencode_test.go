@@ -105,6 +105,118 @@ func TestOpencodeAgent_FullFlow(t *testing.T) {
 	}
 }
 
+// TestOpencodeAgent_SessionResume proves a reuse invocation with a stored
+// session id resumes that exact session: no create call, no delete call (the
+// session stays alive for later fixer rounds), and the result reports the
+// resumed identity.
+func TestOpencodeAgent_SessionResume(t *testing.T) {
+	calledPaths := make(map[string]bool)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledPaths[r.Method+" "+r.URL.Path] = true
+		switch {
+		case r.URL.Path == "/session" && r.Method == http.MethodPost:
+			t.Error("resume must not create a new session")
+			w.WriteHeader(http.StatusInternalServerError)
+
+		case r.URL.Path == "/global/event" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "data: {\"payload\":{\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":\"test-session-456\",\"part\":{\"id\":\"p1\",\"messageID\":\"msg1\",\"type\":\"text\",\"text\":\"{\\\"success\\\":true}\"}}}}\n\n")
+			fmt.Fprint(w, "data: {\"payload\":{\"type\":\"session.idle\"}}\n\n")
+
+		case r.URL.Path == "/session/test-session-456/message" && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"info":{"id":"msg1","role":"assistant","structured":{"success":true}},"parts":[]}`)
+
+		case r.URL.Path == "/session/test-session-456" && r.Method == http.MethodDelete:
+			t.Error("resume must keep the session alive for later rounds")
+			w.WriteHeader(http.StatusInternalServerError)
+
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	a := &opencodeAgent{
+		bin:    "opencode",
+		server: &managedServer{port: mustParsePort(server.URL)},
+	}
+
+	result, err := a.Run(context.Background(), RunOpts{
+		Prompt:  "fix the findings",
+		CWD:     t.TempDir(),
+		Session: &SessionRef{ID: "test-session-456"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.SessionID != "test-session-456" {
+		t.Fatalf("SessionID = %q, want the resumed session id", result.SessionID)
+	}
+	if !result.Resumed {
+		t.Fatal("resume invocation must report Resumed")
+	}
+	if calledPaths["POST /session"] || calledPaths["DELETE /session/test-session-456"] {
+		t.Fatalf("resume must not create or delete sessions: %v", calledPaths)
+	}
+}
+
+// TestOpencodeAgent_SessionFreshKeepsSession proves a reuse invocation with no
+// stored id creates a session and keeps it alive (no delete) so the run's next
+// fixer round can resume it, and reports the minted identity.
+func TestOpencodeAgent_SessionFreshKeepsSession(t *testing.T) {
+	calledPaths := make(map[string]bool)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledPaths[r.Method+" "+r.URL.Path] = true
+		switch {
+		case r.URL.Path == "/session" && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"id":"test-session-789"}`)
+
+		case r.URL.Path == "/global/event" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "data: {\"payload\":{\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":\"test-session-789\",\"part\":{\"id\":\"p1\",\"messageID\":\"msg1\",\"type\":\"text\",\"text\":\"{\\\"success\\\":true}\"}}}}\n\n")
+			fmt.Fprint(w, "data: {\"payload\":{\"type\":\"session.idle\"}}\n\n")
+
+		case r.URL.Path == "/session/test-session-789/message" && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"info":{"id":"msg1","role":"assistant","structured":{"success":true}},"parts":[]}`)
+
+		case r.URL.Path == "/session/test-session-789" && r.Method == http.MethodDelete:
+			t.Error("fresh reuse session must stay alive for later rounds")
+			w.WriteHeader(http.StatusInternalServerError)
+
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	a := &opencodeAgent{
+		bin:    "opencode",
+		server: &managedServer{port: mustParsePort(server.URL)},
+	}
+
+	result, err := a.Run(context.Background(), RunOpts{
+		Prompt:  "fix the findings",
+		CWD:     t.TempDir(),
+		Session: &SessionRef{},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.SessionID != "test-session-789" {
+		t.Fatalf("SessionID = %q, want the minted session id", result.SessionID)
+	}
+	if result.Resumed {
+		t.Fatal("fresh session must not report Resumed")
+	}
+	if calledPaths["DELETE /session/test-session-789"] {
+		t.Fatalf("fresh reuse session must not be deleted: %v", calledPaths)
+	}
+}
+
 func TestOpencodeAgent_BackfillsAssistantTextWhenStreamCannotClassifyOrphans(t *testing.T) {
 	calledPaths := make(map[string]bool)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
