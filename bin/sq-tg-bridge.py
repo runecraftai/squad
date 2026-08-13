@@ -173,7 +173,7 @@ class BridgeConfig:
 
     def __init__(self, args):
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.squad_home = os.environ.get("SQUAD_BASE") or os.path.dirname(script_dir)
+        self.squad_home = os.environ.get("SQUAD_BASE") or os.environ.get("SQUAD_HOME") or os.path.dirname(script_dir)
         base_env = load_env_file(os.path.join(self.squad_home, ".env"))
         bridge_file = args.config or os.environ.get("TG_BRIDGE_CONFIG") \
             or os.path.join(self.squad_home, "config", "telegram-bridge.env")

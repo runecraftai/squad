@@ -172,7 +172,7 @@ done
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P) || exit 0
 SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." 2>/dev/null && pwd -P)} || exit 0
-SQUAD_BASE=${SQUAD_BASE:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE=${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}
 
 # Scope to a genuine primary base, exactly as the session-start nudge and the
