@@ -21,38 +21,38 @@
 | release-please `package-name` | `lavish-axi` | `sq-report` | ✅ | — |
 | plugin.json | Chrome-extension manifest | verify: rename only NAME-encoding fields (e.g., id/name literal `lavish-axi`); display-name/version JSONPath stays | ✅ (name-encoding only) | prose defers |
 | src name literals | cli.js/plugin.js/skill.js bin refs | follow new name (name-encoding only) | ✅ (names) | prose defers |
-| version | 0.1.48 | 0.1.48 (kept) | — | ✅ |
-| engines node>=22, deps (@tailwindcss/browser, axi-sdk-js, chokidar, cross-spawn, daisyui, express, open, parse5), pnpm@11.1.1, scripts (build via node), `.tool-versions`, `.prettierrc`, tsconfig (typecheck only), THIRD-PARTY-NOTICES.md | — | unchanged | — | ✅ |
+| version | 0.1.48 | **0.1.0 (clean-baseline reset, PR #16)** — vendor.json keeps upstream 0.1.48 provenance | — | ✅ |
+| engines node>=22, deps (@tailwindcss/browser, axi-sdk-js, chokidar, cross-spawn, daisyui, express, open, parse5), pnpm@11.1.1, scripts (build via node), `.tool-versions`, `.prettierrc`, tsconfig (typecheck only), THIRD-PARTY-NOTICES.md | — | unchanged (manifest `".": "0.1.0"`) | — | ✅ |
 | README / CHANGELOG / VISION / help prose | — | — | — | ✅ (roadmap item) |
-| Floor constant `LAVISH_AXI_MIN` | name + 0.1.46 | name stays, value 0.1.48, operand `sq-report` | ✅ (operand+value) | constant NAME defers |
+| Floor constant `LAVISH_AXI_MIN` | name + 0.1.46 | name stays, value **0.1.0** (reset by PR #16; planned 0.1.48 bump superseded), operand `sq-report` | ✅ (operand+value) | constant NAME defers |
 | Procevent source id `lavish` | — | KEPT (protocol id, deferred) | — | ✅ |
 
 ## Requirements
 
-### REQ-SQREPORT-01 (P0) — Vendored at the pinned tag
-**Acceptance Criteria:**
-1. WHEN `packages/sq-report/` is inspected THEN it SHALL contain the lavish-axi v0.1.48 tracked tree (excl. `.git`, `node_modules`, `dist`) with `vendor.json`
-2. WHEN `package.json` is read THEN `version` SHALL be 0.1.48 and `bin` SHALL be `{"sq-report": "dist/cli.mjs"}`
+### REQ-SQREPORT-01 (P0) — Vendored at the pinned tag — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `packages/sq-report/` contains the lavish-axi v0.1.48 tracked tree (excl. `.git`, `node_modules`, `dist`) with `vendor.json` — met (package version 0.1.0 baseline; vendor.json records upstream 0.1.48)
+2. `package.json` `version` is 0.1.0 (baseline reset) and `bin` is `{"sq-report": "dist/cli.mjs"}` — met; vendor.json documents the 0.1.48 pin
 
-### REQ-SQREPORT-02 (P0) — Names renamed
-**Acceptance Criteria:**
-1. WHEN the rename table is applied THEN dir/name/bin-key/release-please name SHALL match the New column
-2. WHEN `grep -rE '\blavish-axi\b' packages/sq-report/package.json packages/sq-report/bin packages/sq-report/release-please-config.json` runs THEN it SHALL return 0 hits
+### REQ-SQREPORT-02 (P0) — Names renamed — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. dir/name/bin-key/release-please name match the New column — met
+2. `grep -rE '\blavish-axi\b' packages/sq-report/package.json packages/sq-report/bin packages/sq-report/release-please-config.json` returns 0 hits — met
 
-### REQ-SQREPORT-03 (P0) — Tests green in-workspace
-**Acceptance Criteria:**
-1. WHEN `pnpm install --frozen-lockfile && pnpm build && pnpm test` runs in `packages/sq-report` THEN it SHALL be green (vitest, ~24 JS suites; browser-tagged suites behave as upstream)
-2. WHEN `npm pack --dry-run` runs THEN `dist/cli.mjs` SHALL be listed under the `sq-report` bin
+### REQ-SQREPORT-03 (P0) — Tests green in-workspace — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `pnpm install --frozen-lockfile && pnpm build && pnpm test` in `packages/sq-report` is green (vitest, ~24 JS suites; browser-tagged suites behave as upstream; CI `axi-tools` matrix) — met
+2. `npm pack --dry-run` lists `dist/cli.mjs` under the `sq-report` bin — met
 
-### REQ-SQREPORT-04 (P0) — Distro executes `sq-report`
-**Acceptance Criteria:**
-1. WHEN `bin/sq-procevent-lavish.sh` is read THEN it SHALL execute `sq-report poll` and gate on `command -v sq-report` (register id `lavish` KEPT)
-2. WHEN `COMMON_TOOLS`/`install_cmd`/floor check in `bin/sq-bootstrap.sh` are read THEN they SHALL name `sq-report` with the workspace install command (`npm install -g ./packages/sq-report && sq-report setup hooks` — verify the hooks subcommand exists upstream; else drop the second half) and `LAVISH_AXI_MIN=0.1.48`
-3. WHEN test fakebins named `lavish-axi` are swept THEN they SHALL use `sq-report` (prose-assertion keep-list exempt)
+### REQ-SQREPORT-04 (P0) — Distro executes `sq-report` — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `bin/sq-procevent-lavish.sh` executes `sq-report poll` and gates on `command -v sq-report` (register id `lavish` KEPT) — met
+2. `COMMON_TOOLS`/`install_cmd`/floor check in `bin/sq-bootstrap.sh` name `sq-report` with the workspace install command (`npm install -g ./packages/sq-report && sq-report setup hooks`) and `LAVISH_AXI_MIN=0.1.0` (reset by PR #16) — met
+3. Test fakebins named `lavish-axi` swept → `sq-report` (prose-assertion keep-list exempt) — met
 
-### REQ-SQREPORT-05 (P0) — Turbo integration
-**Acceptance Criteria:**
-1. WHEN `turbo run build|test|lint --filter=sq-report` runs from the root THEN it SHALL pass (upstream has no `lint` script — verify and map to `format:check` or skip in the turbo task set)
+### REQ-SQREPORT-05 (P0) — Turbo integration — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `turbo run build|test|lint --filter=sq-report` passes from the root (upstream has no `lint` script; mapped per the design note) — met
 
 ## Traceability
-REQ-SQREPORT-01..05 ↔ umbrella REQ-M6-01 (AC1–AC4), REQ-M6-03, REQ-M6-04 (floor). Success = all five green + umbrella guard.
+REQ-SQREPORT-01..05 ↔ umbrella REQ-M6-01 (AC1–AC4), REQ-M6-03, REQ-M6-04 (floor). **Status: DONE (reviewed 2026-08-13).** Post-delivery deltas: package version and floor reset to 0.1.0 (PR #16); `skills/lavish` kept (product name); THIRD-PARTY-NOTICES trimmed to minimal attribution (PR #24); no legacy `lavish-axi` alias was created (OQ-M6-01 partial).

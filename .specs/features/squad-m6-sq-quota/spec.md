@@ -20,39 +20,39 @@
 | Packaged skill dir | `skills/quota-axi/` | `skills/sq-quota/` (A-M6-01) | ✅ | — |
 | release-please `package-name` | `quota-axi` | `sq-quota` | ✅ | — |
 | src name literals | version.ts name check / skill.ts / model-kb refs | follow new name (name-encoding only) | ✅ (names) | prose defers |
-| version | 0.1.20 | 0.1.20 (kept) | — | ✅ |
-| engines node>=22.19, deps (@toon-format/toon, axi-sdk-js), pnpm@11.1.1, `.airlock/lint.sh`, `.release-please-manifest.json`, tsconfig, eslint | — | unchanged | — | ✅ |
+| version | 0.1.20 | **0.1.0 (clean-baseline reset, PR #16)** — vendor.json keeps upstream 0.1.20 provenance | — | ✅ |
+| engines node>=22.19, deps (@toon-format/toon, axi-sdk-js), pnpm@11.1.1, `.airlock/lint.sh`, `.release-please-manifest.json`, tsconfig, eslint | — | unchanged (manifest `".": "0.1.0"`) | — | ✅ |
 | README / CHANGELOG / help / TOON prose | — | — | — | ✅ (roadmap item) |
-| Distro lib file | `bin/sq-quota-axi-lib.sh` | `bin/sq-quota-lib.sh` (OQ-M6-04 default (a)) | ✅ (OQ) | — |
+| Distro lib file | `bin/sq-quota-axi-lib.sh` | `bin/sq-quota-lib.sh` (OQ-M6-04 (a)) | ✅ (OQ) | — |
 | Distro lib probe | `command -v quota-axi` + `quota-axi --version` | `command -v sq-quota` + `sq-quota --version` | ✅ | — |
-| Floor constant | `SQUAD_QUOTA_AXI_MIN=0.1.17` | name stays, value 0.1.20 | ✅ (value) | constant NAME defers |
+| Floor constant | `SQUAD_QUOTA_AXI_MIN=0.1.17` | name stays, value **0.1.0** (reset by PR #16; planned 0.1.20 bump superseded) | ✅ (value) | constant NAME defers |
 
 ## Requirements
 
-### REQ-SQQUOTA-01 (P0) — Vendored at the pinned tag
-**Acceptance Criteria:**
-1. WHEN `packages/sq-quota/` is inspected THEN it SHALL contain the quota-axi v0.1.20 tracked tree (excl. `.git`, `node_modules`, `dist`) with `vendor.json`
-2. WHEN `package.json` is read THEN `version` SHALL be 0.1.20
+### REQ-SQQUOTA-01 (P0) — Vendored at the pinned tag — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `packages/sq-quota/` contains the quota-axi v0.1.20 tracked tree (excl. `.git`, `node_modules`, `dist`) with `vendor.json` — met (package version 0.1.0 baseline; vendor.json records upstream 0.1.20)
+2. `package.json` `version` is 0.1.0 (baseline reset); vendor.json documents the 0.1.20 pin
 
-### REQ-SQQUOTA-02 (P0) — Names renamed
-**Acceptance Criteria:**
-1. WHEN the rename table is applied THEN dir/name/bin/files/skill-dir/release-please name SHALL match the New column
-2. WHEN `grep -rE '\bquota-axi\b' packages/sq-quota/package.json packages/sq-quota/bin packages/sq-quota/release-please-config.json` runs THEN it SHALL return 0 hits
+### REQ-SQQUOTA-02 (P0) — Names renamed — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. dir/name/bin/files/skill-dir/release-please name match the New column — met
+2. `grep -rE '\bquota-axi\b' packages/sq-quota/package.json packages/sq-quota/bin packages/sq-quota/release-please-config.json` returns 0 hits — met
 
-### REQ-SQQUOTA-03 (P0) — Tests green in-workspace
-**Acceptance Criteria:**
-1. WHEN `pnpm install --frozen-lockfile && pnpm build && pnpm test` runs in `packages/sq-quota` THEN it SHALL be green (note: upstream `test` script = `pnpm run build && vitest run`)
-2. WHEN `npm pack --dry-run` runs THEN `dist/bin/sq-quota.js` SHALL be listed
+### REQ-SQQUOTA-03 (P0) — Tests green in-workspace — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `pnpm install --frozen-lockfile && pnpm build && pnpm test` in `packages/sq-quota` is green (build-first test script; CI `axi-tools` matrix) — met
+2. `npm pack --dry-run` lists `dist/bin/sq-quota.js` — met
 
-### REQ-SQQUOTA-04 (P0) — Distro probes `sq-quota` with the new floor
-**Acceptance Criteria:**
-1. WHEN `bin/sq-quota-lib.sh` (ex sq-quota-axi-lib.sh) is read THEN it SHALL probe `sq-quota` and `SQUAD_QUOTA_AXI_MIN` SHALL be 0.1.20; all sourcing files (sq-bootstrap.sh, sq-test-run.sh lane) SHALL use the renamed path
-2. WHEN `COMMON_TOOLS`/`install_cmd` in `bin/sq-bootstrap.sh` are read THEN they SHALL name `sq-quota` with the workspace install command
-3. WHEN test fakebins named `quota-axi` are swept THEN they SHALL use `sq-quota` (prose-assertion keep-list exempt)
+### REQ-SQQUOTA-04 (P0) — Distro probes `sq-quota` with the new floor — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `bin/sq-quota-lib.sh` (ex sq-quota-axi-lib.sh) probes `sq-quota` and `SQUAD_QUOTA_AXI_MIN=0.1.0` (reset by PR #16); sourcing files (sq-bootstrap.sh, sq-test-run.sh lane) use the renamed path — met
+2. `COMMON_TOOLS`/`install_cmd` in `bin/sq-bootstrap.sh` name `sq-quota` with the workspace install command — met
+3. Test fakebins named `quota-axi` swept → `sq-quota` (prose-assertion keep-list exempt) — met
 
-### REQ-SQQUOTA-05 (P0) — Turbo integration
-**Acceptance Criteria:**
-1. WHEN `turbo run build|test|lint --filter=sq-quota` runs from the root THEN it SHALL pass
+### REQ-SQQUOTA-05 (P0) — Turbo integration — ✅ DONE
+**Acceptance Criteria (current facts):**
+1. `turbo run build|test|lint --filter=sq-quota` passes from the root — met
 
 ## Traceability
-REQ-SQQUOTA-01..05 ↔ umbrella REQ-M6-01 (AC1–AC4), REQ-M6-03, REQ-M6-04 (floor), OQ-M6-04. Success = all five green + umbrella guard.
+REQ-SQQUOTA-01..05 ↔ umbrella REQ-M6-01 (AC1–AC4), REQ-M6-03, REQ-M6-04 (floor), OQ-M6-04. **Status: DONE (reviewed 2026-08-13).** Post-delivery deltas: package version and floor reset to 0.1.0 (PR #16); `bin/sq-quota-lib.sh` rename landed (OQ-M6-04 (a)); packaged skill dir now `skills/sq-quota` (PR #25 scrub); no legacy `quota-axi` alias was created (OQ-M6-01 partial).

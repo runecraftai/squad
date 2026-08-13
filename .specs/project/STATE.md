@@ -193,6 +193,9 @@ RISK-M6-01 nested pnpm lockfiles at root bun · RISK-M6-02 lavish-axi repo size 
 ### M6 boundary (unchanged from M4)
 Real npm publish of the new forks and the fob/no-mistakes release channel (404) remain org-gated (OQ-03) — local workspace install is the M6 path; publish recorded as future work.
 
+### M6 post-delivery review (2026-08-13)
+The planning records above are the 2026-08-10 state. Current repo facts (verified 2026-08-13; full delta in `.specs/features/squad-m6-vendoring/context.md` "Post-delivery review"): PR #16 (2026-08-11) reset every workspace package and all four AXI floors to a clean **0.1.0** baseline (incl. `SQUAD_TASKS_AXI_MIN`, superseding the durable 0.2.4 claim) and re-classified pr-review from vendored to maintained (vendor.json/upstream identity dropped); PR #8 renamed `no-mistakes` to `drill`; goal-loop-audit was cut (commander decision 2026-08-10, PR #3); PR #25 scrubbed packaged-skill dirs to the `sq-*` names and retired the guard's packages/ keep-list; PR #24 trimmed sq-report notices; PR #26 builds vendored fob from source. Only the mandatory `tasks-axi` protocol alias was created (the four optional legacy aliases were not). The M6 feature artifacts (spec/design/tasks/context in `.specs/features/squad-m6-vendoring/` and the five `squad-m6-sq-*` dirs) are updated to these facts.
+
 ## Decision — goal-loop-audit cut (2026-08-10)
 
 Commander decision (2026-08-10): remove the vendored `@runecraft/goal-loop-audit` (Runecraft v1.1; M5 pin 0.28.34) from the distro "for now" — `packages/goal-loop-audit/` and `.pi/extensions/sq-goal-loop-audit.ts` deleted, `docs/documentation-audiences.json` entries and the `bun.lock` workspace refs removed. drill/no-mistakes and pr-review stay. The T-M5-01..03 task log and M5 milestone records above stay as the historical integration record (decision, not erasure). Re-add path with full provenance is recorded in ROADMAP.md (M5 section).
