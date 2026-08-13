@@ -1,0 +1,195 @@
+<!--
+  Review thread board template for the review-comments skill.
+  Self-contained: no external CSS/JS/fonts. Copy this file, fill the DATA
+  object below, save it under .lavish/ in the working directory, and open it
+  with `sq-report <file.html>`. Collect feedback with `sq-report poll`.
+
+  Data shape:
+  - generated: free-form timestamp line (e.g. "2025-06-10 14:32")
+  - mrs[]: one entry per merge request
+      title: MR title shown in the section header
+      url:   full MR URL (https://...)
+      branch / commit: shown as chips under the header
+      threads[]: one entry per review thread
+        location: "path/file.ext:line" shown as a monospace chip
+        state:    "pending" | "replied" | "resolved"
+        reviewer: the reviewer's comment text (verbatim)
+        reply:    the drafted or posted reply text (what the copy button copies)
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review threads</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1f2328; --muted: #59636e;
+    --line: #d1d9e0; --accent: #0969da;
+    --pending-bg: #fff8c5; --pending-ink: #4d3d00; --pending-line: #d4a72c;
+    --replied-bg: #ddf4ff; --replied-ink: #0550ae; --replied-line: #54aeff;
+    --resolved-bg: #dafbe1; --resolved-ink: #116329; --resolved-line: #4ac26b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 24px 16px 64px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .stats { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stats span { background: var(--card); border: 1px solid var(--line);
+                border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+  .mr { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+        padding: 16px 18px; margin-bottom: 20px; }
+  .mr h2 { font-size: 16px; margin: 0 0 6px; }
+  .mr h2 a { color: var(--accent); text-decoration: none; }
+  .mr h2 a:hover { text-decoration: underline; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chips code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+                background: var(--bg); border: 1px solid var(--line);
+                border-radius: 6px; padding: 2px 8px; color: var(--muted); }
+  .thread { border: 1px solid var(--line); border-radius: 8px;
+            padding: 12px 14px; margin-bottom: 10px; }
+  .thread .meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+                  flex-wrap: wrap; }
+  .thread .loc { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+                 background: var(--bg); border: 1px solid var(--line);
+                 border-radius: 6px; padding: 2px 8px; }
+  .badge { border-radius: 999px; padding: 2px 10px; font-size: 12px;
+           font-weight: 600; border: 1px solid transparent; }
+  .badge.pending  { background: var(--pending-bg);  color: var(--pending-ink);
+                    border-color: var(--pending-line); }
+  .badge.replied  { background: var(--replied-bg);  color: var(--replied-ink);
+                    border-color: var(--replied-line); }
+  .badge.resolved { background: var(--resolved-bg); color: var(--resolved-ink);
+                    border-color: var(--resolved-line); }
+  .block { margin-top: 8px; }
+  .block .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+                color: var(--muted); margin-bottom: 3px; }
+  .block .text { background: var(--bg); border: 1px solid var(--line);
+                 border-radius: 6px; padding: 8px 10px; white-space: pre-wrap;
+                 word-break: break-word; }
+  .copy { margin-top: 6px; background: var(--accent); color: #fff; border: 0;
+          border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+  .copy:hover { filter: brightness(1.08); }
+  .copy.copied { background: var(--resolved-ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Review threads</h1>
+    <p class="sub" id="sub"></p>
+  </header>
+  <div class="stats" id="stats"></div>
+  <main id="board"></main>
+</div>
+<script>
+const DATA = {
+  "generated": "",
+  "mrs": [
+    {
+      "title": "MR title",
+      "url": "https://example.com/mr/1",
+      "branch": "feat/xxx",
+      "commit": "abc1234",
+      "threads": [
+        {
+          "location": "src/example.js:12",
+          "state": "pending",
+          "reviewer": "The reviewer's comment, verbatim.",
+          "reply": "The drafted reply."
+        }
+      ]
+    }
+  ]
+};
+
+const STATE_LABEL = { "pending": "pending", "replied": "replied", "resolved": "resolved" };
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function copyReply(btn, text) {
+  const done = function () {
+    btn.textContent = "copiado";
+    btn.classList.add("copied");
+    setTimeout(function () {
+      btn.textContent = "copiar";
+      btn.classList.remove("copied");
+    }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* clipboard unavailable */ }
+  document.body.removeChild(ta);
+  done();
+}
+
+function render() {
+  document.title = "Review threads";
+  document.getElementById("sub").textContent =
+    (DATA.generated ? "gerado em " + DATA.generated : DATA.generated);
+  const counts = { pending: 0, replied: 0, resolved: 0 };
+  DATA.mrs.forEach(function (mr) {
+    mr.threads.forEach(function (t) {
+      if (counts[t.state] !== undefined) counts[t.state] += 1;
+    });
+  });
+  const stats = document.getElementById("stats");
+  Object.keys(counts).forEach(function (k) {
+    const el = document.createElement("span");
+    el.textContent = k + ": " + counts[k];
+    stats.appendChild(el);
+  });
+  const board = document.getElementById("board");
+  DATA.mrs.forEach(function (mr) {
+    const section = document.createElement("section");
+    section.className = "mr";
+    let html = "<h2><a href=\"" + esc(mr.url) + "\" target=\"_blank\" rel=\"noopener\">" +
+      esc(mr.title) + "</a></h2>";
+    html += "<div class=\"chips\">";
+    if (mr.branch) html += "<code>branch: " + esc(mr.branch) + "</code>";
+    if (mr.commit) html += "<code>commit: " + esc(mr.commit) + "</code>";
+    html += "</div>";
+    section.innerHTML = html;
+    mr.threads.forEach(function (t, i) {
+      const thread = document.createElement("div");
+      thread.className = "thread";
+      const badge = STATE_LABEL[t.state] ? t.state : "pending";
+      let tHtml = "<div class=\"meta\">";
+      if (t.location) tHtml += "<span class=\"loc\">" + esc(t.location) + "</span>";
+      tHtml += "<span class=\"badge " + badge + "\">" + esc(badge) + "</span></div>";
+      tHtml += "<div class=\"block\"><div class=\"tag\">reviewer</div>" +
+        "<div class=\"text\">" + esc(t.reviewer) + "</div></div>";
+      tHtml += "<div class=\"block\"><div class=\"tag\">reply</div>" +
+        "<div class=\"text\">" + esc(t.reply) + "</div>" +
+        "<button type=\"button\" class=\"copy\">copiar</button></div>";
+      thread.innerHTML = tHtml;
+      const btn = thread.querySelector(".copy");
+      btn.addEventListener("click", function () { copyReply(btn, t.reply); });
+      section.appendChild(thread);
+    });
+    board.appendChild(section);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
