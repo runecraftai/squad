@@ -12,8 +12,10 @@
 #   3. no \bfm- or \bfmx- prefixes (fmx- escapes \bfm- and is grepped explicitly)
 #   4. no \bFM_ env prefix
 #   5. no mapped-sense vocabulary: captain, crewmate, fleet, secondmate,
-#      treehouse, ahoy, bearings, stow, wake-queue, "ship task", "scout task",
-#      "scout worktree", "the watch", watch.sh, watcher-continuity
+#      treehouse (case-insensitive and _-adjacency-aware, with the two
+#      documented legacy-alias env names allowlisted), ahoy, bearings, stow,
+#      wake-queue, "ship task", "scout task", "scout worktree", "the watch",
+#      watch.sh, watcher-continuity
 #      (natural-English watch/ship/scout outside these patterns is ALLOWED -
 #      the allowlist is this exact pattern list, never bare-word greps)
 #   6. keep-list asserts: AGENTS.md exists, CLAUDE.md is a symlink to it,
@@ -24,8 +26,18 @@
 #      repository and are exempt the same way .specs/ is: provenance metadata
 #      (M3/M5/M6 vendoring pattern), not authorship credit in Squad content.
 #
+# Nivel-2 closure (slice 6, decisions 2026-08-11):
+# - `fm_`/`fmx_` function prefixes are native Squad vocabulary (decision 1), so
+#   no guard pattern bans them; guard 3 still bans the dash forms.
+# - firstmate was already case-insensitive (guard 1); treehouse is now
+#   case-insensitive and _-adjacency-aware (guard 5), so TREEHOUSE_* and
+#   SQUAD_TREEHOUSE_* identifiers can no longer hide behind case or
+#   word-boundary gaps. Only the two documented legacy-alias env names
+#   (docs/configuration.md env table, slice-3 contract) stay allowlisted.
+#
 # Status: drafted at T-M1-01; RED until the M1 sweep completes; runs green at
-# T-M1-12 (full-suite gate). All guards run in one pass and report the FULL
+# T-M1-12 (full-suite gate); treehouse case/adjacency closure landed in the
+# Nivel-2 slice-6 finalization. All guards run in one pass and report the FULL
 # remaining hit list together.
 
 # shellcheck source=tests/lib.sh
@@ -50,14 +62,23 @@ record_failure() {  # <label> <detail>
   printf -v GUARD_FAILURES '%s-- %s --\n%s\n' "$GUARD_FAILURES" "$1" "$2"
 }
 
+# Documented legacy-alias env names that stay legitimate: the two
+# SQUAD_TREEHOUSE_RETURN_LOCK_* names are the permanent read-aliases for
+# SQUAD_FOB_RETURN_LOCK_* (slice-3 contract, docs/configuration.md env table),
+# so guard 5 must not flag them. Every other treehouse token in any case or
+# identifier position is a violation.
+TREEHOUSE_LEGACY_ALIAS_SED='s/SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES//g; s/SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS//g'
+
 # guard_no_match <label> <pattern>...
 # Records a violation if ANY tracked file matches ANY pattern (fixed -E -I -H -n).
 # A pattern may be written case-insensitive with a leading ci: marker, which is
 # stripped and applied as a real grep -i flag (grep -E has no inline (?i); the
 # marker must stay paren-free for stock macOS Bash 3.2 parsing).
+# Each hit is rechecked after stripping the documented legacy-alias tokens, so
+# a line that only carried an allowlisted alias is not reported.
 guard_no_match() {
   local label=$1; shift
-  local pattern file ci hits matches=""
+  local pattern file ci hits matches="" keep="" stripped="" hit
   # bash 3.2 (stock macOS) cannot parse `case` inside a $(...) substitution,
   # so the case lives in the function body and only the grep runs in $().
   while IFS= read -r file; do
@@ -71,7 +92,20 @@ guard_no_match() {
       else
         hits=$(grep -I -H -n -E -e "$pattern" -- "$ROOT/$file" 2>/dev/null | sed "s|^$ROOT/||")
       fi
-      [ -z "$hits" ] || matches="${matches}${matches:+$'\n'}${hits}"
+      if [ -n "$hits" ]; then
+        keep=""
+        while IFS= read -r hit; do
+          stripped=$(printf '%s\n' "$hit" | sed "$TREEHOUSE_LEGACY_ALIAS_SED")
+          if [ "$ci" -eq 1 ]; then
+            printf '%s\n' "$stripped" | grep -qi -E -e "$pattern" \
+              && keep="${keep}${keep:+$'\n'}${hit}"
+          else
+            printf '%s\n' "$stripped" | grep -q -E -e "$pattern" \
+              && keep="${keep}${keep:+$'\n'}${hit}"
+          fi
+        done <<< "$hits"
+        [ -n "$keep" ] && matches="${matches}${matches:+$'\n'}${keep}"
+      fi
     done
   done < <(tracked_files)
   if [ -n "$matches" ]; then
@@ -108,7 +142,7 @@ test_guard_no_mapped_vocabulary() {
     '\bcrewmate\b' \
     '\bfleet\b' \
     '\bsecondmate\b' \
-    '\btreehouse\b' \
+    'ci:(^|[^[:alpha:]])treehouse([^[:alpha:]]|$)' \
     '\bahoy\b' \
     '\bbearings\b' \
     '\bstow\b' \
