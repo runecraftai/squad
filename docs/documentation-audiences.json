@@ -157,6 +157,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/review-comments/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/sitrep/SKILL.md",
       "audience": "agent-runtime"
     },
