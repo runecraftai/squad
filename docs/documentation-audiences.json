@@ -787,6 +787,14 @@
     {
       "path": "packages/sq-tasks/test/fixtures/squad-backlog.md",
       "audience": "maintainer-verification"
+    },
+    {
+      "path": ".agents/skills/session-handoff/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "docs/handoff-request.md",
+      "audience": "operator-current"
     }
   ]
 }

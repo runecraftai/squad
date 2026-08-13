@@ -1346,6 +1346,46 @@ EOF
   pass "sq-session-start.sh composes the real sq-lock.sh, sq-bootstrap.sh, and sq-stand-to-drain.sh output verbatim"
 }
 
+# --- durable new-session handoff requests ------------------------------------
+
+test_handoff_requests_surface_once_in_digest() {
+  local rec root home fakebin out out2 state_line
+  rec=$(new_world handoff-requests)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  # The surfacer scopes to a real primary checkout; every real primary has
+  # AGENTS.md and bin/ in its root, so the fixture provides them.
+  printf '# Squad\n' > "$root/AGENTS.md"
+  mkdir -p "$root/bin"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-handoff-request.sh" add pr-merged m2-test "M2 landed via PR #42" \
+    || fail "could not seed a pending handoff request"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "HANDOFF REQUESTS" "session start did not emit the HANDOFF REQUESTS section"
+  assert_contains "$out" "MILESTONE CLOSE" "session start did not surface the handoff card"
+  assert_contains "$out" "M2 landed via PR #42" "the surfaced card lost the milestone context"
+  assert_contains "$out" "commander owns" "the surfaced card lost the commander-owned /new reminder"
+
+  # Once per milestone: the digest marked the pending record surfaced.
+  state_line=$(SQUAD_BASE="$home" "$ROOT/bin/sq-handoff-request.sh" list --all)
+  case "$state_line" in
+    *$'\t'pr-merged$'\t'm2-test$'\t'surfaced$'\t'*) : ;;
+    *) fail "the digest did not mark the pending record surfaced: $state_line" ;;
+  esac
+
+  # A second run surfaces nothing new: the card is still exactly once.
+  out2=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out2" "Still open (presented or pending" "the still-open listing disappeared after surfacing"
+  assert_not_contains "$out2" "MILESTONE CLOSE" "a second session start re-presented an already surfaced card"
+
+  pass "session start surfaces each handoff request exactly once and keeps the open question listed"
+}
+
 # --- deferred network stage -------------------------------------------------
 
 # install_slow_gh <fakebin> <seconds>: one external-network call the digest used
@@ -2204,6 +2244,7 @@ test_orphan_status_logs_are_printed
 test_endpoint_liveness_tmux
 test_endpoint_liveness_herdr
 test_composition_invokes_real_scripts
+test_handoff_requests_surface_once_in_digest
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies

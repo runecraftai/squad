@@ -44,8 +44,11 @@
 #                       represented by the two digests below.
 #   6. unit digest   - a compact data/backlog.md identity/metadata listing,
 #                       every state/*.meta, a bounded state/*.status tail,
-#                       state/.afk, and a cheap per-task endpoint-liveness read:
-#                       read-only, always runs.
+#                       state/.afk, a cheap per-task endpoint-liveness read,
+#                       and the HANDOFF REQUESTS subsection
+#                       (docs/handoff-request.md): always runs; read-only
+#                       except a locked session's once-per-milestone handoff
+#                       card surface mark (read-only sessions only list).
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
 #   8. context digest - data/projects.md, data/XOs.md, data/commander.md,
@@ -115,10 +118,12 @@
 # and all of which are safe to compute without verified lock ownership.
 # It deliberately skips the network-only GitHub-auth probe because a read-only
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
-# Only projection cleanup, the six bootstrap mutating sweeps, and the
-# stand-to queue drain are skipped.
-# The context and unit-state digests
-# below are always read-only, so they run unconditionally in both modes.
+# Only projection cleanup, the six bootstrap mutating sweeps, the
+# stand-to queue drain, and the handoff surfacer (which read-only sessions
+# skip and only list instead) are omitted from the read-only path.
+# The context digest is always read-only, and the unit-state digest's only
+# mutation is that locked-session handoff surface mark, so both digests run
+# unconditionally in both modes (docs/handoff-request.md).
 #
 # BACKLOG DIGEST: the startup listing is a RECOVERY input, not a reporting
 # surface, so it carries what this turn can act on and nothing else.
@@ -739,6 +744,31 @@ if fm_pf_relay_active "$SQUAD_BASE" \
     printf '\nEach line is a public reply this home still owes. Reconcile terminal results with\n'
     printf '%s/bin/sq-public-followup.sh consume, then deliver a ready one with\n' "$SQUAD_ROOT"
     printf '%s/bin/sq-public-followup.sh deliver <id>. Load relay-respond for the procedure.\n' "$SQUAD_ROOT"
+  fi
+fi
+
+# Durable new-session handoff requests (docs/handoff-request.md). At a milestone
+# close - a merged milestone PR or a drained flight queue - Squad records a
+# pending request; whichever surface runs first, this digest or the Pi turn-end
+# extension, marks it surfaced and prints the card exactly once. The read-only
+# path never mutates, so it only lists. The still-open set (pending or surfaced,
+# not yet resolved) stays visible across restarts so a presented-but-unanswered
+# question is never silently dropped.
+HANDOFF_OPEN=$("$SCRIPT_DIR/sq-handoff-request.sh" list --open 2>/dev/null) || HANDOFF_OPEN=
+HANDOFF_CARD=
+if [ "$READ_ONLY" -eq 0 ]; then
+  HANDOFF_CARD=$("$SCRIPT_DIR/sq-handoff-surface.sh" 2>/dev/null) || HANDOFF_CARD=
+fi
+if [ -n "$HANDOFF_CARD" ] || [ -n "$HANDOFF_OPEN" ]; then
+  subsection "HANDOFF REQUESTS"
+  if [ -n "$HANDOFF_CARD" ]; then
+    printf '%s\n' "$HANDOFF_CARD"
+    printf '\nEach card above is surfaced exactly once per milestone. Present it and ask\n'
+    printf 'whether to start a new session; the commander owns the /new decision.\n'
+  fi
+  if [ -n "$HANDOFF_OPEN" ]; then
+    printf '\nStill open (presented or pending, commander has not answered yet):\n'
+    printf '%s\n' "$HANDOFF_OPEN"
   fi
 fi
 

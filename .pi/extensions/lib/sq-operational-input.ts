@@ -13,6 +13,7 @@ export const SQUAD_CURRENT_OPERATIONAL_KINDS = [
   "away-supervisor",
   "from-squad",
   "launch-brief",
+  "handoff-request",
 ] as const;
 
 export type SquadCurrentOperationalKind =
