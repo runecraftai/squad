@@ -164,6 +164,12 @@ worker_acquire_lock() {
     fi
     [ ! -L "$WORKER_LOCK/pid" ] && [ ! -L "$WORKER_LOCK/start" ] && [ ! -L "$WORKER_LOCK/command" ] || return 1
     rm -f -- "$WORKER_LOCK/pid" "$WORKER_LOCK/start" "$WORKER_LOCK/command" || return 1
+    # A worker killed between its quarantine temp's creation and its publish
+    # (SIGKILL mid-shutdown) leaves a .quarantine.* temp in the lock dir. The
+    # owner is provably gone (checked above), so clear the temp with the rest
+    # of the stale lock; otherwise rmdir fails forever and every replacement
+    # worker wedges on the non-empty directory (observed under load).
+    rm -f -- "$WORKER_LOCK"/.quarantine.* 2>/dev/null || true
     rmdir "$WORKER_LOCK" || return 1
   done
   return 1
@@ -294,6 +300,16 @@ worker_stop_active_execution() {
 worker_shutdown() {
   trap - HUP INT TERM
   worker_publish_quarantine || {
+    if [ ! -d "$WORKER_LOCK" ] || [ -L "$WORKER_LOCK" ]; then
+      # The lock this quarantine would guard is gone (state cleanup removed it
+      # or the whole state root). Looping on would serve unlocked and stay
+      # immortal to TERM: the serve loop's reap_stale recreates the state root
+      # while the lock stays absent, so the next heartbeat succeeds and every
+      # later TERM hits the same failed publish. Exit like a heartbeat failure
+      # so the supervisor respawns the serve child under a fresh lock.
+      worker_error "cannot guard worker ownership for shutdown because the worker lock is gone"
+      exit 1
+    fi
     worker_error "cannot guard worker ownership for shutdown"
     trap worker_shutdown HUP INT TERM
     return 0
