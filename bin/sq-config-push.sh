@@ -37,7 +37,7 @@ data/XOs.md is only a fallback for missing home= fields in older or
 incomplete meta records.
 
 Environment overrides follow the rest of Squad:
-  SQUAD_HOME            active Squad base
+  SQUAD_BASE            active Squad base
   SQUAD_ROOT_OVERRIDE  Squad repo root
   SQUAD_STATE_OVERRIDE state dir
   SQUAD_DATA_OVERRIDE  data dir
@@ -60,10 +60,10 @@ esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 XOS_MD="$DATA/XOs.md"
 
 "$SCRIPT_DIR/sq-guard.sh" || true
@@ -109,7 +109,7 @@ if [ ! -s "$records" ]; then
   exit 0
 fi
 
-echo "config-push: $SQUAD_HOME -> live XO homes"
+echo "config-push: $SQUAD_BASE -> live XO homes"
 
 seen_homes=""
 errors=0
@@ -152,7 +152,7 @@ while IFS='|' read -r id home _window meta; do
       if printf '%s\n' "$remote_out" | grep -Eq '^(pushed|removed):'; then remote_nudge=1; fi
       [ "$remote_pending" -eq 0 ] || remote_nudge=1
       if [ "$remote_nudge" -eq 1 ]; then
-        if SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" \
+        if SQUAD_BASE="$SQUAD_BASE" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$STATE" \
           "$SCRIPT_DIR/sq-send.sh" "sq-$id" "$SQUAD_REMOTE_SECOND_MATE_NUDGE_MESSAGE" >/dev/null 2>&1; then
           rm -f -- "$remote_marker"
           echo "  config-reread: sent"
@@ -204,9 +204,9 @@ while IFS='|' read -r id home _window meta; do
     errors=1
     continue
   }
-  if fm_config_reread_retry_queue_is_full "$SQUAD_HOME" "$id"; then
+  if fm_config_reread_retry_queue_is_full "$SQUAD_BASE" "$id"; then
     fm_config_reread_retry_pending "$id" "$home_real" || true
-    if fm_config_reread_retry_queue_is_full "$SQUAD_HOME" "$id"; then
+    if fm_config_reread_retry_queue_is_full "$SQUAD_BASE" "$id"; then
       echo "  config-reread: error - retry instruction queue is full"
       errors=1
       fm_lock_release "$home_lock" || true
@@ -222,17 +222,17 @@ while IFS='|' read -r id home _window meta; do
   }
   reports="$reports $report"
   if SQUAD_CONFIG_INHERIT_REPORT="$report" SQUAD_CONFIG_INHERIT_LIVE=1 \
-    propagate_XO_inheritance "$SQUAD_HOME" "$home_real" "$CONFIG" "$DATA"; then
+    propagate_XO_inheritance "$SQUAD_BASE" "$home_real" "$CONFIG" "$DATA"; then
     :
   else
     errors=1
   fi
   print_item_report "$report"
   reread_pending=0
-  if fm_config_reread_has_pending "$home_real" || fm_config_reread_has_staged "$SQUAD_HOME" "$id"; then
+  if fm_config_reread_has_pending "$home_real" || fm_config_reread_has_staged "$SQUAD_BASE" "$id"; then
     reread_pending=1
   fi
-  if reread_out=$(SQUAD_HOME="$SQUAD_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+  if reread_out=$(SQUAD_BASE="$SQUAD_BASE" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
     SQUAD_STATE_OVERRIDE="$STATE" \
     fm_config_send_reread_nudge "$id" "$home_real" "$report" 2>&1); then
     if [ -n "$(fm_config_reread_changed_items "$report")" ] || [ "$reread_pending" -eq 1 ]; then

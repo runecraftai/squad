@@ -4,8 +4,8 @@
 SQUAD_WAKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_WAKE_DEFAULT_ROOT="$(cd "$SQUAD_WAKE_LIB_DIR/.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_WAKE_DEFAULT_ROOT}}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-${STATE:-$SQUAD_HOME/state}}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-${STATE:-$SQUAD_BASE/state}}"
 SQUAD_WAKE_QUEUE="${SQUAD_WAKE_QUEUE:-$STATE/.stand-to-queue}"
 SQUAD_WAKE_QUEUE_LOCK="${SQUAD_WAKE_QUEUE_LOCK:-$STATE/.stand-to-queue.lock}"
 SQUAD_LOCK_STALE_AFTER="${SQUAD_LOCK_STALE_AFTER:-2}"
@@ -80,7 +80,7 @@ fm_path_age() {
 
 SQUAD_SENTRY_MATCHED_IDENTITY=
 fm_sentry_lock_matches_pid() {
-  local state=$1 watch_path=$2 pid=$3 home=${4:-$SQUAD_HOME} lockdir lock_home lock_path lock_identity current_identity
+  local state=$1 watch_path=$2 pid=$3 home=${4:-$SQUAD_BASE} lockdir lock_home lock_path lock_identity current_identity
   SQUAD_SENTRY_MATCHED_IDENTITY=
   lockdir="$state/.sentry.lock"
   lock_home=$(cat "$lockdir/sq-home" 2>/dev/null || true)
@@ -97,7 +97,7 @@ fm_sentry_lock_matches_pid() {
 SQUAD_SENTRY_HEALTHY_PID=
 SQUAD_SENTRY_HEALTHY_IDENTITY=
 fm_sentry_healthy() {
-  local state=$1 watch_path=$2 grace=${3:-${SQUAD_GUARD_GRACE:-300}} home=${4:-$SQUAD_HOME} lockdir beat pid identity age
+  local state=$1 watch_path=$2 grace=${3:-${SQUAD_GUARD_GRACE:-300}} home=${4:-$SQUAD_BASE} lockdir beat pid identity age
   SQUAD_SENTRY_HEALTHY_PID=
   SQUAD_SENTRY_HEALTHY_IDENTITY=
   lockdir="$state/.sentry.lock"
@@ -167,7 +167,7 @@ SQUAD_SENTRY_VERDICT_OK=false
 # shellcheck disable=SC2034 # Read by callers after the function returns.
 SQUAD_SENTRY_VERDICT_REASON=stale-beacon
 fm_sentry_supervision_verdict() {
-  local state=$1 watch=$2 grace=${3:-${SQUAD_GUARD_GRACE:-300}} home=${4:-$SQUAD_HOME}
+  local state=$1 watch=$2 grace=${3:-${SQUAD_GUARD_GRACE:-300}} home=${4:-$SQUAD_BASE}
   local beat age fresh=false
   SQUAD_SENTRY_VERDICT_OK=false
   SQUAD_SENTRY_VERDICT_REASON=stale-beacon

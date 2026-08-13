@@ -46,7 +46,7 @@ run_tool() {
   shift
   : > "$OUT"
   : > "$ERR"
-  env SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_HOME="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" "$@" \
+  env SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_BASE="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" "$@" \
     "$CHECK" --claude --tool "$tool" > "$OUT" 2> "$ERR" || rc=$?
   return "$rc"
 }
@@ -190,7 +190,7 @@ test_task_worktree_and_non_Squad_repo_are_inert() {
   printf '# fixture\n' > "$child/AGENTS.md"
   : > "$OUT"
   : > "$ERR"
-  SQUAD_ROOT_OVERRIDE="$child" SQUAD_HOME="$child" SQUAD_STATE_OVERRIDE="$child/state" \
+  SQUAD_ROOT_OVERRIDE="$child" SQUAD_BASE="$child" SQUAD_STATE_OVERRIDE="$child/state" \
     "$CHECK" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 0 ] || fail "an operator task worktree must be out of scope, got exit $rc: $(cat "$ERR")"
   [ ! -s "$OUT" ] || fail "task-worktree no-op wrote stdout: $(cat "$OUT")"
@@ -199,7 +199,7 @@ test_task_worktree_and_non_Squad_repo_are_inert() {
   mkdir -p "$plain/bin"
   git -C "$plain" init -q
   rc=0
-  SQUAD_ROOT_OVERRIDE="$plain" SQUAD_HOME="$plain" SQUAD_STATE_OVERRIDE="$plain/state" \
+  SQUAD_ROOT_OVERRIDE="$plain" SQUAD_BASE="$plain" SQUAD_STATE_OVERRIDE="$plain/state" \
     "$CHECK" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 0 ] || fail "a non-Squad repo must be out of scope, got exit $rc"
   pass "the guard is inert in an operator task worktree and in a non-Squad repo"
@@ -211,7 +211,7 @@ test_XO_home_is_in_scope() {
   mkdir -p "$second/bin" "$second/state"
   printf '# fixture\n' > "$second/AGENTS.md"
   printf 'sm-fixture\n' > "$second/.sq-xo-home"
-  SQUAD_ROOT_OVERRIDE="$second" SQUAD_HOME="$second" SQUAD_STATE_OVERRIDE="$second/state" \
+  SQUAD_ROOT_OVERRIDE="$second" SQUAD_BASE="$second" SQUAD_STATE_OVERRIDE="$second/state" \
     "$CHECK" --claude --tool Agent > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 2 ] || fail "a marked XO home operates a unit and must be guarded, got exit $rc"
   pass "a marked XO home is guarded even though it is a linked worktree"
@@ -221,7 +221,7 @@ test_stdin_transports_and_output_shapes() {
   local rc=0
   : > "$OUT"; : > "$ERR"
   printf '%s' '{"tool_name":"Agent","tool_input":{"prompt":"go"}}' \
-    | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_HOME="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
+    | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_BASE="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
       "$CHECK" --claude > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 2 ] || fail "Claude-shaped stdin must deny, got exit $rc"
   [ ! -s "$OUT" ] || fail "Claude deny wrote stdout, which makes Claude ignore the deny: $(cat "$OUT")"
@@ -229,7 +229,7 @@ test_stdin_transports_and_output_shapes() {
   rc=0
   : > "$OUT"; : > "$ERR"
   printf '%s' '{"toolName":"Agent"}' \
-    | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_HOME="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
+    | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_BASE="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
       "$CHECK" > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 2 ] || fail "Grok-shaped stdin must deny, got exit $rc"
   jq -e '.decision == "deny" and (.reason | startswith("[subagent-dispatch]"))' "$OUT" >/dev/null 2>&1 \
@@ -238,7 +238,7 @@ test_stdin_transports_and_output_shapes() {
   rc=0
   : > "$OUT"; : > "$ERR"
   printf '%s' '{"tool_name":"Bash","tool_input":{"command":"ls"}}' \
-    | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_HOME="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
+    | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_BASE="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
       "$CHECK" --claude > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 0 ] || fail "Bash through stdin must allow, got exit $rc"
   [ ! -s "$OUT" ] && [ ! -s "$ERR" ] || fail "stdin allow wrote output"
@@ -251,7 +251,7 @@ test_malformed_transport_fails_open() {
     rc=0
     : > "$OUT"; : > "$ERR"
     printf '%s' "$payload" \
-      | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_HOME="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
+      | SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_BASE="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
         "$CHECK" --claude > "$OUT" 2> "$ERR" || rc=$?
     [ "$rc" -eq 0 ] || fail "malformed transport must fail open, payload '$payload' gave exit $rc"
     [ ! -s "$OUT" ] || fail "fail-open path wrote stdout for payload '$payload'"
@@ -268,7 +268,7 @@ test_missing_jq_stdin_transport_fails_open() {
   ln -sf "$cat_bin" "$fakebin/cat"
   : > "$OUT"; : > "$ERR"
   printf '%s' '{"tool_name":"Agent"}' \
-    | env PATH="$fakebin" SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_HOME="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
+    | env PATH="$fakebin" SQUAD_ROOT_OVERRIDE="$PRIMARY" SQUAD_BASE="$PRIMARY" SQUAD_STATE_OVERRIDE="$STATE" \
       "$CHECK" --claude > "$OUT" 2> "$ERR" || rc=$?
   [ "$rc" -eq 0 ] || fail "missing jq transport must fail open, got exit $rc: $(cat "$ERR")"
   [ ! -s "$OUT" ] || fail "missing jq fail-open path wrote stdout: $(cat "$OUT")"

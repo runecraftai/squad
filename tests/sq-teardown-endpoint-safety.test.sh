@@ -36,7 +36,7 @@ SH
 
 run_case() {  # <case> <id>
   local dir=$1 id=$2
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
   SQUAD_RUNTIME_LOG="$dir/runtime.log" PATH="$dir/fakebin:$PATH" \
     "$TEARDOWN" "$id" --force
 }
@@ -217,7 +217,7 @@ SH
     "window=" "worktree=$dir/worktree" "project=$dir/project" "kind=recon"
   set +e
   env -u TMUX -u TMUX_PANE SQUAD_TEST_TMUX_SOCKET="$socket_id" \
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_RUNTIME_LOG="$dir/runtime.log" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_RUNTIME_LOG="$dir/runtime.log" \
     PATH="$dir/fakebin:$PATH" "$TEARDOWN" invalid --force \
     > "$dir/invalid.out" 2> "$dir/invalid.err"
   rc=$?
@@ -253,7 +253,7 @@ SH
     "worktree=$dir/nonexistent-worktree" "project=$dir/nonexistent-project" \
     "kind=recon" "mode=drill"
   env -u TMUX -u TMUX_PANE SQUAD_TEST_TMUX_SOCKET="$socket_id" \
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_RUNTIME_LOG="$dir/runtime.log" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_RUNTIME_LOG="$dir/runtime.log" \
     PATH="$dir/fakebin:$PATH" "$TEARDOWN" "$target_id" --force \
     > "$dir/valid.out" 2> "$dir/valid.err" \
     || fail "isolated valid endpoint teardown failed: $(cat "$dir/valid.err")"

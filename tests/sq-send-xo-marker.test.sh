@@ -79,7 +79,7 @@ run_send() {
   local fb=$1 home=$2 log=$3; shift 3
   : > "$log"
   env PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SEND_LOG="$log" SQUAD_SEND_SETTLE=0 \
     "$SEND" "$@" 2>/dev/null
 }
 

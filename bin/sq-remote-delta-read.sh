@@ -17,7 +17,8 @@
 # indistinguishable from an empty window.
 set -eu
 
-SQUAD_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-}}"
+: "${SQUAD_BASE:?SQUAD_BASE is required (legacy SQUAD_HOME is also accepted)}"
 MAX_BYTES=${SQUAD_REMOTE_DELTA_MAX_BYTES:-65536}
 POLL_SECONDS=${SQUAD_REMOTE_DELTA_POLL_SECONDS:-0.2}
 
@@ -84,11 +85,11 @@ resolve_log() { # <relative-path>
   case "$rel" in ''|/*|*'//'*) die "log must be a nonempty relative path" ;; esac
   case "/$rel/" in */../*|*/./*) die "log traversal is not allowed: $rel" ;; esac
   case "$rel" in *$'\n'*|*$'\r'*|*$'\t'*) die "log path contains control characters" ;; esac
-  home_real=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
+  home_real=$(CDPATH='' cd -- "$SQUAD_BASE" 2>/dev/null && pwd -P) || die "SQUAD_BASE is unavailable"
   parent=$(dirname "$rel")
   base=$(basename "$rel")
-  parent_real=$(CDPATH='' cd -- "$SQUAD_HOME/$parent" 2>/dev/null && pwd -P) || die "log parent is unavailable: $rel"
-  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "log escapes SQUAD_HOME: $rel" ;; esac
+  parent_real=$(CDPATH='' cd -- "$SQUAD_BASE/$parent" 2>/dev/null && pwd -P) || die "log parent is unavailable: $rel"
+  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "log escapes SQUAD_BASE: $rel" ;; esac
   path="$parent_real/$base"
   if [ -e "$path" ] || [ -L "$path" ]; then
     [ -f "$path" ] && [ ! -L "$path" ] || die "log is not a non-symlink regular file: $rel"

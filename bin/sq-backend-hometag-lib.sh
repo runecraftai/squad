@@ -18,7 +18,7 @@
 # path, so distinct installations - including multiple primaries on one
 # machine - never collide even though they share one backend-global
 # namespace. Callers source this file AFTER resolving their own
-# SQUAD_HOME/SQUAD_ROOT fallbacks (both adapters already do this for their own
+# SQUAD_BASE/SQUAD_ROOT fallbacks (both adapters already do this for their own
 # purposes before any other function runs).
 #
 # Moving/relocating a Squad installation changes its SQUAD_ROOT path and
@@ -29,7 +29,7 @@
 SQUAD_BACKEND_HOMETAG_XO_MARKER=".sq-xo-home"
 
 fm_backend_hometag() {
-  local marker="$SQUAD_HOME/$SQUAD_BACKEND_HOMETAG_XO_MARKER" id prefix root hash
+  local marker="$SQUAD_BASE/$SQUAD_BACKEND_HOMETAG_XO_MARKER" id prefix root hash
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then

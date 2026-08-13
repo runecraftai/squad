@@ -83,7 +83,7 @@ function resolvePath(anchor) {
 
 function effectivePaths(root) {
   const fmRoot = process.env.SQUAD_ROOT_OVERRIDE || root;
-  const fmHome = process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE || fmRoot;
+  const fmHome = process.env.SQUAD_BASE || process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE || fmRoot;
   const state = process.env.SQUAD_STATE_OVERRIDE || `${fmHome}/state`;
   const config = process.env.SQUAD_CONFIG_OVERRIDE || `${fmHome}/config`;
   return { root: fmRoot, home: fmHome, state, config };
@@ -285,12 +285,13 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   setArmStatus("starting");
   const env = {
     ...process.env,
+    SQUAD_BASE: paths.home,
     SQUAD_HOME: paths.home,
     SQUAD_ROOT_OVERRIDE: paths.root,
     SQUAD_CONFIG_OVERRIDE: paths.config,
     SQUAD_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
-  const armChild = spawn("bash", ["-lc", 'config_dir="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$SQUAD_ROOT_OVERRIDE/bin/sq-sentry-arm.sh" --restart'], {
+  const armChild = spawn("bash", ["-lc", 'config_dir="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$SQUAD_ROOT_OVERRIDE/bin/sq-sentry-arm.sh" --restart'], {
     cwd: paths.root,
     env,
     stdio: ["ignore", "pipe", "pipe"],

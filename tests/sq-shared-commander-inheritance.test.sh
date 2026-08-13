@@ -299,7 +299,7 @@ EOF
   fakebin=$(make_fake_spawn_toolchain "$w")
 
   PATH="$fakebin:$BASE_PATH" TMUX='' \
-    SQUAD_ROOT_OVERRIDE="$root" SQUAD_HOME="$home" \
+    SQUAD_ROOT_OVERRIDE="$root" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$data_override" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 \
@@ -329,7 +329,7 @@ EOF
   fakebin=$(make_fake_spawn_toolchain "$w")
   add_bootstrap_compatible_tools "$fakebin"
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" \
     SQUAD_DATA_OVERRIDE="$data_override" \
     "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 
@@ -358,7 +358,7 @@ EOF
   chmod "$SQUAD_SHARED_COMMANDER_MODE" "$sm/data/commander-shared.md"
   write_shared "$data_override/commander-shared.md" "changed override shared bytes"
 
-  out=$(PATH="$BASE_PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" \
+  out=$(PATH="$BASE_PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" \
     SQUAD_DATA_OVERRIDE="$data_override" \
     "$ROOT/bin/sq-config-push.sh" 2>/dev/null)
 
@@ -380,7 +380,7 @@ EOF
   add_bootstrap_compatible_tools "$fakebin"
   fm_fake_exit0 "$fakebin" pgrep
 
-  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root" \
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root" \
     "$ROOT/bin/sq-session-start.sh")
 
   assert_contains "$out" "data/commander-shared.md (shared, main-authoritative, read-only in XO homes)" \

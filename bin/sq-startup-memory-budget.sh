@@ -14,9 +14,9 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
 # shellcheck source=bin/sq-startup-memory-budget-lib.sh
 . "$SCRIPT_DIR/sq-startup-memory-budget-lib.sh"
@@ -43,7 +43,7 @@ report() {
     return 2
   fi
 
-  if [ -e "$SQUAD_HOME/.sq-xo-home" ] || [ -L "$SQUAD_HOME/.sq-xo-home" ]; then
+  if [ -e "$SQUAD_BASE/.sq-xo-home" ] || [ -L "$SQUAD_BASE/.sq-xo-home" ]; then
     role=xo
   fi
 

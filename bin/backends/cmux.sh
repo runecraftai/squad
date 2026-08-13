@@ -103,13 +103,13 @@
 # fm_backend_required_tools only when cmux is the resolved backend; this adapter
 # also gates them again before spawning.
 
-# SQUAD_HOME fallback: every real caller already sets SQUAD_HOME as a global before
+# SQUAD_BASE fallback: every real caller already sets SQUAD_BASE as a global before
 # sourcing sq-backend.sh (which sources this file); this exists only so this
 # file's own unit tests, which source it directly, resolve sanely. Mirrors
 # bin/backends/zellij.sh's identical fallback.
 SQUAD_BACKEND_CMUX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_CMUX_ROOT}}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # shellcheck source=bin/sq-backend-hometag-lib.sh
 . "$SQUAD_BACKEND_CMUX_ROOT/bin/sq-backend-hometag-lib.sh"
@@ -156,7 +156,7 @@ fm_backend_cmux_tool_check() {
 # Never overrides an operator's own ambient CMUX_SOCKET_PASSWORD when the file
 # is absent - fm_backend_cmux_cli only exports this when it resolves non-empty.
 fm_backend_cmux_password() {
-  local config_dir="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}" f line
+  local config_dir="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}" f line
   f="$config_dir/cmux-socket-password"
   [ -f "$f" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do

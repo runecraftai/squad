@@ -347,7 +347,7 @@ add_sm_home() {
 
 run_bootstrap() {  # <fakebin> <home> <pane-cmd> <call-log> [extra env...] -> stdout
   local fb=$1 home=$2 cmd=$3 log=$4; shift 4
-  PATH="$fb:$BASE_PATH" TMUX='' SQUAD_BACKEND=tmux SQUAD_HOME="$home" \
+  PATH="$fb:$BASE_PATH" TMUX='' SQUAD_BACKEND=tmux SQUAD_BASE="$home" \
     SQUAD_TEST_PANE_CMD="$cmd" SQUAD_TMUX_CALL_LOG="$log" \
     env "$@" "$ROOT/bin/sq-bootstrap.sh" 2>&1
 }

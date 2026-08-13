@@ -1436,7 +1436,7 @@ pe_case() {  # <dir> <command>...
   local dir=$1
   shift
   (unset SQUAD_ROOT_OVERRIDE
-   SQUAD_PROCEVENT_CLAIM_ROOT="$dir/claims" SQUAD_HOME="$dir" "$ROOT/bin/sq-procevent.sh" "$@")
+   SQUAD_PROCEVENT_CLAIM_ROOT="$dir/claims" SQUAD_BASE="$dir" "$ROOT/bin/sq-procevent.sh" "$@")
 }
 
 # Capture one real process-event result into <dir>'s home, then retire the
@@ -1456,11 +1456,11 @@ seed_captured_procevent_result() {  # <dir>
   [ -s "$dir/state/.stand-to-queue" ]
 }
 
-# The sentry, scoped by SQUAD_HOME rather than SQUAD_STATE_OVERRIDE, so the
+# The sentry, scoped by SQUAD_BASE rather than SQUAD_STATE_OVERRIDE, so the
 # per-cycle reconcile it launches resolves the same home's state.
 procevent_watch_bg() {  # <dir> <out>
   local dir=$1 out=$2
-  PATH="$dir/fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_PROCEVENT_CLAIM_ROOT="$dir/claims" \
+  PATH="$dir/fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_PROCEVENT_CLAIM_ROOT="$dir/claims" \
     SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" \
     SQUAD_POLL=0.2 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
 }
@@ -1598,7 +1598,7 @@ test_procevent_surface_crash_boundaries() {
   append_wake "$state" check "procevent:output-fail:1" "check: procevent fixture output-fail 1"
   mkfifo "$fifo"
   sh -c ': < "$1"' _ "$fifo" & reader=$!
-  PATH="$dir/fakebin:$PATH" SQUAD_HOME="$dir" SQUAD_PROCEVENT_CLAIM_ROOT="$dir/claims" \
+  PATH="$dir/fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_PROCEVENT_CLAIM_ROOT="$dir/claims" \
     SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" SQUAD_POLL=0.2 SQUAD_SIGNAL_GRACE=1 \
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$fifo" &
   pid=$!

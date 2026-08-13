@@ -119,6 +119,7 @@ if [ "$COMMAND" = sq-remote-doctor.sh ]; then
     /usr/bin/env -i
     "PATH=$SQUAD_REMOTE_JOB_CHILD_PATH"
     "HOME=$ACCOUNT_HOME"
+    "SQUAD_BASE=$HOME_PATH"
     "SQUAD_HOME=$HOME_PATH"
     "SQUAD_ROOT_OVERRIDE=$ROOT"
     SQUAD_REMOTE_DOCTOR_BOOTSTRAP=1

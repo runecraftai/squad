@@ -196,7 +196,7 @@ probe_process_opens() {  # <harness> <version> <lab> <expect-resume> <cold-argv.
 
   : > "$record"
   rm -f "$marker" "$lab/state/.startup-network."*
-  out=$( cd "$lab" && SQUAD_LIVE_RECORD="$record" SQUAD_LIVE_NONCE="$LIVE_NONCE" SQUAD_ROOT_OVERRIDE="$lab" SQUAD_HOME="$lab" \
+  out=$( cd "$lab" && SQUAD_LIVE_RECORD="$record" SQUAD_LIVE_NONCE="$LIVE_NONCE" SQUAD_ROOT_OVERRIDE="$lab" SQUAD_BASE="$lab" \
     SQUAD_LIVE_DETACH_MARKER="$marker" \
     "${cold[@]}" "$ASK" < /dev/null 2>&1 )
   source=$(head -n 1 "$record")
@@ -220,7 +220,7 @@ probe_process_opens() {  # <harness> <version> <lab> <expect-resume> <cold-argv.
   pass "$harness $version: a worker detached by the session-open hook outlives it, so the deferred network checks still run"
 
   : > "$record"
-  ( cd "$lab" && SQUAD_LIVE_RECORD="$record" SQUAD_LIVE_NONCE="$LIVE_NONCE" SQUAD_ROOT_OVERRIDE="$lab" SQUAD_HOME="$lab" \
+  ( cd "$lab" && SQUAD_LIVE_RECORD="$record" SQUAD_LIVE_NONCE="$LIVE_NONCE" SQUAD_ROOT_OVERRIDE="$lab" SQUAD_BASE="$lab" \
     "${resume[@]}" 'Say only OK.' < /dev/null >/dev/null 2>&1 ) || true
   source=$(head -n 1 "$record")
   [ -n "$source" ] \
@@ -244,7 +244,7 @@ probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-arg
   local record="$lab/record" session="fmss-$harness" reset n compact_seed compact_reply
   : > "$record"
   tmux -L "$SOCKET" new-session -d -s "$session" -c "$lab" -x 200 -y 50 \
-    -e SQUAD_LIVE_RECORD="$record" -e SQUAD_ROOT_OVERRIDE="$lab" -e SQUAD_HOME="$lab" \
+    -e SQUAD_LIVE_RECORD="$record" -e SQUAD_ROOT_OVERRIDE="$lab" -e SQUAD_BASE="$lab" \
     -e SQUAD_LIVE_NONCE="$LIVE_NONCE" \
     "$*" \
     || fail "$harness $version: could not start an interactive lab session"

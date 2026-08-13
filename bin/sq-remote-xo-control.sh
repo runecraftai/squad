@@ -37,7 +37,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-TARGET_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
+TARGET_HOME="${SQUAD_BASE:-${SQUAD_HOME:-}}"
+: "${TARGET_HOME:?SQUAD_BASE is required (legacy SQUAD_HOME is also accepted)}"
 CONTROL_STATE="$TARGET_HOME/state/parent-route"
 CONTROL_DATA="$TARGET_HOME/data/.parent-route"
 REMOTE_HERDR_SESSION=sq-remote
@@ -166,7 +167,7 @@ cmd_launch() {
   [ "$model" = - ] || ARGS+=(--model "$model")
   [ "$effort" = - ] || ARGS+=(--effort "$effort")
   [ -z "$traceparent" ] || ARGS+=(--traceparent "$traceparent")
-  if ! out=$(HERDR_SESSION="$REMOTE_HERDR_SESSION" SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+  if ! out=$(HERDR_SESSION="$REMOTE_HERDR_SESSION" SQUAD_BASE="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
     SQUAD_STATE_OVERRIDE="$CONTROL_STATE" SQUAD_DATA_OVERRIDE="$CONTROL_DATA" \
     SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" SQUAD_SKIP_XO_INHERIT=1 \
     "$SCRIPT_DIR/sq-spawn.sh" "${ARGS[@]}" 2>&1); then
@@ -185,7 +186,7 @@ cmd_send() {
   validate_id "$id"
   validate_home "$id"
   remote_endpoint_require "$id"
-  SQUAD_HOME="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
+  SQUAD_BASE="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
     "$SCRIPT_DIR/sq-send.sh" "$REMOTE_ENDPOINT_TARGET" "$message"
 }
 
@@ -194,7 +195,7 @@ cmd_key() {
   validate_id "$id"
   validate_home "$id"
   remote_endpoint_require "$id"
-  SQUAD_HOME="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
+  SQUAD_BASE="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
     "$SCRIPT_DIR/sq-send.sh" "$REMOTE_ENDPOINT_TARGET" --key "$key"
 }
 
@@ -245,7 +246,7 @@ cmd_update() {
   local id=$1 update_out root_status
   validate_id "$id"
   validate_home "$id"
-  if ! update_out=$(SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+  if ! update_out=$(SQUAD_BASE="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
     "$SCRIPT_DIR/sq-update.sh" 2>&1); then
     [ -z "$update_out" ] || printf '%s\n' "$update_out" >&2
     die "remote code root update failed"
@@ -271,15 +272,15 @@ cmd_retire() {
   fi
   [ -z "$force" ] || [ "$force" = --force ] || usage
   remote_endpoint_require "$id"
-  SQUAD_HOME="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
+  SQUAD_BASE="$TARGET_HOME" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" SQUAD_STATE_OVERRIDE="$TARGET_HOME/state" \
     SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" "$SCRIPT_DIR/sq-guard.sh" || true
   if [ -n "$force" ]; then
-    SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    SQUAD_BASE="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
       SQUAD_STATE_OVERRIDE="$CONTROL_STATE" SQUAD_DATA_OVERRIDE="$CONTROL_DATA" \
       SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" SQUAD_TEARDOWN_GUARD_DONE=1 \
       "$SCRIPT_DIR/sq-teardown.sh" "$id" --force
   else
-    SQUAD_HOME="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
+    SQUAD_BASE="$SQUAD_ROOT" SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
       SQUAD_STATE_OVERRIDE="$CONTROL_STATE" SQUAD_DATA_OVERRIDE="$CONTROL_DATA" \
       SQUAD_CONFIG_OVERRIDE="$TARGET_HOME/config" SQUAD_TEARDOWN_GUARD_DONE=1 \
       "$SCRIPT_DIR/sq-teardown.sh" "$id"

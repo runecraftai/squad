@@ -29,7 +29,7 @@ It tokenizes the bytes and classifies lexical execution positions only.
 - `--claude` to preserve Claude's stderr-only deny requirement.
 
 The wrapper discovers the code root from its own location.
-The active Squad base is `${SQUAD_HOME:-<code-root>}`.
+The active Squad base is `${SQUAD_BASE:-<code-root>}`.
 It passes both roots and the exact command string to the Node policy owner.
 
 The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain the `sq-sentry` byte sequence even after the classifier's decoders run.
@@ -67,7 +67,7 @@ bin/sq-sentry.sh              (watch; protected but never blessed)
 ```
 
 The relative form, the `<code-root>`-anchored absolute form, and any word ending in `/bin/<script>` all resolve to that identity.
-Suffix matching recognizes an expanded-path prefix statically, so `$SQUAD_HOME/bin/sq-sentry-arm.sh`, `$HOME/Squad/bin/sq-sentry-arm.sh`, and `~/Squad/bin/sq-sentry-arm.sh` are the arm identity.
+Suffix matching recognizes an expanded-path prefix statically, so `$SQUAD_BASE/bin/sq-sentry-arm.sh`, `$HOME/Squad/bin/sq-sentry-arm.sh`, and `~/Squad/bin/sq-sentry-arm.sh` are the arm identity.
 The classifier never expands the variable or tilde; it matches the literal bytes only.
 Static quote forms are cooked before the suffix match, so a command word split by ordinary quotes (`sq-"watch"-arm.sh`), ANSI-C quoting (`sq-$'\x77'atch-arm.sh`), or a bash locale string (`sq-$"watch"-arm.sh`) all resolve to the same identity; this reads the fixed literal bytes as the shell would cook them and never runs an expansion or a command.
 This covers statically-visible literal words in command position; opaque dynamic dataflow such as `bash -lc "$WHOLE_COMMAND"` remains out of scope.

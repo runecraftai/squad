@@ -90,16 +90,16 @@ resolve_directory_input() {
 }
 
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME=$(resolve_directory_input SQUAD_HOME "${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}") || exit 1
+SQUAD_BASE=$(resolve_directory_input SQUAD_BASE "${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}") || exit 1
 if [ -n "${SQUAD_DATA_OVERRIDE:-}" ]; then
   DATA=$(resolve_directory_input SQUAD_DATA_OVERRIDE "$SQUAD_DATA_OVERRIDE") || exit 1
 else
-  DATA="$SQUAD_HOME/data"
+  DATA="$SQUAD_BASE/data"
 fi
 if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
   STATE=$(resolve_directory_input SQUAD_STATE_OVERRIDE "$SQUAD_STATE_OVERRIDE") || exit 1
 else
-  STATE="$SQUAD_HOME/state"
+  STATE="$SQUAD_BASE/state"
 fi
 KIND=strike
 HERDR_LAB=0

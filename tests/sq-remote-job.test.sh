@@ -38,7 +38,7 @@ printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 cat > "$REMOTE_ROOT/bin/sq-probe-job.sh" <<'SH'
 #!/bin/bash
 set -u
-printf 'home=%s\nroot=%s\nactive=%s\npath=%s\n' "$SQUAD_HOME" "$SQUAD_ROOT_OVERRIDE" "${SQUAD_REMOTE_JOB_ACTIVE:-}" "$PATH"
+printf 'home=%s\nroot=%s\nactive=%s\npath=%s\n' "$SQUAD_BASE" "$SQUAD_ROOT_OVERRIDE" "${SQUAD_REMOTE_JOB_ACTIVE:-}" "$PATH"
 printf 'args:'
 printf ' <%s>' "$@"
 printf '\n'
@@ -192,7 +192,7 @@ JOB_DIR="$STATE_ROOT/jobs/$JOB_ID"
 fm_remote_job_wait "$ACCOUNT_HOME" "$JOB_ID" || fail "$SQUAD_REMOTE_JOB_ERROR"
 [ "$SQUAD_REMOTE_JOB_EXIT" -eq 0 ] || fail "the completed probe did not preserve exit status"
 OUT=$(<"$SQUAD_REMOTE_JOB_STDOUT")
-assert_contains "$OUT" "home=$REMOTE_HOME" "the worker did not pass the staged SQUAD_HOME"
+assert_contains "$OUT" "home=$REMOTE_HOME" "the worker did not pass the staged SQUAD_BASE"
 assert_contains "$OUT" "root=$REMOTE_ROOT" "the worker did not pass the configured root"
 assert_contains "$OUT" 'active=1' "the target did not execute inside the worker environment"
 # shellcheck disable=SC2016 # Literal shell-looking expected output is an injection probe.

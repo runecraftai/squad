@@ -6,12 +6,12 @@
 # under test - a --xo spawn's tab landing in the XO's OWN
 # herdr workspace, and an operator spawned FROM an XO home landing there
 # too - only exists at sq-spawn.sh's own home-shadowing logic (the herdr case
-# arm) and at fm_backend_herdr_workspace_label's SQUAD_HOME read; neither is
+# arm) and at fm_backend_herdr_workspace_label's SQUAD_BASE read; neither is
 # exercised by the adapter-primitive smoke test.
 #
 # Mirrors tests/sq-backend-autodetect-smoke.test.sh's isolated-session
 # convention: a private throwaway HERDR_SESSION (never the commander's
-# default), scratch SQUAD_HOME(s), and scratch local-only projects.
+# default), scratch SQUAD_BASE(s), and scratch local-only projects.
 #
 # Safety (2026-07-02 incident, see tests/herdr-test-safety.sh): cleanup uses
 # ONLY herdr_safe_stop_and_delete, never a bare/inline-prefixed `herdr server
@@ -21,7 +21,7 @@
 #   - a primary-shaped home (no .sq-xo-home marker) spawning a
 #     operator into the "Squad" workspace
 #   - an XO-shaped home (with .sq-xo-home) getting its own
-#     labeled workspace when the PRIMARY spawns it (sq-spawn.sh's SQUAD_HOME
+#     labeled workspace when the PRIMARY spawns it (sq-spawn.sh's SQUAD_BASE
 #     shadow for --xo)
 #   - an operator spawned FROM that XO-shaped home (the XO
 #     running its OWN sq-spawn.sh) landing in the XO's own workspace -
@@ -114,7 +114,7 @@ PROJ2="$TMP_ROOT/scratch-project-2"; make_scratch_project "$PROJ2"
 # --- 1. primary-shaped home: an operator spawns into the "Squad" space ---
 
 CM1_OUT="$TMP_ROOT/cm1.out"; CM1_ERR="$TMP_ROOT/cm1.err"
-SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$PRIMARY_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
+SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$PRIMARY_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
   "$ROOT/bin/sq-spawn.sh" cm1 "$PROJ1" "sh -c 'echo primary-crew-ok'" --mode drill --yolo off --backend herdr \
   >"$CM1_OUT" 2>"$CM1_ERR"
 rc=$?
@@ -139,11 +139,11 @@ CM1_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "
 pass "real herdr E2E: the primary-shaped home's operator landed in the 'Squad' workspace"
 
 # --- 2. the PRIMARY spawns an XO: its tab lands in the XO's own space ---
-# (sq-spawn.sh's herdr case arm shadows SQUAD_HOME to the XO's home for
+# (sq-spawn.sh's herdr case arm shadows SQUAD_BASE to the XO's home for
 # exactly this call - AGENTS.md task herdr-sm-spaces-k4, requirement 3.)
 
 SM_OUT="$TMP_ROOT/sm.out"; SM_ERR="$TMP_ROOT/sm.err"
-SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$PRIMARY_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
+SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$PRIMARY_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
   "$ROOT/bin/sq-spawn.sh" e2esm1 "$SM_HOME" "sh -c 'echo XO-launch-ok'" --xo --backend herdr \
   >"$SM_OUT" 2>"$SM_ERR"
 rc=$?
@@ -169,7 +169,7 @@ pass "real herdr E2E: a --xo spawn by the PRIMARY lands in the XO's own labeled 
 # XO workspace (this exact path has never run before this test) -----
 
 CM2_OUT="$TMP_ROOT/cm2.out"; CM2_ERR="$TMP_ROOT/cm2.err"
-SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$SM_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
+SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$SM_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
   "$ROOT/bin/sq-spawn.sh" cm2 "$PROJ2" "sh -c 'echo sm-crew-ok'" --mode drill --yolo off --backend herdr \
   >"$CM2_OUT" 2>"$CM2_ERR"
 rc=$?
@@ -194,13 +194,13 @@ pass "real herdr E2E: an operator spawned FROM the XO-shaped home lands in the X
 
 # --- 4. list-live recovery: each home sees only its own tabs ---------------
 
-PRIMARY_LIVE=$(SQUAD_HOME="$PRIMARY_HOME" fm_backend_herdr_list_live "$SESSION")
+PRIMARY_LIVE=$(SQUAD_BASE="$PRIMARY_HOME" fm_backend_herdr_list_live "$SESSION")
 assert_contains_local "$PRIMARY_LIVE" "sq-cm1" "the primary home's list_live did not see its own task"
 assert_not_contains_local "$PRIMARY_LIVE" "sq-e2esm1" "the primary home's list_live must not see the XO's own task"
 assert_not_contains_local "$PRIMARY_LIVE" "sq-cm2" "the primary home's list_live must not see the XO-owned operator's task"
 pass "real herdr E2E: list_live from the primary's own context sees only the primary's own task"
 
-SM_LIVE=$(SQUAD_HOME="$SM_HOME" fm_backend_herdr_list_live "$SESSION")
+SM_LIVE=$(SQUAD_BASE="$SM_HOME" fm_backend_herdr_list_live "$SESSION")
 assert_contains_local "$SM_LIVE" "sq-e2esm1" "the XO home's list_live did not see its own task"
 assert_contains_local "$SM_LIVE" "sq-cm2" "the XO home's list_live did not see the operator spawned from it"
 assert_not_contains_local "$SM_LIVE" "sq-cm1" "the XO home's list_live must not see the primary's task"

@@ -110,7 +110,7 @@ run_spawn() {
   shift 4
   : > "$launchlog"
   env -u SQUAD_TRACE_CONTEXT \
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -128,7 +128,7 @@ run_spawn_tc() {
   shift 5
   : > "$launchlog"
   env SQUAD_TRACE_CONTEXT="$tc" \
-    SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+    SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -196,7 +196,7 @@ run_two_level() {
   smfake=$(make_spawn_fakebin "$base/sm-fake")
   : > "$smlog"
   env SQUAD_TRACE_CONTEXT="$penv" \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$prim" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$prim" \
     SQUAD_STATE_OVERRIDE="$prim/state" SQUAD_DATA_OVERRIDE="$prim/data" \
     SQUAD_PROJECTS_OVERRIDE="$prim/projects" SQUAD_CONFIG_OVERRIDE="$prim/config" \
     SQUAD_SPAWN_NO_GUARD=1 CLAUDECODE=1 TMUX="fake,1,0" \
@@ -222,7 +222,7 @@ run_two_level() {
   wfake=$(make_spawn_fakebin "$base/w-fake")
   : > "$wlog"
   env SQUAD_TRACE_CONTEXT="$TL_ENV_TC" TRACEPARENT="$TL_CARRIER" \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$sm" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$sm" \
     SQUAD_STATE_OVERRIDE="$sm/state" SQUAD_DATA_OVERRIDE="$sm/data" \
     SQUAD_PROJECTS_OVERRIDE="$sm/projects" SQUAD_CONFIG_OVERRIDE="$sm/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wwt" TMUX="fake,1,0" \
@@ -362,7 +362,7 @@ test_duplicate_XO_spawn_does_not_converge_trace_context() {
   fake=$(make_spawn_fakebin "$base/fake")
 
   out=$(env -u SQUAD_TRACE_CONTEXT \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$prim" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$prim" \
     SQUAD_STATE_OVERRIDE="$prim/state" SQUAD_DATA_OVERRIDE="$prim/data" \
     SQUAD_PROJECTS_OVERRIDE="$prim/projects" SQUAD_CONFIG_OVERRIDE="$prim/config" \
     SQUAD_SPAWN_NO_GUARD=1 CLAUDECODE=1 TMUX="fake,1,0" \

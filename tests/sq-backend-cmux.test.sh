@@ -209,7 +209,7 @@ test_password_reads_from_config_file() {
   local dir out
   dir="$TMP_ROOT/password-file"; mkdir -p "$dir/config"
   printf 'sekret-pw\n' > "$dir/config/cmux-socket-password"
-  out=$( SQUAD_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
+  out=$( SQUAD_BASE="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
   [ "$out" = "sekret-pw" ] || fail "password should be read from config/cmux-socket-password, got '$out'"
   pass "fm_backend_cmux_password: reads the first non-empty line of config/cmux-socket-password"
 }
@@ -218,7 +218,7 @@ test_password_preserves_config_file_whitespace() {
   local dir out
   dir="$TMP_ROOT/password-file-whitespace"; mkdir -p "$dir/config"
   printf '\nsek ret\t pw  \n' > "$dir/config/cmux-socket-password"
-  out=$( SQUAD_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
+  out=$( SQUAD_BASE="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
   [ "$out" = $'sek ret\t pw  ' ] || fail "password should preserve spaces and tabs from config/cmux-socket-password, got '$out'"
   pass "fm_backend_cmux_password: preserves spaces and tabs in config/cmux-socket-password"
 }
@@ -229,7 +229,7 @@ test_password_respects_config_override() {
   mkdir -p "$home_cfg" "$override_cfg"
   printf 'home-pw\n' > "$home_cfg/cmux-socket-password"
   printf 'override-pw\n' > "$override_cfg/cmux-socket-password"
-  out=$( SQUAD_HOME="$dir/home" SQUAD_CONFIG_OVERRIDE="$override_cfg" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
+  out=$( SQUAD_BASE="$dir/home" SQUAD_CONFIG_OVERRIDE="$override_cfg" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
   [ "$out" = "override-pw" ] || fail "password should be read from SQUAD_CONFIG_OVERRIDE, got '$out'"
   pass "fm_backend_cmux_password: respects SQUAD_CONFIG_OVERRIDE"
 }
@@ -237,7 +237,7 @@ test_password_respects_config_override() {
 test_password_empty_when_config_absent() {
   local dir out
   dir="$TMP_ROOT/password-absent"; mkdir -p "$dir/config"
-  out=$( SQUAD_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
+  out=$( SQUAD_BASE="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_password' "$ROOT" )
   [ -z "$out" ] || fail "password should be empty when config/cmux-socket-password is absent, got '$out'"
   pass "fm_backend_cmux_password: empty when config/cmux-socket-password is absent"
 }
@@ -247,7 +247,7 @@ test_cli_exports_password_only_when_configured() {
   dir="$TMP_ROOT/password-export"; mkdir -p "$dir/config" "$dir/responses"
   printf 'sekret-pw\n' > "$dir/config/cmux-socket-password"
   fb=$(make_cmux_fakebin "$dir")
-  PATH="$fb:$PATH" SQUAD_HOME="$dir" SQUAD_CMUX_LOG="$dir/log" SQUAD_CMUX_RESPONSES="$dir/responses" \
+  PATH="$fb:$PATH" SQUAD_BASE="$dir" SQUAD_CMUX_LOG="$dir/log" SQUAD_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_cli ping' "$ROOT" >/dev/null
   assert_contains "$(cat "$dir/log")" "CMUX_SOCKET_PASSWORD=sekret-pw" \
     "fm_backend_cmux_cli did not export the configured password"
@@ -280,7 +280,7 @@ test_scoped_title_uses_primary_home_label() {
   local dir out expected
   dir="$TMP_ROOT/scoped-title-primary"; mkdir -p "$dir"
   expected=$(cmux_expected_scoped_title sq-task1 "$dir")
-  out=$( SQUAD_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
+  out=$( SQUAD_BASE="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
   [ "$out" = "$expected" ] || fail "primary scoped title should be $expected, got '$out'"
   pass "fm_backend_cmux_scoped_title: scopes a primary task title with Squad plus root hash"
 }
@@ -290,7 +290,7 @@ test_scoped_title_uses_XO_home_label() {
   dir="$TMP_ROOT/scoped-title-XO"; mkdir -p "$dir"
   printf 'sm-one\n' > "$dir/.sq-xo-home"
   expected=$(cmux_expected_scoped_title sq-task1 "$dir")
-  out=$( SQUAD_HOME="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
+  out=$( SQUAD_BASE="$dir" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
   [ "$out" = "$expected" ] || fail "XO scoped title should be $expected, got '$out'"
   pass "fm_backend_cmux_scoped_title: scopes an XO task title with the home marker plus root hash"
 }
@@ -301,8 +301,8 @@ test_scoped_title_changes_with_root_path() {
   mkdir -p "$home" "$root_one" "$root_two"
   expected_one=$(cmux_expected_scoped_title sq-task1 "$home" "$root_one")
   expected_two=$(cmux_expected_scoped_title sq-task1 "$home" "$root_two")
-  out_one=$( SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root_one" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
-  out_two=$( SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$root_two" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
+  out_one=$( SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root_one" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
+  out_two=$( SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$root_two" bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_scoped_title sq-task1' "$ROOT" )
   [ "$out_one" = "$expected_one" ] || fail "scoped title should include root-one hash as $expected_one, got '$out_one'"
   [ "$out_two" = "$expected_two" ] || fail "scoped title should include root-two hash as $expected_two, got '$out_two'"
   [ "$out_one" != "$out_two" ] || fail "scoped titles should differ for distinct SQUAD_ROOT paths"

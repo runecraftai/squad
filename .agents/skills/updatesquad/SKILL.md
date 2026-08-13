@@ -41,9 +41,9 @@ This touches only the Squad repo and its own worktrees, never anything under `pr
 3. **Nudge each updated live XO.**
    For every target listed on the `nudge-XOs:` line (do nothing when it says `none`), send a one-line re-read nudge so that XO picks up its new instructions too:
    ```sh
-   SQUAD_HOME=<this-Squad-base> bin/sq-send.sh <id> 'Squad was updated to the latest - please re-read your AGENTS.md to pick up the new instructions.'
+   SQUAD_BASE=<this-Squad-base> bin/sq-send.sh <id> 'Squad was updated to the latest - please re-read your AGENTS.md to pick up the new instructions.'
    ```
-   Include `SQUAD_HOME=<this-Squad-base>` unless `SQUAD_HOME` is already set to the active Squad base.
+   Include `SQUAD_BASE=<this-Squad-base>` unless `SQUAD_BASE` is already set to the active Squad base.
    This is a gentle steer, not an interruption: the XO already got a safe tracked-files fast-forward, and the nudge never forces, tears down, or discards its work.
    An XO that was skipped, already current, or has no live metadata is not on the list and needs no nudge.
 

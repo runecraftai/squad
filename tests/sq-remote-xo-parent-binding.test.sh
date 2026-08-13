@@ -4,7 +4,7 @@
 # inside a REMOTE second-mate home refused forever with "cannot resolve the
 # primary home ... durable parent binding", because the remote launch hands the
 # child the remote code checkout as its parent home (bin/sq-spawn.sh's sole
-# writer of SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME receives SQUAD_HOME=$SQUAD_ROOT from
+# writer of SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME receives SQUAD_BASE=$SQUAD_ROOT from
 # bin/sq-remote-xo-control.sh's host-local launch), and that path can
 # never carry the parent's real state or registry.
 #
@@ -56,7 +56,7 @@ cleanup() {
     kill "$PUBLISH_PID" 2>/dev/null || true
     wait "$PUBLISH_PID" 2>/dev/null || true
   fi
-  SQUAD_HOME="$PARENT" SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
+  SQUAD_BASE="$PARENT" SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
     "$ROOT/bin/sq-procevent.sh" sweep-home >/dev/null 2>&1 || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     worker_pid=$(cat "$TMP_ROOT/remote-jobs/worker.pid")
@@ -88,7 +88,7 @@ printf 'schema=sq-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nparent_ho
   "$(printf publication | base64 | tr -d '\n')" \
   "$(printf 'Publication-order regression charter.\n' | base64 | tr -d '\n')" \
   "$(printf publish-host | base64 | tr -d '\n')" > "$PUBLISH_MANIFEST"
-PATH="$PUBLISH_FAKEBIN:$PATH" SQUAD_HOME="$PUBLISH_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
+PATH="$PUBLISH_FAKEBIN:$PATH" SQUAD_BASE="$PUBLISH_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \
   SQUAD_TEST_REAL_MV="$REAL_MV" SQUAD_TEST_PUBLISH_ENTERED="$PUBLISH_ENTERED" \
   SQUAD_TEST_PUBLISH_RELEASE="$PUBLISH_RELEASE" \
   "$ROOT/bin/sq-remote-home-provision.sh" < "$PUBLISH_MANIFEST" >/dev/null 2>&1 &
@@ -180,7 +180,7 @@ SH
 chmod +x "$FAKEBIN/fake-ssh"
 
 remote_env() {
-  SQUAD_HOME="$PARENT" \
+  SQUAD_BASE="$PARENT" \
   SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
   SQUAD_SSH_BIN="$FAKEBIN/fake-ssh" \
@@ -237,7 +237,7 @@ run_child_teardown() { # <extra env assignments...>
   local out rc=0
   write_child_meta
   out=$(env "$@" PATH="$TMP_ROOT/childfake:$PATH" \
-    SQUAD_HOME="$REMOTE_HOME" SQUAD_STATE_OVERRIDE="$REMOTE_HOME/state" \
+    SQUAD_BASE="$REMOTE_HOME" SQUAD_STATE_OVERRIDE="$REMOTE_HOME/state" \
     SQUAD_DATA_OVERRIDE="$REMOTE_HOME/data" SQUAD_CONFIG_OVERRIDE="$REMOTE_HOME/config" \
     "$REMOTE_ROOT/bin/sq-teardown.sh" work-child 2>&1) || rc=$?
   CHILD_TEARDOWN_OUT=$out
@@ -261,7 +261,7 @@ pass "a remote XO's finished worker cleans up when the remote code root's own .e
 # environment, simulating the remote host's own login-shell export reaching the
 # agent's pane. fm_pf_relay_active's environment-wins rule would make this look
 # identical to a genuine same-home commitment; the fix must tell them apart by
-# reading only $SQUAD_HOME/.env, never the process environment, once the durable
+# reading only $SQUAD_BASE/.env, never the process environment, once the durable
 # record says the parent is remote.
 run_child_teardown SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$DELIVERED" SQX_PAIRING_TOKEN=ambient-login-token
 [ "$CHILD_TEARDOWN_RC" -eq 0 ] \

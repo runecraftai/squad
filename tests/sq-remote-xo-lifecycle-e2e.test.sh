@@ -29,7 +29,7 @@ cleanup() {
   local worker_pid='' wait_attempt=0
   touch "$TMP_ROOT/provision.release" "$TMP_ROOT/seed.release" "$TMP_ROOT/handoff.release" \
     "$TMP_ROOT/inherit.release" "$TMP_ROOT/launch.release" 2>/dev/null || true
-  SQUAD_HOME="$PARENT" SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
+  SQUAD_BASE="$PARENT" SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
     "$ROOT/bin/sq-procevent.sh" sweep-home >/dev/null 2>&1 || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     worker_pid=$(cat "$TMP_ROOT/remote-jobs/worker.pid")
@@ -244,7 +244,7 @@ chmod +x "$FAKEBIN/fake-ssh"
 
 publish_healthy_sentry_identity() { # <state> <home> <watch-script>
   local state=$1 home=$2 watch=$3 identity
-  identity=$(SQUAD_HOME="$PARENT" SQUAD_STATE_OVERRIDE="$PARENT/state" /bin/bash -c \
+  identity=$(SQUAD_BASE="$PARENT" SQUAD_STATE_OVERRIDE="$PARENT/state" /bin/bash -c \
     '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/sq-stand-to-lib.sh" "$$") \
     || fail "could not derive fixture sentry identity"
   mkdir -p "$state/.sentry.lock"
@@ -256,7 +256,7 @@ publish_healthy_sentry_identity() { # <state> <home> <watch-script>
 }
 
 remote_env() {
-  SQUAD_HOME="$PARENT" \
+  SQUAD_BASE="$PARENT" \
   SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
   SQUAD_SSH_BIN="$FAKEBIN/fake-ssh" \
@@ -284,7 +284,7 @@ sha256_file() {
 }
 
 seed_env() {
-  SQUAD_HOME="$TMP_ROOT/seed-parent" \
+  SQUAD_BASE="$TMP_ROOT/seed-parent" \
   SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   SQUAD_PROCEVENT_CLAIM_ROOT="$CLAIMS" \
   SQUAD_SSH_BIN="$FAKEBIN/fake-ssh" \
@@ -318,7 +318,7 @@ printf 'schema=sq-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nproject_c
   "$(printf ios | base64 | tr -d '\n')" \
   "$(printf 'Concurrent provisioning charter.\n' | base64 | tr -d '\n')" \
   > "$TMP_ROOT/provision.manifest"
-PATH="$FAKEBIN:$PATH" SQUAD_HOME="$TMP_ROOT/concurrent-home" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
+PATH="$FAKEBIN:$PATH" SQUAD_BASE="$TMP_ROOT/concurrent-home" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   "$REMOTE_ROOT/bin/sq-remote-home-provision.sh" < "$TMP_ROOT/provision.manifest" \
   > "$TMP_ROOT/provision-one.out" 2>&1 &
 provision_one=$!
@@ -329,7 +329,7 @@ while [ ! -f "$TMP_ROOT/provision.entered" ]; do
   [ "$provision_wait" -le 250 ] || fail "first provisioning attempt never reached cloning"
   sleep 0.02
 done
-PATH="$FAKEBIN:$PATH" SQUAD_HOME="$TMP_ROOT/concurrent-home" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
+PATH="$FAKEBIN:$PATH" SQUAD_BASE="$TMP_ROOT/concurrent-home" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   "$REMOTE_ROOT/bin/sq-remote-home-provision.sh" < "$TMP_ROOT/provision.manifest" \
   > "$TMP_ROOT/provision-two.out" 2>&1 &
 provision_two=$!
@@ -535,7 +535,7 @@ printf 'schema=sq-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nproject_c
   "$(printf -- '- beta [direct-PR] - beta project (added 2026-08-06)' | base64 | tr -d '\n')" \
   "$(printf direct-PR | base64 | tr -d '\n')" \
   > "$TMP_ROOT/unsafe-origin.manifest"
-if SQUAD_HOME="$TMP_ROOT/unsafe-origin-home" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
+if SQUAD_BASE="$TMP_ROOT/unsafe-origin-home" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   "$REMOTE_ROOT/bin/sq-remote-home-provision.sh" < "$TMP_ROOT/unsafe-origin.manifest" \
   > "$TMP_ROOT/unsafe-origin.out" 2>&1; then
   fail "remote provisioning accepted an origin the transport had not validated"
@@ -659,18 +659,18 @@ mkdir -p "$PROTOCOL_HOME/config" "$PROTOCOL_HOME/data" "$PROTOCOL_HOME/state"
 printf 'complete inherited payload\n' > "$TMP_ROOT/inherit-complete"
 inherit_bytes=$(LC_ALL=C wc -c < "$TMP_ROOT/inherit-complete" | tr -d ' ')
 inherit_hash=$(sha256_file "$TMP_ROOT/inherit-complete")
-if printf 'complete' | SQUAD_HOME="$PROTOCOL_HOME" "$REMOTE_ROOT/bin/sq-remote-inherit.sh" \
+if printf 'complete' | SQUAD_BASE="$PROTOCOL_HOME" "$REMOTE_ROOT/bin/sq-remote-inherit.sh" \
   put config/crew-harness "$inherit_bytes" "$inherit_hash" 1 >/dev/null 2>&1; then
   fail "remote inheritance published a truncated payload"
 fi
 assert_absent "$PROTOCOL_HOME/config/crew-harness" "truncated inheritance published a destination"
-SQUAD_HOME="$PROTOCOL_HOME" "$REMOTE_ROOT/bin/sq-remote-inherit.sh" \
+SQUAD_BASE="$PROTOCOL_HOME" "$REMOTE_ROOT/bin/sq-remote-inherit.sh" \
   put config/crew-harness "$inherit_bytes" "$inherit_hash" 2 \
   < "$TMP_ROOT/inherit-complete" >/dev/null
 printf 'stale inherited payload\n' > "$TMP_ROOT/inherit-stale"
 inherit_stale_bytes=$(LC_ALL=C wc -c < "$TMP_ROOT/inherit-stale" | tr -d ' ')
 inherit_stale_hash=$(sha256_file "$TMP_ROOT/inherit-stale")
-if SQUAD_HOME="$PROTOCOL_HOME" "$REMOTE_ROOT/bin/sq-remote-inherit.sh" \
+if SQUAD_BASE="$PROTOCOL_HOME" "$REMOTE_ROOT/bin/sq-remote-inherit.sh" \
   put config/crew-harness "$inherit_stale_bytes" "$inherit_stale_hash" 1 \
   < "$TMP_ROOT/inherit-stale" >/dev/null 2>&1; then
   fail "remote inheritance accepted a superseded payload generation"
@@ -1150,7 +1150,7 @@ assert_present "$TMP_ROOT/external-pending/escape" "unsafe retirement removed an
 rm -f "$PARENT/state/pending-replies"
 mv "$PARENT/state/pending-replies.safe" "$PARENT/state/pending-replies"
 handoff_lock="$PARENT/state/.backlog-handoff-ios.lock"
-SQUAD_HOME="$PARENT" /bin/bash -c '
+SQUAD_BASE="$PARENT" /bin/bash -c '
   . "$1"
   fm_lock_acquire_wait "$2"
   touch "$3"

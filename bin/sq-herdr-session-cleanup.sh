@@ -5,7 +5,7 @@
 #
 # The caller must already own this Squad base's session lock. This script is
 # base-local and considers only the current named Herdr session and ordinary
-# state/*.herdr-presentation journals in the effective SQUAD_HOME. Each candidate
+# state/*.herdr-presentation journals in the effective SQUAD_BASE. Each candidate
 # is additionally serialized by the existing state/.spawn-<task>.lock and the
 # shared named-session Herdr presentation lock, in that order.
 #
@@ -25,8 +25,8 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
@@ -58,8 +58,8 @@ fm_herdr_cleanup_title_token() { # <workspace-title>
 }
 
 fm_herdr_cleanup_home_identity() {
-  [ -d "$SQUAD_HOME" ] && [ ! -L "$SQUAD_HOME" ] || return 1
-  (cd "$SQUAD_HOME" 2>/dev/null && pwd -P)
+  [ -d "$SQUAD_BASE" ] && [ ! -L "$SQUAD_BASE" ] || return 1
+  (cd "$SQUAD_BASE" 2>/dev/null && pwd -P)
 }
 
 fm_herdr_cleanup_journal_matches() { # <title> <session> <home-real>

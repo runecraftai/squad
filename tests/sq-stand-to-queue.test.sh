@@ -234,7 +234,7 @@ test_drain_asserts_sentry_liveness() {
   printf '%s\n' "$WATCH" > "$state/.sentry.lock/sentry-path"
   printf '%s\n' "$identity" > "$state/.sentry.lock/pid-identity"
   touch "$state/.last-sentry-beat"
-  SQUAD_HOME="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_GUARD_GRACE=300 "$DRAIN" >/dev/null 2> "$err" \
+  SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_GUARD_GRACE=300 "$DRAIN" >/dev/null 2> "$err" \
     || fail "drain failed with a live sentry and fresh beacon"
   if grep -F 'WATCHER DOWN' "$err" >/dev/null; then
     fail "drain false-alarmed with a live sentry and fresh beacon"

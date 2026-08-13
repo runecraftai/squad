@@ -48,7 +48,7 @@ make_spawn_case() {
 
 run_grok_spawn() {
   local home=$1 proj=$2 wt=$3 fakebin=$4 grok_home=$5 id=$6
-  SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -106,7 +106,7 @@ EOF
   expect_code 0 "$status" "grok spawn should succeed before teardown"
   token=$(sed -n 's/^token=//p' "$wt/.sq-grok-turnend")
 
-  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$home/state" \
+  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$home/state" \
     GROK_HOME="$grok_home" PATH="$fakebin:$PATH" \
     "$TEARDOWN" "$id" --force >/dev/null 2>&1 \
     || fail "grok teardown failed"
@@ -132,7 +132,7 @@ esac
 exit 1
 SH
   chmod +x "$fakebin/ps"
-  out=$(SQUAD_HOME="$home" PATH="$fakebin:$PATH" "$ROOT/bin/sq-lock.sh" status)
+  out=$(SQUAD_BASE="$home" PATH="$fakebin:$PATH" "$ROOT/bin/sq-lock.sh" status)
   assert_contains "$out" "lock: held by live harness pid" "sq-lock did not recognize grok as a live holder"
   pass "sq-lock recognizes grok harness processes"
 }

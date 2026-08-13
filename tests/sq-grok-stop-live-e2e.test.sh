@@ -153,7 +153,7 @@ EOF
 set -u
 cd '$lab/project' || exit 70
 env -u TMUX -u TMUX_PANE HOME='$lab/home' GROK_HOME='$lab/grok-home' GROK_AGENT=1 \
-  SQUAD_HOME='$lab/fmhome' SQUAD_ROOT_OVERRIDE='$lab/project' SQUAD_GROK_E2E_ROOT='$lab' \
+  SQUAD_BASE='$lab/fmhome' SQUAD_ROOT_OVERRIDE='$lab/project' SQUAD_GROK_E2E_ROOT='$lab' \
   SQUAD_GROK_E2E_BIN='$binary' SQUAD_E2E_TMUX_SOCKET_ID='$lab/dedicated.sock' PATH='$lab/bin':"\$PATH" \
   '$binary' $([ "$kind" = native ] && printf '%s' '--trust ')--always-approve --reasoning-effort low \
     --output-format json --leader-socket '$lab/leader.sock' -p $(printf '%q' "$prompt") \

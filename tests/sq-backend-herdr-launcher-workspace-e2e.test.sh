@@ -127,12 +127,12 @@ spawn_from_launcher() {
   if [ -n "$pane" ]; then
     env HERDR_ENV=1 HERDR_PANE_ID="$pane" HERDR_SESSION="$HERDR_LAB_SESSION" \
       HERDR_SOCKET_PATH="$LAB_SOCKET" \
-      SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+      SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
       "$ROOT/bin/sq-spawn.sh" "$id" "$proj" "sh -c 'echo launcher-ws-ok'" --backend herdr "$@" \
       >"$SPAWN_OUT" 2>"$SPAWN_ERR"
   else
     env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH HERDR_SESSION="$HERDR_LAB_SESSION" \
-      SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+      SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
       "$ROOT/bin/sq-spawn.sh" "$id" "$proj" "sh -c 'echo launcher-ws-ok'" --backend herdr "$@" \
       >"$SPAWN_OUT" 2>"$SPAWN_ERR"
   fi
@@ -278,7 +278,7 @@ WS_PRIMARY_TABS_BEFORE=$(tab_labels_of_workspace "$WS_PRIMARY")
 cat > "$TMP_ROOT/spawn-in-pane.sh" <<SPAWN
 #!/usr/bin/env bash
 set -u
-SQUAD_SPAWN_NO_GUARD=1 SQUAD_HOME="$PRIMARY_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \\
+SQUAD_SPAWN_NO_GUARD=1 SQUAD_BASE="$PRIMARY_HOME" SQUAD_ROOT_OVERRIDE="$ROOT" \\
   "$ROOT/bin/sq-spawn.sh" dupC "$PROJ" "sh -c 'echo launcher-ws-ok'" --mode drill --yolo off --backend herdr \\
   > "$TMP_ROOT/dupC.out" 2> "$TMP_ROOT/dupC.err"
 echo \$? > "$TMP_ROOT/dupC.rc"

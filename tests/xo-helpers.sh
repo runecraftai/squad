@@ -166,7 +166,7 @@ SH
 scaffold_XO_charter() {
   local home=$1 id=$2 charter=$3
   shift 3
-  SQUAD_HOME="$home" SQUAD_XO_CHARTER="$charter" "$ROOT/bin/sq-brief.sh" "$id" --xo "$@" >/dev/null
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER="$charter" "$ROOT/bin/sq-brief.sh" "$id" --xo "$@" >/dev/null
 }
 
 # Make a directory look like a genuine seeded XO home (for handoff tests).

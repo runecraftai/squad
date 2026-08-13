@@ -38,7 +38,7 @@ exit "$rc"
 SH
 cat > "$REMOTE_ROOT/bin/sq-probe-two.sh" <<'SH'
 #!/usr/bin/env bash
-printf 'home=%s\nroot=%s\nworker=%s\n' "$SQUAD_HOME" "$SQUAD_ROOT_OVERRIDE" "${SQUAD_REMOTE_JOB_ACTIVE:-}"
+printf 'home=%s\nroot=%s\nworker=%s\n' "$SQUAD_BASE" "$SQUAD_ROOT_OVERRIDE" "${SQUAD_REMOTE_JOB_ACTIVE:-}"
 if [ -n "${TOP_SECRET:-}" ]; then printf 'secret=leaked\n'; else printf 'secret=absent\n'; fi
 SH
 cat > "$REMOTE_ROOT/bin/sq-probe-path.sh" <<'SH'
@@ -109,7 +109,7 @@ EOF
 write_registry
 
 fm_on() {
-  SQUAD_HOME="$LOCAL_HOME" \
+  SQUAD_BASE="$LOCAL_HOME" \
   SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" \
   SQUAD_SSH_BIN="$FAKEBIN/fake-ssh" \
   SQUAD_FAKE_SSH_COUNT="$SSH_COUNT" \
@@ -183,7 +183,7 @@ assert_contains "$INVALID_COUNT_OUT" 'SQUAD_SSH_ALIVE_COUNT_MAX must be a positi
 pass "sq-on rejects invalid dead-peer settings before launching ssh"
 
 out=$(TOP_SECRET='must-not-cross' fm_on remote-mac sq-probe-two.sh)
-assert_contains "$out" "home=$REMOTE_HOME" "remote SQUAD_HOME was not explicit"
+assert_contains "$out" "home=$REMOTE_HOME" "remote SQUAD_BASE was not explicit"
 assert_contains "$out" "root=$REMOTE_ROOT" "remote root was not explicit"
 assert_contains "$out" 'secret=absent' "the primary ambient environment crossed the transport"
 assert_contains "$out" 'worker=1' "the fixed entrypoint executed outside the remote job worker"
@@ -439,7 +439,7 @@ cp "$ROOT/bin/sq-remote-doctor.sh" "$REMOTE_ROOT/bin/sq-remote-doctor.sh"
 chmod +x "$REMOTE_ROOT/bin/sq-remote-doctor.sh"
 pass "doctor bootstrap remains authenticated when git is unavailable"
 
-if SQUAD_HOME="$LOCAL_HOME" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" SQUAD_SSH_BIN="$FAKEBIN/fake-ssh" \
+if SQUAD_BASE="$LOCAL_HOME" SQUAD_ROOT_OVERRIDE="$REMOTE_ROOT" SQUAD_SSH_BIN="$FAKEBIN/fake-ssh" \
   "$ROOT/bin/sq-on.sh" '-oProxyCommand=bad' sq-probe-two.sh >/dev/null 2>&1; then
   fail "an option-shaped SSH route was accepted"
 fi

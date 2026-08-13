@@ -181,7 +181,7 @@ run_spawn() {
   mkdir -p "$home/data/$id"
   printf 'brief\n' > "$home/data/$id/brief.md"
   ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
-      "SQUAD_ROOT_OVERRIDE=" "SQUAD_HOME=$home" \
+      "SQUAD_ROOT_OVERRIDE=" "SQUAD_BASE=$home" \
       "SQUAD_STATE_OVERRIDE=$home/state" "SQUAD_DATA_OVERRIDE=$home/data" \
       "SQUAD_PROJECTS_OVERRIDE=$home/projects" "SQUAD_CONFIG_OVERRIDE=$home/config" \
       "SQUAD_SPAWN_NO_GUARD=1" "SQUAD_FAKE_PANE_PATH=$pane" "TMUX=fake,1,0" \
@@ -271,7 +271,7 @@ SH
 run_send() {
   local cwd=$1 home=$2 fakebin=$3 log=$4 target=$5 text=$6; shift 6
   ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
-      "PATH=$fakebin:$PATH" "SQUAD_HOME=$home" "SQUAD_ROOT_OVERRIDE=$home" \
+      "PATH=$fakebin:$PATH" "SQUAD_BASE=$home" "SQUAD_ROOT_OVERRIDE=$home" \
       "SQUAD_TMUX_LOG=$log" "SQUAD_SEND_SETTLE=0" "$@" \
       "$SEND" "$target" "$text" ) 2>&1
 }

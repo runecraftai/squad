@@ -37,7 +37,7 @@ PROMPT='Run exactly `bin/sq-sentry-checkpoint.sh --seconds 1` as one foreground 
 (
   cd "$PROJECT" || exit 1
   printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
-  SQUAD_HOME="$HOME_DIR" SQUAD_ROOT_OVERRIDE="$PROJECT" codex exec \
+  SQUAD_BASE="$HOME_DIR" SQUAD_ROOT_OVERRIDE="$PROJECT" codex exec \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \

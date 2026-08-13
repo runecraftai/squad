@@ -10,7 +10,7 @@ Task chronology, fixture paths, and delivery evidence remain outside this record
 ## Synthetic real-agent pass
 
 The development-only real-agent pass ran on 2026-07-30 with Pi 0.82.0 on `openai-codex/gpt-5.6-terra` at medium thinking.
-It used disposable primary and XO-shaped `SQUAD_HOME` directories under the repository worktree only.
+It used disposable primary and XO-shaped `SQUAD_BASE` directories under the repository worktree only.
 No live Squad memory, project data, credential content, or external system was placed in either fixture or prompt.
 The following exact Bash shell body created the sanitized fixtures, invoked the model-qualified skill twice per base, and captured reports, hashes, and file modes:
 
@@ -91,29 +91,29 @@ cat >"$PRIMARY/data/learnings.md" <<'EOF'
 - Report-sized procedure: create a staging directory, enumerate every file, copy each file, compare every line, write a status ledger, notify all operators, archive the ledger, and repeat the entire sequence after every prompt.
 EOF
 
-SQUAD_HOME="$PRIMARY" bin/sq-startup-memory-budget.sh report \
+SQUAD_BASE="$PRIMARY" bin/sq-startup-memory-budget.sh report \
   >"$VERIFY_ROOT/primary.before.report"
 for file in commander.md commander-shared.md learnings.md; do
   shasum -a 256 "$PRIMARY/data/$file"
 done >"$VERIFY_ROOT/primary.before.sha256"
 
-SQUAD_HOME="$PRIMARY" pi -p --no-session --no-extensions --no-context-files \
+SQUAD_BASE="$PRIMARY" pi -p --no-session --no-extensions --no-context-files \
   --model openai-codex/gpt-5.6-terra --thinking medium \
   --skill .agents/skills/debrief/SKILL.md \
-  'Invoke /debrief now against only the disposable synthetic Squad home in $SQUAD_HOME. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_HOME environment, before and after curation; that executable is the only permitted path outside $SQUAD_HOME. Retain the exact before total, preserve the complete main-authoritative routing header in data/commander-shared.md, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, preserve every unique current preference, authority or safety boundary, stable fact, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, and report-sized material. Do not access or modify any other home, credential, project data, or external system.' \
+  'Invoke /debrief now against only the disposable synthetic Squad home in $SQUAD_BASE. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_BASE environment, before and after curation; that executable is the only permitted path outside $SQUAD_BASE. Retain the exact before total, preserve the complete main-authoritative routing header in data/commander-shared.md, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, preserve every unique current preference, authority or safety boundary, stable fact, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, and report-sized material. Do not access or modify any other home, credential, project data, or external system.' \
   >"$VERIFY_ROOT/primary.pass1.out"
-SQUAD_HOME="$PRIMARY" bin/sq-startup-memory-budget.sh report \
+SQUAD_BASE="$PRIMARY" bin/sq-startup-memory-budget.sh report \
   >"$VERIFY_ROOT/primary.after.report"
 for file in commander.md commander-shared.md learnings.md; do
   shasum -a 256 "$PRIMARY/data/$file"
 done >"$VERIFY_ROOT/primary.after.sha256"
 
-SQUAD_HOME="$PRIMARY" pi -p --no-session --no-extensions --no-context-files \
+SQUAD_BASE="$PRIMARY" pi -p --no-session --no-extensions --no-context-files \
   --model openai-codex/gpt-5.6-terra --thinking medium \
   --skill .agents/skills/debrief/SKILL.md \
-  'Invoke /debrief now against only the disposable synthetic Squad home in $SQUAD_HOME. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_HOME environment, before and after curation; that executable is the only permitted path outside $SQUAD_HOME. Retain the exact before total, preserve the complete main-authoritative routing header in data/commander-shared.md, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, preserve every unique current preference, authority or safety boundary, stable fact, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, and report-sized material. Do not access or modify any other home, credential, project data, or external system.' \
+  'Invoke /debrief now against only the disposable synthetic Squad home in $SQUAD_BASE. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_BASE environment, before and after curation; that executable is the only permitted path outside $SQUAD_BASE. Retain the exact before total, preserve the complete main-authoritative routing header in data/commander-shared.md, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, preserve every unique current preference, authority or safety boundary, stable fact, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, and report-sized material. Do not access or modify any other home, credential, project data, or external system.' \
   >"$VERIFY_ROOT/primary.pass2.out"
-SQUAD_HOME="$PRIMARY" bin/sq-startup-memory-budget.sh report \
+SQUAD_BASE="$PRIMARY" bin/sq-startup-memory-budget.sh report \
   >"$VERIFY_ROOT/primary.repeat.report"
 for file in commander.md commander-shared.md learnings.md; do
   shasum -a 256 "$PRIMARY/data/$file"
@@ -145,7 +145,7 @@ cat >"$XO/data/learnings.md" <<'EOF'
 EOF
 
 SQUAD_ROOT="$RUNTIME_ROOT"
-SQUAD_HOME="$PRIMARY"
+SQUAD_BASE="$PRIMARY"
 . bin/sq-ff-lib.sh
 . bin/sq-config-inherit-lib.sh
 validate_XO_home "$XO_ID" "$XO"
@@ -160,7 +160,7 @@ cmp -s "$PRIMARY/data/commander-shared.md" \
 record_shared_state inherited "$XO/data/commander-shared.md" \
   >>"$VERIFY_ROOT/inheritance.out"
 
-SQUAD_HOME="$XO" bin/sq-startup-memory-budget.sh report \
+SQUAD_BASE="$XO" bin/sq-startup-memory-budget.sh report \
   >"$VERIFY_ROOT/XO.before.report"
 for file in commander.md commander-shared.md learnings.md; do
   shasum -a 256 "$XO/data/$file"
@@ -168,12 +168,12 @@ done >"$VERIFY_ROOT/XO.before.sha256"
 record_shared_state before "$XO/data/commander-shared.md" \
   >"$VERIFY_ROOT/XO.shared-state"
 
-SQUAD_HOME="$XO" pi -p --no-session --no-extensions --no-context-files \
+SQUAD_BASE="$XO" pi -p --no-session --no-extensions --no-context-files \
   --model openai-codex/gpt-5.6-terra --thinking medium \
   --skill .agents/skills/debrief/SKILL.md \
-  'Invoke /debrief now against only the validated disposable synthetic XO home in $SQUAD_HOME. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_HOME environment, before and after curation; that executable is the only permitted path outside $SQUAD_HOME. Retain the exact before total, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, keep data/commander-shared.md byte-identical and filesystem read-only because it was installed through primary-authoritative inheritance, preserve every unique current preference, stable learning, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, overlap, and report-sized material in editable local memory. Do not access or modify any other home, credential, project data, or external system.' \
+  'Invoke /debrief now against only the validated disposable synthetic XO home in $SQUAD_BASE. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_BASE environment, before and after curation; that executable is the only permitted path outside $SQUAD_BASE. Retain the exact before total, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, keep data/commander-shared.md byte-identical and filesystem read-only because it was installed through primary-authoritative inheritance, preserve every unique current preference, stable learning, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, overlap, and report-sized material in editable local memory. Do not access or modify any other home, credential, project data, or external system.' \
   >"$VERIFY_ROOT/XO.pass1.out"
-SQUAD_HOME="$XO" bin/sq-startup-memory-budget.sh report \
+SQUAD_BASE="$XO" bin/sq-startup-memory-budget.sh report \
   >"$VERIFY_ROOT/XO.after.report"
 for file in commander.md commander-shared.md learnings.md; do
   shasum -a 256 "$XO/data/$file"
@@ -181,12 +181,12 @@ done >"$VERIFY_ROOT/XO.after.sha256"
 record_shared_state after "$XO/data/commander-shared.md" \
   >>"$VERIFY_ROOT/XO.shared-state"
 
-SQUAD_HOME="$XO" pi -p --no-session --no-extensions --no-context-files \
+SQUAD_BASE="$XO" pi -p --no-session --no-extensions --no-context-files \
   --model openai-codex/gpt-5.6-terra --thinking medium \
   --skill .agents/skills/debrief/SKILL.md \
-  'Invoke /debrief now against only the validated disposable synthetic XO home in $SQUAD_HOME. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_HOME environment, before and after curation; that executable is the only permitted path outside $SQUAD_HOME. Retain the exact before total, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, keep data/commander-shared.md byte-identical and filesystem read-only because it was installed through primary-authoritative inheritance, preserve every unique current preference, stable learning, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, overlap, and report-sized material in editable local memory. Do not access or modify any other home, credential, project data, or external system.' \
+  'Invoke /debrief now against only the validated disposable synthetic XO home in $SQUAD_BASE. There are no new session facts to file. Follow every requirement in the loaded debrief skill. Run the repository-owned bin/sq-startup-memory-budget.sh report command, with the existing SQUAD_BASE environment, before and after curation; that executable is the only permitted path outside $SQUAD_BASE. Retain the exact before total, and make the completion receipt state the effective budget, exact before and after totals, an action for each of the three files, every exception, and reset safety. Inspect all three startup-memory files completely, keep data/commander-shared.md byte-identical and filesystem read-only because it was installed through primary-authoritative inheritance, preserve every unique current preference, stable learning, and authoritative pointer, and consolidate the supplied duplicate, superseded, stale, chronological, metric, overlap, and report-sized material in editable local memory. Do not access or modify any other home, credential, project data, or external system.' \
   >"$VERIFY_ROOT/XO.pass2.out"
-SQUAD_HOME="$XO" bin/sq-startup-memory-budget.sh report \
+SQUAD_BASE="$XO" bin/sq-startup-memory-budget.sh report \
   >"$VERIFY_ROOT/XO.repeat.report"
 for file in commander.md commander-shared.md learnings.md; do
   shasum -a 256 "$XO/data/$file"

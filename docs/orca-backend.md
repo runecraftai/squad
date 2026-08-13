@@ -23,7 +23,7 @@ The first task for a project registers that repository with `orca repo add --pat
 No manual repository registration is required.
 
 Open the Orca app to watch a task's terminal.
-Routine supervision uses the recorded endpoint through `bin/sq-peek.sh <id>` and `SQUAD_HOME=<home> bin/sq-send.sh <id> '<text>'`.
+Routine supervision uses the recorded endpoint through `bin/sq-peek.sh <id>` and `SQUAD_BASE=<home> bin/sq-send.sh <id> '<text>'`.
 Enter and Ctrl-C are supported; Escape is not.
 
 ## Task shape and metadata

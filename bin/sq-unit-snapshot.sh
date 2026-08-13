@@ -59,11 +59,11 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
-DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_HOME/data}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_HOME/config}"
-PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_HOME/projects}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+PROJECTS="${SQUAD_PROJECTS_OVERRIDE:-$SQUAD_BASE/projects}"
 BACKLOG="$DATA/backlog.md"
 SNAPSHOT_NOW=${SQUAD_SNAPSHOT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 if [ -n "${SQUAD_SNAPSHOT_NOW_EPOCH:-}" ]; then
@@ -203,7 +203,7 @@ operator_state_json() {  # <id>
   local id=$1 raw rest state source detail sep
   raw=$(
     SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
-      SQUAD_HOME="$SQUAD_HOME" \
+      SQUAD_BASE="$SQUAD_BASE" \
       SQUAD_STATE_OVERRIDE="$STATE" \
       SQUAD_DATA_OVERRIDE="$DATA" \
       SQUAD_PROJECTS_OVERRIDE="$PROJECTS" \
@@ -640,7 +640,7 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
 XO_home_summary_json() {  # <backlog-json> <tasks-json>
   jq -n \
     --arg generated "$SNAPSHOT_NOW" \
-    --arg home "$SQUAD_HOME" \
+    --arg home "$SQUAD_BASE" \
     --argjson child_n "$SQUAD_SNAPSHOT_XO_CHILDREN" \
     --argjson queued_n "$SQUAD_SNAPSHOT_XO_QUEUED" \
     --argjson decisions_n "$SQUAD_SNAPSHOT_XO_DECISIONS" \
@@ -1196,7 +1196,7 @@ XO_current_json() {  # <parent-tasks-json>
       else
         summary=$(fm_run_timed "$SQUAD_SNAPSHOT_XO_TIMEOUT" env \
           SQUAD_ROOT_OVERRIDE="$SQUAD_ROOT" \
-          SQUAD_HOME="$home" \
+          SQUAD_BASE="$home" \
           SQUAD_STATE_OVERRIDE="$home/state" \
           SQUAD_DATA_OVERRIDE="$home/data" \
           SQUAD_CONFIG_OVERRIDE="$home/config" \
@@ -1366,7 +1366,7 @@ XO_LANDED_JSON=$(XO_landed_from_current_json "$XO_CURRENT_JSON") \
 
 jq -n \
   --arg generated "$SNAPSHOT_NOW" \
-  --arg fm_home "$SQUAD_HOME" \
+  --arg fm_home "$SQUAD_BASE" \
   --arg fm_root "$SQUAD_ROOT" \
   --arg state "$STATE" \
   --arg data "$DATA" \

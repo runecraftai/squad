@@ -5,14 +5,15 @@
 #   sq-remote-file.sh get <relative-path> [max-bytes]
 #   sq-remote-file.sh put state/handoff/<id>.outbox.md <max-bytes> <bytes> <sha256> <generation>
 #
-# A get path is relative to SQUAD_HOME, must resolve through ordinary directories
+# A get path is relative to SQUAD_BASE, must resolve through ordinary directories
 # to one non-symlink regular file inside that base, and is bounded before output.
 # Put is deliberately narrower: it atomically replaces only a backlog handoff
 # scratch file under state/handoff. There is no delete operation and no generic
 # write path; the receiving command owns scratch cleanup after committed ingest.
 set -eu
 
-SQUAD_HOME=${SQUAD_HOME:?SQUAD_HOME is required}
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-}}"
+: "${SQUAD_BASE:?SQUAD_BASE is required (legacy SQUAD_HOME is also accepted)}"
 MAX_DEFAULT=262144
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -30,11 +31,11 @@ resolve_file() { # <relative-path>
   case "$rel" in ''|/*|*'//'*) die "path must be a nonempty relative path" ;; esac
   case "/$rel/" in */../*|*/./*) die "path traversal is not allowed: $rel" ;; esac
   case "$rel" in *$'\n'*|*$'\r'*|*$'\t'*) die "path contains control characters" ;; esac
-  home_real=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
+  home_real=$(CDPATH='' cd -- "$SQUAD_BASE" 2>/dev/null && pwd -P) || die "SQUAD_BASE is unavailable"
   parent=$(dirname "$rel")
   base=$(basename "$rel")
-  parent_real=$(CDPATH='' cd -- "$SQUAD_HOME/$parent" 2>/dev/null && pwd -P) || die "file parent is unavailable: $rel"
-  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "file escapes SQUAD_HOME: $rel" ;; esac
+  parent_real=$(CDPATH='' cd -- "$SQUAD_BASE/$parent" 2>/dev/null && pwd -P) || die "file parent is unavailable: $rel"
+  case "$parent_real" in "$home_real"|"$home_real"/*) ;; *) die "file escapes SQUAD_BASE: $rel" ;; esac
   path="$parent_real/$base"
   [ -f "$path" ] && [ ! -L "$path" ] || die "file is not a non-symlink regular file: $rel"
   printf '%s\n' "$path"
@@ -215,7 +216,7 @@ case "$COMMAND" in
     case "$NAME" in */*) die "put path has an extra directory" ;; esac
     case "/$REL/" in */../*|*/./*) die "put path contains traversal" ;; esac
     case "$REL" in *'//'*) die "put path is malformed" ;; esac
-    HOME_REAL=$(CDPATH='' cd -- "$SQUAD_HOME" 2>/dev/null && pwd -P) || die "SQUAD_HOME is unavailable"
+    HOME_REAL=$(CDPATH='' cd -- "$SQUAD_BASE" 2>/dev/null && pwd -P) || die "SQUAD_BASE is unavailable"
     if put_handoff_file "$HOME_REAL" "$(basename "$REL")" "$MAX" "$REL" \
       "$EXPECTED_BYTES" "$EXPECTED_HASH" "$GENERATION"; then
       :

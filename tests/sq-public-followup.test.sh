@@ -111,7 +111,7 @@ EOF
 run_pf() {  # <home> <args...>
   local home=$1
   shift
-  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" FAKE_CURL_LOG="${FAKE_CURL_LOG:-}" \
     FAKE_FOLLOWUP_CODE="${FAKE_FOLLOWUP_CODE:-200}" "$PF" "$@"
 }
@@ -158,7 +158,7 @@ seed_commitment() {
     > "$home/state/x-inbox/$request.json"
   chmod 700 "$home/state/x-inbox"
   chmod 600 "$home/state/x-inbox/$request.json"
-  SQUAD_HOME="$home" bash -c \
+  SQUAD_BASE="$home" bash -c \
     ". '$ROOT/bin/sq-x-lib.sh'; fmx_context_registry_set '$home/state' '$request' '$platform' 1900" \
     || fail "could not retain the private request context"
 
@@ -507,7 +507,7 @@ test_typed_terminal_clear_only_removes_legacy_link() {
   printf '%s\n' 'status=working' 'x_request=req-clear' 'x_request_ts=1700000000' \
     'x_followups=2' 'x_platform=discord' 'x_reply_max_chars=1900' > "$meta"
 
-  out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" "$ROOT/bin/sq-x-followup.sh" --clear work-clear) \
     || fail "the typed terminal clear transition must succeed"
   [ "$out" = work-clear ] || fail "the clear-only transition must identify the task"
@@ -564,7 +564,7 @@ test_outward_delivery_stays_with_the_owning_home() {
 
   # The child home has no commitment of its own and no relay consent, so it can
   # neither deliver nor even see one.
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" FAKE_CURL_LOG="$log" \
     expect_failure "a home without relay consent must not deliver a public reply" \
     "$PF" deliver pf-own
@@ -612,7 +612,7 @@ test_XO_teardown_requires_parent_binding() {
     "window=Squad:sq-work-child" "endpoint_task_id=work-child" \
     "worktree=$child" "project=$child" "kind=strike" "mode=local-only"
 
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     expect_failure "marked child teardown without a parent must refuse cleanup" \
     "$TEARDOWN" work-child
@@ -626,7 +626,7 @@ test_XO_teardown_requires_parent_binding() {
   printf '%s\n' mate > "$child/.sq-xo-home"
   printf -- '- mate - synthetic (id is legacy); preserve this (home: %s; scope: synthetic (child); semicolon remains meaningful; projects: ; added 2026-07-30)\n' \
     "$child" > "$parent/data/XOs.md"
-  SQUAD_HOME="$parent" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null \
+  SQUAD_BASE="$parent" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null \
     || fail "home-seed validation rejected a punctuation-bearing operational registry record"
   registry_before=$(cat "$parent/data/XOs.md")
   marker_before=$(cat "$child/.sq-xo-home")
@@ -638,7 +638,7 @@ test_XO_teardown_requires_parent_binding() {
   assert_absent "$child/.sq-xo-parent" \
     "the legacy env-only binding case must not gain a durable parent record"
 
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$parent" \
     expect_failure "marked child teardown with a valid parent must enforce the parent commitment" \
@@ -701,7 +701,7 @@ esac
 exec "$SQUAD_TEST_REAL_MV" "$@"
 SH
   chmod +x "$fakebin/mv"
-  PATH="$fakebin:$PATH" SQUAD_HOME="$parent" \
+  PATH="$fakebin:$PATH" SQUAD_BASE="$parent" \
     SQUAD_XO_CHARTER='Local publication-order regression charter.' \
     SQUAD_TEST_REAL_MV="$real_mv" SQUAD_TEST_PUBLISH_ENTERED="$entered" \
     SQUAD_TEST_PUBLISH_RELEASE="$release" \
@@ -730,7 +730,7 @@ test_XO_teardown_resolves_parent_from_durable_record_when_env_lost() {
   parent=$(make_home teardown-durable-parent)
   child="$TMP_ROOT/teardown-durable-child"
   SQUAD_XO_CHARTER='Durable-record regression charter.' \
-    SQUAD_HOME="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
+    SQUAD_BASE="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
     || fail "real XO seeding failed"
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
@@ -748,7 +748,7 @@ test_XO_teardown_resolves_parent_from_durable_record_when_env_lost() {
   # No SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME at all here: a restart of the XO
   # agent that drops the launch-time prefix must still find the real parent
   # through the durable record instead of silently treating the relay as off.
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     expect_failure "teardown with a lost launch binding must still find the real parent" \
     "$TEARDOWN" work-child
@@ -767,7 +767,7 @@ test_XO_teardown_durable_record_missing_parent_registration_still_refuses() {
   parent=$(make_home teardown-durable-missing-parent relay-off)
   child="$TMP_ROOT/teardown-durable-missing-child"
   SQUAD_XO_CHARTER='Durable-record missing-registration regression charter.' \
-    SQUAD_HOME="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
+    SQUAD_BASE="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
     || fail "real XO seeding failed"
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
@@ -782,7 +782,7 @@ test_XO_teardown_durable_record_missing_parent_registration_still_refuses() {
   # record naming the real parent path must not be enough on its own to bypass
   # the check; the real protection this guard exists for must survive the fix.
 
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     expect_failure "a durable local record with no parent-side registration must still refuse" \
     "$TEARDOWN" work-child
@@ -798,7 +798,7 @@ test_XO_teardown_durable_record_with_unknown_field_succeeds() {
   parent=$(make_home teardown-durable-clean-parent relay-off)
   child="$TMP_ROOT/teardown-durable-clean-child"
   SQUAD_XO_CHARTER='Durable-record clean-cleanup regression charter.' \
-    SQUAD_HOME="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
+    SQUAD_BASE="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
     || fail "real XO seeding failed"
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
@@ -817,7 +817,7 @@ test_XO_teardown_durable_record_with_unknown_field_succeeds() {
     "kind=strike" "mode=local-only"
 
   rc=0
-  out=$(PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  out=$(PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     SQUAD_CONFIG_OVERRIDE="$child/config" SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$parent_alias" \
     "$TEARDOWN" work-clean 2>&1) || rc=$?
@@ -833,7 +833,7 @@ test_XO_teardown_rejects_conflicting_live_and_durable_parent_bindings() {
   live_parent=$(make_home teardown-durable-conflict-live relay-off)
   child="$TMP_ROOT/teardown-durable-conflict-child"
   SQUAD_XO_CHARTER='Durable-record conflict regression charter.' \
-    SQUAD_HOME="$durable_parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
+    SQUAD_BASE="$durable_parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
     || fail "real XO seeding failed"
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$durable_parent" && pwd -P)
@@ -848,7 +848,7 @@ test_XO_teardown_rejects_conflicting_live_and_durable_parent_bindings() {
     "worktree=$child/projects/worktree" "project=$child/projects/worktree" \
     "kind=strike" "mode=local-only"
 
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     SQUAD_CONFIG_OVERRIDE="$child/config" SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$live_parent" \
     expect_failure "conflicting live and durable parent bindings must refuse cleanup" \
@@ -866,7 +866,7 @@ test_XO_teardown_rejects_unsafe_durable_parent_records() {
     parent=$(make_home "teardown-durable-$case_name-parent" relay-off)
     child="$TMP_ROOT/teardown-durable-$case_name-child"
     SQUAD_XO_CHARTER='Unsafe durable-record regression charter.' \
-      SQUAD_HOME="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
+      SQUAD_BASE="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
       || fail "real XO seeding failed for $case_name"
     child=$(cd "$child" && pwd -P)
     make_fake_curl "$child" >/dev/null
@@ -897,7 +897,7 @@ test_XO_teardown_rejects_unsafe_durable_parent_records() {
         ;;
     esac
 
-    PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+    PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
       SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
       expect_failure "an unsafe $case_name durable parent record must refuse cleanup" \
       "$TEARDOWN" work-child
@@ -927,7 +927,7 @@ test_XO_teardown_rejects_nul_bearing_durable_parent_record() {
   parent=$(make_home teardown-durable-nul-parent relay-off)
   child="$TMP_ROOT/teardown-durable-nul-child"
   SQUAD_XO_CHARTER='Durable-record NUL regression charter.' \
-    SQUAD_HOME="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
+    SQUAD_BASE="$parent" "$ROOT/bin/sq-home-seed.sh" mate "$child" --no-projects >/dev/null \
     || fail "real XO seeding failed"
   child=$(cd "$child" && pwd -P)
   parent_resolved=$(cd "$parent" && pwd -P)
@@ -951,7 +951,7 @@ test_XO_teardown_rejects_nul_bearing_durable_parent_record() {
     printf '%s\n' "$suf"
   } > "$record"
 
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     SQUAD_CONFIG_OVERRIDE="$child/config" \
     expect_failure "a NUL-bearing durable parent record must refuse cleanup" \
@@ -981,7 +981,7 @@ SH
     "kind=strike" "mode=local-only"
 
   rc=0
-  out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_CONFIG_OVERRIDE="$home/config" FAKE_TASKS_AXI_LOG="$tasks_log" \
     "$TEARDOWN" work-disabled 2>&1) || rc=$?
@@ -1017,7 +1017,7 @@ SH
     "kind=strike" "mode=local-only"
 
   rc=0
-  out=$(PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  out=$(PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     SQUAD_CONFIG_OVERRIDE="$child/config" \
     SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$parent" FAKE_TASKS_AXI_LOG="$tasks_log" \
@@ -1044,7 +1044,7 @@ test_XO_parent_binding_matches_literal_id() {
     "window=Squad:sq-work-literal" "endpoint_task_id=work-literal" \
     "worktree=$child" "project=$child" "kind=strike" "mode=local-only"
 
-  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$child" \
+  PATH="$child/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$child" \
     SQUAD_STATE_OVERRIDE="$child/state" SQUAD_DATA_OVERRIDE="$child/data" \
     SQUAD_CONFIG_OVERRIDE="$child/config" SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$parent" \
     expect_failure "a near-match registry id must not satisfy a dotted parent binding" \
@@ -1136,7 +1136,7 @@ test_cleanup_refuses_while_a_public_reply_is_owed() {
     "mode=drill"
 
   rc=0
-  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" ship-task \
     > "$home/teardown.out" 2> "$home/teardown.err" || rc=$?
@@ -1149,7 +1149,7 @@ test_cleanup_refuses_while_a_public_reply_is_owed() {
   run_pf "$home" consume >/dev/null || fail "consume failed"
   FAKE_CURL_LOG="$home/curl.log" run_pf "$home" deliver pf-guard >/dev/null || fail "delivery failed"
   rc=0
-  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" ship-task >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "cleanup must proceed once the public reply has landed (rc=$rc)"
@@ -1176,14 +1176,14 @@ SH
   for cmd in "consume" "pending" "guard-work main any-task" "retire anything"; do
     rc=0
     # shellcheck disable=SC2086  # each cmd is a deliberate argument list
-    out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+    out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
       SQUAD_STATE_OVERRIDE="$home/state" FAKE_TASKS_AXI_LOG="$tasks_log" "$PF" $cmd 2>&1) || rc=$?
     [ "$rc" -eq 0 ] || fail "'$cmd' must be a silent success in a relay-disabled home (rc=$rc)"
     [ -z "$out" ] || fail "'$cmd' must print nothing in a relay-disabled home, got: $out"
   done
 
   rc=0
-  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+  PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" FAKE_TASKS_AXI_LOG="$tasks_log" "$PF" active || rc=$?
   [ "$rc" -eq 1 ] || fail "'active' must report inactive in a relay-disabled home"
 
@@ -1223,7 +1223,7 @@ SH
   for cmd in "consume" "pending" "guard-work main any-task"; do
     rc=0
     # shellcheck disable=SC2086  # each cmd is a deliberate argument list
-    out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" \
+    out=$(PATH="$home/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \
       SQUAD_STATE_OVERRIDE="$home/state" FAKE_TASKS_AXI_LOG="$tasks_log" "$PF" $cmd 2>&1) || rc=$?
     [ "$rc" -eq 0 ] || fail "'$cmd' must be a silent success with no commitments (rc=$rc)"
     [ -z "$out" ] || fail "'$cmd' must print nothing with no commitments, got: $out"
@@ -1262,29 +1262,29 @@ test_exhausted_binding_is_not_retried() {
 test_relay_poll_stays_inert_and_surfaces_once() {
   local off on out first second
   off=$(make_home poll-off relay-off)
-  out=$(PATH="$off/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$off" \
+  out=$(PATH="$off/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$off" \
     SQUAD_STATE_OVERRIDE="$off/state" "$POLL" 2>&1)
   [ -z "$out" ] || fail "the relay poll must stay silent without a token, got: $out"
   assert_absent "$off/state/public-followup" "an inert poll must create nothing"
 
   on=$(make_home poll-on)
-  out=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$on" \
+  out=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$on" \
     SQUAD_STATE_OVERRIDE="$on/state" "$POLL" 2>&1)
   assert_not_contains "$out" "public-followup" \
     "a relay home with no public commitments must not mention public follow-ups"
 
   seed_commitment "$on" pf-poll req-poll discord main work-poll
-  out=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$on" \
+  out=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$on" \
     SQUAD_STATE_OVERRIDE="$on/state" "$POLL" 2>&1)
   assert_not_contains "$out" "public-followup" \
     "a registered commitment with no terminal result yet must not wake the poll"
 
   emit_terminal "$on" "$on" pf-poll main work-poll >/dev/null || fail "emit failed"
-  first=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$on" \
+  first=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$on" \
     SQUAD_STATE_OVERRIDE="$on/state" "$POLL" 2>&1)
   assert_contains "$first" "public-followup terminal results are waiting" \
     "a new terminal result must surface through the existing relay poll"
-  second=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$on" \
+  second=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$on" \
     SQUAD_STATE_OVERRIDE="$on/state" "$POLL" 2>&1)
   assert_not_contains "$second" "public-followup" \
     "an unchanged pending set must not wake Squad again every cycle"
@@ -1296,7 +1296,7 @@ test_relay_poll_stays_inert_and_surfaces_once() {
 test_session_start_surfaces_only_when_owed() {
   local off on out
   off=$(make_home startup-off relay-off)
-  out=$(PATH="$off/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$off" \
+  out=$(PATH="$off/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$off" \
     SQUAD_STATE_OVERRIDE="$off/state" SQUAD_DATA_OVERRIDE="$off/data" \
     SQUAD_CONFIG_OVERRIDE="$off/config" "$SESSION_START" 2>&1)
   assert_not_contains "$out" "Public commitments" \
@@ -1304,7 +1304,7 @@ test_session_start_surfaces_only_when_owed() {
 
   on=$(make_home startup-on)
   seed_commitment "$on" pf-start req-start discord main work-start
-  out=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$on" \
+  out=$(PATH="$on/fakebin:$PATH" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$on" \
     SQUAD_STATE_OVERRIDE="$on/state" SQUAD_DATA_OVERRIDE="$on/data" \
     SQUAD_CONFIG_OVERRIDE="$on/config" "$SESSION_START" 2>&1)
   assert_contains "$out" "Public commitments awaiting delivery" \

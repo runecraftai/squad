@@ -156,7 +156,7 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  const fmHome = process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE || root;
+  const fmHome = process.env.SQUAD_BASE || process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE || root;
   const configDirectory = process.env.SQUAD_CONFIG_OVERRIDE || resolve(fmHome, "config");
   const calmPreferencePath = resolve(configDirectory, "calm");
   const loadCalmPreference = (): boolean => {

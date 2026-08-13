@@ -27,7 +27,7 @@ zellij attach <session-name>
 ```
 
 Routine supervision does not require attachment.
-Use `bin/sq-peek.sh <id>` and `SQUAD_HOME=<home> bin/sq-send.sh <id> '<text>'` against the metadata-routed endpoint.
+Use `bin/sq-peek.sh <id>` and `SQUAD_BASE=<home> bin/sq-send.sh <id> '<text>'` against the metadata-routed endpoint.
 
 Verify setup by spawning a small task and confirming metadata contains `backend=zellij`, `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
 

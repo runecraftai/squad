@@ -154,7 +154,7 @@ make_spawn_case() {
 run_spawn() {
   local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
   shift 6
-  HOME="$home" SQUAD_ROOT_OVERRIDE='' SQUAD_HOME="$home" \
+  HOME="$home" SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \
     SQUAD_SPAWN_NO_GUARD=1 SQUAD_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -425,7 +425,7 @@ test_kimi_teardown_removes_pointer_and_registry_token() {
   expect_code 0 "$rc" "Kimi spawn should succeed before teardown"
   token=$(sed -n 's/^token=//p' "$WT_DIR/.sq-kimi-turnend")
 
-  HOME="$HOME_DIR" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$HOME_DIR" \
+  HOME="$HOME_DIR" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$HOME_DIR" \
     SQUAD_STATE_OVERRIDE="$HOME_DIR/state" SQUAD_DATA_OVERRIDE="$HOME_DIR/data" \
     SQUAD_PROJECTS_OVERRIDE="$HOME_DIR/projects" SQUAD_CONFIG_OVERRIDE="$HOME_DIR/config" \
     SQUAD_SPAWN_NO_GUARD=1 PATH="$FAKEBIN_DIR:$BASE_PATH" \
@@ -553,13 +553,13 @@ exit 1
 SH
   chmod +x "$fakebin/ps"
 
-  SQUAD_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/sq-lock.sh" \
+  SQUAD_BASE="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/sq-lock.sh" \
     || fail "sq-lock did not acquire from Kimi ancestry"
   case "$(cat "$home/state/.lock")" in
     ''|*[!0-9]*) fail "sq-lock did not record the Kimi harness ancestor" ;;
   esac
   printf '%s\n' "$$" > "$home/state/.lock"
-  out=$(SQUAD_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/sq-lock.sh" status)
+  out=$(SQUAD_BASE="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/sq-lock.sh" status)
   assert_contains "$out" "lock: held by live harness pid" \
     "sq-lock did not recognize Kimi as a live holder"
   pass "sq-lock recognizes Kimi ancestry and live lock holders"
@@ -617,9 +617,9 @@ test_sentry_never_classifies_kimi_from_its_spinner() (
   mkdir -p "$state"
   printf 'window=fake\nharness=kimi\n' > "$state/kimi-watch.meta"
   unset SQUAD_BUSY_REGEX
-  SQUAD_HOME="$TMP_ROOT/watch-home"
+  SQUAD_BASE="$TMP_ROOT/watch-home"
   SQUAD_STATE_OVERRIDE="$state"
-  export SQUAD_HOME SQUAD_STATE_OVERRIDE
+  export SQUAD_BASE SQUAD_STATE_OVERRIDE
   # shellcheck source=/dev/null
   . "$ROOT/bin/sq-sentry.sh"
   # shellcheck disable=SC2329 # Runtime override called by the sourced sentry.

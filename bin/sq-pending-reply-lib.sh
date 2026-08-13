@@ -17,13 +17,13 @@
 # records, and never treat wrong-base or structured-base heuristics as
 # acknowledgement.
 #
-# Record location (parent SQUAD_HOME):
+# Record location (parent SQUAD_BASE):
 #   state/pending-replies/<corr_id>
 # Each record is a key=value file owned by this library. Schema:
 #   schema=sq-pending-reply.v1
 #   corr_id=                privacy-safe correlation token
 #   task_id=                XO task id in the parent base
-#   parent_home=            absolute parent SQUAD_HOME
+#   parent_home=            absolute parent SQUAD_BASE
 #   parent_status=          absolute path of parent state/<task_id>.status
 #   parent_status_scan_signature=
 #   request_summary=        short sanitized summary (no secrets by design)
@@ -753,7 +753,7 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   else
     if [ -z "$parent_home" ] || [ ! -d "$parent_home" ]; then
       send_status=1
-    elif ! env SQUAD_HOME="$parent_home" SQUAD_PENDING_REPLY_EXISTING_CORR="$corr" \
+    elif ! env SQUAD_BASE="$parent_home" SQUAD_PENDING_REPLY_EXISTING_CORR="$corr" \
       "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-send.sh" "$task_id" "$msg"; then
       send_status=1
     fi

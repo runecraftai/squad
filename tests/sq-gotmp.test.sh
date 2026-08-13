@@ -5,7 +5,7 @@
 # gotmp/, exports GOTMPDIR into the operator pane, and records tasktmp= in the task's
 # meta. sq-teardown reads tasktmp= and removes the whole root on cleanup.
 #
-# These tests exercise sq-teardown directly as a subprocess against a fake SQUAD_HOME/SQUAD_ROOT
+# These tests exercise sq-teardown directly as a subprocess against a fake SQUAD_BASE/SQUAD_ROOT
 # built so the real script resolves into it, with stub helper scripts.
 # The isolated sq-spawn subprocess in sq-kimi-harness.test.sh covers temp-root creation,
 # metadata publication, and the pane environment export.
@@ -40,7 +40,7 @@ trap cleanup EXIT
 
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/sq-gotmp-tests.XXXXXX")
 
-# Build a fake SQUAD_HOME/SQUAD_ROOT so the real sq-teardown.sh (symlinked in) resolves
+# Build a fake SQUAD_BASE/SQUAD_ROOT so the real sq-teardown.sh (symlinked in) resolves
 # state and helper scripts inside it. Stub the helper scripts sq-teardown calls so no
 # live tmux/fob/unit state is touched. A nonexistent worktree path makes both
 # `if [ -d "$WT" ]` guards skip, so teardown runs straight to the cleanup + state rm.
@@ -118,7 +118,7 @@ test_teardown_removes_tasktmp_dir() {
   # Sanity: dir + contents exist before teardown.
   [ -d "$task_tmp/gotmp" ] || fail "precondition: gotmp missing before teardown"
   # Run the REAL teardown against the fake root.
-  SQUAD_HOME="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \
+  SQUAD_BASE="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero with a valid tasktmp"
   [ ! -e "$task_tmp" ] \
     || fail "teardown did not remove the tasktmp dir ($task_tmp still exists)"
@@ -174,7 +174,7 @@ kind=strike
 mode=drill
 yolo=off
 META
-  SQUAD_HOME="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \
+  SQUAD_BASE="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero when tasktmp= was absent"
   pass "sq-teardown skips gracefully when tasktmp= is absent (backward compat)"
 }
@@ -187,7 +187,7 @@ test_teardown_skips_gracefully_when_dir_missing() {
   [ ! -e "$task_tmp" ] || fail "precondition: task_tmp should not exist yet"
   local fake
   fake=$(make_fake_root "$id" "$task_tmp")
-  SQUAD_HOME="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \
+  SQUAD_BASE="$fake" bash "$fake/bin/sq-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero when tasktmp dir was missing"
   [ ! -e "$task_tmp" ] || fail "teardown created/left the tasktmp dir unexpectedly"
   pass "sq-teardown skips gracefully when tasktmp= points to a nonexistent dir"

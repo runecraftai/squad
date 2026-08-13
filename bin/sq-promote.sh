@@ -17,8 +17,8 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
-STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_HOME/state}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 MODE=
 YOLO=
@@ -83,6 +83,6 @@ grep -v -e '^kind=' -e '^mode=' -e '^yolo=' "$META" > "$TMP"
 } >> "$TMP"
 mv "$TMP" "$META"
 
-HOME_Q=$(printf '%q' "$SQUAD_HOME")
+HOME_Q=$(printf '%q' "$SQUAD_BASE")
 echo "promoted $ID to ship mode=$MODE yolo=$YOLO (teardown protection restored)"
-echo "next: SQUAD_HOME=$HOME_Q bin/sq-send.sh sq-$ID '<ship instructions for mode=$MODE: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"
+echo "next: SQUAD_BASE=$HOME_Q bin/sq-send.sh sq-$ID '<ship instructions for mode=$MODE: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"

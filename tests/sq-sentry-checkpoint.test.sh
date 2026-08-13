@@ -21,7 +21,7 @@ test_quiet_checkpoint_exits_124_cleanly() {
   out="$home/out.txt"
   err="$home/err.txt"
   status=0
-  SQUAD_HOME="$home" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
+  SQUAD_BASE="$home" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
   expect_code 124 "$status" "quiet checkpoint exit"
   assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "quiet checkpoint line missing"
   assert_absent "$home/state/.sentry.lock/pid" "watch lock pid survived quiet checkpoint timeout"
@@ -38,10 +38,10 @@ test_signal_passes_through_and_exits_zero() {
     printf 'done: synthetic wake\n' > "$home/state/demo.status"
   ) &
   status=0
-  SQUAD_HOME="$home" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 8 >"$out" 2>"$err" || status=$?
+  SQUAD_BASE="$home" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 8 >"$out" 2>"$err" || status=$?
   expect_code 0 "$status" "signal checkpoint exit"
   assert_contains "$(cat "$out")" "signal:" "signal wake was not passed through"
-  drained=$(SQUAD_HOME="$home" "$ROOT/bin/sq-stand-to-drain.sh")
+  drained=$(SQUAD_BASE="$home" "$ROOT/bin/sq-stand-to-drain.sh")
   assert_contains "$drained" $'\tsignal\tdemo.status\t' "signal wake was not queued durably"
   pass "checkpoint passes through a real sentry wake and leaves the queue for drain"
 }
@@ -59,10 +59,10 @@ test_registered_check_uses_preserved_sentry_environment() {
 printf 'env check fired with SQUAD_CHECK_INTERVAL=%s\n' "${SQUAD_CHECK_INTERVAL:-missing}"
 SH
   chmod 0700 "$home/state/env-check.check.sh"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-check-register.sh" env-check >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-check-register.sh" env-check >/dev/null \
     || fail "could not register checkpoint custom check"
   status=0
-  SQUAD_HOME="$home" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=1 "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
+  SQUAD_BASE="$home" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=1 "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
   expect_code 0 "$status" "check checkpoint exit"
   assert_contains "$(cat "$out")" "check:" "check wake was not passed through"
   assert_contains "$(cat "$out")" "SQUAD_CHECK_INTERVAL=1" "sentry environment was not preserved"
@@ -80,7 +80,7 @@ test_existing_singleton_sentry_is_not_success() {
   mkdir "$home/state/.sentry.lock"
   printf '%s\n' "$$" > "$home/state/.sentry.lock/pid"
   status=0
-  SQUAD_HOME="$home" SQUAD_GUARD_GRACE=300 "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
+  SQUAD_BASE="$home" SQUAD_GUARD_GRACE=300 "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
   expect_code 1 "$status" "singleton checkpoint exit"
   assert_contains "$(cat "$out")" "sentry: already running" "singleton sentry output was not passed through"
   assert_contains "$(cat "$err")" "outside this foreground checkpoint" "singleton sentry failure was not explained"

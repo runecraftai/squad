@@ -42,7 +42,7 @@ An XO base label is `xo-<XO-id>`, derived from its validated `.sq-xo-home` marke
 An XO launched by the primary receives a narrowly scoped base override during container creation.
 
 Attach to the selected named Herdr session and switch to the relevant base workspace to watch its task tabs.
-Routine supervision uses `bin/sq-peek.sh <id>` and `SQUAD_HOME=<home> bin/sq-send.sh <id> '<text>'` without attaching.
+Routine supervision uses `bin/sq-peek.sh <id>` and `SQUAD_BASE=<home> bin/sq-send.sh <id> '<text>'` without attaching.
 
 Workspace and tab creation use `--no-focus`.
 The first workspace in a completely empty Herdr session must become focused because no prior target exists, but later task creation does not intentionally steal focus.

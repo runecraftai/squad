@@ -522,7 +522,7 @@ test_spawn_refuses_orca_XO_before_home_mutation() {
   printf 'claude\n' > "$config/crew-harness"
   touch "$state/.last-sentry-beat"
   set +e
-  out=$( SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_HOME="$home" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+  out=$( SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/sq-spawn.sh" "$id" "$subhome" claude --backend orca --xo 2>&1 )
   status=$?
@@ -715,7 +715,7 @@ test_peek_send_and_crew_state_route_through_orca_meta() {
   printf '{"ok":true,"result":{"send":{"handle":"term-io","accepted":true}}}\n' > "$RESP/3.out"
   printf '{"ok":true,"result":{"terminal":{"tail":["│ > │"]}}}\n' > "$RESP/4.out"
   PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_HOME="$neutral" SQUAD_STATE_OVERRIDE="$state" SQUAD_SEND_SETTLE=0 \
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_BASE="$neutral" SQUAD_STATE_OVERRIDE="$state" SQUAD_SEND_SETTLE=0 \
     "$ROOT/bin/sq-send.sh" "sq-$id" "hello orca"
   printf '{"ok":true,"result":{"terminal":{"tail":["idle prompt"]}}}\n' > "$RESP/5.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
@@ -1221,7 +1221,7 @@ test_XO_force_teardown_removes_orca_child_via_orca() {
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_HOME="$home" "$ROOT/bin/sq-teardown.sh" domain --force 2>&1 )
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_BASE="$home" "$ROOT/bin/sq-teardown.sh" domain --force 2>&1 )
   rc=$?
   set -e
   expect_code 0 "$rc" "forced XO teardown should remove Orca child work through Orca"$'\n'"$out"
@@ -1264,7 +1264,7 @@ test_XO_force_teardown_refuses_orca_child_id_path_mismatch() {
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_HOME="$home" "$ROOT/bin/sq-teardown.sh" domain --force 2>&1 )
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_BASE="$home" "$ROOT/bin/sq-teardown.sh" domain --force 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "forced XO teardown should refuse mismatched Orca child id/path"
@@ -1304,7 +1304,7 @@ test_XO_force_teardown_refuses_partial_orca_child() {
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_HOME="$home" "$ROOT/bin/sq-teardown.sh" domain --force 2>&1 )
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_BASE="$home" "$ROOT/bin/sq-teardown.sh" domain --force 2>&1 )
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "forced XO teardown accepted a child with no terminal identity"

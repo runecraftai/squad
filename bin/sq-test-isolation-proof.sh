@@ -29,7 +29,7 @@
 # Isolation contract for each concurrent worker:
 #   - distinct mode-0700 temporary root under a proof-owned parent
 #   - TMPDIR/TMP point only at that root so mktemp/fm_test_tmproot stay private
-#   - ambient SQUAD_HOME / SQUAD_*_OVERRIDE cleared so no shared base is reused
+#   - ambient SQUAD_BASE / SQUAD_*_OVERRIDE cleared so no shared base is reused
 #   - no global git config mutation (snapshot before/after)
 #   - no production sharding and no retry-until-green
 #
@@ -424,7 +424,7 @@ for script in "${CANDIDATES[@]}"; do
     export TMPDIR="$work/tmp"
     export TMP="$work/tmp"
     # Clear ambient unit overrides so candidates cannot share a live base.
-    unset SQUAD_HOME SQUAD_STATE_OVERRIDE SQUAD_DATA_OVERRIDE SQUAD_ROOT_OVERRIDE \
+    unset SQUAD_BASE SQUAD_STATE_OVERRIDE SQUAD_DATA_OVERRIDE SQUAD_ROOT_OVERRIDE \
       SQUAD_PROJECTS_OVERRIDE SQUAD_CONFIG_OVERRIDE SQUAD_BACKEND 2>/dev/null || true
     cd "$ROOT" || exit 1
     begin_ms=$(now_ms)

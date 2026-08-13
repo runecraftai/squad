@@ -105,16 +105,16 @@
 # fm_backend_required_tools only when zellij is the resolved backend; this
 # adapter also gates them again before spawning.
 
-# SQUAD_HOME fallback: every real caller already sets SQUAD_HOME as a global before
+# SQUAD_BASE fallback: every real caller already sets SQUAD_BASE as a global before
 # sourcing sq-backend.sh (which sources this file); this exists only so this
 # file's own unit tests, which source it directly, resolve sanely. Mirrors
 # bin/backends/herdr.sh's identical fallback; unlike herdr this adapter still
 # has no per-base CONTAINER split (one shared session for every base), but
-# SQUAD_HOME/SQUAD_ROOT now also feed fm_backend_zellij_home_label's tab-title tag
+# SQUAD_BASE/SQUAD_ROOT now also feed fm_backend_zellij_home_label's tab-title tag
 # below.
 SQUAD_BACKEND_ZELLIJ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_ZELLIJ_ROOT}}"
-SQUAD_HOME="${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # shellcheck source=bin/sq-backend-hometag-lib.sh
 . "$SQUAD_BACKEND_ZELLIJ_ROOT/bin/sq-backend-hometag-lib.sh"

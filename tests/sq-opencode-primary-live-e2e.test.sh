@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opt-in credentialed OpenCode continuity regression on an isolated project and
-# SQUAD_HOME. Existing OpenCode credentials stay in their managed store.
+# SQUAD_BASE. Existing OpenCode credentials stay in their managed store.
 set -u
 
 if [ "${SQUAD_OPENCODE_LIVE_E2E:-0}" != 1 ]; then
@@ -169,7 +169,7 @@ run_ahoy_transcript_regressions() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -u' \
-    'file="${SQUAD_HOME:?}/state/session-start-count"' \
+    'file="${SQUAD_BASE:?}/state/session-start-count"' \
     'count=0' \
     '[ ! -f "$file" ] || count=$(sed -n "1p" "$file")' \
     'count=$((count + 1))' \
@@ -230,7 +230,7 @@ run_native_ahoy_regressions() {
   status=0
   (
     cd "$AHOY_PROJECT" &&
-      OPENCODE_DB="$first_db" SQUAD_HOME="$first_home" \
+      OPENCODE_DB="$first_db" SQUAD_BASE="$first_home" \
         OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 \
         OPENCODE_CONFIG_CONTENT='{"permission":{"*":"allow"}}' \
         opencode run --format json --auto "/reporting"
@@ -253,7 +253,7 @@ run_native_ahoy_regressions() {
   [ "$session_count" = 1 ] || fail "OpenCode native first-message Reporting left the original session"
 
   "$TMUX" -L "$SOCKET" new-session -d -s "$native_session" -c "$AHOY_PROJECT" \
-    "env OPENCODE_DB='$later_db' SQUAD_HOME='$later_home' OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' opencode --auto"
+    "env OPENCODE_DB='$later_db' SQUAD_BASE='$later_home' OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' opencode --auto"
   i=0
   while [ "$i" -lt 120 ]; do
     "$TMUX" -L "$SOCKET" capture-pane -p -t "$native_session" 2>/dev/null | grep -Fq "$OPENCODE_VERSION" && break
@@ -274,7 +274,7 @@ run_native_ahoy_regressions() {
   status=0
   (
     cd "$AHOY_PROJECT" &&
-      OPENCODE_DB="$later_db" SQUAD_HOME="$later_home" \
+      OPENCODE_DB="$later_db" SQUAD_BASE="$later_home" \
         OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 \
         OPENCODE_CONFIG_CONTENT='{"permission":{"*":"allow"}}' \
         opencode run --format json --auto --session "$session_id" "/reporting"
@@ -304,10 +304,10 @@ chmod +x "$PROJECT/bin/sq-operational-input.sh"
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
 printf 'project=fixture\n' > "$HOME_DIR/state/opencode-e2e.meta"
 
-# shellcheck disable=SC2016 # The model, not this test shell, expands SQUAD_HOME.
-PROMPT='Use the terminal to run `printf ready > "$SQUAD_HOME/state/opencode-model-initial"`, then respond briefly. If a later sentry wake arrives, run bin/sq-stand-to-drain.sh, then run `printf handled > "$SQUAD_HOME/state/opencode-model-handled"`. Never run or request any sentry arm command.'
+# shellcheck disable=SC2016 # The model, not this test shell, expands SQUAD_BASE.
+PROMPT='Use the terminal to run `printf ready > "$SQUAD_BASE/state/opencode-model-initial"`, then respond briefly. If a later sentry wake arrives, run bin/sq-stand-to-drain.sh, then run `printf handled > "$SQUAD_BASE/state/opencode-model-handled"`. Never run or request any sentry arm command.'
 "$TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -c "$PROJECT" \
-  "env OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' SQUAD_HOME='$HOME_DIR' SQUAD_ROOT_OVERRIDE='$PROJECT' SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=0 SQUAD_HEARTBEAT=600 bash -lc 'printf \"%s\\n\" \"\$\$\" > \"\$SQUAD_HOME/state/.lock\"; opencode --auto; rc=\$?; printf \"OPENCODE_EXIT=%s\\n\" \"\$rc\"; sleep 300'"
+  "env OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' SQUAD_BASE='$HOME_DIR' SQUAD_ROOT_OVERRIDE='$PROJECT' SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=0 SQUAD_HEARTBEAT=600 bash -lc 'printf \"%s\\n\" \"\$\$\" > \"\$SQUAD_BASE/state/.lock\"; opencode --auto; rc=\$?; printf \"OPENCODE_EXIT=%s\\n\" \"\$rc\"; sleep 300'"
 
 # Send the initial prompt through the ready composer so this exercises the same
 # persistent TUI path as a primary session.

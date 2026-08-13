@@ -27,7 +27,7 @@
 #
 # The worker accepts only a tracked, non-symlink executable named sq-*.sh below
 # its configured SQUAD_ROOT/bin. Every child receives env -i with the composed
-# PATH, HOME, SQUAD_HOME, SQUAD_ROOT_OVERRIDE, and SQUAD_REMOTE_JOB_ACTIVE=1. The PATH
+# PATH, HOME, SQUAD_BASE, SQUAD_ROOT_OVERRIDE, and SQUAD_REMOTE_JOB_ACTIVE=1. The PATH
 # is intentionally filesystem-discovered rather than login-shell-derived:
 # ~/.local/bin; nvm, asdf, and mise shims/install bins; Nix; Homebrew; and the
 # system tail. No shell startup files are evaluated.

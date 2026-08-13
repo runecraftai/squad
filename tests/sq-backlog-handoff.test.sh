@@ -78,7 +78,7 @@ EOF
   local expected_block
   expected_block=$(extract_item_block "$home/data/backlog.md" body-item)
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design body-item >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design body-item >/dev/null \
     || fail "handoff of body-followed-by-item failed"
 
   local dest_block
@@ -128,7 +128,7 @@ EOF
   local expected_block
   expected_block=$(extract_item_block "$home/data/backlog.md" section-tail)
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design section-tail >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design section-tail >/dev/null \
     || fail "handoff of body-followed-by-section failed"
 
   local dest_block
@@ -178,7 +178,7 @@ test_body_moves_when_last_lines_of_file() {
   local expected_block
   expected_block=$(extract_item_block "$home/data/backlog.md" eof-item)
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design eof-item >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design eof-item >/dev/null \
     || fail "handoff of EOF body item failed"
 
   local dest_block
@@ -223,7 +223,7 @@ test_eof_body_before_seeded_destination_section_keeps_boundary() {
     printf '%s\n' '## Done'
   } > "$expected_destination"
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design seeded-eof-item >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design seeded-eof-item >/dev/null \
     || fail "handoff of EOF body into seeded backlog failed"
 
   cmp -s "$expected_destination" "$sub/data/backlog.md" \
@@ -251,7 +251,7 @@ test_untouched_eof_line_preserves_terminator() {
     printf '%s' '  keep body without a final newline'
   } > "$expected_source"
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design move-item >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design move-item >/dev/null \
     || fail "handoff before untouched EOF preservation check failed"
 
   cmp -s "$expected_source" "$home/data/backlog.md" \
@@ -277,7 +277,7 @@ test_body_handoff_is_idempotent() {
 ## Done
 EOF
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design idem-item >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design idem-item >/dev/null \
     || fail "first handoff of body-carrying item failed"
 
   local main_after dest_after
@@ -285,7 +285,7 @@ EOF
   dest_after=$(cat "$sub/data/backlog.md")
 
   local out
-  out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design idem-item 2>&1) \
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design idem-item 2>&1) \
     || fail "idempotent re-run of body-carrying item failed"
   assert_contains "$out" "already present" "re-run did not report skip of already-present key"
 
@@ -335,7 +335,7 @@ EOF
   cp "$home/data/backlog.md" "$source_before"
   cp "$sub/data/backlog.md" "$destination_before"
 
-  if out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design malformed-body 2>&1); then
+  if out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design malformed-body 2>&1); then
     fail "handoff accepted a noncanonical indented continuation"
   fi
 
@@ -371,7 +371,7 @@ EOF
   local expected_block
   expected_block=$(extract_item_block "$home/data/backlog.md" ha-codex-fast-default-4e)
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design ha-codex-fast-default-4e >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design ha-codex-fast-default-4e >/dev/null \
     || fail "handoff of ## Intent body item failed"
 
   local dest_block
@@ -426,7 +426,7 @@ EOF
   local expected_block
   expected_block=$(extract_item_block "$home/data/backlog.md" multi-para)
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design multi-para >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design multi-para >/dev/null \
     || fail "handoff of multi-paragraph body failed"
 
   local dest_block
@@ -458,7 +458,7 @@ EOF
   main_after=$(cat "$home/data/backlog.md")
   dest_after=$(cat "$sub/data/backlog.md")
   local out
-  out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" design multi-para 2>&1) \
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" design multi-para 2>&1) \
     || fail "idempotent re-run of multi-paragraph body failed"
   assert_contains "$out" "already present" "re-run did not report skip of already-present key"
   [ "$main_after" = "$(cat "$home/data/backlog.md")" ] \
@@ -485,7 +485,7 @@ test_registry_home_with_pre_home_parentheses() {
   # Prose parentheses before (home: ...) and punctuation inside scope match the live registry shape.
   printf -- '- %s - issue triage (id is legacy) (home: %s; scope: issue triage (child); semicolon is meaningful; projects: alpha; added 2026-07-09)\n' \
     "$id" "$sub_abs" > "$home/data/XOs.md"
-  SQUAD_HOME="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-home-seed.sh" validate >/dev/null \
     || fail "home-seed validation rejected punctuation-bearing registry fields"
 
   cat > "$home/data/backlog.md" <<'EOF'
@@ -496,7 +496,7 @@ test_registry_home_with_pre_home_parentheses() {
 ## Done
 EOF
 
-  SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" "$id" paren-item >/dev/null \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" "$id" paren-item >/dev/null \
     || fail "handoff failed for registry entry with parentheses before (home: ...)"
 
   assert_grep 'paren-item' "$sub/data/backlog.md" \
@@ -527,7 +527,7 @@ test_registry_home_missing_field_fails_cleanly() {
 EOF
 
   local out rc=0
-  out=$(SQUAD_HOME="$home" "$ROOT/bin/sq-backlog-handoff.sh" "$id" orphan-item 2>&1) || rc=$?
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-backlog-handoff.sh" "$id" orphan-item 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "handoff succeeded for registry entry with no (home: ...) field"
   assert_contains "$out" "has no home" \
     "missing (home: ...) field did not report the clean 'has no home' error"

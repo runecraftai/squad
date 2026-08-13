@@ -9,7 +9,7 @@
 # end to end, because auto-detection is a sq-spawn-TIME decision, not an
 # adapter primitive - it has to be proven where fm_backend_name is actually
 # called. The real spawn runs in a helper-provisioned, per-run named Herdr lab
-# session, with a scratch SQUAD_HOME and scratch local-only project. Concurrent
+# session, with a scratch SQUAD_BASE and scratch local-only project. Concurrent
 # copies therefore never share the default session or a workspace namespace.
 #
 # The complementary "tmux nested inside herdr resolves to tmux, silently" case
@@ -83,7 +83,7 @@ on_exit() {
 trap on_exit EXIT
 "$HERDR_LAB_HELPER" provision "$HERDR_LAB_SESSION" || fail "could not provision isolated Herdr lab session"
 
-# --- scratch world: SQUAD_HOME with NO backend config, one throwaway project ---
+# --- scratch world: SQUAD_BASE with NO backend config, one throwaway project ---
 
 STATE="$TMP_ROOT/state"; DATA="$TMP_ROOT/data"; CONFIG="$TMP_ROOT/config"
 mkdir -p "$STATE" "$DATA/$ID" "$CONFIG"

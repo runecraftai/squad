@@ -71,7 +71,7 @@ test_pi_extension_reports_external_healthy_sentry() {
 printf 'sentry: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -88,7 +88,7 @@ const pi = {
     prompt = message;
   },
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 if (!handler) {
@@ -149,7 +149,7 @@ test_pi_tool_returns_agent_tool_result() {
 exit 0
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -162,7 +162,7 @@ const pi = {
   },
   sendUserMessage: async () => {},
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 if (!tool) throw new Error("Pi watch tool was not registered");
@@ -216,7 +216,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -229,7 +229,7 @@ const pi = {
   },
   sendUserMessage: async () => {},
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 const initial = await tool.execute("tool-call-first", {}, undefined, undefined, {});
@@ -276,7 +276,7 @@ printf 'arm\n' >> "${SQUAD_ARM_LOG:?}"
 exit 0
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_WATCH_REARM_RETRY_BASE_MS=10000 SQUAD_WATCH_REARM_RETRY_MAX_MS=10000 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_WATCH_REARM_RETRY_BASE_MS=10000 SQUAD_WATCH_REARM_RETRY_MAX_MS=10000 node --input-type=module 2>&1 <<'EOF'
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -289,7 +289,7 @@ const pi = {
   },
   sendUserMessage: async () => {},
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-first", {}, undefined, undefined, {});
@@ -341,7 +341,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -366,7 +366,7 @@ const pi = {
     await deliveryBlocked;
   },
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-continuity", {}, undefined, undefined, {});
@@ -417,7 +417,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -437,7 +437,7 @@ const pi = {
       : 0;
   },
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-hung-successor", {}, undefined, undefined, {});
@@ -489,7 +489,7 @@ printf 'arm=%s\n' "$$" >> "${SQUAD_ARM_LOG:?}"
 while [ ! -e "$SQUAD_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -509,7 +509,7 @@ const pi = {
       : 0;
   },
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-unretired-successor", {}, undefined, undefined, {});
@@ -567,7 +567,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/sq-sentry-arm.sh"
-    out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_PI_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -593,7 +593,7 @@ async function waitFor(predicate, message) {
   }
   throw new Error(message);
 }
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-late-close", {}, undefined, undefined, {});
@@ -649,7 +649,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -665,7 +665,7 @@ const pi = {
     prompts += 1;
   },
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-empty", {}, undefined, undefined, {});
@@ -704,7 +704,7 @@ printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 exit 0
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -720,7 +720,7 @@ const pi = {
     prompt += message;
   },
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-established-empty", {}, undefined, undefined, {});
@@ -756,7 +756,7 @@ while [ ! -e "$SQUAD_RELEASE_FILE" ]; do sleep 0.02; done
 printf 'signal: lock handoff\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" node --input-type=module 2>&1 <<'EOF'
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -773,7 +773,7 @@ const pi = {
     prompt += message;
   },
 };
-const lock = `${process.env.SQUAD_HOME}/state/.lock`;
+const lock = `${process.env.SQUAD_BASE}/state/.lock`;
 writeFileSync(lock, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
@@ -812,7 +812,7 @@ test_pi_arm_distinguishes_session_lock_ownership() {
 printf 'arm\n' >> "${SQUAD_ARM_LOG:?}"
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_ARM_LOG="$log" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -830,7 +830,7 @@ const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 if (!tool) throw new Error("Pi watch tool was not registered");
 
-const lock = `${process.env.SQUAD_HOME}/state/.lock`;
+const lock = `${process.env.SQUAD_BASE}/state/.lock`;
 const callArm = () => tool.execute("tool-call-lock", {}, undefined, undefined, {});
 const assertMissingLock = (result, label) => {
   if (result.details?.ok !== false) throw new Error(`${label} unexpectedly armed: ${JSON.stringify(result.details)}`);
@@ -898,7 +898,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.2; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_CHILD_PID_FILE="$child_pid_file" SQUAD_ARM_LOG="$arm_log" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_CHILD_PID_FILE="$child_pid_file" SQUAD_ARM_LOG="$arm_log" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -950,7 +950,7 @@ function liveArmPids() {
     .filter(pidAlive);
 }
 
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 
 const startup = makePi();
@@ -1074,7 +1074,7 @@ test_pi_process_exit_cleanup_listener_lifecycle() {
   plugin="$repo/.pi/extensions/sq-primary-pi-watch.ts"
   : > "$repo/bin/sq-sentry-arm.sh"
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 
 const handlers = new Map();
@@ -1124,7 +1124,7 @@ printf '%s\n' "$$" > "$SQUAD_CHILD_PID_FILE"
 while :; do sleep 1; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_CLEANUP_LOG="$cleanup_log" SQUAD_CHILD_PID_FILE="$pid_file" node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$repo" SQUAD_CLEANUP_LOG="$cleanup_log" SQUAD_CHILD_PID_FILE="$pid_file" node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1140,7 +1140,7 @@ const pi = {
   },
   sendUserMessage: async () => {},
 };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-exit", {}, undefined, undefined, {});
@@ -1212,11 +1212,11 @@ test_opencode_primary_watch_plugin_uses_effective_state_home() {
   : > "$home/state/task.meta"
   cat > "$repo/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-printf 'home=%s root=%s\n' "${SQUAD_HOME:-}" "${SQUAD_ROOT_OVERRIDE:-}" >> "${SQUAD_ARM_LOG:?}"
+printf 'home=%s root=%s\n' "${SQUAD_BASE:-}" "${SQUAD_ROOT_OVERRIDE:-}" >> "${SQUAD_ARM_LOG:?}"
 printf 'sentry: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1227,7 +1227,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1238,16 +1238,16 @@ if (!existsSync(process.env.SQUAD_ARM_LOG)) {
 }
 const text = readFileSync(process.env.SQUAD_ARM_LOG, "utf8");
 const expectedRoot = realpathSync(process.env.WORKTREE);
-if (!text.includes(`home=${process.env.SQUAD_HOME}`) || !text.includes(`root=${expectedRoot}`)) {
+if (!text.includes(`home=${process.env.SQUAD_BASE}`) || !text.includes(`root=${expectedRoot}`)) {
   console.error(text);
   process.exit(1);
 }
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must use SQUAD_HOME state outside the repo root"
+  expect_code 0 "$status" "OpenCode watch plugin must use SQUAD_BASE state outside the repo root"
   [ -z "$out" ] || fail "OpenCode effective-state test printed output: $out"
-  pass "OpenCode sentry plugin uses the effective SQUAD_HOME state"
+  pass "OpenCode sentry plugin uses the effective SQUAD_BASE state"
 }
 
 test_opencode_primary_watch_plugin_sources_effective_config() {
@@ -1266,7 +1266,7 @@ printf 'poll=%s\n' "${SQUAD_POLL:-missing}" >> "${SQUAD_ARM_LOG:?}"
 printf 'sentry: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1277,7 +1277,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1294,7 +1294,7 @@ if (!text.includes("poll=7")) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must source SQUAD_HOME config outside the repo root"
+  expect_code 0 "$status" "OpenCode watch plugin must source SQUAD_BASE config outside the repo root"
   [ -z "$out" ] || fail "OpenCode effective-config test printed output: $out"
   pass "OpenCode sentry plugin sources the effective config"
 }
@@ -1315,7 +1315,7 @@ printf 'arm\n' >> "${SQUAD_ARM_LOG:?}"
 printf 'sentry: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1328,7 +1328,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, "999999\n");
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, "999999\n");
 await hooks.event(event);
 // The idle event arms asynchronously; await the shared coordinator path so the
 // foreign-lock decision is settled before the lock is rewritten. This removes
@@ -1341,7 +1341,7 @@ if (existsSync(process.env.SQUAD_ARM_LOG)) {
   console.error("watch arm ran without owning the session lock");
   process.exit(1);
 }
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
 await globalThis.__SquadOpenCodeWatchArm.ensureArmed("session-test", client);
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
@@ -1376,7 +1376,7 @@ printf 'arm\n' >> "${SQUAD_ARM_LOG:?}"
 printf 'sentry: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1387,7 +1387,7 @@ await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 const status = await globalThis.__SquadOpenCodeWatchArm.ensureArmed("session-test", client);
 await new Promise((resolve) => setTimeout(resolve, 120));
 if (status !== "not-primary") {
@@ -1430,7 +1430,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1458,7 +1458,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   worktree: process.env.WORKTREE,
 });
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
 for (let i = 0; i < 250; i += 1) {
   const rows = existsSync(process.env.SQUAD_ARM_LOG)
@@ -1518,7 +1518,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_PRE_READY_RELEASE_FILE="$release" SQUAD_PRE_READY_RETIRED_FILE="$retired" SQUAD_STOP_FILE="$stop" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_PRE_READY_RELEASE_FILE="$release" SQUAD_PRE_READY_RETIRED_FILE="$retired" SQUAD_STOP_FILE="$stop" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1536,7 +1536,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 500; i += 1) {
   const rows = existsSync(process.env.SQUAD_ARM_LOG)
@@ -1591,7 +1591,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1613,7 +1613,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 1000 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1665,7 +1665,7 @@ printf 'arm=%s\n' "$$" >> "${SQUAD_ARM_LOG:?}"
 while [ ! -e "$SQUAD_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1687,7 +1687,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 500 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1745,7 +1745,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/sq-sentry-arm.sh"
-    out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_UNRETIRED_READY_FILE="$ready" SQUAD_UNRETIRED_RETIRE_FILE="$retired" SQUAD_RELEASE_FILE="$release" SQUAD_STOP_FILE="$stop" SQUAD_LATE_KIND="$kind" SQUAD_OPENCODE_ARM_READY_TIMEOUT_MS=1000 SQUAD_WATCH_ARM_RETIRE_TIMEOUT_MS=20 SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1773,7 +1773,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 await waitFor(
   () => existsSync(process.env.SQUAD_UNRETIRED_READY_FILE),
@@ -1829,7 +1829,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$SQUAD_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_STOP_FILE="$stop" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1847,7 +1847,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250; i += 1) {
   const rows = existsSync(process.env.SQUAD_ARM_LOG)
@@ -1885,7 +1885,7 @@ printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 exit 0
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_WATCH_REARM_RETRY_BASE_MS=5 SQUAD_WATCH_REARM_RETRY_MAX_MS=10 SQUAD_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1903,7 +1903,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1939,7 +1939,7 @@ while [ ! -e "$SQUAD_RELEASE_FILE" ]; do sleep 0.02; done
 printf 'signal: lock handoff\n'
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_RELEASE_FILE="$release" node 2>&1 <<'EOF'
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -1958,7 +1958,7 @@ const hooks = await mod.FmPrimaryWatchArm({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-const lock = `${process.env.SQUAD_HOME}/state/.lock`;
+const lock = `${process.env.SQUAD_BASE}/state/.lock`;
 writeFileSync(lock, `${process.pid}\n`);
 const eventPromise = hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
@@ -2010,7 +2010,7 @@ printf 'guard should not run\n' >&2
 exit 2
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh" "$repo/bin/sq-turnend-guard.sh"
-  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
+  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2034,7 +2034,7 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -2083,7 +2083,7 @@ printf 'guard ran after external healthy sentry\n' >&2
 exit 2
 SH
   chmod +x "$repo/bin/sq-sentry-arm.sh" "$repo/bin/sq-turnend-guard.sh"
-  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" SQUAD_HOME="$home" SQUAD_ARM_LOG="$log" SQUAD_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
+  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" SQUAD_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2107,7 +2107,7 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-writeFileSync(`${process.env.SQUAD_HOME}/state/.lock`, `${process.pid}\n`);
+writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
 for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_GUARD_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));

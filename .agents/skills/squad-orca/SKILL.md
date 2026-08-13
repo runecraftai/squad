@@ -24,7 +24,7 @@ Use raw `orca` only when the helper surface cannot answer the inspection questio
 ## Preflight
 
 Work from the current Squad base or repo root.
-If `SQUAD_HOME` is set, remember that operational state lives under `$SQUAD_HOME` while the helper scripts still run from this repo's `bin/`.
+If `SQUAD_BASE` is set, remember that operational state lives under `$SQUAD_BASE` while the helper scripts still run from this repo's `bin/`.
 
 Before switching or spawning against Orca:
 

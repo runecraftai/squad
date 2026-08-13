@@ -7,7 +7,7 @@
 # dead owner; at least two tokenless auto-arm and rewake cycles then complete
 # with zero model-issued arm commands; and the cooperative guard consumes no
 # forced continuation while the hook's launch is healthy.
-# The project and SQUAD_HOME are isolated; Claude keeps using its existing managed
+# The project and SQUAD_BASE are isolated; Claude keeps using its existing managed
 # authentication. No live unit home, worktree, or session is touched.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
 set -u
@@ -66,7 +66,7 @@ JSON
 cat > "$PROJECT/bin/tool-logger.sh" <<'SH'
 #!/usr/bin/env bash
 P=$(cat 2>/dev/null || true)
-printf '%s\n' "$P" | jq -r '.tool_input.command // "unknown"' >> "$SQUAD_HOME/state/tool-calls.log" 2>/dev/null
+printf '%s\n' "$P" | jq -r '.tool_input.command // "unknown"' >> "$SQUAD_BASE/state/tool-calls.log" 2>/dev/null
 exit 0
 SH
 chmod +x "$PROJECT/bin/tool-logger.sh"
@@ -82,10 +82,10 @@ printf '9999999\n' > "$HOME_DIR/state/.lock"
 # a misbehaving session can never loop forever.
 cat > "$PROJECT/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-N=$(cat "$SQUAD_HOME/state/arm-count" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$SQUAD_HOME/state/arm-count"
-echo "arm-run=$N pid=$$" >> "$SQUAD_HOME/state/arm-ran"
+N=$(cat "$SQUAD_BASE/state/arm-count" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$SQUAD_BASE/state/arm-count"
+echo "arm-run=$N pid=$$" >> "$SQUAD_BASE/state/arm-ran"
 if [ "$N" -ge 3 ]; then
-  rm -f "$SQUAD_HOME/state/task.meta"
+  rm -f "$SQUAD_BASE/state/task.meta"
   printf 'sentry: attached pid=%s (beacon 2s)\n' "$$"
   exit 0
 fi
@@ -98,10 +98,10 @@ SH
 # Stop-owned cycles.
 cat > "$PROJECT/bin/sq-stand-to-drain.sh" <<'SH'
 #!/usr/bin/env bash
-N=$(cat "$SQUAD_HOME/state/drain-count" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$SQUAD_HOME/state/drain-count"
-echo "drain-run=$N" >> "$SQUAD_HOME/state/drain-ran"
+N=$(cat "$SQUAD_BASE/state/drain-count" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$SQUAD_BASE/state/drain-count"
+echo "drain-run=$N" >> "$SQUAD_BASE/state/drain-ran"
 if [ "$N" -ge 3 ]; then
-  rm -f "$SQUAD_HOME/state/task.meta"
+  rm -f "$SQUAD_BASE/state/task.meta"
 fi
 printf 'stale: fixture-rapid drained\n'
 SH
@@ -111,7 +111,7 @@ PROMPT='Run exactly `bin/sq-session-start.sh` with Bash as your first tool call.
 
 (
   cd "$PROJECT" || exit 1
-  SQUAD_HOME="$HOME_DIR" CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
+  SQUAD_BASE="$HOME_DIR" CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
     claude -p "$PROMPT" --dangerously-skip-permissions --effort low --output-format stream-json --verbose
 ) > "$TRANSCRIPT" 2>&1 || fail "Claude credentialed auto-arm session failed: $(tail -20 "$TRANSCRIPT")"
 
@@ -152,7 +152,7 @@ LIVE_OWNER_PID=$!
 printf '%s\n' "$LIVE_OWNER_PID" > "$LIVE_OWNER_HOME/state/.lock"
 LIVE_OWNER_RC=0
 printf '%s\n' '{"session_id":"live-owner-control"}' \
-  | SQUAD_HOME="$LIVE_OWNER_HOME" SQUAD_ROOT_OVERRIDE="$PROJECT" "$FAKE_CLAUDE" -c '"$SQUAD_ROOT_OVERRIDE/bin/sq-claude-stop-autoarm.sh"' \
+  | SQUAD_BASE="$LIVE_OWNER_HOME" SQUAD_ROOT_OVERRIDE="$PROJECT" "$FAKE_CLAUDE" -c '"$SQUAD_ROOT_OVERRIDE/bin/sq-claude-stop-autoarm.sh"' \
       >"$LAB/live-owner.out" 2>"$LAB/live-owner.err" || LIVE_OWNER_RC=$?
 [ "$LIVE_OWNER_RC" -eq 0 ] || fail "competing Stop hook returned $LIVE_OWNER_RC while another live session owned the home"
 [ "$(cat "$LIVE_OWNER_HOME/state/.lock")" = "$LIVE_OWNER_PID" ] || fail "competing Stop hook replaced the live session owner"

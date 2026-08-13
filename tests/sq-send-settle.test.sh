@@ -57,7 +57,7 @@ SH
 
 # run_send <fakebin> <sleep-log> [env-assignments...] -- <sq-send args...>
 # Runs sq-send.sh with the stubs on PATH. SQUAD_ROOT_OVERRIDE points at a non-repo
-# temp dir so sq-guard's tangle check stays silent, and SQUAD_HOME at an empty home so
+# temp dir so sq-guard's tangle check stays silent, and SQUAD_BASE at an empty home so
 # no in-flight task is seen; guard noise goes to stderr (discarded). Echoes nothing;
 # returns sq-send's exit code.
 run_send() {
@@ -65,7 +65,7 @@ run_send() {
   home="$TMP_ROOT/home-$RANDOM"; mkdir -p "$home/state"
   : > "$log"
   env "$@" PATH="$fb:$PATH" \
-    SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SLEEP_LOG="$log" \
+    SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
     "$SEND" "sess:win" "hello commander" 2>/dev/null
 }
 
@@ -111,7 +111,7 @@ test_key_path_never_pauses() {
   fb=$(make_stubs "$dir"); log="$dir/sleep.log"
   home="$dir/home"; mkdir -p "$home/state"
   : > "$log"
-  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_HOME="$home" SQUAD_SLEEP_LOG="$log" \
+  env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
     "$SEND" "sess:win" --key Escape 2>/dev/null; rc=$?
   expect_code 0 "$rc" "--key send should succeed"
   [ ! -s "$log" ] || fail "--key path paused but must not"$'\n'"--- sleeps ---"$'\n'"$(cat "$log")"
@@ -130,7 +130,7 @@ test_claude_escape_records_interrupt_idle() {
   printf 'busy_gen=%s\n' "$gen" >> "$home/state/task.meta"
   : > "$log"
 
-  env PATH="$fb:$PATH" SQUAD_HOME="$home" SQUAD_SLEEP_LOG="$log" \
+  env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
     "$SEND" task --key Escape 2>/dev/null; rc=$?
   expect_code 0 "$rc" "Claude Escape send should succeed"
   out=$(fm_busy_classify tmux sess:win claude task "$home/state")

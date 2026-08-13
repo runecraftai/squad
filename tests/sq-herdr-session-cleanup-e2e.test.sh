@@ -62,7 +62,7 @@ chmod +x "$FAKEBIN/herdr"
 
 lab() { env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" "$@"; }
 production_process_proof() {
-  SQUAD_HOME="$HOME_DIR" SQUAD_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
+  SQUAD_BASE="$HOME_DIR" SQUAD_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
     SQUAD_HERDR_SESSION_CLEANUP_SOURCE_ONLY=1 PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" \
     bash -c '. "$1"; fm_backend_herdr_pane_idle_shell_pid "$2" "$3" >/dev/null' \
       _ "$ROOT/bin/sq-herdr-session-cleanup.sh" "$HERDR_LAB_SESSION" "$PANE"
@@ -119,7 +119,7 @@ done
 [ "$attempt" -lt 50 ] || fail 'restored child did not converge to the exact childless idle-shell process-group shape'
 pass 'real named lab reproduced the exact restored one-tab one-pane childless no-agent shell shape'
 
-SQUAD_HOME="$HOME_DIR" SQUAD_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
+SQUAD_BASE="$HOME_DIR" SQUAD_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
   PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" "$ROOT/bin/sq-herdr-session-cleanup.sh" \
   || fail 'session-start cleanup command failed'
 AFTER_FOCUS=$(focus_snapshot) || fail 'could not capture exact post-cleanup focus'
@@ -133,7 +133,7 @@ fi
 [ ! -e "$HOME_DIR/state/$ID.herdr-presentation" ] || fail 'matching journal survived confirmed exact pane closure'
 pass 'real named lab cleanup closes only the exact stale pane and preserves exact focus'
 
-SQUAD_HOME="$HOME_DIR" SQUAD_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
+SQUAD_BASE="$HOME_DIR" SQUAD_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
   PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" "$ROOT/bin/sq-herdr-session-cleanup.sh" \
   || fail 'idempotent repeat failed'
 [ "$(focus_snapshot)" = "$BEFORE_FOCUS" ] || fail 'idempotent repeat changed focus'

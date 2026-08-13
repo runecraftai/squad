@@ -11,9 +11,9 @@ TMP_ROOT=$(fm_test_tmproot sq-herdr-session-cleanup)
 SQUAD_TEST_CLEANUP_DIRS+=("$TMP_ROOT")
 trap fm_test_cleanup EXIT
 
-export SQUAD_HOME="$TMP_ROOT/home"
-export SQUAD_STATE_OVERRIDE="$SQUAD_HOME/state"
-export SQUAD_CONFIG_OVERRIDE="$SQUAD_HOME/config"
+export SQUAD_BASE="$TMP_ROOT/home"
+export SQUAD_STATE_OVERRIDE="$SQUAD_BASE/state"
+export SQUAD_CONFIG_OVERRIDE="$SQUAD_BASE/config"
 mkdir -p "$SQUAD_STATE_OVERRIDE" "$SQUAD_CONFIG_OVERRIDE"
 touch "$SQUAD_CONFIG_OVERRIDE/herdr-presentation-spaces"
 printf '%s\n' herdr > "$SQUAD_CONFIG_OVERRIDE/backend"
@@ -261,10 +261,10 @@ reset_fixture; printf '%s\n' "└ task · p:$TOKEN p:$TOKEN" > "$FIXTURE_DIR/tit
 reset_fixture; rm -f "$SQUAD_STATE_OVERRIDE/$ID.herdr-presentation"; assert_preserved "zero journal match"
 reset_fixture; write_v1 sq-task; assert_preserved "multiple journal matches"
 reset_fixture; rm -f "$SQUAD_STATE_OVERRIDE/$ID.herdr-presentation"; write_cross_home_v2; assert_preserved "cross-home journal"
-reset_fixture; write_v2 "$SQUAD_HOME" w9 "$TAB" "$PANE"; assert_preserved "v2 workspace binding mismatch"
-reset_fixture; write_v2 "$SQUAD_HOME" "$WS" w9:t1 "$PANE"; assert_preserved "v2 tab binding mismatch"
-reset_fixture; write_v2 "$SQUAD_HOME" "$WS" "$TAB" w9:p1; assert_preserved "v2 pane binding mismatch"
-reset_fixture; write_v2 "$SQUAD_HOME" "$WS" "$TAB" "$PANE"
+reset_fixture; write_v2 "$SQUAD_BASE" w9 "$TAB" "$PANE"; assert_preserved "v2 workspace binding mismatch"
+reset_fixture; write_v2 "$SQUAD_BASE" "$WS" w9:t1 "$PANE"; assert_preserved "v2 tab binding mismatch"
+reset_fixture; write_v2 "$SQUAD_BASE" "$WS" "$TAB" w9:p1; assert_preserved "v2 pane binding mismatch"
+reset_fixture; write_v2 "$SQUAD_BASE" "$WS" "$TAB" "$PANE"
 fm_herdr_session_cleanup >/dev/null 2>&1
 [ ! -e "$SQUAD_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "matching v2 cleanup kept the journal"
 [ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "matching v2 cleanup did not close exactly once"
@@ -288,14 +288,14 @@ cp -R "$ROOT/bin" "$INTEGRATION_ROOT/bin"
 TRACE="$INTEGRATION_ROOT/cleanup.trace"
 cat > "$INTEGRATION_ROOT/bin/sq-herdr-session-cleanup.sh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "${SQUAD_HOME:?}" >> "${SQUAD_HERDR_CLEANUP_TRACE:?}"
+printf '%s\n' "${SQUAD_BASE:?}" >> "${SQUAD_HERDR_CLEANUP_TRACE:?}"
 SH
 chmod +x "$INTEGRATION_ROOT/bin/sq-herdr-session-cleanup.sh"
 printf '%s\n' manual > "$INTEGRATION_ROOT/home/config/backlog-backend"
-SQUAD_HOME="$INTEGRATION_ROOT/home" SQUAD_HERDR_CLEANUP_TRACE="$TRACE" SQUAD_BOOTSTRAP_DETECT_ONLY=1 \
+SQUAD_BASE="$INTEGRATION_ROOT/home" SQUAD_HERDR_CLEANUP_TRACE="$TRACE" SQUAD_BOOTSTRAP_DETECT_ONLY=1 \
   "$INTEGRATION_ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
 [ ! -e "$TRACE" ] || fail "detect-only bootstrap ran stale projection cleanup"
-SQUAD_HOME="$INTEGRATION_ROOT/home" SQUAD_HERDR_CLEANUP_TRACE="$TRACE" \
+SQUAD_BASE="$INTEGRATION_ROOT/home" SQUAD_HERDR_CLEANUP_TRACE="$TRACE" \
   "$INTEGRATION_ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
 [ ! -e "$TRACE" ] || fail "standalone bootstrap ran lock-owned stale projection cleanup"
 pass "standalone bootstrap cannot run lock-owned stale projection cleanup"
@@ -305,7 +305,7 @@ cat > "$INTEGRATION_ROOT/bin/sq-lock.sh" <<'SH'
 printf '%s\n' 'lock acquired'
 SH
 chmod +x "$INTEGRATION_ROOT/bin/sq-lock.sh"
-SQUAD_HOME="$INTEGRATION_ROOT/home" SQUAD_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
+SQUAD_BASE="$INTEGRATION_ROOT/home" SQUAD_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
   SQUAD_HERDR_CLEANUP_TRACE="$TRACE" \
   "$INTEGRATION_ROOT/bin/sq-session-start.sh" >/dev/null 2>&1 \
   || fail "lock-owning session start failed"
@@ -319,7 +319,7 @@ printf '%s\n' 'error: another live Squad session holds the lock' >&2
 exit 1
 SH
 chmod +x "$INTEGRATION_ROOT/bin/sq-lock.sh"
-SQUAD_HOME="$INTEGRATION_ROOT/home" SQUAD_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
+SQUAD_BASE="$INTEGRATION_ROOT/home" SQUAD_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
   SQUAD_HERDR_CLEANUP_TRACE="$TRACE" \
   "$INTEGRATION_ROOT/bin/sq-session-start.sh" >/dev/null 2>&1 \
   || fail "read-only session start failed"

@@ -39,9 +39,9 @@ If the worktree or ownership cannot be reconciled safely, leave all state intact
 Escalate in order:
 
 1. Peek the pane.
-2. If the operator is waiting on a question its brief already answers, answer in one line via `SQUAD_HOME=<this-Squad-base> bin/sq-send.sh` from an active Squad session unless `SQUAD_HOME` is already set to the active Squad base.
+2. If the operator is waiting on a question its brief already answers, answer in one line via `SQUAD_BASE=<this-Squad-base> bin/sq-send.sh` from an active Squad session unless `SQUAD_BASE` is already set to the active Squad base.
 3. If the operator is confused or looping, interrupt with the adapter's interrupt key, then redirect with one corrective line.
-   For example, for a single-Escape adapter: `SQUAD_HOME=<this-Squad-base> bin/sq-send.sh <window> --key Escape`.
+   For example, for a single-Escape adapter: `SQUAD_BASE=<this-Squad-base> bin/sq-send.sh <window> --key Escape`.
 4. If the operator is genuinely wedged after redirection, exit the agent with the adapter's exit command and relaunch with the same brief plus a `progress so far` note appended to it.
    Genuine wedging means looping, unresponsive, repeating the same obstacle, or truly dead.
    A low context reading is not wedging; modern harnesses auto-compact and keep going.

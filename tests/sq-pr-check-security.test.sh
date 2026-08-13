@@ -145,7 +145,7 @@ start_ambiguous_pending_repair() {
   write_ambiguous_poll "$dir"
   mkdir "$state/task-a.pr-poll"
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "ambiguous pending-repair fixture unexpectedly completed"
@@ -235,7 +235,7 @@ assert_private_symlink_unchanged() {
 run_check_entry() {
   local dir=$1
   shift
-  SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_HOME="$dir/home" \
+  SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
     SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
     SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
@@ -245,7 +245,7 @@ run_check_entry() {
 run_merge_entry() {
   local dir=$1
   shift
-  SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_HOME="$dir/home" \
+  SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
     SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
     SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
@@ -482,7 +482,7 @@ test_invalid_entrypoints_have_zero_side_effects() {
   for value in "${UNSAFE_LIFECYCLE_IDS[@]}"; do
     before=$(state_snapshot "$dir/home/state")
     set +e
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_GUARD_LOG="$dir/guard.log" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_GUARD_LOG="$dir/guard.log" \
       "$TEARDOWN" "$value" --force > "$dir/stdout" 2> "$dir/stderr"
     rc=$?
     set -e
@@ -584,7 +584,7 @@ exit 0
 SH
   chmod 0700 "$dir/fakebin/tmux"
   touch "$dir/home/state/.last-sentry-beat"
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
     "$TEARDOWN" Task_A.1 --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "safe lifecycle-compatible task ID could not be torn down"
   [ ! -e "$dir/home/state/Task_A.1.meta" ] \
@@ -612,7 +612,7 @@ SH
     touch "$dir/home/state/.last-sentry-beat"
     mkdir "$dir/home/state/$id.check.sh"
     set +e
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
       "$TEARDOWN" "$id" --force > "$dir/unsafe-teardown.out" 2> "$dir/unsafe-teardown.err"
     rc=$?
     set -e
@@ -622,7 +622,7 @@ SH
     [ -d "$dir/home/state/$id.check.sh" ] \
       || fail "legacy task teardown changed the unsafe direct artifact"
     rmdir "$dir/home/state/$id.check.sh"
-    SQUAD_HOME="$dir/home" "$ROOT/bin/sq-x-link.sh" "$id" req-legacy \
+    SQUAD_BASE="$dir/home" "$ROOT/bin/sq-x-link.sh" "$id" req-legacy \
       --carry-count 0 --carry-ts 1700000000 --carry-platform x --carry-max 280 \
       > "$dir/x-link.out" 2> "$dir/x-link.err" \
       || fail "path-safe legacy task ID could not link an X request"
@@ -631,7 +631,7 @@ SH
       || fail "path-safe legacy task ID could not use the PR merge flow"
     fm_pr_poll_artifacts_valid "$dir/home/state" "$id" "$POLL" \
       || fail "path-safe legacy task ID did not publish an authenticated poll"
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
       "$TEARDOWN" "$id" --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
       || fail "legacy path-safe task ID could not be torn down"
     [ ! -e "$dir/home/state/$id.meta" ] || fail "legacy task teardown retained metadata"
@@ -645,7 +645,7 @@ run_sentry_bounded() {
   local home=$1 fakebin=$2 check_interval=${SQUAD_TEST_CHECK_INTERVAL:-0} watch_root=${SQUAD_TEST_WATCH_ROOT:-$ROOT}
   shift 2
   perl -e 'my $pid=fork; die unless defined $pid; if (!$pid) { exec @ARGV } local $SIG{ALRM}=sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 }; alarm 10; waitpid $pid, 0; alarm 0; exit($? >> 8)' \
-    env SQUAD_HOME="$home" SQUAD_ROOT_OVERRIDE="$watch_root" SQUAD_CHECK_INTERVAL="$check_interval" SQUAD_CHECK_TIMEOUT=1 \
+    env SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$watch_root" SQUAD_CHECK_INTERVAL="$check_interval" SQUAD_CHECK_TIMEOUT=1 \
       SQUAD_POLL=0.02 SQUAD_HEARTBEAT=999999 SQUAD_SIGNAL_GRACE=0 PATH="$fakebin:$BASE_PATH" "$WATCH" "$@"
 }
 
@@ -866,7 +866,7 @@ SH
   chmod +x "$dir/fakebin/basename"
 
   set +e
-  SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
   rc=$?
   set -e
   wait "$older_pid" 2>/dev/null || true
@@ -882,7 +882,7 @@ SH
   older_pid=$!
   write_sentry_lock "$state" "$dir/home" "$older_pid"
   set +e
-  SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
   rc=$?
   set -e
   wait "$older_pid" 2>/dev/null || true
@@ -899,7 +899,7 @@ test_migration_initializes_fresh_state() {
   mkdir -p "$dir"
 
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
   rc=$?
   set -e
 
@@ -962,7 +962,7 @@ test_private_artifact_paths_refuse_symlinks_and_directories() {
       esac
       make_private_symlink "$dir" "$destination" "$kind"
       set +e
-      SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+      SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
       rc=$?
       set -e
       [ "$rc" -ne 0 ] || fail "migration accepted a symlinked private $artifact path"
@@ -983,7 +983,7 @@ test_private_artifact_paths_refuse_symlinks_and_directories() {
     fi
     mkdir "$destination"
     set +e
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "migration accepted a directory $artifact destination"
@@ -1111,7 +1111,7 @@ test_marker_and_diagnostic_rename_fail_closed() {
     install_mv_fault "$dir"
     set +e
     SQUAD_TEST_MV_MATCH=.sq-pr-check-migration. SQUAD_TEST_MV_ACTION="$action" SQUAD_TEST_REAL_MV="$REAL_MV" \
-      SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+      SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "marker rename $action was reported as success"
@@ -1119,7 +1119,7 @@ test_marker_and_diagnostic_rename_fail_closed() {
     ! find "$state" -name '.sq-pr-check-migration.*' -print | grep . >/dev/null \
       || fail "marker rename $action left a staged marker"
     rm -f "$dir/fakebin/mv"
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
       || fail "marker rename $action did not recover on retry"
     assert_valid_migration_marker "$state/.pr-check-migration-v1"
 
@@ -1129,7 +1129,7 @@ test_marker_and_diagnostic_rename_fail_closed() {
     install_mv_fault "$dir"
     set +e
     SQUAD_TEST_MV_MATCH=.sq-pr-check-log. SQUAD_TEST_MV_ACTION="$action" SQUAD_TEST_REAL_MV="$REAL_MV" \
-      SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+      SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "diagnostic rename $action was reported as success"
@@ -1139,7 +1139,7 @@ test_marker_and_diagnostic_rename_fail_closed() {
     ! find "$state" -name '.sq-pr-check-log.*' -print | grep . >/dev/null \
       || fail "diagnostic rename $action left a staged log"
     rm -f "$dir/fakebin/mv"
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
       || fail "diagnostic rename $action did not recover on retry"
     assert_valid_migration_marker "$state/.pr-check-migration-v1"
     assert_grep 'task task-a: ambiguous or invalid legacy poll quarantined and unarmed' "$state/.pr-check-migration.log" \
@@ -1176,7 +1176,7 @@ test_postrename_marker_and_diagnostic_validation_retries() {
       SQUAD_TEST_FINAL_PATH="$destination" SQUAD_TEST_FINAL_ACTION="$action" \
         SQUAD_TEST_FAULT_LINK_TARGET="$link_target" SQUAD_TEST_FAULT_GATE="$gate" \
         SQUAD_TEST_REAL_MV="$REAL_MV" SQUAD_TEST_REAL_STAT="$REAL_STAT" SQUAD_TEST_REAL_CHMOD="$REAL_CHMOD" \
-        SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+        SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
       rc=$?
       set -e
       [ "$rc" -ne 0 ] || fail "post-rename $artifact $action fault was reported as success"
@@ -1198,7 +1198,7 @@ test_postrename_marker_and_diagnostic_validation_retries() {
       [ "$(cat "$link_target")" = 'external sentinel' ] || fail "migration type fault changed an external target"
       [ "$(file_mode "$link_target")" = 644 ] || fail "migration type fault changed an external target mode"
 
-      SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+      SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
         || fail "post-rename $artifact $action retry did not recover"
       assert_valid_migration_marker "$state/.pr-check-migration-v1"
       if [ "$artifact" = diagnostic ] || [ "$artifact" = obligation ]; then
@@ -1234,12 +1234,12 @@ test_quarantine_validation_and_retry_contract() {
   install_chmod_noop_fault "$dir"
   set +e
   SQUAD_TEST_CHMOD_MATCH="$state/.pr-check-quarantine" SQUAD_TEST_REAL_CHMOD="$REAL_CHMOD" \
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a nonprivate quarantine directory"
   [ ! -e "$state/.pr-check-migration-v1" ] || fail "quarantine directory mode fault published a marker"
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
     || fail "quarantine directory mode fault did not recover on retry"
   [ "$(file_mode "$state/.pr-check-quarantine")" = 700 ] || fail "retry did not repair quarantine directory mode"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
@@ -1251,12 +1251,12 @@ test_quarantine_validation_and_retry_contract() {
   install_chmod_noop_fault "$dir"
   set +e
   SQUAD_TEST_CHMOD_MATCH="$state/.pr-check-quarantine/task-a.check.*" SQUAD_TEST_REAL_CHMOD="$REAL_CHMOD" \
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a nonprivate quarantine artifact"
   [ ! -e "$state/.pr-check-migration-v1" ] || fail "quarantine artifact mode fault published a marker"
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
     || fail "quarantine artifact mode fault did not recover on retry"
   quarantined=$(find "$state/.pr-check-quarantine" -name 'task-a.check.*' -type f | head -1)
   [ -n "$quarantined" ] && [ "$(file_mode "$quarantined")" = 600 ] \
@@ -1291,12 +1291,12 @@ SH
   chmod +x "$dir/fakebin/mv" "$dir/fakebin/stat"
   set +e
   SQUAD_TEST_REAL_MV="$REAL_MV" SQUAD_TEST_REAL_STAT="$REAL_STAT" SQUAD_TEST_FAULT_GATE="$dir/device-fault" \
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a wrong-device quarantine artifact"
   [ ! -e "$state/.pr-check-migration-v1" ] || fail "quarantine device fault published a marker"
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
     || fail "quarantine device fault did not recover on retry"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
 
@@ -1319,13 +1319,13 @@ SH
   chmod +x "$dir/fakebin/mv"
   set +e
   SQUAD_TEST_REAL_MV="$REAL_MV" SQUAD_TEST_REAL_CP="$REAL_CP" \
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a quarantine result whose source name remained"
   [ -e "$state/task-a.check.sh" ] || fail "source-remains fault did not preserve the source fixture"
   [ ! -e "$state/.pr-check-migration-v1" ] || fail "source-remains fault published a marker"
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
     || fail "source-remains fault did not recover on retry"
   [ ! -e "$state/task-a.check.sh" ] || fail "source-remains retry did not finish quarantine"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
@@ -1350,13 +1350,13 @@ SH
   chmod +x "$dir/fakebin/mv"
   set +e
   SQUAD_TEST_REAL_MV="$REAL_MV" SQUAD_TEST_FAULT_LINK_TARGET="$external" \
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a symlink as a final quarantine artifact"
   [ ! -e "$state/.pr-check-migration-v1" ] || fail "quarantine symlink fault published a marker"
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "retry trusted a symlinked quarantine artifact"
@@ -1379,13 +1379,13 @@ SH
       directory) mkdir "$state/task-a.check.sh" ;;
     esac
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "migration accepted a nonordinary $source_kind quarantine source"
     [ ! -e "$state/.pr-check-migration-v1" ] || fail "$source_kind quarantine source published a marker"
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "retry accepted a nonordinary $source_kind quarantine source"
@@ -1404,7 +1404,7 @@ SH
   chmod 0644 "$external"
   ln "$external" "$state/.pr-check-quarantine/preexisting"
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a hardlinked quarantine artifact"
@@ -1422,7 +1422,7 @@ SH
   chmod 0644 "$external"
   ln "$external" "$state/task-a.check.sh"
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted a hardlinked quarantine source"
@@ -1441,7 +1441,7 @@ test_ambiguous_failure_accepts_validated_replacement() {
   mkdir "$state/task-a.pr-poll"
 
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "ambiguous partial migration unexpectedly succeeded"
@@ -1452,13 +1452,13 @@ test_ambiguous_failure_accepts_validated_replacement() {
     || fail "ambiguous partial migration did not persist recovery obligations"
 
   rmdir "$state/task-a.pr-poll"
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_CHECK" task-a https://github.com/o/r/pull/10 >/dev/null \
     || fail "validated replacement poll could not be published"
   fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
     || fail "replacement registration did not publish a valid poll pair"
 
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-retry.out" 2> "$dir/migrate-retry.err" \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-retry.out" 2> "$dir/migrate-retry.err" \
     || fail "migration did not accept the validated replacement: $(cat "$dir/migrate-retry.err")"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
   [ ! -e "$pending" ] && [ ! -e "$failure" ] \
@@ -1525,7 +1525,7 @@ test_replacement_provenance_negative_matrix() {
       || fail "$case_name replacement passed runtime authentication"
 
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/retry.out" 2> "$dir/retry.err"
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/retry.out" 2> "$dir/retry.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "$case_name replacement unexpectedly completed migration"
@@ -1561,7 +1561,7 @@ test_complete_single_link_validation() {
     ! fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
       || fail "$artifact hard link remained authenticated"
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "$artifact hard link reached terminal migration success"
@@ -1575,7 +1575,7 @@ test_complete_single_link_validation() {
     state="$dir/home/state"
     case "$artifact" in
       marker|scan-marker)
-        SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+        SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
           || fail "could not publish $artifact fixture"
         if [ "$artifact" = marker ]; then
           target="$state/.pr-check-migration-v1"
@@ -1585,7 +1585,7 @@ test_complete_single_link_validation() {
         ;;
       log)
         write_ambiguous_poll "$dir"
-        SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+        SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
           || fail "could not publish diagnostic log fixture"
         target="$state/.pr-check-migration.log"
         ;;
@@ -1593,7 +1593,7 @@ test_complete_single_link_validation() {
         write_ambiguous_poll "$dir"
         mkdir "$state/task-a.pr-poll"
         set +e
-        SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
+        SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null
         set -e
         target="$state/.pr-check-quarantine/task-a.diagnostic.pending-ambiguous"
         ;;
@@ -1601,7 +1601,7 @@ test_complete_single_link_validation() {
     alias="$dir/$artifact.alias"
     ln "$target" "$alias"
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/retry.out" 2> "$dir/retry.err"
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/retry.out" 2> "$dir/retry.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "$artifact hard link passed a marker short-circuit or retry"
@@ -1612,12 +1612,12 @@ test_complete_single_link_validation() {
   state="$dir/home/state"
   fmx_poll_shim_content "$dir/home" "$ROOT" > "$state/x-sentry.check.sh"
   chmod 0700 "$state/x-sentry.check.sh"
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" >/dev/null 2>/dev/null \
     || fail "could not publish X-shim marker fixture"
   alias="$dir/x-shim.alias"
   ln "$state/x-sentry.check.sh" "$alias"
   set +e
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" --checks-safe > "$dir/retry.out" 2> "$dir/retry.err"
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" --checks-safe > "$dir/retry.out" 2> "$dir/retry.err"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "hard-linked X shim passed marker-aware migration"
@@ -1630,13 +1630,13 @@ test_complete_single_link_validation() {
   alias="$dir/custom-check.alias"
   ln "$state/custom.check.sh" "$alias"
   set +e
-  SQUAD_HOME="$dir/home" "$REGISTER" custom > "$dir/register.out" 2> "$dir/register.err"
+  SQUAD_BASE="$dir/home" "$REGISTER" custom > "$dir/register.out" 2> "$dir/register.err"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "custom check registration accepted a hard-linked source"
   [ ! -e "$state/custom.check-trust" ] || fail "rejected hard-linked custom check received a trust record"
   rm -f "$alias"
-  SQUAD_HOME="$dir/home" "$REGISTER" custom >/dev/null \
+  SQUAD_BASE="$dir/home" "$REGISTER" custom >/dev/null \
     || fail "could not register the custom check single-link fixture"
   ln "$state/custom.check.sh" "$alias"
   ! fm_custom_check_registered "$state" custom \
@@ -1659,13 +1659,13 @@ test_complete_single_link_validation() {
   printf '#!/usr/bin/env bash\nprintf "custom-ready\\n"\n' > "$state/custom.check.sh"
   chmod 0755 "$state/custom.check.sh"
   set +e
-  SQUAD_HOME="$dir/home" "$REGISTER" custom > "$dir/register.out" 2> "$dir/register.err"
+  SQUAD_BASE="$dir/home" "$REGISTER" custom > "$dir/register.out" 2> "$dir/register.err"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "custom check registration accepted a non-private source"
   [ ! -e "$state/custom.check-trust" ] || fail "non-private custom check received a trust record"
   chmod 0700 "$state/custom.check.sh"
-  SQUAD_HOME="$dir/home" "$REGISTER" custom >/dev/null \
+  SQUAD_BASE="$dir/home" "$REGISTER" custom >/dev/null \
     || fail "could not register private custom check fixture"
   chmod 0755 "$state/custom.check.sh"
   ! fm_custom_check_registered "$state" custom \
@@ -1697,7 +1697,7 @@ SH
   chmod +x "$fakebin/tmux"
   touch "$state/.last-sentry-beat"
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
     "$TEARDOWN" task-a --force > "$dir/teardown.out" 2> "$dir/teardown.err"
   rc=$?
   set -e
@@ -1729,7 +1729,7 @@ test_failed_outcomes_block_every_retry_until_repaired() {
     mkdir "$state/task-a.pr-poll"
 
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-1.out" 2> "$dir/migrate-1.err"
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-1.out" 2> "$dir/migrate-1.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "$classification partial quarantine unexpectedly succeeded"
@@ -1745,7 +1745,7 @@ test_failed_outcomes_block_every_retry_until_repaired() {
     chmod 0600 "$state/.pr-check-migration-v1"
 
     set +e
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err"
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err"
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "$classification unrepaired retry unexpectedly succeeded"
@@ -1758,7 +1758,7 @@ test_failed_outcomes_block_every_retry_until_repaired() {
     [ ! -e "$success" ] || fail "$classification unrepaired retry created a contradictory success obligation"
 
     rmdir "$state/task-a.pr-poll"
-    SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-3.out" 2> "$dir/migrate-3.err" \
+    SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-3.out" 2> "$dir/migrate-3.err" \
       || fail "$classification migration did not recover after sidecar repair"
     assert_valid_migration_marker "$state/.pr-check-migration-v1"
     [ ! -e "$pending" ] && [ ! -L "$pending" ] \
@@ -1801,7 +1801,7 @@ test_canonical_publication_failure_recovers_only_on_retry() {
   SQUAD_TEST_FINAL_PATH="$destination" SQUAD_TEST_FINAL_ACTION=mode \
     SQUAD_TEST_FAULT_LINK_TARGET="$link_target" SQUAD_TEST_FAULT_GATE="$gate" \
     SQUAD_TEST_REAL_MV="$REAL_MV" SQUAD_TEST_REAL_STAT="$REAL_STAT" SQUAD_TEST_REAL_CHMOD="$REAL_CHMOD" \
-    SQUAD_HOME="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate-1.out" 2> "$dir/migrate-1.err"
+    SQUAD_BASE="$dir/home" PATH="$dir/fakebin:$BASE_PATH" "$MIGRATE" > "$dir/migrate-1.out" 2> "$dir/migrate-1.err"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "canonical publication fault unexpectedly succeeded"
@@ -1813,7 +1813,7 @@ test_canonical_publication_failure_recovers_only_on_retry() {
   [ -f "$failure" ] || fail "canonical publication fault did not persist a failure obligation"
   [ ! -e "$success" ] || fail "canonical publication fault persisted contradictory outcomes"
 
-  SQUAD_HOME="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err" \
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err" \
     || fail "canonical publication failure did not recover on a clean retry"
   [ "$(cat "$dir/migrate-2.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
     || fail "canonical publication retry did not report the armed outcome"
@@ -1852,7 +1852,7 @@ SH
   chmod 0700 "$dir/fakebin/tmux"
   touch "$state/.last-sentry-beat"
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
     "$TEARDOWN" _noncanonical --force > "$dir/teardown.out" 2> "$dir/teardown.err"
   rc=$?
   set -e
@@ -1863,7 +1863,7 @@ SH
     || fail "namespace collision refusal removed the legacy pending obligation"
   [ -f "$state/.pr-check-quarantine/_noncanonical.check.abc123" ] \
     || fail "namespace collision refusal removed legacy reserved evidence"
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "migration could not recover the previous reserved obligation namespace"
   [ ! -e "$state/.pr-check-quarantine/_noncanonical.diagnostic.pending-noncanonical" ] \
     || fail "legacy reserved retry retained its pending obligation"
@@ -1874,7 +1874,7 @@ SH
   [ -f "$state/.pr-check-quarantine/!noncanonical.check.abc123" ] \
     || fail "legacy reserved retry did not migrate its quarantined evidence"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
     "$TEARDOWN" _noncanonical --force > "$dir/teardown-2.out" 2> "$dir/teardown-2.err" \
     || fail "task teardown did not recover after legacy namespace migration"
   [ ! -e "$state/_noncanonical.meta" ] \
@@ -1897,7 +1897,7 @@ SH
   cp "$state/.pr-check-quarantine/_noncanonical.check.abc123" \
     "$state/.pr-check-quarantine/!noncanonical.check.abc123"
   chmod 0600 "$state/.pr-check-quarantine/"*
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "migration could not reconcile identical legacy namespace entries"
   [ ! -e "$state/.pr-check-quarantine/_noncanonical.diagnostic.pending-noncanonical" ] \
     || fail "terminal legacy outcome retained a superseded pending obligation"
@@ -1919,7 +1919,7 @@ SH
   printf 'sq-pr-check-migration-v1\n' > "$state/.pr-check-migration-v1"
   chmod 0600 "$state/.pr-check-quarantine/"* \
     "$state/.pr-check-migration-scan-v1" "$state/.pr-check-migration-v1"
-  SQUAD_HOME="$dir/home" "$MIGRATE" --checks-safe > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" --checks-safe > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "completed legacy namespace did not migrate past existing markers"
   [ ! -e "$state/.pr-check-quarantine/_noncanonical.diagnostic.noncanonical" ] \
     || fail "completed legacy terminal remained in the task namespace"
@@ -1938,7 +1938,7 @@ SH
   printf 'unknown obligation\n' > "$state/.pr-check-quarantine/task-a.diagnostic.unknown"
   chmod 0600 "$state/.pr-check-quarantine/task-a.diagnostic.unknown"
   set +e
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration accepted an unknown diagnostic obligation"
@@ -1957,7 +1957,7 @@ SH
   printf 'sq-pr-check-migration-v1\n' > "$state/.pr-check-migration-v1"
   chmod 0600 "$state/.pr-check-migration-scan-v1" "$state/.pr-check-migration-v1"
   set +e
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "migration marker accepted malformed diagnostic content"
@@ -1970,7 +1970,7 @@ SH
   chmod 0700 "$state/.pr-check-quarantine"
   printf 'quarantined bytes\n' > "$state/.pr-check-quarantine/foo.diagnostic.bar.check.abc123"
   chmod 0600 "$state/.pr-check-quarantine/foo.diagnostic.bar.check.abc123"
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "diagnostic namespace rejected a valid quarantine artifact"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
 
@@ -1980,7 +1980,7 @@ SH
     'window=sq-foo.diagnostic.bar' \
     'pr=https://github.com/o/r/pull/41'
   printf 'legacy delimiter bytes\n' > "$state/foo.diagnostic.bar.check.sh"
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "migration could not decode an obligation for a delimiter-bearing task ID"
   fm_pr_poll_artifacts_valid "$state" foo.diagnostic.bar "$POLL" \
     || fail "delimiter-bearing task ID did not rebuild an authenticated poll"
@@ -2007,7 +2007,7 @@ test_nonexecuting_migration() {
   chmod 0700 "$state/x-sentry.check.sh"
   x_before=$(state_snapshot "$state" | grep 'x-sentry.check.sh')
 
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "canonical legacy migration failed"
   [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
     || fail "canonical migration stdout did not state that the rebuilt poll is armed"
@@ -2027,16 +2027,16 @@ test_nonexecuting_migration() {
   [ "$x_after" = "$x_before" ] || fail "migration changed the X-mode shim"
 
   snap_before=$(state_snapshot "$state")
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate-2.out" 2> "$dir/migrate-2.err" \
     || fail "idempotent migration rerun failed"
   snap_after=$(state_snapshot "$state")
   [ "$snap_after" = "$snap_before" ] || fail "migration rerun changed state"
   printf 'trusted custom check bytes\n' > "$state/custom.check.sh"
   chmod 0700 "$state/custom.check.sh"
-  SQUAD_HOME="$dir/home" "$REGISTER" custom >/dev/null \
+  SQUAD_BASE="$dir/home" "$REGISTER" custom >/dev/null \
     || fail "could not register the later custom check"
   snap_before=$(state_snapshot "$state")
-  SQUAD_HOME="$dir/home" "$MIGRATE" >/dev/null 2>/dev/null || fail "completed migration rerun failed"
+  SQUAD_BASE="$dir/home" "$MIGRATE" >/dev/null 2>/dev/null || fail "completed migration rerun failed"
   snap_after=$(state_snapshot "$state")
   [ "$snap_after" = "$snap_before" ] || fail "completed migration changed a later custom check"
 
@@ -2053,7 +2053,7 @@ test_nonexecuting_migration() {
     'x_reply_max_chars=1900'
   printf 'legacy X-linked bytes\n' > "$state/task-x.check.sh"
   snap_before=$(cat "$state/task-x.meta")
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "X-linked migration failed"
   [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
     || fail "X-linked migration did not report an armed canonical poll"
@@ -2068,7 +2068,7 @@ test_nonexecuting_migration() {
     'pr=https://github.com/o/r/pull/10' \
     'window=injected-after-pr'
   printf 'legacy ambiguous bytes\n' > "$state/task-b.check.sh"
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
     || fail "ambiguous migration failed to quarantine"
   [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: quarantined polls remain unarmed; review state/.pr-check-migration.log before rearming' ] \
     || fail "ambiguous migration stdout did not state that quarantined polls remain unarmed"
@@ -2085,7 +2085,7 @@ test_nonexecuting_migration() {
   state="$dir/home/state"
   printf 'legacy invalid-id bytes\n' > "$state/bad id.check.sh"
   set +e
-  SQUAD_HOME="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "noncanonical artifact migration failed"
@@ -2123,7 +2123,7 @@ SH
         ;;
     esac
 
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" "$MIGRATE" >/dev/null 2> "$dir/migrate.err" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" "$MIGRATE" >/dev/null 2> "$dir/migrate.err" \
       || fail "$marker_kind historical X shim transition failed: $(cat "$dir/migrate.err")"
     fmx_poll_shim_valid "$shim" "$dir/home" "$dir/root" \
       || fail "$marker_kind historical X shim was not replaced with the current identity"
@@ -2196,7 +2196,7 @@ SH
     chmod 0600 "$state/.pr-check-migration-scan-v1" "$state/.pr-check-migration-v1"
 
     set +e
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" "$MIGRATE" --checks-safe \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" "$MIGRATE" --checks-safe \
       > "$dir/migrate.out" 2> "$dir/migrate.err"
     rc=$?
     set -e
@@ -2251,7 +2251,7 @@ test_direct_registration_refreshes_v1_x_shim() {
         ;;
     esac
 
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_GUARD_LOG="$dir/guard.log" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_GUARD_LOG="$dir/guard.log" \
       PATH="$dir/fakebin:$BASE_PATH" "$PR_CHECK" task-a "https://github.com/o/r/pull/$number" \
       > "$dir/register.out" 2> "$dir/register.err" \
       || fail "$marker_kind direct registration did not preserve the v1 X shim: $(cat "$dir/register.err")"
@@ -2266,7 +2266,7 @@ test_direct_registration_refreshes_v1_x_shim() {
     [ -z "$quarantined" ] || fail "$marker_kind authenticated v1 X shim was quarantined"
 
     snapshot_before=$(state_snapshot "$state")
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" "$MIGRATE" --checks-safe >/dev/null \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" "$MIGRATE" --checks-safe >/dev/null \
       || fail "$marker_kind current X shim marker rerun failed"
     snapshot_after=$(state_snapshot "$state")
     [ "$snapshot_after" = "$snapshot_before" ] \
@@ -2281,7 +2281,7 @@ test_direct_registration_refreshes_v1_x_shim() {
   printf '# unrecognized version\n' >> "$shim"
   chmod 0755 "$shim"
 
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_GUARD_LOG="$dir/guard.log" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_GUARD_LOG="$dir/guard.log" \
     PATH="$dir/fakebin:$BASE_PATH" "$PR_CHECK" task-a https://github.com/o/r/pull/22 \
     >/dev/null 2> "$dir/register.err" \
     || fail "direct registration failed after quarantining an X shim lookalike: $(cat "$dir/register.err")"
@@ -2303,7 +2303,7 @@ test_bootstrap_migrates_before_other_mutations() {
     'pr=https://github.com/o/r/pull/11'
   printf 'legacy bytes\n' > "$state/task-a.check.sh"
 
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
     "$ROOT/bin/sq-bootstrap.sh" > "$dir/bootstrap.out" 2> "$dir/bootstrap.err" \
     || fail "bootstrap boundary failed"
   cmp -s "$POLL" "$state/task-a.check.sh" || fail "bootstrap did not migrate the legacy poll"
@@ -2354,7 +2354,7 @@ SH
   chmod +x "$fakebin/tmux" "$dir/root/bin/sq-unit-sync.sh" "$dir/root/bin/sq-x-poll.sh"
 
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_FLEET_MARKER="$fleet_marker" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_FLEET_MARKER="$fleet_marker" \
     PATH="$fakebin:$BASE_PATH" "$ROOT/bin/sq-bootstrap.sh" > "$dir/bootstrap.out" 2> "$dir/bootstrap.err"
   rc=$?
   set -e
@@ -2383,7 +2383,7 @@ SH
   printf '%s\n' '#!/usr/bin/env bash' "printf '%s\\n' replacement-ran" > "$state/a-replaced.check.sh"
   chmod 0600 "$state/a-replaced.check.sh"
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
     SQUAD_TEST_GH_STATE=MERGED SQUAD_POLL=0 SQUAD_CHECK_INTERVAL=0 SQUAD_SIGNAL_GRACE=0 \
     PATH="$fakebin:$BASE_PATH" "$WATCH" > "$dir/watch.out" 2> "$dir/watch.err"
   rc=$?
@@ -2399,12 +2399,12 @@ SH
   rm -f "$state/a-replaced.check.sh" "$state/.last-check" "$x_poll_marker"
   printf '%s\n' '#!/usr/bin/env bash' "printf '%s\\n' custom-ready" > "$state/b-custom.check.sh"
   chmod 0700 "$state/b-custom.check.sh"
-  SQUAD_HOME="$dir/home" "$REGISTER" b-custom > "$dir/register.out" \
+  SQUAD_BASE="$dir/home" "$REGISTER" b-custom > "$dir/register.out" \
     || fail "custom check registration failed"
   assert_grep 'registered: state/b-custom.check.sh' "$dir/register.out" \
     "custom check registration was not visible"
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
     SQUAD_TEST_GH_STATE=OPEN SQUAD_POLL=0 SQUAD_CHECK_INTERVAL=0 SQUAD_SIGNAL_GRACE=0 \
     PATH="$fakebin:$BASE_PATH" "$WATCH" > "$dir/watch-custom.out" 2> "$dir/watch-custom.err"
   rc=$?
@@ -2416,7 +2416,7 @@ SH
   chmod 0700 "$state/b-custom.check.sh"
   rm -f "$state/.last-check" "$x_poll_marker"
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
     SQUAD_TEST_GH_STATE=OPEN SQUAD_POLL=0 SQUAD_CHECK_INTERVAL=0 SQUAD_SIGNAL_GRACE=0 \
     PATH="$fakebin:$BASE_PATH" "$WATCH" > "$dir/watch-custom-replaced.out" 2> "$dir/watch-custom-replaced.err"
   rc=$?
@@ -2433,7 +2433,7 @@ SH
   chmod 0700 "$state/x-sentry.check.sh"
   rm -f "$state/.last-check" "$x_poll_marker"
   set +e
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_TEST_X_POLL_MARKER="$x_poll_marker" \
     SQUAD_TEST_GH_STATE=OPEN SQUAD_POLL=0 SQUAD_CHECK_INTERVAL=0 SQUAD_SIGNAL_GRACE=0 \
     PATH="$fakebin:$BASE_PATH" "$WATCH" > "$dir/watch-replaced.out" 2> "$dir/watch-replaced.err"
   rc=$?
@@ -2476,10 +2476,10 @@ trap 'kill -TERM "$child" 2>/dev/null; exit 124' TERM
 wait "$child"
 SH
   chmod 0700 "$dir/fakebin/timeout"
-  SQUAD_HOME="$dir/home" "$REGISTER" custom >/dev/null \
+  SQUAD_BASE="$dir/home" "$REGISTER" custom >/dev/null \
     || fail "could not register signal cleanup custom check"
 
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_POLL=0 SQUAD_CHECK_INTERVAL=0 \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_POLL=0 SQUAD_CHECK_INTERVAL=0 \
     SQUAD_SIGNAL_GRACE=0 SQUAD_TEST_CUSTOM_CHILD_PID="$child_pid_file" \
     PATH="$dir/fakebin:$BASE_PATH" "$WATCH" \
     > "$dir/watch.out" 2> "$dir/watch.err" &
@@ -2538,7 +2538,7 @@ while [ ! -s "$SQUAD_TEST_DESCENDANT_READY" ]; do sleep 0.01; done
 : > "$SQUAD_TEST_DIRECT_DONE"
 SH
     chmod 0700 "$state/custom.check.sh"
-    SQUAD_HOME="$dir/home" "$REGISTER" custom >/dev/null \
+    SQUAD_BASE="$dir/home" "$REGISTER" custom >/dev/null \
       || fail "could not register $backend returned-descendant check"
     if [ "$backend" = installed-timeout ]; then
       cat > "$fakebin/timeout" <<'SH'
@@ -2553,7 +2553,7 @@ SH
       force_fallback=1
     fi
 
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_POLL=0.1 SQUAD_CHECK_INTERVAL=999999 \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_POLL=0.1 SQUAD_CHECK_INTERVAL=999999 \
       SQUAD_CHECK_TIMEOUT=10 SQUAD_HEARTBEAT=999999 SQUAD_SIGNAL_GRACE=0 \
       SQUAD_CHECK_FORCE_FALLBACK="$force_fallback" SQUAD_TEST_DESCENDANT_READY="$ready" \
       SQUAD_TEST_DESCENDANT_SENTINEL="$sentinel" SQUAD_TEST_DESCENDANT_PID="$child_pid_file" \
@@ -2628,7 +2628,7 @@ SH
   chmod +x "$fakebin/tmux"
   touch "$dir/home/state/.last-sentry-beat"
 
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
     "$TEARDOWN" task-a --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "teardown cleanup fixture failed"
   [ ! -e "$dir/home/state/task-a.check.sh" ] || fail "teardown left the runnable check"
@@ -2660,7 +2660,7 @@ exit 0
 SH
   chmod +x "$fakebin/tmux"
   touch "$dir/home/state/.last-sentry-beat"
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
     "$TEARDOWN" task-a --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "teardown could not finish a valid crash-left retirement receipt"
   assert_poll_absent "$dir/home/state" task-a
@@ -2688,7 +2688,7 @@ SH
   chmod +x "$fakebin/tmux"
   touch "$dir/home/state/.last-sentry-beat"
 
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
     "$TEARDOWN" invalid --force > "$dir/teardown.out" 2> "$dir/teardown.err" \
     || fail "valid invalid task teardown failed"
   [ ! -e "$dir/home/state/.pr-check-quarantine/invalid.check.abc123" ] \
@@ -2722,7 +2722,7 @@ SH
     chmod +x "$fakebin/tmux"
     touch "$dir/home/state/.last-sentry-beat"
     set +e
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_FAKE_TMUX_LOG="$dir/tmux.log" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_FAKE_TMUX_LOG="$dir/tmux.log" \
       PATH="$fakebin:$BASE_PATH" "$TEARDOWN" task-a --force \
       > "$dir/teardown.out" 2> "$dir/teardown.err"
     rc=$?
@@ -2761,7 +2761,7 @@ SH
     chmod +x "$fakebin/tmux"
     touch "$dir/home/state/.last-sentry-beat"
     set +e
-    SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$BASE_PATH" \
       "$TEARDOWN" task-a --force > "$dir/teardown.out" 2> "$dir/teardown.err"
     rc=$?
     set -e
@@ -2860,7 +2860,7 @@ EOF
   # Arming is where a missing CLI can still be reported, so it refuses there.
   write_task_meta "$dir" task-b
   set +e
-  out=$(SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_HOME="$dir/home" \
+  out=$(SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
     SQUAD_TEST_GUARD_LOG="$dir/guard.log" PATH="$noglab" \
     "$PR_CHECK" task-b "$url" 2>&1)
   rc=$?
@@ -2906,7 +2906,7 @@ add_stop_custom_check() {
   state="$dir/home/state"
   printf '#!/usr/bin/env bash\nprintf "stop-cycle\\n"\n' > "$state/z-stop.check.sh"
   chmod 0700 "$state/z-stop.check.sh"
-  SQUAD_HOME="$dir/home" "$REGISTER" z-stop >/dev/null \
+  SQUAD_BASE="$dir/home" "$REGISTER" z-stop >/dev/null \
     || fail "could not register stop-cycle custom check"
 }
 
@@ -3024,7 +3024,7 @@ test_retirement_crash_recovery() {
   assert_poll_absent "$state" task-a
   raw_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$state/.stand-to-queue")
   [ "$raw_count" -eq 2 ] || fail "post-queue retry did not preserve at-least-once rows"
-  SQUAD_HOME="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-stand-to-drain.sh" > "$dir/drain.out" 2>/dev/null
+  SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-stand-to-drain.sh" > "$dir/drain.out" 2>/dev/null
   drain_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$dir/drain.out")
   [ "$drain_count" -eq 1 ] || fail "same-key crash retry rows did not deduplicate at drain"
 
@@ -3247,7 +3247,7 @@ test_retirement_refuses_replacement_and_nonterminal_results() {
   state="$dir/home/state"
   printf '#!/usr/bin/env bash\nprintf "merged\\n"\n' > "$state/custom.check.sh"
   chmod 0700 "$state/custom.check.sh"
-  SQUAD_HOME="$dir/home" "$REGISTER" custom >/dev/null || fail "could not register merged custom check"
+  SQUAD_BASE="$dir/home" "$REGISTER" custom >/dev/null || fail "could not register merged custom check"
   set +e
   run_sentry_bounded "$dir/home" "$dir/fakebin" > "$dir/custom.out" 2> "$dir/custom.err"
   rc=$?

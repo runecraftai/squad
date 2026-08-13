@@ -51,7 +51,7 @@
 # state/.sentry-triage.log remains exclusively the sentry's absorbed-wake debug
 # log and is never written here.
 #
-# --restart: stop ONLY this SQUAD_HOME's sentry (the pid recorded in THIS base's
+# --restart: stop ONLY this SQUAD_BASE's sentry (the pid recorded in THIS base's
 # state/.sentry.lock) and own a fresh cycle, or attach if a verified live peer
 # wins the singleton while the duplicate child stands down. It
 # resolves and signals exactly that pid, so it can never touch another base's
@@ -227,7 +227,7 @@ clear_stale_recorded_sentry_lock() {
   lock_home=$(cat "$WATCH_LOCK/sq-home" 2>/dev/null || true)
   lock_path=$(cat "$WATCH_LOCK/sentry-path" 2>/dev/null || true)
   lock_identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
-  [ "$lock_home" = "$SQUAD_HOME" ] || return 0
+  [ "$lock_home" = "$SQUAD_BASE" ] || return 0
   [ "$lock_path" = "$WATCH" ] || return 0
   [ -n "$lock_identity" ] || return 0
   fm_lock_remove_path "$WATCH_LOCK" || true
@@ -243,7 +243,7 @@ HEALTHY_IDENTITY=
 healthy_sentry() {
   HEALTHY_PID=
   HEALTHY_IDENTITY=
-  fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_HOME" || return 1
+  fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE" || return 1
   HEALTHY_PID=$SQUAD_SENTRY_HEALTHY_PID
   HEALTHY_IDENTITY=$SQUAD_SENTRY_HEALTHY_IDENTITY
 }
@@ -383,7 +383,7 @@ if [ "$mode" = restart ]; then
   # Base-scoped stop: only the sentry pid recorded in THIS base's lock.
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   if fm_pid_alive "$lock_pid"; then
-    if fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$SQUAD_HOME"; then
+    if fm_sentry_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$SQUAD_BASE"; then
       kill -TERM "$lock_pid" 2>/dev/null || true
       # Wait for it to actually exit before relaunching, so the fresh sentry
       # either takes a released lock or reclaims a now-dead-pid stale lock instead

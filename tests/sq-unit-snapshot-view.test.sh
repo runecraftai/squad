@@ -30,7 +30,7 @@ for arg in "$@"; do
 done
 case "${1:-}" in
   list-windows)
-    sed -n 's/^window=[^:]*://p' "${SQUAD_HOME:?}"/state/*.meta
+    sed -n 's/^window=[^:]*://p' "${SQUAD_BASE:?}"/state/*.meta
     ;;
   display-message)
     case "$*" in
@@ -135,7 +135,7 @@ EOF
 test_empty_fleet_json() {
   local home out view
   home=$(make_home empty)
-  out=$(SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .schema == "sq-unit-snapshot.v1"
       and .backlog.present == false
@@ -146,7 +146,7 @@ test_empty_fleet_json() {
       and .main_inventory.unstructured_current_count == 0
   ' >/dev/null \
     || fail "empty snapshot schema or absence markers wrong: $out"
-  view=$(SQUAD_HOME="$home" "$VIEW")
+  view=$(SQUAD_BASE="$home" "$VIEW")
   assert_contains "$view" "No live task metadata found." "empty unit view should say no live metadata"
   pass "empty unit snapshot and view use explicit absence markers"
 }
@@ -156,7 +156,7 @@ test_fixture_snapshot_json() {
   home=$(make_home fixture)
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e . >/dev/null || fail "snapshot must be valid JSON"
   ids=$(printf '%s' "$out" | jq -r '.tasks | map(.id) | join(",")')
   [ "$ids" = "XO-task,cmux-task,recon-task,ship-task" ] \
@@ -224,7 +224,7 @@ EOF
     "mode=ship"
   printf 'working: visible\n' > "$home/state/visible-ship.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .main_inventory.valid == false
       and .main_inventory.reason == "unstructured current backlog row"
@@ -251,7 +251,7 @@ EOF
     "kind=strike" \
     "mode=ship"
   printf 'working: orphan now live\n' > "$home/state/orphan-ship.status"
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .main_inventory.valid == true
       and .main_inventory.reason == null
@@ -284,7 +284,7 @@ EOF
     "harness=codex" "kind=strike" "mode=ship"
   printf 'working: preparing canary\n' > "$home/state/worker.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .main_inventory.orphan_in_flight == ["orphan"]
       and (.backlog.records[] | select(.id == "program")
@@ -313,7 +313,7 @@ EOF
 - [x] worker - Real worker (repo: alpha) (kind: ship) (done 2026-07-22)
 EOF
   rm "$home/state/worker.meta" "$home/state/worker.status"
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .backlog.records[] | select(.id == "commander-run")
     | .blocked_by == "review"
@@ -334,7 +334,7 @@ EOF
 - [x] worker - Real worker (repo: alpha) (kind: ship) (done 2026-07-22)
 - [x] review - Security review (repo: alpha) (kind: ship) (done 2026-07-22)
 EOF
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .backlog.records[] | select(.id == "commander-run")
     | .blocked_by == "review"
@@ -345,7 +345,7 @@ EOF
 
   sed 's/blocked-by: review/blocked-by: missing/' "$home/data/backlog.md" > "$home/data/backlog.next"
   mv "$home/data/backlog.next" "$home/data/backlog.md"
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .backlog.records[] | select(.id == "commander-run")
     | .blocked_by_ids == ["worker", "missing"]
@@ -404,7 +404,7 @@ test_event_hints_follow_reconciled_current_state() {
     --source claude-hook --event user-prompt-submit
   printf 'blocked: old failure\n' > "$home/state/stale-blocked.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     def task($id): (.tasks[] | select(.id == $id));
     task("active-decision").current_state.state == "parked"
@@ -429,7 +429,7 @@ test_scout_reports_include_teardown_reports() {
 EOF
   printf '# Reported Recon\n' > "$home/data/reported-recon/report.md"
   printf '# Untracked Recon\n' > "$home/data/untracked-recon/report.md"
-  out=$(SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e --arg home "$home" '
     (.tasks | length) == 0
       and .scout_reports == [
@@ -474,7 +474,7 @@ EOF
   record_claude_idle "$home/state" bold-task
   printf 'done: report ready\n' > "$home/state/bold-task.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_DATA_OVERRIDE="$data" SQUAD_PROJECTS_OVERRIDE="$projects" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_DATA_OVERRIDE="$data" SQUAD_PROJECTS_OVERRIDE="$projects" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e --arg data "$data" --arg projects "$projects" '
     .roots.data == $data
       and .roots.projects == $projects
@@ -550,7 +550,7 @@ EOF
       and .paths.report.path == ($data + "/bold-task/report.md")
       and .paths.report.present == true
   ' >/dev/null || fail "bold task did not join to override-backed backlog and report"
-  view=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" SQUAD_DATA_OVERRIDE="$data" SQUAD_PROJECTS_OVERRIDE="$projects" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" SQUAD_DATA_OVERRIDE="$data" SQUAD_PROJECTS_OVERRIDE="$projects" "$VIEW")
   assert_contains "$view" "| bold-task | done / status-log | recon | alpha | tmux | present | $data/bold-task/report.md" \
     "view should render bold in-flight row from snapshot"
   assert_contains "$view" "| blocked-reason | Blocked Reason | beta | ship | queued-comma - waits on queued-comma | - |" \
@@ -567,7 +567,7 @@ test_view_renders_snapshot() {
   home=$(make_home view)
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$VIEW")
   assert_contains "$view" "| ship-task | working / pane | strike | alpha | tmux | present | https://github.com/runecraftai/squad/pull/9" \
     "view should render ship row from snapshot"
   assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
@@ -596,7 +596,7 @@ test_view_renders_dead_XO_agent_status() {
     "projects=alpha, beta"
   printf 'working: watching delegated scope\n' > "$home/state/dead-XO.status"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$VIEW")
   assert_contains "$view" "| dead-XO | unknown / none | xo | $home/XO-home | tmux | present / dead |" \
     "view should distinguish a present XO endpoint from a dead agent"
   assert_contains "$view" "| dead-XO | unknown / none | xo | $home/XO-home | tmux | present / dead | - | $home/XO-home (absent) |" \
@@ -626,7 +626,7 @@ test_open_decision_survives_later_unrelated_event() {
   printf 'working: implementing an unrelated subsystem\n' >> "$home/state/masked-decision.status"
   printf 'done: an unrelated subtask finished\n' >> "$home/state/masked-decision.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "masked-decision")
     | .hints.pending_decision == true
@@ -652,7 +652,7 @@ test_XO_open_decision_survives_live_endpoint() {
     "projects=alpha"
   printf 'needs-decision [key=race]: choose ordering\n' > "$home/state/active-XO.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "active-XO")
     | .endpoint.agent_alive == "alive"
@@ -680,7 +680,7 @@ test_open_decision_transfers_to_commander_hold() {
   printf 'needs-decision [key=route]: choose a sample route\n' > "$home/state/transferred-decision.status"
   printf 'commander-held [key=route]: tracked by transferred-decision-route\n' >> "$home/state/transferred-decision.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "transferred-decision")
     | .hints.pending_decision == false
@@ -706,7 +706,7 @@ test_open_decision_clears_on_keyed_resolution() {
   printf 'done: an unrelated subtask finished\n' >> "$home/state/resolved-decision.status"
   printf 'resolved [key=race]: commander chose subscribe-then-reconcile\n' >> "$home/state/resolved-decision.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "resolved-decision")
     | .hints.pending_decision == false
@@ -741,7 +741,7 @@ test_completed_scout_report_is_pointer_not_pending() {
   # Completed report whose PROSE reads like the decision.
   printf '# Lavish 103\nThe open question is whether to adopt approach A or B.\nThis needs a commander decision. Recommendation: A.\n' > "$home/data/lavish-103/report.md"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "lavish-103")
     | .current_state.state == "done"
@@ -769,7 +769,7 @@ test_parked_scout_decision_stays_pending() {
   record_claude_idle "$home/state" parked-recon
   printf 'needs-decision [key=q1]: adopt approach A or B\n' > "$home/state/parked-recon.status"
   fakebin=$(make_fakebin "$home")
-  out=$(PATH="$fakebin:$PATH" SQUAD_HOME="$home" "$SNAPSHOT" --json)
+  out=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "parked-recon")
     | .hints.pending_decision == true

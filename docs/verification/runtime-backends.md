@@ -117,7 +117,7 @@ The isolated process and endpoint checks used:
 tmux display-message -p -t "$target" '#{pane_current_command}'
 ps -o comm= -p "$wrapper_pid"
 ps -o comm= -p "$engine_pid"
-SQUAD_HOME="$fixture_home" bin/sq-crew-state.sh "$task_id"
+SQUAD_BASE="$fixture_home" bin/sq-crew-state.sh "$task_id"
 ```
 
 Observed bounded shapes:

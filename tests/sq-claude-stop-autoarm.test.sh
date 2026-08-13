@@ -8,7 +8,7 @@
 # Stale-owner cases instead leave a dead recorded pid for the hook to reclaim
 # through the real sq-lock.sh path. The arm wrapper is a per-test fixture, so no
 # real sentry, model, or unit state is touched.
-# shellcheck disable=SC2016 # single quotes are deliberate: $SQUAD_HOME expands inside the fake harness child, and grep needles are literal strings
+# shellcheck disable=SC2016 # single quotes are deliberate: $SQUAD_BASE expands inside the fake harness child, and grep needles are literal strings
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -69,9 +69,9 @@ make_operator_worktree_dir() {
 run_autoarm() {
   local dir=$1 rc=0
   printf '%s\n' '{"session_id":"sess-autoarm","stop_hook_active":false}' \
-    | SQUAD_HOME="$dir" "$FAKE_CLAUDE" -c '
-        printf "%s\n" "$$" > "$SQUAD_HOME/state/.lock"
-        "$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh"
+    | SQUAD_BASE="$dir" "$FAKE_CLAUDE" -c '
+        printf "%s\n" "$$" > "$SQUAD_BASE/state/.lock"
+        "$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh"
       ' 2>&1 || rc=$?
   printf 'RC=%s\n' "$rc" >&2
   return "$rc"
@@ -84,7 +84,7 @@ write_arm_fixture() {
     actionable)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
 printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 printf 'stale: fixture-win actionable\n'
 exit 0
@@ -93,7 +93,7 @@ SH
     failed)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
 printf 'sentry: FAILED - no live sentry with a fresh beacon\n'
 exit 1
 SH
@@ -101,7 +101,7 @@ SH
     clean)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
 printf 'sentry: attached pid=%s (beacon 2s)\n' "$$"
 exit 0
 SH
@@ -109,7 +109,7 @@ SH
     benign-live)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
 printf 'sentry: FAILED - cycle ended without an actionable reason\n'
 exit 1
 SH
@@ -117,7 +117,7 @@ SH
     slow-actionable)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
 sleep 2
 printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 printf 'signal: task.status done: slow fixture\n'
@@ -127,8 +127,8 @@ SH
     meta-vanishes)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
-rm -f "$SQUAD_HOME/state/task.meta"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
+rm -f "$SQUAD_BASE/state/task.meta"
 printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 printf 'signal: task.status done: fixture\n'
 exit 0
@@ -137,8 +137,8 @@ SH
     afk-appears)
       cat > "$dir/bin/sq-sentry-arm.sh" <<'SH'
 #!/usr/bin/env bash
-echo "$$" >> "$SQUAD_HOME/state/arm-ran"
-: > "$SQUAD_HOME/state/.afk"
+echo "$$" >> "$SQUAD_BASE/state/arm-ran"
+: > "$SQUAD_BASE/state/.afk"
 printf 'sentry: started pid=%s (beacon fresh)\n' "$$"
 printf 'stale: fixture-win actionable\n'
 exit 0
@@ -196,7 +196,7 @@ test_inert_without_session_lock() {
   : > "$dir/state/task.meta"
   write_arm_fixture "$dir" actionable
   # No state/.lock: run the hook directly (no fake harness, no lock file).
-  out=$(printf '%s\n' '{"session_id":"s"}' | SQUAD_HOME="$dir" bash "$dir/bin/sq-claude-stop-autoarm.sh" 2>&1); status=$?
+  out=$(printf '%s\n' '{"session_id":"s"}' | SQUAD_BASE="$dir" bash "$dir/bin/sq-claude-stop-autoarm.sh" 2>&1); status=$?
   expect_code 0 "$status" "hook must stay inert when no session holds the home lock"
   [ ! -e "$dir/state/arm-ran" ] || fail "hook armed without a session lock"
   pass "auto-arm: inert with no session lock"
@@ -209,9 +209,9 @@ test_reclaims_stale_session_lock_before_arming() {
   printf '9999999\n' > "$dir/state/.lock"
   write_arm_fixture "$dir" actionable
   out=$(printf '%s\n' '{"session_id":"stale"}' \
-    | SQUAD_HOME="$dir" "$FAKE_CLAUDE" -c '
-        printf "%s\n" "$$" > "$SQUAD_HOME/state/expected-owner"
-        "$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh"
+    | SQUAD_BASE="$dir" "$FAKE_CLAUDE" -c '
+        printf "%s\n" "$$" > "$SQUAD_BASE/state/expected-owner"
+        "$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh"
       ' 2>&1); status=$?
   expect_code 2 "$status" "a dead recorded session owner must be reclaimed before the actionable rewake"
   expected_owner=$(cat "$dir/state/expected-owner")
@@ -232,7 +232,7 @@ test_inert_when_lock_held_by_other_harness() {
   "$FAKE_CLAUDE" -c 'sleep 60; :' &
   other=$!
   printf '%s\n' "$other" > "$dir/state/.lock"
-  out=$(printf '%s\n' '{"session_id":"s"}' | SQUAD_HOME="$dir" "$FAKE_CLAUDE" -c '"$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh"' 2>&1); status=$?
+  out=$(printf '%s\n' '{"session_id":"s"}' | SQUAD_BASE="$dir" "$FAKE_CLAUDE" -c '"$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh"' 2>&1); status=$?
   owner_after=$(cat "$dir/state/.lock")
   kill "$other" 2>/dev/null || true
   wait "$other" 2>/dev/null || true
@@ -266,7 +266,7 @@ test_stale_lock_recovery_preserves_afk_and_need_gates() {
   : > "$afk_dir/state/.afk"
   printf '9999999\n' > "$afk_dir/state/.lock"
   write_arm_fixture "$afk_dir" actionable
-  out=$(printf '%s\n' '{"session_id":"stale-afk"}' | SQUAD_HOME="$afk_dir" "$FAKE_CLAUDE" -c '"$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh"' 2>&1); status=$?
+  out=$(printf '%s\n' '{"session_id":"stale-afk"}' | SQUAD_BASE="$afk_dir" "$FAKE_CLAUDE" -c '"$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh"' 2>&1); status=$?
   expect_code 0 "$status" "a stale owner must not widen the AFK gate"
   [ "$(cat "$afk_dir/state/.lock")" = 9999999 ] || fail "AFK stale lock was reclaimed despite away ownership"
   [ ! -e "$afk_dir/state/arm-ran" ] || fail "stale AFK home armed"
@@ -274,7 +274,7 @@ test_stale_lock_recovery_preserves_afk_and_need_gates() {
   idle_dir=$(make_primary_dir "$TMP_ROOT/stale-idle")
   printf '9999999\n' > "$idle_dir/state/.lock"
   write_arm_fixture "$idle_dir" actionable
-  out=$(printf '%s\n' '{"session_id":"stale-idle"}' | SQUAD_HOME="$idle_dir" "$FAKE_CLAUDE" -c '"$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh"' 2>&1); status=$?
+  out=$(printf '%s\n' '{"session_id":"stale-idle"}' | SQUAD_BASE="$idle_dir" "$FAKE_CLAUDE" -c '"$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh"' 2>&1); status=$?
   expect_code 0 "$status" "a stale owner must not widen the supervision-need gate"
   [ "$(cat "$idle_dir/state/.lock")" = 9999999 ] || fail "idle stale lock was reclaimed without supervision need"
   [ ! -e "$idle_dir/state/arm-ran" ] || fail "stale idle home armed"
@@ -295,11 +295,11 @@ test_resolves_outermost_claude_pid_in_nested_bgspare_chain() {
   # so bash cannot tail-exec-collapse it into the outer pid, which would
   # collapse the two-hop chain this test depends on down to one hop.
   out=$(printf '%s\n' '{"session_id":"nested"}' \
-    | SQUAD_HOME="$dir" "$FAKE_CLAUDE" -c '
-        printf "%s\n" "$$" > "$SQUAD_HOME/state/.lock"
+    | SQUAD_BASE="$dir" "$FAKE_CLAUDE" -c '
+        printf "%s\n" "$$" > "$SQUAD_BASE/state/.lock"
         "$FAKE_CLAUDE" -c "
-          printf \"%s\n\" \"\$\$\" > \"\$SQUAD_HOME/state/inner-pid\"
-          \"\$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh\"
+          printf \"%s\n\" \"\$\$\" > \"\$SQUAD_BASE/state/inner-pid\"
+          \"\$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh\"
         "
       ' 2>&1); status=$?
   inner_pid=$(cat "$dir/state/inner-pid" 2>/dev/null || true)
@@ -514,14 +514,14 @@ test_single_flight_admits_exactly_one_owner() {
   dir=$(make_primary_dir "$TMP_ROOT/single-flight")
   : > "$dir/state/task.meta"
   write_arm_fixture "$dir" slow-actionable
-  SQUAD_HOME="$dir" "$FAKE_CLAUDE" -c '
-    printf "%s\n" "$$" > "$SQUAD_HOME/state/.lock"
-    printf "%s\n" "{\"session_id\":\"s\"}" | "$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh" >/dev/null 2>"$SQUAD_HOME/state/err1" &
+  SQUAD_BASE="$dir" "$FAKE_CLAUDE" -c '
+    printf "%s\n" "$$" > "$SQUAD_BASE/state/.lock"
+    printf "%s\n" "{\"session_id\":\"s\"}" | "$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh" >/dev/null 2>"$SQUAD_BASE/state/err1" &
     p1=$!
-    printf "%s\n" "{\"session_id\":\"s\"}" | "$SQUAD_HOME/bin/sq-claude-stop-autoarm.sh" >/dev/null 2>"$SQUAD_HOME/state/err2" &
+    printf "%s\n" "{\"session_id\":\"s\"}" | "$SQUAD_BASE/bin/sq-claude-stop-autoarm.sh" >/dev/null 2>"$SQUAD_BASE/state/err2" &
     p2=$!
-    wait "$p1"; echo $? > "$SQUAD_HOME/state/rc1"
-    wait "$p2"; echo $? > "$SQUAD_HOME/state/rc2"
+    wait "$p1"; echo $? > "$SQUAD_BASE/state/rc1"
+    wait "$p2"; echo $? > "$SQUAD_BASE/state/rc2"
   '
   rc1=$(cat "$dir/state/rc1")
   rc2=$(cat "$dir/state/rc2")
@@ -570,7 +570,7 @@ test_active_in_marked_XO_home() {
 
 test_fm_lock_status_still_works_with_shared_lib() {
   local out
-  out=$(SQUAD_HOME="$TMP_ROOT/lock-status-home" bash "$ROOT/bin/sq-lock.sh" status 2>&1)
+  out=$(SQUAD_BASE="$TMP_ROOT/lock-status-home" bash "$ROOT/bin/sq-lock.sh" status 2>&1)
   assert_contains "$out" "lock: free" "sq-lock.sh status must keep working after the session-lock lib extraction"
   pass "sq-lock: shared session-lock lib preserves the status path"
 }
