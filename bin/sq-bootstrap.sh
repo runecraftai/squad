@@ -752,7 +752,7 @@ install_cmd() {
   case "$1" in
     tmux|node|git|gh|curl|jq|orca|zellij) echo "brew install $1  # or the platform's package manager" ;;
     cmux) echo "brew install --cask cmux  # or see https://cmux.com" ;;
-    fob) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/fob-install.sh | sh  # OQ-03 placeholder" ;;
+    fob) echo "bin/sq-install-fob.sh ~/.local/bin  # build the vendored packages/fob" ;;
     drill) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/drill-install.sh | sh  # OQ-03 placeholder" ;;
     sq-gh|sq-browser|sq-report) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1 && $1 setup hooks" ;;
     sq-quota|sq-tasks) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1" ;;

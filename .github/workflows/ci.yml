@@ -210,11 +210,16 @@ jobs:
           set -eu
           bin/sq-install-herdr.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install pinned FOB
+      - name: Set up Go toolchain for the vendored fob build
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/fob/go.mod
+      - name: Build and install fob from vendored source
         run: |
           set -eu
           # Several real-herdr-gated E2E scripts require fob for spawn
           # worktree acquisition (presentation, workspace-per-home, autodetect).
+          # Built from packages/fob by the install script, never downloaded.
           bin/sq-install-fob.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Assert Herdr pin and protocol floor
