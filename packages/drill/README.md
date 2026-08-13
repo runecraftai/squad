@@ -19,7 +19,7 @@
 
 <h3 align="center">Kill all the slop. Raise clean PR.</h3>
 
-<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 
 `drill` puts a local git proxy in front of your real remote.
 Push to `drill` instead of `origin`, and it spins up a disposable worktree, runs an AI-driven validation pipeline, forwards the branch to the configured push target only after every check passes, and opens a clean PR automatically.

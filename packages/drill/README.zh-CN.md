@@ -14,7 +14,7 @@
 
 <h3 align="center">干掉所有 slop，开出干净的 PR。</h3>
 
-<p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
+<p align="center"><a href="README.md">English</a> · <strong>简体中文</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 
 `drill` 在你真实的远端前面放了一个本地 git 代理。
 把分支推给 `drill` 而不是 `origin`，它会拉起一个用完即弃的 worktree，跑一条 AI 驱动的校验流水线，**只有每一项检查都通过后**才把分支转发到配置的推送目标，并自动开出一个干净的 PR。
