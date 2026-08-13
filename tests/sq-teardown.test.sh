@@ -366,13 +366,13 @@ SH
   chmod +x "$case_dir/fakebin/fob"
 }
 
-# fob return fails once with the index.lock signature, then clears the lock
-# (simulating a dying crew git process finishing) so the next retry succeeds.
-# The first failure always reports the lock path even if the file is removed in
-# the same attempt - matching the production race where the lock self-clears
-# between the failed return and the supervisor's existence check.
+# fob return fails the first fail_count attempts with the index.lock signature,
+# then clears the lock (simulating a dying crew git process finishing) so the
+# next retry succeeds. Each failing attempt reports the lock path when it can be
+# resolved - matching the production race where the lock self-clears between the
+# failed return and the supervisor's existence check.
 add_transient_lock_fob() {
-  local case_dir=$1
+  local case_dir=$1 fail_count=${2:-1}
   cat > "$case_dir/fakebin/fob" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = return ]; then
@@ -396,7 +396,7 @@ if [ "${1:-}" = return ]; then
   fi
   count=$(( count + 1 ))
   printf '%s\n' "$count" > "$count_file"
-  if [ "$count" -eq 1 ]; then
+  if [ "$count" -le __FAIL_COUNT__ ]; then
     # Emit the real git signature, then drop the lock so a lock-existence-only
     # recovery path would wrongly abort without retrying.
     if [ -n "$lock" ]; then
@@ -411,6 +411,8 @@ if [ "${1:-}" = return ]; then
 fi
 exit 0
 SH
+  sed -i.bak "s/__FAIL_COUNT__/$fail_count/" "$case_dir/fakebin/fob"
+  rm -f "$case_dir/fakebin/fob.bak"
   chmod +x "$case_dir/fakebin/fob"
 }
 
@@ -1331,7 +1333,7 @@ test_fob_return_lock_legacy_alias_retry_budget_still_applies() {
   git -C "$case_dir/wt" push -q origin fm/task-x1
   git -C "$case_dir/project" fetch -q origin
 
-  add_transient_lock_fob "$case_dir"
+  add_transient_lock_fob "$case_dir" 3
   add_lsof_no_holder "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
@@ -1355,12 +1357,12 @@ test_fob_return_lock_legacy_alias_retry_budget_still_applies() {
   rc=$?
   set -e
 
-  expect_code 0 "$rc" "fob-legacy-alias-retry-budget: teardown should succeed on retry after lock self-clears"
-  assert_grep "succeeded on retry" "$case_dir/stderr" \
-    "fob-legacy-alias-retry-budget: teardown did not report success on retry"
-  [ "$(cat "$attempt_file")" = 2 ] \
-    || fail "fob-legacy-alias-retry-budget: expected exactly 2 fob return attempts, got $(cat "$attempt_file")"
-  assert_absent "$lock" "fob-legacy-alias-retry-budget: lock should remain cleared after success"
+  expect_code 1 "$rc" "fob-legacy-alias-retry-budget: teardown should exhaust the legacy retry budget and refuse"
+  assert_grep "even after the lock file disappeared" "$case_dir/stderr" \
+    "fob-legacy-alias-retry-budget: teardown did not exhaust the legacy retry budget before giving up"
+  [ "$(cat "$attempt_file")" = 3 ] \
+    || fail "fob-legacy-alias-retry-budget: expected exactly 3 fob return attempts, got $(cat "$attempt_file")"
+  assert_absent "$lock" "fob-legacy-alias-retry-budget: lock should remain cleared after the fob attempts"
   pass "pre-fob legacy alias retry budget still applies end to end"
 }
 
