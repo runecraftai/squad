@@ -2020,11 +2020,12 @@ func buildStampedFob(t *testing.T, version string) string {
 // FOB_NO_UPDATE_CHECK, so the updater path under test runs live.
 func buildEnvAllowUpdateCheck(homeDir string) []string {
 	skip := map[string]bool{
-		"HOME":        true,
-		"USERPROFILE": true,
-		"HOMEDRIVE":   true,
-		"HOMEPATH":    true,
-		"FOB_DIR":     true,
+		"HOME":                true,
+		"USERPROFILE":         true,
+		"HOMEDRIVE":           true,
+		"HOMEPATH":            true,
+		"FOB_DIR":             true,
+		"FOB_NO_UPDATE_CHECK": true,
 	}
 	var env []string
 	for _, e := range os.Environ() {
