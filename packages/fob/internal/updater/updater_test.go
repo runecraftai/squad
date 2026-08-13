@@ -667,3 +667,29 @@ func TestVerifyChecksumNoURL(t *testing.T) {
 		t.Fatal("expected error when checksum URL is empty")
 	}
 }
+
+func TestIsSemver(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"v2.1.1", true},
+		{"2.1.1", true},
+		{"v2.1.1-3-g4b21c14", true},
+		{"2.1", true},
+		{"v2", true},
+		{"v1.2.3-beta.1", true},
+		{"4b21c14", false},
+		{"4b21c14-dirty", false},
+		{"dev", false},
+		{"", false},
+		{"v", false},
+		{"1..2", false},
+		{"1.2.3.4", false},
+	}
+	for _, tt := range tests {
+		if got := IsSemver(tt.version); got != tt.want {
+			t.Errorf("IsSemver(%q) = %v, want %v", tt.version, got, tt.want)
+		}
+	}
+}

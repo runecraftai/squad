@@ -12,8 +12,8 @@ var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update fob to the latest version",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if version == "dev" {
-			fmt.Println("Skipping update: running a dev build")
+		if !updater.IsSemver(version) {
+			fmt.Println("Skipping update: running a non-release build")
 			return nil
 		}
 

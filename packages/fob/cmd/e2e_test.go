@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -1991,5 +1992,123 @@ func TestEnterPrintPathPrintsOnlyPathToStdout(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(path, "README.md")); err != nil {
 		t.Errorf("printed path is not a valid worktree: %s (%v)", path, err)
+	}
+}
+
+// buildStampedFob builds the fob binary with the given version stamped via
+// ldflags and returns its path.
+func buildStampedFob(t *testing.T, version string) string {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fob")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	moduleRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-ldflags", "-X main.version="+version, "-o", bin, ".")
+	build.Dir = moduleRoot
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build fob with version %q: %v\n%s", version, err, out)
+	}
+	return bin
+}
+
+// buildEnvAllowUpdateCheck mirrors buildEnv but deliberately does not set
+// FOB_NO_UPDATE_CHECK, so the updater path under test runs live.
+func buildEnvAllowUpdateCheck(homeDir string) []string {
+	skip := map[string]bool{
+		"HOME":        true,
+		"USERPROFILE": true,
+		"HOMEDRIVE":   true,
+		"HOMEPATH":    true,
+		"FOB_DIR":     true,
+	}
+	var env []string
+	for _, e := range os.Environ() {
+		if k, _, ok := strings.Cut(e, "="); ok {
+			if skip[strings.ToUpper(k)] {
+				continue
+			}
+		}
+		env = append(env, e)
+	}
+	if runtime.GOOS == "windows" {
+		env = append(env, "USERPROFILE="+homeDir)
+	} else {
+		env = append(env, "HOME="+homeDir)
+	}
+	return env
+}
+
+// runStampedFob runs the given fob binary with update checks live and a HOME
+// that already carries a seeded update cache. Output is captured with
+// CombinedOutput: separate stdout/stderr buffers race with Go's os/exec pipe
+// copying for short-lived processes, so a single shared pipe is deterministic.
+func runStampedFob(t *testing.T, binPath, repoDir, homeDir string, args ...string) (output string, exitCode int) {
+	t.Helper()
+	cmd := exec.Command(binPath, args...)
+	cmd.Dir = repoDir
+	cmd.Env = buildEnvAllowUpdateCheck(homeDir)
+
+	out, err := cmd.CombinedOutput()
+	exitCode = 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			t.Fatalf("failed to execute fob %v: %v", args, err)
+		}
+	}
+	return string(out), exitCode
+}
+
+// seedUpdateCache writes a fresh update cache claiming a newer release, so a
+// live updater has a nag to print without any network call.
+func seedUpdateCache(t *testing.T, homeDir string) {
+	t.Helper()
+	cacheDir := filepath.Join(homeDir, ".fob")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entry := fmt.Sprintf(`{"checked_at":%q,"latest_version":"v2.1.1"}`, time.Now().UTC().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(cacheDir, "update-check.json"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestNonSemverBuildSkipsUpdateChecks pins the approved suppression: a locally
+// built fob stamped with a bare git hash must not nag or offer updates,
+// because the OQ-03 release channel is a boundary and that version could not
+// have come from it. A semver-stamped build in the same setup must still nag,
+// proving the cache seed is effective and the suppression is what changed.
+func TestNonSemverBuildSkipsUpdateChecks(t *testing.T) {
+	repoDir, homeDir := setupTestRepo(t)
+	seedUpdateCache(t, homeDir)
+
+	hashBin := buildStampedFob(t, "4b21c14")
+	semverBin := buildStampedFob(t, "v2.1.1-3-g4b21c14")
+
+	hashOut, hashCode := runStampedFob(t, hashBin, repoDir, homeDir, "status")
+	if hashCode != 0 {
+		t.Errorf("non-semver build status exited %d: %s", hashCode, hashOut)
+	}
+	if strings.Contains(hashOut, "A new version of fob is available") {
+		t.Errorf("non-semver build printed the update nag:\n%s", hashOut)
+	}
+
+	updateOut, updateCode := runStampedFob(t, hashBin, repoDir, homeDir, "update")
+	if updateCode != 0 {
+		t.Errorf("non-semver build update exited %d: %s", updateCode, updateOut)
+	}
+	if !strings.Contains(updateOut, "non-release build") {
+		t.Errorf("non-semver build update did not refuse as a non-release build: %q", updateOut)
+	}
+
+	semverOut, _ := runStampedFob(t, semverBin, repoDir, homeDir, "status")
+	if !strings.Contains(semverOut, "A new version of fob is available") {
+		t.Errorf("semver build did not print the update nag (cache seed ineffective?):\n%s", semverOut)
 	}
 }

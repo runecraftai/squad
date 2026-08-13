@@ -14,6 +14,11 @@
 #
 # Version metadata is derived with `git describe --tags --always --dirty`, so
 # a local build reports the fork tag plus commit distance instead of "dev".
+#
+# Install is atomic: the binary is built and version-gated at a staged path
+# inside the destination directory, then moved into place with a same-filesystem
+# rename. A failed build or gate leaves any existing fob binary untouched, and
+# the live binary is never removed or half-written.
 set -eu
 
 die() {
@@ -37,20 +42,24 @@ command -v go >/dev/null 2>&1 \
 VERSION=$(cd "$REPO_ROOT" && git describe --tags --always --dirty 2>/dev/null || true)
 [ -n "$VERSION" ] || die "cannot derive fob version metadata (not a git checkout of squad?)"
 
-TMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-fob.XXXXXX")
-trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$DESTINATION"
+STAGED="$DESTINATION/.fob.tmp.$$"
+trap 'rm -f "$STAGED"' EXIT
 
 printf 'sq-install-fob.sh: building fob %s from %s\n' "$VERSION" "$FOB_SOURCE_DIR" >&2
-(cd "$FOB_SOURCE_DIR" && go build -ldflags "-X main.version=$VERSION" -o "$TMP/fob" .) \
+(cd "$FOB_SOURCE_DIR" && go build -ldflags "-X main.version=$VERSION" -o "$STAGED" .) \
   || die "go build of the vendored fob failed"
+chmod 0755 "$STAGED"
 
-mkdir -p "$DESTINATION"
-install -m 0755 "$TMP/fob" "$DESTINATION/fob"
-
-installed_version=$("$DESTINATION/fob" --version 2>/dev/null | tr -d '[:space:]')
+installed_version=$("$STAGED" --version 2>/dev/null | tr -d '[:space:]')
 # fob prints the stamped version on --version.
 [ "$installed_version" = "$VERSION" ] \
-  || die "installed fob version is '${installed_version:-<empty>}', expected '$VERSION'"
+  || die "staged fob version is '${installed_version:-<empty>}', expected '$VERSION'"
+
+# Atomic move into place: the rename happens only after the staged binary
+# passed the version gate, so the live fob binary is never replaced by a
+# broken or unverified build.
+mv -f "$STAGED" "$DESTINATION/fob"
 
 printf 'sq-install-fob.sh: installed fob %s to %s\n' \
   "$installed_version" "$DESTINATION/fob" >&2
