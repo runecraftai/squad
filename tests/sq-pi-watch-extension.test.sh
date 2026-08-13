@@ -1229,23 +1229,25 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
+// Wait for the expected CONTENT, not just file existence: the arm opens the
+// log with >> (O_CREAT) before its line lands, so an existence-only poll can
+// read an empty file and race the write. Content polling is deterministic.
+const expectedRoot = realpathSync(process.env.WORKTREE);
+let text = "";
+for (let i = 0; i < 250 && !(text.includes(`home=${process.env.SQUAD_BASE}`) && text.includes(`root=${expectedRoot}`)); i += 1) {
+  if (existsSync(process.env.SQUAD_ARM_LOG)) {
+    text = readFileSync(process.env.SQUAD_ARM_LOG, "utf8");
+  }
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.SQUAD_ARM_LOG)) {
-  console.error("watch arm did not run");
-  process.exit(1);
-}
-const text = readFileSync(process.env.SQUAD_ARM_LOG, "utf8");
-const expectedRoot = realpathSync(process.env.WORKTREE);
 if (!text.includes(`home=${process.env.SQUAD_BASE}`) || !text.includes(`root=${expectedRoot}`)) {
-  console.error(text);
+  console.error(`watch arm did not record the effective state: ${text}`);
   process.exit(1);
 }
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must use SQUAD_BASE state outside the repo root"
+  expect_code 0 "$status" "OpenCode watch plugin must use SQUAD_BASE state outside the repo root${out:+ (node output: $out)}"
   [ -z "$out" ] || fail "OpenCode effective-state test printed output: $out"
   pass "OpenCode sentry plugin uses the effective SQUAD_BASE state"
 }
@@ -1279,22 +1281,23 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !existsSync(process.env.SQUAD_ARM_LOG); i += 1) {
+// Content poll for the same reason as the effective-state test: the arm's >>
+// open() creates the log before its line lands, so existence alone races.
+let text = "";
+for (let i = 0; i < 250 && !text.includes("poll=7"); i += 1) {
+  if (existsSync(process.env.SQUAD_ARM_LOG)) {
+    text = readFileSync(process.env.SQUAD_ARM_LOG, "utf8");
+  }
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
-if (!existsSync(process.env.SQUAD_ARM_LOG)) {
-  console.error("watch arm did not run");
-  process.exit(1);
-}
-const text = readFileSync(process.env.SQUAD_ARM_LOG, "utf8");
 if (!text.includes("poll=7")) {
-  console.error(text);
+  console.error(`watch arm did not source the effective config: ${text}`);
   process.exit(1);
 }
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must source SQUAD_BASE config outside the repo root"
+  expect_code 0 "$status" "OpenCode watch plugin must source SQUAD_BASE config outside the repo root${out:+ (node output: $out)}"
   [ -z "$out" ] || fail "OpenCode effective-config test printed output: $out"
   pass "OpenCode sentry plugin sources the effective config"
 }
