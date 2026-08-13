@@ -51,7 +51,7 @@ test_lib_classification() {
     [ "$out" = "$expect" ] || fail "$label: expected tangle='$expect', got '$out'"
   done <<'ROWS'
 on the default branch is healthy|default||
-on a feature branch is the tangle|feature|fm/readme-restructure-d3|fm/readme-restructure-d3
+on a feature branch is the tangle|feature|sq/readme-restructure-d3|sq/readme-restructure-d3
 detached HEAD on default is healthy (worktrees, XO homes)|detached||
 ROWS
   # A non-git directory is not a tangle and must not error.
@@ -78,10 +78,10 @@ test_guard_banner() {
   out=$(run_guard "$repo")
   assert_not_contains "$out" "WORKTREE TANGLE" "guard alarmed on a detached HEAD (legitimate worktree state)"
 
-  git -C "$repo" checkout -q -B fm/tangle-aa1
+  git -C "$repo" checkout -q -B sq/tangle-aa1
   out=$(run_guard "$repo")
   assert_contains "$out" "WORKTREE TANGLE" "guard did not alarm on a feature branch in the primary"
-  assert_contains "$out" "fm/tangle-aa1" "guard banner did not name the offending branch"
+  assert_contains "$out" "sq/tangle-aa1" "guard banner did not name the offending branch"
   assert_contains "$out" "checkout main" "guard banner did not print the restore remediation"
   out=$(SQUAD_GUARD_READ_ONLY=1 run_guard "$repo")
   assert_contains "$out" "WORKTREE TANGLE" "read-only guard did not keep the tangle alarm"
@@ -108,12 +108,12 @@ test_bootstrap_line() {
   out=$(run_bootstrap "$repo" | grep '^TANGLE:' || true)
   [ -z "$out" ] || fail "bootstrap emitted a TANGLE line on a detached HEAD: $out"
 
-  git -C "$repo" checkout -q -B fm/tangle-bb2
+  git -C "$repo" checkout -q -B sq/tangle-bb2
   out=$(run_bootstrap "$repo" | grep '^TANGLE:' || true)
-  assert_contains "$out" "fm/tangle-bb2" "bootstrap did not report the tangled branch"
+  assert_contains "$out" "sq/tangle-bb2" "bootstrap did not report the tangled branch"
   assert_contains "$out" "checkout main" "bootstrap TANGLE line lacked the restore remediation"
   out=$(SQUAD_ROOT_OVERRIDE="$repo" SQUAD_BASE="$repo" SQUAD_BOOTSTRAP_DETECT_ONLY=1 "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null | grep '^TANGLE:' || true)
-  assert_contains "$out" "fm/tangle-bb2" "detect-only bootstrap did not report the tangled branch"
+  assert_contains "$out" "sq/tangle-bb2" "detect-only bootstrap did not report the tangled branch"
   assert_contains "$out" "read-only session must leave restore work" "detect-only bootstrap did not explain restore ownership"
   assert_not_contains "$out" "checkout main" "detect-only bootstrap printed a state-changing restore command"
   pass "sq-bootstrap: TANGLE problem line fires only for a feature branch and suppresses repair commands in detect-only mode"
@@ -139,7 +139,7 @@ test_brief_assertion_precedes_branch() {
   assert_no_grep "they are identical in the primary checkout" "$brief" \
     "brief must not claim the primary checkout has identical git dirs"
   iso=$(grep -n 'launched in primary checkout, not an isolated worktree' "$brief" | head -1 | cut -d: -f1)
-  br=$(grep -n 'git checkout -b fm/' "$brief" | head -1 | cut -d: -f1)
+  br=$(grep -n 'git checkout -b sq/' "$brief" | head -1 | cut -d: -f1)
   if [ -z "$iso" ] || [ -z "$br" ]; then
     fail "brief missing assertion ($iso) or branch step ($br)"
   fi

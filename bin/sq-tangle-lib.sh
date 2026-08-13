@@ -8,7 +8,7 @@
 # on a real branch - normally the default branch, main. The "worktree tangle"
 # failure mode is an operator spawned to work on Squad ITSELF branching and
 # committing in the primary checkout instead of its own disposable worktree,
-# stranding the primary on a feature branch (e.g. fm/readme-restructure-d3).
+# stranding the primary on a feature branch (e.g. sq/readme-restructure-d3).
 #
 # fm_primary_tangle_branch detects exactly that and nothing else: a NAMED,
 # non-default branch checked out in the given root. It is deliberately silent for

@@ -4,7 +4,7 @@
 # state/<task-id>.meta so sq-teardown.sh applies the full ship-task teardown protection
 # again. After promoting, send the operator its ship instructions via sq-send.sh
 # (inventory scratch state, reset to a clean default-branch base, carry over only
-# intended fix changes, create branch fm/<task-id>, implement, then report done
+# intended fix changes, create branch sq/<task-id>, implement, then report done
 # according to this task's delivery mode).
 # A recon records no delivery posture, so promotion is where this task's delivery
 # contract is decided: --mode and --yolo are REQUIRED and written into the meta
@@ -85,4 +85,4 @@ mv "$TMP" "$META"
 
 HOME_Q=$(printf '%q' "$SQUAD_BASE")
 echo "promoted $ID to ship mode=$MODE yolo=$YOLO (teardown protection restored)"
-echo "next: SQUAD_BASE=$HOME_Q bin/sq-send.sh sq-$ID '<ship instructions for mode=$MODE: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"
+echo "next: SQUAD_BASE=$HOME_Q bin/sq-send.sh sq-$ID '<ship instructions for mode=$MODE: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch sq/$ID; implement; report done>'"

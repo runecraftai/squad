@@ -121,7 +121,7 @@ test_local_links_and_no_keyword_heuristic() {
 /tmp/task-worktree/bin/tool --version
 ```
 
-Observed version 1.2.3 on branch `fm/example`.
+Observed version 1.2.3 on branch `sq/example`.
 MD
   write_fixture_inventory "$repo"
   git -C "$repo" add README.md docs

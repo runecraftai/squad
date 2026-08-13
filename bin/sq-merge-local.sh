@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Perform the approved local merge for a local-only strike task: fast-forward the
-# project's default branch to the operator's fm/<id> branch.
+# project's default branch to the operator's sq/<id> branch.
 #
 # This is Squad's merge gate-action (the commander's merge authority applied
 # locally instead of via a GitHub PR). It is the one sanctioned exception to hard
@@ -41,7 +41,7 @@ default_branch() {
   return 1
 }
 
-BRANCH="fm/$ID"
+BRANCH="sq/$ID"
 git -C "$PROJ" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null || { echo "error: branch $BRANCH does not exist in $PROJ" >&2; exit 1; }
 
 DEFAULT=$(default_branch) || { echo "error: cannot determine default branch for $PROJ; expected origin/HEAD, main, or master" >&2; exit 1; }

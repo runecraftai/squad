@@ -108,7 +108,7 @@ test_classify_terminal_signal_escalates() {
   state="$dir/state"
   for kw in "done: PR https://x/y/pull/1" "needs-decision: pick A" "blocked: no perms" \
             "failed: rc 2" "PR ready https://x/y/pull/2" "checks green" \
-            "ready in branch fm/t1" "merged"; do
+            "ready in branch sq/t1" "merged"; do
     printf 'working\n%s\n' "$kw" > "$state/t.status"
     out=$(SQUAD_STATE_OVERRIDE="$state" classify_signal "$state/t.status" "$state")
     case "$out" in escalate\|*) ;; *) fail "commander verb did not escalate ($kw): $out" ;; esac
@@ -195,11 +195,11 @@ test_stale_terminal_escalates() {
   local dir state out
   dir=$(make_supercase stale-terminal)
   state="$dir/state"
-  printf 'done: ready in branch fm/t1\n' > "$state/fin-t5.status"
+  printf 'done: ready in branch sq/t1\n' > "$state/fin-t5.status"
   out=$(SQUAD_STATE_OVERRIDE="$state" classify_stale "sess:sq-fin-t5" "$state")
   case "$out" in escalate\|*) ;; *) fail "terminal stale did not escalate: $out" ;; esac
   fm_write_meta "$state/herdr-t5.meta" "window=default:w1:p2" "backend=herdr"
-  printf 'done: ready in branch fm/herdr\n' > "$state/herdr-t5.status"
+  printf 'done: ready in branch sq/herdr\n' > "$state/herdr-t5.status"
   out=$(SQUAD_STATE_OVERRIDE="$state" classify_stale "default:w1:p2" "$state")
   case "$out" in escalate\|*) ;; *) fail "terminal herdr stale did not escalate through metadata: $out" ;; esac
   pass "stale + terminal status escalates immediately"

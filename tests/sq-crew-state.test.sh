@@ -347,10 +347,10 @@ EOF
 test_active_run_is_authoritative() {
   reset_fakes
   local d; d=$(new_case active)
-  make_repo_on_branch "$d/wt" fm/feat-a
+  make_repo_on_branch "$d/wt" sq/feat-a
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-a.meta" "window=fm:sq-feat-a" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/feat-a)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/feat-a)"
   local out; out=$(run_crew_state "$d" feat-a)
   assert_contains "$out" "state: working" "active run -> working"
   assert_contains "$out" "source: run-step" "active run -> run-step source"
@@ -362,11 +362,11 @@ test_active_run_is_authoritative() {
 test_stale_needs_decision_superseded() {
   reset_fakes
   local d; d=$(new_case superseded)
-  make_repo_on_branch "$d/wt" fm/feat-b
+  make_repo_on_branch "$d/wt" sq/feat-b
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-b.meta" "window=fm:sq-feat-b" "worktree=$d/wt" "kind=strike"
   printf 'working: started\nneeds-decision: pick A or B\n' > "$d/state/feat-b.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_fixing fm/feat-b)"
+  SQUAD_FAKE_AXI_STATUS="$(run_fixing sq/feat-b)"
   local out; out=$(run_crew_state "$d" feat-b)
   assert_contains "$out" "state: working" "resumed run -> working despite needs-decision log"
   assert_contains "$out" "source: run-step" "resumed run -> run-step source"
@@ -378,11 +378,11 @@ test_stale_needs_decision_superseded() {
 test_stale_blocked_superseded() {
   reset_fakes
   local d; d=$(new_case superseded-blocked)
-  make_repo_on_branch "$d/wt" fm/feat-bb
+  make_repo_on_branch "$d/wt" sq/feat-bb
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-bb.meta" "window=fm:sq-feat-bb" "worktree=$d/wt" "kind=strike"
   printf 'blocked: waiting on review answer\n' > "$d/state/feat-bb.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/feat-bb)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/feat-bb)"
   local out; out=$(run_crew_state "$d" feat-bb)
   assert_contains "$out" "state: working" "resumed run -> working despite blocked log"
   assert_contains "$out" "superseded" "stale blocked log flagged superseded"
@@ -393,11 +393,11 @@ test_stale_blocked_superseded() {
 test_genuine_parked_not_superseded() {
   reset_fakes
   local d; d=$(new_case parked)
-  make_repo_on_branch "$d/wt" fm/feat-c
+  make_repo_on_branch "$d/wt" sq/feat-c
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-c.meta" "window=fm:sq-feat-c" "worktree=$d/wt" "kind=strike"
   printf 'needs-decision: review gate\n' > "$d/state/feat-c.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_parked fm/feat-c)"
+  SQUAD_FAKE_AXI_STATUS="$(run_parked sq/feat-c)"
   local out; out=$(run_crew_state "$d" feat-c)
   assert_contains "$out" "state: parked" "genuine parked run -> parked"
   assert_contains "$out" "source: run-step" "parked -> run-step source"
@@ -410,11 +410,11 @@ test_genuine_parked_not_superseded() {
 test_scalar_gate_parked_not_superseded() {
   reset_fakes
   local d; d=$(new_case parked-scalar-gate)
-  make_repo_on_branch "$d/wt" fm/feat-cs
+  make_repo_on_branch "$d/wt" sq/feat-cs
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cs.meta" "window=fm:sq-feat-cs" "worktree=$d/wt" "kind=strike"
   printf 'needs-decision: review gate\n' > "$d/state/feat-cs.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_parked_scalar_gate_running fm/feat-cs)"
+  SQUAD_FAKE_AXI_STATUS="$(run_parked_scalar_gate_running sq/feat-cs)"
   local out; out=$(run_crew_state "$d" feat-cs)
   assert_contains "$out" "state: parked" "scalar gate wait -> parked"
   assert_contains "$out" "source: run-step" "scalar gate wait -> run-step source"
@@ -427,11 +427,11 @@ test_scalar_gate_parked_not_superseded() {
 test_gate_block_parked_not_superseded() {
   reset_fakes
   local d; d=$(new_case parked-gate-block)
-  make_repo_on_branch "$d/wt" fm/feat-cb
+  make_repo_on_branch "$d/wt" sq/feat-cb
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cb.meta" "window=fm:sq-feat-cb" "worktree=$d/wt" "kind=strike"
   printf 'needs-decision: review gate\n' > "$d/state/feat-cb.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_parked_in_gate_block fm/feat-cb)"
+  SQUAD_FAKE_AXI_STATUS="$(run_parked_in_gate_block sq/feat-cb)"
   local out; out=$(run_crew_state "$d" feat-cb)
   assert_contains "$out" "state: parked" "gate block wait -> parked"
   assert_contains "$out" "source: run-step" "gate block wait -> run-step source"
@@ -444,11 +444,11 @@ test_gate_block_parked_not_superseded() {
 test_ci_ready_done_log_beats_monitoring_run() {
   reset_fakes
   local d; d=$(new_case ci-ready)
-  make_repo_on_branch "$d/wt" fm/feat-ci
+  make_repo_on_branch "$d/wt" sq/feat-ci
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-ci.meta" "window=fm:sq-feat-ci" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-ci.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ci)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-ci)"
   local out; out=$(run_crew_state "$d" feat-ci)
   assert_contains "$out" "state: done" "ci-ready status log -> done"
   assert_contains "$out" "source: status-log" "ci-ready state comes from the status log"
@@ -465,11 +465,11 @@ test_ci_ready_done_log_beats_monitoring_run() {
 test_ci_monitoring_checks_green_surfaces_done() {
   reset_fakes
   local d; d=$(new_case ci-green)
-  make_repo_on_branch "$d/wt" fm/feat-cigreen
+  make_repo_on_branch "$d/wt" sq/feat-cigreen
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cigreen.meta" "window=fm:sq-feat-cigreen" "worktree=$d/wt" "kind=strike"
   # No status-log line at all: the operator never reported its own checks-green line.
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cigreen)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-cigreen)"
   SQUAD_FAKE_CI_LOGS=$(cat <<'EOF'
 CI checks running, waiting for results...
 all CI checks passed - still monitoring until merged or closed
@@ -486,10 +486,10 @@ EOF
 test_top_level_ci_checks_green_surfaces_done() {
   reset_fakes
   local d; d=$(new_case top-level-ci-green)
-  make_repo_on_branch "$d/wt" fm/feat-topcigreen
+  make_repo_on_branch "$d/wt" sq/feat-topcigreen
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-topcigreen.meta" "window=fm:sq-feat-topcigreen" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_top_level_ci fm/feat-topcigreen)"
+  SQUAD_FAKE_AXI_STATUS="$(run_top_level_ci sq/feat-topcigreen)"
   SQUAD_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
   local out; out=$(run_crew_state "$d" feat-topcigreen)
   assert_contains "$out" "state: done" "top-level ci with green log -> done"
@@ -502,10 +502,10 @@ test_top_level_ci_checks_green_surfaces_done() {
 test_ci_monitoring_no_checks_terminal_surfaces_done() {
   reset_fakes
   local d; d=$(new_case ci-nochecks)
-  make_repo_on_branch "$d/wt" fm/feat-cinochecks
+  make_repo_on_branch "$d/wt" sq/feat-cinochecks
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cinochecks.meta" "window=fm:sq-feat-cinochecks" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecks)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-cinochecks)"
   SQUAD_FAKE_CI_LOGS="no CI checks reported - still monitoring until merged or closed"
   local out; out=$(run_crew_state "$d" feat-cinochecks)
   assert_contains "$out" "state: done" "terminal no-checks ci-monitor run -> done"
@@ -516,10 +516,10 @@ test_ci_monitoring_no_checks_terminal_surfaces_done() {
 test_ci_monitoring_green_then_rearm_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-green-then-rearm)
-  make_repo_on_branch "$d/wt" fm/feat-cirearm
+  make_repo_on_branch "$d/wt" sq/feat-cirearm
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cirearm.meta" "window=fm:sq-feat-cirearm" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cirearm)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-cirearm)"
   SQUAD_FAKE_CI_LOGS=$(cat <<'EOF'
 all CI checks passed - still monitoring until merged or closed
 base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
@@ -535,10 +535,10 @@ EOF
 test_ci_monitoring_no_checks_yet_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-nochecks-yet)
-  make_repo_on_branch "$d/wt" fm/feat-cinochecksyet
+  make_repo_on_branch "$d/wt" sq/feat-cinochecksyet
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cinochecksyet.meta" "window=fm:sq-feat-cinochecksyet" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cinochecksyet)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-cinochecksyet)"
   SQUAD_FAKE_CI_LOGS=$(cat <<'EOF'
 no CI checks reported - still monitoring until merged or closed
 base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
@@ -555,10 +555,10 @@ EOF
 test_ci_monitoring_still_waiting_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-waiting)
-  make_repo_on_branch "$d/wt" fm/feat-ciwait
+  make_repo_on_branch "$d/wt" sq/feat-ciwait
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-ciwait.meta" "window=fm:sq-feat-ciwait" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-ciwait)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-ciwait)"
   SQUAD_FAKE_CI_LOGS="CI checks running, waiting for results..."
   local out; out=$(run_crew_state "$d" feat-ciwait)
   assert_contains "$out" "state: working" "ci step still red -> working"
@@ -571,10 +571,10 @@ test_ci_monitoring_still_waiting_stays_working() {
 test_ci_monitoring_green_then_new_issue_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-green-then-issue)
-  make_repo_on_branch "$d/wt" fm/feat-cirelapse
+  make_repo_on_branch "$d/wt" sq/feat-cirelapse
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cirelapse.meta" "window=fm:sq-feat-cirelapse" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cirelapse)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-cirelapse)"
   SQUAD_FAKE_CI_LOGS=$(cat <<'EOF'
 all CI checks passed - still monitoring until merged or closed
 base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
@@ -590,11 +590,11 @@ EOF
 test_ci_ready_done_log_relapse_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-ready-then-relapse)
-  make_repo_on_branch "$d/wt" fm/feat-cireadyrelapse
+  make_repo_on_branch "$d/wt" sq/feat-cireadyrelapse
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cireadyrelapse.meta" "window=fm:sq-feat-cireadyrelapse" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-cireadyrelapse.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cireadyrelapse)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-cireadyrelapse)"
   SQUAD_FAKE_CI_LOGS=$(cat <<'EOF'
 all CI checks passed - still monitoring until merged or closed
 base branch advanced (aaaaaaa..bbbbbbb), re-arming CI monitor timeout
@@ -611,11 +611,11 @@ EOF
 test_ci_fixing_after_green_stays_working() {
   reset_fakes
   local d; d=$(new_case ci-fixing-after-green)
-  make_repo_on_branch "$d/wt" fm/feat-cifixing
+  make_repo_on_branch "$d/wt" sq/feat-cifixing
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-cifixing.meta" "window=fm:sq-feat-cifixing" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-cifixing.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_fixing fm/feat-cifixing)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_fixing sq/feat-cifixing)"
   SQUAD_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
   local out; out=$(run_crew_state "$d" feat-cifixing)
   assert_contains "$out" "state: working" "ci fixing step must stay working"
@@ -627,10 +627,10 @@ test_ci_fixing_after_green_stays_working() {
 test_top_level_fixing_ci_running_after_green_stays_working() {
   reset_fakes
   local d; d=$(new_case top-level-fixing-ci-running)
-  make_repo_on_branch "$d/wt" fm/feat-topfixingci
+  make_repo_on_branch "$d/wt" sq/feat-topfixingci
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-topfixingci.meta" "window=fm:sq-feat-topfixingci" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_fixing_ci_running fm/feat-topfixingci)"
+  SQUAD_FAKE_AXI_STATUS="$(run_fixing_ci_running sq/feat-topfixingci)"
   SQUAD_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
   local out; out=$(run_crew_state "$d" feat-topfixingci)
   assert_contains "$out" "state: working" "top-level fixing with ci running must stay working"
@@ -643,11 +643,11 @@ test_top_level_fixing_ci_running_after_green_stays_working() {
 test_top_level_fixing_done_log_stays_working() {
   reset_fakes
   local d; d=$(new_case top-level-fixing-done-log)
-  make_repo_on_branch "$d/wt" fm/feat-topfixing
+  make_repo_on_branch "$d/wt" sq/feat-topfixing
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-topfixing.meta" "window=fm:sq-feat-topfixing" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-topfixing.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_fixing fm/feat-topfixing)"
+  SQUAD_FAKE_AXI_STATUS="$(run_fixing sq/feat-topfixing)"
   SQUAD_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
   local out; out=$(run_crew_state "$d" feat-topfixing)
   assert_contains "$out" "state: working" "top-level fixing must stay working"
@@ -661,10 +661,10 @@ test_top_level_fixing_done_log_stays_working() {
 test_terminal_passed() {
   reset_fakes
   local d; d=$(new_case passed)
-  make_repo_on_branch "$d/wt" fm/feat-d
+  make_repo_on_branch "$d/wt" sq/feat-d
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-d.meta" "window=fm:sq-feat-d" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_passed fm/feat-d)"
+  SQUAD_FAKE_AXI_STATUS="$(run_passed sq/feat-d)"
   local out; out=$(run_crew_state "$d" feat-d)
   assert_contains "$out" "state: done" "passed run -> done"
   assert_contains "$out" "source: run-step" "passed -> run-step source"
@@ -674,10 +674,10 @@ test_terminal_passed() {
 test_terminal_failed() {
   reset_fakes
   local d; d=$(new_case failed)
-  make_repo_on_branch "$d/wt" fm/feat-e
+  make_repo_on_branch "$d/wt" sq/feat-e
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-e.meta" "window=fm:sq-feat-e" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_failed fm/feat-e)"
+  SQUAD_FAKE_AXI_STATUS="$(run_failed sq/feat-e)"
   local out; out=$(run_crew_state "$d" feat-e)
   assert_contains "$out" "state: failed" "failed run -> failed"
   assert_contains "$out" "source: run-step" "failed -> run-step source"
@@ -697,17 +697,17 @@ test_terminal_failed() {
 test_cross_branch_attribution_via_runs_list() {
   reset_fakes
   local d short; d=$(new_case crossbranch)
-  make_repo_on_branch "$d/wt" fm/feat-f
+  make_repo_on_branch "$d/wt" sq/feat-f
   short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-f.meta" "window=fm:sq-feat-f" "worktree=$d/wt" "kind=strike"
   # The repo-wide active/most-recent run belongs to a different crew's branch.
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/other-crew)"
   # Real `drill runs` shape: plain text, newest-first, no run id, no
   # quoting - "<status> <branch> <short-sha> <date> [<pr-url>]".
   SQUAD_FAKE_RUNS_LIST="$(cat <<EOF
-  running    fm/other-crew aaaaaaa  2026-07-02 22:10
-  running    fm/feat-f ${short}  2026-07-02 22:05
+  running    sq/other-crew aaaaaaa  2026-07-02 22:10
+  running    sq/feat-f ${short}  2026-07-02 22:05
 EOF
 )"
   local out; out=$(run_crew_state "$d" feat-f)
@@ -721,15 +721,15 @@ EOF
 test_cross_branch_attribution_picks_most_recent_row() {
   reset_fakes
   local d short; d=$(new_case crossbranch-mostrecent)
-  make_repo_on_branch "$d/wt" fm/feat-fq
+  make_repo_on_branch "$d/wt" sq/feat-fq
   short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-fq.meta" "window=fm:sq-feat-fq" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/other-crew)"
   SQUAD_FAKE_RUNS_LIST="$(cat <<EOF
-  running    fm/other-crew aaaaaaa  2026-07-02 22:10
-  running    fm/feat-fq ${short}  2026-07-02 21:50
-  completed  fm/feat-fq bbbbbbb  2026-07-02 20:00  https://github.com/o/r/pull/1
+  running    sq/other-crew aaaaaaa  2026-07-02 22:10
+  running    sq/feat-fq ${short}  2026-07-02 21:50
+  completed  sq/feat-fq bbbbbbb  2026-07-02 20:00  https://github.com/o/r/pull/1
 EOF
 )"
   local out; out=$(run_crew_state "$d" feat-fq)
@@ -741,15 +741,15 @@ EOF
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status() {
   reset_fakes
   local d short; d=$(new_case coarse-ready-other-log)
-  make_repo_on_branch "$d/wt" fm/feat-coarseready
+  make_repo_on_branch "$d/wt" sq/feat-coarseready
   short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-coarseready.meta" "window=fm:sq-feat-coarseready" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/4 checks green\n' > "$d/state/feat-coarseready.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring fm/other-crew)"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/other-crew)"
   SQUAD_FAKE_RUNS_LIST="$(cat <<EOF
-  running    fm/other-crew aaaaaaa  2026-07-02 22:10
-  running    fm/feat-coarseready ${short}  2026-07-02 22:05
+  running    sq/other-crew aaaaaaa  2026-07-02 22:10
+  running    sq/feat-coarseready ${short}  2026-07-02 22:05
 EOF
 )"
   SQUAD_FAKE_CI_LOGS="CI checks running, waiting for results..."
@@ -765,13 +765,13 @@ EOF
 test_other_branch_run_ignored() {
   reset_fakes
   local d; d=$(new_case otherbranch)
-  make_repo_on_branch "$d/wt" fm/feat-g
+  make_repo_on_branch "$d/wt" sq/feat-g
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-g.meta" "window=fm:sq-feat-g" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'done: implemented, ready to validate\n' > "$d/state/feat-g.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/some-other)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/some-other)"
   SQUAD_FAKE_RUNS_LIST="$(cat <<'EOF'
-  running    fm/some-other aaaaaaa  2026-07-02 22:10
+  running    sq/some-other aaaaaaa  2026-07-02 22:10
 EOF
 )"
   SQUAD_FAKE_BUSY=0
@@ -787,7 +787,7 @@ EOF
 test_no_run_busy_pane() {
   reset_fakes
   local d; d=$(new_case busy)
-  make_repo_on_branch "$d/wt" fm/feat-h
+  make_repo_on_branch "$d/wt" sq/feat-h
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-h.meta" "window=fm:sq-feat-h" "worktree=$d/wt" "kind=strike" "harness=claude"
   # No matching run anywhere. The busy verdict comes from the operator's own
@@ -811,7 +811,7 @@ test_no_run_busy_pane() {
 test_no_run_footer_text_alone_is_not_working() {
   reset_fakes
   local d; d=$(new_case busy-footer-only)
-  make_repo_on_branch "$d/wt" fm/feat-h2
+  make_repo_on_branch "$d/wt" sq/feat-h2
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-h2.meta" "window=fm:sq-feat-h2" "worktree=$d/wt" "kind=strike" "harness=claude"
   SQUAD_FAKE_AXI_STATUS=""
@@ -831,7 +831,7 @@ test_no_run_footer_text_alone_is_not_working() {
 test_no_run_grok_uses_isolated_fallback() {
   reset_fakes
   local d; d=$(new_case busy-grok)
-  make_repo_on_branch "$d/wt" fm/feat-h3
+  make_repo_on_branch "$d/wt" sq/feat-h3
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-h3.meta" "window=fm:sq-feat-h3" "worktree=$d/wt" "kind=strike" "harness=grok"
   SQUAD_FAKE_AXI_STATUS=""
@@ -849,7 +849,7 @@ test_no_run_herdr_unknown_uses_backend_capture() {
   command -v jq >/dev/null 2>&1 || { pass "herdr pane fallback skipped without jq"; return; }
   reset_fakes
   local d; d=$(new_case herdr-busy)
-  make_repo_on_branch "$d/wt" fm/feat-herdr
+  make_repo_on_branch "$d/wt" sq/feat-herdr
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-herdr.meta" "window=default:w1:p2" "worktree=$d/wt" "kind=strike" \
     "backend=herdr" "harness=claude"
@@ -877,7 +877,7 @@ test_no_run_herdr_idle_agent_status_outranked_by_record() {
   command -v jq >/dev/null 2>&1 || { pass "herdr idle corroboration skipped without jq"; return; }
   reset_fakes
   local d; d=$(new_case herdr-idle-busy-record)
-  make_repo_on_branch "$d/wt" fm/feat-herdr-idle
+  make_repo_on_branch "$d/wt" sq/feat-herdr-idle
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-herdr-idle.meta" "window=default:w1:p3" "worktree=$d/wt" "kind=strike" \
     "backend=herdr" "harness=claude"
@@ -904,7 +904,7 @@ test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle() {
   command -v jq >/dev/null 2>&1 || { pass "herdr idle+idle-record skipped without jq"; return; }
   reset_fakes
   local d; d=$(new_case herdr-idle-idle-record)
-  make_repo_on_branch "$d/wt" fm/feat-herdr-stopped
+  make_repo_on_branch "$d/wt" sq/feat-herdr-stopped
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-herdr-stopped.meta" "window=default:w1:p4" "worktree=$d/wt" "kind=strike" \
     "backend=herdr" "harness=claude"
@@ -927,7 +927,7 @@ test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle() {
 test_no_run_idle_pane_uses_log() {
   reset_fakes
   local d; d=$(new_case idle)
-  make_repo_on_branch "$d/wt" fm/feat-i
+  make_repo_on_branch "$d/wt" sq/feat-i
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-i.meta" "window=fm:sq-feat-i" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'needs-decision: which database?\n' > "$d/state/feat-i.status"
@@ -943,7 +943,7 @@ test_no_run_idle_pane_uses_log() {
 test_no_run_idle_pane_uses_keyed_log() {
   reset_fakes
   local d; d=$(new_case keyed-idle)
-  make_repo_on_branch "$d/wt" fm/feat-keyed
+  make_repo_on_branch "$d/wt" sq/feat-keyed
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-keyed.meta" "window=fm:sq-feat-keyed" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'needs-decision [key=q1]: which database?\n' > "$d/state/feat-keyed.status"
@@ -962,7 +962,7 @@ test_no_run_idle_pane_uses_keyed_log() {
 test_no_run_idle_pane_paused() {
   reset_fakes
   local d; d=$(new_case paused)
-  make_repo_on_branch "$d/wt" fm/feat-pause
+  make_repo_on_branch "$d/wt" sq/feat-pause
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-pause.meta" "window=fm:sq-feat-pause" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'paused: holding for the upstream tool release\n' > "$d/state/feat-pause.status"
@@ -979,7 +979,7 @@ test_no_run_idle_pane_paused() {
 test_no_run_idle_pane_custom_paused_verb() {
   reset_fakes
   local d; d=$(new_case custom-paused)
-  make_repo_on_branch "$d/wt" fm/feat-custom-pause
+  make_repo_on_branch "$d/wt" sq/feat-custom-pause
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-custom-pause.meta" "window=fm:sq-feat-custom-pause" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'awaiting: vendor maintenance window\n' > "$d/state/feat-custom-pause.status"
@@ -1033,7 +1033,7 @@ test_no_run_idle_XO_resolved_event_not_state() {
 test_dead_window_ignores_stale_status_log() {
   reset_fakes
   local d; d=$(new_case dead-window)
-  make_repo_on_branch "$d/wt" fm/feat-dead
+  make_repo_on_branch "$d/wt" sq/feat-dead
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-dead.meta" "window=fm:sq-feat-dead" "worktree=$d/wt" "kind=strike"
   printf 'done: old completion event\n' > "$d/state/feat-dead.status"
@@ -1054,11 +1054,11 @@ test_dead_window_ignores_stale_status_log() {
 test_dead_window_still_reports_terminal_run_step() {
   reset_fakes
   local d; d=$(new_case dead-window-done)
-  make_repo_on_branch "$d/wt" fm/feat-dead-done
+  make_repo_on_branch "$d/wt" sq/feat-dead-done
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-dead-done.meta" "window=fm:sq-feat-dead-done" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/3 checks green\n' > "$d/state/feat-dead-done.status"
-  SQUAD_FAKE_AXI_STATUS="$(run_passed fm/feat-dead-done)"
+  SQUAD_FAKE_AXI_STATUS="$(run_passed sq/feat-dead-done)"
   SQUAD_FAKE_TMUX_MISSING=1   # the operator's window has closed
   local out; out=$(run_crew_state "$d" feat-dead-done)
   assert_contains "$out" "state: done" "closed pane still reports terminal run-step done"
@@ -1072,10 +1072,10 @@ test_dead_window_still_reports_terminal_run_step() {
 test_dead_window_still_reports_active_run_step() {
   reset_fakes
   local d; d=$(new_case dead-window-active)
-  make_repo_on_branch "$d/wt" fm/feat-dead-act
+  make_repo_on_branch "$d/wt" sq/feat-dead-act
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-dead-act.meta" "window=fm:sq-feat-dead-act" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/feat-dead-act)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/feat-dead-act)"
   SQUAD_FAKE_TMUX_MISSING=1
   local out; out=$(run_crew_state "$d" feat-dead-act)
   assert_contains "$out" "state: working" "closed pane still reports active run-step"
@@ -1088,7 +1088,7 @@ test_no_timeout_uses_perl_bound() {
   reset_fakes
   local d toolbin out start elapsed calls_file calls
   d=$(new_case no-timeout)
-  make_repo_on_branch "$d/wt" fm/feat-timeout
+  make_repo_on_branch "$d/wt" sq/feat-timeout
   make_fakebin "$d" >/dev/null
   calls_file="$d/drill.calls"
   : > "$calls_file"
@@ -1120,12 +1120,12 @@ SH
 test_scout_skips_run_lookup() {
   reset_fakes
   local d; d=$(new_case recon)
-  make_repo_on_branch "$d/wt" fm/recon-j
+  make_repo_on_branch "$d/wt" sq/recon-j
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/recon-j.meta" "window=fm:sq-recon-j" "worktree=$d/wt" "kind=recon" \
     "harness=claude"
   # Even if a run existed on this branch, a recon must not read it.
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/recon-j)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/recon-j)"
   SQUAD_FAKE_BUSY=1
   local gen; gen=$("$ROOT/bin/sq-busy-event.sh" arm "$d/state" recon-j)
   "$ROOT/bin/sq-busy-event.sh" apply "$d/state" recon-j busy --gen "$gen" \
@@ -1172,14 +1172,14 @@ test_missing_meta() {
 test_provably_working_via_runs_list_fallback() {
   reset_fakes
   local d short; d=$(new_case provably-working-crossbranch)
-  make_repo_on_branch "$d/wt" fm/feat-provable
+  make_repo_on_branch "$d/wt" sq/feat-provable
   short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-provable.meta" "window=fm:sq-feat-provable" "worktree=$d/wt" "kind=strike"
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/other-crew)"
   SQUAD_FAKE_RUNS_LIST="$(cat <<EOF
-  running    fm/other-crew aaaaaaa  2026-07-02 22:10
-  running    fm/feat-provable ${short}  2026-07-02 22:05
+  running    sq/other-crew aaaaaaa  2026-07-02 22:10
+  running    sq/feat-provable ${short}  2026-07-02 22:05
 EOF
 )"
   PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" operator_is_provably_working feat-provable \
@@ -1190,15 +1190,15 @@ EOF
 test_not_provably_working_when_stopped() {
   reset_fakes
   local d; d=$(new_case provably-working-stopped)
-  make_repo_on_branch "$d/wt" fm/feat-stopped
+  make_repo_on_branch "$d/wt" sq/feat-stopped
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-stopped.meta" "window=fm:sq-feat-stopped" "worktree=$d/wt" "kind=strike"
   # Repo-wide run belongs to someone else, and this branch has no row in the
   # runs list either (it never validated, or genuinely finished/stopped) - the
   # only remaining signal is the pane, which is idle.
-  SQUAD_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/other-crew)"
   SQUAD_FAKE_RUNS_LIST="$(cat <<'EOF'
-  running    fm/other-crew aaaaaaa  2026-07-02 22:10
+  running    sq/other-crew aaaaaaa  2026-07-02 22:10
 EOF
 )"
   SQUAD_FAKE_BUSY=0
@@ -1222,12 +1222,12 @@ test_historical_same_branch_rewritten_head_not_current() {
   reset_fakes
   local d old_head new_head out
   d=$(new_case rewritten-head)
-  make_repo_on_branch "$d/wt" fm/todo-flag
+  make_repo_on_branch "$d/wt" sq/todo-flag
   old_head=$(git -C "$d/wt" rev-parse HEAD)
   # Simulate a rebase rewrite: orphan new history on the same branch name.
   git -C "$d/wt" checkout -q --orphan tmp-rewrite
   git -C "$d/wt" commit -q --allow-empty -m 'rewritten tip'
-  git -C "$d/wt" branch -q -M fm/todo-flag
+  git -C "$d/wt" branch -q -M sq/todo-flag
   new_head=$(git -C "$d/wt" rev-parse HEAD)
   [ "$old_head" != "$new_head" ] || fail "rewrite did not produce a new head"
   make_fakebin "$d" >/dev/null
@@ -1235,7 +1235,7 @@ test_historical_same_branch_rewritten_head_not_current() {
   printf 'working: stage 2 setup complete rebased onto merged #76\n' > "$d/state/wishlist.status"
   # Historical run still reports the pre-rewrite head on the reused branch.
   SQUAD_FAKE_RUN_HEAD="$old_head"
-  SQUAD_FAKE_AXI_STATUS="$(run_parked fm/todo-flag)"
+  SQUAD_FAKE_AXI_STATUS="$(run_parked sq/todo-flag)"
   SQUAD_FAKE_BUSY=0
   arm_idle_record "$d/state" wishlist
   out=$(run_crew_state "$d" wishlist)
@@ -1252,7 +1252,7 @@ test_active_run_descendant_fix_head_remains_current() {
   reset_fakes
   local d base_head fix_head out
   d=$(new_case pipeline-descendant)
-  make_repo_on_branch "$d/wt" fm/feat-pipeline
+  make_repo_on_branch "$d/wt" sq/feat-pipeline
   base_head=$(git -C "$d/wt" rev-parse HEAD)
   git -C "$d/wt" commit -q --allow-empty -m 'pipeline fix commit'
   fix_head=$(git -C "$d/wt" rev-parse HEAD)
@@ -1261,7 +1261,7 @@ test_active_run_descendant_fix_head_remains_current() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/pipe.meta" "window=fm:sq-pipe" "worktree=$d/wt" "kind=strike"
   SQUAD_FAKE_RUN_HEAD="$fix_head"
-  SQUAD_FAKE_AXI_STATUS="$(run_fixing fm/feat-pipeline)"
+  SQUAD_FAKE_AXI_STATUS="$(run_fixing sq/feat-pipeline)"
   out=$(run_crew_state "$d" pipe)
   assert_contains "$out" "source: run-step" "descendant pipeline fix head remains run-step"
   assert_contains "$out" "state: working" "active fixing run remains working"
@@ -1273,14 +1273,14 @@ test_local_advanced_past_run_head_invalidates() {
   reset_fakes
   local d run_head out
   d=$(new_case local-advanced)
-  make_repo_on_branch "$d/wt" fm/feat-adv
+  make_repo_on_branch "$d/wt" sq/feat-adv
   run_head=$(git -C "$d/wt" rev-parse HEAD)
   git -C "$d/wt" commit -q --allow-empty -m 'local stage-2 work after prior run'
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/adv.meta" "window=fm:sq-adv" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'working: stage 2 implementation in progress\n' > "$d/state/adv.status"
   SQUAD_FAKE_RUN_HEAD="$run_head"
-  SQUAD_FAKE_AXI_STATUS="$(run_parked fm/feat-adv)"
+  SQUAD_FAKE_AXI_STATUS="$(run_parked sq/feat-adv)"
   SQUAD_FAKE_BUSY=0
   arm_idle_record "$d/state" adv
   out=$(run_crew_state "$d" adv)
@@ -1294,11 +1294,11 @@ test_missing_run_head_falls_back_to_current_state() {
   reset_fakes
   local d out
   d=$(new_case missing-run-head)
-  make_repo_on_branch "$d/wt" fm/feat-no-head
+  make_repo_on_branch "$d/wt" sq/feat-no-head
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/no-head.meta" "window=fm:sq-no-head" "worktree=$d/wt" "kind=strike" "harness=claude"
   printf 'working: current stage still in progress\n' > "$d/state/no-head.status"
-  SQUAD_FAKE_AXI_STATUS=$(run_parked fm/feat-no-head | grep -v '^  head:')
+  SQUAD_FAKE_AXI_STATUS=$(run_parked sq/feat-no-head | grep -v '^  head:')
   SQUAD_FAKE_RUNS_LIST=""
   SQUAD_FAKE_BUSY=0
   arm_idle_record "$d/state" no-head

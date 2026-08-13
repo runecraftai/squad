@@ -477,7 +477,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   data="$TMP_ROOT/spawn-data"
   state="$TMP_ROOT/spawn-state"
   config="$TMP_ROOT/spawn-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'brief\n' > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
@@ -605,7 +605,7 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails() {
   data="$TMP_ROOT/terminal-fail-data"
   state="$TMP_ROOT/terminal-fail-state"
   config="$TMP_ROOT/terminal-fail-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'brief\n' > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
@@ -638,7 +638,7 @@ test_spawn_preserves_orca_metadata_when_abort_cleanup_fails() {
   data="$TMP_ROOT/cleanup-fail-data"
   state="$TMP_ROOT/cleanup-fail-state"
   config="$TMP_ROOT/cleanup-fail-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'brief\n' > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
@@ -672,7 +672,7 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
   data="$TMP_ROOT/meta-fail-data"
   state="$TMP_ROOT/meta-fail-state"
   config="$TMP_ROOT/meta-fail-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state/$id.meta" "$config"
   printf 'brief\n' > "$data/$id/brief.md"
   orca_case meta-fail
@@ -787,7 +787,7 @@ test_scout_teardown_removes_orca_worktree_via_helper() {
   data="$TMP_ROOT/teardown-data"
   state="$TMP_ROOT/teardown-state"
   config="$TMP_ROOT/teardown-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
   touch "$state/.last-sentry-beat"
@@ -830,8 +830,8 @@ test_scout_teardown_refuses_orca_id_path_mismatch() {
   data="$TMP_ROOT/recon-mismatch-data"
   state="$TMP_ROOT/recon-mismatch-state"
   config="$TMP_ROOT/recon-mismatch-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
-  git -C "$proj" worktree add --quiet -b "fm/$id-other" "$other_wt"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  git -C "$proj" worktree add --quiet -b "sq/$id-other" "$other_wt"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
   touch "$state/.last-sentry-beat"
@@ -1014,7 +1014,7 @@ test_ship_teardown_removes_orca_worktree_when_id_path_matches() {
   data="$TMP_ROOT/ship-match-data"
   state="$TMP_ROOT/ship-match-state"
   config="$TMP_ROOT/ship-match-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   touch "$state/.last-sentry-beat"
   fm_write_meta "$state/$id.meta" \
@@ -1049,7 +1049,7 @@ test_ship_teardown_refuses_orca_unresolvable_worktree_id() {
   data="$TMP_ROOT/ship-unresolved-data"
   state="$TMP_ROOT/ship-unresolved-state"
   config="$TMP_ROOT/ship-unresolved-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   touch "$state/.last-sentry-beat"
   fm_write_meta "$state/$id.meta" \
@@ -1087,8 +1087,8 @@ test_ship_teardown_refuses_orca_id_path_mismatch() {
   data="$TMP_ROOT/ship-mismatch-data"
   state="$TMP_ROOT/ship-mismatch-state"
   config="$TMP_ROOT/ship-mismatch-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
-  git -C "$proj" worktree add --quiet -b "fm/$id-other" "$other_wt"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  git -C "$proj" worktree add --quiet -b "sq/$id-other" "$other_wt"
   mkdir -p "$data/$id" "$state" "$config"
   touch "$state/.last-sentry-beat"
   fm_write_meta "$state/$id.meta" \
@@ -1132,7 +1132,7 @@ test_teardown_refuses_orca_missing_worktree_id() {
   data="$TMP_ROOT/missing-id-data"
   state="$TMP_ROOT/missing-id-state"
   config="$TMP_ROOT/missing-id-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
   touch "$state/.last-sentry-beat"
@@ -1170,7 +1170,7 @@ test_teardown_refuses_orca_worktree_without_terminal_handle() {
   data="$TMP_ROOT/no-terminal-data"
   state="$TMP_ROOT/no-terminal-state"
   config="$TMP_ROOT/no-terminal-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
   touch "$state/.last-sentry-beat"
@@ -1203,7 +1203,7 @@ test_XO_force_teardown_removes_orca_child_via_orca() {
   child_id="orcachildz6"
   mkdir -p "$home/state" "$home/data" "$subhome/state" "$subhome/projects"
   printf 'domain\n' > "$subhome/.sq-xo-home"
-  fm_git_worktree "$childproj" "$childwt" "fm/$child_id"
+  fm_git_worktree "$childproj" "$childwt" "sq/$child_id"
   fm_write_meta "$home/state/domain.meta" \
     "window=Squad:sq-domain" "worktree=$subhome" "project=$subhome" \
     "harness=echo" "kind=xo" "mode=xo" "yolo=off" \
@@ -1245,8 +1245,8 @@ test_XO_force_teardown_refuses_orca_child_id_path_mismatch() {
   child_id="orcachildmismatchz1"
   mkdir -p "$home/state" "$home/data" "$subhome/state" "$subhome/projects"
   printf 'domain\n' > "$subhome/.sq-xo-home"
-  fm_git_worktree "$childproj" "$childwt" "fm/$child_id"
-  git -C "$childproj" worktree add --quiet -b "fm/$child_id-other" "$other_wt"
+  fm_git_worktree "$childproj" "$childwt" "sq/$child_id"
+  git -C "$childproj" worktree add --quiet -b "sq/$child_id-other" "$other_wt"
   fm_write_meta "$home/state/domain.meta" \
     "window=Squad:sq-domain" "worktree=$subhome" "project=$subhome" \
     "harness=echo" "kind=xo" "mode=xo" "yolo=off" \
@@ -1287,7 +1287,7 @@ test_XO_force_teardown_refuses_partial_orca_child() {
   child_id="orcapartialz9"
   mkdir -p "$home/state" "$home/data" "$subhome/state" "$subhome/projects"
   printf 'domain\n' > "$subhome/.sq-xo-home"
-  fm_git_worktree "$childproj" "$childwt" "fm/$child_id"
+  fm_git_worktree "$childproj" "$childwt" "sq/$child_id"
   fm_write_meta "$home/state/domain.meta" \
     "window=Squad:sq-domain" "worktree=$subhome" "project=$subhome" \
     "harness=echo" "kind=xo" "mode=xo" "yolo=off" \

@@ -56,7 +56,7 @@ make_XO_dir() {
 # has (git-dir != git-common-dir), which must keep the hook inert.
 make_operator_worktree_dir() {
   local base=$1 dir=$2
-  fm_git_worktree "$base" "$dir" fm/autoarm-test-branch
+  fm_git_worktree "$base" "$dir" sq/autoarm-test-branch
   mkdir -p "$dir/state"
   : > "$dir/AGENTS.md"
   install_autoarm_scripts "$dir"
