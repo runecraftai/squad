@@ -67,7 +67,7 @@ record_failure() {  # <label> <detail>
 # SQUAD_FOB_RETURN_LOCK_* (slice-3 contract, docs/configuration.md env table),
 # so guard 5 must not flag them. Every other treehouse token in any case or
 # identifier position is a violation.
-TREEHOUSE_LEGACY_ALIAS_SED='s/SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES//g; s/SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS//g'
+TREEHOUSE_LEGACY_ALIAS_SED='s/\(^\|[^[:alnum:]_]\)SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES\([^[:alnum:]_]\|$\)/\1\2/g; s/\(^\|[^[:alnum:]_]\)SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS\([^[:alnum:]_]\|$\)/\1\2/g'
 
 # guard_no_match <label> <pattern>...
 # Records a violation if ANY tracked file matches ANY pattern (fixed -E -I -H -n).
@@ -155,6 +155,31 @@ test_guard_no_mapped_vocabulary() {
     'watcher-continuity'
 }
 
+test_guard_alias_allowlist_is_exact() {
+  local pattern='(^|[^[:alpha:]])treehouse([^[:alpha:]]|$)'
+  local line stripped
+  for line in \
+    'export SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=3' \
+    'FOB_RETURN_LOCK_RETRIES=${SQUAD_FOB_RETURN_LOCK_RETRIES:-${SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES:-3}}' \
+    'SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0.1' \
+    '`SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS` remains a compatible fallback'; do
+    stripped=$(printf '%s\n' "$line" | sed "$TREEHOUSE_LEGACY_ALIAS_SED")
+    if printf '%s\n' "$stripped" | grep -qi -E -e "$pattern"; then
+      fail "guard 5 allowlist: exact documented alias still flagged: $line"
+    fi
+  done
+  for line in \
+    'SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES_EXTRA=1' \
+    'XSQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=1' \
+    'SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS_MAX=1'; do
+    stripped=$(printf '%s\n' "$line" | sed "$TREEHOUSE_LEGACY_ALIAS_SED")
+    if ! printf '%s\n' "$stripped" | grep -qi -E -e "$pattern"; then
+      fail "guard 5 allowlist: extended alias escaped the strip: $line"
+    fi
+  done
+  pass "rebrand guard 5: allowlist strips only exact legacy-alias names"
+}
+
 test_guard_keep_list() {
   [ -f "$ROOT/AGENTS.md" ] || record_failure "rebrand guard 6: keep-list" "AGENTS.md missing"
   [ -L "$ROOT/CLAUDE.md" ] || record_failure "rebrand guard 6: keep-list" "CLAUDE.md is not a symlink"
@@ -173,6 +198,7 @@ test_guard_no_upstream_authors
 test_guard_no_fm_prefix
 test_guard_no_fm_env_prefix
 test_guard_no_mapped_vocabulary
+test_guard_alias_allowlist_is_exact
 test_guard_keep_list
 
 if [ -n "$GUARD_FAILURES" ]; then
