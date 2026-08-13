@@ -1,8 +1,7 @@
 # Third-party notices
 
-The published `sq-report` package vendors the following third-party software into `dist/`.
-Each component remains under its own license; the notices below satisfy their attribution requirements.
-The whiteboard bundle (`dist/whiteboard/`) is built from these packages by `scripts/build.js`.
+`sq-report` bundles the following third-party software into `dist/` (built by `scripts/build.js`).
+Each component remains under its own license; the attributions below satisfy their license requirements.
 
 ## Bundled into `dist/whiteboard/whiteboard.js` and `whiteboard.css`
 
@@ -57,7 +56,6 @@ The Xiaolai family (CJK glyphs) is intentionally not vendored; Excalidraw falls 
 | `daisyui.css`, `daisyui-themes.css` (daisyUI)     | MIT     |
 | `tailwindcss-browser.js` (`@tailwindcss/browser`) | MIT     |
 
-## Pre-publication audit note
+## License verification
 
-Font license attributions above were compiled from each family's upstream project.
 Before any npm publication that changes the vendored font set, re-verify each family's license file upstream (the `@excalidraw/excalidraw` npm package does not ship per-font license files).
