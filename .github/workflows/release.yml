@@ -63,9 +63,9 @@ jobs:
         run: |
           set -eu
           cd "packages/${{ matrix.package }}"
-          # Go binaries have no package.json; their release is a GitHub
-          # release/tag only.
-          if [ ! -f package.json ]; then
+          # Go binaries and private workspace stubs have no npm distribution;
+          # their release is a GitHub release/tag only.
+          if [ ! -f package.json ] || node -e "process.exit(require('./package.json').private ? 0 : 1)"; then
             echo "No npm package for ${{ matrix.package }} (Go binary); nothing to publish."
             exit 0
           fi

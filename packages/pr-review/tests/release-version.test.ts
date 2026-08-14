@@ -14,7 +14,7 @@ const tempDirs: string[] = [];
 function writeVersionFiles(versions: VersionFiles = {}): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pr-review-release-version-test-"));
 	tempDirs.push(dir);
-	fs.writeFileSync(path.join(dir, ".release-please-manifest.json"), JSON.stringify({ ".": versions.manifest ?? "1.2.3" }));
+	fs.writeFileSync(path.join(dir, ".release-please-manifest.json"), JSON.stringify({ "packages/pr-review": versions.manifest ?? "1.2.3" }));
 	fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: versions.packageJson ?? "1.2.3" }));
 	return dir;
 }
@@ -41,7 +41,7 @@ describe("root release-version invariant", () => {
 	test("rejects missing or malformed root versions", () => {
 		const missing = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pr-review-release-version-test-"));
 		tempDirs.push(missing);
-		fs.writeFileSync(path.join(missing, ".release-please-manifest.json"), JSON.stringify({ ".": "1.2.3" }));
+		fs.writeFileSync(path.join(missing, ".release-please-manifest.json"), JSON.stringify({ "packages/pr-review": "1.2.3" }));
 		fs.writeFileSync(path.join(missing, "package.json"), JSON.stringify({}));
 		expect(() => verifyRootReleaseVersion(missing)).toThrow(/valid semantic version/);
 		expect(() => verifyRootReleaseVersion(writeVersionFiles({ packageJson: "not-a-version" }))).toThrow(/valid semantic version/);
