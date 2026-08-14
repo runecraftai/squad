@@ -1,0 +1,81 @@
+name: Release
+
+# release-please drives one release stream per package (each package has its
+# own release-please-config.json + .release-please-manifest.json under
+# packages/<name>/). On push to main it opens or updates the package's release
+# PR; once that PR is merged, the next run detects the merged PR, creates the
+# GitHub release and tag (drill-v0.1.1, sq-tasks-v0.1.1, ...), and publishes
+# the JS packages to npm. Go binaries (drill, fob) only get releases/tags;
+# drill's release is created as a draft per its config so assets can be
+# attached before publishing.
+#
+# npm publishing needs an NPM_TOKEN repository secret (npm auth token for the
+# publishing account). Without it the publish step fails loudly on the first
+# real release instead of silently skipping.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  # npm provenance (publishConfig.provenance in pr-review and sq-tasks)
+  # requires the OIDC id-token from this permission.
+  id-token: write
+
+# One stream per package is independent state; the job-level group prevents
+# two overlapping runs of the same package on the same ref.
+
+jobs:
+  release-please:
+    name: Release ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ matrix.package }}-${{ github.ref }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [drill, fob, pr-review, sq-browser, sq-gh, sq-quota, sq-report, sq-tasks]
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: packages/${{ matrix.package }}/release-please-config.json
+          manifest-file: packages/${{ matrix.package }}/.release-please-manifest.json
+      - uses: actions/checkout@v6
+        if: ${{ steps.release.outputs.releases_created }}
+      - uses: pnpm/action-setup@v4
+        if: ${{ steps.release.outputs.releases_created }}
+        with:
+          version: 11.1.1
+      - uses: actions/setup-node@v6
+        if: ${{ steps.release.outputs.releases_created }}
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Publish to npm
+        if: ${{ steps.release.outputs.releases_created }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -eu
+          cd "packages/${{ matrix.package }}"
+          # Go binaries have no package.json; their release is a GitHub
+          # release/tag only.
+          if [ ! -f package.json ]; then
+            echo "No npm package for ${{ matrix.package }} (Go binary); nothing to publish."
+            exit 0
+          fi
+          # pr-review is a plain source package with no lockfile and no build;
+          # everything else installs frozen deps and builds (prepack also
+          # rebuilds as a safety net).
+          if [ -f pnpm-lock.yaml ]; then
+            npx -y pnpm@11.1.1 install --frozen-lockfile
+            npx -y pnpm@11.1.1 run build
+          fi
+          # publishConfig in each package.json owns access/public and
+          # provenance; NODE_AUTH_TOKEN above authenticates the publish.
+          npm publish
