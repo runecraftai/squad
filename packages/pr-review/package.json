@@ -26,6 +26,10 @@
     "developer-tools"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runecraftai/squad.git"
+  },
   "engines": {
     "node": ">=20"
   },

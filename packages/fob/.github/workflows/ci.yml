@@ -10,8 +10,8 @@ on:
     branches: [main]
     paths-ignore:
       - .release-please-manifest.json
-      - CHANGELOG.md
-      - flake.nix
+      - packages/fob/CHANGELOG.md
+      - packages/fob/flake.nix
 
 jobs:
   check:

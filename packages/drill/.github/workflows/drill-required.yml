@@ -11,7 +11,7 @@ on:
     # run is created in action_required and never starts.
     paths-ignore:
       - .release-please-manifest.json
-      - CHANGELOG.md
+      - packages/drill/CHANGELOG.md
 
 permissions:
   contents: read

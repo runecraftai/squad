@@ -42,7 +42,7 @@ test("published package root is a complete Agent Plugin", async () => {
 test("release-please keeps the plugin manifest version in step with the package", async () => {
   const config = JSON.parse(await readFile(new URL("../release-please-config.json", import.meta.url), "utf8"));
 
-  assert.deepEqual(config.packages["."]["extra-files"], [{ type: "json", path: "plugin.json", jsonpath: "$.version" }]);
+  assert.deepEqual(config.packages["packages/sq-report"]["extra-files"], [{ type: "json", path: "plugin.json", jsonpath: "$.version" }]);
 });
 
 test("lavish-design agent skill is marked internal for skills CLI discovery", async () => {

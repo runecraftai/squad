@@ -9,7 +9,7 @@ on:
     # no run is created at all. push/tag/release triggers are unaffected.
     paths-ignore:
       - .release-please-manifest.json
-      - CHANGELOG.md
+      - packages/drill/CHANGELOG.md
 
 jobs:
   check:
