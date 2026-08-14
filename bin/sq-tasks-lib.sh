@@ -1,25 +1,28 @@
 # shellcheck shell=bash
-# Shared tasks-axi backend selection and compatibility probe for bootstrap,
+# Shared sq-tasks backend selection and compatibility probe for bootstrap,
 # teardown, and XO backlog handoff.
 # Usage: . bin/sq-tasks-lib.sh
 #
-# Compatible means tasks-axi --version reports SQUAD_TASKS_AXI_MIN or newer,
-# `tasks-axi update --help` exposes --archive-body for recoverable note rewrites,
-# and `tasks-axi mv --help` exposes [<id>...] for atomic multi-ID moves required
-# by XO handoffs.
+# Compatible means the resolved backend command reports SQUAD_TASKS_AXI_MIN or
+# newer, `update --help` exposes --archive-body for recoverable note rewrites,
+# and `mv --help` exposes [<id>...] for atomic multi-ID moves required by XO
+# handoffs.
 # SQUAD_TASKS_AXI_MIN follows the axi-family floor policy owned beside the floor
-# constants in bin/sq-bootstrap.sh.
+# constants in bin/sq-bootstrap.sh. The constant name is a durable version
+# contract used by bootstrap probes; it is NOT a user-facing tool name (the
+# purge decision 2026-08-14 keeps it only as the probe contract identifier).
 # The feature probes are a separate concern and stay as defense in depth for
 # stripped or forked builds that advertise a current version without those flags.
-# `config/backlog-backend=manual` opts out of tasks-axi for routine Squad
-# backlog mutations, but validated XO handoffs always use `tasks-axi mv`.
-# Absent or any other value keeps the default tasks-axi backend path, falling
+# `config/backlog-backend=manual` opts out of the sq-tasks backend for routine
+# Squad backlog mutations, but validated XO handoffs always invoke the legacy
+# protocol alias (see the resolver note below).
+# Absent or any other value keeps the default sq-tasks backend path, falling
 # back to manual mutation when the tool is not compatible.
 #
 # This file is the single owner of SQUAD_TASKS_AXI_MIN. bin/sq-bootstrap.sh turns a
 # failing check into the operator-facing MISSING diagnostic.
 #
-# COMPATIBILITY VERDICT REUSE. fm_tasks_axi_compatible costs three tasks-axi
+# COMPATIBILITY VERDICT REUSE. fm_tasks_axi_compatible costs three backend
 # subprocesses, and one session start needs the same verdict twice: once in
 # bin/sq-session-start.sh's backlog listing and once in the bin/sq-bootstrap.sh
 # child it runs. Two reuse layers collapse that to a single probe:
@@ -28,17 +31,18 @@
 #     in SQUAD_TASKS_AXI_COMPATIBLE=0|1. Sourcing this file CONSUMES that variable
 #     (it is unset from the environment and kept only as a private shell
 #     variable), so the verdict reaches the child that needs it and never leaks
-#     onward into a spawned agent's environment, where it could outlive a
-#     tasks-axi upgrade. Any value other than exactly 0 or 1 is ignored and the
+#     onward into a spawned agent's environment, where it could outlive an
+#     sq-tasks upgrade. Any value other than exactly 0 or 1 is ignored and the
 #     probe runs normally.
-# Both layers are bounded by process lifetime, so a tasks-axi install or upgrade
+# Both layers are bounded by process lifetime, so an sq-tasks install or upgrade
 # is picked up by the next process rather than being cached to disk.
 
 SQUAD_TASKS_AXI_MIN=0.1.0
 
-# Resolve the tasks-axi backend command: the forked sq-tasks (M2,
-# T-M2-04) wins when installed; otherwise the legacy tasks-axi name is used
-# so a pre-M2 environment keeps working. The fork keeps the same CLI protocol.
+# Resolve the sq-tasks backend command: the forked sq-tasks (M2,
+# T-M2-04) wins when installed; otherwise the legacy tasks-axi protocol-alias
+# name is used so a pre-M2 environment keeps working. The fork keeps the same
+# CLI protocol.
 # Note: runtime call sites keep invoking the bare `tasks-axi` name so PATH
 # shadowing (test fakebin stubs, the CI tasks-axi alias) keeps working; this
 # resolver drives the compatibility probes below.

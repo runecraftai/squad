@@ -18,7 +18,7 @@
 #
 # Registered modes:
 #   drill            full pipeline -> PR -> configured merge authority (default)
-#   direct-PR              push + PR via gh-axi, no pipeline
+#   direct-PR              push + PR via sq-gh, no pipeline
 #   local-only             local branch, no remote/PR, guarded local merge
 #   drill-prod-only  a conditional policy, not a task mode: Squad
 #                          classifies each task's surface at intake (the

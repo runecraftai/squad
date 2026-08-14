@@ -16,7 +16,7 @@ TMP_ROOT=$(fm_test_tmproot sq-sitrep)
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 # A fakebin that stubs the local tools the canonical snapshot may reach for, plus a
-# gh/gh-axi that RECORDS every call to $NET_LOG so a test can prove the default path
+# gh/sq-gh that RECORDS every call to $NET_LOG so a test can prove the default path
 # makes no network call. gh returns one fixture open PR keyed to the strike task.
 make_fakebin() {  # <dir>
   local fb
@@ -887,7 +887,7 @@ test_default_is_bounded_and_local_only() {
   local canon; canon=$(PATH="$fakebin:$PATH" SQUAD_BASE="$home" "$ROOT/bin/sq-unit-snapshot.sh" --json)
   [ "${#toon}" -lt "${#canon}" ] || fail "projection must be smaller than the canonical snapshot"
   # Local-only: no GitHub/network call on the default path.
-  [ ! -s "$home/net.log" ] || fail "default run must make no gh/gh-axi call, got: $(cat "$home/net.log")"
+  [ ! -s "$home/net.log" ] || fail "default run must make no gh/sq-gh call, got: $(cat "$home/net.log")"
   # Definitive not-requested PR state, never a silent omission.
   assert_contains "$toon" 'prs: "not_requested' "default must state PR checks were not requested"
   assert_contains "$toon" "live PR discovery + checks,\"--include-prs\"" "omitted must mark the dropped live-PR surface"
@@ -1172,7 +1172,7 @@ test_landed_includes_XO_home_merges() {
       and (.landed | any(.[]; .id == "done-a"))
   ' >/dev/null || fail "landed must merge XO-home Done with main-home Done: $json"
   # Still zero network on this default path.
-  [ ! -s "$home/net.log" ] || fail "landed roll-up must make no gh/gh-axi call, got: $(cat "$home/net.log")"
+  [ ! -s "$home/net.log" ] || fail "landed roll-up must make no gh/sq-gh call, got: $(cat "$home/net.log")"
   pass "landed includes XO-managed merges alongside main-home merges"
 }
 

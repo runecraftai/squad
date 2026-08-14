@@ -56,7 +56,10 @@ A checkout-local `bin/git` therefore cannot authorize an untracked command, and 
 The filesystem discovery normally finds tools installed by nvm, asdf, or mise without starting their shell hooks.
 When a required tool remains discoverable only through one of those managers, `sq-remote-doctor.sh --fix` may create a Squad-owned wrapper in `~/.local/bin` that executes its selected absolute target.
 It never overwrites a wrapper or other file it does not own, and it never installs a package.
-An operator can use the same wrapper shape when a tool needs a manual selection:
+An operator can use the same wrapper shape when a tool needs a manual selection.
+The wrapper below provides the backlog-backend protocol alias the remote runtime
+invokes (contract: `bin/sq-tasks-lib.sh`); its `exec` line must point at the
+installed `sq-tasks` binary, never at another wrapper:
 
 ```sh
 mkdir -p ~/.local/bin
@@ -64,7 +67,7 @@ cat > ~/.local/bin/tasks-axi <<'SH'
 #!/usr/bin/env bash
 tool_bin="$HOME/.nvm/versions/node/<selected-version>/bin"
 PATH="$tool_bin:$PATH"
-exec "$tool_bin/tasks-axi" "$@"
+exec "$tool_bin/sq-tasks" "$@"
 SH
 chmod +x ~/.local/bin/tasks-axi
 ```
@@ -105,7 +108,7 @@ These steps are never automated and are always reported rather than silently att
 - The first console login on that Mac, and automatic login in System Settings > Users & Groups when the machine runs headless and must come back on its own after a reboot.
 - FileVault, which holds a reboot at pre-boot authentication before any login session exists.
 - Installing any missing required tool that no safe wrapper can resolve.
-- The required remote tool set is `git`, `jq`, `herdr`, compatible `tasks-axi`, `fob`, and at least one of `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, or `kimi`.
+- The required remote tool set is `git`, `jq`, `herdr`, compatible `sq-tasks` (installed with its backlog-backend protocol alias, per `bin/sq-tasks-lib.sh`), `fob`, and at least one of `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, or `kimi`.
 - Each worker runtime's own `/login`, and any keychain password prompt that login needs.
 
 Squad never writes an auto-login password, never changes FileVault, and never stores an account password.
@@ -195,12 +198,12 @@ Move already-judged queued work with the normal command:
 bin/sq-backlog-handoff.sh <id> <item-key>...
 ```
 
-For a remote route, `tasks-axi mv` first moves the dependency-closed set atomically from the primary backlog into `data/handoff/<id>.outbox.md`.
+For a remote route, `sq-tasks mv` first moves the dependency-closed set atomically from the primary backlog into `data/handoff/<id>.outbox.md`.
 The outbox is then copied to the remote handoff scratch directory and `sq-backlog-receive.sh` atomically ingests every destination-absent key under the remote backlog's own lock.
 Confirmed receipt removes the outbox.
 An existing outbox is the complete retry record, and `--resume-pending` safely re-delivers it.
 Bootstrap retries pending outboxes and emits `XO_HANDOFF:` only when one remains.
-There is no two-phase journal and no additional tasks-axi release requirement.
+There is no two-phase journal and no additional sq-tasks release requirement.
 
 ## Sync, update, and retirement
 

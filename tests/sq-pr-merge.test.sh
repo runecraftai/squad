@@ -7,11 +7,11 @@
 #
 # Matrix:
 #   (a) merge records pr= and pr_head= before merging, and merges
-#   (b) merge is refused when gh-axi pr merge itself fails (no silent success)
-#   (c) extra gh-axi pr merge args are forwarded after number and --repo
-#   (d) merge is refused before gh-axi when task meta is missing
-#   (e) PR URL is parsed to number + --repo for gh-axi (defaults to --squash)
-#   (f) malformed PR URL fails fast without calling gh-axi
+#   (b) merge is refused when sq-gh pr merge itself fails (no silent success)
+#   (c) extra sq-gh pr merge args are forwarded after number and --repo
+#   (d) merge is refused before sq-gh when task meta is missing
+#   (e) PR URL is parsed to number + --repo for sq-gh (defaults to --squash)
+#   (f) malformed PR URL fails fast without calling sq-gh
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
 set -u
@@ -24,7 +24,7 @@ PR_MERGE="$ROOT/bin/sq-pr-merge.sh"
 TMP_ROOT=$(fm_test_tmproot sq-pr-merge-tests)
 
 # Build a fresh sandbox for one test case: a state dir with a task meta and a
-# fakebin with a gh-axi mock that records how it was invoked. Echoes the case dir.
+# fakebin with a sq-gh mock that records how it was invoked. Echoes the case dir.
 make_case() {
   local name=$1 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
@@ -42,7 +42,7 @@ make_case() {
   printf '%s\n' "$case_dir"
 }
 
-# gh-axi mock recording every invocation to a log file, and gh mock answering
+# sq-gh mock recording every invocation to a log file, and gh mock answering
 # headRefOid for sq-pr-check.sh's pr_head lookup. Args: case_dir head_sha
 add_gh_mocks() {
   local case_dir=$1 head=$2
@@ -65,7 +65,7 @@ SH
   chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
 }
 
-# gh-axi mock that fails the merge call but succeeds everything else, so a
+# sq-gh mock that fails the merge call but succeeds everything else, so a
 # real merge failure is distinguishable from the recording step.
 add_gh_mocks_merge_fails() {
   local case_dir=$1
@@ -118,8 +118,8 @@ test_records_pr_and_head_before_merging() {
   assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" \
     "records-before-merge: pr_head= was not recorded"
   grep -qxF 'pr merge 9 --repo example/repo --squash' "$case_dir/sq-gh.log" \
-    || fail "records-before-merge: gh-axi pr merge was not invoked with number, --repo, and default --squash"
-  pass "sq-pr-merge records pr= and pr_head= before invoking gh-axi pr merge"
+    || fail "records-before-merge: sq-gh pr merge was not invoked with number, --repo, and default --squash"
+  pass "sq-pr-merge records pr= and pr_head= before invoking sq-gh pr merge"
 }
 
 test_merge_failure_propagates_after_recording() {
@@ -135,7 +135,7 @@ test_merge_failure_propagates_after_recording() {
   rc=$?
   set -e
 
-  expect_code 1 "$rc" "merge-fails: sq-pr-merge should propagate the gh-axi merge failure"
+  expect_code 1 "$rc" "merge-fails: sq-pr-merge should propagate the sq-gh merge failure"
   assert_grep 'pr=https://github.com/example/repo/pull/13' "$case_dir/state/task-x1.meta" \
     "merge-fails: pr= should already be recorded even though the merge itself failed"
   pass "sq-pr-merge propagates a real merge failure without silently succeeding"
@@ -152,8 +152,8 @@ test_extra_merge_args_forwarded() {
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "extra-args: sq-pr-merge failed"
 
   grep -qxF 'pr merge 15 --repo example/repo --squash --delete-branch' "$case_dir/sq-gh.log" \
-    || fail "extra-args: extra gh-axi pr merge flags were not forwarded"
-  pass "sq-pr-merge forwards extra flags to gh-axi pr merge after the -- separator"
+    || fail "extra-args: extra sq-gh pr merge flags were not forwarded"
+  pass "sq-pr-merge forwards extra flags to sq-gh pr merge after the -- separator"
 }
 
 test_missing_meta_refuses_before_merge() {
@@ -173,7 +173,7 @@ test_missing_meta_refuses_before_merge() {
   expect_code 1 "$rc" "missing-meta: sq-pr-merge should refuse"
   assert_grep 'error: task metadata is unavailable' "$case_dir/stderr" \
     "missing-meta: refusal did not explain missing meta"
-  [ ! -s "$case_dir/sq-gh.log" ] || fail "missing-meta: gh-axi pr merge was invoked"
+  [ ! -s "$case_dir/sq-gh.log" ] || fail "missing-meta: sq-gh pr merge was invoked"
   assert_absent "$case_dir/state/missing-x1.check.sh" \
     "missing-meta: sq-pr-check should not arm a poll for an unknown task"
   pass "sq-pr-merge refuses before merging when task meta is missing"
@@ -200,8 +200,8 @@ test_malformed_url_refuses_before_merge() {
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "malformed-url: malformed PR URL armed a merge poll"
   assert_no_grep 'pr merge' "$case_dir/sq-gh.log" \
-    "malformed-url: gh-axi pr merge was invoked for a malformed URL"
-  pass "sq-pr-merge refuses malformed PR URLs before calling gh-axi"
+    "malformed-url: sq-gh pr merge was invoked for a malformed URL"
+  pass "sq-pr-merge refuses malformed PR URLs before calling sq-gh"
 }
 
 test_rejects_unsafe_url_segments_before_recording() {
@@ -227,7 +227,7 @@ test_rejects_unsafe_url_segments_before_recording() {
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "unsafe-url-segment: unsafe PR URL armed a merge poll"
   assert_no_grep 'pr merge' "$case_dir/sq-gh.log" \
-    "unsafe-url-segment: gh-axi pr merge was invoked for an unsafe URL"
+    "unsafe-url-segment: sq-gh pr merge was invoked for an unsafe URL"
   pass "sq-pr-merge refuses unsafe PR URL segments before recording state"
 }
 
@@ -252,7 +252,7 @@ test_repo_override_args_refuse_before_recording() {
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "repo-override: repo override armed a merge poll"
   assert_no_grep 'pr merge' "$case_dir/sq-gh.log" \
-    "repo-override: gh-axi pr merge was invoked despite repo override"
+    "repo-override: sq-gh pr merge was invoked despite repo override"
   pass "sq-pr-merge refuses repo override args before recording state"
 }
 
@@ -297,8 +297,8 @@ test_parses_pr_url_for_gh_axi() {
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "url-parsing: sq-pr-merge failed"
 
   grep -qxF 'pr merge 126 --repo my-org/my-repo --squash' "$case_dir/sq-gh.log" \
-    || fail "url-parsing: gh-axi pr merge was not invoked as number + --repo + default --squash"
-  pass "sq-pr-merge parses a GitHub PR URL into gh-axi number and --repo arguments"
+    || fail "url-parsing: sq-gh pr merge was not invoked as number + --repo + default --squash"
+  pass "sq-pr-merge parses a GitHub PR URL into sq-gh number and --repo arguments"
 }
 
 test_records_pr_and_head_before_merging

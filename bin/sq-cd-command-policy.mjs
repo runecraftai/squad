@@ -4,7 +4,7 @@
 //
 // A stray persistent top-level `cd projects/<clone>` silently relocates the
 // primary shell, so the next Squad-owned command (a backlog write, an
-// sq-* lifecycle call, tasks-axi) runs inside a project clone instead of the
+// sq-* lifecycle call, sq-tasks) runs inside a project clone instead of the
 // base. This policy blocks exactly that class of command; the environmental
 // scoping to the real primary checkout lives in the bin/sq-cd-pretool-check.sh
 // transport, not here. See docs/cd-guard.md for the full contract.

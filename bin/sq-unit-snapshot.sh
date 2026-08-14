@@ -13,10 +13,10 @@
 #   roots: resolved root/config/data/state/projects directories.
 #   backlog: {path,present,records[]} where records are ordered as written in
 #     data/backlog.md and cover In flight, Queued, and Done.
-#     Canonical tasks-axi rows are structured; free-form non-empty lines in
+#     Canonical sq-tasks rows are structured; free-form non-empty lines in
 #     those sections are preserved as unstructured records.
 #     Structured rows preserve commander-hold metadata such as hold_kind and
-#     hold_reason when tasks-axi emits it. They also carry normalized current_role,
+#     hold_reason when sq-tasks emits it. They also carry normalized current_role,
 #     requires_child_metadata, blocked_by_ids, unresolved_blocker_ids, and
 #     commander_actionable fields. Repeated blocker tokens remain ordered; a blocker
 #     resolves only when its structured record is Done, and missing ids stay open.
@@ -152,7 +152,7 @@ JSON is the stable machine-readable output contract.
 validated registered-home handoff. It is local-only, skips nested XO
 aggregation, and marks inventory contradictions or unavailable child state invalid.
 Its invalidity object names the normalized failure kind and affected ids.
-Actionable tasks-axi commander holds appear as decisions_open and stay visible in
+Actionable sq-tasks commander holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, and plural blocker fields for downstream
 projections. A commander hold is actionable only when every blocker is Done.
 Cross-home reads use SQUAD_SNAPSHOT_XOS (default 20, 0 lifts the count

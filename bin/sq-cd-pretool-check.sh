@@ -3,7 +3,7 @@
 #
 # A stray persistent top-level `cd projects/<clone>` in the PRIMARY Squad
 # shell silently relocates the shell, so a later Squad-owned command (a
-# backlog write, an sq-* lifecycle call, tasks-axi) runs inside a project clone
+# backlog write, an sq-* lifecycle call, sq-tasks) runs inside a project clone
 # instead of the base. This seatbelt denies such a command before it runs.
 # bin/sq-cd-command-policy.mjs is the sole owner of the block/allow decision; it
 # reuses the shell classifier owned by bin/sq-arm-command-policy.mjs. This

@@ -3,7 +3,7 @@
 # deterministic public-followup consumer.
 #
 # Squad promises a public final reply when a mySquad relay mention (X or
-# Discord) asks for work. `tasks-axi public-followup` is the sole owner of that
+# Discord) asks for work. `sq-tasks public-followup` is the sole owner of that
 # typed obligation and its state machine; state/x-context/ is the sole owner of
 # the private full request context. This library owns only the small Squad
 # side: the activation gate, the private per-base transport directories, and the
@@ -23,7 +23,7 @@
 #      / fm_pf_has_events            only by the relay path (sq-public-followup.sh
 #                                    register). Relay-enabled bases with no
 #                                    public commitments stop here, so no
-#                                    tasks-axi call and no backlog scan happens.
+#                                    sq-tasks call and no backlog scan happens.
 #
 # Private transport layout, all under <home>/state/public-followup (mode 0700,
 # created only by `sq-public-followup.sh register`):
@@ -31,13 +31,13 @@
 #                              binding (obligation, relation, work ref,
 #                              generation, platform, request id). Presence hint
 #                              and reverse work->obligation index only; the
-#                              obligation itself always remains tasks-axi truth.
+#                              obligation itself always remains sq-tasks truth.
 #   events/<event-id>.json     inbound typed terminal events awaiting
 #                              reconciliation, one file per event id.
 #   consumed/<event-id>        idempotency ledger: an accepted event id is never
 #                              replayed, so duplicate emits and restart replay
 #                              are no-ops.
-#   rejected/<event-id>.json   events tasks-axi refused, kept with a
+#   rejected/<event-id>.json   events sq-tasks refused, kept with a
 #   rejected/<event-id>.reason one-line reason so a refusal is inspectable and
 #                              never retried in a loop.
 #   surfaced                   last surfaced pending-event signature, so the
@@ -120,7 +120,7 @@ fm_pf_active() {
 # --- identifiers ------------------------------------------------------------
 
 # fm_pf_slug_valid <value>: obligation ids, relation ids, work ids, and request
-# ids all compose filenames. They arrive from tasks-axi, the relay, and child
+# ids all compose filenames. They arrive from sq-tasks, the relay, and child
 # bases, so every one is checked against a conservative slug before use.
 fm_pf_slug_valid() {
   local v=$1
@@ -130,7 +130,7 @@ fm_pf_slug_valid() {
   [ "${#v}" -le 128 ]
 }
 
-# fm_pf_home_id_valid <home_id>: tasks-axi accepts "main" or
+# fm_pf_home_id_valid <home_id>: sq-tasks accepts "main" or
 # "XO:<stable-id>" as a work_ref base. Validate the same shape here so a
 # malformed source base is refused before it reaches a filename or a CLI call.
 fm_pf_home_id_valid() {

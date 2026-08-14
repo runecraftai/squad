@@ -507,7 +507,7 @@ test_invalid_entrypoints_have_zero_side_effects() {
   [ "$rc" -ne 0 ] || fail "merge entrypoint accepted zero arguments"
 
   [ ! -s "$dir/gh.log" ] || fail "invalid direct or merge data called gh"
-  [ ! -s "$dir/sq-gh.log" ] || fail "invalid direct or merge data called gh-axi"
+  [ ! -s "$dir/sq-gh.log" ] || fail "invalid direct or merge data called sq-gh"
   [ ! -s "$dir/guard.log" ] || fail "invalid direct or merge data called the guard"
   [ ! -e "$TMP_ROOT/escape.check.sh" ] || fail "task traversal wrote outside state"
   pass "PR and teardown entrypoints reject invalid arguments before every side effect"

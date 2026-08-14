@@ -5,7 +5,7 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
+command -v tasks-axi >/dev/null 2>&1 || { echo "skip: sq-tasks not found"; exit 0; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 TMP_ROOT=$(fm_test_tmproot sq-remote-handoff)
 mkdir -p "$TMP_ROOT"
@@ -283,9 +283,9 @@ assert_no_grep 'serialized-b' "$PARENT/data/backlog.md" "second serialized hando
 assert_absent "$PARENT/data/handoff/ios.outbox.md" "serialized handoffs left a pending outbox"
 pass "concurrent handoffs serialize staging through confirmed cleanup"
 
-# A stale tasks-axi lock is removed only on the destination host after the first
+# A stale sq-tasks lock is removed only on the destination host after the first
 # move refusal proves a retry is needed. The dead pid and age satisfy the same
-# conservative procedure tasks-axi prints.
+# conservative procedure sq-tasks prints.
 write_backlog '- [ ] stale-lock-item - remote stale lock recovery (repo: alpha)'
 printf '999999:abandoned:0:1\n' > "$REMOTE/data/backlog.md.lock"
 if [ "$(uname 2>/dev/null)" = Darwin ]; then

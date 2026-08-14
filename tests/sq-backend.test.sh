@@ -936,10 +936,10 @@ test_teardown_conformance_old_vs_new() {
   local old_bin fb proj wt id old_tmux_fixture saved_base_ref
   # The recon teardown path runs the commander-held decision gate
   # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
-  # forked sq-tasks-axi exposes (M2, T-M2-04); the upstream tasks-axi cannot
+  # forked sq-tasks exposes (M2, T-M2-04); upstream builds cannot
   # run this case (M2 dependency).
   if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
-    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    echo "skip: sq-tasks lacks the commander-hold contract (forked sq-tasks, M2)"
     return 0
   fi
   local state_old state_new config_old config_new data log_old log_new out_old out_new rc_old rc_new

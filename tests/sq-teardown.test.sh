@@ -90,9 +90,9 @@ SH
 # tmux kill-window etc.: succeed silently.
 exit 0
 SH
-  # Default gh-axi mock: no PR is associated with the branch, and viewing any PR
+  # Default sq-gh mock: no PR is associated with the branch, and viewing any PR
   # number fails. This keeps the landed-work check hermetic (never reaching the real
-  # gh-axi) and represents the common "no GitHub PR" baseline. Tests that need a
+  # sq-gh) and represents the common "no GitHub PR" baseline. Tests that need a
   # merged PR or a lookup error override this file with the helpers below.
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
@@ -184,13 +184,13 @@ if [ "${1:-}" = --version ]; then
   exit 0
 fi
 if [ "${1:-}" = update ] && [ "${2:-}" = --help ]; then
-  printf '%s\n' 'usage: tasks-axi update <id> [flags]'
+  printf '%s\n' 'usage: sq-tasks update <id> [flags]'
   printf '%s\n' '  --body-file <path>'
   printf '%s\n' '  --archive-body'
   exit 0
 fi
 if [ "${1:-}" = mv ] && [ "${2:-}" = --help ]; then
-  printf '%s\n' 'usage: tasks-axi mv <id> [<id>...] --to <path-or-dir>'
+  printf '%s\n' 'usage: sq-tasks mv <id> [<id>...] --to <path-or-dir>'
   exit 0
 fi
 exit 0
@@ -316,7 +316,7 @@ land_equivalent_patch_on_origin_branch() {
   git -C "$case_dir/project" rev-parse "refs/remotes/origin/$branch"
 }
 
-# Override gh-axi so every call fails, simulating an API/network error.
+# Override sq-gh so every call fails, simulating an API/network error.
 add_gh_axi_error() {
   local case_dir=$1
   cat > "$case_dir/fakebin/sq-gh" <<'SH'
@@ -583,26 +583,26 @@ test_local_only_fork_remote_allows() {
 
 test_teardown_prompts_tasks_axi_done_when_compatible() {
   local case_dir out
-  case_dir=$(make_case tasks-axi-reminder)
+  case_dir=$(make_case sq-tasks-reminder)
   write_meta "$case_dir" drill strike
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
   add_compatible_tasks_axi "$case_dir"
 
-  out=$(run_teardown "$case_dir") || fail "teardown failed with compatible tasks-axi"
-  printf '%s\n' "$out" | grep -F 'tasks-axi done task-x1 --pr https://github.com/example/repo/pull/7' >/dev/null \
-    || fail "teardown did not prompt tasks-axi done: $out"
-  printf '%s\n' "$out" | grep -F 'tasks-axi ready' >/dev/null \
-    || fail "teardown did not prompt tasks-axi ready: $out"
+  out=$(run_teardown "$case_dir") || fail "teardown failed with compatible sq-tasks"
+  printf '%s\n' "$out" | grep -F 'sq-tasks done task-x1 --pr https://github.com/example/repo/pull/7' >/dev/null \
+    || fail "teardown did not prompt sq-tasks done: $out"
+  printf '%s\n' "$out" | grep -F 'sq-tasks ready' >/dev/null \
+    || fail "teardown did not prompt sq-tasks ready: $out"
   printf '%s\n' "$out" | grep -F 'check date gates' >/dev/null \
     || fail "teardown did not preserve date-gate check: $out"
   printf '%s\n' "$out" | grep -F 'keep Done to the 10 most recent' >/dev/null \
-    && fail "teardown kept manual Done pruning in compatible tasks-axi prompt: $out"
-  pass "teardown prompts tasks-axi backlog refresh when compatible"
+    && fail "teardown kept manual Done pruning in compatible sq-tasks prompt: $out"
+  pass "teardown prompts sq-tasks backlog refresh when compatible"
 }
 
 test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present() {
   local case_dir out
-  case_dir=$(make_case tasks-axi-manual-optout)
+  case_dir=$(make_case sq-tasks-manual-optout)
   write_meta "$case_dir" drill strike
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
   printf '%s\n' manual > "$case_dir/config/backlog-backend"
@@ -611,9 +611,9 @@ test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present() {
   out=$(run_teardown "$case_dir") || fail "teardown failed with manual backlog backend"
   printf '%s\n' "$out" | grep -F 'Update data/backlog.md - move task-x1 to Done' >/dev/null \
     || fail "teardown did not prompt manual backlog update under opt-out: $out"
-  printf '%s\n' "$out" | grep -F 'tasks-axi done' >/dev/null \
-    && fail "teardown prompted tasks-axi despite manual backend opt-out: $out"
-  pass "teardown honors config/backlog-backend=manual even when tasks-axi is compatible"
+  printf '%s\n' "$out" | grep -F 'sq-tasks done' >/dev/null \
+    && fail "teardown prompted sq-tasks despite manual backend opt-out: $out"
+  pass "teardown honors config/backlog-backend=manual even when sq-tasks is compatible"
 }
 
 test_local_only_truly_unpushed_refuses() {
@@ -680,7 +680,7 @@ test_drill_truly_unpushed_refuses() {
   local case_dir rc
   case_dir=$(make_case drill-unpushed)
   write_meta "$case_dir" drill strike
-  # Real content that is not pushed, has no PR (default gh-axi mock), and never
+  # Real content that is not pushed, has no PR (default sq-gh mock), and never
   # landed on origin/main: genuinely unlanded work that must still refuse.
   wt_commit_file "$case_dir" feature.txt hello "unpushed work"
 
@@ -873,7 +873,7 @@ test_content_in_default_fallback_allows() {
   local case_dir rc
   case_dir=$(make_case content-landed)
   write_meta "$case_dir" drill strike
-  # No pr= recorded and the default gh-axi mock reports no PR, so the merged-PR path
+  # No pr= recorded and the default sq-gh mock reports no PR, so the merged-PR path
   # cannot fire and the content check must carry it. The branch adds feature.txt, and
   # the same net change has independently landed on origin/main via a squash commit.
   wt_commit_file "$case_dir" feature.txt hello "add feature"

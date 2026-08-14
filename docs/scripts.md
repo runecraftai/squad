@@ -24,7 +24,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-remote-job-reap-orphans.sh` | Stop remote job workers left running by a pruned code root, never one whose checkout still exists |
 | `sq-remote-doctor.sh`    | Check, and with `--fix` repair, one remote account's second-mate readiness (remote job worker, Herdr, Aqua launch agents, PATH, and required tools) |
 | `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
-| `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
+| `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through sq-tasks             |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
 | `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs   |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
@@ -84,8 +84,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-ff-lib.sh`           | Shared guarded fast-forward helper for origin pulls and local XO syncs       |
 | `sq-lock-lib.sh`         | Shared "is this git lock provably abandoned?" proof used by teardown and unit-sync   |
 | `sq-config-inherit-lib.sh` | Shared primary-to-XO inherited local-material propagation and config-reread delivery |
-| `sq-tasks-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe                  |
-| `sq-quota-lib.sh`    | Shared `quota-axi` compatibility floor for the bootstrap diagnostic                  |
+| `sq-tasks-lib.sh`    | Shared backlog-backend selector and `sq-tasks` compatibility probe                  |
+| `sq-quota-lib.sh`    | Shared `sq-quota` compatibility floor for the bootstrap diagnostic                  |
 | `sq-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `sq-stand-to-drain.sh`       | Atomically drain queued sentry wakes, emit bounded best-effort status-event annotations and a unit-wide OPEN DECISIONS section, then assert supervision health |
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |

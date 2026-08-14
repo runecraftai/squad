@@ -8,7 +8,7 @@
 # Scope-matching is Squad's JUDGMENT: you pass the task-id keys you have
 # already judged in-scope for the XO. This script performs only the
 # unit-level validation that the backlog backend cannot know, then DELEGATES
-# the actual item move to `tasks-axi mv`, the single owner of the backlog
+# the actual item move to `sq-tasks mv`, the single owner of the backlog
 # format. Delegating the move is the durability end-state: it removes the awk
 # that used to re-implement block extraction and insertion here, so the format
 # has exactly one parser and cannot drift out of sync (the body-orphaning class
@@ -26,7 +26,7 @@
 #     already present in the XO backlog is reported and skipped, and if
 #     any key matches neither backlog nothing is moved.
 #
-# What `tasks-axi mv <id>... --to <dest>` owns: moving each full item BLOCK
+# What `sq-tasks mv <id>... --to <dest>` owns: moving each full item BLOCK
 # byte-exact (header, body lines, blank separators, and indented pseudo-headings
 # such as `  ## Intent`), preserving destination section placement, and moving a
 # whole connected set (a blocker and its dependents) atomically with blocked-by
@@ -35,14 +35,14 @@
 #
 # Item bodies must use at least two leading spaces. The helper refuses a selected
 # item with a single-space or tab-indented continuation rather than risk leaving
-# it orphaned, because tasks-axi treats only two-or-more-space lines as body.
-# The move needs compatible `tasks-axi` on PATH, including atomic multi-ID `mv`
+# it orphaned, because sq-tasks treats only two-or-more-space lines as body.
+# The move needs compatible `sq-tasks` on PATH, including atomic multi-ID `mv`
 # support. Bootstrap requires a compatible build unit-wide, so this works
 # everywhere; the `config/backlog-backend=manual` knob only governs Squad's
 # own hand-editing of its own backlog, not this validated helper. Idempotent:
 # re-running converges. Atomic: on any move failure nothing moves.
 # See AGENTS.md project management and task lifecycle.
-# Remote routes use an outbox handoff: one atomic local tasks-axi mv removes the
+# Remote routes use an outbox handoff: one atomic local sq-tasks mv removes the
 # selected set from the dispatchable backlog into data/handoff/<id>.outbox.md,
 # then an idempotent confined transfer and sq-backlog-receive.sh deliver it.
 # A present outbox is the whole recovery record. No two-phase journal exists.
@@ -221,7 +221,7 @@ validate_backlog_file() {
 # header exists in the file. This reads only section headings and item header
 # lines - never item bodies - so it drives the unit-level classification (in-
 # flight refusal, already-present idempotency, missing-key abort) without
-# re-implementing the block/body move semantics that tasks-axi mv owns.
+# re-implementing the block/body move semantics that sq-tasks mv owns.
 backlog_key_section() {
   local file=$1 key=$2
   [ -f "$file" ] || return 1
@@ -355,7 +355,7 @@ remote_handoff() { # <XO-id> <keys...>
   validate_backlog_file "main backlog" "$MAIN_BACKLOG" || return 1
   validate_backlog_file "remote handoff outbox" "$outbox" || return 1
   fm_tasks_axi_compatible || {
-    echo "error: a compatible tasks-axi with atomic multi-ID mv support is required to stage remote handoffs; run bin/sq-bootstrap.sh for the required version" >&2
+    echo "error: a compatible sq-tasks with atomic multi-ID mv support is required to stage remote handoffs; run bin/sq-bootstrap.sh for the required version" >&2
     return 1
   }
   to_move=()
@@ -403,9 +403,9 @@ remote_handoff() { # <XO-id> <keys...>
       return 1
     fi
   fi
-  # A hard local kill can land tasks-axi's target persist before its source
+  # A hard local kill can land sq-tasks' target persist before its source
   # persist. The outbox is already authoritative in that state, so converge by
-  # deleting only duplicates that tasks-axi itself confirms are dependency-safe.
+  # deleting only duplicates that sq-tasks itself confirms are dependency-safe.
   remove_interrupted_source_duplicates "$outbox" "${requested[@]}" || return 1
   remote_deliver_outbox "$id" "$outbox" || return 1
   echo "handed off ${#requested[@]} item(s) to remote XO $id: ${requested[*]}"
@@ -540,13 +540,13 @@ if [ "$FAILED" -ne 0 ]; then
 fi
 
 if ! fm_tasks_axi_compatible; then
-  echo "error: a compatible tasks-axi with atomic multi-ID mv support is required to move backlog items; run bin/sq-bootstrap.sh for the required version" >&2
+  echo "error: a compatible sq-tasks with atomic multi-ID mv support is required to move backlog items; run bin/sq-bootstrap.sh for the required version" >&2
   exit 1
 fi
 
 # Seed the destination with Squad's standard three-section scaffold when it
 # does not exist yet, so the moved item lands under the right section. (Left to
-# create the file itself, tasks-axi mv writes its own `# Backlog` title format,
+# create the file itself, sq-tasks mv writes its own `# Backlog` title format,
 # which is not Squad's base-backlog convention.)
 mkdir -p "$SUB_HOME/data"
 SUB_CREATED=0
@@ -555,10 +555,10 @@ if [ ! -f "$SUB_BACKLOG" ]; then
   SUB_CREATED=1
 fi
 
-# Delegate the move to tasks-axi. Passing the whole in-scope set to one call is a
+# Delegate the move to sq-tasks. Passing the whole in-scope set to one call is a
 # single atomic transaction, so a connected set (blocker + dependents) moves
 # together and, on any failure, neither backlog's content changes - the only
-# cleanup is a scaffold we just created. tasks-axi writes both its success and
+# cleanup is a scaffold we just created. sq-tasks writes both its success and
 # error output to stdout, so capture it and surface it only on failure.
 if ! MV_OUT=$(tasks-axi mv "${TO_MOVE[@]}" --file "$MAIN_BACKLOG" --to "$SUB_BACKLOG" 2>&1); then
   if [ "$SUB_CREATED" -eq 1 ]; then
@@ -567,7 +567,7 @@ if ! MV_OUT=$(tasks-axi mv "${TO_MOVE[@]}" --file "$MAIN_BACKLOG" --to "$SUB_BAC
   if [ -n "$MV_OUT" ]; then
     printf '%s\n' "$MV_OUT" >&2
   fi
-  echo "error: tasks-axi mv failed; nothing was moved." >&2
+  echo "error: sq-tasks mv failed; nothing was moved." >&2
   exit 1
 fi
 

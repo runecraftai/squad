@@ -34,17 +34,17 @@ This preference is local to each Squad base and is not part of XO inherited conf
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 
-The tracked `.tasks.toml` pins the default `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
-When the default backend is selected and compatible `tasks-axi` is on `PATH`, Squad uses its verbs for routine backlog mutations.
-XO handoffs are separate and unconditional: `sq-backlog-handoff.sh` keeps only its own unit-level validation and always delegates the item move to `tasks-axi mv`, the single owner of the backlog format.
+The tracked `.tasks.toml` pins the default `sq-tasks` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
+When the default backend is selected and compatible `sq-tasks` is on `PATH`, Squad uses its verbs for routine backlog mutations.
+XO handoffs are separate and unconditional: `sq-backlog-handoff.sh` keeps only its own unit-level validation and always delegates the item move to `sq-tasks mv`, the single owner of the backlog format.
 It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their base for pruning or archiving.
 Handoff item bodies must use at least two leading spaces, and the helper refuses a selected item with a single-space or tab-indented continuation rather than risk orphaning it.
-Because bootstrap requires `tasks-axi` on `PATH` on every profile, that delegation works unit-wide, and the `config/backlog-backend=manual` knob governs Squad's own hand-editing of its backlog, not this validated helper.
+Because bootstrap requires `sq-tasks` on `PATH` on every profile, that delegation works unit-wide, and the `config/backlog-backend=manual` knob governs Squad's own hand-editing of its backlog, not this validated helper.
 Compatible means the installed build passes the shared version and feature probe owned by [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh), including the atomic multi-ID move required by handoff delegation.
-Bootstrap requires compatible `tasks-axi` on every profile; see "Toolchain" below for missing-tool reporting and silent default-backend behavior.
-Set the local, gitignored `config/backlog-backend` file to `manual` to force manual backlog editing and suppress the verbose `BOOTSTRAP_INFO: tasks-axi available` fact, not missing-tool reporting.
-Absent or `tasks-axi` selects the default tasks-axi backend.
-The file format is unchanged in both modes; tasks-axi and manual edits produce the same `## In flight`, `## Queued`, and `## Done` sections.
+Bootstrap requires compatible `sq-tasks` on every profile; see "Toolchain" below for missing-tool reporting and silent default-backend behavior.
+Set the local, gitignored `config/backlog-backend` file to `manual` to force manual backlog editing and suppress the verbose `BOOTSTRAP_INFO: sq-tasks available` fact, not missing-tool reporting.
+Absent (or any non-manual value) selects the default sq-tasks backend.
+The file format is unchanged in both modes; sq-tasks and manual edits produce the same `## In flight`, `## Queued`, and `## Done` sections.
 
 ## Runtime backend (config/backend / SQUAD_BACKEND)
 
@@ -287,10 +287,10 @@ XO bases inherit this file from the primary, so an XO's own operators apply the 
 On session start the sergeant at arms detects what its required toolchain is missing or too old and lists each problem with either an exact install command or manual instructions.
 It installs automatically supported tools only after you say go; manual-only tools remain for you to install from the printed instructions.
 Required tools come in two parts: a universal toolchain every base needs regardless of backend, and a per-backend delta that follows the runtime backend actually resolved for this base.
-The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, drill v1.31.2 or newer, compatible gh-axi, chrome-devtools-axi, compatible lavish-axi, compatible tasks-axi per "Backlog backend" above, and compatible quota-axi.
-[`bin/sq-bootstrap.sh`](../bin/sq-bootstrap.sh) owns the axi-family floor policy and the gh-axi and lavish-axi floors, while [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh) and [`bin/sq-quota-lib.sh`](../bin/sq-quota-lib.sh) hold their own tools' floor constants.
+The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, drill v1.31.2 or newer, compatible sq-gh, sq-browser, compatible sq-report, compatible sq-tasks per "Backlog backend" above, and compatible sq-quota.
+[`bin/sq-bootstrap.sh`](../bin/sq-bootstrap.sh) owns the axi-family floor policy and the sq-gh and sq-report floors, while [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh) and [`bin/sq-quota-lib.sh`](../bin/sq-quota-lib.sh) hold their own tools' floor constants.
 This section is the single owner of that universal toolchain list; backend guides' prerequisites point here and add only their backend-specific tools.
-In that list, drill runs the validation pipeline, gh-axi, chrome-devtools-axi, and lavish-axi cover GitHub, browser, and rich-review operations, and tasks-axi plus quota-axi back backlog mutations and quota-aware array dispatch.
+In that list, drill runs the validation pipeline, sq-gh, sq-browser, and sq-report cover GitHub, browser, and rich-review operations, and sq-tasks plus sq-quota back backlog mutations and quota-aware array dispatch.
 The per-backend delta is required only for the backend resolved from `SQUAD_BACKEND`, then `config/backend`, then runtime auto-detection, then default `tmux`, so a base is never told to install a tool an inactive backend or feature would need.
 That delta is owned in code by `fm_backend_required_tools` in `bin/sq-backend.sh`: the resolved backend's own session-provider CLI (`tmux`, `herdr`, `zellij`, `orca`, or `cmux`), `jq` for the JSON-emitting experimental adapters (`herdr`, `zellij`, `cmux`) whose spawn and liveness paths parse the backend's JSON output, and the `fob` worktree provider for every session-provider-only backend (`tmux`, `herdr`, `zellij`, `cmux`).
 Backend tool availability uses the adapter's own executable resolver, so bootstrap and spawn agree on supported non-`PATH` locations such as cmux's bundled CLI.
@@ -299,11 +299,11 @@ Orca provides both the task worktree and terminal endpoint (see "Runtime backend
 A herdr, zellij, or cmux base is therefore never told `tmux` is missing, and the `fob` durable-lease upgrade check runs only for the backends that actually use fob.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
 When Relay is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
-`tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`.
-An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm install -g tasks-axi)`; when `config/backlog-backend` is not `manual` and compatible `tasks-axi` is on `PATH`, bootstrap stays silent and Squad uses its verbs for routine backlog mutations, otherwise it hand-edits `data/backlog.md` until installation is approved and completed.
-An absent or incompatible `gh-axi` reports `MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)`.
-An absent or incompatible `lavish-axi` reports `MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)`.
-An absent or too-old `quota-axi` reports `MISSING: quota-axi (install: npm install -g quota-axi)`; Squad cannot resolve a profile array without a compatible binary.
+`sq-tasks` and `sq-quota` are required bootstrap tools in every profile, the same class as `sq-report`.
+An absent or incompatible `sq-tasks` reports `MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)`; when `config/backlog-backend` is not `manual` and compatible `sq-tasks` is on `PATH`, bootstrap stays silent and Squad uses its verbs for routine backlog mutations, otherwise it hand-edits `data/backlog.md` until installation is approved and completed.
+An absent or incompatible `sq-gh` reports `MISSING: sq-gh (install: (cd packages/sq-gh && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-gh && sq-gh setup hooks)`.
+An absent or incompatible `sq-report` reports `MISSING: sq-report (install: (cd packages/sq-report && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-report && sq-report setup hooks)`.
+An absent or too-old `sq-quota` reports `MISSING: sq-quota (install: (cd packages/sq-quota && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-quota)`; Squad cannot resolve a profile array without a compatible binary.
 Bootstrap also reports a `TANGLE:` line when `SQUAD_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 In a read-only session that did not get the unit lock, the same line is advisory and omits the checkout command.
 The locked session-start deferred network stage runs bootstrap's best-effort project clone refresh through `sq-unit-sync.sh`.
@@ -415,7 +415,7 @@ These paths need `jq` to build the JSON payload, but they run before token and n
 ### Promised public replies (state/public-followup)
 
 A relay request that spawns real work can leave Squad owing a specific public reply in a specific thread.
-That promise is a typed `kind=public-followup` obligation owned entirely by `tasks-axi public-followup`, with the full private request context staying in `state/x-context/`; Squad keeps no parallel copy of either.
+That promise is a typed `kind=public-followup` obligation owned entirely by `sq-tasks public-followup`, with the full private request context staying in `state/x-context/`; Squad keeps no parallel copy of either.
 `bin/sq-public-followup.sh` is Squad's side: it registers a commitment, reconciles typed terminal work results into it, and posts the final reply through `bin/sq-x-reply.sh --followup`.
 Run `bin/sq-public-followup.sh --help` for the exact subcommands and flags.
 
@@ -425,7 +425,7 @@ Work routed elsewhere reports a typed terminal result with `bin/sq-public-follow
 A terminal event's id is derived from its identity tuple, so a duplicate report, a retry, or a replay after restart resolves to the same event and changes nothing.
 
 Activation is the same `.env` `SQX_PAIRING_TOKEN` contract as the rest of Relay, with no second flag.
-A base without that token runs one file test and stops: no `tasks-axi` call, no backlog or request-context scan, and no `state/public-followup/` directory.
+A base without that token runs one file test and stops: no `sq-tasks` call, no backlog or request-context scan, and no `state/public-followup/` directory.
 Ordinary startup, polling, cleanup, and silent read-side subcommands also produce no output; commands that require an active relay report that configuration error after the same gate.
 A relay-enabled base with no registered commitment stops at an O(1) directory presence check, so the empty state costs no CLI call and adds no periodic scan.
 Unreconciled terminal results ride the existing 30-second relay poll rather than a new process or timer: `bin/sq-x-poll.sh` compares the pending-event signature against `surfaced` and wakes Squad once per new result set.
@@ -472,7 +472,7 @@ The Squad relay client resolves only the `x` and `discord` platforms for its fol
 ## Process-to-event sources (state/procevent)
 
 A long-polling external process is registered as a *source* through its adapter, whose header and `--help` own the commands and flags.
-`bin/sq-procevent.sh` owns the generic contract; `bin/sq-procevent-lavish.sh` is the first adapter and wraps only the currently published `lavish-axi poll` interface.
+`bin/sq-procevent.sh` owns the generic contract; `bin/sq-procevent-lavish.sh` is the first adapter and wraps only the currently published `sq-report poll` interface.
 
 This section is the single owner of the runner's operating contract.
 Registration writes one private record under `state/procevent/`, and a completed result plus its immutable adapter identity are captured under `state/procevent-inbox/` before it is published.
@@ -521,7 +521,7 @@ The runner proves exactly one durability boundary: output that reached the runne
 `bin/sq-procevent.sh handled <source-id> <sequence>` is the only thing that stops re-announcement: a generation-keyed, private, path-safe, durable, and idempotent acknowledgement that atomically checks and deduplicates by the exact source and sequence, so a paired effect gated on its first-time-vs-repeat report is never authorized twice.
 Wake publication itself is still best-effort, so the same source and sequence can repeat even before any restart; handlers deduplicate that identity rather than assuming a wake is unique.
 The runner proves nothing about the source side, and the handled acknowledgement proves nothing about a paired external effect performed before it: a crash between that effect and the acknowledgement call can still repeat the effect on replay, so this is never a generic exactly-once guarantee.
-The published `lavish-axi poll` clears feedback destructively before returning it, so a result lost between that clearing and the runner reading process output is unrecoverable.
+The published `sq-report poll` clears feedback destructively before returning it, so a result lost between that clearing and the runner reading process output is unrecoverable.
 Never describe this path as at-least-once, no-loss, or lossless.
 `docs/verification/process-event-sources.md` holds the measurements and `.agents/skills/process-event-sources/SKILL.md` owns the handling procedure.
 
@@ -558,7 +558,7 @@ SQUAD_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session
 SQUAD_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 SQUAD_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/sq-bootstrap.sh
 SQUAD_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the whole deferred network stage; hitting it prints an actionable NETWORK_CHECKS line
-SQUAD_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed tasks-axi compatibility verdict (0 or 1); consumed when bin/sq-tasks-lib.sh is sourced
+SQUAD_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed sq-tasks compatibility verdict (0 or 1); consumed when bin/sq-tasks-lib.sh is sourced
 SQUAD_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 SQUAD_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; sq-send.sh overrides it to name the requested message specifically
 SQUAD_POLL=15              # seconds between sentry poll cycles

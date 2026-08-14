@@ -6,7 +6,7 @@
 # visual-review, chat, or terminal prose to guess whether a decision exists.
 # The invoking agent inventories unresolved decisions, assigns stable keys, and
 # routes dependent work. This script supplies deterministic identities, creates
-# and verifies structured tasks-axi commander holds, records completion attestation
+# and verifies structured sq-tasks commander holds, records completion attestation
 # in the originating task's metadata, and closes a hold only after a durable
 # decision record has been linked to existing dependent work.
 #
@@ -101,9 +101,9 @@ tasks_axi() {
 }
 
 require_tasks_axi() {
-  fm_tasks_axi_compatible || fail "compatible tasks-axi is required"
+  fm_tasks_axi_compatible || fail "compatible sq-tasks is required"
   tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null \
-    || fail "tasks-axi does not expose the commander-hold contract"
+    || fail "sq-tasks does not expose the commander-hold contract"
 }
 
 task_show() {  # <id>
@@ -245,7 +245,7 @@ command_hold() {
   validate_slug decision-key "$key"
   validate_one_line title "$title"
   validate_one_line reason "$reason"
-  case "$reason" in *'('*|*')'*) fail "reason must not contain parentheses (tasks-axi hold contract)" ;; esac
+  case "$reason" in *'('*|*')'*) fail "reason must not contain parentheses (sq-tasks hold contract)" ;; esac
   require_tasks_axi
   origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $SQUAD_BASE"
   id=$(hold_id "$origin" "$key")
@@ -415,7 +415,7 @@ command_resolve() {
     state=$(show_field "$show" state)
     [ "$state" != "done" ] || [ "$resolution_recorded" = 1 ] \
       || fail "routed task $dep is already done"
-    # tasks-axi quotes multi-entry blocked_by as "a,b,c"; strip so edge ids match.
+    # sq-tasks quotes multi-entry blocked_by as "a,b,c"; strip so edge ids match.
     blocked=$(show_field "$show" blocked_by | tr -d '[:space:]')
     blocked=${blocked#\"}
     blocked=${blocked%\"}

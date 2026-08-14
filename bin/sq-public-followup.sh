@@ -8,7 +8,7 @@
 # operation. Every command here reads durable state and nothing else.
 #
 # OWNERSHIP BOUNDARIES (do not re-implement any of these here):
-#   tasks-axi public-followup   the typed obligation and its state machine.
+#   sq-tasks public-followup   the typed obligation and its state machine.
 #   state/x-context/            the private full request context (sq-x-lib.sh).
 #   bin/sq-x-reply.sh           posting to the relay, thread splitting, dry run.
 #   bin/sq-public-followup-lib.sh  the activation gate and private transport.
@@ -18,7 +18,7 @@
 # first on the authoritative activation contract (a non-empty SQX_PAIRING_TOKEN
 # in $SQUAD_BASE/.env). Read-side and cleanup paths then use an O(1) presence check
 # for registrations this base actually created. A relay-disabled base therefore
-# runs one [ -f ] test before any backlog work: no tasks-axi call, no backlog scan,
+# runs one [ -f ] test before any backlog work: no sq-tasks call, no backlog scan,
 # and no file created. Silent read-side commands return without output; commands
 # that require an active relay report their configuration error after the same
 # gate. A relay-enabled base with no live commitments stops at the second gate
@@ -32,7 +32,7 @@
 #   sq-public-followup.sh register <obligation-id> --relation <relation-id>
 #         --work-base <main|XO:<id>> --work-id <task-id> --generation <n>
 #         [--platform <x|discord>] [--request <request-id>]
-#       Record the binding the relay path just created with `tasks-axi
+#       Record the binding the relay path just created with `sq-tasks
 #       public-followup add` + `bind-work`. This is the event-driven
 #       registration: it creates this base's private public-followup directories
 #       (0700) and the bounded public-safe registration record, which is what
@@ -46,8 +46,8 @@
 #
 #   sq-public-followup.sh consume
 #       Drain every pending typed terminal event: validate its derived identity,
-#       skip anything already accepted, apply `tasks-axi public-followup
-#       work-event`, and quarantine what tasks-axi refuses. Prints one
+#       skip anything already accepted, apply `sq-tasks public-followup
+#       work-event`, and quarantine what sq-tasks refuses. Prints one
 #       "ready <obligation-id> <request-id> <platform>" line per obligation that
 #       became delivery-ready, and one "rejected <event-id>: <reason>" line per
 #       refusal. Silent when there is nothing to do. Duplicate events and restart
@@ -88,7 +88,7 @@
 #       explicit discard-approved escape hatch for an unresolved or missing
 #       obligation.
 #
-# Requires jq and a compatible tasks-axi for registration, reconciliation,
+# Requires jq and a compatible sq-tasks for registration, reconciliation,
 # delivery, cleanup guards, and retirement; `active` and `brief` only inspect
 # local state.
 # SQUAD_PF_RETRY_BACKOFF_SECS (default 900) sets the next-attempt time recorded with
@@ -139,17 +139,17 @@ next_attempt_rfc3339() {
 
 require_tools() {
   command -v jq >/dev/null 2>&1 || die "jq is required" 1
-  fm_tasks_axi_cmd >/dev/null 2>&1 || die "tasks-axi is required (install the sq-tasks-axi fork or legacy tasks-axi)" 1
+  fm_tasks_axi_cmd >/dev/null 2>&1 || die "sq-tasks is required" 1
 }
 
-# Every tasks-axi call runs from the base whose backlog owns the obligation, the
+# Every sq-tasks call runs from the base whose backlog owns the obligation, the
 # same convention bin/sq-decision-hold.sh uses for typed backlog state.
 tx() { (cd "$SQUAD_BASE" && tasks-axi "$@"); }
 
 # obligation_json <id>: the complete typed obligation payload on stdout, empty
 # when the backlog simply has no such public-followup item, and a non-zero exit
 # ONLY when the backlog could not be read at all. Callers depend on that
-# distinction to report the right thing, so jq runs without -e here. tasks-axi
+# distinction to report the right thing, so jq runs without -e here. sq-tasks
 # stays the single source of truth; the registration record is never consulted
 # for state.
 obligation_json() {
@@ -217,17 +217,17 @@ cmd_register() {
 
   local payload
   payload=$(obligation_json "$id") \
-    || die "could not read the backlog through tasks-axi" 1
+    || die "could not read the backlog through sq-tasks" 1
   [ -n "$payload" ] \
-    || die "no public-followup obligation '$id' in this home's backlog; create it with tasks-axi public-followup add before registering" 1
+    || die "no public-followup obligation '$id' in this home's backlog; create it with sq-tasks public-followup add before registering" 1
 
   # The relation must already be bound, so a registration can never describe a
-  # binding tasks-axi does not have.
+  # binding sq-tasks does not have.
   printf '%s' "$payload" | jq -e --arg r "$relation" --arg h "$work_home" --arg w "$work_id" \
     '(.public_followup.work_relations // [])
        | map(select(.relation_id == $r and .work_ref.home_id == $h and .work_ref.task_id == $w))
        | length > 0' >/dev/null 2>&1 \
-    || die "obligation '$id' has no bound relation '$relation' for $work_home/$work_id; run tasks-axi public-followup bind-work first" 1
+    || die "obligation '$id' has no bound relation '$relation' for $work_home/$work_id; run sq-tasks public-followup bind-work first" 1
 
   [ -n "$platform" ] || platform=$(pf_field "$payload" '.public_followup.request.platform')
   [ -n "$request" ] || request=$(pf_field "$payload" '.public_followup.request.request_id')
@@ -358,7 +358,7 @@ cmd_consume() {
 
     # The filename, the declared event_id, and the identity tuple must all agree.
     # A mismatch means the file was hand-edited or built by something other than
-    # sq-public-followup-emit.sh, so it is refused before tasks-axi sees it.
+    # sq-public-followup-emit.sh, so it is refused before sq-tasks sees it.
     if [ "$(pf_field "$payload" '.event_id')" != "$event_id" ]; then
       reject_event "$file" "$event_id" "declared event_id does not match the filename" || consume_rc=1
       continue
@@ -382,7 +382,7 @@ cmd_consume() {
       continue
     fi
 
-    # tasks-axi is the authority on source base, work id, generation, schema,
+    # sq-tasks is the authority on source base, work id, generation, schema,
     # outcome, and deliverables. Anything it refuses is quarantined verbatim.
     # stderr is captured separately so a warning can never corrupt the JSON that
     # the accepted path parses.
@@ -394,7 +394,7 @@ cmd_consume() {
     if [ "$rc" -ne 0 ]; then
       reason=$( { cat "$stderr_file" 2>/dev/null; printf '%s\n' "$out"; } \
         | grep -v '^[[:space:]]*$' | head -1 | fm_pf_clean_outcome_text | fm_pf_bound_bytes 400)
-      reject_event "$file" "$event_id" "${reason:-tasks-axi refused the event}" || consume_rc=1
+      reject_event "$file" "$event_id" "${reason:-sq-tasks refused the event}" || consume_rc=1
       continue
     fi
 
@@ -444,7 +444,7 @@ cmd_pending() {
           and (.state | type == "string"))
       ' >/dev/null 2>&1; then
     if fm_pf_has_registrations "$STATE"; then
-      printf 'cannot read this home'\''s public commitments through tasks-axi; %s registration(s) are still recorded under state/%s/registry\n' \
+      printf 'cannot read this home'\''s public commitments through sq-tasks; %s registration(s) are still recorded under state/%s/registry\n' \
         "$(fm_pf_registry_ids "$STATE" | grep -c . || true)" "$SQUAD_PF_DIRNAME"
       printed=1
     fi
@@ -637,7 +637,7 @@ cmd_deliver() {
   require_tools
 
   local payload delivery attempt request platform text tmp_text hash chunks rc receipt receipt_fields receipt_dry_run link_status
-  payload=$(obligation_json "$id") || die "could not read the backlog through tasks-axi" 1
+  payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
   [ -n "$payload" ] || die "no public-followup obligation '$id' in this home's backlog" 1
 
   delivery=$(pf_field "$payload" '.public_followup.delivery.state')
@@ -711,7 +711,7 @@ cmd_deliver() {
   # than assumed, because every later receipt or error must name it exactly.
   local begun
   begun=$(tx public-followup begin-delivery "$id" --payload-hash "$hash" --json 2>/dev/null) \
-    || die "tasks-axi refused to begin delivery for '$id'" 1
+    || die "sq-tasks refused to begin delivery for '$id'" 1
   attempt=$(printf '%s' "$begun" | jq -r '.task.public_followup.delivery.attempt_count // empty' 2>/dev/null)
   case "$attempt" in
     ''|*[!0-9]*) die "could not read the delivery attempt for '$id' after beginning it; nothing was posted" 1 ;;
@@ -790,13 +790,13 @@ cmd_record_posted() {
   require_tools
 
   local payload request platform
-  payload=$(obligation_json "$id") || die "could not read the backlog through tasks-axi" 1
+  payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
   [ -n "$payload" ] || die "no public-followup obligation '$id' in this home's backlog" 1
   request=$(pf_field "$payload" '.public_followup.request.request_id')
   platform=$(pf_field "$payload" '.public_followup.request.platform')
 
   record_posted "$id" "$attempt" "$request" "$platform" "$chunks" \
-    || die "tasks-axi refused the receipt for '$id' attempt $attempt; the recorded attempt must match exactly" 1
+    || die "sq-tasks refused the receipt for '$id' attempt $attempt; the recorded attempt must match exactly" 1
   if ! clear_public_followup_link "$id"; then
     die "the receipt for '$id' was recorded, but its legacy X link could not be cleared; the registration was retained for reconciliation" 1
   fi
@@ -820,7 +820,7 @@ cmd_guard_work() {
   # From here the work IS bound to a public promise, so an unreadable state is a
   # blocking answer, not a pass: cleanup must never proceed on a guess.
   if ! command -v jq >/dev/null 2>&1 || ! fm_tasks_axi_cmd >/dev/null 2>&1; then
-    printf 'cannot verify the public commitments bound to %s/%s: jq and tasks-axi are required\n' \
+    printf 'cannot verify the public commitments bound to %s/%s: jq and sq-tasks are required\n' \
       "$work_home" "$work_id"
     exit 3
   fi
@@ -864,7 +864,7 @@ cmd_retire() {
   fm_pf_relay_active "$SQUAD_BASE" || exit 0
   require_tools
 
-  payload=$(obligation_json "$id") || die "could not read the backlog through tasks-axi" 1
+  payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
   if [ -n "$payload" ]; then
     delivery=$(pf_field "$payload" '.public_followup.delivery.state')
     task_state=$(pf_field "$payload" '.state')

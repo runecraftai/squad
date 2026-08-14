@@ -7,7 +7,11 @@
 # The names-only boundary (commander decision CD-M6-03) was the M6 rule; the
 # rebrand item (roadmap-futuro-rebrand-completo-de-menco-31) has since retired
 # every packages/ hit, including the sq-browser bridge log prefix that used to
-# be pinned below.
+# be pinned below, and the 2026-08-14 purge decision retired the deferred-prose
+# keep-lists: bin/ and tests/ no longer carry any of the five old names, in
+# prose or in messages. (The plain `tasks-axi` protocol-alias name is NOT a
+# guarded pattern: bin/sq-tasks-lib.sh documents where the runtime still
+# requires it for PATH shadowing, test stubs, and the CI alias.)
 # .specs/ is exempt (the planning corpus names origins, per M1 §8) and this
 # file is exempt (it legitimately contains the forbidden patterns as the grep
 # expressions).
@@ -15,55 +19,14 @@
 # Surfaces (0 hits except the documented keep-list):
 #   1. packages/*/package.json, packages/*/bin, packages/*/release-please-config.json,
 #      packages/*/plugin.json, .github/workflows/ci.yml
-#   2. bin/*.sh (deferred-prose keep-list below)
-#   3. tests/*.test.sh (deferred-prose keep-list below)
+#   2. bin/*.sh
+#   3. tests/*.test.sh
 #   4. positive: packages/ has sq-gh sq-browser sq-quota sq-report sq-tasks and
 #      no tasks-axi directory
 #
-# Keep-list (documented deferred prose):
-#   bin/sq-bootstrap.sh
-#     - header comment describing the axi-family floor policy (prose)
-#   bin/sq-brief.sh
-#     - operator instructions "Use gh-axi for GitHub operations and
-#       chrome-devtools-axi for browser operations" (prose, deferred)
-#   bin/sq-pr-merge.sh
-#     - header/usage comments naming the gh-axi invocation shape (prose)
-#   bin/sq-procevent-lavish.sh
-#     - usage comment + "lavish-axi is not installed" die message (prose)
-#   bin/sq-procevent-lib.sh
-#     - comment mentioning `lavish-axi poll` (prose)
-#   bin/sq-project-mode.sh
-#     - comment "push + PR via gh-axi" (prose)
-#   bin/sq-public-followup.sh
-#     - die message "install the sq-tasks-axi fork or legacy tasks-axi" (prose)
-#   bin/sq-session-start.sh
-#     - header comments naming the tool checks (prose)
-#   bin/sq-teardown.sh
-#     - comments naming the gh-axi PR resolution path (prose)
-#   bin/sq-vendor-auth-probe.sh
-#     - comments naming the quota-axi data source (prose)
-#   tests/sq-backend-orca.test.sh, tests/sq-backend.test.sh, tests/sq-backend-zellij.test.sh,
-#   tests/sq-decision-hold-lifecycle.test.sh, tests/sq-public-followup.test.sh
-#     - skip messages/comments naming the forked sq-tasks-axi (prose)
-#   tests/sq-bootstrap.test.sh
-#     - header comment pinning the pre-M6 MISSING lines + row labels (prose)
-#   tests/sq-on.test.sh
-#     - comment naming the fork-first resolver fixtures (prose)
-#   tests/sq-pr-check-security.test.sh
-#     - fail message naming the called tool (prose)
-#   tests/sq-pr-merge.test.sh
-#     - header comments naming the gh-axi mock (prose)
-#   tests/sq-procevent.test.sh
-#     - comment describing the `lavish-axi poll` stand-in (prose)
-#   tests/sq-sitrep-snapshot.test.sh
-#     - comments/fail messages naming the gh-axi fakebin (prose)
-#   tests/sq-teardown.test.sh
-#     - comments naming the default gh-axi mock (prose)
-#   tests/sq-vendor-auth-probe.test.sh
-#     - comment/fail message naming the quota-axi fakebin (prose)
-#
-# Status: drafted at T-M6-U6; runs green at the M6 full-suite gate. All guards
-# report the FULL remaining hit list together.
+# Status: drafted at T-M6-U6; runs green at the M6 full-suite gate; the
+# 2026-08-14 purge emptied the deferred-prose keep-lists. All guards report the
+# FULL remaining hit list together.
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -111,52 +74,23 @@ test_guard_ci_workflow() {
     "$OLD_NAMES" ".github/workflows/ci.yml"
 }
 
-# Guard 3: bin/*.sh executable name references must be renamed; only the
-# documented deferred-prose keep-list may still carry old names in comments
-# and user-facing messages.
+# Guard 3: bin/*.sh executable name references must be renamed; the
+# deferred-prose keep-list was retired by the 2026-08-14 purge, so the guard is
+# a plain no-match scan.
 test_guard_bin_scripts() {
-  local list keep
+  local list
   list=$(tracked_files | grep '^bin/.*\.sh$' || true)
-  keep=$(printf '%s\n' \
-    'bin/sq-bootstrap.sh' \
-    'bin/sq-brief.sh' \
-    'bin/sq-pr-merge.sh' \
-    'bin/sq-procevent-lavish.sh' \
-    'bin/sq-procevent-lib.sh' \
-    'bin/sq-project-mode.sh' \
-    'bin/sq-public-followup.sh' \
-    'bin/sq-session-start.sh' \
-    'bin/sq-teardown.sh' \
-    'bin/sq-vendor-auth-probe.sh' \
-    | sed '/^$/d')
-  list=$(printf '%s\n%s\n' "$list" "$keep" | grep -vxF -f <(printf '%s\n' "$keep") || true)
-  guard_no_match "M6 guard 3: no old tool names in bin/ scripts (keep-list: deferred prose)" \
+  guard_no_match "M6 guard 3: no old tool names in bin/ scripts" \
     "$OLD_NAMES" "$list"
 }
 
-# Guard 4: tests/*.test.sh executable references must be renamed; only the
-# documented deferred-prose keep-list may carry old names in comments, skip
-# messages, and assertion prose.
+# Guard 4: tests/*.test.sh executable name references must be renamed; the
+# deferred-prose keep-list was retired by the 2026-08-14 purge, so the guard is
+# a plain no-match scan.
 test_guard_tests() {
-  local list keep
+  local list
   list=$(tracked_files | grep '^tests/.*\.test\.sh$' || true)
-  keep=$(printf '%s\n' \
-    'tests/sq-backend-orca.test.sh' \
-    'tests/sq-backend.test.sh' \
-    'tests/sq-backend-zellij.test.sh' \
-    'tests/sq-bootstrap.test.sh' \
-    'tests/sq-decision-hold-lifecycle.test.sh' \
-    'tests/sq-on.test.sh' \
-    'tests/sq-pr-check-security.test.sh' \
-    'tests/sq-pr-merge.test.sh' \
-    'tests/sq-procevent.test.sh' \
-    'tests/sq-public-followup.test.sh' \
-    'tests/sq-sitrep-snapshot.test.sh' \
-    'tests/sq-teardown.test.sh' \
-    'tests/sq-vendor-auth-probe.test.sh' \
-    | sed '/^$/d')
-  list=$(printf '%s\n%s\n' "$list" "$keep" | grep -vxF -f <(printf '%s\n' "$keep") || true)
-  guard_no_match "M6 guard 4: no old tool names in tests/ (keep-list: deferred prose)" \
+  guard_no_match "M6 guard 4: no old tool names in tests/" \
     "$OLD_NAMES" "$list"
 }
 
@@ -183,4 +117,4 @@ if [ -n "$GUARD_FAILURES" ]; then
   printf '%s\n' "$GUARD_FAILURES"
   exit 1
 fi
-pass "M6 name-surface guard: all surfaces clean (documented deferred-prose keep-list excluded)"
+pass "M6 name-surface guard: all surfaces clean"

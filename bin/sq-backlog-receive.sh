@@ -7,10 +7,10 @@
 # The delivered file must be a non-symlink backlog-format scratch file confined
 # to SQUAD_BASE/state/handoff. Every item must be Queued. Keys already present in
 # data/backlog.md are skipped; every remaining key moves in one dependency-closed
-# `tasks-axi mv` transaction under tasks-axi's own locks. On an ambiguous caller
+# `sq-tasks mv` transaction under sq-tasks' own locks. On an ambiguous caller
 # retry, destination-present classification makes this operation idempotent.
 #
-# If tasks-axi reports a lock failure, this host may remove and retry once only
+# If sq-tasks reports a lock failure, this host may remove and retry once only
 # for its own backlog or delivered lock whose pid is dead and whose mtime is at
 # least 30 seconds old. No live or uncertain lock is touched. On confirmed
 # receipt the delivered scratch file is removed; no other path is deletable.
@@ -163,7 +163,7 @@ for key in "${KEYS[@]}"; do
 done
 
 if [ "${#TO_MOVE[@]}" -gt 0 ]; then
-  fm_tasks_axi_compatible || die "a compatible tasks-axi is required for atomic backlog receipt; run bin/sq-bootstrap.sh for the required version"
+  fm_tasks_axi_compatible || die "a compatible sq-tasks is required for atomic backlog receipt; run bin/sq-bootstrap.sh for the required version"
   if ! MOVE_OUT=$(run_move "${TO_MOVE[@]}" 2>&1); then
     recovered=0
     for lock in "$DELIVERED.lock" "$DEST.lock"; do

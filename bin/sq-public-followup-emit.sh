@@ -25,17 +25,17 @@
 #                          that took the mention). Must already have a
 #                          registration for --obligation; see
 #                          `sq-public-followup.sh register`.
-#   --obligation <id>      tasks-axi public-followup obligation id.
+#   --obligation <id>      sq-tasks public-followup obligation id.
 #   --relation <id>        The relation_id this work fulfills or contributes to.
 #   --source-base <id>     This worker's stable base identity, exactly as bound:
 #                          "main" or "XO:<stable-id>".
 #   --work-id <id>         This worker's exact task id, exactly as bound.
 #   --generation <n>       The bound relation generation (integer >= 1).
-#   --outcome <type>       Typed outcome. tasks-axi owns the vocabulary and
+#   --outcome <type>       Typed outcome. sq-tasks owns the vocabulary and
 #                          refuses anything it does not accept; this script only
 #                          checks the token is a safe slug.
 #   --deliverable k=v      Repeatable safe deliverable (for example
-#                          pr_url=https://...). tasks-axi owns which keys a given
+#                          pr_url=https://...). sq-tasks owns which keys a given
 #                          expected-final type permits.
 #   --outcome-text ...     Public-safe outcome sentence, from an argument, a
 #                          file, or stdin ("-"). Collapsed to one line; the
@@ -177,7 +177,7 @@ fi
 
 # The registration is the owning base's own record of what it bound, so checking
 # the identity tuple against it catches a mis-briefed worker at the edge with a
-# clear message. tasks-axi still re-validates everything at consume time and
+# clear message. sq-tasks still re-validates everything at consume time and
 # remains the authority; this is a cheap early refusal, not a second gatekeeper.
 reg_mismatch() {
   local field=$1 expected=$2 got=$3
