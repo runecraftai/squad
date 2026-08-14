@@ -500,17 +500,143 @@ func TestFinalizeTextResult_WithSchemaParsesFixOutputWithLeadingProse(t *testing
 	}
 }
 
-// TestFinalizeTextResult_WithSchemaFailsLoudlyWhenFixOutputHasNoJSON keeps the
-// tolerant extraction honest: prose without any JSON payload still fails with
-// the raw parse error, never a silent empty result.
-func TestFinalizeTextResult_WithSchemaFailsLoudlyWhenFixOutputHasNoJSON(t *testing.T) {
+// TestFinalizeTextResult_WithSchemaTreatsProseFixOutputAsRoundSummary keeps
+// fix rounds alive when the fixer ends its round with a plain-text summary
+// instead of the requested JSON object. Pi fixers regularly do this, and the
+// former hard failure ("agent fix: pi output parse: ...") discarded the
+// already-applied fixes before they were committed. The prose is treated as
+// the round summary: the round completes and the work gets committed.
+func TestFinalizeTextResult_WithSchemaTreatsProseFixOutputAsRoundSummary(t *testing.T) {
 	text := "All fixes applied and verified. The summary is: everything looks good now."
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != text {
+		t.Errorf("expected prose to become the round summary, got %q", output.Summary)
+	}
+	if result.Text != text {
+		t.Errorf("expected original text to be preserved, got %q", result.Text)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaMalformedJSONStillFailsLoudly keeps the
+// prose fallback honest: text that looks like an attempted JSON payload (a
+// leading brace) but does not parse must still fail with a clear error, never
+// be silently swallowed as a round summary.
+func TestFinalizeTextResult_WithSchemaMalformedJSONStillFailsLoudly(t *testing.T) {
+	text := `{"summary": "the fix is applied`
 	_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
 	if err == nil {
-		t.Fatal("expected garbage-only fix output to fail")
+		t.Fatal("expected malformed JSON fix output to fail")
 	}
 	if !strings.Contains(err.Error(), "output parse") {
 		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaProseBraceFragmentBecomesRoundSummary
+// covers realistic fixer prose that contains balanced non-JSON brace
+// fragments ("Changed {opencode -> codex} handling in matrix.ts"). The
+// fragment is not an attempted JSON payload - it is not parseable JSON and it
+// is not fenced - so the round must still complete with the prose synthesized
+// as the round summary; failing here would lose the same applied fixes the
+// prose fallback exists to protect.
+func TestFinalizeTextResult_WithSchemaProseBraceFragmentBecomesRoundSummary(t *testing.T) {
+	text := "Changed {opencode -> codex} handling in matrix.ts"
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != text {
+		t.Errorf("expected prose with brace fragment to become the round summary, got %q", output.Summary)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaBareNonObjectPayloadStillFailsLoudly keeps
+// the prose fallback from swallowing parseable-but-schema-invalid payloads: a
+// bare string is valid JSON that is not a summary object, and a bare object
+// missing the required "summary" property is an attempted JSON payload. Both
+// must keep failing loudly instead of being synthesized over.
+func TestFinalizeTextResult_WithSchemaBareNonObjectPayloadStillFailsLoudly(t *testing.T) {
+	for _, text := range []string{`"hello"`, `{"done":true}`} {
+		_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+		if err == nil {
+			t.Errorf("expected output parse failure for %q", text)
+			continue
+		}
+		if !strings.Contains(err.Error(), "output parse") {
+			t.Errorf("expected parse error for %q, got: %v", text, err)
+		}
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaFencedMalformedJSONStaysLoud keeps the
+// fenced-payload guard intact: a ```json fence whose body does not parse is
+// an attempted JSON payload and must fail loudly, never be synthesized over
+// as a round summary.
+func TestFinalizeTextResult_WithSchemaFencedMalformedJSONStaysLoud(t *testing.T) {
+	text := "Round complete.\n\n```json\n{\"summary\": broken\n```\n"
+	_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected fenced malformed JSON to fail")
+	}
+	if !strings.Contains(err.Error(), "output parse") {
+		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaProseFallbackScopedToSummaryShape proves
+// the prose fallback never leaks into structured-output rounds: a findings
+// shaped schema (review, lint, test, document) must still fail loudly on
+// prose-only output, because there is no single summary string to recover
+// and silently approving with zero findings would hide a broken agent.
+func TestFinalizeTextResult_WithSchemaProseFallbackScopedToSummaryShape(t *testing.T) {
+	text := "I reviewed the diff and everything looks good."
+	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected prose-only review output to fail")
+	}
+	if !strings.Contains(err.Error(), "output parse") {
+		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaProseSummaryCappedToSchemaMaxLength keeps
+// a synthesized prose summary within the schema's declared summary bound, so
+// the downstream commit-summary byte limit never rejects a round the parser
+// already accepted.
+func TestFinalizeTextResult_WithSchemaProseSummaryCappedToSchemaMaxLength(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{"summary":{"type":"string","maxLength":32}},
+		"required":["summary"]
+	}`)
+	text := "This is a very long plain-text round summary that goes well beyond the declared summary length bound."
+	result, err := finalizeTextResult("pi", text, schema, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(output.Summary) > 32 {
+		t.Errorf("synthesized summary length = %d, want <= 32", len(output.Summary))
 	}
 }
 

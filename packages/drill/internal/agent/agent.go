@@ -318,14 +318,118 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 
 	if bare, err := lastBareJSONObject(text, validationSchema); err == nil && bare != nil {
 		return bare, nil
-	} else if candidateErr == nil && err != nil {
+	} else if candidateErr == nil && err != nil && !isJSONSyntaxError(err) {
 		candidateErr = err
 	}
 
 	if candidateErr != nil {
 		return nil, candidateErr
 	}
+	if fallback, ok := plainTextRoundSummary(text, schema, rawErr); ok {
+		return fallback, nil
+	}
 	return nil, rawErr
+}
+
+// plainTextRoundSummary converts a prose-only fix round into the summary
+// object the round contract promises. Fix agents regularly end their round
+// with a plain-text summary instead of the requested JSON object, and a parse
+// failure there would discard already-applied fixes (the "agent fix: pi
+// output parse" failure mode). The fallback is scoped strictly to the
+// summary-only schema shape (an object whose sole required property is a
+// string "summary" - the commitSummarySchema every fix round validates
+// against), so review/lint/document/test/pr rounds keep failing loudly on
+// non-JSON output. Text that looks like an attempted JSON payload (a leading
+// brace or bracket) is never synthesized over: the caller's parse error
+// surfaces as a clear failure instead of silently swallowing malformed JSON.
+func plainTextRoundSummary(text string, schema json.RawMessage, rawErr error) (json.RawMessage, bool) {
+	if !isSummaryOnlySchema(schema) {
+		return nil, false
+	}
+	if !isJSONSyntaxError(rawErr) {
+		return nil, false
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		return nil, false
+	}
+	summary := capStringBytes(trimmed, summaryMaxBytes(schema))
+	payload, err := json.Marshal(map[string]string{"summary": summary})
+	if err != nil {
+		return nil, false
+	}
+	return payload, true
+}
+
+// isSummaryOnlySchema reports whether schema is the fix-round shape: an
+// object whose sole required property is a string named "summary" (the
+// commitSummarySchema contract shared by every fix round).
+func isSummaryOnlySchema(schema json.RawMessage) bool {
+	if len(schema) == 0 {
+		return false
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(schema, &parsed); err != nil {
+		return false
+	}
+	required, ok := parsed["required"].([]any)
+	if !ok || len(required) != 1 {
+		return false
+	}
+	if name, ok := required[0].(string); !ok || name != "summary" {
+		return false
+	}
+	properties, ok := parsed["properties"].(map[string]any)
+	if !ok {
+		return false
+	}
+	summaryProp, ok := properties["summary"].(map[string]any)
+	if !ok {
+		return false
+	}
+	typ, _ := summaryProp["type"].(string)
+	return typ == "string"
+}
+
+// summaryMaxBytes returns the schema's summary maxLength bound, or 0 when
+// the schema declares none. The cap mirrors the downstream commit-summary
+// byte bound so a synthesized prose summary is never rejected as oversized
+// after it was accepted by the parser.
+func summaryMaxBytes(schema json.RawMessage) int {
+	var parsed map[string]any
+	if err := json.Unmarshal(schema, &parsed); err != nil {
+		return 0
+	}
+	properties, ok := parsed["properties"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	summaryProp, ok := properties["summary"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	max, ok := summaryProp["maxLength"].(float64)
+	if !ok || max <= 0 {
+		return 0
+	}
+	return int(max)
+}
+
+// capStringBytes truncates s to at most maxBytes bytes at a UTF-8 rune
+// boundary. A maxBytes of 0 or a string within the bound is returned
+// unchanged.
+func capStringBytes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	cut := 0
+	for i := range s {
+		if i > maxBytes {
+			break
+		}
+		cut = i
+	}
+	return s[:cut]
 }
 
 func textValidationSchema(schema json.RawMessage) (json.RawMessage, error) {
@@ -501,7 +605,8 @@ func indexJSONFenceClose(text string) (int, int) {
 // reasoning prose followed by a raw JSON answer, with no code fence.
 func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, error) {
 	var last json.RawMessage
-	var lastErr error
+	var validationErr error
+	var syntaxErr error
 	for i := 0; i < len(text); i++ {
 		if strings.HasPrefix(text[i:], "```") {
 			if !isFenceOpener(text, i) {
@@ -535,16 +640,32 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 		obj, err := parseStructuredCandidate([]byte(candidate), schema)
 		if err == nil {
 			last = obj
-			lastErr = nil
-		} else if lastErr == nil {
-			lastErr = err
+			validationErr = nil
+			syntaxErr = nil
+		} else if isJSONSyntaxError(err) {
+			if syntaxErr == nil {
+				syntaxErr = err
+			}
+		} else if validationErr == nil {
+			validationErr = err
 		}
 		i = end - 1
 	}
 	if last != nil {
 		return last, nil
 	}
-	return nil, lastErr
+	if validationErr != nil {
+		return nil, validationErr
+	}
+	return nil, syntaxErr
+}
+
+// isJSONSyntaxError reports whether err is a JSON syntax error (the candidate
+// is not valid JSON) rather than a schema-validation failure (the candidate
+// parses as JSON but violates the schema).
+func isJSONSyntaxError(err error) bool {
+	var syntaxErr *json.SyntaxError
+	return errors.As(err, &syntaxErr)
 }
 
 // scanBalancedObject returns the exclusive end index of a brace-balanced
