@@ -46,18 +46,18 @@ jobs:
           config-file: packages/${{ matrix.package }}/release-please-config.json
           manifest-file: packages/${{ matrix.package }}/.release-please-manifest.json
       - uses: actions/checkout@v6
-        if: ${{ steps.release.outputs.releases_created }}
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
       - uses: pnpm/action-setup@v4
-        if: ${{ steps.release.outputs.releases_created }}
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
           version: 11.1.1
       - uses: actions/setup-node@v6
-        if: ${{ steps.release.outputs.releases_created }}
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - name: Publish to npm
-        if: ${{ steps.release.outputs.releases_created }}
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
