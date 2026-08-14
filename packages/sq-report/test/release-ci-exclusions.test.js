@@ -15,7 +15,7 @@ const workflowsDir = join(root, ".github", "workflows");
  */
 function expectedReleaseOutputs() {
   const config = JSON.parse(readFileSync(join(root, "release-please-config.json"), "utf8"));
-  const pkg = config.packages?.["."] ?? {};
+  const pkg = config.packages?.["packages/sq-report"] ?? {};
   const releaseType = pkg["release-type"] ?? config["release-type"] ?? "node";
   const changelog = pkg["changelog-path"] ?? config["changelog-path"] ?? "CHANGELOG.md";
 
