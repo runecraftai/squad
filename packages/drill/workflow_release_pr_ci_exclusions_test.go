@@ -92,13 +92,16 @@ func expectedReleasePleaseOutputs(t *testing.T) []string {
 		seen[path] = struct{}{}
 		out = append(out, path)
 	}
-	add(".release-please-manifest.json")
-
 	for pkgPath, pkg := range cfg.Packages {
 		prefix := ""
 		if pkgPath != "." {
 			prefix = strings.TrimSuffix(pkgPath, "/") + "/"
 		}
+		// The manifest for a package's release stream lives next to its
+		// config (packages/<name>/.release-please-manifest.json), where
+		// release.yml points manifest-file; root-keyed configs keep the
+		// root manifest path.
+		add(prefix + ".release-please-manifest.json")
 		switch pkg.ReleaseType {
 		case "go", "simple", "rust", "python", "elixir", "terraform-module":
 			add(prefix + "CHANGELOG.md")

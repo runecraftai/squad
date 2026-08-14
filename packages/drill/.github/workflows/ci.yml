@@ -8,7 +8,7 @@ on:
     # action_required and never start; excluding the exact release-output set means
     # no run is created at all. push/tag/release triggers are unaffected.
     paths-ignore:
-      - .release-please-manifest.json
+      - packages/drill/.release-please-manifest.json
       - packages/drill/CHANGELOG.md
 
 jobs:

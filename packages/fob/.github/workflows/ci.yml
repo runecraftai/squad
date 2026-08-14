@@ -9,7 +9,7 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
-      - .release-please-manifest.json
+      - packages/fob/.release-please-manifest.json
       - packages/fob/CHANGELOG.md
       - packages/fob/flake.nix
 

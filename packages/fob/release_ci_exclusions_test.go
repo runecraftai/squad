@@ -33,12 +33,17 @@ func expectedReleaseOutputs(cfg releasePleaseConfig) ([]string, error) {
 		return nil, fmt.Errorf("release-please-config.json has no packages")
 	}
 
-	seen := map[string]struct{}{
-		// Manifest is always written for multi and single-package configs.
-		".release-please-manifest.json": {},
-	}
+	seen := map[string]struct{}{}
 
 	for pkgPath, pkg := range cfg.Packages {
+		// Manifest is always written for multi and single-package configs;
+		// per-package streams keep it next to their config.
+		manifest := ".release-please-manifest.json"
+		if pkgPath != "." && pkgPath != "" {
+			manifest = filepath.ToSlash(filepath.Join(pkgPath, ".release-please-manifest.json"))
+		}
+		seen[manifest] = struct{}{}
+
 		// CHANGELOG.md lives at the package root (repo root for ".").
 		changelog := "CHANGELOG.md"
 		if pkgPath != "." && pkgPath != "" {
@@ -360,7 +365,7 @@ func TestExpectedReleaseOutputsIncludesConfiguredExtraFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{".release-please-manifest.json", "packages/fob/CHANGELOG.md", "packages/fob/flake.nix"}
+	want := []string{"packages/fob/.release-please-manifest.json", "packages/fob/CHANGELOG.md", "packages/fob/flake.nix"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("expected %v, got %v", want, got)
 	}
