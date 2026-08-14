@@ -124,9 +124,9 @@ test("home output teaches agents when and how to use Lavish Editor", () => {
   const output = createHomeOutput({ bin: `${os.homedir()}/.local/bin/sq-report`, sessions: [] });
 
   assert.equal(output.bin, "~/.local/bin/sq-report");
-  assert.match(output.description, /Lavish Editor/);
+  assert.match(output.description, /sq-report/);
   assert.match(output.description, /complex response/);
-  assert.match(output.description, /consider using Lavish Editor/);
+  assert.match(output.description, /consider using sq-report/);
   assert.match(output.description, /First generate an interactive HTML artifact/);
   assert.deepEqual(output.sessions, []);
   assert.equal("use_cases" in output, false);
@@ -149,7 +149,7 @@ test("home output teaches agents when and how to use Lavish Editor", () => {
     "Must be used when the agent needs to collect user input on decisions, choices, preferences, triage, scope, or other structured feedback from within the artifact",
   );
   assert.ok(output.help.some((item) => item.includes("sq-report <html-file>")));
-  assert.ok(output.help.some((item) => item.includes("`.lavish/`")));
+  assert.ok(output.help.some((item) => item.includes("`.sq-report/`")));
   assert.ok(output.help.some((item) => item.includes("sq-report playbook <playbook_id>")));
   assert.ok(output.help.some((item) => item.includes("combines several playbooks")));
   assert.ok(output.help.some((item) => item.includes("MUST open each matching playbook")));
@@ -236,7 +236,7 @@ test("export and share outputs flag an unpainted page surface before it reaches 
   });
   assert.equal(exported.self_paint_warning, SELF_PAINT_WARNING);
   assert.match(exported.next_step, /^Fix the unpainted page surface flagged in self_paint_warning/);
-  assert.match(exported.next_step, /no Lavish server/, "the export contract stays intact");
+  assert.match(exported.next_step, /no sq-report server/, "the export contract stays intact");
 
   const shared = createShareOutput({
     source: "/tmp/report.html",
@@ -688,7 +688,7 @@ test("playbook detail output returns focused Lavish-native guidance", () => {
   assert.ok(output.playbook.lavish_notes.some((item) => item.includes("onsubmit")));
   assert.ok(output.playbook.pitfalls.some((item) => item.includes("unclear")));
   assert.ok(output.playbook.pitfalls.some((item) => item.includes("radio change")));
-  assert.ok(output.playbook.lavish_notes.some((item) => item.includes("Lavish")));
+  assert.ok(output.playbook.lavish_notes.some((item) => item.includes("sq-report")));
 });
 
 test("code playbook detail output requires verified @pierre/diffs rendering", () => {
@@ -785,7 +785,7 @@ test("a user-ended open refuses with a status agents can branch on, not a URL to
 
   assert.equal(output.session.file, "/tmp/artifact.html");
   assert.equal(output.session.status, "user-ended");
-  assert.match(output.next_step, /user explicitly ended this Lavish Editor session from the browser/);
+  assert.match(output.next_step, /user explicitly ended this sq-report session from the browser/);
   assert.match(output.next_step, /did not reopen it/);
   assert.match(output.next_step, /Do not reopen unless the user asks for further review/);
   assert.match(output.next_step, /sq-report \/tmp\/artifact\.html --reopen/);
@@ -803,7 +803,7 @@ test("export output reports the written file and reassures it needs no server", 
   assert.equal(output.export.output, "/tmp/report.export.html");
   assert.equal(output.export.unresolved_local_assets, 0);
   assert.equal(output.export.bytes, Buffer.byteLength("<html></html>"));
-  assert.match(output.next_step, /no Lavish server/);
+  assert.match(output.next_step, /no sq-report server/);
   assert.match(output.next_step, /remote CDN\/font references are left as links/);
 });
 
@@ -926,7 +926,7 @@ test("share output reports the public url and the secret update key", () => {
   assert.match(output.next_step, /PUBLIC/);
   assert.match(output.next_step, /update_key/);
   assert.match(output.next_step, /x\.ht-ml\.app/);
-  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of Lavish/);
+  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of sq-report/);
 });
 
 test("password-protected share output tells viewers they also need the password", () => {
@@ -942,7 +942,7 @@ test("password-protected share output tells viewers they also need the password"
   assert.equal(output.share.visibility, "private");
   assert.match(output.next_step, /PASSWORD-PROTECTED/);
   assert.match(output.next_step, /viewers also need the password/);
-  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of Lavish/);
+  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of sq-report/);
   assert.doesNotMatch(output.next_step, /anyone with the link can view/);
 });
 
@@ -956,7 +956,7 @@ test("share output surfaces local assets that could not be inlined", () => {
   assert.equal(output.share.unresolved_local_assets, 1);
   assert.deepEqual(output.unresolved_local_assets, [{ kind: "load-failed", ref: "./missing.png" }]);
   assert.match(output.next_step, /LOCAL assets could not be inlined/);
-  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of Lavish/);
+  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of sq-report/);
   assert.doesNotMatch(output.next_step, /share this URL/);
 });
 
@@ -994,7 +994,7 @@ test("password-protected share output with unresolved assets still mentions the 
   assert.equal(output.share.visibility, "private");
   assert.match(output.next_step, /PASSWORD-PROTECTED/);
   assert.match(output.next_step, /viewers also need the password/);
-  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of Lavish/);
+  assert.match(output.next_step, /ht-ml\.app \(https:\/\/ht-ml\.app\), a third-party host not part of sq-report/);
   assert.doesNotMatch(output.next_step, /anyone with the link can view/);
 });
 
@@ -1282,7 +1282,7 @@ test("a poll reporting the session ended by the user tells the agent to stop and
 
   assert.equal(output.session.status, "ended");
   assert.equal(output.session.ended_by, "user");
-  assert.match(output.next_step, /user ended this Lavish Editor session/);
+  assert.match(output.next_step, /user ended this sq-report session/);
   assert.match(output.next_step, /Stop polling/);
   assert.match(output.next_step, /do not run `sq-report \/tmp\/report\.html` to reopen it/);
   assert.match(output.next_step, /deliver any remaining updates directly in this conversation/i);
@@ -1335,10 +1335,10 @@ test("the final feedback batch before an agent end preserves ended_by and allows
 
   assert.equal(output.session.session_ended, true);
   assert.equal(output.session.ended_by, "agent");
-  assert.match(output.next_step, /last feedback before the Lavish Editor session ended/);
+  assert.match(output.next_step, /last feedback before the sq-report session ended/);
   assert.match(output.next_step, /sq-report \/tmp\/report\.html`\s+to open a fresh session/);
   assert.doesNotMatch(output.next_step, /--reopen/);
-  assert.doesNotMatch(output.next_step, /user ended this Lavish Editor session/);
+  assert.doesNotMatch(output.next_step, /user ended this sq-report session/);
 });
 
 test("final user-ended feedback still reports a fatal artifact failure without reopening", () => {
@@ -1354,7 +1354,7 @@ test("final user-ended feedback still reports a fatal artifact failure without r
   });
 
   assert.match(output.next_step, /fatal artifact failure/);
-  assert.match(output.next_step, /confirm it renders without reopening this ended Lavish session/);
+  assert.match(output.next_step, /confirm it renders without reopening this ended sq-report session/);
   assert.doesNotMatch(output.next_step, /--reopen/);
 });
 
@@ -1687,8 +1687,8 @@ if (command === "plugins list") {
     const records = [{ kind: "plugin", name: "sq-report-tools", source: "direct" }];
     if (options.installedSource && fs.existsSync(options.installedSource)) {
       records.push(options.listSourcePath
-        ? { kind: "plugin", name: "sq-report", sourcePath: fs.readFileSync(options.installedSource, "utf8") }
-        : { kind: "plugin", name: "sq-report", source: "direct" });
+        ? { kind: "plugin", name: "report", sourcePath: fs.readFileSync(options.installedSource, "utf8") }
+        : { kind: "plugin", name: "report", source: "direct" });
     }
     process.stdout.write(JSON.stringify(records));
   }
@@ -1703,7 +1703,7 @@ if (command === "plugin install") {
   if (options.installedSource) fs.writeFileSync(options.installedSource, pluginRoot);
   if (options.copilotConfig) {
     fs.writeFileSync(options.copilotConfig, JSON.stringify({
-      installedPlugins: [{ name: "sq-report", source: { source: "local", path: pluginRoot } }],
+      installedPlugins: [{ name: "report", source: { source: "local", path: pluginRoot } }],
     }));
   }
   if (options.installLog) fs.appendFileSync(options.installLog, "install\\n");
@@ -1733,14 +1733,14 @@ test("setup plugin registers the installed package in the clients that are prese
     const result = runSetupPlugin(homeDir, stateDir, pathDir);
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /name: sq-report/);
+    assert.match(result.stdout, /name: report/);
     assert.match(result.stdout, /cursor,registered/);
     // No VS Code settings and no copilot binary in this environment.
     assert.match(result.stdout, /vscode,absent/);
     assert.match(result.stdout, /copilot,absent/);
 
     // The registered slot points at the package root, which is where plugin.json lives.
-    const linked = await realpath(`${homeDir}/.cursor/plugins/local/sq-report`);
+    const linked = await realpath(`${homeDir}/.cursor/plugins/local/report`);
     assert.equal(linked, await realpath(fileURLToPath(new URL("..", import.meta.url))));
     assert.ok(existsSync(`${linked}/plugin.json`));
     assert.ok(existsSync(`${linked}/skills/lavish/SKILL.md`));
@@ -1853,10 +1853,10 @@ test("setup plugin repairs Copilot registration without trusting list text", asy
     assert.equal(await realpath(await readFile(installedSource, "utf8")), pluginRoot);
     assert.equal(await readFile(installLog, "utf8"), "install\n");
 
-    await writeFile(installedSource, "/stale/sq-report");
+    await writeFile(installedSource, "/stale/report");
     await writeFile(
       copilotConfig,
-      '{"installedPlugins":[{"name":"sq-report","source":{"source":"local","path":"/stale/sq-report"}}]}',
+      '{"installedPlugins":[{"name":"report","source":{"source":"local","path":"/stale/report"}}]}',
     );
     const repaired = runSetupPlugin(homeDir, stateDir, pathDir);
 
@@ -1876,7 +1876,7 @@ test("setup plugin preserves Copilot registration when replacement fails", async
   const homeDir = await mkdtemp(`${os.tmpdir()}/sq-report-plugin-copilot-failure-home-`);
   const pathDir = await mkdtemp(`${os.tmpdir()}/sq-report-plugin-copilot-failure-path-`);
   const installedSource = path.join(homeDir, "copilot-installed-source");
-  const originalSource = "/working/sq-report";
+  const originalSource = "/working/report";
   try {
     await writeFile(installedSource, originalSource);
     await writeCopilotCommandStub(pathDir, { installedSource, listSourcePath: true, installFails: true });
@@ -1921,7 +1921,7 @@ test("setup plugin isolates a client it cannot register from the ones it can", a
   try {
     // A real directory in Cursor's slot is unregisterable - the same reported (not thrown)
     // path a Windows box without Developer Mode takes when link creation is refused.
-    const occupied = `${homeDir}/.cursor/plugins/local/sq-report`;
+    const occupied = `${homeDir}/.cursor/plugins/local/report`;
     await mkdir(occupied, { recursive: true });
     await writeFile(`${occupied}/keep.txt`, "user content", "utf8");
     await mkdir(path.dirname(settingsFile), { recursive: true });
@@ -2126,7 +2126,7 @@ test("polling a file without an active session tells the agent to open it first"
     (error) => {
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "NOT_FOUND");
-      assert.match(error.message, /No active Lavish Editor session/);
+      assert.match(error.message, /No active sq-report session/);
       assert.ok(error.suggestions.some((item) => item.includes("sq-report /tmp/report.html")));
       return true;
     },
@@ -2139,7 +2139,7 @@ test("network fetch failures become structured Lavish server errors", async () =
     (error) => {
       assert.ok(error instanceof AxiError);
       assert.equal(error.code, "SERVER_ERROR");
-      assert.match(error.message, /Lavish Editor server connection failed/);
+      assert.match(error.message, /sq-report server connection failed/);
       assert.ok(error.suggestions.some((item) => item.includes("sq-report server --verbose")));
       return true;
     },
@@ -2192,7 +2192,7 @@ test("fetchJson reports interrupted response body failures without retrying", as
       (error) => {
         assert.ok(error instanceof AxiError);
         assert.equal(error.code, "SERVER_ERROR");
-        assert.match(error.message, /Lavish Editor poll response was interrupted/);
+        assert.match(error.message, /sq-report poll response was interrupted/);
         return true;
       },
     );

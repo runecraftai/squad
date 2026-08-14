@@ -37,7 +37,7 @@ const COMMANDS = new Set(["open", "poll", "end", "stop", "server", "playbook", "
 // the bare-arg normalization below would rewrite them into the hidden `open` command.
 const RESERVED = new Set(RESERVED_COMMANDS);
 const DESCRIPTION =
-  "Lavish Editor helps agents turn rich HTML artifacts into collaborative human review surfaces. Whenever you are about to give user a complex response that will be easier to understand via a rich / interactive page, consider using Lavish Editor. " +
+  "sq-report helps agents turn rich HTML artifacts into collaborative human review surfaces. Whenever you are about to give user a complex response that will be easier to understand via a rich / interactive page, consider using sq-report. " +
   "First generate an interactive HTML artifact according to user request, then run `sq-report <html-file>` so the user can visually review it, annotate elements or selected text, queue prompts, and send feedback back through `sq-report poll`.";
 export const POLL_WAKE_PATH_RULES = Object.freeze([
   "Keep the poll in the foreground by default and let it return the feedback directly to the agent.",
@@ -184,14 +184,14 @@ export function createHomeOutput({ bin, sessions, includeSessions = true, agent 
     ],
     playbooks: listPlaybooks(),
     help: [
-      "Run `sq-report <html-file>` to open or resume a Lavish Editor session. If the user explicitly ended the session from the browser, this refuses to reopen it and explains why instead of reopening uninvited - pass `--reopen` only when the user asks for further review or something important needs their visual attention",
-      "Unless the user specifies another location, create HTML artifacts in the current working directory under `.lavish/`",
-      "Lavish serves the html file through a local express.js server. If your html needs to reference other filesystem assets such as images, CSS, fonts, and local scripts, copy them into the same directory as the HTML file, then reference them with relative paths from that directory. Never prepend `/` to those asset paths - root paths won't work",
-      `Run \`sq-report poll <html-file>\` to wait for user feedback. It long-polls and stays silent until the user sends feedback or ends the session, so leave it running - never kill it. Detected layout issues never return this poll: the browser files them in the user's Layout issues inbox in the Lavish top bar, and they arrive as an ordinary tag "layout-warnings" prompt only when the user selects them and queues the fixes. Never edit the artifact to chase a layout issue the user has not queued. The only exception is a fatal artifact_failures response, which means the review surface itself could not be used. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}`,
+      "Run `sq-report <html-file>` to open or resume a sq-report session. If the user explicitly ended the session from the browser, this refuses to reopen it and explains why instead of reopening uninvited - pass `--reopen` only when the user asks for further review or something important needs their visual attention",
+      "Unless the user specifies another location, create HTML artifacts in the current working directory under `.sq-report/`",
+      "sq-report serves the html file through a local express.js server. If your html needs to reference other filesystem assets such as images, CSS, fonts, and local scripts, copy them into the same directory as the HTML file, then reference them with relative paths from that directory. Never prepend `/` to those asset paths - root paths won't work",
+      `Run \`sq-report poll <html-file>\` to wait for user feedback. It long-polls and stays silent until the user sends feedback or ends the session, so leave it running - never kill it. Detected layout issues never return this poll: the browser files them in the user's Layout issues inbox in the sq-report top bar, and they arrive as an ordinary tag "layout-warnings" prompt only when the user selects them and queues the fixes. Never edit the artifact to chase a layout issue the user has not queued. The only exception is a fatal artifact_failures response, which means the review surface itself could not be used. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}`,
       'Rendered Mermaid diagrams in `.mermaid` containers become embedded, editable Excalidraw whiteboards in the browser (click a diagram to unlock editing; a Fullscreen action opens it over the whole viewport) - flowchart, sequence, class, ER, and state diagrams convert to editable shapes; other types embed as an image to draw on. Scenes autosave locally; when a reload detects a changed Mermaid source, the reviewer explicitly chooses to re-convert and discard saved edits or keep editing the saved scene. Standalone and exported copies still render plain Mermaid. Queue feedback adds a prompt to the Conversation panel; when the user sends it, poll returns a tag "whiteboard" prompt carrying a bounded edit summary plus local scenePath (.excalidraw JSON) and previewPath (PNG) files - read the summary first, open the files only when needed, then apply the edits by updating the Mermaid source in the artifact (never try to write the scene back)',
       "Run `sq-report end <html-file>` to end a session as the agent - ending it this way still allows a plain reopen later. When the user ends it from the browser instead, a later `sq-report <html-file>` refuses to reopen it without `--reopen`",
-      "Run `sq-report export <html-file> [--out <path>]` to write a portable copy of the artifact - one HTML file with its LOCAL assets inlined - so it opens with no Lavish server and no sibling files. Remote CDN/font references are left as links, so it needs network to render those. Users can also export from the browser chrome's overflow menu",
-      "Run `sq-report share <html-file> [--password <pw>] [--token <t>]` to publish the artifact on ht-ml.app (https://ht-ml.app), a third-party hosting service not part of Lavish, and get back a visitable URL. Shares are PUBLIC by default, so anyone with the link can open them. Pass --password to publish a PRIVATE password-protected page; viewers must supply the password to view. Local assets are inlined; remote refs load over the network. It returns the url plus a secret update_key for managing the page later. Use --token or SQ_REPORT_HTML_APP_TOKEN only when you have an optional bearer token; it is never required. Users can also publish from the browser chrome's overflow menu",
+      "Run `sq-report export <html-file> [--out <path>]` to write a portable copy of the artifact - one HTML file with its LOCAL assets inlined - so it opens with no sq-report server and no sibling files. Remote CDN/font references are left as links, so it needs network to render those. Users can also export from the browser chrome's overflow menu",
+      "Run `sq-report share <html-file> [--password <pw>] [--token <t>]` to publish the artifact on ht-ml.app (https://ht-ml.app), a third-party hosting service not part of sq-report, and get back a visitable URL. Shares are PUBLIC by default, so anyone with the link can open them. Pass --password to publish a PRIVATE password-protected page; viewers must supply the password to view. Local assets are inlined; remote refs load over the network. It returns the url plus a secret update_key for managing the page later. Use --token or SQ_REPORT_HTML_APP_TOKEN only when you have an optional bearer token; it is never required. Users can also publish from the browser chrome's overflow menu",
       "Run `sq-report stop` to shut down the background server (it also self-stops when idle or after the last session ends with nothing connected)",
       `Run \`sq-report playbook <playbook_id>\` for focused artifact guidance. ${PLAYBOOK_ROUTER_HELP}`,
       DESIGN_SYSTEM_HINT,
@@ -221,12 +221,12 @@ export function createPlaybookOutput(args) {
 
 export function createOpenOutput({ file, url, status, agent = "generic", selfPaintWarning = undefined }) {
   const selfPaintPrefix = selfPaintWarning
-    ? `First fix the unpainted page surface flagged in self_paint_warning and save - Lavish live-reloads the artifact automatically, so you do not need to re-run \`sq-report ${file}\`. `
+    ? `First fix the unpainted page surface flagged in self_paint_warning and save - sq-report live-reloads the artifact automatically, so you do not need to re-run \`sq-report ${file}\`. `
     : "";
   return {
     session: { file, url, status },
     ...(selfPaintWarning ? { self_paint_warning: selfPaintWarning } : {}),
-    next_step: `${selfPaintPrefix}Do not respond to the user just yet. Now you must run \`sq-report poll ${file}\`. This command long-polls until the user sends feedback or ends the session, and it stays silent the whole time - that is normal, never kill it. Layout issues the browser detects do not return this poll; they wait in the user's Layout issues inbox until the user queues them, then arrive as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use. ${pollExecutionGuidance({ agent })} After applying feedback, run \`sq-report poll ${file} --agent-reply "<message for the user>"\` without --timeout-ms to show your response in Lavish Editor and wait for more feedback. If the user ends the session, stop polling and do not reopen it by re-running \`sq-report ${file}\` unless the user asks for further review or something genuinely important needs their visual attention - deliver routine updates directly in this conversation instead. When reopening is warranted, run \`sq-report ${file} --reopen\`.`,
+    next_step: `${selfPaintPrefix}Do not respond to the user just yet. Now you must run \`sq-report poll ${file}\`. This command long-polls until the user sends feedback or ends the session, and it stays silent the whole time - that is normal, never kill it. Layout issues the browser detects do not return this poll; they wait in the user's Layout issues inbox until the user queues them, then arrive as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use. ${pollExecutionGuidance({ agent })} After applying feedback, run \`sq-report poll ${file} --agent-reply "<message for the user>"\` without --timeout-ms to show your response in sq-report and wait for more feedback. If the user ends the session, stop polling and do not reopen it by re-running \`sq-report ${file}\` unless the user asks for further review or something genuinely important needs their visual attention - deliver routine updates directly in this conversation instead. When reopening is warranted, run \`sq-report ${file} --reopen\`.`,
   };
 }
 
@@ -237,7 +237,7 @@ export function createOpenOutput({ file, url, status, agent = "generic", selfPai
 export function createUserEndedOpenOutput({ file, url }) {
   return {
     session: { file, url, status: "user-ended" },
-    next_step: `The user explicitly ended this Lavish Editor session from the browser, so \`sq-report ${file}\` did not reopen it. Do not reopen unless the user asks for further review or something genuinely important needs their visual attention - deliver routine updates directly in this conversation instead. When reopening is warranted, run \`sq-report ${file} --reopen\`.`,
+    next_step: `The user explicitly ended this sq-report session from the browser, so \`sq-report ${file}\` did not reopen it. Do not reopen unless the user asks for further review or something genuinely important needs their visual attention - deliver routine updates directly in this conversation instead. When reopening is warranted, run \`sq-report ${file} --reopen\`.`,
   };
 }
 
@@ -388,9 +388,7 @@ export function startPollWaitReporter({
  */
 export function createPollOutput({ file, response, agent = "generic" }) {
   if (response.status === "missing") {
-    throw new AxiError("No active Lavish Editor session for this file", "NOT_FOUND", [
-      `Run \`sq-report ${file}\` first`,
-    ]);
+    throw new AxiError("No active sq-report session for this file", "NOT_FOUND", [`Run \`sq-report ${file}\` first`]);
   }
   if (response.status === "feedback") {
     const artifactFailures = Array.isArray(response.artifact_failures) ? response.artifact_failures : [];
@@ -423,16 +421,16 @@ export function createPollOutput({ file, response, agent = "generic" }) {
 function createFeedbackNextStep(file, artifactFailures, sessionEnded, endedBy, prompts = [], agent = "generic") {
   const count = artifactFailures.length;
   const whiteboardNote = prompts.some((prompt) => prompt && prompt.tag === "whiteboard")
-    ? `This feedback includes whiteboard edits (tag "whiteboard"): read the edit summary in the prompt text first, and only when it is not enough, open the target's scenePath (.excalidraw scene JSON) or previewPath (PNG) local files for detail. The artifact's Mermaid source stays authoritative - apply the edits by updating the Mermaid text in ${file} (Lavish live-reloads it); never try to write the .excalidraw scene back. `
+    ? `This feedback includes whiteboard edits (tag "whiteboard"): read the edit summary in the prompt text first, and only when it is not enough, open the target's scenePath (.excalidraw scene JSON) or previewPath (PNG) local files for detail. The artifact's Mermaid source stays authoritative - apply the edits by updating the Mermaid text in ${file} (sq-report live-reloads it); never try to write the .excalidraw scene back. `
     : "";
   const layoutNote = prompts.some((prompt) => prompt && prompt.tag === "layout-warnings")
-    ? `This feedback includes layout issues the user selected from the Lavish Layout issues inbox (tag "layout-warnings"): the target lists the exact warning ids and targets. Apply every listed fix in one pass before saving so the user's review refreshes once. Queueing is a repair request, not a resolution - Lavish only marks a warning resolved after a newer artifact load and a complete check at the same viewport no longer detects it. `
+    ? `This feedback includes layout issues the user selected from the sq-report Layout issues inbox (tag "layout-warnings"): the target lists the exact warning ids and targets. Apply every listed fix in one pass before saving so the user's review refreshes once. Queueing is a repair request, not a resolution - sq-report only marks a warning resolved after a newer artifact load and a complete check at the same viewport no longer detects it. `
     : "";
   if (sessionEnded) {
     const failureNote =
       count > 0
         ? endedBy === "user"
-          ? `${count} fatal artifact failure${count === 1 ? "" : "s"} arrived alongside this final feedback - the review surface itself could not be used. Repair ${file}, then open it directly and confirm it renders without reopening this ended Lavish session. `
+          ? `${count} fatal artifact failure${count === 1 ? "" : "s"} arrived alongside this final feedback - the review surface itself could not be used. Repair ${file}, then open it directly and confirm it renders without reopening this ended sq-report session. `
           : `${count} fatal artifact failure${count === 1 ? "" : "s"} arrived alongside this final feedback - the review surface itself could not be used. Repair ${file}, then run \`sq-report ${file}\` to open a fresh session. `
         : "";
     if (endedBy === "user") {
@@ -442,7 +440,7 @@ function createFeedbackNextStep(file, artifactFailures, sessionEnded, endedBy, p
           : ` Only run \`sq-report ${file} --reopen\` if the user explicitly asks for further review or something genuinely important needs their visual attention.`;
       return `${failureNote}${layoutNote}${whiteboardNote}This was the last feedback before the user ended the session. Stop polling ${file} and do not reopen it - deliver any remaining updates directly in this conversation instead.${reopenNote}`;
     }
-    return `${failureNote}${layoutNote}${whiteboardNote}This was the last feedback before the Lavish Editor session ended. Stop polling ${file}. Deliver any remaining updates directly in this conversation, or run \`sq-report ${file}\` to open a fresh session if the user needs further visual review.`;
+    return `${failureNote}${layoutNote}${whiteboardNote}This was the last feedback before the sq-report session ended. Stop polling ${file}. Deliver any remaining updates directly in this conversation, or run \`sq-report ${file}\` to open a fresh session if the user needs further visual review.`;
   }
   const prefix =
     count > 0 ? artifactFailuresPrefix(file, artifactFailures) : `Apply the requested changes to ${file}. `;
@@ -459,14 +457,14 @@ function artifactFailuresPrefix(file, artifactFailures) {
     .map((failure) => `${failure.kind}: ${failure.detail}`)
     .slice(0, 5)
     .join("; ");
-  return `${count} fatal artifact failure${plural} detected - the review surface could not be used (${details}). Repair ${file} so it renders with all of its local assets, then re-check in the browser. Lavish live-reloads the artifact automatically after you save, so you do not need to re-run \`sq-report ${file}\` for this. `;
+  return `${count} fatal artifact failure${plural} detected - the review surface could not be used (${details}). Repair ${file} so it renders with all of its local assets, then re-check in the browser. sq-report live-reloads the artifact automatically after you save, so you do not need to re-run \`sq-report ${file}\` for this. `;
 }
 
 function createEndedNextStep(file, endedBy) {
   if (endedBy === "user") {
-    return `The user ended this Lavish Editor session. Stop polling ${file} - do not run \`sq-report ${file}\` to reopen it. Deliver any remaining updates directly in this conversation instead. Only reopen with \`sq-report ${file} --reopen\` if the user explicitly asks for further review or something genuinely important needs their visual attention.`;
+    return `The user ended this sq-report session. Stop polling ${file} - do not run \`sq-report ${file}\` to reopen it. Deliver any remaining updates directly in this conversation instead. Only reopen with \`sq-report ${file} --reopen\` if the user explicitly asks for further review or something genuinely important needs their visual attention.`;
   }
-  return `This Lavish Editor session for ${file} has ended. Stop polling. Deliver any remaining updates directly in this conversation, or run \`sq-report ${file}\` to open a fresh session if the user needs further visual review.`;
+  return `This sq-report session for ${file} has ended. Stop polling. Deliver any remaining updates directly in this conversation, or run \`sq-report ${file}\` to open a fresh session if the user needs further visual review.`;
 }
 
 async function endCommand(args) {
@@ -528,9 +526,9 @@ export function createExportOutput({ source, output, html, warnings, selfPaintWa
     result.next_step =
       "Some LOCAL assets could not be inlined and were left as references (see unresolved_local_assets); they will break once the file is moved. Remote CDN/font references are intentionally left as links and render where there is network access.";
   } else if (notices.length) {
-    result.next_step = `Wrote ${output} with export notices (see notices). Open it directly or host it anywhere - it needs no Lavish server. Local assets are inlined; remote CDN/font references are left as links, so it needs network to render those.`;
+    result.next_step = `Wrote ${output} with export notices (see notices). Open it directly or host it anywhere - it needs no sq-report server. Local assets are inlined; remote CDN/font references are left as links, so it needs network to render those.`;
   } else {
-    result.next_step = `Wrote ${output}. Open it directly or host it anywhere - it needs no Lavish server. Local assets are inlined; remote CDN/font references are left as links, so it needs network to render those.`;
+    result.next_step = `Wrote ${output}. Open it directly or host it anywhere - it needs no sq-report server. Local assets are inlined; remote CDN/font references are left as links, so it needs network to render those.`;
   }
   if (selfPaintWarning) {
     result.self_paint_warning = selfPaintWarning;
@@ -598,7 +596,7 @@ export function createShareOutput({ source, site, warnings, passwordProtected = 
   if (notices.length) result.notices = assetWarningSummaries(notices);
   const noticeNote = notices.length ? " Export notices are available in notices." : "";
   const hostNote =
-    "ht-ml.app (https://ht-ml.app), a third-party host not part of Lavish, hosts the page, so it needs no Lavish server.";
+    "ht-ml.app (https://ht-ml.app), a third-party host not part of sq-report, hosts the page, so it needs no sq-report server.";
   if (unresolved.length) {
     result.next_step =
       `Published ${isPasswordProtected ? "a PASSWORD-PROTECTED page at " : ""}${site.url}, but some LOCAL assets could not be inlined and were left as references (see unresolved_local_assets); inspect the hosted page and fix missing local assets before sharing it.${passwordNote}${noticeNote} ` +
@@ -1045,7 +1043,7 @@ async function visibleSessions() {
 
 async function assertHtmlFile(file) {
   if (!isHtmlPath(file)) {
-    throw new AxiError("Lavish Editor expects an HTML file", "VALIDATION_ERROR", ["Run `sq-report <html-file>`"]);
+    throw new AxiError("sq-report expects an HTML file", "VALIDATION_ERROR", ["Run `sq-report <html-file>`"]);
   }
   try {
     await access(file);
@@ -1069,7 +1067,7 @@ async function ensureServer({ forceRestart = false } = {}) {
   }
   if (existing) {
     if (!(await canControlServerOnPort(port, existing, processOnPortMatchesLavish))) {
-      throw new AxiError(`Port ${port} is occupied by a non-Lavish server`, "SERVER_ERROR", [
+      throw new AxiError(`Port ${port} is occupied by a non-sq-report server`, "SERVER_ERROR", [
         `Stop the process using port ${port}, or set SQ_REPORT_PORT to another port`,
       ]);
     }
@@ -1096,7 +1094,7 @@ async function ensureServer({ forceRestart = false } = {}) {
     }
     await delay(100);
   }
-  throw new AxiError("Lavish Editor server did not start", "SERVER_ERROR", [
+  throw new AxiError("sq-report server did not start", "SERVER_ERROR", [
     `Run \`sq-report server --port ${port}\` to inspect server startup`,
   ]);
 }
@@ -1260,7 +1258,7 @@ export async function fetchJson(url, { retries = 0, retryDelayMs = 250 } = {}) {
 
   if (!response) throw serverConnectionError();
   if (!response.ok) {
-    throw new AxiError(`Lavish Editor request failed: ${response.status}`, "SERVER_ERROR");
+    throw new AxiError(`sq-report request failed: ${response.status}`, "SERVER_ERROR");
   }
   try {
     return await response.json();
@@ -1281,20 +1279,20 @@ async function postJson(url, body) {
     throw serverConnectionError();
   }
   if (!response.ok) {
-    throw new AxiError(`Lavish Editor request failed: ${response.status}`, "SERVER_ERROR");
+    throw new AxiError(`sq-report request failed: ${response.status}`, "SERVER_ERROR");
   }
   return response.json();
 }
 
 function serverConnectionError() {
-  return new AxiError("Lavish Editor server connection failed", "SERVER_ERROR", [
+  return new AxiError("sq-report server connection failed", "SERVER_ERROR", [
     "Run `sq-report server --verbose` or inspect `~/.sq-report/server.log` (`SQ_REPORT_STATE_DIR/server.log` when set) for server startup or crash diagnostics",
     "Re-run the last `sq-report poll <html-file>` command after the server is healthy",
   ]);
 }
 
 function pollResponseInterruptedError() {
-  return new AxiError("Lavish Editor poll response was interrupted", "SERVER_ERROR", [
+  return new AxiError("sq-report poll response was interrupted", "SERVER_ERROR", [
     "Run `sq-report server --verbose` or inspect `~/.sq-report/server.log` (`SQ_REPORT_STATE_DIR/server.log` when set) for server startup or crash diagnostics",
     "Re-run the last `sq-report poll <html-file>` command after the server is healthy",
   ]);
@@ -1352,21 +1350,21 @@ export function getCommandHelp(command, { agent = "generic" } = {}) {
 }
 
 function createTopLevelHelp({ agent = "generic" } = {}) {
-  return `sq-report - Lavish Editor AXI\n\nUsage:\n  sq-report\n  sq-report <html-file> [--no-open] [--no-gate] [--reopen]\n  sq-report poll <html-file> [--agent-reply "..."]\n  sq-report end <html-file>\n  sq-report export <html-file> [--out <path>]\n  sq-report share <html-file> [--password <pw>] [--token <t>]\n  sq-report stop\n  sq-report playbook [playbook_id]\n  sq-report design\n  sq-report setup hooks\n  sq-report setup plugin\n\n${DESIGN_SYSTEM_HINT}\n\nNote: poll long-polls indefinitely by default until the user sends feedback or ends the session, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the Lavish top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}\n\n`;
+  return `sq-report - sq-report AXI\n\nUsage:\n  sq-report\n  sq-report <html-file> [--no-open] [--no-gate] [--reopen]\n  sq-report poll <html-file> [--agent-reply "..."]\n  sq-report end <html-file>\n  sq-report export <html-file> [--out <path>]\n  sq-report share <html-file> [--password <pw>] [--token <t>]\n  sq-report stop\n  sq-report playbook [playbook_id]\n  sq-report design\n  sq-report setup hooks\n  sq-report setup plugin\n\n${DESIGN_SYSTEM_HINT}\n\nNote: poll long-polls indefinitely by default until the user sends feedback or ends the session, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the sq-report top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}\n\n`;
 }
 
 function createCommandHelp({ agent = "generic" } = {}) {
   return {
-    open: `Usage: sq-report <html-file> [--no-open] [--no-gate] [--reopen]\n\nOpen or resume a Lavish Editor review session for an HTML artifact. Use --no-open when you need to ensure the server/session exists without opening another browser window. Use --no-gate to skip the open-time layout curtain for this browser open. If the user explicitly ended the session from the browser, this refuses to reopen it and returns guidance instead - pass --reopen to force it open when the user asks for further review or something important needs their visual attention. Sessions ended by the agent (\`sq-report end\`) reopen normally without the flag.\n`,
-    poll: `Usage: sq-report poll <html-file> [--agent-reply "..."]\n\nThis command long-polls indefinitely for queued user prompts. It stays silent while it waits - that is normal, never kill it. Browser-detected layout issues do NOT return this poll: they are filed passively in the user's Layout issues inbox and arrive as an ordinary tag "layout-warnings" prompt only after the user selects them and queues the fixes. Warning lifecycle: an issue stays unresolved and counted while queued, becomes recurring if a newer artifact revision still shows it, and is resolved only after a newer artifact load plus a complete diagnostic pass at the same viewport no longer detects it. A failed or incomplete pass preserves it as unverified rather than clearing it. The only response that arrives without user action is artifact_failures - a fatal failure that made the review surface itself unusable. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} Use --agent-reply after applying prior feedback to display your response in Lavish Editor before waiting again. ${POLL_SEND_AND_END_RULE}\n`,
-    end: `Usage: sq-report end <html-file>\n\nEnd a Lavish Editor session as the agent. A session ended this way still reopens normally on the next \`sq-report <html-file>\`, unlike a user ending it from the browser, which requires --reopen.\n`,
-    export: `Usage: sq-report export <html-file> [--out <path>]\n\nWrite a portable copy of an artifact: one HTML file with its LOCAL assets inlined (relative-path stylesheets, scripts, images, and fonts become inline <style>/<script> blocks and data URIs). Remote CDN/font references (https URLs) are left as links for the browser to load, so the file needs network to render those. Lavish makes no outbound requests - it only reads local files, confined to the artifact's directory. Defaults to writing <name>.export.html next to the source; pass --out to choose a path. The Lavish annotation SDK is never included in an export.\n`,
-    share: `Usage: sq-report share <html-file> [--password <pw>] [--token <t>]\n\nPublish the artifact on ht-ml.app (https://ht-ml.app), a third-party hosting service not part of Lavish, and print a visitable URL. Shares are PUBLIC by default: anyone with the link can open the page, and it may be indexed or scraped. Pass --password to publish a PRIVATE password-protected page; viewers must supply the password to view. Builds the same local-inlined HTML as 'export' (local assets inlined; remote CDN/font URLs left as links and are not blocked by CSP on ht-ml.app, but still load over the viewer's network), then POSTs it to ht-ml.app's /v1 API. Creating a site needs no account or API key. The response includes the url plus a secret update_key (shown once) for updating or deleting the page later. Set SQ_REPORT_HTML_APP_TOKEN (or pass --token) to attach an optional bearer token; it is never required. The annotation SDK is never included.\n`,
-    stop: `Usage: sq-report stop [--port <port>]\n\nShut down the background Lavish Editor server. The server also stops itself when no browser or poll has been connected for a while (SQ_REPORT_IDLE_TIMEOUT_MS, default 30m) and immediately when the last session ends with nothing connected.\n`,
+    open: `Usage: sq-report <html-file> [--no-open] [--no-gate] [--reopen]\n\nOpen or resume a sq-report review session for an HTML artifact. Use --no-open when you need to ensure the server/session exists without opening another browser window. Use --no-gate to skip the open-time layout curtain for this browser open. If the user explicitly ended the session from the browser, this refuses to reopen it and returns guidance instead - pass --reopen to force it open when the user asks for further review or something important needs their visual attention. Sessions ended by the agent (\`sq-report end\`) reopen normally without the flag.\n`,
+    poll: `Usage: sq-report poll <html-file> [--agent-reply "..."]\n\nThis command long-polls indefinitely for queued user prompts. It stays silent while it waits - that is normal, never kill it. Browser-detected layout issues do NOT return this poll: they are filed passively in the user's Layout issues inbox and arrive as an ordinary tag "layout-warnings" prompt only after the user selects them and queues the fixes. Warning lifecycle: an issue stays unresolved and counted while queued, becomes recurring if a newer artifact revision still shows it, and is resolved only after a newer artifact load plus a complete diagnostic pass at the same viewport no longer detects it. A failed or incomplete pass preserves it as unverified rather than clearing it. The only response that arrives without user action is artifact_failures - a fatal failure that made the review surface itself unusable. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} Use --agent-reply after applying prior feedback to display your response in sq-report before waiting again. ${POLL_SEND_AND_END_RULE}\n`,
+    end: `Usage: sq-report end <html-file>\n\nEnd a sq-report session as the agent. A session ended this way still reopens normally on the next \`sq-report <html-file>\`, unlike a user ending it from the browser, which requires --reopen.\n`,
+    export: `Usage: sq-report export <html-file> [--out <path>]\n\nWrite a portable copy of an artifact: one HTML file with its LOCAL assets inlined (relative-path stylesheets, scripts, images, and fonts become inline <style>/<script> blocks and data URIs). Remote CDN/font references (https URLs) are left as links for the browser to load, so the file needs network to render those. sq-report makes no outbound requests - it only reads local files, confined to the artifact's directory. Defaults to writing <name>.export.html next to the source; pass --out to choose a path. The sq-report annotation SDK is never included in an export.\n`,
+    share: `Usage: sq-report share <html-file> [--password <pw>] [--token <t>]\n\nPublish the artifact on ht-ml.app (https://ht-ml.app), a third-party hosting service not part of sq-report, and print a visitable URL. Shares are PUBLIC by default: anyone with the link can open the page, and it may be indexed or scraped. Pass --password to publish a PRIVATE password-protected page; viewers must supply the password to view. Builds the same local-inlined HTML as 'export' (local assets inlined; remote CDN/font URLs left as links and are not blocked by CSP on ht-ml.app, but still load over the viewer's network), then POSTs it to ht-ml.app's /v1 API. Creating a site needs no account or API key. The response includes the url plus a secret update_key (shown once) for updating or deleting the page later. Set SQ_REPORT_HTML_APP_TOKEN (or pass --token) to attach an optional bearer token; it is never required. The annotation SDK is never included.\n`,
+    stop: `Usage: sq-report stop [--port <port>]\n\nShut down the background sq-report server. The server also stops itself when no browser or poll has been connected for a while (SQ_REPORT_IDLE_TIMEOUT_MS, default 30m) and immediately when the last session ends with nothing connected.\n`,
     playbook: `Usage: sq-report playbook [playbook_id]\n\nList focused artifact guidance playbooks, or show one playbook by ID. Known IDs: diagram, table, comparison, plan, code, input, slides.\n\n${PLAYBOOK_ROUTER_HELP}\n\nExamples:\n  sq-report playbook\n  sq-report playbook diagram\n  sq-report playbook input\n`,
-    design: `Usage: sq-report design\n\nShow a copy-pasteable CDN snippet for Tailwind CSS browser runtime v4 + DaisyUI v5 + themes, Mermaid diagram tooling, a content-to-playbook router, an optional layout safety CSS snippet, plus technical reference for DaisyUI components. ${PLAYBOOK_ROUTER_HELP} Lavish artifacts stay portable HTML. This CDN snippet is the design fallback, not the default: inspect the subject project before falling back, and paste the layout safety CSS only when useful for dense nested grid/flex layouts, badges, wide fonts, or local media. ${DESIGN_PRIORITY_RULE}\n`,
+    design: `Usage: sq-report design\n\nShow a copy-pasteable CDN snippet for Tailwind CSS browser runtime v4 + DaisyUI v5 + themes, Mermaid diagram tooling, a content-to-playbook router, an optional layout safety CSS snippet, plus technical reference for DaisyUI components. ${PLAYBOOK_ROUTER_HELP} sq-report artifacts stay portable HTML. This CDN snippet is the design fallback, not the default: inspect the subject project before falling back, and paste the layout safety CSS only when useful for dense nested grid/flex layouts, badges, wide fonts, or local media. ${DESIGN_PRIORITY_RULE}\n`,
     setup: `Usage: sq-report setup hooks\n       sq-report setup plugin\n\nhooks: install or repair agent SessionStart hooks for sq-report ambient context in Claude Code, Codex, OpenCode, and GitHub Copilot CLI. Restart your agent session afterward to receive the context. This is the primary integration - it carries live session state.\n\nplugin: register the installed sq-report package as an Agent Plugin (agent-plugins.org) in VS Code, Cursor, and GitHub Copilot CLI. The installed package directory is itself the plugin root, so nothing is downloaded and no marketplace is involved. Reload each client afterward. Codex users should use \`setup hooks\` instead.\n\nBoth actions are explicit opt-in, idempotent, and repair a stale path after a reinstall.\n`,
-    server: `Usage: sq-report server [--port 4387] [--verbose]\n\nRun the local Lavish Editor server. Pass --verbose (or set SQ_REPORT_DEBUG=1) to log session and watcher events to stderr. Detached server output is appended to ~/.sq-report/server.log, or SQ_REPORT_STATE_DIR/server.log when set, for startup and crash diagnostics.\n\nSQ_REPORT_HOST sets the bind address (default 127.0.0.1; a wildcard 0.0.0.0 or :: binds every interface). Binding beyond loopback exposes an unauthenticated server that can read and serve arbitrary local files to anything that can reach it, so only do so on a trusted network. SQ_REPORT_LINK_HOST sets the hostname written into generated session links (default: the bind address, or loopback when bound to a wildcard). See README's Allowed hosts section for Host allowlisting and SQ_REPORT_ALLOWED_HOSTS. SQ_REPORT_NO_OPEN=1 (or --no-open) suppresses the local browser launch.\n`,
+    server: `Usage: sq-report server [--port 4387] [--verbose]\n\nRun the local sq-report server. Pass --verbose (or set SQ_REPORT_DEBUG=1) to log session and watcher events to stderr. Detached server output is appended to ~/.sq-report/server.log, or SQ_REPORT_STATE_DIR/server.log when set, for startup and crash diagnostics.\n\nSQ_REPORT_HOST sets the bind address (default 127.0.0.1; a wildcard 0.0.0.0 or :: binds every interface). Binding beyond loopback exposes an unauthenticated server that can read and serve arbitrary local files to anything that can reach it, so only do so on a trusted network. SQ_REPORT_LINK_HOST sets the hostname written into generated session links (default: the bind address, or loopback when bound to a wildcard). See README's Allowed hosts section for Host allowlisting and SQ_REPORT_ALLOWED_HOSTS. SQ_REPORT_NO_OPEN=1 (or --no-open) suppresses the local browser launch.\n`,
   };
 }
 

@@ -12,7 +12,7 @@ const CSS_RULE_RE = /([^{}]+)\{([^{}]*)\}/g;
 const ROOT_SELECTOR_TOKEN_RE = /(^|[\s,>~+])(html|body|:root|\*)(?![\w-])/i;
 
 export const SELF_PAINT_WARNING =
-  "This artifact never paints its own page surface: no background on html/body/:root, no bg-* class or data-theme on html/body, and no stylesheet that could set one. Lavish injects no design system, so text that assumes a dark or light host surface can render invisible. Set an explicit background and readable text.";
+  "This artifact never paints its own page surface: no background on html/body/:root, no bg-* class or data-theme on html/body, and no stylesheet that could set one. sq-report injects no design system, so text that assumes a dark or light host surface can render invisible. Set an explicit background and readable text.";
 
 /**
  * @param {string} html

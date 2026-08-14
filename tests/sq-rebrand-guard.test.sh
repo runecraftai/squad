@@ -28,7 +28,10 @@
 #   9. every packages/*/package.json npm identity is @runecraft/<dirname>
 #      (commander decision 2026-08-14: publish all npm packages under the
 #      @runecraft scope because bare names like drill/fob are squatted on
-#      npm; bin names and CLI commands are untouched by the rename)
+#      npm; bin names and CLI commands are untouched by the rename), with
+#      one accepted exception: the sq-report package ships as
+#      @runecraft/report (accepted requirement of the sq-report rebrand PR,
+#      keeping the packages/sq-report/ directory path stable)
 #
 # Nivel-2 closure (slice 6, decisions 2026-08-11):
 # - `fm_`/`fmx_` function prefixes are native Squad vocabulary (decision 1), so
@@ -126,6 +129,10 @@ test_guard_npm_scope() {
     const fs = require("fs");
     const path = require("path");
     const packagesDir = process.argv[1];
+    // Accepted exceptions to the @runecraft/<dirname> convention: the
+    // sq-report package publishes as @runecraft/report while its directory
+    // stays packages/sq-report/ (sq-report rebrand requirement).
+    const exceptions = { "sq-report": "@runecraft/report" };
     const failures = [];
     for (const entry of fs.readdirSync(packagesDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
@@ -138,7 +145,9 @@ test_guard_npm_scope() {
         failures.push(`packages/${entry.name}/package.json could not be parsed: ${err.message}`);
         continue;
       }
-      const expected = `@runecraft/${entry.name}`;
+      const expected = Object.prototype.hasOwnProperty.call(exceptions, entry.name)
+        ? exceptions[entry.name]
+        : `@runecraft/${entry.name}`;
       if (name !== expected) {
         failures.push(`packages/${entry.name}/package.json name is ${name === null ? "<missing>" : JSON.stringify(name)}, expected \"${expected}\"`);
       }
@@ -148,7 +157,7 @@ test_guard_npm_scope() {
   if [ -n "$failures" ]; then
     record_failure "rebrand guard 9: npm identity is @runecraft-scoped" "$failures"
   else
-    pass "rebrand guard 9: every packages/*/package.json npm name is @runecraft/<dir>"
+    pass "rebrand guard 9: every packages/*/package.json npm name is @runecraft/<dir> (sq-report exception: @runecraft/report)"
   fi
 }
 

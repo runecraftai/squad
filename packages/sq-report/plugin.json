@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "sq-report",
+  "name": "report",
   "version": "0.1.0",
-  "description": "HTML is the new markdown. Lavish is the new editor for your HTML artifacts.",
+  "description": "HTML is the new markdown. sq-report is the new editor for your HTML artifacts.",
   "author": {
     "name": "Squad contributors",
     "url": "https://github.com/runecraftai/squad"
