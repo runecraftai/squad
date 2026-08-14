@@ -279,6 +279,7 @@ Spawns a `pi` subprocess for each invocation with `--mode json --no-session`.
 See [`agent_args_override`](/drill/reference/global-config/#agent_args_override) for Pi override precedence.
 Reads JSONL events from stdout and streams incremental text deltas to the TUI.
 When structured output is requested, drill injects the JSON schema into the prompt and validates the final text response.
+Fix rounds validate against the summary-only schema; when the fixer ends its round with a plain-text summary instead of the requested JSON object, drill treats that prose as the round summary so the applied fixes are still committed.
 
 ## Copilot CLI
 

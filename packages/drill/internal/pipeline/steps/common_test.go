@@ -712,6 +712,55 @@ func TestExecuteFixMode_RejectsUnsafeSummaryWithoutStaging(t *testing.T) {
 	}
 }
 
+func TestExecuteFixMode_CommitsProseRoundSummary(t *testing.T) {
+	// The parser layer converts a fixer's prose-only final message into the
+	// summary object (see plainTextRoundSummary in internal/agent). This test
+	// proves that result shape flows through executeFixMode into a commit: the
+	// round completes and the fix work is preserved even though the agent
+	// never emitted JSON. It mirrors the parser contract with the same
+	// prose->summary mapping; the agent-package tests pin that contract.
+	t.Parallel()
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	gitCmd(t, dir, "checkout", "--detach", headSHA)
+
+	prose := "All fixes applied and verified. Everything looks good now."
+	output, err := json.Marshal(map[string]string{"summary": prose})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// extractCommitSummary collapses whitespace and trims trailing
+	// punctuation, so the commit message carries the cleaned prose.
+	cleanedProse := "All fixes applied and verified. Everything looks good now"
+	ag := &mockAgent{
+		name: "pi",
+		runFn: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+			if err := os.WriteFile(filepath.Join(opts.CWD, "agent-change.txt"), []byte("change"), 0o644); err != nil {
+				return nil, err
+			}
+			return &agent.Result{Text: prose, Output: output}, nil
+		},
+	}
+	sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Fixing = true
+
+	summary, err := executeFixMode(sctx, types.StepReview, fixExecutionOptions{
+		ErrorPrefix:     "agent fix review",
+		FallbackSummary: "fix review findings",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != cleanedProse {
+		t.Errorf("fix summary = %q, want cleaned prose round summary %q", summary, cleanedProse)
+	}
+	if got := lastCommitMessage(t, dir); got != "drill(review): "+cleanedProse {
+		t.Errorf("commit message = %q, want prose-based message", got)
+	}
+	if got := gitCmd(t, dir, "log", "-1", "--pretty=%H"); got == headSHA {
+		t.Errorf("expected a new fix commit, HEAD still at %q", headSHA)
+	}
+}
+
 func TestCommitAgentFixes_UsesFallbackSummary(t *testing.T) {
 	t.Parallel()
 	dir, baseSHA, headSHA := setupGitRepo(t)
