@@ -435,8 +435,8 @@ test("chrome top bar follows the design mock wordmark and overflow menu treatmen
   const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
   const css = await chromeCssSource();
 
-  assert.match(html, /class="brand-mark">Lavish/);
-  assert.match(html, /class="brand-support">Editor/);
+  assert.match(html, /class="brand-mark">sq-report/);
+  assert.doesNotMatch(html, /class="brand-support">Editor/);
   assert.match(css, /font-family:var\(--font-serif\)/);
   assert.match(css, /letter-spacing:\.18em/);
   assert.match(html, /class="more-button" id="moreButton"/);
@@ -532,7 +532,7 @@ test("overflow menu offers publishing an ht-ml.app link via a share dialog", asy
     html,
     /Publish to <a class="share-link" href="https:\/\/ht-ml\.app" target="_blank" rel="noopener noreferrer">ht-ml\.app<\/a>/,
   );
-  assert.match(html, /third-party hosting service, not part of Lavish/);
+  assert.match(html, /third-party hosting service, not part of sq-report/);
   assert.match(html, /id="sharePassword"/);
   assert.match(html, /id="shareUpdateKey"/);
   assert.match(html, /Without a password, the page is PUBLIC/);
@@ -3670,7 +3670,7 @@ test("chrome falls back to a default favicon and title when none are provided", 
   const html = createChromeHtml({ key: "abc", file: "/tmp/artifact.html" });
 
   assert.match(html, /<link rel="icon" href="data:image\/svg\+xml,/);
-  assert.match(html, /<title>Lavish Editor<\/title>/);
+  assert.match(html, /<title>sq-report<\/title>/);
 });
 
 test("chrome adopts a favicon tag and tab title passed from the artifact", () => {
@@ -3678,11 +3678,11 @@ test("chrome adopts a favicon tag and tab title passed from the artifact", () =>
     '<link rel="icon" href="data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\'><text>🗂️</text></svg>">';
   const html = createChromeHtml(
     { key: "abc", file: "/tmp/artifact.html" },
-    { faviconTag, title: "Project Board · Lavish" },
+    { faviconTag, title: "Project Board · sq-report" },
   );
 
   assert.ok(html.includes(faviconTag), "artifact favicon tag is injected verbatim");
-  assert.match(html, /<title>Project Board · Lavish<\/title>/);
+  assert.match(html, /<title>Project Board · sq-report<\/title>/);
 });
 
 test("chrome tab title from the artifact is HTML-escaped", () => {

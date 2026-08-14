@@ -31,7 +31,7 @@ export const PLAYBOOKS = [
       "Do not present unverified architecture claims as facts. Cite the files or commands that support them.",
     ],
     lavish_notes: [
-      "A Lavish diagram should invite precise annotation: make modules, edges, and captions easy to click and discuss.",
+      "A sq-report diagram should invite precise annotation: make modules, edges, and captions easy to click and discuss.",
       "When a relationship is uncertain, label it as a question so the user can resolve it in the review loop.",
     ],
   },
@@ -59,7 +59,7 @@ export const PLAYBOOKS = [
       "Do not use color as the only status signal.",
     ],
     lavish_notes: [
-      "A Lavish table should make individual rows easy annotation targets.",
+      "A sq-report table should make individual rows easy annotation targets.",
       "If a row implies a follow-up change, include an action control that queues a specific prompt.",
     ],
   },
@@ -87,7 +87,7 @@ export const PLAYBOOKS = [
       "Do not bury assumptions that would change the recommendation.",
     ],
     lavish_notes: [
-      "A Lavish comparison should let the user annotate the exact option or tradeoff they want changed.",
+      "A sq-report comparison should let the user annotate the exact option or tradeoff they want changed.",
       "If the goal is selection, provide controls that queue the chosen option with rationale.",
     ],
   },
@@ -114,11 +114,11 @@ export const PLAYBOOKS = [
       "Do not only focus on ambiguous decisions and omit the actual proposal.",
       "Do not omit failure modes, migration concerns, or backwards compatibility questions.",
     ],
-    lavish_notes: ["A Lavish plan should make a plan and its uncertainties easy to annotate before code exists."],
+    lavish_notes: ["A sq-report plan should make a plan and its uncertainties easy to annotate before code exists."],
   },
   {
     id: "code",
-    use_when: "Render source code, code files, patches, PR diffs, and before/after code inside Lavish artifacts",
+    use_when: "Render source code, code files, patches, PR diffs, and before/after code inside sq-report artifacts",
     choose: [
       "Use this whenever an artifact shows source code: a snippet, full file, patch, PR diff, local change set, or before/after code.",
       "Use File for one code file, FileDiff for old/new versions or parsed patch metadata, and CodeView only when several files or diffs need coordinated navigation.",
@@ -141,11 +141,11 @@ export const PLAYBOOKS = [
   const options = { theme, themeType: "dark", overflow: "wrap" };
   const oldFile = {
     name: "src/greeting.ts",
-    contents: "export function greet(name: string) {\\n  return \\"Hello \\" + name;\\n}\\n\\nconsole.log(greet(\\"Lavish\\"));\\n",
+    contents: "export function greet(name: string) {\\n  return \\"Hello \\" + name;\\n}\\n\\nconsole.log(greet(\\"sq-report\\"));\\n",
   };
   const newFile = {
     name: "src/greeting.ts",
-    contents: "export function greet(name: string) {\\n  return \\"Hello, \\" + name + \\"!\\";\\n}\\n\\nconsole.log(greet(\\"Lavish\\"));\\n",
+    contents: "export function greet(name: string) {\\n  return \\"Hello, \\" + name + \\"!\\";\\n}\\n\\nconsole.log(greet(\\"sq-report\\"));\\n",
   };
 
   new File(options).render({
@@ -172,7 +172,7 @@ export const PLAYBOOKS = [
       "Do not separate a claim from the code lines that prove it.",
     ],
     lavish_notes: [
-      "A Lavish code artifact should make each file, hunk, and relevant line easy to annotate precisely.",
+      "A sq-report code artifact should make each file, hunk, and relevant line easy to annotate precisely.",
       "When a user action should trigger a fix, queue prompts that name the file path, line range, and desired change.",
       "If the artifact combines code with a plan, table, or comparison, read those playbooks too and keep @pierre/diffs responsible for the code surface.",
     ],
@@ -196,7 +196,7 @@ export const PLAYBOOKS = [
       "Native controls - radios, checkboxes, text inputs, selects, textareas, buttons, options, labels, disclosure summaries, and contenteditable regions - are interactive automatically: clicks toggle, focus, and type instead of annotating, so they do not need data-lavish-action. Build choice and option UIs from these whenever you can.",
       "For reversible choices, do not call window.lavish.queuePrompt() from radio change handlers or option click handlers. Those handlers should only update local selected state.",
       "Use a per-question form submit or explicit Queue answer button to read the current values and call window.lavish.queuePrompt() exactly once for the final answer.",
-      "Put data-lavish-action only on custom (non-native) elements that should act like a feedback control - typically a styled div or span you made clickable - so Lavish does not annotate it and shows a pointer cursor instead.",
+      "Put data-lavish-action only on custom (non-native) elements that should act like a feedback control - typically a styled div or span you made clickable - so sq-report does not annotate it and shows a pointer cursor instead.",
       "Use data-lavish-question on a question wrapper or pass queueKey when multiple pre-send updates should replace the prior unsent answer for the same question.",
       "Pass options such as tag, text, selector, target, data, queueKey, or element when they help the agent understand exactly what the user chose.",
       "Call window.lavish.sendQueuedPrompts() only when the control should immediately send committed feedback instead of waiting for the user to press Send to Agent.",
@@ -210,7 +210,7 @@ export const PLAYBOOKS = [
       "Do not require interaction for content the user only needs to read.",
     ],
     lavish_notes: [
-      "Lavish is strongest when the artifact becomes a focused review surface and not just a static page.",
+      "sq-report is strongest when the artifact becomes a focused review surface and not just a static page.",
       'A native single-choice question should submit the final value: `<form data-lavish-question="plan" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get(\'plan\'); if (choice) window.lavish.queuePrompt(\'Use the \' + choice + \' plan\', { tag: \'choice\', text: \'Plan: \' + choice, element: event.currentTarget, data: { question: \'plan\', answer: choice } });"><label><input type="radio" name="plan" value="Starter"> Starter</label><label><input type="radio" name="plan" value="Pro"> Pro</label><button type="submit">Queue this answer</button></form>`.',
       "A custom choice UI should make option buttons update local state, then use a separate Queue answer button with data-lavish-action to queue the final selected value.",
       "Use window.lavish.queuePrompt for user intent, not internal analytics or UI-only state changes.",
@@ -241,7 +241,7 @@ export const PLAYBOOKS = [
       "Do not make consecutive slides with the same spatial composition unless repetition is the point.",
     ],
     lavish_notes: [
-      "A Lavish slide deck can still collect feedback, but each prompt should refer to a slide or decision.",
+      "A sq-report slide deck can still collect feedback, but each prompt should refer to a slide or decision.",
       "Use slides for persuasion or presentation, not for dense code review.",
     ],
   },

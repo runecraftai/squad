@@ -57,7 +57,7 @@ metadata:
   hermes-category: productivity
 ---
 
-# Lavish Editor
+# sq-report
 
 ${skillCommandText(home.description)}
 
@@ -78,16 +78,16 @@ ${home.help[home.help.length - 1]}
 
 ## Workflow
 
-1. Create the HTML artifact (default location \`.lavish/<name>.html\` in the working directory).
+1. Create the HTML artifact (default location \`.sq-report/<name>.html\` in the working directory).
 2. Run \`npx -y @runecraft/sq-report <html-file>\` to open or resume a review session in the browser.
-   If the output carries a \`self_paint_warning\`, fix the unpainted page surface and save before polling - Lavish live-reloads the artifact.
+   If the output carries a \`self_paint_warning\`, fix the unpainted page surface and save before polling - sq-report live-reloads the artifact.
 3. Run \`npx -y @runecraft/sq-report poll <html-file>\` to long-poll for the user's annotations and queued prompts.
    On the first poll, prefer \`--agent-reply "<one-line summary of what you built and what to review first>"\` so the conversation panel opens with context.
    Browser-detected layout issues are filed passively in the user's Layout issues inbox and arrive as an ordinary \`layout-warnings\` prompt only when the user selects and queues them. Never edit an issue the user has not queued. The only response that arrives without user action is \`artifact_failures\`, when the review surface itself is unusable.
    The poll stays silent until the user acts or a fatal artifact failure makes the review surface unusable - leave it running, never kill it.
    Cosmetic, intentional, transient, tiny, and uncertain observations remain silent.
 ${POLL_WAKE_PATH_RULES.map((rule) => `   ${skillCommandText(rule)}`).join("\n")}
-4. If poll returns feedback, apply the user's prompts. A \`layout-warnings\` prompt is an explicit repair request; apply every listed fix in one pass before saving, and let Lavish re-check it after a newer artifact load.
+4. If poll returns feedback, apply the user's prompts. A \`layout-warnings\` prompt is an explicit repair request; apply every listed fix in one pass before saving, and let sq-report re-check it after a newer artifact load.
 5. Apply human feedback, then poll again with \`--agent-reply "<message>"\` to reply in the browser and keep the loop going under the same foreground-or-verified-wake-path rule.
 6. Run \`npx -y @runecraft/sq-report end <html-file>\` when the review is finished.
 7. ${POLL_SEND_AND_END_RULE} Deliver any remaining updates directly in this conversation.

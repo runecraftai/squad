@@ -143,10 +143,10 @@ export const LAYOUT_SAFETY_CSS_SNIPPET = `<style>
 // the `sq-report design` summary, and the design command help. Edit the rule here only;
 // other surfaces embed it or point at it instead of restating it.
 export const DESIGN_PRIORITY_RULE =
-  "Decide the design direction in this strict priority order, and only move to the next step when the current one truly yields nothing: (1) if the user asked for a specific look or named design system, use that; (2) otherwise you must first inspect the project the artifact is about - the subject or product whose content or UI it represents, which may differ from your current working directory - and match that project's design system: Tailwind or theme config, shared CSS variables or design tokens, component library, brand assets, or existing styled pages. If the artifact previews, proposes, or mocks a specific app's UI, render it in that app's own design system so it faithfully shows the product, even when you are running in a different repo; (3) only when both steps come up empty, use the Lavish-recommended Tailwind CSS browser runtime v4 + DaisyUI v5, available via CDN, and prefer that CDN snippet over hand-writing styles unless explicitly instructed otherwise by the user.";
+  "Decide the design direction in this strict priority order, and only move to the next step when the current one truly yields nothing: (1) if the user asked for a specific look or named design system, use that; (2) otherwise you must first inspect the project the artifact is about - the subject or product whose content or UI it represents, which may differ from your current working directory - and match that project's design system: Tailwind or theme config, shared CSS variables or design tokens, component library, brand assets, or existing styled pages. If the artifact previews, proposes, or mocks a specific app's UI, render it in that app's own design system so it faithfully shows the product, even when you are running in a different repo; (3) only when both steps come up empty, use the sq-report-recommended Tailwind CSS browser runtime v4 + DaisyUI v5, available via CDN, and prefer that CDN snippet over hand-writing styles unless explicitly instructed otherwise by the user.";
 
 export const DESIGN_SYSTEM_HINT =
-  "Lavish does not auto-inject any design system - artifacts stay portable so they render identically when opened directly without sq-report running. Before writing any HTML: " +
+  "sq-report does not auto-inject any design system - artifacts stay portable so they render identically when opened directly without sq-report running. Before writing any HTML: " +
   DESIGN_PRIORITY_RULE +
   " Run `sq-report design` for a content-to-playbook router, a copy-pasteable CDN snippet, a Mermaid CDN snippet/init for diagrams, and the DaisyUI component reference. When you deliver the artifact, state which of the three design sources you used and why.";
 
@@ -196,7 +196,7 @@ export function createDesignOutput() {
     },
     design: {
       summary:
-        "Use this Lavish CDN fallback only if (1) the user gave no design direction and (2) you already inspected the project the artifact is about and found no design system or style conventions to match. If you have not checked the subject project yet, check first. Lavish does not auto-inject any design system; artifacts stay portable HTML. Paint an explicit page background and readable text. " +
+        "Use this sq-report CDN fallback only if (1) the user gave no design direction and (2) you already inspected the project the artifact is about and found no design system or style conventions to match. If you have not checked the subject project yet, check first. sq-report does not auto-inject any design system; artifacts stay portable HTML. Paint an explicit page background and readable text. " +
         DESIGN_PRIORITY_RULE +
         " Paste the CDN snippet below into your `<head>`.",
       cdn_snippet: DESIGN_CDN_SNIPPET,
@@ -207,9 +207,9 @@ export function createDesignOutput() {
         "Use this command for common syntax. Read the latest DaisyUI docs for full details when using advanced or unfamiliar components.",
       layout_safety_snippet: LAYOUT_SAFETY_CSS_SNIPPET,
       layout_safety_note:
-        "Optional copy-paste CSS for artifacts with dense nested grid/flex layouts, badges, wide monospace or pixel fonts, or local media. Paste it into the artifact yourself when useful. Lavish never auto-injects it, so direct-open portability stays intact.",
+        "Optional copy-paste CSS for artifacts with dense nested grid/flex layouts, badges, wide monospace or pixel fonts, or local media. Paste it into the artifact yourself when useful. sq-report never auto-injects it, so direct-open portability stays intact.",
       other_design_systems:
-        "If the user asks for a different design system (Bootstrap, custom CSS, plain HTML, etc.), use that instead - Lavish does not require DaisyUI.",
+        "If the user asks for a different design system (Bootstrap, custom CSS, plain HTML, etc.), use that instead - sq-report does not require DaisyUI.",
     },
     diagram_tooling: {
       use_when:
@@ -219,7 +219,7 @@ export function createDesignOutput() {
       versions: { mermaid: MERMAID_VERSION },
     },
     theme_usage: [
-      'Default to `<html data-theme="luxury">` - it matches the Lavish look. Pick a different theme from the list below only when the user asked for one or the content clearly calls for it.',
+      'Default to `<html data-theme="luxury">` - it matches the sq-report look. Pick a different theme from the list below only when the user asked for one or the content clearly calls for it.',
       'Set a nested section theme with `<section data-theme="night">`.',
       "Prefer semantic colors such as `bg-base-100`, `bg-base-200`, `text-base-content`, `bg-primary`, `text-primary-content`, `alert-warning`, and `btn-primary` so themes remain readable.",
       "Avoid hardcoded Tailwind color names for text and surfaces unless the user asked for exact colors.",

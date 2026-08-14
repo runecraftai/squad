@@ -127,7 +127,7 @@ The scan runs on the exact text that will be posted, after humanizing.
 ## Visual thread board
 
 Build the board when the commander wants to review suggested replies before they are posted, or to track thread states across MRs.
-Copy the template at [assets/thread-board.template.html](assets/thread-board.template.html), fill its `DATA` object, and save the result as a `.html` file under `.lavish/` in the current working directory (sq-report's default location).
+Copy the template at [assets/thread-board.template.html](assets/thread-board.template.html), fill its `DATA` object, and save the result as a `.html` file under `.sq-report/` in the current working directory (sq-report's default location).
 
 The board shows, per MR: the MR title, the full MR link, branch and commit chips, and one card per thread with location (file:line), state badge, the reviewer's comment verbatim, and the suggested reply with a copy button.
 States are `pending` (no reply posted yet), `replied` (reply posted), and `resolved` (thread resolved on the forge).
@@ -136,8 +136,8 @@ The template is fully self-contained: inline CSS and JS, no external assets, cop
 Open and collect feedback:
 
 ```bash
-sq-report .lavish/thread-board.html
-sq-report poll .lavish/thread-board.html
+sq-report .sq-report/thread-board.html
+sq-report poll .sq-report/thread-board.html
 ```
 
 `sq-report poll` long-polls and stays silent until the commander sends feedback, so leave it running. If the poll is killed or times out, re-run it; queued feedback is never lost.
