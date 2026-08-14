@@ -56,6 +56,9 @@ export function spawnPluginClientSync(command, args) {
 
 /**
  * Build the Agent Plugins manifest from package.json so the two can never disagree.
+ * The plugin name is the npm package name's unscoped segment: the Agent Plugins
+ * 1.0.0 schema's `name` pattern forbids the `@`/`/` of a scoped npm identity, and
+ * registrations (plugin.json name matching) must keep working unchanged.
  * Field order matches the published schema's reading order.
  *
  * @param {Record<string, any>} packageJson parsed package.json
@@ -64,7 +67,7 @@ export function spawnPluginClientSync(command, args) {
 export function createPluginManifest(packageJson) {
   return {
     $schema: PLUGIN_SCHEMA_URL,
-    name: packageJson.name,
+    name: packageJson.name.split("/").pop(),
     version: packageJson.version,
     description: packageJson.description,
     author: PLUGIN_AUTHOR,

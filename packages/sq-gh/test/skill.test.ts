@@ -65,7 +65,7 @@ describe("createSkillMarkdown", () => {
 
   it("teaches npx invocation instead of assuming a global install", () => {
     const markdown = createSkillMarkdown();
-    expect(markdown).toContain("npx -y sq-gh");
+    expect(markdown).toContain("npx -y @runecraft/sq-gh");
   });
 
   it("documents the gh prerequisite", () => {

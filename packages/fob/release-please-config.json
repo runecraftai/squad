@@ -3,7 +3,8 @@
   "packages": {
     "packages/fob": {
       "release-type": "go",
-      "package-name": "fob",
+      "package-name": "@runecraft/fob",
+      "component": "fob",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [

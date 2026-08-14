@@ -14,7 +14,7 @@ CI uses `pnpm install --frozen-lockfile`, which parses the YAML structurally and
 ## The SDK-provided `update` command
 
 `sq-gh` runs its CLI through `runAxiCli` from `axi-sdk-js` (`src/cli.ts`) and registers no `update` command of its own.
-Since `axi-sdk-js@0.1.8` ships `update` as a `RESERVED_COMMANDS` built-in, `sq-gh` inherits `sq-gh update` for free, and the SDK auto-resolves the npm package name (`sq-gh`) by walking up to the nearest `package.json`.
+Since `axi-sdk-js@0.1.8` ships `update` as a `RESERVED_COMMANDS` built-in, `sq-gh` inherits `sq-gh update` for free, and the SDK auto-resolves the npm package name (`@runecraft/sq-gh`) by walking up to the nearest `package.json`.
 The SDK also appends a `"built-in":` section to the top-level `--help` output at runtime, so `src/cli.ts`'s `TOP_HELP` constant is a prefix of the rendered help rather than the whole thing.
 
 ## Release process

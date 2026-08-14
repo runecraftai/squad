@@ -3,7 +3,7 @@ import {
   type ModelQuotaRecord,
   type ModelsResponse,
   type SqQuotaResponse,
-} from "sq-quota";
+} from "@runecraft/sq-quota";
 
 const quota: SqQuotaResponse = {
   generatedAt: "2026-08-05T12:00:00.000Z",

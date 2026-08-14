@@ -1,5 +1,5 @@
 {
-  "package": "sq-browser",
+  "package": "@runecraft/sq-browser",
   "upstream": "chrome-devtools-axi",
   "version": "0.1.29",
   "source": "https://github.com/runecraftai/squad/tree/chrome-devtools-axi-v0.1.29",

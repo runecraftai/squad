@@ -97,7 +97,7 @@ test("generated manifest tracks package.json rather than restating it", async ()
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const manifest = createPluginManifest(packageJson);
 
-  assert.equal(manifest.name, packageJson.name);
+  assert.equal(manifest.name, packageJson.name.split("/").pop());
   assert.equal(manifest.version, packageJson.version);
   assert.equal(manifest.description, packageJson.description);
   assert.equal(manifest.license, packageJson.license);

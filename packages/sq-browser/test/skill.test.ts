@@ -48,7 +48,7 @@ describe("createSkillMarkdown", () => {
 
   it("teaches npx invocation instead of assuming a global install", () => {
     const markdown = createSkillMarkdown();
-    expect(markdown).toContain("npx -y sq-browser");
+    expect(markdown).toContain("npx -y @runecraft/sq-browser");
   });
 });
 

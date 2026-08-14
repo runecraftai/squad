@@ -5,7 +5,7 @@
 <h1 align="center">sq-gh</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/sq-gh"><img alt="npm" src="https://img.shields.io/npm/v/sq-gh?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@runecraft/sq-gh"><img alt="npm" src="https://img.shields.io/npm/v/@runecraft/sq-gh?style=flat-square" /></a>
   <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=ci" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
@@ -72,7 +72,7 @@ sq-gh is a plain CLI, so any capable agent can run it directly with nothing inst
 Just tell your agent:
 
 ```
-Execute `npx -y sq-gh` to get GitHub tools.
+Execute `npx -y @runecraft/sq-gh` to get GitHub tools.
 ```
 
 ### Session hook
@@ -81,7 +81,7 @@ Want ambient GitHub context, the current repo's open issues and PRs, fed into ev
 Install the CLI globally and opt into the hook:
 
 ```sh
-npm install -g sq-gh
+npm install -g @runecraft/sq-gh
 sq-gh setup hooks
 ```
 

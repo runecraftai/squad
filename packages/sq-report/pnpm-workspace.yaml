@@ -5,7 +5,7 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - axi-sdk-js
-  - sq-report
+  - "@runecraft/sq-report"
 onlyBuiltDependencies:
   - esbuild
 allowBuilds:

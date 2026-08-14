@@ -5,7 +5,7 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
   - axi-sdk-js
-  - sq-gh
+  - "@runecraft/sq-gh"
 onlyBuiltDependencies:
   - esbuild
 allowBuilds:

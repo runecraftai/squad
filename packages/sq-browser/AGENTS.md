@@ -73,7 +73,7 @@ That makes `src/version.ts` a LEAF module: it may import node builtins only, and
 
 The CLI is built on `axi-sdk-js` (`runAxiCli`): `HOME_DESCRIPTION` and `TOP_HELP` are the shared static guidance, SDK built-ins such as `update` and `update --check` are appended by the runner at runtime, and the `home()` callback returns the live page snapshot when a bridge session is active.
 This is the same output that lands in the agent's optional `SessionStart` hook after `sq-browser setup hooks` (`src/hooks.ts`, Claude Code + Codex + OpenCode); `shouldInstallHooksForExecPath` guards dev entrypoints like `pnpm run dev` from self-registering hooks.
-`src/skill.ts` renders the installable Agent Skill (`skills/sq-browser/SKILL.md`) from the same shared guidance plus the SDK built-in command list, rewriting invocations to non-interactive `npx -y sq-browser ...`.
+`src/skill.ts` renders the installable Agent Skill (`skills/sq-browser/SKILL.md`) from the same shared guidance plus the SDK built-in command list, rewriting invocations to non-interactive `npx -y @runecraft/sq-browser ...`.
 
 Output format per command: TOON-encoded metadata block (`encode` from `@toon-format/toon`), then raw snapshot text, then a `help[N]:` block of contextual next-step suggestions (`src/suggestions.ts`).
 Snapshots are truncated at ~16k chars (`--full` disables); `eval` output keeps head and tail (`truncateText`).

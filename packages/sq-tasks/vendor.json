@@ -1,5 +1,5 @@
 {
-  "package": "sq-tasks",
+  "package": "@runecraft/sq-tasks",
   "upstream": "tasks-axi",
   "version": "0.2.5",
   "source": "https://github.com/kunchenguid/tasks-axi/tree/tasks-axi-v0.2.5",

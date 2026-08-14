@@ -6,7 +6,8 @@
   "packages": {
     "packages/sq-tasks": {
       "release-type": "node",
-      "package-name": "sq-tasks"
+      "package-name": "@runecraft/sq-tasks",
+      "component": "sq-tasks"
     }
   }
 }

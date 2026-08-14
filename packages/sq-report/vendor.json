@@ -1,5 +1,5 @@
 {
-  "package": "sq-report",
+  "package": "@runecraft/sq-report",
   "upstream": "lavish-axi",
   "version": "0.1.48",
   "source": "https://github.com/runecraftai/squad/tree/lavish-axi-v0.1.48",
