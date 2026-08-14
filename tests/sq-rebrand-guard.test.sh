@@ -25,6 +25,10 @@
 #   8. packages/*/vendor.json provenance records name the upstream source
 #      repository and are exempt the same way .specs/ is: provenance metadata
 #      (M3/M5/M6 vendoring pattern), not authorship credit in Squad content.
+#   9. every packages/*/package.json npm identity is @runecraft/<dirname>
+#      (commander decision 2026-08-14: publish all npm packages under the
+#      @runecraft scope because bare names like drill/fob are squatted on
+#      npm; bin names and CLI commands are untouched by the rename)
 #
 # Nivel-2 closure (slice 6, decisions 2026-08-11):
 # - `fm_`/`fmx_` function prefixes are native Squad vocabulary (decision 1), so
@@ -115,6 +119,39 @@ guard_no_match() {
   fi
 }
 
+test_guard_npm_scope() {
+  local failures
+  # shellcheck disable=SC2016  # Single quotes are deliberate: ${...} belongs to the Node snippet.
+  failures=$(node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const packagesDir = process.argv[1];
+    const failures = [];
+    for (const entry of fs.readdirSync(packagesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const pkg = path.join(packagesDir, entry.name, "package.json");
+      if (!fs.existsSync(pkg)) continue;
+      let name = null;
+      try {
+        name = JSON.parse(fs.readFileSync(pkg, "utf8")).name;
+      } catch (err) {
+        failures.push(`packages/${entry.name}/package.json could not be parsed: ${err.message}`);
+        continue;
+      }
+      const expected = `@runecraft/${entry.name}`;
+      if (name !== expected) {
+        failures.push(`packages/${entry.name}/package.json name is ${name === null ? "<missing>" : JSON.stringify(name)}, expected \"${expected}\"`);
+      }
+    }
+    process.stdout.write(failures.join("\n"));
+  ' "$ROOT/packages")
+  if [ -n "$failures" ]; then
+    record_failure "rebrand guard 9: npm identity is @runecraft-scoped" "$failures"
+  else
+    pass "rebrand guard 9: every packages/*/package.json npm name is @runecraft/<dir>"
+  fi
+}
+
 test_guard_no_firstmate_tokens() {
   guard_no_match "rebrand guard 1: no firstmate tokens (excluding .specs/)" \
     'ci:firstmate|first mate'
@@ -200,6 +237,7 @@ test_guard_no_fm_env_prefix
 test_guard_no_mapped_vocabulary
 test_guard_alias_allowlist_is_exact
 test_guard_keep_list
+test_guard_npm_scope
 
 if [ -n "$GUARD_FAILURES" ]; then
   printf 'not ok - rebrand guards: %s violation(s) remain (excluding .specs/)\n' \

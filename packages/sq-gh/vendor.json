@@ -1,5 +1,5 @@
 {
-  "package": "sq-gh",
+  "package": "@runecraft/sq-gh",
   "upstream": "gh-axi",
   "version": "0.1.30",
   "source": "https://github.com/runecraftai/squad/tree/gh-axi-v0.1.30",

@@ -5,7 +5,7 @@
 <h1 align="center">sq-quota</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/sq-quota"><img alt="npm" src="https://img.shields.io/npm/v/sq-quota?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@runecraft/sq-quota"><img alt="npm" src="https://img.shields.io/npm/v/@runecraft/sq-quota?style=flat-square" /></a>
   <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=ci" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
@@ -32,7 +32,7 @@ After a successful Keychain read, future non-interactive quota reads use that pr
 Legacy markers created before account-pinned lookup are not reused, so an upgrade may require this one-time grant again.
 
 ```sh
-$ npx -y sq-quota
+$ npx -y @runecraft/sq-quota
 bin: ~/.npm/_npx/.../sq-quota
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2026-03-15T16:42:00.000Z"
@@ -132,13 +132,13 @@ Run `sq-quota auth` to inspect local auth source availability without printing s
 **Direct use**
 
 ```sh
-npx -y sq-quota
+npx -y @runecraft/sq-quota
 ```
 
 **npm**
 
 ```sh
-npm install -g sq-quota
+npm install -g @runecraft/sq-quota
 ```
 
 **From source**
@@ -233,7 +233,7 @@ The `quota` command's `--json` emits `schemaVersion: 3`.
 
 ### Normalized schema contract
 
-The package publishes TypeScript declarations from its package root, so consumers can use `import type { SqQuotaResponse, ModelsResponse } from "sq-quota"`. The adapter contract is `ProviderAdapter` in and normalized `ProviderQuota` out: adapters report observed quota data, never rank, mutate provider state, or retain raw responses.
+The package publishes TypeScript declarations from its package root, so consumers can use `import type { SqQuotaResponse, ModelsResponse } from "@runecraft/sq-quota"`. The adapter contract is `ProviderAdapter` in and normalized `ProviderQuota` out: adapters report observed quota data, never rank, mutate provider state, or retain raw responses.
 
 `schemaVersion` is command-specific. Additive optional fields do not bump it. A semantic or incompatible shape change does. The `quota` report is version 3, `auth` is version 1, and `models` is version 1.
 

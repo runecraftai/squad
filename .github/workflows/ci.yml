@@ -402,7 +402,7 @@ jobs:
       - name: Install workspace deps (root packageManager is bun)
         run: bun install
       - name: Build fob + drill
-        run: bun x turbo run build --filter=fob --filter=drill
+        run: bun x turbo run build --filter=@runecraft/fob --filter=@runecraft/drill
       - name: Go test per package
         run: |
           set -eu

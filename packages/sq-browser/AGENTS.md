@@ -28,7 +28,7 @@ Its frontmatter includes Hermes Agent metadata from `src/skill.ts`; update the g
 - Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`packages/sq-browser/.release-please-manifest.json`, `packages/sq-browser/CHANGELOG.md`, `packages/sq-browser/package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
 - Generated files are listed in `.prettierignore`; validate them with their generator checks instead of formatting them directly.
 - Keep `skills/sq-browser/` in the npm `files` list when changing package contents; the skill-first install path depends on it shipping with the package.
-- `pnpm-workspace.yaml` enforces a minimum release age for dependency updates as a supply-chain guard; `axi-sdk-js` and `sq-browser` are exempt.
+- `pnpm-workspace.yaml` enforces a minimum release age for dependency updates as a supply-chain guard; `axi-sdk-js` and `@runecraft/sq-browser` are exempt.
 - `.airlock/lint.sh` must use pnpm (never `npm install` or `npx`); `test/airlock-lint.test.ts` enforces this.
 - Human-authored PRs to `main` must go through [`drill`](https://github.com/runecraftai/squad); CI enforces a deterministic signature in the PR body. See CONTRIBUTING.md.
 
@@ -73,7 +73,7 @@ That makes `src/version.ts` a LEAF module: it may import node builtins only, and
 
 The CLI is built on `axi-sdk-js` (`runAxiCli`): `HOME_DESCRIPTION` and `TOP_HELP` are the shared static guidance, SDK built-ins such as `update` and `update --check` are appended by the runner at runtime, and the `home()` callback returns the live page snapshot when a bridge session is active.
 This is the same output that lands in the agent's optional `SessionStart` hook after `sq-browser setup hooks` (`src/hooks.ts`, Claude Code + Codex + OpenCode); `shouldInstallHooksForExecPath` guards dev entrypoints like `pnpm run dev` from self-registering hooks.
-`src/skill.ts` renders the installable Agent Skill (`skills/sq-browser/SKILL.md`) from the same shared guidance plus the SDK built-in command list, rewriting invocations to non-interactive `npx -y sq-browser ...`.
+`src/skill.ts` renders the installable Agent Skill (`skills/sq-browser/SKILL.md`) from the same shared guidance plus the SDK built-in command list, rewriting invocations to non-interactive `npx -y @runecraft/sq-browser ...`.
 
 Output format per command: TOON-encoded metadata block (`encode` from `@toon-format/toon`), then raw snapshot text, then a `help[N]:` block of contextual next-step suggestions (`src/suggestions.ts`).
 Snapshots are truncated at ~16k chars (`--full` disables); `eval` output keeps head and tail (`truncateText`).

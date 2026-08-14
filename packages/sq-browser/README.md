@@ -5,7 +5,7 @@
 <h1 align="center">sq-browser</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/sq-browser"><img alt="npm" src="https://img.shields.io/npm/v/sq-browser?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@runecraft/sq-browser"><img alt="npm" src="https://img.shields.io/npm/v/@runecraft/sq-browser?style=flat-square" /></a>
   <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=CI" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
@@ -95,7 +95,7 @@ sq-browser is a plain CLI, so any capable agent can run it directly with nothing
 Just tell your agent:
 
 ```
-Execute `npx -y sq-browser` to get browser automation tools.
+Execute `npx -y @runecraft/sq-browser` to get browser automation tools.
 ```
 
 ### Session hook
@@ -104,7 +104,7 @@ Want ambient browser context, including the live page state of an active session
 Install the CLI globally and opt into the hook:
 
 ```sh
-npm install -g sq-browser
+npm install -g @runecraft/sq-browser
 sq-browser setup hooks
 ```
 

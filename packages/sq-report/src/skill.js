@@ -17,7 +17,7 @@ function playbookList(playbooks) {
 }
 
 function skillCommandText(text) {
-  return text.replaceAll("`sq-report", "`npx -y sq-report");
+  return text.replaceAll("`sq-report", "`npx -y @runecraft/sq-report");
 }
 
 // Agent Skills allows only these top-level frontmatter keys; the reference validator
@@ -61,9 +61,9 @@ metadata:
 
 ${skillCommandText(home.description)}
 
-You do not need sq-report installed globally - invoke it with \`npx -y sq-report <html-file>\`.
-If sq-report output shows a follow-up command starting with \`sq-report\`, run it as \`npx -y sq-report ...\` instead.
-In restricted subprocess sandboxes, CI, or agent harnesses where \`npx -y\` exits opaquely (for example with status 216), use an already-installed copy directly: \`node "$(npm root)/sq-report/dist/cli.mjs" <html-file>\` for a local install, \`node "$(npm root -g)/sq-report/dist/cli.mjs" <html-file>\` for a global install, or the bare \`sq-report <html-file>\` bin after installing once.
+You do not need sq-report installed globally - invoke it with \`npx -y @runecraft/sq-report <html-file>\`.
+If sq-report output shows a follow-up command starting with \`sq-report\`, run it as \`npx -y @runecraft/sq-report ...\` instead.
+In restricted subprocess sandboxes, CI, or agent harnesses where \`npx -y\` exits opaquely (for example with status 216), use an already-installed copy directly: \`node "$(npm root)/@runecraft/sq-report/dist/cli.mjs" <html-file>\` for a local install, \`node "$(npm root -g)/@runecraft/sq-report/dist/cli.mjs" <html-file>\` for a global install, or the bare \`sq-report <html-file>\` bin after installing once.
 
 ## Request
 
@@ -79,9 +79,9 @@ ${home.help[home.help.length - 1]}
 ## Workflow
 
 1. Create the HTML artifact (default location \`.lavish/<name>.html\` in the working directory).
-2. Run \`npx -y sq-report <html-file>\` to open or resume a review session in the browser.
+2. Run \`npx -y @runecraft/sq-report <html-file>\` to open or resume a review session in the browser.
    If the output carries a \`self_paint_warning\`, fix the unpainted page surface and save before polling - Lavish live-reloads the artifact.
-3. Run \`npx -y sq-report poll <html-file>\` to long-poll for the user's annotations and queued prompts.
+3. Run \`npx -y @runecraft/sq-report poll <html-file>\` to long-poll for the user's annotations and queued prompts.
    On the first poll, prefer \`--agent-reply "<one-line summary of what you built and what to review first>"\` so the conversation panel opens with context.
    Browser-detected layout issues are filed passively in the user's Layout issues inbox and arrive as an ordinary \`layout-warnings\` prompt only when the user selects and queues them. Never edit an issue the user has not queued. The only response that arrives without user action is \`artifact_failures\`, when the review surface itself is unusable.
    The poll stays silent until the user acts or a fatal artifact failure makes the review surface unusable - leave it running, never kill it.
@@ -89,7 +89,7 @@ ${home.help[home.help.length - 1]}
 ${POLL_WAKE_PATH_RULES.map((rule) => `   ${skillCommandText(rule)}`).join("\n")}
 4. If poll returns feedback, apply the user's prompts. A \`layout-warnings\` prompt is an explicit repair request; apply every listed fix in one pass before saving, and let Lavish re-check it after a newer artifact load.
 5. Apply human feedback, then poll again with \`--agent-reply "<message>"\` to reply in the browser and keep the loop going under the same foreground-or-verified-wake-path rule.
-6. Run \`npx -y sq-report end <html-file>\` when the review is finished.
+6. Run \`npx -y @runecraft/sq-report end <html-file>\` when the review is finished.
 7. ${POLL_SEND_AND_END_RULE} Deliver any remaining updates directly in this conversation.
 
 ## Visual guidance
@@ -98,9 +98,9 @@ ${bullets(home.visual_guidance)}
 
 ## Playbooks
 
-Run \`npx -y sq-report playbook <id>\` for focused, detailed guidance on any of these.
+Run \`npx -y @runecraft/sq-report playbook <id>\` for focused, detailed guidance on any of these.
 ${PLAYBOOK_ROUTER_HELP}
-For flows, architecture, state, or sequence diagrams, do not hand-build boxes-and-arrows from div/flexbox; open the diagram playbook and use the theme-aware Mermaid snippet from \`npx -y sq-report design\` unless SVG is needed for richly annotated nodes.
+For flows, architecture, state, or sequence diagrams, do not hand-build boxes-and-arrows from div/flexbox; open the diagram playbook and use the theme-aware Mermaid snippet from \`npx -y @runecraft/sq-report design\` unless SVG is needed for richly annotated nodes.
 
 ${playbookList(home.playbooks)}
 

@@ -6,7 +6,8 @@
   "packages": {
     "packages/sq-gh": {
       "release-type": "node",
-      "package-name": "sq-gh"
+      "package-name": "@runecraft/sq-gh",
+      "component": "sq-gh"
     }
   }
 }

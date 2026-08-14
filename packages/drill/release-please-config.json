@@ -3,7 +3,8 @@
   "packages": {
     "packages/drill": {
       "release-type": "go",
-      "package-name": "drill",
+      "package-name": "@runecraft/drill",
+      "component": "drill",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "draft": true,

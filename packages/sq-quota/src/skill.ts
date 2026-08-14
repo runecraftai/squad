@@ -35,7 +35,7 @@ function yamlDoubleQuote(value: string): string {
 /**
  * Render the installable SKILL.md for the sq-quota skill. The body uses the
  * same shared CLI description and help text, then adds agent-facing workflow
- * guidance that prefers non-interactive `npx -y sq-quota ...` invocation so
+ * guidance that prefers non-interactive `npx -y @runecraft/sq-quota ...` invocation so
  * the CLI comes along on demand.
  *
  * @returns full SKILL.md contents including YAML frontmatter
@@ -56,7 +56,7 @@ metadata:
 
 ${DESCRIPTION}
 
-You do not need sq-quota installed globally - invoke it with \`npx -y sq-quota\`.
+You do not need sq-quota installed globally - invoke it with \`npx -y @runecraft/sq-quota\`.
 
 sq-quota is data only: it never routes, recommends a provider, model, harness, credential, or
 route, proxies, intercepts, logs in, imports browser cookies, or mutates provider state. Default
@@ -73,7 +73,7 @@ or when comparing supported local provider headroom side by side.
 
 ## Workflow
 
-1. Run \`npx -y sq-quota\` for compact TOON output covering supported providers' quota windows.
+1. Run \`npx -y @runecraft/sq-quota\` for compact TOON output covering supported providers' quota windows.
 2. Scope to one provider with \`--provider claude\` or to a subset with \`--provider cursor,copilot,grok,kimi\`.
 3. Pass \`--json\` for the normalized machine-readable model instead of TOON. Read
    \`quotaSemantics.effectiveAvailability\` rather than treating a model window in isolation:
@@ -88,13 +88,13 @@ or when comparing supported local provider headroom side by side.
    one. Stale reports keep raw windows for diagnostics, but effective availability, pace, and
    runway are always unknown; never route from a stale raw percentage as though it were current
    headroom. Default output has no ordering preference. For a provider-native model evidence join,
-   use \`npx -y sq-quota models --intelligence high --json\`. This catalog covers Claude, Codex,
+   use \`npx -y @runecraft/sq-quota models --intelligence high --json\`. This catalog covers Claude, Codex,
    Grok, and Kimi only; its buckets are coarse editorial classifications, not scores. Its response
    includes catalog provenance and unmatched model windows. \`--sort runway\` is an explicit,
    documented quota-evidence comparator, not a provider, model, harness, credential, or route
    recommendation; inspect \`sort.tieGroups\` rather than treating equal evidence as a preference.
 4. Pass \`--full\` to include account identity, per-source attempts, and raw reserve diagnostics.
-5. Run \`npx -y sq-quota auth\` to check local auth-source availability without printing
+5. Run \`npx -y @runecraft/sq-quota auth\` to check local auth-source availability without printing
    secret values.
 6. On macOS, Claude Keychain value reads are pinned to the same validated current-user account
    Claude Code selects and are skipped by default until the user grants access once.

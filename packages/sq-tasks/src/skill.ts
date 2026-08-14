@@ -35,7 +35,7 @@ export function extractCommandsBlock(): string {
 /**
  * Render the installable SKILL.md. The body is built from the same shared
  * guidance the CLI prints (description + top-level help), rewriting invocations
- * to non-interactive `npx -y sq-tasks ...` so the CLI comes along on demand.
+ * to non-interactive `npx -y @runecraft/sq-tasks ...` so the CLI comes along on demand.
  */
 export function createSkillMarkdown(): string {
   return `---
@@ -53,8 +53,8 @@ metadata:
 
 ${DESCRIPTION}
 
-You do not need sq-tasks installed globally - invoke it with \`npx -y sq-tasks <command>\`.
-If sq-tasks output shows a follow-up command starting with \`sq-tasks\`, run it as \`npx -y sq-tasks ...\` instead.
+You do not need sq-tasks installed globally - invoke it with \`npx -y @runecraft/sq-tasks <command>\`.
+If sq-tasks output shows a follow-up command starting with \`sq-tasks\`, run it as \`npx -y @runecraft/sq-tasks ...\` instead.
 
 sq-tasks operates on a hand-editable \`backlog.md\` in the current workspace (or the path set in \`.tasks.toml\`). It edits the file in place with a byte-exact round-trip, so the human-readable backlog stays the source of truth.
 
@@ -64,7 +64,7 @@ Use sq-tasks whenever a task touches the backlog: filing or dispatching work, mo
 
 ## Workflow
 
-1. Run \`npx -y sq-tasks\` with no arguments for a dashboard of the current backlog - in flight work, queued work with blockers, and suggested next commands.
+1. Run \`npx -y @runecraft/sq-tasks\` with no arguments for a dashboard of the current backlog - in flight work, queued work with blockers, and suggested next commands.
 2. Drill in verb-first: \`list\`, \`show <id>\`, \`ready\`, then mutate with \`add\`, \`start\`, \`done\`, \`block\`/\`unblock\`, \`hold\`/\`unhold\`, \`update\`.
 3. The long notes never appear in \`list\`; run \`show <id> --full\` to read a task's complete body before replacing it.
 4. \`add\` takes a caller-supplied id (the join key), e.g. \`sq-tasks add sq-x "title" --kind strike --repo Squad --start\`; or pass \`--mint\` to generate a slug-xx id from the title.
@@ -80,7 +80,7 @@ Use sq-tasks whenever a task touches the backlog: filing or dispatching work, mo
 ${extractCommandsBlock()}
 \`\`\`
 
-Run \`npx -y sq-tasks --help\` for global flags, or \`npx -y sq-tasks <command> --help\` for per-command usage.
+Run \`npx -y @runecraft/sq-tasks --help\` for global flags, or \`npx -y @runecraft/sq-tasks <command> --help\` for per-command usage.
 
 ## Tips
 

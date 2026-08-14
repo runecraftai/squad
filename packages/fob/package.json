@@ -1,5 +1,5 @@
 {
-  "name": "fob",
+  "name": "@runecraft/fob",
   "private": true,
   "version": "0.1.0",
   "scripts": {

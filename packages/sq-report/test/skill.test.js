@@ -11,7 +11,7 @@ import {
 } from "../src/skill.js";
 
 function skillCommandText(text) {
-  return text.replaceAll("`sq-report", "`npx -y sq-report");
+  return text.replaceAll("`sq-report", "`npx -y @runecraft/sq-report");
 }
 
 test("createSkillMarkdown emits valid frontmatter naming the lavish skill", () => {
@@ -167,9 +167,9 @@ test("createSkillMarkdown omits setup guidance", () => {
 test("createSkillMarkdown uses non-interactive npx commands", () => {
   const md = createSkillMarkdown();
 
-  assert.match(md, /`npx -y sq-report <html-file>`/);
+  assert.match(md, /`npx -y @runecraft\/sq-report <html-file>`/);
   assert.match(md, /If sq-report output shows a follow-up command starting with `sq-report`/);
-  assert.match(md, /run it as `npx -y sq-report/);
+  assert.match(md, /run it as `npx -y @runecraft\/sq-report/);
   assert.doesNotMatch(md, /`npx sq-report/);
   assert.doesNotMatch(md, /Run `sq-report/);
 });
@@ -179,7 +179,7 @@ test("createSkillMarkdown documents installed-copy fallback for restricted sandb
 
   assert.match(md, /restricted subprocess sandboxes/);
   assert.match(md, /status 216/);
-  assert.match(md, /`node "\$\(npm root\)\/sq-report\/dist\/cli\.mjs" <html-file>`/);
-  assert.match(md, /`node "\$\(npm root -g\)\/sq-report\/dist\/cli\.mjs" <html-file>`/);
+  assert.match(md, /`node "\$\(npm root\)\/@runecraft\/sq-report\/dist\/cli\.mjs" <html-file>`/);
+  assert.match(md, /`node "\$\(npm root -g\)\/@runecraft\/sq-report\/dist\/cli\.mjs" <html-file>`/);
   assert.match(md, /bare `sq-report <html-file>` bin/);
 });

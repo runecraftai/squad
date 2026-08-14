@@ -22,7 +22,7 @@ function readPackageVersion(): string {
       name?: unknown;
     };
     if (
-      parsed.name === "sq-tasks" &&
+      parsed.name === "@runecraft/sq-tasks" &&
       typeof parsed.version === "string" &&
       parsed.version.length > 0
     ) {
@@ -30,7 +30,7 @@ function readPackageVersion(): string {
     }
   }
 
-  throw new Error("Could not determine sq-tasks package version");
+  throw new Error("Could not determine @runecraft/sq-tasks package version");
 }
 
 export const VERSION = readPackageVersion();

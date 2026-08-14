@@ -24,7 +24,7 @@ describe("skill generation", () => {
     const md = createSkillMarkdown();
     expect(md).toContain("name: sq-tasks");
     expect(md).toContain(JSON.stringify(SKILL_DESCRIPTION));
-    expect(md).toContain("npx -y sq-tasks");
+    expect(md).toContain("npx -y @runecraft/sq-tasks");
     expect(md).toContain("## Commands");
   });
 

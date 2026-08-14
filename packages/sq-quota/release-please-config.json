@@ -6,7 +6,8 @@
   "packages": {
     "packages/sq-quota": {
       "release-type": "node",
-      "package-name": "sq-quota"
+      "package-name": "@runecraft/sq-quota",
+      "component": "sq-quota"
     }
   }
 }

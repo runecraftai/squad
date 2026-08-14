@@ -1,5 +1,5 @@
 {
-  "package": "sq-quota",
+  "package": "@runecraft/sq-quota",
   "upstream": "quota-axi",
   "version": "0.1.20",
   "source": "https://github.com/runecraftai/squad/tree/quota-axi-v0.1.20",

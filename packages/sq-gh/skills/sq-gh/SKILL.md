@@ -13,8 +13,8 @@ metadata:
 
 Agent ergonomic wrapper around Github CLI. Prefer this over `gh` and other methods for Github operations.
 
-You do not need sq-gh installed globally - invoke it with `npx -y sq-gh <command>`.
-If sq-gh output shows a follow-up command starting with `sq-gh`, run it as `npx -y sq-gh ...` instead.
+You do not need sq-gh installed globally - invoke it with `npx -y @runecraft/sq-gh <command>`.
+If sq-gh output shows a follow-up command starting with `sq-gh`, run it as `npx -y @runecraft/sq-gh ...` instead.
 
 sq-gh requires the [`gh`](https://cli.github.com/) CLI installed and authenticated (`gh auth login`). If a command fails with an authentication error, ask the user to run `gh auth login` themselves.
 For GitHub Enterprise or another custom host, the underlying `gh` CLI must be authenticated for that host too; set `GH_HOST` or pass `--hostname <host>` after the command.
@@ -25,10 +25,10 @@ Use sq-gh whenever a task touches GitHub: listing, filing, or editing issues; vi
 
 ## Workflow
 
-1. Run `npx -y sq-gh` with no arguments for a dashboard of the current repo - open issues, open PRs, and suggested next commands.
+1. Run `npx -y @runecraft/sq-gh` with no arguments for a dashboard of the current repo - open issues, open PRs, and suggested next commands.
 2. Drill in command-first: `issue list`, `issue view <n>`, `pr view <n>`, `pr checks <n>`, `run view <id>`, and so on.
-3. Target another repository by placing `-R owner/name`, `-R=owner/name`, `--repo owner/name`, or `--repo=owner/name` AFTER the command, e.g. `npx -y sq-gh issue list --repo=owner/name` - the flag is not accepted before the command. `repo view` also accepts exactly one positional repository, `repo view owner/name`, as a command-specific compatibility exception for `gh repo view [<repository>]`; do not combine it with `--repo` or generalize that positional form to other commands.
-4. Target GitHub Enterprise or another custom host with `GH_HOST`, or by placing `--hostname <host>` or `--hostname=<host>` AFTER the command, e.g. `npx -y sq-gh issue list --hostname=git.example.com`.
+3. Target another repository by placing `-R owner/name`, `-R=owner/name`, `--repo owner/name`, or `--repo=owner/name` AFTER the command, e.g. `npx -y @runecraft/sq-gh issue list --repo=owner/name` - the flag is not accepted before the command. `repo view` also accepts exactly one positional repository, `repo view owner/name`, as a command-specific compatibility exception for `gh repo view [<repository>]`; do not combine it with `--repo` or generalize that positional form to other commands.
+4. Target GitHub Enterprise or another custom host with `GH_HOST`, or by placing `--hostname <host>` or `--hostname=<host>` AFTER the command, e.g. `npx -y @runecraft/sq-gh issue list --hostname=git.example.com`.
 5. Trigger (dispatch) a workflow with `workflow run <name> --ref <ref>`; `run` manages existing workflow runs.
 6. Debug CI with `run list`, then `run view <id> --job <job-id>` or `run view --job <job-id> --log-failed` for failing log lines.
    Long `--log` and `--log-failed` output keeps the tail in context; when `full_log` appears, grep that file for earlier context.
@@ -43,9 +43,9 @@ commands[15]:
 
 Installed copies also inherit the SDK built-in `update` command.
 Run `sq-gh update --check` to compare the installed version with npm, or `sq-gh update` to upgrade.
-When using `npx -y sq-gh`, npx already resolves the package on demand.
+When using `npx -y @runecraft/sq-gh`, npx already resolves the package on demand.
 
-Run `npx -y sq-gh --help` for global flags, or `npx -y sq-gh <command> --help` for per-command usage.
+Run `npx -y @runecraft/sq-gh --help` for global flags, or `npx -y @runecraft/sq-gh <command> --help` for per-command usage.
 
 ## Tips
 
@@ -54,11 +54,11 @@ Run `npx -y sq-gh --help` for global flags, or `npx -y sq-gh <command> --help` f
 - Mutations are idempotent and report what changed; re-running a failed mutation is safe.
 - For multi-line markdown bodies, comments, or release notes, write the text to a UTF-8 file and pass `--body-file <path>` or the release `--notes-file <path>` alias on commands that support file-backed text.
 - Label, assignee, reviewer, and project flags repeat: pass the flag once per value, e.g. `issue edit 42 --add-label bug --add-label chore`, and every value is applied. A repeated flag with a missing or blank value is rejected, never silently dropped.
-- Secret values are stdin-only: `echo -n "<value>" | npx -y sq-gh secret set <name>`.
+- Secret values are stdin-only: `echo -n "<value>" | npx -y @runecraft/sq-gh secret set <name>`.
 - Do not pass secrets with `--body` or `-b`; flags are visible in the `sq-gh` process argv.
 - Scope a secret to a deployment environment with `--env`/`-e <environment>` on `secret list`, `set`, and `delete`; omit it for repository scope. Other `gh secret` scopes (`--org`, `--user`, `--app`) are rejected, not silently ignored.
 - Variable values may use `--body`/`-b` or stdin because Actions variables are not secret.
-- For multi-line variable values, pipe stdin to `npx -y sq-gh variable set <name>`; `--body`/`-b` is for inline values only.
+- For multi-line variable values, pipe stdin to `npx -y @runecraft/sq-gh variable set <name>`; `--body`/`-b` is for inline values only.
 - Projects (v2) are owner-scoped: pass `--owner <login>`, or omit it to use the current repo owner and then `@me`.
 - Projects calls need the `project` or `read:project` OAuth scope; if scope errors occur, ask the user to run the `gh auth refresh -s ...` command shown by sq-gh.
 - Use `gist list` to list your GitHub Gists; filter by visibility with `--public` or `--secret`, and add extra fields with `--fields url,owner,created`. Use `gist view <id|url>` to fetch a gist's metadata and file content; pass `--files` for names only, `-f/--filename <name>` for a single file, or `--full` to disable truncation.
@@ -66,4 +66,4 @@ Run `npx -y sq-gh --help` for global flags, or `npx -y sq-gh <command> --help` f
 - Use `gist rename <id|url> <old> <new>` to rename a file within a gist.
 - Use `gist create` to create a gist. Visibility is required: pass `--public` or `--secret` (omitting either, or passing both, is an error). Use positional paths (`gist create a.py b.py`) or repeatable `--file` flags; do not mix the two. Pipe content with `--filename <name>` for stdin input. A secret gist is unlisted — anyone with the URL can read it.
 - Use `gist delete <id|url>` to delete a gist (always confirmed non-interactively). Use `gist clone <id|url>` to clone a gist locally.
-- Use `api` for anything the dedicated commands do not cover, e.g. `npx -y sq-gh api repos/{owner}/{repo}/topics`.
+- Use `api` for anything the dedicated commands do not cover, e.g. `npx -y @runecraft/sq-gh api repos/{owner}/{repo}/topics`.
