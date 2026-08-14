@@ -173,6 +173,7 @@ When that section reports its checks still in progress it names exactly what is 
 Bootstrap detects first, asks for consent, and installs only after the commander approves in the current session.
 Do not dispatch until the required tools are present and GitHub authentication is good.
 Use `sq-gh` for GitHub, `sq-browser` for browser work, and `sq-report` for structured decisions or reports; consult current help rather than memorizing flags.
+For frontend validation use the Playwright tooling in [`docs/playwright-validation.md`](docs/playwright-validation.md).
 A silent bootstrap section needs no action; for any printed actionable diagnostic line, load `bootstrap-diagnostics` and follow its owner procedure.
 `BOOTSTRAP_INFO:` lines are completed no-action facts and do not require loading a skill.
 `xo-provisioning` owns startup XO sync, liveness, and inherited local-material convergence.
