@@ -1687,8 +1687,8 @@ if (command === "plugins list") {
     const records = [{ kind: "plugin", name: "sq-report-tools", source: "direct" }];
     if (options.installedSource && fs.existsSync(options.installedSource)) {
       records.push(options.listSourcePath
-        ? { kind: "plugin", name: "sq-report", sourcePath: fs.readFileSync(options.installedSource, "utf8") }
-        : { kind: "plugin", name: "sq-report", source: "direct" });
+        ? { kind: "plugin", name: "report", sourcePath: fs.readFileSync(options.installedSource, "utf8") }
+        : { kind: "plugin", name: "report", source: "direct" });
     }
     process.stdout.write(JSON.stringify(records));
   }
@@ -1703,7 +1703,7 @@ if (command === "plugin install") {
   if (options.installedSource) fs.writeFileSync(options.installedSource, pluginRoot);
   if (options.copilotConfig) {
     fs.writeFileSync(options.copilotConfig, JSON.stringify({
-      installedPlugins: [{ name: "sq-report", source: { source: "local", path: pluginRoot } }],
+      installedPlugins: [{ name: "report", source: { source: "local", path: pluginRoot } }],
     }));
   }
   if (options.installLog) fs.appendFileSync(options.installLog, "install\\n");
@@ -1733,14 +1733,14 @@ test("setup plugin registers the installed package in the clients that are prese
     const result = runSetupPlugin(homeDir, stateDir, pathDir);
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /name: sq-report/);
+    assert.match(result.stdout, /name: report/);
     assert.match(result.stdout, /cursor,registered/);
     // No VS Code settings and no copilot binary in this environment.
     assert.match(result.stdout, /vscode,absent/);
     assert.match(result.stdout, /copilot,absent/);
 
     // The registered slot points at the package root, which is where plugin.json lives.
-    const linked = await realpath(`${homeDir}/.cursor/plugins/local/sq-report`);
+    const linked = await realpath(`${homeDir}/.cursor/plugins/local/report`);
     assert.equal(linked, await realpath(fileURLToPath(new URL("..", import.meta.url))));
     assert.ok(existsSync(`${linked}/plugin.json`));
     assert.ok(existsSync(`${linked}/skills/lavish/SKILL.md`));
@@ -1853,10 +1853,10 @@ test("setup plugin repairs Copilot registration without trusting list text", asy
     assert.equal(await realpath(await readFile(installedSource, "utf8")), pluginRoot);
     assert.equal(await readFile(installLog, "utf8"), "install\n");
 
-    await writeFile(installedSource, "/stale/sq-report");
+    await writeFile(installedSource, "/stale/report");
     await writeFile(
       copilotConfig,
-      '{"installedPlugins":[{"name":"sq-report","source":{"source":"local","path":"/stale/sq-report"}}]}',
+      '{"installedPlugins":[{"name":"report","source":{"source":"local","path":"/stale/report"}}]}',
     );
     const repaired = runSetupPlugin(homeDir, stateDir, pathDir);
 
@@ -1876,7 +1876,7 @@ test("setup plugin preserves Copilot registration when replacement fails", async
   const homeDir = await mkdtemp(`${os.tmpdir()}/sq-report-plugin-copilot-failure-home-`);
   const pathDir = await mkdtemp(`${os.tmpdir()}/sq-report-plugin-copilot-failure-path-`);
   const installedSource = path.join(homeDir, "copilot-installed-source");
-  const originalSource = "/working/sq-report";
+  const originalSource = "/working/report";
   try {
     await writeFile(installedSource, originalSource);
     await writeCopilotCommandStub(pathDir, { installedSource, listSourcePath: true, installFails: true });
@@ -1921,7 +1921,7 @@ test("setup plugin isolates a client it cannot register from the ones it can", a
   try {
     // A real directory in Cursor's slot is unregisterable - the same reported (not thrown)
     // path a Windows box without Developer Mode takes when link creation is refused.
-    const occupied = `${homeDir}/.cursor/plugins/local/sq-report`;
+    const occupied = `${homeDir}/.cursor/plugins/local/report`;
     await mkdir(occupied, { recursive: true });
     await writeFile(`${occupied}/keep.txt`, "user content", "utf8");
     await mkdir(path.dirname(settingsFile), { recursive: true });

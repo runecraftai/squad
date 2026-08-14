@@ -6,7 +6,7 @@
   "packages": {
     "packages/sq-report": {
       "release-type": "node",
-      "package-name": "@runecraft/sq-report",
+      "package-name": "@runecraft/report",
       "component": "sq-report",
       "extra-files": [
         {
