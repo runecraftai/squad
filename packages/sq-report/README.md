@@ -5,7 +5,7 @@
 <h1 align="center">sq-report</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@runecraft/sq-report"><img alt="npm" src="https://img.shields.io/npm/v/@runecraft/sq-report?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@runecraft/report"><img alt="npm" src="https://img.shields.io/npm/v/@runecraft/report?style=flat-square" /></a>
   <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=ci" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
@@ -95,7 +95,7 @@ sq-report is a plain CLI, so any capable agent can run it directly with nothing 
 Just tell your agent:
 
 ```
-Use `npx -y @runecraft/sq-report` to write a product or technical plan for what we discussed.
+Use `npx -y @runecraft/report` to write a product or technical plan for what we discussed.
 ```
 
 ### Session hook
@@ -104,7 +104,7 @@ Want sq-report's ambient context, including your live open sessions, fed into ev
 Install the CLI globally and opt into the hook:
 
 ```sh
-npm install -g @runecraft/sq-report
+npm install -g @runecraft/report
 sq-report setup hooks
 ```
 
@@ -119,7 +119,7 @@ sq-report also ships as an [Agent Plugin](https://agent-plugins.org), the vendor
 **No marketplace is involved.** The installed npm package _is_ the plugin: `plugin.json` sits at the package root next to the `skills/` directory, so whatever `npm install` already put on disk is a complete, conformant plugin. Install the CLI, then register it:
 
 ```sh
-npm install -g @runecraft/sq-report
+npm install -g @runecraft/report
 sq-report setup plugin
 ```
 
@@ -127,13 +127,13 @@ That registers the installed package with every supported client it finds, **VS 
 
 Each client is registered independently: one that cannot be registered is reported with what to do about it, and never blocks the others or fails the command.
 
-To register by hand instead, point any client at the package directory (`npm root -g`/`@runecraft/sq-report`):
+To register by hand instead, point any client at the package directory (`npm root -g`/`@runecraft/report`):
 
-| Client             | Register with                                                                                                   |
-| ------------------ | --------------------------------------------------------------------------------------------------------------- |
-| VS Code            | `"chat.pluginLocations": { "<package-dir>": true }` in user settings                                            |
-| Cursor             | link the package dir at `~/.cursor/plugins/local/sq-report` (`setup plugin` handles Windows link compatibility) |
-| GitHub Copilot CLI | `copilot plugin install <package-dir>` (or `copilot plugin install runecraftai/squad` straight from the repo)   |
+| Client             | Register with                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| VS Code            | `"chat.pluginLocations": { "<package-dir>": true }` in user settings                                          |
+| Cursor             | link the package dir at `~/.cursor/plugins/local/report` (`setup plugin` handles Windows link compatibility)  |
+| GitHub Copilot CLI | `copilot plugin install <package-dir>` (or `copilot plugin install runecraftai/squad` straight from the repo) |
 
 Codex and ChatGPT install plugins only from marketplace sources, so Codex users should use the session hook above instead.
 sq-report declares no MCP server; the CLI itself is the agent interface, so a plugin install brings the same `lavish` skill, and the skill and plugin are alternatives rather than a stack.
