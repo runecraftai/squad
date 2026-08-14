@@ -121,6 +121,7 @@ guard_no_match() {
 
 test_guard_npm_scope() {
   local failures
+  # shellcheck disable=SC2016  # Single quotes are deliberate: ${...} belongs to the Node snippet.
   failures=$(node -e '
     const fs = require("fs");
     const path = require("path");
