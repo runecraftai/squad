@@ -36,7 +36,7 @@
     "dev": "tsx bin/sq-browser.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build"
   },
   "license": "MIT",
   "engines": {

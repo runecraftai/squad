@@ -105,9 +105,9 @@ func TestReleasePleaseConfigCreatesDrafts(t *testing.T) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
-	pkg, ok := cfg.Packages["."]
+	pkg, ok := cfg.Packages["packages/drill"]
 	if !ok {
-		t.Fatalf("release-please config missing '.' package")
+		t.Fatalf("release-please config missing 'packages/drill' package")
 	}
 	if !pkg.Draft {
 		t.Fatalf("release-please must create releases as drafts; partial releases would otherwise be marked latest before binaries are uploaded")
@@ -127,9 +127,9 @@ func TestReleasePleaseConfigForcesTagCreation(t *testing.T) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
-	pkg, ok := cfg.Packages["."]
+	pkg, ok := cfg.Packages["packages/drill"]
 	if !ok {
-		t.Fatalf("release-please config missing '.' package")
+		t.Fatalf("release-please config missing 'packages/drill' package")
 	}
 	if !pkg.ForceTagCreation {
 		t.Fatalf("release-please config must force tag creation so an existing GitHub release cannot silently prevent the tag from being recreated")

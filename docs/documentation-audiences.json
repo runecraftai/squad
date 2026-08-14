@@ -497,6 +497,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "packages/fob/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
       "path": "packages/fob/CLAUDE.md",
       "audience": "maintainer-architecture"
     },
@@ -515,6 +519,10 @@
     {
       "path": "packages/drill/AGENTS.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/drill/CHANGELOG.md",
+      "audience": "public-product"
     },
     {
       "path": "packages/drill/CLAUDE.md",
@@ -633,6 +641,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": "packages/pr-review/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
       "path": "packages/pr-review/README.md",
       "audience": "public-product"
     },
@@ -647,6 +659,10 @@
     {
       "path": "packages/sq-browser/AGENTS.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-browser/CHANGELOG.md",
+      "audience": "public-product"
     },
     {
       "path": "packages/sq-browser/CLAUDE.md",
@@ -673,6 +689,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "packages/sq-gh/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
       "path": "packages/sq-gh/CLAUDE.md",
       "audience": "maintainer-architecture"
     },
@@ -695,6 +715,10 @@
     {
       "path": "packages/sq-quota/AGENTS.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-quota/CHANGELOG.md",
+      "audience": "public-product"
     },
     {
       "path": "packages/sq-quota/CLAUDE.md",
@@ -729,6 +753,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "packages/sq-report/CHANGELOG.md",
+      "audience": "public-product"
+    },
+    {
       "path": "packages/sq-report/CLAUDE.md",
       "audience": "maintainer-architecture"
     },
@@ -759,6 +787,10 @@
     {
       "path": "packages/sq-tasks/AGENTS.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "packages/sq-tasks/CHANGELOG.md",
+      "audience": "public-product"
     },
     {
       "path": "packages/sq-tasks/CLAUDE.md",

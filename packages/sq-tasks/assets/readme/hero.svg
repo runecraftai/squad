@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="380" viewBox="0 0 1200 380"
      role="img" aria-labelledby="title desc">
-  <title id="title">sq-tasks: an operations board task backlog that stays human-editable while agents work it</title>
-  <desc id="desc">A backlog.md document shows queued and done tasks with checkboxes; a band below proves the byte-exact round-trip: render(parse(src)) equals src.</desc>
+  <title id="title">sq-tasks: an operations board that stays human-editable while agents work it</title>
+  <desc id="desc">A backlog.md document shows queued and done tasks with checkboxes, headed source of truth; a band below proves the byte-exact round-trip: render(parse(src)) equals src.</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -13,10 +13,10 @@
 
   <rect width="1200" height="380" rx="26" fill="url(#bg)"/>
 
-  <!-- unit insignia: star in a ring -->
-  <g id="unit-patch" transform="translate(48 36)">
-    <circle r="16" fill="#0d0d12" stroke="#3a3a46" stroke-width="1.5"/>
-    <path d="M0 -8.5 L2.63 -2.63 L8.08 -2.63 L3.72 1.01 L5.31 6.87 L0 3.4 L-5.31 6.87 L-3.72 1.01 L-8.08 -2.63 L-2.63 -2.63 Z" fill="#c9cdd6"/>
+  <!-- product mark: completed task checkbox -->
+  <g id="product-mark" transform="translate(48 36)">
+    <rect x="-18" y="-18" width="36" height="36" rx="10" fill="#0d0d12" stroke="#3a3a46" stroke-width="1.5"/>
+    <path d="M -7 0.5 L -2.5 5 L 8 -5.5" fill="none" stroke="#c9cdd6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
   <!-- left: identity block -->
@@ -32,10 +32,7 @@
   <g id="backlog-card" transform="translate(640 44)">
     <rect width="500" height="292" rx="12" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
     <text x="24" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#f1f1f5">backlog.md</text>
-    <text x="476" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#8b8b98" text-anchor="end">order of battle</text>
-    <!-- map marker: unit position -->
-    <path d="M452 16 L462 26 L452 36 L442 26 Z" fill="none" stroke="#9aa0ac" stroke-width="1.5"/>
-    <circle cx="452" cy="26" r="2" fill="#c9cdd6"/>
+    <text x="476" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#8b8b98" text-anchor="end">source of truth</text>
     <line x1="16" y1="46" x2="484" y2="46" stroke="#2b2b35" stroke-width="1.5"/>
 
     <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">

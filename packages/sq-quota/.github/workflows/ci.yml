@@ -9,9 +9,9 @@ on:
     # pull_request run that can only sit in action_required. Its output set is
     # exactly these files, so excluding them means no run is ever created.
     paths-ignore:
-      - .release-please-manifest.json
-      - CHANGELOG.md
-      - package.json
+      - packages/sq-quota/.release-please-manifest.json
+      - packages/sq-quota/CHANGELOG.md
+      - packages/sq-quota/package.json
 
 jobs:
   build-and-test:

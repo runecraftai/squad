@@ -30,7 +30,7 @@ export function verifyRootReleaseVersion(rootDir = process.cwd(), expectedVersio
 	const manifest = readJson(path.join(rootDir, ".release-please-manifest.json"));
 	const packageJson = readJson(path.join(rootDir, "package.json"));
 	const versions = {
-		'.release-please-manifest.json["."]': manifest["."],
+		'.release-please-manifest.json["packages/pr-review"]': manifest["packages/pr-review"],
 		"package.json.version": packageJson.version,
 	};
 

@@ -41,7 +41,7 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
 ## Release and Packaging
 
 Releases are cut by release-please from Conventional Commits on `main`.
-When a release is created, the release workflow installs dependencies, builds, lints, tests, checks generated skill drift, and publishes with `npm publish --access public --provenance`.
+When a release is created, the monorepo release workflow (`.github/workflows/release.yml`) installs dependencies, builds, and publishes the package to npm with the `NPM_TOKEN` secret; public access and npm provenance stay enabled through `publishConfig`.
 
 The npm package intentionally ships runtime JavaScript only.
 Keep `package.json` `files` limited to `dist/**/*.js`, `skills/sq-tasks`, `LICENSE`, and `README.md`; TypeScript declarations and source maps stay local for development.

@@ -82,8 +82,11 @@ Any argv shape other than exactly one version flag falls through to `runAxiCli`,
 
 ### Release & packaging (mirrors the `*-axi` siblings)
 
-- **Published to npm as a public package** via `release-please` → `npm publish --access public --provenance` on a release commit (`.github/workflows/release-please.yml`); the commander can also `npm publish` manually. Conventional commits drive the version bump; `release-please-config.json` + `.release-please-manifest.json` own versioning and `CHANGELOG.md`.
-- Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`.release-please-manifest.json`, `CHANGELOG.md`, `package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
+- **Published to npm as a public package** on a release commit.
+  The monorepo `.github/workflows/release.yml` runs one release stream per package, and merging the bot's release PR triggers `npm publish` with the `NPM_TOKEN` secret (provenance stays enabled through `publishConfig`).
+  The commander can also `npm publish` manually.
+  Conventional commits drive the version bump; `release-please-config.json` + `.release-please-manifest.json` own versioning and `CHANGELOG.md`.
+- Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`packages/sq-tasks/.release-please-manifest.json`, `packages/sq-tasks/CHANGELOG.md`, `packages/sq-tasks/package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
 - **The tarball ships runtime JS only.** `package.json` `files` is `dist/**/*.js` (+ `skills/sq-tasks`, `LICENSE`, `README.md`), so the `.d.ts`/`.js.map` that `tsc` emits for local debugging are kept out of the package.
   `prepack` runs `npm run build`, so `npm pack`/`npm publish` always rebuild `dist` first.
   In a fresh clone, run `pnpm install --frozen-lockfile` before manual pack or publish.

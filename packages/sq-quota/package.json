@@ -51,7 +51,7 @@
     "lint": "eslint bin src test scripts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build"
   },
   "license": "MIT",
   "engines": {

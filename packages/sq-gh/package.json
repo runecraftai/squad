@@ -34,7 +34,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx bin/sq-gh.ts",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build"
   },
   "license": "MIT",
   "engines": {

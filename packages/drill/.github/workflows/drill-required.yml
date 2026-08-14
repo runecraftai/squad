@@ -10,8 +10,8 @@ on:
     # below cannot do this: it is evaluated inside a run, and a GITHUB_TOKEN PR's
     # run is created in action_required and never starts.
     paths-ignore:
-      - .release-please-manifest.json
-      - CHANGELOG.md
+      - packages/drill/.release-please-manifest.json
+      - packages/drill/CHANGELOG.md
 
 permissions:
   contents: read
