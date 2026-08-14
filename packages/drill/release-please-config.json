@@ -1,4 +1,5 @@
 {
+  "bootstrap-sha": "71715714efeea44e804152126f25c199a8ffe7fa",
   "packages": {
     "packages/drill": {
       "release-type": "go",

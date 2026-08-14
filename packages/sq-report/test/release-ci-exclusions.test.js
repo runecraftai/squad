@@ -15,19 +15,24 @@ const workflowsDir = join(root, ".github", "workflows");
  */
 function expectedReleaseOutputs() {
   const config = JSON.parse(readFileSync(join(root, "release-please-config.json"), "utf8"));
-  const pkg = config.packages?.["packages/sq-report"] ?? {};
+  const pkgKey = "packages/sq-report";
+  const pkg = config.packages?.[pkgKey];
+  if (!pkg) {
+    throw new Error(`release-please-config.json has no "${pkgKey}" package entry`);
+  }
+  const prefix = `${pkgKey}/`;
   const releaseType = pkg["release-type"] ?? config["release-type"] ?? "node";
-  const changelog = pkg["changelog-path"] ?? config["changelog-path"] ?? "CHANGELOG.md";
+  const changelog = prefix + (pkg["changelog-path"] ?? config["changelog-path"] ?? "CHANGELOG.md");
 
   const expected = [changelog];
   switch (releaseType) {
     case "simple":
-      expected.push(pkg["version-file"] ?? config["version-file"] ?? "version.txt");
+      expected.push(prefix + (pkg["version-file"] ?? config["version-file"] ?? "version.txt"));
       break;
     case "node":
-      expected.push("package.json");
+      expected.push(prefix + "package.json");
       if (existsSync(join(root, "package-lock.json"))) {
-        expected.push("package-lock.json");
+        expected.push(prefix + "package-lock.json");
       }
       break;
     case "go":
@@ -39,13 +44,16 @@ function expectedReleaseOutputs() {
   const extra = pkg["extra-files"] ?? config["extra-files"] ?? [];
   for (const entry of extra) {
     const path = typeof entry === "string" ? entry : entry?.path;
-    if (path) expected.push(path);
+    if (path) expected.push(path.includes("/") ? path : prefix + path);
   }
 
-  let manifest = ".release-please-manifest.json";
+  let manifest = prefix + ".release-please-manifest.json";
   const releaseWorkflow = readFileSync(join(workflowsDir, "release-please.yml"), "utf8");
   const manifestMatch = releaseWorkflow.match(/manifest-file:\s*(\S+)/);
-  if (manifestMatch) manifest = manifestMatch[1];
+  if (manifestMatch) {
+    const configured = manifestMatch[1];
+    manifest = configured.includes("/") ? configured : prefix + configured;
+  }
   expected.push(manifest);
 
   return [...new Set(expected)];
@@ -191,7 +199,12 @@ const expected = expectedReleaseOutputs();
 
 test("derives the node release-output set for this repository", () => {
   // plugin.json is an extra-file: release-please bumps its version alongside package.json.
-  assert.deepEqual(expected, ["CHANGELOG.md", "package.json", "plugin.json", ".release-please-manifest.json"]);
+  assert.deepEqual(expected, [
+    "packages/sq-report/CHANGELOG.md",
+    "packages/sq-report/package.json",
+    "packages/sq-report/plugin.json",
+    "packages/sq-report/.release-please-manifest.json",
+  ]);
 });
 
 test("every pull_request workflow ignores the full release-output set", () => {
@@ -228,10 +241,10 @@ test("does not attach path filters to non-pull_request triggers on ci.yml", () =
   assert.deepEqual(on.push, { branches: ["main"] });
   assert.deepEqual(on.pull_request.branches, ["main"]);
   assert.deepEqual(on.pull_request["paths-ignore"], [
-    ".release-please-manifest.json",
-    "CHANGELOG.md",
-    "package.json",
-    "plugin.json",
+    "packages/sq-report/.release-please-manifest.json",
+    "packages/sq-report/CHANGELOG.md",
+    "packages/sq-report/package.json",
+    "packages/sq-report/plugin.json",
   ]);
   assert.equal(on.release, undefined);
   assert.equal(on.workflow_dispatch, undefined);

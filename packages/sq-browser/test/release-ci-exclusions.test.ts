@@ -31,22 +31,31 @@ function expectedReleaseOutputs(): string[] {
       }
     >;
   };
-  const pkg = config.packages?.["."] ?? {};
+  const pkgKey = "packages/sq-browser";
+  const pkg = config.packages?.[pkgKey];
+  if (!pkg) {
+    throw new Error(
+      `release-please-config.json has no "${pkgKey}" package entry`,
+    );
+  }
+  const prefix = `${pkgKey}/`;
   const releaseType = pkg["release-type"] ?? config["release-type"] ?? "node";
   const changelog =
-    pkg["changelog-path"] ?? config["changelog-path"] ?? "CHANGELOG.md";
+    prefix +
+    (pkg["changelog-path"] ?? config["changelog-path"] ?? "CHANGELOG.md");
 
   const expected: string[] = [changelog];
   switch (releaseType) {
     case "simple":
       expected.push(
-        pkg["version-file"] ?? config["version-file"] ?? "version.txt",
+        prefix +
+          (pkg["version-file"] ?? config["version-file"] ?? "version.txt"),
       );
       break;
     case "node":
-      expected.push("package.json");
+      expected.push(prefix + "package.json");
       if (existsSync(join(root, "package-lock.json"))) {
-        expected.push("package-lock.json");
+        expected.push(prefix + "package-lock.json");
       }
       break;
     case "go":
@@ -60,16 +69,19 @@ function expectedReleaseOutputs(): string[] {
   const extra = pkg["extra-files"] ?? config["extra-files"] ?? [];
   for (const entry of extra) {
     const path = typeof entry === "string" ? entry : entry?.path;
-    if (path) expected.push(path);
+    if (path) expected.push(path.includes("/") ? path : prefix + path);
   }
 
-  let manifest = ".release-please-manifest.json";
+  let manifest = prefix + ".release-please-manifest.json";
   const releaseWorkflow = readFileSync(
     join(workflowsDir, "release-please.yml"),
     "utf8",
   );
   const manifestMatch = releaseWorkflow.match(/manifest-file:\s*(\S+)/);
-  if (manifestMatch) manifest = manifestMatch[1];
+  if (manifestMatch) {
+    const configured = manifestMatch[1];
+    manifest = configured.includes("/") ? configured : prefix + configured;
+  }
   expected.push(manifest);
 
   return [...new Set(expected)];
@@ -169,16 +181,16 @@ function allPathsIgnored(ignorePatterns: string[], paths: string[]): boolean {
 describe("release-please CI exclusions", () => {
   const expected = expectedReleaseOutputs();
   const ignoreSet = [
-    ".release-please-manifest.json",
-    "CHANGELOG.md",
-    "package.json",
+    "packages/sq-browser/.release-please-manifest.json",
+    "packages/sq-browser/CHANGELOG.md",
+    "packages/sq-browser/package.json",
   ];
 
   it("derives the node release-output set for this repository", () => {
     expect(expected).toEqual([
-      "CHANGELOG.md",
-      "package.json",
-      ".release-please-manifest.json",
+      "packages/sq-browser/CHANGELOG.md",
+      "packages/sq-browser/package.json",
+      "packages/sq-browser/.release-please-manifest.json",
     ]);
   });
 
@@ -245,9 +257,9 @@ describe("release-please CI exclusions", () => {
   it("offline filter: latest release PR file set is fully ignored", () => {
     // sq-browser #90 (release 0.1.28) - exact observed release-output set.
     const releasePrFiles = [
-      ".release-please-manifest.json",
-      "CHANGELOG.md",
-      "package.json",
+      "packages/sq-browser/.release-please-manifest.json",
+      "packages/sq-browser/CHANGELOG.md",
+      "packages/sq-browser/package.json",
     ];
     expect(allPathsIgnored(ignoreSet, releasePrFiles)).toBe(true);
   });

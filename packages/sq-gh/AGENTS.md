@@ -23,7 +23,7 @@ Releases are cut by release-please from conventional commit messages on `main`.
 The monorepo `.github/workflows/release.yml` runs one release stream per package (`packages/sq-gh/release-please-config.json` + `.release-please-manifest.json`), and merging the bot's release PR triggers `npm publish` with the `NPM_TOKEN` secret.
 Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json` (a guard workflow blocks PRs that touch them), and regenerate `skills/sq-gh/SKILL.md` with `pnpm run build:skill` instead of editing it directly.
 
-Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`.release-please-manifest.json`, `CHANGELOG.md`, `package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
+Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`packages/sq-gh/.release-please-manifest.json`, `packages/sq-gh/CHANGELOG.md`, `packages/sq-gh/package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
 
 ## GitHub Enterprise host support (`src/host.ts`, `src/cli.ts`)
 

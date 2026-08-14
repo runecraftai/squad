@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,7 +79,8 @@ describe("guard-generated-files workflow helper", () => {
     const repo = initRepo();
     writeFileSync(join(repo, "README.md"), "seed\n");
     const base = commit(repo, "seed");
-    writeFileSync(join(repo, ".release-please-manifest.json"), "{}\n");
+    mkdirSync(join(repo, "packages/sq-tasks"), { recursive: true });
+    writeFileSync(join(repo, "packages/sq-tasks/.release-please-manifest.json"), "{}\n");
     const head = commit(repo, "add manifest");
 
     const result = runGuard(repo, base, head);
@@ -92,7 +93,8 @@ describe("guard-generated-files workflow helper", () => {
     const repo = initRepo();
     writeFileSync(join(repo, "README.md"), "seed\n");
     const base = commit(repo, "seed");
-    writeFileSync(join(repo, "CHANGELOG.md"), "# Changelog\n");
+    mkdirSync(join(repo, "packages/sq-tasks"), { recursive: true });
+    writeFileSync(join(repo, "packages/sq-tasks/CHANGELOG.md"), "# Changelog\n");
     const head = commit(repo, "add changelog");
 
     const result = runGuard(repo, base, head);
@@ -104,9 +106,10 @@ describe("guard-generated-files workflow helper", () => {
   it("rejects deleting an existing generated file", () => {
     const repo = initRepo();
     writeFileSync(join(repo, "README.md"), "seed\n");
-    writeFileSync(join(repo, ".release-please-manifest.json"), "{}\n");
+    mkdirSync(join(repo, "packages/sq-tasks"), { recursive: true });
+    writeFileSync(join(repo, "packages/sq-tasks/.release-please-manifest.json"), "{}\n");
     const base = commit(repo, "seed");
-    rmSync(join(repo, ".release-please-manifest.json"));
+    rmSync(join(repo, "packages/sq-tasks/.release-please-manifest.json"));
     const head = commit(repo, "delete manifest");
 
     const result = runGuard(repo, base, head);
@@ -117,9 +120,10 @@ describe("guard-generated-files workflow helper", () => {
 
   it("rejects renaming an existing generated file", () => {
     const repo = initRepo();
-    writeFileSync(join(repo, "CHANGELOG.md"), "# Changelog\n");
+    mkdirSync(join(repo, "packages/sq-tasks"), { recursive: true });
+    writeFileSync(join(repo, "packages/sq-tasks/CHANGELOG.md"), "# Changelog\n");
     const base = commit(repo, "seed changelog");
-    git(repo, ["mv", "CHANGELOG.md", "NOTES.md"]);
+    git(repo, ["mv", "packages/sq-tasks/CHANGELOG.md", "packages/sq-tasks/NOTES.md"]);
     const head = commit(repo, "rename changelog");
 
     const result = runGuard(repo, base, head);
@@ -130,11 +134,12 @@ describe("guard-generated-files workflow helper", () => {
 
   it("rejects copying an existing file into a generated path", () => {
     const repo = initRepo();
-    writeFileSync(join(repo, "README.md"), '{"."":"0.1.0"}\n');
+    writeFileSync(join(repo, "README.md"), '{".":"0.1.0"}\n');
     const base = commit(repo, "seed");
+    mkdirSync(join(repo, "packages/sq-tasks"), { recursive: true });
     writeFileSync(
-      join(repo, ".release-please-manifest.json"),
-      '{"."":"0.1.0"}\n',
+      join(repo, "packages/sq-tasks/.release-please-manifest.json"),
+      '{".":"0.1.0"}\n',
     );
     const head = commit(repo, "copy manifest");
 

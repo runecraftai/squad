@@ -9,9 +9,9 @@ on:
     # below cannot do this: it is evaluated inside a run, and a GITHUB_TOKEN PR's
     # run is created in action_required and never starts.
     paths-ignore:
-      - .release-please-manifest.json
-      - CHANGELOG.md
-      - package.json
+      - packages/sq-tasks/.release-please-manifest.json
+      - packages/sq-tasks/CHANGELOG.md
+      - packages/sq-tasks/package.json
 
 permissions:
   contents: read
