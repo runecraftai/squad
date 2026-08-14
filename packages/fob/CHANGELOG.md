@@ -4,7 +4,7 @@
 
 ### Features
 
-* **fob:** build vendored fob from source instead of downloading a pinned release ([#26](https://github.com/runecraftai/squad/issues/26)) ([371ae46](https://github.com/runecraftai/squad/commit/371ae46205224c7358edca73084053be99c7812a))
+* **fob:** build fob from source at install time, reporting an accurate version from the source tree ([#26](https://github.com/runecraftai/squad/issues/26)) ([371ae46](https://github.com/runecraftai/squad/commit/371ae46205224c7358edca73084053be99c7812a))
 
 ### Bug Fixes
 
