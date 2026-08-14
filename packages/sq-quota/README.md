@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="sq-quota: local agent-provider quota windows, reported in one call" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="sq-quota: ammunition stock report for local agent-provider quota windows" />
 </p>
 
 <h1 align="center">sq-quota</h1>
@@ -9,6 +9,8 @@
   <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=ci" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
+
+<h3 align="center">Know your stock before you spend.</h3>
 
 Quota CLI for agents, part of the [Squad](https://github.com/runecraftai/squad) monorepo.
 

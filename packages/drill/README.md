@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="drill: push through a local AI validation gate and land a clean PR" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="drill: run your push through a local AI validation exercise and land a clean PR" />
 </p>
 
 <h1 align="center"><code>git push drill</code></h1>
@@ -17,7 +17,7 @@
   /></a>
 </p>
 
-<h3 align="center">Kill all the slop. Raise clean PR.</h3>
+<h3 align="center">Kill all the slop. Land the clean PR.</h3>
 
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 

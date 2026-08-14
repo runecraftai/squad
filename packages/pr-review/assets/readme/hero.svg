@@ -1,67 +1,75 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="360" viewBox="0 0 1200 360"
      role="img" aria-labelledby="title desc">
-  <title id="title">pr-review: parallel, tiered code review for GitHub pull requests in Pi</title>
-  <desc id="desc">Five review passes run in parallel: overview, correctness, contracts, security and performance, and resources. Their findings are validated and merge into one structured review that posts COMMENT-only.</desc>
+  <title id="title">pr-review: armament inspection for a GitHub pull request - parallel passes, validated findings, COMMENT-only publishing</title>
+  <desc id="desc">Five inspection passes run in parallel: overview, correctness, contracts, security and performance, and resources. Their findings are validated and merge into one structured review that posts COMMENT-only.</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#101216"/>
-      <stop offset="1" stop-color="#0c0e12"/>
+      <stop offset="0" stop-color="#0b0b0e"/>
+      <stop offset="1" stop-color="#050507"/>
     </linearGradient>
   </defs>
 
   <rect width="1200" height="360" rx="26" fill="url(#bg)"/>
 
-  <!-- left: identity block -->
-  <g id="title-block" transform="translate(56 96)">
-    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#9aa1af" letter-spacing="2">PARALLEL PR REVIEW · PI PACKAGE</text>
-    <text x="0" y="88" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="80" font-weight="700" fill="#e8eaf0">pr-review</text>
-    <text x="0" y="134" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c6cad4">Five focused passes run in parallel on your PR.</text>
-    <text x="0" y="164" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c6cad4">Findings are validated before they reach you.</text>
-    <text x="0" y="226" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#9aa1af">@runecraft/pr-review · /pr-review &lt;n&gt;</text>
+  <!-- unit insignia: star in a ring -->
+  <g id="unit-patch" transform="translate(48 36)">
+    <circle r="16" fill="#0d0d12" stroke="#3a3a46" stroke-width="1.5"/>
+    <path d="M0 -8.5 L2.63 -2.63 L8.08 -2.63 L3.72 1.01 L5.31 6.87 L0 3.4 L-5.31 6.87 L-3.72 1.01 L-8.08 -2.63 L-2.63 -2.63 Z" fill="#c9cdd6"/>
   </g>
 
-  <!-- right: parallel lanes -->
+  <!-- left: identity block -->
+  <g id="title-block" transform="translate(56 96)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#9b9ba8" letter-spacing="2">ARMAMENT INSPECTION · PR REVIEW</text>
+    <text x="0" y="88" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="80" font-weight="700" fill="#f1f1f5">pr-review</text>
+    <text x="0" y="134" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9c9d2">Five inspection passes run in parallel.</text>
+    <text x="0" y="164" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9c9d2">Findings validated before they reach you.</text>
+    <text x="0" y="226" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#8b8b98">@runecraft/pr-review · /pr-review &lt;n&gt;</text>
+  </g>
+
+  <!-- right: inspection lanes -->
   <g id="lanes" transform="translate(620 44)">
     <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">
       <g id="lane-1" transform="translate(0 0)">
-        <rect width="520" height="34" rx="8" fill="#1a1d24" stroke="#2e333d" stroke-width="1.5"/>
-        <circle cx="22" cy="17" r="5" fill="#a78bfa"/>
-        <text x="40" y="22" fill="#e8eaf0">overview</text>
-        <text x="500" y="22" fill="#9aa1af" text-anchor="end">light</text>
+        <rect width="520" height="34" rx="8" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
+        <circle cx="22" cy="17" r="5" fill="#c9cdd6"/>
+        <text x="40" y="22" fill="#f1f1f5">overview</text>
+        <text x="500" y="22" fill="#8b8b98" text-anchor="end">light</text>
       </g>
       <g id="lane-2" transform="translate(0 42)">
-        <rect width="520" height="34" rx="8" fill="#1a1d24" stroke="#2e333d" stroke-width="1.5"/>
-        <circle cx="22" cy="17" r="5" fill="#a78bfa"/>
-        <text x="40" y="22" fill="#e8eaf0">correctness</text>
-        <text x="500" y="22" fill="#9aa1af" text-anchor="end">heavy</text>
+        <rect width="520" height="34" rx="8" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
+        <circle cx="22" cy="17" r="5" fill="#c9cdd6"/>
+        <text x="40" y="22" fill="#f1f1f5">correctness</text>
+        <text x="500" y="22" fill="#8b8b98" text-anchor="end">heavy</text>
       </g>
       <g id="lane-3" transform="translate(0 84)">
-        <rect width="520" height="34" rx="8" fill="#1a1d24" stroke="#2e333d" stroke-width="1.5"/>
-        <circle cx="22" cy="17" r="5" fill="#a78bfa"/>
-        <text x="40" y="22" fill="#e8eaf0">contracts</text>
-        <text x="500" y="22" fill="#9aa1af" text-anchor="end">heavy</text>
+        <rect width="520" height="34" rx="8" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
+        <circle cx="22" cy="17" r="5" fill="#c9cdd6"/>
+        <text x="40" y="22" fill="#f1f1f5">contracts</text>
+        <text x="500" y="22" fill="#8b8b98" text-anchor="end">heavy</text>
       </g>
       <g id="lane-4" transform="translate(0 126)">
-        <rect width="520" height="34" rx="8" fill="#1a1d24" stroke="#2e333d" stroke-width="1.5"/>
-        <circle cx="22" cy="17" r="5" fill="#a78bfa"/>
-        <text x="40" y="22" fill="#e8eaf0">security + performance</text>
-        <text x="500" y="22" fill="#9aa1af" text-anchor="end">heavy</text>
+        <rect width="520" height="34" rx="8" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
+        <circle cx="22" cy="17" r="5" fill="#c9cdd6"/>
+        <text x="40" y="22" fill="#f1f1f5">security + performance</text>
+        <text x="500" y="22" fill="#8b8b98" text-anchor="end">heavy</text>
       </g>
       <g id="lane-5" transform="translate(0 168)">
-        <rect width="520" height="34" rx="8" fill="#1a1d24" stroke="#2e333d" stroke-width="1.5"/>
-        <circle cx="22" cy="17" r="5" fill="#a78bfa"/>
-        <text x="40" y="22" fill="#e8eaf0">resources</text>
-        <text x="500" y="22" fill="#9aa1af" text-anchor="end">heavy</text>
+        <rect width="520" height="34" rx="8" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
+        <circle cx="22" cy="17" r="5" fill="#c9cdd6"/>
+        <text x="40" y="22" fill="#f1f1f5">resources</text>
+        <text x="500" y="22" fill="#8b8b98" text-anchor="end">heavy</text>
       </g>
     </g>
 
-    <line x1="260" y1="206" x2="260" y2="222" stroke="#a78bfa" stroke-width="3"/>
-    <path d="M254 218 L260 228 L266 218" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="260" y1="206" x2="260" y2="222" stroke="#c9cdd6" stroke-width="3"/>
+    <path d="M254 218 L260 228 L266 218" fill="none" stroke="#c9cdd6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 
-    <rect y="230" width="520" height="52" rx="10" fill="#1d1830" stroke="#4c3a8f" stroke-width="1.5"/>
-    <text x="24" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#c4b5fd">findings validated → review</text>
-    <text x="496" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#a78bfa" text-anchor="end">COMMENT only</text>
+    <!-- inspection stamp -->
+    <rect y="230" width="520" height="52" rx="10" fill="#0d0d12" stroke="#c9cdd6" stroke-width="1.5"/>
+    <rect x="8" y="238" width="504" height="36" rx="6" fill="none" stroke="#9aa0ac" stroke-width="1" stroke-dasharray="7 5"/>
+    <text x="24" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#c9cdd6">findings validated → review</text>
+    <text x="496" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#c9cdd6" text-anchor="end">COMMENT only</text>
   </g>
 </svg>

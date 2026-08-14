@@ -2,49 +2,66 @@
      width="1200" height="380" viewBox="0 0 1200 380"
      role="img" aria-labelledby="title desc">
   <title id="title">sq-browser: a Chrome session your agent can drive from the terminal</title>
-  <desc id="desc">A browser window shows an opened page with an accessibility snapshot, an element ref uid=g1:1, and a next-step hint to click it.</desc>
+  <desc id="desc">A browser window shows an opened page with an accessibility snapshot, an element ref uid=g1:1, and a next-step hint to click it; a scope reticle marks the recon target.</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f172a"/>
-      <stop offset="1" stop-color="#0b1120"/>
+      <stop offset="0" stop-color="#0b0b0e"/>
+      <stop offset="1" stop-color="#050507"/>
     </linearGradient>
   </defs>
 
   <rect width="1200" height="380" rx="26" fill="url(#bg)"/>
 
+  <!-- unit insignia: star in a ring -->
+  <g id="unit-patch" transform="translate(48 36)">
+    <circle r="16" fill="#0d0d12" stroke="#3a3a46" stroke-width="1.5"/>
+    <path d="M0 -8.5 L2.63 -2.63 L8.08 -2.63 L3.72 1.01 L5.31 6.87 L0 3.4 L-5.31 6.87 L-3.72 1.01 L-8.08 -2.63 L-2.63 -2.63 Z" fill="#c9cdd6"/>
+  </g>
+
   <!-- left: identity block -->
   <g id="title-block" transform="translate(64 104)">
-    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#94a3b8" letter-spacing="2">BROWSER AUTOMATION FOR AGENTS</text>
-    <text x="0" y="94" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="88" font-weight="700" fill="#e2e8f0">sq-browser</text>
-    <text x="0" y="144" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#cbd5e1">One command opens a page, snapshots it,</text>
-    <text x="0" y="174" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#cbd5e1">and tells the agent what to click next.</text>
-    <text x="0" y="240" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#94a3b8">open · snapshot · click · eval · lighthouse</text>
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#9b9ba8" letter-spacing="2">RECON · BROWSER OBSERVATION</text>
+    <text x="0" y="94" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="88" font-weight="700" fill="#f1f1f5">sq-browser</text>
+    <text x="0" y="144" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9c9d2">One command puts eyes on the page,</text>
+    <text x="0" y="174" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9c9d2">snapshots it, and names the next move.</text>
+    <text x="0" y="240" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8b8b98">open · snapshot · click · eval · lighthouse</text>
   </g>
 
   <!-- right: browser window -->
   <g id="browser" transform="translate(636 40)">
-    <rect width="510" height="300" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+    <rect width="510" height="300" rx="14" fill="#111116" stroke="#2b2b35" stroke-width="1.5"/>
     <circle cx="24" cy="22" r="6" fill="#ff5f57"/>
     <circle cx="48" cy="22" r="6" fill="#febc2e"/>
     <circle cx="72" cy="22" r="6" fill="#28c840"/>
-    <text x="104" y="27" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="14" fill="#94a3b8">sq-browser</text>
+    <text x="104" y="27" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="14" fill="#8b8b98">sq-browser</text>
 
-    <rect x="16" y="42" width="478" height="34" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1"/>
-    <text x="32" y="63" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#cbd5e1">https://example.com</text>
-    <line x1="16" y1="86" x2="494" y2="86" stroke="#334155" stroke-width="1.5"/>
+    <rect x="16" y="42" width="478" height="34" rx="8" fill="#0b0b0e" stroke="#2b2b35" stroke-width="1"/>
+    <text x="32" y="63" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#c9c9d2">https://example.com</text>
+    <line x1="16" y1="86" x2="494" y2="86" stroke="#2b2b35" stroke-width="1.5"/>
 
-    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">
-      <text x="24" y="116" fill="#94a3b8">page: {title: "Example Domain", refs: 1}</text>
-      <text x="24" y="142" fill="#e2e8f0">snapshot:</text>
-      <text x="24" y="168" fill="#e2e8f0">RootWebArea "Example Domain"</text>
-      <text x="40" y="192" fill="#e2e8f0">heading "Example Domain"</text>
-      <text x="40" y="216" fill="#e2e8f0">link "More information..."</text>
-      <text x="330" y="216" fill="#38bdf8">uid=g1:1</text>
+    <!-- scope reticle over the recon target -->
+    <g transform="translate(255 168)" opacity="0.55">
+      <circle r="64" fill="none" stroke="#c9cdd6" stroke-width="1" opacity="0.45"/>
+      <circle r="46" fill="none" stroke="#c9cdd6" stroke-width="1" opacity="0.3"/>
+      <line x1="0" y1="-78" x2="0" y2="-66" stroke="#c9cdd6" stroke-width="1.5"/>
+      <line x1="0" y1="66" x2="0" y2="78" stroke="#c9cdd6" stroke-width="1.5"/>
+      <line x1="-78" y1="0" x2="-66" y2="0" stroke="#c9cdd6" stroke-width="1.5"/>
+      <line x1="66" y1="0" x2="78" y2="0" stroke="#c9cdd6" stroke-width="1.5"/>
+      <circle r="2.5" fill="#c9cdd6"/>
     </g>
 
-    <rect x="24" y="236" width="462" height="50" rx="10" fill="#0c4a6e" opacity="0.5"/>
-    <text x="40" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#7dd3fc">help[1]:</text>
-    <text x="40" y="278" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#7dd3fc">Run `sq-browser click @g1:1` to click the link</text>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">
+      <text x="24" y="116" fill="#8b8b98">page: {title: "Example Domain", refs: 1}</text>
+      <text x="24" y="142" fill="#f1f1f5">snapshot:</text>
+      <text x="24" y="168" fill="#f1f1f5">RootWebArea "Example Domain"</text>
+      <text x="40" y="192" fill="#f1f1f5">heading "Example Domain"</text>
+      <text x="40" y="216" fill="#f1f1f5">link "More information..."</text>
+      <text x="330" y="216" fill="#c9cdd6">uid=g1:1</text>
+    </g>
+
+    <rect x="24" y="236" width="462" height="50" rx="10" fill="#16161d" stroke="#3a3a46" stroke-width="1.5"/>
+    <text x="40" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#c9cdd6">help[1]:</text>
+    <text x="40" y="278" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#c9cdd6">Run `sq-browser click @g1:1` to click the link</text>
   </g>
 </svg>

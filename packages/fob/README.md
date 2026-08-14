@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="fob: a reusable pool of clean git worktrees for your agents" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="fob: a forward operating base of clean git worktrees for your agents" />
 </p>
 
 <h1 align="center">fob</h1>
@@ -9,7 +9,7 @@
   <a href="https://discord.gg/BW4aJuQhTf"><img alt="Discord" src="https://img.shields.io/discord/1439901831038763092?style=flat-square&label=discord" /></a>
 </p>
 
-<h3 align="center">Manage worktrees without managing worktrees.</h3>
+<h3 align="center">Forward base for every agent. Clean worktrees on demand.</h3>
 
 Every agent session needs its own clean copy of the repo.
 Clone it fresh each time and you pay for reinstalls and rebuilds every run.
