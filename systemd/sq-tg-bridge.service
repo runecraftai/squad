@@ -25,7 +25,7 @@ Description=Squad Telegram bridge (local Relay connector)
 [Service]
 Type=simple
 Environment=SQUAD_BASE=%h/Projects/squad
-ExecStart=/usr/bin/env python3 %h/Projects/squad/bin/sq-tg-bridge.py
+ExecStart=/usr/bin/env python3 ${SQUAD_BASE}/bin/sq-tg-bridge.py
 Restart=on-failure
 RestartSec=5
 

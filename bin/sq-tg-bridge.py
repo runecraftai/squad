@@ -79,7 +79,7 @@ Concurrency: the connector runs on a ThreadingHTTPServer (one handler thread
 per request) and the getUpdates long-poll runs on its own thread, so a slow or
 stalled Telegram call never blocks the HTTP accept loop or another request.
 Outbound sendMessage/sendPhoto calls are capped at TG_BRIDGE_SEND_TIMEOUT
-(default 10s) so a stalled Telegram API surfaces as the contract's 502 - and a
+(default 8s) so a stalled Telegram API surfaces as the contract's 502 - and a
 still-pending request - inside the Squad client's own request budget instead of
 hanging the answer past it.  The long-poll getUpdates keeps its own 35s cap
 (30s poll + margin).
@@ -102,7 +102,7 @@ Config (env wins over file; file wins over default):
   TG_BRIDGE_NOW_OVERRIDE     test seam: epoch seconds replacing the wall clock
                              for follow-up window math (same role as
                              SQX_NOW_OVERRIDE in bin/sq-x-lib.sh)
-  TG_BRIDGE_SEND_TIMEOUT     per-send HTTP cap in seconds (default 10; must be
+  TG_BRIDGE_SEND_TIMEOUT     per-send HTTP cap in seconds (default 8; must be
                              positive)
 
 Usage: sq-tg-bridge.py [--help] [--config FILE] [--bind ADDR] [--port N]
@@ -136,7 +136,7 @@ REPLY_MAX_CHARS = 4096                # Telegram's per-message character budget
 MAX_BODY_BYTES = 64 * 1024 * 1024     # connector POST body cap (image base64)
 GETUPDATES_TIMEOUT = 30               # Telegram long-poll seconds
 HTTP_TIMEOUT = 35                     # outbound HTTP cap (long-poll + margin)
-SEND_TIMEOUT = 10                     # per-send cap: a stalled Telegram API
+SEND_TIMEOUT = 8                      # per-send cap: a stalled Telegram API
                                       # must surface as the contract's 502
                                       # inside the client's request budget
 

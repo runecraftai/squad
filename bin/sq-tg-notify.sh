@@ -11,7 +11,8 @@
 #
 # Config comes from the base's gitignored config/telegram-bridge.env, the same
 # file the bridge uses: TG_BOT_TOKEN (required) and TG_ALLOWED_CHAT_IDS
-# (required; the first id is the mirror target).  The base home resolves like
+# (required; the first id is the mirror target).  The file holds plain
+# unquoted KEY=VALUE lines, one per setting.  The base home resolves like
 # the other sq-* scripts: $SQUAD_BASE, then legacy $SQUAD_HOME, then this repo
 # root.  Fail-closed: missing or unreadable config exits 1 with the reason on
 # stderr and sends nothing.

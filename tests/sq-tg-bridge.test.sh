@@ -1056,6 +1056,7 @@ test_slow_send_times_out_with_502_and_stays_pending() {
     "the connector must keep serving other requests while a send is stalled"
   wait "$answer_pid"
   rm -f "$fake_dir/very-slow-sends"
+  touch "$fake_dir/sent.log"
   elapsed=$(( $(date +%s) - start_ts ))
   expect_code 502 "$(cat "$home/answer.code")" \
     "a send that outlives the send cap must surface as the 502 contract"
@@ -1066,13 +1067,27 @@ test_slow_send_times_out_with_502_and_stays_pending() {
     "the timed-out answer must leave the request pending"
   [ "$(jq -r '.request_id' "$home/body.json")" = "$rid" ] \
     || fail "the same request must be re-offered after the timed-out answer"
+  local deadline count first_line last_line
+  deadline=$(( $(date +%s) + 15 ))
+  while [ "$(jq -s 'length' "$fake_dir/sent.log")" -lt 1 ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "the timed-out send never reached the fake server"
+    sleep 0.2
+  done
   expect_code 200 "$(bridge_post "$url" answer \
     "{\"request_id\":\"$rid\",\"text\":\"resposta\"}")" \
     "a retry after the timeout must post"
-  local count
+  deadline=$(( $(date +%s) + 10 ))
+  while [ "$(jq -s 'length' "$fake_dir/sent.log")" -lt 2 ]; do
+    [ "$(date +%s)" -lt "$deadline" ] || fail "the retry never reached the fake server"
+    sleep 0.2
+  done
   count=$(jq -s 'length' "$fake_dir/sent.log")
-  expect_code 1 "$count" "only the successful retry may reach Telegram"
-  pass "a stalled Telegram send times out into the 502 contract, keeps serving, and stays pending"
+  expect_code 2 "$count" "the timed-out send and the retry must each reach Telegram exactly once"
+  first_line=$(head -1 "$fake_dir/sent.log" | jq -r '.sent_message_id')
+  last_line=$(tail -1 "$fake_dir/sent.log" | jq -r '.sent_message_id')
+  [ "$last_line" -gt "$first_line" ] \
+    || fail "the last Telegram post must be the retry's, after the timed-out send's record"
+  pass "a stalled Telegram send times out into the 502 contract, keeps serving, and stays pending; the timed-out send may still land once at Telegram, and the bridge itself never re-sends"
 }
 
 # ---------------------------------------------------------------------------
