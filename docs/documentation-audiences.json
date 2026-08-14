@@ -377,6 +377,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/playwright-validation.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/remote-XOs.md",
       "audience": "operator-current"
     },
