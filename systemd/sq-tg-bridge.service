@@ -21,7 +21,6 @@
 
 [Unit]
 Description=Squad Telegram bridge (local Relay connector)
-Documentation=docs/configuration.md
 
 [Service]
 Type=simple
