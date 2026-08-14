@@ -318,14 +318,14 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 
 	if bare, err := lastBareJSONObject(text, validationSchema); err == nil && bare != nil {
 		return bare, nil
-	} else if candidateErr == nil && err != nil {
+	} else if candidateErr == nil && err != nil && !isJSONSyntaxError(err) {
 		candidateErr = err
 	}
 
 	if candidateErr != nil {
 		return nil, candidateErr
 	}
-	if fallback, ok := plainTextRoundSummary(text, schema); ok {
+	if fallback, ok := plainTextRoundSummary(text, schema, rawErr); ok {
 		return fallback, nil
 	}
 	return nil, rawErr
@@ -342,8 +342,11 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 // non-JSON output. Text that looks like an attempted JSON payload (a leading
 // brace or bracket) is never synthesized over: the caller's parse error
 // surfaces as a clear failure instead of silently swallowing malformed JSON.
-func plainTextRoundSummary(text string, schema json.RawMessage) (json.RawMessage, bool) {
+func plainTextRoundSummary(text string, schema json.RawMessage, rawErr error) (json.RawMessage, bool) {
 	if !isSummaryOnlySchema(schema) {
+		return nil, false
+	}
+	if !isJSONSyntaxError(rawErr) {
 		return nil, false
 	}
 	trimmed := strings.TrimSpace(text)
@@ -602,7 +605,8 @@ func indexJSONFenceClose(text string) (int, int) {
 // reasoning prose followed by a raw JSON answer, with no code fence.
 func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, error) {
 	var last json.RawMessage
-	var lastErr error
+	var validationErr error
+	var syntaxErr error
 	for i := 0; i < len(text); i++ {
 		if strings.HasPrefix(text[i:], "```") {
 			if !isFenceOpener(text, i) {
@@ -636,16 +640,32 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 		obj, err := parseStructuredCandidate([]byte(candidate), schema)
 		if err == nil {
 			last = obj
-			lastErr = nil
-		} else if lastErr == nil {
-			lastErr = err
+			validationErr = nil
+			syntaxErr = nil
+		} else if isJSONSyntaxError(err) {
+			if syntaxErr == nil {
+				syntaxErr = err
+			}
+		} else if validationErr == nil {
+			validationErr = err
 		}
 		i = end - 1
 	}
 	if last != nil {
 		return last, nil
 	}
-	return nil, lastErr
+	if validationErr != nil {
+		return nil, validationErr
+	}
+	return nil, syntaxErr
+}
+
+// isJSONSyntaxError reports whether err is a JSON syntax error (the candidate
+// is not valid JSON) rather than a schema-validation failure (the candidate
+// parses as JSON but violates the schema).
+func isJSONSyntaxError(err error) bool {
+	var syntaxErr *json.SyntaxError
+	return errors.As(err, &syntaxErr)
 }
 
 // scanBalancedObject returns the exclusive end index of a brace-balanced

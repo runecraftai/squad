@@ -541,6 +541,63 @@ func TestFinalizeTextResult_WithSchemaMalformedJSONStillFailsLoudly(t *testing.T
 	}
 }
 
+// TestFinalizeTextResult_WithSchemaProseBraceFragmentBecomesRoundSummary
+// covers realistic fixer prose that contains balanced non-JSON brace
+// fragments ("Changed {opencode -> codex} handling in matrix.ts"). The
+// fragment is not an attempted JSON payload - it is not parseable JSON and it
+// is not fenced - so the round must still complete with the prose synthesized
+// as the round summary; failing here would lose the same applied fixes the
+// prose fallback exists to protect.
+func TestFinalizeTextResult_WithSchemaProseBraceFragmentBecomesRoundSummary(t *testing.T) {
+	text := "Changed {opencode -> codex} handling in matrix.ts"
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != text {
+		t.Errorf("expected prose with brace fragment to become the round summary, got %q", output.Summary)
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaBareNonObjectPayloadStillFailsLoudly keeps
+// the prose fallback from swallowing parseable-but-schema-invalid payloads: a
+// bare string is valid JSON that is not a summary object, and a bare object
+// missing the required "summary" property is an attempted JSON payload. Both
+// must keep failing loudly instead of being synthesized over.
+func TestFinalizeTextResult_WithSchemaBareNonObjectPayloadStillFailsLoudly(t *testing.T) {
+	for _, text := range []string{`"hello"`, `{"done":true}`} {
+		_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+		if err == nil {
+			t.Errorf("expected output parse failure for %q", text)
+			continue
+		}
+		if !strings.Contains(err.Error(), "output parse") {
+			t.Errorf("expected parse error for %q, got: %v", text, err)
+		}
+	}
+}
+
+// TestFinalizeTextResult_WithSchemaFencedMalformedJSONStaysLoud keeps the
+// fenced-payload guard intact: a ```json fence whose body does not parse is
+// an attempted JSON payload and must fail loudly, never be synthesized over
+// as a round summary.
+func TestFinalizeTextResult_WithSchemaFencedMalformedJSONStaysLoud(t *testing.T) {
+	text := "Round complete.\n\n```json\n{\"summary\": broken\n```\n"
+	_, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected fenced malformed JSON to fail")
+	}
+	if !strings.Contains(err.Error(), "output parse") {
+		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
 // TestFinalizeTextResult_WithSchemaProseFallbackScopedToSummaryShape proves
 // the prose fallback never leaks into structured-output rounds: a findings
 // shaped schema (review, lint, test, document) must still fail loudly on
