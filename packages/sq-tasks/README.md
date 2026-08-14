@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="sq-tasks: a task backlog that stays human-editable while agents work it" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="sq-tasks: an operations board that stays human-editable while agents work it" />
 </p>
 
 <h1 align="center">sq-tasks</h1>
@@ -9,6 +9,8 @@
   <a href="https://github.com/runecraftai/squad/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runecraftai/squad/ci.yml?style=flat-square&label=ci" /></a>
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
+
+<h3 align="center">The operations board agents and humans share.</h3>
 
 Task and backlog manager for agents, part of the [Squad](https://github.com/runecraftai/squad) monorepo.
 
