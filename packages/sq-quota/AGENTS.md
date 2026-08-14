@@ -54,9 +54,11 @@ pnpm run build:skill -- --check
 
 ## Release process
 
-Releases are cut by release-please from conventional commit messages on `main`; merging the bot's release PR triggers `npm publish` via `.github/workflows/release-please.yml`, using npm's OIDC trusted-publisher flow (`id-token: write` + `--provenance`), not an `NPM_TOKEN` secret.
-`.release-please-manifest.json` is primed at `0.1.0`, the version already published to npm by hand before release-please was wired up; release-please owns every version after that.
-`release-please-config.json` intentionally sets `bootstrap-sha` to `9f5dc949c50ab8ac0a441be777e1c3693ee0b612`, the commit that produced the already-published npm `0.1.0`; do not retarget it to later scaffolding commits unless the published baseline itself is being corrected.
+Releases are cut by release-please from conventional commit messages on `main`.
+The monorepo `.github/workflows/release.yml` runs one release stream per package (`packages/sq-quota/release-please-config.json` + `.release-please-manifest.json`), and merging the bot's release PR triggers `npm publish` with the `NPM_TOKEN` secret.
+`.release-please-manifest.json` is primed at `0.1.0`, matching the package version.
+Nothing has been published to npm yet (`sq-quota` is free on npm), so the first publish happens only after the commander approves and the `NPM_TOKEN` secret exists; release-please owns every version after that.
+`release-please-config.json` keeps the `bootstrap-sha` inherited from the vendored upstream config (`9f5dc949c50ab8ac0a441be777e1c3693ee0b612`, a commit outside this repo's history); do not retarget it to later scaffolding commits unless the published baseline itself is being corrected.
 Do not hand-edit `CHANGELOG.md` or `.release-please-manifest.json` (a guard workflow blocks PRs that touch them), and regenerate `skills/sq-quota/SKILL.md` with `pnpm run build:skill` instead of editing it directly (`pnpm run build:skill -- --check` in CI fails if it drifts from `src/skill.ts`).
 Every `pull_request` workflow must `paths-ignore` the release-please output set (`.release-please-manifest.json`, `CHANGELOG.md`, `package.json`) so release PRs create zero runs; `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts.
 

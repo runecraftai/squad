@@ -42,7 +42,7 @@ See the [drill quick start](https://github.com/runecraftai/squad) for the full f
 - Do not bump `package.json`'s `version` by hand for ordinary changes.
   release-please updates it in the release PR.
 - Do not change `release-please-config.json`'s `bootstrap-sha` for ordinary changes.
-  It points at commit `9f5dc949c50ab8ac0a441be777e1c3693ee0b612`, the published npm `0.1.0` baseline.
+  It is inherited from the vendored upstream config (commit `9f5dc949c50ab8ac0a441be777e1c3693ee0b612`, outside this repo's history).
 - Do not hand-edit `skills/sq-quota/SKILL.md`.
   It is generated from the shared skill source, including frontmatter metadata; run `pnpm run build:skill` and commit the result.
 - sq-quota is data only: it must never route, recommend, proxy, intercept, log in, import browser cookies, or mutate provider state. Keep changes within that boundary.
