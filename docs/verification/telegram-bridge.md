@@ -23,6 +23,8 @@ bash tests/sq-tg-bridge.test.sh
 bash tests/sq-tg-notify.test.sh
 ```
 
+The cases below are the relevant lines excerpted from those suites' full `ok` output (the bridge suite runs 30 cases, the mirror suite 7):
+
 ```
 ok - a stalled Telegram send times out into the 502 contract, keeps serving, and stays pending
 ok - concurrent answers cannot double-post a thread

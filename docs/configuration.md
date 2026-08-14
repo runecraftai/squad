@@ -588,6 +588,7 @@ TG_BRIDGE_BIND=127.0.0.1   # Telegram bridge: connector listen address
 TG_BRIDGE_PORT=8787     # Telegram bridge: connector listen port (0 = ephemeral)
 TG_BRIDGE_CONFIG=        # Telegram bridge: alternate env file (default <SQUAD_BASE>/config/telegram-bridge.env)
 TG_BRIDGE_STATE_FILE=    # Telegram bridge: alternate runtime state file (default <SQUAD_BASE>/state/telegram-bridge/state.json)
+TG_BRIDGE_SEND_TIMEOUT=8   # Telegram bridge: per-send HTTP cap in seconds (default 8; must be positive)
 SQUAD_PF_RETRY_BACKOFF_SECS=900   # seconds before the next attempt after a retryable promised-public-reply delivery error
 SQUAD_LOCK_STALE_AFTER=2   # seconds before dead-pid lock records can be reclaimed; mid-acquire locks keep at least 2s grace
 SQUAD_GUARD_GRACE=300      # seconds before guard warnings, arm health checks, and the primary turn-end guard treat a sentry beacon as stale
