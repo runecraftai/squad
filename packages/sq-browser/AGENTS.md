@@ -28,7 +28,7 @@ Its frontmatter includes Hermes Agent metadata from `src/skill.ts`; update the g
 - Every `pull_request` workflow (`ci.yml`, `guard-generated-files.yml`, `drill-required.yml`) uses `paths-ignore` for the release-please output set (`packages/sq-browser/.release-please-manifest.json`, `packages/sq-browser/CHANGELOG.md`, `packages/sq-browser/package.json`) so release PRs create zero runs. Job-level bot `if`s stay as defense in depth. `test/release-ci-exclusions.test.ts` derives that set from `release-please-config.json` and fails if a workflow drifts; update the ignore lists when adding `extra-files` or changing `release-type`.
 - Generated files are listed in `.prettierignore`; validate them with their generator checks instead of formatting them directly.
 - Keep `skills/sq-browser/` in the npm `files` list when changing package contents; the skill-first install path depends on it shipping with the package.
-- `pnpm-workspace.yaml` enforces a minimum release age for dependency updates as a supply-chain guard; `axi-sdk-js` and `sq-browser` are exempt.
+- `pnpm-workspace.yaml` enforces a minimum release age for dependency updates as a supply-chain guard; `axi-sdk-js` and `@runecraft/sq-browser` are exempt.
 - `.airlock/lint.sh` must use pnpm (never `npm install` or `npx`); `test/airlock-lint.test.ts` enforces this.
 - Human-authored PRs to `main` must go through [`drill`](https://github.com/runecraftai/squad); CI enforces a deterministic signature in the PR body. See CONTRIBUTING.md.
 
