@@ -447,12 +447,27 @@ To set it up:
    `TG_BOT_TOKEN=<bot token>`
    `TG_ALLOWED_CHAT_IDS=<commander Telegram user id>`
 3. Put `SQX_PAIRING_TOKEN=<token>` in the base's gitignored `.env` (the same token already there when Relay is on) and set `SQX_RELAY_URL=http://127.0.0.1:8787`.
-4. Run `python3 bin/sq-tg-bridge.py`; it needs only the Python 3 standard library, binds 127.0.0.1, and logs to stderr (the script header and `--help` own the exact flags and config keys).
 
-Run it as a long-lived process under the service manager of your choice; the bridge restarts non-lossy because its runtime state is persisted.
+Run the bridge as the shipped user service so it starts at boot and restarts when it crashes:
+
+1. Copy `systemd/sq-tg-bridge.service` to `~/.config/systemd/user/`, adjusting the `SQUAD_BASE` path inside it when this base lives outside the standard `~/Projects/squad` layout.
+2. `systemctl --user daemon-reload`
+3. `systemctl --user enable --now sq-tg-bridge`
+4. `loginctl enable-linger "$USER"` so the user manager (and therefore the bridge) starts at boot, not only after login.
+
+Verify with `systemctl --user status sq-tg-bridge` (active, restarts recorded) and `journalctl --user -u sq-tg-bridge` (the bridge logs each start to stderr).
+Remove the service with `systemctl --user disable --now sq-tg-bridge`, then delete the copied unit file and run `systemctl --user daemon-reload`.
+The bridge needs only the Python 3 standard library, binds 127.0.0.1, and logs to stderr (the script header and `--help` own the exact flags and config keys).
+A restart is non-lossy: runtime request state (the pending queue, follow-up bindings, and the Telegram update offset) lives in `state/telegram-bridge/state.json` (gitignored) and survives bridge restarts, so a restart never re-ingests an already-offered message and never re-answers an answered request.
+
+### Dual channel (chat to chat + Telegram)
+
+When the commander wants chat replies to also arrive on Telegram, Squad mirrors each commander-facing reply with `bin/sq-tg-notify.sh <text-or-'-'>` (`-` reads the message from stdin).
+The mirror is a proactive ping, not a relay request: it calls the Telegram Bot API directly (`sendMessage`) against the same `config/telegram-bridge.env`, targets the first `TG_ALLOWED_CHAT_IDS` entry, and works even when the bridge is down.
+It prints one `telegram HTTP <code>` line so a caller can tell a delivered mirror from a failed one, and fails closed (exit 1, nothing sent) when the config file, token, or chat id is missing.
+The base home resolves like the other `sq-*` scripts: `$SQUAD_BASE`, then legacy `$SQUAD_HOME`, then this repo root.
 The bridge reports the client-resolved `discord` platform with an explicit `reply_max_chars` of 4096.
 The Squad relay client resolves only the `x` and `discord` platforms for its follow-up fail-safe, and an explicit limit always wins over the platform default, so replies still split at Telegram's 4096-character message budget and completion follow-ups pass the fail-safe.
-Runtime request state (the pending queue, follow-up bindings, and the Telegram update offset) lives in `state/telegram-bridge/state.json` (gitignored) and survives bridge restarts.
 
 ## Process-to-event sources (state/procevent)
 

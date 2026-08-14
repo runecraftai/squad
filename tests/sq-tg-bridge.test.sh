@@ -129,6 +129,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw.decode("utf-8"))
             if os.path.exists(args.state_dir + "/slow-sends"):
                 time.sleep(1.0)
+            if os.path.exists(args.state_dir + "/very-slow-sends"):
+                time.sleep(5.0)
             if os.path.exists(args.state_dir + "/reset-sends"):
                 with open(args.state_dir + "/reset-hit", "a",
                           encoding="utf-8") as fh:
@@ -1035,6 +1037,44 @@ test_error_status_with_reset_body_on_greeting_does_not_kill_poller() {
   pass "an unreadable error body on the greeting leaves the poller alive"
 }
 
+test_slow_send_times_out_with_502_and_stays_pending() {
+  local home fake_dir fake_port url rid start_ts elapsed
+  home="$TMP_ROOT/slow-send-home"; setup_home "$home"
+  fake_dir="$TMP_ROOT/slow-send-fake"; start_fake_tg "$fake_dir"; fake_port=$FAKE_PORT
+  start_bridge "$home" "$fake_port" TG_BRIDGE_SEND_TIMEOUT=1; url=$BRIDGE_URL
+  feed_updates "$fake_dir" "$(one_update 70 700 "$OWNER_ID" 'telegram lento')"
+  wait_for_request "$url" "$home/body.json"
+  rid="tg-$OWNER_ID-700"
+  touch "$fake_dir/very-slow-sends"
+  start_ts=$(date +%s)
+  (curl -s -m 20 -o "$home/answer.body" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data "{\"request_id\":\"$rid\",\"text\":\"resposta\"}" \
+    "$url/connector/answer" > "$home/answer.code") & local answer_pid=$!
+  sleep 0.5
+  expect_code 200 "$(bridge_poll "$url" "$home/body.json")" \
+    "the connector must keep serving other requests while a send is stalled"
+  wait "$answer_pid"
+  rm -f "$fake_dir/very-slow-sends"
+  elapsed=$(( $(date +%s) - start_ts ))
+  expect_code 502 "$(cat "$home/answer.code")" \
+    "a send that outlives the send cap must surface as the 502 contract"
+  [ "$elapsed" -lt 4 ] || fail "the bounded send must give up before the fake's 5s sleep (took ${elapsed}s)"
+  jq -e '.error == "telegram_send_failed"' "$home/answer.body" > /dev/null \
+    || fail "the 502 body must carry telegram_send_failed"
+  expect_code 200 "$(bridge_poll "$url" "$home/body.json")" \
+    "the timed-out answer must leave the request pending"
+  [ "$(jq -r '.request_id' "$home/body.json")" = "$rid" ] \
+    || fail "the same request must be re-offered after the timed-out answer"
+  expect_code 200 "$(bridge_post "$url" answer \
+    "{\"request_id\":\"$rid\",\"text\":\"resposta\"}")" \
+    "a retry after the timeout must post"
+  local count
+  count=$(jq -s 'length' "$fake_dir/sent.log")
+  expect_code 1 "$count" "only the successful retry may reach Telegram"
+  pass "a stalled Telegram send times out into the 502 contract, keeps serving, and stays pending"
+}
+
 # ---------------------------------------------------------------------------
 
 write_fake_telegram
@@ -1068,3 +1108,4 @@ test_non_list_result_does_not_kill_poller
 test_non_string_text_does_not_kill_poller
 test_error_status_with_reset_body_returns_502_and_stays_pending
 test_error_status_with_reset_body_on_greeting_does_not_kill_poller
+test_slow_send_times_out_with_502_and_stays_pending
