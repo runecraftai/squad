@@ -15,7 +15,7 @@ Lavish Editor helps agents turn rich HTML artifacts into collaborative human rev
 
 You do not need sq-report installed globally - invoke it with `npx -y @runecraft/sq-report <html-file>`.
 If sq-report output shows a follow-up command starting with `sq-report`, run it as `npx -y @runecraft/sq-report ...` instead.
-In restricted subprocess sandboxes, CI, or agent harnesses where `npx -y` exits opaquely (for example with status 216), use an already-installed copy directly: `node "$(npm root)/sq-report/dist/cli.mjs" <html-file>` for a local install, `node "$(npm root -g)/sq-report/dist/cli.mjs" <html-file>` for a global install, or the bare `sq-report <html-file>` bin after installing once.
+In restricted subprocess sandboxes, CI, or agent harnesses where `npx -y` exits opaquely (for example with status 216), use an already-installed copy directly: `node "$(npm root)/@runecraft/sq-report/dist/cli.mjs" <html-file>` for a local install, `node "$(npm root -g)/@runecraft/sq-report/dist/cli.mjs" <html-file>` for a global install, or the bare `sq-report <html-file>` bin after installing once.
 
 ## Request
 

@@ -120,15 +120,30 @@ guard_no_match() {
 }
 
 test_guard_npm_scope() {
-  local dir name expected failures=""
-  for dir in "$ROOT"/packages/*/; do
-    [ -f "$dir/package.json" ] || continue
-    name=$(sed -n 's/^[[:space:]]*"name": "\([^"]*\)".*/\1/p' "$dir/package.json" | head -1)
-    expected="@runecraft/$(basename "$dir")"
-    if [ -z "$name" ] || [ "$name" != "$expected" ]; then
-      failures="${failures}${failures:+$'\n'}packages/$(basename "$dir")/package.json name is '${name:-<unparsed>}', expected '$expected'"
-    fi
-  done
+  local failures
+  failures=$(node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const packagesDir = process.argv[1];
+    const failures = [];
+    for (const entry of fs.readdirSync(packagesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const pkg = path.join(packagesDir, entry.name, "package.json");
+      if (!fs.existsSync(pkg)) continue;
+      let name = null;
+      try {
+        name = JSON.parse(fs.readFileSync(pkg, "utf8")).name;
+      } catch (err) {
+        failures.push(`packages/${entry.name}/package.json could not be parsed: ${err.message}`);
+        continue;
+      }
+      const expected = `@runecraft/${entry.name}`;
+      if (name !== expected) {
+        failures.push(`packages/${entry.name}/package.json name is ${name === null ? "<missing>" : JSON.stringify(name)}, expected \"${expected}\"`);
+      }
+    }
+    process.stdout.write(failures.join("\n"));
+  ' "$ROOT/packages")
   if [ -n "$failures" ]; then
     record_failure "rebrand guard 9: npm identity is @runecraft-scoped" "$failures"
   else

@@ -179,7 +179,7 @@ test("createSkillMarkdown documents installed-copy fallback for restricted sandb
 
   assert.match(md, /restricted subprocess sandboxes/);
   assert.match(md, /status 216/);
-  assert.match(md, /`node "\$\(npm root\)\/sq-report\/dist\/cli\.mjs" <html-file>`/);
-  assert.match(md, /`node "\$\(npm root -g\)\/sq-report\/dist\/cli\.mjs" <html-file>`/);
+  assert.match(md, /`node "\$\(npm root\)\/@runecraft\/sq-report\/dist\/cli\.mjs" <html-file>`/);
+  assert.match(md, /`node "\$\(npm root -g\)\/@runecraft\/sq-report\/dist\/cli\.mjs" <html-file>`/);
   assert.match(md, /bare `sq-report <html-file>` bin/);
 });

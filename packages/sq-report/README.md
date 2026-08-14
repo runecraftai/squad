@@ -126,7 +126,7 @@ That registers the installed package with every supported client it finds, **VS 
 
 Each client is registered independently: one that cannot be registered is reported with what to do about it, and never blocks the others or fails the command.
 
-To register by hand instead, point any client at the package directory (`npm root -g`/`sq-report`):
+To register by hand instead, point any client at the package directory (`npm root -g`/`@runecraft/sq-report`):
 
 | Client             | Register with                                                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
