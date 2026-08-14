@@ -75,6 +75,15 @@ one allowed chat id: all three are fail-closed.  The runtime state file is
 written atomically with mode 0600 under a 0700 directory and the bridge refuses
 a symlinked state file.
 
+Concurrency: the connector runs on a ThreadingHTTPServer (one handler thread
+per request) and the getUpdates long-poll runs on its own thread, so a slow or
+stalled Telegram call never blocks the HTTP accept loop or another request.
+Outbound sendMessage/sendPhoto calls are capped at TG_BRIDGE_SEND_TIMEOUT
+(default 8s) so a stalled Telegram API surfaces as the contract's 502 - and a
+still-pending request - inside the Squad client's own request budget instead of
+hanging the answer past it.  The long-poll getUpdates keeps its own 35s cap
+(30s poll + margin).
+
 Config (env wins over file; file wins over default):
   SQUAD_BASE                 base home for .env and config lookups
                              (default: this repo root; same resolution as the
@@ -93,6 +102,8 @@ Config (env wins over file; file wins over default):
   TG_BRIDGE_NOW_OVERRIDE     test seam: epoch seconds replacing the wall clock
                              for follow-up window math (same role as
                              SQX_NOW_OVERRIDE in bin/sq-x-lib.sh)
+  TG_BRIDGE_SEND_TIMEOUT     per-send HTTP cap in seconds (default 8; must be
+                             positive)
 
 Usage: sq-tg-bridge.py [--help] [--config FILE] [--bind ADDR] [--port N]
                        [--telegram-api-url URL] [--state-file FILE]
@@ -125,6 +136,9 @@ REPLY_MAX_CHARS = 4096                # Telegram's per-message character budget
 MAX_BODY_BYTES = 64 * 1024 * 1024     # connector POST body cap (image base64)
 GETUPDATES_TIMEOUT = 30               # Telegram long-poll seconds
 HTTP_TIMEOUT = 35                     # outbound HTTP cap (long-poll + margin)
+SEND_TIMEOUT = 8                      # per-send cap: a stalled Telegram API
+                                      # must surface as the contract's 502
+                                      # inside the client's request budget
 
 
 def log(msg):
@@ -211,6 +225,18 @@ class BridgeConfig:
             os.path.join(self.squad_home, "state", "telegram-bridge",
                          "state.json"))
         self.api_url = args.telegram_api_url or "https://api.telegram.org"
+        send_timeout = first_set(
+            os.environ.get("TG_BRIDGE_SEND_TIMEOUT"),
+            bridge_env.get("TG_BRIDGE_SEND_TIMEOUT"))
+        if send_timeout is None:
+            self.send_timeout = SEND_TIMEOUT
+        else:
+            try:
+                self.send_timeout = float(send_timeout)
+            except ValueError:
+                raise SystemExit(
+                    "sq-tg-bridge: invalid TG_BRIDGE_SEND_TIMEOUT: %r"
+                    % send_timeout)
         self.now_override = os.environ.get("TG_BRIDGE_NOW_OVERRIDE")
         if self.now_override is not None:
             try:
@@ -246,6 +272,10 @@ class BridgeConfig:
             raise SystemExit(
                 "sq-tg-bridge: invalid TG_BRIDGE_NOW_OVERRIDE: %r"
                 % self.now_override)
+        if self.send_timeout <= 0:
+            raise SystemExit(
+                "sq-tg-bridge: invalid TG_BRIDGE_SEND_TIMEOUT: %r"
+                % self.send_timeout)
 
     def now(self):
         if self.now_override is not None:
@@ -409,18 +439,19 @@ class TelegramError(Exception):
 class TelegramClient:
     """Minimal Bot API client: getUpdates, sendMessage, sendPhoto."""
 
-    def __init__(self, api_url, bot_token, log_fn):
+    def __init__(self, api_url, bot_token, log_fn, send_timeout=SEND_TIMEOUT):
         self.base = "%s/bot%s" % (api_url.rstrip("/"), bot_token)
         self.log = log_fn
+        self.send_timeout = send_timeout
 
-    def call_json(self, method, params):
+    def call_json(self, method, params, timeout=HTTP_TIMEOUT):
         url = "%s/%s" % (self.base, method)
         data = json.dumps(params).encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST",
                                      headers={"Content-Type": "application/json"})
-        return self._open(req)
+        return self._open(req, timeout)
 
-    def call_form(self, method, fields, files):
+    def call_form(self, method, fields, files, timeout=HTTP_TIMEOUT):
         boundary = "----sqtg%s" % secrets.token_hex(12)
         body = bytearray()
         for name, value in fields:
@@ -441,11 +472,11 @@ class TelegramClient:
                                          "Content-Type":
                                              "multipart/form-data; boundary=%s"
                                              % boundary})
-        return self._open(req)
+        return self._open(req, timeout)
 
-    def _open(self, req):
+    def _open(self, req, timeout=HTTP_TIMEOUT):
         try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             try:
@@ -482,7 +513,8 @@ class TelegramClient:
         params = {"chat_id": chat_id, "text": text}
         if reply_to_message_id is not None:
             params["reply_to_message_id"] = reply_to_message_id
-        return self.call_json("sendMessage", params)
+        return self.call_json("sendMessage", params,
+                              timeout=self.send_timeout)
 
     def send_photo(self, chat_id, data, media_type, reply_to_message_id=None):
         fields = [("chat_id", str(chat_id))]
@@ -493,7 +525,8 @@ class TelegramClient:
             "image/webp": "webp", "image/bmp": "bmp", "image/tiff": "tiff",
         }.get(media_type, "img")
         return self.call_form("sendPhoto", fields,
-                              [("photo", "photo.%s" % ext, media_type, data)])
+                              [("photo", "photo.%s" % ext, media_type, data)],
+                              timeout=self.send_timeout)
 
 
 def safe_slug(rid):
@@ -703,7 +736,8 @@ class Bridge:
         self.config = config
         self.log = log
         self.store = RequestStore(config.state_file, config.now, log)
-        self.tg = TelegramClient(config.api_url, config.bot_token, log)
+        self.tg = TelegramClient(config.api_url, config.bot_token, log,
+                                 config.send_timeout)
 
     def handle_telegram_update(self, update):
         """Classify one getUpdates result element; returns the request_id or

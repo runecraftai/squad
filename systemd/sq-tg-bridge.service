@@ -1,0 +1,33 @@
+# Squad Telegram bridge user service.
+#
+# Keeps the local Relay connector (bin/sq-tg-bridge.py) running from boot:
+# starts it at session start, restarts it if it crashes, and never loses the
+# pending-request state because the bridge persists it under
+# <SQUAD_BASE>/state/telegram-bridge/state.json.
+#
+# Install (docs/configuration.md, "Telegram bridge"): copy this file to
+# ~/.config/systemd/user/, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now sq-tg-bridge
+#   loginctl enable-linger "$USER"   # run from boot, not only after login
+# Remove:
+#   systemctl --user disable --now sq-tg-bridge
+#   rm ~/.config/systemd/user/sq-tg-bridge.service
+#   systemctl --user daemon-reload
+#
+# Adjust the SQUAD_BASE path below when the base lives outside the standard
+# ~/Projects/squad layout.  No network ordering is needed: the bridge backs
+# off and retries getUpdates until Telegram is reachable.
+
+[Unit]
+Description=Squad Telegram bridge (local Relay connector)
+
+[Service]
+Type=simple
+Environment=SQUAD_BASE=%h/Projects/squad
+ExecStart=/usr/bin/env python3 ${SQUAD_BASE}/bin/sq-tg-bridge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
