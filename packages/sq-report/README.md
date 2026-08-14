@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="sq-report: the after-action debrief for agent-generated HTML artifacts" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="sq-report: a review surface for agent-generated HTML artifacts" />
 </p>
 
 <h1 align="center">sq-report</h1>
@@ -10,7 +10,7 @@
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
 
-<h3 align="center">The after-action report for agent-built artifacts.</h3>
+<h3 align="center">sq-report: for when a rich editor is not rich enough.</h3>
 
 ```text
 Agent writes artifact.html

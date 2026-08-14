@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="sq-browser: recon-grade Chrome sessions your agent drives from the terminal" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="sq-browser: a Chrome session your agent can drive from the terminal" />
 </p>
 
 <h1 align="center">sq-browser</h1>
@@ -10,7 +10,7 @@
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
 
-<h3 align="center">Recon-grade browser automation, most agent-ergonomic in the field.</h3>
+<h3 align="center">The most agent-ergonomic browser automation</h3>
 
 `sq-browser` wraps the [chrome-devtools-mcp](https://www.npmjs.com/package/chrome-devtools-mcp) server with a CLI built for agents.
 

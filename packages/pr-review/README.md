@@ -1,10 +1,8 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="pr-review: armament inspection for a GitHub pull request - parallel passes, validated findings, COMMENT-only publishing" />
+  <img src="./assets/readme/hero.svg" width="100%" alt="pr-review: five parallel review passes on a GitHub pull request, validated findings, COMMENT-only publishing" />
 </p>
 
 <h1 align="center">@runecraft/pr-review</h1>
-
-<h3 align="center">Inspect the change before it fires.</h3>
 
 Parallel, tiered code review for GitHub pull requests, built for the [Pi coding agent](https://pi.dev).
 You run `/pr-review <n>` and five focused passes go to work at once, on models you choose: an overview plus heavy lenses for correctness, contracts, security and performance, and resources.

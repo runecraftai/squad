@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="400" viewBox="0 0 1200 400"
      role="img" aria-labelledby="title desc">
-  <title id="title">fob: a forward operating base of clean git worktrees for your agents</title>
+  <title id="title">fob: Forward Operating Base - a reusable pool of isolated git worktrees for your agents</title>
   <desc id="desc">A repository feeds a pool of isolated worktrees under ~/.fob; one is in use by an agent in the field, one is ready, one is resetting, and exiting returns a worktree to the pool.</desc>
 
   <defs>
@@ -20,12 +20,12 @@
   </g>
 
   <!-- left: identity block -->
-  <g id="title-block" transform="translate(64 120)">
-    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#9b9ba8" letter-spacing="2">FORWARD OPERATING BASE · WORKTREE POOL</text>
-    <text x="0" y="96" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="96" font-weight="700" fill="#f1f1f5">fob</text>
-    <text x="0" y="150" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="24" fill="#c9c9d2">Clean worktrees, deployed on demand.</text>
-    <text x="0" y="184" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="24" fill="#c9c9d2">Every agent gets its own forward base.</text>
-    <text x="0" y="252" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8b8b98">fob · fob get --lease · fob return</text>
+  <g id="title-block" transform="translate(64 110)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#9b9ba8" letter-spacing="2">FOB · REUSABLE WORKTREE POOL</text>
+    <text x="0" y="62" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="48" font-weight="700" fill="#f1f1f5">Forward Operating Base</text>
+    <text x="0" y="110" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9c9d2">A reusable pool of isolated git worktrees</text>
+    <text x="0" y="142" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="22" fill="#c9c9d2">for agents. Deploy one per agent, on demand.</text>
+    <text x="0" y="204" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8b8b98">fob · fob get --lease · fob return</text>
   </g>
 
   <!-- right: forward base diagram -->

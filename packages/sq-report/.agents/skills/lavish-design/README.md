@@ -1,5 +1,7 @@
 # Lavish Design System
 
+> _For when a rich editor is not rich enough._
+
 This is the brand & design system for **Lavish** — an in-browser agentic editor that opens agent-generated HTML artifacts in a local browser, lets a human pinpoint elements or selected text, annotate them, and ship that feedback back to the agent.
 
 The product feels like a quiet reading room with a brass lamp: dark ink walls, a single warm gold accent, generous type set in a literary serif beside a clean technical sans. Elegant. Minimal. Futuristic. _Lavish._
@@ -56,13 +58,13 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 **Voice**
 
 - **Second-person, agent-aware.** Most copy addresses the user (_"Tell your agent…"_), but it never forgets there are _two_ readers: a human and an agent. Where it's helpful, the copy explicitly addresses the agent in the same breath (_"agents should normally omit it"_).
-- **Confident without bravado.** No exclamation marks. No "🚀". The product asserts what it _is_ in one line and lets the rest of the page work.
+- **Confident without bravado.** No exclamation marks. No "🚀". The product asserts what it _is_ in one line — _"For when a rich editor is not rich enough"_ — and lets the rest of the page work.
 - **Literary cadence.** Sentences are crafted, not assembled. Words like _artifact_, _snapshot_, _canonical_, _ergonomic_ show up unforced. Avoid SaaS adjectives ("seamless," "powerful," "revolutionary").
 
 **Tone**
 
 - **Calm. Considered. Specific.** When something is technical, name it precisely. When something is a feeling, write it as a feeling.
-- **A wink, occasionally.** _"git push drill."_ A dry, deadpan sense of humor — never goofy.
+- **A wink, occasionally.** _"git push drill."_ _"For when a rich editor is not rich enough."_ A dry, deadpan sense of humor — never goofy.
 
 **Casing**
 
@@ -84,6 +86,7 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 
 **Examples lifted directly from the product**
 
+> _"For when a rich editor is not rich enough."_
 > _"HTML is the new markdown. Lavish is the new editor for your HTML artifacts."_
 > _"Browser-native review · Precise feedback · Agent-ergonomic interface"_
 > _"Session ended. Return to your agent to continue."_
