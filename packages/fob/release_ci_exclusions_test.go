@@ -84,6 +84,10 @@ func expectedReleaseOutputs(cfg releasePleaseConfig) ([]string, error) {
 			if extra == "" {
 				continue
 			}
+			if pkgPath != "." && pkgPath != "" && !strings.Contains(extra, "/") && !strings.HasPrefix(extra, "!") {
+				seen[filepath.ToSlash(filepath.Join(pkgPath, extra))] = struct{}{}
+				continue
+			}
 			seen[filepath.ToSlash(extra)] = struct{}{}
 		}
 	}
@@ -356,7 +360,7 @@ func TestExpectedReleaseOutputsIncludesConfiguredExtraFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{".release-please-manifest.json", "CHANGELOG.md", "flake.nix"}
+	want := []string{".release-please-manifest.json", "packages/fob/CHANGELOG.md", "packages/fob/flake.nix"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("expected %v, got %v", want, got)
 	}
