@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "report",
+  "name": "sq-report",
   "version": "0.1.0",
   "description": "HTML is the new markdown. sq-report is the new editor for your HTML artifacts.",
   "author": {
