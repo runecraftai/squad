@@ -20,7 +20,7 @@
 # for bounded re-announcement - including across a restart between publication
 # and handling - until `sq-procevent.sh handled` records it. It proves nothing
 # about the source side of the handoff. In particular the currently published
-# `lavish-axi poll` destructively clears feedback before returning it, so a
+# `sq-report poll` destructively clears feedback before returning it, so a
 # result lost between that clearing and this runner reading the process output
 # is unrecoverable. A Squad wrapper cannot close that window, and marking a
 # result handled says nothing about whether a paired external effect performed

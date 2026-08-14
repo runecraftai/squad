@@ -514,7 +514,7 @@ EOF
       and .kind == "commander"
       and .hold_reason == "commander route choice pending"
       and .hold_kind == "commander"
-  ' >/dev/null || fail "tasks-axi commander-hold metadata did not parse"
+  ' >/dev/null || fail "sq-tasks commander-hold metadata did not parse"
   printf '%s' "$out" | jq -e '
     .backlog.records[] | select(.id == "done-comma")
     | .repo == "gamma"
@@ -559,7 +559,7 @@ EOF
     "view should render bracketed PR artifact outside the title"
   assert_contains "$view" "| done-note | Done Note | delta | ship | - | local main |" \
     "view should render local-only done artifact outside the title"
-  pass "snapshot parses tasks-axi rows and respects operational overrides"
+  pass "snapshot parses sq-tasks rows and respects operational overrides"
 }
 
 test_view_renders_snapshot() {

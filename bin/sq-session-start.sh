@@ -113,8 +113,8 @@
 # The tradeoff this ordering accepts: a refused (read-only) session must not
 # go dark. So on refusal, bootstrap still runs (in SQUAD_BOOTSTRAP_DETECT_ONLY=1
 # mode) for its local read-only detect lines - missing tools, the worktree-tangle
-# check, the harness override, crew-dispatch validation, tasks-axi and quota-axi
-# tool checks, and tasks-axi availability - none of which mutate shared state
+# check, the harness override, crew-dispatch validation, sq-tasks and sq-quota
+# tool checks, and sq-tasks availability - none of which mutate shared state
 # and all of which are safe to compute without verified lock ownership.
 # It deliberately skips the network-only GitHub-auth probe because a read-only
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
@@ -140,21 +140,21 @@
 #     deep queue costs a counter rather than kilobytes.
 #     (This replaces SQUAD_SESSION_START_BACKLOG_LIMIT, which bounded the whole
 #     listing indiscriminately and so could drop a held or blocked row.)
-# When compatible tasks-axi is selected and available, the shared tasks-axi
+# When compatible sq-tasks is selected and available, the shared sq-tasks
 # backend probe remains the compatibility owner and this script asks
-# `tasks-axi list` for the compact identity fields plus blocked_by, hold_kind,
+# `sq-tasks list` for the compact identity fields plus blocked_by, hold_kind,
 # and hold_reason, never body. The groups are the tool's own filters
 # (`--state in_flight`, `--state held`, `--state queued --blocked`, and
-# `tasks-axi ready`), so this script never reimplements task state; the groups
+# `sq-tasks ready`), so this script never reimplements task state; the groups
 # can overlap, because an in-flight item that is also held appears under both.
-# When manual mode is selected, or tasks-axi is unavailable or incompatible,
+# When manual mode is selected, or sq-tasks is unavailable or incompatible,
 # this script prints only backlog section headings and item title lines, so
 # title-line hold and blocked-by metadata remain visible while indented bodies
 # stay out of the startup digest; the same never-bound-a-held-or-blocked-row
 # rule applies, recognized there from the title line's own hold/blocked-by
 # markers.
-# Full bodies are targeted follow-up only: `tasks-axi show <id> --full` when
-# compatible tasks-axi is available, or `data/backlog.md` when the file body is
+# Full bodies are targeted follow-up only: `sq-tasks show <id> --full` when
+# compatible sq-tasks is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
 # STATUS TAILS: SQUAD_SESSION_START_STATUS_TAIL bounds how many lines each task's
@@ -295,8 +295,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || printf unknown)
 # shellcheck source=bin/sq-line-cap-lib.sh
 . "$SCRIPT_DIR/sq-line-cap-lib.sh"
 
-# One tasks-axi compatibility verdict per session start. The probe costs three
-# tasks-axi subprocesses and this digest needs the same answer twice - here for
+# One sq-tasks compatibility verdict per session start. The probe costs three
+# sq-tasks subprocesses and this digest needs the same answer twice - here for
 # the backlog listing and again inside the sq-bootstrap.sh child, which reports
 # an incompatible build as MISSING. Computing it once and handing it to that
 # child collapses six subprocesses to three. sq-tasks-lib.sh owns both reuse
@@ -337,12 +337,12 @@ print_file_or_absent() {
 }
 
 print_backlog_pointer() {
-  printf 'Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.\n'
+  printf 'Full task bodies remain available on demand: sq-tasks show <id> --full when compatible sq-tasks is available, or data/backlog.md.\n'
 }
 
 # A queued title line whose own text already marks it held or blocked. The
 # manual renderer has no task model, so this is the only signal it gets, and it
-# is the one tasks-axi's markdown backend writes: "(hold: ...)", "(hold-kind:
+# is the one sq-tasks' markdown backend writes: "(hold: ...)", "(hold-kind:
 # ...)", and "blocked-by: ...". Bracket expressions rather than backslashes,
 # because awk's -v applies escape processing before the regex is ever compiled.
 MANUAL_KEEP_RE='[(]hold|blocked-by:'
@@ -390,7 +390,7 @@ print_backlog_manual_compact() {
   ' "$path"
 }
 
-# tasks-axi closes every listing with its own help block. This section composes
+# sq-tasks closes every listing with its own help block. This section composes
 # four listings, so keeping them would repeat the same pointers four times, once
 # per group, each carrying this base's full backlog path. The section prints one
 # equivalent pointer of its own (print_backlog_pointer), so the per-group help
@@ -400,7 +400,7 @@ strip_axi_help() {
 }
 
 # Bound the dispatchable-now listing without rewriting the tool's own rendering:
-# `tasks-axi ready` rows are the indented lines under its ready[N]{...} header,
+# `sq-tasks ready` rows are the indented lines under its ready[N]{...} header,
 # and every other line it prints (its count, its public-followup line) passes
 # through untouched. Whatever is cut is disclosed exactly.
 print_ready_queued_bounded() {
@@ -418,7 +418,7 @@ print_ready_queued_bounded() {
       if (total > 0) {
         printf "(shown %d of %d ready queued item(s))\n", shown, total
         if (total > shown) {
-          printf "(%d more queued - tasks-axi ready --file %s)\n", total - shown, path
+          printf "(%d more queued - sq-tasks ready --file %s)\n", total - shown, path
         }
       }
     }
@@ -436,7 +436,7 @@ print_backlog_tasks_axi_compact() {
   elif ! ready=$(tasks-axi ready --file "$path" 2>&1); then
     err=$ready
   else
-    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to %s; task bodies omitted)\n' \
+    printf 'compact backlog listing (sq-tasks; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to %s; task bodies omitted)\n' \
       "$QUEUED_LIMIT"
     printf '\nin flight:\n'
     printf '%s\n' "$in_flight" | strip_axi_help
@@ -448,7 +448,7 @@ print_backlog_tasks_axi_compact() {
     print_ready_queued_bounded "$ready" "$path"
     return 0
   fi
-  printf 'tasks-axi compact listing failed; falling back to title-line rendering.\n'
+  printf 'sq-tasks compact listing failed; falling back to title-line rendering.\n'
   printf '%s\n' "$err"
   print_backlog_manual_compact "$path" "fallback"
 }
@@ -463,7 +463,7 @@ print_backlog_compact() {
       elif fm_backlog_backend_manual "$CONFIG"; then
         print_backlog_manual_compact "$path" "manual backend"
       else
-        print_backlog_manual_compact "$path" "tasks-axi unavailable or incompatible"
+        print_backlog_manual_compact "$path" "sq-tasks unavailable or incompatible"
       fi
       print_backlog_pointer
     else
@@ -665,7 +665,7 @@ Go to a source directly only when:
   - an individual full status log is needed for older wake-event history, or a
     status line was capped and its tail matters (each task's full log path is
     printed with its tail),
-  - a full task body is needed (tasks-axi show <id> --full, or data/backlog.md),
+  - a full task body is needed (sq-tasks show <id> --full, or data/backlog.md),
   - the backlog listing disclosed omitted queued items and this turn needs them,
   - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
     turn needs their verdict (bin/sq-startup-network.sh report),

@@ -2,12 +2,12 @@
 # Merge a task's PR after recording pr= and any available pr_head= through
 # bin/sq-pr-check.sh, so teardown can verify landed work after squash merges.
 # The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
-# owner/repository and PR number are passed to gh-axi as separate arguments.
+# owner/repository and PR number are passed to sq-gh as separate arguments.
 #
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
 # must not include --repo or -R because the repository comes only from the URL.
-# Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra gh-axi pr merge args>]
+# Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra sq-gh pr merge args>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

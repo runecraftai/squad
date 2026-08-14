@@ -481,7 +481,7 @@ LAVISH_POLL_COUNT="$TMP_ROOT/lavish-poll-count"
 export LAVISH_POLL_COUNT
 cat > "$LAVISH_BIN/sq-report" <<'SH'
 #!/usr/bin/env bash
-# Stand-in for `lavish-axi poll <file>` around a human `Send & End`: the final
+# Stand-in for `sq-report poll <file>` around a human `Send & End`: the final
 # feedback is delivered exactly once carrying session_ended, and every later
 # poll returns an empty ended session immediately.
 n=$(cat "$LAVISH_POLL_COUNT" 2>/dev/null || echo 0)

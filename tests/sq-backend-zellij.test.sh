@@ -835,9 +835,9 @@ test_teardown_passes_recorded_tab_id_to_zellij_kill() {
   local dir state data config project fb out status
   # Recon teardown runs the commander-held decision gate
   # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
-  # forked sq-tasks-axi exposes (M2, T-M2-04); upstream tasks-axi cannot run it.
+  # forked sq-tasks exposes (M2, T-M2-04); upstream builds cannot run it.
   if ! tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null; then
-    echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"
+    echo "skip: sq-tasks lacks the commander-hold contract (forked sq-tasks, M2)"
     return 0
   fi
   dir="$TMP_ROOT/teardown-zellij-ghost"; state="$dir/state"; data="$dir/data"; config="$dir/config"; project="$dir/project"

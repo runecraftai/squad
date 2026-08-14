@@ -110,7 +110,7 @@ Do not translate the reviewer's language. Reply in the thread's language.
 ## Client-visible guard
 
 For client-visible repos (Globo rule), replies must never mention internal tooling, "commander", "Squad", agent names, or orchestration.
-This includes: squad-internal tool names (sq-report, gh-axi, lavish, tasks-axi, quota-axi, drill), agent or worker concepts (operator, spawn, brief, harness, sentry), and process words (worktree, orchestration).
+This includes: squad-internal tool names (sq-report, sq-gh, sq-browser, sq-tasks, sq-quota, drill), agent or worker concepts (operator, spawn, brief, harness, sentry), and process words (worktree, orchestration).
 When in doubt about a repo's visibility, apply the guard anyway.
 
 Final scan, before posting every reply:

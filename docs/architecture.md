@@ -192,7 +192,7 @@ XOs are idle by default: after startup recovery reconciles only work already in 
 When called with `SQUAD_BASE=<this-Squad-base>` or when `SQUAD_BASE` is already set to the active Squad base, metadata-routed `sq-send.sh` requests to a live `kind=xo` use the live-charter-compatible `from-squad` carrier owned by `bin/sq-operational-input.sh`, so the XO returns terse answers through status lines and detailed answers through docs plus status pointers instead of replying only in its own chat.
 The parent guards every marked request against a missing correlated report without reading the XO conversation; `bin/sq-pending-reply-lib.sh` owns the correlation, recovery, escalation, and retention contract.
 Explicit backend-target sends and direct human typing stay unmarked, so commander intervention in an XO pane remains conversational.
-After seeding an XO, `sq-backlog-handoff.sh` validates the unit-specific handoff, then atomically delegates already-judged in-scope queued item moves to `tasks-axi mv` so the domain queue starts in the right place.
+After seeding an XO, `sq-backlog-handoff.sh` validates the unit-specific handoff, then atomically delegates already-judged in-scope queued item moves to `sq-tasks mv` so the domain queue starts in the right place.
 Remote routes move that dependency-closed set into a non-dispatchable backlog-format outbox before transfer, then use an idempotent remote receive under the destination backlog's own lock.
 The outbox is the complete retry record, so no two-phase journal or transport-level retry is needed.
 An unreachable remote host is unknown rather than dead, preserves its route and durable work, and is never failed over or relaunched locally.
@@ -224,8 +224,8 @@ A ship brief records its mode as a fixed machine-readable line and the spawn ref
 When a selected delivery path calls for a diff, `bin/sq-review-diff.sh` refreshes the authoritative base and, when task meta records `pr=`, always fetches and compares against `refs/pull/<n>/head` by default (recorded `pr_head=` is only an offline fallback) before falling back to the local branch with a warning.
 For target project repos shipped through their own drill pipeline, commits under `.drill/evidence/` are the pipeline's PR-viewable validation evidence and are expected to stay in the operator branch until the evidence-hosting design changes.
 The Squad repo itself is the exception: its `.drill/` directory is local state, stays gitignored, and is rejected by CI if tracked.
-PR-based task merges go through `bin/sq-pr-merge.sh`, which records `pr=` and any available `pr_head=` through `bin/sq-pr-check.sh` before calling `gh-axi pr merge`.
-The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, invokes `gh-axi pr merge <n> --repo <owner>/<repo>`, defaults to `--squash`, preserves explicit merge-method flags, and rejects malformed URLs or repo override flags before recording merge state; a well-formed GitLab merge request URL (see [docs/gitlab-merge-sentry.md](gitlab-merge-sentry.md)) is refused too, explicitly, rather than sent to the wrong forge.
+PR-based task merges go through `bin/sq-pr-merge.sh`, which records `pr=` and any available `pr_head=` through `bin/sq-pr-check.sh` before calling `sq-gh pr merge`.
+The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, invokes `sq-gh pr merge <n> --repo <owner>/<repo>`, defaults to `--squash`, preserves explicit merge-method flags, and rejects malformed URLs or repo override flags before recording merge state; a well-formed GitLab merge request URL (see [docs/gitlab-merge-sentry.md](gitlab-merge-sentry.md)) is refused too, explicitly, rather than sent to the wrong forge.
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
 [`bin/sq-teardown.sh`](../bin/sq-teardown.sh)'s header owns the landed-work proofs, PR-discovery fallback, and stale-lock recovery procedure.
 
@@ -258,9 +258,9 @@ Attached images are recorded as compact `{media_type, bytes, source_path}` metad
 Relay remains layered on top of the existing check mechanism without changing its request-handling behavior.
 
 A promised *final* public reply is a stronger commitment than a milestone follow-up, because forgetting it is publicly visible.
-It is therefore not carried in conversation memory at all: intake turns it into a typed `kind=public-followup` obligation owned by `tasks-axi public-followup`, and every later step reads that obligation from disk.
+It is therefore not carried in conversation memory at all: intake turns it into a typed `kind=public-followup` obligation owned by `sq-tasks public-followup`, and every later step reads that obligation from disk.
 The mechanism boundary is deliberately narrow.
-`tasks-axi` owns the obligation state machine and is the only thing that validates a terminal result's source base, work id, generation, schema, outcome, and deliverables.
+`sq-tasks` owns the obligation state machine and is the only thing that validates a terminal result's source base, work id, generation, schema, outcome, and deliverables.
 `state/x-context/` remains the only owner of the private full request context.
 `bin/sq-x-reply.sh` remains the only thing that posts.
 `bin/sq-public-followup.sh` composes those three and adds nothing of its own beyond the activation gate, a private terminal-event inbox, and the idempotent delivery sequence.
@@ -282,7 +282,7 @@ The full ownership rule - what is project-intrinsic versus unit-private, and how
 `/debrief` sweeps the current session for durable knowledge that only exists in conversation and routes each finding to the most specific disk base.
 Base-domain commander preferences go to `data/commander.md`, cross-domain shared commander preferences go to the primary base's `data/commander-shared.md`, unit-local operational facts and gotchas go to base-local `data/learnings.md`, project-intrinsic knowledge goes through normal operator delivery into that project's committed `AGENTS.md`, and task-scoped notes or undone next steps go to the backlog.
 Memory writes use inspect-then-update: read the current destination first, then rewrite or prune matching bullets or notes in place instead of appending by default.
-Task-scoped notes use `tasks-axi show <id> --full` followed by `tasks-axi update <id> --body-file <path>`, adding `--archive-body` when the prior body should remain recoverable.
+Task-scoped notes use `sq-tasks show <id> --full` followed by `sq-tasks update <id> --body-file <path>`, adding `--archive-body` when the prior body should remain recoverable.
 Generalizable Squad knowledge goes to shared tracked docs through the normal PR pipeline; the Squad-internal `/debrief` deliberately never stores findings in either skill directory.
 Invoked in a primary base, `/debrief` then cascades the same sweep to every registered XO, enumerated through `bin/sq-debrief-cascade.sh`: each base is accounted and curated against its own startup-memory allowance, a live XO sweeps its own session, and a slow or unreachable base is reported as an exception rather than blocking the primary.
 

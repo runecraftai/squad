@@ -88,7 +88,7 @@ exit 0
 SH
   chmod +x "$fake/bin/sq-unit-sync.sh"
   # sq-tasks-lib.sh: stub (teardown sources it). Report no backend so
-  # backlog_refresh_reminder takes the plain-message path; no tasks-axi here.
+  # backlog_refresh_reminder takes the plain-message path; no sq-tasks here.
   cat > "$fake/bin/sq-tasks-lib.sh" <<'SH'
 fm_tasks_axi_backend_available() { return 1; }
 SH

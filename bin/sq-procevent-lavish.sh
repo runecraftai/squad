@@ -21,7 +21,7 @@
 # and restart recovery all belong to bin/sq-procevent.sh.
 #
 # It wraps ONLY the currently published interface, verified against 0.1.45:
-#   Usage: lavish-axi poll <html-file> [--agent-reply "..."]
+#   Usage: sq-report poll <html-file> [--agent-reply "..."]
 # and that command "long-polls indefinitely" server-side. The adapter therefore
 # runs the plain blocking form with no timeout flag, so results arrive as real
 # server-side events. It adds no periodic discovery, no timer fallback, and no
@@ -69,7 +69,7 @@ cmd_source_id() {
 cmd_arm() {
   local artifact=${1-} id real
   [ -n "$artifact" ] || usage
-  command -v sq-report >/dev/null 2>&1 || die "lavish-axi is not installed"
+  command -v sq-report >/dev/null 2>&1 || die "sq-report is not installed"
   id=$(cmd_source_id "$artifact") || exit 1
   real=$(perl -MCwd=realpath -e '$p = realpath($ARGV[0]); defined($p) or exit 1; print "$p\n"' "$artifact" 2>/dev/null) \
     || die "cannot resolve the artifact path: $artifact"

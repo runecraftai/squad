@@ -8,8 +8,8 @@
 # ORIGINAL thread exactly once.
 #
 # Everything here is hermetic: the relay is a fakebin `curl`, so no port, no
-# server, and no public post. tasks-axi and jq are the real tools, because
-# tasks-axi owns the obligation state machine and stubbing it would test nothing.
+# server, and no public post. sq-tasks and jq are the real tools, because
+# sq-tasks owns the obligation state machine and stubbing it would test nothing.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -24,9 +24,9 @@ SESSION_START="$ROOT/bin/sq-session-start.sh"
 TMP_ROOT=$(fm_test_tmproot sq-public-followup)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
-command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
+command -v tasks-axi >/dev/null 2>&1 || { echo "skip: sq-tasks not found"; exit 0; }
 # The typed public-followup contract uses Squad's home taxonomy (xo:<stable-id>),
-# which the forked sq-tasks-axi validates (M2, T-M2-04). The upstream tasks-axi
+# which the forked sq-tasks validates (M2, T-M2-04); upstream builds
 # validates home ids against its own legacy taxonomy instead, so without the
 # fork every bind-work fixture fails at validation, not at the behaviour under
 # test.
@@ -38,7 +38,7 @@ jq -n '{relation_id:"rel-probe", work_ref:{home_id:"xo:probe", task_id:"probe"},
 if (cd "$probe" && tasks-axi public-followup bind-work pf-probe --relation-file "$probe/relation.json" 2>&1) \
   | grep -Fq 'must be main or'; then
   rm -rf "$probe"
-  echo "skip: installed tasks-axi lacks the Squad xo: home taxonomy (forked sq-tasks-axi, M2)"
+  echo "skip: installed sq-tasks lacks the Squad xo: home taxonomy (forked sq-tasks, M2)"
   exit 0
 fi
 rm -rf "$probe"
@@ -116,7 +116,7 @@ run_pf() {  # <home> <args...>
     FAKE_FOLLOWUP_CODE="${FAKE_FOLLOWUP_CODE:-200}" "$PF" "$@"
 }
 
-tasks_in() {  # <home> <tasks-axi args...>
+tasks_in() {  # <home> <sq-tasks args...>
   local home=$1
   shift
   (cd "$home" && tasks-axi "$@")
@@ -350,7 +350,7 @@ test_duplicate_event_and_replay_are_noops() {
 
 # --- 3. refusals ---------------------------------------------------------------
 
-# Everything tasks-axi is the authority on - source home, work id, generation,
+# Everything sq-tasks is the authority on - source home, work id, generation,
 # schema, and permitted deliverables - must be refused rather than half-applied,
 # and quarantined rather than retried forever.
 test_invalid_events_are_refused_and_quarantined() {
@@ -390,14 +390,14 @@ test_invalid_events_are_refused_and_quarantined() {
   assert_present "$rejected/deadbeef.reason" "a refusal must keep an inspectable reason"
 
   # A deliverable the expected-final type does not permit. The emitter accepts the
-  # shape; tasks-axi is the authority that refuses the semantics.
+  # shape; sq-tasks is the authority that refuses the semantics.
   "$EMIT" --home "$home" --obligation pf-refuse --relation rel-code \
     --source-home XO:fmdev --work-id work-real --generation 1 \
     --outcome pr-merged --deliverable report_path=data/x/report.md \
     --outcome-text 'wrong deliverable for a merged PR' >/dev/null \
     || fail "the emitter should publish a shape-valid event"
   out=$(run_pf "$home" consume) || fail "consume must survive an unsupported deliverable"
-  assert_contains "$out" "rejected " "an unsupported deliverable must be refused by tasks-axi"
+  assert_contains "$out" "rejected " "an unsupported deliverable must be refused by sq-tasks"
   [ "$(delivery_state "$home" pf-refuse)" = pending-work ] \
     || fail "a refused event must leave the commitment untouched"
 
@@ -967,7 +967,7 @@ test_relay_disabled_unmarked_teardown_skips_public_path() {
   local home tasks_log out rc
   home=$(make_home teardown-disabled-unmarked relay-off)
   fm_git_init_commit "$home/projects/worktree"
-  tasks_log="$home/tasks-axi.log"; : > "$tasks_log"
+  tasks_log="$home/sq-tasks.log"; : > "$tasks_log"
   printf 'manual\n' > "$home/config/backlog-backend"
   cat > "$home/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
@@ -986,7 +986,7 @@ SH
     SQUAD_CONFIG_OVERRIDE="$home/config" FAKE_TASKS_AXI_LOG="$tasks_log" \
     "$TEARDOWN" work-disabled 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "relay-disabled unmarked teardown must not refuse public-followup cleanup (rc=$rc): $out"
-  [ ! -s "$tasks_log" ] || fail "relay-disabled unmarked teardown must not invoke tasks-axi: $(tr '\n' ';' < "$tasks_log")"
+  [ ! -s "$tasks_log" ] || fail "relay-disabled unmarked teardown must not invoke sq-tasks: $(tr '\n' ';' < "$tasks_log")"
   assert_not_contains "$out" "still owes a public reply" \
     "relay-disabled unmarked teardown must not run the public commitment guard"
   assert_absent "$home/state/public-followup" \
@@ -1003,7 +1003,7 @@ test_relay_disabled_parent_allows_marked_child_teardown() {
   printf -- '- disabled-mate - synthetic (home: %s; scope: synthetic; projects: ; added 2026-07-30)\n' \
     "$child" > "$parent/data/XOs.md"
   fm_write_meta "$parent/state/disabled-mate.meta" "kind=xo" "home=$child"
-  tasks_log="$child/tasks-axi.log"; : > "$tasks_log"
+  tasks_log="$child/sq-tasks.log"; : > "$tasks_log"
   printf 'manual\n' > "$child/config/backlog-backend"
   cat > "$child/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
@@ -1023,12 +1023,12 @@ SH
     SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME="$parent" FAKE_TASKS_AXI_LOG="$tasks_log" \
     "$TEARDOWN" work-disabled 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "relay-disabled parent must allow marked-child teardown (rc=$rc): $out"
-  [ ! -s "$tasks_log" ] || fail "relay-disabled parent must not invoke tasks-axi for a marked child"
+  [ ! -s "$tasks_log" ] || fail "relay-disabled parent must not invoke sq-tasks for a marked child"
   assert_not_contains "$out" "still owes a public reply" \
     "relay-disabled parent must not run the public commitment guard"
   assert_absent "$child/state/public-followup" \
     "relay-disabled parent must not create a public-followup artifact"
-  pass "a marked child proceeds without tasks-axi when its parent relay is disabled"
+  pass "a marked child proceeds without sq-tasks when its parent relay is disabled"
 }
 
 test_XO_parent_binding_matches_literal_id() {
@@ -1090,12 +1090,12 @@ printf '%s' '{"public_followups":['
 SH
   chmod +x "$home/fakebin/tasks-axi"
 
-  out=$(run_pf "$home" pending) || fail "pending must survive malformed tasks-axi output"
-  assert_contains "$out" "cannot read this home's public commitments through tasks-axi" \
+  out=$(run_pf "$home" pending) || fail "pending must survive malformed sq-tasks output"
+  assert_contains "$out" "cannot read this home's public commitments through sq-tasks" \
     "malformed backlog output must use the loud fallback"
   assert_present "$home/state/public-followup/registry/pf-malformed" \
     "malformed backlog output must retain the registration"
-  pass "pending keeps registrations when tasks-axi returns malformed JSON"
+  pass "pending keeps registrations when sq-tasks returns malformed JSON"
 }
 
 test_private_context_survives_inbox_cleanup() {
@@ -1159,12 +1159,12 @@ test_cleanup_refuses_while_a_public_reply_is_owed() {
 # --- 7. zero overhead for homes that do not use the relay ----------------------
 
 # The hard acceptance criterion. A home that never opted into the mySquad
-# relay must see no process, no tasks-axi call, no scan, no output, and no file.
+# relay must see no process, no sq-tasks call, no scan, no output, and no file.
 test_relay_disabled_home_pays_nothing() {
   local home tasks_log out rc before after cmd
   home=$(make_home relay-disabled relay-off)
-  tasks_log="$home/tasks-axi.log"; : > "$tasks_log"
-  # Any tasks-axi invocation at all is a failure here, so make it loud.
+  tasks_log="$home/sq-tasks.log"; : > "$tasks_log"
+  # Any sq-tasks invocation at all is a failure here, so make it loud.
   cat > "$home/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_TASKS_AXI_LOG"
@@ -1188,7 +1188,7 @@ SH
   [ "$rc" -eq 1 ] || fail "'active' must report inactive in a relay-disabled home"
 
   [ ! -s "$tasks_log" ] \
-    || fail "a relay-disabled home must never invoke tasks-axi: $(cat "$tasks_log")"
+    || fail "a relay-disabled home must never invoke sq-tasks: $(cat "$tasks_log")"
   after=$(find "$home/state" | LC_ALL=C sort)
   [ "$before" = "$after" ] \
     || fail "a relay-disabled home must gain no public-followup artifact"
@@ -1204,7 +1204,7 @@ SH
   [ -z "$out" ] || fail "emitting into a relay-disabled home must produce no output: $out"
   assert_absent "$home/state/public-followup" \
     "a refused emit must not create a public-followup directory"
-  pass "a relay-disabled home runs no tasks-axi call, prints nothing, and gains no artifact"
+  pass "a relay-disabled home runs no sq-tasks call, prints nothing, and gains no artifact"
 }
 
 # An opted-in home that has never made a public commitment must not start paying
@@ -1212,7 +1212,7 @@ SH
 test_relay_enabled_empty_state_makes_no_calls() {
   local home tasks_log out rc cmd
   home=$(make_home relay-enabled-empty)
-  tasks_log="$home/tasks-axi.log"; : > "$tasks_log"
+  tasks_log="$home/sq-tasks.log"; : > "$tasks_log"
   cat > "$home/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_TASKS_AXI_LOG"

@@ -13,9 +13,9 @@ TMP_ROOT=$(fm_test_tmproot sq-decision-hold)
 TASKS_AXI_BIN=$(command -v tasks-axi || true)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
-command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found"; exit 0; }
+command -v tasks-axi >/dev/null 2>&1 || { echo "skip: sq-tasks not found"; exit 0; }
 tasks-axi hold --help 2>&1 | grep -F -- '--kind commander' >/dev/null \
-  || { echo "skip: tasks-axi lacks the commander-hold contract (forked sq-tasks-axi, M2)"; exit 0; }
+  || { echo "skip: sq-tasks lacks the commander-hold contract (forked sq-tasks, M2)"; exit 0; }
 
 make_home() {  # <name>
   local home="$TMP_ROOT/$1" fakebin
@@ -95,7 +95,7 @@ EOF
   pass "report-only unresolved decision is reproduced and completion refuses before loss"
 }
 
-tasks_in() {  # <home> <tasks-axi args...>
+tasks_in() {  # <home> <sq-tasks args...>
   local home=$1
   shift
   (cd "$home" && tasks-axi "$@")
@@ -301,7 +301,7 @@ exit 127
 EOF
   chmod +x "$home/fakebin/tasks-axi"
   if run_teardown "$home" "$id" > "$home/unavailable-teardown.out" 2> "$home/unavailable-teardown.err"; then
-    fail "recon teardown skipped verification when tasks-axi was unavailable"
+    fail "recon teardown skipped verification when sq-tasks was unavailable"
   fi
   assert_present "$home/state/$id.meta" "refused unavailable-task teardown removed metadata"
   pass "non-forced recon teardown always requires durable inventory verification"
@@ -457,7 +457,7 @@ EOF
   pass "main-home and XO-home commander holds remain correctly routed"
 }
 
-# tasks-axi quotes multi-entry blocked_by values as "a,b,c". resolve must strip
+# sq-tasks quotes multi-entry blocked_by values as "a,b,c". resolve must strip
 # those surrounding quotes before comma-boundary membership so the first and last
 # list elements match, not only middle elements.
 test_resolve_matches_quoted_blocked_by_edges() {

@@ -56,10 +56,10 @@
 #          LAVISH_AXI_MIN below; the per-tool owners point there. An installed
 #          build below its floor reports MISSING like drill, so the operator
 #          is asked to upgrade rather than silently running an older tool.
-#          tasks-axi feature probes remain a separate defense-in-depth check.
-#          tasks-axi and quota-axi are required bootstrap tools (same class as
-#          lavish-axi). A compatible tasks-axi default backend is silent.
-#          quota-axi is required for the agent-owned dispatch-profile array
+#          sq-tasks feature probes remain a separate defense-in-depth check.
+#          sq-tasks and sq-quota are required bootstrap tools (same class as
+#          sq-report). A compatible sq-tasks default backend is silent.
+#          sq-quota is required for the agent-owned dispatch-profile array
 #          procedure in AGENTS.md section 4 and
 #          .agents/skills/quota-array-dispatch/SKILL.md.
 #          On a primary base, the locked mutable path materializes the visible
@@ -795,7 +795,7 @@ DRILL_MIN=1.31.2
 # newest axi tools. It is NOT the minimum feature-introduced version. These floors
 # are expected to drift upward as new versions ship. Never lower a floor to the
 # earliest release that happens to satisfy some depended-on behavior. The
-# tasks-axi feature probes are an independent defense-in-depth concern, not part
+# The sq-tasks feature probes are an independent defense-in-depth concern, not part
 # of its floor.
 GH_AXI_MIN=0.1.0
 LAVISH_AXI_MIN=0.1.0
@@ -1132,7 +1132,7 @@ detect_local_tools() {
   done
   for t in $COMMON_TOOLS; do
     if [ "$t" = sq-tasks ]; then
-      # sq-tasks keeps the legacy tasks-axi resolver alias (bin/sq-tasks-lib.sh);
+      # sq-tasks keeps the legacy protocol-alias resolver fallback (bin/sq-tasks-lib.sh);
       # a pre-M6 environment with only the legacy binary on PATH is present, not missing.
       [ -n "$(fm_tasks_axi_cmd)" ] || missing_tool_diagnostic "$t"
       continue
@@ -1184,7 +1184,7 @@ detect_local_config() {
   crew_dispatch_validate
   if [ "${SQUAD_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ] \
     && ! fm_backlog_backend_manual "$CONFIG" && fm_tasks_axi_compatible; then
-    echo "BOOTSTRAP_INFO: tasks-axi available"
+    echo "BOOTSTRAP_INFO: sq-tasks available"
   fi
 }
 

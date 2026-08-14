@@ -176,7 +176,7 @@ EOF
 # sq-session-start.sh can execute: a git repo on main so the tangle check
 # behaves, plus the home directories the digest reads. The deliberately bare
 # PATH keeps every bootstrap probe fast and hermetic - it reports missing tools
-# instead of reaching the host's real gh/tmux/tasks-axi.
+# instead of reaching the host's real gh/tmux/sq-tasks.
 RUN_PATH=${SQUAD_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 
 make_run_primary() {

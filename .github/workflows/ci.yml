@@ -52,16 +52,16 @@ jobs:
           set -eu
           bin/sq-install-shellcheck.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install sq-tasks (forked tasks-axi, M6 rename)
+      - name: Install sq-tasks
         run: |
           set -eu
           # npm install of the folder packs the already-built dist, so the
           # pnpm deps must exist first; build is then a no-op cache hit.
           (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
           npm install -g ./packages/sq-tasks
-          # Backward-compat alias: the distro and its tests invoke the backlog
-          # backend by the protocol name `tasks-axi`; the fork's own bin is
-          # `sq-tasks` (M6).
+          # Backward-compat alias: runtime and tests invoke the backlog backend
+          # by the legacy protocol name (bin/sq-tasks-lib.sh contract); the
+          # fork's own bin is `sq-tasks`.
           ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
           sq-tasks --version
@@ -92,16 +92,16 @@ jobs:
           set -eu
           bin/sq-install-shellcheck.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Install sq-tasks (forked tasks-axi, M6 rename)
+      - name: Install sq-tasks
         run: |
           set -eu
           # npm install of the folder packs the already-built dist, so the
           # pnpm deps must exist first; build is then a no-op cache hit.
           (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)
           npm install -g ./packages/sq-tasks
-          # Backward-compat alias: the distro and its tests invoke the backlog
-          # backend by the protocol name `tasks-axi`; the fork's own bin is
-          # `sq-tasks` (M6).
+          # Backward-compat alias: runtime and tests invoke the backlog backend
+          # by the legacy protocol name (bin/sq-tasks-lib.sh contract); the
+          # fork's own bin is `sq-tasks`.
           ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
           sq-tasks --version
@@ -154,7 +154,7 @@ jobs:
             exit 1
           }
           tmux -V
-      - name: Install sq-tasks for backlog-handoff delegation (forked tasks-axi, M6 rename)
+      - name: Install sq-tasks for backlog-handoff delegation
         run: |
           set -eu
           (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build)

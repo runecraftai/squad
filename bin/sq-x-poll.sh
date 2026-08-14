@@ -23,7 +23,7 @@
 #
 # The public-followup line rides here rather than on a new poll of its own: this
 # check only exists in a base that opted into the relay, and it is an O(1)
-# directory presence test plus a signature compare, with no tasks-axi call and no
+# directory presence test plus a signature compare, with no sq-tasks call and no
 # backlog scan. A base with no pending terminal results pays nothing for it.
 # The full object is stashed verbatim, so any conversation context the relay
 # includes (in_reply_to: {author_handle, text}, null for a fresh mention) is

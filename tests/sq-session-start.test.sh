@@ -27,7 +27,7 @@
 #   - the deferred network stage: an unreachable host delays a reported check
 #     rather than the digest, the sweeps it defers still run and land, a result
 #     surfaces exactly once (inline or as a wake, never both), a read-only
-#     session declares the checks it skipped, and the tasks-axi compatibility
+#     session declares the checks it skipped, and the sq-tasks compatibility
 #     verdict is paid for once per session start
 set -u
 
@@ -107,7 +107,7 @@ SH
   printf '%s\n' manual > "${fakebin%/*}/home-placeholder" 2>/dev/null || true
 }
 
-# make_fake_tasks_axi_compact <fakebin>: a tasks-axi boundary that answers the
+# make_fake_tasks_axi_compact <fakebin>: a sq-tasks boundary that answers the
 # four group filters the startup listing composes (in-flight, held, blocked
 # queued, and the dispatchable ready set) and REFUSES anything the recovery
 # listing must never ask for: a body field, an unfiltered whole-backlog listing,
@@ -132,7 +132,7 @@ task_header() {
 }
 list_help() {
   printf 'help[1]:\n'
-  printf '%s\n' '  - Run `tasks-axi show <id> --full` for full notes on a task'
+  printf '%s\n' '  - Run `sq-tasks show <id> --full` for full notes on a task'
 }
 case "${1:-}" in
   --version|-v|-V)
@@ -141,13 +141,13 @@ case "${1:-}" in
     ;;
   update)
     if [ "${2:-}" = --help ]; then
-      printf '%s\n' 'usage: tasks-axi update <id> [--archive-body]'
+      printf '%s\n' 'usage: sq-tasks update <id> [--archive-body]'
       exit 0
     fi
     ;;
   mv)
     if [ "${2:-}" = --help ]; then
-      printf '%s\n' 'usage: tasks-axi mv <dest> [<id>...]'
+      printf '%s\n' 'usage: sq-tasks mv <dest> [<id>...]'
       exit 0
     fi
     ;;
@@ -162,7 +162,7 @@ case "${1:-}" in
     done
     printf 'ready_public_followups: 0 delivery-ready obligations\n'
     printf 'help[1]:\n'
-    printf '%s\n' '  - Run `tasks-axi start <id>` to dispatch one of these'
+    printf '%s\n' '  - Run `sq-tasks start <id>` to dispatch one of these'
     exit 0
     ;;
   list)
@@ -759,7 +759,7 @@ EOF
   assert_not_contains "$out" "git -C $root checkout main" "read-only bootstrap printed a state-changing checkout remediation"
 
   # Detect-only bootstrap diagnostics still ran (the fakebin's PATH excludes
-  # tasks-axi, so bootstrap's own read-only tool-detection line fires
+  # sq-tasks, so bootstrap's own read-only tool-detection line fires
   # deterministically regardless of what is installed on the test host).
   assert_contains "$out" "MISSING: sq-tasks (install:" "detect-only bootstrap diagnostics did not run on the read-only path"
 
@@ -1497,30 +1497,30 @@ SH
   pass "session start: a read-only session declares its skipped network checks rather than dropping them"
 }
 
-# The compatibility verdict costs three tasks-axi subprocesses and one session
+# The compatibility verdict costs three sq-tasks subprocesses and one session
 # start needs it twice. The digest must pay for it once.
 test_tasks_axi_compatibility_is_probed_once() {
   local rec root home fakebin log probes
-  rec=$(new_world tasks-axi-once)
+  rec=$(new_world sq-tasks-once)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
   make_fake_tasks_axi_compact "$fakebin"
-  log="$home/tasks-axi.log"
+  log="$home/sq-tasks.log"
   printf '# Backlog\n\n## In flight\n\n## Queued\n' > "$home/data/backlog.md"
 
   SQUAD_FAKE_TASKS_AXI_LOG="$log" run_session_start "$home" "$root" "$fakebin:$BASE_PATH" >/dev/null
 
   probes=$(grep -c -- '--version' "$log" || true)
   [ "$probes" -eq 1 ] \
-    || fail "tasks-axi was version-probed $probes times in one session start: $(cat "$log")"
+    || fail "sq-tasks was version-probed $probes times in one session start: $(cat "$log")"
   probes=$(grep -c -- 'update --help' "$log" || true)
   [ "$probes" -eq 1 ] \
-    || fail "tasks-axi update --help ran $probes times in one session start: $(cat "$log")"
+    || fail "sq-tasks update --help ran $probes times in one session start: $(cat "$log")"
   assert_grep 'ready --file' "$log" "the backlog listing never ran, so the verdict was not actually reused"
-  pass "session start: the tasks-axi compatibility verdict is computed once and reused"
+  pass "session start: the sq-tasks compatibility verdict is computed once and reused"
 }
 
 # --- unit-state digest: compact backlog rendering --------------------------
@@ -1556,7 +1556,7 @@ EOF
 
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata() {
   local rec root home fakebin out log
-  rec=$(new_world backlog-compact-tasks-axi)
+  rec=$(new_world backlog-compact-sq-tasks)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
@@ -1567,49 +1567,49 @@ EOF
   mkdir -p "$home/projects/Squad"
   printf 'window=sq-sess:compact\nworktree=%s\nproject=Squad\nkind=strike\n' "$home/projects/Squad" \
     > "$home/state/compact-startup.meta"
-  log="$home/tasks-axi.log"
+  log="$home/sq-tasks.log"
 
   out=$(SQUAD_FAKE_TASKS_AXI_LOG="$log" SQUAD_FAKE_TASKS_AXI_READY=3 \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to 20; task bodies omitted)" \
-    "compatible tasks-axi backend did not render the compact backlog listing"
+  assert_contains "$out" "compact backlog listing (sq-tasks; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to 20; task bodies omitted)" \
+    "compatible sq-tasks backend did not render the compact backlog listing"
   assert_contains "$out" "tasks[1]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:" \
-    "tasks-axi compact listing omitted the expected structured field header"
+    "sq-tasks compact listing omitted the expected structured field header"
   assert_contains "$out" "compact-startup,in_flight,ship,Squad,Compact startup digest,none,commander,commander choice pending" \
-    "tasks-axi compact listing omitted in-flight identity, state, or hold metadata"
+    "sq-tasks compact listing omitted in-flight identity, state, or hold metadata"
   assert_contains "$out" "held-queued,queued,ship,Squad,Held queued work,none,commander,commander choice pending" \
-    "tasks-axi compact listing omitted a held row or its hold metadata"
+    "sq-tasks compact listing omitted a held row or its hold metadata"
   assert_contains "$out" 'blocked-followup,queued,recon,Squad,Follow compact startup,compact-startup,"-","-"' \
-    "tasks-axi compact listing omitted blocked-by metadata"
+    "sq-tasks compact listing omitted blocked-by metadata"
   assert_contains "$out" "ready-3,queued,ship,Squad,Ready item 3" \
-    "tasks-axi compact listing omitted a dispatchable queued row inside the bound"
-  assert_not_contains "$out" "OVERSIZED-BODY-LINE" "tasks-axi compact digest leaked an in-flight task body"
-  assert_not_contains "$out" "QUEUED-BODY-LINE" "tasks-axi compact digest leaked a queued task body"
-  assert_not_contains "$out" "DONE-ROW-LINE" "tasks-axi compact digest listed a done row at startup"
+    "sq-tasks compact listing omitted a dispatchable queued row inside the bound"
+  assert_not_contains "$out" "OVERSIZED-BODY-LINE" "sq-tasks compact digest leaked an in-flight task body"
+  assert_not_contains "$out" "QUEUED-BODY-LINE" "sq-tasks compact digest leaked a queued task body"
+  assert_not_contains "$out" "DONE-ROW-LINE" "sq-tasks compact digest listed a done row at startup"
   assert_contains "$out" "--- compact-startup ---" "in-flight meta identity disappeared from startup recovery digest"
   assert_contains "$out" "worktree=$home/projects/Squad" "in-flight recovery worktree identity disappeared from startup digest"
-  assert_contains "$out" "Full task bodies remain available on demand: tasks-axi show <id> --full" \
+  assert_contains "$out" "Full task bodies remain available on demand: sq-tasks show <id> --full" \
     "compact digest omitted the full-body lookup pointer"
   assert_contains "$out" "ready_public_followups: 0 delivery-ready obligations" \
     "the composed listing dropped a real signal from the dispatchable set"
   # One section pointer, not one repeated help block per composed group.
   assert_not_contains "$out" "help[1]:" \
-    "the composed listing repeated tasks-axi's per-group help block"
+    "the composed listing repeated sq-tasks' per-group help block"
 
   # The fake refuses a body field, an unfiltered listing, and a done listing, so
   # a clean render already proves those were never asked for; pin the group
   # filters the listing is built from.
   assert_grep "--state in_flight --fields blocked_by,hold_kind,hold_reason" "$log" \
-    "session start did not ask tasks-axi for the in-flight group"
+    "session start did not ask sq-tasks for the in-flight group"
   assert_grep "--state held --fields blocked_by,hold_kind,hold_reason" "$log" \
-    "session start did not ask tasks-axi for the held group"
+    "session start did not ask sq-tasks for the held group"
   assert_grep "--state queued --blocked --fields blocked_by,hold_kind,hold_reason" "$log" \
-    "session start did not ask tasks-axi for the blocked queued group"
+    "session start did not ask sq-tasks for the blocked queued group"
   assert_grep "ready --file $home/data/backlog.md" "$log" \
-    "session start did not ask tasks-axi for the dispatchable queued set"
+    "session start did not ask sq-tasks for the dispatchable queued set"
 
-  pass "compatible tasks-axi backlog rendering drops done rows and keeps every in-flight, held, and blocked row"
+  pass "compatible sq-tasks backlog rendering drops done rows and keeps every in-flight, held, and blocked row"
 }
 
 # The bound may only ever cut the dispatchable-now listing, and whatever it cuts
@@ -1633,7 +1633,7 @@ EOF
   assert_not_contains "$out" "ready-4,queued" "the queued bound did not actually bound the ready listing"
   assert_contains "$out" "(shown 3 of 7 ready queued item(s))" \
     "the bounded queued listing did not report what it showed"
-  assert_contains "$out" "(4 more queued - tasks-axi ready --file $home/data/backlog.md)" \
+  assert_contains "$out" "(4 more queued - sq-tasks ready --file $home/data/backlog.md)" \
     "the bounded queued listing did not disclose an exact remainder and how to see it"
 
   # The bound is for dispatchable work only: held and blocked rows stay whole.
@@ -1700,14 +1700,14 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "compact backlog listing (tasks-axi unavailable or incompatible; done rows omitted;" \
-    "unavailable tasks-axi did not fall back to compact title-line rendering"
+  assert_contains "$out" "compact backlog listing (sq-tasks unavailable or incompatible; done rows omitted;" \
+    "unavailable sq-tasks did not fall back to compact title-line rendering"
   assert_contains "$out" "- [ ] compact-startup - Compact startup digest" \
-    "unavailable tasks-axi fallback omitted a backlog title line"
-  assert_not_contains "$out" "OVERSIZED-BODY-LINE" "unavailable tasks-axi fallback leaked an in-flight task body"
-  assert_not_contains "$out" "DONE-ROW-LINE" "unavailable tasks-axi fallback listed a done row at startup"
+    "unavailable sq-tasks fallback omitted a backlog title line"
+  assert_not_contains "$out" "OVERSIZED-BODY-LINE" "unavailable sq-tasks fallback leaked an in-flight task body"
+  assert_not_contains "$out" "DONE-ROW-LINE" "unavailable sq-tasks fallback listed a done row at startup"
 
-  pass "unavailable or incompatible tasks-axi falls back to compact manual backlog rendering"
+  pass "unavailable or incompatible sq-tasks falls back to compact manual backlog rendering"
 }
 
 # --- runtime bound -----------------------------------------------------------

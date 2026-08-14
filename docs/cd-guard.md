@@ -11,7 +11,7 @@ the sentry-arm PreToolUse seatbelt (`bin/sq-arm-pretool-check.sh`, `docs/arm-pre
 ## Purpose and boundary
 
 The primary Squad shell persists its working directory across tool calls.
-A stray persistent top-level `cd projects/<clone>` therefore silently relocates the shell, so the next Squad-owned command - a backlog write, an `sq-*` lifecycle call, `tasks-axi` - runs inside a project clone instead of the base.
+A stray persistent top-level `cd projects/<clone>` therefore silently relocates the shell, so the next Squad-owned command - a backlog write, an `sq-*` lifecycle call, `sq-tasks` - runs inside a project clone instead of the base.
 That has actually happened: a persistent top-level `cd` caused a Squad-owned backlog write to execute inside a project clone rather than the base.
 The seatbelt denies exactly that command shape - a cwd change that persists to the primary shell - before it runs.
 

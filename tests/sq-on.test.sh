@@ -51,7 +51,7 @@ printf '%s\n' "${SQUAD_REMOTE_JOB_ACTIVE:-absent}" >> "$HOME/tool-probe.log"
 case "\${1:-}:\${2:-}" in
   --version:*) printf '0.2.4\n' ;;
   update:--help) printf '%s\n' --archive-body ;;
-  mv:--help) printf '%s\n' 'usage: tasks-axi mv <id> [<id>...]' ;;
+  mv:--help) printf '%s\n' 'usage: sq-tasks mv <id> [<id>...]' ;;
 esac
 SH
 chmod +x "$REMOTE_ROOT/bin/sq-tasks"
@@ -297,7 +297,7 @@ assert_contains "$out" 'check remote-job-probe=ok: the remote job worker complet
   "the doctor did not use a completed worker probe for tool readiness"
 # The worker probe evidence: the doctor staged the probe job inside the
 # remote job worker and validated its result (asserted above). The fake
-# tasks-axi/sq-tasks-axi fixtures exist so the fork-first resolver
+# The fixtures carry the forked and legacy alias names so the fork-first resolver
 # (fm_tasks_axi_cmd, M2) hits them on the worker child PATH; the log-file
 # side channel is not stable across worker environments, so readiness is
 # asserted through the doctor's own probe check instead.
@@ -335,7 +335,7 @@ cat > "$DOCTOR_BIN/tasks-axi" <<'SH'
 case "${1:-}:${2:-}" in
   --version:*) printf '0.2.4\n' ;;
   update:--help) printf '%s\n' --archive-body ;;
-  mv:--help) printf '%s\n' 'usage: tasks-axi mv <id> [<id>...]' ;;
+  mv:--help) printf '%s\n' 'usage: sq-tasks mv <id> [<id>...]' ;;
 esac
 SH
 printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/fob"

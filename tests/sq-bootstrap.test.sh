@@ -4,21 +4,21 @@
 # Bootstrap prints one block or line per actionable problem, optional verbose
 # BOOTSTRAP_INFO fact, or completed bootstrap no-action fact and is silent when
 # all is well. Squad consumes the exact 'MISSING: fob (install: ...)',
-# 'MISSING: tasks-axi (install: ...)', 'MISSING: quota-axi (install: ...)',
-# 'MISSING: gh-axi (install: ...)', 'MISSING: lavish-axi (install: ...)', and
+# 'MISSING: sq-tasks (install: ...)', 'MISSING: sq-quota (install: ...)',
+# 'MISSING: sq-gh (install: ...)', 'MISSING: sq-report (install: ...)', and
 # 'BOOTSTRAP_INFO: ...' lines, so those contracts are pinned verbatim. The cases
 # are table-driven over the inputs that vary: whether `fob get --help`
-# advertises --lease, which (if any) tasks-axi version is on PATH, whether
-# tasks-axi update advertises --archive-body, whether its mv help advertises
-# multi-ID moves, whether quota-axi is on PATH,
-# whether the local backend config opts out of tasks-axi backlog mutations,
-# which drill version is on PATH, which gh-axi version is on PATH, and
-# which lavish-axi version is on PATH.
+# advertises --lease, which (if any) sq-tasks version is on PATH, whether
+# sq-tasks update advertises --archive-body, whether its mv help advertises
+# multi-ID moves, whether sq-quota is on PATH,
+# whether the local backend config opts out of sq-tasks backlog mutations,
+# which drill version is on PATH, which sq-gh version is on PATH, and
+# which sq-report version is on PATH.
 # Dedicated unit-sync cases pin the computed bootstrap timeout, explicit
 # override, blank-env defaulting, partial-output relay, and pre-launch timeout
 # scan.
 # Dedicated network-phase cases pin SQUAD_BOOTSTRAP_NETWORK as a true partition of
-# one run into its local and network halves, and the one-hop tasks-axi
+# one run into its local and network halves, and the one-hop sq-tasks
 # compatibility handoff that keeps a session start from paying for that verdict
 # twice.
 set -u
@@ -107,8 +107,8 @@ add_tasks_axi() {
   local fakebin=$1 version=$2 archive_body=${3:-yes} multi_id=${4:-yes} archive_line mv_usage
   archive_line=""
   [ "$archive_body" = yes ] && archive_line='  --archive-body'
-  mv_usage='usage: tasks-axi mv <id> [<id>...] --to <path-or-dir>'
-  [ "$multi_id" = yes ] || mv_usage='usage: tasks-axi mv <id> --to <path-or-dir>'
+  mv_usage='usage: sq-tasks mv <id> [<id>...] --to <path-or-dir>'
+  [ "$multi_id" = yes ] || mv_usage='usage: sq-tasks mv <id> --to <path-or-dir>'
   cat > "$fakebin/sq-tasks" <<SH
 #!/usr/bin/env bash
 if [ "\${1:-}" = --version ]; then
@@ -116,7 +116,7 @@ if [ "\${1:-}" = --version ]; then
   exit 0
 fi
 if [ "\${1:-}" = update ] && [ "\${2:-}" = --help ]; then
-  printf '%s\n' 'usage: tasks-axi update <id> [flags]'
+  printf '%s\n' 'usage: sq-tasks update <id> [flags]'
   printf '%s\n' '  --body-file <path>'
   [ -z '$archive_line' ] || printf '%s\n' '$archive_line'
   exit 0
@@ -240,7 +240,7 @@ assert_timeout_report() {
 }
 
 # Each row (fields are '^'-separated; the install URL contains a literal '|'):
-#   <label>^<lease 1/0>^<tasks-axi version or ->^<quota 1/0>^<backend or ->^<mode>^<expect>^<notcontains>
+#   <label>^<lease 1/0>^<sq-tasks version or ->^<sq-quota 1/0>^<backend or ->^<mode>^<expect>^<notcontains>
 #   mode=empty -> output must be empty (expect/notcontains ignored)
 #   mode=exact -> output must equal <expect>
 #   mode=grep  -> output must contain <expect> (fixed string); <notcontains> must not appear
@@ -299,16 +299,16 @@ test_bootstrap_reporting() {
   done <<'ROWS'
 fob --lease support is accepted silently^1^0.2.4^1^manual^empty^^
 fob without --lease reports an upgrade, gh auth is fine^0^0.2.4^1^-^grep^MISSING: fob (install: bin/sq-install-fob.sh ~/.local/bin  # build the vendored packages/fob)^NEEDS_GH_AUTH
-compatible tasks-axi is silent by default^1^0.2.4^1^-^empty^^
-missing tasks-axi is required by default^1^-^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
-incompatible tasks-axi is required by default^1^0.0.9^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
-tasks-axi without archive-body is required by default^1^0.2.4:noarchive^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
-tasks-axi without multi-id mv is required by default^1^0.2.4:nomulti^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
-missing quota-axi is required by default^1^0.2.4^0^manual^exact^MISSING: sq-quota (install: (cd packages/sq-quota && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-quota)^
-manual backlog backend still requires missing tasks-axi^1^-^1^manual^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
-manual backlog backend suppresses tasks-axi availability^1^0.2.4^1^manual^empty^^
+compatible sq-tasks is silent by default^1^0.2.4^1^-^empty^^
+missing sq-tasks is required by default^1^-^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
+incompatible sq-tasks is required by default^1^0.0.9^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
+sq-tasks without archive-body is required by default^1^0.2.4:noarchive^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
+sq-tasks without multi-id mv is required by default^1^0.2.4:nomulti^1^-^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
+missing sq-quota is required by default^1^0.2.4^0^manual^exact^MISSING: sq-quota (install: (cd packages/sq-quota && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-quota)^
+manual backlog backend still requires missing sq-tasks^1^-^1^manual^exact^MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)^
+manual backlog backend suppresses sq-tasks availability^1^0.2.4^1^manual^empty^^
 ROWS
-  pass "bootstrap reports fob lease + tasks-axi/quota-axi bootstrap contracts"
+  pass "bootstrap reports fob lease + sq-tasks/sq-quota bootstrap contracts"
 }
 
 test_drill_min_version() {
@@ -348,7 +348,7 @@ test_gh_axi_min_version() {
   while IFS='^' read -r label version mode; do
     [ -n "$label" ] || continue
     n=$((n + 1))
-    case_dir="$TMP_ROOT/gh-axi-$n"
+    case_dir="$TMP_ROOT/sq-gh-$n"
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
@@ -361,15 +361,15 @@ test_gh_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum gh-axi version is accepted^0.1.0^empty
-newer gh-axi patch is accepted^0.1.31^empty
-newer gh-axi minor is accepted^0.2.0^empty
-newer gh-axi major is accepted^1.0.0^empty
-older gh-axi patch reports an upgrade^0.0.9^missing
-much older gh-axi minor reports an upgrade^0.0.1^missing
-unparseable gh-axi version reports an upgrade^gh-axi development build^missing
+minimum sq-gh version is accepted^0.1.0^empty
+newer sq-gh patch is accepted^0.1.31^empty
+newer sq-gh minor is accepted^0.2.0^empty
+newer sq-gh major is accepted^1.0.0^empty
+older sq-gh patch reports an upgrade^0.0.9^missing
+much older sq-gh minor reports an upgrade^0.0.1^missing
+unparseable sq-gh version reports an upgrade^sq-gh development build^missing
 ROWS
-  pass "bootstrap enforces gh-axi minimum version"
+  pass "bootstrap enforces sq-gh minimum version"
 }
 
 test_lavish_axi_min_version() {
@@ -379,7 +379,7 @@ test_lavish_axi_min_version() {
   while IFS='^' read -r label version mode; do
     [ -n "$label" ] || continue
     n=$((n + 1))
-    case_dir="$TMP_ROOT/lavish-axi-$n"
+    case_dir="$TMP_ROOT/sq-report-$n"
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
@@ -392,15 +392,15 @@ test_lavish_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum lavish-axi version is accepted^0.1.0^empty
-newer lavish-axi patch is accepted^0.1.49^empty
-newer lavish-axi minor is accepted^0.2.0^empty
-newer lavish-axi major is accepted^1.0.0^empty
+minimum sq-report version is accepted^0.1.0^empty
+newer sq-report patch is accepted^0.1.49^empty
+newer sq-report minor is accepted^0.2.0^empty
+newer sq-report major is accepted^1.0.0^empty
 below the floor reports an upgrade^0.0.9^missing
-much older lavish-axi minor reports an upgrade^0.0.1^missing
-unparseable lavish-axi version reports an upgrade^lavish-axi development build^missing
+much older sq-report minor reports an upgrade^0.0.1^missing
+unparseable sq-report version reports an upgrade^sq-report development build^missing
 ROWS
-  pass "bootstrap enforces lavish-axi minimum version"
+  pass "bootstrap enforces sq-report minimum version"
 }
 
 test_tasks_axi_min_version() {
@@ -410,7 +410,7 @@ test_tasks_axi_min_version() {
   while IFS='^' read -r label version mode; do
     [ -n "$label" ] || continue
     n=$((n + 1))
-    case_dir="$TMP_ROOT/tasks-axi-$n"
+    case_dir="$TMP_ROOT/sq-tasks-$n"
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
@@ -438,20 +438,20 @@ test_tasks_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum tasks-axi version is accepted^0.1.0^empty
-newer tasks-axi patch is accepted^0.2.5^empty
-newer tasks-axi minor is accepted^0.3.0^empty
-newer tasks-axi major is accepted^1.0.0^empty
-older tasks-axi with features reports an upgrade^0.0.9^missing
+minimum sq-tasks version is accepted^0.1.0^empty
+newer sq-tasks patch is accepted^0.2.5^empty
+newer sq-tasks minor is accepted^0.3.0^empty
+newer sq-tasks major is accepted^1.0.0^empty
+older sq-tasks with features reports an upgrade^0.0.9^missing
 below the floor reports an upgrade^0.0.1^missing
-unparseable tasks-axi version reports an upgrade^tasks-axi development build^missing
-tasks-axi at floor without archive-body reports an upgrade^0.1.0:noarchive^missing
-tasks-axi at floor without multi-id reports an upgrade^0.1.0:nomulti^missing
+unparseable sq-tasks version reports an upgrade^sq-tasks development build^missing
+sq-tasks at floor without archive-body reports an upgrade^0.1.0:noarchive^missing
+sq-tasks at floor without multi-id reports an upgrade^0.1.0:nomulti^missing
 ROWS
-  pass "bootstrap enforces tasks-axi minimum version"
+  pass "bootstrap enforces sq-tasks minimum version"
 }
 
-# These rows exercise the real bootstrap check with a fake quota-axi answering
+# These rows exercise the real bootstrap check with a fake sq-quota answering
 # --version: below the floor produces MISSING, while at or above is silent.
 test_quota_axi_min_version() {
   local label version mode case_dir fakebin out missing n
@@ -460,7 +460,7 @@ test_quota_axi_min_version() {
   while IFS='^' read -r label version mode; do
     [ -n "$label" ] || continue
     n=$((n + 1))
-    case_dir="$TMP_ROOT/quota-axi-$n"
+    case_dir="$TMP_ROOT/sq-quota-$n"
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
@@ -473,15 +473,15 @@ test_quota_axi_min_version() {
         [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
     esac
   done <<'ROWS'
-minimum quota-axi version is accepted^0.1.0^empty
-newer quota-axi patch is accepted^0.1.21^empty
-newer quota-axi minor is accepted^0.2.0^empty
-newer quota-axi major is accepted^1.0.0^empty
+minimum sq-quota version is accepted^0.1.0^empty
+newer sq-quota patch is accepted^0.1.21^empty
+newer sq-quota minor is accepted^0.2.0^empty
+newer sq-quota major is accepted^1.0.0^empty
 below the floor reports an upgrade^0.0.9^missing
-much older quota-axi minor reports an upgrade^0.0.1^missing
-unparseable quota-axi version reports an upgrade^quota-axi development build^missing
+much older sq-quota minor reports an upgrade^0.0.1^missing
+unparseable sq-quota version reports an upgrade^sq-quota development build^missing
 ROWS
-  pass "bootstrap enforces quota-axi minimum version"
+  pass "bootstrap enforces sq-quota minimum version"
 }
 
 test_git_is_required_with_supported_install_instruction() {
@@ -870,7 +870,7 @@ test_routine_bootstrap_confirmations_are_silent() {
   local out
   out=$(run_routine_bootstrap_fixture bash "$TMP_ROOT/routine-silent")
   [ -z "$out" ] || fail "routine bootstrap confirmations should be silent, got: $out"
-  pass "bootstrap keeps routine tasks-axi, harness, dispatch, and already-live liveness confirmations silent"
+  pass "bootstrap keeps routine sq-tasks, harness, dispatch, and already-live liveness confirmations silent"
 }
 
 test_routine_bootstrap_contract_runs_under_system_bash() {
@@ -962,7 +962,7 @@ SH
 
 # The verdict costs three subprocesses, so a caller that already has it can hand
 # it over - but only one hop, and never onward into a spawned agent's
-# environment, where it could outlive a tasks-axi upgrade.
+# environment, where it could outlive an sq-tasks upgrade.
 # assert_timing_record <log> <scope> <name> <detail> <msg>: one bin/sq-timing-lib.sh
 # record with exactly these fields must exist. Field-exact rather than a substring
 # match, so a detail that landed in the wrong column cannot pass.
@@ -1030,10 +1030,10 @@ test_network_phases_record_per_step_elapsed_times() {
 
 test_tasks_axi_verdict_handoff_is_consumed_once() {
   local case_dir fakebin log out
-  case_dir="$TMP_ROOT/tasks-axi-handoff"
+  case_dir="$TMP_ROOT/sq-tasks-handoff"
   mkdir -p "$case_dir/home/config"
   fakebin=$(make_fake_toolchain "$case_dir")
-  log="$case_dir/tasks-axi.log"
+  log="$case_dir/sq-tasks.log"
   cat > "$fakebin/sq-tasks" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${SQUAD_FAKE_TASKS_AXI_LOG:?}"
@@ -1069,7 +1069,7 @@ SH
   out=$(SQUAD_TASKS_AXI_COMPATIBLE=1 bash -c '. "$1"; printf "%s\n" "${SQUAD_TASKS_AXI_COMPATIBLE-unset}"' \
     _ "$ROOT/bin/sq-tasks-lib.sh")
   [ "$out" = unset ] || fail "sourcing the library left the handoff in the environment: $out"
-  pass "bootstrap: the tasks-axi compatibility verdict travels exactly one process hop"
+  pass "bootstrap: the sq-tasks compatibility verdict travels exactly one process hop"
 }
 
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info() {

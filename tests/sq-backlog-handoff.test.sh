@@ -9,9 +9,9 @@ set -u
 # shellcheck source=tests/xo-helpers.sh disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/xo-helpers.sh"
 
-# The move is delegated to `tasks-axi mv`, so this suite exercises the real
+# The move is delegated to `sq-tasks mv`, so this suite exercises the real
 # binary. Skip cleanly when it is absent (matching the backend smoke suites).
-command -v tasks-axi >/dev/null 2>&1 || { echo "skip: tasks-axi not found (required by the delegated handoff path)"; exit 0; }
+command -v tasks-axi >/dev/null 2>&1 || { echo "skip: sq-tasks not found (required by the delegated handoff path)"; exit 0; }
 
 TMP_ROOT=$(fm_test_tmproot sq-backlog-handoff)
 
@@ -160,7 +160,7 @@ test_body_moves_when_last_lines_of_file() {
     printf '%s\n' '  ## Intent'
     printf '%s' '  eof body line two'
   } > "$home/data/backlog.md"
-  # tasks-axi owns the destination format: the moved block lands under ## Queued
+  # sq-tasks owns the destination format: the moved block lands under ## Queued
   # in the standard three-section scaffold the handoff seeds for a fresh home.
   local expected_destination="$TMP_ROOT/body-eof-expected.md"
   {
@@ -208,7 +208,7 @@ test_eof_body_before_seeded_destination_section_keeps_boundary() {
     printf '%s\n' '  seeded eof body one'
     printf '%s' '  seeded eof body two'
   } > "$home/data/backlog.md"
-  # tasks-axi owns the destination whitespace: the moved block sits directly
+  # sq-tasks owns the destination whitespace: the moved block sits directly
   # under ## Queued with the section separator before the following ## Done, and
   # the EOF body stays a clean line above that heading (its boundary is kept).
   local expected_destination="$TMP_ROOT/body-eof-seeded-expected.md"
