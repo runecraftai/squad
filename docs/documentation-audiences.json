@@ -741,18 +741,6 @@
       "audience": "public-product"
     },
     {
-      "path": "packages/sq-report/lavish-editor-marketing/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/lavish-editor-marketing/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/lavish-editor-marketing/DESIGN.md",
-      "audience": "maintainer-architecture"
-    },
-    {
       "path": "packages/sq-report/skills/lavish/SKILL.md",
       "audience": "agent-runtime"
     },
