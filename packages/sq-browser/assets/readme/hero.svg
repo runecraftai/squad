@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="380" viewBox="0 0 1200 380"
      role="img" aria-labelledby="title desc">
-  <title id="title">sq-browser: a Chrome session your agent can drive from the terminal</title>
+  <title id="title">sq-browser: recon-grade Chrome sessions your agent drives from the terminal</title>
   <desc id="desc">A browser window shows an opened page with an accessibility snapshot, an element ref uid=g1:1, and a next-step hint to click it; a scope reticle marks the recon target.</desc>
 
   <defs>
