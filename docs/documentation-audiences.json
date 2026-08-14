@@ -31,7 +31,8 @@
     "docs/zellij-backend.md",
     "docs/orca-backend.md",
     "docs/cmux-backend.md",
-    "docs/remote-XOs.md"
+    "docs/remote-XOs.md",
+    "docs/status-notify.md"
   ],
   "requiredOwnerPointers": [
     {
@@ -403,6 +404,10 @@
     {
       "path": "docs/sq-test-portable-shards.md",
       "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/status-notify.md",
+      "audience": "operator-current"
     },
     {
       "path": "docs/subagent-guard.md",

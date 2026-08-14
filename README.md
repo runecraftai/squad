@@ -163,6 +163,7 @@ Squad's tooling ships as standalone packages under `packages/`, each with its ow
 - [docs/calm.md](docs/calm.md) - current Pi `/calm` behavior and supported presentation limits.
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.
 - [docs/tmux-backend.md](docs/tmux-backend.md) - current setup and limits for the tmux reference backend.
+- [docs/status-notify.md](docs/status-notify.md) - desktop notifications for operator done/blocked wake events, with a tmux focus action.
 - [docs/herdr-backend.md](docs/herdr-backend.md) - current setup, safety boundaries, and limits for the experimental Herdr backend.
 - [docs/zellij-backend.md](docs/zellij-backend.md) - current setup and limits for the experimental Zellij backend.
 - [docs/orca-backend.md](docs/orca-backend.md) - current setup and limits for the experimental Orca backend.
