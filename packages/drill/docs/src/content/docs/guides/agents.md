@@ -201,7 +201,7 @@ Five global config fields tune resolution and invocation, and the [Global Config
 
 ## Review session reuse
 
-With the default `session_reuse: true`, Claude and Codex keep one durable review-fixer session per run, and resume failures fall back to a fresh fixer session instead of skipping the fix turn.
+With the default `session_reuse: true`, Claude, Codex, opencode, and pi keep one durable review-fixer session per run, and resume failures fall back to a fresh fixer session instead of skipping the fix turn.
 Review turns always run in fresh, session-free invocations: a rereview certifies fixes that implement the previous review turn's findings, so it must never resume the session that prescribed them.
 The [`session_reuse` field reference](/drill/reference/global-config/#session_reuse) owns the exact reuse, fallback, privacy, and restart-recovery semantics.
 
@@ -271,11 +271,11 @@ Starts a persistent HTTP server (`acli rovodev serve`) on first use and reuses i
 
 ## OpenCode
 
-Starts a persistent HTTP server (`opencode serve`) on first use and reuses it across invocations. If a reused server refuses a connection, drill discards it and retries with a fresh server. Any `agent_args_override.opencode` flags are inserted before drill's managed serve flags. Similar session lifecycle to Rovo Dev: create session, send message, stream SSE events until idle, delete session. Supports `json_schema` format in the message request for structured output, with `retryCount: 2` so the model gets a second chance to emit a structured response. When opencode reports `info.error.name = "StructuredOutputError"` (the model did not call the StructuredOutput tool after those retries), drill surfaces a clean error including the retry count rather than falling through to text-parsing the streamed reasoning prose. When native structured output is genuinely absent, it falls back to parsing the final text with the same JSON fence and bare-object fallback, validating that fallback result against the requested schema while allowing `null` for optional fields.
+Starts a persistent HTTP server (`opencode serve`) on first use and reuses it across invocations. If a reused server refuses a connection, drill discards it and retries with a fresh server. Any `agent_args_override.opencode` flags are inserted before drill's managed serve flags. Cold invocations follow the same lifecycle as Rovo Dev: create session, send message, stream SSE events until idle, delete session. With session reuse, the fixer resumes the stored session id hosted by the managed serve server (a repeated message turn on `POST /session/{id}/message`) and keeps that session alive across fixer rounds instead of deleting it per turn; a message to an unknown session id fails with `NotFoundError`, which drops to the pipeline's fresh-session fallback. Supports `json_schema` format in the message request for structured output, with `retryCount: 2` so the model gets a second chance to emit a structured response. When opencode reports `info.error.name = "StructuredOutputError"` (the model did not call the StructuredOutput tool after those retries), drill surfaces a clean error including the retry count rather than falling through to text-parsing the streamed reasoning prose. When native structured output is genuinely absent, it falls back to parsing the final text with the same JSON fence and bare-object fallback, validating that fallback result against the requested schema while allowing `null` for optional fields.
 
 ## Pi
 
-Spawns a `pi` subprocess for each invocation with `--mode json --no-session`.
+Spawns a `pi` subprocess for each invocation with `--mode json`, adding `--no-session` on cold runs. With session reuse, `--no-session` is swapped for pi's native durable session: `--session-id <id>` resumes the exact stored project session, and an empty id lets pi mint a fresh resumable session whose identity is captured from the JSONL session event.
 See [`agent_args_override`](/drill/reference/global-config/#agent_args_override) for Pi override precedence.
 Reads JSONL events from stdout and streams incremental text deltas to the TUI.
 When structured output is requested, drill injects the JSON schema into the prompt and validates the final text response.

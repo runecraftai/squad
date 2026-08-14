@@ -26,6 +26,13 @@ type piAgent struct {
 
 func (a *piAgent) Name() string { return "pi" }
 
+// SupportsSessionResume reports pi's native durable-session capability:
+// `pi --mode json` emits a session event carrying the project session id, and
+// `--session-id <id>` resumes that exact session across invocations
+// (verified against pi 0.84.1 --help and empirically: a second --session-id
+// invocation recalls context stored by the first).
+func (a *piAgent) SupportsSessionResume() bool { return true }
+
 func (a *piAgent) ReportsAgentAttempts() bool { return true }
 
 // NeutralizesGateInstructions reports whether pi is currently launched with the
@@ -49,7 +56,12 @@ func (a *piAgent) Run(ctx context.Context, opts RunOpts) (*Result, error) {
 func (a *piAgent) Close() error { return nil }
 
 func (a *piAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error) {
-	args := a.buildArgs()
+	resumeID := ""
+	reuse := opts.Session != nil
+	if reuse {
+		resumeID = opts.Session.ID
+	}
+	args := a.buildArgs(reuse, resumeID)
 	cmd := exec.CommandContext(ctx, a.bin, args...)
 	cmd.Dir = opts.CWD
 	cmd.Env = gitSafeEnv(opts.CWD)
@@ -113,15 +125,26 @@ func (a *piAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error) {
 
 	text := pp.finalText()
 	res, err := finalizeTextResult("pi", text, opts.JSONSchema, pp.usage)
+	if res != nil && reuse {
+		// Only reuse invocations report a session identity: cold runs pass
+		// --no-session, whose emitted session id is ephemeral and would not
+		// resume, so reporting it would be a lie to the reuse machinery.
+		res.SessionID = pp.sessionID
+		res.Resumed = resumeID != ""
+	}
 	emitAgentExited(opts, "pi", pid, err)
 	return res, err
 }
 
 // buildArgs returns the Pi argv for one invocation. Under the project-settings
 // opt-out, the context-file suppression flag comes first. User extras otherwise
-// precede the managed flags that drill requires for JSONL parsing.
-func (a *piAgent) buildArgs() []string {
-	args := make([]string, 0, len(a.extraArgs)+5)
+// precede the managed flags that drill requires for JSONL parsing. Session
+// reuse (reuse=true) swaps the cold-run --no-session for pi's native durable
+// session: --session-id <id> resumes the exact stored project session when an
+// id is given, and an empty id lets pi mint a fresh resumable session whose
+// identity is reported in the JSONL session event.
+func (a *piAgent) buildArgs(reuse bool, resumeID string) []string {
+	args := make([]string, 0, len(a.extraArgs)+7)
 	// Project-settings opt-out (trusted-only; see config.DisableProjectSettings):
 	// disable AGENTS.md/CLAUDE.md discovery so an agent-orchestration target
 	// (upstream) cannot install a commander identity on the gate agent.
@@ -142,7 +165,13 @@ func (a *piAgent) buildArgs() []string {
 			args = append(args, arg)
 		}
 	}
-	args = append(args, "--mode", "json", "--no-session")
+	args = append(args, "--mode", "json")
+	switch {
+	case !reuse:
+		args = append(args, "--no-session")
+	case resumeID != "":
+		args = append(args, "--session-id", resumeID)
+	}
 	return args
 }
 
@@ -204,6 +233,7 @@ type piParser struct {
 	usage          TokenUsage
 	seenUsage      map[string]struct{}
 	assistantError string
+	sessionID      string
 }
 
 func (p *piParser) parse(ctx context.Context, r io.Reader) error {
@@ -239,6 +269,12 @@ func (p *piParser) parse(ctx context.Context, r io.Reader) error {
 func (p *piParser) handleEvent(event map[string]any) {
 	typ, _ := event["type"].(string)
 	switch typ {
+	case "session":
+		// Every pi run opens with a session event carrying the project session
+		// id (same id under --session-id resume; freshly minted otherwise).
+		if id, ok := event["id"].(string); ok {
+			p.sessionID = id
+		}
 	case "message_update":
 		p.rememberAssistant(event["message"])
 		p.handleAssistantEvent(event["assistantMessageEvent"])

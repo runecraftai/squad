@@ -18,6 +18,15 @@ type opencodeAgent struct {
 
 func (a *opencodeAgent) Name() string { return "opencode" }
 
+// SupportsSessionResume reports opencode's native durable-session capability:
+// sessions hosted by the managed `opencode serve` accept repeated POST
+// /session/{id}/message turns, so one session identity can span fixer rounds
+// (verified empirically against the installed opencode server: a second
+// message to the same session id recalls context stored by the first, and a
+// message to an unknown id fails with NotFoundError so a stale resume drops
+// to the pipeline's fresh-session fallback).
+func (a *opencodeAgent) SupportsSessionResume() bool { return true }
+
 func (a *opencodeAgent) ReportsAgentAttempts() bool { return true }
 
 func (a *opencodeAgent) Run(ctx context.Context, opts RunOpts) (*Result, error) {
@@ -46,12 +55,25 @@ func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, err
 		return nil, err
 	}
 
-	// Create session with blanket permissions
-	sessionID, err := a.createSession(ctx, baseURL, opts.CWD)
-	if err != nil {
-		return nil, err
+	// Reuse the durable fixer session when session reuse is active: resume the
+	// stored identity when present, otherwise create a session and keep it
+	// alive across fixer rounds. Cold invocations keep the legacy lifecycle
+	// (create, run, delete).
+	resumeID := ""
+	reuse := opts.Session != nil
+	if reuse {
+		resumeID = opts.Session.ID
 	}
-	defer a.deleteSession(baseURL, sessionID)
+	sessionID := resumeID
+	if sessionID == "" {
+		sessionID, err = a.createSession(ctx, baseURL, opts.CWD)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !reuse {
+		defer a.deleteSession(baseURL, sessionID)
+	}
 
 	// Build prompt with schema instructions if provided
 	prompt := opts.Prompt
@@ -166,13 +188,21 @@ func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, err
 
 	// Prefer structured output from response
 	if mr.resp != nil && mr.resp.Info != nil && mr.resp.Info.Structured != nil {
-		return &Result{
+		res := &Result{
 			Output:                mr.resp.Info.Structured,
 			Text:                  state.lastText,
 			Usage:                 state.usage,
 			UsageReported:         state.usage.Reported,
 			CacheCreationReported: state.usage.CacheCreationReported,
-		}, nil
+		}
+		if reuse {
+			// Only reuse invocations report a session identity: cold runs
+			// delete their session before the result is consumed, so reporting
+			// its id would be a lie to the reuse machinery.
+			res.SessionID = sessionID
+			res.Resumed = resumeID != ""
+		}
+		return res, nil
 	}
 
 	// Surface opencode's StructuredOutputError directly. When the model
@@ -195,7 +225,12 @@ func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, err
 	if outputText == "" {
 		outputText = state.lastText
 	}
-	return finalizeTextResult("opencode", outputText, opts.JSONSchema, state.usage)
+	res, err := finalizeTextResult("opencode", outputText, opts.JSONSchema, state.usage)
+	if res != nil && reuse {
+		res.SessionID = sessionID
+		res.Resumed = resumeID != ""
+	}
+	return res, err
 }
 
 func (a *opencodeAgent) Close() error {
