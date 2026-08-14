@@ -116,7 +116,7 @@ When in doubt about a repo's visibility, apply the guard anyway.
 Final scan, before posting every reply:
 
 ```bash
-grep -inE '\b(commander|squad|operator|worktree|sentry|drill|harness|agent|spawn|brief|orchestrat|lavish|axi|mcp|skill)\b' <<'EOF'
+grep -inE '\b(commander|squad|operator|worktree|sentry|drill|harness|agent|spawn|brief|orchestrat|sq-[a-z]+|mcp|skill)\b' <<'EOF'
 <paste the drafted reply here>
 EOF
 ```
