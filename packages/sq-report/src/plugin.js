@@ -312,10 +312,14 @@ export function linkCursorLocalPlugin(localPluginsDir, pluginRoot, pluginName, o
         movedPrevious = true;
       }
       rename(replacement, target);
-      if (movedPrevious) remove(previous, { force: true });
+      // Node >= 22.12 treats a symlink to a directory as a directory for rmSync and
+      // requires `recursive`; without it the moved-aside old registration link throws
+      // ERR_FS_EISDIR here (Node never follows the top-level link, so only the link is
+      // removed and the plugin package directory stays intact).
+      if (movedPrevious) remove(previous, { recursive: true, force: true });
     } catch (error) {
       try {
-        remove(replacement, { force: true });
+        remove(replacement, { recursive: true, force: true });
         if (movedPrevious) rename(previous, target);
       } catch {
         // Preserve the original replacement error.
