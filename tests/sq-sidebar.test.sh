@@ -148,9 +148,14 @@ assert_eq "line 2 carries label and detail" \
 assert_eq "non-working cards use a static glyph" \
   "$(printf '%s\n' "$R1" | sed -n '3p')" \
   "!  beta        00:01:00"
+# The spinner frame must be a pure function of the clock: NOW=5 selects the
+# fifth frame (⠴), the same card row the NOW=0 case above renders as ⠋. The
+# whole line is compared (never cut -c1, which is byte-based under a POSIX
+# locale and would slice the multibyte braille glyph in CI's C-locale runner).
 assert_eq "spinner frame is a pure function of the clock" \
-  "$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=5 "$SIDEBAR" render | sed -n '1p' | cut -c1)" \
-  "⠴"
+  "$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=5 \
+    SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" render | sed -n '1p')" \
+  "⠴ alpha       01:01:01"
 
 # A long detail must never wrap past the pane width (keeps the click mapping).
 S2="$TMP_ROOT/state-b"; mkdir -p "$S2"
