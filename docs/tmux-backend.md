@@ -44,7 +44,7 @@ Verify setup by spawning a small task and confirming its `sq-<id>` window appear
 
 ## Sidebar ground truth
 
-`bin/sq-window-state.sh` publishes each tmux task window's current state (working / awaiting-decision / blocked / done / idle / failed / unknown) to `state/window-states` for the tmux sidebar (tmux-agents-mon) to consume.
+`bin/sq-window-state.sh` publishes each tmux task window's current state (working / awaiting-decision / blocked / done / idle / failed / unknown) to `state/window-states` for the ground-truth tmux sidebar ([`sq-sidebar.md`](sq-sidebar.md)) to consume.
 That script's header owns the file contract and the verb-to-label translation; `bin/sq-crew-state.sh` remains the owner of the current-state reconciliation it publishes.
 It is a one-shot derivation (no daemon): a consumer runs `publish` on its own refresh cadence.
 
