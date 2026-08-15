@@ -27,8 +27,8 @@ if [ ! -f "$BIN" ]; then
 fi
 
 tmux set-option -g @sq-sidebar-path "$BIN"
-tmux bind-key -n C-M-s run-shell "$BIN toggle"
+tmux bind-key -n C-M-s run-shell '#{q:@sq-sidebar-path} toggle'
 tmux bind-key -n MouseDown1Pane \
   if-shell -F '#{==:#{@sq-sidebar},1}' \
-    "run-shell '$BIN click #{e|+|:#{mouse_y},1} #{q:@sq-sidebar-base}'" \
+    "run-shell '#{q:@sq-sidebar-path} click #{e|+|:#{mouse_y},1} #{q:@sq-sidebar-base}'" \
     'select-pane -t= \; send-keys -M'

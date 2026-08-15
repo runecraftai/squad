@@ -256,7 +256,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
 }
 
 toggle() {  # [BASE]
-  local base=$1 existing cmd benv
+  local base=$1 existing cmd
   base=$(resolve_base "$base")
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the sidebar requires tmux" >&2

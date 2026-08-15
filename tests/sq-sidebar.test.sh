@@ -216,11 +216,30 @@ pass "toggle opens on first use and closes on the second"
 bash "$ROOT/tmux/sq-sidebar.tmux"
 assert_grep "set-option -g @sq-sidebar-path" "$FAKE_TMUX_LOG" "loader records the tool path globally"
 assert_grep "bind-key -n C-M-s run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-s toggle"
+assert_grep "q:@sq-sidebar-path" "$FAKE_TMUX_LOG" "bindings pass the tool path shell-quoted once at fire time"
 assert_grep "bind-key -n MouseDown1Pane" "$FAKE_TMUX_LOG" "loader binds the click action"
 assert_grep "e|+|:#{mouse_y},1" "$FAKE_TMUX_LOG" "click binding passes the 1-based mouse row"
 assert_grep "q:@sq-sidebar-base" "$FAKE_TMUX_LOG" "click binding passes the base shell-quoted once"
 assert_no_grep "mouse_line" "$FAKE_TMUX_LOG" "click binding no longer uses mouse_line"
 pass "loader binds the toggle and the shell-quoted click action"
+
+# The bindings reference the tool path through the option at fire time, so
+# a checkout path with spaces or shell specials survives run-shell's sh -c:
+# the loader must record the literal path in the option and must not embed
+# the raw path in any binding command.
+SPACED="$TMP_ROOT/My Plugin \$x"
+mkdir -p "$SPACED/tmux" "$SPACED/bin"
+cp "$ROOT/tmux/sq-sidebar.tmux" "$SPACED/tmux/"
+cp "$SIDEBAR" "$SPACED/bin/"
+: > "$FAKE_TMUX_LOG"
+bash "$SPACED/tmux/sq-sidebar.tmux"
+assert_grep "set-option -g @sq-sidebar-path $SPACED/bin/sq-sidebar.sh" "$FAKE_TMUX_LOG" \
+  "loader records a spaced tool path literally in the option"
+assert_no_grep "$SPACED/bin/sq-sidebar.sh toggle" "$FAKE_TMUX_LOG" \
+  "no binding embeds the raw tool path (fire-time quoting only)"
+assert_no_grep "$SPACED/bin/sq-sidebar.sh click" "$FAKE_TMUX_LOG" \
+  "click binding never embeds the raw tool path either"
+pass "loader keeps the tool path literal in the option and out of the bindings"
 
 # --- (f) fail-closed paths -------------------------------------------------
 
