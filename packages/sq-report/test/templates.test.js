@@ -89,6 +89,13 @@ test("every template is a parseable standalone document with the layout-safety C
   }
 });
 
+test("every non-slides template uses the Mission Briefing header", () => {
+  for (const kind of TEMPLATE_KINDS.filter(({ id }) => id !== "slides")) {
+    const html = buildTemplate({ kind: kind.id, tokens: "daisyui" });
+    assert.match(html, />Mission Briefing<\/h1>/, `${kind.id} uses the approved header`);
+  }
+});
+
 test("decision templates embed the input-playbook queuePrompt form verbatim", () => {
   for (const tokens of ALL_KITS) {
     const html = buildTemplate({ kind: "decision", tokens });
