@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # sq-window-state.sh - publish per-window ground truth for the tmux sidebar.
 #
-# The tmux sidebar (tmux-agents-mon) classifies operator panes by screen
+# The sidebar that consumes this file is the ground-truth sq-sidebar
+# (tmux/sq-sidebar.tmux, see docs/sq-sidebar.md), which never reads screens;
+# the tmux-agents-mon sidebar it replaces classified operator panes by screen
 # reading, which is a signal, not a guarantee. Squad owns the actual truth:
 # state/<id>.status wake-event lines plus the harness busy state, reconciled
 # into one authoritative current-state line by bin/sq-crew-state.sh. This
@@ -21,7 +23,7 @@
 #   state/window-states - one line per tmux task window, TAB-separated:
 #     <window>\t<id>\t<label>\t<state>\t<detail>
 #   window  the recorded tmux target from state/<id>.meta (e.g. "Squad:sq-abc"),
-#           the key the sidebar joins on against its live window list
+#           the target the sidebar focuses on click
 #   id      the task id
 #   label   the sidebar-facing state; exactly one of:
 #             working           operator is actively working
@@ -48,7 +50,7 @@
 # cmux tasks have no tmux window the sidebar can show. XO tasks (kind=xo) are
 # excluded entirely, and so is any window=remote:* target: sq-spawn.sh's
 # remote-XO path records window=remote:<id> with no backend= line, which
-# names no local tmux window the sidebar could join.
+# names no local tmux window the sidebar could show.
 #
 # Usage:
 #   sq-window-state.sh publish  derive and atomically write state/window-states
