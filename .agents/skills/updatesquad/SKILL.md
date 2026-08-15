@@ -49,7 +49,7 @@ This touches only the Squad repo and its own worktrees, never anything under `pr
 
 4. **Report to the commander in plain outcomes.**
    Summarize what landed under `AGENTS.md` section 9 without Squad's internal vocabulary: which parts of the unit are now on the latest, and which were left as-is and why.
-   For example: "Commander, Squad and both second mates are now on the latest."
+   For example: "Comandante, o agente e os dois subcomandantes estão na versão mais recente."
    Surface any skipped target whose reason needs the commander's attention - for instance a base with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
 
 ## Safety
