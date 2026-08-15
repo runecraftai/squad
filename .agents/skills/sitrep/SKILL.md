@@ -42,7 +42,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
    Until then it stays queued with the reason.
    The `(main-inventory)` gate is an action-free integrity warning rather than queued work.
-   Render it under Charted Next with the related `omitted` disclosure, never invent an Underway row from backlog-only state, and never move it into Commander's Call.
+   Render it under Próximas ações with the related `omitted` disclosure, never invent an Em operação row from backlog-only state, and never move it into Por ordem.
 
 2. **Compose the four-section chat digest from the fresh snapshot.**
    The gather step is deterministic; your judgment is scoped to ranking the command's facts by what matters right now and writing scannable commander-facing prose.
@@ -57,10 +57,10 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    This is the only write allowed by the skill.
    The detailed report includes:
    - **Title** - `# Sitrep - <day> <YYYY-MM-DD>` (use "Morning status" only when the commander specifically asks for a morning brief), followed by two or three sentences framing where things stand.
-   - **Commander's Call** - every open decision summarized with its options from the structured decision record, plus each PR ready to merge and each needed credential or login, every PR with the full `https://...` URL, never a bare `#number`.
-   - **Recently Landed** - the bounded current recent-completions baseline from structured state across the main unit and every registered XO base, rendered in full on every run.
-   - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.sq-report/*.html` boards).
-   - **Charted Next** - queued or gated work, including any main-inventory integrity warning, with each item's blocker, date, or integrity reason.
+   - **Por ordem** - every open decision summarized with its options from the structured decision record, plus each PR ready to merge and each needed credential or login, every PR with the full `https://...` URL, never a bare `#number`.
+   - **Concluído** - the bounded current recent-completions baseline from structured state across the main unit and every registered XO base, rendered in full on every run.
+   - **Em operação** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.sq-report/*.html` boards).
+   - **Próximas ações** - queued or gated work, including any main-inventory integrity warning, with each item's blocker, date, or integrity reason.
    After writing the file, return the concise four-section chat digest and include the report path or link without adding a fifth section.
    For a richer review surface, optionally offer a visual board with `sq-report` when the report has enough structure to deserve one, but only after the required digest is ready.
 
@@ -69,23 +69,23 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
 This skill is the one owner of the `/sitrep` chat-response format; the snapshot and classifier own the data that feeds it, and no other file restates this contract.
 Every `/sitrep` chat response renders EXACTLY these four sections, in THIS order, and nothing else structural (there is no At Anchor section):
 
-1. **Commander's Call** - ONLY items that need the commander's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, or a blocker only the commander can clear.
-   Empty-state: "Nothing needs your action right now."
-2. **Recently Landed** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished local-only merges across the main unit and every registered XO base.
-   Empty-state: "No recent completions are in the current baseline."
-3. **Underway** - live work progressing on its own, one line of current state per direct report.
-   Empty-state: "Nothing is underway."
-4. **Charted Next** - queued or gated work waiting on the unit or a date, plus action-free unit-integrity warnings, never on the commander.
-   Empty-state: "Nothing is queued."
+1. **Por ordem** - ONLY items that need the commander's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, or a blocker only the commander can clear.
+   Empty-state: "Nada requer sua ação no momento."
+2. **Concluído** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished local-only merges across the main unit and every registered XO base.
+   Empty-state: "Sem conclusões recentes."
+3. **Em operação** - live work progressing on its own, one line of current state per direct report.
+   Empty-state: "Nada em operação."
+4. **Próximas ações** - queued or gated work waiting on the unit or a date, plus action-free unit-integrity warnings, never on the commander.
+   Empty-state: "Nada planejado."
 
 Rules that keep the contract unambiguous:
 
 - Every section ALWAYS renders, even when empty, with its short empty-state sentence; never omit a section.
 - Every chat digest and file-mode report is a complete current snapshot, never a delta against a prior report.
-- Recently Landed always renders the bounded current baseline, even when the same completions appeared in an earlier report.
-- The four buckets are mutually exclusive, so every item is forced into exactly one: needs-your-action is Commander's Call, done is Recently Landed, self-progressing is Underway, and not-yet-started work or an action-free unit-integrity warning is Charted Next.
-- The strict boundary keeps action-free items OUT of Commander's Call: a working or validating task, a queued item blocked on another task or a date, landed work, a completed recon's report pointer, a declared `paused:` external wait, and a bare recorded PR with no merge-ready signal each belong to one of the other three sections, never Commander's Call.
-- An XO's own row appears Underway only for `active_child_work`; `externally_held` belongs in Charted Next, and `unknown` belongs there as an unavailable-state gate unless its reason requires the commander's action.
+- Concluído always renders the bounded current baseline, even when the same completions appeared in an earlier report.
+- The four buckets are mutually exclusive, so every item is forced into exactly one: needs-your-action is Por ordem, done is Concluído, self-progressing is Em operação, and not-yet-started work or an action-free unit-integrity warning is Próximas ações.
+- The strict boundary keeps action-free items OUT of Por ordem: a working or validating task, a queued item blocked on another task or a date, landed work, a completed recon's report pointer, a declared `paused:` external wait, and a bare recorded PR with no merge-ready signal each belong to one of the other three sections, never Por ordem.
+- An XO's own row appears Em operação only for `active_child_work`; `externally_held` belongs in Próximas ações, and `unknown` belongs there as an unavailable-state gate unless its reason requires the commander's action.
 - Do not suppress separately projected decisions, landed records, or gates from a `partial-structured` base merely because that XO's own row is `unknown`.
 - Include the required direct address to the commander inside one item or empty-state sentence.
 - Every PR appears as the full `https://...` URL; a shorthand `#number` is fine only as a back-reference after the full URL has already appeared in the same digest.
