@@ -21,7 +21,7 @@ After inventorying the whole report and review surface, run `bin/sq-decision-hol
 A completed investigation and an ended visual review use this same owner and completion command; a visual tool, including sq-report, never owns a parallel completion policy.
 Run the command in the originating work's authoritative `SQUAD_BASE`; main-base work creates main-base holds, and XO-owned work creates holds in that XO base's backlog rather than copying them into the main backlog.
 Do not close a hold merely because the originating investigation completed, its report was archived, its visual review ended, or its task was torn down.
-The hold remains the authoritative Commander's Call item until the commander's answer is durably recorded, dependent work is created in the same backlog and blocked by that hold, and `bin/sq-decision-hold.sh resolve` routes the answer by clearing those dependency edges before closing the hold.
+The hold remains the authoritative Por ordem item until the commander's answer is durably recorded, dependent work is created in the same backlog and blocked by that hold, and `bin/sq-decision-hold.sh resolve` routes the answer by clearing those dependency edges before closing the hold.
 Resolved findings, recommendations that need no commander choice, and prose that merely sounds decision-like do not create holds.
 Sitrep reads the resulting structured state and must never compensate by scraping historical reports, visual-review artifacts, terminal output, chat, or other prose.
 
@@ -31,7 +31,7 @@ Sitrep reads the resulting structured state and must never compensate by scrapin
 2. Inventory only genuine unresolved choices that require the commander.
 3. For each choice, choose a stable key and use the script's `hold` command with a concise title, reason, and repository.
 4. Run the script's `complete` command with the full unresolved-key inventory for that review pass.
-5. Relay the choices to the commander as decisions from Sitrep' Commander's Call section under `AGENTS.md` section 9; do not use the word hold in commander chat.
+5. Relay the choices to the commander as decisions from Sitrep' Por ordem section under `AGENTS.md` section 9; do not use the word hold in commander chat.
 6. After the commander decides, record dependent work with normal sq-tasks commands and block it by the hold identity.
 7. Put the commander's exact durable decision in a file and use the script's `resolve` command with every routed task.
 8. Confirm Sitrep no longer shows the closed hold and that routed work remains in structured backlog state.

@@ -52,7 +52,7 @@ batched digest rather than per-wake injections.
 3. **Do not separately arm `sq-sentry.sh`.** The daemon manages the sentry as
    its child; the singleton lock no-ops a stray arm harmlessly.
 
-4. **Acknowledge** in `AGENTS.md` section 9 language: "Commander, away mode is active; I will batch routine updates and surface only decisions, failures, credentials, or review-ready work until you return."
+4. **Acknowledge** in `AGENTS.md` section 9 language: "Comandante, o modo ausente está ativo; vou agrupar as atualizações de rotina e apresentar apenas decisões, falhas, credenciais ou trabalho pronto para revisão até o seu retorno."
 
 ## How to exit afk
 

@@ -42,7 +42,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
    Until then it stays queued with the reason.
    The `(main-inventory)` gate is an action-free integrity warning rather than queued work.
-   Render it under Charted Next with the related `omitted` disclosure, never invent an Underway row from backlog-only state, and never move it into Commander's Call.
+   Render it under Próximas ações with the related `omitted` disclosure, never invent an Em operação row from backlog-only state, and never move it into Por ordem.
 
 2. **Compose the four-section chat digest from the fresh snapshot.**
    The gather step is deterministic; your judgment is scoped to ranking the command's facts by what matters right now and writing scannable commander-facing prose.
@@ -82,10 +82,10 @@ Rules that keep the contract unambiguous:
 
 - Every section ALWAYS renders, even when empty, with its short empty-state sentence; never omit a section.
 - Every chat digest and file-mode report is a complete current snapshot, never a delta against a prior report.
-- Recently Landed always renders the bounded current baseline, even when the same completions appeared in an earlier report.
-- The four buckets are mutually exclusive, so every item is forced into exactly one: needs-your-action is Commander's Call, done is Recently Landed, self-progressing is Underway, and not-yet-started work or an action-free unit-integrity warning is Charted Next.
-- The strict boundary keeps action-free items OUT of Commander's Call: a working or validating task, a queued item blocked on another task or a date, landed work, a completed recon's report pointer, a declared `paused:` external wait, and a bare recorded PR with no merge-ready signal each belong to one of the other three sections, never Commander's Call.
-- An XO's own row appears Underway only for `active_child_work`; `externally_held` belongs in Charted Next, and `unknown` belongs there as an unavailable-state gate unless its reason requires the commander's action.
+- Concluído always renders the bounded current baseline, even when the same completions appeared in an earlier report.
+- The four buckets are mutually exclusive, so every item is forced into exactly one: needs-your-action is Por ordem, done is Concluído, self-progressing is Em operação, and not-yet-started work or an action-free unit-integrity warning is Próximas ações.
+- The strict boundary keeps action-free items OUT of Por ordem: a working or validating task, a queued item blocked on another task or a date, landed work, a completed recon's report pointer, a declared `paused:` external wait, and a bare recorded PR with no merge-ready signal each belong to one of the other three sections, never Por ordem.
+- An XO's own row appears Em operação only for `active_child_work`; `externally_held` belongs in Próximas ações, and `unknown` belongs there as an unavailable-state gate unless its reason requires the commander's action.
 - Do not suppress separately projected decisions, landed records, or gates from a `partial-structured` base merely because that XO's own row is `unknown`.
 - Include the required direct address to the commander inside one item or empty-state sentence.
 - Every PR appears as the full `https://...` URL; a shorthand `#number` is fine only as a back-reference after the full URL has already appeared in the same digest.
