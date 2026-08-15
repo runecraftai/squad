@@ -1,10 +1,10 @@
-# Lavish Design System
+# sq-report Design System
 
 > _For when a rich editor is not rich enough._
 
-This is the brand & design system for **Lavish** — an in-browser agentic editor that opens agent-generated HTML artifacts in a local browser, lets a human pinpoint elements or selected text, annotate them, and ship that feedback back to the agent.
+This is the brand & design system for **sq-report** — an in-browser agentic editor that opens agent-generated HTML artifacts in a local browser, lets a human pinpoint elements or selected text, annotate them, and ship that feedback back to the agent.
 
-The product feels like a quiet reading room with a brass lamp: dark ink walls, a single warm gold accent, generous type set in a literary serif beside a clean technical sans. Elegant. Minimal. Futuristic. _Lavish._
+The product feels like a quiet reading room with a brass lamp: dark ink walls, a single warm gold accent, generous type set in a literary serif beside a clean technical sans. Elegant. Minimal. Futuristic. _sq-report._
 
 ---
 
@@ -12,8 +12,8 @@ The product feels like a quiet reading room with a brass lamp: dark ink walls, a
 
 This system was reverse-engineered from the public source of truth:
 
-- **Codebase:** [`runecraftai/squad`](https://github.com/runecraftai/squad) — the CLI + local HTTP server that ships the Lavish Editor UI. The chrome HTML originates in `src/server.js` (`createChromeHtml`), chrome styling and browser behavior originate in `src/chrome.css` and `src/chrome-client.js`, and the in-iframe annotation SDK and its styling originate in `src/artifact-sdk.js` (`createArtifactSdk`). The README, AGENTS.md and CONTRIBUTING.md provided the product narrative.
-- **Brand promise** is paraphrased from the repository README: _"HTML is the new markdown. Lavish is the new editor for your HTML artifacts."_
+- **Codebase:** [`runecraftai/squad`](https://github.com/runecraftai/squad) — the CLI + local HTTP server that ships the sq-report chrome. The chrome HTML originates in `src/server.js` (`createChromeHtml`), chrome styling and browser behavior originate in `src/chrome.css` and `src/chrome-client.js`, and the in-iframe annotation SDK and its styling originate in `src/artifact-sdk.js` (`createArtifactSdk`). The README, AGENTS.md and CONTRIBUTING.md provided the product narrative.
+- **Brand promise** is paraphrased from the repository README: _"HTML is the new markdown. sq-report is the new editor for your HTML artifacts."_
 
 No Figma file or slide deck was provided. Slide templates were therefore **not** generated; if you have a deck, point this skill at it and I'll add a `slides/` folder.
 
@@ -21,7 +21,7 @@ No Figma file or slide deck was provided. Slide templates were therefore **not**
 
 ## Product context
 
-Lavish is one product wearing two hats:
+sq-report is one product wearing two hats:
 
 | Surface                | Audience                                                                  | What it looks like                                                                                                                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,7 +43,7 @@ The brand surface this design system serves is **the Editor chrome.** Marketing,
 ├── assets/                    ← logos, marks, glyphs, background imagery
 ├── preview/                   ← Design System tab cards (color, type, components…)
 ├── ui_kits/
-│   └── editor/                ← high-fidelity recreation of the Lavish Editor chrome
+│   └── editor/                ← high-fidelity recreation of the sq-report chrome
 │       ├── index.html         ← clickable prototype: artifact iframe + chat + annotation card
 │       ├── *.jsx              ← React components (TopBar, ChatPanel, ArtifactFrame, …)
 │       └── README.md          ← how the kit is composed
@@ -53,7 +53,7 @@ The brand surface this design system serves is **the Editor chrome.** Marketing,
 
 ## Content fundamentals
 
-Lavish copy reads like a well-edited reading-room sign — _short, declarative, a little literary._ It is written by people who care about a comma.
+sq-report copy reads like a well-edited reading-room sign — _short, declarative, a little literary._ It is written by people who care about a comma.
 
 **Voice**
 
@@ -70,7 +70,7 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 
 - **Sentence case for most user-facing labels.** Primary action labels may use title case when they read as proper actions (_"Send to Agent"_); menu actions such as _"Reload artifact"_, _"Copy DOM snapshot"_, _"Send & end session"_, and _"End session"_ use sentence case.
 - **lowercase command names** (`sq-report`, `pnpm run build`) — never SHOUTY, never `Sq-Report`.
-- The brand mark **Lavish** is Title Case in prose; in product chrome it's set in a slightly heavier weight (`font-weight: 750`) with a touch of tracking (`letter-spacing: .02em`).
+- The brand mark **sq-report** is Title Case in prose; in product chrome it's set in a slightly heavier weight (`font-weight: 750`) with a touch of tracking (`letter-spacing: .02em`).
 
 **Pronouns**
 
@@ -87,7 +87,7 @@ Lavish copy reads like a well-edited reading-room sign — _short, declarative, 
 **Examples lifted directly from the product**
 
 > _"For when a rich editor is not rich enough."_
-> _"HTML is the new markdown. Lavish is the new editor for your HTML artifacts."_
+> _"HTML is the new markdown. sq-report is the new editor for your HTML artifacts."_
 > _"Browser-native review · Precise feedback · Agent-ergonomic interface"_
 > _"Session ended. Return to your agent to continue."_
 > _"Write a message for the agent…"_
@@ -122,7 +122,7 @@ Three families do all the work:
 - **Body & UI → Geist Sans** (sans). The repository's chrome uses `ui-sans-serif, system-ui, sans-serif`; Geist is the closest modern foundry sans with the same low-fuss tone. 14px / 1.4 line-height in product chrome, scaled up for marketing.
 - **Code & technical → Geist Mono** (mono). Replaces `ui-monospace, SFMono-Regular, Menlo`. Used for selectors, file paths, CLI snippets, anywhere the user is reading literal characters.
 
-The brand mark **Lavish Editor** is set in Geist Sans at `font-weight: 750` with `letter-spacing: .02em`. Bold but not heavy. The serif is for prose — never UI labels.
+The brand mark **sq-report** is set in Geist Sans at `font-weight: 750` with `letter-spacing: .02em`. Bold but not heavy. The serif is for prose — never UI labels.
 
 ### Spacing & rhythm
 
@@ -164,7 +164,7 @@ Never on buttons. Never on cards that sit _inside_ a panel. The aesthetic is _pa
 
 - **Fades over moves.** Opacity and color transitions, 120–180ms, `ease-out`.
 - **One exception:** the agent-working spinner — a steady `0.8s linear` rotation. Borrowed directly from the product.
-- **No bounce. No spring. No elastic.** Lavish does not boing.
+- **No bounce. No spring. No elastic.** sq-report does not boing.
 
 ### States
 
@@ -179,7 +179,7 @@ Almost never. The annotation card is solid `#11141a` over the artifact — not a
 
 ### Cards
 
-A "card" in Lavish is a slab of `#11141a` or `#1c212b` with a 1px border (`#303745`) and a generous radius (`12–14px`). **No shadow.** No left-color-accent stripe. The content is the card; the chrome is the frame.
+A "card" in sq-report is a slab of `#11141a` or `#1c212b` with a 1px border (`#303745`) and a generous radius (`12–14px`). **No shadow.** No left-color-accent stripe. The content is the card; the chrome is the frame.
 
 ### Layout rules
 
@@ -193,7 +193,7 @@ A "card" in Lavish is a slab of `#11141a` or `#1c212b` with a 1px border (`#3037
 
 ## Iconography
 
-**Lavish uses icons only where they reduce chrome, never as ornament.** Read that twice.
+**sq-report uses icons only where they reduce chrome, never as ornament.** Read that twice.
 
 The v2 product chrome keeps primary affordances word-first: the brand is text, the mode control reads _Annotate_, the main button reads _Send to Agent_, and the annotation card opens with `<h2>Annotate &lt;div&gt;</h2>` for elements or `Annotate text` for selected text.
 Compact chrome may use small current-color SVGs for the overflow menu, copy affordance, reload, snapshot, end, send, and split-button caret, but those icons support visible labels or tooltips rather than replacing product language.
@@ -205,7 +205,7 @@ When iconography is genuinely needed (marketing, an empty state, a settings menu
 3. **Currentcolor only.** Icons inherit the parent's color so they tint cream on ink, brass on the CTA, sage on agent bubbles.
 4. **Lucide as the substitute set.** The codebase does **not** ship its own icon font or SVG sprite, so this system uses [Lucide](https://lucide.dev) at the CDN as the closest aesthetic match (thin, geometric, monoline). **Flagged substitution — see Caveats.**
 5. **No emoji. No Unicode dingbat icons** in the chrome. The em dash and middle dot are fine in prose; ✅ ✨ 🔥 are not on brand and will never be.
-6. **The brand mark** is wordmark only — _Lavish Editor_ set in Geist Sans 750 with `.02em` tracking. There is no symbol. (`assets/lavish-wordmark.svg`.)
+6. **The brand mark** is wordmark only — _sq-report_ set in Geist Sans 750 with `.02em` tracking. There is no symbol. (`assets/sq-report-wordmark.svg`.)
 
 To use Lucide via CDN:
 

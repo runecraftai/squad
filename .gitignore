@@ -5,7 +5,7 @@
 # Legacy local validation state written by the pre-rename binary; removed once
 # the global drill rename lands and no install writes this directory.
 .no-mistakes/
-.lavish/
+.sq-report/
 .sq-xo-home
 .sq-xo-parent
 .DS_Store

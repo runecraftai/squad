@@ -1,6 +1,6 @@
-# Lavish Editor — UI kit
+# sq-report Editor — UI kit
 
-A clickable design reference for the **Lavish Editor chrome** that the `sq-report` CLI launches in a browser.
+A clickable design reference for the **sq-report chrome** that the `sq-report` CLI launches in a browser.
 The production chrome in `src/chrome.css`, `src/server.js`, and `src/chrome-client.js` is canonical; it now uses the v2 top bar with an **Annotate** switch, an overflow menu for editing actions, a split **Send to Agent** button with **Send & end session**, and an open-time layout gate that reuses the ended-session card visual language.
 This kit remains useful for token-driven components and interaction exploration, but check the production files before copying exact chrome structure.
 

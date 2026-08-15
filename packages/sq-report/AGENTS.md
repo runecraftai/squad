@@ -145,7 +145,7 @@ Agent-facing design guidance is single-sourced in `src/design-reference.js`: `DE
 `src/skill.js` renders the installable Agent Skill from the same home output, rewriting command examples to non-interactive `npx -y @runecraft/sq-report ...` invocations, documenting installed-copy fallbacks for restricted subprocess sandboxes where `npx -y` exits opaquely, omitting live session state, and including Hermes Agent frontmatter metadata for categorization.
 The generated skill intentionally omits a `version` frontmatter field because release-please updates `package.json` without regenerating `skills/lavish/SKILL.md`.
 `skills/lavish/SKILL.md` is the only public Agent Skill shipped through npm.
-The repository-local `.agents/skills/lavish-design/SKILL.md` brand skill is internal and must keep `metadata.internal: true` so `npx skills add ... --list` and skills.sh hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
+The repository-local `.agents/skills/sq-report-design/SKILL.md` brand skill is internal and must keep `metadata.internal: true` so `npx skills add ... --list` and skills.sh hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
 The bare-arg form (`sq-report some.html`) is normalized into `["open", "some.html"]` by `normalizeArgv`, which must let the SDK's `RESERVED_COMMANDS` (such as the built-in `update` self-updater) pass through untouched; otherwise the bare-arg rewrite turns `sq-report update` into `["open", "update"]` and the inherited reserved command never reaches `runAxiCli`.
 
 ### Agent Plugins packaging

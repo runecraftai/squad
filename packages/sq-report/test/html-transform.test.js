@@ -17,7 +17,7 @@ test("does not inject Tailwind or DaisyUI design assets so the saved file stays 
   assert.doesNotMatch(result, /\/design\/daisyui\.css/);
   assert.doesNotMatch(result, /\/design\/daisyui-themes\.css/);
   assert.doesNotMatch(result, /\/design\/tailwindcss-browser\.js/);
-  assert.doesNotMatch(result, /data-lavish-design/);
+  assert.doesNotMatch(result, /data-sq-report-design/);
 });
 
 test("leaves the <head> untouched - only the SDK script is appended at end of body", () => {

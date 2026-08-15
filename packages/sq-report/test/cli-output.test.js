@@ -156,7 +156,7 @@ test("home output teaches agents when and how to use Lavish Editor", () => {
   assert.ok(output.help.some((item) => item.includes("reference other filesystem assets")));
   assert.ok(output.help.some((item) => item.includes("same directory as the HTML file")));
   assert.ok(output.help.includes(DESIGN_SYSTEM_HINT), "home help carries the single-sourced design rule verbatim");
-  assert.ok(!output.help.some((item) => item.includes('<meta name="lavish-design" content="off">')));
+  assert.ok(!output.help.some((item) => item.includes('<meta name="sq-report-design" content="off">')));
   assert.ok(!output.help.some((item) => item.includes("Known IDs")));
   assert.ok(output.help.some((item) => item.includes("technical plan")));
 });
@@ -336,7 +336,7 @@ test("top-level help renders static home output without dynamic sessions", async
     assert.match(result.stdout, /never kill it/);
     assert.match(result.stdout, /queued feedback is never lost/);
     assert.doesNotMatch(result.stdout, /above 10 minutes/);
-    assert.doesNotMatch(result.stdout, /lavish-design/);
+    assert.doesNotMatch(result.stdout, /sq-report-design/);
     assert.doesNotMatch(result.stdout, /sessions\[/);
     assert.doesNotMatch(result.stdout, /Known IDs/);
   } finally {

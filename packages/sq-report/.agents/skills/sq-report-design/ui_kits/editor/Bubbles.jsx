@@ -76,7 +76,7 @@ function WorkingBubble() {
       borderRadius: 999,
       border: "2px solid var(--steel-600)",
       borderTopColor: "var(--accent)",
-      animation: "lavish-spin 0.8s linear infinite",
+      animation: "sq-report-spin 0.8s linear infinite",
       display: "inline-block",
     },
   };

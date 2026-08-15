@@ -40,7 +40,7 @@ const icExit = <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline po
 const icCaret = <path d="m6 9 6 6 6-6"/>;
 
 function Brand() {
-  return <div style={v2.brand}><span style={v2.brandMark}>Lavish</span><span style={v2.brandSupport}>Editor</span></div>;
+  return <div style={v2.brand}><span style={v2.brandMark}>sq-report</span><span style={v2.brandSupport}>Editor</span></div>;
 }
 function AnnotateToggle({ on = true }) {
   return (
@@ -65,7 +65,7 @@ function ArtifactBody() {
     <div style={v2.artifact}>
       <div style={v2.artEyebrow}>v0.1 · the rich editor</div>
       <div style={{ ...v2.artH1, outline: "2px solid var(--brass-500)", outlineOffset: 2 }}>For when a rich editor<br/>is not rich enough.</div>
-      <p style={v2.artLede}>Lavish opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent.</p>
+      <p style={v2.artLede}>sq-report opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent.</p>
     </div>
   );
 }

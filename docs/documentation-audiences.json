@@ -747,15 +747,15 @@
    "audience": "agent-runtime"
   },
   {
-   "path": "packages/sq-report/.agents/skills/lavish-design/README.md",
+   "path": "packages/sq-report/.agents/skills/sq-report-design/README.md",
    "audience": "maintainer-architecture"
   },
   {
-   "path": "packages/sq-report/.agents/skills/lavish-design/SKILL.md",
+   "path": "packages/sq-report/.agents/skills/sq-report-design/SKILL.md",
    "audience": "agent-runtime"
   },
   {
-   "path": "packages/sq-report/.agents/skills/lavish-design/ui_kits/editor/README.md",
+   "path": "packages/sq-report/.agents/skills/sq-report-design/ui_kits/editor/README.md",
    "audience": "maintainer-architecture"
   },
   {

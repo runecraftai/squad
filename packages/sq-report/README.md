@@ -73,7 +73,7 @@ help[12]: "Run `sq-report <html-file>` to open or resume a sq-report session. If
 In restricted subprocess sandboxes, CI, or agent harnesses where `npx -y` exits opaquely, the skill also documents direct installed-copy fallbacks through the local or global npm install path.
 Its frontmatter also includes Hermes Agent metadata, so Hermes-compatible harnesses can categorize and surface it as a first-class productivity skill.
 This installs the public `lavish` skill.
-The repository also contains an internal `lavish-design` brand skill for maintainers; default `npx skills add ... --list` and skills.sh discovery hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
+The repository also contains an internal `sq-report-design` brand skill for maintainers; default `npx skills add ... --list` and skills.sh discovery hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
 
 Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
 

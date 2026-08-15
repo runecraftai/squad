@@ -71,7 +71,7 @@ new_world() {
 make_fake_toolchain() {
   local fakebin=$1
   fm_fake_exit0 "$fakebin" tmux node sq-browser
-  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.48
+  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_SQ_REPORT_VERSION 0.1.48
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then

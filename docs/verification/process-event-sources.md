@@ -5,9 +5,9 @@ Audience: maintainer verification.
 This record holds reusable version-scoped evidence for the runner's active guarantees.
 `docs/configuration.md` owns the operating contract, each script's header and `--help` own its mechanics, and `.agents/skills/process-event-sources/SKILL.md` owns the handling procedure.
 
-Verified on 2026-07-31 on macOS (Darwin 25.5.0) with `lavish-axi` 0.1.45 installed.
+Verified on 2026-07-31 on macOS (Darwin 25.5.0) with `lavish-axi` 0.1.45 installed (the pre-rebrand name of the vendored `sq-report` CLI).
 
-## The published Lavish poll interface the adapter wraps
+## The published sq-report poll interface the adapter wraps
 
 Verified at implementation time without upgrading the installed build:
 
@@ -34,7 +34,7 @@ Note that `lavish-axi <anything> --help` exits 0 for any argument, including a n
 
 The adapter depends on none of this: it uses only the published poll shape above.
 
-## Why an ended Lavish review is terminal
+## Why an ended sq-report review is terminal
 
 Re-verified on 2026-08-01 against the same installed build.
 The published poll help states the lifecycle directly:
@@ -83,16 +83,16 @@ Exercised by `tests/sq-procevent.test.sh` against a fake blocking source whose c
 | adapter-owned application of a captured result | a remote-XO reply captured through the real relay in an isolated base reaches that XO's local status mirror, settles its correlated pending-reply expectation, re-arms the next cursor-anchored source, and is acknowledged, with no handler step; for an already-escalated request, that same path closes the exact decision so the open-decision fold clears and remains clear; a capture whose adapter application fails because local storage for a referenced remote document is obstructed is left unacknowledged and untouched, and the handler's own `handle` still applies it in full after storage recovers |
 | terminal retirement preserves the result | the retired source's captured output, its announced event, its handled acknowledgement, and later explicit `retire` all still behave normally |
 | registration-generation retirement | an old terminal runner preserves a concurrently replaced registration and releases ownership so the replacement runs independently; injected registration-removal failure retains a terminal claim, performs no second poll, and completes idempotently once removal recovers |
-| one `Send & End`, one result | an armed Lavish source driven against a stand-in for the published poll, which delivers the final `session_ended` feedback once and empty ended sessions afterward, polls exactly once, captures exactly one result, publishes one distinct event, and retires itself |
+| one `Send & End`, one result | an armed sq-report source driven against a stand-in for the published poll, which delivers the final `session_ended` feedback once and empty ended sessions afterward, polls exactly once, captures exactly one result, publishes one distinct event, and retires itself |
 | bounded re-announcement until handled | a durably captured result with no handled acknowledgement is re-announced by `reconcile` with the same source and sequence on every call - not only the first restart after a crash - and a drained-but-unhandled wake resurfaces identically after a simulated replacement session |
 | handled acknowledgement | `sq-procevent.sh handled <source-id> <sequence>` atomically and idempotently records handling at mode `0600`, fails without leaving a marker when private-mode enforcement fails, reports the first call distinctly from every repeat, stops further re-announcement once recorded, and never authorizes a paired effect twice across repeat calls |
 | publication-and-acknowledgement serialization | a concurrent `reconcile` cannot append a wake after `handled` wins the shared per-source boundary, so an acknowledged result is not re-announced by a publication race |
 | acknowledgement precondition | `handled` is refused, with no marker created, unless matching captured result and adapter records already exist, so a premature or mistyped acknowledgement cannot suppress a future result |
 | immutable adapter identity | a captured result retains its adapter after its mutable registration is removed |
-| trusted classification boundary | Lavish lifecycle classification reads the leading response envelope, so prompt payload text that resembles a missing-session error cannot override a valid session status |
+| trusted classification boundary | sq-report lifecycle classification reads the leading response envelope, so prompt payload text that resembles a missing-session error cannot override a valid session status |
 | result identity and ordering | each wake names the committed sequence to read, and pending sequences 1, 2, and 10 publish in numeric order |
 | one owner per canonical source | a second base's `start` for the same source id reports `already owned` and publishes nothing |
-| canonical physical identity | a final-component symlink and its target produce the same Lavish source id |
+| canonical physical identity | a final-component symlink and its target produce the same sq-report source id |
 | isolated public start boundary | direct `start` establishes a new runner-led process group before claiming the source, so retirement cannot signal an unrelated process inherited from the caller's group |
 | stale reclaim without displacement | concurrent contenders replacing one stale claim start exactly one runner, and cross-base replacement removes the old generation's staging file from its recorded state directory |
 | crashed leader with a live owned group | `SIGKILL` on only the runner leader leaves its blocking child group alive; reconcile then stops that surviving group before any replacement starts, never leaves two source processes running for one canonical source, and a generation with no leader and no surviving group is still reclaimed |
@@ -139,7 +139,7 @@ Without this launcher, reconcile would silently fail to start a runner on macOS 
 ## Scope
 
 The runner is domain-neutral and creates no endpoint, task metadata, or backlog item, so the supported primary harnesses and runtime backends are unaffected except through the `check` wake they already consume.
-Lavish is the first adapter; adding another requires only a new `bin/sq-procevent-<adapter>.sh`, whose `terminal` command is optional and defaults to keeping the source armed.
+sq-report is the first adapter; adding another requires only a new `bin/sq-procevent-<adapter>.sh`, whose `terminal` command is optional and defaults to keeping the source armed.
 Its `autohandle` command is optional in the same way and defaults to leaving the captured result unacknowledged, so it keeps being announced to a handler exactly as before.
 
 Proactive delivery is inside that same boundary.
