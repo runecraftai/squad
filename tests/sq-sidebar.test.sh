@@ -205,7 +205,19 @@ assert_eq "toggle closes the already-open sidebar pane" \
   "$(grep -c 'kill-pane -t %9' "$FAKE_TMUX_LOG")" "1"
 pass "toggle opens on first use and closes on the second"
 
-# --- (e) fail-closed paths -------------------------------------------------
+# --- (e) the .tmux loader binds the toggle key and the click action --------
+
+: > "$FAKE_TMUX_LOG"
+bash "$ROOT/tmux/sq-sidebar.tmux"
+assert_grep "set-option -g @sq-sidebar-path" "$FAKE_TMUX_LOG" "loader records the tool path globally"
+assert_grep "bind-key -n C-M-s run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-s toggle"
+assert_grep "bind-key -n MouseDown1Pane" "$FAKE_TMUX_LOG" "loader binds the click action"
+assert_grep "e|+|:#{mouse_y},1" "$FAKE_TMUX_LOG" "click binding passes the 1-based mouse row"
+assert_grep "q:@sq-sidebar-base" "$FAKE_TMUX_LOG" "click binding passes the base shell-quoted once"
+assert_no_grep "mouse_line" "$FAKE_TMUX_LOG" "click binding no longer uses mouse_line"
+pass "loader binds the toggle and the shell-quoted click action"
+
+# --- (f) fail-closed paths -------------------------------------------------
 
 if SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" bogus >/dev/null 2>&1; then
   fail "unknown subcommand must exit non-zero"
