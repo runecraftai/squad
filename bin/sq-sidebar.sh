@@ -269,8 +269,7 @@ toggle() {  # [BASE]
     return 0
   fi
   printf -v cmd '%q' "$SELF"
-  printf -v benv 'SQ_SIDEBAR_BASE=%q' "$base"
-  tmux split-window -bh -l "$WIDTH" -e "$benv" "$cmd run"
+  tmux split-window -bh -l "$WIDTH" -e "SQ_SIDEBAR_BASE=$base" "$cmd run"
 }
 
 click() {  # <line> [BASE]

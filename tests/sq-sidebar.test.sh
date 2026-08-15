@@ -200,6 +200,11 @@ assert_eq "toggle opens a left 25-wide sidebar pane running the loop" \
   "$(grep -c 'split-window -bh -l 25' "$FAKE_TMUX_LOG")" "1"
 assert_grep "SQ_SIDEBAR_BASE=" "$FAKE_TMUX_LOG" "toggle passes the base to the loop"
 assert_grep "sq-sidebar.sh run" "$FAKE_TMUX_LOG" "toggle starts the run loop command"
+: > "$FAKE_TMUX_LOG"
+FAKE_TMUX_PANES="" SQUAD_BASE="$TMP_ROOT/My Base" "$SIDEBAR" toggle
+assert_grep "SQ_SIDEBAR_BASE=$TMP_ROOT/My Base" "$FAKE_TMUX_LOG" \
+  "toggle passes a spaced base to the loop env unescaped"
+assert_no_grep 'My\ Base' "$FAKE_TMUX_LOG" "toggle never %q-escapes the loop env base"
 FAKE_TMUX_PANES="%9 1" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle
 assert_eq "toggle closes the already-open sidebar pane" \
   "$(grep -c 'kill-pane -t %9' "$FAKE_TMUX_LOG")" "1"
