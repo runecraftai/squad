@@ -69,7 +69,7 @@ export const TEMPLATE_KINDS = [
     id: "decision",
     title: "Decisions for review",
     eyebrow: "Decision",
-    lede: "Choose an option per decision; selections stay local until you send them from the sq-report panel.",
+    lede: "Choose an option per decision; selections stay local until you send them from the review panel.",
     use_when: "collect a structured decision or choice from the reviewer",
     playbook: "input",
     render: (kit) => decisionSections(kit),
@@ -452,6 +452,7 @@ html, body {
 .sq-card-title { font-size: 1rem; font-weight: 600; margin: 0; }
 .sq-card p { color: var(--fg-dim); font-size: 0.9375rem; margin: 0.5rem 0 0; text-wrap: pretty; }
 .sq-card.is-accent { border-color: var(--accent); }
+.sq-card + .sq-card { margin-top: 0.75rem; }
 
 .sq-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
 @media (min-width: 640px) {
@@ -723,7 +724,7 @@ const SHADCN_CLASSES = {
   grid2: "grid gap-4 sm:grid-cols-2",
   grid3: "grid gap-4 sm:grid-cols-3",
   list: "mt-3 space-y-2 text-sm text-muted-foreground",
-  listItem: "",
+  listItem: "before:mr-2 before:font-bold before:text-primary before:content-['·']",
   badge: "rounded-full border border-border px-2.5 py-0.5 text-xs font-medium",
   badgePrimary: "rounded-full border border-primary px-2.5 py-0.5 text-xs font-medium text-primary",
   badgeOk:
@@ -1134,7 +1135,7 @@ function decisionSections(kit) {
     lede: "Each decision keeps local selection state until the reviewer submits it.",
     content: `${callout(kit, {
       label: "Note",
-      text: "Nothing is sent without the reviewer pressing the send control in the sq-report panel.",
+      text: "Nothing is sent without the reviewer pressing the send control in the review panel.",
     })}
   ${decisionForm(kit, {
     question: "Your decision question",

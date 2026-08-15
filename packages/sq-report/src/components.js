@@ -104,7 +104,7 @@ function cardBody(kit, { title, badge: badgeDef, body, points = [], accent = fal
     : `<h3${cls(kit, "cardTitle")}>${title}</h3>`;
   const list = points.length
     ? `<ul${cls(kit, "list")}>
-      ${points.map((point) => `<li>${point}</li>`).join("\n      ")}
+      ${points.map((point) => `<li${cls(kit, "listItem")}>${point}</li>`).join("\n      ")}
     </ul>`
     : "";
   const cardAttr = accent ? cls2(kit, "card", "cardAccent") : cls(kit, "card");
