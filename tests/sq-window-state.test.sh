@@ -8,7 +8,8 @@
 # with a fake reconciler answering from a fixture map and throwaway state
 # dirs:
 #   (a) only tmux-backend tasks with a recorded window= are published (orca,
-#       herdr, no-window, and symlinked metas are excluded)
+#       herdr, no-window, symlinked, kind=xo, and window=remote:* metas are
+#       excluded)
 #   (b) the crew-state verb -> sidebar label translation is exact for every
 #       verb (working/parked/blocked/done/paused/failed/unknown)
 #   (c) detail prose is sanitized (tabs and newlines never leak into the TSV);
@@ -53,12 +54,14 @@ SH
 chmod +x "$FAKE"
 
 # Real meta shape: window= first, optional backend=, then the rest.
-write_meta() {  # <state-dir> <id> [backend] [window]; window defaults to squad:sq-<id>
-  local dir=$1 id=$2 backend=${3:-} window
+write_meta() {  # <state-dir> <id> [backend] [window] [kind]; window defaults to squad:sq-<id>
+  local dir=$1 id=$2 backend=${3:-} window kind
   if [ "$#" -ge 4 ]; then window=$4; else window="squad:sq-$id"; fi
+  kind=${5:-}
   {
     if [ -n "$window" ]; then printf 'window=%s\n' "$window"; fi
     [ -n "$backend" ] && printf 'backend=%s\n' "$backend"
+    [ -n "$kind" ] && printf 'kind=%s\n' "$kind"
     printf 'worktree=/tmp/wt-%s\n' "$id"
   } > "$dir/$id.meta"
 }
@@ -92,8 +95,13 @@ write_meta "$S1" alpha "" "squad:sq-alpha"
 write_meta "$S1" orca orca "term-1"
 write_meta "$S1" herdr herdr "herdr:pane"
 write_meta "$S1" nowin tmux ""
+write_meta "$S1" xo tmux "squad:sq-xo" xo
+write_meta "$S1" remote_xo "" "remote:xr1" xo
+write_meta "$S1" remote_nokind "" "remote:rnk"
 write_fixture alpha working "doing stuff"
 write_fixture orca working "ignored"
+write_fixture xo working "ignored"
+write_fixture remote_xo working "ignored"
 ln -s alpha.meta "$S1/evil.meta"
 assert_eq "publishes only tmux windows with window=" "$(run_list_in "$S1")" \
   "squad:sq-alpha	alpha	working	working	doing stuff"

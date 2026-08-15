@@ -44,8 +44,11 @@
 #
 # Only tasks whose effective backend is tmux (explicit backend=tmux or absent
 # backend=, per bin/sq-backend.sh's fm_backend_of_meta) and that record a
-# window= are published; orca/herdr/zellij/cmux tasks have no tmux window the
-# sidebar can show.
+# window= naming a real local tmux target are published; orca/herdr/zellij/
+# cmux tasks have no tmux window the sidebar can show. XO tasks (kind=xo) are
+# excluded entirely, and so is any window=remote:* target: sq-spawn.sh's
+# remote-XO path records window=remote:<id> with no backend= line, which
+# names no local tmux window the sidebar could join.
 #
 # Usage:
 #   sq-window-state.sh publish  derive and atomically write state/window-states
@@ -122,7 +125,7 @@ label_for_state() {  # <crew-state-verb>
 # Derive one TSV row per tmux task window, sorted by window target for a
 # deterministic file. Prints nothing when there are no tmux task windows.
 derive() {
-  local meta id backend window line state label detail
+  local meta id backend window kind line state label detail
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
     [ ! -L "$meta" ] || continue
@@ -130,6 +133,9 @@ derive() {
     [ "$backend" = tmux ] || continue
     window=$(fm_meta_get "$meta" window)
     [ -n "$window" ] || continue
+    case "$window" in remote:*) continue ;; esac
+    kind=$(fm_meta_get "$meta" kind)
+    [ "$kind" = xo ] && continue
     id=$(basename "$meta"); id=${id%.meta}
     line=$("$CREW_STATE_BIN" "$id" 2>/dev/null) || true
     state=$(crew_state_verb "$line")
