@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const banner = `_  _ ____    _  _ _ ____ ___ ____ _  _ ____ ____
-|\ | |  |    |\/| | [__   |  |__| |_/  |___ [__
-| \| |__|    |  | | ___]  |  |  | | \_ |___ ___]`
+const banner = `___  ____ _ _    _
+|  \ |__/ | |    |
+|__/ |  \ | |___ |___`
 
 func newInitCmd() *cobra.Command {
 	var forkURL string
