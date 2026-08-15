@@ -34,7 +34,8 @@
 #   toggle [BASE]   open a 25-wide left sidebar pane in the current window, or
 #                   close it when one is already open (C-M-s, workmux-style)
 #   click <line> [BASE]  focus the operator window whose card occupies pane
-#                   line <line> (tmux MouseDown1Pane action)
+#                   line <line> (1-based pane row; the tmux loader passes the
+#                   mouse row and the base recorded by run in @sq-sidebar-base)
 #   focus <window>  select-window to the given target (exposed for scripts)
 #
 # BASE resolution: argument > SQ_SIDEBAR_BASE > SQUAD_BASE > SQUAD_HOME >
@@ -47,6 +48,7 @@
 # 25), SQ_SIDEBAR_SPINNER (space-separated frame glyphs), SQ_SIDEBAR_REFRESH_SECS
 # (publish cadence in run, default 2), SQ_SIDEBAR_FRAME_SECS (render cadence,
 # default 1), SQ_SIDEBAR_NOW (epoch; pins the spinner frame for tests),
+# SQ_SIDEBAR_ELAPSED_NOW (epoch; pins the elapsed clock for tests),
 # SQ_SIDEBAR_NO_COLOR=1 and SQ_SIDEBAR_NO_ELAPSED=1 disable their feature.
 set -euo pipefail
 
@@ -99,7 +101,7 @@ elapsed_for() {  # <state-dir> <id> -> HH:MM:SS wall-clock, or empty
   case "$start" in
     '' | *[!0-9]*) return 0 ;;
   esac
-  now=$(date +%s)
+  now=${SQ_SIDEBAR_ELAPSED_NOW:-$(date +%s)}
   diff=$((now - start))
   [ "$diff" -lt 0 ] && diff=0
   h=$((diff / 3600)); m=$(((diff % 3600) / 60)); s=$((diff % 60))
@@ -239,6 +241,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
     exit 1
   }
   tmux set-option -p @sq-sidebar 1 2>/dev/null || true
+  tmux set-option -p @sq-sidebar-base "$base" 2>/dev/null || true
   every=$(( (REFRESH_SECS + FRAME_SECS - 1) / FRAME_SECS ))
   [ "$every" -lt 1 ] && every=1
   publish "$base" || true

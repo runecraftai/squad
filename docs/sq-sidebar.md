@@ -25,7 +25,7 @@ The renderer truncates every line to the pane width minus one, so a card never w
 
 ## Requirements
 
-- tmux 3.2 or newer (pane user options, `if-shell -F`, and `#{mouse_line}` are required; verified on 3.7).
+- tmux 3.2 or newer (pane user options, `if-shell -F`, and the `#{e|+|:...}` and `#{q:...}` click formats are required; verified on 3.7).
 - A UTF-8 terminal for the spinner glyphs; `SQ_SIDEBAR_SPINNER` can replace them with ASCII frames.
 - A Squad base with tmux task windows; the sidebar shows nothing when `state/window-states` is absent or empty.
 
@@ -46,6 +46,7 @@ Do not use `tmux source-file` on the loader: the loader is shell, not tmux confi
 Press `C-M-s` (workmux-style) in any window to toggle a 25-wide sidebar pane on the left of the current window.
 The pane shows one card per operator window and re-renders every second; the ground truth it reads is re-published every two seconds.
 Click a card with the mouse to focus that operator's tmux window.
+The click resolves the operator base from the `@sq-sidebar-base` pane option the sidebar records at start, so it works from any base the toggle was launched with.
 A click anywhere else in a pane keeps tmux's default behavior: it focuses the clicked pane and passes the mouse event through.
 
 Customize with environment variables (all optional):
@@ -73,7 +74,7 @@ For a machine-side toggle or auto-open script, call `bin/sq-sidebar.sh toggle [B
 - The sidebar shows only tmux-backend task windows, matching what `bin/sq-window-state.sh` publishes; orca, herdr, zellij, cmux, and XO tasks have no tmux window to show.
 - Keeping the sidebar pane at `SQ_SIDEBAR_WIDTH` keeps the click line mapping exact; manually resizing the pane can wrap lines and drift the mapping.
 - The spinner advances with the render cadence and is driven by the clock, not by per-frame events; it is a visual state hint, not a progress meter.
-- The mouse click path is exercised through tmux's documented mouse binding semantics (`{mouse}` targets and `#{mouse_line}`); the full click flow was smoke-verified manually, not by automated mouse injection.
+- The mouse click path is exercised through tmux's documented mouse binding semantics (`{mouse}` targets and the `#{e|+|:#{mouse_y},1}` row conversion); the full click flow was smoke-verified manually, not by automated mouse injection.
 
 ## Regression entry point
 

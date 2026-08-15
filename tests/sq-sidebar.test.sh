@@ -111,7 +111,11 @@ assert_eq "publish wrote window-states" \
 Squad:beta	beta	blocked	blocked	needs the decision
 Squad:gamma	gamma	done	done	landed"
 
-C1=$(SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" cards)
+# Elapsed assertions pin the clock with SQ_SIDEBAR_ELAPSED_NOW to the same
+# epoch the mtimes were set from, so no second-boundary wall-clock race can
+# flake them; the unpinned path is a plain `date +%s` read (see the script
+# header) and the pinned expectations prove the exact HH:MM:SS formatting.
+C1=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" cards)
 assert_eq "cards row carries label/state/detail/model/effort and busy-gen elapsed" \
   "$(printf '%s\n' "$C1" | sed -n '1p')" \
   "Squad:alpha	alpha	working	working	building the tmux sidebar	01:01:01	claude	low"
@@ -131,7 +135,8 @@ assert_eq "no busy-gen and no meta means no elapsed field" \
 
 # --- (b) render: two lines per card, spinner, truncation -------------------
 
-R1=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 "$SIDEBAR" render)
+R1=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 \
+  SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" render)
 assert_eq "render emits exactly two display lines per card" \
   "$(printf '%s\n' "$R1" | wc -l | tr -d ' ')" "6"
 assert_eq "line 1 carries glyph, id, and elapsed" \

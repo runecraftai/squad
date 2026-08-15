@@ -10,9 +10,12 @@
 # The loader owns the key and mouse bindings; the rendering, toggle, and click
 # logic lives in bin/sq-sidebar.sh (see its header and docs/sq-sidebar.md).
 # The toggle interface is `bin/sq-sidebar.sh toggle [BASE]`, which is what the
-# machine-side auto-open script calls. On non-sidebar clicks the binding
-# replicates tmux's default MouseDown1Pane behavior (focus the clicked pane
-# and pass the mouse event through).
+# machine-side auto-open script calls. The click binding passes the 1-based
+# mouse row (`#{e|+|:#{mouse_y},1}`) and the base the run loop recorded in the
+# pane's `@sq-sidebar-base` option, shell-quoted once with `#{q:...}` so a base
+# with spaces or shell specials stays one argument. On non-sidebar clicks the
+# binding replicates tmux's default MouseDown1Pane behavior (focus the clicked
+# pane and pass the mouse event through).
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,5 +30,5 @@ tmux set-option -g @sq-sidebar-path "$BIN"
 tmux bind-key -n C-M-s run-shell "$BIN toggle"
 tmux bind-key -n MouseDown1Pane \
   if-shell -F '#{==:#{@sq-sidebar},1}' \
-    "run-shell '$BIN click #{mouse_line}'" \
+    "run-shell '$BIN click #{e|+|:#{mouse_y},1} #{q:@sq-sidebar-base}'" \
     'select-pane -t= \; send-keys -M'
