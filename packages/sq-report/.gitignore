@@ -1,7 +1,6 @@
 node_modules/
 dist/
 coverage/
-.lavish/
 .sq-report/
 .DS_Store
 *.log

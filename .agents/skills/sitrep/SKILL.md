@@ -59,10 +59,10 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    - **Title** - `# Sitrep - <day> <YYYY-MM-DD>` (use "Morning status" only when the commander specifically asks for a morning brief), followed by two or three sentences framing where things stand.
    - **Commander's Call** - every open decision summarized with its options from the structured decision record, plus each PR ready to merge and each needed credential or login, every PR with the full `https://...` URL, never a bare `#number`.
    - **Recently Landed** - the bounded current recent-completions baseline from structured state across the main unit and every registered XO base, rendered in full on every run.
-   - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.lavish/*.html` boards).
+   - **Underway** - each live direct report making progress, with its current state, and the plans or main pickup pointers worth reopening (`data/<id>/report.md` files, `.sq-report/*.html` boards).
    - **Charted Next** - queued or gated work, including any main-inventory integrity warning, with each item's blocker, date, or integrity reason.
    After writing the file, return the concise four-section chat digest and include the report path or link without adding a fifth section.
-   For a richer review surface, optionally offer a Lavish board with `sq-report` when the report has enough structure to deserve one, but only after the required digest is ready.
+   For a richer review surface, optionally offer a visual board with `sq-report` when the report has enough structure to deserve one, but only after the required digest is ready.
 
 ## Chat-response contract
 

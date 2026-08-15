@@ -1,6 +1,6 @@
 ---
-name: lavish-design
-description: Use this skill to generate well-branded interfaces and assets for Lavish, either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
+name: sq-report-design
+description: Use this skill to generate well-branded interfaces and assets for sq-report, either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
 user-invocable: true
 metadata:
   internal: true
@@ -14,9 +14,9 @@ If the user invokes this skill without any other guidance, ask them what they wa
 
 - `README.md` — product context, content fundamentals, visual foundations, iconography, caveats
 - `colors_and_type.css` — drop-in CSS custom properties for the full token system (ink, brass, sage, amber, rust, steel, cream + type + spacing + radii + shadows)
-- `assets/` — wordmark, lavish-mark icon, flow diagram SVG
+- `assets/` — wordmark, sq-report-mark icon, flow diagram SVG
 - `preview/` — Design-System-tab specimen cards (one concept per card)
-- `ui_kits/editor/` — clickable React recreation of the Lavish Editor chrome
+- `ui_kits/editor/` — clickable React recreation of the sq-report chrome
 
 ## Quick rules of thumb
 
@@ -33,5 +33,5 @@ If the user invokes this skill without any other guidance, ask them what they wa
 1. `@import "../colors_and_type.css";` in your stylesheet (or copy the tokens block inline if standalone).
 2. Build with the semantic vars (`--bg`, `--fg`, `--accent`, etc.) — never hard-code hex.
 3. Set `font-family: var(--font-sans)` on the body; reach for `var(--font-serif)` on headlines and pull-quotes.
-4. Reference `assets/lavish-wordmark.svg` for the brand mark; do not redraw it.
+4. Reference `assets/sq-report-wordmark.svg` for the brand mark; do not redraw it.
 5. If you need a component (button, pill, bubble, annotation card, top bar), open the matching JSX file in `ui_kits/editor/` and copy the styles object — they're already token-driven.

@@ -340,8 +340,8 @@ test_visual_review_uses_shared_completion_owner() {
     || fail "completed investigation teardown failed: $(cat "$home/visual-teardown.err")"
   tasks_in "$home" "done" "$id" --report "data/$id/report.md" --keep 0 >/dev/null
 
-  mkdir -p "$home/.lavish"
-  printf '<html><body>Synthetic sample board</body></html>\n' > "$home/.lavish/sample-board.html"
+  mkdir -p "$home/.sq-report"
+  printf '<html><body>Synthetic sample board</body></html>\n' > "$home/.sq-report/sample-board.html"
   hold=$(run_decisions "$home" hold "$id" layout \
     --title "Choose the sample layout" --reason "commander layout choice pending" --repo sample) \
     || fail "post-teardown visual review could not use the shared hold owner"

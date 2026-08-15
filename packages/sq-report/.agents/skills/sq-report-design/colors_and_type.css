@@ -1,5 +1,5 @@
 /* ============================================================
-   Lavish Design System — Tokens
+   sq-report Design System — Tokens
    For when a rich editor is not rich enough.
    ============================================================ */
 
@@ -90,7 +90,7 @@
   /* --- Letter-spacing --------------------------------------- */
   --track-tight:  -0.01em; /* @kind font */
   --track-normal:  0;       /* @kind font */
-  --track-brand:   0.02em; /* @kind font */  /* "Lavish Editor" wordmark */
+  --track-brand:   0.02em; /* @kind font */  /* "sq-report" wordmark */
   --track-label:   0.08em; /* @kind font */  /* UPPERCASE eyebrows */
   --track-caps:    0.12em; /* @kind font */
 

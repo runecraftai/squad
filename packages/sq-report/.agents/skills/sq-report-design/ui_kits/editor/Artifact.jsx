@@ -112,7 +112,7 @@ function Artifact({ annotationOn, selectedEl, hoveredEl, onHover, onClick }) {
         <Anno id="eyebrow" tag="div" style={artifactStyles.eyebrow}>v0.1 · the rich editor</Anno>
         <Anno id="h1" tag="h1" style={artifactStyles.h1}>For when a rich editor is not rich enough.</Anno>
         <Anno id="lede" tag="p" style={artifactStyles.lede}>
-          Lavish opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements,
+          sq-report opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements,
           and ships your feedback back to the agent.
         </Anno>
         <Anno id="cta" tag="button" style={artifactStyles.cta}>Open an artifact →</Anno>

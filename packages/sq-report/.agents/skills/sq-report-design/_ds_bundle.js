@@ -1,8 +1,8 @@
-/* @ds-bundle: {"format":3,"namespace":"LavishDesignSystem_019e18","components":[],"sourceHashes":{"ui_kits/editor/AnnotationCard.jsx":"e4ef246fc207","ui_kits/editor/Artifact.jsx":"af55469055a1","ui_kits/editor/Bubbles.jsx":"685612381332","ui_kits/editor/ChatPanel.jsx":"b8fa493fc85d","ui_kits/editor/Pills.jsx":"036cd5cad301","ui_kits/editor/TopBar.jsx":"3538d0a0dad7","ui_kits/editor/app.jsx":"a70747413714","ui_kits/editor/design-canvas.jsx":"bd8746af6e58","ui_kits/editor/options-app-v2.jsx":"3161094fd814","ui_kits/editor/options-app-v3.jsx":"7712a504d33a","ui_kits/editor/options-app.jsx":"f98ec7d5f23c","ui_kits/editor/options-chrome-v2.jsx":"f940622d3bce","ui_kits/editor/options-chrome-v3.jsx":"cac73025b895","ui_kits/editor/options-chrome.jsx":"6a2ee48e04af"},"inlinedExternals":[],"unexposedExports":[]} */
+/* @ds-bundle: {"format":3,"namespace":"SqReportDesignSystem_019e18","components":[],"sourceHashes":{"ui_kits/editor/AnnotationCard.jsx":"e4ef246fc207","ui_kits/editor/Artifact.jsx":"af55469055a1","ui_kits/editor/Bubbles.jsx":"685612381332","ui_kits/editor/ChatPanel.jsx":"b8fa493fc85d","ui_kits/editor/Pills.jsx":"036cd5cad301","ui_kits/editor/TopBar.jsx":"3538d0a0dad7","ui_kits/editor/app.jsx":"a70747413714","ui_kits/editor/design-canvas.jsx":"bd8746af6e58","ui_kits/editor/options-app-v2.jsx":"3161094fd814","ui_kits/editor/options-app-v3.jsx":"7712a504d33a","ui_kits/editor/options-app.jsx":"f98ec7d5f23c","ui_kits/editor/options-chrome-v2.jsx":"f940622d3bce","ui_kits/editor/options-chrome-v3.jsx":"cac73025b895","ui_kits/editor/options-chrome.jsx":"6a2ee48e04af"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
-const __ds_ns = (window.LavishDesignSystem_019e18 = window.LavishDesignSystem_019e18 || {});
+const __ds_ns = (window.SqReportDesignSystem_019e18 = window.SqReportDesignSystem_019e18 || {});
 
 const __ds_scope = {};
 
@@ -290,7 +290,7 @@ function Artifact({
     id: "lede",
     tag: "p",
     style: artifactStyles.lede
-  }, "Lavish opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent."), /*#__PURE__*/React.createElement(Anno, {
+  }, "sq-report opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent."), /*#__PURE__*/React.createElement(Anno, {
     id: "cta",
     tag: "button",
     style: artifactStyles.cta
@@ -396,7 +396,7 @@ function WorkingBubble() {
       borderRadius: 999,
       border: "2px solid var(--steel-600)",
       borderTopColor: "var(--accent)",
-      animation: "lavish-spin 0.8s linear infinite",
+      animation: "sq-report-spin 0.8s linear infinite",
       display: "inline-block"
     }
   };
@@ -1148,7 +1148,7 @@ function TopBar({
     style: s.brand
   }, /*#__PURE__*/React.createElement("span", {
     style: s.brandMark
-  }, "Lavish"), /*#__PURE__*/React.createElement("span", {
+  }, "sq-report"), /*#__PURE__*/React.createElement("span", {
     style: s.brandSupport
   }, "Editor")), /*#__PURE__*/React.createElement("div", {
     style: s.spacer
@@ -3369,7 +3369,7 @@ function Brand() {
     style: v2.brand
   }, /*#__PURE__*/React.createElement("span", {
     style: v2.brandMark
-  }, "Lavish"), /*#__PURE__*/React.createElement("span", {
+  }, "sq-report"), /*#__PURE__*/React.createElement("span", {
     style: v2.brandSupport
   }, "Editor"));
 }
@@ -3435,7 +3435,7 @@ function ArtifactBody() {
     }
   }, "For when a rich editor", /*#__PURE__*/React.createElement("br", null), "is not rich enough."), /*#__PURE__*/React.createElement("p", {
     style: v2.artLede
-  }, "Lavish opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent."));
+  }, "sq-report opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent."));
 }
 
 // The ⋯ menu, optionally open — this is where the file path now lives.
@@ -4144,7 +4144,7 @@ Object.assign(window, {
 try { (() => {
 /* global React */
 // Mock chrome renderers for the "reduce button noise" exploration.
-// Each renders a small, static Lavish Editor chrome at artboard scale.
+// Each renders a small, static sq-report chrome at artboard scale.
 // Shared bits live here; the four variants compose them differently.
 
 const mc = {
@@ -4409,7 +4409,7 @@ function Brand() {
     style: mc.brand
   }, /*#__PURE__*/React.createElement("span", {
     style: mc.brandMark
-  }, "Lavish"), /*#__PURE__*/React.createElement("span", {
+  }, "sq-report"), /*#__PURE__*/React.createElement("span", {
     style: mc.brandSupport
   }, "Editor"));
 }
@@ -4493,7 +4493,7 @@ function ArtifactBody({
     }
   }, "For when a rich editor", /*#__PURE__*/React.createElement("br", null), "is not rich enough."), /*#__PURE__*/React.createElement("p", {
     style: mc.artLede
-  }, "Lavish opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent."), note);
+  }, "sq-report opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent."), note);
 }
 
 /* ----- Variant 0 · Current (baseline) ----- */

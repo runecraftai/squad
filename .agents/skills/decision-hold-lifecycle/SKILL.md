@@ -2,7 +2,7 @@
 name: decision-hold-lifecycle
 description: >-
   Agent-only policy for completing investigations and visual reviews without losing unresolved commander decisions.
-  Load before treating an investigation, recon report, structured review, or Lavish review as complete, before ending a visual review that exposed a decision, and when recording or routing the commander's answer.
+  Load before treating an investigation, recon report, structured review, or sq-report review as complete, before ending a visual review that exposed a decision, and when recording or routing the commander's answer.
 user-invocable: false
 metadata:
   internal: true
@@ -18,7 +18,7 @@ Every unresolved decision that belongs to the commander and is discovered while 
 The agent performs the semantic inventory because scripts must not infer decisions from report prose, visual-review artifacts, terminal output, or chat.
 Give each distinct unresolved decision a stable privacy-safe key, register it through `bin/sq-decision-hold.sh hold`, and use the same key on retry so registration is idempotent while different decisions retain different durable identities.
 After inventorying the whole report and review surface, run `bin/sq-decision-hold.sh complete` with every unresolved key, or with `--none` only when the reviewed surface contains no unresolved commander decision.
-A completed investigation and an ended visual review use this same owner and completion command; a visual tool, including Lavish, never owns a parallel completion policy.
+A completed investigation and an ended visual review use this same owner and completion command; a visual tool, including sq-report, never owns a parallel completion policy.
 Run the command in the originating work's authoritative `SQUAD_BASE`; main-base work creates main-base holds, and XO-owned work creates holds in that XO base's backlog rather than copying them into the main backlog.
 Do not close a hold merely because the originating investigation completed, its report was archived, its visual review ended, or its task was torn down.
 The hold remains the authoritative Commander's Call item until the commander's answer is durably recorded, dependent work is created in the same backlog and blocked by that hold, and `bin/sq-decision-hold.sh resolve` routes the answer by clearing those dependency edges before closing the hold.

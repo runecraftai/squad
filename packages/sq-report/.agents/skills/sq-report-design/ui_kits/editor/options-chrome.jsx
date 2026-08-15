@@ -1,6 +1,6 @@
 /* global React */
 // Mock chrome renderers for the "reduce button noise" exploration.
-// Each renders a small, static Lavish Editor chrome at artboard scale.
+// Each renders a small, static sq-report chrome at artboard scale.
 // Shared bits live here; the four variants compose them differently.
 
 const mc = {
@@ -66,7 +66,7 @@ const sendIcon = <><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></>;
 function Brand() {
   return (
     <div style={mc.brand}>
-      <span style={mc.brandMark}>Lavish</span>
+      <span style={mc.brandMark}>sq-report</span>
       <span style={mc.brandSupport}>Editor</span>
     </div>
   );
@@ -103,7 +103,7 @@ function ArtifactBody({ note }) {
     <div style={mc.artifact}>
       <div style={mc.artEyebrow}>v0.1 · the rich editor</div>
       <div style={{ ...mc.artH1, outline: "2px solid var(--brass-500)", outlineOffset: 2 }}>For when a rich editor<br/>is not rich enough.</div>
-      <p style={mc.artLede}>Lavish opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent.</p>
+      <p style={mc.artLede}>sq-report opens an agent-generated HTML artifact in a local browser, lets you pinpoint elements, and ships your feedback back to the agent.</p>
       {note}
     </div>
   );

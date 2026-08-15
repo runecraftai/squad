@@ -1,5 +1,5 @@
 name: Bug report
-description: Something went wrong with Lavish Editor
+description: Something went wrong with sq-report
 labels: ["bug"]
 body:
   - type: textarea

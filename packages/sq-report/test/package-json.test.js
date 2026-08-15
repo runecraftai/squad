@@ -47,11 +47,11 @@ test("release-please keeps the plugin manifest version in step with the package"
   ]);
 });
 
-test("lavish-design agent skill is marked internal for skills CLI discovery", async () => {
-  const skillMd = await readFile(new URL("../.agents/skills/lavish-design/SKILL.md", import.meta.url), "utf8");
+test("sq-report-design agent skill is marked internal for skills CLI discovery", async () => {
+  const skillMd = await readFile(new URL("../.agents/skills/sq-report-design/SKILL.md", import.meta.url), "utf8");
   const frontmatter = skillMd.slice(4, skillMd.indexOf("\n---\n", 4));
 
-  assert.match(frontmatter, /^name: lavish-design$/m);
+  assert.match(frontmatter, /^name: sq-report-design$/m);
   assert.match(frontmatter, /^metadata:\n {2}internal: true$/m);
 });
 

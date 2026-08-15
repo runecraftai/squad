@@ -45,7 +45,7 @@ make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
   fm_fake_exit0 "$fakebin" tmux node sq-browser
-  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_LAVISH_AXI_VERSION 0.1.48
+  fm_fake_version_tool "$fakebin" sq-report SQUAD_FAKE_SQ_REPORT_VERSION 0.1.48
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
@@ -372,7 +372,7 @@ ROWS
   pass "bootstrap enforces sq-gh minimum version"
 }
 
-test_lavish_axi_min_version() {
+test_sq_report_min_version() {
   local label version mode case_dir fakebin out missing n
   missing='MISSING: sq-report (install: (cd packages/sq-report && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-report && sq-report setup hooks)'
   n=0
@@ -384,7 +384,7 @@ test_lavish_axi_min_version() {
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
     out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
-      SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_LAVISH_AXI_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
+      SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_SQ_REPORT_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
       empty)
         [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
@@ -1149,7 +1149,7 @@ ROWS
 test_bootstrap_reporting
 test_drill_min_version
 test_gh_axi_min_version
-test_lavish_axi_min_version
+test_sq_report_min_version
 test_tasks_axi_min_version
 test_quota_axi_min_version
 test_git_is_required_with_supported_install_instruction

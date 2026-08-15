@@ -107,7 +107,7 @@ function TopBar({ filePath, annotationOn, onToggleAnnotation, onEndSession, onRe
   return (
     <div style={s.bar}>
       <div style={s.brand}>
-        <span style={s.brandMark}>Lavish</span>
+        <span style={s.brandMark}>sq-report</span>
         <span style={s.brandSupport}>Editor</span>
       </div>
       <div style={s.spacer} />

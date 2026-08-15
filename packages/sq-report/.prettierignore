@@ -1,9 +1,8 @@
 dist
 node_modules
-.lavish
 .sq-report
 .drill
-lavish-code-review.html
+thread-board.html
 package-lock.json
 CHANGELOG.md
 plugin.json

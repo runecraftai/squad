@@ -53,7 +53,7 @@
 #          drill is also MISSING when its installed version is older than
 #          1.31.2.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
-#          LAVISH_AXI_MIN below; the per-tool owners point there. An installed
+#          SQ_REPORT_MIN below; the per-tool owners point there. An installed
 #          build below its floor reports MISSING like drill, so the operator
 #          is asked to upgrade rather than silently running an older tool.
 #          sq-tasks feature probes remain a separate defense-in-depth check.
@@ -798,7 +798,7 @@ DRILL_MIN=1.31.2
 # The sq-tasks feature probes are an independent defense-in-depth concern, not part
 # of its floor.
 GH_AXI_MIN=0.1.0
-LAVISH_AXI_MIN=0.1.0
+SQ_REPORT_MIN=0.1.0
 
 fob_supports_lease() {
   fob get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
@@ -1152,7 +1152,7 @@ detect_local_tools() {
   if command -v sq-gh >/dev/null 2>&1 && ! tool_version_at_least sq-gh "$GH_AXI_MIN"; then
     echo "MISSING: sq-gh (install: $(install_cmd sq-gh))"
   fi
-  if command -v sq-report >/dev/null 2>&1 && ! tool_version_at_least sq-report "$LAVISH_AXI_MIN"; then
+  if command -v sq-report >/dev/null 2>&1 && ! tool_version_at_least sq-report "$SQ_REPORT_MIN"; then
     echo "MISSING: sq-report (install: $(install_cmd sq-report))"
   fi
   if command -v sq-quota >/dev/null 2>&1 && ! fm_quota_axi_compatible; then
