@@ -45,8 +45,10 @@ SH
 }
 
 # A fakebin `tmux`: `display -p -F` reports the currently focused window
-# (FAKE_TMUX_FOCUSED, empty = outside any tmux server), and `select-window`
-# records its argv to FAKE_TMUX_LOG exactly like the real focus action.
+# (FAKE_TMUX_FOCUSED, empty = outside any tmux server), `display-message`
+# records its argv to FAKE_TMUX_LOG like the status-line channel, and
+# `select-window` records its argv to FAKE_TMUX_LOG exactly like the real
+# focus action.
 make_fake_tmux() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
@@ -55,6 +57,15 @@ make_fake_tmux() {
 case "${1:-}" in
   display)
     printf '%s\n' "${FAKE_TMUX_FOCUSED:-}"
+    ;;
+  display-message)
+    {
+      printf 'display-message'
+      for a in "$@"; do
+        printf ' <%s>' "$a"
+      done
+      printf '\n'
+    } >> "${FAKE_TMUX_LOG:?}"
     ;;
   select-window)
     {
@@ -323,6 +334,120 @@ test_unknown_subcommand_fails_closed() {
   pass "sq-status-notify fails closed on an unknown subcommand"
 }
 
+test_timeout_per_verb() {
+  local base fakebin notify_log zero fifteen
+  base=$(make_base timeouts)
+  fakebin=$(make_fake_notify "$base")
+  notify_log="$base/notify.log"
+  printf 'working: seed\n' > "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'done: finished work\n' >> "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'needs-decision: pick a path\n' >> "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'blocked: stuck on x\n' >> "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'failed: test run crashed\n' >> "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+
+  zero=$(grep -cF '<-t> <0>' "$notify_log")
+  expect_code 3 "$zero" "needs-decision, blocked, and failed must persist until dismissed"
+  fifteen=$(grep -cF '<-t> <15000>' "$notify_log")
+  expect_code 1 "$fifteen" "done must show for 15 seconds"
+  pass "sq-status-notify persists needs-decision/blocked/failed and times out conclusions"
+}
+
+test_stderr_notify_log() {
+  local base fakebin notify_log scan_err
+  base=$(make_base stderr-log)
+  fakebin=$(make_fake_notify "$base")
+  notify_log="$base/notify.log"
+  scan_err="$base/scan.err"
+  printf 'working: seed\n' > "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base" 2>>"$scan_err"
+  printf 'done: finished work\n' >> "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base" 2>>"$scan_err"
+  printf 'blocked: stuck on x\n' >> "$base/state/sq-1.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base" 2>>"$scan_err"
+
+  assert_grep "notify: Operator finished: sq-1" "$scan_err" "a done event must log its title to stderr"
+  assert_grep "notify: Operator blocked: sq-1" "$scan_err" "a blocked event must log its title to stderr"
+  pass "sq-status-notify logs each notification title to stderr"
+}
+
+test_tmux_channel_target_window() {
+  local base fakebin notify_log tmux_log
+  base=$(make_base tmux-target)
+  fakebin=$(make_fake_notify "$base")
+  make_fake_tmux "$base" >/dev/null
+  notify_log="$base/notify.log"
+  tmux_log="$base/tmux.log"
+  printf 'window=Squad:sq-7\n' > "$base/state/sq-7.meta"
+  printf 'working: seed\n' > "$base/state/sq-7.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    FAKE_TMUX_LOG="$tmux_log" SQ_NOTIFY_TMUX=1 "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'done: ready\n' >> "$base/state/sq-7.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    FAKE_TMUX_LOG="$tmux_log" FAKE_TMUX_FOCUSED="Other:elsewhere" SQ_NOTIFY_TMUX=1 \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+
+  wait_for_file "$notify_log" || fail "the desktop notification never landed"
+  assert_grep "<display-message> <-t> <Squad:sq-7> <Operator finished: sq-7>" "$tmux_log" \
+    "the tmux channel must flash on the operator's recorded window"
+  assert_grep "Operator finished: sq-7" "$notify_log" \
+    "the tmux channel must not replace the desktop notification"
+  pass "sq-status-notify flashes the tmux status line on the operator window when enabled"
+}
+
+test_tmux_channel_no_target() {
+  local base fakebin notify_log tmux_log
+  base=$(make_base tmux-no-target)
+  fakebin=$(make_fake_notify "$base")
+  make_fake_tmux "$base" >/dev/null
+  notify_log="$base/notify.log"
+  tmux_log="$base/tmux.log"
+  printf 'working: seed\n' > "$base/state/sq-3.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    FAKE_TMUX_LOG="$tmux_log" SQ_NOTIFY_TMUX=1 "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'done: ready\n' >> "$base/state/sq-3.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    FAKE_TMUX_LOG="$tmux_log" SQ_NOTIFY_TMUX=1 "$ROOT/bin/sq-status-notify.sh" scan "$base"
+
+  assert_grep "<display-message> <Operator finished: sq-3>" "$tmux_log" \
+    "the tmux channel must flash on the calling client's status line without a target"
+  assert_grep "Operator finished: sq-3" "$notify_log" \
+    "the desktop notification must still fire without a target"
+  pass "sq-status-notify flashes the tmux status line without a recorded window"
+}
+
+test_tmux_channel_without_tmux() {
+  local base fakebin notify_log scan_err rc
+  base=$(make_base tmux-missing)
+  fakebin=$(make_fake_notify "$base") # no tmux stub: the channel must fail silently
+  notify_log="$base/notify.log"
+  scan_err="$base/scan.err"
+  printf 'working: seed\n' > "$base/state/sq-4.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    SQ_NOTIFY_TMUX=1 "$ROOT/bin/sq-status-notify.sh" scan "$base" 2>"$scan_err"; rc=$?
+  expect_code 0 "$rc" "a scan with the tmux channel and no tmux must not fail"
+  printf 'done: ready\n' >> "$base/state/sq-4.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    SQ_NOTIFY_TMUX=1 "$ROOT/bin/sq-status-notify.sh" scan "$base" 2>"$scan_err"; rc=$?
+  expect_code 0 "$rc" "a notification with the tmux channel and no tmux must not fail"
+  assert_grep "Operator finished: sq-4" "$notify_log" "notify-send must still fire without tmux"
+  assert_grep "notify: Operator finished: sq-4" "$scan_err" "the journal line must still be emitted"
+  assert_no_grep "tmux" "$scan_err" "a missing tmux must fail silently"
+  pass "sq-status-notify fails silently when the tmux channel is enabled but tmux is absent"
+}
+
 # ---------------------------------------------------------------------------
 
 test_baseline_no_spam
@@ -334,3 +459,8 @@ test_base_resolution_chain
 test_click_action_focuses_window_from_meta
 test_focus_requires_target
 test_unknown_subcommand_fails_closed
+test_timeout_per_verb
+test_stderr_notify_log
+test_tmux_channel_target_window
+test_tmux_channel_no_target
+test_tmux_channel_without_tmux

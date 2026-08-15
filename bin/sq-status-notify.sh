@@ -22,6 +22,15 @@
 #   - Clicking the notification body focuses the operator's tmux window.
 #     The click handler forks per notification so the watcher never blocks on
 #     an unacknowledged popup (notify-send -A implies --wait).
+#   - Notifications persist until dismissed for needs-decision, blocked, and
+#     failed events (notify-send -t 0); conclusions and other events show for
+#     15 seconds (notify-send -t 15000).
+#   - Every notification logs "notify: <title>" to stderr; under the systemd
+#     user unit this lands in the unit's journal.
+#   - SQ_NOTIFY_TMUX=1 adds a tmux display-message status-line flash on the
+#     operator's recorded window (or the calling client's status line when no
+#     window is recorded), silently skipped when tmux is unavailable. The
+#     focused-window suppression above applies to this channel too.
 #   - Per-base notification offsets live under
 #     $XDG_STATE_HOME/sq-status-notify/ (default ~/.local/state/sq-status-notify/),
 #     one subdirectory per base.
@@ -33,7 +42,8 @@
 #
 # BASE resolution: argument > SQUAD_BASE > SQUAD_HOME > this repo root.
 # Env: SQ_NOTIFY_POLL (seconds, default 5), SQ_NOTIFY_VERBS (space-separated
-# verb list, default "done needs-decision blocked failed").
+# verb list, default "done needs-decision blocked failed"), SQ_NOTIFY_TMUX
+# (=1 enables the optional tmux display-message status-line channel).
 #
 # Fail-closed: an unknown subcommand, or `focus` without TARGET, prints the
 # reason to stderr and exits non-zero. notify-send is best-effort: when it is
@@ -57,27 +67,36 @@ resolve_base() {  # [BASE] -> base path, per the sq-* scripts' chain
 
 notify_one() {  # <id> <verb> <text> <target>
   local id=$1 verb=$2 text=$3 target=$4
-  local title body current chosen
+  local title body current chosen timeout=15000
   case "$verb" in
     done) title="Operator finished: $id" ;;
-    needs-decision) title="Operator needs your decision: $id" ;;
-    blocked) title="Operator blocked: $id" ;;
-    failed) title="Work failed: $id" ;;
+    needs-decision) title="Operator needs your decision: $id"; timeout=0 ;;
+    blocked) title="Operator blocked: $id"; timeout=0 ;;
+    failed) title="Work failed: $id"; timeout=0 ;;
     *) title="Squad: $id" ;;
   esac
   body="${text:0:280}"
 
   if [[ -n "$target" ]]; then
     # Suppression herdr-like: the operator's window is already focused, so the
-    # notification would be noise.
+    # notification would be noise. Applies to the tmux status-line channel too.
     current="$(tmux display -p -F '#{session_name}:#{window_name}' 2>/dev/null || true)"
     if [[ -n "$current" && "$current" == "$target" ]]; then
       return 0
     fi
+    # Optional tmux status-line channel: flash the event in the operator's
+    # terminal. Best-effort: silent when tmux is missing or the window is gone.
+    if [[ "${SQ_NOTIFY_TMUX:-}" == 1 ]]; then
+      tmux display-message -t "$target" "$title" 2>/dev/null || true
+    fi
+    # The journal-facing log line lands before the forked notify-send so it is
+    # not delayed by an unacknowledged popup.
+    echo "notify: $title" >&2
     # Fork: notify-send -A implies --wait; the action (click on the body)
-    # focuses the operator's tmux window.
+    # focuses the operator's tmux window. timeout=0 persists until dismissed
+    # (mako); conclusions and other events show for 15 seconds.
     (
-      chosen="$(notify-send -a Squad -u normal -A "default=Focus window" "$title" "$body" 2>/dev/null || true)"
+      chosen="$(notify-send -a Squad -u normal -t "$timeout" -A "default=Focus window" "$title" "$body" 2>/dev/null || true)"
       case "$chosen" in
         default) exec "$SELF" focus "$target" ;;
       esac
@@ -85,7 +104,11 @@ notify_one() {  # <id> <verb> <text> <target>
     return 0
   fi
 
-  notify-send -a Squad -u normal "$title" "$body" 2>/dev/null || true
+  if [[ "${SQ_NOTIFY_TMUX:-}" == 1 ]]; then
+    tmux display-message "$title" 2>/dev/null || true
+  fi
+  echo "notify: $title" >&2
+  notify-send -a Squad -u normal -t "$timeout" "$title" "$body" 2>/dev/null || true
 }
 
 scan_once() {  # <base>: one pass over the base's state dir
