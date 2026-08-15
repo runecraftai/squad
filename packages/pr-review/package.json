@@ -1,6 +1,6 @@
 {
   "name": "@runecraft/pr-review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Parallel AI code review for GitHub pull requests in the Pi coding agent, with model-agnostic tiered subagents, structured findings, optional verification, and safe COMMENT-only publishing.",
   "keywords": [
     "pi-package",
