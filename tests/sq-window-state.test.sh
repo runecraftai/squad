@@ -94,7 +94,7 @@ write_meta "$S1" herdr herdr "herdr:pane"
 write_meta "$S1" nowin tmux ""
 write_fixture alpha working "doing stuff"
 write_fixture orca working "ignored"
-ln -s /nonexistent "$S1/evil.meta"
+ln -s alpha.meta "$S1/evil.meta"
 assert_eq "publishes only tmux windows with window=" "$(run_list_in "$S1")" \
   "squad:sq-alpha	alpha	working	working	doing stuff"
 
