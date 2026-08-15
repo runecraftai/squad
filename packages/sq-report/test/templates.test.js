@@ -24,6 +24,28 @@ const BIN = fileURLToPath(new URL("../bin/sq-report.js", import.meta.url));
 const ALL_KINDS = TEMPLATE_KINDS.map((kind) => kind.id);
 const ALL_KITS = TOKEN_KITS.map((kit) => kit.id);
 
+/** Every class name written into `class="..."` attributes of a rendered template. */
+function emittedClassNames(html) {
+  const names = new Set();
+  for (const match of html.matchAll(/class="([^"]*)"/g)) {
+    for (const name of match[1].split(/\s+/)) {
+      if (name) names.add(name);
+    }
+  }
+  return names;
+}
+
+/** Every class selector the document's own <style> blocks (BRAND_CSS, SLIDES_CSS, layout safety) define. */
+function definedClassNames(html) {
+  const names = new Set();
+  for (const match of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+    for (const selector of match[1].matchAll(/\.([A-Za-z_][\w-]*)/g)) {
+      names.add(selector[1]);
+    }
+  }
+  return names;
+}
+
 /** @param {unknown} node @returns {Array<{ nodeName: string }>} */
 function childrenOf(node) {
   const children = /** @type {{ childNodes?: Array<{ nodeName: string }> } | null} */ (node)?.childNodes;
@@ -121,6 +143,62 @@ test("design output and hint point agents at the starter scaffold (single-source
   );
   assert.match(output.templates.instruction, /sq-report new <kind>/);
   assert.match(DESIGN_SYSTEM_HINT, /sq-report new/);
+  assert.match(output.templates.masthead, /Squad Briefing/);
+});
+
+test("the sq-report kit defines every class it emits in its own CSS (no dead classes)", () => {
+  // .mermaid is the Mermaid init hook, styled by the CDN script, never by the kit CSS.
+  const externalHooks = new Set(["mermaid"]);
+  for (const kind of ALL_KINDS) {
+    const html = buildTemplate({ kind, tokens: "sq-report" });
+    const defined = definedClassNames(html);
+    for (const name of emittedClassNames(html)) {
+      if (externalHooks.has(name)) continue;
+      assert.ok(defined.has(name), `${kind} emits .${name} with no definition in the sq-report kit CSS`);
+    }
+  }
+});
+
+test("the rendered h1 never names the tool; the colophon does", () => {
+  for (const kind of ALL_KINDS) {
+    for (const tokens of ALL_KITS) {
+      const html = buildTemplate({ kind, tokens });
+      const headings = [...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map((match) =>
+        match[1].replace(/<[^>]+>/g, ""),
+      );
+      assert.ok(headings.length >= 1, `${kind}/${tokens} renders at least one h1`);
+      for (const heading of headings) {
+        assert.doesNotMatch(heading, /sq-report/i, `${kind}/${tokens} h1 does not name the tool`);
+      }
+      const kindDef = TEMPLATE_KINDS.find((candidate) => candidate.id === kind);
+      if (kindDef.footer !== false) {
+        assert.match(html, /Rendered with sq-report/, `${kind}/${tokens} colophon names the tool`);
+      }
+    }
+  }
+});
+
+test("the base kind ships the full text-fill catalog", () => {
+  for (const tokens of ALL_KITS) {
+    const html = buildTemplate({ kind: "base", tokens });
+    for (const marker of [
+      "Squad Briefing", // C1 masthead
+      "Verdict", // C2 verdict banner
+      "--sq-stat-cols: 3", // C4 stat row
+      "recommended", // C5 card badge
+      "Defect", // C6 danger callout
+      "<thead>", // C7 evidence table
+      "passing", // C8 badge variants
+      "<ol", // C9 timeline
+      "<blockquote", // C10 pull quote
+      "<pre", // C11 code block
+      'data-lavish-question="plan"', // C12 decision form
+      "<dl", // C13 key-value list
+      "Rendered with sq-report", // C14 colophon
+    ]) {
+      assert.ok(html.includes(marker), `${tokens} base kind includes catalog marker: ${marker}`);
+    }
+  }
 });
 
 test("a generated artifact survives export inlining with the queuePrompt wiring intact", async () => {

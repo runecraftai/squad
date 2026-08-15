@@ -225,6 +225,8 @@ export function createDesignOutput() {
         description,
         ...(isDefault ? { default: true } : {}),
       })),
+      masthead:
+        'Starter masthead: "Squad Briefing / <kind>", with the tool name only in the colophon. Documented alternates (not CLI flags): "Squad Report" band for recurring numbered output, "Dispatch" for short urgent artifacts, "Squad · Briefing" mark lockup for artifacts leaving the unit, and no brand line at all when the title stands alone. Swap the masthead builder in src/components.js to use one.',
     },
     diagram_tooling: {
       use_when:
