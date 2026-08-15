@@ -54,7 +54,7 @@ case "$REFRESH" in '' | *[!0-9]*) REFRESH=10 ;; esac
 . "$SCRIPT_DIR/sq-busy-lib.sh"
 
 usage() {
-  sed -n '2,22p' "$SELF" | sed 's/^# \{0,1\}//'
+  sed -n '2,/^[^#]/p' "$SELF" | sed '$d; s/^# \{0,1\}//'
 }
 
 fm_web_escape() {  # <string> -> HTML-escaped string
