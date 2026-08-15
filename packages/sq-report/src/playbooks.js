@@ -4,6 +4,44 @@ export const PLAYBOOK_ROUTER_INSTRUCTION =
 export const PLAYBOOK_ROUTER_HELP =
   "One artifact often combines several playbooks (for example a plan that includes a comparison and a diagram), so MUST open each matching playbook before writing HTML.";
 
+// Shared source strings between the playbooks and the `sq-report new` starter templates
+// (src/templates.js). The playbook text embeds these verbatim and the templates render
+// the same bytes, so the wiring they document can never drift apart.
+
+// The canonical native single-choice queuePrompt form from the input playbook.
+export const INPUT_DECISION_FORM_SNIPPET = `<form data-lavish-question="plan" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('plan'); if (choice) window.lavish.queuePrompt('Use the ' + choice + ' plan', { tag: 'choice', text: 'Plan: ' + choice, element: event.currentTarget, data: { question: 'plan', answer: choice } });"><label><input type="radio" name="plan" value="Starter"> Starter</label><label><input type="radio" name="plan" value="Pro"> Pro</label><button type="submit">Queue this answer</button></form>`;
+
+// The verified @pierre/diffs no-build snippet from the code playbook: one file render
+// plus one split diff, loaded from esm.sh.
+export const CODE_DIFF_SNIPPET = `<div id="file"></div>
+<div id="diff"></div>
+<script type="module">
+  import { File, FileDiff } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+
+  const theme = { light: "github-light", dark: "github-dark" };
+  const options = { theme, themeType: "dark", overflow: "wrap" };
+  const oldFile = {
+    name: "src/greeting.ts",
+    contents: "export function greet(name: string) {\\n  return \\"Hello \\" + name;\\n}\\n\\nconsole.log(greet(\\"sq-report\\"));\\n",
+  };
+  const newFile = {
+    name: "src/greeting.ts",
+    contents: "export function greet(name: string) {\\n  return \\"Hello, \\" + name + \\"!\\";\\n}\\n\\nconsole.log(greet(\\"sq-report\\"));\\n",
+  };
+
+  new File(options).render({
+    containerWrapper: document.querySelector("#file"),
+    file: newFile,
+  });
+
+  new FileDiff({ ...options, diffStyle: "split" }).render({
+    containerWrapper: document.querySelector("#diff"),
+    oldFile,
+    newFile,
+  });
+
+</script>`;
+
 export const PLAYBOOKS = [
   {
     id: "diagram",
@@ -132,34 +170,7 @@ export const PLAYBOOKS = [
     design_rules: [
       `Rendering MUST use @pierre/diffs, not hand-rolled <pre> blocks or another diff library. This verified no-build standalone HTML snippet renders one file and one split diff from esm.sh:
 \`\`\`html
-<div id="file"></div>
-<div id="diff"></div>
-<script type="module">
-  import { File, FileDiff } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
-
-  const theme = { light: "github-light", dark: "github-dark" };
-  const options = { theme, themeType: "dark", overflow: "wrap" };
-  const oldFile = {
-    name: "src/greeting.ts",
-    contents: "export function greet(name: string) {\\n  return \\"Hello \\" + name;\\n}\\n\\nconsole.log(greet(\\"sq-report\\"));\\n",
-  };
-  const newFile = {
-    name: "src/greeting.ts",
-    contents: "export function greet(name: string) {\\n  return \\"Hello, \\" + name + \\"!\\";\\n}\\n\\nconsole.log(greet(\\"sq-report\\"));\\n",
-  };
-
-  new File(options).render({
-    containerWrapper: document.querySelector("#file"),
-    file: newFile,
-  });
-
-  new FileDiff({ ...options, diffStyle: "split" }).render({
-    containerWrapper: document.querySelector("#diff"),
-    oldFile,
-    newFile,
-  });
-
-</script>
+${CODE_DIFF_SNIPPET}
 \`\`\``,
       "Pick a Shiki theme pair that matches the artifact's DaisyUI or Tailwind direction and light or dark mode; replace the GitHub pair above when the page is not GitHub-like.",
       'Use FileDiff diffStyle: "split" for side-by-side review and diffStyle: "unified" for stacked reading; keep overflow: "wrap" unless horizontal alignment is essential.',
@@ -211,7 +222,7 @@ export const PLAYBOOKS = [
     ],
     lavish_notes: [
       "sq-report is strongest when the artifact becomes a focused review surface and not just a static page.",
-      'A native single-choice question should submit the final value: `<form data-lavish-question="plan" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get(\'plan\'); if (choice) window.lavish.queuePrompt(\'Use the \' + choice + \' plan\', { tag: \'choice\', text: \'Plan: \' + choice, element: event.currentTarget, data: { question: \'plan\', answer: choice } });"><label><input type="radio" name="plan" value="Starter"> Starter</label><label><input type="radio" name="plan" value="Pro"> Pro</label><button type="submit">Queue this answer</button></form>`.',
+      `A native single-choice question should submit the final value: \`${INPUT_DECISION_FORM_SNIPPET}\`.`,
       "A custom choice UI should make option buttons update local state, then use a separate Queue answer button with data-lavish-action to queue the final selected value.",
       "Use window.lavish.queuePrompt for user intent, not internal analytics or UI-only state changes.",
       "End input paths with an obvious way for the user to send feedback back to the agent.",

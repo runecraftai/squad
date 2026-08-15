@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,15 @@ import { fileURLToPath } from "node:url";
 import { AxiError, installSessionStartHooks, RESERVED_COMMANDS, runAxiCli } from "axi-sdk-js";
 
 import { createDesignOutput, DESIGN_PRIORITY_RULE, DESIGN_SYSTEM_HINT } from "./design-reference.js";
+import {
+  buildTemplate,
+  createNewOutput,
+  createTemplatesListOutput,
+  resolveTemplateKind,
+  resolveTokenKit,
+  TEMPLATE_KINDS,
+  TOKEN_KITS,
+} from "./templates.js";
 import {
   buildSelfContainedHtml,
   exportFileName,
@@ -32,7 +41,19 @@ import { resolveDesignAssetPath, serve } from "./server.js";
 import { canonicalFile, sessionKey, SessionStore } from "./session-store.js";
 import { initDefaultTelemetry } from "./telemetry.js";
 
-const COMMANDS = new Set(["open", "poll", "end", "stop", "server", "playbook", "design", "setup", "export", "share"]);
+const COMMANDS = new Set([
+  "open",
+  "poll",
+  "end",
+  "stop",
+  "server",
+  "playbook",
+  "design",
+  "setup",
+  "export",
+  "share",
+  "new",
+]);
 // SDK-reserved built-ins (e.g. `update`) must reach runAxiCli untouched; otherwise
 // the bare-arg normalization below would rewrite them into the hidden `open` command.
 const RESERVED = new Set(RESERVED_COMMANDS);
@@ -120,6 +141,7 @@ export async function run(argv) {
         server: serverCommand,
         export: exportCommand,
         share: shareCommand,
+        new: newCommand,
       },
       getCommandHelp: (command) => getCommandHelp(command, { agent }),
     });
@@ -191,6 +213,7 @@ export function createHomeOutput({ bin, sessions, includeSessions = true, agent 
       'Rendered Mermaid diagrams in `.mermaid` containers become embedded, editable Excalidraw whiteboards in the browser (click a diagram to unlock editing; a Fullscreen action opens it over the whole viewport) - flowchart, sequence, class, ER, and state diagrams convert to editable shapes; other types embed as an image to draw on. Scenes autosave locally; when a reload detects a changed Mermaid source, the reviewer explicitly chooses to re-convert and discard saved edits or keep editing the saved scene. Standalone and exported copies still render plain Mermaid. Queue feedback adds a prompt to the Conversation panel; when the user sends it, poll returns a tag "whiteboard" prompt carrying a bounded edit summary plus local scenePath (.excalidraw JSON) and previewPath (PNG) files - read the summary first, open the files only when needed, then apply the edits by updating the Mermaid source in the artifact (never try to write the scene back)',
       "Run `sq-report end <html-file>` to end a session as the agent - ending it this way still allows a plain reopen later. When the user ends it from the browser instead, a later `sq-report <html-file>` refuses to reopen it without `--reopen`",
       "Run `sq-report export <html-file> [--out <path>]` to write a portable copy of the artifact - one HTML file with its LOCAL assets inlined - so it opens with no sq-report server and no sibling files. Remote CDN/font references are left as links, so it needs network to render those. Users can also export from the browser chrome's overflow menu",
+      "Run `sq-report new <kind> [--tokens <kit>] [--out <path>]` to scaffold a ready-made starter artifact you then edit: it ships with a painted page background, the layout-safety CSS, and playbook-aligned snippets (decision form, comparison cards, table, plan, code, Mermaid diagram, slides). Run `sq-report new` to list kinds and token kits",
       "Run `sq-report share <html-file> [--password <pw>] [--token <t>]` to publish the artifact on ht-ml.app (https://ht-ml.app), a third-party hosting service not part of sq-report, and get back a visitable URL. Shares are PUBLIC by default, so anyone with the link can open them. Pass --password to publish a PRIVATE password-protected page; viewers must supply the password to view. Local assets are inlined; remote refs load over the network. It returns the url plus a secret update_key for managing the page later. Use --token or SQ_REPORT_HTML_APP_TOKEN only when you have an optional bearer token; it is never required. Users can also publish from the browser chrome's overflow menu",
       "Run `sq-report stop` to shut down the background server (it also self-stops when idle or after the last session ends with nothing connected)",
       `Run \`sq-report playbook <playbook_id>\` for focused artifact guidance. ${PLAYBOOK_ROUTER_HELP}`,
@@ -665,6 +688,40 @@ async function playbookCommand(args) {
 
 async function designCommand() {
   return createDesignOutput();
+}
+
+async function newCommand(args) {
+  const kind = firstPositionalArg(args, ["--tokens", "--out"]);
+  if (!kind) {
+    return createTemplatesListOutput();
+  }
+  const tokens = flagValue(args, "--tokens") || "daisyui";
+  if (!resolveTemplateKind(kind)) {
+    throw new AxiError(`Unknown template kind: ${kind}`, "VALIDATION_ERROR", [
+      `Run \`sq-report new\` to list kinds: ${TEMPLATE_KINDS.map((candidate) => candidate.id).join(", ")}`,
+    ]);
+  }
+  if (!resolveTokenKit(tokens)) {
+    throw new AxiError(`Unknown token kit: ${tokens}`, "VALIDATION_ERROR", [
+      `Known token kits: ${TOKEN_KITS.map((candidate) => candidate.id).join(", ")}`,
+    ]);
+  }
+  const out = flagValue(args, "--out") || path.join(process.cwd(), ".sq-report", `${kind}.html`);
+  const absolute = path.resolve(out);
+  if (!isHtmlPath(absolute)) {
+    throw new AxiError("Template output must be an HTML file path", "VALIDATION_ERROR", [
+      "Pass `--out <path>.html` to choose the output path",
+    ]);
+  }
+  if (existsSync(absolute)) {
+    throw new AxiError(`File already exists: ${absolute}`, "VALIDATION_ERROR", [
+      "Pass `--out` to write to a different path",
+    ]);
+  }
+  const html = buildTemplate({ kind, tokens });
+  await mkdir(path.dirname(absolute), { recursive: true });
+  await writeFile(absolute, html, "utf8");
+  return createNewOutput({ kind, tokens, file: absolute, html });
 }
 
 async function setupCommand(args) {
@@ -1350,7 +1407,7 @@ export function getCommandHelp(command, { agent = "generic" } = {}) {
 }
 
 function createTopLevelHelp({ agent = "generic" } = {}) {
-  return `sq-report - sq-report AXI\n\nUsage:\n  sq-report\n  sq-report <html-file> [--no-open] [--no-gate] [--reopen]\n  sq-report poll <html-file> [--agent-reply "..."]\n  sq-report end <html-file>\n  sq-report export <html-file> [--out <path>]\n  sq-report share <html-file> [--password <pw>] [--token <t>]\n  sq-report stop\n  sq-report playbook [playbook_id]\n  sq-report design\n  sq-report setup hooks\n  sq-report setup plugin\n\n${DESIGN_SYSTEM_HINT}\n\nNote: poll long-polls indefinitely by default until the user sends feedback or ends the session, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the sq-report top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}\n\n`;
+  return `sq-report - sq-report AXI\n\nUsage:\n  sq-report\n  sq-report <html-file> [--no-open] [--no-gate] [--reopen]\n  sq-report poll <html-file> [--agent-reply "..."]\n  sq-report end <html-file>\n  sq-report export <html-file> [--out <path>]\n  sq-report share <html-file> [--password <pw>] [--token <t>]\n  sq-report stop\n  sq-report playbook [playbook_id]\n  sq-report design\n  sq-report new <kind> [--tokens <kit>] [--out <path>]\n  sq-report setup hooks\n  sq-report setup plugin\n\n${DESIGN_SYSTEM_HINT}\n\nNote: poll long-polls indefinitely by default until the user sends feedback or ends the session, staying silent while it waits - never kill it. Layout issues the browser detects are passive: they collect in the user's Layout issues inbox in the sq-report top bar and reach the agent only when the user selects them and queues the fixes, as an ordinary tag "layout-warnings" prompt. Do not pass --timeout-ms during normal agent use; it is for tests and debugging only. ${pollExecutionGuidance({ agent })} ${POLL_SEND_AND_END_RULE}\n\n`;
 }
 
 function createCommandHelp({ agent = "generic" } = {}) {
@@ -1362,7 +1419,8 @@ function createCommandHelp({ agent = "generic" } = {}) {
     share: `Usage: sq-report share <html-file> [--password <pw>] [--token <t>]\n\nPublish the artifact on ht-ml.app (https://ht-ml.app), a third-party hosting service not part of sq-report, and print a visitable URL. Shares are PUBLIC by default: anyone with the link can open the page, and it may be indexed or scraped. Pass --password to publish a PRIVATE password-protected page; viewers must supply the password to view. Builds the same local-inlined HTML as 'export' (local assets inlined; remote CDN/font URLs left as links and are not blocked by CSP on ht-ml.app, but still load over the viewer's network), then POSTs it to ht-ml.app's /v1 API. Creating a site needs no account or API key. The response includes the url plus a secret update_key (shown once) for updating or deleting the page later. Set SQ_REPORT_HTML_APP_TOKEN (or pass --token) to attach an optional bearer token; it is never required. The annotation SDK is never included.\n`,
     stop: `Usage: sq-report stop [--port <port>]\n\nShut down the background sq-report server. The server also stops itself when no browser or poll has been connected for a while (SQ_REPORT_IDLE_TIMEOUT_MS, default 30m) and immediately when the last session ends with nothing connected.\n`,
     playbook: `Usage: sq-report playbook [playbook_id]\n\nList focused artifact guidance playbooks, or show one playbook by ID. Known IDs: diagram, table, comparison, plan, code, input, slides.\n\n${PLAYBOOK_ROUTER_HELP}\n\nExamples:\n  sq-report playbook\n  sq-report playbook diagram\n  sq-report playbook input\n`,
-    design: `Usage: sq-report design\n\nShow a copy-pasteable CDN snippet for Tailwind CSS browser runtime v4 + DaisyUI v5 + themes, Mermaid diagram tooling, a content-to-playbook router, an optional layout safety CSS snippet, plus technical reference for DaisyUI components. ${PLAYBOOK_ROUTER_HELP} sq-report artifacts stay portable HTML. This CDN snippet is the design fallback, not the default: inspect the subject project before falling back, and paste the layout safety CSS only when useful for dense nested grid/flex layouts, badges, wide fonts, or local media. ${DESIGN_PRIORITY_RULE}\n`,
+    design: `Usage: sq-report design\n\nShow a copy-pasteable CDN snippet for Tailwind CSS browser runtime v4 + DaisyUI v5 + themes, Mermaid diagram tooling, a content-to-playbook router, an optional layout safety CSS snippet, the starter-template list (see \`sq-report new\`), plus technical reference for DaisyUI components. ${PLAYBOOK_ROUTER_HELP} sq-report artifacts stay portable HTML. This CDN snippet is the design fallback, not the default: inspect the subject project before falling back, and paste the layout safety CSS only when useful for dense nested grid/flex layouts, badges, wide fonts, or local media. ${DESIGN_PRIORITY_RULE}\n`,
+    new: `Usage: sq-report new <kind> [--tokens <kit>] [--out <path>]\n\nScaffold a ready-made starter artifact you then edit: a standalone HTML file with a painted page background, the layout-safety CSS, a design-system choice, and playbook-aligned snippets (decision queuePrompt form, comparison cards, table, plan, code via @pierre/diffs, Mermaid diagram, slides). Kinds mirror the playbooks: base, decision, comparison, table, plan, code, diagram, slides. Token kits: daisyui (default, CDN runtime), shadcn (Tailwind browser runtime), sq-report (self-contained compiled CSS, fully offline). Refuses to overwrite an existing file - pass --out for a different path. Run \`sq-report new\` with no arguments to list kinds and kits.\n`,
     setup: `Usage: sq-report setup hooks\n       sq-report setup plugin\n\nhooks: install or repair agent SessionStart hooks for sq-report ambient context in Claude Code, Codex, OpenCode, and GitHub Copilot CLI. Restart your agent session afterward to receive the context. This is the primary integration - it carries live session state.\n\nplugin: register the installed sq-report package as an Agent Plugin (agent-plugins.org) in VS Code, Cursor, and GitHub Copilot CLI. The installed package directory is itself the plugin root, so nothing is downloaded and no marketplace is involved. Reload each client afterward. Codex users should use \`setup hooks\` instead.\n\nBoth actions are explicit opt-in, idempotent, and repair a stale path after a reinstall.\n`,
     server: `Usage: sq-report server [--port 4387] [--verbose]\n\nRun the local sq-report server. Pass --verbose (or set SQ_REPORT_DEBUG=1) to log session and watcher events to stderr. Detached server output is appended to ~/.sq-report/server.log, or SQ_REPORT_STATE_DIR/server.log when set, for startup and crash diagnostics.\n\nSQ_REPORT_HOST sets the bind address (default 127.0.0.1; a wildcard 0.0.0.0 or :: binds every interface). Binding beyond loopback exposes an unauthenticated server that can read and serve arbitrary local files to anything that can reach it, so only do so on a trusted network. SQ_REPORT_LINK_HOST sets the hostname written into generated session links (default: the bind address, or loopback when bound to a wildcard). See README's Allowed hosts section for Host allowlisting and SQ_REPORT_ALLOWED_HOSTS. SQ_REPORT_NO_OPEN=1 (or --no-open) suppresses the local browser launch.\n`,
   };

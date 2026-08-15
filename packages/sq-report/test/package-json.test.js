@@ -30,6 +30,12 @@ test("published package includes the installable skill", async () => {
   assert.ok(packageJson.files.includes("skills/lavish"));
 });
 
+test("published package ships the generated starter templates", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+
+  assert.ok(packageJson.files.includes("templates"));
+});
+
 test("published package root is a complete Agent Plugin", async () => {
   // The tarball root doubles as the plugin root, so both the manifest and the skills it
   // discovers have to ship; without either, an installed copy is not installable as a plugin.
