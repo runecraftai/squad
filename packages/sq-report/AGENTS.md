@@ -168,6 +168,10 @@ No need to explicitly document the telemetry behaviors.
 ## Things to know when editing
 
 - `run()` short-circuits `--version`/`-v`/`-V` (`isVersionOnlyArgv`) before `ensureStateDir` and `initDefaultTelemetry`, because agent harnesses probe every tool's version at session start and the telemetry drain in the `finally` block costs up to a full second. Any new startup work must go after that short-circuit; `test/cli-version.test.js` guards both the latency budget and the "no telemetry request, no state dir" property.
+- The `sq-report new` starter templates are owned by `src/templates.js` (kinds, token kits, and the `buildTemplate` renderer).
+  The decision queuePrompt form and the `@pierre/diffs` code snippet are single-sourced in `src/playbooks.js` and imported by both the playbook text and the templates, so the two cannot drift.
+  The daisyui and shadcn kits load the Tailwind browser runtime from a CDN; the sq-report kit is compiled plain CSS (distilled from the internal `sq-report-design` `colors_and_type.css`) and is deliberately not interchangeable with the CDN kits.
+  `scripts/build.js` writes one ready-to-open starter per kind into `templates/` (gitignored, shipped via `package.json` `files`), and `src/design-reference.js` embeds the kind/kit list in the design output through an intentional, evaluation-safe import cycle with `templates.js`.
 - `canonicalFile` runs `realpath`, so symlinks resolve to their target before becoming session keys. Two paths that refer to the same file always collapse to one session.
 - The SDK injected into artifacts lives in `src/artifact-sdk.js` and is wrapped by `createSdkJs`.
   It executes inside an iframe sandboxed with `allow-scripts allow-forms allow-popups allow-downloads` (no `allow-same-origin`), so it cannot read the chrome's DOM - communication is `postMessage` only - and it runs the layout audit in the iframe because the chrome cannot directly inspect the sandboxed document.

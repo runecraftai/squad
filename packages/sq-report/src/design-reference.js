@@ -1,4 +1,8 @@
 import { listPlaybooks, PLAYBOOK_ROUTER_INSTRUCTION } from "./playbooks.js";
+import { TEMPLATE_KINDS, TOKEN_KITS } from "./templates.js";
+// Intentional safe cycle with src/templates.js: this module reads TEMPLATE_KINDS /
+// TOKEN_KITS only inside createDesignOutput(), and templates.js reads this module's
+// snippet constants only inside its builders - never at module-evaluation time.
 
 export const TAILWIND_BROWSER_VERSION = "4.2.4";
 export const DAISYUI_VERSION = "5.5.19";
@@ -148,7 +152,7 @@ export const DESIGN_PRIORITY_RULE =
 export const DESIGN_SYSTEM_HINT =
   "sq-report does not auto-inject any design system - artifacts stay portable so they render identically when opened directly without sq-report running. Before writing any HTML: " +
   DESIGN_PRIORITY_RULE +
-  " Run `sq-report design` for a content-to-playbook router, a copy-pasteable CDN snippet, a Mermaid CDN snippet/init for diagrams, and the DaisyUI component reference. When you deliver the artifact, state which of the three design sources you used and why.";
+  " Run `sq-report design` for a content-to-playbook router, a copy-pasteable CDN snippet, a Mermaid CDN snippet/init for diagrams, and the DaisyUI component reference. When you deliver the artifact, state which of the three design sources you used and why. To start from a ready-made starter artifact you then edit, run `sq-report new <kind> [--tokens <kit>]`; run `sq-report new` to list the kinds and token kits.";
 
 export const DAISYUI_THEMES = [
   "light",
@@ -210,6 +214,17 @@ export function createDesignOutput() {
         "Optional copy-paste CSS for artifacts with dense nested grid/flex layouts, badges, wide monospace or pixel fonts, or local media. Paste it into the artifact yourself when useful. sq-report never auto-injects it, so direct-open portability stays intact.",
       other_design_systems:
         "If the user asks for a different design system (Bootstrap, custom CSS, plain HTML, etc.), use that instead - sq-report does not require DaisyUI.",
+    },
+    templates: {
+      instruction:
+        "Run `sq-report new <kind> [--tokens <kit>]` to scaffold a ready-made starter artifact you then edit - it ships with a painted page background, the layout-safety CSS, and playbook-aligned snippets (decision form, comparison cards, table, plan, code, Mermaid diagram, slides). Kinds mirror the playbooks; the default token kit is daisyui.",
+      kinds: TEMPLATE_KINDS.map(({ id, use_when }) => ({ id, use_when })),
+      token_kits: TOKEN_KITS.map(({ id, name, description, default: isDefault }) => ({
+        id,
+        name,
+        description,
+        ...(isDefault ? { default: true } : {}),
+      })),
     },
     diagram_tooling: {
       use_when:

@@ -1,4 +1,4 @@
-import { chmod, copyFile, cp, mkdir, readFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 
 import * as esbuild from "esbuild";
 
@@ -22,6 +22,16 @@ await esbuild.build({
 });
 
 await chmod("dist/cli.mjs", 0o755);
+
+// Starter templates: one ready-to-open file per kind with the default token kit,
+// shipped in `templates/` (package.json files) so published users can read or copy
+// them directly. `sq-report new` generates the same files on demand from
+// src/templates.js, which owns all template content.
+const { TEMPLATE_KINDS, buildTemplate } = await import("../src/templates.js");
+await mkdir("templates", { recursive: true });
+for (const kind of TEMPLATE_KINDS) {
+  await writeFile(`templates/${kind.id}.html`, buildTemplate({ kind: kind.id }), "utf8");
+}
 await copyFile("src/chrome-client.js", "dist/chrome-client.js");
 await copyFile("src/chrome.css", "dist/chrome.css");
 await mkdir("dist/design", { recursive: true });
