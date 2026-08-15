@@ -7,16 +7,44 @@
 # verb -> label translation and publishes state/window-states (its header owns
 # the file contract); bin/sq-crew-state.sh owns current-state reconciliation;
 # bin/sq-classify-lib.sh owns the status-event vocabulary. This script reads
-# state/window-states plus state/<id>.meta and state/<id>.busy-gen and renders
-# the cards.
+# state/window-states plus state/<id>.meta, state/<id>.busy-gen, and
+# state/<id>.status and renders the sidebar.
 #
-# Card model (two display lines per operator window, one raw record per card):
-#   line 1: <glyph> <id> [<elapsed>]      state-colored mission row
-#   line 2: <label> <detail-or-meta>      state-colored label + current prose
-#   cards: <window>\t<id>\t<label>\t<state>\t<detail>\t<elapsed>\t<model>\t<effort>
-# The two-lines-per-card layout is the ONE layout constant this script owns;
-# `click` maps a rendered pane line to its card with ((line + 1) / 2), so
-# `render` must keep emitting exactly two lines per card.
+# Visual model (top to bottom, all sections opt-out via env):
+#   rollup   one line per tmux session: its worst (most-actionable) operator
+#            state and the operator count
+#   INBOX    one two-line card per operator needing attention
+#            (awaiting-decision, blocked, failed), most actionable first
+#   routine  one two-line card per remaining operator (working, idle, done,
+#            unknown), sorted by window target
+# A card is exactly two display lines; `map` and `click` resolve a rendered
+# pane line to its card's window through the same frame, so line count and
+# order stay exact even with the section headers in between.
+#
+# Card tokens: each card line is a configurable template whose tokens are
+# substituted per card (see SQ_SIDEBAR_LINE1 / SQ_SIDEBAR_LINE2 below):
+#   {glyph}   the state icon (spinner while working, static otherwise)
+#   {id}      the task id, left-padded to 12 columns
+#   {label}   the sidebar-facing state label (working, awaiting-decision, ...)
+#   {state}   the canonical Squad verb behind the label
+#   {detail}  the reconciled prose, or model·effort when there is no prose
+#   {elapsed} wall-clock since the busy contract was armed, right-padded to 8
+#   {model}   the recorded model tag from meta (raw)
+#   {effort}  the recorded effort tag from meta (raw)
+#   {unread}  the unread glyph on a done card not yet acknowledged, else empty
+#   {window}  the recorded tmux target (session:window)
+#   {session} the session part of the window target
+# The actionability ordering (failed > blocked > awaiting-decision > unknown >
+# working > idle > done) and the INBOX membership set (awaiting-decision,
+# blocked, failed) are THIS script's own rendering policy; the ground truth
+# only supplies labels.
+#
+# Unread marker: a done card shows SQ_SIDEBAR_UNREAD until the commander
+# acknowledges it. `ack` writes state/<id>.sidebar-ack (its own private state,
+# gitignored) for every currently-done task; a done task is unread while that
+# marker is missing or older than the task's last status-log append
+# (state/<id>.status mtime), so a task that finishes, is acknowledged, and
+# finishes again becomes unread again.
 #
 # Elapsed time is a simple honest approximation: wall-clock since the task's
 # busy contract was armed (state/<id>.busy-gen mtime, written once at spawn),
@@ -25,9 +53,24 @@
 # effort tags from meta as the cost context. See docs/sq-sidebar.md.
 #
 # Subcommands:
-#   cards [BASE]    print one raw TAB-separated record per operator card
+#   cards [BASE]    print one raw TAB-separated record per operator card, in
+#                   window order (window, id, label, state, detail, elapsed,
+#                   model, effort) - the machine-side/powerkit contract
+#   inbox [BASE]    the same records, restricted to attention operators and
+#                   sorted most-actionable first
 #   render [BASE]   print the display lines with ANSI styling (spinner when
 #                   working); SQ_SIDEBAR_NO_COLOR=1 prints plain text
+#   map [BASE]      print one window target per rendered line (empty for
+#                   headers/separators) so a click resolves any line exactly
+#   badge <window> [BASE]  print a colored state icon (+ unread glyph) with no
+#                   trailing newline, for a window-status-format tab badge
+#   ack [BASE]      mark every currently-done task as acknowledged; prints the
+#                   count; the C-M-a keybinding
+#   filter [BASE]   cycle the sidebar filter (all -> awaiting-decision ->
+#                   blocked -> failed -> working -> idle -> done -> all) and
+#                   print the new value; the C-M-f keybinding
+#   next-inbox [BASE]  select-window to the next attention operator, cycling;
+#                   the C-M-n keybinding
 #   publish [BASE]  run bin/sq-window-state.sh publish for the base
 #   run [BASE]      the sidebar pane loop: self-tag, publish on the refresh
 #                   cadence, re-render every frame until the pane is killed
@@ -39,9 +82,9 @@
 #   focus <window>  select-window to the given target (exposed for scripts)
 #
 # BASE resolution: argument > SQ_SIDEBAR_BASE > SQUAD_BASE > SQUAD_HOME >
-# this repo root. The renderer, card reader, and publish are tmux-free and
-# fully testable against fake state dirs; only toggle/run/click/focus need
-# tmux and fail closed with a stderr note when it is missing.
+# this repo root. The renderer, card reader, badge, and publish are tmux-free
+# and fully testable against fake state dirs; only toggle/run/click/focus/
+# filter/next-inbox need tmux and fail closed with a stderr note when missing.
 #
 # Env: SQUAD_STATE_OVERRIDE selects the state dir (tests); SQUAD_CREW_STATE_BIN
 # overrides the reconciler binary for publish (tests); SQ_SIDEBAR_WIDTH (default
@@ -49,7 +92,11 @@
 # (publish cadence in run, default 2), SQ_SIDEBAR_FRAME_SECS (render cadence,
 # default 1), SQ_SIDEBAR_NOW (epoch; pins the spinner frame for tests),
 # SQ_SIDEBAR_ELAPSED_NOW (epoch; pins the elapsed clock for tests),
-# SQ_SIDEBAR_NO_COLOR=1 and SQ_SIDEBAR_NO_ELAPSED=1 disable their feature.
+# SQ_SIDEBAR_NO_COLOR=1 and SQ_SIDEBAR_NO_ELAPSED=1 disable their feature,
+# SQ_SIDEBAR_LINE1 / SQ_SIDEBAR_LINE2 (card token templates, defaults below),
+# SQ_SIDEBAR_FILTER (label to restrict cards to, empty or "all" for none),
+# SQ_SIDEBAR_UNREAD (default ●), SQ_SIDEBAR_NO_ROLLUP=1, SQ_SIDEBAR_NO_INBOX=1,
+# SQ_SIDEBAR_CURRENT (pins the current window for next-inbox tests).
 set -euo pipefail
 
 SELF="$(readlink -f "$0")"
@@ -62,7 +109,14 @@ WIDTH="${SQ_SIDEBAR_WIDTH:-25}"
 REFRESH_SECS="${SQ_SIDEBAR_REFRESH_SECS:-2}"
 FRAME_SECS="${SQ_SIDEBAR_FRAME_SECS:-1}"
 SPINNER="${SQ_SIDEBAR_SPINNER:-⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏}"
-LINES_PER_CARD=2
+UNREAD="${SQ_SIDEBAR_UNREAD:-●}"
+# The token templates default through a variable rather than an inline `${:-...}`
+# word, because literal braces in an inline default word confuse bash's
+# parameter-expansion closing-brace scan.
+DEFAULT_LINE1='{glyph} {id}{elapsed}{unread}'
+DEFAULT_LINE2='{label} {detail}'
+LINE1="${SQ_SIDEBAR_LINE1:-$DEFAULT_LINE1}"
+LINE2="${SQ_SIDEBAR_LINE2:-$DEFAULT_LINE2}"
 read -r -a SPINNER_FRAMES <<< "$SPINNER"
 
 resolve_base() {  # [BASE] -> base path, per the sq-* scripts' chain
@@ -136,10 +190,52 @@ label_color() {  # <label> -> ANSI SGR color for the card
   esac
 }
 
-# glyph_for <label> <now>: spinner frames while working, static glyphs else.
-glyph_for() {  # <label> <now>
+# state_rank <label>: the sidebar's own actionability ordering, most actionable
+# first. This is a rendering policy, not ground truth.
+state_rank() {  # <label>
   case "$1" in
-    working) spinner_frame "$2" ;;
+    failed) printf '0' ;;
+    blocked) printf '1' ;;
+    awaiting-decision) printf '2' ;;
+    unknown) printf '3' ;;
+    working) printf '4' ;;
+    idle) printf '5' ;;
+    done) printf '6' ;;
+    *) printf '7' ;;
+  esac
+}
+
+# is_inbox_label <label>: 0 when the label is one that needs commander
+# attention (the INBOX set), non-zero otherwise.
+is_inbox_label() {  # <label>
+  case "$1" in
+    awaiting-decision | blocked | failed) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+session_of() {  # <window> -> the session part before the first ':'
+  printf '%s' "${1%%:*}"
+}
+
+# unread_for <state-dir> <id> <label>: 1 when a done task is unacknowledged.
+unread_for() {  # <state-dir> <id> <label>
+  local dir=$1 id=$2 label=$3 ack_mtime status_mtime
+  [ "$label" = "done" ] || { printf '0'; return 0; }
+  ack_mtime=$(file_mtime "$dir/$id.sidebar-ack")
+  status_mtime=$(file_mtime "$dir/$id.status")
+  if [ -z "$ack_mtime" ]; then printf '1'; return 0; fi
+  if [ -n "$status_mtime" ] && [ "$status_mtime" -gt "$ack_mtime" ]; then
+    printf '1'; return 0
+  fi
+  printf '0'
+}
+
+# static_glyph <label>: the always-static state icon (no spinner), used by the
+# rollup header and the window-tab badge.
+static_glyph() {  # <label>
+  case "$1" in
+    working) printf '▶' ;;
     awaiting-decision) printf '?' ;;
     blocked) printf '!' ;;
     done) printf '✓' ;;
@@ -147,6 +243,55 @@ glyph_for() {  # <label> <now>
     failed) printf '✗' ;;
     *) printf '.' ;;
   esac
+}
+
+# glyph_for <label> <now>: spinner frames while working, static glyphs else.
+glyph_for() {  # <label> <now>
+  case "$1" in
+    working) spinner_frame "$2" ;;
+    *) static_glyph "$1" ;;
+  esac
+}
+
+# expand_tokens <template> <window> <id> <label> <state> <detail> <elapsed>
+#               <model> <effort> <unread> <glyph>
+# Replaces the card tokens in <template> with the given card's values. {id} is
+# left-padded to 12, {elapsed} right-padded to 8 when present, {unread} is the
+# unread glyph (or empty), and {detail} is the detail prose or model·effort
+# when there is none. Values are substituted literally (no shell eval);
+# unknown tokens pass through unchanged.
+expand_tokens() {  # <template> <window> <id> <label> <state> <detail> <elapsed> <model> <effort> <unread> <glyph>
+  local t=$1 window=$2 id=$3 label=$4 state=$5 detail=$6 elapsed=$7 \
+        model=$8 effort=$9 unread=${10} glyph=${11}
+  local id_pad el_pad unread_str detail_str session glyph_pad
+  id_pad=$(printf '%-12s' "$(truncate "$id" 12)")
+  glyph_pad=$(printf '%-2s' "$glyph")
+  if [ -n "$elapsed" ] && [ "${SQ_SIDEBAR_NO_ELAPSED:-}" != 1 ]; then
+    el_pad=$(printf '%8s' "$elapsed")
+  else
+    el_pad=""
+  fi
+  if [ "$unread" = 1 ]; then unread_str="$UNREAD"; else unread_str=""; fi
+  if [ -n "$detail" ]; then
+    detail_str=$detail
+  elif [ -n "$model" ] || [ -n "$effort" ]; then
+    detail_str="$model${effort:+·$effort}"
+  else
+    detail_str=""
+  fi
+  session=$(session_of "$window")
+  t=${t//\{glyph\}/$glyph_pad}
+  t=${t//\{id\}/$id_pad}
+  t=${t//\{label\}/$label}
+  t=${t//\{state\}/$state}
+  t=${t//\{detail\}/$detail_str}
+  t=${t//\{elapsed\}/$el_pad}
+  t=${t//\{model\}/$model}
+  t=${t//\{effort\}/$effort}
+  t=${t//\{unread\}/$unread_str}
+  t=${t//\{window\}/$window}
+  t=${t//\{session\}/$session}
+  printf '%s' "$t"
 }
 
 # cards_lines [BASE]: one raw TAB-separated record per operator card, in the
@@ -166,49 +311,169 @@ cards_lines() {  # [BASE]
   done < "$ws"
 }
 
-# display_lines [BASE]: the exact lines the sidebar pane shows, one physical
-# line per pane row. With SQ_SIDEBAR_NO_COLOR=1 the output is plain text that
-# still equals the rendered line-for-line output. Empty when there are no
-# operator cards; the pane shows a placeholder instead.
-display_lines() {  # [BASE]
-  local base=$1 now color glyph line1 line2 glyph_id
-  now=${SQ_SIDEBAR_NOW:-$(date +%s)}
-  color=1
-  if [ "${SQ_SIDEBAR_NO_COLOR:-}" = 1 ]; then color=0; fi
-  while IFS=$'\t' read -r window id label state detail elapsed model effort; do
+# inbox_lines [BASE]: attention operators (awaiting-decision/blocked/failed),
+# most actionable first, same raw record shape as cards_lines.
+inbox_lines() {  # [BASE]
+  local base=$1 dir ws window id label state detail elapsed model effort rank
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || return 0
+  while IFS=$'\t' read -r window id label state detail; do
     [ -n "$window" ] || continue
-    glyph=$(glyph_for "$label" "$now")
-    # Line 1: <glyph> <id> [<elapsed>]; line 2: <label> <detail-or-meta>.
-    # Both truncated to the pane width minus one so a card never wraps and
-    # the click line mapping stays exact.
-    glyph_id=$(printf '%-2s %-12s' "$glyph" "$(truncate "$id" 12)")
-    if [ -n "$elapsed" ] && [ "${SQ_SIDEBAR_NO_ELAPSED:-}" != 1 ]; then
-      line1=$(printf '%-14s%8s' "$glyph_id" "$elapsed")
-    else
-      line1=$glyph_id
-    fi
-    if [ -n "$detail" ]; then
-      line2=$(printf '%s %s' "$label" "$detail")
-    elif [ -n "$model" ] || [ -n "$effort" ]; then
-      line2=$(printf '%s %s' "$label" "$model${effort:+·$effort}")
-    else
-      line2=$label
-    fi
-    line1=$(truncate "$line1" "$((WIDTH - 1))")
-    line2=$(truncate "$line2" "$((WIDTH - 1))")
-    if [ "$color" -eq 1 ]; then
-      printf '\033[%sm%s\033[0m\n' "$(label_color "$label")" "$line1"
-      printf '\033[%sm%s\033[0m\n' "$(label_color "$label")" "$line2"
-    else
-      printf '%s\n' "$line1"
-      printf '%s\n' "$line2"
-    fi
-  done < <(cards_lines "$base")
+    is_inbox_label "$label" || continue
+    elapsed=$(elapsed_for "$dir" "$id")
+    model=$(meta_get "$dir/$id.meta" model)
+    effort=$(meta_get "$dir/$id.meta" effort)
+    rank=$(state_rank "$label")
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$rank" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort"
+  done < "$ws" | LC_ALL=C sort -k1,1n -k2,2 | cut -f2-
 }
 
-render() {  # [BASE]: ANSI display lines, or the placeholder when no cards
-  local base=$1 out
-  out=$(display_lines "$base")
+# records [BASE]: every operator as a 10-column record with a leading sort
+# key. Inbox records sort first by actionability, routine records after by
+# window target, so one sorted pass yields the INBOX-then-routine layout.
+# Fields are separated by the unit separator (\x1f), NOT tab: model/effort
+# may be empty, and tab-as-IFS collapses empty middle fields on read-back.
+records() {  # [BASE] -> sortkey window id label state detail elapsed model effort unread
+  local base=$1 dir ws window id label state detail elapsed model effort unread sk
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || return 0
+  while IFS=$'\t' read -r window id label state detail; do
+    [ -n "$window" ] || continue
+    elapsed=$(elapsed_for "$dir" "$id")
+    model=$(meta_get "$dir/$id.meta" model)
+    effort=$(meta_get "$dir/$id.meta" effort)
+    unread=$(unread_for "$dir" "$id" "$label")
+    if is_inbox_label "$label"; then
+      sk="0$(printf '%02d' "$(state_rank "$label")")"
+    else
+      sk="1$window"
+    fi
+    printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
+      "$sk" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread"
+  done < "$ws" | LC_ALL=C sort
+}
+
+# session_label_pairs [BASE]: session<TAB>label lines sorted by session, the
+# input rollup_lines aggregates.
+session_label_pairs() {  # [BASE]
+  local base=$1 dir ws window id label state detail
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || return 0
+  while IFS=$'\t' read -r window id label state detail; do
+    [ -n "$window" ] || continue
+    printf '%s\t%s\n' "$(session_of "$window")" "$label"
+  done < "$ws" | LC_ALL=C sort
+}
+
+# rollup_lines [BASE]: session<TAB>worst-label<TAB>count.
+rollup_lines() {  # [BASE]
+  local base=$1 session prev="" worst="" count=0 label
+  while IFS=$'\t' read -r session label; do
+    [ -n "$session" ] || continue
+    if [ -n "$prev" ] && [ "$session" != "$prev" ]; then
+      printf '%s\t%s\t%s\n' "$prev" "$worst" "$count"
+      worst=""; count=0
+    fi
+    prev=$session
+    count=$((count + 1))
+    if [ -z "$worst" ] || [ "$(state_rank "$label")" -lt "$(state_rank "$worst")" ]; then
+      worst=$label
+    fi
+  done < <(session_label_pairs "$base")
+  if [ -n "$prev" ]; then
+    printf '%s\t%s\t%s\n' "$prev" "$worst" "$count"
+  fi
+}
+
+# filter_active <filter>: 0 when the filter restricts to one label.
+filter_active() {  # <filter>
+  case "${1:-}" in
+    '' | all) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# frame_lines [BASE]: the exact physical lines the sidebar shows, one per row,
+# as window<TAB>kind<TAB>text. window is the sentinel `-` for non-clickable
+# rows; kind is card:<label>, rollup:<label>, header, or sep, so render can
+# color each row.
+frame_lines() {  # [BASE]
+  local base=$1 now filter dir session wlabel count text glyph
+  local sk window id label state detail elapsed model effort unread line1 line2
+  local inbox_seen=0 routine_seen=0
+  now=${SQ_SIDEBAR_NOW:-$(date +%s)}
+  filter=${SQ_SIDEBAR_FILTER:-}
+  dir=$(state_dir "$base")
+  [ -f "$dir/window-states" ] || return 0
+
+  if [ "${SQ_SIDEBAR_NO_ROLLUP:-}" != 1 ]; then
+    while IFS=$'\t' read -r session wlabel count; do
+      [ -n "$session" ] || continue
+      glyph=$(static_glyph "$wlabel")
+      text=$(printf '%s %s %s ops' "$glyph" "$session" "$count")
+      printf '%s\t%s\t%s\n' "-" "rollup:$wlabel" "$(truncate "$text" "$((WIDTH - 1))")"
+    done < <(rollup_lines "$base")
+  fi
+
+  while IFS=$'\x1f' read -r sk window id label state detail elapsed model effort unread; do
+    [ -n "$window" ] || continue
+    if filter_active "$filter" && [ "$label" != "$filter" ]; then
+      continue
+    fi
+    if is_inbox_label "$label"; then
+      if [ "$inbox_seen" = 0 ] && [ "${SQ_SIDEBAR_NO_INBOX:-}" != 1 ]; then
+        printf '%s\t%s\t%s\n' "-" "header" "$(truncate '▸ INBOX' "$((WIDTH - 1))")"
+      fi
+      inbox_seen=1
+    else
+      if [ "$routine_seen" = 0 ]; then
+        if [ "$inbox_seen" = 1 ] && [ "${SQ_SIDEBAR_NO_INBOX:-}" != 1 ]; then
+          printf '%s\t%s\t%s\n' "-" "sep" \
+            "$(printf '%*s' "$((WIDTH - 1))" '' | tr ' ' '─')"
+        fi
+        routine_seen=1
+      fi
+    fi
+    glyph=$(glyph_for "$label" "$now")
+    line1=$(expand_tokens "$LINE1" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
+    line2=$(expand_tokens "$LINE2" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
+    printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line1" "$((WIDTH - 1))")"
+    printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line2" "$((WIDTH - 1))")"
+  done < <(records "$base")
+}
+
+# map [BASE]: one window target per rendered line (a sentinel `-` becomes empty
+# for non-card rows).
+map() {  # [BASE]
+  local base=$1 window kind text
+  while IFS=$'\t' read -r window kind text; do
+    if [ "$window" = "-" ]; then
+      printf '\n'
+    else
+      printf '%s\n' "$window"
+    fi
+  done < <(frame_lines "$base")
+}
+
+# render [BASE]: ANSI display lines, or the placeholder when there are no rows.
+render() {  # [BASE]
+  local base=$1 out="" window kind text color
+  while IFS=$'\t' read -r window kind text; do
+    if [ "${SQ_SIDEBAR_NO_COLOR:-}" = 1 ]; then
+      out="${out}${text}"$'\n'
+    else
+      case "$kind" in
+        card:*) color=$(label_color "${kind#card:}") ;;
+        rollup:*) color=$(label_color "${kind#rollup:}") ;;
+        *) color='38;5;244' ;;
+      esac
+      out="${out}"$'\033['"${color}m${text}"$'\033[0m'$'\n'
+    fi
+  done < <(frame_lines "$base")
   if [ -z "$out" ]; then
     if [ "${SQ_SIDEBAR_NO_COLOR:-}" = 1 ]; then
       printf '%s\n' '-- no Squad operators --'
@@ -217,7 +482,77 @@ render() {  # [BASE]: ANSI display lines, or the placeholder when no cards
     fi
     return 0
   fi
-  printf '%s\n' "$out"
+  printf '%s' "$out"
+}
+
+# badge <window> [BASE]: a colored state icon for a window-status-format tab,
+# with no trailing newline; done+unread prepends the unread glyph.
+badge() {  # <window> [BASE]
+  local window=${1:-} base=${2:-} dir ws id label state detail row glyph unread
+  [ -n "$window" ] || return 0
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || return 0
+  row=$(awk -F'\t' -v w="$window" '$1 == w { print; exit }' "$ws")
+  [ -n "$row" ] || return 0
+  id=$(printf '%s' "$row" | cut -f2)
+  label=$(printf '%s' "$row" | cut -f3)
+  glyph=$(static_glyph "$label")
+  unread=$(unread_for "$dir" "$id" "$label")
+  if [ "$unread" = 1 ]; then
+    printf '\033[%sm%s%s\033[0m' "$(label_color "$label")" "$UNREAD" "$glyph"
+  else
+    printf '\033[%sm%s\033[0m' "$(label_color "$label")" "$glyph"
+  fi
+}
+
+# ack [BASE]: write state/<id>.sidebar-ack for every done task; print count.
+ack() {  # [BASE]
+  local base=$1 dir ws window id label state detail count=0
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || { printf '0\n'; return 0; }
+  while IFS=$'\t' read -r window id label state detail; do
+    [ -n "$window" ] || continue
+    [ "$label" = "done" ] || continue
+    printf '%s\n' "$(date +%s)" > "$dir/$id.sidebar-ack"
+    count=$((count + 1))
+  done < "$ws"
+  printf '%d\n' "$count"
+}
+
+# filter_next <current>: the next filter in the cycle.
+filter_next() {  # <current>
+  case "${1:-}" in
+    '' | all) printf 'awaiting-decision' ;;
+    awaiting-decision) printf 'blocked' ;;
+    blocked) printf 'failed' ;;
+    failed) printf 'working' ;;
+    working) printf 'idle' ;;
+    idle) printf 'done' ;;
+    done) printf 'all' ;;
+    *) printf 'all' ;;
+  esac
+}
+
+# inbox_next [BASE] <current>: the next attention window target after <current>
+# (cycling), or the first when <current> is not in the set; empty when none.
+inbox_next() {  # [BASE] <current>
+  local base=$1 current=$2 i=0 found=-1 idx=0 w
+  local -a windows=()
+  while IFS=$'\t' read -r w _; do
+    [ -n "$w" ] || continue
+    windows+=("$w")
+  done < <(inbox_lines "$base")
+  if [ "${#windows[@]}" -eq 0 ]; then return 0; fi
+  for w in "${windows[@]}"; do
+    if [ "$w" = "$current" ]; then found=$i; break; fi
+    i=$((i + 1))
+  done
+  if [ "$found" -ge 0 ]; then
+    idx=$(( (found + 1) % ${#windows[@]} ))
+  fi
+  printf '%s' "${windows[$idx]}"
 }
 
 publish() {  # [BASE]
@@ -234,7 +569,7 @@ render_pane() {  # [BASE]
 }
 
 run() {  # [BASE]: the sidebar pane loop; killed with the pane
-  local base=$1 every n=0
+  local base=$1 every n=0 filter
   base=$(resolve_base "$base")
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the sidebar pane requires tmux" >&2
@@ -250,7 +585,8 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
     if (( n % every == 0 )); then
       publish "$base" || true
     fi
-    render_pane "$base"
+    filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
+    SQ_SIDEBAR_FILTER="$filter" render_pane "$base"
     sleep "$FRAME_SECS"
   done
 }
@@ -273,15 +609,12 @@ toggle() {  # [BASE]
 }
 
 click() {  # <line> [BASE]
-  local line=${1:-} base=${2:-} n row window
+  local line=${1:-} base=${2:-} window
   case "$line" in
     '' | *[!0-9]*) return 0 ;;
   esac
   [ "$line" -ge 1 ] || return 0
-  n=$(( (line + 1) / LINES_PER_CARD ))
-  row=$(cards_lines "$base" | sed -n "${n}p")
-  [ -n "$row" ] || return 0
-  window=$(printf '%s' "$row" | cut -f1)
+  window=$(map "$base" | sed -n "${line}p")
   [ -n "$window" ] || return 0
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the click action requires tmux" >&2
@@ -303,16 +636,47 @@ focus() {  # <window>
   tmux select-window -t "$window" 2>/dev/null || true
 }
 
+filter() {  # cycle the global filter, print the new value (no base needed)
+  local cur next
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; the filter key requires tmux" >&2
+    exit 1
+  }
+  cur=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
+  next=$(filter_next "$cur")
+  tmux set-option -g @sq-sidebar-filter "$next" 2>/dev/null || true
+  printf '%s\n' "$next"
+}
+
+next_inbox() {  # [BASE]: focus the next attention operator window
+  local base=$1 current next
+  base=$(resolve_base "$base")
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; the next-inbox key requires tmux" >&2
+    exit 1
+  }
+  current=${SQ_SIDEBAR_CURRENT:-$(tmux display-message -p '#{session_name}:#{window_name}' 2>/dev/null || true)}
+  next=$(inbox_next "$base" "$current")
+  [ -n "$next" ] || return 0
+  tmux select-window -t "$next" 2>/dev/null || true
+}
+
 case "${1:-}" in
   cards) cards_lines "${2:-}" ;;
+  inbox) inbox_lines "${2:-}" ;;
   render) render "${2:-}" ;;
+  map) map "${2:-}" ;;
+  badge) shift; badge "${1:-}" "${2:-}" ;;
+  ack) ack "${2:-}" ;;
+  filter) filter "${2:-}" ;;
+  next-inbox) next_inbox "${2:-}" ;;
   publish) publish "${2:-}" ;;
   run) run "${2:-}" ;;
   toggle) toggle "${2:-}" ;;
   click) shift; click "${1:-}" "${2:-}" ;;
   focus) shift; focus "${1:-}" ;;
   *)
-    echo "usage: sq-sidebar.sh cards|render|publish|run|toggle|click|focus [BASE]" >&2
+    echo "usage: sq-sidebar.sh cards|inbox|render|map|badge|ack|filter|next-inbox|publish|run|toggle|click|focus [BASE]" >&2
     exit 1
     ;;
 esac
