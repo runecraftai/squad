@@ -15,7 +15,23 @@ import {
   LAYOUT_SAFETY_CSS_SNIPPET,
   MERMAID_CDN_SNIPPET,
 } from "./design-reference.js";
-import { CODE_DIFF_SNIPPET, INPUT_DECISION_FORM_SNIPPET } from "./playbooks.js";
+import { CODE_DIFF_SNIPPET } from "./playbooks.js";
+import {
+  callout,
+  cardGrid,
+  cls as clsAttr,
+  codeBlock,
+  colophon,
+  decisionForm,
+  evidenceTable,
+  kvList,
+  masthead,
+  quote,
+  section,
+  statRow,
+  timeline,
+  verdict,
+} from "./components.js";
 
 export const TOKEN_KITS = [
   {
@@ -42,9 +58,9 @@ export const TOKEN_KITS = [
 export const TEMPLATE_KINDS = [
   {
     id: "base",
-    title: "sq-report starter artifact",
-    eyebrow: "sq-report starter",
-    lede: "A minimal painted starter artifact - replace the placeholder content below with the real content.",
+    title: "A starter artifact you <em>fill with text</em>",
+    eyebrow: "Starter",
+    lede: "A painted starter document - replace the placeholder prose below with the real content.",
     use_when: "any artifact: a minimal painted starter you fill in",
     playbook: null,
     render: (kit) => baseSections(kit),
@@ -52,7 +68,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "decision",
     title: "Decisions for review",
-    eyebrow: "input playbook",
+    eyebrow: "Decision",
     lede: "Choose an option per decision; selections stay local until you send them from the sq-report panel.",
     use_when: "collect a structured decision or choice from the reviewer",
     playbook: "input",
@@ -61,7 +77,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "comparison",
     title: "Options and tradeoffs",
-    eyebrow: "comparison playbook",
+    eyebrow: "Comparison",
     lede: "Name the decision at the top; compare concrete behavior per side, with the cost as visible as the benefit.",
     use_when: "show options, tradeoffs, or current vs target behavior",
     playbook: "comparison",
@@ -70,7 +86,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "table",
     title: "Evidence table",
-    eyebrow: "table playbook",
+    eyebrow: "Evidence",
     lede: "Scan-friendly records with the primary status visible at a glance.",
     use_when: "turn dense records into a scan-friendly table",
     playbook: "table",
@@ -79,7 +95,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "plan",
     title: "Plan for review",
-    eyebrow: "plan playbook",
+    eyebrow: "Plan",
     lede: "Goal, current state, desired behavior, proposed approach, and open questions.",
     use_when: "present a product or technical plan before implementation",
     playbook: "plan",
@@ -88,7 +104,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "code",
     title: "Code review",
-    eyebrow: "code playbook",
+    eyebrow: "Code review",
     lede: "Rendered source, files, and diffs through @pierre/diffs.",
     use_when: "render source code, files, or diffs",
     playbook: "code",
@@ -97,7 +113,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "diagram",
     title: "Architecture / flow",
-    eyebrow: "diagram playbook",
+    eyebrow: "Diagram",
     lede: "Lead with the question the diagram answers, then the core relationship.",
     use_when: "map relationships, flows, state, or architecture",
     playbook: "diagram",
@@ -106,6 +122,7 @@ export const TEMPLATE_KINDS = [
   {
     id: "slides",
     title: "Presentation",
+    eyebrow: "Slides",
     use_when: "create a deliberate presentation deck",
     playbook: "slides",
     header: false,
@@ -208,7 +225,9 @@ const SHADCN_THEME_MAPPING = `@theme inline {
 // Artifact-content token system distilled from the internal sq-report-design
 // colors_and_type.css (which owns the product chrome). The chrome-brand font import is
 // deliberately dropped so the artifact stays dependency-free; type stacks fall back to
-// system fonts. This kit is compiled plain CSS - no runtime, no CDN.
+// system fonts. This kit is compiled plain CSS - no runtime, no CDN. The component rules
+// below are the text-fill catalog from the sq-report design recon (src/components.js);
+// every class name the template emits is defined here or in a kind's own inline <style>.
 const BRAND_CSS = `:root {
   --ink-900: #0f1115;
   --ink-800: #11141a;
@@ -258,6 +277,7 @@ const BRAND_CSS = `:root {
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 12px;
+  --radius-xl: 14px;
   --radius-pill: 999px;
 }
 
@@ -267,16 +287,67 @@ html, body {
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
+  margin: 0;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 .sq-page {
-  max-width: 68rem;
+  max-width: 62rem;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 4rem;
+  padding: 3rem 1.5rem 5rem;
 }
 
+/* --- layout primitives (owned by the kit, NOT Tailwind names) --- */
+.sq-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.sq-row-between { justify-content: space-between; }
+.sq-stack { display: grid; gap: 0.75rem; }
+.sq-rule { height: 1px; background: var(--border-subtle); border: 0; margin: 0; }
+
+/* --- masthead (C1) --- */
+.sq-masthead { padding-bottom: 1.75rem; margin-bottom: 2.5rem; border-bottom: 1px solid var(--border); }
+
+.sq-masthead-brand {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--fg-label);
+}
+.sq-masthead-brand::before {
+  content: ""; width: 7px; height: 7px; flex: none;
+  border-radius: var(--radius-pill); background: var(--accent);
+}
+.sq-masthead-brand .sq-brand-sep { color: var(--border-strong); }
+
+.sq-masthead-title {
+  font-family: var(--font-serif);
+  font-size: clamp(2.25rem, 5vw, 3.25rem);
+  line-height: 1.05; letter-spacing: -0.015em;
+  font-weight: 400; margin: 0.875rem 0 0;
+  text-wrap: balance;
+}
+.sq-masthead-title em { font-style: italic; color: var(--accent); }
+
+.sq-masthead-lede {
+  font-family: var(--font-serif); font-size: 1.25rem; font-style: italic;
+  line-height: 1.45; color: var(--fg-muted);
+  max-width: 46rem; margin: 0.875rem 0 0;
+  text-wrap: pretty;
+}
+
+.sq-meta {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem;
+  margin-top: 1.5rem;
+  font-family: var(--font-mono); font-size: 12px; color: var(--fg-faint);
+}
+.sq-meta > span { display: inline-flex; gap: 0.4rem; align-items: baseline; min-width: 0; }
+.sq-meta b {
+  font-family: var(--font-sans); font-weight: 700; font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-label);
+}
+
+/* --- type --- */
 .sq-eyebrow {
   display: inline-block;
   font-size: 10px;
@@ -298,9 +369,11 @@ html, body {
 }
 
 .sq-h2 {
-  font-size: 1.1rem;
+  font-size: 1.375rem;
   font-weight: 600;
-  margin: 0 0 0.75rem;
+  line-height: 1.3;
+  margin: 0;
+  letter-spacing: -0.005em;
 }
 
 .sq-h3 {
@@ -318,154 +391,236 @@ html, body {
   margin: 0.5rem 0 0;
 }
 
-.sq-section { margin-bottom: 2.5rem; }
-
 .sq-muted { color: var(--fg-faint); }
 
-.sq-card {
+/* --- verdict banner (C2) --- */
+.sq-verdict {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem;
+  border: 1px solid var(--accent); border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem; margin-bottom: 2.5rem;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 1rem;
+}
+.sq-verdict-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent); flex: none;
+}
+.sq-verdict-text {
+  font-family: var(--font-serif); font-size: 1.25rem; font-style: italic;
+  color: var(--fg); margin: 0; flex: 1 1 20rem; min-width: 0; text-wrap: pretty;
 }
 
-.sq-card + .sq-card { margin-top: 0.75rem; }
+/* --- section header (C3) --- */
+.sq-section { margin-bottom: 3rem; }
+.sq-section-head { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; }
+.sq-section-num {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--accent); flex: none; padding-top: 0.15rem;
+}
+.sq-section-head .sq-rule { flex: 1; align-self: center; }
+.sq-section-lede {
+  font-family: var(--font-serif); font-size: 1.0625rem; font-style: italic;
+  color: var(--fg-faint); max-width: 44rem; margin: 0 0 1.25rem;
+}
 
-.sq-card-title { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.25rem; }
+/* --- stat row (C4) --- */
+.sq-stats {
+  display: grid; gap: 1px; background: var(--border-subtle);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .sq-stats { grid-template-columns: repeat(var(--sq-stat-cols, 3), minmax(0, 1fr)); }
+}
+.sq-stat { background: var(--bg-panel); padding: 1.125rem 1.25rem; min-width: 0; }
+.sq-stat-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--fg-label);
+}
+.sq-stat-value {
+  font-family: var(--font-serif); font-size: 2.25rem; line-height: 1.1;
+  margin-top: 0.375rem; color: var(--fg); font-variant-numeric: tabular-nums;
+}
+.sq-stat-value.is-accent { color: var(--accent); }
+.sq-stat-note { font-size: 12px; color: var(--fg-faint); margin-top: 0.25rem; }
 
-.sq-grid { display: grid; gap: 0.75rem; }
-.sq-grid-2 { grid-template-columns: 1fr; }
-.sq-grid-3 { grid-template-columns: 1fr; }
+/* --- card + card grid (C5) --- */
+.sq-card {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 1.25rem; min-width: 0;
+}
+.sq-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.sq-card-title { font-size: 1rem; font-weight: 600; margin: 0; }
+.sq-card p { color: var(--fg-dim); font-size: 0.9375rem; margin: 0.5rem 0 0; text-wrap: pretty; }
+.sq-card.is-accent { border-color: var(--accent); }
+
+.sq-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
 @media (min-width: 640px) {
   .sq-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sq-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+.sq-grid > * { min-width: 0; }
 
-.sq-list { margin-top: 0.5rem; display: grid; gap: 0.375rem; font-size: 0.875rem; color: var(--fg-dim); }
-
-.sq-badge {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--fg-dim);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 0.2rem 0.5rem;
+.sq-list { margin: 0.75rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.sq-list li {
+  position: relative; padding-left: 1.125rem;
+  font-size: 0.9375rem; color: var(--fg-dim); text-wrap: pretty;
+}
+.sq-list li::before {
+  content: "·"; position: absolute; left: 0.25rem;
+  color: var(--accent); font-weight: 700;
 }
 
-.sq-badge-accent { color: var(--accent); border-color: var(--accent); }
+/* --- callout (C6) --- */
+.sq-callout {
+  display: grid; gap: 0.375rem;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-panel);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: 1rem 1.25rem; margin: 1.25rem 0;
+}
+.sq-callout-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent);
+}
+.sq-callout p { margin: 0; color: var(--fg-muted); text-wrap: pretty; }
+.sq-callout.is-danger { border-left-color: var(--danger); }
+.sq-callout.is-danger .sq-callout-label { color: var(--danger); }
+.sq-callout.is-quiet { border-left-color: var(--border-strong); }
+.sq-callout.is-quiet .sq-callout-label { color: var(--fg-label); }
 
-.sq-badge-warn { color: var(--amber-300); border-color: var(--amber-300); }
+/* --- evidence table (C7) --- */
+.sq-table-wrap {
+  overflow-x: auto; border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--bg-panel);
+}
+.sq-table { width: 100%; min-width: 34rem; border-collapse: collapse; font-size: 0.875rem; text-align: left; }
+.sq-table th {
+  color: var(--fg-label); text-transform: uppercase; font-size: 10px;
+  letter-spacing: 0.08em; font-weight: 700;
+  padding: 0.75rem 1.125rem; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.sq-table td {
+  padding: 0.8125rem 1.125rem; border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top; color: var(--fg-dim); overflow-wrap: anywhere;
+}
+.sq-table td:first-child { color: var(--fg); font-weight: 500; }
+.sq-table tr:last-child td { border-bottom: none; }
+.sq-table tbody tr:hover td { background: var(--ink-700); }
+
+/* --- badge (C8) --- */
+.sq-badge {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; color: var(--fg-dim);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-pill);
+  padding: 0.15rem 0.5rem; white-space: nowrap;
+}
+.sq-badge-accent { color: var(--accent); border-color: var(--accent); }
+.sq-badge-warn { color: var(--amber-300); border-color: var(--amber-700); }
+.sq-badge-danger { color: var(--danger); border-color: var(--danger); }
+.sq-badge-ok { color: var(--sage-300); border-color: var(--sage-700); }
+
+/* --- timeline (C9) --- */
+.sq-timeline {
+  margin: 0; padding: 0 0 0 1.5rem; list-style: none;
+  border-left: 1px solid var(--border); display: grid; gap: 1.5rem;
+}
+.sq-timeline > li { position: relative; min-width: 0; }
+.sq-timeline > li::before {
+  content: ""; position: absolute; left: calc(-1.5rem - 4.5px); top: 0.4rem;
+  width: 8px; height: 8px; border-radius: var(--radius-pill);
+  background: var(--bg); border: 1px solid var(--border-strong);
+}
+.sq-timeline > li.is-now::before { background: var(--accent); border-color: var(--accent); }
+.sq-timeline-when {
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-label);
+}
+.sq-timeline-what { font-size: 1rem; font-weight: 600; margin: 0.25rem 0 0; }
+.sq-timeline > li p { margin: 0.25rem 0 0; color: var(--fg-faint); font-size: 0.9375rem; }
+
+/* --- pull quote (C10) --- */
+.sq-quote {
+  font-family: var(--font-serif); font-style: italic;
+  font-size: 1.75rem; line-height: 1.3; color: var(--fg);
+  border-left: 2px solid var(--accent);
+  padding: 0 0 0 1.5rem; margin: 2rem 0;
+  max-width: 42rem; text-wrap: pretty;
+}
+.sq-quote footer {
+  font-family: var(--font-sans); font-style: normal; font-size: 12px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg-label); margin-top: 0.875rem;
+}
+
+/* --- code block (C11) --- */
+.sq-code {
+  font-family: var(--font-mono); font-size: 0.85em;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0.1rem 0.4rem; color: var(--cream-200);
+}
+.sq-codeblock { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-panel); }
+.sq-codeblock-bar {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  padding: 0.5rem 0.875rem; border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px; color: var(--fg-faint);
+  background: var(--ink-700);
+}
+.sq-codeblock pre {
+  margin: 0; padding: 1rem 1.125rem; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--cream-200);
+}
+
+/* --- decision form (C12, styles the shared queuePrompt markup) --- */
+form[data-lavish-question] { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
+form[data-lavish-question] label {
+  display: flex; gap: 0.625rem; align-items: flex-start;
+  padding: 0.75rem 0.875rem; border: 1px solid var(--border);
+  border-radius: var(--radius-md); cursor: pointer; color: var(--fg-muted);
+  transition: background 180ms cubic-bezier(0.2, 0.6, 0.2, 1), border-color 180ms;
+}
+form[data-lavish-question] label:hover { background: var(--bg-elevated); color: var(--fg); }
+form[data-lavish-question] label:has(input:checked) { border-color: var(--accent); color: var(--fg); }
+form[data-lavish-question] input[type="radio"] { accent-color: var(--accent); margin-top: 0.2rem; }
+form[data-lavish-question] button[type="submit"] { align-self: flex-start; }
 
 .sq-btn {
-  display: inline-block;
-  font: inherit;
-  font-weight: 600;
-  color: var(--accent-ink);
-  background: var(--accent);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.875rem;
-  cursor: pointer;
+  display: inline-block; font: inherit; font-weight: 600;
+  color: var(--accent-ink); background: var(--accent);
+  border: 1px solid transparent; border-radius: var(--radius-md);
+  padding: 0.5625rem 0.875rem; cursor: pointer;
 }
-
 .sq-btn:hover { background: var(--accent-hover); }
-
-.sq-btn-ghost {
-  color: var(--fg);
-  background: transparent;
-  border-color: var(--border);
-}
-
+.sq-btn-ghost { color: var(--fg); background: transparent; border-color: var(--border-strong); }
 .sq-btn-ghost:hover { background: var(--bg-elevated); }
-
-.sq-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-panel);
-}
-
-.sq-table {
-  width: 100%;
-  min-width: 36rem;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-  text-align: left;
-}
-
-.sq-table th {
-  color: var(--fg-label);
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  font-weight: 600;
-  padding: 0.625rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.sq-table td {
-  padding: 0.625rem 1rem;
-  border-bottom: 1px solid var(--border-subtle);
-  vertical-align: top;
-}
-
-.sq-table tr:last-child td { border-bottom: none; }
-
-.sq-code {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.1rem 0.4rem;
-  color: var(--cream-200);
-}
-
 .sq-input {
-  width: 100%;
-  font: inherit;
-  color: var(--fg);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.625rem;
+  width: 100%; font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  padding: 0.625rem 0.75rem;
 }
+.sq-input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.sq-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* --- key-value list (C13) --- */
+.sq-kv { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--border-subtle); }
+.sq-kv > div {
+  display: grid; grid-template-columns: 1fr; gap: 0.25rem;
+  padding: 0.75rem 0; border-bottom: 1px solid var(--border-subtle); min-width: 0;
+}
+@media (min-width: 640px) { .sq-kv > div { grid-template-columns: 13rem 1fr; gap: 1.5rem; } }
+.sq-kv dt {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--fg-label); padding-top: 0.15rem;
+}
+.sq-kv dd { margin: 0; color: var(--fg-dim); overflow-wrap: anywhere; }
 
+/* --- footer / colophon (C14) --- */
 .sq-footer {
-  border-top: 1px solid var(--border);
-  margin-top: 2rem;
-  padding-top: 1rem;
-  font-size: 0.75rem;
-  color: var(--fg-faint);
+  border-top: 1px solid var(--border); margin-top: 3.5rem; padding-top: 1.25rem;
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-label);
 }
 
-.sq-mt-2 { margin-top: 0.5rem; }
-
-/* Style the shared queuePrompt decision form (plain markup from the input playbook) */
-form[data-lavish-question] {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-form[data-lavish-question] label {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  padding: 0.625rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-
-form[data-lavish-question] label:hover { background: var(--bg-elevated); }
-
-form[data-lavish-question] button[type="submit"] { align-self: flex-start; }`;
+.sq-mt-2 { margin-top: 0.5rem; }`;
 
 const DAISYUI_CLASSES = {
   page: "bg-base-100 text-base-content",
@@ -473,26 +628,82 @@ const DAISYUI_CLASSES = {
   eyebrow: "badge badge-ghost",
   h1: "mt-3 text-3xl font-bold tracking-tight sm:text-4xl",
   lede: "mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70 sm:text-base",
-  section: "mb-10",
-  h2: "mb-3 text-lg font-semibold",
+  section: "mb-12",
+  h2: "text-2xl font-semibold",
   h3: "font-semibold",
-  card: "card card-border bg-base-100 p-4",
-  cardTitle: "card-title",
-  grid2: "grid gap-3 sm:grid-cols-2",
-  grid3: "grid gap-3 sm:grid-cols-3",
-  list: "mt-2 space-y-1 text-sm text-base-content/70",
-  badge: "badge badge-soft badge-neutral",
-  badgePrimary: "badge badge-primary",
-  badgeWarn: "badge badge-soft badge-warning",
+  card: "card card-border bg-base-200 p-5",
+  cardTitle: "font-semibold",
+  cardHead: "flex items-baseline justify-between gap-3",
+  cardText: "mt-2 text-sm text-base-content/70",
+  cardAccent: "border-primary",
+  grid2: "grid gap-4 sm:grid-cols-2",
+  grid3: "grid gap-4 sm:grid-cols-3",
+  list: "mt-3 space-y-2 text-sm text-base-content/70",
+  listItem: "before:mr-2 before:font-bold before:text-primary before:content-['·']",
+  badge: "badge badge-ghost badge-sm",
+  badgePrimary: "badge badge-primary badge-outline badge-sm",
+  badgeOk: "badge badge-success badge-outline badge-sm",
+  badgeWarn: "badge badge-warning badge-outline badge-sm",
+  badgeDanger: "badge badge-error badge-outline badge-sm",
   btnPrimary: "btn btn-primary",
   btnGhost: "btn btn-ghost",
   btnRow: "mt-2",
   muted: "text-base-content/60",
-  tableWrap: "overflow-x-auto rounded-box border border-base-content/5 bg-base-100",
-  table: "table table-zebra",
-  code: "rounded bg-base-200 px-1 py-0.5 text-xs",
+  tableWrap: "overflow-x-auto rounded-box border border-base-content/15 bg-base-200",
+  table: "table table-sm",
+  code: "rounded bg-base-300 px-1 py-0.5 text-xs",
   textarea: "textarea textarea-bordered w-full",
-  footer: "border-t border-base-content/10 pt-4 text-xs text-base-content/50",
+  masthead: "mb-10 border-b border-base-content/15 pb-7",
+  mastheadBrand:
+    "flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-base-content/50",
+  mastheadDot: "inline-block size-[7px] rounded-full bg-primary",
+  brandSep: "text-base-content/25",
+  mastheadTitle: "mt-3.5 font-serif text-4xl leading-[1.05] tracking-tight text-balance sm:text-5xl",
+  mastheadTitleEm: "text-primary",
+  mastheadLede: "mt-3.5 max-w-3xl font-serif text-xl italic leading-relaxed text-base-content/70",
+  meta: "mt-6 flex flex-wrap gap-x-5 gap-y-2 font-mono text-xs text-base-content/50",
+  metaLabel: "font-sans text-[10px] font-bold uppercase tracking-[0.08em] text-base-content/40",
+  verdict:
+    "mb-10 flex flex-wrap items-baseline gap-x-4 gap-y-2 rounded-box border border-primary bg-base-200 px-5 py-4",
+  verdictLabel: "text-[10px] font-bold uppercase tracking-[0.08em] text-primary",
+  verdictText: "min-w-0 flex-1 font-serif text-xl italic text-pretty",
+  sectionHead: "mb-4 flex items-baseline gap-3",
+  sectionNum: "font-mono text-xs font-semibold text-primary",
+  sectionLede: "mb-4 max-w-3xl font-serif text-base italic text-base-content/60",
+  rule: "flex-1 self-center border-base-content/10",
+  stats:
+    "grid gap-px overflow-hidden rounded-box border border-base-content/15 bg-base-content/10 sm:grid-cols-[repeat(var(--sq-stat-cols,3),minmax(0,1fr))]",
+  stat: "min-w-0 bg-base-200 px-5 py-4",
+  statLabel: "text-[10px] font-bold uppercase tracking-[0.08em] text-base-content/50",
+  statValue: "mt-1.5 font-serif text-4xl tabular-nums",
+  statValueAccent: "text-primary",
+  statNote: "mt-1 text-xs text-base-content/50",
+  callout: "my-5 grid gap-1.5 rounded-r-box border-l-2 border-primary bg-base-200 px-5 py-4",
+  calloutDanger: "border-error",
+  calloutQuiet: "border-base-content/30",
+  calloutLabel: "text-[10px] font-bold uppercase tracking-[0.08em] text-primary",
+  calloutLabelDanger: "text-error",
+  calloutLabelQuiet: "text-base-content/60",
+  calloutText: "text-pretty text-base-content/80",
+  timeline: "grid gap-6 border-l border-base-content/15 pl-6",
+  timelineItem:
+    "relative before:absolute before:-left-[1.72rem] before:top-1.5 before:size-2 before:rounded-full before:border before:border-base-content/30 before:bg-base-100",
+  timelineItemNow: "before:border-primary before:bg-primary",
+  timelineWhen: "font-mono text-[11px] uppercase tracking-wide text-base-content/50",
+  timelineWhat: "mt-1 font-semibold",
+  timelineDetail: "mt-1 text-sm text-base-content/60",
+  quote: "my-8 max-w-2xl text-pretty border-l-2 border-primary pl-6 font-serif text-3xl italic leading-snug",
+  quoteFooter: "mt-3.5 font-sans text-xs not-italic uppercase tracking-[0.08em] text-base-content/50",
+  codeblock: "overflow-hidden rounded-box border border-base-content/15 bg-base-200",
+  codeblockBar:
+    "flex items-center justify-between gap-3 border-b border-base-content/15 bg-base-300 px-3.5 py-2 font-mono text-xs text-base-content/60",
+  codeblockPre: "overflow-x-auto px-4 py-4 font-mono text-[13px] leading-relaxed",
+  kv: "mt-8 border-t border-base-content/10",
+  kvRow: "grid gap-1 border-b border-base-content/10 py-3 sm:grid-cols-[13rem_1fr] sm:gap-6",
+  kvDt: "text-[10px] font-bold uppercase tracking-[0.08em] text-base-content/50",
+  kvDd: "break-words text-base-content/70",
+  footer:
+    "mt-14 flex flex-wrap justify-between gap-x-6 gap-y-2 border-t border-base-content/15 pt-5 font-mono text-[11.5px] text-base-content/45",
 };
 
 const SHADCN_CLASSES = {
@@ -501,18 +712,26 @@ const SHADCN_CLASSES = {
   eyebrow: "rounded-full border border-border px-2.5 py-0.5 text-xs font-medium",
   h1: "mt-3 text-3xl font-bold tracking-tight sm:text-4xl",
   lede: "mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base",
-  section: "mb-10",
-  h2: "mb-3 text-lg font-semibold",
+  section: "mb-12",
+  h2: "text-2xl font-semibold",
   h3: "text-sm font-semibold",
-  card: "rounded-lg border border-border bg-card p-4",
+  card: "rounded-lg border border-border bg-card p-5",
   cardTitle: "text-sm font-semibold",
-  grid2: "grid gap-3 sm:grid-cols-2",
-  grid3: "grid gap-3 sm:grid-cols-3",
-  list: "mt-2 space-y-1 text-sm text-muted-foreground",
+  cardHead: "flex items-baseline justify-between gap-3",
+  cardText: "mt-2 text-sm text-muted-foreground",
+  cardAccent: "border-primary",
+  grid2: "grid gap-4 sm:grid-cols-2",
+  grid3: "grid gap-4 sm:grid-cols-3",
+  list: "mt-3 space-y-2 text-sm text-muted-foreground",
+  listItem: "",
   badge: "rounded-full border border-border px-2.5 py-0.5 text-xs font-medium",
-  badgePrimary: "rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground",
+  badgePrimary: "rounded-full border border-primary px-2.5 py-0.5 text-xs font-medium text-primary",
+  badgeOk:
+    "rounded-full border border-verdict-pass/50 bg-verdict-pass/10 px-2.5 py-0.5 text-xs font-medium text-verdict-pass",
   badgeWarn:
     "rounded-full border border-verdict-warn/50 bg-verdict-warn/10 px-2.5 py-0.5 text-xs font-medium text-verdict-warn",
+  badgeDanger:
+    "rounded-full border border-verdict-fail/50 bg-verdict-fail/10 px-2.5 py-0.5 text-xs font-medium text-verdict-fail",
   btnPrimary:
     "cursor-pointer rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90",
   btnGhost:
@@ -524,7 +743,56 @@ const SHADCN_CLASSES = {
   code: "rounded bg-secondary px-1 py-0.5 text-xs",
   textarea:
     "mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring",
-  footer: "border-t border-border pt-4 text-xs text-muted-foreground",
+  masthead: "mb-10 border-b border-border pb-7",
+  mastheadBrand:
+    "flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground",
+  mastheadDot: "inline-block size-[7px] rounded-full bg-primary",
+  brandSep: "text-border",
+  mastheadTitle: "mt-3.5 font-serif text-4xl leading-[1.05] tracking-tight text-balance sm:text-5xl",
+  mastheadTitleEm: "text-primary",
+  mastheadLede: "mt-3.5 max-w-3xl font-serif text-xl italic leading-relaxed text-muted-foreground",
+  meta: "mt-6 flex flex-wrap gap-x-5 gap-y-2 font-mono text-xs text-muted-foreground",
+  metaLabel: "font-sans text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground",
+  verdict: "mb-10 flex flex-wrap items-baseline gap-x-4 gap-y-2 rounded-lg border border-primary bg-card px-5 py-4",
+  verdictLabel: "text-[10px] font-bold uppercase tracking-[0.08em] text-primary",
+  verdictText: "min-w-0 flex-1 font-serif text-xl italic text-pretty",
+  sectionHead: "mb-4 flex items-baseline gap-3",
+  sectionNum: "font-mono text-xs font-semibold text-primary",
+  sectionLede: "mb-4 max-w-3xl font-serif text-base italic text-muted-foreground",
+  rule: "flex-1 self-center border-border",
+  stats:
+    "grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-[repeat(var(--sq-stat-cols,3),minmax(0,1fr))]",
+  stat: "min-w-0 bg-card px-5 py-4",
+  statLabel: "text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground",
+  statValue: "mt-1.5 font-serif text-4xl tabular-nums",
+  statValueAccent: "text-primary",
+  statNote: "mt-1 text-xs text-muted-foreground",
+  callout: "my-5 grid gap-1.5 rounded-r-lg border-l-2 border-primary bg-card px-5 py-4",
+  calloutDanger: "border-destructive",
+  calloutQuiet: "border-border",
+  calloutLabel: "text-[10px] font-bold uppercase tracking-[0.08em] text-primary",
+  calloutLabelDanger: "text-destructive",
+  calloutLabelQuiet: "text-muted-foreground",
+  calloutText: "text-pretty text-muted-foreground",
+  timeline: "grid gap-6 border-l border-border pl-6",
+  timelineItem:
+    "relative before:absolute before:-left-[1.72rem] before:top-1.5 before:size-2 before:rounded-full before:border before:border-border before:bg-background",
+  timelineItemNow: "before:border-primary before:bg-primary",
+  timelineWhen: "font-mono text-[11px] uppercase tracking-wide text-muted-foreground",
+  timelineWhat: "mt-1 text-sm font-semibold",
+  timelineDetail: "mt-1 text-sm text-muted-foreground",
+  quote: "my-8 max-w-2xl text-pretty border-l-2 border-primary pl-6 font-serif text-3xl italic leading-snug",
+  quoteFooter: "mt-3.5 font-sans text-xs not-italic uppercase tracking-[0.08em] text-muted-foreground",
+  codeblock: "overflow-hidden rounded-lg border border-border bg-card",
+  codeblockBar:
+    "flex items-center justify-between gap-3 border-b border-border bg-secondary px-3.5 py-2 font-mono text-xs text-muted-foreground",
+  codeblockPre: "overflow-x-auto px-4 py-4 font-mono text-[13px] leading-relaxed",
+  kv: "mt-8 border-t border-border",
+  kvRow: "grid gap-1 border-b border-border py-3 sm:grid-cols-[13rem_1fr] sm:gap-6",
+  kvDt: "text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground",
+  kvDd: "break-words text-muted-foreground",
+  footer:
+    "mt-14 flex flex-wrap justify-between gap-x-6 gap-y-2 border-t border-border pt-5 font-mono text-[11.5px] text-muted-foreground",
 };
 
 const BRAND_CLASSES = {
@@ -538,12 +806,18 @@ const BRAND_CLASSES = {
   h3: "sq-h3",
   card: "sq-card",
   cardTitle: "sq-card-title",
+  cardHead: "sq-card-head",
+  cardText: "",
+  cardAccent: "is-accent",
   grid2: "sq-grid sq-grid-2",
   grid3: "sq-grid sq-grid-3",
   list: "sq-list",
+  listItem: "",
   badge: "sq-badge",
   badgePrimary: "sq-badge sq-badge-accent",
+  badgeOk: "sq-badge sq-badge-ok",
   badgeWarn: "sq-badge sq-badge-warn",
+  badgeDanger: "sq-badge sq-badge-danger",
   btnPrimary: "sq-btn",
   btnGhost: "sq-btn sq-btn-ghost",
   btnRow: "sq-mt-2",
@@ -552,6 +826,50 @@ const BRAND_CLASSES = {
   table: "sq-table",
   code: "sq-code",
   textarea: "sq-input",
+  masthead: "sq-masthead",
+  mastheadBrand: "sq-masthead-brand",
+  mastheadDot: "",
+  brandSep: "sq-brand-sep",
+  mastheadTitle: "sq-masthead-title",
+  mastheadTitleEm: "",
+  mastheadLede: "sq-masthead-lede",
+  meta: "sq-meta",
+  metaLabel: "",
+  verdict: "sq-verdict",
+  verdictLabel: "sq-verdict-label",
+  verdictText: "sq-verdict-text",
+  sectionHead: "sq-section-head",
+  sectionNum: "sq-section-num",
+  sectionLede: "sq-section-lede",
+  rule: "sq-rule",
+  stats: "sq-stats",
+  stat: "sq-stat",
+  statLabel: "sq-stat-label",
+  statValue: "sq-stat-value",
+  statValueAccent: "is-accent",
+  statNote: "sq-stat-note",
+  callout: "sq-callout",
+  calloutDanger: "is-danger",
+  calloutQuiet: "is-quiet",
+  calloutLabel: "sq-callout-label",
+  calloutLabelDanger: "",
+  calloutLabelQuiet: "",
+  calloutText: "",
+  timeline: "sq-timeline",
+  timelineItem: "",
+  timelineItemNow: "is-now",
+  timelineWhen: "sq-timeline-when",
+  timelineWhat: "sq-timeline-what",
+  timelineDetail: "",
+  quote: "sq-quote",
+  quoteFooter: "",
+  codeblock: "sq-codeblock",
+  codeblockBar: "sq-codeblock-bar",
+  codeblockPre: "",
+  kv: "sq-kv",
+  kvRow: "",
+  kvDt: "",
+  kvDd: "",
   footer: "sq-footer",
 };
 
@@ -667,20 +985,21 @@ const KIT_CLASSES = {
 };
 
 function pageHeader(kit, kind) {
-  return `<header class="mb-8">
-  <div class="flex flex-wrap items-center gap-2 text-xs">
-    <span class="${kit.cls("eyebrow")}">${kind.eyebrow}</span>
-    ${kit.toggle ? `<span>${kit.toggle}</span>` : ""}
-  </div>
-  <h1 class="${kit.cls("h1")}">${kind.title}</h1>
-  <p class="${kit.cls("lede")}">${kind.lede}</p>
-</header>`;
+  return masthead(kit, {
+    brand: "Squad Briefing",
+    segment: kind.eyebrow,
+    title: kind.title,
+    lede: kind.lede,
+    meta: [
+      { label: "Prepared", value: new Date().toISOString().slice(0, 10) },
+      { label: "Status", value: "For review" },
+    ],
+    toggle: kit.toggle,
+  });
 }
 
 function pageFooter(kit) {
-  return `<footer class="${kit.cls("footer")}">
-  <p>sq-report review surface.</p>
-</footer>`;
+  return colophon(kit, { left: "Squad Briefing · prepared for review" });
 }
 
 function starterComment(kind, tokens) {
@@ -697,7 +1016,9 @@ function starterComment(kind, tokens) {
 export function buildTemplate({ kind = "base", tokens = "daisyui", title = "" } = {}) {
   const kindDef = resolveTemplateKind(kind) || TEMPLATE_KINDS[0];
   const kit = kitWithClassHelper(tokens);
-  const resolvedTitle = title || kindDef.title;
+  // Kind titles may carry a <em> brass phrase for the rendered <h1>; the browser
+  // tab title stays plain text.
+  const resolvedTitle = (title || kindDef.title).replace(/<[^>]+>/g, "").trim();
   const header = kindDef.header === false ? "" : pageHeader(kit, kindDef);
   const body = kindDef.render(kit);
   const containerClass = kindDef.containerClass === false ? "" : kit.cls("container");
@@ -716,136 +1037,229 @@ ${header}${body}${footer}
 }
 
 function baseSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Placeholder section</h2>
-  <div class="${kit.cls("card")}">
-    <h3 class="${kit.cls("cardTitle")}">Replace me</h3>
-    <p class="${kit.cls("muted")}">Write the artifact content here. Add sections, cards, tables, diagrams, or queuePrompt forms matching the relevant playbooks: run \`sq-report playbook\` to list them.</p>
-  </div>
-</section>`;
+  return `${verdict(kit, {
+    label: "Verdict",
+    text: "One sentence stating the conclusion, so a busy reader can stop after this line.",
+  })}
+${section(kit, {
+  num: "01",
+  title: "What the numbers say",
+  lede: "Three to four counts that frame the finding.",
+  content: statRow(kit, [
+    { label: "Replace: what is counted", value: "01", note: "Replace: qualifier" },
+    { label: "Replace: the number that matters", value: "02", note: "Replace: qualifier", accent: true },
+    { label: "Replace: what is counted", value: "03", note: "Replace: qualifier" },
+  ]),
+})}
+${section(kit, {
+  num: "02",
+  title: "Options and tradeoffs",
+  lede: "Parallel items of equal weight, with the recommended one marked.",
+  content: cardGrid(kit, [
+    {
+      title: "Option A",
+      badge: { text: "recommended", variant: "primary" },
+      body: "Replace: what this option actually does.",
+      points: ["Replace: primary benefit with its cost.", "Replace: second concrete behavior."],
+      accent: true,
+    },
+    {
+      title: "Option B",
+      body: "Replace: what this option actually does.",
+      points: ["Replace: primary benefit with its cost.", "Replace: second concrete behavior."],
+    },
+  ]),
+})}
+${section(kit, {
+  num: "03",
+  title: "Callouts and evidence",
+  lede: "An aside that must not be missed, then the dense records.",
+  content: `${callout(kit, { label: "Note", text: "Replace: a caveat, constraint, or note on method." })}
+  ${callout(kit, { label: "Defect", text: "Replace: what is broken, with the evidence.", variant: "danger" })}
+  ${evidenceTable(kit, {
+    headers: ["Item", "Evidence", "Status"],
+    rows: [
+      {
+        cells: [
+          { text: "Replace: item" },
+          { text: "Replace: path, link, or quote", muted: true },
+          { badge: { text: "open", variant: "warn" } },
+        ],
+      },
+      {
+        cells: [
+          { text: "Replace: item" },
+          { text: "Replace: path, link, or quote", muted: true },
+          { badge: { text: "passing", variant: "ok" } },
+        ],
+      },
+    ],
+  })}`,
+})}
+${section(kit, {
+  num: "04",
+  title: "Sequence and detail",
+  lede: "Ordered steps, then the short facts that are not a table.",
+  content: `${timeline(kit, [
+    { when: "Step one · now", what: "Replace: what happens first", detail: "Replace: the detail line.", now: true },
+    { when: "Step two", what: "Replace: what happens next", detail: "Replace: the detail line." },
+  ])}
+  ${kvList(kit, [
+    { term: "Files touched", value: "Replace: path, path" },
+    { term: "New dependencies", value: "Replace: none, or name them" },
+  ])}`,
+})}
+${section(kit, {
+  num: "05",
+  title: "Voice and code",
+  lede: "The sentence worth remembering, then the literal excerpt.",
+  content: `${quote(kit, { text: "Replace: the sentence the reader should remember.", attribution: "Replace: attribution" })}
+  ${codeBlock(kit, { path: "Replace: src/path.js", label: "excerpt", code: "Replace: the code" })}`,
+})}
+${section(kit, {
+  num: "06",
+  title: "Your call",
+  lede: "The artifact needs an answer, not just a read.",
+  content: decisionForm(kit, {
+    question: "Replace: the question",
+    context: "Replace: what is being chosen, what the options mean, and what happens next.",
+  }),
+})}`;
 }
 
 function decisionSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Decisions in review</h2>
-  <p class="${kit.cls("muted")}">Each decision keeps local selection state until the reviewer submits it. Nothing is sent without the reviewer pressing the send control in the sq-report panel.</p>
+  return section(kit, {
+    num: "01",
+    title: "Decisions in review",
+    lede: "Each decision keeps local selection state until the reviewer submits it.",
+    content: `${callout(kit, {
+      label: "Note",
+      text: "Nothing is sent without the reviewer pressing the send control in the sq-report panel.",
+    })}
+  ${decisionForm(kit, {
+    question: "Your decision question",
+    context: "Short context: what is being chosen, what the options mean, and what happens next.",
+  })}
 
   <!-- REPLACE the options and labels below with your decision's options. Keep the
        <form> element and its onsubmit wiring untouched - it is the canonical
        input-playbook queuePrompt form (see the "input" playbook). -->
-  <div class="${kit.cls("card")}">
-    <h3 class="${kit.cls("cardTitle")}">D1 · Your decision question</h3>
-    <p class="${kit.cls("muted")}">Short context: what is being chosen, what the options mean, and what happens next.</p>
-    ${INPUT_DECISION_FORM_SNIPPET}
-  </div>
-
-  <div class="${kit.cls("card")}">
-    <h3 class="${kit.cls("cardTitle")}">Open comment (optional)</h3>
-    <p class="${kit.cls("muted")}">Any adjustment, question, or condition that changes the answers above.</p>
+  <div${clsAttr(kit, "card")}>
+    <h3${clsAttr(kit, "cardTitle")}>Open comment (optional)</h3>
+    <p${clsAttr(kit, "cardText")}>Any adjustment, question, or condition that changes the answers above.</p>
     <form data-lavish-question="open" onsubmit="event.preventDefault(); const v = new FormData(event.currentTarget).get('open'); if (v && v.trim()) window.lavish.queuePrompt('Open comment: ' + v.trim(), { tag: 'feedback', text: v.trim(), element: event.currentTarget, data: { question: 'open' } }); event.currentTarget.reset();">
-      <textarea name="open" rows="3" class="${kit.cls("textarea")}" placeholder="Write here..."></textarea>
-      <div class="${kit.cls("btnRow")}">
-        <button type="submit" class="${kit.cls("btnGhost")}">Queue comment</button>
+      <textarea name="open" rows="3"${clsAttr(kit, "textarea")} placeholder="Write here..."></textarea>
+      <div${clsAttr(kit, "btnRow")}>
+        <button type="submit"${clsAttr(kit, "btnGhost")}>Queue comment</button>
       </div>
     </form>
-  </div>
-</section>`;
+  </div>`,
+  });
 }
 
 function comparisonSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Options</h2>
-  <p class="${kit.cls("muted")}">Name the decision at the top of the artifact and show the concrete behavior per side, not just abstract pros and cons. Make the cost of each option as visible as the benefit.</p>
-  <div class="${kit.cls("grid2")}">
-    <div class="${kit.cls("card")}">
-      <h3 class="${kit.cls("cardTitle")}">Option A <span class="${kit.cls("badgePrimary")}">recommended</span></h3>
-      <ul class="${kit.cls("list")}">
-        <li>Concrete behavior or artifact shape under this option.</li>
-        <li>Primary benefit with its cost or tradeoff.</li>
-      </ul>
-    </div>
-    <div class="${kit.cls("card")}">
-      <h3 class="${kit.cls("cardTitle")}">Option B</h3>
-      <ul class="${kit.cls("list")}">
-        <li>Concrete behavior or artifact shape under this option.</li>
-        <li>Primary benefit with its cost or tradeoff.</li>
-      </ul>
-    </div>
-  </div>
-</section>`;
+  return section(kit, {
+    num: "01",
+    title: "Options",
+    lede: "Name the decision at the top of the artifact; compare concrete behavior per side, with the cost as visible as the benefit.",
+    content: cardGrid(kit, [
+      {
+        title: "Option A",
+        badge: { text: "recommended", variant: "primary" },
+        body: "Concrete behavior or artifact shape under this option.",
+        points: ["Primary benefit with its cost or tradeoff."],
+        accent: true,
+      },
+      {
+        title: "Option B",
+        body: "Concrete behavior or artifact shape under this option.",
+        points: ["Primary benefit with its cost or tradeoff."],
+      },
+    ]),
+  });
 }
 
 function tableSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Evidence table</h2>
-  <p class="${kit.cls("muted")}">Start with a short summary of what the rows prove or require, keep the primary status visible without reading every cell, and protect long paths and URLs from overflowing.</p>
-  <div class="${kit.cls("tableWrap")}">
-    <table class="${kit.cls("table")}">
-      <thead>
-        <tr>
-          <th>Item</th>
-          <th>Evidence</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Replace with real rows</td>
-          <td class="${kit.cls("muted")}">Evidence, path, or link for this row.</td>
-          <td><span class="${kit.cls("badgeWarn")}">open</span></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</section>`;
+  return section(kit, {
+    num: "01",
+    title: "Evidence table",
+    lede: "Start with a short summary of what the rows prove or require; keep the primary status visible without reading every cell.",
+    content: evidenceTable(kit, {
+      headers: ["Item", "Evidence", "Status"],
+      rows: [
+        {
+          cells: [
+            { text: "Replace with real rows" },
+            { text: "Evidence, path, or link for this row.", muted: true },
+            { badge: { text: "open", variant: "warn" } },
+          ],
+        },
+        {
+          cells: [
+            { text: "Replace with real rows" },
+            { text: "Evidence, path, or link for this row.", muted: true },
+            { badge: { text: "passing", variant: "ok" } },
+          ],
+        },
+        {
+          cells: [
+            { text: "Replace with real rows" },
+            { text: "Evidence, path, or link for this row.", muted: true },
+            { badge: { text: "failing", variant: "danger" } },
+          ],
+        },
+      ],
+    }),
+  });
 }
 
 function planSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Goal</h2>
-  <p class="${kit.cls("lede")}">The goal, the current state, and the desired behavior.</p>
-</section>
-<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Proposed approach</h2>
-  <div class="${kit.cls("grid2")}">
-    <div class="${kit.cls("card")}">
-      <h3 class="${kit.cls("cardTitle")}">Decision 1</h3>
-      <p class="${kit.cls("muted")}">High-level choice with the reasoning that supports it.</p>
-    </div>
-    <div class="${kit.cls("card")}">
-      <h3 class="${kit.cls("cardTitle")}">Decision 2</h3>
-      <p class="${kit.cls("muted")}">High-level choice with the reasoning that supports it.</p>
-    </div>
-  </div>
-</section>
-<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Risks and open questions</h2>
-  <ul class="${kit.cls("list")}">
-    <li>Risk, failure mode, or migration concern.</li>
-    <li>Open question - resolve it with a comparison or decision section before shipping.</li>
-  </ul>
-</section>`;
+  return `${section(kit, {
+    num: "01",
+    title: "Goal",
+    lede: "The goal, the current state, and the desired behavior.",
+  })}
+${section(kit, {
+  num: "02",
+  title: "Proposed approach",
+  lede: "High-level decisions, each with the reasoning that supports it.",
+  content: cardGrid(kit, [
+    { title: "Decision 1", body: "High-level choice with the reasoning that supports it." },
+    { title: "Decision 2", body: "High-level choice with the reasoning that supports it." },
+  ]),
+})}
+${section(kit, {
+  num: "03",
+  title: "Risks and open questions",
+  lede: "Failure modes, migration concerns, and questions to resolve before shipping.",
+  content: kvList(kit, [
+    { term: "Risk", value: "Failure mode or migration concern." },
+    { term: "Open question", value: "Resolve it with a comparison or decision section before shipping." },
+  ]),
+})}`;
 }
 
 function codeSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Code</h2>
-  <p class="${kit.cls("muted")}">Place the path, language, and reason to inspect the code immediately before each rendered file or diff. Replace the file contents in the snippet below.</p>
-  ${CODE_DIFF_SNIPPET}
-</section>`;
+  return section(kit, {
+    num: "01",
+    title: "Code",
+    lede: "Place the path, language, and reason to inspect the code immediately before each rendered file or diff.",
+    content: CODE_DIFF_SNIPPET,
+  });
 }
 
 function diagramSections(kit) {
-  return `<section class="${kit.cls("section")}">
-  <h2 class="${kit.cls("h2")}">Diagram</h2>
-  <p class="${kit.cls("muted")}">Lead with the question the diagram answers, keep the first visual to the core relationship, and put dense evidence below it. Diagrams in .mermaid containers become editable whiteboards in sq-report.</p>
-  <div class="mermaid">
+  return `${section(kit, {
+    num: "01",
+    title: "Diagram",
+    lede: "Lead with the question the diagram answers; keep the first visual to the core relationship.",
+    content: `<div class="mermaid">
 flowchart TD
   A[Start] --> B{Decision}
   B -- yes --> C[Next step]
   B -- no --> D[Alternative]
-  </div>
-</section>
+  </div>`,
+  })}
 ${MERMAID_CDN_SNIPPET}`;
 }
 
