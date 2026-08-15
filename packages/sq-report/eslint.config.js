@@ -6,7 +6,7 @@ import globals from "globals";
 
 export default defineConfig(js.configs.recommended, eslintConfigPrettier, {
   files: ["**/*.js"],
-  ignores: ["dist/", "node_modules/", ".sq-report/", "lavish-code-review.html"],
+  ignores: ["dist/", "node_modules/", ".sq-report/", "thread-board.html"],
   languageOptions: {
     ecmaVersion: "latest",
     sourceType: "module",
