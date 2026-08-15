@@ -16,6 +16,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-unit-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `sq-unit-snapshot.sh`   | Print the read-only structured unit snapshot JSON (schema `sq-unit-snapshot.v1`)   |
 | `sq-unit-view.sh`       | Render the unit snapshot as a human Markdown view                                   |
+| `sq-web-view.sh`        | Serve or render the read-only web dashboard over a base's operator state (docs/web-view.md) |
 | `sq-sitrep-snapshot.sh` | Project the unit snapshot to the compact TOON sitrep view; local-only unless `--include-prs` |
 | `sq-update.sh`           | Fast-forward-only self-update of Squad and local or remote XO bases       |
 | `sq-on.sh`               | Execute one tracked Squad command in a configured remote XO base, using its job worker except for the doctor bootstrap |

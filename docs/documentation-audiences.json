@@ -1,837 +1,842 @@
 {
-  "version": 1,
-  "scope": {
-    "trackedPatterns": [
-      "*.md",
-      "*.mdx",
-      "*.rst",
-      "*.txt",
-      "docs/examples/*"
-    ],
-    "description": "Tracked Markdown-like prose, including symlinked aliases, plus copyable documentation examples. Script headers, executable configuration, generated JSON evidence, and legal text keep their existing code/config/legal owners."
+ "version": 1,
+ "scope": {
+  "trackedPatterns": [
+   "*.md",
+   "*.mdx",
+   "*.rst",
+   "*.txt",
+   "docs/examples/*"
+  ],
+  "description": "Tracked Markdown-like prose, including symlinked aliases, plus copyable documentation examples. Script headers, executable configuration, generated JSON evidence, and legal text keep their existing code/config/legal owners."
+ },
+ "allowedAudiences": [
+  "public-product",
+  "operator-current",
+  "operator-example",
+  "maintainer-architecture",
+  "maintainer-verification",
+  "agent-runtime"
+ ],
+ "setupAudiences": [
+  "public-product",
+  "operator-current",
+  "operator-example"
+ ],
+ "readmeSetupTargets": [
+  "docs/configuration.md",
+  "docs/wedge-alarm.md",
+  "docs/tmux-backend.md",
+  "docs/herdr-backend.md",
+  "docs/zellij-backend.md",
+  "docs/orca-backend.md",
+  "docs/cmux-backend.md",
+  "docs/remote-XOs.md",
+  "docs/status-notify.md",
+  "docs/web-view.md"
+ ],
+ "requiredOwnerPointers": [
+  {
+   "source": ".agents/skills/squad-coding-guidelines/SKILL.md",
+   "target": "docs/documentation-audiences.md"
   },
-  "allowedAudiences": [
-    "public-product",
-    "operator-current",
-    "operator-example",
-    "maintainer-architecture",
-    "maintainer-verification",
-    "agent-runtime"
-  ],
-  "setupAudiences": [
-    "public-product",
-    "operator-current",
-    "operator-example"
-  ],
-  "readmeSetupTargets": [
-    "docs/configuration.md",
-    "docs/wedge-alarm.md",
-    "docs/tmux-backend.md",
-    "docs/herdr-backend.md",
-    "docs/zellij-backend.md",
-    "docs/orca-backend.md",
-    "docs/cmux-backend.md",
-    "docs/remote-XOs.md",
-    "docs/status-notify.md"
-  ],
-  "requiredOwnerPointers": [
-    {
-      "source": ".agents/skills/squad-coding-guidelines/SKILL.md",
-      "target": "docs/documentation-audiences.md"
-    },
-    {
-      "source": ".drill.yaml",
-      "target": "docs/documentation-audiences.md"
-    },
-    {
-      "source": "CONTRIBUTING.md",
-      "target": "docs/documentation-audiences.md"
-    },
-    {
-      "source": "README.md",
-      "target": "docs/documentation-audiences.md"
-    },
-    {
-      "source": "docs/documentation-audiences.md",
-      "target": "docs/documentation-audiences.json"
-    },
-    {
-      "source": "docs/calm.md",
-      "target": "docs/calm-mode-feasibility.md"
-    },
-    {
-      "source": "docs/calm-mode-feasibility.md",
-      "target": "docs/calm.md"
-    },
-    {
-      "source": "docs/sessionstart-nudge.md",
-      "target": "docs/verification/supervision.md"
-    },
-    {
-      "source": "docs/turnend-guard.md",
-      "target": "docs/verification/supervision.md"
-    },
-    {
-      "source": "docs/sentry-continuity.md",
-      "target": "docs/verification/supervision.md"
-    },
-    {
-      "source": "docs/wedge-alarm.md",
-      "target": "docs/verification/supervision.md"
-    },
-    {
-      "source": "docs/tmux-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/herdr-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/zellij-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/orca-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/cmux-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/codex-app-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/trace-context.md",
-      "target": "docs/verification/trace-context.md"
-    }
-  ],
-  "surfaces": [
-    {
-      "path": ".agents/skills/afk/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/ask-user-authority/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/bootstrap-diagnostics/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/debrief/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/decision-hold-lifecycle/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/diagnostic-reasoning/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/harness-adapters/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/process-event-sources/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/project-management/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/quota-array-dispatch/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/relay-respond/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/reporting/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/review-comments/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/sitrep/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/squad-codexapp/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/squad-coding-guidelines/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/squad-orca/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/stuck-operator-recovery/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/updatesquad/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/xo-provisioning/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".specs/features/squad-inception/context.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-inception/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-inception/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-inception/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-browser/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-browser/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-browser/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-gh/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-gh/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-gh/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-quota/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-quota/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-quota/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-report/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-report/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-report/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-tasks/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-tasks/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-sq-tasks/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-vendoring/context.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-vendoring/design.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-vendoring/spec.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/features/squad-m6-vendoring/tasks.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/handoff-m0.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/project/PROJECT.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/project/ROADMAP.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".specs/project/STATE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": ".github/pull_request_template.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "AGENTS.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "CLAUDE.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "docs/architecture.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/arm-pretool-check.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/calm-mode-feasibility.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/calm.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/cd-guard.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/cmux-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/codex-app-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/configuration.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/decision-hold-lifecycle.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/documentation-audiences.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/examples/crew-dispatch.json",
-      "audience": "operator-example"
-    },
-    {
-      "path": "docs/examples/wedge-alarm",
-      "audience": "operator-example"
-    },
-    {
-      "path": "docs/gitlab-merge-sentry.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/herdr-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/orca-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/playwright-validation.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/remote-XOs.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/scripts.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/sentry-continuity.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/sessionstart-nudge.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/sq-test-isolation-proof.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/sq-test-portable-shards.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/status-notify.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/subagent-guard.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/supervision-protocols/claude.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/supervision-protocols/codex.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/supervision-protocols/grok.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/supervision-protocols/opencode.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/supervision-protocols/pi.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/supervision-protocols/unknown.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/tmux-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/trace-context.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "docs/turnend-guard.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/verification/debrief-memory.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/dispatch-auth.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/muse.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/process-event-sources.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/public-followup.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/runtime-backends.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/supervision.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/telegram-bridge.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/trace-context.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/wedge-alarm.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/zellij-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "skills/debrief/SKILL.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "docs/pr-review.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "packages/fob/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/fob/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/fob/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/fob/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/fob/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/fob/VISION.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/drill/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/drill/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/drill/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/README.pt-BR.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/README.zh-CN.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/VISION.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/concepts/auto-fix.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/concepts/daemon.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/concepts/gate-model.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/concepts/pipeline.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/guides/agents.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/guides/configuration.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/guides/provider-integration.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/guides/setup-wizard.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/guides/troubleshooting.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/guides/tui.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/index.mdx",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/reference/cli.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/reference/environment.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/reference/global-config.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/reference/pipeline-steps.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/reference/repo-config.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/start-here/installation.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/start-here/introduction.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/docs/src/content/docs/start-here/quick-start.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/drill/internal/e2e/fixtures/opencode/plain/sse.txt",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/drill/internal/e2e/fixtures/opencode/structured/sse.txt",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/drill/internal/tui/DESIGN.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/drill/skills/drill/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/pr-review/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/pr-review/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/pr-review/RELEASING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/pr-review/prompts/pr-review.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-browser/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-browser/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-browser/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-browser/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-browser/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-browser/VISION.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-browser/skills/sq-browser/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-gh/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-gh/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-gh/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-gh/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-gh/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-gh/VISION.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-gh/skills/sq-gh/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-quota/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-quota/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-quota/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-quota/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-quota/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-quota/skills/sq-quota/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-report/.agents/skills/lavish-design/README.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/.agents/skills/lavish-design/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-report/.agents/skills/lavish-design/ui_kits/editor/README.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-report/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-report/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-report/THIRD-PARTY-NOTICES.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-report/skills/lavish/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-report/task-evidence/excalidraw-label-clipping/README.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/sq-report/task-evidence/mermaid-theme/README.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/sq-tasks/AGENTS.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-tasks/CHANGELOG.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-tasks/CLAUDE.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-tasks/CONTRIBUTING.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "packages/sq-tasks/README.md",
-      "audience": "public-product"
-    },
-    {
-      "path": "packages/sq-tasks/skills/sq-tasks/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "packages/sq-tasks/test/fixtures/backlog.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "packages/sq-tasks/test/fixtures/squad-backlog.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": ".agents/skills/session-handoff/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": "docs/handoff-request.md",
-      "audience": "operator-current"
-    }
-  ]
+  {
+   "source": ".drill.yaml",
+   "target": "docs/documentation-audiences.md"
+  },
+  {
+   "source": "CONTRIBUTING.md",
+   "target": "docs/documentation-audiences.md"
+  },
+  {
+   "source": "README.md",
+   "target": "docs/documentation-audiences.md"
+  },
+  {
+   "source": "docs/documentation-audiences.md",
+   "target": "docs/documentation-audiences.json"
+  },
+  {
+   "source": "docs/calm.md",
+   "target": "docs/calm-mode-feasibility.md"
+  },
+  {
+   "source": "docs/calm-mode-feasibility.md",
+   "target": "docs/calm.md"
+  },
+  {
+   "source": "docs/sessionstart-nudge.md",
+   "target": "docs/verification/supervision.md"
+  },
+  {
+   "source": "docs/turnend-guard.md",
+   "target": "docs/verification/supervision.md"
+  },
+  {
+   "source": "docs/sentry-continuity.md",
+   "target": "docs/verification/supervision.md"
+  },
+  {
+   "source": "docs/wedge-alarm.md",
+   "target": "docs/verification/supervision.md"
+  },
+  {
+   "source": "docs/tmux-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/herdr-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/zellij-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/orca-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/cmux-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/codex-app-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/trace-context.md",
+   "target": "docs/verification/trace-context.md"
+  }
+ ],
+ "surfaces": [
+  {
+   "path": ".agents/skills/afk/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/ask-user-authority/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/bootstrap-diagnostics/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/debrief/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/decision-hold-lifecycle/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/diagnostic-reasoning/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/harness-adapters/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/process-event-sources/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/project-management/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/quota-array-dispatch/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/relay-respond/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/reporting/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/review-comments/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/sitrep/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/squad-codexapp/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/squad-coding-guidelines/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/squad-orca/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/stuck-operator-recovery/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/updatesquad/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/xo-provisioning/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".specs/features/squad-inception/context.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-inception/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-inception/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-inception/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-browser/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-browser/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-browser/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-gh/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-gh/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-gh/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-quota/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-quota/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-quota/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-report/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-report/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-report/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-tasks/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-tasks/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-sq-tasks/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-vendoring/context.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-vendoring/design.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-vendoring/spec.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/features/squad-m6-vendoring/tasks.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/handoff-m0.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/project/PROJECT.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/project/ROADMAP.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".specs/project/STATE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": ".github/pull_request_template.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "AGENTS.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "CLAUDE.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "docs/architecture.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/arm-pretool-check.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/calm-mode-feasibility.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/calm.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/cd-guard.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/cmux-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/codex-app-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/configuration.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/decision-hold-lifecycle.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/documentation-audiences.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/examples/crew-dispatch.json",
+   "audience": "operator-example"
+  },
+  {
+   "path": "docs/examples/wedge-alarm",
+   "audience": "operator-example"
+  },
+  {
+   "path": "docs/gitlab-merge-sentry.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/herdr-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/orca-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/playwright-validation.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/remote-XOs.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/scripts.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/sentry-continuity.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/sessionstart-nudge.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/sq-test-isolation-proof.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/sq-test-portable-shards.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/status-notify.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/subagent-guard.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/supervision-protocols/claude.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/supervision-protocols/codex.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/supervision-protocols/grok.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/supervision-protocols/opencode.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/supervision-protocols/pi.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/supervision-protocols/unknown.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/tmux-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/trace-context.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/turnend-guard.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/verification/debrief-memory.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/dispatch-auth.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/muse.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/process-event-sources.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/public-followup.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/runtime-backends.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/supervision.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/telegram-bridge.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/verification/trace-context.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/wedge-alarm.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/zellij-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "skills/debrief/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "docs/pr-review.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "packages/fob/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/fob/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/fob/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/fob/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/fob/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/fob/VISION.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/drill/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/drill/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/drill/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/README.pt-BR.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/README.zh-CN.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/VISION.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/concepts/auto-fix.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/concepts/daemon.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/concepts/gate-model.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/concepts/pipeline.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/guides/agents.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/guides/configuration.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/guides/provider-integration.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/guides/setup-wizard.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/guides/troubleshooting.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/guides/tui.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/index.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/reference/cli.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/reference/environment.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/reference/global-config.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/reference/pipeline-steps.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/reference/repo-config.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/start-here/installation.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/start-here/introduction.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/docs/src/content/docs/start-here/quick-start.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/drill/internal/e2e/fixtures/opencode/plain/sse.txt",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "packages/drill/internal/e2e/fixtures/opencode/structured/sse.txt",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "packages/drill/internal/tui/DESIGN.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/drill/skills/drill/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/pr-review/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/pr-review/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/pr-review/RELEASING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/pr-review/prompts/pr-review.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-browser/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-browser/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-browser/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-browser/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-browser/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-browser/VISION.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-browser/skills/sq-browser/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-gh/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-gh/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-gh/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-gh/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-gh/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-gh/VISION.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-gh/skills/sq-gh/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-quota/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-quota/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-quota/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-quota/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-quota/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-quota/skills/sq-quota/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-report/.agents/skills/lavish-design/README.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-report/.agents/skills/lavish-design/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-report/.agents/skills/lavish-design/ui_kits/editor/README.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-report/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-report/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-report/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-report/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-report/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-report/THIRD-PARTY-NOTICES.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-report/skills/lavish/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-report/task-evidence/excalidraw-label-clipping/README.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "packages/sq-report/task-evidence/mermaid-theme/README.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "packages/sq-tasks/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-tasks/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-tasks/CLAUDE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-tasks/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/sq-tasks/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/sq-tasks/skills/sq-tasks/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/sq-tasks/test/fixtures/backlog.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "packages/sq-tasks/test/fixtures/squad-backlog.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": ".agents/skills/session-handoff/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/handoff-request.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/web-view.md",
+   "audience": "operator-current"
+  }
+ ]
 }
