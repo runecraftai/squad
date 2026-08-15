@@ -27,7 +27,7 @@ bin/sq-web-view.sh serve --bind 0.0.0.0 --port 8080
 ```
 
 Binding `0.0.0.0` makes the dashboard reachable from other devices on the LAN at the machine's LAN address.
-There is no authentication framework, by design: the dashboard is read-only and reveals only operator status, wake events, project paths, and window names.
+There is no authentication framework, by design: the dashboard is read-only and reveals only operator status, wake events, project paths, window names, and the harness, mode, effort, and model metadata on each card.
 Decide consciously before exposing it beyond the loopback interface, and keep the default `127.0.0.1` bind unless remote access is actually wanted.
 If real authentication is required, that is outside this tool's scope; keep the viewer on loopback or behind an authenticated proxy instead.
 
@@ -39,7 +39,7 @@ If real authentication is required, that is outside this tool's scope; keep the 
 bin/sq-web-view.sh render > /tmp/squad-view/index.html
 ```
 
-Serve the file with any static file server, for example `python3 -m http.server -d /tmp/squad-view 8080`.
+Serve the file with any static file server, for example `python3 -m http.server --bind 127.0.0.1 -d /tmp/squad-view 8080`; the stdlib server binds every interface by default, so pass `--bind 127.0.0.1` unless LAN access is intended.
 A static export is a snapshot: regenerate it to refresh the page.
 
 ## What it shows
