@@ -67,9 +67,10 @@ write_meta t3 squad:sq-t3 /home/example/beta pi strike direct-PR
 printf 'working: report has <script>alert(1)</script> & "quotes"\n' > "$STATE/t3.status"
 printf 'needs-decision: [key=esc] pick a plan\n' >> "$STATE/t3.status"
 
-# t4: blocked wake event, busy record with a stale gen (gen-mismatch).
+# t4: canonical keyed blocked wake event (verb [key=...]: note), busy record
+# with a stale gen (gen-mismatch).
 write_meta t4 squad:sq-t4 /home/example/gamma pi strike drill
-printf 'blocked: upstream API unreachable\n' > "$STATE/t4.status"
+printf 'blocked [key=api-shape]: upstream API unreachable\n' > "$STATE/t4.status"
 "$EV" arm "$STATE" t4 > /dev/null || fail "busy arm failed for t4"
 printf 'v1 gen=wrong seq=1 state=busy source=stale event=stale ts=1\n' > "$STATE/t4.busy-state"
 
@@ -112,7 +113,8 @@ test_render_colors_known_verbs() {
   out=$("$VIEW" render --state "$STATE") || fail "render failed"
   assert_contains "$out" 'pill green">done' "done should render green"
   assert_contains "$out" 'pill blue">needs-decision' "needs-decision should render blue"
-  assert_contains "$out" 'pill red">blocked' "blocked should render red"
+  assert_contains "$out" 'pill red">blocked' "keyed blocked should still render red"
+  assert_contains "$out" "blocked [key=api-shape]: upstream API unreachable" "the keyed wake event text should survive"
   assert_contains "$out" 'pill amber">working' "working should render amber"
   pass "render maps known wake verbs to pill colors"
 }

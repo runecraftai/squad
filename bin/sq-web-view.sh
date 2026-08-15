@@ -140,6 +140,9 @@ fm_web_task_row() {  # <state-dir> <id> <log-mtime>
   [ -n "${last_line:-}" ] || last_line='no wake events yet'
 
   verb=${last_line%%:*}
+  verb=${verb%%\[key=*}
+  verb=${verb#"${verb%%[![:space:]]*}"}
+  verb=${verb%"${verb##*[![:space:]]}"}
   color=$(fm_web_verb_color "$verb")
   if [ -n "$color" ]; then
     pill="<span class=\"pill $color\">$(fm_web_escape "$verb")</span>"
