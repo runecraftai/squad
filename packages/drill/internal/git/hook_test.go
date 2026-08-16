@@ -146,7 +146,7 @@ func TestPostReceiveHookScript(t *testing.T) {
 	if !strings.Contains(script, "drill") {
 		t.Fatal("hook should mention the command name")
 	}
-	if !strings.Contains(script, "|__| |_/") {
+	if !strings.Contains(script, "|__/ |  \\") {
 		t.Fatal("hook should contain ASCII art banner")
 	}
 	if strings.Contains(script, "\033[") {
