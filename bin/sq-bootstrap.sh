@@ -10,6 +10,9 @@
 #                 "BACKEND_INVALID: <name> (known: <names>)",
 #                 "STARTUP_MEMORY_BUDGET: invalid config/startup-memory-budget - <reason>",
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
+#                 "CREW_DISPATCH: model existence: <id> matches <n> model(s) for <harness>",
+#                 "CREW_DISPATCH: model existence: <id> matches zero models for <harness>",
+#                 "CREW_DISPATCH: model existence: model listing probe failed for <harness>: <reason>",
 #                 "UNIT_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "PR_CHECK_MIGRATION: <private remediation>",
 #                 "TANGLE: <remediation>",
@@ -984,6 +987,60 @@ EOF
   echo "SQX: X mode on - relay poll armed via state/x-sentry.check.sh; 30s sentry cadence in config/x-mode.env"
 }
 
+# Map a harness name to the CLI executable that resolves its model listing.
+# Pi-family harnesses (pi, pi-signed, opencode) all use the 'pi' executable for
+# --list-models; others use their own harness name as the CLI.
+harness_to_executable() {
+  case "$1" in
+    pi|pi-signed|opencode) echo pi ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# Validate that every configured model id in crew-dispatch resolves to exactly
+# one model via the harness's own listing surface. Zero matches or multiple
+# prefix matches are both actionable: the former means the id was removed or
+# mistyped, the latter means the id is ambiguous (the silent fuzzy-match bug
+# this check was introduced to prevent).
+# A probe that cannot run is reported as explicit uncertainty rather than a hard
+# failure, because the check is defence-in-depth and the harness is still usable
+# when the listing surface is unreachable.
+crew_validate_model_existence() {
+  local file=$1
+  local models harness exec probe_out rc total_matches pattern
+  models=$(jq -r '[.. | objects | select(.model != null) | select(.harness == "pi" or .harness == "pi-signed" or .harness == "opencode") | .model] | .[]' "$file" 2>/dev/null) || return 0
+  [ -n "$models" ] || return 0
+  local -a seen=()
+  while IFS= read -r models; do
+    pattern=${models%%$'
+'*}
+    case " ${seen[*]} " in
+      *" $pattern "*) continue ;;
+    esac
+    seen+=("$pattern")
+    # Resolve harness for this model by scanning configured profiles.
+    harness=$(jq -r ".. | objects | select(.model == \"$pattern\") | .harness // empty" "$file" 2>/dev/null | head -n 1)
+    [ -n "$harness" ] || continue
+    exec=$(harness_to_executable "$harness")
+    command -v "$exec" >/dev/null 2>&1 || {
+      echo "CREW_DISPATCH: model existence: model listing probe failed for $harness: $exec not found"
+      continue
+    }
+    probe_out=$("$exec" --list-models "$pattern" 2>/dev/null) || rc=$?
+    rc=${rc:-0}
+    if [ "$rc" -ne 0 ]; then
+      echo "CREW_DISPATCH: model existence: model listing probe failed for $harness: $exec --list-models exited $rc"
+      continue
+    fi
+    total_matches=$(printf '%s\n' "$probe_out" | grep -c .)
+    if [ "$total_matches" -eq 0 ]; then
+      echo "CREW_DISPATCH: model existence: $pattern matches zero models for $harness"
+    elif [ "$total_matches" -gt 1 ]; then
+      echo "CREW_DISPATCH: model existence: $pattern matches $total_matches model(s) for $harness - pin an exact model id"
+    fi
+  done <<< "$models"
+}
+
 crew_dispatch_validate() {
   local file err
   file="$CONFIG/crew-dispatch.json"
@@ -1061,6 +1118,7 @@ crew_dispatch_validate() {
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - $err"
     return 0
   fi
+  crew_validate_model_existence "$file"
   if [ "${SQUAD_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ]; then
     jq -r '
     def profile($p):

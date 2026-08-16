@@ -1080,6 +1080,7 @@ test_crew_dispatch_active_rules_are_verbose_bootstrap_info() {
   printf '%s\n' '{"rules":[{"when":"fresh news","use":{"harness":"grok"},"why":"current context"},{"when":"big feature","use":[{"harness":"claude","model":"claude-sonnet-5","effort":"high"},{"harness":"codex","model":"gpt-5.5","effort":"high"}]},{"when":"legacy feature","use":[{"harness":"claude"},{"harness":"codex"}],"select":"quota-balanced"}],"default":[{"harness":"pi","model":"anthropic/claude-sonnet-5","effort":"high"},{"harness":"grok","model":"grok-4.5","effort":"high"}]}' > "$case_dir/home/config/crew-dispatch.json"
   fakebin=$(make_fake_toolchain "$case_dir")
   add_real_jq "$fakebin"
+  install_fake_pi "$fakebin"
 
   out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
@@ -1105,6 +1106,7 @@ test_crew_dispatch_validation() {
     printf '%s\n' "$body" > "$case_dir/home/config/crew-dispatch.json"
     fakebin=$(make_fake_toolchain "$case_dir")
     add_real_jq "$fakebin"
+    install_fake_pi "$fakebin"
     out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
@@ -1174,3 +1176,90 @@ test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
 test_crew_dispatch_validation
+
+# A fake pi binary that simulates --list-models for model-existence tests.
+# Exact-match patterns return one line; the glm-5 prefix pattern returns
+# three (the silent fuzzy-match bug); everything else returns zero lines.
+install_fake_pi() {
+  local fakebin=$1
+  cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --list-models ]; then
+  case "${2:-}" in
+    opencode-go/deepseek-v4-pro) printf '%s\n' "opencode-go/deepseek-v4-pro" ;;
+    opencode-go/mimo-v2.5) printf '%s\n' "opencode-go/mimo-v2.5" ;;
+    opencode-go/glm-5) printf '%s\n' "opencode-go/glm-5.1"; printf '%s\n' "opencode-go/glm-5.2"; printf '%s\n' "opencode-go/glm-5.3" ;;
+    anthropic/claude-sonnet-5) printf '%s\n' "anthropic/claude-sonnet-5" ;;
+    openai-codex/gpt-5.6-sol) printf '%s\n' "openai-codex/gpt-5.6-sol" ;;
+    *) ;;
+  esac
+  exit 0
+fi
+exit 0
+SH
+  chmod +x "$fakebin/pi"
+}
+
+# A fake pi binary that fails when called with --list-models, simulating a
+# missing or broken listing surface. This shadows the real pi in PATH.
+install_failing_fake_pi() {
+  local fakebin=$1
+  cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --list-models ]; then
+  exit 1
+fi
+exit 0
+SH
+  chmod +x "$fakebin/pi"
+}
+
+# --- crew-dispatch model-existence validation tests ---
+# These test that configured model ids are resolved against the harness's model
+# listing and that ambiguous or missing ids produce actionable CREW_DISPATCH
+# diagnostics. A fake pi binary simulates --list-models for each case.
+
+test_crew_dispatch_model_existence_validation() {
+  local label body mode expect notcontains pi_mode case_dir fakebin out n
+  n=0
+  while IFS='^' read -r label body mode expect notcontains pi_mode; do
+    [ -n "$label" ] || continue
+    n=$((n + 1))
+    case_dir="$TMP_ROOT/model-exist-$n"
+    mkdir -p "$case_dir/home/config"
+    printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+    printf '%s\n' "$body" > "$case_dir/home/config/crew-dispatch.json"
+    fakebin=$(make_fake_toolchain "$case_dir")
+    add_real_jq "$fakebin"
+    # Install the appropriate fake pi: working for most cases, failing for
+    # the probe-failure case. The failing stub shadows the real pi in PATH.
+    case "${pi_mode:-}" in
+      fail) install_failing_fake_pi "$fakebin" ;;
+      *)    install_fake_pi "$fakebin" ;;
+    esac
+    out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+      SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
+    case "$mode" in
+      empty)
+        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+      exact)
+        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
+      grep)
+        printf '%s\n' "$out" | grep -Fx "$expect" >/dev/null || fail "$label: missing '$expect' (got: $out)"
+        if [ -n "$notcontains" ]; then
+          printf '%s\n' "$out" | grep -F "$notcontains" >/dev/null && fail "$label: unexpected '$notcontains' in: $out"
+        fi
+        ;;
+    esac
+  done <<'ROWS'
+exact match is silent (model exists and is unambiguous)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/deepseek-v4-pro","effort":"high"}}]}^empty^^^
+zero match fails closed (model does not exist)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/nonexistent-xyz","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/nonexistent-xyz matches zero models for pi^^
+multi match fails closed (prefix ambiguity)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/glm-5 matches 3 model(s) for pi - pin an exact model id^^
+multi match is deduplicated across profiles^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}},{"when":"planning","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/glm-5 matches 3 model(s) for pi - pin an exact model id^^
+model in default profiles is also validated^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/deepseek-v4-pro","effort":"high"}}],"default":{"harness":"pi","model":"opencode-go/nonexistent-xyz","effort":"high"}}^exact^CREW_DISPATCH: model existence: opencode-go/nonexistent-xyz matches zero models for pi^^
+probe failure when listing surface is unavailable is surfaced as uncertainty^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/deepseek-v4-pro","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: model listing probe failed for pi: pi --list-models exited 1^^fail
+ROWS
+  pass "bootstrap validates crew-dispatch model existence via --list-models probe"
+}
+
+test_crew_dispatch_model_existence_validation
