@@ -1018,6 +1018,7 @@ crew_validate_model_existence() {
       *" $pattern "*) continue ;;
     esac
     seen+=("$pattern")
+    rc=0
     # Resolve harness for this model by scanning configured profiles.
     harness=$(jq -r ".. | objects | select(.model == \"$pattern\") | .harness // empty" "$file" 2>/dev/null | head -n 1)
     [ -n "$harness" ] || continue
@@ -1032,7 +1033,7 @@ crew_validate_model_existence() {
       echo "CREW_DISPATCH: model existence: model listing probe failed for $harness: $exec --list-models exited $rc"
       continue
     fi
-    total_matches=$(printf '%s\n' "$probe_out" | grep -c .)
+    total_matches=$(printf '%s\n' "$probe_out" | grep -v '^provider ' | grep -vi '^No models matching' | grep -c .)
     if [ "$total_matches" -eq 0 ]; then
       echo "CREW_DISPATCH: model existence: $pattern matches zero models for $harness"
     elif [ "$total_matches" -gt 1 ]; then

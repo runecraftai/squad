@@ -1185,13 +1185,14 @@ install_fake_pi() {
   cat > "$fakebin/pi" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = --list-models ]; then
+  printf '%s\n' 'provider   model                       context  max-out  thinking  images'
   case "${2:-}" in
-    opencode-go/deepseek-v4-pro) printf '%s\n' "opencode-go/deepseek-v4-pro" ;;
-    opencode-go/mimo-v2.5) printf '%s\n' "opencode-go/mimo-v2.5" ;;
-    opencode-go/glm-5) printf '%s\n' "opencode-go/glm-5.1"; printf '%s\n' "opencode-go/glm-5.2"; printf '%s\n' "opencode-go/glm-5.3" ;;
-    anthropic/claude-sonnet-5) printf '%s\n' "anthropic/claude-sonnet-5" ;;
-    openai-codex/gpt-5.6-sol) printf '%s\n' "openai-codex/gpt-5.6-sol" ;;
-    *) ;;
+    opencode-go/deepseek-v4-pro) printf '%s\n' 'opencode-go  deepseek-v4-pro          128K     32K      yes       no' ;;
+    opencode-go/mimo-v2.5) printf '%s\n' 'opencode-go  mimo-v2.5                128K     32K      yes       no' ;;
+    opencode-go/glm-5) printf '%s\n' 'opencode-go  glm-5.1                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.2                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.3                  128K     32K      yes       no' ;;
+    anthropic/claude-sonnet-5) printf '%s\n' 'anthropic    claude-sonnet-5           1M       64K      yes       yes' ;;
+    openai-codex/gpt-5.6-sol) printf '%s\n' 'openai-codex  gpt-5.6-sol             1M       32K      yes       no' ;;
+    *) printf '%s\n' 'No models matching "'"$2"'"' ;;
   esac
   exit 0
 fi
