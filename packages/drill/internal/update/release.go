@@ -148,14 +148,12 @@ func selectNewestComponentRelease(component string, releases []releaseResponse, 
 }
 
 // tagBelongsToComponent reports whether a tag belongs to the given component:
-// either the "<component>-" prefixed form this repo's release-please produces
-// ("drill-v0.1.1") or a bare semver tag ("v1.2.3", "1.2.3-beta.1").
+// only the "<component>-" prefixed form this repo's release-please produces
+// ("drill-v0.1.1"). A bare semver tag ("v2.1.1") belongs to a release without
+// a component prefix and never matches, so a sibling's newer release cannot
+// win component selection.
 func tagBelongsToComponent(component, tag string) bool {
-	if strings.HasPrefix(tag, component+"-") {
-		return true
-	}
-	core, _, ok := strings.Cut(tag, "-")
-	return !ok || strings.ContainsAny(core, ".")
+	return strings.HasPrefix(tag, component+"-")
 }
 
 // fetchLatestReleaseIncludingPrereleases finds the highest-semver release including

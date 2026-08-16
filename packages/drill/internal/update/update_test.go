@@ -32,12 +32,12 @@ func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
 		{
 			name:        "darwin tarball",
 			platform:    platformSpec{GOOS: "darwin", GOARCH: "arm64"},
-			archiveName: "drill-v1.2.3-darwin-arm64.tar.gz",
+			archiveName: "drill-drill-v1.2.3-darwin-arm64.tar.gz",
 		},
 		{
 			name:        "windows zip",
 			platform:    platformSpec{GOOS: "windows", GOARCH: "amd64"},
-			archiveName: "drill-v1.2.3-windows-amd64.zip",
+			archiveName: "drill-drill-v1.2.3-windows-amd64.zip",
 		},
 	}
 
@@ -47,7 +47,7 @@ func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
 				if r.URL.Path != "/repos/runecraftai/squad/releases" {
 					t.Fatalf("unexpected path %q", r.URL.Path)
 				}
-				fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}]`,
+				fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}]`,
 					tt.archiveName,
 				)
 			}))
@@ -72,7 +72,7 @@ func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
 			if !plan.UpdateAvailable {
 				t.Fatal("expected update to be available")
 			}
-			if plan.LatestVersion != "v1.2.3" {
+			if plan.LatestVersion != "drill-v1.2.3" {
 				t.Fatalf("LatestVersion = %q", plan.LatestVersion)
 			}
 			if plan.ArchiveName != tt.archiveName {
@@ -86,7 +86,7 @@ func TestUpdaterCheckLatestAndRefreshCache(t *testing.T) {
 				t.Fatalf("refreshCache error = %v", err)
 			}
 			cache := readCache(cachePath)
-			if cache == nil || cache.LatestVersion != "v1.2.3" {
+			if cache == nil || cache.LatestVersion != "drill-v1.2.3" {
 				t.Fatalf("cache = %#v", cache)
 			}
 		})
@@ -102,6 +102,8 @@ func TestUpdaterCheckLatestScopesToComponentRelease(t *testing.T) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
+				{"tag_name":"v2.1.1","draft":false,"prerelease":false,"assets":[{"name":"v2.1.1-darwin-arm64.tar.gz","browser_download_url":"http://example.com/root-archive"}]},
+				{"tag_name":"v0.2.0","draft":false,"prerelease":false,"assets":[]},
 				{"tag_name":"fob-v2.0.0","draft":false,"prerelease":false,"assets":[{"name":"fob-v2.0.0-darwin-arm64.tar.gz","browser_download_url":"http://example.com/fob-archive"}]},
 				{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}
 			]`, archiveName)
@@ -184,7 +186,7 @@ func TestUpdaterRunReplacesExecutable(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -195,7 +197,7 @@ func TestUpdaterRunReplacesExecutable(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -247,7 +249,7 @@ func TestUpdaterRunResetsDaemonAfterUpdate(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -258,7 +260,7 @@ func TestUpdaterRunResetsDaemonAfterUpdate(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -306,7 +308,7 @@ func TestUpdaterRunRefusesWithActiveRunsAndListsThem(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -317,7 +319,7 @@ func TestUpdaterRunRefusesWithActiveRunsAndListsThem(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -462,7 +464,7 @@ func TestUpdaterRunFailsWhenDaemonResetFails(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -473,7 +475,7 @@ func TestUpdaterRunFailsWhenDaemonResetFails(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -537,7 +539,7 @@ func TestUpdaterRunFailsWhenDaemonResetLeavesDaemonOffline(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -548,7 +550,7 @@ func TestUpdaterRunFailsWhenDaemonResetLeavesDaemonOffline(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -607,7 +609,7 @@ func TestUpdaterRunFailsWhenDaemonUsesDifferentExecutable(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -618,7 +620,7 @@ func TestUpdaterRunFailsWhenDaemonUsesDifferentExecutable(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -702,7 +704,7 @@ func TestUpdaterRunReplacesDaemonWhenDifferentExecutableConfirmed(t *testing.T) 
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -713,7 +715,7 @@ func TestUpdaterRunReplacesDaemonWhenDifferentExecutableConfirmed(t *testing.T) 
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -800,7 +802,7 @@ func TestUpdaterRunReplacesDaemonWhenDifferentExecutableConfirmed(t *testing.T) 
 			if string(content) != "new-binary" {
 				t.Fatalf("executable content = %q", string(content))
 			}
-			if !strings.Contains(stdout.String(), "updated drill from v1.2.2 to v1.2.3") {
+			if !strings.Contains(stdout.String(), "updated drill from v1.2.2 to drill-v1.2.3") {
 				t.Fatalf("stdout should report successful update, got %q", stdout.String())
 			}
 			for _, want := range []string{resolveExecutablePath(otherExecPath), resolveExecutablePath(execPath), tt.want} {
@@ -818,7 +820,7 @@ func TestUpdaterRunFailsWhenDaemonExecutableCannotBeResolved(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.2.3-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.2.3-darwin-arm64.tar.gz"
 	archive := makeTarGz(t, map[string][]byte{
 		"bin/drill": []byte("new-binary"),
 	})
@@ -829,7 +831,7 @@ func TestUpdaterRunFailsWhenDaemonExecutableCannotBeResolved(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprintf(w, `[{"tag_name":"v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
+			fmt.Fprintf(w, `[{"tag_name":"drill-v1.2.3","assets":[{"name":%q,"browser_download_url":%q},{"name":"checksums.txt","browser_download_url":%q}]}]`,
 				archiveName,
 				server.URL+"/archive",
 				server.URL+"/checksums",
@@ -906,7 +908,7 @@ func TestUpdaterRunSkipsDaemonExecutableCheckWhenAlreadyUpToDate(t *testing.T) {
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
-			fmt.Fprint(w, `[{"tag_name":"v1.2.2","assets":[]}]`)
+			fmt.Fprint(w, `[{"tag_name":"drill-v1.2.2","assets":[]}]`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -1025,17 +1027,17 @@ func TestUpdaterCheckLatestBetaUsesReleasesList(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.3.0-beta.1-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.3.0-beta.1-darwin-arm64.tar.gz"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
-				{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
-				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]},
-				{"tag_name":"v1.4.0-draft","draft":true,"prerelease":true,"assets":[]}
+				{"tag_name":"drill-v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
+				{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[]},
+				{"tag_name":"drill-v1.4.0-draft","draft":true,"prerelease":true,"assets":[]}
 			]`, archiveName)
 		case "/repos/runecraftai/squad/tags":
-			fmt.Fprint(w, `[{"name":"v1.3.0-beta.1"},{"name":"v1.2.3"}]`)
+			fmt.Fprint(w, `[{"name":"drill-v1.3.0-beta.1"},{"name":"drill-v1.2.3"}]`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -1061,7 +1063,7 @@ func TestUpdaterCheckLatestBetaUsesReleasesList(t *testing.T) {
 	if !plan.UpdateAvailable {
 		t.Fatal("expected update to be available")
 	}
-	if plan.LatestVersion != "v1.3.0-beta.1" {
+	if plan.LatestVersion != "drill-v1.3.0-beta.1" {
 		t.Fatalf("LatestVersion = %q", plan.LatestVersion)
 	}
 	if plan.ArchiveName != archiveName {
@@ -1073,17 +1075,17 @@ func TestUpdaterCheckLatestBetaPicksHighestSemver(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.3.0-beta.2-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.3.0-beta.2-darwin-arm64.tar.gz"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
-				{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[]},
-				{"tag_name":"v1.3.0-beta.2","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
-				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]}
+				{"tag_name":"drill-v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[]},
+				{"tag_name":"drill-v1.3.0-beta.2","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
+				{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[]}
 			]`, archiveName)
 		case "/repos/runecraftai/squad/tags":
-			fmt.Fprint(w, `[{"name":"v1.3.0-beta.2"},{"name":"v1.3.0-beta.1"},{"name":"v1.2.3"}]`)
+			fmt.Fprint(w, `[{"name":"drill-v1.3.0-beta.2"},{"name":"drill-v1.3.0-beta.1"},{"name":"drill-v1.2.3"}]`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -1106,7 +1108,7 @@ func TestUpdaterCheckLatestBetaPicksHighestSemver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkLatest error = %v", err)
 	}
-	if plan.LatestVersion != "v1.3.0-beta.2" {
+	if plan.LatestVersion != "drill-v1.3.0-beta.2" {
 		t.Fatalf("LatestVersion = %q", plan.LatestVersion)
 	}
 }
@@ -1115,18 +1117,18 @@ func TestUpdaterCheckLatestBetaFallsBackToTagsWhenListingStale(t *testing.T) {
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.3.0-beta.1-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.3.0-beta.1-darwin-arm64.tar.gz"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
 			fmt.Fprint(w, `[
-				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]},
-				{"tag_name":"v1.2.2","draft":false,"prerelease":false,"assets":[]}
+				{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[]},
+				{"tag_name":"drill-v1.2.2","draft":false,"prerelease":false,"assets":[]}
 			]`)
 		case "/repos/runecraftai/squad/tags":
-			fmt.Fprint(w, `[{"name":"v1.3.0-beta.1"},{"name":"v1.2.3"},{"name":"v1.2.2"}]`)
-		case "/repos/runecraftai/squad/releases/tags/v1.3.0-beta.1":
-			fmt.Fprintf(w, `{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}`, archiveName)
+			fmt.Fprint(w, `[{"name":"drill-v1.3.0-beta.1"},{"name":"drill-v1.2.3"},{"name":"drill-v1.2.2"}]`)
+		case "/repos/runecraftai/squad/releases/tags/drill-v1.3.0-beta.1":
+			fmt.Fprintf(w, `{"tag_name":"drill-v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]}`, archiveName)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -1152,7 +1154,7 @@ func TestUpdaterCheckLatestBetaFallsBackToTagsWhenListingStale(t *testing.T) {
 	if !plan.UpdateAvailable {
 		t.Fatal("expected update to be available")
 	}
-	if plan.LatestVersion != "v1.3.0-beta.1" {
+	if plan.LatestVersion != "drill-v1.3.0-beta.1" {
 		t.Fatalf("LatestVersion = %q", plan.LatestVersion)
 	}
 	if plan.ArchiveName != archiveName {
@@ -1164,24 +1166,24 @@ func TestUpdaterCheckLatestBetaChecksListedReleaseAfterMissingTags(t *testing.T)
 	allowInsecureDownloads = true
 	t.Cleanup(func() { allowInsecureDownloads = false })
 
-	archiveName := "drill-v1.3.0-beta.1-darwin-arm64.tar.gz"
+	archiveName := "drill-drill-v1.3.0-beta.1-darwin-arm64.tar.gz"
 	tagFetches := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/runecraftai/squad/releases":
 			fmt.Fprintf(w, `[
-				{"tag_name":"v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
-				{"tag_name":"v1.2.3","draft":false,"prerelease":false,"assets":[]}
+				{"tag_name":"drill-v1.3.0-beta.1","draft":false,"prerelease":true,"assets":[{"name":%q,"browser_download_url":"http://example.com/archive"},{"name":"checksums.txt","browser_download_url":"http://example.com/checksums"}]},
+				{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[]}
 			]`, archiveName)
 		case "/repos/runecraftai/squad/tags":
 			fmt.Fprint(w, `[
-				{"name":"v1.3.0-beta.6"},
-				{"name":"v1.3.0-beta.5"},
-				{"name":"v1.3.0-beta.4"},
-				{"name":"v1.3.0-beta.3"},
-				{"name":"v1.3.0-beta.2"},
-				{"name":"v1.3.0-beta.1"},
-				{"name":"v1.2.3"}
+				{"name":"drill-v1.3.0-beta.6"},
+				{"name":"drill-v1.3.0-beta.5"},
+				{"name":"drill-v1.3.0-beta.4"},
+				{"name":"drill-v1.3.0-beta.3"},
+				{"name":"drill-v1.3.0-beta.2"},
+				{"name":"drill-v1.3.0-beta.1"},
+				{"name":"drill-v1.2.3"}
 			]`)
 		default:
 			if strings.HasPrefix(r.URL.Path, "/repos/runecraftai/squad/releases/tags/") {
@@ -1210,7 +1212,7 @@ func TestUpdaterCheckLatestBetaChecksListedReleaseAfterMissingTags(t *testing.T)
 	if err != nil {
 		t.Fatalf("checkLatest error = %v", err)
 	}
-	if plan.LatestVersion != "v1.3.0-beta.1" {
+	if plan.LatestVersion != "drill-v1.3.0-beta.1" {
 		t.Fatalf("LatestVersion = %q", plan.LatestVersion)
 	}
 	if tagFetches != 5 {

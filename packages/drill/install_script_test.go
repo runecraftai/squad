@@ -242,7 +242,7 @@ if [ -n "$out" ]; then
   cp "$FAKE_RELEASE_ARCHIVE" "$out"
   exit 0
 fi
-	printf '{"tag_name":"v1.2.3"}'
+	printf '{"tag_name":"drill-v1.2.3"}'
 `)
 	writeExecutable(t, filepath.Join(binDir, "sudo"), "#!/bin/sh\nexec \"$@\"\n")
 	return binDir

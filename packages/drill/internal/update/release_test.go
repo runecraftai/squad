@@ -190,3 +190,16 @@ func TestEnsureHTTPS(t *testing.T) {
 		t.Fatal("ensureHTTPS should reject http urls")
 	}
 }
+
+func TestTagBelongsToComponentStrictPrefix(t *testing.T) {
+	for _, tag := range []string{"drill-v1.2.3", "drill-v1.2.3-beta.1", "drill-v1"} {
+		if !tagBelongsToComponent("drill", tag) {
+			t.Fatalf("tagBelongsToComponent(drill, %q) = false, want true", tag)
+		}
+	}
+	for _, tag := range []string{"v2.1.1", "v1.2.3", "1.2.3", "1.2.3-beta.1", "fob-v2.0.0", "sq-tasks-v0.1.1", "drillx-v1.0.0", ""} {
+		if tagBelongsToComponent("drill", tag) {
+			t.Fatalf("tagBelongsToComponent(drill, %q) = true, want false", tag)
+		}
+	}
+}
