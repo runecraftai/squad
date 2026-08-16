@@ -1,8 +1,8 @@
 ---
 name: hijack
 description: >-
-  Agent-only playbook for a hijack operation: bringing an existing open-source tool's mechanisms under the Runecraft umbrella brand as a Runecraft-owned fork.
-  Load before evaluating a candidate tool for adoption, before forking or vendoring upstream code into this repo, before rebranding or relicensing a vendored fork, and before deciding go or no-go on an adoption.
+  Agent-only playbook for a hijack operation: sequestering an existing open-source product whole and transforming it into a Runecraft product.
+  Load before evaluating a product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 user-invocable: false
 metadata:
   internal: true
@@ -10,118 +10,133 @@ metadata:
 
 # Hijack operation
 
-This skill is the single policy owner for adopting an existing open-source tool's mechanisms into the Runecraft brand.
-A hijack is not a dependency upgrade and not a contribution to upstream.
-It takes the mechanism, not the identity: the fork ships as a Runecraft product with Runecraft naming, Runecraft documentation, and Runecraft's own license, while every attribution the source license legally requires is preserved.
+This skill is the single policy owner for acquiring an existing open-source product into the Runecraft brand.
 
-The vendoring mechanics are already proven in this repo.
-`packages/*/vendor.json` is the provenance record format, and `.specs/features/squad-m6-vendoring/design.md` section 9 owns the on-demand upstream-sync procedure.
-Follow those rather than inventing a parallel mechanism.
+A hijack is an acquisition, not a fork.
+The product is taken whole and becomes a Runecraft product: Runecraft naming, Runecraft identity, Runecraft documentation, Runecraft's own license.
+There is no upstream relationship afterward.
+Nothing tracks upstream, nothing syncs from upstream, and nothing in the product surface refers to upstream.
 
-## 1. Candidate evaluation
+Independence is the point of the operation.
+Do not frame the result as a fork, a vendored dependency, or a downstream copy, and do not build a sync obligation into it.
+The single exception to total independence is the legal floor in section 4, which is a distribution requirement, not a relationship with upstream.
 
-Do not fork before this stage produces a written verdict.
+## 1. Is the product worth taking
+
+Do not take anything before this stage produces a written verdict.
 
 1. Classify the license from the upstream repository's own `LICENSE` file, never from a README badge or a package registry field.
-   Permissive licenses (MIT, BSD, ISC, Apache-2.0) are hijack-eligible.
-   Copyleft licenses (GPL, LGPL, AGPL) and source-available licenses (BSL, SSPL, Elastic, "commons clause") are NOT eligible without an explicit commander decision, because their terms follow the fork into whatever ships next to it.
-   Unlicensed code and code with no license file at all is the worst case: no permission was granted, so it is a hard stop.
-2. Record maintenance health: last release date, commit cadence over the last twelve months, open issue and PR backlog, and whether releases are tagged and reproducible.
-   A stale but complete tool is a fine hijack target; a fast-moving one costs more at every sync.
-3. Record the bus factor.
-   A single-contributor project is a common hijack target precisely because upstream continuity is unreliable, but it also means no second reviewer ever read the code, so budget a real read of what is being adopted.
-4. Judge fit against the Runecraft surfaces that would consume it.
-   Name the concrete surface the mechanism plugs into and the concrete capability the unit gains.
+   Permissive licenses (MIT, BSD, ISC, Apache-2.0) are acquirable.
+   Copyleft licenses (GPL, LGPL, AGPL) and source-available licenses (BSL, SSPL, Elastic, "commons clause") are NOT acquirable without an explicit commander decision, because their terms follow the code into whatever ships next to it.
+   Code with no license file at all is a hard stop: no permission was granted to anyone.
+2. Name the Runecraft surface that will own the product and the concrete capability the unit gains.
+   An acquisition without a named owning surface is a hard stop, because owning a product with no home is pure cost.
    "Interesting project" is not fit.
-5. Size the surface being adopted.
-   Prefer taking the mechanism (the data model, the loop, the protocol) over taking the whole distribution when only part of it earns its keep.
+3. Record the bus factor and the maintenance reality.
+   A single-contributor or abandoned project is a strong acquisition target precisely because there is no upstream future worth staying attached to.
+   It also means no second reviewer ever read the code, so budget a real read of what is being taken.
+4. Judge the code as code you are about to own outright.
+   After the acquisition every bug, every vulnerability, and every unfinished corner is Runecraft's, with nobody upstream to fix it.
+   Read enough to accept that ownership honestly.
+5. Decide whether the whole product is worth taking, or none of it.
+   Taking a product whole is the operation; taking a fragment and wiring it to an upstream remainder is not a hijack and reintroduces the dependency the operation exists to remove.
+   If only one mechanism is worth having and the rest is dead weight, build that mechanism internally instead.
 6. Check for a lighter path.
-   If a small internal implementation covers the need, build it instead: a fork is durable maintenance cost, and `AGENTS.md`'s simplest-direct-path rule applies here too.
+   If a small internal implementation covers the need, build it: owning an acquired product is permanent maintenance, and `AGENTS.md`'s simplest-direct-path rule applies here too.
 
-## 2. Fork mechanics
+## 2. Take the product
 
-1. Pin an exact upstream point: a release tag when one exists, otherwise a commit SHA.
-   Never vendor from a moving branch.
-2. Copy tracked files only, from a reference clone at that pin, excluding `.git`, `node_modules`, and build output.
-3. Vendor into this repo's workspace under `packages/<runecraft-name>/`, following the existing package layout.
-4. Write the `vendor.json` provenance record with the upstream name, the pinned version or SHA, the source URL, the extraction date, the extraction method, content hashes, and the upstream license identifier.
-   Provenance is what makes a later sync, a later audit, and a later legal question answerable; it is not optional and it is not a comment in a script.
-5. Keep the upstream test suite running in-workspace from the first commit.
-   A fork whose inherited tests were never made green is unowned code, not adopted code.
-6. Commit the untouched vendored copy separately from the rebrand, so the rename diff is reviewable on its own.
+1. Take the product at a single coherent point: a release tag when one exists, otherwise a commit SHA.
+   Take from a fixed point rather than a moving branch, because you are copying a finished thing once, not opening a channel.
+2. Take the whole tracked product, excluding `.git`, dependency directories, and build output.
+3. Land it in the Runecraft workspace as a Runecraft-owned component under its Runecraft name, following the existing layout of the surfaces around it.
+4. Cut every upstream channel in the same pass: remote references, update checks, telemetry endpoints, issue-tracker links, funding links, and any config pointing at an upstream registry or domain.
+   Anything left pointing outward is a live dependency you did not intend to keep.
+5. Make the inherited test suite green under Runecraft ownership before the acquisition is considered complete.
+   A product whose tests were never made green is unowned code, not an acquired product.
+6. Commit the raw intake separately from the transformation, so the transformation diff is reviewable on its own.
+   This is a review convenience, not a provenance obligation.
 
-## 3. Rebrand
+## 3. Transform it into a Runecraft product
 
-1. Assign the Runecraft name before writing any code against the fork, and use it everywhere a name is executed: directory, package name, binary name, published scope, and every call site.
-2. Decouple the documentation.
-   Rewrite the README, help text, and examples so they describe the Runecraft product and its supported use, not upstream's roadmap, upstream's community, or upstream's issue tracker.
-3. Remove upstream's brand identity from the shipped product surface: logos, badges, project names in output, telemetry endpoints, support links, funding links, and social handles.
-4. Separate the rename from the deep prose rebrand when the fork is large.
-   Names-only first (things that execute), prose second (things that read), each as its own reviewable pass.
-   `.specs/features/squad-m6-vendoring/spec.md` records the precedent for that split, including which deferred surfaces it left behind.
-5. Point every internal reference at the Runecraft name, and add a guard test that fails when an old name reappears in an executing surface.
+1. Assign the Runecraft name before writing any code against it, and apply that name everywhere it executes: directory, package name, binary name, published scope, module paths, and every call site.
+2. Rewrite the documentation as Runecraft documentation.
+   The README, help text, and examples describe the Runecraft product and its supported use, with no upstream roadmap, upstream community, upstream issue tracker, or upstream history in them.
+3. Remove upstream's identity from the product surface completely: names in output, logos, badges, support links, social handles, author fields, and brand strings.
+4. Apply Runecraft's own license to the product.
+   This repo's root `LICENSE` is the model for what a Runecraft-owned product ships.
+5. Sequence a large transformation as two reviewable passes: names first (everything that executes), prose second (everything that reads).
+   Both passes must land; a half-transformed product still carries upstream identity.
+6. Add a guard test that fails when an upstream name reappears in an executing surface, so the transformation cannot silently regress.
 
-## 4. License handling
+## 4. The legal floor
 
-Removing upstream's licensing identity from the product surface is part of the hijack.
-Violating the source license is not, and no brand goal overrides that.
+This is the one absolute line in this playbook, and no brand goal overrides it.
 
-1. Apply Runecraft's own license to the fork as the license of the combined work.
-   This repo's root `LICENSE` is the model for what a Runecraft-owned fork ships.
-2. Preserve every attribution the source license legally requires.
-   For MIT and BSD, the copyright notice and permission text must travel with redistributed copies of that code.
-   Satisfy this with a third-party attribution file (`NOTICE`, or a `LICENSES/` entry) referenced from the fork, plus the `license` field in `vendor.json`.
-   That keeps upstream's name out of the product surface while keeping the legally required notice in the distribution.
-3. Never delete an upstream copyright line and ship the file as original Runecraft work.
-   That is the one action in this playbook that converts a legitimate fork into an infringement.
-4. Apache-2.0 additionally requires carrying `NOTICE` content and marking modified files; do both or do not adopt.
-5. Any license that is not plainly permissive, any missing or ambiguous license, any file with a different license than the repository root, and any vendored third-party subtree inside the upstream tree are legal edge cases.
-   Stop and escalate them as a commander decision with the exact text and file path.
+Never instruct or perform a violation of the source license.
+
+The commander's directive to remove upstream licensing is fulfilled by removing upstream's BRAND IDENTITY from the product surface, which section 3 does completely.
+It is never fulfilled by deleting an attribution the license legally requires.
+
+1. MIT and BSD require their copyright notice and permission text to travel with redistributed copies of that code.
+   Satisfy that with a minimal attribution record outside the product surface, such as a `NOTICE` file or a `LICENSES/` entry.
+   That record is a distribution requirement only.
+   It is not a provenance system, it creates no sync obligation, and it does not make the product a fork.
+2. Keep that record minimal and out of the way: what the license requires, nothing more.
+   No upstream branding, no upstream links, and no upstream identity in the product surface itself.
+3. Never delete an upstream copyright line and ship that file as original Runecraft work.
+   That single action converts a legitimate acquisition into infringement.
+4. Apache-2.0 additionally requires carrying `NOTICE` content and marking modified files; do both or do not acquire.
+5. Escalate to the commander, with exact text and file path, for any copyleft or source-available license, any missing or ambiguous license, any file whose license differs from the repository root, and any third-party subtree carrying its own license.
    Do not resolve a licensing ambiguity by guessing in either direction.
-6. Record the resulting license posture in the fork's `vendor.json` and in the PR description, so a later reader does not have to re-derive it.
+6. Record the resulting license posture in the PR description so a later reader does not have to re-derive it.
 
 ## 5. Integration into Runecraft surfaces
 
-1. Wire the fork into the workspace build and into bootstrap installation, so the unit consumes the workspace copy and never the upstream package.
-2. Add a version floor or presence check at the call site, matching how the other vendored tools are gated.
-3. Add build and test coverage in CI alongside the existing package jobs.
-4. Give the mechanism exactly one owner in the instruction surface, and add its load trigger where `squad-coding-guidelines` requires it: a one-line pointer, never a restatement of the fork's own documentation.
-5. Migrate call sites in one pass and remove the upstream dependency in the same change, so there is no window where both are installed and either could win.
+1. Wire the product into the Runecraft build and installation path so the unit consumes the Runecraft product and nothing else.
+2. Remove any upstream package from dependencies and installation in the same change, so there is no window where both exist and either could win.
+3. Add build and test coverage alongside the surrounding surfaces.
+4. Give the product exactly one owner in the instruction surface, and add its load trigger where `squad-coding-guidelines` requires it: a one-line pointer, never a restatement of the product's own documentation.
+5. Migrate call sites in one pass, under the Runecraft name.
 
-## 6. Ops and maintenance
+## 6. After the acquisition
 
-1. Upstream sync is on-demand, not scheduled.
-   Follow `.specs/features/squad-m6-vendoring/design.md` section 9; it owns the diff, re-rename, floor bump, provenance update, and per-package commit sequence.
-2. Re-apply the rename on every newly copied upstream file.
-   Blind-copying upstream `package.json` or bin names is how a rebrand silently regresses.
-3. Watch upstream for security advisories even while skipping feature syncs, since the fork inherits the vulnerability without inheriting the patch.
-4. Treat every protocol or CLI-contract change upstream as a call-site change here, caught by the floors and compatibility probes rather than discovered in production.
-5. When upstream dies, nothing breaks: that outcome is the point of the hijack, and the fork simply stops having a sync source.
+The product is Runecraft's. Treat it as code the unit wrote.
+
+1. There is no upstream sync, on demand or otherwise.
+   Do not diff against upstream, do not port upstream releases, and do not maintain a mapping back to an upstream version.
+2. Upstream dying, going closed, changing direction, or being abandoned changes nothing here.
+   That immunity is the return on the operation.
+3. Fix bugs and security issues directly, as the owner.
+   There is no upstream patch to wait for and no advisory feed that applies to a product that no longer exists outside Runecraft.
+4. Evolve it for Runecraft's needs without regard for upstream compatibility.
+   Divergence is expected and is not drift.
+5. If a specific later upstream change ever looks genuinely valuable, treat it as a new idea to implement under Runecraft ownership, and escalate it as a fresh decision rather than reopening a dependency.
 
 ## 7. Go / no-go
 
 Proceed only when all of these hold:
 
 - The license is permissive, unambiguous, and confirmed from the upstream `LICENSE` file.
-- The named Runecraft surface and the concrete gained capability are both written down.
-- An exact upstream pin exists.
-- The inherited test suite can be made green in-workspace.
-- The maintenance cost of syncing is acceptable against the value of the mechanism.
+- A named Runecraft surface will own the product, and the gained capability is written down.
+- Taking the product whole is the right move, not taking a fragment.
+- The inherited test suite can be made green under Runecraft ownership.
+- The unit accepts permanent ownership of the code, including its unfixed bugs.
 
 Stop and escalate to the commander when any of these appear:
 
 - Copyleft, source-available, missing, ambiguous, or mixed licensing.
-- A required attribution that cannot be satisfied without keeping upstream branding on the product surface.
 - Patent, trademark, or trade-name exposure in the upstream name or assets.
-- Vendored third-party subtrees inside upstream with their own licenses.
-- A scope that has grown past the mechanism into adopting an entire product the unit has no use for.
+- Third-party subtrees carrying their own licenses.
+- A required attribution that cannot be satisfied without leaving upstream branding on the product surface.
+- A product whose upstream channels cannot be fully severed.
 
-Abandon an in-flight hijack when the inherited tests cannot be made green, when the rebrand cannot be completed without breaking the mechanism, or when the sync cost is discovered to exceed rewriting the mechanism outright.
-Abandoning is cheap before the fork reaches the workspace and expensive after, which is why stage 1 evaluation is a written verdict rather than a formality.
+Abandon an in-flight acquisition when the inherited tests cannot be made green under Runecraft ownership, when the transformation cannot be completed without breaking the product, or when honest reading shows the unit is not willing to own the code permanently.
+Abandoning is cheap before intake and expensive after, which is why section 1 is a written verdict rather than a formality.
 
 ## Appendix: first application
 
-The first hijack target is the LifeOS and Agentic OS mechanism set (upstream `danielmiessler/LifeOS`, MIT, single-maintainer, high star count).
-Mechanisms in scope for the port: the memory layer (Cortex), the skills layer, the hooks layer, the background daemon (Pulse), the goals and identity model (TELOS), and the assistant instruction layer (ISA).
-Hermes, the sidecar, is excluded by explicit commander instruction and is not to be ported, adapted, or referenced as a Runecraft surface.
-That execution is a separate task; this appendix is a pointer, not the migration spec.
+The first acquisition target is LifeOS and Agentic OS (upstream `danielmiessler/LifeOS`, MIT, single-maintainer, high star count), whose mechanisms are organized as the SEED and PAUL frameworks.
+Mechanisms in scope: the memory layer (Cortex), the skills layer, the hooks layer, the background daemon (Pulse), the goals and identity model (TELOS), and the assistant instruction layer (ISA).
+Hermes, the sidecar, is excluded by explicit commander order and is not to be acquired, adapted, or referenced as a Runecraft surface.
+That execution is a separate task; this appendix is a pointer, not the acquisition plan.

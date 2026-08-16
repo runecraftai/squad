@@ -534,7 +534,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `squad-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Squad work.
 - `session-handoff` - load on a `handoff-request` operational wake or a session-start HANDOFF REQUESTS section, and before writing a handoff request at a milestone close (a merged milestone PR or a drained flight queue); the commander owns the /new decision and it must never auto-start.
 - `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing an operator for a Squad-repo task.
-- `hijack` - load before evaluating an existing open-source tool for adoption into the Runecraft brand, before forking or vendoring its code into this repo, before rebranding or relicensing a vendored fork, and before deciding go or no-go on that adoption.
+- `hijack` - load before evaluating an existing open-source product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
 
 ## 14. Relay
