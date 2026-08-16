@@ -387,7 +387,7 @@ assert_eq "click under a filter no longer resolves to the unfiltered frame's row
 # selects sq-eps. On the default (rollup) frame line 2 is the INBOX header, a
 # no-op, so the assert would fail without the click reading the toggle option.
 : > "$FAKE_TMUX_LOG"
-FAKE_TMUX_FILTER= FAKE_TMUX_NO_ROLLUP=1 click_in 2
+FAKE_TMUX_FILTER='' FAKE_TMUX_NO_ROLLUP=1 click_in 2
 assert_eq "click under a persisted NO_ROLLUP resolves through the no-rollup frame" \
   "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "1"
 assert_eq "the NO_ROLLUP click does not auto-focus the rollup row's neighbour" \
