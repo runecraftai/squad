@@ -24,7 +24,7 @@ Developers who run a coding agent (Claude Code, Grok, Pi/pi-signed, Codex, or Op
 
 ## Tech Stack
 
-**Distro (the repo itself):** Bash + POSIX shell scripts (`bin/sq-*.sh`), a 65KB `AGENTS.md` operating contract (filename kept — tooling convention), 19 internal skills under `.agents/skills/` (`metadata.internal=true`), tracked harness adapters (`.claude/`, `.codex/`, `.grok/`, `.opencode/`, `.pi/`), docs, and a ~133-test shell suite.
+**Distro (the repo itself):** Bash + POSIX shell scripts (`bin/sq-*.sh`), a 65KB `AGENTS.md` operating contract (filename kept — tooling convention), 22 internal skills under `.agents/skills/` (`metadata.internal=true`), tracked harness adapters (`.claude/`, `.codex/`, `.grok/`, `.opencode/`, `.pi/`), docs, and a ~133-test shell suite.
 
 **Monorepo orchestration (mirrors `/home/rehem/Projects/harness` conventions):**
 
@@ -48,7 +48,7 @@ Developers who run a coding agent (Claude Code, Grok, Pi/pi-signed, Codex, or Op
 ```
 squad/
 ├── AGENTS.md                 # operating contract (filename KEPT); CLAUDE.md symlinks here
-├── .agents/skills/            # 19 internal skills (rebranded; /reporting /sitrep /debrief …)
+├── .agents/skills/            # 22 internal skills (rebranded; /reporting /sitrep /debrief …)
 ├── bin/                       # 130 sq-* files (128 .sh + 2 .mjs) + bin/backends/ (tmux herdr zellij orca cmux)
 ├── docs/                      # architecture, configuration, backend docs, supervision protocols
 ├── skills/                    # public installer-facing skills (debrief)
