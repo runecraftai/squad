@@ -346,7 +346,7 @@ records() {  # [BASE] -> sortkey window id label state detail elapsed model effo
     model=$(meta_get "$dir/$id.meta" model)
     effort=$(meta_get "$dir/$id.meta" effort)
     unread=$(unread_for "$dir" "$id" "$label")
-    if is_inbox_label "$label"; then
+    if [ "${SQ_SIDEBAR_NO_INBOX:-}" != 1 ] && is_inbox_label "$label"; then
       sk="0$(printf '%02d' "$(state_rank "$label")")"
     else
       sk="1$window"
@@ -614,6 +614,10 @@ click() {  # <line> [BASE]
     '' | *[!0-9]*) return 0 ;;
   esac
   [ "$line" -ge 1 ] || return 0
+  if command -v tmux >/dev/null 2>&1; then
+    SQ_SIDEBAR_FILTER=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
+    export SQ_SIDEBAR_FILTER
+  fi
   window=$(map "$base" | sed -n "${line}p")
   [ -n "$window" ] || return 0
   command -v tmux >/dev/null 2>&1 || {

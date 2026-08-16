@@ -102,6 +102,7 @@ make_fake_tmux() {  # <dir> -> echoes fakebin path
 printf 'tmux %s\n' "$*" >> "$FAKE_TMUX_LOG"
 case "${1:-}" in
   list-panes) printf '%s\n' "${FAKE_TMUX_PANES:-}" ;;
+  show-option) printf '%s\n' "${FAKE_TMUX_FILTER:-}" ;;
 esac
 exit 0
 SH
@@ -249,6 +250,15 @@ IN5=$(SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" inbox)
 EXPECTED_IN5=$(printf 'Squad:sq-eps\teps\tfailed\tfailed\trun cancelled\t00:00:05\t\t\nSquad:sq-beta\tbeta\tblocked\tblocked\tneeds the decision\t00:00:05\t\t\nSquad:sq-delta\tdelta\tawaiting-decision\tparked\tgate ask-user\t00:00:05\t\t')
 assert_eq "inbox lists attention operators most-actionable first" "$IN5" "$EXPECTED_IN5"
 
+# NO_INBOX=1 reverts to plain window-order sorting: an attention card no
+# longer sorts above a routine card (and no INBOX header is emitted).
+RN=$(SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 SQ_SIDEBAR_NO_ELAPSED=1 "$SIDEBAR" render)
+assert_eq "NO_INBOX reverts to window order: the working card precedes the blocked one" \
+  "$(printf '%s\n' "$RN" | sed -n '1p')" "$(line1_of '⠋' alpha)"
+assert_eq "NO_INBOX keeps window order: the blocked card stays in window position" \
+  "$(printf '%s\n' "$RN" | sed -n '3p')" "$(line1_of '!' beta)"
+
 # With no attention operators there is no INBOX header and no separator.
 S6="$TMP_ROOT/state-f"; mkdir -p "$S6"
 {
@@ -339,8 +349,8 @@ click_in() {  # <line>
 # failed card's first line.
 click_in 1
 click_in 2
-assert_eq "click on rollup/header rows never invokes tmux" \
-  "$(wc -l < "$FAKE_TMUX_LOG")" "0"
+assert_eq "click on rollup/header rows never selects a window" \
+  "$(grep -c 'select-window' "$FAKE_TMUX_LOG")" "0"
 click_in 3
 click_in 4
 assert_eq "click lines 3 and 4 (failed card) focus its window" \
@@ -348,9 +358,22 @@ assert_eq "click lines 3 and 4 (failed card) focus its window" \
 click_in 0
 click_in ""
 click_in 999
-assert_eq "out-of-range and empty clicks never invoke tmux" \
-  "$(wc -l < "$FAKE_TMUX_LOG")" "2"
+assert_eq "out-of-range and empty clicks never select a window" \
+  "$(grep -c 'select-window' "$FAKE_TMUX_LOG")" "2"
 pass "click line mapping is exact and no-ops safely out of range"
+
+# A click under an active filter must resolve through the same filtered frame
+# the run loop renders (the click process reads the global filter option, the
+# way run does each frame), not the unfiltered one. With the FAKE_TMUX_FILTER
+# option answered as blocked, only the blocked card renders: line 3 is now the
+# blocked card's first line, not the failed card's. The assert would fail on
+# the unfiltered map, which puts the failed card on line 3.
+: > "$FAKE_TMUX_LOG"
+FAKE_TMUX_FILTER="blocked" click_in 3
+assert_eq "click under a filter focuses the filtered frame's window" \
+  "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "1"
+assert_eq "click under a filter no longer resolves to the unfiltered frame's row" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "0"
 
 # --- (i) toggle opens and closes the sidebar pane --------------------------
 
