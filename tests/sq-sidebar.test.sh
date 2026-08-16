@@ -3,21 +3,33 @@
 #
 # The sidebar is a CONSUMER of the ground-truth contract: it reads
 # state/window-states (published by bin/sq-window-state.sh, whose own suite
-# covers the derivation) plus state/<id>.meta and state/<id>.busy-gen, and
-# renders two display lines per operator card. These cases pin that rendering
-# and the tmux wiring hermetically, over fake state dirs with a fake
+# covers the derivation) plus state/<id>.meta, state/<id>.busy-gen, and
+# state/<id>.status, and renders operator cards, a per-session rollup, and an
+# INBOX section for operators needing attention. These cases pin the
+# rendering and the tmux wiring hermetically, over fake state dirs with a fake
 # reconciler and a fake tmux:
 #   (a) publish + cards end-to-end: labels/details come from window-states
 #       unchanged (no invented states), elapsed comes from the busy-gen mtime
 #       (meta mtime fallback), model/effort come from meta
-#   (b) render emits exactly two display lines per card so the click line
-#       mapping stays exact, spinner frames are a pure function of the clock,
-#       and long detail never wraps past the pane width
-#   (c) click <line> maps to the card at ((line + 1) / 2) and selects its
-#       window; empty/non-numeric/out-of-range lines are no-ops
-#   (d) toggle opens a 25-wide left sidebar pane on first use and kills the
+#   (b) render emits two display lines per card driven by configurable tokens,
+#       spinner frames are a pure function of the clock, and long detail never
+#       wraps past the pane width
+#   (c) rollup + INBOX: the session rollup shows the worst (most-actionable)
+#       state and attention count; attention operators sort above routine ones
+#       under an INBOX header and a separator
+#   (d) unread marker: a done card shows the unread glyph until ack writes
+#       state/<id>.sidebar-ack; the badge and render both reflect it
+#   (e) filter: SQ_SIDEBAR_FILTER restricts cards to one label; the filter
+#       subcommand cycles the global option
+#   (f) badge emits a colored state icon (plus unread glyph) for a window tab
+#   (g) next-inbox cycles through the attention set (fake tmux logs the target)
+#   (h) click <line> maps through the frame to the card's window; empty/non-
+#       numeric/out-of-range lines are no-ops
+#   (i) toggle opens a 25-wide left sidebar pane on first use and kills the
 #       tagged pane on the second; the run loop self-tags the pane
-#   (e) fail-closed: unknown subcommands and tmux-gated commands without
+#   (j) the .tmux loader binds the toggle/ack/filter/next-inbox keys, the
+#       click action, and the window-tab badge format
+#   (k) fail-closed: unknown subcommands and tmux-gated commands without
 #       tmux exit non-zero with a stderr note
 set -u
 
@@ -53,7 +65,7 @@ chmod +x "$FAKE"
 write_meta() {  # <state-dir> <id> [model] [effort]
   local dir=$1 id=$2 model=${3:-} effort=${4:-}
   {
-    printf 'window=Squad:%s\n' "$id"
+    printf 'window=Squad:sq-%s\n' "$id"
     [ -n "$model" ] && printf 'model=%s\n' "$model"
     [ -n "$effort" ] && printf 'effort=%s\n' "$effort"
   } > "$dir/$id.meta"
@@ -72,8 +84,16 @@ assert_eq() {  # <label> <actual> <expected>
   fi
 }
 
+# line1_of <glyph> <id>: the exact padded card line-1 shape (glyph left-padded
+# to 2, a space, then the id left-padded to 12) so ordering assertions never
+# hand-count spaces.
+line1_of() {  # <glyph> <id>
+  printf '%-2s %s' "$1" "$(printf '%-12s' "$2")"
+}
+
 # fake tmux that logs every invocation and serves a canned list-panes answer,
-# so the toggle/click tmux wiring is asserted on the real command lines.
+# so the toggle/click/next-inbox/filter tmux wiring is asserted on the real
+# command lines.
 make_fake_tmux() {  # <dir> -> echoes fakebin path
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
@@ -82,6 +102,12 @@ make_fake_tmux() {  # <dir> -> echoes fakebin path
 printf 'tmux %s\n' "$*" >> "$FAKE_TMUX_LOG"
 case "${1:-}" in
   list-panes) printf '%s\n' "${FAKE_TMUX_PANES:-}" ;;
+  show-option) case "${3:-}" in
+      @sq-sidebar-filter) printf '%s\n' "${FAKE_TMUX_FILTER:-}" ;;
+      @sq-sidebar-no-rollup) printf '%s\n' "${FAKE_TMUX_NO_ROLLUP:-}" ;;
+      @sq-sidebar-no-inbox) printf '%s\n' "${FAKE_TMUX_NO_INBOX:-}" ;;
+      *) printf '%s\n' "" ;;
+    esac ;;
 esac
 exit 0
 SH
@@ -96,35 +122,31 @@ write_meta "$S1" alpha claude low
 write_meta "$S1" beta grok xhigh
 write_meta "$S1" gamma
 write_fixture alpha working "building the tmux sidebar"
-write_fixture beta blocked "needs the decision"
+write_fixture beta paused "external wait"
 write_fixture gamma "done" "landed"
 now=$(date +%s)
 touch -d "@$((now - 3661))" "$S1/alpha.busy-gen"
-touch -d "@$((now - 60))" "$S1/beta.meta" # no busy-gen: meta mtime fallback
-touch -d "@$((now - 30))" "$S1/gamma.meta" # no busy-gen: meta mtime fallback
+touch -d "@$((now - 60))" "$S1/beta.meta"
+touch -d "@$((now - 30))" "$S1/gamma.meta"
 SQUAD_STATE_OVERRIDE="$S1" SQUAD_CREW_STATE_BIN="$FAKE" \
   SQUAD_FAKE_CREW_STATE="$FIXTURE" "$SIDEBAR" publish
 
 assert_eq "publish wrote window-states" \
   "$(cat "$S1/window-states")" \
-  "Squad:alpha	alpha	working	working	building the tmux sidebar
-Squad:beta	beta	blocked	blocked	needs the decision
-Squad:gamma	gamma	done	done	landed"
+  "Squad:sq-alpha	alpha	working	working	building the tmux sidebar
+Squad:sq-beta	beta	idle	paused	external wait
+Squad:sq-gamma	gamma	done	done	landed"
 
-# Elapsed assertions pin the clock with SQ_SIDEBAR_ELAPSED_NOW to the same
-# epoch the mtimes were set from, so no second-boundary wall-clock race can
-# flake them; the unpinned path is a plain `date +%s` read (see the script
-# header) and the pinned expectations prove the exact HH:MM:SS formatting.
 C1=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" cards)
 assert_eq "cards row carries label/state/detail/model/effort and busy-gen elapsed" \
   "$(printf '%s\n' "$C1" | sed -n '1p')" \
-  "Squad:alpha	alpha	working	working	building the tmux sidebar	01:01:01	claude	low"
+  "Squad:sq-alpha	alpha	working	working	building the tmux sidebar	01:01:01	claude	low"
 assert_eq "cards falls back to meta mtime for elapsed without busy-gen" \
   "$(printf '%s\n' "$C1" | sed -n '2p')" \
-  "Squad:beta	beta	blocked	blocked	needs the decision	00:01:00	grok	xhigh"
-assert_eq "cards keeps empty model/effort fields when absent; fresh meta counts as 00:00:00" \
+  "Squad:sq-beta	beta	idle	paused	external wait	00:01:00	grok	xhigh"
+assert_eq "cards keeps empty model/effort fields when absent; fresh meta counts as 00:00:30" \
   "$(printf '%s\n' "$C1" | sed -n '3p')" \
-  "Squad:gamma	gamma	done	done	landed	00:00:30		"
+  "Squad:sq-gamma	gamma	done	done	landed	00:00:30		"
 
 # A card whose meta and busy-gen are both gone renders no elapsed at all.
 S4="$TMP_ROOT/state-d"; mkdir -p "$S4"
@@ -133,10 +155,11 @@ assert_eq "no busy-gen and no meta means no elapsed field" \
   "$(SQUAD_STATE_OVERRIDE="$S4" "$SIDEBAR" cards)" \
   "Squad:orphan	orphan	working	working	no files left			"
 
-# --- (b) render: two lines per card, spinner, truncation -------------------
+# --- (b) render: two lines per card, tokens, spinner, truncation -----------
+# Rollup and INBOX are disabled here so the card rendering is isolated.
 
-R1=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 \
-  SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" render)
+R1=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" render)
 assert_eq "render emits exactly two display lines per card" \
   "$(printf '%s\n' "$R1" | wc -l | tr -d ' ')" "6"
 assert_eq "line 1 carries glyph, id, and elapsed" \
@@ -147,21 +170,33 @@ assert_eq "line 2 carries label and detail" \
   "working building the tmu"
 assert_eq "non-working cards use a static glyph" \
   "$(printf '%s\n' "$R1" | sed -n '3p')" \
-  "!  beta        00:01:00"
+  "-  beta        00:01:00"
+# gamma is done and unacknowledged, so the unread glyph trails its line 1.
+assert_eq "done card without an ack marker shows the unread glyph" \
+  "$(printf '%s\n' "$R1" | sed -n '5p')" \
+  "✓ gamma       00:00:30●"
 # The spinner frame must be a pure function of the clock: NOW=5 selects the
 # fifth frame (⠴), the same card row the NOW=0 case above renders as ⠋. The
 # whole line is compared (never cut -c1, which is byte-based under a POSIX
 # locale and would slice the multibyte braille glyph in CI's C-locale runner).
 assert_eq "spinner frame is a pure function of the clock" \
-  "$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=5 \
-    SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" render | sed -n '1p')" \
+  "$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+    SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=5 SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" render | sed -n '1p')" \
   "⠴ alpha       01:01:01"
+
+# The card templates are configurable: a custom line 1 drops id/elapsed in
+# favor of the raw state verb and the model tag.
+RC=$(SQUAD_STATE_OVERRIDE="$S1" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 SQ_SIDEBAR_LINE1='{glyph} {state} {model}' \
+  "$SIDEBAR" render | sed -n '1p')
+assert_eq "card line 1 honors a custom token template" "$RC" "⠋ working claude"
 
 # A long detail must never wrap past the pane width (keeps the click mapping).
 S2="$TMP_ROOT/state-b"; mkdir -p "$S2"
-printf 'Squad:long\tlong\tworking\tworking\t%s\n' \
+printf 'Squad:sq-long\tlong\tworking\tworking\t%s\n' \
   "$(printf 'x%.0s' $(seq 1 80))" > "$S2/window-states"
-R2=$(SQUAD_STATE_OVERRIDE="$S2" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 "$SIDEBAR" render)
+R2=$(SQUAD_STATE_OVERRIDE="$S2" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 "$SIDEBAR" render)
 maxlen=$(printf '%s\n' "$R2" | awk '{ if (length($0) > m) m = length($0) } END { print m+0 }')
 [ "$maxlen" -le 24 ] || fail "render line exceeded the 24-char pane width: $maxlen"
 pass "long detail is truncated to the pane width"
@@ -172,32 +207,193 @@ assert_eq "no operators renders the placeholder" \
   "$(SQUAD_STATE_OVERRIDE="$S3" SQ_SIDEBAR_NO_COLOR=1 "$SIDEBAR" render)" \
   "-- no Squad operators --"
 
-# --- (c) click maps a rendered line to its card's window -------------------
+# --- (c) rollup + INBOX -----------------------------------------------------
+# A multi-operator session mixes inbox and routine states: the rollup reports
+# the worst state and attention count, and inbox cards sort above routine ones.
+
+S5="$TMP_ROOT/state-e"; mkdir -p "$S5"
+write_meta "$S5" alpha
+write_meta "$S5" beta
+write_meta "$S5" gamma
+write_meta "$S5" delta
+write_meta "$S5" eps
+{
+  printf 'Squad:sq-alpha\talpha\tworking\tworking\tbuilding\n'
+  printf 'Squad:sq-beta\tbeta\tblocked\tblocked\tneeds the decision\n'
+  printf 'Squad:sq-gamma\tgamma\tdone\tdone\tlanded\n'
+  printf 'Squad:sq-delta\tdelta\tawaiting-decision\tparked\tgate ask-user\n'
+  printf 'Squad:sq-eps\teps\tfailed\tfailed\trun cancelled\n'
+} > "$S5/window-states"
+
+R5=$(SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 \
+  SQ_SIDEBAR_NO_ELAPSED=1 "$SIDEBAR" render)
+# Line 1 is the session rollup: worst state failed, 5 ops, 3 needing attention.
+assert_eq "rollup shows the session's worst state and operator count" \
+  "$(printf '%s\n' "$R5" | sed -n '1p')" \
+  "✗ Squad 5 ops"
+assert_eq "INBOX header is pinned above the attention cards" \
+  "$(printf '%s\n' "$R5" | sed -n '2p')" \
+  "▸ INBOX"
+# Attention cards sort most-actionable first: failed, blocked, awaiting-decision.
+assert_eq "failed card sorts first in the INBOX" \
+  "$(printf '%s\n' "$R5" | sed -n '3p')" \
+  "$(line1_of '✗' eps)"
+assert_eq "blocked card sorts second in the INBOX" \
+  "$(printf '%s\n' "$R5" | sed -n '5p')" \
+  "$(line1_of '!' beta)"
+assert_eq "awaiting-decision card sorts third in the INBOX" \
+  "$(printf '%s\n' "$R5" | sed -n '7p')" \
+  "$(line1_of '?' delta)"
+
+# Pin the elapsed clock for the inbox list: S5 has no busy-gen files, so
+# elapsed comes from meta mtime, which the touch below fixes 5 seconds back.
+touch -d "@$((now - 5))" "$S5"/*.meta
+
+# The inbox subcommand exposes the same most-actionable-first list as raw rows
+# (same 8-column shape as cards, with empty model/effort fields preserved).
+IN5=$(SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_ELAPSED_NOW="$now" "$SIDEBAR" inbox)
+EXPECTED_IN5=$(printf 'Squad:sq-eps\teps\tfailed\tfailed\trun cancelled\t00:00:05\t\t\nSquad:sq-beta\tbeta\tblocked\tblocked\tneeds the decision\t00:00:05\t\t\nSquad:sq-delta\tdelta\tawaiting-decision\tparked\tgate ask-user\t00:00:05\t\t')
+assert_eq "inbox lists attention operators most-actionable first" "$IN5" "$EXPECTED_IN5"
+
+# NO_INBOX=1 reverts to plain window-order sorting: an attention card no
+# longer sorts above a routine card (and no INBOX header is emitted).
+RN=$(SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 SQ_SIDEBAR_NO_ELAPSED=1 "$SIDEBAR" render)
+assert_eq "NO_INBOX reverts to window order: the working card precedes the blocked one" \
+  "$(printf '%s\n' "$RN" | sed -n '1p')" "$(line1_of '⠋' alpha)"
+assert_eq "NO_INBOX keeps window order: the blocked card stays in window position" \
+  "$(printf '%s\n' "$RN" | sed -n '3p')" "$(line1_of '!' beta)"
+
+# With no attention operators there is no INBOX header and no separator.
+S6="$TMP_ROOT/state-f"; mkdir -p "$S6"
+{
+  printf 'Squad:sq-alpha\talpha\tworking\tworking\tbuilding\n'
+  printf 'Squad:sq-gamma\tgamma\tdone\tdone\tlanded\n'
+} > "$S6/window-states"
+R6=$(SQUAD_STATE_OVERRIDE="$S6" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 \
+  SQ_SIDEBAR_NO_ELAPSED=1 "$SIDEBAR" render)
+assert_not_contains "$R6" "INBOX" "no INBOX header without attention operators"
+assert_eq "rollup only, then routine cards" \
+  "$(printf '%s\n' "$R6" | wc -l | tr -d ' ')" "5"
+
+# --- (d) unread marker and ack --------------------------------------------
+S7="$TMP_ROOT/state-g"; mkdir -p "$S7"
+write_meta "$S7" done1
+write_meta "$S7" done2
+{
+  printf 'Squad:sq-done1\tdone1\tdone\tdone\tlanded\n'
+  printf 'Squad:sq-done2\tdone2\tdone\tdone\tlanded\n'
+} > "$S7/window-states"
+# done2 has a fresh ack marker; done1 does not.
+touch "$S7/done2.sidebar-ack"
+
+R7=$(SQUAD_STATE_OVERRIDE="$S7" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 SQ_SIDEBAR_NO_ELAPSED=1 "$SIDEBAR" render)
+assert_eq "unacknowledged done card shows the unread glyph" \
+  "$(printf '%s\n' "$R7" | sed -n '1p')" \
+  "✓ done1       ●"
+assert_eq "acknowledged done card hides the unread glyph" \
+  "$(printf '%s\n' "$R7" | sed -n '3p')" \
+  "✓ done2       "
+
+assert_eq "ack writes a marker for every done task and reports the count" \
+  "$(SQUAD_STATE_OVERRIDE="$S7" "$SIDEBAR" ack)" "2"
+[ -f "$S7/done1.sidebar-ack" ] || fail "ack did not write done1's marker"
+[ -f "$S7/done2.sidebar-ack" ] || fail "ack did not refresh done2's marker"
+R7B=$(SQUAD_STATE_OVERRIDE="$S7" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NO_ROLLUP=1 \
+  SQ_SIDEBAR_NO_INBOX=1 SQ_SIDEBAR_NOW=0 SQ_SIDEBAR_NO_ELAPSED=1 "$SIDEBAR" render)
+assert_eq "after ack the unread glyph disappears" \
+  "$(printf '%s\n' "$R7B" | sed -n '1p')" \
+  "✓ done1       "
+
+# --- (e) filter ------------------------------------------------------------
+R8=$(SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_NO_COLOR=1 SQ_SIDEBAR_NOW=0 \
+  SQ_SIDEBAR_NO_ELAPSED=1 SQ_SIDEBAR_FILTER=blocked "$SIDEBAR" render)
+assert_contains "$R8" "beta" "filter shows the blocked card"
+assert_not_contains "$R8" "eps" "filter hides the failed card"
+assert_not_contains "$R8" "alpha" "filter hides the working card"
 
 FB=$(make_fake_tmux "$TMP_ROOT")
 export FAKE_TMUX_LOG="$TMP_ROOT/tmux.log"
 : > "$FAKE_TMUX_LOG"
 export PATH="$FB:$PATH"
+SQUAD_STATE_OVERRIDE="$S5" "$SIDEBAR" filter >/dev/null
+assert_eq "filter first cycle moves all -> awaiting-decision" \
+  "$(grep -c 'set-option -g @sq-sidebar-filter awaiting-decision' "$FAKE_TMUX_LOG")" "1"
+
+# --- (f) badge -------------------------------------------------------------
+assert_eq "badge emits a colored blocked icon" \
+  "$(SQUAD_STATE_OVERRIDE="$S5" "$SIDEBAR" badge 'Squad:sq-beta')" \
+  "$(printf '\033[38;5;196m!\033[0m')"
+assert_eq "badge for an unacknowledged done task prepends the unread glyph" \
+  "$(SQUAD_STATE_OVERRIDE="$S5" "$SIDEBAR" badge 'Squad:sq-gamma')" \
+  "$(printf '\033[38;5;45m●✓\033[0m')"
+assert_eq "badge for an unknown window prints nothing" \
+  "$(SQUAD_STATE_OVERRIDE="$S5" "$SIDEBAR" badge 'Squad:nope')" ""
+
+# --- (g) next-inbox --------------------------------------------------------
+: > "$FAKE_TMUX_LOG"
+SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_CURRENT='Squad:sq-eps' "$SIDEBAR" next-inbox
+assert_eq "next-inbox from the first attention window advances to the second" \
+  "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "1"
+: > "$FAKE_TMUX_LOG"
+SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_CURRENT='Squad:sq-delta' "$SIDEBAR" next-inbox
+assert_eq "next-inbox from the last attention window wraps to the first" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "1"
+: > "$FAKE_TMUX_LOG"
+SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_CURRENT='Squad:sq-alpha' "$SIDEBAR" next-inbox
+assert_eq "next-inbox from a non-attention window selects the first attention window" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "1"
+
+# --- (h) click maps through the frame --------------------------------------
+: > "$FAKE_TMUX_LOG"
 click_in() {  # <line>
-  SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" click "$1"
+  SQUAD_STATE_OVERRIDE="$S5" SQ_SIDEBAR_NOW=0 "$SIDEBAR" click "$1"
 }
+# With rollup + INBOX, line 1 is the rollup (non-clickable), line 3 is the
+# failed card's first line.
 click_in 1
-assert_eq "click line 1 focuses card 1's window" \
-  "$(grep -c 'select-window -t Squad:alpha' "$FAKE_TMUX_LOG")" "1"
-click_in 2 # second display line of the same card
-assert_eq "click line 2 (same card) also focuses card 1" \
-  "$(grep -c 'select-window -t Squad:alpha' "$FAKE_TMUX_LOG")" "2"
+click_in 2
+assert_eq "click on rollup/header rows never selects a window" \
+  "$(grep -c 'select-window' "$FAKE_TMUX_LOG")" "0"
 click_in 3
-assert_eq "click line 3 focuses card 2's window" \
-  "$(grep -c 'select-window -t Squad:beta' "$FAKE_TMUX_LOG")" "1"
+click_in 4
+assert_eq "click lines 3 and 4 (failed card) focus its window" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "2"
 click_in 0
 click_in ""
 click_in 999
-assert_eq "out-of-range and empty clicks never invoke tmux" \
-  "$(wc -l < "$FAKE_TMUX_LOG")" "3"
+assert_eq "out-of-range and empty clicks never select a window" \
+  "$(grep -c 'select-window' "$FAKE_TMUX_LOG")" "2"
 pass "click line mapping is exact and no-ops safely out of range"
 
-# --- (d) toggle opens and closes the sidebar pane --------------------------
+# A click under an active filter must resolve through the same filtered frame
+# the run loop renders (the click process reads the global filter option, the
+# way run does each frame), not the unfiltered one. With the FAKE_TMUX_FILTER
+# option answered as blocked, only the blocked card renders: line 3 is now the
+# blocked card's first line, not the failed card's. The assert would fail on
+# the unfiltered map, which puts the failed card on line 3.
+: > "$FAKE_TMUX_LOG"
+FAKE_TMUX_FILTER="blocked" click_in 3
+assert_eq "click under a filter focuses the filtered frame's window" \
+  "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "1"
+assert_eq "click under a filter no longer resolves to the unfiltered frame's row" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "0"
+
+# A click under a persisted layout toggle (NO_ROLLUP answered by the fake tmux,
+# as run persists it each frame and renders with) must resolve through the same
+# frame the run loop renders. With NO_ROLLUP the rollup row is gone, so the
+# failed card's first line moves from line 3 to line 2; a click on line 2 thus
+# selects sq-eps. On the default (rollup) frame line 2 is the INBOX header, a
+# no-op, so the assert would fail without the click reading the toggle option.
+: > "$FAKE_TMUX_LOG"
+FAKE_TMUX_FILTER='' FAKE_TMUX_NO_ROLLUP=1 click_in 2
+assert_eq "click under a persisted NO_ROLLUP resolves through the no-rollup frame" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "1"
+assert_eq "the NO_ROLLUP click does not auto-focus the rollup row's neighbour" \
+  "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "0"
+
+# --- (i) toggle opens and closes the sidebar pane --------------------------
 
 : > "$FAKE_TMUX_LOG"
 FAKE_TMUX_PANES="" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle
@@ -215,18 +411,25 @@ assert_eq "toggle closes the already-open sidebar pane" \
   "$(grep -c 'kill-pane -t %9' "$FAKE_TMUX_LOG")" "1"
 pass "toggle opens on first use and closes on the second"
 
-# --- (e) the .tmux loader binds the toggle key and the click action --------
+# --- (j) the .tmux loader binds keys and the badge format ------------------
 
 : > "$FAKE_TMUX_LOG"
 bash "$ROOT/tmux/sq-sidebar.tmux"
 assert_grep "set-option -g @sq-sidebar-path" "$FAKE_TMUX_LOG" "loader records the tool path globally"
 assert_grep "bind-key -n C-M-s run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-s toggle"
+assert_grep "bind-key -n C-M-n run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-n next-inbox key"
+assert_grep "bind-key -n C-M-a run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-a ack key"
+assert_grep "bind-key -n C-M-f run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-f filter key"
 assert_grep "q:@sq-sidebar-path" "$FAKE_TMUX_LOG" "bindings pass the tool path shell-quoted once at fire time"
 assert_grep "bind-key -n MouseDown1Pane" "$FAKE_TMUX_LOG" "loader binds the click action"
 assert_grep "e|+|:#{mouse_y},1" "$FAKE_TMUX_LOG" "click binding passes the 1-based mouse row"
 assert_grep "q:@sq-sidebar-base" "$FAKE_TMUX_LOG" "click binding passes the base shell-quoted once"
+assert_grep "window-status-format" "$FAKE_TMUX_LOG" "loader sets the window tab badge format"
+assert_grep "window-status-current-format" "$FAKE_TMUX_LOG" "loader sets the current window tab badge format"
+assert_grep 'badge "#{session_name}:#{window_name}"' "$FAKE_TMUX_LOG" \
+  "badge format passes the session:window target"
 assert_no_grep "mouse_line" "$FAKE_TMUX_LOG" "click binding no longer uses mouse_line"
-pass "loader binds the toggle and the shell-quoted click action"
+pass "loader binds the keys, the click action, and the tab badge format"
 
 # The bindings reference the tool path through the option at fire time, so
 # a checkout path with spaces or shell specials survives run-shell's sh -c:
@@ -244,9 +447,11 @@ assert_no_grep "$SPACED/bin/sq-sidebar.sh toggle" "$FAKE_TMUX_LOG" \
   "no binding embeds the raw tool path (fire-time quoting only)"
 assert_no_grep "$SPACED/bin/sq-sidebar.sh click" "$FAKE_TMUX_LOG" \
   "click binding never embeds the raw tool path either"
+assert_no_grep "$SPACED/bin/sq-sidebar.sh badge" "$FAKE_TMUX_LOG" \
+  "badge format shells out through the quoted option, never the raw path"
 pass "loader keeps the tool path literal in the option and out of the bindings"
 
-# --- (f) fail-closed paths -------------------------------------------------
+# --- (k) fail-closed paths -------------------------------------------------
 
 if SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" bogus >/dev/null 2>&1; then
   fail "unknown subcommand must exit non-zero"
@@ -258,3 +463,11 @@ if env PATH="$NOBIN" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle >/dev/null 2>&
   fail "toggle without tmux must exit non-zero"
 fi
 pass "toggle without tmux fails closed"
+if env PATH="$NOBIN" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" filter >/dev/null 2>&1; then
+  fail "filter without tmux must exit non-zero"
+fi
+pass "filter without tmux fails closed"
+if env PATH="$NOBIN" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" next-inbox >/dev/null 2>&1; then
+  fail "next-inbox without tmux must exit non-zero"
+fi
+pass "next-inbox without tmux fails closed"

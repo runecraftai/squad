@@ -1,32 +1,62 @@
 # Squad ground-truth tmux sidebar (sq-sidebar)
 
-`bin/sq-sidebar.sh` renders a herdr-like sidebar of per-operator cards in a tmux pane, powered by Squad ground truth instead of screen reading.
+`bin/sq-sidebar.sh` renders a per-operator card sidebar in a tmux pane, powered by Squad ground truth instead of screen reading.
 It replaces the old tmux-agents-mon sidebar on the commander's machine; the machine-side swap is a separate follow-up.
-The sidebar is a pure consumer of the ground-truth contract: it reads `state/window-states` (published by `bin/sq-window-state.sh`, whose header owns the file contract), `state/<id>.meta`, and `state/<id>.busy-gen`.
+The sidebar is a pure consumer of the ground-truth contract: it reads `state/window-states` (published by `bin/sq-window-state.sh`, whose header owns the file contract), `state/<id>.meta`, `state/<id>.busy-gen`, and `state/<id>.status`.
 It never reads screens and never maps Squad verbs itself: `bin/sq-window-state.sh` owns the verb to label translation and `bin/sq-classify-lib.sh` owns the status vocabulary.
 
 The script header owns the full command, environment, and behavior reference.
 This page covers setup, usage, and the interface contract with the machine-side scripts.
 
+## Layout
+
+The sidebar pane is laid out top to bottom, and every section can be turned off by an environment variable:
+
+- **Rollup** - one line per tmux session showing that session's worst (most-actionable) operator state, a colored icon, and the operator count.
+  A session with any attention operator surfaces that state here, so a glance at the rollup tells you whether the whole unit is healthy.
+  Disable with `SQ_SIDEBAR_NO_ROLLUP=1`.
+- **INBOX** - the operators needing commander attention (awaiting-decision, blocked, failed), sorted most-actionable first, under an `INBOX` header.
+  They sit above the routine cards, so what needs you is always at the top.
+  Disable with `SQ_SIDEBAR_NO_INBOX=1` (this also reverts to plain window-order sorting).
+- **Cards** - one two-line card per remaining operator (working, idle, done, unknown), sorted by window target.
+
+The actionability ordering (failed, blocked, awaiting-decision, unknown, working, idle, done) and the INBOX membership set (awaiting-decision, blocked, failed) are the sidebar's own rendering policy - the ground truth only supplies labels.
+
 ## Card model
 
-Each operator window renders as one card of two display lines:
+Each operator renders as one card of two display lines, and both lines are configurable token templates:
 
-- Line 1 is `<glyph> <id> [<elapsed>]`: a spinner while the operator is working, a static glyph otherwise, the mission id, and wall-clock elapsed time.
-- Line 2 is `<label> <detail>`: the sidebar-facing state label (working, awaiting-decision, blocked, done, idle, failed, unknown) and the reconciled current-status prose from `state/window-states`.
+- Line 1 is `SQ_SIDEBAR_LINE1` (default `{glyph} {id}{elapsed}{unread}`): a spinner while the operator is working, a static state icon otherwise, the mission id, wall-clock elapsed time, and the unread glyph when a done card is unacknowledged.
+- Line 2 is `SQ_SIDEBAR_LINE2` (default `{label} {detail}`): the sidebar-facing state label (working, awaiting-decision, blocked, done, idle, failed, unknown) and the reconciled current-status prose from `state/window-states`.
 
-The label and state names come verbatim from the ground-truth contract; the sidebar only picks glyphs and colors per label.
+Tokens: `{glyph}` (the state icon; spinner while working), `{id}` (left-padded to 12), `{label}`, `{state}` (the canonical Squad verb), `{detail}` (prose, or `model·effort` when there is no prose), `{elapsed}` (right-padded to 8 when present), `{model}`, `{effort}`, `{unread}` (the unread glyph on a done card not yet acknowledged, else empty), `{window}`, `{session}`.
+Unknown tokens pass through unchanged, so a template with a typo is visible rather than silently blank.
+
+The label and state names come verbatim from the ground-truth contract; the sidebar only picks glyphs, colors, and the actionability ordering per label.
 Elapsed time is a simple honest approximation: wall-clock since the task's busy contract was armed (`state/<id>.busy-gen` mtime, written once at spawn), falling back to the meta file's mtime.
 It is not billing-grade, and the sidebar does NOT compute session cost: when a card has no detail prose, line 2 shows the recorded `model=` and `effort=` meta tags as the cost context instead.
 See `bin/sq-busy-event.sh` for who arms the busy contract and `bin/sq-crew-state.sh` for what the reconciled prose means.
 
-The two-lines-per-card layout is the single layout constant the script owns; `click` maps a rendered pane line to its card with `((line + 1) / 2)`.
-The renderer truncates every line to the pane width minus one, so a card never wraps and the mapping stays exact.
+The two-lines-per-card layout is the single layout constant the script owns; `click` resolves a rendered pane line to its card's window through the same frame the renderer emits, so the mapping stays exact even with the rollup, INBOX header, and separator lines in between.
+The renderer truncates every line to the pane width minus one, so a card never wraps.
+
+## Unread done markers
+
+A `done` card shows the unread glyph (`SQ_SIDEBAR_UNREAD`, default `●`) until the commander acknowledges it.
+`bin/sq-sidebar.sh ack` (the `C-M-a` key) writes `state/<id>.sidebar-ack` for every currently-done task, and a done task is unread while that marker is missing or older than the task's last status-log append (`state/<id>.status` mtime).
+A task that finishes, is acknowledged, and finishes again becomes unread again.
+The same dot appears on the window-tab badge.
+
+## Window tab badge
+
+The loader sets `window-status-format` and `window-status-current-format` to prepend a colored state icon (plus the unread dot) to each tmux window tab.
+`bin/sq-sidebar.sh badge <session:window>` emits the icon for a window, so the tab badge reflects the same ground truth as the sidebar.
+The badge uses the always-static icon, not the spinner, since status-line formats re-evaluate on the status interval rather than per frame.
 
 ## Requirements
 
 - tmux 3.2 or newer (pane user options, `if-shell -F`, and the `#{e|+|:...}` and `#{q:...}` click formats are required; verified on 3.7).
-- A UTF-8 terminal for the spinner glyphs; `SQ_SIDEBAR_SPINNER` can replace them with ASCII frames.
+- A UTF-8 terminal for the spinner and state glyphs; `SQ_SIDEBAR_SPINNER` can replace them with ASCII frames.
 - A Squad base with tmux task windows; the sidebar shows nothing when `state/window-states` is absent or empty.
 
 ## Install and load
@@ -38,16 +68,25 @@ Put this repo (or a plugin checkout of it) on the machine and add one line to `~
 run-shell "/home/you/squad/tmux/sq-sidebar.tmux"
 ```
 
-The loader binds the toggle key and the click action and records the tool path in the global `@sq-sidebar-path` option.
+The loader binds the keys, the click action, and the window-tab badge, and records the tool path in the global `@sq-sidebar-path` option.
 Do not use `tmux source-file` on the loader: the loader is shell, not tmux config syntax.
 
 ## Usage
 
-Press `C-M-s` (workmux-style) in any window to toggle a 25-wide sidebar pane on the left of the current window.
-The pane shows one card per operator window and re-renders every second; the ground truth it reads is re-published every two seconds.
+| Key | Action |
+| --- | ------ |
+| `C-M-s` | Toggle a 25-wide sidebar pane on the left of the current window |
+| `C-M-n` | Focus the next operator needing attention (cycles the INBOX set) |
+| `C-M-a` | Acknowledge every currently-done operator (clears their unread dots) |
+| `C-M-f` | Cycle the filter: all, awaiting-decision, blocked, failed, working, idle, done |
+
+The pane shows the rollup, the INBOX, and one card per operator window, and re-renders every second; the ground truth it reads is re-published every two seconds.
 Click a card with the mouse to focus that operator's tmux window.
 The click resolves the operator base from the `@sq-sidebar-base` pane option the sidebar records at start, so it works from any base the toggle was launched with.
 A click anywhere else in a pane keeps tmux's default behavior: it focuses the clicked pane and passes the mouse event through.
+
+The filter (`C-M-f`, or `SQ_SIDEBAR_FILTER`) restricts the cards to one state label so you can isolate, for example, only `blocked` or only `awaiting-decision` operators.
+The rollup is independent of the filter and always reflects the whole session.
 
 Customize with environment variables (all optional):
 
@@ -57,17 +96,25 @@ Customize with environment variables (all optional):
 | `SQ_SIDEBAR_SPINNER` | braille frames | Space-separated spinner glyphs |
 | `SQ_SIDEBAR_REFRESH_SECS` | `2` | Ground-truth re-publish cadence in the run loop |
 | `SQ_SIDEBAR_FRAME_SECS` | `1` | Render cadence in the run loop |
+| `SQ_SIDEBAR_LINE1` | `{glyph} {id}{elapsed}{unread}` | Line 1 token template per card |
+| `SQ_SIDEBAR_LINE2` | `{label} {detail}` | Line 2 token template per card |
+| `SQ_SIDEBAR_FILTER` | empty (`all`) | State label to restrict cards to |
+| `SQ_SIDEBAR_UNREAD` | `●` | The unread glyph on an unacknowledged done card |
 | `SQ_SIDEBAR_NO_COLOR` | unset | `1` disables ANSI styling (plain text) |
 | `SQ_SIDEBAR_NO_ELAPSED` | unset | `1` hides the elapsed time column |
+| `SQ_SIDEBAR_NO_ROLLUP` | unset | `1` hides the per-session rollup |
+| `SQ_SIDEBAR_NO_INBOX` | unset | `1` hides the INBOX section and reverts to window order |
 
 For a machine-side toggle or auto-open script, call `bin/sq-sidebar.sh toggle [BASE]` directly; the loader's `C-M-s` binding is exactly that command.
 
 ## Interface contract with the machine-side scripts
 
-- `~/.local/bin/sq-sidebar-start.sh` (machine) owns the auto-open-on-boot and toggle flow; the follow-up machine swap re-points it at `bin/sq-sidebar.sh toggle [BASE]`, and it must not bind `C-M-s` a second time because the loader owns that key.
+- `~/.local/bin/sq-sidebar-start.sh` (machine) owns the auto-open-on-boot and toggle flow; the follow-up machine swap re-points it at `bin/sq-sidebar.sh toggle [BASE]`, and it must not bind the keys a second time because the loader owns them.
 - The powerkit agent-count segment reads `bin/sq-sidebar.sh cards [BASE]` (one raw TAB-separated record per card: window, id, label, state, detail, elapsed, model, effort) or `state/window-states` directly; the follow-up machine swap decides which.
+- `bin/sq-sidebar.sh inbox [BASE]` returns the same record shape, restricted to attention operators and sorted most-actionable first.
+- `bin/sq-sidebar.sh map [BASE]` returns one window target per rendered line (empty for non-card rows), which is how a script can resolve a click to a window without re-deriving the layout.
 - `bin/sq-status-notify.sh` is independent: it watches `state/<id>.status` for desktop notifications and focuses via the same `window=` targets, with no interface change.
-- `state/window-states` remains owned by `bin/sq-window-state.sh`; the sidebar never writes it, it only calls `publish` and reads the file.
+- `state/window-states` remains owned by `bin/sq-window-state.sh`; the sidebar never writes it, it only calls `publish` and reads the file. The unread marker `state/<id>.sidebar-ack` is the sidebar's own private state, written only by `ack`.
 
 ## Limits
 
@@ -75,6 +122,20 @@ For a machine-side toggle or auto-open script, call `bin/sq-sidebar.sh toggle [B
 - Keeping the sidebar pane at `SQ_SIDEBAR_WIDTH` keeps the click line mapping exact; manually resizing the pane can wrap lines and drift the mapping.
 - The spinner advances with the render cadence and is driven by the clock, not by per-frame events; it is a visual state hint, not a progress meter.
 - The mouse click path is exercised through tmux's documented mouse binding semantics (`{mouse}` targets and the `#{e|+|:#{mouse_y},1}` row conversion); the full click flow was smoke-verified manually, not by automated mouse injection.
+- The window-tab badge shells out through `#()` on the status interval, so it refreshes on the status cadence rather than per frame.
+
+## Future direction: ratatui TUI panel
+
+The sidebar is deliberately a tmux-pane shell renderer because it had to ship without new runtime dependencies and reuse the existing ground-truth pipeline.
+A ratatui-based TUI panel (in the style of opensessions and herdr's configuration surface) is a candidate follow-up phase, not part of this rework.
+
+Evaluation:
+
+- **Fits cleanly** for richer visuals - boxed cards, a real scrollable list, and mouse/keyboard navigation that a line-oriented shell renderer can only approximate.
+- **Costs** - a compiled or crate-fetched binary (new dependency and a build/install step), plus a second consumer of `state/window-states` that would need to stay byte-compatible with the shell path during migration.
+- **Recommendation** - keep `state/window-states` as the single data source and `bin/sq-sidebar.sh cards|inbox|map` as the contract, and have the ratatui panel consume those exact subcommands (or the file directly) rather than re-deriving state.
+  Ship it as an opt-in alternative behind the same `C-M-s` toggle, gated by a feature flag, so the shell renderer stays the fallback until the TUI is proven on the commander's machine.
+  This is worth doing only after the token/card model here is settled, since that is what a TUI would render first-class.
 
 ## Regression entry point
 
