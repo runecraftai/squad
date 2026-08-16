@@ -517,7 +517,7 @@ It performs guarded fast-forward updates of Squad and registered XO bases, refre
 
 These skills are not commander-invocable; load them only at their precise triggers.
 
-- `bootstrap-diagnostics` - load whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line (`MISSING:`, `MISSING_MANUAL:`, `BACKEND_INVALID:`, `NEEDS_GH_AUTH`, `TANGLE:`, `STARTUP_MEMORY_BUDGET:`, `CREW_DISPATCH: invalid`, `UNIT_SYNC:`, `NETWORK_CHECKS:`, `PR_CHECK_MIGRATION:`, `XO_SYNC:`, `XO_LIVENESS:`, `XO_HANDOFF:`, `NUDGE_XOS:`, or `SQX:`); silence and `BOOTSTRAP_INFO:` need no load.
+- `bootstrap-diagnostics` - load whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line (`MISSING:`, `MISSING_MANUAL:`, `BACKEND_INVALID:`, `NEEDS_GH_AUTH`, `TANGLE:`, `STARTUP_MEMORY_BUDGET:`, `CREW_DISPATCH: invalid`, `CREW_DISPATCH: model existence:`, `UNIT_SYNC:`, `NETWORK_CHECKS:`, `PR_CHECK_MIGRATION:`, `XO_SYNC:`, `XO_LIVENESS:`, `XO_HANDOFF:`, `NUDGE_XOS:`, or `SQX:`); silence and `BOOTSTRAP_INFO:` need no load.
 - `diagnostic-reasoning` - load before scoping a reported bug and before acting on a diagnostic report.
 - `ask-user-authority` - load before deciding any ask-user finding, regardless of the project's `yolo` posture.
 - `quota-array-dispatch` - load before choosing among a matched crew-dispatch profile array from current sq-quota output.
