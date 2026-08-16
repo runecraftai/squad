@@ -12,7 +12,7 @@
 
 <h3 align="center">The operations board agents and humans share.</h3>
 
-Task and backlog manager for agents, part of the [Squad](https://github.com/runecraftai/squad) monorepo.
+Task and backlog manager for agents, part of the [Runecraft](https://github.com/runecraftai/squad) monorepo.
 
 sq-tasks makes a tiny structured change to a human-readable backlog at near-zero output-token cost.
 It edits a hand-editable `backlog.md` in place with a byte-exact round-trip, so the markdown stays the source of truth while long task bodies never bloat a `list`.

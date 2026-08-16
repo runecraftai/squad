@@ -10,7 +10,7 @@
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
 
-Quota CLI for agents, part of the [Squad](https://github.com/runecraftai/squad) monorepo.
+Quota CLI for agents, part of the [Runecraft](https://github.com/runecraftai/squad) monorepo.
 
 Agents need quota state before they choose where work can safely run.
 Vendor dashboards are not shaped for shell automation, and local CLIs expose different windows, resets, and auth sources.
