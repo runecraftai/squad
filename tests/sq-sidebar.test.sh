@@ -102,7 +102,12 @@ make_fake_tmux() {  # <dir> -> echoes fakebin path
 printf 'tmux %s\n' "$*" >> "$FAKE_TMUX_LOG"
 case "${1:-}" in
   list-panes) printf '%s\n' "${FAKE_TMUX_PANES:-}" ;;
-  show-option) printf '%s\n' "${FAKE_TMUX_FILTER:-}" ;;
+  show-option) case "${3:-}" in
+      @sq-sidebar-filter) printf '%s\n' "${FAKE_TMUX_FILTER:-}" ;;
+      @sq-sidebar-no-rollup) printf '%s\n' "${FAKE_TMUX_NO_ROLLUP:-}" ;;
+      @sq-sidebar-no-inbox) printf '%s\n' "${FAKE_TMUX_NO_INBOX:-}" ;;
+      *) printf '%s\n' "" ;;
+    esac ;;
 esac
 exit 0
 SH
@@ -374,6 +379,19 @@ assert_eq "click under a filter focuses the filtered frame's window" \
   "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "1"
 assert_eq "click under a filter no longer resolves to the unfiltered frame's row" \
   "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "0"
+
+# A click under a persisted layout toggle (NO_ROLLUP answered by the fake tmux,
+# as run persists it each frame and renders with) must resolve through the same
+# frame the run loop renders. With NO_ROLLUP the rollup row is gone, so the
+# failed card's first line moves from line 3 to line 2; a click on line 2 thus
+# selects sq-eps. On the default (rollup) frame line 2 is the INBOX header, a
+# no-op, so the assert would fail without the click reading the toggle option.
+: > "$FAKE_TMUX_LOG"
+FAKE_TMUX_FILTER= FAKE_TMUX_NO_ROLLUP=1 click_in 2
+assert_eq "click under a persisted NO_ROLLUP resolves through the no-rollup frame" \
+  "$(grep -c 'select-window -t Squad:sq-eps' "$FAKE_TMUX_LOG")" "1"
+assert_eq "the NO_ROLLUP click does not auto-focus the rollup row's neighbour" \
+  "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "0"
 
 # --- (i) toggle opens and closes the sidebar pane --------------------------
 

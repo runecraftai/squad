@@ -569,7 +569,7 @@ render_pane() {  # [BASE]
 }
 
 run() {  # [BASE]: the sidebar pane loop; killed with the pane
-  local base=$1 every n=0 filter
+  local base=$1 every n=0 filter no_rollup no_inbox
   base=$(resolve_base "$base")
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the sidebar pane requires tmux" >&2
@@ -577,6 +577,12 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
   }
   tmux set-option -p @sq-sidebar 1 2>/dev/null || true
   tmux set-option -p @sq-sidebar-base "$base" 2>/dev/null || true
+  if [ -n "${SQ_SIDEBAR_NO_ROLLUP:-}" ]; then
+    tmux set-option -g @sq-sidebar-no-rollup "$SQ_SIDEBAR_NO_ROLLUP" 2>/dev/null || true
+  fi
+  if [ -n "${SQ_SIDEBAR_NO_INBOX:-}" ]; then
+    tmux set-option -g @sq-sidebar-no-inbox "$SQ_SIDEBAR_NO_INBOX" 2>/dev/null || true
+  fi
   every=$(( (REFRESH_SECS + FRAME_SECS - 1) / FRAME_SECS ))
   [ "$every" -lt 1 ] && every=1
   publish "$base" || true
@@ -586,7 +592,10 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
       publish "$base" || true
     fi
     filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
-    SQ_SIDEBAR_FILTER="$filter" render_pane "$base"
+    no_rollup=${SQ_SIDEBAR_NO_ROLLUP:-$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)}
+    no_inbox=${SQ_SIDEBAR_NO_INBOX:-$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)}
+    SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+      SQ_SIDEBAR_NO_INBOX="$no_inbox" render_pane "$base"
     sleep "$FRAME_SECS"
   done
 }
@@ -616,7 +625,9 @@ click() {  # <line> [BASE]
   [ "$line" -ge 1 ] || return 0
   if command -v tmux >/dev/null 2>&1; then
     SQ_SIDEBAR_FILTER=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
-    export SQ_SIDEBAR_FILTER
+    SQ_SIDEBAR_NO_ROLLUP=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
+    SQ_SIDEBAR_NO_INBOX=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
+    export SQ_SIDEBAR_FILTER SQ_SIDEBAR_NO_ROLLUP SQ_SIDEBAR_NO_INBOX
   fi
   window=$(map "$base" | sed -n "${line}p")
   [ -n "$window" ] || return 0
