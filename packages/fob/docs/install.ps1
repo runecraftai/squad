@@ -7,7 +7,7 @@ $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" 
 
 $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest"
 $version = $release.tag_name
-$versionNum = $version.TrimStart("v")
+$versionNum = $version -replace "^fob-", "" -replace "^v", ""
 
 $filename = "fob-v$versionNum-windows-$arch.zip"
 $url = "https://github.com/$repo/releases/download/$version/$filename"

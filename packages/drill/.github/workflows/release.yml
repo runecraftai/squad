@@ -60,6 +60,8 @@ jobs:
           GOOS: darwin
           GOARCH: ${{ matrix.goarch }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
+          # Placeholders: replace with the real Umami endpoint before the
+          # commander-gated live publish.
           UMAMI_HOST: https://a.squad.example
           UMAMI_WEBSITE_ID: f959e889-92f5-4121-8a1f-571b10861198
         run: |
@@ -252,6 +254,8 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
+          # Placeholders: replace with the real Umami endpoint before the
+          # commander-gated live publish.
           UMAMI_HOST: https://a.squad.example
           UMAMI_WEBSITE_ID: f959e889-92f5-4121-8a1f-571b10861198
         run: |
@@ -339,9 +343,9 @@ jobs:
       needs.checksums.result == 'success' &&
       needs.release-please.outputs.release_created == 'true'
     steps:
-      - name: Publish draft release as prerelease
+      - name: Publish draft release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: gh release edit "$TAG" --draft=false --prerelease=true
+        run: gh release edit "$TAG" --draft=false

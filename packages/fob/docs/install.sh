@@ -31,7 +31,8 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-VERSION_NUM="${VERSION#v}"
+VERSION_NUM="${VERSION#fob-}"
+VERSION_NUM="${VERSION_NUM#v}"
 FILENAME="fob-v${VERSION_NUM}-${OS}-${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
 
