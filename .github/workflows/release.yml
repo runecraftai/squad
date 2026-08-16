@@ -1,13 +1,13 @@
 name: Release
 
-# release-please drives one release stream per package (each package has its
+# release-please drives one npm release stream per package (each package has its
 # own release-please-config.json + .release-please-manifest.json under
 # packages/<name>/). On push to main it opens or updates the package's release
 # PR; once that PR is merged, the next run detects the merged PR, creates the
-# GitHub release and tag (drill-v0.1.1, sq-tasks-v0.1.1, ...), and publishes
-# the JS packages to npm. Go binaries (drill, fob) only get releases/tags;
-# drill's release is created as a draft per its config so assets can be
-# attached before publishing.
+# GitHub release and tag (sq-tasks-v0.1.1, ...), and publishes the package to
+# npm. The Go binaries (drill, fob) are distributed as GitHub releases with
+# compiled per-OS/arch assets attached; those are handled by the dedicated
+# release-drill.yml and release-fob.yml workflows, not this npm pipeline.
 #
 # npm publishing needs an NPM_TOKEN repository secret (npm auth token for the
 # publishing account). Without it the publish step fails loudly on the first
@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [drill, fob, pr-review, sq-browser, sq-gh, sq-quota, sq-report, sq-tasks]
+        package: [pr-review, sq-browser, sq-gh, sq-quota, sq-report, sq-tasks]
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -63,12 +63,6 @@ jobs:
         run: |
           set -eu
           cd "packages/${{ matrix.package }}"
-          # Go binaries and private workspace stubs have no npm distribution;
-          # their release is a GitHub release/tag only.
-          if [ ! -f package.json ] || node -e "process.exit(require('./package.json').private ? 0 : 1)"; then
-            echo "No npm package for ${{ matrix.package }} (Go binary); nothing to publish."
-            exit 0
-          fi
           # pr-review is a plain source package with no lockfile and no build;
           # everything else installs frozen deps and builds (prepack also
           # rebuilds as a safety net).
