@@ -172,10 +172,39 @@ spinner_frame() {  # <now>
   printf '%s' "${SPINNER_FRAMES[$idx]}"
 }
 
-# truncate <string> <max-chars>: character-safe (not byte-safe) truncation.
+# truncate <string> <max-chars>: the first <max> UTF-8 characters of <string>,
+# never splitting a multibyte glyph mid-sequence. Locale-independent: bytes are
+# decoded under a forced C locale, so a C/POSIX locale (GitHub runners default
+# to LC_ALL=C) cannot turn cut's -c into byte counting and slice the trailing
+# multibyte unread glyph or spinner off a card line.
 truncate() {  # <string> <max-chars>
-  local s=$1 max=$2
-  printf '%s' "$s" | cut -c1-"$max"
+  local out
+  [ -n "$1" ] || return 0
+  [ "${2:-0}" -gt 0 ] || return 0
+  out=$(
+    LC_ALL=C
+    s=$1
+    max=$2
+    n=0
+    outseg=''
+    while [ -n "$s" ] && [ "$n" -lt "$max" ]; do
+      printf -v byte '%d' "'${s:0:1}"
+      if [ "$byte" -lt 128 ]; then
+        extra=0
+      elif [ "$byte" -lt 224 ]; then
+        extra=1
+      elif [ "$byte" -lt 240 ]; then
+        extra=2
+      else
+        extra=3
+      fi
+      outseg=${outseg}${s:0:$((extra + 1))}
+      s=${s:$((extra + 1))}
+      n=$((n + 1))
+    done
+    printf '%s' "$outseg"
+  )
+  printf '%s' "$out"
 }
 
 label_color() {  # <label> -> ANSI SGR color for the card
