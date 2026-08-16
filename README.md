@@ -164,7 +164,7 @@ Squad's tooling ships as standalone packages under `packages/`, each with its ow
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.
 - [docs/tmux-backend.md](docs/tmux-backend.md) - current setup and limits for the tmux reference backend.
 - [docs/status-notify.md](docs/status-notify.md) - desktop notifications for operator done/blocked wake events, with a tmux focus action.
-- [docs/sq-sidebar.md](docs/sq-sidebar.md) - the ground-truth tmux sidebar: per-operator cards, spinner, and click-to-focus in a togglable pane.
+- [docs/sq-sidebar.md](docs/sq-sidebar.md) - the ground-truth tmux sidebar: per-operator cards, session rollup, INBOX, window-tab badges, and filters in a togglable pane.
 - [docs/web-view.md](docs/web-view.md) - a read-only web dashboard of operator state, served over the LAN for viewing from another machine or a phone.
 - [docs/herdr-backend.md](docs/herdr-backend.md) - current setup, safety boundaries, and limits for the experimental Herdr backend.
 - [docs/zellij-backend.md](docs/zellij-backend.md) - current setup and limits for the experimental Zellij backend.
