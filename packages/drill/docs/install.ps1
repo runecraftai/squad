@@ -4,7 +4,8 @@ $repo = "runecraftai/squad"
 $installDir = "$env:LOCALAPPDATA\drill"
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
 
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest"
+$releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=100"
+$release = $releases | Where-Object { $_.tag_name -like "drill-v*" } | Select-Object -First 1
 $version = $release.tag_name
 if (-not $version) {
     throw "Could not determine latest release"

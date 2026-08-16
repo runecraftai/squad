@@ -45,6 +45,10 @@ func TestCompareVersions(t *testing.T) {
 		{"v1.0.0-rc.1", "v1.0.0-rc.1", 0},
 		// Pre-release of higher version still beats release of lower
 		{"v2.0.0-beta", "v1.0.0", 1},
+		// Component-prefixed release tags
+		{"fob-v2.0.0", "fob-v1.0.0", 1},
+		{"fob-v1.0.0", "fob-v2.0.0", -1},
+		{"fob-v1.0.0", "v1.0.0", 0},
 	}
 
 	for _, tt := range tests {
@@ -69,6 +73,8 @@ func TestParseVersion(t *testing.T) {
 		{"v1.2", [3]int{1, 2, 0}, ""},
 		{"v1.2.3-beta", [3]int{1, 2, 3}, "beta"},
 		{"v1.2.3-rc.1", [3]int{1, 2, 3}, "rc.1"},
+		{"fob-v1.2.3", [3]int{1, 2, 3}, ""},
+		{"fob-v1.2.3-beta", [3]int{1, 2, 3}, "beta"},
 		{"invalid", [3]int{0, 0, 0}, ""},
 	}
 
@@ -429,7 +435,9 @@ func createTestArchive(t *testing.T, content []byte) []byte {
 }
 
 // fakeGitHubServer starts an httptest server that serves a GitHub-like
-// /releases/latest response, an asset download endpoint, and a checksums endpoint.
+// /releases listing response, an asset download endpoint, and a checksums
+// endpoint. The listing includes a newer sibling release (drill-v9.9.9) that
+// must never be selected as fob's latest.
 func fakeGitHubServer(t *testing.T, latestTag string, archiveBytes []byte) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -442,22 +450,30 @@ func fakeGitHubServer(t *testing.T, latestTag string, archiveBytes []byte) *http
 	checksum := hex.EncodeToString(h.Sum(nil))
 	checksumsContent := fmt.Sprintf("%s  %s\n", checksum, assetName)
 
-	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
-		release := githubRelease{
-			TagName: latestTag,
-			Assets: []githubAsset{
-				{
-					Name:               assetName,
-					BrowserDownloadURL: fmt.Sprintf("http://%s/download/%s", r.Host, assetName),
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
+		releases := []githubRelease{
+			{
+				TagName: latestTag,
+				Assets: []githubAsset{
+					{
+						Name:               assetName,
+						BrowserDownloadURL: fmt.Sprintf("http://%s/download/%s", r.Host, assetName),
+					},
+					{
+						Name:               "checksums.txt",
+						BrowserDownloadURL: fmt.Sprintf("http://%s/download/checksums.txt", r.Host),
+					},
 				},
-				{
-					Name:               "checksums.txt",
-					BrowserDownloadURL: fmt.Sprintf("http://%s/download/checksums.txt", r.Host),
+			},
+			{
+				TagName: "drill-v9.9.9",
+				Assets: []githubAsset{
+					{Name: "drill-drill-v9.9.9-linux-amd64.tar.gz", BrowserDownloadURL: "http://example.com/drill-archive"},
 				},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(release)
+		json.NewEncoder(w).Encode(releases)
 	})
 
 	mux.HandleFunc("/download/"+assetName, func(w http.ResponseWriter, r *http.Request) {
@@ -488,10 +504,10 @@ func TestCheckLatestE2E(t *testing.T) {
 	}
 
 	archive := createTestArchive(t, []byte("new-binary-content"))
-	srv := fakeGitHubServer(t, "v2.0.0", archive)
+	srv := fakeGitHubServer(t, "fob-v2.0.0", archive)
 
 	origURL := githubAPIURL
-	githubAPIURL = srv.URL + "/releases/latest"
+	githubAPIURL = srv.URL + "/releases"
 	t.Cleanup(func() { githubAPIURL = origURL })
 
 	result, err := CheckLatest("v1.0.0")
@@ -502,8 +518,8 @@ func TestCheckLatestE2E(t *testing.T) {
 	if !result.UpdateAvailable {
 		t.Error("expected UpdateAvailable=true")
 	}
-	if result.LatestVersion != "v2.0.0" {
-		t.Errorf("LatestVersion = %q, want %q", result.LatestVersion, "v2.0.0")
+	if result.LatestVersion != "fob-v2.0.0" {
+		t.Errorf("LatestVersion = %q, want %q", result.LatestVersion, "fob-v2.0.0")
 	}
 	if result.DownloadURL == "" {
 		t.Error("expected DownloadURL to be set")
@@ -517,8 +533,8 @@ func TestCheckLatestE2E(t *testing.T) {
 	if cached == nil {
 		t.Fatal("expected cache to be written")
 	}
-	if cached.LatestVersion != "v2.0.0" {
-		t.Errorf("cached LatestVersion = %q, want %q", cached.LatestVersion, "v2.0.0")
+	if cached.LatestVersion != "fob-v2.0.0" {
+		t.Errorf("cached LatestVersion = %q, want %q", cached.LatestVersion, "fob-v2.0.0")
 	}
 	if IsCacheStale("v1.0.0") {
 		t.Error("cache should be fresh after CheckLatest")
@@ -533,10 +549,10 @@ func TestCheckLatestNoUpdate(t *testing.T) {
 	}
 
 	archive := createTestArchive(t, []byte("content"))
-	srv := fakeGitHubServer(t, "v1.0.0", archive)
+	srv := fakeGitHubServer(t, "fob-v1.0.0", archive)
 
 	origURL := githubAPIURL
-	githubAPIURL = srv.URL + "/releases/latest"
+	githubAPIURL = srv.URL + "/releases"
 	t.Cleanup(func() { githubAPIURL = origURL })
 
 	result, err := CheckLatest("v1.0.0")
@@ -552,7 +568,7 @@ func TestCheckLatestNoUpdate(t *testing.T) {
 func TestApplyE2E(t *testing.T) {
 	newContent := []byte("#!/bin/sh\necho updated\n")
 	archive := createTestArchive(t, newContent)
-	srv := fakeGitHubServer(t, "v2.0.0", archive)
+	srv := fakeGitHubServer(t, "fob-v2.0.0", archive)
 
 	// Create a fake "current binary" to be replaced
 	targetDir := t.TempDir()
@@ -565,10 +581,10 @@ func TestApplyE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assetName := AssetNameForVersion("v2.0.0")
+	assetName := AssetNameForVersion("fob-v2.0.0")
 	result := &CheckResult{
 		CurrentVersion:  "v1.0.0",
-		LatestVersion:   "v2.0.0",
+		LatestVersion:   "fob-v2.0.0",
 		UpdateAvailable: true,
 		DownloadURL:     srv.URL + "/download/" + assetName,
 		ChecksumURL:     srv.URL + "/download/checksums.txt",
@@ -675,6 +691,8 @@ func TestIsSemver(t *testing.T) {
 	}{
 		{"v2.1.1", true},
 		{"2.1.1", true},
+		{"fob-v2.1.1", true},
+		{"fob-v1.2.3-beta.1", true},
 		{"v2.1.1-3-g4b21c14", true},
 		{"2.1", false},
 		{"v2", false},
@@ -692,5 +710,36 @@ func TestIsSemver(t *testing.T) {
 		if got := IsSemver(tt.version); got != tt.want {
 			t.Errorf("IsSemver(%q) = %v, want %v", tt.version, got, tt.want)
 		}
+	}
+}
+
+func TestNewestFobRelease(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "drill-v9.9.9", Assets: nil},         // sibling, newer
+		{TagName: "sq-tasks-v9.8.0", Assets: nil},      // sibling
+		{TagName: "fob-v2.0.0-rc.1", Prerelease: true}, // prerelease, skipped
+		{TagName: "fob-v1.1.0", Draft: true},           // draft, skipped
+		{TagName: "fob-v2.0.0"},                        // newest stable fob
+		{TagName: "fob-v0.9.9"},
+		{TagName: "fob-not-a-version"},
+	}
+
+	got, err := newestFobRelease(releases)
+	if err != nil {
+		t.Fatalf("newestFobRelease: %v", err)
+	}
+	if got.TagName != "fob-v2.0.0" {
+		t.Errorf("newestFobRelease = %q, want %q", got.TagName, "fob-v2.0.0")
+	}
+}
+
+func TestNewestFobReleaseNone(t *testing.T) {
+	releases := []githubRelease{
+		{TagName: "drill-v9.9.9"},
+		{TagName: "fob-v1.0.0", Draft: true},
+		{TagName: "fob-v1.0.0-rc.1", Prerelease: true},
+	}
+	if _, err := newestFobRelease(releases); err == nil {
+		t.Fatal("expected error when no stable fob release exists")
 	}
 }

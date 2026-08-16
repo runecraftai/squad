@@ -68,7 +68,7 @@ func TestFetchLatestRelease_SendsAuthorizationHeaderFromEnvToken(t *testing.T) {
 	var gotAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		fmt.Fprint(w, `{"tag_name":"v1.2.3","assets":[]}`)
+		fmt.Fprint(w, `[{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[]}]`)
 	}))
 	defer server.Close()
 

@@ -29,7 +29,7 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | grep '^drill-v' | head -n 1)"
 if [ -z "$VERSION" ]; then
   echo "Could not determine latest release"
   exit 1

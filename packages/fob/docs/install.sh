@@ -25,7 +25,7 @@ case "$OS" in
   *) echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
-VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | grep '^fob-v' | head -n 1)"
 if [ -z "$VERSION" ]; then
   echo "Failed to determine latest version"
   exit 1
