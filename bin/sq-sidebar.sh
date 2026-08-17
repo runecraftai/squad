@@ -745,7 +745,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
     filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
     no_rollup=${SQ_SIDEBAR_NO_ROLLUP:-$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)}
     no_inbox=${SQ_SIDEBAR_NO_INBOX:-$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)}
-    layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+    layout=$(tmux show-option -gv -t "$session" @sq-sidebar-layout 2>/dev/null || echo "tiles")
     selected=$(tmux show-option -gv -t "$session" @sq-sidebar-selected 2>/dev/null || echo "-1")
     SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
       SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
@@ -801,9 +801,9 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
         ;;
       v) # toggle layout
         if [ "$layout" = "tiles" ]; then
-          tmux set-option -g @sq-sidebar-layout "compact" 2>/dev/null || true
+          tmux set-option -t "$session" @sq-sidebar-layout "compact" 2>/dev/null || true
         else
-          tmux set-option -g @sq-sidebar-layout "tiles" 2>/dev/null || true
+          tmux set-option -t "$session" @sq-sidebar-layout "tiles" 2>/dev/null || true
         fi
         ;;
       f) # toggle filter
@@ -921,13 +921,15 @@ layout_toggle() {  # [BASE]
     echo "sq-sidebar: tmux not found; the layout key requires tmux" >&2
     exit 1
   }
-  cur=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+  local session
+  session=$(resolve_session)
+  cur=$(tmux show-option -gv -t "$session" @sq-sidebar-layout 2>/dev/null || echo "tiles")
   if [ "$cur" = "tiles" ]; then
     next="compact"
   else
     next="tiles"
   fi
-  tmux set-option -g @sq-sidebar-layout "$next" 2>/dev/null || true
+  tmux set-option -t "$session" @sq-sidebar-layout "$next" 2>/dev/null || true
   printf '%s\n' "$next"
 }
 
@@ -945,7 +947,7 @@ navigate() {  # <direction> [BASE]
   filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
   no_rollup=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
   no_inbox=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
-  layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+  layout=$(tmux show-option -gv -t "$session" @sq-sidebar-layout 2>/dev/null || echo "tiles")
   count=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
     SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
     card_count "$base")
@@ -988,7 +990,7 @@ select_agent() {  # [BASE]
   filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
   no_rollup=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
   no_inbox=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
-  layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+  layout=$(tmux show-option -gv -t "$session" @sq-sidebar-layout 2>/dev/null || echo "tiles")
   target=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
     SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
     card_window_at "$base" "$selected")
@@ -1061,11 +1063,12 @@ last_agent() {
     echo "sq-sidebar: tmux not found; last-agent requires tmux" >&2
     exit 1
   }
-  local current last_window
+  local current last_window session
+  session=$(resolve_session)
   current=$(tmux display-message -p '#{session_name}:#{window_name}' 2>/dev/null || true)
-  last_window=$(tmux show-option -gv @sq-sidebar-last-window 2>/dev/null || true)
+  last_window=$(tmux show-option -gv -t "$session" @sq-sidebar-last-window 2>/dev/null || true)
   if [ -n "$last_window" ] && [ "$last_window" != "$current" ]; then
-    tmux set-option -g @sq-sidebar-last-window "$current" 2>/dev/null || true
+    tmux set-option -t "$session" @sq-sidebar-last-window "$current" 2>/dev/null || true
     tmux select-window -t "$last_window" 2>/dev/null || true
   fi
 }
@@ -1112,7 +1115,9 @@ click() {  # <line> [BASE]
     SQ_SIDEBAR_FILTER=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
     SQ_SIDEBAR_NO_ROLLUP=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
     SQ_SIDEBAR_NO_INBOX=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
-    SQ_SIDEBAR_LAYOUT=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+    local click_session
+    click_session=$(resolve_session)
+    SQ_SIDEBAR_LAYOUT=$(tmux show-option -gv -t "$click_session" @sq-sidebar-layout 2>/dev/null || echo "tiles")
     export SQ_SIDEBAR_FILTER SQ_SIDEBAR_NO_ROLLUP SQ_SIDEBAR_NO_INBOX SQ_SIDEBAR_LAYOUT
   fi
   window=$(map "$base" | sed -n "${line}p")
@@ -1122,9 +1127,10 @@ click() {  # <line> [BASE]
     exit 1
   }
   # Track last window for last-agent
-  local current
+  local current session
+  session=$(resolve_session)
   current=$(tmux display-message -p '#{session_name}:#{window_name}' 2>/dev/null || true)
-  tmux set-option -g @sq-sidebar-last-window "$current" 2>/dev/null || true
+  tmux set-option -t "$session" @sq-sidebar-last-window "$current" 2>/dev/null || true
   tmux select-window -t "$window" 2>/dev/null || true
 }
 
