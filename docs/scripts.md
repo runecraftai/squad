@@ -77,7 +77,6 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
-| `sq-sidebar.sh`          | Render the ground-truth tmux sidebar (rollup, INBOX, cards, badge), toggle the pane, filter, acknowledge done cards, and focus operators (docs/sq-sidebar.md) |
 | `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
