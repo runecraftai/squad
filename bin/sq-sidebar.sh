@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sq-sidebar.sh - Squad ground-truth tmux sidebar (workmux parity).
+# sq-sidebar.sh - Squad Operations Board (workmux-parity tmux sidebar).
 #
 # Renders a per-operator card sidebar in tmux panes from Squad ground truth.
 # The sidebar is a CONSUMER of the ground-truth contract; it never reads
@@ -11,11 +11,13 @@
 # state/<id>.status and renders the sidebar.
 #
 # GLOBAL SIDEBAR (workmux parity):
-# When toggled on, a sidebar pane is created in EVERY tmux window and a hook
-# auto-adds sidebar panes to newly created windows. When toggled off, all
-# sidebar panes are killed and the hook is removed. Every sidebar pane renders
-# the same ground-truth data; the pane placement is per-window, the data is
-# not.
+# When toggled on, a sidebar pane is created in EVERY tmux window of the
+# CURRENT SESSION and a session-scoped hook auto-adds sidebar panes to newly
+# created windows in that session. When toggled off, all sidebar panes in the
+# session are killed and the hook is removed. The sidebar is session-scoped:
+# toggling in one session never affects other concurrent sessions. Every sidebar
+# pane renders the same ground-truth data; the pane placement is per-window,
+# the data is not.
 #
 # LAYOUT MODES:
 #   tiles (default) - two-line cards with status stripe
@@ -29,7 +31,14 @@
 #   g/G     jump to first/last agent
 #   v       toggle layout mode (tiles/compact)
 #   f       toggle session filter
-#   q       close sidebar (with quit confirmation)
+#   q       close sidebar in current session (with quit confirmation)
+#
+# SESSION SCOPING:
+# The sidebar is session-scoped by construction. All tmux hooks, options, and
+# pane operations target the current session only. Global keybindings use
+# session-scoped conditionals: sidebar-local keys (j/k/Enter/g/G/v/f/q) are
+# intercepted only when the current session has an active sidebar pane. This
+# prevents the sidebar from leaking into other concurrent tmux sessions.
 #
 # Visual model (top to bottom, all sections opt-out via env):
 #   rollup   one line per tmux session: its worst (most-actionable) operator
@@ -105,6 +114,11 @@
 #                   vim's Ctrl-^ or tmux's last-window)
 #   reap [BASE]     list stale operators (last status older than threshold);
 #                   display-only, never wired to recovery actions
+#
+# SESSION SCOPING:
+# All sidebar state is session-scoped: @sq-sidebar-active-<session>,
+# @sq-sidebar-session (records which session owns the sidebar pane), hooks
+# use -t <session>, and pane cleanup targets only the current session.
 #   click <line> [BASE]  focus the operator window whose card occupies pane
 #                   line <line> (1-based pane row; the tmux loader passes the
 #                   mouse row and the base recorded by run in @sq-sidebar-base)
@@ -570,6 +584,14 @@ render() {  # [BASE]
   printf '%s' "$out"
 }
 
+# resolve_session: the current tmux session name, or empty when tmux is not
+# available. Used by toggle and q handler to scope operations to the current
+# session only.
+resolve_session() {
+  command -v tmux >/dev/null 2>&1 || return 0
+  tmux display-message -p '#{session_name}' 2>/dev/null || true
+}
+
 # badge <window> [BASE]: a colored state icon for a window-status-format tab,
 # with no trailing newline; done+unread prepends the unread glyph.
 badge() {  # <window> [BASE]
@@ -786,16 +808,20 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
       f) # toggle filter
         filter=$(SQ_SIDEBAR_BASE="$base" "$SELF" filter 2>/dev/null || true)
         ;;
-      q) # quit sidebar
-        # Kill all sidebar panes globally
-        tmux list-panes -a -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
-          awk '$2 == 1 {print $1}' | while read -r pane; do
-            tmux kill-pane -t "$pane" 2>/dev/null || true
-          done
-        tmux set-hook -gu after-new-window 2>/dev/null || true
-        tmux set-option -gu @sq-sidebar-global 2>/dev/null || true
-        tmux set-option -gu @sq-sidebar-base 2>/dev/null || true
-        tmux set-option -gu @sq-sidebar-selected 2>/dev/null || true
+      q) # quit sidebar (session-scoped)
+        local q_session
+        q_session=$(resolve_session)
+        if [ -n "$q_session" ]; then
+          # Kill sidebar panes in THIS session only
+          tmux list-panes -t "$q_session" -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
+            awk '$2 == 1 {print $1}' | while read -r pane; do
+              tmux kill-pane -t "$pane" 2>/dev/null || true
+            done
+          tmux set-hook -t "$q_session" -u after-new-window 2>/dev/null || true
+          tmux set-option -t "$q_session" -u @sq-sidebar-active-"$q_session" 2>/dev/null || true
+          tmux set-option -t "$q_session" -u @sq-sidebar-session 2>/dev/null || true
+          tmux set-option -t "$q_session" -u @sq-sidebar-selected 2>/dev/null || true
+        fi
         exit 0
         ;;
       $'\n'|$'\r') # Enter - jump to selected agent
@@ -812,9 +838,10 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
   done
 }
 
-# toggle [BASE]: GLOBAL sidebar toggle. When active, kills all sidebar panes
-# and removes the hook. When inactive, creates sidebar panes in ALL windows
-# and installs a hook for new windows.
+# toggle [BASE]: SESSION-SCOPED sidebar toggle. When active in the current
+# session, kills all sidebar panes in that session and removes the session
+# hook. When inactive, creates sidebar panes in ALL windows of the current
+# session and installs a session-scoped hook for new windows.
 toggle() {  # [BASE]
   local base=$1
   base=$(resolve_base "$base")
@@ -823,31 +850,40 @@ toggle() {  # [BASE]
     exit 1
   }
 
-  # Check if global sidebar is active
-  local global_active
-  global_active=$(tmux show-option -gv @sq-sidebar-global 2>/dev/null || true)
+  local session
+  session=$(resolve_session)
+  [ -n "$session" ] || {
+    echo "sq-sidebar: cannot resolve current session" >&2
+    exit 1
+  }
 
-  if [ "$global_active" = "1" ]; then
-    # Toggle OFF: kill all sidebar panes and remove hook
-    tmux list-panes -a -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
+  # Check if sidebar is active in THIS session (not globally)
+  local session_active
+  session_active=$(tmux show-option -gv @sq-sidebar-active-"$session" 2>/dev/null || true)
+
+  if [ "$session_active" = "1" ]; then
+    # Toggle OFF: kill sidebar panes in THIS session only, remove session hook
+    tmux list-panes -t "$session" -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
       awk '$2 == 1 {print $1}' | while read -r pane; do
         tmux kill-pane -t "$pane" 2>/dev/null || true
       done
-    tmux set-hook -gu after-new-window 2>/dev/null || true
-    tmux set-option -gu @sq-sidebar-global 2>/dev/null || true
-    tmux set-option -gu @sq-sidebar-base 2>/dev/null || true
-    tmux set-option -gu @sq-sidebar-selected 2>/dev/null || true
+    tmux set-hook -t "$session" -u after-new-window 2>/dev/null || true
+    tmux set-option -t "$session" -u @sq-sidebar-active-"$session" 2>/dev/null || true
+    tmux set-option -t "$session" -u @sq-sidebar-session 2>/dev/null || true
+    tmux set-option -t "$session" -u @sq-sidebar-selected 2>/dev/null || true
     return 0
   fi
 
-  # Toggle ON: set global option and install hook
-  tmux set-option -g @sq-sidebar-global 1
-  tmux set-option -g @sq-sidebar-base "$base"
-  tmux set-option -g @sq-sidebar-selected -1
-  tmux set-hook -g after-new-window "run-shell '#{q:@sq-sidebar-path} add-pane #{q:@sq-sidebar-base}'"
+  # Toggle ON: set session option and install session-scoped hook
+  tmux set-option -t "$session" @sq-sidebar-active-"$session" 1
+  tmux set-option -t "$session" @sq-sidebar-session "$session"
+  tmux set-option -t "$session" @sq-sidebar-base "$base"
+  tmux set-option -t "$session" @sq-sidebar-selected -1
+  # Session-scoped hook: only fires for windows created in THIS session
+  tmux set-hook -t "$session" after-new-window "run-shell '#{q:@sq-sidebar-path} add-pane #{q:@sq-sidebar-base}'"
 
-  # Create sidebar panes in all existing windows
-  tmux list-windows -F '#{session_name}:#{window_index}' 2>/dev/null | while read -r win; do
+  # Create sidebar panes in all existing windows of THIS session
+  tmux list-windows -t "$session" -F '#{session_name}:#{window_index}' 2>/dev/null | while read -r win; do
     # Skip if this window already has a sidebar pane
     local existing
     existing=$(tmux list-panes -t "$win" -F '#{@sq-sidebar}' 2>/dev/null | grep -c '^1$' || true)
@@ -855,7 +891,7 @@ toggle() {  # [BASE]
       continue
     fi
     # Create sidebar pane in this window
-    tmux split-window -t "$win" -bh -l "$WIDTH" -e "SQ_SIDEBAR_BASE=$base" "$SELF run" 2>/dev/null || true
+    tmux split-window -t "$win" -h -p 17 -e "SQ_SIDEBAR_BASE=$base" "$SELF run" 2>/dev/null || true
   done
 }
 
@@ -1153,6 +1189,7 @@ case "${1:-}" in
   focus) shift; focus "${1:-}" ;;
   *)
     echo "usage: sq-sidebar.sh cards|inbox|render|map|badge|ack|filter|next-inbox|publish|run|toggle|add-pane|layout|navigate|select|first|last|last-done|last-agent|reap|click|focus [BASE]" >&2
+echo "  Squad Operations Board - tmux sidebar for operator monitoring" >&2
     exit 1
     ;;
 esac

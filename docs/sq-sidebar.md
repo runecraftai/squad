@@ -1,20 +1,31 @@
-# Squad ground-truth tmux sidebar (sq-sidebar)
+# Squad Operations Board (tmux sidebar)
 
 `bin/sq-sidebar.sh` renders a per-operator card sidebar in tmux panes, powered by Squad ground truth instead of screen reading.
-It replaces the old tmux-agents-mon sidebar on the commander's machine; the machine-side swap is a separate follow-up.
+It is the Operations Board: a session-scoped tmux sidebar that shows operator status, enables quick navigation, and surfaces attention-needing operators.
 The sidebar is a pure consumer of the ground-truth contract: it reads `state/window-states` (published by `bin/sq-window-state.sh`, whose header owns the file contract), `state/<id>.meta`, `state/<id>.busy-gen`, and `state/<id>.status`.
 It never reads screens and never maps Squad verbs itself: `bin/sq-window-state.sh` owns the verb to label translation and `bin/sq-classify-lib.sh` owns the status vocabulary.
 
 The script header owns the full command, environment, and behavior reference.
 This page covers setup, usage, and the interface contract with the machine-side scripts.
 
+## Session scoping
+
+The sidebar is session-scoped by construction.
+All tmux hooks, options, and pane operations target the current session only.
+Global keybindings (C-M-s/n/a/f/d/l) work from any session, but sidebar-local keys (j/k/Enter/g/G/v/f/q) are intercepted only when the current session has an active sidebar pane.
+This prevents the sidebar from leaking into other concurrent tmux sessions.
+
+Toggle the sidebar on in one session; open a second tmux session side by side.
+The second session must show no sidebar pane and its keys must pass through normally.
+Toggle the sidebar off in the first session; the second session remains unaffected.
+
 ## Global sidebar (workmux parity)
 
-When toggled on, a sidebar pane is created in EVERY tmux window and a tmux hook (`after-new-window`) auto-adds sidebar panes to newly created windows.
-When toggled off, all sidebar panes are killed and the hook is removed.
+When toggled on, a sidebar pane is created in EVERY tmux window of the CURRENT SESSION and a session-scoped tmux hook (`after-new-window`) auto-adds sidebar panes to newly created windows in that session.
+When toggled off, all sidebar panes in the session are killed and the hook is removed.
 Every sidebar pane renders the same ground-truth data; the pane placement is per-window, the data is not.
 
-This matches workmux's default sidebar behavior: the sidebar is always visible across all windows without needing to toggle per-window.
+This matches workmux's default sidebar behavior: the sidebar is always visible across all windows without needing to toggle per-window, but scoped to the current session to prevent cross-session interference.
 
 ## Layout modes
 
@@ -85,6 +96,14 @@ No explicit cleanup step is needed; the ground-truth contract handles card lifec
 - A UTF-8 terminal for the spinner and state glyphs; `SQ_SIDEBAR_SPINNER` can replace them with ASCII frames.
 - A Squad base with tmux task windows; the sidebar shows nothing when `state/window-states` is absent or empty.
 
+## Session isolation verification
+
+After toggling the sidebar on in one session, verify cross-session isolation:
+1. Open a second tmux session: `tmux new-session -s test-isolation`
+2. Confirm the second session has no sidebar pane and keys pass through normally
+3. Toggle sidebar off in the first session; confirm the second session is unaffected
+4. Close the test session: `tmux kill-session -t test-isolation`
+
 ## Install and load
 
 The plugin loads as a `.tmux` shell script, the same way tmux plugin managers run plugins.
@@ -112,6 +131,8 @@ Do not use `tmux source-file` on the loader: the loader is shell, not tmux confi
 
 ### Sidebar-local keybindings (when the sidebar pane is focused)
 
+These keys are intercepted only when the current session has an active sidebar pane; in other sessions, they pass through normally.
+
 | Key | Action |
 | --- | ------ |
 | `j` | Navigate down (select next card) |
@@ -121,7 +142,7 @@ Do not use `tmux source-file` on the loader: the loader is shell, not tmux confi
 | `G` | Jump to the last agent |
 | `v` | Toggle layout mode (tiles/compact) |
 | `f` | Toggle session filter |
-| `q` | Close the sidebar globally (with quit confirmation) |
+| `q` | Close the sidebar in current session (with quit confirmation) |
 
 The pane shows the rollup, the INBOX, and one card per operator window, and re-renders every second; the ground truth it reads is re-published every two seconds.
 Click a card with the mouse to focus that operator's tmux window.
