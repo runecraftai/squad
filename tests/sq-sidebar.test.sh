@@ -79,7 +79,27 @@ PATH="$TMP_ROOT:$PATH" env -u SQUAD_BASE -u SQUAD_HOME \
 assert_no_grep "set-environment" "$FAKE_TMUX_LOG" \
   "loader does not pin when no Squad base is set"
 
-# --- (e) plugin is shellcheck-clean ---
+# --- (e) plugin starts publish driver when sq-window-state.sh exists ---
+
+# Create a fake sq-window-state.sh that logs calls
+FAKE_WS_DIR="$TMP_ROOT/squad-base/bin"
+mkdir -p "$FAKE_WS_DIR"
+FAKE_WS_LOG="$TMP_ROOT/ws-publish.log"
+cat > "$FAKE_WS_DIR/sq-window-state.sh" <<SH
+#!/usr/bin/env bash
+echo "publish" >> "$FAKE_WS_LOG"
+SH
+chmod +x "$FAKE_WS_DIR/sq-window-state.sh"
+
+rm -f "$FAKE_TMUX_LOG" "$FAKE_WS_LOG"
+PATH="$TMP_ROOT:$PATH" SQUAD_BASE="$TMP_ROOT/squad-base" \
+  bash "$ROOT/tmux/workmux-sidebar.tmux"
+
+# Verify the publish loop was started (pid was set)
+assert_grep "set-option -g @workmux_publish_pid" "$FAKE_TMUX_LOG" \
+  "publish driver pid is registered"
+
+# --- (f) plugin is shellcheck-clean ---
 
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/tmux/workmux-sidebar.tmux"; then

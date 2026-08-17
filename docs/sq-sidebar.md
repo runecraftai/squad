@@ -97,6 +97,8 @@ sidebar:
 
 The sidebar is a pure consumer of Squad's ground-truth contract. `bin/sq-window-state.sh` owns the verb-to-label translation and publishes to `state/window-states`. The sidebar never reads screens.
 
+The tmux plugin starts a background publish loop that calls `bin/sq-window-state.sh publish` every 2 seconds (replacing the old sidebar's run loop, which was the only caller). The loop exits when the tmux server dies.
+
 See `bin/sq-window-state.sh` header for the file format contract.
 
 ## Limits

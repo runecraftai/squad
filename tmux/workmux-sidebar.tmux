@@ -29,5 +29,29 @@ if [ -n "${SQUAD_HOME:-}" ]; then
   tmux set-environment -g SQUAD_HOME "$SQUAD_HOME"
 fi
 
+# Resolve Squad base for the publish driver
+_pub_base="${SQUAD_BASE:-${SQUAD_HOME:-$HOME/.fob/squad}}"
+_pub_bin="$_pub_base/bin/sq-window-state.sh"
+
+# Kill any previous publish loop for this server
+prev_pid=$(tmux show-option -gqv @workmux_publish_pid 2>/dev/null || true)
+if [ -n "$prev_pid" ] && kill -0 "$prev_pid" 2>/dev/null; then
+  kill "$prev_pid" 2>/dev/null || true
+fi
+
+# Start background publish loop if sq-window-state.sh exists.
+# The old sidebar's run loop was the only caller of publish; this
+# replaces it with a lightweight background loop that keeps
+# state/window-states fresh for the workmux data source.
+if [ -f "$_pub_bin" ]; then
+  (
+    while tmux list-sessions -F '#{session_name}' >/dev/null 2>&1; do
+      "$_pub_bin" publish 2>/dev/null || true
+      sleep 2
+    done
+  ) &
+  tmux set-option -g @workmux_publish_pid "$!"
+fi
+
 # Bind C-M-s to toggle the workmux sidebar
 tmux bind-key -n C-M-s run-shell "workmux sidebar"
