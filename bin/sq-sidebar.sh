@@ -851,15 +851,15 @@ toggle() {  # [BASE]
   session_active=$(tmux show-option -gv @sq-sidebar-active-"$session" 2>/dev/null || true)
 
   if [ "$session_active" = "1" ]; then
-    # Toggle OFF: kill sidebar panes in THIS session only, remove session hook
-    tmux list-panes -t "$session" -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
-      awk '$2 == 1 {print $1}' | while read -r pane; do
-        tmux kill-pane -t "$pane" 2>/dev/null || true
-      done
+    # Toggle OFF: clean session state while current pane is still alive, then kill
     tmux set-hook -t "$session" -u after-new-window 2>/dev/null || true
     tmux set-option -t "$session" -u @sq-sidebar-active-"$session" 2>/dev/null || true
     tmux set-option -t "$session" -u @sq-sidebar-session 2>/dev/null || true
     tmux set-option -t "$session" -u @sq-sidebar-selected 2>/dev/null || true
+    tmux list-panes -t "$session" -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
+      awk '$2 == 1 {print $1}' | while read -r pane; do
+        tmux kill-pane -t "$pane" 2>/dev/null || true
+      done
     return 0
   fi
 
