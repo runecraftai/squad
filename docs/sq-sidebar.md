@@ -12,6 +12,12 @@ The workmux sidebar reads from Squad's ground-truth state files:
 
 When `SQUAD_BASE` or `SQUAD_HOME` is set, workmux automatically uses the Squad data source instead of its default tmux monitoring.
 
+The tmux plugin runs `workmux sidebar` in the tmux server's environment, so the variables must be visible there. The loader pins any `SQUAD_BASE` / `SQUAD_HOME` it sees at load time into the server's global environment (`tmux set-environment -g`), covering the common case where tmux is started from a shell that exports them. If tmux was started before the variables were exported, set them globally in `~/.config/tmux/tmux.conf` so the sidebar still selects the Squad data source:
+
+```conf
+set-environment -g SQUAD_BASE /path/to/your/squad-base
+```
+
 ## Install
 
 Install workmux from the Squad fork. The Squad integration (meta parsing and
@@ -44,7 +50,7 @@ Add to `~/.config/tmux/tmux.conf`:
 run-shell "/path/to/squad/tmux/workmux-sidebar.tmux"
 ```
 
-The plugin binds `C-M-s` to toggle the sidebar.
+The plugin binds `C-M-s` to toggle the sidebar, and requires workmux in `PATH`.
 
 ## Usage
 

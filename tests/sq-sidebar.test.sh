@@ -5,7 +5,11 @@
 # These tests verify:
 #   (a) tmux/workmux-sidebar.tmux loads and binds C-M-s to workmux sidebar
 #   (b) The plugin fails closed when workmux is not in PATH
-#   (c) The plugin file is valid shell (shellcheck-clean)
+#   (c) The plugin pins any visible SQUAD_BASE/SQUAD_HOME into the tmux
+#       server's global environment (so the run-shell binding always sees
+#       the Squad data source even after attachments from other shells)
+#   (d) The plugin issues no set-environment when no Squad base is visible
+#   (e) The plugin file is valid shell (shellcheck-clean)
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -53,7 +57,29 @@ else
   pass "plugin exits non-zero when workmux is not found"
 fi
 
-# --- (c) plugin is shellcheck-clean ---
+# --- (c) plugin pins visible Squad base into the server environment ---
+
+rm -f "$FAKE_TMUX_LOG"
+PATH="$TMP_ROOT:$PATH" SQUAD_BASE=/squad/base SQUAD_HOME=/squad/home \
+  bash "$ROOT/tmux/workmux-sidebar.tmux"
+
+assert_grep "set-environment -g SQUAD_BASE /squad/base" "$FAKE_TMUX_LOG" \
+  "loader pins SQUAD_BASE into the server environment"
+assert_grep "set-environment -g SQUAD_HOME /squad/home" "$FAKE_TMUX_LOG" \
+  "loader pins SQUAD_HOME into the server environment"
+assert_grep "bind-key -n C-M-s run-shell workmux sidebar" "$FAKE_TMUX_LOG" \
+  "C-M-s is still bound when a Squad base is pinned"
+
+# --- (d) plugin issues no set-environment when no Squad base is visible ---
+
+rm -f "$FAKE_TMUX_LOG"
+PATH="$TMP_ROOT:$PATH" env -u SQUAD_BASE -u SQUAD_HOME \
+  bash "$ROOT/tmux/workmux-sidebar.tmux"
+
+assert_no_grep "set-environment" "$FAKE_TMUX_LOG" \
+  "loader does not pin when no Squad base is set"
+
+# --- (e) plugin is shellcheck-clean ---
 
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/tmux/workmux-sidebar.tmux"; then
