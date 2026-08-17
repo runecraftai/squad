@@ -809,20 +809,8 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
       f) # toggle filter
         filter=$(SQ_SIDEBAR_BASE="$base" "$SELF" filter 2>/dev/null || true)
         ;;
-      q) # quit sidebar (session-scoped)
-        local q_session
-        q_session=$(resolve_session)
-        if [ -n "$q_session" ]; then
-          # Kill sidebar panes in THIS session only
-          tmux list-panes -t "$q_session" -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
-            awk '$2 == 1 {print $1}' | while read -r pane; do
-              tmux kill-pane -t "$pane" 2>/dev/null || true
-            done
-          tmux set-hook -t "$q_session" -u after-new-window 2>/dev/null || true
-          tmux set-option -t "$q_session" -u @sq-sidebar-active-"$q_session" 2>/dev/null || true
-          tmux set-option -t "$q_session" -u @sq-sidebar-session 2>/dev/null || true
-          tmux set-option -t "$q_session" -u @sq-sidebar-selected 2>/dev/null || true
-        fi
+      q) # quit sidebar (session-scoped) — delegate to toggle for clean shutdown
+        toggle "$base"
         exit 0
         ;;
       $'\n'|$'\r') # Enter - jump to selected agent
