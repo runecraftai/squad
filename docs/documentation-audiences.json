@@ -400,6 +400,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/standalone-publication-readiness.md",
+   "audience": "maintainer-verification"
+  },
+  {
    "path": "docs/sq-test-isolation-proof.md",
    "audience": "maintainer-verification"
   },
