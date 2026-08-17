@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # sq-window-state.sh - publish per-window ground truth for the tmux sidebar.
 #
-# The sidebar that consumes this file is the ground-truth sq-sidebar
-# (tmux/sq-sidebar.tmux, see docs/sq-sidebar.md), which never reads screens;
+# The sidebar that consumes this file is the workmux sidebar (Squad fork,
+# tmux/workmux-sidebar.tmux, see docs/sq-sidebar.md), which never reads screens;
 # the tmux-agents-mon sidebar it replaces classified operator panes by screen
 # reading, which is a signal, not a guarantee. Squad owns the actual truth:
 # state/<id>.status wake-event lines plus the harness busy state, reconciled
@@ -14,9 +14,9 @@
 # notification watcher) and does NOT re-derive status semantics
 # (bin/sq-classify-lib.sh owns the status-event vocabulary, bin/sq-crew-state.sh
 # owns current-state reconciliation). It is a pure one-shot derivation: run
-# `publish` on the sidebar's refresh cadence (the sidebar itself re-scans every
-# 2s), from a tmux status-interval hook, or from any periodic or event-driven
-# driver a consumer already runs - no daemon is needed here.
+# `publish` from a tmux status-interval hook or any periodic or event-driven
+# driver a consumer owns; the sidebar itself only reads the published file -
+# no daemon is needed here.
 #
 # File contract (owned by this header; docs/configuration.md "Operational base
 # layout and state" points here):
