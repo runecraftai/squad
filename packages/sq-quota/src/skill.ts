@@ -3,7 +3,7 @@ import { DESCRIPTION, TOP_HELP } from "./cli.js";
 // Trigger string Claude Code (and other agents) match against to auto-load the skill.
 // Kept terse and outcome-focused so it fires on "check quota/rate limits" intents.
 export const SKILL_DESCRIPTION =
-  "Report local Claude, Codex, Cursor, GitHub Copilot, Grok, and Kimi quota windows via the sq-quota CLI - remaining " +
+  "Report local Claude, Codex, Cursor, GitHub Copilot, Grok, Kimi, and OpenCode quota windows via the sq-quota CLI - remaining " +
   "effective usable runway, percentages, reset times, cycle-average pace vs the reset clock, and provider status read from local auth sources, " +
   "with no routing, provider mutation, or default ordering preference. Use before deciding whether it is safe " +
   "to keep spending a provider's quota, when the user asks about usage, rate limits, pace, or " +
@@ -24,6 +24,7 @@ export const HERMES_TAGS = [
   "copilot",
   "grok",
   "kimi",
+  "opencode",
   "cli",
 ];
 export const HERMES_CATEGORY = "observability";
@@ -74,7 +75,7 @@ or when comparing supported local provider headroom side by side.
 ## Workflow
 
 1. Run \`npx -y @runecraft/sq-quota\` for compact TOON output covering supported providers' quota windows.
-2. Scope to one provider with \`--provider claude\` or to a subset with \`--provider cursor,copilot,grok,kimi\`.
+2. Scope to one provider with \`--provider claude\` or to a subset with \`--provider cursor,copilot,grok,kimi,opencode\`. By default only providers with local credentials are shown; pass \`--all-providers\` to show every known provider.
 3. Pass \`--json\` for the normalized machine-readable model instead of TOON. Read
    \`quotaSemantics.effectiveAvailability\` rather than treating a model window in isolation:
    account windows can bound every model, and \`boundedBy\` names every window included in the

@@ -88,6 +88,14 @@ function semanticsFor(
         provider.state.untrustedWindowIds ?? [],
         generatedAt,
       );
+    case "opencode":
+      return {
+        status: "unknown",
+        description:
+          provider.quotaSemantics?.description ??
+          "OpenCode/Zen has no public quota API, so effective remaining is unknown.",
+        effectiveAvailability: [],
+      };
     case "cursor":
     case "copilot":
       return unknownSemantics(

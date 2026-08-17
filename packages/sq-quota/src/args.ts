@@ -13,6 +13,10 @@ export type QuotaFlags = {
   refreshSeconds?: number;
   /** Render one `--tui` frame and exit instead of staying live. */
   once: boolean;
+  /** Show all known providers even if they have no local credentials. */
+  allProviders: boolean;
+  /** Whether the user explicitly specified providers via --provider. */
+  providersExplicit: boolean;
 };
 
 /** Refresh bounds: fast enough to feel live, slow enough to stay polite. */
@@ -75,6 +79,7 @@ function parseCommonFlags(
   let once = false;
   let refreshSeconds: number | undefined;
   let allowKeychainPrompt = false;
+  let allProviders = false;
   let intelligence: IntelligenceBucket | undefined;
   let sort: ModelSortKey | undefined;
 
@@ -110,6 +115,10 @@ function parseCommonFlags(
     }
     if (arg === "--allow-keychain-prompt") {
       allowKeychainPrompt = true;
+      continue;
+    }
+    if (arg === "--all-providers") {
+      allProviders = true;
       continue;
     }
     if (arg === "--intelligence") {
@@ -184,6 +193,8 @@ function parseCommonFlags(
     tui,
     once,
     allowKeychainPrompt,
+    allProviders,
+    providersExplicit: providerValue !== undefined,
     ...(refreshSeconds !== undefined ? { refreshSeconds } : {}),
     ...(intelligence ? { intelligence } : {}),
     ...(sort ? { sort } : {}),
@@ -240,7 +251,7 @@ function parseProviderScope(value: string | undefined): ProviderId[] {
     throw new AxiError(
       error instanceof Error ? error.message : "unsupported provider",
       "VALIDATION_ERROR",
-      ["Supported providers: claude, codex, cursor, copilot, grok, kimi"],
+      ["Supported providers: claude, codex, cursor, copilot, grok, kimi, opencode"],
     );
   }
 }

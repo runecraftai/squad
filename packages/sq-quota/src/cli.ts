@@ -15,12 +15,14 @@ commands[3]:
   (none)=quota, auth, models
 output:
   Default TOON reports local quota evidence. models is a deterministic data join; --sort runway is explicit opt-in ordering. --tui renders a live human terminal report instead (q quits).
-flags[11]:
-  --provider <claude,codex,cursor,copilot,grok,kimi>, --json, --full, --tui, --refresh <30s-24h>, --once, --allow-keychain-prompt, --intelligence <high|medium|low>, --sort <runway>, --help, -v/--version
+  By default, only providers with local credentials are shown. Use --all-providers to show every known provider.
+flags[12]:
+  --provider <claude,codex,cursor,copilot,grok,kimi,opencode>, --json, --full, --tui, --refresh <30s-24h>, --once, --allow-keychain-prompt, --all-providers, --intelligence <high|medium|low>, --sort <runway>, --help, -v/--version
 examples:
   sq-quota
   sq-quota --provider claude
-  sq-quota --provider cursor,copilot,grok,kimi
+  sq-quota --provider cursor,copilot,grok,kimi,opencode
+  sq-quota --all-providers
   sq-quota --json
   sq-quota --full
   sq-quota --tui
