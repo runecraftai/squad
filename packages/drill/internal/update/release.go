@@ -110,34 +110,50 @@ func (u *updater) fetchLatestRelease(ctx context.Context) (*releaseResponse, err
 	if u.includePrereleases {
 		return u.fetchLatestReleaseIncludingPrereleases(ctx)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(u.apiBaseURL, "/")+"/repos/"+u.repo+"/releases/latest", nil)
+	releases, err := u.fetchAllReleases(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("build release request: %w", err)
+		return nil, err
 	}
-	applyGitHubAuth(req)
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch latest release: %w", err)
+	return selectNewestComponentRelease(u.appName, releases, false)
+}
+
+// selectNewestComponentRelease returns the newest non-draft release whose tag
+// belongs to the given component, preferring the highest semver. Releases from
+// sibling components (fob, sq-*, ...) are ignored so a sibling's newer release
+// can never be mistaken for this component's latest.
+func selectNewestComponentRelease(component string, releases []releaseResponse, includePrereleases bool) (*releaseResponse, error) {
+	var best *releaseResponse
+	var bestVer semVersion
+	for i := range releases {
+		r := &releases[i]
+		if r.Draft || r.TagName == "" || (r.Prerelease && !includePrereleases) {
+			continue
+		}
+		if !tagBelongsToComponent(component, r.TagName) {
+			continue
+		}
+		ver, err := parseVersion(r.TagName)
+		if err != nil {
+			continue
+		}
+		if best == nil || ver.compare(bestVer) > 0 {
+			best = r
+			bestVer = ver
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch latest release: unexpected status %d", resp.StatusCode)
+	if best == nil {
+		return nil, fmt.Errorf("no %s release found", component)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("read latest release: %w", err)
-	}
-	if len(body) > maxAPIResponseSize {
-		return nil, fmt.Errorf("latest release response exceeds %d bytes", maxAPIResponseSize)
-	}
-	var release releaseResponse
-	if err := json.Unmarshal(body, &release); err != nil {
-		return nil, fmt.Errorf("parse latest release: %w", err)
-	}
-	if release.TagName == "" {
-		return nil, fmt.Errorf("latest release missing tag_name")
-	}
-	return &release, nil
+	return best, nil
+}
+
+// tagBelongsToComponent reports whether a tag belongs to the given component:
+// only the "<component>-" prefixed form this repo's release-please produces
+// ("drill-v0.1.1"). A bare semver tag ("v2.1.1") belongs to a release without
+// a component prefix and never matches, so a sibling's newer release cannot
+// win component selection.
+func tagBelongsToComponent(component, tag string) bool {
+	return strings.HasPrefix(tag, component+"-")
 }
 
 // fetchLatestReleaseIncludingPrereleases finds the highest-semver release including
@@ -169,6 +185,9 @@ func (u *updater) fetchLatestReleaseIncludingPrereleases(ctx context.Context) (*
 	var candidates []candidate
 	add := func(name string) {
 		if name == "" {
+			return
+		}
+		if !tagBelongsToComponent(u.appName, name) {
 			return
 		}
 		if _, ok := seen[name]; ok {
@@ -225,7 +244,7 @@ func (u *updater) fetchLatestReleaseIncludingPrereleases(ctx context.Context) (*
 }
 
 func (u *updater) fetchAllReleases(ctx context.Context) ([]releaseResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(u.apiBaseURL, "/")+"/repos/"+u.repo+"/releases", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(u.apiBaseURL, "/")+"/repos/"+u.repo+"/releases?per_page=100", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build releases request: %w", err)
 	}

@@ -25,6 +25,10 @@ func TestCompareVersions(t *testing.T) {
 		{name: "prerelease with build metadata", a: "v1.2.3-rc1+abc", b: "v1.2.3-rc1+def", wantCmp: 0},
 		{name: "different prerelease lengths", a: "v1.2.3-alpha.1", b: "v1.2.3-alpha", wantCmp: 1},
 		{name: "numeric prerelease less than string", a: "v1.2.3-1", b: "v1.2.3-alpha", wantCmp: -1},
+		{name: "component prefix equal", a: "drill-v1.2.3", b: "v1.2.3", wantCmp: 0},
+		{name: "component prefix newer", a: "drill-v1.2.4", b: "drill-v1.2.3", wantCmp: 1},
+		{name: "component prefix older", a: "drill-v1.2.3", b: "drill-v1.2.4", wantCmp: -1},
+		{name: "component prefix prerelease", a: "drill-v1.2.3-beta.1", b: "drill-v1.2.3", wantCmp: -1},
 	}
 
 	for _, tt := range tests {
@@ -43,5 +47,8 @@ func TestCompareVersions(t *testing.T) {
 func TestCompareVersionsRejectsInvalid(t *testing.T) {
 	if _, err := compareVersions("dev", "v1.2.3"); err == nil {
 		t.Fatal("compareVersions should reject non-semver input")
+	}
+	if _, err := compareVersions("4b21c14-dirty", "v1.2.3"); err == nil {
+		t.Fatal("compareVersions should reject dev hashes")
 	}
 }

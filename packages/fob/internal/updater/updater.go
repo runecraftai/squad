@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultGitHubAPIURL = "https://api.github.com/repos/runecraftai/squad/releases/latest"
+	defaultGitHubAPIURL = "https://api.github.com/repos/runecraftai/squad/releases"
 	cacheFileName       = "update-check.json"
 	checksumsFile       = "checksums.txt"
 	cacheTTL            = 24 * time.Hour
@@ -57,8 +57,10 @@ type CacheEntry struct {
 
 // githubRelease is the subset of the GitHub API response we need.
 type githubRelease struct {
-	TagName string        `json:"tag_name"`
-	Assets  []githubAsset `json:"assets"`
+	TagName    string        `json:"tag_name"`
+	Draft      bool          `json:"draft"`
+	Prerelease bool          `json:"prerelease"`
+	Assets     []githubAsset `json:"assets"`
 }
 
 type githubAsset struct {
@@ -71,7 +73,7 @@ func CheckLatest(currentVersion string) (*CheckResult, error) {
 	client := &http.Client{Timeout: httpTimeout}
 	resp, err := client.Get(githubAPIURL)
 	if err != nil {
-		return nil, fmt.Errorf("fetching latest release: %w", err)
+		return nil, fmt.Errorf("fetching releases: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -79,9 +81,14 @@ func CheckLatest(currentVersion string) (*CheckResult, error) {
 		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
-	var release githubRelease
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAPIResponseSize)).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decoding release: %w", err)
+	var releases []githubRelease
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAPIResponseSize)).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decoding releases: %w", err)
+	}
+
+	release, err := newestFobRelease(releases)
+	if err != nil {
+		return nil, err
 	}
 
 	// Write cache
@@ -108,6 +115,30 @@ func CheckLatest(currentVersion string) (*CheckResult, error) {
 	}
 
 	return result, nil
+}
+
+// newestFobRelease returns the newest non-draft, non-prerelease release whose
+// tag belongs to fob ("fob-vX.Y.Z"), preferring the highest semver. Releases
+// from sibling components (drill, sq-*, ...) are ignored so a sibling's newer
+// release can never be mistaken for fob's latest.
+func newestFobRelease(releases []githubRelease) (*githubRelease, error) {
+	var best *githubRelease
+	for i := range releases {
+		r := &releases[i]
+		if r.Draft || r.Prerelease || !strings.HasPrefix(r.TagName, "fob-") {
+			continue
+		}
+		if !IsSemver(r.TagName) {
+			continue
+		}
+		if best == nil || CompareVersions(r.TagName, best.TagName) > 0 {
+			best = r
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("no fob release found")
+	}
+	return best, nil
 }
 
 // ReadCache reads ~/.fob/update-check.json and returns a CheckResult
@@ -306,6 +337,7 @@ func CompareVersions(a, b string) int {
 
 // AssetNameForVersion returns the archive file name for a specific version.
 func AssetNameForVersion(version string) string {
+	version = strings.TrimPrefix(version, "fob-")
 	version = strings.TrimPrefix(version, "v")
 	ext := ".tar.gz"
 	if runtime.GOOS == "windows" {
@@ -321,6 +353,7 @@ type semver struct {
 
 // parseVersion extracts major, minor, patch and pre-release from a version string.
 func parseVersion(v string) semver {
+	v = strings.TrimPrefix(v, "fob-")
 	v = strings.TrimPrefix(v, "v")
 
 	var result semver
@@ -347,6 +380,7 @@ func parseVersion(v string) semver {
 // checks for.
 func IsSemver(version string) bool {
 	v := strings.TrimSpace(version)
+	v = strings.TrimPrefix(v, "fob-")
 	v = strings.TrimPrefix(v, "v")
 	if v == "" {
 		return false

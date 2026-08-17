@@ -27,6 +27,7 @@ func compareVersions(a, b string) (int, error) {
 
 func parseVersion(raw string) (semVersion, error) {
 	trimmed := strings.TrimSpace(raw)
+	trimmed = stripComponentPrefix(trimmed)
 	trimmed = strings.TrimPrefix(trimmed, "v")
 	if trimmed == "" {
 		return semVersion{}, fmt.Errorf("parse version %q: empty", raw)
@@ -72,6 +73,21 @@ func parseVersion(raw string) (semVersion, error) {
 	}
 
 	return v, nil
+}
+
+// stripComponentPrefix removes a leading "<component>-" prefix from release
+// tags of the form "drill-v0.1.1", leaving "v0.1.1" for semver parsing. A dash
+// inside a semver itself ("v1.2.3-beta.1") is not a component prefix and is
+// left untouched.
+func stripComponentPrefix(raw string) string {
+	component, rest, ok := strings.Cut(raw, "-")
+	if !ok || component == "" || strings.ContainsAny(component, ".") || rest == "" {
+		return raw
+	}
+	if !strings.HasPrefix(rest, "v") && (rest[0] < '0' || rest[0] > '9') {
+		return raw
+	}
+	return rest
 }
 
 func isDevVersion(version string) bool {

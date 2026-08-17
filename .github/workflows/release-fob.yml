@@ -1,5 +1,11 @@
-name: Release
+name: Release (fob)
 
+# fob's Go binary release pipeline, active at the monorepo root. The same
+# workflow also lives at packages/fob/.github/workflows/release.yml as the
+# split-ready template; keep the two in sync (path prefixes are the only
+# difference). release-please creates the fob tag and GitHub release, the
+# build-and-upload matrix builds and uploads per-OS/arch archives, and the
+# checksums job publishes a SHA-256 manifest.
 on:
   push:
     branches: [main]
@@ -8,6 +14,10 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+
+concurrency:
+  group: release-fob-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release-please:
@@ -20,13 +30,16 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          config-file: packages/fob/release-please-config.json
+          manifest-file: packages/fob/.release-please-manifest.json
 
   build-and-upload:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fob
     strategy:
       matrix:
         include:
@@ -49,7 +62,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: packages/fob/go.mod
 
       - name: Build
         env:
@@ -97,7 +110,7 @@ jobs:
           VERSION: ${{ needs.release-please.outputs.version }}
         with:
           name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: fob-v${{ needs.release-please.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
+          path: packages/fob/fob-v${{ needs.release-please.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}.*
 
   notify-issues:
     needs: release-please
@@ -110,9 +123,10 @@ jobs:
           TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
           VERSION: ${{ needs.release-please.outputs.version }}
         run: |
-          # Get the previous tag
+          # Get the previous tag. Scope to this package's own `fob-` tags so a
+          # drill or sq-* release is never mistaken for fob's previous release.
           prev_tag=$(gh api repos/${{ github.repository }}/releases \
-            --jq "[.[] | select(.tag_name != \"${TAG_NAME}\")] | first | .tag_name")
+            --jq "[.[] | select(.tag_name != \"${TAG_NAME}\" and (.tag_name | startswith(\"fob-\")))] | first | .tag_name")
 
           if [ -z "$prev_tag" ] || [ "$prev_tag" = "null" ]; then
             echo "No previous release found, skipping"

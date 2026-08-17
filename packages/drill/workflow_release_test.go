@@ -152,7 +152,7 @@ func TestReleaseWorkflowDoesNotOverrideReleaseType(t *testing.T) {
 	}
 }
 
-func TestReleaseWorkflowPublishesPrereleaseOnlyAfterAssetsComplete(t *testing.T) {
+func TestReleaseWorkflowPublishesReleaseOnlyAfterAssetsComplete(t *testing.T) {
 	data, err := os.ReadFile(".github/workflows/release.yml")
 	if err != nil {
 		t.Fatalf("read workflow: %v", err)
@@ -169,15 +169,17 @@ func TestReleaseWorkflowPublishesPrereleaseOnlyAfterAssetsComplete(t *testing.T)
 		"needs.release-please.outputs.release_created == 'true'",
 		"gh release edit",
 		"--draft=false",
-		"--prerelease=true",
 	}
 	for _, req := range required {
 		if !strings.Contains(block, req) {
-			t.Fatalf("finalize job must contain %q so a draft is only published as prerelease after every asset job succeeds", req)
+			t.Fatalf("finalize job must contain %q so a draft is only published after every asset job succeeds", req)
 		}
 	}
+	if strings.Contains(block, "--prerelease=true") {
+		t.Fatalf("finalize job must publish a normal release, not a prerelease")
+	}
 	if strings.Contains(block, "--latest=true") {
-		t.Fatalf("finalize job must not auto-promote to latest; latest is set manually")
+		t.Fatalf("finalize job must not pass --latest=true explicitly; GitHub marks the published release as latest")
 	}
 
 	for _, dep := range []string{"release-please", "build-and-upload", "checksums"} {

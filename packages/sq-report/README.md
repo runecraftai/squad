@@ -19,7 +19,7 @@ Agent writes artifact.html
 sq-report <file> opens it in the browser
         │
         ▼
-Commander annotates and edits
+You annotate and edit
         │
         ▼
 sq-report poll returns the feedback
@@ -28,7 +28,7 @@ sq-report poll returns the feedback
 Agent applies the changes
 ```
 
-HTML is the new markdown. sq-report is the new editor for your HTML artifacts, packaged as the `sq-report` CLI in the [Squad](https://github.com/runecraftai/squad) monorepo.
+HTML is the new markdown. sq-report is the new editor for your HTML artifacts, packaged as the `sq-report` CLI in the [Runecraft](https://github.com/runecraftai/squad) monorepo.
 
 Agents are good at producing rich HTML artifacts, but the human-agent collaboration loop on such artifacts is lacking and falls back into screenshots and long responses for "tell me what to change."
 That loses the thing HTML is best at: interactivity.

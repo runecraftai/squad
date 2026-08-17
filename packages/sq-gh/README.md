@@ -10,7 +10,7 @@
   <a href="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=flat-square" /></a>
 </p>
 
-GitHub CLI for agents, part of the [Squad](https://github.com/runecraftai/squad) monorepo.
+GitHub CLI for agents, part of the [Runecraft](https://github.com/runecraftai/squad) monorepo.
 
 sq-gh wraps the official `gh` CLI with token-efficient TOON output, contextual next-step suggestions, and structured error handling.
 It is built for autonomous agents that interact with GitHub via shell execution: one short command, a compact answer, and a hint about what to run next.

@@ -68,7 +68,7 @@ func TestFetchLatestRelease_SendsAuthorizationHeaderFromEnvToken(t *testing.T) {
 	var gotAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		fmt.Fprint(w, `{"tag_name":"v1.2.3","assets":[]}`)
+		fmt.Fprint(w, `[{"tag_name":"drill-v1.2.3","draft":false,"prerelease":false,"assets":[]}]`)
 	}))
 	defer server.Close()
 
@@ -188,5 +188,18 @@ func TestEnsureHTTPS(t *testing.T) {
 	}
 	if err := ensureHTTPS("http://example.com/release"); err == nil {
 		t.Fatal("ensureHTTPS should reject http urls")
+	}
+}
+
+func TestTagBelongsToComponentStrictPrefix(t *testing.T) {
+	for _, tag := range []string{"drill-v1.2.3", "drill-v1.2.3-beta.1", "drill-v1"} {
+		if !tagBelongsToComponent("drill", tag) {
+			t.Fatalf("tagBelongsToComponent(drill, %q) = false, want true", tag)
+		}
+	}
+	for _, tag := range []string{"v2.1.1", "v1.2.3", "1.2.3", "1.2.3-beta.1", "fob-v2.0.0", "sq-tasks-v0.1.1", "drillx-v1.0.0", ""} {
+		if tagBelongsToComponent("drill", tag) {
+			t.Fatalf("tagBelongsToComponent(drill, %q) = true, want false", tag)
+		}
 	}
 }
