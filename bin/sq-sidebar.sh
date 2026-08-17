@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# sq-sidebar.sh - Squad ground-truth tmux sidebar (replaces tmux-agents-mon).
+# sq-sidebar.sh - Squad ground-truth tmux sidebar (workmux parity).
 #
-# Renders a per-operator card sidebar in a tmux pane from Squad ground truth.
+# Renders a per-operator card sidebar in tmux panes from Squad ground truth.
 # The sidebar is a CONSUMER of the ground-truth contract; it never reads
 # screens and never maps Squad verbs itself. bin/sq-window-state.sh owns the
 # verb -> label translation and publishes state/window-states (its header owns
@@ -10,6 +10,27 @@
 # state/window-states plus state/<id>.meta, state/<id>.busy-gen, and
 # state/<id>.status and renders the sidebar.
 #
+# GLOBAL SIDEBAR (workmux parity):
+# When toggled on, a sidebar pane is created in EVERY tmux window and a hook
+# auto-adds sidebar panes to newly created windows. When toggled off, all
+# sidebar panes are killed and the hook is removed. Every sidebar pane renders
+# the same ground-truth data; the pane placement is per-window, the data is
+# not.
+#
+# LAYOUT MODES:
+#   tiles (default) - two-line cards with status stripe
+#   compact         - one-line per card
+# Toggled live with the `v` key in a focused sidebar pane, or `sq-sidebar.sh
+# layout` from the command line. Persisted in @sq-sidebar-layout global option.
+#
+# SIDEBAR-LOCAL NAVIGATION (when the sidebar pane is focused):
+#   j/k     navigate down/up
+#   Enter   jump to the selected agent's pane
+#   g/G     jump to first/last agent
+#   v       toggle layout mode (tiles/compact)
+#   f       toggle session filter
+#   q       close sidebar (with quit confirmation)
+#
 # Visual model (top to bottom, all sections opt-out via env):
 #   rollup   one line per tmux session: its worst (most-actionable) operator
 #            state and the operator count
@@ -17,12 +38,13 @@
 #            (awaiting-decision, blocked, failed), most actionable first
 #   routine  one two-line card per remaining operator (working, idle, done,
 #            unknown), sorted by window target
-# A card is exactly two display lines; `map` and `click` resolve a rendered
-# pane line to its card's window through the same frame, so line count and
-# order stay exact even with the section headers in between.
+# In compact mode, each card is one line instead of two.
+# A card is exactly two display lines (tiles) or one line (compact); `map` and
+# `click` resolve a rendered pane line to its card's window through the same
+# frame, so line count and order stay exact even with the section headers.
 #
 # Card tokens: each card line is a configurable template whose tokens are
-# substituted per card (see SQ_SIDEBAR_LINE1 / SQ_SIDEBAR_LINE2 below):
+# substituted per card (see SQ_SIDEBAR_LINE1 / SQ_SIDEBAR_LINE2 / SQ_SIDEBAR_COMPACT_LINE):
 #   {glyph}   the state icon (spinner while working, static otherwise)
 #   {id}      the task id, left-padded to 12 columns
 #   {label}   the sidebar-facing state label (working, awaiting-decision, ...)
@@ -39,18 +61,12 @@
 # blocked, failed) are THIS script's own rendering policy; the ground truth
 # only supplies labels.
 #
-# Unread marker: a done card shows SQ_SIDEBAR_UNREAD until the commander
-# acknowledges it. `ack` writes state/<id>.sidebar-ack (its own private state,
-# gitignored) for every currently-done task; a done task is unread while that
-# marker is missing or older than the task's last status-log append
-# (state/<id>.status mtime), so a task that finishes, is acknowledged, and
-# finishes again becomes unread again.
-#
-# Elapsed time is a simple honest approximation: wall-clock since the task's
-# busy contract was armed (state/<id>.busy-gen mtime, written once at spawn),
-# falling back to the meta file's mtime. It is not billing-grade and this
-# script does NOT compute session cost - it only shows the recorded model and
-# effort tags from meta as the cost context. See docs/sq-sidebar.md.
+# PANE LIFECYCLE CLEANUP:
+# Cards disappear automatically when a mission is torn down: the ground-truth
+# file (state/window-states) drops entries whose meta file is gone, so the
+# next render no longer shows the card. The sidebar pane itself is killed when
+# its host window is killed (standard tmux behavior). No explicit cleanup
+# step is needed; the ground-truth contract handles card lifecycle.
 #
 # Subcommands:
 #   cards [BASE]    print one raw TAB-separated record per operator card, in
@@ -74,8 +90,21 @@
 #   publish [BASE]  run bin/sq-window-state.sh publish for the base
 #   run [BASE]      the sidebar pane loop: self-tag, publish on the refresh
 #                   cadence, re-render every frame until the pane is killed
-#   toggle [BASE]   open a 25-wide left sidebar pane in the current window, or
-#                   close it when one is already open (C-M-s, workmux-style)
+#   toggle [BASE]   GLOBAL toggle: open a sidebar pane in EVERY tmux window
+#                   and hook new-window creation, or close all when active
+#   add-pane [BASE]  create a sidebar pane in the current window (called by
+#                   the after-new-window hook)
+#   layout [BASE]   toggle tiles/compact layout mode; prints new value
+#   navigate <direction> [BASE]  move sidebar selection up/down
+#   select [BASE]   jump to the selected agent's window
+#   first [BASE]    jump to the first agent
+#   last [BASE]     jump to the last agent
+#   last-done [BASE]  jump to most recently completed/attention operator;
+#                   repeated invocations cycle reverse-chronologically
+#   last-agent      toggle between current and last visited window (like
+#                   vim's Ctrl-^ or tmux's last-window)
+#   reap [BASE]     list stale operators (last status older than threshold);
+#                   display-only, never wired to recovery actions
 #   click <line> [BASE]  focus the operator window whose card occupies pane
 #                   line <line> (1-based pane row; the tmux loader passes the
 #                   mouse row and the base recorded by run in @sq-sidebar-base)
@@ -84,7 +113,8 @@
 # BASE resolution: argument > SQ_SIDEBAR_BASE > SQUAD_BASE > SQUAD_HOME >
 # this repo root. The renderer, card reader, badge, and publish are tmux-free
 # and fully testable against fake state dirs; only toggle/run/click/focus/
-# filter/next-inbox need tmux and fail closed with a stderr note when missing.
+# filter/next-inbox/last-done/last-agent need tmux and fail closed with a
+# stderr note when missing.
 #
 # Env: SQUAD_STATE_OVERRIDE selects the state dir (tests); SQUAD_CREW_STATE_BIN
 # overrides the reconciler binary for publish (tests); SQ_SIDEBAR_WIDTH (default
@@ -94,9 +124,11 @@
 # SQ_SIDEBAR_ELAPSED_NOW (epoch; pins the elapsed clock for tests),
 # SQ_SIDEBAR_NO_COLOR=1 and SQ_SIDEBAR_NO_ELAPSED=1 disable their feature,
 # SQ_SIDEBAR_LINE1 / SQ_SIDEBAR_LINE2 (card token templates, defaults below),
+# SQ_SIDEBAR_COMPACT_LINE (compact mode token template, default below),
 # SQ_SIDEBAR_FILTER (label to restrict cards to, empty or "all" for none),
 # SQ_SIDEBAR_UNREAD (default ●), SQ_SIDEBAR_NO_ROLLUP=1, SQ_SIDEBAR_NO_INBOX=1,
-# SQ_SIDEBAR_CURRENT (pins the current window for next-inbox tests).
+# SQ_SIDEBAR_CURRENT (pins the current window for next-inbox tests),
+# SQ_SIDEBAR_STALE_THRESHOLD (hours for reap, default 4).
 set -euo pipefail
 
 SELF="$(readlink -f "$0")"
@@ -115,8 +147,10 @@ UNREAD="${SQ_SIDEBAR_UNREAD:-●}"
 # parameter-expansion closing-brace scan.
 DEFAULT_LINE1='{glyph} {id}{elapsed}{unread}'
 DEFAULT_LINE2='{label} {detail}'
+DEFAULT_COMPACT='{glyph} {id} {elapsed} {label} {detail}'
 LINE1="${SQ_SIDEBAR_LINE1:-$DEFAULT_LINE1}"
 LINE2="${SQ_SIDEBAR_LINE2:-$DEFAULT_LINE2}"
+COMPACT_LINE="${SQ_SIDEBAR_COMPACT_LINE:-$DEFAULT_COMPACT}"
 read -r -a SPINNER_FRAMES <<< "$SPINNER"
 
 resolve_base() {  # [BASE] -> base path, per the sq-* scripts' chain
@@ -429,13 +463,15 @@ filter_active() {  # <filter>
 # frame_lines [BASE]: the exact physical lines the sidebar shows, one per row,
 # as window<TAB>kind<TAB>text. window is the sentinel `-` for non-clickable
 # rows; kind is card:<label>, rollup:<label>, header, or sep, so render can
-# color each row.
+# color each row. Supports both tiles (two-line cards) and compact (one-line
+# cards) layouts, selected by SQ_SIDEBAR_LAYOUT or @sq-sidebar-layout.
 frame_lines() {  # [BASE]
-  local base=$1 now filter dir session wlabel count text glyph
+  local base=$1 now filter dir session wlabel count text glyph layout
   local sk window id label state detail elapsed model effort unread line1 line2
-  local inbox_seen=0 routine_seen=0
+  local inbox_seen=0 routine_seen=0 card_idx=0
   now=${SQ_SIDEBAR_NOW:-$(date +%s)}
   filter=${SQ_SIDEBAR_FILTER:-}
+  layout=${SQ_SIDEBAR_LAYOUT:-tiles}
   dir=$(state_dir "$base")
   [ -f "$dir/window-states" ] || return 0
 
@@ -468,10 +504,17 @@ frame_lines() {  # [BASE]
       fi
     fi
     glyph=$(glyph_for "$label" "$now")
-    line1=$(expand_tokens "$LINE1" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
-    line2=$(expand_tokens "$LINE2" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
-    printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line1" "$((WIDTH - 1))")"
-    printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line2" "$((WIDTH - 1))")"
+    if [ "$layout" = "compact" ]; then
+      # Compact: one line per card
+      line1=$(expand_tokens "$COMPACT_LINE" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
+      printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line1" "$((WIDTH - 1))")"
+    else
+      # Tiles: two lines per card (default)
+      line1=$(expand_tokens "$LINE1" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
+      line2=$(expand_tokens "$LINE2" "$window" "$id" "$label" "$state" "$detail" "$elapsed" "$model" "$effort" "$unread" "$glyph")
+      printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line1" "$((WIDTH - 1))")"
+      printf '%s\t%s\t%s\n' "$window" "card:$label" "$(truncate "$line2" "$((WIDTH - 1))")"
+    fi
   done < <(records "$base")
 }
 
@@ -489,19 +532,32 @@ map() {  # [BASE]
 }
 
 # render [BASE]: ANSI display lines, or the placeholder when there are no rows.
+# When SQ_SIDEBAR_SELECTED is set, that card index is highlighted with inverse
+# video so the user can see which card navigation would jump to.
 render() {  # [BASE]
-  local base=$1 out="" window kind text color
+  local base=$1 out="" window kind text color card_idx=0 selected
+  selected=${SQ_SIDEBAR_SELECTED:--1}
   while IFS=$'\t' read -r window kind text; do
     if [ "${SQ_SIDEBAR_NO_COLOR:-}" = 1 ]; then
-      out="${out}${text}"$'\n'
+      if [[ "$kind" == card:* ]] && [ "$card_idx" = "$selected" ]; then
+        out="${out}[${text}]"$'\n'
+      else
+        out="${out}${text}"$'\n'
+      fi
     else
       case "$kind" in
         card:*) color=$(label_color "${kind#card:}") ;;
         rollup:*) color=$(label_color "${kind#rollup:}") ;;
         *) color='38;5;244' ;;
       esac
-      out="${out}"$'\033['"${color}m${text}"$'\033[0m'$'\n'
+      if [[ "$kind" == card:* ]] && [ "$card_idx" = "$selected" ]; then
+        # Inverse video for selected card
+        out="${out}"$'\033[7;'"${color}m${text}"$'\033[0m'$'\n'
+      else
+        out="${out}"$'\033['"${color}m${text}"$'\033[0m'$'\n'
+      fi
     fi
+    [[ "$kind" == card:* ]] && card_idx=$((card_idx + 1))
   done < <(frame_lines "$base")
   if [ -z "$out" ]; then
     if [ "${SQ_SIDEBAR_NO_COLOR:-}" = 1 ]; then
@@ -597,8 +653,51 @@ render_pane() {  # [BASE]
   render "$base"
 }
 
+# card_count [BASE]: count the total number of cards in the frame (respecting
+# filter). Used by navigate to clamp the selected index.
+card_count() {  # [BASE]
+  local base=$1 count=0 window kind text
+  while IFS=$'\t' read -r window kind text; do
+    [[ "$kind" == card:* ]] && count=$((count + 1))
+  done < <(frame_lines "$base")
+  printf '%d' "$count"
+}
+
+# card_window_at [BASE] <index>: the window target of the card at the given
+# 0-based index in the frame. Empty if the index is out of range.
+card_window_at() {  # [BASE] <index>
+  local base=$1 target=$2 idx=0 window kind text
+  while IFS=$'\t' read -r window kind text; do
+    [[ "$kind" == card:* ]] || continue
+    if [ "$idx" = "$target" ]; then
+      printf '%s' "$window"
+      return 0
+    fi
+    idx=$((idx + 1))
+  done < <(frame_lines "$base")
+}
+
+# last_done_windows [BASE]: attention + recently-done windows, sorted by
+# status-log mtime descending (most recent first). Used by last-done to
+# cycle through operators needing attention.
+last_done_windows() {  # [BASE]
+  local base=$1 dir ws window id label state detail mtime
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || return 0
+  while IFS=$'\t' read -r window id label state detail; do
+    [ -n "$window" ] || continue
+    # Include attention operators and recently done ones
+    if is_inbox_label "$label" || [ "$label" = "done" ]; then
+      mtime=$(file_mtime "$dir/$id.status")
+      [ -n "$mtime" ] || mtime=0
+      printf '%s\t%s\t%s\n' "$mtime" "$window" "$label"
+    fi
+  done < "$ws" | LC_ALL=C sort -k1,1rn -k2,2 | cut -f2-
+}
+
 run() {  # [BASE]: the sidebar pane loop; killed with the pane
-  local base=$1 every n=0 filter no_rollup no_inbox
+  local base=$1 every n=0 filter no_rollup no_inbox layout key selected count
   base=$(resolve_base "$base")
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the sidebar pane requires tmux" >&2
@@ -623,27 +722,346 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
     filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
     no_rollup=${SQ_SIDEBAR_NO_ROLLUP:-$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)}
     no_inbox=${SQ_SIDEBAR_NO_INBOX:-$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)}
+    layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+    selected=$(tmux show-option -gv @sq-sidebar-selected 2>/dev/null || echo "-1")
     SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
-      SQ_SIDEBAR_NO_INBOX="$no_inbox" render_pane "$base"
-    sleep "$FRAME_SECS"
+      SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+      SQ_SIDEBAR_SELECTED="$selected" render_pane "$base"
+    # Read a keypress with timeout; sidebar-local navigation keys
+    read -r -t "$FRAME_SECS" -n 1 key 2>/dev/null || true
+    case "${key:-}" in
+      j) # navigate down
+        count=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+          SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+          card_count "$base")
+        if [ "$count" -gt 0 ]; then
+          if [ "$selected" -lt 0 ] || [ "$selected" -ge $((count - 1)) ]; then
+            selected=0
+          else
+            selected=$((selected + 1))
+          fi
+          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+        fi
+        ;;
+      k) # navigate up
+        count=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+          SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+          card_count "$base")
+        if [ "$count" -gt 0 ]; then
+          if [ "$selected" -le 0 ]; then
+            selected=$((count - 1))
+          else
+            selected=$((selected - 1))
+          fi
+          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+        fi
+        ;;
+      g) # jump to first
+        count=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+          SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+          card_count "$base")
+        if [ "$count" -gt 0 ]; then
+          selected=0
+          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+        fi
+        ;;
+      G) # jump to last
+        count=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+          SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+          card_count "$base")
+        if [ "$count" -gt 0 ]; then
+          selected=$((count - 1))
+          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+        fi
+        ;;
+      '') # no keypress, just re-render ;;
+        ;;
+      v) # toggle layout
+        if [ "$layout" = "tiles" ]; then
+          tmux set-option -g @sq-sidebar-layout "compact" 2>/dev/null || true
+        else
+          tmux set-option -g @sq-sidebar-layout "tiles" 2>/dev/null || true
+        fi
+        ;;
+      f) # toggle filter
+        filter=$(SQ_SIDEBAR_BASE="$base" "$SELF" filter 2>/dev/null || true)
+        ;;
+      q) # quit sidebar
+        # Kill all sidebar panes globally
+        tmux list-panes -a -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
+          awk '$2 == 1 {print $1}' | while read -r pane; do
+            tmux kill-pane -t "$pane" 2>/dev/null || true
+          done
+        tmux set-hook -gu after-new-window 2>/dev/null || true
+        tmux set-option -gu @sq-sidebar-global 2>/dev/null || true
+        tmux set-option -gu @sq-sidebar-base 2>/dev/null || true
+        tmux set-option -gu @sq-sidebar-selected 2>/dev/null || true
+        exit 0
+        ;;
+      $'\n'|$'\r') # Enter - jump to selected agent
+        if [ "$selected" -ge 0 ]; then
+          local target
+          target=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+            SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+            card_window_at "$base" "$selected")
+          [ -n "$target" ] && tmux select-window -t "$target" 2>/dev/null || true
+        fi
+        ;;
+    esac
+    key=""
   done
 }
 
+# toggle [BASE]: GLOBAL sidebar toggle. When active, kills all sidebar panes
+# and removes the hook. When inactive, creates sidebar panes in ALL windows
+# and installs a hook for new windows.
 toggle() {  # [BASE]
-  local base=$1 existing cmd
+  local base=$1
   base=$(resolve_base "$base")
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the sidebar requires tmux" >&2
     exit 1
   }
-  existing=$(tmux list-panes -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
-    awk '$2 == 1 {print $1; exit}' || true)
-  if [ -n "$existing" ]; then
-    tmux kill-pane -t "$existing" 2>/dev/null || true
+
+  # Check if global sidebar is active
+  local global_active
+  global_active=$(tmux show-option -gv @sq-sidebar-global 2>/dev/null || true)
+
+  if [ "$global_active" = "1" ]; then
+    # Toggle OFF: kill all sidebar panes and remove hook
+    tmux list-panes -a -F '#{pane_id} #{@sq-sidebar}' 2>/dev/null |
+      awk '$2 == 1 {print $1}' | while read -r pane; do
+        tmux kill-pane -t "$pane" 2>/dev/null || true
+      done
+    tmux set-hook -gu after-new-window 2>/dev/null || true
+    tmux set-option -gu @sq-sidebar-global 2>/dev/null || true
+    tmux set-option -gu @sq-sidebar-base 2>/dev/null || true
+    tmux set-option -gu @sq-sidebar-selected 2>/dev/null || true
     return 0
   fi
-  printf -v cmd '%q' "$SELF"
-  tmux split-window -bh -l "$WIDTH" -e "SQ_SIDEBAR_BASE=$base" "$cmd run"
+
+  # Toggle ON: set global option and install hook
+  tmux set-option -g @sq-sidebar-global 1
+  tmux set-option -g @sq-sidebar-base "$base"
+  tmux set-option -g @sq-sidebar-selected -1
+  tmux set-hook -g after-new-window "run-shell '#{q:@sq-sidebar-path} add-pane #{q:@sq-sidebar-base}'"
+
+  # Create sidebar panes in all existing windows
+  tmux list-windows -F '#{session_name}:#{window_index}' 2>/dev/null | while read -r win; do
+    # Skip if this window already has a sidebar pane
+    local existing
+    existing=$(tmux list-panes -t "$win" -F '#{@sq-sidebar}' 2>/dev/null | grep -c '^1$' || true)
+    if [ "$existing" -gt 0 ]; then
+      continue
+    fi
+    # Create sidebar pane in this window
+    tmux split-window -t "$win" -bh -l "$WIDTH" -e "SQ_SIDEBAR_BASE=$base" "$SELF run" 2>/dev/null || true
+  done
+}
+
+# add-pane [BASE]: create a sidebar pane in the current window. Called by the
+# after-new-window hook so new windows automatically get a sidebar pane.
+add_pane() {  # [BASE]
+  local base=$1
+  base=$(resolve_base "$base")
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; add-pane requires tmux" >&2
+    exit 1
+  }
+  # Check if this window already has a sidebar pane
+  local existing
+  existing=$(tmux list-panes -F '#{@sq-sidebar}' 2>/dev/null | grep -c '^1$' || true)
+  if [ "$existing" -gt 0 ]; then
+    return 0
+  fi
+  tmux split-window -bh -l "$WIDTH" -e "SQ_SIDEBAR_BASE=$base" "$SELF run" 2>/dev/null || true
+}
+
+# layout [BASE]: toggle tiles/compact layout mode; prints the new value.
+layout_toggle() {  # [BASE]
+  local cur next
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; the layout key requires tmux" >&2
+    exit 1
+  }
+  cur=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+  if [ "$cur" = "tiles" ]; then
+    next="compact"
+  else
+    next="tiles"
+  fi
+  tmux set-option -g @sq-sidebar-layout "$next" 2>/dev/null || true
+  printf '%s\n' "$next"
+}
+
+# navigate <direction> [BASE]: move sidebar selection up/down.
+navigate() {  # <direction> [BASE]
+  local direction=${1:-} base=${2:-}
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; navigate requires tmux" >&2
+    exit 1
+  }
+  base=$(resolve_base "$base")
+  local selected count filter no_rollup no_inbox layout
+  selected=$(tmux show-option -gv @sq-sidebar-selected 2>/dev/null || echo "-1")
+  filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
+  no_rollup=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
+  no_inbox=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
+  layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+  count=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+    SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+    card_count "$base")
+  if [ "$count" -eq 0 ]; then return 0; fi
+  case "$direction" in
+    down)
+      if [ "$selected" -lt 0 ] || [ "$selected" -ge $((count - 1)) ]; then
+        selected=0
+      else
+        selected=$((selected + 1))
+      fi
+      ;;
+    up)
+      if [ "$selected" -le 0 ]; then
+        selected=$((count - 1))
+      else
+        selected=$((selected - 1))
+      fi
+      ;;
+    *)
+      echo "usage: sq-sidebar.sh navigate <up|down> [BASE]" >&2
+      exit 1
+      ;;
+  esac
+  tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+}
+
+# select [BASE]: jump to the selected agent's window.
+select_agent() {  # [BASE]
+  local base=$1
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; select requires tmux" >&2
+    exit 1
+  }
+  base=$(resolve_base "$base")
+  local selected filter no_rollup no_inbox layout target
+  selected=$(tmux show-option -gv @sq-sidebar-selected 2>/dev/null || echo "-1")
+  if [ "$selected" -lt 0 ]; then return 0; fi
+  filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
+  no_rollup=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
+  no_inbox=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
+  layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+  target=$(SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
+    SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
+    card_window_at "$base" "$selected")
+  [ -n "$target" ] && tmux select-window -t "$target" 2>/dev/null || true
+}
+
+# first [BASE]: jump to the first agent.
+jump_first() {  # [BASE]
+  local base=$1
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; first requires tmux" >&2
+    exit 1
+  }
+  base=$(resolve_base "$base")
+  local target
+  target=$(SQ_SIDEBAR_NO_ROLLUP=1 SQ_SIDEBAR_NO_INBOX=1 card_window_at "$base" 0)
+  [ -n "$target" ] && tmux select-window -t "$target" 2>/dev/null || true
+}
+
+# last [BASE]: jump to the last agent.
+jump_last() {  # [BASE]
+  local base=$1
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; last requires tmux" >&2
+    exit 1
+  }
+  base=$(resolve_base "$base")
+  local count target
+  count=$(SQ_SIDEBAR_NO_ROLLUP=1 SQ_SIDEBAR_NO_INBOX=1 card_count "$base")
+  if [ "$count" -gt 0 ]; then
+    target=$(SQ_SIDEBAR_NO_ROLLUP=1 SQ_SIDEBAR_NO_INBOX=1 card_window_at "$base" $((count - 1)))
+    [ -n "$target" ] && tmux select-window -t "$target" 2>/dev/null || true
+  fi
+}
+
+# last-done [BASE]: jump to the most recently completed or attention-needing
+# operator. Repeated invocations cycle through all such operators in reverse
+# chronological order (most recent status-log mtime first).
+last_done() {  # [BASE]
+  local base=$1 current next
+  base=$(resolve_base "$base")
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; last-done requires tmux" >&2
+    exit 1
+  }
+  current=${SQ_SIDEBAR_CURRENT:-$(tmux display-message -p '#{session_name}:#{window_name}' 2>/dev/null || true)}
+  # Get the list of attention/done windows sorted by recency
+  local -a windows=()
+  while IFS=$'\t' read -r w _; do
+    [ -n "$w" ] || continue
+    windows+=("$w")
+  done < <(last_done_windows "$base")
+  if [ "${#windows[@]}" -eq 0 ]; then return 0; fi
+  local i=0 found=-1 idx=0
+  for w in "${windows[@]}"; do
+    if [ "$w" = "$current" ]; then found=$i; break; fi
+    i=$((i + 1))
+  done
+  if [ "$found" -ge 0 ]; then
+    idx=$(( (found + 1) % ${#windows[@]} ))
+  fi
+  tmux select-window -t "${windows[$idx]}" 2>/dev/null || true
+}
+
+# last-agent: toggle between the current window and the last one visited.
+# Like vim's Ctrl-^ or tmux's last-window, but remembers across session
+# switches. Uses @sq-sidebar-last-window to track the previous window.
+last_agent() {
+  command -v tmux >/dev/null 2>&1 || {
+    echo "sq-sidebar: tmux not found; last-agent requires tmux" >&2
+    exit 1
+  }
+  local current last_window
+  current=$(tmux display-message -p '#{session_name}:#{window_name}' 2>/dev/null || true)
+  last_window=$(tmux show-option -gv @sq-sidebar-last-window 2>/dev/null || true)
+  if [ -n "$last_window" ] && [ "$last_window" != "$current" ]; then
+    tmux set-option -g @sq-sidebar-last-window "$current" 2>/dev/null || true
+    tmux select-window -t "$last_window" 2>/dev/null || true
+  fi
+}
+
+# reap [BASE]: list operators whose last status update is older than
+# SQ_SIDEBAR_STALE_THRESHOLD hours. Display-only; never wired to recovery
+# actions. The sentry's own stale-detection is separate and owns real recovery.
+reap() {  # [BASE]
+  local base=$1 dir ws now threshold_secs
+  dir=$(state_dir "$base")
+  ws="$dir/window-states"
+  [ -f "$ws" ] || return 0
+  now=${SQ_SIDEBAR_ELAPSED_NOW:-$(date +%s)}
+  threshold_secs=$(( ${SQ_SIDEBAR_STALE_THRESHOLD:-4} * 3600 ))
+  printf '%-12s %-20s %-12s %s\n' "ID" "WINDOW" "LABEL" "STALE_FOR"
+  printf '%-12s %-20s %-12s %s\n' "----" "------" "-----" "---------"
+  local found=0
+  while IFS=$'\t' read -r window id label state detail; do
+    [ -n "$window" ] || continue
+    local mtime diff h m s stale_str
+    mtime=$(file_mtime "$dir/$id.status")
+    [ -n "$mtime" ] || mtime=$(file_mtime "$dir/$id.meta")
+    [ -n "$mtime" ] || continue
+    diff=$((now - mtime))
+    if [ "$diff" -ge "$threshold_secs" ]; then
+      h=$((diff / 3600)); m=$(((diff % 3600) / 60)); s=$((diff % 60))
+      printf '%02d:%02d:%02d' "$h" "$m" "$s"
+      stale_str=$(printf '%02d:%02d:%02d' "$h" "$m" "$s")
+      printf '%-12s %-20s %-12s %s\n' "$(truncate "$id" 12)" "$(truncate "$window" 20)" "$label" "$stale_str"
+      found=1
+    fi
+  done < "$ws"
+  if [ "$found" = "0" ]; then
+    printf '(no stale operators)\n'
+  fi
 }
 
 click() {  # <line> [BASE]
@@ -656,7 +1074,8 @@ click() {  # <line> [BASE]
     SQ_SIDEBAR_FILTER=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
     SQ_SIDEBAR_NO_ROLLUP=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
     SQ_SIDEBAR_NO_INBOX=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
-    export SQ_SIDEBAR_FILTER SQ_SIDEBAR_NO_ROLLUP SQ_SIDEBAR_NO_INBOX
+    SQ_SIDEBAR_LAYOUT=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
+    export SQ_SIDEBAR_FILTER SQ_SIDEBAR_NO_ROLLUP SQ_SIDEBAR_NO_INBOX SQ_SIDEBAR_LAYOUT
   fi
   window=$(map "$base" | sed -n "${line}p")
   [ -n "$window" ] || return 0
@@ -664,6 +1083,10 @@ click() {  # <line> [BASE]
     echo "sq-sidebar: tmux not found; the click action requires tmux" >&2
     exit 1
   }
+  # Track last window for last-agent
+  local current
+  current=$(tmux display-message -p '#{session_name}:#{window_name}' 2>/dev/null || true)
+  tmux set-option -g @sq-sidebar-last-window "$current" 2>/dev/null || true
   tmux select-window -t "$window" 2>/dev/null || true
 }
 
@@ -712,15 +1135,24 @@ case "${1:-}" in
   map) map "${2:-}" ;;
   badge) shift; badge "${1:-}" "${2:-}" ;;
   ack) ack "${2:-}" ;;
-  filter) filter "${2:-}" ;;
+  filter) filter ;;
   next-inbox) next_inbox "${2:-}" ;;
   publish) publish "${2:-}" ;;
   run) run "${2:-}" ;;
   toggle) toggle "${2:-}" ;;
+  add-pane) add_pane "${2:-}" ;;
+  layout) layout_toggle ;;
+  navigate) shift; navigate "${1:-}" "${2:-}" ;;
+  select) select_agent "${2:-}" ;;
+  first) jump_first "${2:-}" ;;
+  last) jump_last "${2:-}" ;;
+  last-done) last_done "${2:-}" ;;
+  last-agent) last_agent ;;
+  reap) reap "${2:-}" ;;
   click) shift; click "${1:-}" "${2:-}" ;;
   focus) shift; focus "${1:-}" ;;
   *)
-    echo "usage: sq-sidebar.sh cards|inbox|render|map|badge|ack|filter|next-inbox|publish|run|toggle|click|focus [BASE]" >&2
+    echo "usage: sq-sidebar.sh cards|inbox|render|map|badge|ack|filter|next-inbox|publish|run|toggle|add-pane|layout|navigate|select|first|last|last-done|last-agent|reap|click|focus [BASE]" >&2
     exit 1
     ;;
 esac

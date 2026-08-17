@@ -93,7 +93,8 @@ line1_of() {  # <glyph> <id>
 
 # fake tmux that logs every invocation and serves a canned list-panes answer,
 # so the toggle/click/next-inbox/filter tmux wiring is asserted on the real
-# command lines.
+# command lines. Supports global sidebar (list-windows, show-option for
+# @sq-sidebar-global, set-hook, display-message).
 make_fake_tmux() {  # <dir> -> echoes fakebin path
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
@@ -102,12 +103,20 @@ make_fake_tmux() {  # <dir> -> echoes fakebin path
 printf 'tmux %s\n' "$*" >> "$FAKE_TMUX_LOG"
 case "${1:-}" in
   list-panes) printf '%s\n' "${FAKE_TMUX_PANES:-}" ;;
+  list-windows) printf '%s\n' "${FAKE_TMUX_WINDOWS:-}" ;;
+  display-message) printf '%s\n' "${FAKE_TMUX_DISPLAY:-}" ;;
   show-option) case "${3:-}" in
       @sq-sidebar-filter) printf '%s\n' "${FAKE_TMUX_FILTER:-}" ;;
       @sq-sidebar-no-rollup) printf '%s\n' "${FAKE_TMUX_NO_ROLLUP:-}" ;;
       @sq-sidebar-no-inbox) printf '%s\n' "${FAKE_TMUX_NO_INBOX:-}" ;;
+      @sq-sidebar-global) printf '%s\n' "${FAKE_TMUX_GLOBAL:-}" ;;
+      @sq-sidebar-layout) printf '%s\n' "${FAKE_TMUX_LAYOUT:-tiles}" ;;
+      @sq-sidebar-selected) printf '%s\n' "${FAKE_TMUX_SELECTED:--1}" ;;
+      @sq-sidebar-last-window) printf '%s\n' "${FAKE_TMUX_LAST_WINDOW:-}" ;;
       *) printf '%s\n' "" ;;
     esac ;;
+  set-option) ;; # accept all set-option calls silently
+  set-hook) ;; # accept all set-hook calls silently
 esac
 exit 0
 SH
@@ -393,23 +402,34 @@ assert_eq "click under a persisted NO_ROLLUP resolves through the no-rollup fram
 assert_eq "the NO_ROLLUP click does not auto-focus the rollup row's neighbour" \
   "$(grep -c 'select-window -t Squad:sq-beta' "$FAKE_TMUX_LOG")" "0"
 
-# --- (i) toggle opens and closes the sidebar pane --------------------------
+# --- (i) toggle opens and closes the global sidebar ------------------------
+# The new toggle is GLOBAL: it creates sidebar panes in ALL windows and
+# installs a hook for new windows. The fake tmux must support list-windows
+# and show-option for @sq-sidebar-global.
 
 : > "$FAKE_TMUX_LOG"
-FAKE_TMUX_PANES="" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle
-assert_eq "toggle opens a left 25-wide sidebar pane running the loop" \
-  "$(grep -c 'split-window -bh -l 25' "$FAKE_TMUX_LOG")" "1"
-assert_grep "SQ_SIDEBAR_BASE=" "$FAKE_TMUX_LOG" "toggle passes the base to the loop"
+FAKE_TMUX_PANES="" FAKE_TMUX_GLOBAL="" FAKE_TMUX_WINDOWS="Squad:0" \
+  SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle
+assert_eq "toggle sets the global option" \
+  "$(grep -c 'set-option -g @sq-sidebar-global 1' "$FAKE_TMUX_LOG")" "1"
+assert_grep "set-hook -g after-new-window" "$FAKE_TMUX_LOG" "toggle installs the after-new-window hook"
+assert_eq "toggle creates sidebar panes in each window" \
+  "$(grep -c 'split-window.*-bh -l 25' "$FAKE_TMUX_LOG")" "1"
+assert_grep "SQ_SIDEBAR_BASE=" "$FAKE_TMUX_LOG" "toggle passes the base to the pane"
 assert_grep "sq-sidebar.sh run" "$FAKE_TMUX_LOG" "toggle starts the run loop command"
 : > "$FAKE_TMUX_LOG"
-FAKE_TMUX_PANES="" SQUAD_BASE="$TMP_ROOT/My Base" "$SIDEBAR" toggle
+FAKE_TMUX_PANES="" FAKE_TMUX_GLOBAL="" FAKE_TMUX_WINDOWS="Squad:0" \
+  SQUAD_BASE="$TMP_ROOT/My Base" "$SIDEBAR" toggle
 assert_grep "SQ_SIDEBAR_BASE=$TMP_ROOT/My Base" "$FAKE_TMUX_LOG" \
   "toggle passes a spaced base to the loop env unescaped"
 assert_no_grep 'My\ Base' "$FAKE_TMUX_LOG" "toggle never %q-escapes the loop env base"
-FAKE_TMUX_PANES="%9 1" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle
-assert_eq "toggle closes the already-open sidebar pane" \
+# Second toggle (global=1) should kill all panes and remove hook.
+: > "$FAKE_TMUX_LOG"
+FAKE_TMUX_PANES="%9 1" FAKE_TMUX_GLOBAL="1" SQUAD_STATE_OVERRIDE="$S1" "$SIDEBAR" toggle
+assert_eq "toggle closes all sidebar panes" \
   "$(grep -c 'kill-pane -t %9' "$FAKE_TMUX_LOG")" "1"
-pass "toggle opens on first use and closes on the second"
+assert_grep "set-hook -gu after-new-window" "$FAKE_TMUX_LOG" "toggle removes the hook"
+pass "toggle opens globally on first use and closes all on the second"
 
 # --- (j) the .tmux loader binds keys and the badge format ------------------
 
@@ -420,6 +440,12 @@ assert_grep "bind-key -n C-M-s run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M
 assert_grep "bind-key -n C-M-n run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-n next-inbox key"
 assert_grep "bind-key -n C-M-a run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-a ack key"
 assert_grep "bind-key -n C-M-f run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-f filter key"
+assert_grep "bind-key -n C-M-d run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-d last-done key"
+assert_grep "bind-key -n C-M-l run-shell" "$FAKE_TMUX_LOG" "loader binds the C-M-l last-agent key"
+assert_grep "bind-key -n j if-shell" "$FAKE_TMUX_LOG" "loader binds sidebar-local j navigate"
+assert_grep "bind-key -n k if-shell" "$FAKE_TMUX_LOG" "loader binds sidebar-local k navigate"
+assert_grep "bind-key -n v if-shell" "$FAKE_TMUX_LOG" "loader binds sidebar-local v layout toggle"
+assert_grep "bind-key -n q if-shell" "$FAKE_TMUX_LOG" "loader binds sidebar-local q quit"
 assert_grep "q:@sq-sidebar-path" "$FAKE_TMUX_LOG" "bindings pass the tool path shell-quoted once at fire time"
 assert_grep "bind-key -n MouseDown1Pane" "$FAKE_TMUX_LOG" "loader binds the click action"
 assert_grep "e|+|:#{mouse_y},1" "$FAKE_TMUX_LOG" "click binding passes the 1-based mouse row"
