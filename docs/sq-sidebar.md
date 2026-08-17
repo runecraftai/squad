@@ -14,10 +14,13 @@ When `SQUAD_BASE` or `SQUAD_HOME` is set, workmux automatically uses the Squad d
 
 ## Install
 
-Install workmux from the Squad fork:
+Install workmux from the Squad fork. The Squad integration (meta parsing and
+SQUAD_BASE/SQUAD_HOME auto-detection) lives on the unmerged fork PR
+[#1](https://github.com/runecraftai/workmux/pull/1) (branch
+`fix/squad-meta-parsing`), so pin that branch until it merges:
 
 ```bash
-cargo install --git https://github.com/runecraftai/workmux
+cargo install --git https://github.com/runecraftai/workmux --branch fix/squad-meta-parsing
 ```
 
 Or build from source:
@@ -25,9 +28,13 @@ Or build from source:
 ```bash
 git clone https://github.com/runecraftai/workmux.git
 cd workmux
+git checkout fix/squad-meta-parsing
 cargo build --release
 cp target/release/workmux ~/.local/bin/
 ```
+
+Once the fork PR merges, drop the branch pin; `main` will then include the
+Squad integration.
 
 ## Load the tmux plugin
 
