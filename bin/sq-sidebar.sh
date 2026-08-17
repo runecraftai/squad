@@ -719,12 +719,13 @@ last_done_windows() {  # [BASE]
 }
 
 run() {  # [BASE]: the sidebar pane loop; killed with the pane
-  local base=$1 every n=0 filter no_rollup no_inbox layout key selected count
+  local base=$1 every n=0 filter no_rollup no_inbox layout key selected count session
   base=$(resolve_base "$base")
   command -v tmux >/dev/null 2>&1 || {
     echo "sq-sidebar: tmux not found; the sidebar pane requires tmux" >&2
     exit 1
   }
+  session=$(resolve_session)
   tmux set-option -p @sq-sidebar 1 2>/dev/null || true
   tmux set-option -p @sq-sidebar-base "$base" 2>/dev/null || true
   if [ -n "${SQ_SIDEBAR_NO_ROLLUP:-}" ]; then
@@ -745,7 +746,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
     no_rollup=${SQ_SIDEBAR_NO_ROLLUP:-$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)}
     no_inbox=${SQ_SIDEBAR_NO_INBOX:-$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)}
     layout=$(tmux show-option -gv @sq-sidebar-layout 2>/dev/null || echo "tiles")
-    selected=$(tmux show-option -gv @sq-sidebar-selected 2>/dev/null || echo "-1")
+    selected=$(tmux show-option -gv -t "$session" @sq-sidebar-selected 2>/dev/null || echo "-1")
     SQ_SIDEBAR_FILTER="$filter" SQ_SIDEBAR_NO_ROLLUP="$no_rollup" \
       SQ_SIDEBAR_NO_INBOX="$no_inbox" SQ_SIDEBAR_LAYOUT="$layout" \
       SQ_SIDEBAR_SELECTED="$selected" render_pane "$base"
@@ -762,7 +763,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
           else
             selected=$((selected + 1))
           fi
-          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+          tmux set-option -t "$session" @sq-sidebar-selected "$selected" 2>/dev/null || true
         fi
         ;;
       k) # navigate up
@@ -775,7 +776,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
           else
             selected=$((selected - 1))
           fi
-          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+          tmux set-option -t "$session" @sq-sidebar-selected "$selected" 2>/dev/null || true
         fi
         ;;
       g) # jump to first
@@ -784,7 +785,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
           card_count "$base")
         if [ "$count" -gt 0 ]; then
           selected=0
-          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+          tmux set-option -t "$session" @sq-sidebar-selected "$selected" 2>/dev/null || true
         fi
         ;;
       G) # jump to last
@@ -793,7 +794,7 @@ run() {  # [BASE]: the sidebar pane loop; killed with the pane
           card_count "$base")
         if [ "$count" -gt 0 ]; then
           selected=$((count - 1))
-          tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+          tmux set-option -t "$session" @sq-sidebar-selected "$selected" 2>/dev/null || true
         fi
         ;;
       '') # no keypress, just re-render ;;
@@ -910,7 +911,7 @@ add_pane() {  # [BASE]
   if [ "$existing" -gt 0 ]; then
     return 0
   fi
-  tmux split-window -bh -l "$WIDTH" -e "SQ_SIDEBAR_BASE=$base" "$SELF run" 2>/dev/null || true
+  tmux split-window -h -p 17 -e "SQ_SIDEBAR_BASE=$base" "$SELF run" 2>/dev/null || true
 }
 
 # layout [BASE]: toggle tiles/compact layout mode; prints the new value.
@@ -938,8 +939,9 @@ navigate() {  # <direction> [BASE]
     exit 1
   }
   base=$(resolve_base "$base")
-  local selected count filter no_rollup no_inbox layout
-  selected=$(tmux show-option -gv @sq-sidebar-selected 2>/dev/null || echo "-1")
+  local session selected count filter no_rollup no_inbox layout
+  session=$(resolve_session)
+  selected=$(tmux show-option -gv -t "$session" @sq-sidebar-selected 2>/dev/null || echo "-1")
   filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
   no_rollup=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
   no_inbox=$(tmux show-option -gv @sq-sidebar-no-inbox 2>/dev/null || true)
@@ -968,7 +970,7 @@ navigate() {  # <direction> [BASE]
       exit 1
       ;;
   esac
-  tmux set-option -g @sq-sidebar-selected "$selected" 2>/dev/null || true
+  tmux set-option -t "$session" @sq-sidebar-selected "$selected" 2>/dev/null || true
 }
 
 # select [BASE]: jump to the selected agent's window.
@@ -979,8 +981,9 @@ select_agent() {  # [BASE]
     exit 1
   }
   base=$(resolve_base "$base")
-  local selected filter no_rollup no_inbox layout target
-  selected=$(tmux show-option -gv @sq-sidebar-selected 2>/dev/null || echo "-1")
+  local session selected filter no_rollup no_inbox layout target
+  session=$(resolve_session)
+  selected=$(tmux show-option -gv -t "$session" @sq-sidebar-selected 2>/dev/null || echo "-1")
   if [ "$selected" -lt 0 ]; then return 0; fi
   filter=$(tmux show-option -gv @sq-sidebar-filter 2>/dev/null || true)
   no_rollup=$(tmux show-option -gv @sq-sidebar-no-rollup 2>/dev/null || true)
@@ -1089,7 +1092,6 @@ reap() {  # [BASE]
     diff=$((now - mtime))
     if [ "$diff" -ge "$threshold_secs" ]; then
       h=$((diff / 3600)); m=$(((diff % 3600) / 60)); s=$((diff % 60))
-      printf '%02d:%02d:%02d' "$h" "$m" "$s"
       stale_str=$(printf '%02d:%02d:%02d' "$h" "$m" "$s")
       printf '%-12s %-20s %-12s %s\n' "$(truncate "$id" 12)" "$(truncate "$window" 20)" "$label" "$stale_str"
       found=1
