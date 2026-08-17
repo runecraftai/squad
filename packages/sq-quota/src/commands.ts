@@ -38,9 +38,15 @@ export async function quotaCommand(
     allowKeychainPrompt: flags.allowKeychainPrompt,
   };
 
-  if (flags.tui) return quotaTuiReport(flags, options);
+  const effectiveProviders = await resolveEffectiveProviders(
+    flags,
+    options,
+  );
+  const effectiveFlags = { ...flags, providers: effectiveProviders };
 
-  const response = await loadQuota(flags.providers, options, false);
+  if (flags.tui) return quotaTuiReport(effectiveFlags, options);
+
+  const response = await loadQuota(effectiveProviders, options, false);
   const redacted = redactedResponse(response, flags.full);
   return flags.json
     ? JSON.stringify(redacted, null, 2)
@@ -136,7 +142,12 @@ export async function modelsCommand(
   const options: ProviderOptions = {
     allowKeychainPrompt: flags.allowKeychainPrompt,
   };
-  const quota = await fetchQuota(flags.providers, options);
+
+  const effectiveProviders = await resolveEffectiveProviders(
+    flags,
+    options,
+  );
+  const quota = await fetchQuota(effectiveProviders, options);
   writeCachedProvidersBestEffort(quota.providers);
   const response = createModelsResponse(quota, {
     ...(flags.intelligence ? { intelligence: flags.intelligence } : {}),
@@ -169,7 +180,11 @@ export async function authCommand(
     allowKeychainPrompt: flags.allowKeychainPrompt,
   };
 
-  const reports = await inspectAuth(flags.providers, options);
+  const effectiveProviders = await resolveEffectiveProviders(
+    flags,
+    options,
+  );
+  const reports = await inspectAuth(effectiveProviders, options);
   return flags.json
     ? JSON.stringify(
         { generatedAt: nowIso(), schemaVersion: 1, auth: reports },
@@ -192,6 +207,35 @@ export async function fetchQuota(
   return annotateQuotaAdvice({
     generatedAt,
     providers: results,
+  });
+}
+
+async function resolveEffectiveProviders(
+  flags: { providers: ProviderId[]; allProviders: boolean; providersExplicit: boolean },
+  options: ProviderOptions,
+): Promise<ProviderId[]> {
+  if (flags.providersExplicit || flags.allProviders) return flags.providers;
+  return filterPresentProviders(flags.providers, options);
+}
+
+/**
+ * Filter to providers that have at least one local credential artifact.
+ * A provider is "present" if its inspectAuth reports any source that is
+ * not "missing" - i.e. the user has configured it at some point.
+ * This is a fast local file/env check, not a network probe.
+ */
+async function filterPresentProviders(
+  providers: ProviderId[],
+  options: ProviderOptions,
+): Promise<ProviderId[]> {
+  const reports = await Promise.all(
+    providers.map((provider) => PROVIDERS[provider].inspectAuth(options)),
+  );
+  return providers.filter((_, index) => {
+    const report = reports[index];
+    return report.sources.some(
+      (source) => source.status !== "missing",
+    );
   });
 }
 

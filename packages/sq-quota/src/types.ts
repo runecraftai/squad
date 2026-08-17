@@ -4,7 +4,8 @@ export type ProviderId =
   | "cursor"
   | "copilot"
   | "grok"
-  | "kimi";
+  | "kimi"
+  | "opencode";
 
 export const PROVIDER_IDS = [
   "claude",
@@ -13,6 +14,7 @@ export const PROVIDER_IDS = [
   "copilot",
   "grok",
   "kimi",
+  "opencode",
 ] as const satisfies readonly ProviderId[];
 
 export type ProviderSource =
@@ -199,6 +201,8 @@ export type ProviderQuota = {
     sourcesTried: string[];
   };
   attempts?: SourceAttempt[];
+  /** Optional human-readable notes rendered by the TUI card footer. */
+  notes?: string[];
 };
 
 export type SqQuotaResponse = {

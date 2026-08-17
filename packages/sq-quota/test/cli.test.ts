@@ -46,6 +46,7 @@ describe("CLI flag parsing", () => {
       "copilot",
       "grok",
       "kimi",
+      "opencode",
     ]);
   });
 
@@ -66,12 +67,14 @@ describe("CLI flag parsing", () => {
   it("collects the boolean flags", () => {
     expect(parseFlags(["--json", "--full", "--allow-keychain-prompt"])).toEqual(
       {
-        providers: ["claude", "codex", "cursor", "copilot", "grok", "kimi"],
+        providers: ["claude", "codex", "cursor", "copilot", "grok", "kimi", "opencode"],
         json: true,
         full: true,
         tui: false,
         once: false,
         allowKeychainPrompt: true,
+        allProviders: false,
+        providersExplicit: false,
       },
     );
     expect(parseFlags(["--tui"]).tui).toBe(true);

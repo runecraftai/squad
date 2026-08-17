@@ -150,7 +150,7 @@ describe("models command", () => {
       state: { status: "fresh", stale: false, sourcesTried: ["api"] },
     });
 
-    const json = JSON.parse(await capture(["models", "--json"]));
+    const json = JSON.parse(await capture(["models", "--all-providers", "--json"]));
     expect(json.models).toHaveLength(12);
     expect(process.exitCode).toBe(1);
 

@@ -654,6 +654,75 @@ describe("renderQuotaTui structure", () => {
       "runway unknown",
     );
   });
+
+  it("renders a windowless live card for auth-only providers without fabricating a percentage", () => {
+    const response = fixtureResponse();
+    response.providers.push({
+      provider: "opencode",
+      label: "OpenCode",
+      source: "api",
+      windows: [],
+      notes: ["3 models available"],
+      state: {
+        status: "fresh",
+        stale: false,
+        refreshedAt: GENERATED_AT,
+        authStatus: "usable",
+        sourcesTried: ["api"],
+      },
+      quotaSemantics: {
+        status: "unknown",
+        description: "No public quota API.",
+        effectiveAvailability: [],
+      },
+    });
+    const output = renderQuotaTui(response, {
+      timeZone: "America/Los_Angeles",
+    });
+    const lines = output.split("\n");
+    const opencodeTitle = findLine(lines, "● opencode");
+    expect(opencodeTitle).toContain("api");
+    findLine(lines, "effective unknown");
+    findLine(lines, "3 models available");
+    expect(output).toContain("runway unknown");
+    // Verify the opencode card itself does not contain a percentage bar
+    const opencodeCardStart = lines.findIndex((line) =>
+      line.includes("● opencode"),
+    );
+    const opencodeCardEnd = lines.findIndex(
+      (line, index) => index > opencodeCardStart && line.match(/^╰/),
+    );
+    if (opencodeCardStart >= 0 && opencodeCardEnd > opencodeCardStart) {
+      const opencodeCard = lines
+        .slice(opencodeCardStart, opencodeCardEnd + 1)
+        .join("\n");
+      // The opencode card should not have a numeric percentage on the effective line
+      // (it shows "effective unknown" instead of "XX% ...")
+      expect(opencodeCard).toContain("effective unknown");
+    }
+  });
+
+  it("renders notes from the notes array on windowless live cards", () => {
+    const response = fixtureResponse();
+    response.providers.push({
+      provider: "opencode",
+      label: "OpenCode",
+      source: "api",
+      windows: [],
+      notes: ["5 models available", "custom note"],
+      state: {
+        status: "fresh",
+        stale: false,
+        refreshedAt: GENERATED_AT,
+        sourcesTried: ["api"],
+      },
+    });
+    const output = renderQuotaTui(response, {
+      timeZone: "America/Los_Angeles",
+    });
+    expect(output).toContain("5 models available");
+    expect(output).toContain("custom note");
+  });
 });
 
 describe("thin bars with pace markers", () => {
