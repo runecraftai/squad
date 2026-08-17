@@ -140,6 +140,48 @@ SH
   chmod +x "$fakebin/jq"
 }
 
+# A fake pi binary that simulates --list-models for model-existence tests.
+# Exact-match patterns return one line; the glm-5 prefix pattern returns
+# three (the silent fuzzy-match bug); everything else returns zero lines.
+# Defined ahead of every test function that calls it (crew-dispatch
+# validation and model-existence tests both shadow pi with this stub), since
+# top-level test invocations run in file order and a call site preceding this
+# definition would silently no-op with 'command not found' rather than fail loud.
+install_fake_pi() {
+  local fakebin=$1
+  cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --list-models ]; then
+  printf '%s\n' 'provider   model                       context  max-out  thinking  images'
+  case "${2:-}" in
+    opencode-go/deepseek-v4-pro) printf '%s\n' 'opencode-go  deepseek-v4-pro          128K     32K      yes       no' ;;
+    opencode-go/mimo-v2.5) printf '%s\n' 'opencode-go  mimo-v2.5                128K     32K      yes       no' ;;
+    opencode-go/glm-5) printf '%s\n' 'opencode-go  glm-5.1                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.2                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.3                  128K     32K      yes       no' ;;
+    anthropic/claude-sonnet-5) printf '%s\n' 'anthropic    claude-sonnet-5           1M       64K      yes       yes' ;;
+    openai-codex/gpt-5.6-sol) printf '%s\n' 'openai-codex  gpt-5.6-sol             1M       32K      yes       no' ;;
+    *) printf '%s\n' 'No models matching "'"$2"'"' ;;
+  esac
+  exit 0
+fi
+exit 0
+SH
+  chmod +x "$fakebin/pi"
+}
+
+# A fake pi binary that fails when called with --list-models, simulating a
+# missing or broken listing surface. This shadows the real pi in PATH.
+install_failing_fake_pi() {
+  local fakebin=$1
+  cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --list-models ]; then
+  exit 1
+fi
+exit 0
+SH
+  chmod +x "$fakebin/pi"
+}
+
 make_fake_fleet_sync_root() {
   local dir=$1 fake_root
   fake_root="$dir/fake-root"
@@ -1176,44 +1218,6 @@ test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
 test_crew_dispatch_validation
-
-# A fake pi binary that simulates --list-models for model-existence tests.
-# Exact-match patterns return one line; the glm-5 prefix pattern returns
-# three (the silent fuzzy-match bug); everything else returns zero lines.
-install_fake_pi() {
-  local fakebin=$1
-  cat > "$fakebin/pi" <<'SH'
-#!/usr/bin/env bash
-if [ "${1:-}" = --list-models ]; then
-  printf '%s\n' 'provider   model                       context  max-out  thinking  images'
-  case "${2:-}" in
-    opencode-go/deepseek-v4-pro) printf '%s\n' 'opencode-go  deepseek-v4-pro          128K     32K      yes       no' ;;
-    opencode-go/mimo-v2.5) printf '%s\n' 'opencode-go  mimo-v2.5                128K     32K      yes       no' ;;
-    opencode-go/glm-5) printf '%s\n' 'opencode-go  glm-5.1                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.2                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.3                  128K     32K      yes       no' ;;
-    anthropic/claude-sonnet-5) printf '%s\n' 'anthropic    claude-sonnet-5           1M       64K      yes       yes' ;;
-    openai-codex/gpt-5.6-sol) printf '%s\n' 'openai-codex  gpt-5.6-sol             1M       32K      yes       no' ;;
-    *) printf '%s\n' 'No models matching "'"$2"'"' ;;
-  esac
-  exit 0
-fi
-exit 0
-SH
-  chmod +x "$fakebin/pi"
-}
-
-# A fake pi binary that fails when called with --list-models, simulating a
-# missing or broken listing surface. This shadows the real pi in PATH.
-install_failing_fake_pi() {
-  local fakebin=$1
-  cat > "$fakebin/pi" <<'SH'
-#!/usr/bin/env bash
-if [ "${1:-}" = --list-models ]; then
-  exit 1
-fi
-exit 0
-SH
-  chmod +x "$fakebin/pi"
-}
 
 # --- crew-dispatch model-existence validation tests ---
 # These test that configured model ids are resolved against the harness's model
