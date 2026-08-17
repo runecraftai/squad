@@ -1,6 +1,6 @@
 ---
 name: sq-quota
-description: "Report local Claude, Codex, Cursor, GitHub Copilot, Grok, and Kimi quota windows via the sq-quota CLI - remaining effective usable runway, percentages, reset times, cycle-average pace vs the reset clock, and provider status read from local auth sources, with no routing, provider mutation, or default ordering preference. Use before deciding whether it is safe to keep spending a provider's quota, when the user asks about usage, rate limits, pace, or remaining quota, or when comparing local provider headroom."
+description: "Report local Claude, Codex, Cursor, GitHub Copilot, Grok, Kimi, and OpenCode quota windows via the sq-quota CLI - remaining effective usable runway, percentages, reset times, cycle-average pace vs the reset clock, and provider status read from local auth sources, with no routing, provider mutation, or default ordering preference. Use before deciding whether it is safe to keep spending a provider's quota, when the user asks about usage, rate limits, pace, or remaining quota, or when comparing local provider headroom."
 user-invocable: false
 author: Squad contributors
 metadata:
@@ -43,7 +43,7 @@ or when comparing supported local provider headroom side by side.
 ## Workflow
 
 1. Run `npx -y @runecraft/sq-quota` for compact TOON output covering supported providers' quota windows.
-2. Scope to one provider with `--provider claude` or to a subset with `--provider cursor,copilot,grok,kimi`.
+2. Scope to one provider with `--provider claude` or to a subset with `--provider cursor,copilot,grok,kimi,opencode`. By default only providers with local credentials are shown; pass `--all-providers` to show every known provider.
 3. Pass `--json` for the normalized machine-readable model instead of TOON. Read
    `quotaSemantics.effectiveAvailability` rather than treating a model window in isolation:
    account windows can bound every model, and `boundedBy` names every window included in the
@@ -102,12 +102,13 @@ commands[3]:
   (none)=quota, auth, models
 output:
   Default TOON reports local quota evidence. models is a deterministic data join; --sort runway is explicit opt-in ordering. --tui renders a live human terminal report instead (q quits).
-flags[11]:
-  --provider <claude,codex,cursor,copilot,grok,kimi>, --json, --full, --tui, --refresh <30s-24h>, --once, --allow-keychain-prompt, --intelligence <high|medium|low>, --sort <runway>, --help, -v/--version
+flags[12]:
+  --provider <claude,codex,cursor,copilot,grok,kimi,opencode>, --json, --full, --tui, --refresh <30s-24h>, --once, --allow-keychain-prompt, --all-providers, --intelligence <high|medium|low>, --sort <runway>, --help, -v/--version
 examples:
   sq-quota
   sq-quota --provider claude
-  sq-quota --provider cursor,copilot,grok,kimi
+  sq-quota --provider cursor,copilot,grok,kimi,opencode
+  sq-quota --all-providers
   sq-quota --json
   sq-quota --full
   sq-quota --tui

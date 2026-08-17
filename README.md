@@ -152,7 +152,7 @@ Squad's tooling ships as standalone packages under `packages/`, each with its ow
 | sq-tasks   | Task and backlog manager for agents that edits a hand-editable markdown backlog in place at near-zero token cost     | [README](packages/sq-tasks/README.md)        |
 | sq-gh      | GitHub CLI wrapper for agents with token-efficient output, next-step suggestions, and structured errors              | [README](packages/sq-gh/README.md)           |
 | sq-browser | Agent-ergonomic browser automation that wraps chrome-devtools-mcp with a token-efficient CLI                        | [README](packages/sq-browser/README.md)      |
-| sq-quota   | Reports local Claude, Codex, Cursor, GitHub Copilot, Grok, and Kimi quota windows in one data-only call              | [README](packages/sq-quota/README.md)        |
+| sq-quota   | Reports local Claude, Codex, Cursor, GitHub Copilot, Grok, Kimi, and OpenCode quota windows in one data-only call    | [README](packages/sq-quota/README.md)        |
 | sq-report  | Opens agent-generated HTML in a local browser editor so you can annotate elements and send feedback to the agent    | [README](packages/sq-report/README.md)       |
 
 ## Documentation

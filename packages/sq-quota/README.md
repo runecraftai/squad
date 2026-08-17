@@ -15,8 +15,8 @@ Quota CLI for agents, part of the [Squad](https://github.com/runecraftai/squad) 
 Agents need quota state before they choose where work can safely run.
 Vendor dashboards are not shaped for shell automation, and local CLIs expose different windows, resets, and auth sources.
 
-sq-quota reports local Claude, Codex, Cursor, GitHub Copilot, Grok, and Kimi quota windows in one call.
-It is data only: it never routes, recommends a provider, model, harness, credential, or route, proxies, intercepts, logs in, imports browser cookies, or mutates provider state. Default output has no ordering preference. The opt-in `models --sort runway` surface applies only its documented deterministic comparator to quota evidence, preserves all evidence and explicit ties, and is not a recommendation.
+sq-quota reports local Claude, Codex, Cursor, GitHub Copilot, Grok, Kimi, and OpenCode quota windows in one call.
+It is data only: it never routes, recommends a provider, model, harness, credential, or route, proxies, intercepts, logs in, imports browser cookies, or mutates provider state. Default output has no ordering preference and, by default, only shows providers with local credentials present (use `--all-providers` to show every known provider). The opt-in `models --sort runway` surface applies only its documented deterministic comparator to quota evidence, preserves all evidence and explicit ties, and is not a recommendation.
 
 - **Official sources** - sq-quota reads local provider auth sources and calls the first-party quota, usage, billing, or entitlement endpoints used by the local agents, with a read-only Codex app-server probe as fallback.
 - **Local first** - quota and auth reports run on the machine that holds the credentials; their network calls go to first-party provider endpoints, never a third-party relay.
@@ -36,13 +36,14 @@ $ npx -y @runecraft/sq-quota
 bin: ~/.npm/_npx/.../sq-quota
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2026-03-15T16:42:00.000Z"
-providers[6]{provider,plan,source,status,authStatus,refreshedAt}:
+providers[7]{provider,plan,source,status,authStatus,refreshedAt}:
   claude,pro,oauth,fresh,unknown,"2026-03-15T16:41:55.000Z"
   codex,plus,cli-rpc,fresh,unknown,"2026-03-15T16:41:58.000Z"
   cursor,pro,api,fresh,unknown,"2026-03-15T16:41:59.000Z"
   copilot,individual,api,fresh,unknown,"2026-03-15T16:42:00.000Z"
   grok,unknown,web,fresh,usable,"2026-03-15T16:42:00.000Z"
   kimi,unknown,api,fresh,unknown,"2026-03-15T16:42:00.000Z"
+  opencode,unknown,api,auth-only,unknown,"2026-03-15T16:42:00.000Z"
 windows[15]{provider,id,label,percentRemaining,resetsAt,pace,state}:
   claude,five_hour,session,82,"2026-03-15T20:10:48.000Z",behind,fresh
   claude,seven_day,week,64,"2026-03-20T17:59:45.600Z",ahead,fresh
@@ -104,23 +105,25 @@ The skill handles discovery; the CLI runs on demand through
 bin: ~/.local/share/mise/installs/node/26.5.0/bin/sq-quota
 description: Report local agent-provider quota windows for routing-aware agents
 generatedAt: "2026-08-11T04:05:09.647Z"
-providers[6]{provider,plan,source,status,authStatus,refreshedAt}:
+providers[7]{provider,plan,source,status,authStatus,refreshedAt}:
 claude,pro,oauth,fresh,unknown,"2026-08-11T04:05:10.145Z"
 codex,unknown,unavailable,error,unknown,none
 cursor,unknown,unavailable,auth_required,unknown,none
 copilot,unknown,unavailable,auth_required,unknown,none
 grok,unknown,unavailable,auth_required,unusable,none
 kimi,unknown,unavailable,auth_required,unknown,none
+opencode,unknown,unavailable,auth_required,unknown,none
 windows[2]{provider,id,label,percentRemaining,resetsAt,pace,state}:
 claude,five_hour,session,100,unknown,unknown,fresh
 claude,seven_day,week,86,"2026-08-12T02:00:00.045989+00:00",behind,fresh
-effective[6]{provider,scope,effectivePercentRemaining,boundedBy,limitingWindowIds,runway,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId,projectionConfidence,projectionBasis,unmeasurableWindowIds,unresolvedWindowIds,relationshipStatus}:
+effective[7]{provider,scope,effectivePercentRemaining,boundedBy,limitingWindowIds,runway,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId,projectionConfidence,projectionBasis,unmeasurableWindowIds,unresolvedWindowIds,relationshipStatus}:
 claude,all_models,86,five_hour + seven_day,seven_day,through_reset,unknown,unknown,unknown,established,cycle_average,none,none,known
 codex,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
 cursor,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,"",unknown
 copilot,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,"",unknown
 grok,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
 kimi,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
+opencode,unresolved,unknown,none,unknown,unknown,unknown,unknown,unknown,unknown,unknown,none,none,unknown
 help[4]:
 Default TOON reports effective headroom and usable runway; use --json or --full for reserve diagnostics
 Run `sq-quota --provider claude --json` for JSON output
@@ -202,7 +205,8 @@ It is generated from `src/skill.ts`; update it with `pnpm run build:skill` and v
 
 | Flag                                               | Description                                                        |
 | -------------------------------------------------- | ------------------------------------------------------------------ |
-| `--provider claude,codex,cursor,copilot,grok,kimi` | Scope providers                                                    |
+| `--provider claude,codex,cursor,copilot,grok,kimi,opencode` | Scope providers                                                            |
+| `--all-providers`                                 | Show all known providers even if they have no local credentials           |
 | `--json`                                           | Emit normalized JSON instead of TOON for quota, auth, or models    |
 | `--full`                                           | Include account, source attempts, and reserve details              |
 | `--tui`                                            | Render the live human terminal report instead of TOON (quota only) |
@@ -242,7 +246,7 @@ The package publishes TypeScript declarations from its package root, so consumer
 | Object                        | Fields                                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Quota report                  | `providers`                                                                                                  |
-| Provider report               | `provider`, `label`, `source`, `windows`, `quotaSemantics`, `state`, optional `plan`, and optional `credits` |
+| Provider report               | `provider`, `label`, `source`, `windows`, `quotaSemantics`, `state`, optional `plan`, optional `credits`, and optional `notes` |
 | Provider report with `--full` | Optional `account` identity and per-source `attempts`                                                        |
 | Account identity (`--full`)   | Optional `email`, `organization`, `accountId`, and `identityStatus`                                          |
 
@@ -368,6 +372,7 @@ Source attempts can include `credentialPresent` when a non-secret probe confirms
 | Grok                   | With a usable Grok CLI session bearer, can report the shared `credits` window, optional product-scoped `product:<slug>` windows, the current-period `startsAt` and reset, and optional prepaid credit balance from the consumer Usage-page operation. Pi `xai` auth alone establishes usability but cannot provide these consumer windows. Top-level `credits.remaining` is prepaid/on-demand balance, distinct from the shared period `windows` credits percentage used for effective availability. Pace prefers the startsAt/resetsAt pair. |
 | Grok proto3 zero       | For the exact consumer operation only, an omitted usage float is the official proto3 zero when a valid weekly or monthly current period proves the config is present; sq-quota reports `0` used and `100` remaining rather than deriving usage from money.                                                                                                                                                                                                                                                               |
 | Kimi                   | Reports the principal `weekly` subscription window (with trusted 604,800s duration) plus every valid self-described limit in wire order. Only a limit whose normalized duration is exactly 18,000 seconds is identified as `five_hour`; future limits remain `limit:<index>` unknown windows.                                                                                                                                                                                                                             |
+| OpenCode       | Auth-only success: validates credentials against the Zen models endpoint and reports model count in `notes`. No public quota, balance, or usage API; `quotaSemantics.status` is always `unknown` with empty `effectiveAvailability`. Credentials are discovered from `OPENCODE_API_KEY` or `ZEN_API_KEY` env vars, or from `$XDG_DATA_HOME/opencode/auth.json` (default `~/.local/share/opencode/auth.json`) with `api_key` or `api-key` type entries. |
 
 ### Model catalog and `models`
 
@@ -392,7 +397,7 @@ Auth source entries can include `credentialPresent` when a non-secret probe conf
 | Name                 | Values                                                                                                                                    |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Auth source statuses | `available`, `missing`, `invalid`, `expired`, `skipped`, or `error`                                                                       |
-| Auth source names    | `oauth-file`, `keychain`, `auth-json`, `auth-env`, `apps-json`, `state-vscdb`, `cli-rpc`, `pi:kimi-coding`, `pi:xai`, and `kimi-code-cli` |
+| Auth source names    | `oauth-file`, `keychain`, `auth-json`, `auth-env`, `apps-json`, `state-vscdb`, `cli-rpc`, `pi:kimi-coding`, `pi:xai`, `kimi-code-cli`, and `api-key-env` |
 
 ## Security Posture
 
@@ -406,6 +411,7 @@ Auth source entries can include `credentialPresent` when a non-secret probe conf
 | GitHub Copilot | `$GITHUB_COPILOT_APPS_JSON` when set or the local Copilot apps auth file                                                                                                                                                                                                                                                                                     |
 | Grok           | Grok CLI session auth from `$GROK_AUTH_JSON`, inline `$GROK_AUTH`, `$GROK_AUTH_PATH`, or `$GROK_HOME/auth.json` / `~/.grok/auth.json`, plus Pi's independent `$PI_CODING_AGENT_DIR/auth.json` `xai` entry (default `~/.pi/agent/auth.json`) for OAuth or literal API-key model auth                                          |
 | Kimi           | Pi's `$PI_CODING_AGENT_DIR/auth.json` (default `~/.pi/agent/auth.json`) for a literal `kimi-coding` API key or unexpired OAuth access token first, then a fresh official Kimi Code CLI access token from `$KIMI_CODE_HOME/credentials/kimi-code.json` (default `$HOME/.kimi-code/credentials/kimi-code.json`)                                              |
+| OpenCode       | `OPENCODE_API_KEY` or `ZEN_API_KEY` env vars, or `$XDG_DATA_HOME/opencode/auth.json` (default `~/.local/share/opencode/auth.json`) with `api_key` or `api-key` type entries                                                                                                                                                                                                                                                   |
 
 ### Provider notes
 
