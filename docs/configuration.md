@@ -280,6 +280,8 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 When the file exists, bootstrap validates it with `jq`.
 Valid files stay silent by default; with `SQUAD_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
 Malformed JSON, an empty or malformed rule/default array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
+Additionally, for pi-family harnesses (pi, pi-signed, opencode), bootstrap resolves every configured `model` id against the harness's own `--list-models` output and reports `CREW_DISPATCH: model existence:` when the id matches zero models or more than one model.
+A probe that cannot run surfaces explicit uncertainty rather than a hard failure.
 While the file remains present, no operator or recon spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 XO bases inherit this file from the primary, so an XO's own operators apply the same dispatch profile behavior.
 
