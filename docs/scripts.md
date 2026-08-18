@@ -24,6 +24,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-remote-job-worker.sh` | Long-lived remote queue worker for tracked `sq-*.sh` commands in the account runtime |
 | `sq-remote-job-reap-orphans.sh` | Stop remote job workers left running by a pruned code root, never one whose checkout still exists |
 | `sq-remote-doctor.sh`    | Check, and with `--fix` repair, one remote account's second-mate readiness (remote job worker, Herdr, Aqua launch agents, PATH, and required tools) |
+| `sq-ask.sh`              | Interactive decision card picker: reads a card JSON on stdin and renders a terminal picker | 
 | `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
 | `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through sq-tasks             |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
