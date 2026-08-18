@@ -4,6 +4,7 @@
 # outputs the selected option as JSON to stdout.
 #
 # Usage: echo '{"version":1,...}' | bin/sq-ask.sh [options]
+#        bin/sq-ask.sh '{"version":1,...}' [options]
 #
 # Options:
 #   --format <fmt>    Output format: json (default), text, id
@@ -19,7 +20,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "error: python3 is required but not found in PATH" >&2
+  exit 2
+fi
+
+# --- JSON escaping helper ---
+escape_json_string() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
 
 # --- defaults ---
 FORMAT="json"
@@ -40,20 +56,17 @@ while [[ $# -gt 0 ]]; do
       sed -n '2,/^set -eu/p' "$0" | head -n -1 | sed 's/^# //' | sed 's/^#//'
       exit 0
       ;;
-    *) echo "error: unknown option $1" >&2; exit 2 ;;
+    *) break ;;
   esac
 done
 
-# --- read stdin ---
+# --- read stdin or positional argument ---
 CARD_JSON=""
-if [[ -t 0 ]]; then
-  # stdin is terminal, check for argument
-  if [[ $# -gt 0 ]]; then
-    CARD_JSON="$1"
-  else
-    echo "error: no decision card JSON on stdin or as argument" >&2
-    exit 2
-  fi
+if [[ $# -gt 0 ]]; then
+  CARD_JSON="$1"
+elif [[ -t 0 ]]; then
+  echo "error: no decision card JSON on stdin or as argument" >&2
+  exit 2
 else
   CARD_JSON="$(cat)"
 fi
@@ -432,7 +445,15 @@ pick_bash() {
 
   local default_label="${OPTION_LABELS[$DEFAULT_IDX]}"
   echo -n "Your call [$default_label]: " >&2
-  read -r choice
+  local _read_fd=0
+  if [[ ! -t 0 ]]; then
+    _read_fd=3
+    exec 3<>/dev/tty
+  fi
+  read -r choice <&"$_read_fd"
+  if [[ "$_read_fd" == "3" ]]; then
+    exec 3<&-
+  fi
   echo "" >&2
 
   if [[ -z "$choice" ]]; then
@@ -475,7 +496,15 @@ if [[ "$RESULT" == "CANCELLED" ]]; then
 elif [[ "$RESULT" == "FREE_TEXT" ]]; then
   # Prompt for free text
   echo -n "Enter your answer: " >&2
-  read -r free_text
+  local _read_fd=0
+  if [[ ! -t 0 ]]; then
+    _read_fd=3
+    exec 3<>/dev/tty
+  fi
+  read -r free_text <&"$_read_fd"
+  if [[ "$_read_fd" == "3" ]]; then
+    exec 3<&-
+  fi
   echo "" >&2
 
   if [[ -z "$free_text" ]]; then
@@ -486,7 +515,7 @@ elif [[ "$RESULT" == "FREE_TEXT" ]]; then
     case "$FORMAT" in
       json)
         printf '{"decision_id":"%s","selected_option_id":null,"selected_label":null,"free_text":"%s","method":"free_text"}\n' \
-          "$CARD_ID" "$free_text"
+          "$CARD_ID" "$(escape_json_string "$free_text")"
         ;;
       text) echo "$free_text" ;;
       id) echo "$free_text" ;;
@@ -509,7 +538,7 @@ if [[ "$RESULT" =~ ^OPTION: ]]; then
   case "$FORMAT" in
     json)
       printf '{"decision_id":"%s","selected_option_id":"%s","selected_label":"%s","free_text":null,"method":"picker"}\n' \
-        "$CARD_ID" "$SELECTED_ID" "$SELECTED_LABEL"
+        "$CARD_ID" "$SELECTED_ID" "$(escape_json_string "$SELECTED_LABEL")"
       ;;
     text) echo "$SELECTED_LABEL" ;;
     id) echo "$SELECTED_ID" ;;
