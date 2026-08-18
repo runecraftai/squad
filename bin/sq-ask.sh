@@ -385,7 +385,7 @@ pick_fzf() {
     echo "FREE_TEXT"
   else
     local idx
-    idx=$(echo "$selected" | sed 's/^\([0-9]*\)\..*/\1/')
+    idx="${selected%%.*}"
     idx=$((idx - 1))
     if [[ $idx -ge 0 && $idx -lt ${#OPTION_IDS[@]} ]]; then
       echo "OPTION:${OPTION_IDS[$idx]}"
@@ -523,7 +523,7 @@ if [[ "$RESULT" == "CANCELLED" ]]; then
 elif [[ "$RESULT" == "FREE_TEXT" ]]; then
   # Prompt for free text
   echo -n "Enter your answer: " >&2
-  local _read_fd=0
+  _read_fd=0
   if [[ ! -t 0 ]]; then
     _read_fd=3
     exec 3<>/dev/tty

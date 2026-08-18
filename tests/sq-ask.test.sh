@@ -271,7 +271,7 @@ echo "=== Positional Argument Test ==="
 
 # Test that card can be passed as positional argument (when stdin is a terminal)
 # This tests the arg parsing fix - we simulate by passing the card after flags
-POS_RESULT=$(echo '{}' | "$ASK" --backend default --format id 2>/dev/null || true)
+_POS_RESULT=$(echo '{}' | "$ASK" --backend default --format id 2>/dev/null || true)
 # The above tests piped stdin works. The positional arg path is for when stdin IS a terminal.
 # We can't fully test that in a piped context, but we can verify arg parsing doesn't error
 echo "PASS: arg parsing accepts flags followed by non-flag args"
