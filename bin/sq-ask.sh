@@ -8,18 +8,16 @@
 #
 # Options:
 #   --format <fmt>    Output format: json (default), text, id
-#   --backend <tool>  Force picker backend: fzf, whiptail, bash (default: auto)
+#   --backend <tool>  Force picker backend: fzf, whiptail, dialog, bash (default: auto)
 #   --no-interactive  Fail if no interactive terminal available
 #   --validate        Validate card JSON and exit
 #   --render          Render card text and exit (no picker)
 #   --help            Show this help
 #
-# Picker backend priority: fzf > whiptail > bash (pure fallback)
+# Picker backend priority: fzf > whiptail > dialog > bash (pure fallback)
 # Output is always JSON to stdout (except --format text/id).
 # Exit codes: 0=selected, 1=cancelled, 2=invalid card, 3=no terminal
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "error: python3 is required but not found in PATH" >&2
@@ -258,6 +256,8 @@ detect_backend() {
     echo "fzf"
   elif [[ -t 1 ]] && command -v whiptail >/dev/null 2>&1; then
     echo "whiptail"
+  elif [[ -t 1 ]] && command -v dialog >/dev/null 2>&1; then
+    echo "dialog"
   elif [[ -t 1 ]]; then
     echo "bash"
   else
@@ -424,6 +424,33 @@ pick_whiptail() {
   fi
 }
 
+pick_dialog() {
+  local menu_items=()
+  for i in "${!OPTION_DISPLAYS[@]}"; do
+    menu_items+=("$((i+1))" "${OPTION_DISPLAYS[$i]}")
+  done
+
+  local choice
+  choice=$(dialog --title "━━━ $TITLE ━━━" \
+    --menu "$QUESTION\n\n$CONTEXT" \
+    20 70 10 \
+    "${menu_items[@]}" \
+    3>&1 1>&2 2>&3) || true
+
+  if [[ -z "$choice" ]]; then
+    echo "CANCELLED"
+    return 1
+  fi
+
+  local idx=$((choice - 1))
+  if [[ $idx -ge 0 && $idx -lt ${#OPTION_IDS[@]} ]]; then
+    echo "OPTION:${OPTION_IDS[$idx]}"
+  else
+    echo "CANCELLED"
+    return 1
+  fi
+}
+
 pick_bash() {
   # Pure bash fallback with read
   echo "━━━ DECISION: $TITLE ━━━" >&2
@@ -485,6 +512,7 @@ RESULT=""
 case "$DETECTED_BACKEND" in
   fzf) RESULT=$(pick_fzf) ;;
   whiptail) RESULT=$(pick_whiptail) ;;
+  dialog) RESULT=$(pick_dialog) ;;
   bash) RESULT=$(pick_bash) ;;
   default) RESULT=$(pick_default) ;;
   *) echo "error: unknown backend $DETECTED_BACKEND" >&2; exit 2 ;;

@@ -93,7 +93,7 @@ The decision card standard works across all Squad harnesses:
 - **grok**: Same as claude/codex/opencode
 
 The picker tool (`sq-ask.sh`) detects available terminal tools and degrades gracefully:
-- fzf (preferred) → whiptail → bash read → default (non-interactive)
+- fzf (preferred) → whiptail → dialog → bash read → default (non-interactive)
 
 ## Implementation Files
 
