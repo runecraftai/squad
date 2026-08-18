@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BOARD="$SCRIPT_DIR/../packages/sq-board/bin/sq-board.sh"
+BOARD="$SCRIPT_DIR/../packages/operation-board/bin/sq-board.sh"
 PASS=0
 FAIL=0
 
@@ -235,9 +235,14 @@ output_held=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" --state held 2>&1)
 assert_contains "shows held task via --state held" "gamma-held" "$output_held"
 assert_not_contains "hides queued tasks via --state held" "delta-queued" "$output_held"
 
-# Test 12: No matches shows message
+# Test 12: --state done implies --with-done
+printf '\n-- State done --\n'
+output_state_done=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" --state 'done' 2>&1)
+assert_contains "shows done items with --state done" "epsilon-done" "$output_state_done"
+
+# Test 12b: No matches shows message for a filter with no hits
 printf '\n-- No matches --\n'
-output_empty=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" '--state' 'done' 2>&1)
+output_empty=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" --state 'done' --kind recon 2>&1)
 assert_contains "shows no-match message" "No missions match" "$output_empty"
 
 # Test 13: --help

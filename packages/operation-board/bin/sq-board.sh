@@ -60,7 +60,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --json)       MODE="json"; shift ;;
     --compact)    MODE="compact"; shift ;;
-    --state)      FILTER_STATE="$2"; shift 2 ;;
+    --state)      FILTER_STATE="$2"; shift 2
+                  [ "$FILTER_STATE" = "done" ] && SHOW_DONE=true ;;
     --kind)       FILTER_KIND="$2"; shift 2 ;;
     --with-done)  SHOW_DONE=true; shift ;;
     --help|-h)
@@ -261,6 +262,10 @@ collect_board() {
 }
 
 # --- Output: JSON ---
+json_esc() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g'
+}
+
 render_json() {
   local board_data
   board_data=$(mktemp)
@@ -271,15 +276,26 @@ render_json() {
   while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
     $first || printf ',\n'
     first=false
-    local jtitle jevent jdetail
-    jtitle=$(printf '%s' "$title" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    jevent=$(printf '%s' "$status_event" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    jdetail=$(printf '%s' "$ws_detail" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    id=$(json_esc "$id")
+    state=$(json_esc "$state")
+    kind=$(json_esc "$kind")
+    repo=$(json_esc "$repo")
+    title=$(json_esc "$title")
+    model=$(json_esc "$model")
+    effort=$(json_esc "$effort")
+    mode=$(json_esc "$mode")
+    backend=$(json_esc "$backend")
+    ws_label=$(json_esc "$ws_label")
+    ws_state=$(json_esc "$ws_state")
+    ws_detail=$(json_esc "$ws_detail")
+    status_event=$(json_esc "$status_event")
+    elapsed=$(json_esc "$elapsed")
+    window=$(json_esc "$window")
     printf '  {"id":"%s","state":"%s","kind":"%s","repo":"%s","title":"%s","model":"%s","effort":"%s","mode":"%s","backend":"%s","endpoint_label":"%s","endpoint_state":"%s","endpoint_detail":"%s","last_event":"%s","busy_elapsed":"%s","window":"%s"}\n' \
-      "$id" "$state" "$kind" "$repo" "$jtitle" \
+      "$id" "$state" "$kind" "$repo" "$title" \
       "$model" "$effort" "$mode" "$backend" \
-      "$ws_label" "$ws_state" "$jdetail" \
-      "$jevent" "$elapsed" "$window"
+      "$ws_label" "$ws_state" "$ws_detail" \
+      "$status_event" "$elapsed" "$window"
   done < "$board_data"
   printf '\n]\n'
   rm -f "$board_data"
