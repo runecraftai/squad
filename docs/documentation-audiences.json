@@ -356,6 +356,26 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/decision-card-examples.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/decision-card-format.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/decision-card-pi-recipe.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/decision-card-schema.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/decision-card-standard.md",
+   "audience": "maintainer-architecture"
+  },
+  {
    "path": "docs/decision-hold-lifecycle.md",
    "audience": "maintainer-architecture"
   },
