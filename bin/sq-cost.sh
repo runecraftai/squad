@@ -85,7 +85,7 @@ resolve_task_transcripts() {
 cmd_task() {
   local task_id="${1:?task-id required}"
   local dir
-  dir=$(resolve_task_transcripts "$task_id")
+  dir=$(resolve_task_transcripts "$task_id" || true)
 
   if [ -z "$dir" ] || [ ! -d "$dir" ]; then
     # No transcript found — report as estimate from meta
@@ -110,12 +110,12 @@ cmd_task() {
 
 cmd_transcript() {
   local file="${1:?transcript path required}"
-  sq_cost_from_transcript "$file"
+  sq_cost_from_transcript "$file" || true
 }
 
 cmd_dir() {
   local dir="${1:?directory path required}"
-  sq_cost_scan_dir "$dir"
+  sq_cost_scan_dir "$dir" || true
 }
 
 cmd_cwd() {
