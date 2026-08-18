@@ -139,7 +139,7 @@ Abandoning is cheap before intake and expensive after, which is why section 1 is
 
 Product name: SOVEREIGN.
 Publication target: `runecraftai/SOVEREIGN`.
-The product will also carry the Runecraft brand on the nm/github surface.
+The product will also carry the Runecraft brand on the npm/github surface.
 
 The first acquisition target is LifeOS and Agentic OS (upstream `danielmiessler/LifeOS`, MIT, single-maintainer, high star count), whose mechanisms are organized as the SEED and PAUL frameworks.
 Mechanisms in scope: the memory layer (Cortex), the skills layer, the hooks layer, the background daemon (Pulse), the goals and identity model (TELOS), and the assistant instruction layer (ISA).
