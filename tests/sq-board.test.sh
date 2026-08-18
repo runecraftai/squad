@@ -25,12 +25,12 @@ cat > "$MOCK_BASE/data/backlog.md" <<'BACKLOG'
 ## In flight
 - [ ] alpha-task - Alpha implementation task (repo: test-repo) (kind: strike) (since 2025-08-17)
 - [ ] beta-recon - Beta investigation (repo: test-repo) (kind: recon) (since 2025-08-17)
-
-## Held
-- [ ] gamma-held - Gamma waiting for decision (repo: other-repo) (kind: commander) (hold: waiting for approval) (hold-kind: commander) (since 2025-08-16)
+- **legacy-task** - Legacy in-flight mission (repo: test-repo) (kind: strike)
 
 ## Queued
-- [ ] delta-queued - Delta ready to go (repo: test-repo) (kind: strike) (since 2025-08-15)
+- [ ] gamma-held - Gamma waiting for decision (repo: other-repo) (kind: commander) (hold: waiting for approval) (hold-kind: commander) (since 2025-08-16)
+- [ ] delta-queued - Delta ready to go (repo: test-repo) (since 2025-08-15)
+- [ ] scout-queue - SCOUT probe of new area (repo: test-repo) (since 2025-08-15)
 
 ## Done
 - [ ] epsilon-done - Epsilon completed (repo: test-repo) (kind: strike) (since 2025-08-14)
@@ -56,6 +56,23 @@ mode=herdr
 kind=recon
 backend=herdr
 META
+
+cat > "$MOCK_BASE/state/delta-queued.meta" <<'META'
+window=test:delta
+endpoint_task_id=delta-queued
+model=test-model/v3
+effort=low
+mode=drill
+kind=strike
+backend=tmux
+busy_gen=g-stale.1
+META
+
+touch -d '3 minutes ago' "$MOCK_BASE/state/delta-queued.meta"
+
+# Busy sidecar for the primary elapsed path (state/<id>.busy-gen mtime)
+printf 'g1\n' > "$MOCK_BASE/state/alpha-task.busy-gen"
+touch -d '3 minutes ago' "$MOCK_BASE/state/alpha-task.busy-gen"
 
 # Create mock window-states
 cat > "$MOCK_BASE/state/window-states" <<'WS'
@@ -115,6 +132,24 @@ for item in data:
   fi
 }
 
+assert_json_field_matches() {
+  local desc="$1" item_id="$2" pattern="$3" json="$4" field="$5"
+  local actual
+  actual=$(printf '%s' "$json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for item in data:
+    if item['id'] == sys.argv[1]:
+        print(item.get(sys.argv[2], ''))
+        break
+" "$item_id" "$field" 2>/dev/null || echo "")
+  if printf '%s' "$actual" | grep -qE "$pattern"; then
+    pass "$desc"
+  else
+    fail "$desc" "to match '$pattern'" "'$actual'"
+  fi
+}
+
 # --- Tests ---
 printf '\n=== sq-board tests ===\n\n'
 
@@ -123,6 +158,7 @@ printf '%s\n' '-- Table mode --'
 output=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" 2>&1)
 assert_contains "shows alpha-task in output" "alpha-task" "$output"
 assert_contains "shows beta-recon in output" "beta-recon" "$output"
+assert_contains "shows legacy in-flight bullet" "legacy-task" "$output"
 assert_contains "shows IN FLIGHT section" "IN FLIGHT" "$output"
 assert_contains "shows QUEUED section" "QUEUED" "$output"
 assert_contains "shows HELD section" "HELD" "$output"
@@ -155,7 +191,13 @@ assert_not_contains "hides held tasks" "gamma-held" "$output_flight"
 printf '\n-- Kind filter --\n'
 output_strike=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" --kind strike 2>&1)
 assert_contains "shows strike tasks" "alpha-task" "$output_strike"
+assert_contains "shows strike via meta kind" "delta-queued" "$output_strike"
 assert_not_contains "hides recon tasks" "beta-recon" "$output_strike"
+
+output_recon=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" --kind recon 2>&1)
+assert_contains "shows recon via kind tag" "beta-recon" "$output_recon"
+assert_contains "shows recon via leading kind word" "scout-queue" "$output_recon"
+assert_not_contains "hides strike tasks" "alpha-task" "$output_recon"
 
 # Test 8: Combined filter
 printf '\n-- Combined filter --\n'
@@ -182,6 +224,16 @@ assert_json_field "JSON alpha-task has correct state" "alpha-task" "in_flight" "
 assert_json_field "JSON alpha-task has correct kind" "alpha-task" "strike" "$output_json" "kind"
 assert_json_field "JSON alpha-task has model" "alpha-task" "test-model/v1" "$output_json" "model"
 assert_json_field "JSON alpha-task has mode" "alpha-task" "drill" "$output_json" "mode"
+assert_json_field "JSON gamma-held derives held state" "gamma-held" "held" "$output_json" "state"
+assert_json_field_matches "JSON busy_elapsed from sidecar mtime" "alpha-task" '^[0-9]+[smh]$' "$output_json" "busy_elapsed"
+assert_json_field_matches "JSON busy_elapsed falls back to meta busy_gen" "delta-queued" '^[0-9]+[smh]$' "$output_json" "busy_elapsed"
+
+# Test 11: --state held
+echo
+printf '%s\n' '-- State held --'
+output_held=$(SQUAD_BASE="$MOCK_BASE" "$BOARD" --state held 2>&1)
+assert_contains "shows held task via --state held" "gamma-held" "$output_held"
+assert_not_contains "hides queued tasks via --state held" "delta-queued" "$output_held"
 
 # Test 12: No matches shows message
 printf '\n-- No matches --\n'

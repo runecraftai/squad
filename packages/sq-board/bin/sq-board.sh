@@ -108,8 +108,12 @@ ws_for() {
 }
 
 busy_elapsed() {
-  local f="$STATE_DIR/$1.busy_gen"
-  [ -f "$f" ] || return 0
+  local f="$STATE_DIR/$1.busy-gen"
+  if [ ! -f "$f" ]; then
+    local mfile="$STATE_DIR/$1.meta"
+    grep -q '^busy_gen=' "$mfile" 2>/dev/null || return 0
+    f="$mfile"
+  fi
   local mtime now diff
   mtime=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo "")
   [ -n "$mtime" ] || return 0
@@ -164,36 +168,58 @@ collect_board() {
     # Detect section headers
     case "$line" in
       "## In flight"*) sec="in_flight"; continue ;;
-      "## Held"*)       sec="held"; continue ;;
       "## Queued"*)     sec="queued"; continue ;;
       "## Done"*)       sec="done"; continue ;;
     esac
 
-    # Only process task lines
-    printf '%s' "$line" | grep -q '^- \[.\] ' || continue
+    # Only process task lines: checkbox bullets (- [ ]/- [x]) or legacy
+    # in-flight bullets (- **id** -)
+    printf '%s' "$line" | grep -Eq '^- \[.\] |^- \*\*[A-Za-z0-9][A-Za-z0-9._-]*\*\* - ' || continue
+
+    # Held is per-item derived state: any non-done item carrying a hold tag
+    local st="$sec"
+    if [ "$sec" != "done" ] && printf '%s' "$line" | grep -qE '\(hold(-kind|-until)?:'; then
+      st="held"
+    fi
 
     # Apply state filter
-    [ -n "$FILTER_STATE" ] && [ "$sec" != "$FILTER_STATE" ] && continue
+    [ -n "$FILTER_STATE" ] && [ "$st" != "$FILTER_STATE" ] && continue
     [ "$SHOW_DONE" = false ] && [ "$sec" = "done" ] && continue
 
-    # Parse: - [ ] id - title (repo: X) (kind: Y) ...
-    local id title kind repo
+    # Parse: - [ ] id - title (repo: X) (kind: Y) ... (or - **id** - ...)
+    local id rest kind repo
 
-    # Extract id (first word after checkbox)
-    id=$(printf '%s' "$line" | sed 's/^- \[.\] \([^ ]*\) -.*/\1/')
+    if printf '%s' "$line" | grep -q '^- \*\*'; then
+      id=$(printf '%s' "$line" | sed -E 's/^- \*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\* -.*/\1/')
+      rest=$(printf '%s' "$line" | sed -E 's/^- \*\*[^*]+\*\* - //')
+    else
+      id=$(printf '%s' "$line" | sed 's/^- \[.\] \([^ ]*\) -.*/\1/')
+      rest=$(printf '%s' "$line" | sed 's/^- \[.\] [^ ]* - //')
+    fi
 
-    # Extract kind from (kind: X)
-    kind=$(printf '%s' "$line" | grep -oP '\(kind: \K[^)]+' 2>/dev/null || echo "-")
+    # Extract kind: (kind: X) tag, else legacy leading kind word, else meta kind=
+    kind=$(printf '%s' "$rest" | grep -oP '\(kind: \K[^)]+' 2>/dev/null || echo "-")
+    if [ "$kind" = "-" ]; then
+      case "$rest" in
+        SHIP*)      kind="strike" ;;
+        SCOUT*)     kind="recon" ;;
+        DOCS-ONLY*) kind="docs" ;;
+      esac
+    fi
+    if [ "$kind" = "-" ]; then
+      kind=$(meta_field "$id" "kind")
+      [ -n "$kind" ] || kind="-"
+    fi
 
     # Apply kind filter
     [ -n "$FILTER_KIND" ] && [ "$kind" != "$FILTER_KIND" ] && continue
 
     # Extract repo from (repo: X)
-    repo=$(printf '%s' "$line" | grep -oP '\(repo: \K[^)]+' 2>/dev/null || echo "-")
+    repo=$(printf '%s' "$rest" | grep -oP '\(repo: \K[^)]+' 2>/dev/null || echo "-")
 
     # Extract title: between "id - " and metadata tags
     # Metadata tags: (repo: X), (kind: X), (since DATE), (priority: N), (hold: ...), etc.
-    title=$(printf '%s' "$line" | sed 's/^- \[.\] [^ ]* - //' | sed -E 's/ \(repo: [^)]*\)//; s/ \(kind: [^)]*\)//; s/ \(since [^)]*\)//; s/ \(priority: [^)]*\)//; s/ \(hold: [^)]*\)//; s/ \(hold-kind: [^)]*\)//; s/ \(hold-until: [^)]*\)//; s/ \(blocked-by: [^)]*\)//; s/ \(start: [^)]*\)//' | head -c 200)
+    title=$(printf '%s' "$rest" | sed -E 's/ \(repo: [^)]*\)//; s/ \(kind: [^)]*\)//; s/ \(since [^)]*\)//; s/ \(priority: [^)]*\)//; s/ \(hold: [^)]*\)//; s/ \(hold-kind: [^)]*\)//; s/ \(hold-until: [^)]*\)//; s/ \(blocked-by: [^)]*\)//; s/ \(start: [^)]*\)//' | head -c 200)
 
     # Sanitize: collapse tabs/newlines in title to spaces, truncate by characters
     title=$(printf '%s' "$title" | tr '\t\n' '  ' | cut -c1-160)
@@ -222,9 +248,9 @@ collect_board() {
     ws_detail=$(printf '%s' "$ws_detail" | tr '\t\n' '  ' | cut -c1-200)
     status_event=$(printf '%s' "$status_event" | tr '\t\n' '  ' | cut -c1-200)
 
-    # TSV: id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$id" "$sec" "$kind" "$repo" "$title" \
+    # US: id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window
+    printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
+      "$id" "$st" "$kind" "$repo" "$title" \
       "$model" "$effort" "$mode" "$backend" \
       "$ws_label" "$ws_state" "$ws_detail" \
       "$status_event" "$elapsed" "$window"
@@ -242,7 +268,7 @@ render_json() {
 
   printf '[\n'
   local first=true
-  while IFS=$'\t' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
+  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
     $first || printf ',\n'
     first=false
     local jtitle jevent jdetail
@@ -265,7 +291,7 @@ render_compact() {
   board_data=$(mktemp)
   collect_board > "$board_data"
 
-  while IFS=$'\t' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
+  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
     local icon
     icon=$(icon_for "$ws_label")
     local ep=""
@@ -290,7 +316,7 @@ render_table() {
     return
   fi
 
-  while IFS=$'\t' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
+  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
     if [ "$state" != "$prev_sec" ]; then
       prev_sec="$state"
       printf '\n  %b\n' "$(section_label "$state")"

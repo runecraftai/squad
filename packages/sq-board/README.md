@@ -10,7 +10,7 @@ Mission-planning board for [Squad](https://github.com/runecraftai/squad) — com
 - **Live state** (`state/<id>.meta`) — model, effort, delivery mode, backend
 - **Endpoint truth** (`state/window-states`) — per-window operator state from `sq-window-state.sh`
 - **Status events** (`state/<id>.status`) — latest wake event per task
-- **Elapsed time** (`state/<id>.busy_gen`) — mtime-derived busy duration
+- **Elapsed time** (`state/<id>.busy-gen`) — mtime-derived busy duration
 
 ## Install
 
@@ -94,7 +94,6 @@ One line per mission with icon, id, kind, model, and elapsed time.
 |----------|---------|-------------|
 | `SQUAD_BASE` | auto-detected | Squad base directory |
 | `SQUAD_BACKLOG` | `$SQUAD_BASE/data/backlog.md` | Backlog file path |
-| `SQ_TASKS_BIN` | `sq-tasks` | Path to sq-tasks binary |
 
 ## Naming
 
