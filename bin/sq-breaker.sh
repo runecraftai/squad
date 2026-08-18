@@ -96,6 +96,8 @@ derive_repeat_signals() {
 }
 
 # Count consecutive error/failure lines.
+# Only counts actual errors (failed:, error:, api_error), NOT parked states
+# (blocked:, paused:, needs-decision:) which are legitimate waits, not error storms.
 derive_error_signals() {
   local status_file=$1
   if [ ! -f "$status_file" ]; then
@@ -106,8 +108,16 @@ derive_error_signals() {
   local count=0
   while IFS= read -r line; do
     case "$line" in
-      *failed:*|*error:*|*blocked:*)
-        count=$((count + 1))
+      *failed:*|*error:*)
+        # Exclude blocked/paused/needs-decision - those are parked states, not errors
+        case "$line" in
+          *blocked:*|*paused:*|*needs-decision:*)
+            count=0  # parked state resets the error counter
+            ;;
+          *)
+            count=$((count + 1))
+            ;;
+        esac
         ;;
       *)
         count=0  # reset on non-error
@@ -119,6 +129,8 @@ derive_error_signals() {
 }
 
 # Check if recent lines show progress (working/done vs stuck patterns).
+# Parked states (blocked, paused, needs-decision) are NOT treated as "no progress"
+# because they represent legitimate waits, not stalled work.
 derive_progress() {
   local status_file=$1
   if [ ! -f "$status_file" ]; then
@@ -130,7 +142,10 @@ derive_progress() {
   last_line=$(tail -1 "$status_file" 2>/dev/null || true)
   case "$last_line" in
     *done:*|*working:*|*signal:*check:*)
-      echo "1"  # progress
+      echo "1"  # active progress
+      ;;
+    *blocked:*|*paused:*|*needs-decision:*)
+      echo "1"  # parked state counts as progress (legitimate wait, not stalled)
       ;;
     *)
       echo "0"  # no clear progress

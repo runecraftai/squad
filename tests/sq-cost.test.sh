@@ -233,6 +233,34 @@ test_missing_transcript() {
 
 test_missing_transcript
 
+# ── (f2) graceful degradation: no-meta task lookup ────────────────────────
+
+test_no_meta_task() {
+  # sq-cost.sh task <id> with no state/<id>.meta must exit 0 and print
+  # the documented [estimate] fallback line instead of dying under
+  # set -euo pipefail.
+  local output rc
+  local fake_state="$TMP_ROOT/no-meta-state"
+  mkdir -p "$fake_state"
+  output=$(SQUAD_STATE_OVERRIDE="$fake_state" "$COST_CLI" task nonexistent-task 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "no-meta task should exit 0, got: $rc"
+  assert_contains "$output" "[estimate]" "no-meta task prints [estimate] label"
+  assert_contains "$output" "0|0|0|0|" "no-meta task prints zero token counts"
+  pass "no-meta task cost lookup returns estimate line gracefully"
+
+  # CLI transcript with missing file must not crash
+  output=$("$COST_CLI" transcript /nonexistent/bad.jsonl 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "transcript on missing file should exit 0, got: $rc"
+  pass "transcript on missing file returns gracefully"
+
+  # CLI dir with missing directory must not crash
+  output=$("$COST_CLI" dir /nonexistent/bad-dir 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "dir on missing directory should exit 0, got: $rc"
+  pass "dir on missing directory returns gracefully"
+}
+
+test_no_meta_task
+
 # ── (g) model normalization ───────────────────────────────────────────────
 
 test_model_normalization() {
