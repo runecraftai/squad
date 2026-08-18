@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2](https://github.com/runecraftai/squad/compare/drill-v0.1.1...drill-v0.1.2) (2026-08-18)
+
+
+### Features
+
+* **release:** standalone publication prep for npm and Go binary packages ([#68](https://github.com/runecraftai/squad/issues/68)) ([0288fec](https://github.com/runecraftai/squad/commit/0288fec3ba69b4ea82f330551815fb51c2a67ae0))
+
+
+### Bug Fixes
+
+* **drill:** replace stale NO MISTAKES banners with DRILL ASCII art ([#61](https://github.com/runecraftai/squad/issues/61)) ([a88ab08](https://github.com/runecraftai/squad/commit/a88ab08a2f472ccec5ba540c10a9c7ae3975376e))
+
 ## [0.1.1](https://github.com/runecraftai/squad/compare/drill-v0.1.0...drill-v0.1.1) (2026-08-14)
 
 
