@@ -75,6 +75,86 @@ test_error_storm_trip() {
 
 test_error_storm_trip
 
+# ── (b2) parked states do NOT trip error counter ──────────────────────────
+
+test_parked_states_not_errors() {
+  local state_dir="$TMP_ROOT/parked-state"
+  mkdir -p "$state_dir"
+  local status_file="$state_dir/parked-task.status"
+
+  # A sequence of blocked/paused/needs-decision lines should NOT accumulate
+  # an error count — they are legitimate waits, not error storms.
+  cat > "$status_file" <<'EOF'
+working: starting task
+blocked: waiting on commander decision
+blocked: still waiting
+paused: external dependency delayed
+needs-decision: which approach to take
+blocked: rate limit reset pending
+EOF
+  local output
+  # Reset breaker to healthy first
+  SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" reset parked-task >/dev/null
+  output=$(SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" evaluate parked-task)
+  # Should remain healthy — parked states are not error signals
+  local verdict
+  verdict=$(echo "$output" | cut -d' ' -f1)
+  [ "$verdict" = "healthy" ] || fail "parked states should not trip breaker, got: $verdict"
+  pass "blocked/paused/needs-decision do not trip the breaker"
+
+  # Mixed: error lines followed by a parked state should reset the counter.
+  cat > "$status_file" <<'EOF'
+working: doing work
+error: api call failed
+error: retry failed
+blocked: waiting on external dep
+error: another error after park
+EOF
+  SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" reset parked-task >/dev/null
+  output=$(SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" evaluate parked-task)
+  verdict=$(echo "$output" | cut -d' ' -f1)
+  # Only 1 error after the blocked reset, below threshold → healthy
+  [ "$verdict" = "healthy" ] || fail "parked state should reset error counter, got: $verdict"
+  pass "blocked line resets error counter between error bursts"
+}
+
+test_parked_states_not_errors
+
+# ── (b3) parked states count as progress ─────────────────────────────────
+
+test_parked_states_are_progress() {
+  local state_dir="$TMP_ROOT/parked-progress-state"
+  mkdir -p "$state_dir"
+  local status_file="$state_dir/parked-prog.status"
+
+  # blocked: should count as progress (legitimate wait)
+  echo "blocked: waiting on commander" > "$status_file"
+  SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" reset parked-prog >/dev/null
+  local output verdict
+  output=$(SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" evaluate parked-prog)
+  verdict=$(echo "$output" | cut -d' ' -f1)
+  [ "$verdict" = "healthy" ] || fail "blocked should count as progress (healthy), got: $verdict"
+  pass "blocked status counts as progress"
+
+  # paused: should count as progress
+  echo "paused: external dependency" > "$status_file"
+  SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" reset parked-prog >/dev/null
+  output=$(SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" evaluate parked-prog)
+  verdict=$(echo "$output" | cut -d' ' -f1)
+  [ "$verdict" = "healthy" ] || fail "paused should count as progress (healthy), got: $verdict"
+  pass "paused status counts as progress"
+
+  # needs-decision: should count as progress
+  echo "needs-decision: which approach" > "$status_file"
+  SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" reset parked-prog >/dev/null
+  output=$(SQUAD_STATE_OVERRIDE="$state_dir" "$BREAKER_CLI" evaluate parked-prog)
+  verdict=$(echo "$output" | cut -d' ' -f1)
+  [ "$verdict" = "healthy" ] || fail "needs-decision should count as progress (healthy), got: $verdict"
+  pass "needs-decision status counts as progress"
+}
+
+test_parked_states_are_progress
+
 # ── (c) no-progress streak trips ──────────────────────────────────────────
 
 test_no_progress_trip() {
