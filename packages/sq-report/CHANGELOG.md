@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.2](https://github.com/runecraftai/squad/compare/sq-report-v0.1.1...sq-report-v0.1.2) (2026-08-18)
+
+
+### Features
+
+* **release:** standalone publication prep for npm and Go binary packages ([#68](https://github.com/runecraftai/squad/issues/68)) ([0288fec](https://github.com/runecraftai/squad/commit/0288fec3ba69b4ea82f330551815fb51c2a67ae0))
+* **sq-report:** add sq-report new starter templates with token kits ([#57](https://github.com/runecraftai/squad/issues/57)) ([7c015e0](https://github.com/runecraftai/squad/commit/7c015e0ad6f77e66bf23cfb0b9d5c138aa4c2e48))
+* **sq-report:** purge remaining lavish references from internal surfaces ([#55](https://github.com/runecraftai/squad/issues/55)) ([4b6f93b](https://github.com/runecraftai/squad/commit/4b6f93bf38e5972ac1b68a317ed0ecc67d707bc6))
+* **sq-report:** redesign starter templates with text-fill catalog and Squad Briefing masthead ([#59](https://github.com/runecraftai/squad/issues/59)) ([53bb5ee](https://github.com/runecraftai/squad/commit/53bb5eef1bbf19d26d0ea993b27067ce465c7620))
+
 ## [0.1.1](https://github.com/runecraftai/squad/compare/sq-report-v0.1.0...sq-report-v0.1.1) (2026-08-14)
 
 
