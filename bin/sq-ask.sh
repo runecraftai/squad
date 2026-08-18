@@ -338,7 +338,6 @@ DEFAULT_IDX=$(printf '%s' "$CARD_DATA" | python3 -c "import sys,json; print(json
 OPTION_IDS=()
 OPTION_LABELS=()
 OPTION_DISPLAYS=()
-OPTION_RECOMMENDED=()
 
 while IFS= read -r line; do
   OPTION_IDS+=("$line")
@@ -543,7 +542,7 @@ elif [[ "$RESULT" == "FREE_TEXT" ]]; then
     case "$FORMAT" in
       json)
         printf '{"decision_id":"%s","selected_option_id":null,"selected_label":null,"free_text":"%s","method":"free_text"}\n' \
-          "$CARD_ID" "$(escape_json_string "$free_text")"
+          "$(escape_json_string "$CARD_ID")" "$(escape_json_string "$free_text")"
         ;;
       text) echo "$free_text" ;;
       id) echo "$free_text" ;;
@@ -566,7 +565,7 @@ if [[ "$RESULT" =~ ^OPTION: ]]; then
   case "$FORMAT" in
     json)
       printf '{"decision_id":"%s","selected_option_id":"%s","selected_label":"%s","free_text":null,"method":"picker"}\n' \
-        "$CARD_ID" "$SELECTED_ID" "$(escape_json_string "$SELECTED_LABEL")"
+        "$(escape_json_string "$CARD_ID")" "$(escape_json_string "$SELECTED_ID")" "$(escape_json_string "$SELECTED_LABEL")"
       ;;
     text) echo "$SELECTED_LABEL" ;;
     id) echo "$SELECTED_ID" ;;

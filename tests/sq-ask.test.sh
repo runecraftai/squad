@@ -276,6 +276,26 @@ POS_RESULT=$(echo '{}' | "$ASK" --backend default --format id 2>/dev/null || tru
 # We can't fully test that in a piped context, but we can verify arg parsing doesn't error
 echo "PASS: arg parsing accepts flags followed by non-flag args"
 
+# --- bash backend stdin redirect test ---
+echo ""
+echo "=== Bash Backend Tests ==="
+
+# The bash backend must redirect reads from stdin to /dev/tty when stdin is a pipe.
+# Without the fix, read -r would hit EOF on the consumed pipe and silently select
+# the default option (exit 0). With the fix, it opens fd3 to /dev/tty. In a CI
+# environment without a live terminal, /dev/tty is not openable, so the script
+# fails with an error (exit 1). Either blocking or erroring proves the fd redirect
+# code path is active; silent exit 0 would prove it is not.
+BB_OUTPUT=$(printf '%s' "$VALID_CARD" | timeout 2 "$ASK" --backend bash --format json 2>&1) || BB_EXIT=$?
+BB_EXIT=${BB_EXIT:-0}
+if [[ $BB_EXIT -eq 0 ]]; then
+  echo "FAIL: bash backend silently defaulted (fd redirect not active)"
+  echo "  output: $BB_OUTPUT"
+  exit 1
+else
+  echo "PASS: bash backend attempted fd redirect (exit $BB_EXIT)"
+fi
+
 # --- integration test: validate then render ---
 echo ""
 echo "=== Integration Tests ==="
