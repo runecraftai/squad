@@ -86,6 +86,71 @@ EOF
   printf "OPEN DECISIONS: close one by answering it: bin/sq-send.sh <task> --resolve-key <key> '<answer>'\n"
 }
 
+# Read one key from a state/<id>.meta file (same simple key=value reading the
+# rest of Squad uses; the meta file's schema is owned by bin/sq-spawn.sh).
+_drain_meta_get() {  # <meta-file> <key>
+  local meta=$1 key=$2
+  [ -f "$meta" ] || return 0
+  grep "^${key}=" "$meta" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+# Print the consolidated TEARDOWN PENDING section: every task whose LATEST
+# status-log line verifies done:/failed: but whose state/<id>.meta still exists
+# - exactly the pre-teardown state, since bin/sq-teardown.sh removes the meta.
+# This is a pure reminder: it never runs teardown, because sq-teardown.sh owns
+# the landed-work safety check (AGENTS.md hard rule 3) and skipping it would be
+# unsafe. Runs on every drain - including the empty-queue fast path - so a
+# finished-but-live task cannot slip through on operator memory. kind=xo tasks
+# are excluded: XOs retire through xo-provisioning, never sq-teardown.sh.
+# Bounded and silent: prints nothing when no task matches, which is the common
+# case.
+print_teardown_pending_section() {
+  local meta id status_file status_line verb note line output='' used=0 shown=0 omitted=0 bytes
+  local item_bytes=220 global_bytes=4000
+
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    [ ! -L "$meta" ] || continue
+    id=$(basename "$meta"); id=${id%.meta}
+    [ "$(_drain_meta_get "$meta" kind)" = xo ] && continue
+    status_file="$STATE/$id.status"
+    [ -f "$status_file" ] && [ ! -L "$status_file" ] && [ -s "$status_file" ] || continue
+    status_line=$(LC_ALL=C command tail -n 1 "$status_file" 2>/dev/null) || continue
+    [ -n "$status_line" ] || continue
+    verb=$(status_line_verb "$status_line")
+    case "$verb" in
+      done|failed) ;;
+      *) continue ;;
+    esac
+    note=$(status_line_note "$status_line")
+    line="$id: $verb: $note"
+    # The shared cut counts the item's own characters; the trailing newline this
+    # section's global budget also pays for is this caller's, so the per-item
+    # allowance passed down is one short of the cap.
+    fm_cap_line_var "$line" $((item_bytes - 1))
+    line=$SQUAD_LINE_CAP_LINE
+    bytes=$(( ${#line} + 1 ))
+    if [ $((used + bytes)) -gt "$global_bytes" ]; then
+      omitted=$((omitted + 1))
+      continue
+    fi
+    output="$output$line\n"
+    used=$((used + bytes))
+    shown=$((shown + 1))
+  done
+
+  [ "$shown" -gt 0 ] || [ "$omitted" -gt 0 ] || return 0
+  printf 'TEARDOWN PENDING (reported done/failed but bin/sq-teardown.sh has not run - still live in state/*.meta and the sidebar):\n'
+  printf '%s' "$output"
+  if [ "$omitted" -gt 0 ]; then
+    printf 'TEARDOWN PENDING: %d more omitted (byte cap)\n' "$omitted"
+  fi
+  # Clear hint, printed at exactly the moment a finished task is surfaced. The
+  # drain only reminds; the landed-work check in bin/sq-teardown.sh stays the
+  # authority on whether the recorded work is actually safe to clean up.
+  printf "TEARDOWN PENDING: clear one once its work is confirmed landed: bin/sq-teardown.sh <id>\n"
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
@@ -110,6 +175,7 @@ if [ ! -s "$SQUAD_WAKE_QUEUE" ]; then
   fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
   (print_open_decisions_section) || true
+  (print_teardown_pending_section) || true
   assert_sentry_liveness
   exit 0
 fi
@@ -139,5 +205,6 @@ DRAIN_LOCK_HELD=false
 # best-effort and cannot restore, duplicate, hide, or fail the consumed rows.
 (fm_wake_print_annotations "$RAW_ROWS") || true
 (print_open_decisions_section) || true
+(print_teardown_pending_section) || true
 assert_sentry_liveness
 exit 0
