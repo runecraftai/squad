@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/runecraftai/squad/compare/fob-v0.1.1...fob-v0.1.2) (2026-08-18)
+
+
+### Features
+
+* **release:** standalone publication prep for npm and Go binary packages ([#68](https://github.com/runecraftai/squad/issues/68)) ([0288fec](https://github.com/runecraftai/squad/commit/0288fec3ba69b4ea82f330551815fb51c2a67ae0))
+
 ## [0.1.1](https://github.com/runecraftai/squad/compare/fob-v0.1.0...fob-v0.1.1) (2026-08-14)
 
 
