@@ -77,6 +77,10 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
+| `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
+| `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
+| `sq-cost.sh`           | Price real operator transcripts per model and print per-task cost, degrading to a per-model estimate when no transcript exists |
+| `sq-cost-lib.sh`       | Shared transcript parsing, model normalization, and per-model pricing table used by `sq-cost.sh` |
 | `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
