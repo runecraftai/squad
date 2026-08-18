@@ -47,6 +47,8 @@ signed in CI.
 
 ## Next step (commander-gated)
 
-The live npm publish is the commander-gated next step. It requires a version
-bump for each package (current versions are already published) and the real
-telemetry/Team ID values before any live Go release ships.
+The live npm publish is the commander-gated next step. The six already-published
+packages each require a version bump (their current versions are already
+published), while the new `@runecraft/operation-board` 0.1.0 can publish at its
+current version. The real telemetry/Team ID values are required before any live
+Go release ships.
