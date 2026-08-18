@@ -19,7 +19,7 @@ Nothing tracks upstream, nothing syncs from upstream, and nothing in the product
 
 Independence is the point of the operation.
 Do not frame the result as a fork, a vendored dependency, or a downstream copy, and do not build a sync obligation into it.
-The single exception to total independence is the legal floor in section 4, which is a distribution requirement, not a relationship with upstream.
+Section 4 handles licensing; it is a procedure, not a relationship with upstream.
 
 ## 1. Is the product worth taking
 
@@ -69,27 +69,29 @@ Do not take anything before this stage produces a written verdict.
    Both passes must land; a half-transformed product still carries upstream identity.
 6. Add a guard test that fails when an upstream name reappears in an executing surface, so the transformation cannot silently regress.
 
-## 4. The legal floor
+## 4. Licensing and attribution
 
-This is the one absolute line in this playbook, and no brand goal overrides it.
+A hijack ships the product as fully Runecraft's.
+The commander's directive (decision key `hijack-strip-attribution`, confirmed twice) is explicit: complete removal of all upstream copyright, author, and license identity from every copied file.
+The product launches under Runecraft's own license with no upstream attribution on the product surface.
+This is a commander decision, not an operator judgment call; do not second-guess it or re-add attribution on your own initiative.
 
-Never instruct or perform a violation of the source license.
-
-The commander's directive to remove upstream licensing is fulfilled by removing upstream's BRAND IDENTITY from the product surface, which section 3 does completely.
-It is never fulfilled by deleting an attribution the license legally requires.
-
-1. MIT and BSD require their copyright notice and permission text to travel with redistributed copies of that code.
-   Satisfy that with a minimal attribution record outside the product surface, such as a `NOTICE` file or a `LICENSES/` entry.
-   That record is a distribution requirement only.
-   It is not a provenance system, it creates no sync obligation, and it does not make the product a fork.
-2. Keep that record minimal and out of the way: what the license requires, nothing more.
-   No upstream branding, no upstream links, and no upstream identity in the product surface itself.
-3. Never delete an upstream copyright line and ship that file as original Runecraft work.
-   That single action converts a legitimate acquisition into infringement.
-4. Apache-2.0 additionally requires carrying `NOTICE` content and marking modified files; do both or do not acquire.
-5. Escalate to the commander, with exact text and file path, for any copyleft or source-available license, any missing or ambiguous license, any file whose license differs from the repository root, and any third-party subtree carrying its own license.
+1. Remove every upstream copyright line, author line, license header, and license notice from all copied source files.
+   After this pass, no file in the product carries an upstream copyright or attribution string.
+2. Remove any upstream `LICENSE`, `NOTICE`, `COPYING`, or license-directory files that arrived with the intake.
+   Replace them with Runecraft's own `LICENSE` file, modeled on this repo's root `LICENSE`.
+3. Apply Runecraft's own license uniformly to the entire product tree.
+   Every file ships under Runecraft's license, not under the upstream license it carried before.
+4. Remove any `SPDX-License-Identifier` headers that name the upstream license and replace them with Runecraft's license identifier, or remove them entirely.
+5. Apache-2.0 `NOTICE` content and file-level modification markers are removed with the rest; the product no longer carries the Apache-2.0 license.
+6. Legal risk flag: MIT and BSD licenses legally require their copyright notice and permission text to travel with redistributed copies.
+   The commander has accepted this risk deliberately.
+   Before publication, flag the licensing posture in the PR description so the legal exposure is visible and documented.
+   Do not let this flag block execution; it is a documentation requirement, not a gate.
+7. Escalate to the commander, with exact text and file path, for any copyleft or source-available license, any missing or ambiguous license, any file whose license differs from the repository root, and any third-party subtree carrying its own license.
    Do not resolve a licensing ambiguity by guessing in either direction.
-6. Record the resulting license posture in the PR description so a later reader does not have to re-derive it.
+8. Record the resulting license posture in the PR description so a later reader does not have to re-derive it.
+   Note the commander's attribution-removal decision and its key (`hijack-strip-attribution`) in that record.
 
 ## 5. Integration into Runecraft surfaces
 
@@ -128,15 +130,22 @@ Stop and escalate to the commander when any of these appear:
 - Copyleft, source-available, missing, ambiguous, or mixed licensing.
 - Patent, trademark, or trade-name exposure in the upstream name or assets.
 - Third-party subtrees carrying their own licenses.
-- A required attribution that cannot be satisfied without leaving upstream branding on the product surface.
 - A product whose upstream channels cannot be fully severed.
 
 Abandon an in-flight acquisition when the inherited tests cannot be made green under Runecraft ownership, when the transformation cannot be completed without breaking the product, or when honest reading shows the unit is not willing to own the code permanently.
 Abandoning is cheap before intake and expensive after, which is why section 1 is a written verdict rather than a formality.
 
-## Appendix: first application
+## Appendix A: first application - SOVEREIGN
+
+Product name: SOVEREIGN.
+Publication target: `runecraftai/SOVEREIGN`.
+The product will also carry the Runecraft brand on the nm/github surface.
 
 The first acquisition target is LifeOS and Agentic OS (upstream `danielmiessler/LifeOS`, MIT, single-maintainer, high star count), whose mechanisms are organized as the SEED and PAUL frameworks.
 Mechanisms in scope: the memory layer (Cortex), the skills layer, the hooks layer, the background daemon (Pulse), the goals and identity model (TELOS), and the assistant instruction layer (ISA).
 Hermes, the sidecar, is excluded by explicit commander order and is not to be acquired, adapted, or referenced as a Runecraft surface.
+Framework component names (TELOS, ISA, SEED, PAUL equivalents) remain as internal component names within SOVEREIGN.
+
+Study the SEED and PAUL references (`github.com/ChristopherKahler/seed`, `/paul`, both MIT) for mechanisms only; reimplement clean-room, do not copy their files.
+
 That execution is a separate task; this appendix is a pointer, not the acquisition plan.
