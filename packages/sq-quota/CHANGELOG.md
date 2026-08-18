@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/runecraftai/squad/compare/sq-quota-v0.1.1...sq-quota-v0.1.2) (2026-08-18)
+
+
+### Features
+
+* **release:** standalone publication prep for npm and Go binary packages ([#68](https://github.com/runecraftai/squad/issues/68)) ([0288fec](https://github.com/runecraftai/squad/commit/0288fec3ba69b4ea82f330551815fb51c2a67ae0))
+* **sq-quota:** add OpenCode provider, presence filtering, and --all-providers flag ([#66](https://github.com/runecraftai/squad/issues/66)) ([e29ceca](https://github.com/runecraftai/squad/commit/e29cecaa270139b8bf11da9c1f592a40521ec2ea))
+
 ## [0.1.1](https://github.com/runecraftai/squad/compare/sq-quota-v0.1.0...sq-quota-v0.1.1) (2026-08-14)
 
 
