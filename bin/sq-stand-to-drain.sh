@@ -134,7 +134,8 @@ print_teardown_pending_section() {
       omitted=$((omitted + 1))
       continue
     fi
-    output="$output$line\n"
+    output="$output$line
+"
     used=$((used + bytes))
     shown=$((shown + 1))
   done
