@@ -672,6 +672,10 @@
    "audience": "agent-runtime"
   },
   {
+   "path": "packages/operation-board/README.md",
+   "audience": "public-product"
+  },
+  {
    "path": "packages/sq-browser/AGENTS.md",
    "audience": "maintainer-architecture"
   },

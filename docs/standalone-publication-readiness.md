@@ -15,17 +15,22 @@ out of scope for this change; this document records the dry-run validation.
 | `@runecraft/sq-gh` | 0.1.1 | OK | yes | none |
 | `@runecraft/sq-browser` | 0.1.1 | OK | yes | none |
 | `@runecraft/sq-quota` | 0.1.1 | OK | yes | none |
+| `@runecraft/operation-board` | 0.1.0 | OK (`npm pack --dry-run`) | yes | none |
 
-All six packages are already published at their current versions, so
-`npm publish --dry-run` reports "cannot publish over previously published
-versions" (expected and benign); `npm pack --dry-run` validates each tarball
-cleanly — dist + bin entrypoint resolving to the built file + README (+ LICENSE
-where applicable) present. `pr-review` is a source-only Pi extension package
+Six of the seven npm candidates are already published at their current
+versions, so `npm publish --dry-run` reports "cannot publish over previously
+published versions" (expected and benign); the new
+`@runecraft/operation-board` 0.1.0 has no published version yet.
+`npm pack --dry-run` validates each tarball cleanly — bin entrypoint
+resolving to a shipped file (the bash script itself for the script-only
+sq-board; dist + bin for the rest) + README (+ LICENSE where applicable)
+present. `pr-review` is a source-only Pi extension package
 whose `scripts/verify-package-contents.mjs` enforces a deliberately minimal
 files policy that excludes LICENSE; kept as-is.
 
-Manifest audit found all six already correct (names, versions, bin → dist,
-files whitelist, no `private` flag); no manifest changes were needed. READMEs
+Manifest audit found all seven candidates correct (names, versions, bin →
+dist or shipped file, files whitelist, no `private` flag); no manifest changes
+were needed. READMEs
 are decoupled from Squad-internal framing while keeping the AXI/TOON output
 conventions and the `@runecraft` brand.
 
@@ -42,6 +47,8 @@ signed in CI.
 
 ## Next step (commander-gated)
 
-The live npm publish is the commander-gated next step. It requires a version
-bump for each package (current versions are already published) and the real
-telemetry/Team ID values before any live Go release ships.
+The live npm publish is the commander-gated next step. The six already-published
+packages each require a version bump (their current versions are already
+published), while the new `@runecraft/operation-board` 0.1.0 can publish at its
+current version. The real telemetry/Team ID values are required before any live
+Go release ships.

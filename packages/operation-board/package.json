@@ -1,0 +1,39 @@
+{
+  "name": "@runecraft/operation-board",
+  "version": "0.1.0",
+  "description": "Mission-planning board for Squad — combines backlog queue with live operational state",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runecraftai/squad.git"
+  },
+  "homepage": "https://github.com/runecraftai/squad#readme",
+  "bugs": {
+    "url": "https://github.com/runecraftai/squad/issues"
+  },
+  "keywords": [
+    "squad",
+    "operations",
+    "board",
+    "mission-planning",
+    "backlog",
+    "agent",
+    "tmux"
+  ],
+  "bin": {
+    "sq-board": "bin/sq-board.sh"
+  },
+  "files": [
+    "bin/sq-board.sh",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
