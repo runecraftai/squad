@@ -14,7 +14,7 @@ Mission-planning board for [Squad](https://github.com/runecraftai/squad) — com
 
 ## Live sidebar (vendored workmux)
 
-This package also vendors the full [workmux](https://github.com/raine/workmux) source (MIT) under `sidebar/`, with Squad's data-source integration and two Squad fixes (real task id as the sidebar primary label; click-to-jump resolving to the real `session:window` tmux target) applied.
+This package also vendors the full [workmux](https://github.com/raine/workmux) source (MIT) under `sidebar/`, with two Squad fixes (real task id as the sidebar primary label; click-to-jump resolving to the real `session:window` tmux target) applied. The sidebar always uses tmux native tracking to discover panes automatically.
 
 The vendored binary is built locally from this repo - never installed from an external repository - via `bin/sq-install-workmux-sidebar.sh`, and runs as a live docked tmux sidebar that auto-updates from `state/window-states`.
 

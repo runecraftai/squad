@@ -4,16 +4,15 @@ This is a fork of [workmux](https://github.com/raine/workmux) with added support
 
 ## Key Architecture
 
-### Data Source Abstraction
+### Data Source
 
-The fork adds a `DataSource` trait abstraction in `src/data_source/mod.rs` that allows the sidebar daemon to read agent state from different sources:
-
-- **tmux** (default): Original Workmux behavior, polls tmux for pane state
-- **squad**: Reads from Squad's `state/` directory structure
+The sidebar always uses tmux native tracking to discover panes automatically.
+When `SQUAD_BASE` or `SQUAD_HOME` is set, the sidebar reads from Squad's
+`state/` directory structure for task metadata.
 
 ### Squad Data Source
 
-`src/data_source/squad.rs` implements `SquadDataSource` which reads:
+When Squad state files are present, the sidebar reads:
 
 1. `state/window-states` (TSV: window, id, label, state, detail)
 2. `state/<id>.meta` (JSON: model, effort, kind, mode)
@@ -21,20 +20,8 @@ The fork adds a `DataSource` trait abstraction in `src/data_source/mod.rs` that 
 
 ### Key Files
 
-- `src/data_source/mod.rs` - DataSource trait and DataSourceType enum
-- `src/data_source/squad.rs` - SquadDataSource implementation
-- `src/command/sidebar/daemon.rs` - Daemon with `run_with_data_source()` function
-- `src/cli.rs` - CLI flag `--data-source` on `_sidebar-daemon` command
-
-### Usage
-
-```bash
-# Start sidebar daemon reading from Squad
-workmux _sidebar-daemon --data-source squad
-
-# Default tmux behavior (backward compatible)
-workmux _sidebar-daemon --data-source tmux
-```
+- `src/command/sidebar/daemon_ctrl.rs` - Daemon spawning (always uses tmux native tracking)
+- `src/command/sidebar/daemon.rs` - Daemon with pane discovery logic
 
 ### Environment Variables
 
