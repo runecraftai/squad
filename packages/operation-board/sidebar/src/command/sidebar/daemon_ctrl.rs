@@ -38,14 +38,6 @@ fn spawn_daemon() -> Result<()> {
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("_sidebar-daemon");
 
-    // Squad data source disabled: use tmux native tracking instead.
-    // The Squad data source reads from state/window-states which requires
-    // constant publishing and doesn't resolve labels correctly. Tmux native
-    // tracking discovers panes automatically and click-to-focus works.
-    // if std::env::var("SQUAD_BASE").is_ok() || std::env::var("SQUAD_HOME").is_ok() {
-    //     cmd.arg("--data-source").arg("squad");
-    // }
-
     // Pass instance ID so daemon uses the same socket path as the client
     cmd.arg("--instance-id").arg(&instance_id);
 

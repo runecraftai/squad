@@ -171,6 +171,32 @@ run_publish_in "$S5"
 [ ! -s "$S5/window-states" ] || fail "empty state dir published rows"
 pass "empty state dir publishes an empty file"
 
+# (f2) ghost sessions: a meta whose window= points to a nonexistent
+# session is excluded from output.
+S_GHOST="$TMP_ROOT/state-ghost"; mkdir -p "$S_GHOST"
+write_meta "$S_GHOST" alive tmux "live:ws"
+write_meta "$S_GHOST" ghost tmux "gone:ws"
+write_fixture alive working "present"
+write_fixture ghost working "absent"
+
+# Build a selective fake tmux: succeeds for 'live:', fails for 'gone:'
+FAKE_TMUX_SELECTIVE=$(fm_fakebin "$TMP_ROOT/sel")
+cat > "$FAKE_TMUX_SELECTIVE/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *has-session*)
+    for arg in "$@"; do
+      case "$arg" in gone:*) exit 1 ;; esac
+    done
+    exit 0
+    ;;
+esac
+exit 0
+SH
+chmod +x "$FAKE_TMUX_SELECTIVE/tmux"
+ghost_out=$(PATH="$FAKE_TMUX_SELECTIVE:$PATH" SQUAD_STATE_OVERRIDE="$S_GHOST" SQUAD_CREW_STATE_BIN="$FAKE" SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" list)
+assert_eq "ghost session excluded" "$ghost_out" $'live:ws\talive\tworking\tworking\tpresent'
+
 # (g) unknown and missing subcommands fail closed
 if SQUAD_STATE_OVERRIDE="$S2" "$WS" bogus >/dev/null 2>&1; then
   fail "unknown subcommand should exit non-zero"
