@@ -57,8 +57,8 @@ The sidebar automatically appears in every tmux window, and new windows get the 
 
 | Squad Source | Workmux Field |
 |-------------|---------------|
-| `state/window-states` col 1 (window) | session + window_name |
-| `state/window-states` col 2 (id) | pane_id (real `session:window` target) |
+| `state/window-states` col 1 (window) | session + window_name, pane_id (real `session:window` target) |
+| `state/window-states` col 2 (id) | bare task id (read_meta / read_busy_gen_mtime lookups only, not a tmux target) |
 | `state/window-states` col 3 (label) | status (mapped to AgentStatus) |
 | `state/window-states` col 4-5 (state/detail) | pane_title |
 | `state/<id>.meta` model + effort | agent_command |

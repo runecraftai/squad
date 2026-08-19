@@ -49,10 +49,8 @@ printf 'sq-install-workmux-sidebar.sh: building vendored workmux %s from %s\n' \
 [ -x "$BIN_PATH" ] || die "cargo build succeeded but no binary at $BIN_PATH"
 
 installed_version=$("$BIN_PATH" --version 2>/dev/null | tr -d '[:space:]')
-case "$installed_version" in
-  *"$VERSION"*) : ;;
-  *) die "built workmux version is '${installed_version:-<empty>}', expected 'workmux $VERSION'" ;;
-esac
+[ "$installed_version" = "workmux$VERSION" ] \
+  || die "built workmux version is '${installed_version:-<empty>}', expected 'workmux$VERSION'"
 
 printf 'sq-install-workmux-sidebar.sh: installed workmux %s at %s\n' \
   "$VERSION" "$BIN_PATH" >&2
