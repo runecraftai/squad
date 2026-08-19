@@ -17,7 +17,7 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
 
 1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:runecraftai/squad.git`)  # OQ-03 placeholder.
 2. Create a branch and make your changes.
-3. Initialize the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/squad.git` (Squad expects **drill v1.31.2+**; without a fork, plain `drill init` still works for maintainers with push access).
+3. Initialize the gate with your fork as the push target: `drill init --fork-url git@github.com:<you>/squad.git` (without a fork, plain `drill init` still works for maintainers with push access).
 4. Commit your changes.
 5. Push through the gate instead of pushing to `origin`:
 
