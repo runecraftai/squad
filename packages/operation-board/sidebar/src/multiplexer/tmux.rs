@@ -983,13 +983,15 @@ impl Multiplexer for TmuxBackend {
     }
 
     fn switch_to_pane(&self, pane_id: &str, window_hint: Option<&str>) -> Result<()> {
-        // Real tmux pane IDs are `%N` (percent + digits). Non-tmux backends
-        // (e.g. Squad's data source) produce synthetic IDs like `%task-name`.
-        // When the pane_id isn't a real tmux target, fall back to the window
-        // hint (session:window target) so the switch still succeeds.
+        // Prefer the pane_id directly when it is a real tmux target: a real
+        // pane id (`%N`) or a session-qualified window target
+        // (`session:window`, e.g. a Squad agent's `squad:sq-01HXYZ`). Only
+        // fall back to the window hint for synthetic ids (e.g. Squad's
+        // `%task-name`) or bare unqualified names that tmux can't resolve.
         let is_real_tmux_pane = pane_id.starts_with('%')
             && pane_id[1..].chars().all(|c| c.is_ascii_digit());
-        let target = if is_real_tmux_pane {
+        let is_session_qualified = pane_id.contains(':');
+        let target = if is_real_tmux_pane || is_session_qualified {
             pane_id
         } else if let Some(hint) = window_hint {
             hint
@@ -1230,6 +1232,7 @@ fn inject_status_format(format: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     const LIVE_PANE_LINE: &str = "%7\t12345\tnode\t/repo\tWorking\tmain\twork\t$1\t@2";
 
@@ -1504,5 +1507,99 @@ mod tests {
             result,
             " #I:#W#{?@workmux_status, #{@workmux_status},}#{window_flags} "
         );
+    }
+
+    /// Serializes PATH mutation for the fake-tmux tests below: they share the
+    /// process-global environment, so cargo's parallel test threads must not
+    /// overwrite each other's PATH while a `switch_to_pane` spawn runs.
+    static FAKE_TMUX_PATH_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Run `switch_to_pane` against a fake `tmux` binary on PATH that records
+    /// every invocation, returning the `switch-client -t ...` commands issued.
+    fn recorded_switch_client_cmds(pane_id: &str, window_hint: Option<&str>) -> Vec<String> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = FAKE_TMUX_PATH_LOCK.lock().unwrap();
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let record_file = tmp.path().join("tmux-cmds.log");
+        let fake_tmux = tmp.path().join("tmux");
+
+        // Locate the real tmux so the fake can delegate unrelated commands.
+        let real_tmux = std::env::var_os("PATH")
+            .map(|path| {
+                std::env::split_paths(&path)
+                    .map(|dir| dir.join("tmux"))
+                    .find(|candidate| candidate.is_file())
+            })
+            .flatten()
+            .unwrap_or_else(|| PathBuf::from("/usr/bin/tmux"));
+
+        let script = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{record}\"\nexec \"{real}\" \"$@\"\n",
+            record = record_file.display(),
+            real = real_tmux.display(),
+        );
+        std::fs::write(&fake_tmux, script).unwrap();
+        let mut perms = std::fs::metadata(&fake_tmux).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_tmux, perms).unwrap();
+
+        let prev_path = std::env::var_os("PATH");
+        let faked_path = match &prev_path {
+            Some(existing) => format!("{}:{}", tmp.path().display(), existing.to_string_lossy()),
+            None => tmp.path().display().to_string(),
+        };
+        // SAFETY: mirrors the crate's existing env-mutation test (skills.rs).
+        // The fake shadows only `tmux` and delegates to the real binary, so no
+        // other concurrently-running test that spawns tmux changes behavior.
+        unsafe { std::env::set_var("PATH", faked_path) };
+        let backend = TmuxBackend::new();
+        let _ = backend.switch_to_pane(pane_id, window_hint);
+        match prev_path {
+            Some(existing) => unsafe { std::env::set_var("PATH", existing) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+
+        std::fs::read_to_string(&record_file)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| line.starts_with("switch-client -t "))
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn switch_to_pane_uses_session_qualified_pane_id_for_squad_target() {
+        // Squad agents carry the real session:window target in pane_id
+        // (e.g. "squad:sq-01HXYZ"). The jump must issue
+        // `switch-client -t squad:sq-01HXYZ`, never the bare window-name hint
+        // "sq-01HXYZ" that tmux cannot resolve.
+        let issued = recorded_switch_client_cmds("squad:sq-01HXYZ", Some("sq-01HXYZ"));
+
+        assert_eq!(issued, vec!["switch-client -t squad:sq-01HXYZ".to_string()]);
+    }
+
+    #[test]
+    fn switch_to_pane_prefers_real_tmux_pane_id_over_hint() {
+        let issued = recorded_switch_client_cmds("%7", Some("work"));
+
+        assert_eq!(issued, vec!["switch-client -t %7".to_string()]);
+    }
+
+    #[test]
+    fn switch_to_pane_falls_back_to_hint_for_synthetic_pane_id() {
+        // Synthetic non-tmux ids like "%task-name" are not tmux targets, so
+        // the backend falls back to the window hint.
+        let issued = recorded_switch_client_cmds("%task-name", Some("sq-01HXYZ"));
+
+        assert_eq!(issued, vec!["switch-client -t sq-01HXYZ".to_string()]);
+    }
+
+    #[test]
+    fn switch_to_pane_uses_pane_id_when_no_hint_available() {
+        let issued = recorded_switch_client_cmds("squad:sq-01HXYZ", None);
+
+        assert_eq!(issued, vec!["switch-client -t squad:sq-01HXYZ".to_string()]);
     }
 }
