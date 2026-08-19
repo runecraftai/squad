@@ -353,7 +353,7 @@ ROWS
   pass "bootstrap reports fob lease + sq-tasks/sq-quota bootstrap contracts"
 }
 
-test_drill_min_version() {
+test_drill_presence_only() {
   local label version mode case_dir fakebin out missing n
   missing='MISSING: drill (install: curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/drill-install.sh | sh  # OQ-03 placeholder)'
   n=0
@@ -365,6 +365,9 @@ test_drill_min_version() {
     mkdir -p "$case_dir/home/config"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
+    if [ "$mode" = missing ]; then
+      rm -f "$fakebin/drill"
+    fi
     out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_FAKE_DRILL_VERSION="$version" "$ROOT/bin/sq-bootstrap.sh")
     case "$mode" in
@@ -377,10 +380,11 @@ test_drill_min_version() {
 minimum drill version is accepted^drill version v1.31.2 (fake)^empty
 newer drill minor is accepted^drill version v1.32.0 (fake)^empty
 newer drill major is accepted^drill version v2.0.0 (fake)^empty
-older drill patch reports an upgrade^drill version v1.31.1 (fake)^missing
-unparseable drill version reports an upgrade^drill development build^missing
+older drill patch is accepted (presence only, no version floor)^drill version v1.31.1 (fake)^empty
+unparseable drill version is accepted (presence only, no version floor)^drill development build^empty
+missing drill binary is reported^-^missing
 ROWS
-  pass "bootstrap enforces drill minimum version"
+  pass "bootstrap requires drill by presence only, with no version floor"
 }
 
 test_gh_axi_min_version() {
@@ -1191,7 +1195,7 @@ ROWS
 }
 
 test_bootstrap_reporting
-test_drill_min_version
+test_drill_presence_only
 test_gh_axi_min_version
 test_sq_report_min_version
 test_tasks_axi_min_version
