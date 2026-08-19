@@ -29,6 +29,11 @@ WS="$ROOT/bin/sq-window-state.sh"
 TMP_ROOT=$(fm_test_tmproot sq-window-state)
 FIXTURE="$TMP_ROOT/crew-state.fixture"
 
+# Fake tmux binary so `tmux has-session -t "$window"` succeeds for all
+# windows without requiring a running tmux server.
+FAKE_TMUX=$(fm_fakebin "$TMP_ROOT")
+fm_fake_exit0 "$FAKE_TMUX" tmux
+
 # Fake reconciler: answers one "state: <verb> · source: status-log · <detail>"
 # line per task from SQUAD_FAKE_CREW_STATE (a "<id>\t<verb>\t<detail>" map);
 # an unknown id exits non-zero, like the real binary failing. The <NL> and
@@ -71,12 +76,12 @@ write_fixture() {  # <id> <verb> [detail]
 }
 
 run_list_in() {  # <state-dir>
-  SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
+  PATH="$FAKE_TMUX:$PATH" SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
     SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" list
 }
 
 run_publish_in() {  # <state-dir>
-  SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
+  PATH="$FAKE_TMUX:$PATH" SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
     SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" publish
 }
 
