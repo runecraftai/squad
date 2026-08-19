@@ -53,6 +53,8 @@
 #          landed in the primary instead of its own worktree; restore it per the line.
 #          fob is also MISSING when its installed version lacks
 #          "fob get --lease" support.
+#          workmux-sidebar is MISSING on tmux backends while the vendored
+#          sidebar binary (packages/operation-board/sidebar) is not built.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
 #          SQ_REPORT_MIN below; the per-tool owners point there. An installed
 #          build below its floor reports MISSING, so the operator
@@ -754,6 +756,7 @@ install_cmd() {
     tmux|node|git|gh|curl|jq|orca|zellij) echo "brew install $1  # or the platform's package manager" ;;
     cmux) echo "brew install --cask cmux  # or see https://cmux.com" ;;
     fob) echo "bin/sq-install-fob.sh ~/.local/bin  # build the vendored packages/fob" ;;
+    workmux-sidebar) echo "bin/sq-install-workmux-sidebar.sh  # build the vendored packages/operation-board/sidebar" ;;
     drill) echo "curl -fsSL https://github.com/runecraftai/squad/releases/latest/download/drill-install.sh | sh  # OQ-03 placeholder" ;;
     sq-gh|sq-browser|sq-report) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1 && $1 setup hooks" ;;
     sq-quota|sq-tasks) echo "(cd packages/$1 && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/$1" ;;
@@ -1201,6 +1204,16 @@ detect_local_tools() {
   if fm_backend_list_contains "$TOOLS" fob \
     && command -v fob >/dev/null 2>&1 && ! fob_supports_lease; then
     echo "MISSING: fob (install: $(install_cmd fob))"
+  fi
+  # The vendored workmux sidebar is a tmux-only visibility surface: bases
+  # running tmux backends are told when its locally built binary is missing,
+  # other backends never are. The check is scoped to repos that actually
+  # carry the vendored source, so the install offer never points at a path
+  # that cannot exist.
+  if fm_backend_list_contains "$TOOLS" tmux \
+    && [ -f "$SQUAD_ROOT/packages/operation-board/sidebar/Cargo.toml" ] \
+    && [ ! -x "$SQUAD_ROOT/packages/operation-board/sidebar/target/release/workmux" ]; then
+    echo "MISSING: workmux-sidebar (install: $(install_cmd workmux-sidebar))"
   fi
   if command -v sq-gh >/dev/null 2>&1 && ! tool_version_at_least sq-gh "$GH_AXI_MIN"; then
     echo "MISSING: sq-gh (install: $(install_cmd sq-gh))"

@@ -38,6 +38,7 @@ SITE_SUBPROJECTS = ("packages/drill/docs/src/content/docs/",)
 # local links. Renaming that prose is deferred to a future rebrand pass, so
 # sources under these prefixes are exempt from local-link resolution.
 VENDORED_PACKAGE_PREFIXES = (
+    "packages/operation-board/sidebar/",
     "packages/sq-browser/",
     "packages/sq-gh/",
     "packages/sq-quota/",

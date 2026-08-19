@@ -10,12 +10,22 @@
 # the tmux server's environment, so this loader pins any Squad base visible
 # at load time into the server's global environment instead of relying on
 # whatever the server happened to start with. See docs/sq-sidebar.md for the
-# integration details and the workmux README for full sidebar documentation.
+# integration details and the vendored workmux README
+# (packages/operation-board/sidebar/README.md) for full sidebar documentation.
 set -euo pipefail
 
-# Verify workmux is available
-if ! command -v workmux >/dev/null 2>&1; then
-  echo "workmux-sidebar: workmux not found in PATH; the plugin cannot load" >&2
+# Resolve the vendored workmux binary. Squad vendors the workmux source under
+# packages/operation-board/sidebar and builds it locally via
+# bin/sq-install-workmux-sidebar.sh; the plugin runs that exact repo-local
+# binary, never a PATH-installed workmux from an external source.
+# SQUAD_WORKMUX_BIN is a test override only.
+_squad_repo="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+_workmux_bin="${SQUAD_WORKMUX_BIN:-$_squad_repo/packages/operation-board/sidebar/target/release/workmux}"
+
+# Verify the vendored binary is built
+if [ ! -x "$_workmux_bin" ]; then
+  echo "workmux-sidebar: vendored sidebar binary not built at $_workmux_bin" >&2
+  echo "workmux-sidebar: run bin/sq-install-workmux-sidebar.sh to build it" >&2
   exit 1
 fi
 
@@ -54,4 +64,4 @@ if [ -f "$_pub_bin" ]; then
 fi
 
 # Bind C-M-s to toggle the workmux sidebar
-tmux bind-key -n C-M-s run-shell "workmux sidebar"
+tmux bind-key -n C-M-s run-shell "\"$_workmux_bin\" sidebar"

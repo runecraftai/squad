@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # sq-window-state.sh - publish per-window ground truth for the tmux sidebar.
 #
-# The sidebar that consumes this file is the workmux sidebar (Squad fork,
-# tmux/workmux-sidebar.tmux, see docs/sq-sidebar.md), which never reads screens;
+# The sidebar that consumes this file is the workmux sidebar (vendored under
+# packages/operation-board/sidebar, tmux/workmux-sidebar.tmux, see
+# docs/sq-sidebar.md), which never reads screens;
 # the tmux-agents-mon sidebar it replaces classified operator panes by screen
 # reading, which is a signal, not a guarantee. Squad owns the actual truth:
 # state/<id>.status wake-event lines plus the harness busy state, reconciled

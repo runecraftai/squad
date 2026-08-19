@@ -1,0 +1,28 @@
+# Rust
+/target
+**/*.rs.bk
+*.pdb
+
+# mac
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.pytest_cache/
+tests/venv
+
+# Documentation
+node_modules/
+docs/.astro/
+docs/dist/
+
+# Nix
+result
+result-*
+history
+.claude/temp

@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "tabWidth": 2,
+  "proseWrap": "preserve",
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "node_modules",
+    ".astro",
+    "dist",
+    "public/**/*.mp4",
+    "public/**/*.png",
+    "src/assets/**/*.webp"
+  ]
+}

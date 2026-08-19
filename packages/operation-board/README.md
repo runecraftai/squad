@@ -12,6 +12,16 @@ Mission-planning board for [Squad](https://github.com/runecraftai/squad) — com
 - **Status events** (`state/<id>.status`) — latest wake event per task
 - **Elapsed time** (`state/<id>.busy-gen`) — mtime-derived busy duration
 
+## Live sidebar (vendored workmux)
+
+This package also vendors the full [workmux](https://github.com/raine/workmux) source (MIT) under `sidebar/`, with Squad's data-source integration and two Squad fixes (real task id as the sidebar primary label; click-to-jump resolving to the real `session:window` tmux target) applied.
+
+The vendored binary is built locally from this repo - never installed from an external repository - via `bin/sq-install-workmux-sidebar.sh`, and runs as a live docked tmux sidebar that auto-updates from `state/window-states`.
+
+See [docs/sq-sidebar.md](../../docs/sq-sidebar.md) for the integration and usage.
+
+`sq-board` remains a separate headless entry point: it needs no tmux and prints a static snapshot (table/JSON/compact) on demand, while the sidebar is the live tmux surface.
+
 ## Install
 
 ```bash
