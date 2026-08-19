@@ -874,6 +874,278 @@
   {
    "path": "docs/sq-sidebar.md",
    "audience": "operator-current"
+  },
+  {
+   "path": "packages/operation-board/sidebar/.github/PULL_REQUEST_TEMPLATE.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/AGENTS.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/operation-board/sidebar/CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/CONTRIBUTING.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/operation-board/sidebar/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/RELEASE.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/public/robots.txt",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/changelog.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/agents.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/claude-code.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/configuration.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/dashboard/configuration.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/dashboard/diff-view.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/dashboard/index.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/dashboard/patch-mode.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/direnv.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/git-worktree-caveats.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/index.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/installation.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/kitty.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/monorepos.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/nix.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/quick-start.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sandbox/alternatives.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sandbox/container.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sandbox/features.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sandbox/index.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sandbox/lima.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/session-mode.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sidebar/customization.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/sidebar/index.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/skills.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/status-tracking.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/wezterm.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/workflows.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/guide/zellij.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/add.mdx",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/claude.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/close.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/completions.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/config.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/dashboard.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/docs.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/index.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/init.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/last-done.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/list.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/merge.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/open.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/path.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/reap-agents.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/rebase.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/remove.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/rename.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/resurrect.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/sandbox.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/sidebar.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/status.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/sync-files.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/docs/src/content/docs/reference/commands/update.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/operation-board/sidebar/skills/coordinator/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/operation-board/sidebar/skills/merge/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/operation-board/sidebar/skills/open-pr/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/operation-board/sidebar/skills/rebase/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/operation-board/sidebar/skills/workmux/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/operation-board/sidebar/skills/worktree/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/operation-board/sidebar/tests/requirements.txt",
+   "audience": "maintainer-verification"
   }
  ]
 }
