@@ -579,6 +579,55 @@ test_orca_backend_gates_orca_tool_only_when_selected() {
   pass "bootstrap: backend=orca gates the Orca CLI without requiring it on the default backend"
 }
 
+test_workmux_sidebar_detection() {
+  local case_dir fakebin out vendored
+  # tmux backend (the default) with the vendored source present but the
+  # binary not built: bootstrap must report the local build offer.
+  case_dir="$TMP_ROOT/workmux-sidebar-unbuilt"
+  mkdir -p "$case_dir/home"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  vendored="$case_dir/home/packages/operation-board/sidebar"
+  mkdir -p "$vendored"
+  printf '%s\n' 'version = "0.1.238"' > "$vendored/Cargo.toml"
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
+  expected="MISSING: workmux-sidebar (install: bin/sq-install-workmux-sidebar.sh  # build the vendored packages/operation-board/sidebar)"
+  [ "$out" = "$expected" ] || fail "unbuilt vendored sidebar should report the local build offer, got: $out"
+
+  # Built binary present: the line goes silent.
+  mkdir -p "$vendored/target/release"
+  printf '%s\n' '#!/bin/sh' 'exit 0' > "$vendored/target/release/workmux"
+  chmod +x "$vendored/target/release/workmux"
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
+  [ -z "$out" ] || fail "a built vendored sidebar should be silent, got: $out"
+
+  # No vendored source in the repo: never offered (the check is self-scoping).
+  case_dir="$TMP_ROOT/workmux-sidebar-no-vendor"
+  mkdir -p "$case_dir/home"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
+  [ -z "$out" ] || fail "repos without the vendored sidebar source must be silent, got: $out"
+
+  # Non-tmux backend never reports the tmux-only sidebar even when the
+  # vendored source exists and the binary is unbuilt.
+  case_dir="$TMP_ROOT/workmux-sidebar-orca"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  printf '%s\n' orca > "$case_dir/home/config/backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  mkdir -p "$case_dir/home/packages/operation-board/sidebar"
+  printf '%s\n' 'version = "0.1.238"' > "$case_dir/home/packages/operation-board/sidebar/Cargo.toml"
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
+  [ "$out" = "MISSING: orca (install: brew install orca  # or the platform's package manager)" ] \
+    || fail "backend=orca must not report the tmux-only workmux sidebar, got: $out"
+  pass "bootstrap: the vendored workmux sidebar is offered only where it can be built and used"
+}
+
 # Build a fake toolchain with tmux REMOVED and the named backend session CLI(s)
 # plus jq added, so a backend that must NOT require tmux can be proven silent
 # with tmux absent. Echoes the fakebin dir. The removed tmux is what makes these
@@ -1202,6 +1251,7 @@ test_tasks_axi_min_version
 test_quota_axi_min_version
 test_git_is_required_with_supported_install_instruction
 test_orca_backend_gates_orca_tool_only_when_selected
+test_workmux_sidebar_detection
 test_session_provider_backends_do_not_require_tmux
 test_session_provider_backends_gate_own_cli_not_tmux
 test_herdr_install_requires_manual_action

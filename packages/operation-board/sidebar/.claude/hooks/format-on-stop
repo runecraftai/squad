@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+cd "$CLAUDE_PROJECT_DIR"
+
+input=$(cat)
+session_id=$(jq -r '.session_id // empty' <<<"$input")
+[ -n "$session_id" ] || exit 0
+
+tracking_file=".claude/temp/changed-files-${session_id}.txt"
+work_file="${tracking_file}.work"
+
+# Atomically claim the tracking file
+mv "$tracking_file" "$work_file" 2>/dev/null || exit 0
+trap 'rm -f "$work_file"' EXIT
+
+# Deduplicate and filter to files that still exist
+rust=() py=() docs=()
+while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    case "$f" in
+        *.rs) rust+=("$f") ;;
+        *.py) py+=("$f") ;;
+    esac
+    case "$f" in
+        docs/*.md | docs/*.json | docs/*.css | docs/*.yml | docs/*.yaml | docs/*.ts | docs/*.js)
+            docs+=("$f") ;;
+    esac
+done < <(sort -u "$work_file")
+
+pids=() names=()
+
+if [ ${#rust[@]} -gt 0 ] && command -v cargo >/dev/null 2>&1; then
+    cargo fmt 2>&1 &
+    pids+=($!) names+=("cargo fmt")
+fi
+
+if [ ${#py[@]} -gt 0 ] && command -v ruff >/dev/null 2>&1; then
+    ruff format --quiet "${py[@]}" 2>&1 &
+    pids+=($!) names+=("ruff format")
+fi
+
+if [ ${#docs[@]} -gt 0 ] && [ -x ./docs/node_modules/.bin/oxfmt ]; then
+    # Strip docs/ prefix -- oxfmt must run from docs/ to find .oxfmtrc.json
+    rel_docs=("${docs[@]#docs/}")
+    (cd docs && ./node_modules/.bin/oxfmt "${rel_docs[@]}" >/dev/null 2>&1) &
+    pids+=($!) names+=("oxfmt")
+fi
+
+for i in "${!pids[@]}"; do
+    wait "${pids[$i]}" || echo "format-on-stop: ${names[$i]} failed" >&2
+done

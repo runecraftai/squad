@@ -1,0 +1,40 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Hero from '../components/home/Hero.astro';
+import HeroScreenshot from '../components/home/HeroScreenshot.astro';
+import Why from '../components/home/Why.astro';
+import PainPoints from '../components/home/PainPoints.astro';
+import Demo from '../components/home/Demo.astro';
+import Sandbox from '../components/home/Sandbox.astro';
+import Dashboard from '../components/home/Dashboard.astro';
+import Workflows from '../components/home/Workflows.astro';
+import Testimonials from '../components/home/Testimonials.astro';
+import Cta from '../components/home/Cta.astro';
+import '../styles/home.css';
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'workmux - parallel AI agents in your terminal',
+    description:
+      'Terminal-first workflow for parallel AI agents using git worktrees',
+    template: 'splash',
+    tableOfContents: false,
+    pagefind: false,
+    editUrl: false,
+  }}
+  hasSidebar={false}
+>
+  <div class="mono-editorial">
+    <Hero />
+    <HeroScreenshot />
+    <Why />
+    <PainPoints />
+    <Demo />
+    <Sandbox />
+    <Dashboard />
+    <Workflows />
+    <Testimonials />
+    <Cta />
+  </div>
+</StarlightPage>

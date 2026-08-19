@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -e
+
+cd "$CLAUDE_PROJECT_DIR"
+
+input=$(cat)
+session_id=$(jq -r '.session_id // empty' <<<"$input")
+file_path=$(jq -r '.tool_input.file_path // empty' <<<"$input")
+
+if [ -n "$session_id" ] && [ -n "$file_path" ]; then
+    file_path="${file_path#"$CLAUDE_PROJECT_DIR"/}"
+    mkdir -p .claude/temp
+    printf '%s\n' "$file_path" >>".claude/temp/changed-files-${session_id}.txt"
+fi

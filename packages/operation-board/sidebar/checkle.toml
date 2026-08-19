@@ -1,0 +1,40 @@
+[[check]]
+name = "format-rust-check"
+label = "format-rust"
+mode = "rustfmt"
+command = ["cargo", "fmt", "--all", "--", "--check"]
+
+[[check]]
+name = "format-python-check"
+label = "format-python"
+mode = "auto"
+command = ["ruff", "format", "tests", "--check", "--quiet"]
+
+[[check]]
+name = "clippy"
+mode = "cargo"
+command = ["cargo", "clippy", "--all-targets", "--message-format=json"]
+
+[[check]]
+name = "unit-tests"
+mode = "cargo"
+command = ["cargo", "test", "--bin", "workmux", "--message-format=json"]
+
+[[check]]
+name = "ruff-check"
+mode = "auto"
+command = ["ruff", "check", "tests", "--quiet"]
+
+[[check]]
+name = "pyright"
+mode = "auto"
+command = ["bash", "-lc", "source tests/venv/bin/activate && pyright tests"]
+
+[[check]]
+name = "docs-check"
+mode = "auto"
+command = ["node", "docs/scripts/check-content.mjs"]
+
+[[group]]
+name = "all"
+checks = ["format-rust-check", "format-python-check", "clippy", "unit-tests", "ruff-check", "pyright", "docs-check"]
