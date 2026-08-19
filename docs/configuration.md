@@ -290,7 +290,7 @@ XO bases inherit this file from the primary, so an XO's own operators apply the 
 On session start the sergeant at arms detects what its required toolchain is missing or too old and lists each problem with either an exact install command or manual instructions.
 It installs automatically supported tools only after you say go; manual-only tools remain for you to install from the printed instructions.
 Required tools come in two parts: a universal toolchain every base needs regardless of backend, and a per-backend delta that follows the runtime backend actually resolved for this base.
-The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, drill v1.31.2 or newer, compatible sq-gh, sq-browser, compatible sq-report, compatible sq-tasks per "Backlog backend" above, and compatible sq-quota.
+The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, drill, compatible sq-gh, sq-browser, compatible sq-report, compatible sq-tasks per "Backlog backend" above, and compatible sq-quota.
 [`bin/sq-bootstrap.sh`](../bin/sq-bootstrap.sh) owns the axi-family floor policy and the sq-gh and sq-report floors, while [`bin/sq-tasks-lib.sh`](../bin/sq-tasks-lib.sh) and [`bin/sq-quota-lib.sh`](../bin/sq-quota-lib.sh) hold their own tools' floor constants.
 This section is the single owner of that universal toolchain list; backend guides' prerequisites point here and add only their backend-specific tools.
 In that list, drill runs the validation pipeline, sq-gh, sq-browser, and sq-report cover GitHub, browser, and rich-review operations, and sq-tasks plus sq-quota back backlog mutations and quota-aware array dispatch.
