@@ -21,3 +21,4 @@ packages/*/.turbo/
 node_modules/
 .turbo/
 .lavish/
+respostas-squad.md
