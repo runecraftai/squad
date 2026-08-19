@@ -25,6 +25,12 @@
 #   8. packages/*/vendor.json provenance records name the upstream source
 #      repository and are exempt the same way .specs/ is: provenance metadata
 #      (M3/M5/M6 vendoring pattern), not authorship credit in Squad content.
+#      The whole-tree vendor-in under packages/operation-board/sidebar/ (the
+#      vendored workmux Rust source, byte-identical copy-in per that PR's
+#      explicit no-rebrand scope) is exempt the same way, mirroring the
+#      VENDORED_PACKAGE_PREFIXES precedent in bin/sq-doc-audience-check.sh:
+#      its upstream prose is not Squad's own vocabulary, and renaming it is a
+#      deliberate, separate, later decision, not this guard's job.
 #   9. every packages/*/package.json npm identity is @runecraft/<dirname>
 #      (commander decision 2026-08-14: publish all npm packages under the
 #      @runecraft scope because bare names like drill/fob are squatted on
@@ -57,6 +63,7 @@ tracked_files() {
     | grep -v '^\.specs/' \
     | grep -v '^tests/sq-rebrand-guard.test.sh$' \
     | grep -v '^packages/[^/]*/vendor\.json$' \
+    | grep -v '^packages/operation-board/sidebar/' \
     | grep -v '\.png$' \
     | grep -v '\.gif$'
 }
