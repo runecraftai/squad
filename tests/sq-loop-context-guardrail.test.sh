@@ -8,7 +8,6 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot sq-loop-context-guardrail)
 EXT="$ROOT/.pi/extensions/sq-loop-context-guardrail.ts"
-PI_PACKAGE_DIR=${SQUAD_PI_PACKAGE_DIR:-"$(npm root -g 2>/dev/null)/@earendil-works/pi-coding-agent"}
 
 cleanup() {
   fm_test_cleanup
