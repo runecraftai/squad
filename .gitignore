@@ -19,3 +19,5 @@ packages/*/node_modules/
 packages/*/dist/
 packages/*/.turbo/
 node_modules/
+.turbo/
+.lavish/
