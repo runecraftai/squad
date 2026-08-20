@@ -396,6 +396,10 @@
    "audience": "maintainer-verification"
   },
   {
+   "path": "docs/loop-context-guardrail.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/herdr-backend.md",
    "audience": "operator-current"
   },
