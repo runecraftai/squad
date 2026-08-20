@@ -537,6 +537,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing an operator for a Squad-repo task.
 - `hijack` - load before evaluating an existing open-source product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
+- `obsidian-axi` - load before running any `obsidian-axi` CLI command, or when a task needs to search, read, or explore the commander's personal Obsidian vault via that CLI.
 
 ## 14. Relay
 
