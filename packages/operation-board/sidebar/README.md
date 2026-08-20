@@ -94,15 +94,9 @@ This fork adds support for reading agent state from
 [Squad](https://github.com/runecraftai/squad), a task orchestration system for
 AI coding agents.
 
-### Usage
-
-```bash
-# Start the sidebar daemon reading from Squad's state directory
-workmux _sidebar-daemon --data-source squad
-
-# The daemon reads from $SQUAD_BASE/state/ or $SQUAD_HOME/state/
-# Falls back to ~/.fob/squad/state/ if neither is set
-```
+The sidebar always uses tmux native tracking to discover panes automatically.
+When `SQUAD_BASE` or `SQUAD_HOME` is set, the sidebar reads task metadata from
+Squad's state directory.
 
 ### Data Mapping
 

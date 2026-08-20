@@ -29,6 +29,11 @@ WS="$ROOT/bin/sq-window-state.sh"
 TMP_ROOT=$(fm_test_tmproot sq-window-state)
 FIXTURE="$TMP_ROOT/crew-state.fixture"
 
+# Fake tmux binary so `tmux has-session -t "$window"` succeeds for all
+# windows without requiring a running tmux server.
+FAKE_TMUX=$(fm_fakebin "$TMP_ROOT")
+fm_fake_exit0 "$FAKE_TMUX" tmux
+
 # Fake reconciler: answers one "state: <verb> · source: status-log · <detail>"
 # line per task from SQUAD_FAKE_CREW_STATE (a "<id>\t<verb>\t<detail>" map);
 # an unknown id exits non-zero, like the real binary failing. The <NL> and
@@ -71,12 +76,12 @@ write_fixture() {  # <id> <verb> [detail]
 }
 
 run_list_in() {  # <state-dir>
-  SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
+  PATH="$FAKE_TMUX:$PATH" SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
     SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" list
 }
 
 run_publish_in() {  # <state-dir>
-  SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
+  PATH="$FAKE_TMUX:$PATH" SQUAD_STATE_OVERRIDE="$1" SQUAD_CREW_STATE_BIN="$FAKE" \
     SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" publish
 }
 
@@ -165,6 +170,32 @@ run_publish_in "$S5"
 [ -f "$S5/window-states" ] || fail "publish did not create the file"
 [ ! -s "$S5/window-states" ] || fail "empty state dir published rows"
 pass "empty state dir publishes an empty file"
+
+# (f2) ghost sessions: a meta whose window= points to a nonexistent
+# session is excluded from output.
+S_GHOST="$TMP_ROOT/state-ghost"; mkdir -p "$S_GHOST"
+write_meta "$S_GHOST" alive tmux "live:ws"
+write_meta "$S_GHOST" ghost tmux "gone:ws"
+write_fixture alive working "present"
+write_fixture ghost working "absent"
+
+# Build a selective fake tmux: succeeds for 'live:', fails for 'gone:'
+FAKE_TMUX_SELECTIVE=$(fm_fakebin "$TMP_ROOT/sel")
+cat > "$FAKE_TMUX_SELECTIVE/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *has-session*)
+    for arg in "$@"; do
+      case "$arg" in gone:*) exit 1 ;; esac
+    done
+    exit 0
+    ;;
+esac
+exit 0
+SH
+chmod +x "$FAKE_TMUX_SELECTIVE/tmux"
+ghost_out=$(PATH="$FAKE_TMUX_SELECTIVE:$PATH" SQUAD_STATE_OVERRIDE="$S_GHOST" SQUAD_CREW_STATE_BIN="$FAKE" SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" list)
+assert_eq "ghost session excluded" "$ghost_out" $'live:ws\talive\tworking\tworking\tpresent'
 
 # (g) unknown and missing subcommands fail closed
 if SQUAD_STATE_OVERRIDE="$S2" "$WS" bogus >/dev/null 2>&1; then

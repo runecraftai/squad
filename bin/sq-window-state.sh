@@ -137,6 +137,10 @@ derive() {
     window=$(fm_meta_get "$meta" window)
     [ -n "$window" ] || continue
     case "$window" in remote:*) continue ;; esac
+    # Skip windows that no longer exist in tmux (ghost sessions from
+    # manual closes or crashed panes). The window target uses the
+    # format 'session:window'; verify at least the session exists.
+    tmux has-session -t "$window" 2>/dev/null || continue
     kind=$(fm_meta_get "$meta" kind)
     [ "$kind" = xo ] && continue
     id=$(basename "$meta"); id=${id%.meta}

@@ -30,19 +30,13 @@ pub(super) fn ensure_daemon_running() -> Result<PathBuf> {
 
 /// Spawn the sidebar daemon as a detached background process.
 ///
-/// When `SQUAD_BASE` or `SQUAD_HOME` is set, automatically uses the
-/// Squad data source instead of the default tmux data source.
+/// Always uses tmux native tracking to discover panes automatically.
 fn spawn_daemon() -> Result<()> {
     let exe = std::env::current_exe()?;
     let mux = create_backend(detect_backend());
     let instance_id = mux.instance_id();
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("_sidebar-daemon");
-
-    // Auto-detect Squad environment and use Squad data source
-    if std::env::var("SQUAD_BASE").is_ok() || std::env::var("SQUAD_HOME").is_ok() {
-        cmd.arg("--data-source").arg("squad");
-    }
 
     // Pass instance ID so daemon uses the same socket path as the client
     cmd.arg("--instance-id").arg(&instance_id);

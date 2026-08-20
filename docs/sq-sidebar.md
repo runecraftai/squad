@@ -10,15 +10,10 @@ The workmux sidebar reads from Squad's ground-truth state files:
 - `state/<id>.meta` - task metadata (model, effort, kind, project, worktree)
 - `state/<id>.busy-gen` - mtime used for elapsed time display
 
-When `SQUAD_BASE` or `SQUAD_HOME` is set, workmux automatically uses the Squad data source instead of its default tmux monitoring.
-
-The tmux plugin runs `workmux sidebar` in the tmux server's environment, so the variables must be visible there.
-The loader pins any `SQUAD_BASE` / `SQUAD_HOME` it sees at load time into the server's global environment (`tmux set-environment -g`), covering the common case where tmux is started from a shell that exports them.
-If tmux was started before the variables were exported, set them globally in `~/.config/tmux/tmux.conf` so the sidebar still selects the Squad data source:
-
-```conf
-set-environment -g SQUAD_BASE /path/to/your/squad-base
-```
+The sidebar always uses tmux native tracking to discover panes automatically.
+No environment variables are needed to enable Squad integration; the sidebar reads
+from Squad's state directory when `SQUAD_BASE` or `SQUAD_HOME` is set, but this
+is now the default behavior rather than an opt-in mode.
 
 ## Install
 
