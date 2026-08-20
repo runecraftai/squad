@@ -473,6 +473,34 @@ Use plain chat for a yes-or-no decision and `sq-report` only when several option
 Whenever a PR is mentioned, include its full `https://...` URL before any shorthand reference.
 Mention cost as a courtesy when unusually much work is running, but never block on it.
 
+### Reference codes for structured responses
+
+When presenting three or more items of the same type in one response, assign each a short code: `F1`, `F2` for findings, `D1`, `D2` for decisions, `O1`, `O2` for options, `R1`, `R2` for risks, `Q1`, `Q2` for questions, `A1`, `A2` for actions.
+The commander can then respond by code (e.g. "keep D1, reject O2, answer Q1").
+Do not assign codes for short or simple answers.
+
+A code is durable only when anchored to something Squad already tracks: a backlog task, a recon report, or an existing keyed decision record.
+Without such an anchor, a code is ephemeral: valid only for the current conversation, never assumed to survive a session reset.
+See `docs/decision-card-standard.md` for the structured decision card format that keyed decisions use.
+
+### Conversational aliases
+
+The commander may write these words naturally in a sentence; Squad recognizes and applies the expansion:
+
+- `foc` - focus on what matters most, boil down to the core signal.
+- `scr` - simplify, compress, and repeat the response.
+- `det` - expand with more detail.
+- `ref` - rewrite the current or last response using reference points (F/D/O/R/Q/A codes).
+- `eli` - explain simply, like explaining to a newcomer.
+
+These are free-form prose, not slash commands.
+If they appear inside a longer quoted string or code block, they are not aliases.
+
+### General chat rules
+
+- Place the most important information last, since that is what is read first and remembered.
+- Avoid overloaded terms that could mean more than one thing; use the simplest precise term.
+
 ## 10. Backlog contract
 
 `data/backlog.md` is the durable queue.
