@@ -113,8 +113,11 @@ register_skills() {
     if [ -L "$target_link" ]; then
       # Existing symlink: check if it points to the right place
       local current_target
-      current_target=$(readlink "$target_link" 2>/dev/null) || true
-      if [ "$current_target" = "$skill_path" ]; then
+      current_target=$(readlink "$target_link" 2>/dev/null) || current_target=
+      local current_abs expected_abs
+      current_abs=$(cd "$(dirname "$target_link")" && cd "$current_target" 2>/dev/null && pwd -P) || current_abs=
+      expected_abs=$(cd "$(dirname "$skill_path")" 2>/dev/null && pwd -P) || expected_abs=
+      if [ -n "$current_abs" ] && [ "$current_abs" = "$expected_abs" ]; then
         skipped=$((skipped + 1))
         continue
       fi
@@ -130,10 +133,11 @@ register_skills() {
     fi
 
     # Create symlink to the directory (not the file)
-    local skill_dir
+    local skill_dir relative_skill_dir
     skill_dir=$(dirname "$skill_path")
+    relative_skill_dir=$(realpath --relative-to="$SKILLS_DIR" "$skill_dir")
     if [ "$CHECK_ONLY" = 0 ]; then
-      ln -s "$skill_dir" "$target_link"
+      ln -s "$relative_skill_dir" "$target_link"
       created=$((created + 1))
     else
       echo "would register: $skill_name (from $pkg_dir)"

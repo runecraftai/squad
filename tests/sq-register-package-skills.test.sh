@@ -112,10 +112,10 @@ test_fresh_setup() {
   # Check that symlink points to correct directory
   if [ -L "$TEST_DIR/skills/test-skill" ]; then
     target=$(readlink "$TEST_DIR/skills/test-skill")
-    assert_equals "$TEST_DIR/packages/test-pkg/skills/test-skill" "$target" "symlink points to correct directory"
+    assert_equals "../packages/test-pkg/skills/test-skill" "$target" "symlink points to correct directory"
   fi
   assert_exists "$TEST_DIR/skills/manifest-skill" "manifest skill symlink created"
-  assert_equals "$TEST_DIR/packages/test-pkg/public/manifest-skill" "$(readlink "$TEST_DIR/skills/manifest-skill")" "manifest symlink points to package skill"
+  assert_equals "../packages/test-pkg/public/manifest-skill" "$(readlink "$TEST_DIR/skills/manifest-skill")" "manifest symlink points to package skill"
 
   cleanup
 }
@@ -134,7 +134,7 @@ test_repeat_setup() {
   
   if [ -L "$TEST_DIR/skills/test-skill" ]; then
     target=$(readlink "$TEST_DIR/skills/test-skill")
-    assert_equals "$TEST_DIR/packages/test-pkg/skills/test-skill" "$target" "symlink unchanged after repeat"
+    assert_equals "../packages/test-pkg/skills/test-skill" "$target" "symlink unchanged after repeat"
   fi
   
   cleanup
