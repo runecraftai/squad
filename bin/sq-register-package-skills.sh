@@ -100,7 +100,7 @@ register_skills() {
     local current_target
     current_target=$(readlink "$target_link" 2>/dev/null) || continue
     case "$current_target" in
-      */packages/*|packages/*|../packages/*)
+      */packages/*)
         if [ ! -e "$target_link" ]; then
           if [ "$CHECK_ONLY" = 0 ]; then
             rm -f "$target_link"
