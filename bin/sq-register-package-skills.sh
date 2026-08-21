@@ -49,11 +49,15 @@ discover_pi_manifest_skills() {
     pkg_dir=$(dirname "$pkg_json")
     # Check if package.json has "pi": {"skills": [...]}
     if command -v node >/dev/null 2>&1; then
-      if ! pi_skills=$(node -e "
-        const pkg = require('$pkg_json');
-        const skills = pkg.pi && pkg.pi.skills ? pkg.pi.skills : [];
+      # Pass the path as data, not interpolated JavaScript. This keeps manifest
+      # discovery portable when a checkout path contains quotes or shell
+      # metacharacters.
+      if ! pi_skills=$(node -e '
+        const fs = require("node:fs");
+        const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        const skills = pkg.pi && Array.isArray(pkg.pi.skills) ? pkg.pi.skills : [];
         skills.forEach(s => console.log(s));
-      " 2>/dev/null); then
+      ' "$pkg_json" 2>/dev/null); then
         echo "unable to parse package manifest: $pkg_json" >&2
         return 1
       fi
