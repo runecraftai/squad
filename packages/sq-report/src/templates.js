@@ -989,7 +989,7 @@ function pageHeader(kit, kind) {
   return masthead(kit, {
     brand: "Squad Briefing",
     segment: kind.eyebrow,
-    title: kind.title,
+    title: "Mission Briefing",
     lede: kind.lede,
     meta: [
       { label: "Prepared", value: new Date().toISOString().slice(0, 10) },
