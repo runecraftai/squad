@@ -56,11 +56,16 @@ discover_pi_manifest_skills() {
       " 2>/dev/null) || continue
       while IFS= read -r skill_path; do
         [ -n "$skill_path" ] || continue
-        # Resolve relative to package directory
         skill_path="$pkg_dir/$skill_path"
-        if [ -d "$skill_path" ] && [ -f "$skill_path/SKILL.md" ]; then
+        if [ -f "$skill_path/SKILL.md" ]; then
           skill_name=$(basename "$skill_path")
           echo "$skill_name|$skill_path/SKILL.md|$(basename "$pkg_dir")"
+        elif [ -d "$skill_path" ]; then
+          for skill_dir in "$skill_path"/*/SKILL.md; do
+            [ -f "$skill_dir" ] || continue
+            skill_name=$(basename "$(dirname "$skill_dir")")
+            echo "$skill_name|$skill_dir|$(basename "$pkg_dir")"
+          done
         fi
       done <<< "$pi_skills"
     fi

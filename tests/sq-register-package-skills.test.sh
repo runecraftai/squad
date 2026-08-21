@@ -36,8 +36,8 @@ EOF
   # Create skills directory
   mkdir -p "$TEST_DIR/skills"
 
-  mkdir -p "$TEST_DIR/packages/test-pkg/manifest-skill"
-  cat > "$TEST_DIR/packages/test-pkg/manifest-skill/SKILL.md" << 'EOF'
+  mkdir -p "$TEST_DIR/packages/test-pkg/public/manifest-skill"
+  cat > "$TEST_DIR/packages/test-pkg/public/manifest-skill/SKILL.md" << 'EOF'
 ---
 name: manifest-skill
 description: A manifest-discovered skill
@@ -45,7 +45,7 @@ description: A manifest-discovered skill
 # Manifest Skill
 EOF
   cat > "$TEST_DIR/packages/test-pkg/package.json" << 'EOF'
-{"name":"test-pkg","pi":{"skills":["manifest-skill"]}}
+{"name":"test-pkg","pi":{"skills":["public"]}}
 EOF
 }
 
@@ -104,7 +104,7 @@ test_fresh_setup() {
   setup
   
   # Run registration
-  output=$("$REGISTER_SCRIPT" 2>&1) || true
+  output=$("$REGISTER_SCRIPT" 2>&1)
   
   # Check that skill was registered
   assert_exists "$TEST_DIR/skills/test-skill" "skill symlink created"
@@ -115,7 +115,7 @@ test_fresh_setup() {
     assert_equals "$TEST_DIR/packages/test-pkg/skills/test-skill" "$target" "symlink points to correct directory"
   fi
   assert_exists "$TEST_DIR/skills/manifest-skill" "manifest skill symlink created"
-  assert_equals "$TEST_DIR/packages/test-pkg/manifest-skill" "$(readlink "$TEST_DIR/skills/manifest-skill")" "manifest symlink points to package skill"
+  assert_equals "$TEST_DIR/packages/test-pkg/public/manifest-skill" "$(readlink "$TEST_DIR/skills/manifest-skill")" "manifest symlink points to package skill"
 
   cleanup
 }
@@ -126,8 +126,8 @@ test_repeat_setup() {
   setup
   
   # Run registration twice
-  "$REGISTER_SCRIPT" >/dev/null 2>&1 || true
-  output=$("$REGISTER_SCRIPT" 2>&1) || true
+  "$REGISTER_SCRIPT" >/dev/null 2>&1
+  output=$("$REGISTER_SCRIPT" 2>&1)
   
   # Check that skill still exists and is correct
   assert_exists "$TEST_DIR/skills/test-skill" "skill symlink still exists after repeat"
@@ -148,7 +148,7 @@ test_missing_package() {
   "$REGISTER_SCRIPT" >/dev/null 2>&1
   rm -rf "$TEST_DIR/packages/test-pkg"
 
-  output=$("$REGISTER_SCRIPT" 2>&1) || true
+  output=$("$REGISTER_SCRIPT" 2>&1)
 
   assert_not_exists "$TEST_DIR/skills/test-skill" "stale conventional skill removed"
   assert_not_exists "$TEST_DIR/skills/manifest-skill" "stale manifest skill removed"
@@ -162,7 +162,7 @@ test_check_flag() {
   setup
   
   # Run with --check
-  output=$("$REGISTER_SCRIPT" --check 2>&1) || true
+  output=$("$REGISTER_SCRIPT" --check 2>&1)
   
   # Check that no symlink was created
   assert_not_exists "$TEST_DIR/skills/test-skill" "no symlink created with --check"
@@ -197,7 +197,7 @@ description: Another test skill
 EOF
   
   # Run registration
-  output=$("$REGISTER_SCRIPT" 2>&1) || true
+  output=$("$REGISTER_SCRIPT" 2>&1)
   
   # Check that both skills were registered
   assert_exists "$TEST_DIR/skills/test-skill" "first skill registered"
@@ -215,7 +215,7 @@ test_existing_directory() {
   mkdir -p "$TEST_DIR/skills/test-skill"
   
   # Run registration - should not overwrite
-  output=$("$REGISTER_SCRIPT" 2>&1) || true
+  output=$("$REGISTER_SCRIPT" 2>&1)
   
   # Check that existing directory was preserved
   if [ -d "$TEST_DIR/skills/test-skill" ] && [ ! -L "$TEST_DIR/skills/test-skill" ]; then
