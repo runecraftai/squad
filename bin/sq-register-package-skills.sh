@@ -143,7 +143,15 @@ register_skills() {
     # Create symlink to the directory (not the file)
     local skill_dir relative_skill_dir
     skill_dir=$(dirname "$skill_path")
-    relative_skill_dir=$(realpath --relative-to="$SKILLS_DIR" "$skill_dir")
+    # All package skills live below SQUAD_ROOT. Build the link without
+    # realpath --relative-to, which is GNU-specific and absent on macOS.
+    case "$skill_dir" in
+      "$SQUAD_ROOT"/*) relative_skill_dir="../${skill_dir#"$SQUAD_ROOT"/}" ;;
+      *)
+        echo "skill path is outside Squad root: $skill_dir" >&2
+        return 1
+        ;;
+    esac
     if [ "$CHECK_ONLY" = 0 ]; then
       ln -s "$relative_skill_dir" "$target_link"
       created=$((created + 1))
