@@ -360,7 +360,9 @@ case "$MODE" in
 Delivery contract: mode=direct-PR
 This task ships **direct-PR**: you raise the PR yourself, without the drill pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`sq-gh\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a PR with \`sq-gh\`,
+then immediately run \`bin/sq-pr-check.sh <task-id> <pr-url>\` with the task id and validated PR URL
+to arm merge monitoring. After that, append \`done: PR {url}\` to the status file and stop.
 Do NOT run /drill. The configured merge authority decides whether to merge the PR; Squad relays the outcome.
 EOF
     ;;

@@ -38,7 +38,12 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
     if $t.kind == "xo" then "\(endpoint_exists($t)) / \($t.endpoint.agent_alive)"
     else endpoint_exists($t) end;
   def artifact($t):
-    if $t.pr.url != null then $t.pr.url
+    if $t.pr.url != null then
+      if $t.pr.source == "meta" then $t.pr.url
+      elif $t.pr.source == "drill" then "\($t.pr.url) (drill)"
+      elif $t.pr.source == "status_event" then "\($t.pr.url) (orphan)"
+      else $t.pr.url
+      end
     elif $t.paths.report.present then $t.paths.report.path
     else "-" end;
   def path_of($t):
