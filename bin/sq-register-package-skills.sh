@@ -82,6 +82,24 @@ register_skills() {
   local all_skills
   all_skills=$(discover_conventional_skills; discover_pi_manifest_skills)
 
+  for target_link in "$SKILLS_DIR"/*; do
+    [ -L "$target_link" ] || continue
+    local current_target
+    current_target=$(readlink "$target_link" 2>/dev/null) || continue
+    case "$current_target" in
+      */packages/*|packages/*|../packages/*)
+        if [ ! -e "$target_link" ]; then
+          if [ "$CHECK_ONLY" = 0 ]; then
+            rm -f "$target_link"
+            cleaned=$((cleaned + 1))
+          else
+            echo "would clean: $(basename "$target_link")"
+          fi
+        fi
+        ;;
+    esac
+  done
+
   # Process each discovered skill
   while IFS='|' read -r skill_name skill_path pkg_dir; do
     [ -n "$skill_name" ] || continue

@@ -35,6 +35,18 @@ EOF
   
   # Create skills directory
   mkdir -p "$TEST_DIR/skills"
+
+  mkdir -p "$TEST_DIR/packages/test-pkg/manifest-skill"
+  cat > "$TEST_DIR/packages/test-pkg/manifest-skill/SKILL.md" << 'EOF'
+---
+name: manifest-skill
+description: A manifest-discovered skill
+---
+# Manifest Skill
+EOF
+  cat > "$TEST_DIR/packages/test-pkg/package.json" << 'EOF'
+{"name":"test-pkg","pi":{"skills":["manifest-skill"]}}
+EOF
 }
 
 cleanup() {
@@ -102,7 +114,9 @@ test_fresh_setup() {
     target=$(readlink "$TEST_DIR/skills/test-skill")
     assert_equals "$TEST_DIR/packages/test-pkg/skills/test-skill" "$target" "symlink points to correct directory"
   fi
-  
+  assert_exists "$TEST_DIR/skills/manifest-skill" "manifest skill symlink created"
+  assert_equals "$TEST_DIR/packages/test-pkg/manifest-skill" "$(readlink "$TEST_DIR/skills/manifest-skill")" "manifest symlink points to package skill"
+
   cleanup
 }
 
@@ -131,14 +145,13 @@ test_missing_package() {
   echo "=== Test 3: Missing package ==="
   setup
   
-  # Remove the test package
+  "$REGISTER_SCRIPT" >/dev/null 2>&1
   rm -rf "$TEST_DIR/packages/test-pkg"
-  
-  # Run registration - should not fail
+
   output=$("$REGISTER_SCRIPT" 2>&1) || true
-  
-  # Check that no skill was registered
-  assert_not_exists "$TEST_DIR/skills/test-skill" "no skill registered for missing package"
+
+  assert_not_exists "$TEST_DIR/skills/test-skill" "stale conventional skill removed"
+  assert_not_exists "$TEST_DIR/skills/manifest-skill" "stale manifest skill removed"
   
   cleanup
 }
