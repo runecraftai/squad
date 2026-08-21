@@ -49,11 +49,14 @@ discover_pi_manifest_skills() {
     pkg_dir=$(dirname "$pkg_json")
     # Check if package.json has "pi": {"skills": [...]}
     if command -v node >/dev/null 2>&1; then
-      pi_skills=$(node -e "
+      if ! pi_skills=$(node -e "
         const pkg = require('$pkg_json');
         const skills = pkg.pi && pkg.pi.skills ? pkg.pi.skills : [];
         skills.forEach(s => console.log(s));
-      " 2>/dev/null) || continue
+      " 2>/dev/null); then
+        echo "unable to parse package manifest: $pkg_json" >&2
+        return 1
+      fi
       while IFS= read -r skill_path; do
         [ -n "$skill_path" ] || continue
         skill_path="$pkg_dir/$skill_path"
@@ -68,6 +71,9 @@ discover_pi_manifest_skills() {
           done
         fi
       done <<< "$pi_skills"
+    else
+      echo "node is required to parse package manifest: $pkg_json" >&2
+      return 1
     fi
   done
 }
@@ -85,7 +91,9 @@ register_skills() {
 
   # Discover all skills
   local all_skills
-  all_skills=$(discover_conventional_skills; discover_pi_manifest_skills)
+  if ! all_skills=$(discover_conventional_skills; discover_pi_manifest_skills); then
+    return 1
+  fi
 
   for target_link in "$SKILLS_DIR"/*; do
     [ -L "$target_link" ] || continue
