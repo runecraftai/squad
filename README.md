@@ -169,18 +169,20 @@ The registration script is idempotent and runs during bootstrap. It discovers sk
 1. Conventional `packages/*/skills/*/SKILL.md` directories
 2. Packages with `"pi": {"skills": [...]}` in `package.json`
 
-To check which skills would be registered without modifying anything:
+To check which skills would be registered without modifying anything, run:
 
 ```sh
 bin/sq-register-package-skills.sh --check
 ```
+
+After bootstrap, verify the public skill link with `test -e skills/sq-report/SKILL.md && echo sq-report-ready`.
 
 ### Skill-based discovery vs hook-based automation
 
 Skills provide semantic/prose discovery: the agent loads them when the task matches the skill's description. Hooks provide deterministic bootstrap integration: they run at session start to inject ambient context.
 
 Both mechanisms are complementary:
-- **Skills** handle intent-based discovery ("I need to create a visual artifact")
+- **Skills** handle prose intent discovery ("create a visual plan, comparison, diagram, table, code view, or report")
 - **Hooks** handle session-start integration ("sq-report is available, here are active sessions")
 
 The sq-report package uses both: the public skill for agent discovery and `setup hooks` for session-start context.
