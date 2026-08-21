@@ -361,6 +361,25 @@ drill_runs_status_for_branch() {  # <branch>
   return 0
 }
 
+# Sidecar file for the drill run's structured pr field. The snapshot reads
+# this rather than parsing drill output directly, keeping the crew-state
+# output contract stable and the drill trust boundary clean.
+drill_pr_sidecar() { # <state-dir> <task-id>
+  printf '%s/%s.drill-pr' "$1" "$2"
+}
+drill_pr_sidecar_write() { # <state-dir> <task-id> <pr-url>
+  local sidecar
+  sidecar=$(drill_pr_sidecar "$1" "$2")
+  if [ -n "$3" ]; then
+    printf '%s\n' "$3" > "$sidecar"
+  else
+    rm -f -- "$sidecar"
+  fi
+}
+drill_pr_sidecar_clear() { # <state-dir> <task-id>
+  rm -f -- "$(drill_pr_sidecar "$1" "$2")"
+}
+
 # CREW_BRANCH is empty at detached HEAD (a just-spawned crew, or a recon's
 # scratch worktree); with no branch there is no run to attribute to this crew.
 CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
@@ -528,7 +547,21 @@ if [ "$HAVE_RUN" = 1 ]; then
       ;;
   esac
 
+  # Expose the drill run's structured pr field to the snapshot via a sidecar
+  # file. This is the authoritative PR source when drill created the PR in its
+  # own pipeline step - no prose parsing, no repo-identity guessing.
+  drill_pr_sidecar_clear "$STATE" "$ID"
+  if [ "$RUN_SOURCE" = full ]; then
+    drill_pr_url=$(strip_quotes "$(drill_field pr)")
+    [ -n "$drill_pr_url" ] && drill_pr_sidecar_write "$STATE" "$ID" "$drill_pr_url"
+  fi
+
   emit "$RUN_STATE" run-step "$RUN_DETAIL"
+fi
+
+# When no drill run is attributed, clear any stale sidecar from a prior run.
+if [ "$HAVE_RUN" = 0 ]; then
+  drill_pr_sidecar_clear "$STATE" "$ID"
 fi
 
 # --- fallback: no run attributed to this crew ------------------------------

@@ -436,6 +436,17 @@ task_json_lines() {
     report_path="$DATA/$id/report.md"
     pr=$(meta_value "$meta" pr)
     pr_source=meta
+    # Read the drill run's authoritative structured pr field from the sidecar
+    # written by sq-crew-state.sh. When present it takes precedence over the
+    # metadata value because drill created the PR in its own pipeline step.
+    drill_pr_sidecar="$STATE/$id.drill-pr"
+    if [ -f "$drill_pr_sidecar" ]; then
+      drill_pr=$(cat "$drill_pr_sidecar" 2>/dev/null || true)
+      if [ -n "$drill_pr" ]; then
+        pr=$drill_pr
+        pr_source=drill
+      fi
+    fi
     if [ -z "$pr" ]; then
       pr_from_status=$(first_pr_url_in_file "$status_log" || true)
       pr=$pr_from_status
