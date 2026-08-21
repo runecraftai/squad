@@ -74,6 +74,20 @@ test("every kind renders with every token kit and paints its own page", () => {
   }
 });
 
+test("every template shows 'Mission Briefing' as the visible header", () => {
+  for (const kind of ALL_KINDS) {
+    for (const tokens of ALL_KITS) {
+      const html = buildTemplate({ kind, tokens });
+      // slides kind has header: false so it has no page header
+      if (kind === "slides") continue;
+      assert.ok(
+        html.includes(">Mission Briefing<"),
+        `${kind}/${tokens} must show 'Mission Briefing' as the h1 text`,
+      );
+    }
+  }
+});
+
 test("every template is a parseable standalone document with the layout-safety CSS", () => {
   for (const kind of ALL_KINDS) {
     for (const tokens of ALL_KITS) {
