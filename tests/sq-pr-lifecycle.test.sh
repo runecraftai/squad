@@ -14,7 +14,6 @@ CREW_STATE="$ROOT/bin/sq-crew-state.sh"
 UNIT_SNAPSHOT="$ROOT/bin/sq-unit-snapshot.sh"
 UNIT_VIEW="$ROOT/bin/sq-unit-view.sh"
 PR_CHECK="$ROOT/bin/sq-pr-check.sh"
-PR_LIB="$ROOT/bin/sq-pr-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot sq-pr-lifecycle)
 fm_git_identity fmtest fmtest@example.invalid
@@ -203,9 +202,8 @@ test_direct_pr_registration() {
   local pr_url="https://github.com/runecraftai/squad/pull/101"
 
   # sq-pr-check.sh writes pr= to metadata and arms poll
-  local check_out
-  check_out=$(PATH="$fb:$PATH" SQUAD_STATE_OVERRIDE="$d/state" \
-    SQUAD_ROOT_OVERRIDE="$ROOT" "$PR_CHECK" "$id" "$pr_url" 2>&1) || {
+  PATH="$fb:$PATH" SQUAD_STATE_OVERRIDE="$d/state" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" "$PR_CHECK" "$id" "$pr_url" >/dev/null 2>&1 || {
     # sq-pr-check.sh may fail if the poll template is missing; check metadata
     :
   }
@@ -369,10 +367,9 @@ test_direct_pr_brief_instruction() {
   mkdir -p "$d/data"
 
   # Generate a direct-PR brief via sq-brief.sh
-  local brief_out
-  brief_out=$(SQUAD_DATA_OVERRIDE="$d/data" SQUAD_STATE_OVERRIDE="$d/state" \
+  SQUAD_DATA_OVERRIDE="$d/data" SQUAD_STATE_OVERRIDE="$d/state" \
     SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-brief.sh" "test-brief" "test-repo" \
-    --mode direct-PR 2>&1) || true
+    --mode direct-PR >/dev/null 2>&1 || true
 
   local brief_file="$d/data/test-brief/brief.md"
   [ -f "$brief_file" ] || fail "brief: file not created"
