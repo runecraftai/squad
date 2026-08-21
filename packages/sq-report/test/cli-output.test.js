@@ -1743,7 +1743,7 @@ test("setup plugin registers the installed package in the clients that are prese
     const linked = await realpath(`${homeDir}/.cursor/plugins/local/report`);
     assert.equal(linked, await realpath(fileURLToPath(new URL("..", import.meta.url))));
     assert.ok(existsSync(`${linked}/plugin.json`));
-    assert.ok(existsSync(`${linked}/skills/lavish/SKILL.md`));
+    assert.ok(existsSync(`${linked}/skills/sq-report/SKILL.md`));
   } finally {
     await rm(stateDir, { force: true, recursive: true });
     await rm(homeDir, { force: true, recursive: true });
