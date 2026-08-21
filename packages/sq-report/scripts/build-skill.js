@@ -1,4 +1,4 @@
-// Generates skills/lavish/SKILL.md from the shared no-args home output so the
+// Generates skills/sq-report/SKILL.md from the shared no-args home output so the
 // installable skill never drifts from what `sq-report` (and the SessionStart hook) print.
 //
 //   node scripts/build-skill.js          # write the file
@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { createSkillMarkdown } from "../src/skill.js";
 
-const target = new URL("../skills/lavish/SKILL.md", import.meta.url);
+const target = new URL("../skills/sq-report/SKILL.md", import.meta.url);
 const expected = createSkillMarkdown();
 const check = process.argv.includes("--check");
 
@@ -20,12 +20,12 @@ if (check) {
     // missing file falls through to the mismatch branch below
   }
   if (actual !== expected) {
-    console.error("skills/lavish/SKILL.md is out of date. Run `node scripts/build-skill.js` and commit the result.");
+    console.error("skills/sq-report/SKILL.md is out of date. Run `node scripts/build-skill.js` and commit the result.");
     process.exit(1);
   }
-  console.log("skills/lavish/SKILL.md is up to date.");
+  console.log("skills/sq-report/SKILL.md is up to date.");
 } else {
-  await mkdir(new URL("../skills/lavish/", import.meta.url), { recursive: true });
+  await mkdir(new URL("../skills/sq-report/", import.meta.url), { recursive: true });
   await writeFile(target, expected);
   console.log(`Wrote ${fileURLToPath(target)}`);
 }

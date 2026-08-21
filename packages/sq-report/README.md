@@ -48,15 +48,15 @@ The skill and hooks below only handle discovery; agents learn to use the CLI by 
 Install the `lavish` skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add runecraftai/squad --skill lavish
+npx skills add runecraftai/squad --skill sq-report
 ```
 
 That is the entire setup, no npm install needed.
 The skill handles discovery; the CLI runs on demand through `npx -y @runecraft/report <html-file>`.
-The full generated skill text is committed as `skills/lavish/SKILL.md`, rendered from the CLI's no-args home output by `scripts/build-skill.js`, so it always matches the live guidance - read that file or run `sq-report` with no arguments for the current content.
+The full generated skill text is committed as `skills/sq-report/SKILL.md`, rendered from the CLI's no-args home output by `scripts/build-skill.js`, so it always matches the live guidance - read that file or run `sq-report` with no arguments for the current content.
 In restricted subprocess sandboxes, CI, or agent harnesses where `npx -y` exits opaquely, the skill also documents direct installed-copy fallbacks through the local or global npm install path.
 Its frontmatter also includes Hermes Agent metadata, so Hermes-compatible harnesses can categorize and surface it as a first-class productivity skill.
-This installs the public `lavish` skill.
+This installs the public `sq-report` skill.
 The repository also contains an internal `sq-report-design` brand skill for maintainers; default `npx skills add ... --list` and skills.sh discovery hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
 
 Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
@@ -269,7 +269,7 @@ For flows, architecture, state, or sequence diagrams, open the diagram playbook 
 ```sh
 pnpm run check          # Run all verification commands
 pnpm run build          # Bundle the publishable CLI, chrome, design assets, and starter templates
-pnpm run build:skill    # Regenerate the installable lavish skill
+pnpm run build:skill    # Regenerate the installable sq-report skill
 pnpm test               # Run node:test tests
 pnpm run lint           # Run ESLint
 pnpm run format:check   # Check Prettier formatting

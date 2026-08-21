@@ -33,7 +33,7 @@ export const ALLOWED_SKILL_FRONTMATTER_KEYS = Object.freeze([
 ]);
 
 /**
- * Render the installable SKILL.md for the lavish skill. The body mirrors what
+ * Render the installable SKILL.md for the sq-report skill. The body mirrors what
  * `sq-report` prints with no arguments (minus live session state), while the
  * frontmatter adds discovery metadata for Agent Skills and Hermes Agent.
  *
@@ -47,7 +47,7 @@ export function createSkillMarkdown() {
   const home = createHomeOutput({ bin: "sq-report", sessions: [], includeSessions: false, agent: "static" });
 
   return `---
-name: lavish
+name: sq-report
 description: ${SKILL_DESCRIPTION}
 license: MIT
 metadata:
@@ -69,7 +69,7 @@ In restricted subprocess sandboxes, CI, or agent harnesses where \`npx -y\` exit
 
 $ARGUMENTS
 
-If the request above is non-empty, the user invoked \`/lavish\` explicitly - build an HTML artifact for that request now, following the workflow below.
+If the request above is non-empty, the user invoked \`/sq-report\` explicitly - build an HTML artifact for that request now, following the workflow below.
 If it is empty, infer what to visualize from the conversation.
 
 ## When to use

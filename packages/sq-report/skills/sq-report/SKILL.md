@@ -1,5 +1,5 @@
 ---
-name: lavish
+name: sq-report
 description: Turn complex or visual agent responses into rich, reviewable HTML artifacts the user can annotate and send feedback on, using the sq-report CLI. Use when about to give a plan, comparison, diagram, table, code diff, report, or anything easier to grasp visually than as prose.
 license: MIT
 metadata:
@@ -21,7 +21,7 @@ In restricted subprocess sandboxes, CI, or agent harnesses where `npx -y` exits 
 
 $ARGUMENTS
 
-If the request above is non-empty, the user invoked `/lavish` explicitly - build an HTML artifact for that request now, following the workflow below.
+If the request above is non-empty, the user invoked `/sq-report` explicitly - build an HTML artifact for that request now, following the workflow below.
 If it is empty, infer what to visualize from the conversation.
 
 ## When to use

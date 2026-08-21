@@ -14,11 +14,11 @@ function skillCommandText(text) {
   return text.replaceAll("`sq-report", "`npx -y @runecraft/report");
 }
 
-test("createSkillMarkdown emits valid frontmatter naming the lavish skill", () => {
+test("createSkillMarkdown emits valid frontmatter naming the sq-report skill", () => {
   const { frontmatter, errors } = parseSkillFrontmatter(createSkillMarkdown());
 
   assert.deepEqual(errors, [], "frontmatter parses as plain block-style YAML");
-  assert.equal(frontmatter.name, "lavish");
+  assert.equal(frontmatter.name, "sq-report");
   assert.equal(frontmatter.description, SKILL_DESCRIPTION);
 });
 
@@ -37,7 +37,7 @@ test("createSkillMarkdown emits Hermes Agent metadata as string-valued frontmatt
 test("createSkillMarkdown conforms to the Agent Skills frontmatter contract", () => {
   // Agent Plugins delegates skill validity to Agent Skills and silently skips any skill
   // that fails it, so a regression here would quietly remove the skill from the plugin.
-  const { valid, errors } = validateSkillMarkdown(createSkillMarkdown(), { directoryName: "lavish" });
+  const { valid, errors } = validateSkillMarkdown(createSkillMarkdown(), { directoryName: "sq-report" });
 
   assert.deepEqual(errors, []);
   assert.ok(valid);
@@ -71,7 +71,7 @@ test("validateSkillMarkdown rejects the shapes the reference validator rejects",
   assert.match(validateSkillMarkdown(missing).errors.join("\n"), /`description` is required/);
 });
 
-test("createSkillMarkdown handles explicit /lavish invocation arguments", () => {
+test("createSkillMarkdown handles explicit /sq-report invocation arguments", () => {
   const md = createSkillMarkdown();
   const body = md.slice(md.indexOf("\n---\n", 4) + 5);
 
