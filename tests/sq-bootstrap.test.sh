@@ -1239,6 +1239,10 @@ empty default array is flagged^{"default":[]}^exact^CREW_DISPATCH: invalid confi
 non-object default array entry is flagged^{"default":["codex"]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - each default profile must be an object
 default array profile without harness is flagged^{"default":[{"model":"gpt-5.5"}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - each default profile needs harness
 default array malformed effort is flagged^{"default":[{"harness":"codex","effort":3}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile model and effort must be non-empty strings when present
+mixed effort in default array is flagged^{"default":[{"harness":"pi","model":"google/gemini-3.6-flash","effort":"medium"},{"harness":"pi","model":"openai-codex/gpt-5.6-luna","effort":"low"}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - mixed effort in array: pi
+mixed effort in rule use array is flagged^{"rules":[{"when":"big feature","use":[{"harness":"pi","model":"a","effort":"low"},{"harness":"pi","model":"b","effort":"xhigh"}]}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - mixed effort in array: pi
+same effort across array candidates is accepted^{"rules":[{"when":"big feature","use":[{"harness":"claude","effort":"high"},{"harness":"claude","effort":"high"}]}]}^empty^
+different harnesses at different efforts are accepted (per-harness ceilings differ)^{"rules":[{"when":"big feature","use":[{"harness":"claude","effort":"xhigh"},{"harness":"grok","effort":"high"}]}]}^empty^
 ROWS
   pass "bootstrap validates crew-dispatch.json and reports malformed or unverified configs"
 }

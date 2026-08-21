@@ -10,6 +10,7 @@
 #                 "BACKEND_INVALID: <name> (known: <names>)",
 #                 "STARTUP_MEMORY_BUDGET: invalid config/startup-memory-budget - <reason>",
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
+#                 "CREW_DISPATCH: invalid config/crew-dispatch.json - mixed effort in array: <harness...>",
 #                 "CREW_DISPATCH: model existence: <id> matches <n> model(s) for <harness>",
 #                 "CREW_DISPATCH: model existence: <id> matches zero models for <harness>",
 #                 "CREW_DISPATCH: model existence: model listing probe failed for <harness>: <reason>",
@@ -1086,6 +1087,16 @@ crew_dispatch_validate() {
       | map(select(. as $p | effort_ok($p.h; $p.e) | not))
       | map("\(.h):\(.e)")
       | unique;
+    def array_groups:
+      ([(.rules // [])[]? | .use?] + (if has("default") then [.default] else [] end))
+      | map(select((type) == "array"));
+    def mixed_effort_harnesses:
+      (array_groups
+        | map(group_by(.harness)
+            | map(select((map(select(has("effort") and (.effort != null) and ((.effort | type) == "string"))) | map(.effort) | unique | length) > 1))
+            | map(.[0].harness))
+        | add // [])
+      | unique;
     if type != "object" then "top-level value must be an object"
     elif has("rules") and (.rules | type) != "array" then "rules must be an array"
     elif [(.rules // [])[]? | select(type != "object")] | length > 0 then "each rule must be an object"
@@ -1111,6 +1122,7 @@ crew_dispatch_validate() {
         | unique) as $bad_harnesses
       | if ($bad_harnesses | length) > 0 then "unverified harness: " + ($bad_harnesses | join(", "))
         elif (bad_efforts | length) > 0 then "invalid effort: " + (bad_efforts | join(", "))
+        elif (mixed_effort_harnesses | length) > 0 then "mixed effort in array: " + (mixed_effort_harnesses | join(", "))
         else empty
         end
     end

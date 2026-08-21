@@ -167,7 +167,7 @@ The intake and authority contract in `AGENTS.md` owns when separate recon resear
 
 Operator and recon dispatch can stay on the static operator harness resolved by `config/crew-harness`, or it can use local dispatch profiles in `config/crew-dispatch.json`.
 The dispatch file is intentionally judgment-based: Squad reads the natural-language rules at intake, chooses the best matching rule, resolves profile arrays itself from current quota output under the `AGENTS.md` section 4 intake boundary and the `quota-array-dispatch` selection procedure, and passes only concrete `--harness`, `--model`, and `--effort` axes to `sq-spawn.sh`.
-The shell scripts validate the JSON shape, verified harness/effort combinations, and model id existence against the harness's own model listing, but they do not parse task intent, match natural-language rules, or own array selection.
+The shell scripts validate the JSON shape, reject mixed effort tiers for one harness within a profile array, check verified harness/effort combinations, and check model id existence against the harness's own model listing, but they do not parse task intent, match natural-language rules, or own array selection.
 The session-start bootstrap step keeps valid dispatch configuration silent unless verbose facts are enabled and surfaces a concise invalid-config line when validation fails.
 When the file exists, `sq-spawn.sh` refuses operator and recon launches without an explicit harness, so `config/crew-harness` is only automatic when no dispatch profile file is active.
 XO launches are exempt because they resolve the XO harness and any optional XO model or effort tokens instead.
