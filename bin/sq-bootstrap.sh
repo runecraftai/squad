@@ -1303,4 +1303,10 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   fi
 fi
 local_phase && XO_handoff_detect
+
+# Register package-provided public skills into the Squad skill surface.
+# This is idempotent and runs after all other bootstrap steps.
+if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ] && local_phase; then
+  "$SCRIPT_DIR/sq-register-package-skills.sh" 2>/dev/null || true
+fi
 exit 0

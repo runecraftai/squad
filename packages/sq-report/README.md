@@ -45,7 +45,7 @@ The skill and hooks below only handle discovery; agents learn to use the CLI by 
 
 ## Quick Start
 
-Install the `lavish` skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
+Install the `sq-report` skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add runecraftai/squad --skill sq-report
@@ -62,7 +62,7 @@ The repository also contains an internal `sq-report-design` brand skill for main
 Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
 
 ```
-/lavish let's discuss our plan here
+/sq-report let's discuss our plan here
 ```
 
 Or just ask for anything that is easier to grasp visually, a plan, comparison, diagram, table, code view, or report, and the agent loads the skill on its own when it recognizes the task.
@@ -120,7 +120,7 @@ To register by hand instead, point any client at the package directory (`npm roo
 | GitHub Copilot CLI | `copilot plugin install <package-dir>` (or `copilot plugin install runecraftai/squad` straight from the repo) |
 
 Codex and ChatGPT install plugins only from marketplace sources, so Codex users should use the session hook above instead.
-sq-report declares no MCP server; the CLI itself is the agent interface, so a plugin install brings the same `lavish` skill, and the skill and plugin are alternatives rather than a stack.
+sq-report declares no MCP server; the CLI itself is the agent interface, so a plugin install brings the same `sq-report` skill, and the skill and plugin are alternatives rather than a stack.
 
 ### From source
 
