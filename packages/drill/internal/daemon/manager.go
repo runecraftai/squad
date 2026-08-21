@@ -46,7 +46,8 @@ type RunManager struct {
 	paths        *paths.Paths
 	steps        StepFactory
 
-	branchLocks sync.Map // repoID+"/"+branch → *sync.Mutex
+	branchLocks   sync.Map // repoID+"/"+branch → *sync.Mutex
+	worktreeLocks sync.Map // repoID → *sync.Mutex
 
 	// subMu guards the subscriber set and the per-run state revisions. It is
 	// a plain Mutex, not an RWMutex, because revision assignment and fan-out
@@ -66,6 +67,14 @@ type RunManager struct {
 // never exceed activeRuns × maxSubscribersPerRun × mailboxMaxBytes. Refusing
 // past the cap is an ordinary error, never unbounded growth.
 const maxSubscribersPerRun = 32
+
+func (m *RunManager) withWorktreeLock(repoID string, fn func() error) error {
+	value, _ := m.worktreeLocks.LoadOrStore(repoID, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	return fn()
+}
 
 // NewRunManager creates a RunManager. Pass nil for stepFactory to use default steps.
 func NewRunManager(database *db.DB, p *paths.Paths, stepFactory StepFactory) *RunManager {
@@ -323,7 +332,9 @@ func (m *RunManager) resumeRecoveredRun(plan recoveredRunPlan) {
 			cancel(nil)
 			_ = plan.agent.Close()
 			m.closeSubscribers(plan.run.ID)
-			if err := git.WorktreeRemove(context.Background(), plan.gateDir, plan.workDir); err != nil {
+			if err := m.withWorktreeLock(plan.run.RepoID, func() error {
+				return git.WorktreeRemove(context.Background(), plan.gateDir, plan.workDir)
+			}); err != nil {
 				slog.Warn("failed to remove recovered worktree", "path", plan.workDir, "error", err)
 			}
 			m.mu.Lock()
@@ -775,7 +786,9 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 	// Create worktree from the gate bare repo.
 	gateDir := m.paths.RepoDir(repo.ID)
 	wtDir := m.paths.WorktreeDir(repo.ID, run.ID)
-	if err := git.WorktreeAdd(ctx, gateDir, wtDir, headSHA); err != nil {
+	if err := m.withWorktreeLock(repo.ID, func() error {
+		return git.WorktreeAdd(ctx, gateDir, wtDir, headSHA)
+	}); err != nil {
 		m.db.UpdateRunError(run.ID, fmt.Sprintf("create worktree: %s", err))
 		trackStartFailure("create_worktree")
 		return "", fmt.Errorf("create worktree: %w", err)
@@ -811,7 +824,9 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 	bgOwnsWorktree := false
 	defer func() {
 		if !bgOwnsWorktree {
-			if rmErr := git.WorktreeRemove(context.Background(), gateDir, wtDir); rmErr != nil {
+			if rmErr := m.withWorktreeLock(repo.ID, func() error {
+				return git.WorktreeRemove(context.Background(), gateDir, wtDir)
+			}); rmErr != nil {
 				slog.Warn("failed to remove worktree during setup cleanup", "path", wtDir, "error", rmErr)
 			}
 		}
@@ -971,7 +986,9 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 			m.closeSubscribers(run.ID)
 			m.sweepRunWorktreeProcesses(wtDir)
 			// Clean up worktree.
-			if rmErr := git.WorktreeRemove(context.Background(), gateDir, wtDir); rmErr != nil {
+			if rmErr := m.withWorktreeLock(repo.ID, func() error {
+				return git.WorktreeRemove(context.Background(), gateDir, wtDir)
+			}); rmErr != nil {
 				slog.Warn("failed to remove worktree", "path", wtDir, "error", rmErr)
 			}
 			// Remove tracking.
