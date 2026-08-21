@@ -50,7 +50,7 @@ ROOT=${ROOT%/}
 [ -x "$ROOT/bin/sq-turnend-guard.sh" ] || exit 0
 
 if [ "$CAPABILITY" = native ]; then
-  printf '%s' "$PAYLOAD" | "$ROOT/bin/sq-turnend-guard.sh"
+  SQUAD_BASE="$ROOT" printf '%s' "$PAYLOAD" | SQUAD_BASE="$ROOT" "$ROOT/bin/sq-turnend-guard.sh"
   RC=$?
   case "$RC" in
     0|2) exit "$RC" ;;
@@ -68,7 +68,7 @@ command -v grok >/dev/null 2>&1 || exit 0
 ERR=$(mktemp "${TMPDIR:-/tmp}/sq-turnend-grok.XXXXXX") || exit 0
 trap 'rm -f "$ERR"' EXIT
 
-printf '%s' "$PAYLOAD" | "$ROOT/bin/sq-turnend-guard.sh" 2>"$ERR"
+SQUAD_BASE="$ROOT" printf '%s' "$PAYLOAD" | SQUAD_BASE="$ROOT" "$ROOT/bin/sq-turnend-guard.sh" 2>"$ERR"
 RC=$?
 [ "$RC" -eq 2 ] || exit 0
 
