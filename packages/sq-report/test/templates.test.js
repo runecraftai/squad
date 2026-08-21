@@ -74,17 +74,32 @@ test("every kind renders with every token kit and paints its own page", () => {
   }
 });
 
-test("every template shows 'Mission Briefing' as the visible header", () => {
+test("every template shows 'Mission Briefing' as the brand text", () => {
   for (const kind of ALL_KINDS) {
     for (const tokens of ALL_KITS) {
       const html = buildTemplate({ kind, tokens });
       // slides kind has header: false so it has no page header
       if (kind === "slides") continue;
       assert.ok(
-        html.includes(">Mission Briefing<"),
-        `${kind}/${tokens} must show 'Mission Briefing' as the h1 text`,
+        html.includes("Mission Briefing"),
+        `${kind}/${tokens} must show 'Mission Briefing' as the brand text`,
       );
     }
+  }
+});
+
+test("every non-slides template uses kind-specific title in h1", () => {
+  for (const kind of TEMPLATE_KINDS.filter(({ id }) => id !== "slides")) {
+    const html = buildTemplate({ kind: kind.id, tokens: "daisyui" });
+    // Extract the h1 content, strip HTML tags, and check it contains the plain text title
+    const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
+    assert.ok(h1Match, `${kind.id} has an h1 element`);
+    const h1Text = h1Match[1].replace(/<[^>]+>/g, "");
+    const plainTitle = kind.title.replace(/<[^>]+>/g, "");
+    assert.ok(
+      h1Text.includes(plainTitle),
+      `${kind.id} h1 contains its own title text "${plainTitle}", got "${h1Text}"`,
+    );
   }
 });
 
@@ -100,13 +115,6 @@ test("every template is a parseable standalone document with the layout-safety C
       const body = childrenOf(htmlNode).find((node) => node.nodeName === "body");
       assert.ok(body, `${kind}/${tokens} parses with a body`);
     }
-  }
-});
-
-test("every non-slides template uses the Mission Briefing header", () => {
-  for (const kind of TEMPLATE_KINDS.filter(({ id }) => id !== "slides")) {
-    const html = buildTemplate({ kind: kind.id, tokens: "daisyui" });
-    assert.match(html, />Mission Briefing<\/h1>/, `${kind.id} uses the approved header`);
   }
 });
 
@@ -164,7 +172,7 @@ test("design output and hint point agents at the starter scaffold (single-source
   );
   assert.match(output.templates.instruction, /sq-report new <kind>/);
   assert.match(DESIGN_SYSTEM_HINT, /sq-report new/);
-  assert.match(output.templates.masthead, /Squad Briefing/);
+  assert.match(output.templates.masthead, /Mission Briefing/);
 });
 
 test("the sq-report kit defines every class it emits in its own CSS (no dead classes)", () => {
@@ -203,7 +211,7 @@ test("the base kind ships the full text-fill catalog", () => {
   for (const tokens of ALL_KITS) {
     const html = buildTemplate({ kind: "base", tokens });
     for (const marker of [
-      "Squad Briefing", // C1 masthead
+      "Mission Briefing", // C1 masthead
       "Verdict", // C2 verdict banner
       "--sq-stat-cols: 3", // C4 stat row
       "recommended", // C5 card badge

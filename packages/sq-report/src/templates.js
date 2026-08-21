@@ -987,9 +987,9 @@ const KIT_CLASSES = {
 
 function pageHeader(kit, kind) {
   return masthead(kit, {
-    brand: "Squad Briefing",
+    brand: "Mission Briefing",
     segment: kind.eyebrow,
-    title: "Mission Briefing",
+    title: kind.title,
     lede: kind.lede,
     meta: [
       { label: "Prepared", value: new Date().toISOString().slice(0, 10) },
@@ -1000,7 +1000,7 @@ function pageHeader(kit, kind) {
 }
 
 function pageFooter(kit) {
-  return colophon(kit, { left: "Squad Briefing · prepared for review" });
+  return colophon(kit, { left: "Mission Briefing · prepared for review" });
 }
 
 function starterComment(kind, tokens) {
