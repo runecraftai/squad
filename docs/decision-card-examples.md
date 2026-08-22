@@ -1,6 +1,7 @@
 # Decision Card Examples
 
-Three real-world examples of decision cards as they would appear in Squad's decision surfaces.
+Three real-world examples of decision cards for keyed-decision workflows.
+For general multi-item responses, use the reference code format defined in `AGENTS.md` section 9.
 
 ## Example 1: Merge Authority Decision
 
