@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/runecraftai/squad/compare/drill-v0.1.2...drill-v0.1.3) (2026-08-22)
+
+
+### Bug Fixes
+
+* **sq-report:** restore kind-specific header titles ([#92](https://github.com/runecraftai/squad/issues/92)) ([9b020ff](https://github.com/runecraftai/squad/commit/9b020ff970541d12064317647fc9c4e744ba5fdd))
+
 ## [0.1.2](https://github.com/runecraftai/squad/compare/drill-v0.1.1...drill-v0.1.2) (2026-08-18)
 
 
