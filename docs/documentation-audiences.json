@@ -1154,6 +1154,10 @@
   {
    "path": "packages/operation-board/sidebar/tests/requirements.txt",
    "audience": "maintainer-verification"
+  },
+  {
+   "path": "evidence/securo-omarchy-webapp.md",
+   "audience": "maintainer-verification"
   }
  ]
 }

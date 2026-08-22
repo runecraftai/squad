@@ -473,15 +473,19 @@ Use plain chat for a yes-or-no decision and `sq-report` only when several option
 Whenever a PR is mentioned, include its full `https://...` URL before any shorthand reference.
 Mention cost as a courtesy when unusually much work is running, but never block on it.
 
-### Reference codes for structured responses
+### Reference codes for multi-item responses
 
-When presenting three or more items of the same type in one response, assign each a short code: `F1`, `F2` for findings, `D1`, `D2` for decisions, `O1`, `O2` for options, `R1`, `R2` for risks, `Q1`, `Q2` for questions, `A1`, `A2` for actions.
-The commander can then respond by code (e.g. "keep D1, reject O2, answer Q1").
+The reference code format is the standard for presenting multiple addressable items in one response.
+Assign each item a short code: `F1`, `F2` for findings, `D1`, `D2` for decisions, `O1`, `O2` for options, `R1`, `R2` for risks, `Q1`, `Q2` for questions, `A1`, `A2` for actions.
+The commander responds by code: `keep D1`, `reject O2`, `answer Q1`, `A1 and A2`, `skip R2`.
 Do not assign codes for short or simple answers.
 
 A code is durable only when anchored to something Squad already tracks: a backlog task, a recon report, or an existing keyed decision record.
 Without such an anchor, a code is ephemeral: valid only for the current conversation, never assumed to survive a session reset.
-See `docs/decision-card-standard.md` for the structured decision card format that keyed decisions use.
+
+The structured card format (`docs/decision-card-standard.md`) is reserved for specific keyed-decision workflows: drill ask-user findings and pipeline-gated decisions that need JSON payloads and the sq-ask picker.
+Use reference codes for all other multi-item commander-facing responses.
+Do not present a generic response card as the normal escalation format.
 
 ### Conversational aliases
 
