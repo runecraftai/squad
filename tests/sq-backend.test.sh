@@ -508,6 +508,28 @@ test_backend_validate_spawn_accepts_orca() {
   pass "fm_backend_validate_spawn: all implemented lifecycle backends are spawn-supported"
 }
 
+test_orca_worktree_id_validation() {
+  local meta=$TMP_ROOT/orca-composite.meta id=orca-composite
+  # macOS builds record a bare atom; Linux builds (verified live against Orca
+  # v1.4.188) record the composite `<repo-id>::<absolute-path>` form. Both must
+  # pass endpoint validation; malformed composites must refuse so a bad record
+  # can never name a worktree for removal.
+  fm_backend_orca_worktree_id_valid "wt-123" || fail "bare atom Orca worktree id refused"
+  fm_backend_orca_worktree_id_valid "3f2b9c1e-1234-abcd-5678-deadbeef0000" || fail "UUID-shaped Orca worktree id refused"
+  fm_backend_orca_worktree_id_valid "repo-abc::/home/u/orca/workspaces/repo/sq-task" || fail "composite Linux Orca worktree id refused"
+  for bad in "" "wt:123" "::/abs/path" "repo::relative/path" "a::b::c" "repo::/path with space" $'repo::/path\twith-tab'; do
+    fm_backend_orca_worktree_id_valid "$bad" && fail "malformed Orca worktree id accepted: '$bad'"
+  done
+
+  fm_write_meta "$meta" \
+    "window=sq-$id" "endpoint_task_id=$id" "terminal=term-composite" \
+    "worktree=/tmp/orca-wt" "project=/tmp/repo" "backend=orca" \
+    "orca_worktree_id=repo-abc::/home/u/orca/workspaces/repo/sq-$id"
+  fm_backend_validate_task_endpoint "$meta" "$id" || fail "composite-id Orca endpoint refused"
+  [ "$SQUAD_BACKEND_VALIDATED_TARGET" = term-composite ] || fail "composite-id validation did not select the terminal target"
+  pass "fm_backend_orca_worktree_id_valid: accepts bare and composite ids, refuses malformed composites"
+}
+
 test_meta_get_and_backend_of_meta() {
   local meta=$TMP_ROOT/meta-get.meta
   fm_write_meta "$meta" "window=Squad:sq-x1" "harness=claude"
@@ -1128,6 +1150,7 @@ test_backend_name_explicit_beats_detection
 test_backend_validate_refuses_unknown
 test_backend_source_shell_portable
 test_backend_validate_spawn_accepts_orca
+test_orca_worktree_id_validation
 test_meta_get_and_backend_of_meta
 test_resolve_selector_three_forms
 test_backend_of_selector_matches_explicit_target_meta

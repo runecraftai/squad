@@ -1041,6 +1041,46 @@ test_ship_teardown_removes_orca_worktree_when_id_path_matches() {
   pass "sq-teardown.sh backend=orca: ship teardown requires a matching Orca id path"
 }
 
+test_ship_teardown_removes_orca_composite_id_worktree_when_id_path_matches() {
+  # Linux Orca builds (verified live against v1.4.188) return composite
+  # `<repo-id>::<absolute-path>` worktree ids; teardown must resolve, verify,
+  # and remove them through the raw CLI's id:<composite> selector exactly like
+  # macOS bare ids.
+  local proj wt data state config id out rc neutral wt_id
+  id="orcacompositez4"
+  wt_id="repo-composite::$TMP_ROOT/orca/workspaces/composite-repo/sq-$id"
+  proj="$TMP_ROOT/composite-ship-project"
+  wt="$TMP_ROOT/composite-ship-wt"
+  data="$TMP_ROOT/composite-ship-data"
+  state="$TMP_ROOT/composite-ship-state"
+  config="$TMP_ROOT/composite-ship-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  touch "$state/.last-sentry-beat"
+  fm_write_meta "$state/$id.meta" \
+    "window=sq-$id" "endpoint_task_id=$id" "terminal=term-ship-composite" "worktree=$wt" "project=$proj" \
+    "harness=claude" "kind=strike" "mode=local-only" "yolo=off" \
+    "backend=orca" "orca_worktree_id=$wt_id"
+  orca_case ship-composite
+  printf '{"ok":true,"result":{"worktree":{"id":"%s","path":"%s"}}}\n' "$wt_id" "$wt" > "$RESP/1.out"
+  neutral=$(neutral_fm_root "$CASE_DIR/neutral")
+  set +e
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    "$ROOT/bin/sq-teardown.sh" "$id" 2>&1 )
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "Orca ship teardown should accept a composite Linux worktree id when its path matches"$'\n'"$out"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''show'$'\x1f''--worktree'$'\x1f''id:'"$wt_id"$'\x1f''--json' \
+    "teardown did not resolve the composite Orca worktree id before removal"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-ship-composite'$'\x1f''--json' \
+    "teardown did not close the matched Orca terminal for the composite-id task"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:'"$wt_id"$'\x1f''--force'$'\x1f''--json' \
+    "teardown did not remove the composite-id Orca worktree through orca worktree rm"
+  assert_absent "$state/$id.meta" "successful composite-id teardown should remove task metadata"
+  pass "sq-teardown.sh backend=orca: composite Linux worktree ids resolve, identity-match, and remove cleanly"
+}
+
 test_ship_teardown_refuses_orca_unresolvable_worktree_id() {
   local proj wt data state config id out rc neutral
   id="orcashipunresolvedz1"
@@ -1368,6 +1408,7 @@ test_teardown_preserves_metadata_when_orca_remove_error_json
 test_scout_teardown_refuses_orca_missing_report_when_path_missing
 test_ship_teardown_refuses_orca_missing_worktree_path
 test_ship_teardown_removes_orca_worktree_when_id_path_matches
+test_ship_teardown_removes_orca_composite_id_worktree_when_id_path_matches
 test_ship_teardown_refuses_orca_unresolvable_worktree_id
 test_ship_teardown_refuses_orca_id_path_mismatch
 test_teardown_refuses_orca_missing_worktree_id

@@ -1154,6 +1154,14 @@
   {
    "path": "packages/operation-board/sidebar/tests/requirements.txt",
    "audience": "maintainer-verification"
+  },
+  {
+   "path": "orca-linux-validation-notes.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "evidence/securo-omarchy-webapp.md",
+   "audience": "maintainer-verification"
   }
  ]
 }
