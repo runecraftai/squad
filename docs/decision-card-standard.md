@@ -1,7 +1,18 @@
 # Decision Card Standard
 
-A harness-agnostic standard for presenting commander decisions in Squad.
-Ensures every decision arrives as a structured card with typed options, an explicit default, and a recommendation.
+A harness-agnostic standard for specific keyed-decision workflows in Squad.
+Reserved for drill ask-user findings and pipeline-gated decisions that need JSON payloads and the sq-ask picker.
+For general multi-item commander responses, use the reference code format defined in `AGENTS.md` section 9.
+
+## Scope
+
+This standard covers two workflows:
+
+1. **Drill ask-user findings** - Pipeline-surfaced decisions requiring structured option payloads
+2. **Keyed decisions** - Specific `needs-decision [key=<slug>]:` status lines with explicit option sets
+
+For all other multi-item responses (findings, risks, questions, actions, options), use reference codes (`F1`, `D1`, `O1`, `R1`, `Q1`, `A1`) as defined in `AGENTS.md` section 9.
+Do not present a generic response card as the normal escalation format.
 
 ## Overview
 
@@ -10,7 +21,7 @@ The decision card standard defines:
 1. **Schema** - Machine-readable JSON format for decision cards
 2. **Text Format** - Canonical rendering for chat and terminal display
 3. **Picker Tool** - Interactive terminal picker any harness can invoke
-4. **Integration Points** - How cards flow through Squad's decision surfaces
+4. **Integration Points** - How cards flow through specific decision surfaces
 
 ## Quick Start
 
@@ -55,7 +66,7 @@ This integrates with the existing decision lifecycle:
 
 ### 2. Commander Chat Presentations
 
-When presenting decisions to the commander in chat, use the card format:
+When presenting a keyed decision to the commander in chat, render the card format:
 
 ```
 ━━━ DECISION: <title> ━━━
@@ -70,6 +81,10 @@ Options:
 
 Your call [<default_label>]: _
 ```
+
+This format is reserved for keyed decisions with explicit option sets.
+For multi-item responses without keyed options, use reference codes (`F1`, `D1`, `O1`, `R1`, `Q1`, `A1`) as defined in `AGENTS.md` section 9.
+Do not present this card format as the default escalation format for general multi-item responses.
 
 ### 3. Drill Ask-User Findings
 
@@ -114,6 +129,7 @@ This standard is additive and does not break existing decision flows:
 - Existing `resolved [key=<slug>]:` closure still works
 - The card format is a presentation layer on top of existing semantics
 - `sq-classify-lib.sh` key parsing is unchanged
+- Reference codes (`F1`, `D1`, `O1`, `R1`, `Q1`, `A1`) are the standard for all multi-item commander responses; the card format is reserved for keyed-decision workflows
 
 ## Design Decisions
 
