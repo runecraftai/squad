@@ -45,7 +45,7 @@ The skill and hooks below only handle discovery; agents learn to use the CLI by 
 
 ## Quick Start
 
-Install the `lavish` skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
+Install the `sq-report` skill in the [Agent Skills](https://agentskills.io) format with [`npx skills`](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add runecraftai/squad --skill sq-report
@@ -57,15 +57,16 @@ The full generated skill text is committed as `skills/sq-report/SKILL.md`, rende
 In restricted subprocess sandboxes, CI, or agent harnesses where `npx -y` exits opaquely, the skill also documents direct installed-copy fallbacks through the local or global npm install path.
 Its frontmatter also includes Hermes Agent metadata, so Hermes-compatible harnesses can categorize and surface it as a first-class productivity skill.
 This installs the public `sq-report` skill.
+When running from a Squad checkout, bootstrap also registers the package-provided public skill at `skills/sq-report` from `packages/sq-report/skills/sq-report`; verify the registration with `bin/sq-register-package-skills.sh --check`.
 The repository also contains an internal `sq-report-design` brand skill for maintainers; default `npx skills add ... --list` and skills.sh discovery hide it unless `INSTALL_INTERNAL_SKILLS=1` is set.
 
 Then, in agents that expose skills as slash commands (Claude Code, for example), invoke it directly:
 
 ```
-/lavish let's discuss our plan here
+/sq-report let's discuss our plan here
 ```
 
-Or just ask for anything that is easier to grasp visually, a plan, comparison, diagram, table, code view, or report, and the agent loads the skill on its own when it recognizes the task.
+Or say, "create a visual plan, comparison, diagram, table, code view, or report," and the agent loads the skill when it recognizes that prose intent.
 
 By default the skill lands in the current project's skills directory (`.claude/skills/`, for example); add `-g` to install it for all projects (`~/.claude/skills/`).
 
@@ -120,7 +121,7 @@ To register by hand instead, point any client at the package directory (`npm roo
 | GitHub Copilot CLI | `copilot plugin install <package-dir>` (or `copilot plugin install runecraftai/squad` straight from the repo) |
 
 Codex and ChatGPT install plugins only from marketplace sources, so Codex users should use the session hook above instead.
-sq-report declares no MCP server; the CLI itself is the agent interface, so a plugin install brings the same `lavish` skill, and the skill and plugin are alternatives rather than a stack.
+sq-report declares no MCP server; the CLI itself is the agent interface, so a plugin install brings the same `sq-report` skill, and the skill and plugin are alternatives rather than a stack.
 
 ### From source
 

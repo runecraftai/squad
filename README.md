@@ -156,6 +156,37 @@ Squad's tooling ships as standalone packages under `packages/`, each with its ow
 | sq-report  | Opens agent-generated HTML in a local browser editor so you can annotate elements and send feedback to the agent                  | [README](packages/sq-report/README.md)       |
 | sq-board   | Mission-planning board that renders the backlog queue with live operational state from Squad's durable state files                | [README](packages/operation-board/README.md) |
 
+## Skills
+
+Squad discovers skills from multiple surfaces:
+
+- **Internal skills** (`.agents/skills/`) - Squad-owned procedures loaded on demand by the agent harness.
+- **Public installer-facing skills** (`skills/`) - standalone skills for any agent; symlinked from package-provided sources during bootstrap.
+- **Package-provided skills** (`packages/*/skills/`) - skills bundled with packages, automatically registered into `skills/` by `bin/sq-register-package-skills.sh`.
+
+The registration script is idempotent and runs during bootstrap. It discovers skills from:
+
+1. Conventional `packages/*/skills/*/SKILL.md` directories
+2. Packages with `"pi": {"skills": [...]}` in `package.json`
+
+To check which skills would be registered without modifying anything, run:
+
+```sh
+bin/sq-register-package-skills.sh --check
+```
+
+After bootstrap, verify the public skill link with `test -e skills/sq-report/SKILL.md && echo sq-report-ready`.
+
+### Skill-based discovery vs hook-based automation
+
+Skills provide semantic/prose discovery: the agent loads them when the task matches the skill's description. Hooks provide deterministic bootstrap integration: they run at session start to inject ambient context.
+
+Both mechanisms are complementary:
+- **Skills** handle prose intent discovery ("create a visual plan, comparison, diagram, table, code view, or report")
+- **Hooks** handle session-start integration ("sq-report is available, here are active sessions")
+
+The sq-report package uses both: the public skill for agent discovery and `setup hooks` for session-start context.
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) - maintainer architecture for the squad, supervision, worktrees, XOs, and project modes.
