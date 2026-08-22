@@ -29,7 +29,7 @@ If `SQUAD_BASE` is set, remember that operational state lives under `$SQUAD_BASE
 Before switching or spawning against Orca:
 
 - Confirm Orca is intentionally selected through `--backend orca`, `SQUAD_BACKEND=orca`, or local `config/backend`.
-- Confirm the Orca app is running and the backend readiness checks pass before expecting spawn to work.
+- Confirm the Orca runtime (desktop app on macOS, `orca serve` headless on Linux) is running and the backend readiness checks pass before expecting spawn to work.
 - Inspect active `state/*.meta` records before changing backend selection.
 - Treat a backend switch as affecting future spawns only; existing tasks keep their recorded backend.
 - Reconcile sentry wakes before unrelated work, especially if Orca tasks are already in flight.

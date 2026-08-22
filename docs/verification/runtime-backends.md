@@ -574,6 +574,11 @@ The real lifecycle smoke proved spawn, metadata, nested-subshell worktree discov
 
 Real readiness was verified against `/usr/local/bin/orca` with `/Applications/Orca.app` bundle version 1.4.116.
 
+On Linux, readiness and the full task lifecycle were verified live on 2026-08-22 against the AppImage release v1.4.188 (`~/.local/bin/orca`) on Arch x86_64.
+`orca serve --port <port> --json` satisfied the same readiness gate without the desktop app.
+`orca worktree create` returned the composite id `<repo-id>::<absolute-path>` in `result.worktrees[].id`, which endpoint validation and teardown now accept alongside bare macOS ids.
+A scratch recon spawn through `bin/sq-spawn.sh --recon --harness pi --backend orca` passed peek, a mid-turn steer delivered and queued by pi, and a clean `bin/sq-teardown.sh` run that removed every Orca worktree with no manual CLI cleanup.
+
 ```sh
 orca status --json
 ```
