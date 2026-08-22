@@ -44,41 +44,42 @@ discover_conventional_skills() {
 # Discover skills from package.json "pi" key
 discover_pi_manifest_skills() {
   local pkg_json pkg_dir pi_skills skill_path skill_name
+  # Manifest parsing needs node. A base without node still gets conventional
+  # directory discovery, so registration degrades instead of failing bootstrap.
+  if ! command -v node >/dev/null 2>&1; then
+    echo "node not found; skipping package manifest skill discovery" >&2
+    return 0
+  fi
   for pkg_json in "$SQUAD_ROOT"/packages/*/package.json; do
     [ -f "$pkg_json" ] || continue
     pkg_dir=$(dirname "$pkg_json")
     # Check if package.json has "pi": {"skills": [...]}
-    if command -v node >/dev/null 2>&1; then
-      # Pass the path as data, not interpolated JavaScript. This keeps manifest
-      # discovery portable when a checkout path contains quotes or shell
-      # metacharacters.
-      if ! pi_skills=$(node -e '
-        const fs = require("node:fs");
-        const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-        const skills = pkg.pi && Array.isArray(pkg.pi.skills) ? pkg.pi.skills : [];
-        skills.forEach(s => console.log(s));
-      ' "$pkg_json" 2>/dev/null); then
-        echo "unable to parse package manifest: $pkg_json" >&2
-        return 1
-      fi
-      while IFS= read -r skill_path; do
-        [ -n "$skill_path" ] || continue
-        skill_path="$pkg_dir/$skill_path"
-        if [ -f "$skill_path/SKILL.md" ]; then
-          skill_name=$(basename "$skill_path")
-          echo "$skill_name|$skill_path/SKILL.md|$(basename "$pkg_dir")"
-        elif [ -d "$skill_path" ]; then
-          for skill_dir in "$skill_path"/*/SKILL.md; do
-            [ -f "$skill_dir" ] || continue
-            skill_name=$(basename "$(dirname "$skill_dir")")
-            echo "$skill_name|$skill_dir|$(basename "$pkg_dir")"
-          done
-        fi
-      done <<< "$pi_skills"
-    else
-      echo "node is required to parse package manifest: $pkg_json" >&2
+    # Pass the path as data, not interpolated JavaScript. This keeps manifest
+    # discovery portable when a checkout path contains quotes or shell
+    # metacharacters.
+    if ! pi_skills=$(node -e '
+      const fs = require("node:fs");
+      const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const skills = pkg.pi && Array.isArray(pkg.pi.skills) ? pkg.pi.skills : [];
+      skills.forEach(s => console.log(s));
+    ' "$pkg_json" 2>/dev/null); then
+      echo "unable to parse package manifest: $pkg_json" >&2
       return 1
     fi
+    while IFS= read -r skill_path; do
+      [ -n "$skill_path" ] || continue
+      skill_path="$pkg_dir/$skill_path"
+      if [ -f "$skill_path/SKILL.md" ]; then
+        skill_name=$(basename "$skill_path")
+        echo "$skill_name|$skill_path/SKILL.md|$(basename "$pkg_dir")"
+      elif [ -d "$skill_path" ]; then
+        for skill_dir in "$skill_path"/*/SKILL.md; do
+          [ -f "$skill_dir" ] || continue
+          skill_name=$(basename "$(dirname "$skill_dir")")
+          echo "$skill_name|$skill_dir|$(basename "$pkg_dir")"
+        done
+      fi
+    done <<< "$pi_skills"
   done
 }
 
