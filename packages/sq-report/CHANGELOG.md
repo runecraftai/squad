@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.3](https://github.com/runecraftai/squad/compare/sq-report-v0.1.2...sq-report-v0.1.3) (2026-08-22)
+
+
+### Features
+
+* **skills:** register package-provided public skills during bootstrap ([#93](https://github.com/runecraftai/squad/issues/93)) ([220c677](https://github.com/runecraftai/squad/commit/220c677b498e6871486c3810140884f4eba021e6))
+* **sq-report:** standardize generated report header ([#91](https://github.com/runecraftai/squad/issues/91)) ([4ee6b32](https://github.com/runecraftai/squad/commit/4ee6b3274e8fc75d090c13f5a820091905339dd3))
+
+
+### Bug Fixes
+
+* **sq-report:** name public skill correctly ([8ea0dca](https://github.com/runecraftai/squad/commit/8ea0dca1dbd0b0710d79358e05a5ad4c68470be1))
+* **sq-report:** restore kind-specific header titles ([#92](https://github.com/runecraftai/squad/issues/92)) ([9b020ff](https://github.com/runecraftai/squad/commit/9b020ff970541d12064317647fc9c4e744ba5fdd))
+
 ## [0.1.2](https://github.com/runecraftai/squad/compare/sq-report-v0.1.1...sq-report-v0.1.2) (2026-08-18)
 
 
