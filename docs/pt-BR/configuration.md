@@ -85,17 +85,17 @@ Estas cinco frases são as únicas donas do vocabulário de seletor de tarefa; g
 Registros de endpoint ausentes, vazios, duplicados, malformados, inconsistentes com o backend ou incompatíveis com a tarefa são preservados e recusados.
 Metadados legados do tmux continuam compatíveis com limpeza quando seu nome exato de janela é `sq-<id>`; endpoints opacos não-tmux requerem seu vínculo `endpoint_task_id=` gravado.
 `SQUAD_BASE` determina o label base do Herdr: a base primária usa `Squad`, e uma base XO marcada por `.sq-xo-home` usa `xo-<XO-id>`.
-[`herdr-backend.md`](../herdr-backend.md#watching-and-task-containers) é dona do posicionamento de workspace vinculado ao launcher, o fallback de label apenas, tratamento de colisão e comportamento de recuperação.
-O arquivo local `config/herdr-presentation-spaces` em vez disso desativa uma base de, ou ativa explicitamente em, a projeção visual descartável de tarefa única do Herdr com padrão ligado; [Presentation spaces](../herdr-backend.md#presentation-spaces) é dona de seus valores aceitos, padrão, versão mínima do Herdr, migração, comportamento, limites de segurança, contrato de recuperação e limpeza restrita de início de sessão de filhos idle-shell restaurados exatos.
+[`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) é dona do posicionamento de workspace vinculado ao launcher, o fallback de label apenas, tratamento de colisão e comportamento de recuperação.
+O arquivo local `config/herdr-presentation-spaces` em vez disso desativa uma base de, ou ativa explicitamente em, a projeção visual descartável de tarefa única do Herdr com padrão ligado; [Presentation spaces](herdr-backend.md#presentation-spaces) é dona de seus valores aceitos, padrão, versão mínima do Herdr, migração, comportamento, limites de segurança, contrato de recuperação e limpeza restrita de início de sessão de filhos idle-shell restaurados exatos.
 A configuração é herdada para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 Para operações herdr normais, `HERDR_SESSION` seleciona a sessão nomeada, mas a limpeza destrutiva de teste não pode depender apenas de `HERDR_SESSION`.
-Use o caminho de limpeza protegido descrito em [`docs/herdr-backend.md`](../herdr-backend.md) em vez de `herdr server stop`.
+Use o caminho de limpeza protegido descrito em [`docs/herdr-backend.md`](herdr-backend.md) em vez de `herdr server stop`.
 Para operações zellij normais, `SQUAD_ZELLIJ_SESSION` seleciona a sessão nomeada e padrão é `Squad`.
 Zellij não tem divisão de workspace por base: tarefas primárias e de XO compartilham aquela sessão, e títulos de abas visíveis são escopados pelo label legível do `SQUAD_BASE` ativo mais um hash curto do caminho `SQUAD_ROOT` resolvido como `sq-<base-label>-<id>`.
-Use o caminho de limpeza protegido descrito em [`docs/zellij-backend.md`](../zellij-backend.md) em vez de `kill-all-sessions` ou `delete-all-sessions`.
+Use o caminho de limpeza protegido descrito em [`docs/zellij-backend.md`](zellij-backend.md) em vez de `kill-all-sessions` ou `delete-all-sessions`.
 cmux não tem camada de sessão — um workspace por tarefa, em qualquer janela cmux aberta — e sua senha de socket (quando configurada) é lida de `config/cmux-socket-password` local, gitignored, sob o diretório de config efetivo, nunca commitada.
 O label voltado para o chamador continua `sq-<id>`, mas o título real do workspace cmux é escopado pelo label legível do `SQUAD_BASE` ativo mais um hash curto do caminho `SQUAD_ROOT` resolvido como `sq-<base-label>-<id>`.
-Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](../cmux-backend.md#current-operation-and-safety), nunca enumerar-e-fechar cada workspace.
+Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), nunca enumerar-e-fechar cada workspace.
 `config/backend` é herdado para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
@@ -117,7 +117,7 @@ Além do marcador durável `state/.subsuper-inject-wedged` e do flash na linha d
 As diretrizes são `off` (um interruptor de desligamento independente de posição que desativa todo alerta ativo), `auto`/`default`, `osascript` (banner do Notification Center do macOS), `herdr` (notificação da UI do herdr) e `command:<cmd>` (executa `<cmd>` via `sh -c`, resumo em `$1` e stdin).
 Um arquivo ausente significa `auto`, ou seja, ligado por padrão no macOS: o alarme existe precisamente para que um primário com away-mode travado nunca fique silencioso, e dispara no máximo uma vez por janela de max-defer após um travamento genuíno.
 Um canal ausente ou que falha registra e passa para o próximo, nunca crashando o daemon.
-Veja [`wedge-alarm.md`](../wedge-alarm.md) para a referência atual de canais, [`verification/supervision.md`](../verification/supervision.md#wedge-alarm-channels) para evidência ativa e [`examples/wedge-alarm`](../examples/wedge-alarm) para uma configuração copiável.
+Veja [`wedge-alarm.md`](wedge-alarm.md) para a referência atual de canais, [`verification/supervision.md`](../verification/supervision.md#wedge-alarm-channels) para evidência ativa e [`examples/wedge-alarm`](../examples/wedge-alarm) para uma configuração copiável.
 
 ## Propagação de trace context (config/trace-context / SQUAD_TRACE_CONTEXT)
 
@@ -127,7 +127,7 @@ Cada sessão base bloqueada resolve esses inputs uma vez, e todos os spawns daqu
 Ao lançar um XO, o primário copia a flag de presença para sua base e passa a decisão congelada da sessão primária como uma sobrescrever não vazia `SQUAD_TRACE_CONTEXT=on|off` para o próprio início de sessão do XO.
 Um XO em uma rota remota é coberto da mesma forma: o primário resolve e registra o transport dessa tarefa, e o host configurado o exporta e recebe o mesmo snapshot de ativação.
 A flag de presença é ativação escopada à sessão, então é transferida no lançamento e deixada inalterada pela convergência ao vivo em uma base em execução.
-Veja [`trace-context.md`](../trace-context.md) para semântica do transport, rotas suportadas, o requisito de reinicialização manual da unidade, o limite de sessão e limites de segurança; o cabeçalho de `bin/sq-trace-context-lib.sh` é dono da mecânica exata, e [`verification/trace-context.md`](../verification/trace-context.md) registra evidência reproduzível.
+Veja [`trace-context.md`](trace-context.md) para semântica do transport, rotas suportadas, o requisito de reinicialização manual da unidade, o limite de sessão e limites de segurança; o cabeçalho de `bin/sq-trace-context-lib.sh` é dono da mecânica exata, e [`verification/trace-context.md`](../verification/trace-context.md) registra evidência reproduzível.
 
 ## Defaults de gate (.drill.yaml)
 
@@ -135,7 +135,7 @@ O `.drill.yaml` rastreado mantém evidência de teste fora do repositório e fix
 Essa política de evidência é específica do repositório Squad: projetos alvo podem legitimamente commitar `.drill/evidence/` de seu próprio pipeline de drill, mas Squad mantém `.drill/` local e o CI rejeita entradas rastreadas sob esse caminho.
 Não define `commands.test` para um walk completo de `tests/*.test.sh`.
 Veja [CONTRIBUTING.md](../../CONTRIBUTING.md) para a política de testes locais específica do Squad e pontos de entrada.
-Evidência de shards portáteis e regras de cobertura estão em [sq-test-portable-shards.md](sq-test-portable-shards.md); [herdr-backend.md](../herdr-backend.md#destructive-lab-safety) é dona do limite de isolamento da lane Herdr real, e [runtime-backends.md](../verification/runtime-backends.md#herdr) é dona da evidência ativa.
+Evidência de shards portáteis e regras de cobertura estão em [sq-test-portable-shards.md](sq-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) é dona do limite de isolamento da lane Herdr real, e [runtime-backends.md](../verification/runtime-backends.md#herdr) é dona da evidência ativa.
 
 ## Preferências do comandante (data/commander.md / data/commander-shared.md)
 
@@ -185,7 +185,7 @@ Para projetos `drill`, a seed inicializa apenas projetos recém-clonados em uma 
 Após criar um XO, mova itens enfileirados existentes do backlog principal que você julgou dentro do escopo com `sq-backlog-handoff.sh <XO-id> <item-key>...`; é idempotente e recusa In flight, Done ou bases não-XO.
 Defina `SQUAD_XO_CHARTER` para seed a partir de texto de charter inline quando não existe brief de charter preenchido; defina `SQUAD_XO_SCOPE` quando o escopo de roteamento deve diferir do texto do charter.
 `data/charter.md` da base seed é dona do contrato padrão de lifecycle e escalação de XO; o arquivo de rota aponta para ele através do campo `home:` existente em vez de adicionar outro ponteiro.
-Cada seed escreve um marcador de identidade `.sq-xo-home` na raiz da base, junto com um registro durável `.sq-xo-parent` da rota da base para seu pai (veja "Provision a route" em [`docs/remote-XOs.md`](../remote-XOs.md)).
+Cada seed escreve um marcador de identidade `.sq-xo-home` na raiz da base, junto com um registro durável `.sq-xo-parent` da rota da base para seu pai (veja "Provision a route" em [`docs/remote-XOs.md`](remote-XOs.md)).
 O `.gitignore` raiz rastreado ignora ambos os marcadores, então a validação pode ler sem fazer uma base recém-seedada parecer suja para verificações de segurança baseadas em porcelain.
 Isso não relaxa a proteção para qualquer outro arquivo não rastreado.
 Uma base de worktree vinculado existente que precede essa regra avança através de seu estado apenas-marcardor durante seu próximo bootstrap ou sync local de spawn, após o qual Git ignora o marcador normalmente.

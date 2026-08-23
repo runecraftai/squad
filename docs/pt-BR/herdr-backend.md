@@ -6,7 +6,7 @@ Herdr é um backend experimental nativo de agente com estado de agente nativo po
 O Squad exige protocolo Herdr 14 ou mais novo; a verificação ampla de backend cobre versões 0.7.1, 0.7.3, 0.7.4, 0.7.5 e 0.8.0, enquanto features do protocolo 16 continuam condicionadas por disponibilidade.
 Presentation spaces default-on têm um piso mais alto de Herdr 0.8.0 pela razão explicada em [Presentation spaces](#presentation-spaces).
 Herdr fornece a sessão de terminal enquanto o FOB continua fornecendo task worktrees.
-[`configuration.md`](../configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
+[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
 
 ## Setup
 
@@ -16,14 +16,14 @@ Pré-requisitos:
 
 - Protocolo Herdr 14 ou mais novo, instalado de [herdr.dev](https://herdr.dev).
 - `jq` para respostas JSON.
-- Os requisitos universais de harness e toolchain em [`configuration.md`](../configuration.md#toolchain).
+- Os requisitos universais de harness e toolchain em [`configuration.md`](configuration.md#toolchain).
 - `python3` apenas para ordenação opcional de presentation-space por protocolo 16 e subscrição nativa de eventos.
 
 Herdr é licenciado sob AGPL-3.0-or-later ou comercial.
 O Squad invoca sua CLI como processo separado.
 
 Selecione o Herdr com o `config/backend` local contendo `herdr`, `SQUAD_BACKEND=herdr` para um único lançamento, ou um pedido explícito ao Squad.
-Um agente second-mate remoto é o único caso sem escolha: sempre roda no Herdr, e [`remote-XOs.md`](../remote-XOs.md) é dono daquele requisito e da prontidão que seu host deve atingir.
+Um agente second-mate remoto é o único caso sem escolha: sempre roda no Herdr, e [`remote-XOs.md`](remote-XOs.md) é dono daquele requisito e da prontidão que seu host deve atingir.
 Também é auto-detectado quando o primário roda nativamente sob `HERDR_ENV=1` e não está dentro do tmux.
 Um pane tmux aninhado dentro do Herdr resolve para tmux porque o multiplexador mais interno ganha.
 Um spawn auto-detectado do Herdr imprime um aviso de opt-out.
@@ -279,7 +279,7 @@ Ainda existe um processo de sentinela; o event reader é um filho limitado daque
 O daemon away suporta apenas panes supervisor de tmux e Herdr.
 Ele recusa Zellij, Orca e cmux como backends de supervisor em vez de aplicar o transporte errado.
 Para Herdr, existência do alvo, estado nativo, captura, estado do composer e submit verificado todos roteiam pelo dispatcher compartilhado do backend e o dono explícito de CLI da sessão nomeada.
-O alerta pane-independente de max-defer é configurado em [`wedge-alarm.md`](../wedge-alarm.md).
+O alerta pane-independente de max-defer é configurado em [`wedge-alarm.md`](wedge-alarm.md).
 
 Harnesses com execução rastreada nativa de segundo plano podem rodar o daemon em seu terminal.
 Pi não tem tal mecanismo.

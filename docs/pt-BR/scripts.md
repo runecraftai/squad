@@ -5,7 +5,7 @@
 O sargento de armas comanda estes; os entrypoints interativos também funcionam à mão, enquanto arquivos `*-lib.sh` são helpers carregados via source.
 Cada linha é apenas uma cláusula de propósito: o comentário de cabeçalho do próprio script é a descrição autoritativa do comportamento, flags e contratos dele, então leia o cabeçalho antes do primeiro uso.
 Se você saiu da base do Squad em um shell interativo, invoque esses scripts por caminho absoluto pelo diretório `bin/` do repo; os scripts se autolocalizam internamente depois de iniciar.
-A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidade está resumida em [architecture.md](../architecture.md#drill-gate-authority-boundary), enquanto `docs/sessionstart-nudge.md` cobre o uso silencioso do hook nativo de abertura de sessão; o cabeçalho do `sq-gate-refuse-lib.sh` é dono do contrato exato dele.
+A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidade está resumida em [architecture.md](architecture.md#drill-gate-authority-boundary), enquanto `docs/sessionstart-nudge.md` cobre o uso silencioso do hook nativo de abertura de sessão; o cabeçalho do `sq-gate-refuse-lib.sh` é dono do contrato exato dele.
 
 | Script                   | Propósito                                                                             |
 | ------------------------ | ------------------------------------------------------------------------------------ |

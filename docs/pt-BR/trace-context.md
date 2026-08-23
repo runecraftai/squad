@@ -31,7 +31,7 @@ Spawns ship e recon alcançam aquele site em todos os backends de spawn (`tmux`,
 
 ### Rotas remotas de XO
 
-Um XO numa [rota remota](../remote-XOs.md) nunca alcança aquele site de exportação no processo próprio do pai: o pai entrega o lançamento ao host configurado, que roda seu próprio `bin/sq-spawn.sh` lá.
+Um XO numa [rota remota](remote-XOs.md) nunca alcança aquele site de exportação no processo próprio do pai: o pai entrega o lançamento ao host configurado, que roda seu próprio `bin/sq-spawn.sh` lá.
 A identidade ainda é a do pai, porque a base pai detém os metadados da tarefa que um observador lê.
 O pai portanto resolve o carrier contra os próprios metadados daquela tarefa sob sua própria decisão congelada - reutilizado verbatim no relançamento, cunhado fresco caso contrário, nunca adotando o `TRACEPARENT` ambiente do processo pai - e passa-o ao host remoto, que o exporta no mesmo site incondicional pré-lançamento e devolve o carrier que seu endpoint realmente detém.
 O pai registra esse valor devolvido, então um endpoint remoto já vivo que não foi relançado reporta a identidade que seu agente realmente recebeu em vez de uma que o pai meramente pretendia.

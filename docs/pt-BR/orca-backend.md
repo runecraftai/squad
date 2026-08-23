@@ -16,7 +16,7 @@ Pré-requisitos:
 - macOS: `/Applications/Orca.app` instalado, rodando e pronto, com a CLI instalada via `brew install orca`.
 - Linux: o asset de release do Orca instalado (`orca-linux.AppImage`, ou `orca-ide_<versão>_amd64.deb`) com uma CLI `orca` no PATH - seja um symlink para o AppImage (por exemplo `~/.local/bin/orca -> orca-linux.AppImage`) ou o binário nativo `orca-ide` que o `orca serve` auto-instala.
 - Runtime Linux: inicie o runtime headless suportado com `orca serve` (por exemplo `orca serve --port 6768 --json`) em vez de abrir o app desktop; um processo `serve` pronto satisfaz exatamente o mesmo gate de prontidão abaixo.
-- Os requisitos universais de harness e toolchain em [`configuration.md`](../configuration.md#toolchain).
+- Os requisitos universais de harness e toolchain em [`configuration.md`](configuration.md#toolchain).
 
 Selecione o Orca com o `config/backend` local contendo `orca`, `SQUAD_BACKEND=orca` para um único lançamento, ou um pedido explícito ao Squad.
 Ele nunca é auto-detectado.

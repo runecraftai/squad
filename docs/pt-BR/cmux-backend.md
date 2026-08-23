@@ -4,7 +4,7 @@
 
 O cmux é um backend experimental macOS GUI de terminal.
 Ele fornece workspaces e superfícies de tarefa enquanto o FOB continua fornecendo git worktrees.
-[`configuration.md`](../configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
+[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
 
 ## Setup
 
@@ -15,7 +15,7 @@ Pré-requisitos:
 
 - cmux 0.64 ou mais novo, instalado de [cmux.com](https://cmux.com) ou com `brew install --cask cmux`.
 - `jq` para respostas JSON.
-- Os requisitos universais de harness e toolchain em [`configuration.md`](../configuration.md#toolchain).
+- Os requisitos universais de harness e toolchain em [`configuration.md`](configuration.md#toolchain).
 
 A CLI nem sempre está instalada no `PATH` junto ao app.
 O adaptador prefere `command -v cmux` e caso contrário usa `/Applications/cmux.app/Contents/Resources/bin/cmux`.

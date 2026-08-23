@@ -4,7 +4,7 @@
 
 O Zellij é um backend experimental explicit-only de sessão.
 Ele fornece a sessão de terminal enquanto o FOB continua fornecendo os worktrees das tarefas.
-[`configuration.md`](../configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
+[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
 
 ## Setup
 
@@ -14,7 +14,7 @@ Pré-requisitos:
 
 - Zellij 0.44 ou mais novo.
 - `jq` para respostas JSON.
-- Os requisitos universais de harness e toolchain em [`configuration.md`](../configuration.md#toolchain).
+- Os requisitos universais de harness e toolchain em [`configuration.md`](configuration.md#toolchain).
 
 Selecione-o com o `config/backend` local contendo `zellij`, `SQUAD_BACKEND=zellij` para um único lançamento, ou um pedido explícito ao Squad.
 Ele nunca é auto-detectado.

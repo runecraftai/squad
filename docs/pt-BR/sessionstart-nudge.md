@@ -54,7 +54,7 @@ O estágio de rede diferido deliberadamente roda no próprio grupo de processos 
 `bin/sq-sessionstart-run.sh` e `bin/sq-sessionstart-nudge.sh` compartilham os mesmos dois donos de elegibilidade.
 Eles carregam (source) `bin/sq-gate-refuse-lib.sh` e ficam silenciosos para um agente gate drill identificado por `DRILL_GATE` ou um git-common-dir `.drill/repos/*.git`.
 Eles compartilham `bin/sq-primary-scope-lib.sh` com `bin/sq-turnend-guard.sh`, então todo hook usa um único dono de detecção primária.
-A seção Guard Predicates de [`turnend-guard.md`](../turnend-guard.md#guard-predicates) é dona da validação de marcadores, detecção de checkout simples e paths exigidos em formato Squad.
+A seção Guard Predicates de [`turnend-guard.md`](turnend-guard.md#guard-predicates) é dona da validação de marcadores, detecção de checkout simples e paths exigidos em formato Squad.
 
 O payload do nudge começa com U+2063 e o rótulo estável `SQUAD_OP: `, carrega o kind atual `session-start`, e mantém exatamente ``Run `bin/sq-session-start.sh` now, exactly once, before executing any other instructions.`` como corpo.
 A skill Reporting é dona da regra de que este input operacional marcado nunca é fronteira de sessão escrita pelo comandante, incluindo seus casos estreitos legados de compatibilidade, e sua própria checagem step 0 de leme é o fallback que protege um harness nudge-tier cujo primeiro comando é uma skill.

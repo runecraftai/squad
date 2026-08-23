@@ -7,7 +7,7 @@
 
 ## Insumos de verificação
 
-As durações atuais de candidatos vieram da prova concorrente de 2026-07-29 registrada em [sq-test-isolation-proof.md](../sq-test-isolation-proof.md).
+As durações atuais de candidatos vieram da prova concorrente de 2026-07-29 registrada em [sq-test-isolation-proof.md](sq-test-isolation-proof.md).
 A prova rodou 24 candidatos com quatro workers e nenhuma falha.
 
 | duration_ms | script |

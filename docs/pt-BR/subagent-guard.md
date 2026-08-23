@@ -168,7 +168,7 @@ Uma ferramenta removida do schema permanece removida, então um uso genuinamente
 - Deny retorna exit 2 e escreve `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[subagent-dispatch] ..."}` no stderr.
 - O modo deny padrão também escreve `{"decision":"deny","reason":"[subagent-dispatch] ..."}` no stdout para o Grok.
 - `--claude` suprime o stdout completamente, porque o Claude Code ignora um deny PreToolUse quando o stdout não está vazio.
-  Esta é a mesma peculiaridade verificada registrada em [`arm-pretool-check.md`](../arm-pretool-check.md), e o hook rastreado Claude portanto passa `--claude`.
+  Esta é a mesma peculiaridade verificada registrada em [`arm-pretool-check.md`](arm-pretool-check.md), e o hook rastreado Claude portanto passa `--claude`.
 - Stdin malformado ou vazio, JSON inválido, payload sem nome de ferramenta, e `jq` ausente no transporte stdin todos falham abertos com exit 0 e nenhuma saída.
 
 A mensagem deny nomeia o caminho real de despacho.

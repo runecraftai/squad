@@ -43,8 +43,8 @@ Quando uma sessão inicia ou recarrega com o Calm já ligado, o Calm precisa em 
 O Pi não oferece checagem de posse cedo o suficiente para esse caminho de load-time, e o primeiro registrante ganha a definição completa da ferramenta.
 Se a outra extensão ganhar, um diagnóstico no console no início da sessão nomeia a ferramenta e a extensão vencedora; se o Calm ganhar, o Pi não expõe o registro perdedor, então o override da outra extensão fica indisponível e não pode ser nomeado.
 
-[`calm-mode-feasibility.md`](../calm-mode-feasibility.md) é dona da taxonomia de renderers com escopo de versão, das restrições de override embutido e da evidência empírica.
-[`configuration.md`](../configuration.md#pi-calm-preference-configcalm) é dona do arquivo de preferência persistido e das regras de resolução.
+[`calm-mode-feasibility.md`](calm-mode-feasibility.md) é dona da taxonomia de renderers com escopo de versão, das restrições de override embutido e da evidência empírica.
+[`configuration.md`](configuration.md#pi-calm-preference-configcalm) é dona do arquivo de preferência persistido e das regras de resolução.
 `.pi/extensions/lib/sq-calm-visibility.ts` é dona da política de visibilidade, `.pi/extensions/lib/sq-calm-operational-user-layout.ts` é dona do adaptador de linha operacional-de-usuário com altura zero, e `.pi/extensions/lib/sq-calm-working-ship.ts` é dona da apresentação animada de trabalho.
 
 Pontos de entrada de regressão:

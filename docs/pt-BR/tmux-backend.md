@@ -3,12 +3,12 @@
 # Backend de runtime tmux
 
 O tmux é o backend de runtime de referência verificado do Squad e a baseline totalmente suportada para bases XO.
-[`configuration.md`](../configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
+[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
 
 ## Setup
 
 Instale o tmux com `brew install tmux` ou o gerenciador de pacotes da sua plataforma.
-Os requisitos universais de harness e toolchain estão em [`configuration.md`](../configuration.md#toolchain).
+Os requisitos universais de harness e toolchain estão em [`configuration.md`](configuration.md#toolchain).
 
 O tmux é o padrão rígido quando nenhuma configuração explícita ou auto-detecção de runtime seleciona outro backend.
 Selecione-o explicitamente com o `config/backend` local contendo `tmux`, com `SQUAD_BACKEND=tmux` para um único lançamento, ou pedindo ao Squad para usar tmux.
@@ -46,7 +46,7 @@ Verifique o setup spawnando uma tarefa pequena e confirmando que sua janela `sq-
 
 ## Ground truth da sidebar
 
-O `bin/sq-window-state.sh` publica o estado atual (working / awaiting-decision / blocked / done / idle / failed / unknown) de cada janela tmux de tarefa em `state/window-states` para a sidebar tmux ground-truth ([`sq-sidebar.md`](../sq-sidebar.md)) consumir.
+O `bin/sq-window-state.sh` publica o estado atual (working / awaiting-decision / blocked / done / idle / failed / unknown) de cada janela tmux de tarefa em `state/window-states` para a sidebar tmux ground-truth ([`sq-sidebar.md`](sq-sidebar.md)) consumir.
 O cabeçalho desse script é dono do contrato do arquivo e da tradução de verbo-para-rótulo; `bin/sq-crew-state.sh` permanece dono da reconciliação de estado atual que ele publica.
 É uma derivação one-shot (sem daemon): um consumidor roda `publish` na própria cadência de refresh dele.
 
@@ -82,7 +82,7 @@ O classificador compartilhado aceita um glifo de shell como composer vazio de ag
 Um prompt de shell puro é `unknown`, então escalação do modo ausente nunca é injetada num shell morto.
 
 O estado ocupado não é lido de texto renderizado neste backend.
-O veredito busy, idle, unknown ou dead de uma tarefa vem do contrato semântico de busy-state de propriedade de `bin/sq-busy-lib.sh`; [architecture](../architecture.md#busy-state-is-semantic-per-adapter) é dona das fronteiras dele.
+O veredito busy, idle, unknown ou dead de uma tarefa vem do contrato semântico de busy-state de propriedade de `bin/sq-busy-lib.sh`; [architecture](architecture.md#busy-state-is-semantic-per-adapter) é dona das fronteiras dele.
 O único leitor restante de cauda renderizada é o fallback isolado do Grok dentro daquele contrato, que só consegue classificar uma tarefa Grok.
 O reconhecimento de submit e o guard de painel-do-supervisor ocupado do modo ausente abaixo ainda consultam saída renderizada, mas apenas para decidir se input pode ser entregue, nunca para decidir estado registrado da tarefa.
 O guard do supervisor seleciona apenas a assinatura do harness primário detectado em vez de uma união global de padrões de vendors.

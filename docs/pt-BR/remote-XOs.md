@@ -6,7 +6,7 @@ Second mates remotos colocam uma base Squad inteira e persistente em outro host 
 O primário ainda controla roteamento e supervisão, enquanto a base remota controla seus próprios projetos, backlog e workers.
 O Squad não suporta colocar um worker individual remotamente ou falhar uma rota remota para um substituto local.
 
-O agente second-mate remoto em si sempre roda no [backend Herdr](../herdr-backend.md) na sessão compartilhada `sq-remote`, e todo caminho que provisiona ou lança um recusa um host que não está pronto para ele.
+O agente second-mate remoto em si sempre roda no [backend Herdr](herdr-backend.md) na sessão compartilhada `sq-remote`, e todo caminho que provisiona ou lança um recusa um host que não está pronto para ele.
 `sq-remote` é reservado para trabalho remoto de unidade e não deve ser usado para trabalho pessoal.
 A sessão Herdr interativa do usuário permanece `default` e não é pré-requisito de remote-XO.
 O servidor de sessão remota do Herdr pertence à sessão de login GUI do próprio host em vez da conexão SSH, então o endpoint do agente sobrevive a toda desconexão da qual a supervisão do primário depende.
@@ -183,7 +183,7 @@ Se o reader remoto confinado recusa permanentemente um documento referenciado, a
 Um SSH exit status 255 durante busca de documento referenciado deixa o delta não commitado para o retry normal do runner de process-event porque a conclusão remota é desconhecida.
 O runner de process-event aplica cada delta capturado através deste adaptador assim que capturado, então uma reply espelhada alcança o canal de status primário sem depender do wake handler rodar o próprio adaptador.
 Uma linha espelhada que carrega token de correlação settle seu registro de pending-reply e fecha a open escalation decision daquele pedido, enquanto uma aplicação que não completa deixa o capture sem acknowledge para o caminho de retry documentado do handler.
-O [contrato operacional de process-to-event](../configuration.md#process-to-event-sources-stateprocevent) é dono daquela aplicação automática e de seu limite de retry.
+O [contrato operacional de process-to-event](configuration.md#process-to-event-sources-stateprocevent) é dono daquela aplicação automática e de seu limite de retry.
 O log da fonte nunca é truncado ou consumido.
 Um prefixo encurtado ou alterado para o relay e surface uma falha de continuidade em vez de resetar silenciosamente o cursor.
 

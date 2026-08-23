@@ -4,11 +4,11 @@
 
 Este é o contrato atual autoritativo para o backstop primário "nenhum turno termina às cegas" referenciado da seção 8 do AGENTS.md.
 O predicado vive em `bin/sq-turnend-guard.sh`.
-O escopo primário vive em `bin/sq-primary-scope-lib.sh`, compartilhado com os adaptadores nativos de início de sessão em [`sessionstart-nudge.md`](../sessionstart-nudge.md).
+O escopo primário vive em `bin/sq-primary-scope-lib.sh`, compartilhado com os adaptadores nativos de início de sessão em [`sessionstart-nudge.md`](sessionstart-nudge.md).
 Os arquivos de hook de cada harness adaptam o mecanismo de fim de turno daquela integração primária habilitada a esse predicado compartilhado.
 
 Guards PreToolUse relacionados negam comandos inseguros antes da execução em vez de detectar um fim de turno às cegas depois.
-Seus donos separados são [`arm-pretool-check.md`](../arm-pretool-check.md), [`cd-guard.md`](../cd-guard.md) e [`subagent-guard.md`](../subagent-guard.md).
+Seus donos separados são [`arm-pretool-check.md`](arm-pretool-check.md), [`cd-guard.md`](cd-guard.md) e [`subagent-guard.md`](subagent-guard.md).
 Não infira o escopo, segurança de loop ou tradeoffs de compatibilidade deste guard para aqueles.
 
 ## Invariante atual
@@ -17,7 +17,7 @@ Não infira o escopo, segurança de loop ou tradeoffs de compatibilidade deste g
 O turn-end guard fecha a lacuna restante na própria fronteira de turno do primário.
 Quando trabalho, uma fonte process-event ou polling do Relay precisam de supervisão nessa fronteira e nenhuma sentinela com identidade correspondente tem beacon fresco, a integração do harness precisa ou bloquear o fim do turno ou forçar um follow-up limitado que usa a instrução de recuperação do protocolo emitido no início da sessão.
 O warning pull no meio do turno usa o veredito de supervisão ciente-do-modelo descrito abaixo, enquanto o turn-end guard mantém o predicado PID-strict de sentinela.
-O guard permanece um backstop; [`sentry-continuity.md`](../sentry-continuity.md) é dona da continuidade normal.
+O guard permanece um backstop; [`sentry-continuity.md`](sentry-continuity.md) é dona da continuidade normal.
 
 ## Predicados do guard
 
@@ -54,7 +54,7 @@ Se `jq` está ausente ou o stdin do hook está vazio, o guard sai 0 porque não 
   Ambos os marcadores são exigidos porque o Grok não injeta as mesmas variáveis em todos os tipos de processo: grok 0.2.73 definia `GROK_AGENT` para processos filhos e de ferramenta, enquanto os processos de hook do grok 1.0.0 carregam `GROK_HOOK_EVENT`, `GROK_HOOK_NAME`, `GROK_SESSION_ID` e `GROK_WORKSPACE_ROOT` mas nenhum `GROK_AGENT`.
   Um guard chaveado só em `GROK_AGENT` portanto parou de disparar no grok 1.0.0, e o auto-arm resultante exclusivo do Claude rodava sincronamente sob o Grok - o Grok não tem `asyncRewake`, então esperou pela sentinela trazida a primeiro plano pelo timeout declarado de 28800 segundos e o turno do Grok nunca terminava.
   NÃO alargue este guard para `GROK_SESSION_ID`: o Grok injeta isso em todo processo filho, então pode sobreviver numa sessão Claude lançada pelo Grok e desabilitaria silenciosamente a própria continuidade do Claude.
-  O mesmo guard de marcadores carrega toda entrada rastreada do `.claude/settings.json` cujo evento o Grok já cobre pelo próprio registro dele em `.grok/hooks/`, que são ambas as entradas `Stop`, a entrada `SessionStart` e as duas entradas Bash `PreToolUse`; `bin/sq-subagent-pretool-check.sh` é a única exceção deliberada sem guarda porque nenhum registro do Grok cobre o evento de spawn de subagente, registrado em [`subagent-guard.md`](../subagent-guard.md) "Known residual gap".
+  O mesmo guard de marcadores carrega toda entrada rastreada do `.claude/settings.json` cujo evento o Grok já cobre pelo próprio registro dele em `.grok/hooks/`, que são ambas as entradas `Stop`, a entrada `SessionStart` e as duas entradas Bash `PreToolUse`; `bin/sq-subagent-pretool-check.sh` é a única exceção deliberada sem guarda porque nenhum registro do Grok cobre o evento de spawn de subagente, registrado em [`subagent-guard.md`](subagent-guard.md) "Known residual gap".
   `tests/sq-turnend-guard.test.sh` fixa esse inventário para que nem o conjunto protegido nem a exceção possam mudar silenciosamente.
 
 Claude e Codex conseguem bloquear um Stop diretamente com status de saída 2 e stderr.

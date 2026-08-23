@@ -18,7 +18,7 @@ A reivindicação de dono obsoleto ocorre apenas depois que os gates existentes 
 Depois de cada fechamento não acionável de arm, o hook reconferencia o lock de sentinela com identidade correspondente e o beacon fresco antes de tentar de novo um número limitado de vezes.
 Uma falha de fim de ciclo é benigna quando aquele predicado de sentinela viva é verdadeiro, e o hook suprime a saída do arm e continua silenciosamente.
 Apenas uma falha esgotada sem sentinela verificada emite um único aviso de último recurso por episódio contínuo de falha; ciclos Stop consecutivos posteriores saem com código 2 para garantir outra tentativa de propriedade do Stop sem repetir o aviso até o turn-end guard consumir o fail-open assistido.
-O turn-end guard do Claude é dono da progressão monótonica de falhas, fail-open assistido único, supressão de continuação pós-alarme e reset positivo de recuperação descritos em [`turnend-guard.md`](../turnend-guard.md#harness-integrations).
+O turn-end guard do Claude é dono da progressão monótonica de falhas, fail-open assistido único, supressão de continuação pós-alarme e reset positivo de recuperação descritos em [`turnend-guard.md`](turnend-guard.md#harness-integrations).
 Enquanto a supervisão ainda for necessária e o modo ausente continuar inativo, um fechamento acionável acorda a sessão ociosa pelo exit 2.
 
 ## Ordenação dos acordos acionáveis

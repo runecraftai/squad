@@ -113,4 +113,4 @@ cargo test squad
 - [README do workmux vendado](../../packages/operation-board/sidebar/README.md) - documentação completa da sidebar
 - [workmux upstream](https://github.com/raine/workmux) - projeto original
 - [bin/sq-window-state.sh](../../bin/sq-window-state.sh) - publicador ground-truth
-- [docs/tmux-backend.md](../tmux-backend.md) - documentação do backend tmux
+- [docs/tmux-backend.md](tmux-backend.md) - documentação do backend tmux
