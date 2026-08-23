@@ -1,4 +1,4 @@
-English | [Português (Brasil)](README.pt-BR.md)
+[English](README.md) | Português (Brasil)
 
 <p align="center">
   <img alt="Squad — distro de agentes: fale com um agente, entregue com uma squad. O sargento de armas despacha operadores visíveis (sq-task-1 strike em andamento, sq-task-2 recon concluído, sq-task-3 strike na fila) que entregam um PR ou um relatório de recon ao comandante." src="assets/readme/hero.svg" width="100%" />
