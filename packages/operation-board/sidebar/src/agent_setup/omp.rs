@@ -166,4 +166,19 @@ mod tests {
         let result2 = uninstall_at(ext_path).unwrap();
         assert!(result2.contains("No omp extension found"));
     }
+
+    #[test]
+    fn extension_source_has_no_console_logging() {
+        // Console.log/error statements produce visible output that pollutes
+        // the agent's TUI pane. Status updates should be silent.
+        // Check for actual function calls, not just the text in comments.
+        assert!(
+            !EXTENSION_SOURCE.contains("console.log("),
+            "omp extension must not contain console.log() calls"
+        );
+        assert!(
+            !EXTENSION_SOURCE.contains("console.error("),
+            "omp extension must not contain console.error() calls"
+        );
+    }
 }
