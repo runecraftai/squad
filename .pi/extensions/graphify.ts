@@ -28,7 +28,12 @@ export default function graphifyExtension(pi: ExtensionAPI) {
 	let registered = false;
 
 	function run(args: string[], cwd: string): string {
-		return execFileSync(bin, args, { cwd, encoding: "utf8", timeout: CLI_TIMEOUT_MS });
+		try {
+			return execFileSync(bin, args, { cwd, encoding: "utf8", timeout: CLI_TIMEOUT_MS });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return `Error running graphify: ${message}`;
+		}
 	}
 
 	function registerGraphTools(): void {
