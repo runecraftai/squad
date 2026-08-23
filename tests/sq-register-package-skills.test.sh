@@ -6,6 +6,7 @@
 #   2. Repeat setup: idempotent behavior
 #   3. Missing package: graceful handling
 #   4. --check flag: reports without modifying
+#   5. node absent: registration degrades to conventional discovery
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -231,6 +232,50 @@ test_existing_directory() {
   cleanup
 }
 
+# Test 7: node absent (registration degrades instead of failing)
+test_node_absent() {
+  echo "=== Test 7: node absent ==="
+  setup
+
+  # Run registration with a PATH that has no node, mirroring restricted CI
+  # and minimal-base environments where bootstrap runs.
+  NODE_BIN=$(command -v node || true)
+  if [ -n "$NODE_BIN" ]; then
+    STRIPPED_DIR=$(mktemp -d)
+    for entry in /usr/bin/* /bin/*; do
+      name=$(basename "$entry")
+      [ "$name" = node ] || [ "$name" = nodejs ] || ln -s "$entry" "$STRIPPED_DIR/$name" 2>/dev/null || true
+    done
+    if PATH="$STRIPPED_DIR" command -v node >/dev/null 2>&1; then
+      echo "SKIP: could not build a node-free PATH"
+      rm -rf "$STRIPPED_DIR"
+      cleanup
+      return 0
+    fi
+    output=$(PATH="$STRIPPED_DIR" "$REGISTER_SCRIPT" 2>&1)
+    rc=$?
+    rm -rf "$STRIPPED_DIR"
+  else
+    output=$("$REGISTER_SCRIPT" 2>&1)
+    rc=$?
+  fi
+
+  assert_equals "0" "$rc" "registration succeeds without node"
+  assert_exists "$TEST_DIR/skills/test-skill" "conventional skill still registered without node"
+  assert_not_exists "$TEST_DIR/skills/manifest-skill" "manifest skill skipped without node"
+  if echo "$output" | grep -q "node not found"; then
+    test_count=$((test_count + 1))
+    pass_count=$((pass_count + 1))
+    echo "PASS: missing node is reported"
+  else
+    test_count=$((test_count + 1))
+    fail_count=$((fail_count + 1))
+    echo "FAIL: missing node was not reported"
+  fi
+
+  cleanup
+}
+
 # Run all tests
 test_fresh_setup
 test_repeat_setup
@@ -238,6 +283,7 @@ test_missing_package
 test_check_flag
 test_multiple_packages
 test_existing_directory
+test_node_absent
 
 # Summary
 echo ""
