@@ -10,7 +10,8 @@
 //
 // Config (env only): GRAPHIFY_BIN (binary path, default "graphify"),
 // GRAPHIFY_BUDGET (default query token cap, default 2000),
-// GRAPHIFY_STALE_COMMITS (drift threshold before notifying, default 1).
+// GRAPHIFY_STALE_COMMITS (drift threshold before notifying, default 1),
+// GRAPHIFY_MAX_OUTPUT (max bytes from CLI stdout+stderr, default 1 MiB).
 import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
 import { join } from "node:path";
@@ -18,22 +19,52 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const CLI_TIMEOUT_MS = 60_000;
+const TRUNCATION_MARKER = "\n[output truncated at limit]";
+const DEFAULT_MAX_OUTPUT = 1 * 1024 * 1024; // 1 MiB
 
 export default function graphifyExtension(pi: ExtensionAPI) {
 	const bin = process.env.GRAPHIFY_BIN || "graphify";
 	const defaultBudget = Number.parseInt(process.env.GRAPHIFY_BUDGET ?? "", 10) || 2000;
 	const staleCommitThreshold = Number.parseInt(process.env.GRAPHIFY_STALE_COMMITS ?? "", 10);
 	const staleCommitsAllowed = Number.isFinite(staleCommitThreshold) ? staleCommitThreshold : 1;
+	const maxOutputBytes = Number.parseInt(process.env.GRAPHIFY_MAX_OUTPUT ?? "", 10) || DEFAULT_MAX_OUTPUT;
 
 	let registered = false;
 
+	/**
+	 * Bounded exec: captures stdout+stderr separately, truncates at
+	 * GRAPHIFY_MAX_OUTPUT to prevent OOM on multi-MB graph output.
+	 * Pattern adapted from @gaodes/pi-graphify (MIT, pattern-only adoption).
+	 */
 	function run(args: string[], cwd: string): string {
 		try {
-			return execFileSync(bin, args, { cwd, encoding: "utf8", timeout: CLI_TIMEOUT_MS });
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			return `Error running graphify: ${message}`;
+			const result = execFileSync(bin, args, {
+				cwd,
+				encoding: "utf8",
+				timeout: CLI_TIMEOUT_MS,
+				stdio: ["pipe", "pipe", "pipe"],
+				maxBuffer: maxOutputBytes * 2, // allow capture before truncation
+			});
+			return truncateOutput(result, maxOutputBytes);
+		} catch (error: unknown) {
+			// execFileSync throws on non-zero exit; capture whatever output arrived.
+			const err = error as { stdout?: string; stderr?: string; message?: string };
+			const parts: string[] = [];
+			if (err.stdout) parts.push(truncateOutput(err.stdout, maxOutputBytes));
+			if (err.stderr) parts.push(truncateOutput(err.stderr, maxOutputBytes));
+			if (parts.length > 0) return parts.join("\n");
+			return `Error running graphify: ${err.message ?? String(error)}`;
 		}
+	}
+
+	function truncateOutput(text: string, limit: number): string {
+		const bytes = Buffer.byteLength(text, "utf8");
+		if (bytes <= limit) return text;
+		// Truncate by byte boundary, then find last newline for clean cut.
+		const truncated = Buffer.from(text, "utf8").subarray(0, limit).toString("utf8");
+		const lastNewline = truncated.lastIndexOf("\n");
+		const cleanCut = lastNewline > 0 ? truncated.slice(0, lastNewline) : truncated;
+		return cleanCut + TRUNCATION_MARKER;
 	}
 
 	function registerGraphTools(): void {
