@@ -328,6 +328,10 @@
    "audience": "public-product"
   },
   {
+   "path": "README.pt-BR.md",
+   "audience": "public-product"
+  },
+  {
    "path": "docs/architecture.md",
    "audience": "maintainer-architecture"
   },

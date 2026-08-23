@@ -56,7 +56,7 @@ Para adaptadores capazes de spawn, o backend de provedor de sessão de runtime c
 FOB continua sendo o provedor de worktree para tmux, herdr, zellij e cmux, pois herdr, zellij e cmux são apenas provedores de sessão; Orca fornece tanto o worktree da tarefa quanto o endpoint de terminal.
 Novos spawns escolhem o backend nesta ordem: um flag `--backend` explícito que a autoridade atual para essa tarefa exata autorizou (uma instrução do comandante presente ou o brief aceito da própria tarefa; nunca precedente por analogia de outra tarefa), depois `SQUAD_BACKEND`, depois a primeira linha não vazia do `config/backend` local gitignored, depois auto-detecção de runtime a partir de `$TMUX`, `HERDR_ENV=1` ou sinais de runtime do cmux, depois o padrão `tmux`.
 Se mais de um marcador de runtime estiver presente, a detecção resolve de dentro para fora: `$TMUX` é verificado antes de `HERDR_ENV=1`, que é verificado antes do marcador primário `CMUX_WORKSPACE_ID` do cmux e seus sinais de fallback documentados — tmux ou herdr iniciados de dentro de um terminal cmux é a camada mais interna, atualmente em execução, enquanto o próprio cmux (um aplicativo de terminal, não um multiplexador aninhável) é sempre verificado por último.
-Veja [`docs/cmux-backend.md`](cmux-backend.md#runtime-detection) para por que cmux pode ser selecionado quando `CMUX_WORKSPACE_ID` está ausente.
+Veja [`docs/cmux-backend.md`](cmux-backend.md#detecção-de-runtime) para por que cmux pode ser selecionado quando `CMUX_WORKSPACE_ID` está ausente.
 Herdr ou cmux auto-detectados imprimem um aviso no stderr nomeando `config/backend` e `--backend tmux` como opt-outs; tmux auto-detectado fica silencioso para preservar o comportamento padrão existente.
 Zellij e Orca nunca são auto-detectados; selecione-os colocando o nome em um arquivo local `config/backend`, exportando `SQUAD_BACKEND=<nome>` ou dizendo ao sargento de armas no chat.
 Qualquer valor diferente de `tmux`, `herdr`, `zellij`, `orca` ou `cmux` é rejeitado até que outro adaptador seja implementado e verificado.
@@ -85,7 +85,7 @@ Estas cinco frases são as únicas donas do vocabulário de seletor de tarefa; g
 Registros de endpoint ausentes, vazios, duplicados, malformados, inconsistentes com o backend ou incompatíveis com a tarefa são preservados e recusados.
 Metadados legados do tmux continuam compatíveis com limpeza quando seu nome exato de janela é `sq-<id>`; endpoints opacos não-tmux requerem seu vínculo `endpoint_task_id=` gravado.
 `SQUAD_BASE` determina o label base do Herdr: a base primária usa `Squad`, e uma base XO marcada por `.sq-xo-home` usa `xo-<XO-id>`.
-[`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) é dona do posicionamento de workspace vinculado ao launcher, o fallback de label apenas, tratamento de colisão e comportamento de recuperação.
+[`herdr-backend.md`](herdr-backend.md#monitoramento-e-task-containers) é dona do posicionamento de workspace vinculado ao launcher, o fallback de label apenas, tratamento de colisão e comportamento de recuperação.
 O arquivo local `config/herdr-presentation-spaces` em vez disso desativa uma base de, ou ativa explicitamente em, a projeção visual descartável de tarefa única do Herdr com padrão ligado; [Presentation spaces](herdr-backend.md#presentation-spaces) é dona de seus valores aceitos, padrão, versão mínima do Herdr, migração, comportamento, limites de segurança, contrato de recuperação e limpeza restrita de início de sessão de filhos idle-shell restaurados exatos.
 A configuração é herdada para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 Para operações herdr normais, `HERDR_SESSION` seleciona a sessão nomeada, mas a limpeza destrutiva de teste não pode depender apenas de `HERDR_SESSION`.
@@ -95,7 +95,7 @@ Zellij não tem divisão de workspace por base: tarefas primárias e de XO compa
 Use o caminho de limpeza protegido descrito em [`docs/zellij-backend.md`](zellij-backend.md) em vez de `kill-all-sessions` ou `delete-all-sessions`.
 cmux não tem camada de sessão — um workspace por tarefa, em qualquer janela cmux aberta — e sua senha de socket (quando configurada) é lida de `config/cmux-socket-password` local, gitignored, sob o diretório de config efetivo, nunca commitada.
 O label voltado para o chamador continua `sq-<id>`, mas o título real do workspace cmux é escopado pelo label legível do `SQUAD_BASE` ativo mais um hash curto do caminho `SQUAD_ROOT` resolvido como `sq-<base-label>-<id>`.
-Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), nunca enumerar-e-fechar cada workspace.
+Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](cmux-backend.md#operação-e-segurança-atuais), nunca enumerar-e-fechar cada workspace.
 `config/backend` é herdado para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
@@ -135,7 +135,7 @@ O `.drill.yaml` rastreado mantém evidência de teste fora do repositório e fix
 Essa política de evidência é específica do repositório Squad: projetos alvo podem legitimamente commitar `.drill/evidence/` de seu próprio pipeline de drill, mas Squad mantém `.drill/` local e o CI rejeita entradas rastreadas sob esse caminho.
 Não define `commands.test` para um walk completo de `tests/*.test.sh`.
 Veja [CONTRIBUTING.md](../../CONTRIBUTING.md) para a política de testes locais específica do Squad e pontos de entrada.
-Evidência de shards portáteis e regras de cobertura estão em [sq-test-portable-shards.md](sq-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) é dona do limite de isolamento da lane Herdr real, e [runtime-backends.md](../verification/runtime-backends.md#herdr) é dona da evidência ativa.
+Evidência de shards portáteis e regras de cobertura estão em [sq-test-portable-shards.md](sq-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#segurança-de-lab-destrutivo) é dona do limite de isolamento da lane Herdr real, e [runtime-backends.md](../verification/runtime-backends.md#herdr) é dona da evidência ativa.
 
 ## Preferências do comandante (data/commander.md / data/commander-shared.md)
 
@@ -173,7 +173,7 @@ Uma rota remota adiciona `host:` e `root:` antes dos campos existentes e coloca 
 Use `sq-home-seed.sh validate` para verificar o contrato operacional completo do registro documentado pelo próprio comando.
 O principal sargento de armas roteia lendo esses escopos com julgamento; a lista de projetos é dados de provisionamento, não propriedade exclusiva.
 Use `sq-home-seed.sh <id> - {<projeto>...|--no-projects}` para alugar um novo worktree Squad local para a base XO.
-Para provisionamento remoto, incluindo origens de projetos fornecidas, siga [Remote second mates](remote-XOs.md#provision-a-route).
+Para provisionamento remoto, incluindo origens de projetos fornecidas, siga [Remote second mates](remote-XOs.md#provisionar-uma-rota).
 Use o sinal deliberado `--no-projects` apenas para um domínio do Squad-repo que não precisa de cópias separadas de projetos.
 Não pode ser combinado com uma lista de projetos, e omitir ambos ainda falha alto.
 Uma seed sem projeto não requer cópias existentes de projetos ou entradas `data/projects.md` na base, então recusa uma conversão de base populada sem alterar aquela base.
@@ -217,7 +217,7 @@ Novos harnesses são verificados através de uma tarefa de teste supervisionada 
 O conhecimento do adaptador verificado — a fonte de estado busy, comandos de interrupção e saída, sintaxe de invocação de habilidade e peculiaridades por harness — vive em [`.agents/skills/harness-adapters/SKILL.md`](../../.agents/skills/harness-adapters/SKILL.md).
 A mecânica de lançamento, incluindo os templates de comando verificados, vive em [`bin/sq-spawn.sh`](../../bin/sq-spawn.sh).
 Integrações habilitadas de guard de fim de turno da sessão primária são rastreadas como arquivos de hook de nível de repositório e documentadas em [`docs/turnend-guard.md`](turnend-guard.md).
-Kimi permanece fora das integrações do guard de fim de turno primário; [`docs/turnend-guard.md`](turnend-guard.md#compatibility-limits) é dona de seu hook de wake de crew separado aprovado pelo comandante.
+Kimi permanece fora das integrações do guard de fim de turno primário; [`docs/turnend-guard.md`](turnend-guard.md#limites-de-compatibilidade) é dona de seu hook de wake de crew separado aprovado pelo comandante.
 Protocolos de wake de sentry da sessão primária são renderizados no início de sessão por [`bin/sq-supervision-instructions.sh`](../../bin/sq-supervision-instructions.sh) a partir de [`docs/supervision-protocols/`](supervision-protocols/).
 O hook `asyncRewake` do Stop do Claude é dono dos ciclos de re-armazenamento sem token, Grok usa ciclos de background-notify, Codex usa checkpoints de primeiro plano delimitados, Pi e pi-signed usam as mesmas duas extensões primárias rastreadas, e OpenCode usa seu plugin TUI.
 `config/crew-harness` é um arquivo local, gitignored contendo um nome de adaptador para lançamentos de operador e recon.

@@ -3,7 +3,7 @@
 # Backend de runtime tmux
 
 O tmux é o backend de runtime de referência verificado do Squad e a baseline totalmente suportada para bases XO.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
+[`configuration.md`](configuration.md#backend-de-runtime-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
 
 ## Setup
 
@@ -82,7 +82,7 @@ O classificador compartilhado aceita um glifo de shell como composer vazio de ag
 Um prompt de shell puro é `unknown`, então escalação do modo ausente nunca é injetada num shell morto.
 
 O estado ocupado não é lido de texto renderizado neste backend.
-O veredito busy, idle, unknown ou dead de uma tarefa vem do contrato semântico de busy-state de propriedade de `bin/sq-busy-lib.sh`; [architecture](architecture.md#busy-state-is-semantic-per-adapter) é dona das fronteiras dele.
+O veredito busy, idle, unknown ou dead de uma tarefa vem do contrato semântico de busy-state de propriedade de `bin/sq-busy-lib.sh`; [architecture](architecture.md#estado-busy-é-semântico-por-adaptador) é dona das fronteiras dele.
 O único leitor restante de cauda renderizada é o fallback isolado do Grok dentro daquele contrato, que só consegue classificar uma tarefa Grok.
 O reconhecimento de submit e o guard de painel-do-supervisor ocupado do modo ausente abaixo ainda consultam saída renderizada, mas apenas para decidir se input pode ser entregue, nunca para decidir estado registrado da tarefa.
 O guard do supervisor seleciona apenas a assinatura do harness primário detectado em vez de uma união global de padrões de vendors.

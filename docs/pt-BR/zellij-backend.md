@@ -4,7 +4,7 @@
 
 O Zellij é um backend experimental explicit-only de sessão.
 Ele fornece a sessão de terminal enquanto o FOB continua fornecendo os worktrees das tarefas.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
+[`configuration.md`](configuration.md#backend-de-runtime-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
 
 ## Setup
 

@@ -183,7 +183,7 @@ Se o reader remoto confinado recusa permanentemente um documento referenciado, a
 Um SSH exit status 255 durante busca de documento referenciado deixa o delta não commitado para o retry normal do runner de process-event porque a conclusão remota é desconhecida.
 O runner de process-event aplica cada delta capturado através deste adaptador assim que capturado, então uma reply espelhada alcança o canal de status primário sem depender do wake handler rodar o próprio adaptador.
 Uma linha espelhada que carrega token de correlação settle seu registro de pending-reply e fecha a open escalation decision daquele pedido, enquanto uma aplicação que não completa deixa o capture sem acknowledge para o caminho de retry documentado do handler.
-O [contrato operacional de process-to-event](configuration.md#process-to-event-sources-stateprocevent) é dono daquela aplicação automática e de seu limite de retry.
+O [contrato operacional de process-to-event](configuration.md#fontes-de-processo-para-evento-stateprocevent) é dono daquela aplicação automática e de seu limite de retry.
 O log da fonte nunca é truncado ou consumido.
 Um prefixo encurtado ou alterado para o relay e surface uma falha de continuidade em vez de resetar silenciosamente o cursor.
 

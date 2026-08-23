@@ -6,7 +6,7 @@ Herdr é um backend experimental nativo de agente com estado de agente nativo po
 O Squad exige protocolo Herdr 14 ou mais novo; a verificação ampla de backend cobre versões 0.7.1, 0.7.3, 0.7.4, 0.7.5 e 0.8.0, enquanto features do protocolo 16 continuam condicionadas por disponibilidade.
 Presentation spaces default-on têm um piso mais alto de Herdr 0.8.0 pela razão explicada em [Presentation spaces](#presentation-spaces).
 Herdr fornece a sessão de terminal enquanto o FOB continua fornecendo task worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
+[`configuration.md`](configuration.md#backend-de-runtime-configbackend--squad_backend) é dona da semântica compartilhada de seleção de backend e metadados.
 
 ## Setup
 

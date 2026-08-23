@@ -4,7 +4,7 @@
 
 O cmux é um backend experimental macOS GUI de terminal.
 Ele fornece workspaces e superfícies de tarefa enquanto o FOB continua fornecendo git worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
+[`configuration.md`](configuration.md#backend-de-runtime-configbackend--squad_backend) é dona da semântica compartilhada de seleção e metadados.
 
 ## Setup
 

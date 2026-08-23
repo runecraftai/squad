@@ -14,7 +14,7 @@ Mudar contexto persistido para remover conteúdo oculto, filtrar contexto do pro
 
 ## Evidência de compatibilidade
 
-[`calm.md`](calm.md#pi-compatibility) é dona do contrato atual de compatibilidade com o Pi.
+[`calm.md`](calm.md#compatibilidade-com-o-pi) é dona do contrato atual de compatibilidade com o Pi.
 O Pi 0.81.1 estava instalado quando o Calm foi construído pela primeira vez, e o Pi 0.82.0 foi o alvo posterior de reverificação.
 O CHANGELOG inspecionado do Pi mostra nenhuma API relevante de apresentação introduzida em qualquer uma das versões, então essas versões permanecem evidência de verificação em vez de limites de compatibilidade.
 As classes exportadas usadas pelos adaptadores (`AssistantMessageComponent` e `InteractiveMode`) são internals não documentados sem garantia declarada de versão.
@@ -22,7 +22,7 @@ As classes exportadas usadas pelos adaptadores (`AssistantMessageComponent` e `I
 
 ### Restrições de override de ferramenta embutida
 
-[`calm.md`](calm.md#pi-compatibility) é dona do comportamento atual de colisão visível ao usuário e sua limitação.
+[`calm.md`](calm.md#compatibilidade-com-o-pi) é dona do comportamento atual de colisão visível ao usuário e sua limitação.
 A inspeção do Pi 0.80.10 e 0.82.0 estabeleceu que extensões sobrescrevem uma ferramenta embutida registrando o mesmo nome, a primeira extensão registrada ganha a definição completa de `ToolDefinition` sem merge, e o Pi expõe nenhuma operação de unregister.
 O Pi carrega extensões locais ao projeto antes das extensões globais ou configuradas via CLI, então a extensão Calm rastreada do Squad anteriormente ganhava aquelas colisões mesmo quando sua preferência persistida estava desligada.
 As funções de execução e render da definição perdedora são ambas descartadas, então registrar incondicionalmente os wrappers do Calm substituiria a ferramenta homônima de outra extensão em vez de mudar apenas a apresentação.
@@ -81,7 +81,7 @@ O PR 927 tornou o Calm persistente e descreveu linhas controladas como sem lacun
 O PR 936 removeu a rerotação insegura de input operacional e preservou entradas legadas de altura zero mas não mudou o layout de mensagens de assistente.
 
 O fix instala um adaptador idempotente de apresentação, verificado no Pi 0.81.1 até 0.82.0, sobre o método exportado `AssistantMessageComponent.updateContent`.
-O adaptador sonda por aquele método exato e, conforme o [contrato de compatibilidade](calm.md#pi-compatibility), degrada independentemente com um diagnóstico em vez de condicionar-se a um número de versão.
+O adaptador sonda por aquele método exato e, conforme o [contrato de compatibilidade](calm.md#compatibilidade-com-o-pi), degrada independentemente com um diagnóstico em vez de condicionar-se a um número de versão.
 Apenas enquanto o Calm está ativo e o Pi tem thinking colapsado, o adaptador passa uma cópia rasa de apresentação livre de thinking ao cálculo ordinário de layout do Pi, depois retém a mensagem original no componente para invalidação e expansão de thinking.
 A mensagem persistida do assistente, contexto do provider, execução de ferramentas, dados de export e histórico de expansão permanecem inalterados.
 Mensagens de assistente somente-thinking colapsadas agora renderizam zero linhas, thinking antes de texto visível de assistente não adiciona espaçamento além da baseline só-texto, e expandir o thinking ainda renderiza o raciocínio original.
@@ -139,7 +139,7 @@ A causa principal teria sido falsificada se a linha ou altura permanecesse, o pr
 Nada ocorreu.
 
 O fix instala um adaptador idempotente separado de apresentação, verificado no Pi 0.81.1 até 0.82.0, sobre o método exportado `InteractiveMode.addMessageToChat`.
-O adaptador sonda por aquele método exato e, conforme o [contrato de compatibilidade](calm.md#pi-compatibility), degrada independentemente com um diagnóstico em vez de condicionar-se a um número de versão.
+O adaptador sonda por aquele método exato e, conforme o [contrato de compatibilidade](calm.md#compatibilidade-com-o-pi), degrada independentemente com um diagnóstico em vez de condicionar-se a um número de versão.
 Ele delega reconhecimento atual ao `bin/sq-operational-input.sh`, adiciona apenas a forma de compatibilidade de apresentação respaldada-evidência de `Supervisor escalate (` com U+2063 puro, monta uma subclasse de `UserMessageComponent` que preserva a linha padrão do Pi mais spacer inicial enquanto o Calm está desligado, e devolve zero linhas renderizadas enquanto o Calm está ligado.
 Ele nunca intercepta o evento de input, reescreve a mensagem, muda o papel dela, filtra contexto do modelo, nem muda dados da sessão.
 Mensagens contendo imagem ficam no caminho ordinário do Pi mesmo quando seu texto equivale a um envelope operacional porque os produtores autoritativos do Squad são apenas-texto.
@@ -184,7 +184,7 @@ Loaders de compactação e retry permanecem padrão porque o Pi não expõe subs
 `bin/sq-operational-input.sh` é dono da construção e parsing cross-language atuais de input operacional, enquanto o adaptador fino de Pi vive em `.pi/extensions/lib/sq-operational-input.ts`.
 Apenas `genuine-user-prompt`, `genuine-agent-response` e `working-status` são policy-visible.
 Toda outra classe auditada é policy-hidden quando o Pi expõe fronteira suportada de apresentação, mas input semântico nunca é transformado para impor essa preferência.
-O schema de persistência local à base é de propriedade de [`docs/configuration.md`](configuration.md#pi-calm-preference-configcalm).
+O schema de persistência local à base é de propriedade de [`docs/configuration.md`](configuration.md#preferência-pi-calm-configcalm).
 
 Inputs atuais de session-start, sentinela, turn-end guard, supervisor away e launch-brief retêm seus envelopes estáticos versionados de U+2063.
 O carrier de roteamento estabelecido de `[sq-from-squad]` mais U+2063 no início permanece atual para que charters XO em execução continuem compatíveis.
@@ -226,7 +226,7 @@ O fixture de teste enumera cada classe abaixo através da política centralizada
 | `unknown` | Componente futuro ou não classificado de transcript | Policy-hidden, mas nenhum renderer genérico existe; nunca alegado como coberto. |
 
 A API instalada de extensão não tem filtro global suportado de transcript, renderer de mensagem de usuário, renderer de mensagem de assistente, API de contêiner de chat, ou wrapper genérico de ferramenta custom.
-Pi 0.81.1 até 0.82.0 exportam `AssistantMessageComponent` e `InteractiveMode`, então o Calm usa adaptadores separados idempotentes sondados-via-API para layout de thinking de assistente e para a linha completa operacional-de-usuário do transcript deixando todos os dados de mensagem e renderização não-Calm inalterados; veja o [contrato de compatibilidade](calm.md#pi-compatibility) para como um Pi futuro carente de uma dessas exportações é tratado.
+Pi 0.81.1 até 0.82.0 exportam `AssistantMessageComponent` e `InteractiveMode`, então o Calm usa adaptadores separados idempotentes sondados-via-API para layout de thinking de assistente e para a linha completa operacional-de-usuário do transcript deixando todos os dados de mensagem e renderização não-Calm inalterados; veja o [contrato de compatibilidade](calm.md#compatibilidade-com-o-pi) para como um Pi futuro carente de uma dessas exportações é tratado.
 Substituição geral de componente, apagamento de cursor ANSI, mutação de contexto do provider, e patching de arquivo instalado permanecem rejeitados como workarounds não suportados ou que quebram preservação.
 
 ## Registro de verificação cross-harness
