@@ -30,10 +30,10 @@ Ao ver um lembrete de sistema de tarefa-em-segundo-plano-concluída para o arm:
 5. Não invente um acordo a partir de uma linha de status de attach sozinha.
    Drene a fila e aja apenas em registros reais de acordo, nas entradas `OPEN DECISIONS` do drain ou em uma linha real de motivo da sentinela.
    O re-arm anexa a um ciclo saudável existente quando já há um presente e segue sua cadeia verificada de sucessores.
-   Veja [`sentry-continuity.md`](sentry-continuity.md) para o contrato de sucessores da camada de arm e falha de fechamento limpo.
+   Veja [`sentry-continuity.md`](../sentry-continuity.md) para o contrato de sucessores da camada de arm e falha de fechamento limpo.
 
 O hook Stop do projeto primário roda `bin/sq-turnend-guard-grok.sh` como backstop, não como caminho normal de acordo.
-[`turnend-guard.md`](turnend-guard.md) é dona da seleção de capacidade de payload em execução entre bloqueio nativo no mesmo processo e o fallback limitado pré-nativo de resume.
+[`turnend-guard.md`](../turnend-guard.md) é dona da seleção de capacidade de payload em execução entre bloqueio nativo no mesmo processo e o fallback limitado pré-nativo de resume.
 Depois de qualquer continuação forçada, arme a sentinela com o protocolo em segundo plano acima.
 
 Sessões primárias interativas de TUI são o host de supervisão suportado.
