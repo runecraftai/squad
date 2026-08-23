@@ -1088,7 +1088,7 @@ function deepEqual(a, b) {
 async function serverCommand(args) {
   const port = Number(flagValue(args, "--port") || defaultPort());
   const debug = args.includes("--verbose") || process.env.SQ_REPORT_DEBUG === "1";
-  const server = await serve({ port, stateFile: stateFile(), version: VERSION, debug });
+  const server = await serve({ port, stateFile: stateFile(), debug });
   await server.done;
   return "";
 }

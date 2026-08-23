@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -66,6 +66,13 @@ const designAssetUrls = {
   },
 };
 
+// Single source of truth for the server-reported version.
+// Read from package.json at startup so the server always agrees with the
+// installed package version regardless of build-time injection staleness.
+const SERVER_VERSION =
+  process.env.SQ_REPORT_BUILD_VERSION ||
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60_000;
 const WHITEBOARD_CHANNEL_TOKEN_TTL_MS = 5 * 60_000;
 
@@ -127,7 +134,8 @@ export function resolveIdleTimeoutMs(env = process.env) {
 export async function serve({
   port,
   stateFile,
-  version = "",
+  version = SERVER_VERSION,
+
   debug = false,
   log = null,
   pollHeartbeatMs = 15_000,

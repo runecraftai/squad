@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="luxury">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Decisões Pendentes — Agentic OS + Hijack</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+  :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+    min-width: 0;
+  }
+  :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+    overflow-wrap: anywhere;
+  }
+  :where(img, svg, video, canvas, iframe) {
+    max-width: 100%;
+    height: auto;
+  }
+  body { background: #1a1612; color: #e8e0d4; }
+  .rec-highlight { border-left: 3px solid oklch(0.75 0.18 85); padding-left: 0.75rem; margin: 0.5rem 0; }
+  .tradeoff-text { color: #b8a898; font-size: 0.9rem; line-height: 1.5; }
+  .sub-question { border: 1px solid #3d352c; border-radius: 0.5rem; padding: 1rem; margin-top: 0.75rem; background: #262018; }
+  .tier-group { border: 1px dashed #4a3f34; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 0.75rem; }
+  .tier-group:last-child { margin-bottom: 0; }
+  .btn-queue { min-width: 140px; }
+  label.radio-label { display: block; padding: 0.35rem 0.5rem; border-radius: 0.375rem; cursor: pointer; transition: background 0.15s; }
+  label.radio-label:hover { background: #3d352c; }
+  label.radio-label:has(input:checked) { background: #4a3f34; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<main class="mx-auto max-w-4xl p-4 sm:p-6 lg:p-8 space-y-6">
+
+  <!-- HEADER -->
+  <section class="hero bg-base-200 rounded-box p-6">
+    <div class="hero-content text-center">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold">5 Decisões Pendentes</h1>
+        <p class="py-2 text-base-content/80 max-w-2xl mx-auto">
+          Estas 5 decisões desbloqueiam <strong>duas strike tasks</strong>:
+        </p>
+        <div class="flex flex-wrap justify-center gap-2 mt-2">
+          <span class="badge badge-soft badge-info">squad-graphify-pi-pilot → agentic OS consulting pilot</span>
+          <span class="badge badge-soft badge-warning">runecraft-hijack-lifeos → execução do hijack</span>
+        </div>
+        <p class="text-sm text-base-content/60 mt-3">
+          Selecione uma opção em cada pergunta e clique "Enviar resposta". Cada pergunta envia independentemente.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- D1: Language & Market -->
+  <div class="card card-border bg-base-100">
+    <div class="card-body">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="badge badge-primary badge-lg">D1</span>
+        <h2 class="card-title text-lg">Idioma &amp; Mercado</h2>
+      </div>
+      <p class="text-sm text-base-content/70 mb-2">Recon §10 — Origem: <code>agentic-os-consulting-recon</code>, chave: <code>language-market</code></p>
+
+      <div class="rec-highlight">
+        <p class="font-semibold text-sm">⚡ Recomendação: <strong>PT-BR-first</strong>, mercado BR, com landing page EN apenas se aparecer inbound cross-border.</p>
+      </div>
+      <p class="tradeoff-text">
+        <strong>Tradeoff:</strong> TAM menor hoje, mas sem competição direta e CAC quase zero a partir da audiência existente.
+        EN-first competiria de frente com Charlie/STEEPWORKS sem moat de idioma.
+        Todo o setor concorrente vende em inglês para compradores US/UK/EU — PT-BR é whitespace aberto (§4.4).
+      </p>
+
+      <form data-lavish-question="language-market" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('language'); if (choice) window.lavish.queuePrompt('D1 Idioma e Mercado: escolha ' + choice + '.', { tag: 'choice', text: 'D1 language-market: ' + choice, element: event.currentTarget, data: { question: 'language-market', answer: choice } });">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend font-medium">Qual idioma e mercado para o offer?</legend>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="language" value="PT-BR-first" class="radio radio-primary radio-sm mt-1">
+            <span><strong>PT-BR-first</strong> — Oferta em português para o mercado brasileiro. Landing page EN apenas se inbound cross-border aparecer. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="language" value="EN-first" class="radio radio-sm mt-1">
+            <span><strong>EN-first</strong> — Oferta em inglês para mercado US/UK/EU. Compete diretamente com Charlie e STEEPWORKS.</span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="language" value="bilingual" class="radio radio-sm mt-1">
+            <span><strong>Bilíngue EN+PT</strong> — Duas versões desde o início. Dobra o escopo de conteúdo e landing.</span>
+          </label>
+        </fieldset>
+        <button type="submit" class="btn btn-primary btn-sm btn-queue mt-3">Enviar resposta</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- D2: Positioning -->
+  <div class="card card-border bg-base-100">
+    <div class="card-body">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="badge badge-primary badge-lg">D2</span>
+        <h2 class="card-title text-lg">Posicionamento</h2>
+      </div>
+      <p class="text-sm text-base-content/70 mb-2">Recon §10 — Origem: <code>agentic-os-consulting-recon</code>, chave: <code>positioning-model</code></p>
+
+      <div class="rec-highlight">
+        <p class="font-semibold text-sm">⚡ Recomendação: <strong>Serviço productized done-for-you</strong> no lançamento (Tier 1), com cohort/comunidade adiada até a audiência gratuita crescer.</p>
+      </div>
+      <p class="tradeoff-text">
+        <strong>Tradeoff:</strong> Escala mais lenta, mas custo fixo muito menor e marca mais limpa que uma agência ou cohort prematuro.
+        O funil do Charlie só converte por ter 3.300 membros gratuitos; sem essa base, montar cohort/comunidade é prematuro (§4.4, §7.1).
+        STEEPWORKS posiciona explicitamente contra retainer; permanecer solo-productized evita complexidade operacional.
+      </p>
+
+      <form data-lavish-question="positioning-model" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('positioning'); if (choice) window.lavish.queuePrompt('D2 Posicionamento: escolha ' + choice + '.', { tag: 'choice', text: 'D2 positioning-model: ' + choice, element: event.currentTarget, data: { question: 'positioning-model', answer: choice } });">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend font-medium">Qual modelo de posicionamento?</legend>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="positioning" value="productized-dfy" class="radio radio-primary radio-sm mt-1">
+            <span><strong>Productized DFY</strong> — Serviço com preço fixo por tier (Tier 1/2), sem retainer. Solo-operador. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="positioning" value="agency" class="radio radio-sm mt-1">
+            <span><strong>Agência (estilo CC Strategic)</strong> — Equipe, múltiplos clientes simultâneos, escalation path para done-for-you premium. Requer contratar.</span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="positioning" value="coach-cohort" class="radio radio-sm mt-1">
+            <span><strong>Coach / Cohort (estilo Skool)</strong> — Comunidade paga + cohort anual. Requer audiência grande como top-of-funnel.</span>
+          </label>
+        </fieldset>
+        <button type="submit" class="btn btn-primary btn-sm btn-queue mt-3">Enviar resposta</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- D3: Price Currency & Ranges -->
+  <div class="card card-border bg-base-100">
+    <div class="card-body">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="badge badge-primary badge-lg">D3</span>
+        <h2 class="card-title text-lg">Moeda &amp; Faixas de Preço</h2>
+      </div>
+      <p class="text-sm text-base-content/70 mb-2">Recon §10 — Origem: <code>agentic-os-consulting-recon</code>, chave: <code>price-currency-ranges</code></p>
+
+      <div class="rec-highlight">
+        <p class="font-semibold text-sm">⚡ Recomendação: Preço em <strong>BRL</strong> para compradores BR (Pix/boleto), landing USD disponível para inbound.</p>
+      </div>
+      <p class="tradeoff-text">
+        <strong>Tradeoff:</strong> Preço em BRL limita upside vs USD, mas combina com poder de compra BR e elimina a principal fricção de conversão (pagamento + câmbio) para o ICP escolhido.
+        Âncoras trianguladas de concorrentes (§5): STEEPWORKS ~$1.500, OperatorStack ~$3.500, Sofily €99–€499, DFY market $500–$5k setup + $500–$5k/mo retainer.
+      </p>
+
+      <!-- D3a: Currency -->
+      <form data-lavish-question="price-currency" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('currency'); if (choice) window.lavish.queuePrompt('D3 Moeda: escolha ' + choice + ' como moeda principal do offer.', { tag: 'choice', text: 'D3 price-currency: ' + choice, element: event.currentTarget, data: { question: 'price-currency', answer: choice } });">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend font-medium">Moeda principal</legend>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="currency" value="BRL" class="radio radio-primary radio-sm mt-1">
+            <span><strong>BRL (R$)</strong> — Pix/boleto, sem fricção cambial para compradores BR. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="currency" value="USD" class="radio radio-sm mt-1">
+            <span><strong>USD ($)</strong> — Preço em dólar, Stripe. Maior upside por compra mas fricção cambial.</span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="currency" value="BRL-primary-USD-page" class="radio radio-sm mt-1">
+            <span><strong>BRL primário + página USD</strong> — Preço real em BRL, conversão visual em USD na landing.</span>
+          </label>
+        </fieldset>
+        <button type="submit" class="btn btn-primary btn-sm btn-queue mt-3">Enviar resposta</button>
+      </form>
+
+      <!-- D3b: Tier 1 Pilot Range -->
+      <div class="tier-group mt-4">
+        <form data-lavish-question="price-tier1-pilot" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('tier1pilot'); if (choice) window.lavish.queuePrompt('D3 Faixa Piloto T1: escolha ' + choice + '.', { tag: 'choice', text: 'D3 price-tier1-pilot: ' + choice, element: event.currentTarget, data: { question: 'price-tier1-pilot', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">Tier 1 — Faixa Piloto (primeiros 5 clientes)</legend>
+            <p class="text-xs text-base-content/60 mb-1">Deliberadamente abaixo da âncora T1 para remover fricção e premiar primeiros case studies (§8.2).</p>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier1pilot" value="R2500-4000" class="radio radio-primary radio-sm mt-1">
+              <span><strong>R$ 2.500–4.000</strong> (~US$ 440–700) — Faixa recomendada no recon. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier1pilot" value="R1500-2500" class="radio radio-sm mt-1">
+              <span><strong>R$ 1.500–2.500</strong> (~US$ 260–440) — Mais agressivo para máxima fricção zero.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier1pilot" value="R4000-6500" class="radio radio-sm mt-1">
+              <span><strong>R$ 4.000–6.500</strong> (~US$ 700–1.150) — Sem desconto piloto, preço de lançamento direto.</span>
+            </label>
+          </fieldset>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+
+      <!-- D3c: Tier 1 Launch Range -->
+      <div class="tier-group">
+        <form data-lavish-question="price-tier1-launch" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('tier1launch'); if (choice) window.lavish.queuePrompt('D3 Faixa Lançamento T1: escolha ' + choice + '.', { tag: 'choice', text: 'D3 price-tier1-launch: ' + choice, element: event.currentTarget, data: { question: 'price-tier1-launch', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">Tier 1 — Faixa de Lançamento (após pilotos)</legend>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier1launch" value="R3500-6500" class="radio radio-primary radio-sm mt-1">
+              <span><strong>R$ 3.500–6.500</strong> (~US$ 600–1.150) — Faixa recomendada no recon. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier1launch" value="R2500-5000" class="radio radio-sm mt-1">
+              <span><strong>R$ 2.500–5.000</strong> (~US$ 440–875) — Mais acessível, massifica mais rápido.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier1launch" value="R5000-8000" class="radio radio-sm mt-1">
+              <span><strong>R$ 5.000–8.000</strong> (~US$ 875–1.400) — Premium, posiciona acima de STEEPWORKS no mercado BR.</span>
+            </label>
+          </fieldset>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+
+      <!-- D3d: Tier 2 Range -->
+      <div class="tier-group">
+        <form data-lavish-question="price-tier2" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('tier2'); if (choice) window.lavish.queuePrompt('D3 Faixa T2: escolha ' + choice + '.', { tag: 'choice', text: 'D3 price-tier2: ' + choice, element: event.currentTarget, data: { question: 'price-tier2', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">Tier 2 — Buildout de Operações</legend>
+            <p class="text-xs text-base-content/60 mb-1">10–20 skills customizadas, integrações profundas, rituals, hardening, 2–4 semanas (§5).</p>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier2" value="R12000-25000" class="radio radio-primary radio-sm mt-1">
+              <span><strong>R$ 12.000–25.000</strong> (~US$ 2.100–4.400) — Faixa recomendada no recon. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier2" value="R8000-15000" class="radio radio-sm mt-1">
+              <span><strong>R$ 8.000–15.000</strong> (~US$ 1.400–2.600) — Mais baixo, mais acessível.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier2" value="R15000-35000" class="radio radio-sm mt-1">
+              <span><strong>R$ 15.000–35.000</strong> (~US$ 2.600–6.100) — Premium, com variantes team (3–5 seats).</span>
+            </label>
+          </fieldset>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+
+      <!-- D3e: Tier 3 Retainer -->
+      <div class="tier-group">
+        <form data-lavish-question="price-tier3" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('tier3'); if (choice) window.lavish.queuePrompt('D3 Faixa T3 (retainer): escolha ' + choice + '.', { tag: 'choice', text: 'D3 price-tier3: ' + choice, element: event.currentTarget, data: { question: 'price-tier3', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">Tier 3 — Retainer / Onda Ops (só após PMF)</legend>
+            <p class="text-xs text-base-content/60 mb-1">Monitoramento, fixes, novas skills, rotinas. NÃO lançar até ≥5 T1 + ≥2 T2 (§5, §8.4).</p>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier3" value="R1200-3500-mo" class="radio radio-primary radio-sm mt-1">
+              <span><strong>R$ 1.200–3.500/mês</strong> (~US$ 210–615/mo) — Faixa recomendada no recon. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier3" value="R800-2000-mo" class="radio radio-sm mt-1">
+              <span><strong>R$ 800–2.000/mês</strong> (~US$ 140–350/mo) — Entry-level, mais acessível.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="tier3" value="skip" class="radio radio-sm mt-1">
+              <span><strong>Adiar T3 indefinidamente</strong> — Não definir faixa agora; focar 100% em T1/T2.</span>
+            </label>
+          </fieldset>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- D4: Pilot Scope -->
+  <div class="card card-border bg-base-100">
+    <div class="card-body">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="badge badge-primary badge-lg">D4</span>
+        <h2 class="card-title text-lg">Escopo dos Primeiros Pilotos</h2>
+      </div>
+      <p class="text-sm text-base-content/70 mb-2">Recon §10 — Origem: <code>agentic-os-consulting-recon</code>, chave: <code>pilot-scope</code></p>
+
+      <div class="rec-highlight">
+        <p class="font-semibold text-sm">⚡ Recomendação: <strong>3–5 pilotos</strong>, mix: 2–3 fundadores não-técnicos + 1–2 operadores técnicos + 1 dono de agência. Entregar a MVE (§6.2). Prazo ≤4 semanas.</p>
+      </div>
+      <p class="tradeoff-text">
+        <strong>Tradeoff:</strong> n pequeno = sinal ruidoso; a garantia remove fricção de preço mas cria risco de trabalho de delivery se pilotos forem lentos.
+        MVE entregue no piloto: instalação LifeOS + Brain (Obsidian) + TELOS interview + 1 ferramenta read-only + 2 skills + 1 automação rodando antes do fim da call + plano 30 dias + 2 sem hypercare.
+        Go/no-go (§8.4): GO se ≥80% relatam "vitória óbvia", ≥2 convertem para T2, ≥1 referral espontâneo, tempo de delivery cai.
+      </p>
+
+      <!-- D4a: Pilot Mix -->
+      <form data-lavish-question="pilot-mix" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('mix'); if (choice) window.lavish.queuePrompt('D4 Mix dos pilotos: escolha ' + choice + '.', { tag: 'choice', text: 'D4 pilot-mix: ' + choice, element: event.currentTarget, data: { question: 'pilot-mix', answer: choice } });">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend font-medium">Mix de pilotos</legend>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="mix" value="3-5-founders-heavy" class="radio radio-primary radio-sm mt-1">
+            <span><strong>2–3 fundadores + 1–2 técnicos + 1 agência</strong> — Mix recomendado. Valida DFY, arquitetura e expansão team. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="mix" value="3-5-founders-only" class="radio radio-sm mt-1">
+            <span><strong>3–5 fundadores não-técnicos</strong> — Foco total em validar o ICP principal (done-for-you). Mais rápido de recrutar.</span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="mix" value="2-founders-2-tech" class="radio radio-sm mt-1">
+            <span><strong>2 fundadores + 2 operadores técnicos</strong> — Equilibrado, sem agência. Valida DFY e arquitetura.</span>
+          </label>
+        </fieldset>
+        <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+      </form>
+
+      <!-- D4b: Guarantee -->
+      <form data-lavish-question="pilot-guarantee" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('guarantee'); if (choice) window.lavish.queuePrompt('D4 Garantia do piloto: escolha ' + choice + '.', { tag: 'choice', text: 'D4 pilot-guarantee: ' + choice, element: event.currentTarget, data: { question: 'pilot-guarantee', answer: choice } });">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend font-medium">Garantia para os primeiros pilotos</legend>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="guarantee" value="charlie-guarantee" class="radio radio-primary radio-sm mt-1">
+            <span><strong>"Trabalho grátis até funcionar em 2 semanas"</strong> — Espelha Charlie. Remove toda fricção, cria urgência de delivery. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="guarantee" value="partial-refund" class="radio radio-sm mt-1">
+            <span><strong>Reembolso parcial</strong> — Devolução de 50% se não houver "vitória óbvia" em 2 semanas. Menos risco de trabalho gratuito.</span>
+          </label>
+          <label class="radio-label flex items-start gap-2">
+            <input type="radio" name="guarantee" value="no-guarantee" class="radio radio-sm mt-1">
+            <span><strong>Sem garantia formal</strong> — Preço fixo, entrega descrita. Mais simples mas mais fricção para early adopters.</span>
+          </label>
+        </fieldset>
+        <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- D5: Hijack Execution -->
+  <div class="card card-border bg-base-100">
+    <div class="card-body">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="badge badge-accent badge-lg">D5</span>
+        <h2 class="card-title text-lg">Hijack — Execução do Produto</h2>
+      </div>
+      <p class="text-sm text-base-content/70 mb-2">Backlog <code>runecraft-hijack-lifeos</code> — hold_reason, três sub-decisões pendentes.</p>
+
+      <div class="alert alert-warning mb-3">
+        <span class="text-sm">
+          Hijack = aquisição total do produto (não fork, não vendoring com sync): trazer mecanismos LifeOS + Agentic OS (SEED+PAUL) e transformar em produto 100% Runecraft — identidade, docs, licença própria.
+          Sem atribuição legal (decisão do comandante 2026-08-16). Hermes excluído.
+        </span>
+      </div>
+
+      <!-- D5a: Product Name -->
+      <div class="sub-question">
+        <form data-lavish-question="hijack-name" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('name'); if (choice) window.lavish.queuePrompt('D5 Nome comercial do produto hijack: escolha ' + choice + '.', { tag: 'choice', text: 'D5 hijack-name: ' + choice, element: event.currentTarget, data: { question: 'hijack-name', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">D5a — Nome Comercial do Produto</legend>
+            <p class="text-xs text-base-content/60 mb-1">O nome comercial ainda não foi definido (hold_reason). Opções grounded: o produto é um hijack total do LifeOS para a marca Runecraft, sem atribuição upstream.</p>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="name" value="Runecraft OS" class="radio radio-primary radio-sm mt-1">
+              <span><strong>Runecraft OS</strong> — Direto, ligado à marca, genérico o suficiente para evoluir.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="name" value="Rune" class="radio radio-sm mt-1">
+              <span><strong>Rune</strong> — Curto, memorável, já existe como prefixo na base (rune_*, rune-pilot).</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="name" value="RuneMind" class="radio radio-sm mt-1">
+              <span><strong>RuneMind</strong> — Combina "rune" (Runecraft) + "mind" (brain/memory do LifeOS). Mais descritivo.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="name" value="Arcanum" class="radio radio-sm mt-1">
+              <span><strong>Arcanum</strong> — Já aparece na marca Runecraft; nome com peso, mas pode confundir com其他 produtos.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="name" value="custom" class="radio radio-sm mt-1">
+              <span><strong>Outro nome</strong> — Escreva o nome escolhido no campo abaixo.</span>
+            </label>
+          </fieldset>
+          <div class="mt-2">
+            <input type="text" name="custom-name" placeholder="Se escolheu 'Outro nome', escreva aqui..." class="input input-bordered input-sm w-full max-w-md">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+
+      <!-- D5b: MVE Scope -->
+      <div class="sub-question">
+        <form data-lavish-question="hijack-mve" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('mve'); if (choice) window.lavish.queuePrompt('D5 Escopo MVE do hijack: escolha ' + choice + '.', { tag: 'choice', text: 'D5 hijack-mve: ' + choice, element: event.currentTarget, data: { question: 'hijack-mve', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">D5b — Escopo do MVE (núcleo do produto)</legend>
+            <p class="text-xs text-base-content/60 mb-1">Reutilização validada: memória rune_*, skills catalog, guards já existem na Harness e entram como base.</p>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="mve" value="lean" class="radio radio-primary radio-sm mt-1">
+              <span><strong>Núcleo enxuto</strong> — Memória + Skills + Hooks + Daemon. Sem TELOS/ISA, sem SEED/PAUL. Mais rápido de lançar, valida com mais rigor o core antes de expandir. <span class="badge badge-soft badge-success badge-xs">recomendado (menor risco)</span></span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="mve" value="complete" class="radio radio-sm mt-1">
+              <span><strong>Completo</strong> — TELOS/ISA + SEED/PAUL + Memória + Skills + Hooks + Daemon. Feature-complete desde o início, mas escopo maior e mais complexo.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="mve" value="lean-seed" class="radio radio-sm mt-1">
+              <span><strong>Enxuto + SEED apenas</strong> — Memória + Skills + Hooks + Daemon + SEED framework (sem TELOS/ISA/PAUL). Compromisso: traz o framework de prompts sem o interview system.</span>
+            </label>
+          </fieldset>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+
+      <!-- D5c: Repo Location -->
+      <div class="sub-question">
+        <form data-lavish-question="hijack-repo" onsubmit="event.preventDefault(); const choice = new FormData(event.currentTarget).get('repo'); if (choice) window.lavish.queuePrompt('D5 Localização do repo do produto: escolha ' + choice + '.', { tag: 'choice', text: 'D5 hijack-repo: ' + choice, element: event.currentTarget, data: { question: 'hijack-repo', answer: choice } });">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-medium">D5c — Onde Mora o Produto (repo)</legend>
+            <p class="text-xs text-base-content/60 mb-1">Rota sala limpa confirmada. Reutilização validada: memória, skills, guards da Harness entram como base.</p>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="repo" value="new-repo-runecraftai" class="radio radio-primary radio-sm mt-1">
+              <span><strong>Repo novo em runecraftai/</strong> — Repositório dedicado (ex. runecraftai/rune). Limpo, visível, fácil de versionar e licenciar. <span class="badge badge-soft badge-success badge-xs">recomendado</span></span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="repo" value="module-in-ecosystem" class="radio radio-sm mt-1">
+              <span><strong>Módulo dentro do ecossistema</strong> — Package/subdir dentro de um repo existente (ex. runecraftai/harness ou runecraftai/squad). Mantém tudo junto mas acoplado.</span>
+            </label>
+            <label class="radio-label flex items-start gap-2">
+              <input type="radio" name="repo" value="monorepo" class="radio radio-sm mt-1">
+              <span><strong>Monorepo com workspaces</strong> — Um repo raiz (runecraftai/rune) com packages/ para cada componente (memory, skills, hooks, daemon). Flexível mas mais complexo de manter.</span>
+            </label>
+          </fieldset>
+          <button type="submit" class="btn btn-primary btn-sm btn-queue mt-2">Enviar resposta</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="text-center text-xs text-base-content/40 py-4">
+    Gerado por sq-report · Extraído de agentic-os-consulting-recon (§10) + runecraft-hijack-lifeos hold_reason ·
+    Cada pergunta envia independentemente via <code>window.lavish.queuePrompt</code>.
+  </footer>
+
+</main>
+
+</body>
+</html>
