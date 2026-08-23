@@ -1,3 +1,5 @@
+[English](README.md) | Português (Brasil)
+
 <p align="center">
   <img alt="Squad — agent distro: talk to one agent, deploy with a squad. The sergeant at arms dispatches visible operators (sq-task-1 strike working, sq-task-2 recon done, sq-task-3 strike queued) that deliver a PR or a recon report to the commander." src="assets/readme/hero.svg" width="100%" />
 </p>
