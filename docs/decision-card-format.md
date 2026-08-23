@@ -1,6 +1,8 @@
 # Decision Card Text Format
 
-The canonical textual rendering of a decision card for chat, status lines, and terminal display.
+The canonical textual rendering of a decision card for keyed-decision workflows.
+Reserved for drill ask-user findings and pipeline-gated decisions that need explicit option sets.
+For general multi-item responses, use the reference code format defined in `AGENTS.md` section 9.
 
 ## Chat/Card Format
 
