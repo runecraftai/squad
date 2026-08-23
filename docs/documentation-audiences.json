@@ -484,6 +484,182 @@
    "audience": "maintainer-architecture"
   },
   {
+   "path": "docs/pt-BR/architecture.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/arm-pretool-check.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/calm.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/calm-mode-feasibility.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/pt-BR/cd-guard.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/cmux-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/codex-app-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/configuration.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/decision-card-examples.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/decision-card-format.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/decision-card-pi-recipe.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/decision-card-schema.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/decision-card-standard.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/decision-hold-lifecycle.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/documentation-audiences.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/gitlab-merge-sentry.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/pt-BR/handoff-request.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/herdr-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/loop-context-guardrail.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/orca-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/playwright-validation.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/pr-review.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/remote-XOs.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/scripts.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/sentry-continuity.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/sessionstart-nudge.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/sq-sidebar.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/sq-test-isolation-proof.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/pt-BR/sq-test-portable-shards.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/pt-BR/standalone-publication-readiness.md",
+   "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/pt-BR/status-notify.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/subagent-guard.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/supervision-protocols/claude.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/pt-BR/supervision-protocols/codex.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/pt-BR/supervision-protocols/grok.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/pt-BR/supervision-protocols/opencode.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/pt-BR/supervision-protocols/pi.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/pt-BR/supervision-protocols/unknown.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "docs/pt-BR/tmux-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/trace-context.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/pt-BR/turnend-guard.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/web-view.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/wedge-alarm.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/pt-BR/zellij-backend.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/turnend-guard.md",
    "audience": "operator-current"
   },

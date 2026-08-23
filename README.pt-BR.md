@@ -34,9 +34,9 @@ Você alterna vários projetos ou repositórios ao mesmo tempo - correções, in
 
 Você conversa com o agente. Ele encaminha cada pedido a um operador em seu próprio endpoint de sessão e worktree git, supervisiona a unidade com uma sentinela orientada a eventos que consome zero tokens, e traz PRs prontos, merges locais aprovados ou relatórios de recon. A sentinela dorme sobre a unidade e acorda o sargento só quando algo realmente precisa de você.
 
-XOs opcionais estendem isso para XOs persistentes locais ou remotos de base inteira; perfis de despacho permitem direcionar qual harness cuida de qual tarefa; e o Relay opcional permite que a mesma unidade responda menções públicas no X e no Discord. `codex-app` ainda não é um backend de runtime - [docs/codex-app-backend.md](docs/codex-app-backend.md) é dono dessa fronteira.
+XOs opcionais estendem isso para XOs persistentes locais ou remotos de base inteira; perfis de despacho permitem direcionar qual harness cuida de qual tarefa; e o Relay opcional permite que a mesma unidade responda menções públicas no X e no Discord. `codex-app` ainda não é um backend de runtime - [docs/pt-BR/codex-app-backend.md](docs/pt-BR/codex-app-backend.md) é dono dessa fronteira.
 
-A arquitetura completa - o motor de supervisão, isolamento de worktrees, XOs, perfis de despacho, modos de projeto, Relay opcional, unit sync e self-update - vive em [docs/architecture.md](docs/architecture.md).
+A arquitetura completa - o motor de supervisão, isolamento de worktrees, XOs, perfis de despacho, modos de projeto, Relay opcional, unit sync e self-update - vive em [docs/pt-BR/architecture.md](docs/pt-BR/architecture.md).
 
 ## Começo rápido
 
@@ -80,7 +80,7 @@ SQUAD_PI_HARNESS=pi-signed pi-signed
 
 Para o Grok, `--trust` é necessário uma vez por clone para que os hooks do projeto e o turn-end guard carreguem; `/hooks-trust` dentro do Grok também funciona.
 Para o Pi, aprove o prompt de confiança do projeto uma vez por clone no primeiro lançamento para que os arquivos versionados `.pi/extensions/*.ts` carreguem automaticamente.
-O toggle `/calm` do Pi esconde elementos de transcript suportados - incluindo linhas de usuário operacionais do Squad classificadas canonicamente - e usa um indicador animado exclusivo do Calm durante execuções ativas, preservando todo o contexto do modelo e os dados da sessão. A preferência persiste para a base Squad efetiva, e desativá-la restaura a renderização comum. [O comportamento atual e os limites do Calm](docs/calm.md) são separados das suas [evidências com escopo de versão](docs/calm-mode-feasibility.md).
+O toggle `/calm` do Pi esconde elementos de transcript suportados - incluindo linhas de usuário operacionais do Squad classificadas canonicamente - e usa um indicador animado exclusivo do Calm durante execuções ativas, preservando todo o contexto do modelo e os dados da sessão. A preferência persiste para a base Squad efetiva, e desativá-la restaura a renderização comum. [O comportamento atual e os limites do Calm](docs/pt-BR/calm.md) são separados das suas [evidências com escopo de versão](docs/pt-BR/calm-mode-feasibility.md).
 
 ### Converse com ele
 
