@@ -160,7 +160,7 @@ No `mcp.json` ships: the CLI itself is the agent interface, and adding one would
 
 `src/telemetry.js` posts anonymous events to an Umami endpoint.
 The website ID and host can be baked into the bundle at build time via `SQ_REPORT_UMAMI_HOST`/`SQ_REPORT_UMAMI_WEBSITE_ID` env vars (consumed by `scripts/build.js` and inlined as `process.env.SQ_REPORT_BUILD_UMAMI_*` defines).
-The build also inlines `package.json`'s version as `process.env.SQ_REPORT_BUILD_VERSION` for the CLI/server version handshake, with source runs falling back to reading `package.json`.
+The build optionally inlines `package.json`'s version as `process.env.SQ_REPORT_BUILD_VERSION`, but both the CLI and server independently fall back to reading `package.json` at runtime, making the version handshake robust against stale builds.
 Users opt out with `SQ_REPORT_TELEMETRY=0`.
 The client is best-effort and must never affect CLI behavior - all errors are swallowed.
 No need to explicitly document the telemetry behaviors.
