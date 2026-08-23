@@ -172,7 +172,7 @@ run_publish_in "$S5"
 pass "empty state dir publishes an empty file"
 
 # (f2) ghost sessions: a meta whose window= points to a nonexistent
-# session is excluded from output.
+# session emits an offline row instead of being dropped.
 S_GHOST="$TMP_ROOT/state-ghost"; mkdir -p "$S_GHOST"
 write_meta "$S_GHOST" alive tmux "live:ws"
 write_meta "$S_GHOST" ghost tmux "gone:ws"
@@ -195,7 +195,10 @@ exit 0
 SH
 chmod +x "$FAKE_TMUX_SELECTIVE/tmux"
 ghost_out=$(PATH="$FAKE_TMUX_SELECTIVE:$PATH" SQUAD_STATE_OVERRIDE="$S_GHOST" SQUAD_CREW_STATE_BIN="$FAKE" SQUAD_FAKE_CREW_STATE="$FIXTURE" "$WS" list)
-assert_eq "ghost session excluded" "$ghost_out" $'live:ws\talive\tworking\tworking\tpresent'
+ghost_expected=$(printf '%s\n' \
+  $'gone:ws\tghost\toffline\toffline\t' \
+  $'live:ws\talive\tworking\tworking\tpresent')
+assert_eq "ghost session emits offline row" "$ghost_out" "$ghost_expected"
 
 # (g) unknown and missing subcommands fail closed
 if SQUAD_STATE_OVERRIDE="$S2" "$WS" bogus >/dev/null 2>&1; then

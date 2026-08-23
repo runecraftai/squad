@@ -33,6 +33,7 @@
 #             done              finished
 #             idle              declared external wait (paused)
 #             failed            work failed
+#             offline           meta present but tmux window gone (post-restart)
 #             unknown           no current-state source available
 #   state   the canonical Squad verb from sq-crew-state.sh
 #           (working|parked|done|blocked|paused|failed|unknown)
@@ -121,6 +122,7 @@ label_for_state() {  # <crew-state-verb>
     done) printf 'done' ;;
     paused) printf 'idle' ;;
     failed) printf 'failed' ;;
+    offline) printf 'offline' ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -137,13 +139,14 @@ derive() {
     window=$(fm_meta_get "$meta" window)
     [ -n "$window" ] || continue
     case "$window" in remote:*) continue ;; esac
-    # Skip windows that no longer exist in tmux (ghost sessions from
-    # manual closes or crashed panes). The window target uses the
-    # format 'session:window'; verify at least the session exists.
-    tmux has-session -t "$window" 2>/dev/null || continue
+    id=$(basename "$meta"); id=${id%.meta}
+    if ! tmux has-session -t "$window" 2>/dev/null; then
+      # Window gone — emit as offline so sidebar knows the task existed.
+      printf '%s\t%s\t%s\t%s\t%s\n' "$window" "$id" "offline" "offline" ""
+      continue
+    fi
     kind=$(fm_meta_get "$meta" kind)
     [ "$kind" = xo ] && continue
-    id=$(basename "$meta"); id=${id%.meta}
     line=$("$CREW_STATE_BIN" "$id" 2>/dev/null) || true
     state=$(crew_state_verb "$line")
     label=$(label_for_state "$state")
