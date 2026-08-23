@@ -36,7 +36,9 @@
 #             offline           meta present but tmux window gone (post-restart)
 #             unknown           no current-state source available
 #   state   the canonical Squad verb from sq-crew-state.sh
-#           (working|parked|done|blocked|paused|failed|unknown)
+#           (working|parked|done|blocked|paused|failed|unknown), or the
+#           literal "offline" when this script emits the row itself
+#           because the window is gone (crew-state is never consulted)
 #   detail  the crew-state detail prose, tabs/newlines collapsed to spaces
 #   The file is replaced atomically on every publish, so a reader never sees a
 #   partial write. Absent or empty means there are no tmux task windows to
