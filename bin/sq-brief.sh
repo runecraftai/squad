@@ -256,6 +256,14 @@ When you have no assigned or in-flight work after that reconciliation, go idle a
 An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
 If this charter cannot be carried out, append \`blocked: {why}\` or \`failed: {why}\` to the main status file and stop.
 EOF
+# XO charter status instruction enforcement: refuse to scaffold a brief
+# that lacks the status reporting instruction. A missing status instruction
+# leaves Squad blind to operator state, so this is a hard safety gate.
+if ! grep -q '>>.*\.status' "$BRIEF"; then
+  echo "error: $BRIEF is missing the status reporting instruction. Regenerate with bin/sq-brief.sh or add: echo '{state}: {note}' >> '<state-file>.status'" >&2
+  rm -f "$BRIEF"
+  exit 1
+fi
 if [ "$XO_CHARTER" = "{TASK}" ]; then
   echo "scaffolded: $BRIEF (XO charter; replace {TASK})"
 else
@@ -343,6 +351,13 @@ Before reporting done, read and follow \`$SQUAD_ROOT/.agents/skills/decision-hol
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; Squad may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
+# Recon status instruction enforcement: refuse to scaffold a brief
+# that lacks the status reporting instruction.
+if ! grep -q '>>.*\.status' "$BRIEF"; then
+  echo "error: $BRIEF is missing the status reporting instruction. Regenerate with bin/sq-brief.sh or add: echo '{state}: {note}' >> '<state-file>.status'" >&2
+  rm -f "$BRIEF"
+  exit 1
+fi
 echo "scaffolded: $BRIEF (recon; replace {TASK})"
 exit 0
 fi
@@ -463,4 +478,11 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
+# Strike status instruction enforcement: refuse to scaffold a brief
+# that lacks the status reporting instruction.
+if ! grep -q '>>.*\.status' "$BRIEF"; then
+  echo "error: $BRIEF is missing the status reporting instruction. Regenerate with bin/sq-brief.sh or add: echo '{state}: {note}' >> '<state-file>.status'" >&2
+  rm -f "$BRIEF"
+  exit 1
+fi
 echo "scaffolded: $BRIEF (strike, mode=$MODE; replace {TASK})"
