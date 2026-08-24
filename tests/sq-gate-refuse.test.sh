@@ -179,7 +179,7 @@ SH
 run_spawn() {
   local cwd=$1 home=$2 id=$3 proj=$4 pane=$5 fakebin=$6; shift 6
   mkdir -p "$home/data/$id"
-  printf 'brief\n' > "$home/data/$id/brief.md"
+  printf 'brief\necho done >> %s.status\n' "$home/data/$id" > "$home/data/$id/brief.md"
   ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
       "SQUAD_ROOT_OVERRIDE=" "SQUAD_BASE=$home" \
       "SQUAD_STATE_OVERRIDE=$home/state" "SQUAD_DATA_OVERRIDE=$home/data" \

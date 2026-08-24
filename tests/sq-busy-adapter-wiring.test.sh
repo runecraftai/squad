@@ -51,7 +51,7 @@ make_spawn_case() {  # <name> <harness> <id>
   fm_git_worktree "$proj" "$wt" "wt-$name"
   touch "$home/state/.last-sentry-beat"
   mkdir -p "$home/data/$id"
-  printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+  printf 'brief for %s\necho done >> %s.status\n' "$id" "$home/data/$id" > "$home/data/$id/brief.md"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin"
 }
 

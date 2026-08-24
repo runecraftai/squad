@@ -416,7 +416,7 @@ make_seeded_home() {
   mkdir -p "$home/bin" "$home/data"
   printf '# Squad\n' > "$home/AGENTS.md"
   printf '%s\n' "$id" > "$home/.sq-xo-home"
-  printf 'charter\n' > "$home/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$home/data" > "$home/data/charter.md"
 }
 
 # spawn_XO <world> <id> <home> [explicit-harness]
@@ -902,7 +902,7 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   fakebin=$(make_launch_capturing_tmux "$w/tmux-crew")
   fm_git_worktree "$proj" "$wt" "wt-crew"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state"
-  printf 'brief\n' > "$home/data/$id/brief.md"
+  printf 'brief\necho done >> %s.status\n' "$home/data/$id" > "$home/data/$id/brief.md"
   : > "$launchlog"
   PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_BASE="$home" \

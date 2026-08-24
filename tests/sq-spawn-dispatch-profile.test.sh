@@ -61,7 +61,7 @@ make_spawn_case() {
   touch "$home/state/.last-sentry-beat"
   for id in "$@"; do
     mkdir -p "$home/data/$id"
-    printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+    printf 'brief for %s\necho done >> %s.status\n' "$id" "$home/data/$id" > "$home/data/$id/brief.md"
   done
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$launchlog"
 }
@@ -77,7 +77,7 @@ make_seeded_XO_home() {
   mkdir -p "$home/bin" "$home/data"
   printf '# Squad\n' > "$home/AGENTS.md"
   printf '%s\n' "$id" > "$home/.sq-xo-home"
-  printf 'charter for %s\n' "$id" > "$home/data/charter.md"
+  printf 'charter for %s\necho done >> %s.status\n' "$id" "$home/data" > "$home/data/charter.md"
 }
 
 run_spawn() {

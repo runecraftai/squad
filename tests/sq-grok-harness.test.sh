@@ -40,7 +40,7 @@ make_spawn_case() {
   grok_home="$case_dir/grok"
   id="grok-$name-x1"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$grok_home"
-  printf 'brief\n' > "$home/data/$id/brief.md"
+  printf 'brief\necho done >> %s.status\n' "$home/data/$id" > "$home/data/$id/brief.md"
   fm_git_worktree "$proj" "$wt" "sq/$id"
   touch "$home/state/.last-sentry-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$grok_home|$id"

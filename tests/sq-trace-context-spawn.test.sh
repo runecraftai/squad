@@ -98,7 +98,7 @@ make_spawn_case() {
   touch "$home/state/.last-sentry-beat"
   id=$name-z1
   mkdir -p "$home/data/$id"
-  printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+  printf 'brief for %s\necho done >> %s.status\n' "$id" "$home/data/$id" > "$home/data/$id/brief.md"
   printf '%s\n' "$home|$proj|$wt|$fakebin|$launchlog|$id"
 }
 
@@ -186,12 +186,12 @@ run_two_level() {
   mkdir -p "$sm/bin" "$sm/data"
   printf '# Squad\n' > "$sm/AGENTS.md"
   printf 'sm-%s\n' "$name" > "$sm/.sq-xo-home"
-  printf 'charter\n' > "$sm/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$sm/data" > "$sm/data/charter.md"
 
   # Spawn 1: the primary launches the XO; capture what it injects.
   sm_id="sm-$name"
   mkdir -p "$prim/data/$sm_id"
-  printf 'charter brief\n' > "$prim/data/$sm_id/brief.md"
+  printf 'charter brief\necho done >> %s.status\n' "$prim/data/$sm_id" "$prim/data/$sm_id" > "$prim/data/$sm_id/brief.md"
   smlog="$base/sm-launch.log"
   smfake=$(make_spawn_fakebin "$base/sm-fake")
   : > "$smlog"
@@ -215,7 +215,7 @@ run_two_level() {
   wwt="$base/wwt"
   fm_git_worktree "$wproj" "$wwt" "wt-$name"
   mkdir -p "$sm/state" "$sm/projects" "$sm/data/$worker_id"
-  printf 'worker brief\n' > "$sm/data/$worker_id/brief.md"
+  printf 'worker brief\necho done >> %s.status\n' "$sm/data/$worker_id" "$sm/data/$worker_id" > "$sm/data/$worker_id/brief.md"
   touch "$sm/state/.last-sentry-beat"
   start_trace_session "$sm" "$TL_ENV_TC"
   wlog="$base/worker-launch.log"
@@ -352,13 +352,13 @@ test_duplicate_XO_spawn_does_not_converge_trace_context() {
   log="$base/launch.log"
   mkdir -p "$prim/config" "$prim/data/$id" "$prim/state" "$prim/projects"
   : > "$prim/config/trace-context"
-  printf 'charter brief\n' > "$prim/data/$id/brief.md"
+  printf 'charter brief\necho done >> %s.status\n' "$prim/data/$id" "$prim/data/$id" > "$prim/data/$id/brief.md"
   touch "$prim/state/.last-sentry-beat"
   start_trace_session "$prim"
   mkdir -p "$sm/bin" "$sm/data"
   printf '# Squad\n' > "$sm/AGENTS.md"
   printf '%s\n' "$id" > "$sm/.sq-xo-home"
-  printf 'charter\n' > "$sm/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$sm/data" > "$sm/data/charter.md"
   fake=$(make_spawn_fakebin "$base/fake")
 
   out=$(env -u SQUAD_TRACE_CONTEXT \
@@ -498,8 +498,8 @@ test_two_routed_tasks_through_one_XO_root_distinct_traces() {
   fm_git_worktree "$proj_a" "$wt_a" wt-routed-a
   fm_git_worktree "$proj_b" "$wt_b" wt-routed-b
   mkdir -p "$sm/data/$id_a" "$sm/data/$id_b"
-  printf 'brief a\n' > "$sm/data/$id_a/brief.md"
-  printf 'brief b\n' > "$sm/data/$id_b/brief.md"
+  printf 'brief a\necho done >> %s.status\n' "$sm/data/$id_a" "$sm/data/$id_a" > "$sm/data/$id_a/brief.md"
+  printf 'brief b\necho done >> %s.status\n' "$sm/data/$id_b" "$sm/data/$id_b" > "$sm/data/$id_b/brief.md"
   log_a="$base/launch-a.log"
   log_b="$base/launch-b.log"
 

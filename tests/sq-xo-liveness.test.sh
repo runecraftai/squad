@@ -336,7 +336,7 @@ add_sm_home() {
   mkdir -p "$home/bin" "$home/data" "$home/state" "$home/config" "$home/projects"
   printf '%s\n' "$id" > "$home/.sq-xo-home"
   printf '# Squad\n' > "$home/AGENTS.md"
-  printf 'charter\n' > "$home/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$home/data" > "$home/data/charter.md"
   {
     printf 'window=%s\n' "$window"
     printf 'kind=xo\n'

@@ -115,7 +115,7 @@ seed_marked_home() {
   local w=$1 id=$2 commit=$3
   add_sm_worktree "$w" "$id" "$commit"
   mkdir -p "$w/$id/data" "$w/$id/state" "$w/$id/config" "$w/$id/projects"
-  printf 'charter\n' > "$w/$id/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$w/$id/data" > "$w/$id/data/charter.md"
 }
 
 # run_ff <dir> <base>: drive the shared ff helper in THIS shell (output to a file,
@@ -715,7 +715,7 @@ test_spawn_fast_forwards_before_launch() {
   git -C "$w/main" worktree add -q --detach "$w/sm" "$c1"
   printf 'sm\n' > "$w/sm/.sq-xo-home"
   mkdir -p "$w/sm/data"
-  printf 'charter\n' > "$w/sm/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$w/sm/data" > "$w/sm/data/charter.md"
   bump_primary "$w" instr
   c2=$(head_of "$w/main")
   [ "$(head_of "$w/sm")" = "$c1" ] || fail "precondition: home should start behind the primary"
@@ -749,7 +749,7 @@ test_spawn_warns_when_sync_skipped_before_launch() {
   git -C "$w/main" worktree add -q --detach "$w/sm" "$c1"
   printf 'sm\n' > "$w/sm/.sq-xo-home"
   mkdir -p "$w/sm/data"
-  printf 'charter\n' > "$w/sm/data/charter.md"
+  printf 'charter\necho done >> %s.status\n' "$w/sm/data" > "$w/sm/data/charter.md"
   bump_primary "$w" instr
   printf 'uncommitted local edit\n' >> "$w/sm/AGENTS.md"
   before=$(head_of "$w/sm")
