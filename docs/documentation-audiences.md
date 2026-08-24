@@ -17,6 +17,13 @@ The knowledge-placement policy is owned by [`squad-coding-guidelines`](../.agent
 Task-specific chronology, delivery transcripts, temporary paths, branches, failed hypotheses, and one-off process identifiers stay in private task reports or PR evidence by default.
 Before removing that evidence from a tracked page, distill every unique current fact into its classified owner and retain a focused regression pointer.
 
+## Brazilian Portuguese (pt-BR) translations
+
+Translated docs live under `docs/pt-BR/` mirroring the English `docs/` structure.
+Each pt-BR file is classified in `documentation-audiences.json` with the same audience as its English original.
+The English original remains authoritative; report discrepancies rather than editing the original.
+`README.pt-BR.md` provides the user-facing Portuguese entry point with a language switcher linking to `README.md`.
+
 Run the structural check directly with:
 
 ```sh
