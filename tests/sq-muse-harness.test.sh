@@ -119,7 +119,7 @@ make_spawn_case() {
   id="muse-$name-x1"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" \
     "$home/xdgconfig" "$home/xdgdata"
-  printf 'brief\n' > "$home/data/$id/brief.md"
+  printf 'brief\necho done >> %s.status\n' "$home/data/$id" > "$home/data/$id/brief.md"
   fm_git_worktree "$proj" "$wt" "sq/$id"
   touch "$home/state/.last-sentry-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$id"
@@ -371,7 +371,7 @@ test_spawn_refuses_XO() {
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
   id="muse-XO-x1"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$case_dir/muse"
-  printf 'charter\n' > "$home/data/$id/brief.md"
+  printf 'charter\necho done >> %s.status\n' "$home/data/$id" > "$home/data/$id/brief.md"
   out=$(cd "$case_dir" && SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$home" \
     SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
     SQUAD_PROJECTS_OVERRIDE="$home/projects" SQUAD_CONFIG_OVERRIDE="$home/config" \

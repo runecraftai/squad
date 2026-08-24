@@ -46,6 +46,7 @@ write_brief() {  # <home> <id> [<recorded-mode>]
   {
     printf 'You are an operator.\n\n# Definition of done\n'
     [ -z "$mode" ] || printf 'Delivery contract: mode=%s\n' "$mode"
+    echo "echo done >> $home/data/$id.status"
   } > "$home/data/$id/brief.md"
 }
 

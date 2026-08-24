@@ -1329,6 +1329,14 @@ else
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
+# Brief status instruction enforcement: refuse to launch if the brief
+# lacks the status reporting instruction. Operators that cannot report
+# status leave Squad blind to their state.
+if ! grep -q '>>.*\.status' "$BRIEF"; then
+  echo "error: brief $BRIEF is missing the status reporting instruction (>> ...status). Regenerate with bin/sq-brief.sh or add: echo '{state}: {note}' >> '<state-file>.status'" >&2
+  exit 1
+fi
+
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
   case "$1" in
     drill) echo 3 ;;

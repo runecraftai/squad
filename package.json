@@ -12,5 +12,8 @@
   "packageManager": "bun@1.2.0",
   "devDependencies": {
     "turbo": "^2.0.0"
+  },
+  "dependencies": {
+    "@runecraft/graphify-pi": "^0.1.0"
   }
 }

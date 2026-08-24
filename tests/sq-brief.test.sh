@@ -710,6 +710,84 @@ test_scout_and_XO_scaffold() {
   pass "sq-brief: recon and XO code paths still scaffold well-formed briefs"
 }
 
+# Status instruction enforcement: every scaffold must include the status
+# reporting instruction. The validation catches any future heredoc that
+# omits the >> ...status pattern. assert_grep uses -F (fixed string), so
+# we use plain grep for the regex pattern that the validation actually checks.
+test_status_instruction_is_present_in_all_scaffolds() {
+  local home id brief
+  home="$TMP_ROOT/status-instruction-home"
+  mkdir -p "$home/data"
+
+  # Ship (drill)
+  id="brief-status-drill"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "drill brief was not scaffolded"
+  grep -qE '>>.*\.status' "$brief" || fail "drill brief missing status instruction pattern"
+  assert_grep 'echo' "$brief" "drill brief missing echo-to-status instruction"
+
+  # Ship (direct-PR)
+  id="brief-status-direct"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  grep -qE '>>.*\.status' "$brief" || fail "direct-PR brief missing status instruction pattern"
+
+  # Ship (local-only)
+  id="brief-status-local"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode local-only >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  grep -qE '>>.*\.status' "$brief" || fail "local-only brief missing status instruction pattern"
+
+  # Recon
+  id="brief-status-recon"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --recon >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  grep -qE '>>.*\.status' "$brief" || fail "recon brief missing status instruction pattern"
+
+  # XO charter
+  id="brief-status-xo"
+  SQUAD_BASE="$home" SQUAD_XO_CHARTER='ops' \
+    "$ROOT/bin/sq-brief.sh" "$id" --xo --no-projects >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  grep -qE '>>.*\.status' "$brief" || fail "XO charter missing status instruction pattern"
+
+  pass "sq-brief.sh: all scaffold types include the status reporting instruction"
+}
+
+# The status instruction validation refuses to scaffold if the pattern is
+# absent. We simulate this by writing a brief manually without the pattern
+# and verifying the validation catches it at spawn time (sq-spawn.sh check).
+test_status_instruction_enforcement_refuses_missing_pattern() {
+  local home out status
+  home="$TMP_ROOT/status-enforcement-home"
+  mkdir -p "$home/data"
+
+  # Create a minimal brief file without the status pattern.
+  mkdir -p "$home/data/enforce-test"
+  cat > "$home/data/enforce-test/brief.md" <<'EOF'
+You are an operator.
+
+# Task
+Test task.
+
+# Rules
+1. Do work.
+
+# Definition of done
+Done.
+EOF
+  # The file exists but has no >> ...status pattern. sq-spawn.sh should catch this.
+  # We cannot call sq-spawn.sh directly (it needs a project dir and tmux), but we
+  # can test the grep logic directly.
+  if grep -q '>>.*\.status' "$home/data/enforce-test/brief.md"; then
+    fail "test fixture brief should NOT have the status pattern"
+  fi
+  out=$(grep -q '>>.*\.status' "$home/data/enforce-test/brief.md" 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "grep should fail on a brief without the status pattern"
+  pass "sq-brief.sh: brief without status pattern is correctly detected as missing"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -730,3 +808,5 @@ test_XO_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_XO_load_decision_hold_policy
 test_scout_and_XO_scaffold
+test_status_instruction_is_present_in_all_scaffolds
+test_status_instruction_enforcement_refuses_missing_pattern

@@ -140,7 +140,7 @@ make_spawn_case() {
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$home/.kimi-code"
   printf '# Kimi test config\ndefault_model = "test"\n' > "$home/.kimi-code/config.toml"
-  printf 'brief for kimi\n' > "$home/data/$id/brief.md"
+  printf 'brief for kimi\necho done >> %s.status\n' "$home/data/$id" > "$home/data/$id/brief.md"
   printf 'kimi\n' > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   touch "$home/state/.last-sentry-beat"

@@ -77,7 +77,7 @@ make_settle_case() {
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_git_init_commit "$stale"
   mkdir -p "$home/data/$id"
-  printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+  printf 'brief for %s\necho done >> %s.status\n' "$id" "$home/data/$id" > "$home/data/$id/brief.md"
   touch "$home/state/.last-sentry-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$stale|$fakebin|$countfile|$stale_reads"
 }
