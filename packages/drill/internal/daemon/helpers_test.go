@@ -109,8 +109,12 @@ func startTestDaemon(t *testing.T) (*paths.Paths, *db.DB) {
 		errCh <- RunWithResources(p, d)
 	}()
 
-	// Wait for socket to appear.
-	deadline := time.Now().Add(3 * time.Second)
+	// Wait for socket to appear. Real daemon startup includes a ps-based
+	// orphan-process sweep (see procreap.Sweep), which can take several
+	// seconds on a loaded CI host, so this must use the same production
+	// startup budget as a real daemon launch rather than a short constant
+	// (see daemonStartTimeout).
+	deadline := time.Now().Add(daemonStartTimeout())
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(p.Socket()); err == nil {
 			break
@@ -127,8 +131,8 @@ func startTestDaemon(t *testing.T) (*paths.Paths, *db.DB) {
 		}
 		select {
 		case <-errCh:
-		case <-time.After(3 * time.Second):
-			t.Error("daemon did not stop within 3s")
+		case <-time.After(daemonStopTimeout()):
+			t.Error("daemon did not stop within " + daemonStopTimeout().String())
 		}
 	})
 
@@ -216,7 +220,9 @@ func startTestDaemonWithSteps(t *testing.T, sf StepFactory) (*paths.Paths, *db.D
 		errCh <- RunWithOptions(p, d, sf)
 	}()
 
-	deadline := time.Now().Add(3 * time.Second)
+	// See startTestDaemon: real daemon startup includes a ps-based orphan
+	// sweep that can take several seconds under CI load.
+	deadline := time.Now().Add(daemonStartTimeout())
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(p.Socket()); err == nil {
 			break
@@ -232,8 +238,8 @@ func startTestDaemonWithSteps(t *testing.T, sf StepFactory) (*paths.Paths, *db.D
 		}
 		select {
 		case <-errCh:
-		case <-time.After(3 * time.Second):
-			t.Error("daemon did not stop within 3s")
+		case <-time.After(daemonStopTimeout()):
+			t.Error("daemon did not stop within " + daemonStopTimeout().String())
 		}
 	})
 

@@ -315,8 +315,14 @@ cat > "$DOCTOR_BIN/uname" <<'SH'
 printf 'Linux\n'
 SH
 chmod +x "$DOCTOR_BIN/uname"
+# Create git and jq stubs for the first doctor call, so the test focuses on
+# detecting the missing herdr/tasks-axi/fob/harness tools, not system
+# availability of git and jq.
+ln -sf "$(command -v git)" "$DOCTOR_BIN/git"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/jq"
+chmod +x "$DOCTOR_BIN/jq"
 set +e
-out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROOT/bin/sq-remote-doctor.sh" 2>&1)
+out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN" "$ROOT/bin/sq-remote-doctor.sh" 2>&1)
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "the remote doctor passed with a missing required tool"
@@ -324,11 +330,9 @@ assert_contains "$out" 'required herdr=MISSING' "the remote doctor did not mark 
 assert_contains "$out" 'required tasks-axi=MISSING' "the remote doctor did not mark every missing required tool"
 assert_contains "$out" 'required tools do not resolve on the remote runtime PATH: herdr tasks-axi fob harness' "the remote doctor did not name the missing tools"
 assert_contains "$out" '.local/bin' "the remote doctor did not offer the wrapper escape hatch"
-ln -sf "$(command -v git)" "$DOCTOR_BIN/git"
 # The direct doctor fixture needs the complete required tool set. These stubs
 # exercise resolution only; the dedicated doctor suite owns worker and Herdr
 # lifecycle behavior against controlled launchctl fixtures.
-printf '#!/usr/bin/env bash\nexit 0\n' > "$DOCTOR_BIN/jq"
 printf '#!/usr/bin/env bash\nprintf "{\\\"server\\\":{\\\"running\\\":false}}\\n"\n' > "$DOCTOR_BIN/herdr"
 cat > "$DOCTOR_BIN/tasks-axi" <<'SH'
 #!/usr/bin/env bash
