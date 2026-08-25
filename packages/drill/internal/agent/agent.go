@@ -313,7 +313,13 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	case 1:
 		return parsed[0], nil
 	default:
-		return nil, fmt.Errorf("multiple JSON code fences found in output")
+		// Multiple fences parsed as valid JSON. Pick the last one
+		// deterministically: real review output places its findings
+		// payload last after any illustrative examples, so the final
+		// valid fence is the one the agent meant. This fixes the
+		// "multiple JSON code fences found in output" false failure
+		// when review agents wrap explanation text in code fences.
+		return parsed[len(parsed)-1], nil
 	}
 
 	if bare, err := lastBareJSONObject(text, validationSchema); err == nil && bare != nil {

@@ -1014,7 +1014,9 @@ func TestFinalizeTextResult_WithSchemaParsesCodexRealWorldOutput(t *testing.T) {
 	}
 }
 
-func TestFinalizeTextResult_WithSchemaRejectsAmbiguousFencedJSON(t *testing.T) {
+func TestFinalizeTextResult_ResolvesAmbiguousFencedJSON(t *testing.T) {
+	// Two valid JSON fences: the fix picks the last one deterministically
+	// instead of failing with "multiple JSON code fences found in output".
 	text := strings.Join([]string{
 		"```json",
 		`{"first":true}`,
@@ -1023,12 +1025,133 @@ func TestFinalizeTextResult_WithSchemaRejectsAmbiguousFencedJSON(t *testing.T) {
 		`{"second":true}`,
 		"```",
 	}, "\n")
+	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct{ First, Second bool }
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if !got.Second || got.First {
+		t.Errorf("expected last fence (second) to be selected, got %v", got)
+	}
+}
+
+func TestFinalizeTextResult_MultipleFencesPicksLargestValidJSON(t *testing.T) {
+	// Three valid fences with a real findings payload last.
+	// The parser selects the last valid fence, matching the real review
+	// pattern where illustrative examples precede the actual findings.
+	reviewOutput := strings.Join([]string{
+		"Here is my review:",
+		"",
+		"```json",
+		`{"status": "example"}`,
+		"```",
+		"",
+		"After further analysis:",
+		"",
+		"```json",
+		`{"status": "another example"}`,
+		"```",
+		"",
+		"Final findings:",
+		"",
+		"```json",
+		`{"findings": [{"rule": "go-errcheck", "severity": "error"}], "risk_assessment": {"risk_level": "high"}}`,
+		"```",
+	}, "\n")
+	result, err := finalizeTextResult("pi", reviewOutput, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct {
+		Findings []struct{ Rule string `json:"rule"` } `json:"findings"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Rule != "go-errcheck" {
+		t.Errorf("expected last fence with findings to be selected, got %v", got)
+	}
+}
+
+func TestFinalizeTextResult_ZeroValidFencedJSONFallsThrough(t *testing.T) {
+	// Two fences, neither valid JSON — the error propagates as before.
+	text := strings.Join([]string{
+		"```json",
+		`not-valid-json`,
+		"```",
+		"```json",
+		`also-not-valid`,
+		"```",
+	}, "\n")
 	_, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
 	if err == nil {
-		t.Fatal("expected ambiguous fenced JSON to fail")
+		t.Fatal("expected parse failure for non-JSON fences")
 	}
-	if !strings.Contains(err.Error(), "multiple JSON code fences") {
-		t.Fatalf("expected multiple JSON code fences error, got %v", err)
+	// Should fail with a JSON syntax error, not a multi-fence error.
+	if strings.Contains(err.Error(), "multiple JSON code fences") {
+		t.Fatalf("should not get multiple-fences error when none are valid JSON: %v", err)
+	}
+}
+
+func TestFinalizeTextResult_MalformedJSONInChosenFenceSkipsToNext(t *testing.T) {
+	// First fence has JSON syntax error, second fence is valid.
+	// The parser skips the malformed one and returns the valid fence.
+	text := strings.Join([]string{
+		"```json",
+		`{"broken": ,}`,
+		"```",
+		"```json",
+		`{"valid": true}`,
+		"```",
+	}, "\n")
+	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct{ Valid bool }
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if !got.Valid {
+		t.Errorf("expected valid fence to be selected, got %v", got)
+	}
+}
+
+func TestFinalizeTextResult_RegressionReviewWithExtraFences(t *testing.T) {
+	// Sanitized regression fixture mimicking a real pi review agent output
+	// that triggered the bug: the review findings JSON is valid, but the
+	// agent also emitted fenced explanation blocks.
+	text := strings.Join([]string{
+		"Here is my review:",
+		"",
+		"I found several issues during the code review.",
+		"",
+		"```bash",
+		"# Example of the problematic pattern",
+		"go vet ./...",
+		"```",
+		"",
+		"My findings:",
+		"",
+		"```json",
+		`{"findings": [{"rule": "go-errcheck", "severity": "error", "message": "unchecked error"}], "risk_assessment": {"risk_level": "high"}}`,
+		"```",
+	}, "\n")
+	result, err := finalizeTextResult("pi", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error on regression fixture: %v", err)
+	}
+	var got struct {
+		Findings []struct{ Severity string `json:"severity"` } `json:"findings"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Severity != "error" {
+		t.Errorf("expected findings from last fence, got %v", got)
 	}
 }
 
