@@ -2584,6 +2584,9 @@ const ctx = { ui };
 const fire = async (event, payload = {}) => {
   for (const handler of handlers.get(event) ?? []) await handler(payload, ctx);
 };
+const fireWithContext = async (event, context, payload = {}) => {
+  for (const handler of handlers.get(event) ?? []) await handler(payload, context);
+};
 const reset = () => {
   ui.workingVisible.length = 0;
   ui.widgetOps.length = 0;
@@ -2764,6 +2767,48 @@ for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
   check(ui.widgets.size === 0, `session_start(${reason}) installed a stale widget`);
   check(liveTimers === 0, `session_start(${reason}) left ${liveTimers} animation timers`);
 }
+
+// --- Stale lifecycle contexts are harmless, while unrelated UI errors still surface -
+const staleContextError =
+  "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx.";
+const staleContext = {
+  ui: {
+    setWidget() {
+      throw new Error(staleContextError);
+    },
+    setWorkingVisible() {
+      throw new Error(staleContextError);
+    },
+  },
+};
+reset();
+await fire("agent_start");
+await fireWithContext("session_shutdown", staleContext, { reason: "reload" });
+check(liveTimers === 1, "stale session_shutdown unexpectedly altered the active widget before cleanup");
+ui.setWidget(CALM_WORKING_SHIP_WIDGET_KEY, undefined);
+check(liveTimers === 0 && ui.widgets.size === 0, "stale shutdown regression cleanup fixture leaked its widget");
+await fireWithContext("agent_start", staleContext);
+await fireWithContext("agent_settled", staleContext);
+check(liveTimers === 0, "stale agent lifecycle events started an animation timer");
+const unrelatedContext = {
+  ui: {
+    setWidget() {
+      throw new Error("unrelated Calm UI failure");
+    },
+    setWorkingVisible() {},
+  },
+};
+let unrelatedError;
+try {
+  await fireWithContext("agent_start", unrelatedContext);
+} catch (error) {
+  unrelatedError = error;
+}
+check(
+  unrelatedError instanceof Error && unrelatedError.message === "unrelated Calm UI failure",
+  "Calm swallowed an unrelated UI error while handling a lifecycle event",
+);
+await fire("agent_settled");
 
 // --- Toggling Calm off during an active run restores the stock row immediately -----
 await fire("session_start", { reason: "startup" });
