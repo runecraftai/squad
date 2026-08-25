@@ -135,6 +135,14 @@ export default function (pi: ExtensionAPI) {
   // Pi session starts at the normal initial position. Never module-global.
   const workingShipAnimation = createCalmWorkingShipAnimation();
 
+  // Pi can deliver final lifecycle events with a UI context invalidated by session
+  // replacement or reload. Those events must not crash the process, but unrelated UI
+  // failures must remain visible to Pi.
+  const isInactiveUiContextError = (error: unknown): boolean => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.startsWith("This extension ctx is stale after session replacement or reload");
+  };
+
   // Single owner of Calm's working-row presentation choice. The widget is only created
   // or removed on a real transition, so repeated starts cannot duplicate its timer.
   const applyWorkingPresentation = (
@@ -142,17 +150,21 @@ export default function (pi: ExtensionAPI) {
     forceStockVisibility = false,
   ): void => {
     const showShip = agentRunActive && calmPresentationIsActive();
-    if (showShip !== workingShipShown) {
-      workingShipShown = showShip;
-      ui.setWidget(
-        CALM_WORKING_SHIP_WIDGET_KEY,
-        showShip
-          ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
-          : undefined,
-      );
-      ui.setWorkingVisible(!showShip);
-    } else if (forceStockVisibility && !showShip) {
-      ui.setWorkingVisible(true);
+    try {
+      if (showShip !== workingShipShown) {
+        workingShipShown = showShip;
+        ui.setWidget(
+          CALM_WORKING_SHIP_WIDGET_KEY,
+          showShip
+            ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
+            : undefined,
+        );
+        ui.setWorkingVisible(!showShip);
+      } else if (forceStockVisibility && !showShip) {
+        ui.setWorkingVisible(true);
+      }
+    } catch (error) {
+      if (!isInactiveUiContextError(error)) throw error;
     }
   };
 
