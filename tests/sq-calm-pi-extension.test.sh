@@ -2784,25 +2784,23 @@ for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
 // --- Stale lifecycle contexts are harmless, while unrelated UI errors still surface -
 const staleContextError =
   "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx.";
-const staleContext = {
-  ui: {
-    setWidget() {
-      throw new Error(staleContextError);
-    },
-    setWorkingVisible() {
-      throw new Error(staleContextError);
-    },
+const staleContext = {};
+Object.defineProperty(staleContext, "ui", {
+  get() {
+    throw new Error(staleContextError);
   },
-};
+});
 reset();
+await fire("agent_start");
+await fireWithContext("agent_settled", staleContext);
+check(liveTimers === 1, "stale agent_settled unexpectedly altered the active widget before cleanup");
+await fire("agent_settled");
+check(liveTimers === 0 && ui.widgets.size === 0, "active agent_settled did not retry cleanup after a stale context");
 await fire("agent_start");
 await fireWithContext("session_shutdown", staleContext, { reason: "reload" });
 check(liveTimers === 1, "stale session_shutdown unexpectedly altered the active widget before cleanup");
-ui.setWidget(CALM_WORKING_SHIP_WIDGET_KEY, undefined);
-check(liveTimers === 0 && ui.widgets.size === 0, "stale shutdown regression cleanup fixture leaked its widget");
-await fireWithContext("agent_start", staleContext);
-await fireWithContext("agent_settled", staleContext);
-check(liveTimers === 0, "stale agent lifecycle events started an animation timer");
+await fire("session_shutdown", { reason: "reload" });
+check(liveTimers === 0 && ui.widgets.size === 0, "active session_shutdown did not retry cleanup after a stale context");
 const unrelatedContext = {
   ui: {
     setWidget() {

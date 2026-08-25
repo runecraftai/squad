@@ -152,7 +152,6 @@ export default function (pi: ExtensionAPI) {
     const showShip = agentRunActive && calmPresentationIsActive();
     try {
       if (showShip !== workingShipShown) {
-        workingShipShown = showShip;
         ui.setWidget(
           CALM_WORKING_SHIP_WIDGET_KEY,
           showShip
@@ -160,6 +159,7 @@ export default function (pi: ExtensionAPI) {
             : undefined,
         );
         ui.setWorkingVisible(!showShip);
+        workingShipShown = showShip;
       } else if (forceStockVisibility && !showShip) {
         ui.setWorkingVisible(true);
       }
@@ -404,7 +404,6 @@ export default function (pi: ExtensionAPI) {
     setCalmStockExportRendering(false);
     publishPresentationState();
     agentRunActive = false;
-    workingShipShown = false;
     // A genuine new session lifetime starts the boat at the normal initial position.
     workingShipAnimation.reset();
     applyWorkingPresentation(ctx.ui, true);
@@ -443,15 +442,25 @@ export default function (pi: ExtensionAPI) {
     applyWorkingPresentation(ctx.ui);
   });
 
+  // The lifecycle context itself can be stale, so ctx.ui must be read inside the
+  // same narrow stale-error boundary as the presentation calls.
+  const applyLifecycleWorkingPresentation = (ctx: { ui: ExtensionUIContext }): void => {
+    try {
+      applyWorkingPresentation(ctx.ui);
+    } catch (error) {
+      if (!isInactiveUiContextError(error)) throw error;
+    }
+  };
+
   // agent_settled is emitted from a finally block, so it also covers abort and failure.
   pi.on("agent_settled", (_event, ctx) => {
     agentRunActive = false;
-    applyWorkingPresentation(ctx.ui);
+    applyLifecycleWorkingPresentation(ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     agentRunActive = false;
-    applyWorkingPresentation(ctx.ui);
+    applyLifecycleWorkingPresentation(ctx);
   });
 
   pi.registerCommand("calm", {
