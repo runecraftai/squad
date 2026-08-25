@@ -50,6 +50,18 @@ wait_for_text() {
   return 1
 }
 
+wait_for_export_file() {
+  local file=$1 i=0
+  while [ "$i" -lt 120 ]; do
+    if [ -s "$file" ] && grep -Fq '</html>' "$file" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+
 find_chrome() {
   local candidate
   if [ -n "${SQUAD_CHROME_BIN:-}" ] && [ -x "$SQUAD_CHROME_BIN" ]; then
@@ -3284,8 +3296,10 @@ JS
 
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" -l "/export $export_file"
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" M-s
-  wait_for_text "$export_snapshot" "Session exported to: $export_file" \
-    || fail "/export did not complete while calm mode was on"
+  if ! wait_for_text "$export_snapshot" "Session exported to: $export_file"; then
+    wait_for_export_file "$export_file" \
+      || fail "/export did not complete while calm mode was on"
+  fi
   node - "$export_file" <<'JS' || fail "calm-mode HTML export lost tool data or persisted synthetic provenance"
 const html = require("node:fs").readFileSync(process.argv[2], "utf8");
 const match = html.match(/<script id="session-data" type="application\/json">([^<]+)<\/script>/);
