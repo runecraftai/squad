@@ -156,6 +156,7 @@ Pi's documented custom working-indicator frames are static and width-blind, so t
 `.pi/extensions/sq-calm.ts` remains the sole owner of the presentation choice and the only caller of `setWorkingVisible()`, while `.pi/extensions/lib/sq-calm-working-ship.ts` owns the sprite geometry, the bounce track, and the widget.
 Visibility follows `agent_start` through `agent_settled` rather than turns or tool calls.
 Pi emits `agent_settled` from a `finally` block once a run will not continue automatically, so retries, automatic continuations, queued follow-ups, and compaction inside one run never remove the boat, while settle, abort, and failure all reach the same cleanup.
+If Pi delivers `agent_settled` or `session_shutdown` with a UI context invalidated by session replacement or reload, Calm suppresses only the identified stale-context cleanup failure; unrelated UI errors still propagate, and active-context cleanup remains unchanged.
 Repeated `agent_start` events inside one run are idempotent, and Pi disposes the previous component before installing a replacement under the same key and when it clears extension widgets, so the frame timer cannot duplicate or outlive the widget.
 Pi's above-editor widget container reserves one spacer row whether or not a widget is present, so removing the boat leaves no residual blank row.
 
@@ -261,6 +262,7 @@ Only Pi's Calm presentation implementation changed; every producer and non-Pi tr
 ## Regression coverage
 
 `tests/sq-calm-pi-extension.test.sh` compares wrapped and stock renderers, verifies all seven built-ins plus `sq_watch_arm_pi`, exercises redraw of already-rendered tool, thinking, current operational-user, and legacy synthetic rows, and covers every policy class.
+It also exercises stale UI contexts on final lifecycle callbacks and verifies that unrelated UI failures remain visible.
 It covers persisted preference restoration across every session-start reason and a real restart, proves the working-ship presentation and Calm-off stock `Working...` row through a delayed deterministic provider, asserts no Calm status row, verifies operational messages remain exact ordinary user-role session entries and complete exports, and drives genuine 100 by 44, 160 by 36, and 180 by 44 terminal fixtures.
 A native deterministic `/skill:reporting` turn produces thinking, tool-call, and tool-result blocks, asserts that the collapsed skill-to-final gap equals the two-row visible-only baseline, expands and re-collapses original thinking, restores Calm-off rendering, verifies persisted hidden history, and repeats the geometry assertion after restart with `terminal.clearOnShrink` explicitly off.
 The operational provider path covers Calm loaded on, loaded off, default preference, extension absent, exact sentry delivery, narrow bare-marker legacy input, persisted restart replay, a genuine commander prompt, and adjacent notifications coalesced into one intended processing turn.
