@@ -998,11 +998,11 @@ harness_to_executable() {
   esac
 }
 
-# Validate that every configured model id in crew-dispatch resolves to exactly
-# one model via the harness's own listing surface. Zero matches or multiple
-# prefix matches are both actionable: the former means the id was removed or
-# mistyped, the latter means the id is ambiguous (the silent fuzzy-match bug
-# this check was introduced to prevent).
+# Validate that every configured model id in crew-dispatch resolves via the
+# harness's own listing surface. Zero matches are actionable because the id was
+# removed or mistyped, while multiple prefix matches are actionable only when
+# none is an exact provider/model ID match (the silent fuzzy-match bug this
+# check was introduced to prevent).
 # A probe that cannot run is reported as explicit uncertainty rather than a hard
 # failure, because the check is defence-in-depth and the harness is still usable
 # when the listing surface is unreachable.
