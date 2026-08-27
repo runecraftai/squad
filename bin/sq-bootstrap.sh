@@ -1008,7 +1008,7 @@ harness_to_executable() {
 # when the listing surface is unreachable.
 crew_validate_model_existence() {
   local file=$1
-  local models harness exec probe_out rc total_matches pattern
+  local models harness exec probe_out rc total_matches pattern line provider model_id
   models=$(jq -r '[.. | objects | select(.model != null) | select(.harness == "pi" or .harness == "pi-signed" or .harness == "opencode") | .model] | .[]' "$file" 2>/dev/null) || return 0
   [ -n "$models" ] || return 0
   local -a seen=()
@@ -1044,9 +1044,11 @@ crew_validate_model_existence() {
       # is not ambiguous when the exact ID exists in the listing.
       exact_match=false
       while IFS= read -r line; do
-        provider=$(echo "$line" | awk '{print $1}')
-        model_id=$(echo "$line" | awk '{print $2}')
-        if [ "$provider/$model_id" = "$pattern" ]; then
+        read -r provider model_id _ <<< "$line"
+        # Accept both the current two-column form (provider model) and a
+        # provider/model ID presented as the first column by older/future
+        # listing renderers.
+        if [ "$provider/$model_id" = "$pattern" ] || [ "$provider" = "$pattern" ]; then
           exact_match=true
           break
         fi
