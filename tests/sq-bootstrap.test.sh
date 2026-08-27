@@ -142,7 +142,8 @@ SH
 
 # A fake pi binary that simulates --list-models for model-existence tests.
 # Exact-match patterns return one line; the glm-5 prefix pattern returns
-# three (the silent fuzzy-match bug); everything else returns zero lines.
+# three (the silent fuzzy-match bug); shared-model returns the same bare ID from
+# two providers; everything else returns zero lines.
 # Defined ahead of every test function that calls it (crew-dispatch
 # validation and model-existence tests both shadow pi with this stub), since
 # top-level test invocations run in file order and a call site preceding this
@@ -157,6 +158,7 @@ if [ "${1:-}" = --list-models ]; then
     opencode-go/deepseek-v4-pro) printf '%s\n' 'opencode-go  deepseek-v4-pro          128K     32K      yes       no' ;;
     opencode-go/mimo-v2.5) printf '%s\n' 'opencode-go  mimo-v2.5                128K     32K      yes       no'; printf '%s\n' 'opencode-go  mimo-v2.5-pro            128K     32K      yes       no' ;;
     opencode-go/glm-5) printf '%s\n' 'opencode-go  glm-5.1                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.2                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.3                  128K     32K      yes       no' ;;
+    shared-model) printf '%s\n' 'provider-a  shared-model              128K     32K      yes       no'; printf '%s\n' 'provider-b  shared-model              128K     32K      yes       no' ;;
     anthropic/claude-sonnet-5) printf '%s\n' 'anthropic    claude-sonnet-5           1M       64K      yes       yes' ;;
     openai-codex/gpt-5.6-sol) printf '%s\n' 'openai-codex  gpt-5.6-sol             1M       32K      yes       no' ;;
     *) printf '%s\n' 'No models matching "'"$2"'"' ;;
@@ -1317,6 +1319,7 @@ test_crew_dispatch_model_existence_validation() {
   done <<'ROWS'
 exact match is silent (model exists and is unambiguous)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/deepseek-v4-pro","effort":"high"}}]}^empty^^^
 exact match is not flagged when fuzzy also returns pro variant^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/mimo-v2.5","effort":"high"}}]}^empty^^^
+bare model id remains ambiguous across providers^{"rules":[{"when":"coding","use":{"harness":"pi","model":"shared-model","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: shared-model matches 2 model(s) for pi - pin an exact model id^^
 zero match fails closed (model does not exist)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/nonexistent-xyz","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/nonexistent-xyz matches zero models for pi^^
 multi match fails closed (prefix ambiguity)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/glm-5 matches 3 model(s) for pi - pin an exact model id^^
 multi match is deduplicated across profiles^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}},{"when":"planning","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/glm-5 matches 3 model(s) for pi - pin an exact model id^^

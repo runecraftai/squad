@@ -1046,7 +1046,7 @@ crew_validate_model_existence() {
       while IFS= read -r line; do
         provider=$(echo "$line" | awk '{print $1}')
         model_id=$(echo "$line" | awk '{print $2}')
-        if [ "$provider/$model_id" = "$pattern" ] || [ "$model_id" = "$pattern" ]; then
+        if [ "$provider/$model_id" = "$pattern" ]; then
           exact_match=true
           break
         fi
