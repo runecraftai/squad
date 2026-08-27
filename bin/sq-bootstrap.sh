@@ -1038,7 +1038,22 @@ crew_validate_model_existence() {
     if [ "$total_matches" -eq 0 ]; then
       echo "CREW_DISPATCH: model existence: $pattern matches zero models for $harness"
     elif [ "$total_matches" -gt 1 ]; then
-      echo "CREW_DISPATCH: model existence: $pattern matches $total_matches model(s) for $harness - pin an exact model id"
+      # Check if the pattern is an exact match on the provider/model ID column.
+      # Pi fuzzy-matches the search term against model IDs; a configured
+      # "opencode-go/mimo-v2.5" that matches both mimo-v2.5 and mimo-v2.5-pro
+      # is not ambiguous when the exact ID exists in the listing.
+      exact_match=false
+      while IFS= read -r line; do
+        provider=$(echo "$line" | awk '{print $1}')
+        model_id=$(echo "$line" | awk '{print $2}')
+        if [ "$provider/$model_id" = "$pattern" ] || [ "$model_id" = "$pattern" ]; then
+          exact_match=true
+          break
+        fi
+      done <<< "$(printf '%s\n' "$probe_out" | grep -v '^provider ' | grep -vi '^No models matching')"
+      if [ "$exact_match" = false ]; then
+        echo "CREW_DISPATCH: model existence: $pattern matches $total_matches model(s) for $harness - pin an exact model id"
+      fi
     fi
   done <<< "$models"
 }

@@ -155,7 +155,7 @@ if [ "${1:-}" = --list-models ]; then
   printf '%s\n' 'provider   model                       context  max-out  thinking  images'
   case "${2:-}" in
     opencode-go/deepseek-v4-pro) printf '%s\n' 'opencode-go  deepseek-v4-pro          128K     32K      yes       no' ;;
-    opencode-go/mimo-v2.5) printf '%s\n' 'opencode-go  mimo-v2.5                128K     32K      yes       no' ;;
+    opencode-go/mimo-v2.5) printf '%s\n' 'opencode-go  mimo-v2.5                128K     32K      yes       no'; printf '%s\n' 'opencode-go  mimo-v2.5-pro            128K     32K      yes       no' ;;
     opencode-go/glm-5) printf '%s\n' 'opencode-go  glm-5.1                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.2                  128K     32K      yes       no'; printf '%s\n' 'opencode-go  glm-5.3                  128K     32K      yes       no' ;;
     anthropic/claude-sonnet-5) printf '%s\n' 'anthropic    claude-sonnet-5           1M       64K      yes       yes' ;;
     openai-codex/gpt-5.6-sol) printf '%s\n' 'openai-codex  gpt-5.6-sol             1M       32K      yes       no' ;;
@@ -1316,6 +1316,7 @@ test_crew_dispatch_model_existence_validation() {
     esac
   done <<'ROWS'
 exact match is silent (model exists and is unambiguous)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/deepseek-v4-pro","effort":"high"}}]}^empty^^^
+exact match is not flagged when fuzzy also returns pro variant^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/mimo-v2.5","effort":"high"}}]}^empty^^^
 zero match fails closed (model does not exist)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/nonexistent-xyz","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/nonexistent-xyz matches zero models for pi^^
 multi match fails closed (prefix ambiguity)^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/glm-5 matches 3 model(s) for pi - pin an exact model id^^
 multi match is deduplicated across profiles^{"rules":[{"when":"coding","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}},{"when":"planning","use":{"harness":"pi","model":"opencode-go/glm-5","effort":"high"}}]}^exact^CREW_DISPATCH: model existence: opencode-go/glm-5 matches 3 model(s) for pi - pin an exact model id^^
