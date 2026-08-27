@@ -1044,11 +1044,12 @@ crew_validate_model_existence() {
       # is not ambiguous when the exact ID exists in the listing.
       exact_match=false
       while IFS= read -r line; do
-        read -r provider model_id _ <<< "$line"
-        # Accept both the current two-column form (provider model) and a
-        # provider/model ID presented as the first column by older/future
-        # listing renderers.
-        if [ "$provider/$model_id" = "$pattern" ] || [ "$provider" = "$pattern" ]; then
+        provider=$(printf '%s\n' "$line" | awk '{print $1}')
+        model_id=$(printf '%s\n' "$line" | awk '{print $2}')
+        # Accept the canonical provider/model ID in either the current
+        # two-column form or as the first column of older/future renderers.
+        if [ "$provider/$model_id" = "$pattern" ] ||
+          { case "$pattern" in */*) [ "$provider" = "$pattern" ] ;; *) false ;; esac; }; then
           exact_match=true
           break
         fi
