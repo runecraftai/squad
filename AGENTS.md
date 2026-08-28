@@ -417,6 +417,16 @@ Queued wakes must be drained before other action, stale liveness must be repaire
 The spawn assertion and generated ship brief must both enforce that project work starts in an isolated disposable worktree, never the primary checkout.
 Harness-aware turn-end guards are structural backstops, not permission to omit the live cycle.
 
+### Tool usage rules (MANDATORY)
+
+Reach for the Squad tool over the raw command it replaces; [`docs/commands.md`](docs/commands.md) is the single owner of the full replacement table, the banned-command list, and correct-vs-incorrect examples.
+Never use `tmux list-windows`, `tmux send-keys`, or another raw `tmux` lifecycle command for task state, steering, or operator lifecycle.
+Never hand-parse, `tail`, or `grep` a `state/<id>.status` file to read current state, and never poll `state/` in a shell loop for wake events.
+Use `sq-gh` for all GitHub operations (repos, PRs, issues, search); do not use raw `gh` or `git` for GitHub operations.
+Never use `git push`, a hand-built `curl` call, or the GitHub web UI for a PR operation `sq-gh` covers.
+Never hand-delete a task's worktree or state files, and never hand-write an operator brief.
+These replacements are enforceable, not stylistic: a raw command that skips a Squad tool's safety check (isolation, landed-work verification, submission confirmation) is a correctness bug, not a shortcut, and must be caught and corrected on sight, including one already committed in your own prior turn.
+
 ### Away-mode stub
 
 Invoke the `/afk` skill when the commander says `/afk`, says they are going afk, `state/.afk` exists, an incoming message starts with `SQUAD_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
