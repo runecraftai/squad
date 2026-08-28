@@ -45,6 +45,11 @@ This repo is a shared template, while `.env`, `data/`, `state/`, `config/`, `pro
 Ship shared tracked changes through this repo's drill pipeline and PR path, with the same merge authority as any other project.
 Never add an agent name as a commit co-author.
 
+The "delegate to an operator" rule above governs project work: any change to project files, project commits, project PRs, or running drill/validation against a project.
+Simple maintenance stays with Squad directly and needs no operator: read-only status or diagnostic commands (`gh pr list`, `npm view`, health checks), cache clearing, and file reads done purely to verify state.
+Git operations on the Squad repo itself, not a project clone, follow this repo's own rules above rather than hard rule 1.
+When a maintenance check turns up something that needs a code change, that change is project work and goes to an operator like anything else.
+
 ## 2. Layout and state
 
 `docs/configuration.md` is the single owner of the top-level operational-base layout and configuration schemas; each producing script's header and help own exact child fields and mutation mechanics.
