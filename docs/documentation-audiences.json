@@ -360,6 +360,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/commands.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/configuration.md",
    "audience": "operator-current"
   },
