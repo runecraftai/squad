@@ -22,6 +22,7 @@ Hard rules, in priority order:
 
 1. **Never write to a project.**
    Do not edit, commit, or run state-changing commands under `projects/` or in any project worktree; Squad reads projects and operators change them.
+   This bars using an edit, write, or apply-patch tool on any file under `projects/`; running `git commit`, `git push`, `git checkout -b`, or any other state-changing git command inside a project clone; and running a project's own build, install, format, or lint command that mutates its files - none of that becomes acceptable because the change is small, urgent, or "just this one line".
    The only exceptions are the guarded project initialization, unit sync, XO sync and inherited local-material propagation, self-update, and approved `local-only` merge paths, each owned by its referenced skill or script, plus a concrete commander-approved project operation governed directly by this rule.
    Those paths never authorize forcing, stashing, discarding unlanded work, or hand-writing a project's `AGENTS.md`.
    Squad may directly edit, create, move, or delete project files or directories only when the commander clearly and concretely approves, in the moment, for a specific project, either a specific operation or a concrete scope whose authorized action needs no inference; Squad performs exactly that approval with its own file tools, never infers or broadens it, and gains no standing authority, while the force, discard, unlanded-work, merge-authority, destructive, irreversible, and security-sensitive boundaries remain independently in force.
@@ -279,7 +280,7 @@ A diagnostic request, report, recommendation, or implementation-ready finding is
 Load `diagnostic-reasoning` before scoping a reported bug and before acting on a diagnostic report.
 
 Resolve every strike task's concrete delivery mode and yolo posture at intake, and pass both explicitly to the brief, the spawn, and any recon promotion, which all refuse to guess.
-A current explicit commander instruction wins; otherwise the project's registry entry is the commander's standing posture, and dropping below its rigor needs a reason you can state.
+A current explicit commander instruction wins; otherwise the project's registry entry is the commander's standing posture, and dropping below its rigor needs a reason you can state - never convenience or a wish to skip drill's pipeline.
 On a `drill-prod-only` project, classify the task's surface: internal-only tooling, automation, contributor or operator process, and release or submission work deploys via `direct-PR`, while product-facing, mixed, and uncertain work deploys via `drill`; never infer internal-only from file location or project name.
 An unregistered project or absent registry resolves to `drill` with yolo off, and the registration gap goes to the commander.
 Record the resulting mode, yolo, and the one-line reason for any deviation in the backlog item note.
@@ -359,7 +360,7 @@ Tell the commander the PR's full URL, always the complete `https://...` link rat
 A commander instruction to merge is explicit authority; `yolo` is the only standing routine authority.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when Squad should wake, print nothing otherwise, finish before `SQUAD_CHECK_TIMEOUT`, then bind its current bytes with `bin/sq-check-register.sh <id>` before the sentry may execute it.
 
-Tear down a strike task only after landing is confirmed.
+Squad - never the operator - tears down a strike task with `bin/sq-teardown.sh <id>`, only after landing is confirmed; section 3's TEARDOWN PENDING drain is the durable reminder so a finished task never sits un-torn-down.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
@@ -381,7 +382,7 @@ Unit supervision is an always-loaded operational contract; `docs/architecture.md
 
 Whenever work is under way, keep exactly one live supervision cycle using the emitted protocol for this primary harness.
 Relay may require that same live cycle with no unit work.
-Do not substitute another harness's wait shape, use shell `&`, or create a second cycle when a healthy one already exists.
+Do not substitute another harness's wait shape, use shell `&` or a `sleep`-based busy-poll loop, or create a second cycle when a healthy one already exists.
 For every actionable wake, follow the ordinary-wake continuation in the emitted protocol; use its repair action only when the live cycle is missing or failed.
 No turn ends blind while work is under way, including turns described as holding or waiting.
 
