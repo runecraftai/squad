@@ -397,7 +397,7 @@ EOF
   *)  # drill
     SETUP2="
 2. Run \`drill doctor\`; if it reports the repo is not initialized here, run \`drill init\`."
-    RULE1='1. Never push to the default branch. Never merge a PR.'
+    RULE1="1. Never push to the default branch. Never merge a PR. Never push your branch or open a PR yourself, through sq-gh or any other route - drill is the only path from a committed branch to a PR in this mode."
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=drill
