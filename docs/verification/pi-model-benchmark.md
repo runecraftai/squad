@@ -50,7 +50,7 @@ jq '.run, .summary, .recommendation, .quota' /tmp/pi-model-benchmark-live.json
 
 ## Live verification on 2026-08-31
 
-The exact model identifiers were checked with `pi --no-extensions --offline --list-models 'mimo-v2.5'`, `pi --no-extensions --offline --list-models 'muse-spark-1.2-contributor'`, and `pi --no-extensions --offline --list-models 'longcat-2.0'` before execution.
+The exact model identifiers were checked with `pi --no-extensions --offline --list-models 'opencode-go/mimo-v2.5'`, `pi --no-extensions --offline --list-models 'opencode-go/muse-spark-1.2-contributor'`, and `pi --no-extensions --offline --list-models 'opencode-go/longcat-2.0'` before execution.
 
 The comparable run used three trials per scenario for each approved model.
 
