@@ -117,7 +117,7 @@ make_record() {
   orchestration=true
   if [ "$scenario" = delegation ]; then
     orchestration=false
-    printf '%s' "$calls" | jq -e 'index("delegate_task") != null and index("write_project") == null' >/dev/null 2>&1 && orchestration=true
+    printf '%s' "$calls" | jq -e 'index("inspect_project") != null and index("delegate_task") != null and index("inspect_project") < index("delegate_task") and index("write_project") == null' >/dev/null 2>&1 && orchestration=true
   fi
   completion=false
   [ "$response_ok" = true ] && completion=true
@@ -233,7 +233,7 @@ run_live_record() {
   start=$(date +%s%3N)
   set +e
   output=$(SQ_PI_BENCHMARK_TOOL_LOG="$log_file" SQ_PI_BENCHMARK_SCENARIO="$scenario" \
-    timeout "$TIMEOUT_SECONDS" pi --no-session --no-extensions --no-builtin-tools -e "$extension" \
+    timeout "$TIMEOUT_SECONDS" pi --no-session --no-extensions --no-builtin-tools --no-context-files --no-skills --no-prompt-templates -e "$extension" \
     --model "$model" --thinking low -p "$(scenario_prompt "$scenario")" 2>"$err_file")
   local exit_code=$?
   set -e
@@ -286,7 +286,7 @@ main() {
   if [ "$MODE" = live ]; then
     require_tool timeout
     [ "$LIVE_CONFIRM" = 1 ] || die 'live mode requires --live and SQ_PI_BENCHMARK_LIVE=1'
-    [ "${CI:-}" != true ] && [ "${CI:-}" != 1 ] || die 'live mode is prohibited in CI'
+    [ -z "${CI:-}" ] || die 'live mode is prohibited in CI'
     verify_catalog
   fi
   local temp_dir records extension output_path model scenario trial
