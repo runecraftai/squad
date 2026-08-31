@@ -33,7 +33,7 @@ jq '.summary, .recommendation' /tmp/pi-model-benchmark-fixtures.json
 
 Live mode requires both `--live` and `SQ_PI_BENCHMARK_LIVE=1`.
 
-Live mode is refused when `CI` is `1` or `true`.
+Live mode is refused when `CI` is set to any non-empty value.
 
 Before live execution, the runner verifies every exact model identifier through Pi's offline model catalog.
 
