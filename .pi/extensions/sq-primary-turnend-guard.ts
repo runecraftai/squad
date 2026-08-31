@@ -170,7 +170,8 @@ function runGuard(): Promise<{ code: number; stderr: string }> {
 }
 
 // PreToolUse seatbelts (bin/sq-arm-pretool-check.sh, docs/arm-pretool-check.md;
-// bin/sq-cd-pretool-check.sh, docs/cd-guard.md). Both piggyback on this same
+// bin/sq-cd-pretool-check.sh, docs/cd-guard.md; bin/sq-backend-pretool-check.sh;
+// bin/sq-poll-pretool-check.sh). All piggyback on this same
 // extension file rather than separate ones so no extra Pi -e flag is needed at
 // launch - the primary already loads this file for the turn-end guard, and
 // pi.on("tool_call", ...) can block (verified 2026-07-09 against pi 0.80.5:
@@ -198,6 +199,14 @@ function runCdCheck(command: string): Promise<{ code: number; stderr: string }> 
   return runChecker("sq-cd-pretool-check.sh", command);
 }
 
+function runBackendCheck(command: string): Promise<{ code: number; stderr: string }> {
+  return runChecker("sq-backend-pretool-check.sh", command);
+}
+
+function runPollCheck(command: string): Promise<{ code: number; stderr: string }> {
+  return runChecker("sq-poll-pretool-check.sh", command);
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on?.("session_start", async (event) => {
     const reason = String((event as { reason?: unknown }).reason ?? "");
@@ -220,6 +229,14 @@ export default function (pi: ExtensionAPI) {
     const cdResult = await runCdCheck(command);
     if (cdResult.code === 2) {
       return { block: true, reason: cdResult.stderr.trim() || "denied by the cd-guard PreToolUse seatbelt" };
+    }
+    const backendResult = await runBackendCheck(command);
+    if (backendResult.code === 2) {
+      return { block: true, reason: backendResult.stderr.trim() || "denied by the session-provider CLI seatbelt" };
+    }
+    const pollResult = await runPollCheck(command);
+    if (pollResult.code === 2) {
+      return { block: true, reason: pollResult.stderr.trim() || "denied by the state-polling seatbelt" };
     }
     const result = await runPretoolCheck(command);
     if (result.code !== 2) return {};
