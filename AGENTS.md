@@ -193,6 +193,7 @@ The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `gr
 If static `config/crew-harness` or `config/xo-harness` names an unverified adapter, report it and fall back only to a verified adapter rather than launching it.
 
 `docs/configuration.md` owns dispatch-profile and runtime-backend schemas, `bin/sq-harness.sh` owns static resolution, and `bin/sq-spawn.sh` owns launch flags and fail-closed validation.
+For `harness=claude`, an optional per-spawn Claude account axis (`config/claude-accounts`, `sq-spawn --account`) lets Squad move an operator onto another of the commander's already-authenticated Claude accounts when the active one hits its session limit; `docs/configuration.md` "Claude account selection" owns the registry schema and `bin/sq-claude-account.sh` owns lookup and verification.
 When dispatch profiles exist, consult them at every operator or recon intake and pass the resolved concrete profile required by `sq-spawn`.
 Routing precedence is an explicit per-task commander override, then the best-fit configured rule, then the configured default, then the static operator harness.
 Squad alone resolves a matched profile array: run `sq-quota --json` at that intake, evaluate every configured candidate against that current output, and choose with inspectable effective headroom and usable runway, using pace and reserve only later when needed.

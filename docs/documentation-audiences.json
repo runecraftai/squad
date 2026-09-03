@@ -672,6 +672,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/verification/claude-accounts.md",
+   "audience": "maintainer-verification"
+  },
+  {
    "path": "docs/verification/debrief-memory.md",
    "audience": "maintainer-verification"
   },
