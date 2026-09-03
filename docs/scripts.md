@@ -52,6 +52,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-remote-readiness-lib.sh` | Shared remote second-mate readiness gate: check and, when needed, repair then re-check through `sq-remote-doctor.sh` |
 | [`sq-project-origin-lib.sh`](../bin/sq-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
 | `sq-spawn.sh`            | Spawn operators, scouts, `id=repo` batches, and XOs on the resolved harness and runtime backend |
+| `sq-claude-account.sh`   | Parse `config/claude-accounts` and verify a registered Claude account's login state (`docs/configuration.md`) |
 | `sq-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `sq-backend-hometag-lib.sh` | Shared per-installation base-tag derivation for zellij tab and cmux workspace titles |
 | `sq-composer-lib.sh`     | Single unit-wide owner of composer-content classification for all backends          |

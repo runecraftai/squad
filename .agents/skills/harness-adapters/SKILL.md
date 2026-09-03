@@ -11,7 +11,7 @@ metadata:
 Use this reference before any harness-specific Squad operation: spawn, recovery, trust-dialog handling, skill invocation, interrupt, exit, resume, or adapter verification.
 
 Operators default to the same harness Squad is running on unless `config/crew-harness` records an adapter name.
-Optional dispatch profiles in `config/crew-dispatch.json` can override that static default for one operator or recon dispatch by selecting concrete harness, model, and effort axes at intake.
+Optional dispatch profiles in `config/crew-dispatch.json` can override that static default for one operator or recon dispatch by selecting concrete harness, model, and effort axes at intake, plus a `harness=claude`-only account axis (`docs/configuration.md` "Claude account selection").
 When a matched rule or default is a profile array, load `quota-array-dispatch` for the completion-aware candidate choice after this skill establishes harness and model/provider facts.
 The commander may override that file at session start or later; a per-task instruction such as "run this one on codex" overrides it for that dispatch only.
 `default` means mirror Squad's own harness.
@@ -101,7 +101,7 @@ When changing any primary sentry adapter, update `docs/supervision-protocols/`, 
 
 ## Launch profile axes
 
-`bin/sq-spawn.sh` accepts concrete `--harness`, `--model`, and `--effort` values chosen by Squad at intake.
+`bin/sq-spawn.sh` accepts concrete `--harness`, `--model`, and `--effort` values chosen by Squad at intake, plus `--account` for `harness=claude` (`docs/configuration.md` "Claude account selection").
 Do not make the shell scripts parse or match natural-language dispatch rules.
 
 Effort precedence is an explicit per-task commander instruction first, then any applicable standing dispatch profile or XO pin, then the generic fallback below.
