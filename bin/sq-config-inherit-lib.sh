@@ -12,7 +12,12 @@
 # preference - an absent primary file and an absent destination file both mean
 # the same unconfigured default, so the generic absence mirror below converges
 # an XO without deciding the release-dependent floor; explicit "on" and
-# "off" preferences propagate as files. Primary
+# "off" preferences propagate as files. Primary config/claude-accounts lets a
+# local XO's own operators select the same registered Claude accounts
+# (docs/configuration.md "Claude account selection"); an inherited copy on a
+# remote XO base names host-local paths that generally do not resolve there,
+# which fails closed at bin/sq-claude-account.sh's own verify step rather than
+# doing anything unsafe. Primary
 # config/trace-context is copied at the launch convergence point as part of the
 # default-off W3C trace-context setup, while live convergence leaves it unchanged.
 # The primary passes its frozen base-session decision into a newly launched
@@ -63,7 +68,7 @@ SQUAD_SHARED_COMMANDER_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-SQUAD_INHERITABLE_CONFIG="${SQUAD_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context}"
+SQUAD_INHERITABLE_CONFIG="${SQUAD_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context claude-accounts}"
 
 # Items whose value is a base-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where
