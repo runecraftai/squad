@@ -15,14 +15,14 @@ Task chronology and incident transcripts stay in the private task report and PR 
 | Platform | macOS arm64 (Darwin 25.6.0) |
 | Verified | 2026-09-03 |
 
-This sandbox has exactly one commander-registered Claude account (`gestaoponttual@gmail.com`, config dir `/Users/oserafim/.claude-ponttual`), so the isolation evidence below uses a second, freshly created, never-authenticated `CLAUDE_CONFIG_DIR` rather than a second paid subscription.
+This sandbox has exactly one commander-registered Claude account (`<account-email>`, config dir `<home>/.claude-ponttual`), so the isolation evidence below uses a second, freshly created, never-authenticated `CLAUDE_CONFIG_DIR` rather than a second paid subscription.
 The mechanism the whole account axis rests on - two different `CLAUDE_CONFIG_DIR` values producing two independently distinguishable identities from the one real CLI - is exactly what this proves; a genuine second account exercises the identical code path and should be re-run through this same procedure to extend the evidence once registered.
 
 ## `CLAUDE_CONFIG_DIR` isolates authentication per directory
 
 ```
 $ echo "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-<unset>}"
-CLAUDE_CONFIG_DIR=/Users/oserafim/.claude-ponttual
+CLAUDE_CONFIG_DIR=<home>/.claude-ponttual
 
 $ claude auth status --json
 {
@@ -30,10 +30,10 @@ $ claude auth status --json
   "authMethod": "claude.ai",
   "apiProvider": "firstParty",
   "analyticsDisabled": false,
-  "projectsDirectory": "/Users/oserafim/.claude-ponttual/projects",
-  "email": "gestaoponttual@gmail.com",
-  "orgId": "27f10a83-a026-49be-8d29-055d8df643af",
-  "orgName": "gestaoponttual@gmail.com's Organization",
+  "projectsDirectory": "<home>/.claude-ponttual/projects",
+  "email": "<account-email>",
+  "orgId": "<org-id>",
+  "orgName": "<org-name>",
   "subscriptionType": "pro"
 }
 $ echo "exit=$?"
@@ -72,9 +72,9 @@ Three properties follow and are load-bearing for the account axis:
 ## `bin/sq-claude-account.sh verify` against the real CLI
 
 ```
-$ printf 'real /Users/oserafim/.claude-ponttual\ncold /tmp/empty-claude-config\n' > /tmp/claude-accounts-config/claude-accounts
+$ printf 'real <home>/.claude-ponttual\ncold /tmp/empty-claude-config\n' > /tmp/claude-accounts-config/claude-accounts
 $ SQUAD_CONFIG_OVERRIDE=/tmp/claude-accounts-config bin/sq-claude-account.sh verify real
-/Users/oserafim/.claude-ponttual
+<home>/.claude-ponttual
 $ echo "exit=$?"
 exit=0
 
@@ -84,7 +84,7 @@ $ echo "exit=$?"
 exit=1
 ```
 
-Reproduced exactly by `tests/sq-claude-account-live-e2e.test.sh` (`SQUAD_CLAUDE_ACCOUNT_LIVE_E2E=1`), which also drives the full `bin/sq-spawn.sh --account` path against the real CLI: a `--account real` spawn succeeds, records `account=real` in `state/<id>.meta`, and forwards `CLAUDE_CONFIG_DIR='/Users/oserafim/.claude-ponttual'` onto the faked launch pane; a `--account cold` spawn refuses with the same "is not logged in" message before any endpoint is created.
+Reproduced exactly by `tests/sq-claude-account-live-e2e.test.sh` (`SQUAD_CLAUDE_ACCOUNT_LIVE_E2E=1`), which also drives the full `bin/sq-spawn.sh --account` path against the real CLI: a `--account real` spawn succeeds, records `account=real` in `state/<id>.meta`, and forwards `CLAUDE_CONFIG_DIR='<home>/.claude-ponttual'` onto the faked launch pane; a `--account cold` spawn refuses with the same "is not logged in" message before any endpoint is created.
 Run that guard after any `claude` CLI upgrade and before trusting refreshed account-axis evidence; `tests/sq-claude-account.test.sh` pins the same contract against a fake `claude` binary for ordinary CI runs.
 
 ## `sq-quota` scopes claude quota reads to `CLAUDE_CONFIG_DIR`, but cannot read this base's numbers
