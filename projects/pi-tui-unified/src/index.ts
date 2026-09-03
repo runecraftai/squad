@@ -21,6 +21,7 @@ import {
   renderListEntries,
   renderReadLines,
   textContent,
+  tintMarkdown,
   writeDiff,
 } from "./rendering.js";
 
@@ -33,7 +34,12 @@ function statusText(isError: boolean, theme: Theme): string {
 }
 
 export default function piTuiUnified(pi: ExtensionAPI): void {
+  let userMessageBackground = (text: string) => text;
+  let agentMessageBackground = (text: string) => text;
+
   pi.on("session_start", (_event, ctx) => {
+    userMessageBackground = (text) => ctx.ui.theme.bg("userMessageBg", text);
+    agentMessageBackground = (text) => ctx.ui.theme.bg("customMessageBg", text);
     ctx.ui.setWorkingIndicator({
       frames: [
         ctx.ui.theme.fg("dim", "·"),
@@ -46,8 +52,8 @@ export default function piTuiUnified(pi: ExtensionAPI): void {
   });
 
   pi.registerMarkdownTransformer((markdown, { messageType }) => {
-    if (messageType === "user") return `> **USER**\n\n${markdown}`;
-    if (messageType === "assistant") return `# **AGENT**\n\n${markdown}`;
+    if (messageType === "user") return tintMarkdown(markdown, userMessageBackground);
+    if (messageType === "assistant") return tintMarkdown(markdown, agentMessageBackground);
     return markdown;
   });
 

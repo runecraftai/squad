@@ -39,6 +39,18 @@ export function textContent(content: readonly { type: string; text?: string }[])
     .join("\n");
 }
 
+/** Apply a theme background without adding display-only text to the Markdown. */
+export function tintMarkdown(markdown: string, background: (text: string) => string): string {
+  return markdown.split("\n").map((line) => {
+    if (/^\s{0,3}```/.test(line)) return line;
+    if (!line.trim()) return line;
+
+    const match = line.match(/^(\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s)?)(.*)$/);
+    if (!match || !match[2]) return line;
+    return `${match[1]}${background(match[2])}`;
+  }).join("\n");
+}
+
 export function parseDiffRows(diff: string): DiffRow[] {
   const rows: DiffRow[] = [];
   let removed: string[] = [];
