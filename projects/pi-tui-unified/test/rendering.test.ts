@@ -5,7 +5,6 @@ import {
   parseDiffRows,
   renderListEntries,
   renderReadLines,
-  tintMarkdown,
   writeDiff,
   type ThemeLike,
 } from "../src/rendering.js";
@@ -28,14 +27,6 @@ describe("pi-tui-unified rendering", () => {
     expect(writeDiff("one\ntwo", "src/file.ts")).toBe(
       "--- /dev/null\n+++ src/file.ts\n@@\n+one\n+two",
     );
-  });
-
-  it("tints message content without changing Markdown markers", () => {
-    const rendered = tintMarkdown("# Heading\n\n- item\n\n```ts\nconst x = 1;\n```", (text) => `[bg]${text}[/bg]`);
-    expect(rendered).toContain("# [bg]Heading[/bg]");
-    expect(rendered).toContain("- [bg]item[/bg]");
-    expect(rendered).toContain("const x = 1;");
-    expect(rendered).not.toMatch(/USER|AGENT/);
   });
 
   it("adds line numbers and preserves syntax output", () => {

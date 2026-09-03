@@ -21,8 +21,9 @@ pi -e npm:pi-tui-unified
 - `read` output includes syntax highlighting and line numbers.
 - `bash` output shows theme-colored success or error status and expanded output when requested.
 - `ls` output uses Nerd Font file and directory icons.
-- User messages use a clear subtle accent-derived blue/teal tint, while agent replies use a distinct success-derived green/emerald tint, with no added text labels.
-- Thinking blocks use a separate neutral pending tint and retain their gray text, making them distinct from the final response.
+- The composer uses a theme-derived selected background so the input area stands apart from the chat.
+- User messages retain Pi's native theme background and agent responses retain Pi's native Markdown renderer, with no added text labels.
+- Thinking blocks retain Pi's native gray styling, making them distinct from the final response.
 - The working indicator uses a theme-derived shimmer.
 - Built-in tool execution is delegated to Pi unchanged; this package only replaces presentation.
 
