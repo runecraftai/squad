@@ -21,6 +21,9 @@ describe("extension registration", () => {
         theme: {
           fg: (_color: string, text: string) => text,
           bg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+          getFgAnsi: (color: string) => color === "success" ? "\x1b[38;2;30;200;100m" : "\x1b[38;2;20;180;190m",
+          getBgAnsi: () => "\x1b[48;2;30;30;30m",
+          getColorMode: () => "truecolor",
         },
         setWorkingIndicator: () => undefined,
       },
@@ -28,8 +31,13 @@ describe("extension registration", () => {
 
     expect(tools.map((tool) => tool.name)).toEqual(["read", "bash", "edit", "write", "ls", "find", "grep"]);
     expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
-    expect(markdownTransformers[0]?.("hello", { messageType: "user" })).toContain("userMessageBg");
-    expect(markdownTransformers[0]?.("hello", { messageType: "assistant" })).toContain("customMessageBg");
-    expect(markdownTransformers[0]?.("hello", { messageType: "user" })).not.toMatch(/USER|AGENT/);
+    const user = markdownTransformers[0]?.("hello", { messageType: "user" }) ?? "";
+    const agent = markdownTransformers[0]?.("hello", { messageType: "assistant" }) ?? "";
+    const thinking = markdownTransformers[0]?.("hello", { messageType: "assistant-thinking" }) ?? "";
+    expect(user).toMatch(/\x1b\[48;2;/);
+    expect(agent).toMatch(/\x1b\[48;2;/);
+    expect(agent).not.toBe(user);
+    expect(thinking).not.toBe(agent);
+    expect(user).not.toMatch(/USER|AGENT/);
   });
 });

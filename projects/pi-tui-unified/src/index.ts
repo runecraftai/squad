@@ -33,13 +33,69 @@ function statusText(isError: boolean, theme: Theme): string {
   return isError ? theme.fg("error", "✗ error") : theme.fg("success", "✓ done");
 }
 
+type Rgb = [number, number, number];
+
+function ansiRgb(ansi: string, background: boolean): Rgb | undefined {
+  const kind = background ? 48 : 38;
+  const trueColor = ansi.match(new RegExp(`\\x1b\\[${kind};2;(\\d+);(\\d+);(\\d+)m`));
+  if (trueColor) return [Number(trueColor[1]), Number(trueColor[2]), Number(trueColor[3])];
+  const indexed = ansi.match(new RegExp(`\\x1b\\[${kind};5;(\\d+)m`));
+  if (!indexed) return undefined;
+  return ansi256Rgb(Number(indexed[1]));
+}
+
+function ansi256Rgb(index: number): Rgb {
+  if (index < 16) {
+    const palette: Rgb[] = [
+      [0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
+      [0, 0, 128], [128, 0, 128], [0, 128, 128], [192, 192, 192],
+      [128, 128, 128], [255, 0, 0], [0, 255, 0], [255, 255, 0],
+      [0, 0, 255], [255, 0, 255], [0, 255, 255], [255, 255, 255],
+    ];
+    return palette[index] ?? [0, 0, 0];
+  }
+  if (index >= 232) {
+    const gray = 8 + (index - 232) * 10;
+    return [gray, gray, gray];
+  }
+  const cube = index - 16;
+  const channels = [Math.floor(cube / 36), Math.floor(cube / 6) % 6, cube % 6];
+  return channels.map((channel) => channel === 0 ? 0 : 55 + channel * 40) as Rgb;
+}
+
+function rgb256([red, green, blue]: Rgb): number {
+  const cube = (value: number) => value < 48 ? 0 : value < 114 ? 1 : Math.round((value - 55) / 40);
+  const cubeRgb = (value: number) => value === 0 ? 0 : 55 + value * 40;
+  const channels = [cube(red), cube(green), cube(blue)];
+  const cubeIndex = 16 + channels[0]! * 36 + channels[1]! * 6 + channels[2]!;
+  const cubeDistance = (cubeRgb(channels[0]!) - red) ** 2 + (cubeRgb(channels[1]!) - green) ** 2 + (cubeRgb(channels[2]!) - blue) ** 2;
+  const gray = Math.round((red + green + blue) / 3);
+  const grayIndex = Math.max(0, Math.min(23, Math.round((gray - 8) / 10)));
+  const grayValue = 8 + grayIndex * 10;
+  const grayDistance = (grayValue - red) ** 2 + (grayValue - green) ** 2 + (grayValue - blue) ** 2;
+  return grayDistance < cubeDistance ? 232 + grayIndex : cubeIndex;
+}
+
+function tintedBackground(theme: Theme, foreground: "accent" | "success" | "thinkingText", base: "userMessageBg" | "toolPendingBg"): (text: string) => string {
+  const tint = ansiRgb(theme.getFgAnsi(foreground), false);
+  const background = ansiRgb(theme.getBgAnsi(base), true);
+  if (!tint || !background) return (text) => theme.bg(base, text);
+  const mixed: Rgb = background.map((value, index) => Math.round(value * 0.72 + tint[index]! * 0.28)) as Rgb;
+  const ansi = theme.getColorMode() === "truecolor"
+    ? `\x1b[48;2;${mixed[0]};${mixed[1]};${mixed[2]}m`
+    : `\x1b[48;5;${rgb256(mixed)}m`;
+  return (text) => `${ansi}${text}\x1b[49m`;
+}
+
 export default function piTuiUnified(pi: ExtensionAPI): void {
   let userMessageBackground = (text: string) => text;
   let agentMessageBackground = (text: string) => text;
+  let thinkingMessageBackground = (text: string) => text;
 
   pi.on("session_start", (_event, ctx) => {
-    userMessageBackground = (text) => ctx.ui.theme.bg("userMessageBg", text);
-    agentMessageBackground = (text) => ctx.ui.theme.bg("customMessageBg", text);
+    userMessageBackground = tintedBackground(ctx.ui.theme, "accent", "userMessageBg");
+    agentMessageBackground = tintedBackground(ctx.ui.theme, "success", "userMessageBg");
+    thinkingMessageBackground = tintedBackground(ctx.ui.theme, "thinkingText", "toolPendingBg");
     ctx.ui.setWorkingIndicator({
       frames: [
         ctx.ui.theme.fg("dim", "·"),
@@ -54,6 +110,7 @@ export default function piTuiUnified(pi: ExtensionAPI): void {
   pi.registerMarkdownTransformer((markdown, { messageType }) => {
     if (messageType === "user") return tintMarkdown(markdown, userMessageBackground);
     if (messageType === "assistant") return tintMarkdown(markdown, agentMessageBackground);
+    if (messageType === "assistant-thinking") return tintMarkdown(markdown, thinkingMessageBackground);
     return markdown;
   });
 
