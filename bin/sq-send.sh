@@ -65,6 +65,10 @@
 # footer appears, so an immediate peek would otherwise see the stale idle pane.
 # The pause is sq-send-only; the shared submit core (used by the away-mode daemon,
 # which only needs "submitted") does not pay it, and the --key path is unaffected.
+# Pi and pi-signed task extensions also expose a private delivery dropbox. When
+# present, text uses Pi's sendUserMessage(..., { deliverAs: "followUp" }) so a
+# parked composer cannot swallow the steer. A missing or unavailable extension
+# falls back to the recorded backend's normal submit path.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -109,6 +113,79 @@ fm_send_id_from_meta() {  # <meta-file>
   local base
   base=${1##*/}
   printf '%s' "${base%.meta}"
+}
+
+fm_send_pi_process_identity() {  # <pid>
+  local pid=$1 proc_root stat_line starttime out
+  local -a stat_fields
+  proc_root=${SQUAD_PROC_ROOT_OVERRIDE:-/proc}
+  if [ -r "$proc_root/$pid/stat" ]; then
+    stat_line=$(cat "$proc_root/$pid/stat" 2>/dev/null) || return 1
+    read -r -a stat_fields <<< "${stat_line##*)}"
+    [ "${#stat_fields[@]}" -ge 20 ] || return 1
+    starttime=${stat_fields[19]}
+    case "$starttime" in ''|*[!0-9]*) return 1 ;; esac
+    printf 'proc-starttime=%s\n' "$starttime"
+    return 0
+  fi
+  out=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || return 1
+  out=$(printf '%s\n' "$out" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$out" ] || return 1
+  case "$out" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  printf 'ps-lstart=%s\n' "$out"
+}
+
+# fm_send_pi_native: deliver through the task extension's private dropbox.
+# Return 0 only after the extension reports sendUserMessage accepted the text
+# and an agent_start busy edge proved Pi is processing it. Return 2 when the
+# extension is unavailable so the caller can use the normal backend path.
+fm_send_pi_native() {  # <state-dir> <task-id> <message>
+  local state_dir=$1 task_id=$2 message=$3 dir ready request_id request tmp timeout
+  local response deadline status ready_pid ready_identity current_identity
+  dir="$state_dir/.pi-delivery/$task_id"
+  ready="$dir/ready"
+  [ -d "$dir" ] || return 2
+  [ -f "$ready" ] || return 2
+  ready_pid=$(sed -n '1p' "$ready" 2>/dev/null || true)
+  ready_identity=$(sed -n '2p' "$ready" 2>/dev/null || true)
+  case "$ready_pid" in
+    ''|*[!0-9]*) return 2 ;;
+  esac
+  [ -n "$ready_identity" ] || return 2
+  kill -0 "$ready_pid" 2>/dev/null || return 2
+  current_identity=$(fm_send_pi_process_identity "$ready_pid" 2>/dev/null || true)
+  [ "$current_identity" = "$ready_identity" ] || return 2
+
+  request_id="$task_id.$$.$RANDOM"
+  request="$dir/$request_id.request"
+  response="$dir/$request_id.response"
+  tmp="$request.tmp"
+  if ! printf '%s\n%s\n' "$request_id" "$message" > "$tmp" || ! mv "$tmp" "$request"; then
+    rm -f "$tmp"
+    return 1
+  fi
+
+  timeout=${SQUAD_PI_DELIVERY_TIMEOUT:-5}
+  case "$timeout" in
+    ''|*[!0-9]*) timeout=5 ;;
+  esac
+  deadline=$(( $(date +%s) + timeout ))
+  while [ ! -f "$response" ] && [ "$(date +%s)" -le "$deadline" ]; do
+    sleep 0.05
+  done
+  if [ ! -f "$response" ]; then
+    # Do not fall back after a live extension accepted an unconfirmed request:
+    # that could submit the same steer twice. The request remains for the
+    # extension to reconcile, and the caller gets an explicit failure.
+    return 1
+  fi
+  status=$(sed -n '1p' "$response")
+  rm -f "$response"
+  case "$status" in
+    processing) return 0 ;;
+    unavailable) return 2 ;;
+    *) return 1 ;;
+  esac
 }
 
 # fm_send_clear_after_interrupt: muse RESTORES the interrupted prompt back into
@@ -465,19 +542,41 @@ else
   retries=${SQUAD_SEND_RETRIES:-3}
   sleep_s=${SQUAD_SEND_SLEEP:-0.4}
   # Type once, submit, verify. Only exact empty confirms delivery; every other
-  # verdict preserves the loud refusal boundary.
+  # verdict preserves the loud refusal boundary. Pi's task extension is the
+  # preferred delivery path because it bypasses the parked composer entirely.
   send_rc=0
-  if [ "$TARGET_BACKEND" = remote ]; then
-    if "$SCRIPT_DIR/sq-on.sh" "$TARGET_REMOTE_ID" sq-remote-xo-control.sh send "$TARGET_REMOTE_ID" "$MESSAGE" < /dev/null >/dev/null; then
-      verdict=empty
+  native_rc=2
+  if [ "$TARGET_BACKEND" != remote ] \
+    && [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] \
+    && [ "$(fm_meta_get "$TARGET_META" kind)" != xo ]; then
+    case "$TARGET_HARNESS" in
+      pi|pi-signed)
+        if fm_send_pi_native "$STATE" "$(fm_send_id_from_meta "$TARGET_META")" "$MESSAGE"; then
+          native_rc=0
+        else
+          native_rc=$?
+        fi
+        if [ "$native_rc" -eq 0 ]; then
+          verdict=empty
+        elif [ "$native_rc" -ne 2 ]; then
+          send_rc=$native_rc
+        fi
+        ;;
+    esac
+  fi
+  if [ "$send_rc" -eq 0 ] && [ "$native_rc" -eq 2 ]; then
+    if [ "$TARGET_BACKEND" = remote ]; then
+      if "$SCRIPT_DIR/sq-on.sh" "$TARGET_REMOTE_ID" sq-remote-xo-control.sh send "$TARGET_REMOTE_ID" "$MESSAGE" < /dev/null >/dev/null; then
+        verdict=empty
+      else
+        send_rc=$?
+        verdict=send-failed
+      fi
+    elif verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
+      :
     else
       send_rc=$?
-      verdict=send-failed
     fi
-  elif verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
-    :
-  else
-    send_rc=$?
   fi
   if [ "$send_rc" -ne 0 ]; then
     if [ "$TARGET_BACKEND" = remote ] && [ "$send_rc" -eq 255 ] && [ -n "$PENDING_REPLY_CORR" ]; then

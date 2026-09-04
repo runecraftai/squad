@@ -640,9 +640,10 @@ SQUAD_BUSY_REGEX=          # sobrescrever opcional para guards de entrega render
 SQUAD_COMPOSER_IDLE_RE=    # regex opcional de composer vazio, aplicada após remoção de ghost e borda
 SQUAD_COMPOSER_GHOST_LUMA_MAX=128   # unidade-wide: luminância percebida máxima (0.299R+0.587G+0.114B, 0-255) para um foreground TRUECOLOR contar como texto ghost/lugar desenhado desenhado e ser removido; dim/faint (SGR 2) é removido independente. Assume um tema de terminal escuro (fm_composer_strip_ghost de bin/sq-composer-lib.sh, compartilhado pelos leitores de composer tmux e herdr)
 GROK_HOME=              # Grok config home opcional para o hook global grok de fim de turno do Squad; padrão ~/.grok
-SQUAD_SEND_RETRIES=3       # tentativas de retry de Enter do sq-send após digitar a linha uma vez
-SQUAD_SEND_SLEEP=0.4       # segundos entre checks de submissão do sq-send
+SQUAD_SEND_RETRIES=3       # tentativas de retry de Enter do sq-send no submit do backend após digitar a linha uma vez
+SQUAD_SEND_SLEEP=0.4       # segundos entre checks de submit do backend pelo sq-send
 SQUAD_SEND_SETTLE=1        # segundos que sq-send espera após uma submissão de texto bem-sucedida; 0 desativa
+SQUAD_PI_DELIVERY_TIMEOUT=5 # segundos que sq-send espera pela confirmação de entrega nativa do Pi antes de falhar
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # segundos após entrega de solicitação marcada antes que um turno concluído sem um relatório pai correlacionado seja elegível para sua única retentativa de repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; apenas tmux/herdr, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID antes de fallback tmux

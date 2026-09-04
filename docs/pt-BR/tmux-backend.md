@@ -84,10 +84,10 @@ Um prompt de shell puro é `unknown`, então escalação do modo ausente nunca �
 O estado ocupado não é lido de texto renderizado neste backend.
 O veredito busy, idle, unknown ou dead de uma tarefa vem do contrato semântico de busy-state de propriedade de `bin/sq-busy-lib.sh`; [architecture](architecture.md#estado-busy-é-semântico-por-adaptador) é dona das fronteiras dele.
 O único leitor restante de cauda renderizada é o fallback isolado do Grok dentro daquele contrato, que só consegue classificar uma tarefa Grok.
-O reconhecimento de submit e o guard de painel-do-supervisor ocupado do modo ausente abaixo ainda consultam saída renderizada, mas apenas para decidir se input pode ser entregue, nunca para decidir estado registrado da tarefa.
+Para envios roteados pelo tmux, o reconhecimento de submit e o guard de painel-do-supervisor ocupado do modo ausente abaixo ainda consultam saída renderizada, mas apenas para decidir se input pode ser entregue, nunca para decidir estado registrado da tarefa.
 O guard do supervisor seleciona apenas a assinatura do harness primário detectado em vez de uma união global de padrões de vendors.
 
-`bin/sq-tmux-lib.sh` é dono da mecânica exata de digitar-e-enviar.
+Para envios roteados pelo tmux, `bin/sq-tmux-lib.sh` é dono da mecânica exata de digitar-e-enviar.
 Ele digita uma mensagem uma vez e repete o Enter apenas até o composer liberar.
 Só um composer provado vazio é um reconhecimento positivo de entrega.
 Texto deixado em estrutura estabelecida permanece `pending`, texto em estrutura ambígua fica não provado, e estado ilegível ou inseguro permanece unknown.

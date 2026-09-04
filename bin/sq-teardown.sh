@@ -33,8 +33,8 @@
 # matching quarantine entries as ordinary single-link files on the state
 # device. It refuses and preserves task state when that proof fails; otherwise
 # it removes the task's check, trust record, PR sidecar, publication record, and
-# quarantine entries with the rest of the volatile state, and retires the
-# watcher's per-window markers for the released window (state/.stale-*,
+# quarantine entries, Pi delivery dropbox records, with the rest of the volatile
+# state, and retires the watcher's per-window markers for the released window (state/.stale-*,
 # .stale-since-*, .wedge-escalations-*, .seen-*) so it leaves no marker residue.
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
@@ -2398,6 +2398,7 @@ rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" \
   "$STATE/.$ID.open-decisions-cursor"
+rm -rf -- "$STATE/.pi-delivery/$ID"
 if [ "$KIND" != recon ] && [ "$KIND" != xo ] && [ "$MODE" != local-only ]; then
   "$SQUAD_ROOT/bin/sq-unit-sync.sh" "$PROJ" || true
 fi

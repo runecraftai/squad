@@ -2025,7 +2025,18 @@ EOF
 // "turn_end" fires at every inner turn boundary (one LLM response plus its
 // tool calls) and stays a wake NOTIFICATION touch for the sentry, never
 // current-state truth.
-import { execFile } from "node:child_process";
+// The private delivery dropbox lets sq-send reach a parked Pi session through
+// sendUserMessage instead of typing into a composer that may swallow Enter.
+import { execFile, execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 const busyEvent = (state: string, event: string) =>
   new Promise<void>((resolve) => {
     execFile("$SQUAD_ROOT/bin/sq-busy-event.sh", [
@@ -2033,8 +2044,136 @@ const busyEvent = (state: string, event: string) =>
       "--gen", "$BUSY_GEN", "--source", "pi-ext", "--event", event,
     ], () => resolve());
   });
+const deliveryDir = "$STATE_REAL/.pi-delivery";
+const deliveryTaskDir = deliveryDir + "/$ID";
+const deliveryReady = deliveryTaskDir + "/ready";
+const deliveryReadyTemp = deliveryReady + ".tmp";
+let deliveryWatcher: ReturnType<typeof watch> | undefined;
+let piAgentRunning = false;
+
+async function waitForProcessing(): Promise<boolean> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (piAgentRunning) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return piAgentRunning;
+}
+
+function writeDeliveryResponse(requestId: string, status: string): void {
+  const responsePath = deliveryTaskDir + "/" + requestId + ".response";
+  const responseTemp = responsePath + ".tmp";
+  writeFileSync(responseTemp, status + String.fromCharCode(10));
+  renameSync(responseTemp, responsePath);
+}
+
+function stopDelivery(): void {
+  if (deliveryWatcher) {
+    deliveryWatcher.close();
+    deliveryWatcher = undefined;
+  }
+  try {
+    unlinkSync(deliveryReady);
+  } catch {
+    // Cleanup may already have retired the marker.
+  }
+  try {
+    unlinkSync(deliveryReadyTemp);
+  } catch {}
+}
+
+function deliveryProcessIdentity(pid: number): string | undefined {
+  try {
+    const processStat = readFileSync("/proc/" + pid + "/stat", "utf8");
+    const processFields = processStat.slice(processStat.lastIndexOf(") ") + 2).trim().split(/\s+/);
+    const processStart = processFields[19];
+    if (processStart && /^[0-9]+$/.test(processStart)) return "proc-starttime=" + processStart;
+  } catch {}
+  try {
+    const output = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C" },
+    }).trim();
+    return output ? "ps-lstart=" + output : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function startDelivery(pi: any): void {
+  if (deliveryWatcher) return;
+  try {
+    mkdirSync(deliveryTaskDir, { recursive: true });
+    deliveryWatcher = watch(deliveryTaskDir, () => scanDeliveryRequests(pi));
+    const processIdentity = deliveryProcessIdentity(process.pid);
+    if (!processIdentity) throw new Error("process identity unavailable");
+    writeFileSync(
+      deliveryReadyTemp,
+      String(process.pid) + String.fromCharCode(10) + processIdentity + String.fromCharCode(10),
+    );
+    renameSync(deliveryReadyTemp, deliveryReady);
+    scanDeliveryRequests(pi);
+  } catch {
+    stopDelivery();
+  }
+}
+
+async function processDeliveryRequest(requestPath: string, pi: any): Promise<void> {
+  const processingPath = requestPath + ".processing";
+  const requestName = requestPath.slice((deliveryTaskDir + "/").length);
+  const expectedRequestId = requestName.slice(0, -".request".length);
+  let requestId = "";
+  let claimed = false;
+  try {
+    renameSync(requestPath, processingPath);
+    claimed = true;
+    const raw = readFileSync(processingPath, "utf8");
+    const separator = raw.indexOf(String.fromCharCode(10));
+    if (separator < 0) throw new Error("malformed request");
+    const requestIdCandidate = raw.slice(0, separator);
+    if (requestIdCandidate !== expectedRequestId) throw new Error("request identity mismatch");
+    requestId = requestIdCandidate;
+    const message = raw.slice(separator + 1).replace(new RegExp(String.fromCharCode(10) + "$"), "");
+    if (typeof pi.sendUserMessage !== "function") throw new Error("sendUserMessage unavailable");
+    await pi.sendUserMessage(message, { deliverAs: "followUp" });
+    const processing = await waitForProcessing();
+    writeDeliveryResponse(requestId, processing ? "processing" : "unconfirmed");
+  } catch {
+    if (requestId) writeDeliveryResponse(requestId, "unavailable");
+  } finally {
+    if (claimed) {
+      try {
+        unlinkSync(processingPath);
+      } catch {}
+    }
+  }
+}
+
+function scanDeliveryRequests(pi: any): void {
+  let names: string[];
+  try {
+    names = readdirSync(deliveryTaskDir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.endsWith(".request")) continue;
+    void processDeliveryRequest(deliveryTaskDir + "/" + name, pi);
+  }
+}
+
 export default function (pi: any) {
-  pi.on("agent_start", () => busyEvent("busy", "agent-start"));
+  pi.on("session_start", () => {
+    piAgentRunning = false;
+    startDelivery(pi);
+  });
+  pi.on("session_shutdown", () => {
+    piAgentRunning = false;
+    stopDelivery();
+  });
+  pi.on("agent_start", () => {
+    piAgentRunning = true;
+    return busyEvent("busy", "agent-start");
+  });
   pi.on("agent_settled", (_event: any, ctx: any) => {
     try {
       if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
@@ -2042,6 +2181,7 @@ export default function (pi: any) {
       // A stale ctx (session replacement or reload) throws on use; the settle
       // event still fired, so treat it as settled instead of crashing the run.
     }
+    piAgentRunning = false;
     return busyEvent("idle", "agent-settled");
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));

@@ -36,7 +36,9 @@ make_stubs() {  # <dir> -> echoes fakebin dir
 #!/usr/bin/env bash
 set -u
 case "${1:-}" in
-  send-keys) exit 0 ;;
+  send-keys)
+    [ -z "${SQUAD_TMUX_LOG:-}" ] || printf '%s\n' "$*" >> "$SQUAD_TMUX_LOG"
+    exit 0 ;;
   display-message)
     for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
     printf 'fakepane\n'; exit 0 ;;
@@ -49,6 +51,9 @@ SH
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "${1:-}" >> "$SQUAD_SLEEP_LOG"
+if [ "${SQUAD_REAL_SLEEP:-0}" = 1 ]; then
+  /usr/bin/sleep "${1:-0}"
+fi
 exit 0
 SH
   chmod +x "$fb/sleep"
@@ -118,6 +123,74 @@ test_key_path_never_pauses() {
   pass "sq-send: the --key path never pauses (settle scoped to text submit)"
 }
 
+test_pi_native_delivery_avoids_tmux_for_parked_operator() {
+  local dir fb log home delivery processor pid ready_identity message rc task_id
+  dir="$TMP_ROOT/pi-native"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/sleep.log"
+  home="$dir/home"; mkdir -p "$home/state" "$home/project"
+  task_id=task.with.dot
+  fm_write_meta "$home/state/$task_id.meta" \
+    "window=sess:win" "worktree=$home/wt" "project=$home/project" \
+    "harness=pi" "kind=strike" "mode=drill" "yolo=off"
+  delivery="$home/state/.pi-delivery/$task_id"; mkdir -p "$delivery"
+  processor="$dir/process-delivery.sh"
+  cat > "$processor" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=$1
+log=$2
+while :; do
+  for request in "$dir"/*.request; do
+    [ -e "$request" ] || continue
+    request_id=$(basename "$request" .request)
+    {
+      IFS= read -r _request_line
+      IFS= read -r message
+    } < "$request"
+    printf '%s\n' "$message" > "$log"
+    printf 'processing\n' > "$dir/$request_id.response"
+    rm -f "$request"
+  done
+  /usr/bin/sleep 0.01
+done
+SH
+  chmod +x "$processor"
+  "$processor" "$delivery" "$dir/native-message" &
+  pid=$!
+  ready_identity=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  printf '%s\n%s\n' "$pid" "ps-lstart=$ready_identity" > "$delivery/ready"
+  message='native parked steer'
+  env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
+    SQUAD_TMUX_LOG="$dir/tmux.log" SQUAD_REAL_SLEEP=1 SQUAD_SEND_SETTLE=0 \
+    SQUAD_PROC_ROOT_OVERRIDE="$home/no-proc" SQUAD_PI_DELIVERY_TIMEOUT=3 \
+    "$SEND" "$task_id" "$message" 2>/dev/null
+  rc=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$rc" "Pi native delivery should succeed"
+  [ "$(cat "$dir/native-message")" = "$message" ] \
+    || fail "Pi native delivery did not preserve the message"
+  [ ! -s "$dir/tmux.log" ] || fail "Pi native delivery unexpectedly used tmux"
+  pass "sq-send: parked Pi delivery uses sendUserMessage's native dropbox instead of tmux"
+}
+
+test_pi_fallback_to_tmux_when_extension_unavailable() {
+  local dir fb log home rc
+  dir="$TMP_ROOT/pi-fallback"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/sleep.log"
+  home="$dir/home"; mkdir -p "$home/state" "$home/project"
+  fm_write_meta "$home/state/task.meta" \
+    "window=sess:win" "worktree=$home/wt" "project=$home/project" \
+    "harness=pi-signed" "kind=strike" "mode=drill" "yolo=off"
+  env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
+    SQUAD_TMUX_LOG="$dir/tmux.log" SQUAD_SEND_SETTLE=0 \
+    "$SEND" task "fallback steer" 2>/dev/null
+  rc=$?
+  expect_code 0 "$rc" "Pi fallback delivery should succeed"
+  [ -s "$dir/tmux.log" ] || fail "Pi extension fallback did not use tmux"
+  pass "sq-send: Pi falls back to tmux when native delivery is unavailable"
+}
+
 test_claude_escape_records_interrupt_idle() {
   local dir fb log rc home gen out
   dir="$TMP_ROOT/claude-interrupt"; mkdir -p "$dir"
@@ -143,4 +216,6 @@ test_default_send_pauses_one_second
 test_zero_disables_pause
 test_pause_is_tunable
 test_key_path_never_pauses
+test_pi_native_delivery_avoids_tmux_for_parked_operator
+test_pi_fallback_to_tmux_when_extension_unavailable
 test_claude_escape_records_interrupt_idle
