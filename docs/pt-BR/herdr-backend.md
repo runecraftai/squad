@@ -208,7 +208,7 @@ O adaptador inicia e faz polling de um servidor nomeado antes de chamadas de wor
 Toda invocação Herdr passa por `fm_backend_herdr_cli`, que configura o ambiente e passa um `--session <nome>` explícito no final.
 Uma variável de ambiente sozinha não é confiável quando outro servidor Herdr está rodando.
 
-Texto literal e Enter são operações separadas para steers ordinários.
+Para steers ordinários roteados pelo backend, texto literal e Enter são operações separadas.
 Comandos fixos no momento de spawn podem usar a primitiva atômica de run do Herdr.
 Enter, Escape e Ctrl-C são suportados.
 Input com prefixo de slash e dollar usa o settle compartilhado ciente-do-harness antes do primeiro Enter para que um popup de completion não o consuma.

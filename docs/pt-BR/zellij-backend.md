@@ -76,7 +76,7 @@ Essa sonda ativa tem escopo na descoberta de worktree no momento do spawn e não
 O adaptador registra a aba ativa anterior e imediatamente a restaura com `go-to-tab-by-id`.
 Existe uma corrida visível estreita entre essas chamadas que nenhuma flag atual do Zellij consegue remover.
 
-Envio literal usa bracketed paste seguido de um Enter explícito separado.
+Envio literal roteado pelo backend usa bracketed paste seguido de um Enter explícito separado.
 O adaptador suporta `Enter`, `Esc` e a expressão de tecla de um argumento `Ctrl c` pelo vocabulário compartilhado de teclas.
 O Zellij expõe nenhum sinal nativo de linha de cursor, estilo de composer ANSI ou estado do agente, então o reconhecimento de submit continua baseado em delta de conteúdo.
 Isso distingue nenhuma mudança de tela alterada, mas é menos preciso que o leitor estrutural de caixas do tmux ou o estado nativo do Herdr mais classificador estrutural.

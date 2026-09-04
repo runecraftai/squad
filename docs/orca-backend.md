@@ -52,10 +52,10 @@ Spawn registers the repository, creates an independent worktree, reuses only the
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
 
 `sq-peek.sh` reads with `orca terminal read`.
-`sq-send.sh` types and verifies composer clearance, follows `oldestCursor` when Orca returns a limited page, and retries Enter without retyping when a slash popup first fills an argument placeholder.
+For non-Pi targets, or when native Pi delivery is unavailable, `sq-send.sh` types and verifies composer clearance, follows `oldestCursor` when Orca returns a limited page, and retries Enter without retyping when a slash popup first fills an argument placeholder.
 A bare shell row is `unknown`, not an empty agent composer.
-pi operators launched from a positional brief complete their turn and exit to the shell instead of idling at a composer, so on Linux they never render the bordered composer row the clearance classifier verifies against.
-A steer sent while such an operator is mid-turn is delivered and queued - verified live on v1.4.188, the terminal shows the queued message and the operator later acts on it - but verification still returns `unknown` and `sq-send.sh` exits reporting delivery unconfirmed.
+Pi operators launched from a positional brief complete their turn and exit to the shell instead of idling at a composer, so on Linux they never render the bordered composer row the clearance classifier verifies against.
+When native Pi delivery is unavailable, a steer sent while such an operator is mid-turn is delivered and queued - verified live on v1.4.188, the terminal shows the queued message and the operator later acts on it - but verification still returns `unknown` and `sq-send.sh` exits reporting delivery unconfirmed.
 That verdict stays genuinely unconfirmed either way: peek the terminal before acting on it, and never resend blindly, because the same `unknown` also covers text parked at an exited operator's bare shell prompt.
 The sentry has no native Orca busy signal, so each harness adapter's semantic lifecycle supplies worker state.
 Grok alone retains its isolated rendered-tail fallback.
