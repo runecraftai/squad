@@ -136,7 +136,7 @@ Custa uma linha e remove o modo de falha onde um rename ou rollback silenciosame
 ## Escopo
 
 O hook embarcado dispara apenas numa base primária genuína do Squad, usando o predicado compartilhado `fm_primary_scope_matches` de `bin/sq-primary-scope-lib.sh`.
-Este é o mesmo predicado usado por `bin/sq-sessionstart-nudge.sh` e `bin/sq-turnend-guard.sh`, então os três hooks rastreados com escopo primário não podem divergir.
+Este é o mesmo predicado usado por `bin/sq-sessionstart-nudge.sh` e `bin/sq-turnend-guard.sh`, então esses hooks rastreados com escopo primário não podem divergir.
 
 Uma base está em escopo quando tem `AGENTS.md`, um diretório `bin/`, um diretório de estado existente, e ou um checkout simples onde git-dir é igual a git-common-dir ou um marcador `.sq-xo-home` válido.
 Uma base XO marcada está em escopo de propósito: opera sua própria unidade e deve despachar por ela pelas mesmas razões de durabilidade.

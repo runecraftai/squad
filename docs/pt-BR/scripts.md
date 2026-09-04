@@ -50,6 +50,10 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-arm-pretool-check.sh` | Transporte PreToolUse estável para a política do comando sentry-arm (docs/arm-pretool-check.md) |
 | `sq-arm-command-policy.mjs` | Dono semântico da política PreToolUse do sentry-arm (docs/arm-pretool-check.md)   |
 | `sq-subagent-pretool-check.sh` | Guard PreToolUse do formato de delegação na base primária (docs/subagent-guard.md) |
+| `sq-backend-pretool-check.sh` | Guard PreToolUse de CLI bruta de provedor de sessão na base primária |
+| `sq-backend-command-policy.mjs` | Dono semântico da política de CLI bruta de provedor de sessão |
+| `sq-poll-pretool-check.sh` | Guard PreToolUse de loops de polling de `state/` na base primária |
+| `sq-poll-command-policy.mjs` | Dono semântico da política de loops de polling restritos de `state/` |
 | `sq-supervision-instructions.sh` | Renderizar o bloco de supervisão por harness primário do início de sessão ou a instrução de reparo de uma linha |
 | `sq-home-seed.sh`        | Provisionar transacionalmente uma base XO local e manter `data/XOs.md` |
 | `sq-remote-home-seed.sh` | Registrar e provisionar uma base XO inteira num host alcançável por SSH              |

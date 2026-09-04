@@ -134,7 +134,7 @@ It costs one line and removes the failure mode where a rename or a rollback sile
 ## Scope
 
 The shipped hook fires only in a genuine Squad primary base, using the shared predicate `fm_primary_scope_matches` from `bin/sq-primary-scope-lib.sh`.
-This is the same predicate `bin/sq-sessionstart-nudge.sh` and `bin/sq-turnend-guard.sh` use, so the three tracked primary-scoped hooks cannot drift apart.
+This is the same predicate `bin/sq-sessionstart-nudge.sh` and `bin/sq-turnend-guard.sh` use, so these tracked primary-scoped hooks cannot drift apart.
 
 A base is in scope when it has `AGENTS.md`, a `bin/` directory, an existing state directory, and either a plain checkout where git-dir equals git-common-dir or a valid `.sq-xo-home` marker.
 A marked XO base is in scope on purpose: it operates its own unit and must dispatch through it for the same durability reasons.

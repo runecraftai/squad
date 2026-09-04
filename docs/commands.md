@@ -29,6 +29,8 @@ Reach for the Squad tool first; refer to that script's own header when its exact
 
 - Never use `tmux list-windows` (or grep-ing `tmux list-windows` output) to check task state.
   Use `bin/sq-window-state.sh list`.
+- Never invoke `tmux`, `herdr`, `zellij`, `orca`, or `cmux` directly to create, inspect, steer, or destroy Squad task sessions.
+  Use the applicable Squad lifecycle wrapper such as `bin/sq-spawn.sh`, `bin/sq-send.sh`, `bin/sq-window-state.sh`, or `bin/sq-teardown.sh`.
 - Never use `tmux send-keys` to steer, answer, or interrupt an operator.
   Use `bin/sq-send.sh <target> <text>`.
 - Never use raw `tmux` commands (`tmux kill-window`, `tmux new-session`, manually spawning a harness process, etc.) for operator lifecycle management.
@@ -135,5 +137,5 @@ This refuses when the branch's work is not reachable from a remote and not cover
 
 - [docs/scripts.md](scripts.md) - the complete `bin/` toolbelt reference, one purpose clause per script.
 - [docs/tmux-backend.md](tmux-backend.md) - the tmux reference runtime backend's own setup and window-naming conventions, for the cases where inspecting a window directly by hand is still appropriate (attaching to watch, not to control).
-- [docs/cd-guard.md](cd-guard.md), [docs/arm-pretool-check.md](arm-pretool-check.md), [docs/subagent-guard.md](subagent-guard.md) - the five PreToolUse seatbelts that mechanically enforce a subset of these rules.
+- [docs/cd-guard.md](cd-guard.md), [docs/arm-pretool-check.md](arm-pretool-check.md), [docs/subagent-guard.md](subagent-guard.md) - the three seatbelts with dedicated reference pages; the backend-raw and poll-loop policies are owned by their script headers (`bin/sq-backend-pretool-check.sh` and `bin/sq-poll-pretool-check.sh`) and indexed in [docs/scripts.md](scripts.md).
 - [`AGENTS.md`](../AGENTS.md) - the operating contract these tools implement; section 8 owns the supervision protocol and the mandatory tool-usage rule, section 7 owns the task lifecycle these commands drive.
