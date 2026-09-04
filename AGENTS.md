@@ -586,6 +586,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `hijack` - load before evaluating an existing open-source product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
 - `obsidian-axi` - load before running any `obsidian-axi` CLI command, or when a task needs to search, read, or explore the commander's personal Obsidian vault via that CLI.
+- `sq-learn` - load when saving a lesson, capturing learning, recording a gotcha, logging a lesson, or invoking `sq-learn`.
 
 ## 14. Relay
 
