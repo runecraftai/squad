@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/runecraftai/squad/compare/v0.2.0...v0.2.1) (2026-09-04)
+
+
+### Miscellaneous Chores
+
+* reconcile pipeline branch history ([85d9fdb](https://github.com/runecraftai/squad/commit/85d9fdb1b30249ad7b8f8b0d76c27cfdc7ec5e2e))
+
 ## [0.2.0](https://github.com/runecraftai/squad/compare/v0.1.0...v0.2.0) (2026-08-14)
 
 
