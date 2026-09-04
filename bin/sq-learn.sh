@@ -70,10 +70,6 @@ if [ -n "$TASK" ] && [[ ! $TASK =~ ^[[:alnum:]-]+$ ]]; then
   printf 'warning: task id does not contain only alphanumeric characters and hyphens: %s\n' "$TASK" >&2
 fi
 
-if [ "${#LESSON}" -gt 500 ]; then
-  LESSON=${LESSON:0:497}...
-fi
-
 normalize() {
   local value=$1
   value=$(printf '%s' "$value" | LC_ALL=C tr '[:upper:]' '[:lower:]')
@@ -86,6 +82,16 @@ normalize() {
   while [[ $value == *' ' ]]; do value=${value% }; done
   printf '%s' "$value"
 }
+
+NORMALIZED_LESSON=$(normalize "$LESSON")
+if [[ $NORMALIZED_LESSON =~ ^[[:space:]]*$ ]]; then
+  printf 'error: lesson must not be empty\n' >&2
+  exit 1
+fi
+
+if [ "${#LESSON}" -gt 500 ]; then
+  LESSON=${LESSON:0:497}...
+fi
 
 # A candidate is a contiguous substring covering at least 80% of the lesson.
 is_duplicate() {
@@ -140,11 +146,18 @@ SHARED_TOKENS=$SQUAD_STARTUP_MEMORY_MEASURE_TOKENS
 measure_memory_file "$LEARNINGS"
 LEARNINGS_BYTES=$SQUAD_STARTUP_MEMORY_MEASURE_BYTES
 
-NORMALIZED_LESSON=$(normalize "$LESSON")
-if [[ $NORMALIZED_LESSON =~ ^[[:space:]]*$ ]]; then
-  printf 'error: lesson must not be empty\n' >&2
-  exit 1
+if [ -f "$LEARNINGS" ]; then
+  LEARNINGS_LINKS=$(fm_startup_memory_budget_link_count "$LEARNINGS") || {
+    printf 'error: cannot inspect learnings file link count\n' >&2
+    exit 1
+  }
+  if [ "$LEARNINGS_LINKS" != 1 ]; then
+    printf 'error: learnings file is hardlinked; lesson not captured\n' >&2
+    exit 1
+  fi
 fi
+
+NORMALIZED_LESSON=$(normalize "$LESSON")
 if [ -f "$LEARNINGS" ] && is_duplicate "$NORMALIZED_LESSON"; then
   printf 'duplicate skipped\n'
   exit 0
