@@ -2025,7 +2025,18 @@ EOF
 // "turn_end" fires at every inner turn boundary (one LLM response plus its
 // tool calls) and stays a wake NOTIFICATION touch for the sentry, never
 // current-state truth.
+// The private delivery dropbox lets sq-send reach a parked Pi session through
+// sendUserMessage instead of typing into a composer that may swallow Enter.
 import { execFile } from "node:child_process";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  unlinkSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 const busyEvent = (state: string, event: string) =>
   new Promise<void>((resolve) => {
     execFile("$SQUAD_ROOT/bin/sq-busy-event.sh", [
@@ -2033,8 +2044,86 @@ const busyEvent = (state: string, event: string) =>
       "--gen", "$BUSY_GEN", "--source", "pi-ext", "--event", event,
     ], () => resolve());
   });
+const deliveryDir = "$STATE_REAL/.pi-delivery";
+const deliveryReady = deliveryDir + "/$ID.ready";
+let piAgentRunning = false;
+
+async function waitForProcessing(): Promise<boolean> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (piAgentRunning) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return piAgentRunning;
+}
+
+async function processDeliveryRequest(requestPath: string): Promise<void> {
+  const processingPath = requestPath + ".processing";
+  let requestId = "";
+  try {
+    renameSync(requestPath, processingPath);
+    const raw = readFileSync(processingPath, "utf8");
+    const separator = raw.indexOf(String.fromCharCode(10));
+    if (separator < 0) throw new Error("malformed request");
+    requestId = raw.slice(0, separator);
+    const message = raw.slice(separator + 1).replace(new RegExp(String.fromCharCode(10) + "$"), "");
+    if (typeof pi.sendUserMessage !== "function") throw new Error("sendUserMessage unavailable");
+    await pi.sendUserMessage(message, { deliverAs: "followUp" });
+    const processing = await waitForProcessing();
+    writeFileSync(
+      deliveryDir + "/" + requestId + ".response",
+      (processing ? "processing" : "unconfirmed") + String.fromCharCode(10),
+    );
+  } catch {
+    if (requestId) {
+      writeFileSync(
+        deliveryDir + "/" + requestId + ".response",
+        "unavailable" + String.fromCharCode(10),
+      );
+    }
+  } finally {
+    try {
+      unlinkSync(processingPath);
+    } catch {
+      // Another delivery scan claimed this request first.
+    }
+  }
+}
+
+function scanDeliveryRequests(): void {
+  let names: string[];
+  try {
+    names = readdirSync(deliveryDir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.endsWith(".request")) continue;
+    void processDeliveryRequest(deliveryDir + "/" + name);
+  }
+}
+
 export default function (pi: any) {
-  pi.on("agent_start", () => busyEvent("busy", "agent-start"));
+  try {
+    mkdirSync(deliveryDir, { recursive: true });
+    const deliveryWatcher = watch(deliveryDir, () => scanDeliveryRequests());
+    writeFileSync(deliveryReady, String(process.pid) + String.fromCharCode(10));
+    process.once("exit", () => {
+      deliveryWatcher.close();
+      try {
+        unlinkSync(deliveryReady);
+      } catch {
+        // Cleanup may already have retired the marker.
+      }
+    });
+    scanDeliveryRequests();
+  } catch {
+    // sq-send sees the missing ready marker and safely uses the backend fallback.
+  }
+
+  pi.on("agent_start", () => {
+    piAgentRunning = true;
+    return busyEvent("busy", "agent-start");
+  });
   pi.on("agent_settled", (_event: any, ctx: any) => {
     try {
       if (ctx && typeof ctx.isIdle === "function" && !ctx.isIdle()) return;
@@ -2042,6 +2131,7 @@ export default function (pi: any) {
       // A stale ctx (session replacement or reload) throws on use; the settle
       // event still fired, so treat it as settled instead of crashing the run.
     }
+    piAgentRunning = false;
     return busyEvent("idle", "agent-settled");
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
