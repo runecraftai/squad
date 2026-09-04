@@ -141,6 +141,10 @@ measure_memory_file "$LEARNINGS"
 LEARNINGS_BYTES=$SQUAD_STARTUP_MEMORY_MEASURE_BYTES
 
 NORMALIZED_LESSON=$(normalize "$LESSON")
+if [[ $NORMALIZED_LESSON =~ ^[[:space:]]*$ ]]; then
+  printf 'error: lesson must not be empty\n' >&2
+  exit 1
+fi
 if [ -f "$LEARNINGS" ] && is_duplicate "$NORMALIZED_LESSON"; then
   printf 'duplicate skipped\n'
   exit 0
