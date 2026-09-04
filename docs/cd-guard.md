@@ -5,8 +5,8 @@ This document is the authoritative human-readable contract for the cd-guard PreT
 `bin/sq-cd-pretool-check.sh` is the stable harness transport, primary-checkout scope, and output renderer.
 The tracked harness adapters forward command text without classifying it.
 
-It is the third member of a family of primary-session guards that share the same cross-harness hook machinery:
-the sentry-arm PreToolUse seatbelt (`bin/sq-arm-pretool-check.sh`, `docs/arm-pretool-check.md`) and the turn-end supervision guard (`bin/sq-turnend-guard.sh`, `docs/turnend-guard.md`).
+It is the fifth member of a family of primary-session guards that share the same cross-harness hook machinery:
+the sentry-arm PreToolUse seatbelt (`bin/sq-arm-pretool-check.sh`, `docs/arm-pretool-check.md`), the turn-end supervision guard (`bin/sq-turnend-guard.sh`, `docs/turnend-guard.md`), the raw session-provider CLI guard (`bin/sq-backend-pretool-check.sh`), and the state polling-loop guard (`bin/sq-poll-pretool-check.sh`).
 
 ## Purpose and boundary
 

@@ -140,6 +140,8 @@ family_for_basename() {
     sq-documentation-audiences.test.sh|sq-ensure-agents-md.test.sh|sq-grok-harness.test.sh|\
     sq-kimi-harness.test.sh|sq-muse-harness.test.sh|sq-herdr-lab.test.sh|sq-lint.test.sh|\
     sq-operational-input.test.sh|sq-pi-primary-types.test.sh|\
+    sq-backend-pretool-check.test.sh|sq-poll-pretool-check.test.sh|\
+    sq-primary-pretool-wiring.test.sh|\
     sq-send-popup-settle.test.sh|sq-send-settle.test.sh|\
     sq-subagent-pretool-check.test.sh|\
     sq-supervision-instructions.test.sh|sq-task-delivery.test.sh|\
@@ -1699,3 +1701,4 @@ if [ -n "$JSON_PATH" ]; then
 fi
 
 exit "$AGG_RC"
+

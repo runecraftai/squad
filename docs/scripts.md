@@ -48,6 +48,10 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-arm-pretool-check.sh` | Stable PreToolUse transport for the sentry-arm command policy (docs/arm-pretool-check.md) |
 | `sq-arm-command-policy.mjs` | Semantic owner of the sentry-arm PreToolUse policy (docs/arm-pretool-check.md)   |
 | `sq-subagent-pretool-check.sh` | Primary-base delegation-shape PreToolUse guard (docs/subagent-guard.md) |
+| `sq-backend-pretool-check.sh` | Primary-base raw session-provider CLI PreToolUse guard |
+| `sq-backend-command-policy.mjs` | Semantic owner of the raw session-provider CLI policy |
+| `sq-poll-pretool-check.sh` | Primary-base `state/` polling-loop PreToolUse guard |
+| `sq-poll-command-policy.mjs` | Semantic owner of the narrow `state/` polling-loop policy |
 | `sq-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `sq-home-seed.sh`        | Transactionally provision a local XO base and maintain `data/XOs.md` |
 | `sq-remote-home-seed.sh` | Register and provision a whole XO base on an SSH-reachable host              |
