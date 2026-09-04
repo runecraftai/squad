@@ -30,6 +30,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-backlog-handoff.sh`  | Validar e delegar movimentos enfileirados de itens de backlog para uma base XO               |
 | `sq-backlog-receive.sh`  | Ingerir idempotentemente um outbox confinado de handoff remoto através do sq-tasks             |
 | `sq-decision-hold.sh`    | Criar, verificar, completar e resolver decisões duráveis retidas pelo comandante                 |
+| `sq-learn.sh`            | Capturar uma lição operacional durável em `data/learnings.md`                         |
 | `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab   |
 | `sq-herdr-lab.sh`        | Provisionar e operar protegidamente uma sessão de lab Herdr isolada, nunca padrão         |
 | `sq-install-herdr.sh`    | Instalar o pin exato de versão do Herdr usado pelo CI com URL oficial de asset, SHA-256 e checagens de protocolo |

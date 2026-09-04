@@ -147,7 +147,8 @@ Preferências compartilhadas do comandante que se aplicam entre domínios de XO 
 ## Aprendizados operacionais (data/learnings.md)
 
 Fatos operacionais e armadilhas locais da unidade vivem localmente em `data/learnings.md`; é gitignored e impresso após os arquivos de preferência do comandante no digest de contexto do início de sessão.
-O arquivo é criado lentamente no primeiro aprendizado e segue o mesmo estilo datado, baseado em evidência e curadoria de `data/commander.md`: inspecione o arquivo atual primeiro, depois reescreva ou sele entradas obsoletas em vez de anexar para sempre.
+O arquivo é criado sob demanda por `bin/sq-learn.sh`, que captura novos aprendizados; o cabeçalho do script é dono das flags exatas e do comportamento de captura.
+A habilidade interna [`/debrief`](../../.agents/skills/debrief/SKILL.md) é dona da curadoria inspect-then-update, incluindo reescrever ou podar entradas obsoletas em vez de anexar para sempre.
 Não existe arquivo compartilhado de aprendizados por decisão do comandante.
 
 ## Orçamento de memória de startup (config/startup-memory-budget)

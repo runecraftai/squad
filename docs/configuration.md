@@ -145,7 +145,8 @@ Shared commander preferences that apply across XO domains live only in the prima
 ## Operational learnings (data/learnings.md)
 
 Unit-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed after the commander-preference files in the session-start context digest.
-The file is created lazily on first learning and follows the same dated, evidence-backed, curated style as `data/commander.md`: inspect the current file first, then rewrite or prune stale entries instead of appending forever.
+The file is created lazily by `bin/sq-learn.sh`, which captures new lessons; the script header owns its exact capture flags and behavior.
+The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns inspect-then-update curation, including rewriting or pruning stale entries instead of appending forever.
 There is no shared learnings file by commander decision.
 
 ## Startup memory budget (config/startup-memory-budget)

@@ -46,4 +46,4 @@ Keep each lesson under 500 characters.
 
 Make the lesson specific and actionable so another operator can apply it.
 
-The script deduplicates identical lessons automatically.
+The script skips identical and near-duplicate lessons automatically.

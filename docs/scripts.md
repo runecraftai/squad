@@ -28,6 +28,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
 | `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through sq-tasks             |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
+| `sq-learn.sh`            | Capture a durable operational lesson in `data/learnings.md`                         |
 | `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs   |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `sq-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
