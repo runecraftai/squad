@@ -121,16 +121,22 @@ fm_send_id_from_meta() {  # <meta-file>
 # extension is unavailable so the caller can use the normal backend path.
 fm_send_pi_native() {  # <state-dir> <task-id> <message>
   local state_dir=$1 task_id=$2 message=$3 dir ready request_id request tmp timeout
-  local response deadline status ready_pid
+  local response deadline status ready_pid ready_start current_start
   dir="$state_dir/.pi-delivery"
   ready="$dir/$task_id.ready"
   [ -d "$dir" ] || return 2
   [ -f "$ready" ] || return 2
   ready_pid=$(sed -n '1p' "$ready" 2>/dev/null || true)
+  ready_start=$(sed -n '2p' "$ready" 2>/dev/null || true)
   case "$ready_pid" in
     ''|*[!0-9]*) return 2 ;;
   esac
+  case "$ready_start" in
+    ''|*[!0-9]*) return 2 ;;
+  esac
   kill -0 "$ready_pid" 2>/dev/null || return 2
+  current_start=$(awk '{print $22}' "/proc/$ready_pid/stat" 2>/dev/null || true)
+  [ "$current_start" = "$ready_start" ] || return 2
 
   request_id="$task_id.$$.$RANDOM"
   request="$dir/$request_id.request"
