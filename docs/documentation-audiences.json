@@ -700,6 +700,10 @@
    "audience": "maintainer-verification"
   },
   {
+   "path": "docs/verification/pi-model-benchmark.md",
+   "audience": "maintainer-verification"
+  },
+  {
    "path": "docs/verification/supervision.md",
    "audience": "maintainer-verification"
   },
