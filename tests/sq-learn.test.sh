@@ -6,8 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/bin/sq-learn.sh"
 
 if [ ! -x "$SCRIPT" ]; then
-  printf 'SKIP - bin/sq-learn.sh is not available yet\n'
-  exit 0
+  printf 'FAIL - required executable bin/sq-learn.sh is missing\n' >&2
+  exit 1
 fi
 
 passed=0
@@ -77,14 +77,16 @@ test_metadata() {
 }
 
 test_truncation() {
-  local home lesson
+  local home lesson entry payload
   home=$(new_home) || return 1
   lesson=$(printf '%600s' '' | tr ' ' 'x')
   run_learn "$home" "$lesson" >/dev/null || {
     cleanup_home "$home"
     return 1
   }
-  [ "$(tr -cd 'x' < "$home/data/learnings.md" | wc -c)" -eq 500 ]
+  entry=$(grep '^-' "$home/data/learnings.md")
+  payload=${entry#*):** }
+  [ "${#payload}" -eq 500 ]
   local result=$?
   cleanup_home "$home"
   return "$result"
