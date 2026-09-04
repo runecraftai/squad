@@ -18,7 +18,6 @@ if [ "${1:-}" = '--help' ] || [ "${1:-}" = '-h' ]; then
   usage
   exit 0
 fi
-
 if [ "$#" -lt 1 ] || [ -z "${1:-}" ]; then
   usage
   exit 1
