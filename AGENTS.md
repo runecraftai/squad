@@ -587,6 +587,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
 - `obsidian-axi` - load before running any `obsidian-axi` CLI command, or when a task needs to search, read, or explore the commander's personal Obsidian vault via that CLI.
 - `sq-learn` - load when saving a lesson, capturing learning, recording a gotcha, logging a lesson, or invoking `sq-learn`.
+- `skill-verification` - load before promoting an external skill or allowing an imported skill into drill, CI, or production dispatch.
 
 ## 14. Relay
 
