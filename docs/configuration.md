@@ -145,7 +145,7 @@ Shared commander preferences that apply across XO domains live only in the prima
 ## Operational learnings (data/learnings.md)
 
 Unit-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed after the commander-preference files in the session-start context digest.
-The file is created lazily by `bin/sq-learn.sh`, which captures new lessons; the script header owns its exact capture flags and behavior.
+The file is created lazily by `bin/sq-learn.sh`, which captures new lessons only when the resulting startup-memory surface remains within budget; the script header owns its exact capture flags and behavior.
 The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns inspect-then-update curation, including rewriting or pruning stale entries instead of appending forever.
 There is no shared learnings file by commander decision.
 
@@ -283,8 +283,7 @@ Valid files stay silent by default; with `SQUAD_BOOTSTRAP_VERBOSE_FACTS=1`, boot
 Malformed JSON, an empty or malformed rule/default array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 Within one `use` or `default` array, every candidate profile sharing a harness must carry the same `effort` when more than one of them specifies one; a mismatch is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - mixed effort in array: <harness...>`.
 An array's candidates are quota-driven alternates for the same task (`AGENTS.md` section 4, `quota-array-dispatch`), so letting quota pressure pick between two different reasoning-effort tiers would silently replace the task's reasoning class instead of only swapping model or harness; route an effort difference through a separate `when` rule keyed on task characteristics instead.
-Additionally, for pi-family harnesses (pi, pi-signed, opencode), bootstrap resolves every configured `model` id against the harness's own `--list-models` output and reports `CREW_DISPATCH: model existence:` when the id matches zero models or more than one model without an exact provider/model ID match.
-An exact provider/model ID match is accepted even when the same listing also contains longer fuzzy matches.
+Additionally, for pi-family harnesses (pi, pi-signed, opencode), bootstrap resolves every configured `model` id against the harness's own `--list-models` output and reports `CREW_DISPATCH: model existence:` when the id matches zero models or more than one model.
 A probe that cannot run surfaces explicit uncertainty rather than a hard failure.
 While the file remains present, no operator or recon spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 XO bases inherit this file from the primary, so an XO's own operators apply the same dispatch profile behavior.

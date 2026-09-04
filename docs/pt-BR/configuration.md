@@ -147,7 +147,7 @@ Preferências compartilhadas do comandante que se aplicam entre domínios de XO 
 ## Aprendizados operacionais (data/learnings.md)
 
 Fatos operacionais e armadilhas locais da unidade vivem localmente em `data/learnings.md`; é gitignored e impresso após os arquivos de preferência do comandante no digest de contexto do início de sessão.
-O arquivo é criado sob demanda por `bin/sq-learn.sh`, que captura novos aprendizados; o cabeçalho do script é dono das flags exatas e do comportamento de captura.
+O arquivo é criado lentamente por `bin/sq-learn.sh`, que captura novos aprendizados somente quando a superfície de memória de startup resultante permanece dentro da cota; o cabeçalho do script é dono das flags exatas e do comportamento de captura.
 A habilidade interna [`/debrief`](../../.agents/skills/debrief/SKILL.md) é dona da curadoria inspect-then-update, incluindo reescrever ou podar entradas obsoletas em vez de anexar para sempre.
 Não existe arquivo compartilhado de aprendizados por decisão do comandante.
 
@@ -285,8 +285,7 @@ Arquivos válidos ficam silenciosos por padrão; com `SQUAD_BOOTSTRAP_VERBOSE_FA
 JSON malformado, um array rule/default vazio ou malformado, um harness não verificado ou um valor de esforço não suportado por aquele harness é reportado como `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`; `jq` ausente é reportado através do fluxo normal de consentimento de instalação `MISSING: jq`.
 Dentro de um array `use` ou `default`, cada perfil candidato compartilhando um harness deve carregar o mesmo `effort` quando mais de um deles especifica um; uma incompatibilidade é reportada como `CREW_DISPATCH: invalid config/crew-dispatch.json - mixed effort in array: <harness...>`.
 Os candidatos de um array são alternativas guiadas por quota para a mesma tarefa (seção 4 do `AGENTS.md`, `quota-array-dispatch`), então deixar a pressão de quota escolher entre dois níveis diferentes de reasoning-effort substituiria silenciosamente a classe de reasoning da tarefa em vez de trocar apenas modelo ou harness; rotule uma diferença de esforço através de uma regra `when` separada, com chave nas características da tarefa.
-Além disso, para harnesses da família pi (pi, pi-signed, opencode), bootstrap resolve cada `model` id configurado contra a saída `--list-models` do próprio harness e reporta `CREW_DISPATCH: model existence:` quando o id corresponde a zero modelos ou mais de um modelo sem uma correspondência exata de ID provider/model.
-Uma correspondência exata de ID provider/model é aceita mesmo quando a mesma listagem também contém correspondências fuzzy mais longas.
+Além disso, para harnesses da família pi (pi, pi-signed, opencode), bootstrap resolve cada `model` id configurado contra a saída `--list-models` do próprio harness e reporta `CREW_DISPATCH: model existence:` quando o id corresponde a zero modelos ou mais de um modelo.
 Uma sonda que não pode executar surfaca incerteza explícita em vez de uma falha dura.
 Enquanto o arquivo estiver presente, nenhum spawn de operador ou recon pode prosseguir sem um harness resolvido explícito; configuração malformada deve ser reportada e corrigida em vez de ser contornada por seleção.
 Bases XO herdam este arquivo do primário, então os próprios operadores de um XO aplicam o mesmo comportamento de perfil de dispatch.
