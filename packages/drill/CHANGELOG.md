@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/runecraftai/squad/compare/drill-v0.1.3...drill-v0.1.4) (2026-09-04)
+
+
+### Bug Fixes
+
+* **drill:** resolve multiple JSON code fences instead of failing ([9750679](https://github.com/runecraftai/squad/commit/97506792b5e0bb4aa9f4a2c1f14b18557e6578a6))
+* **drill:** resolve multiple JSON code fences instead of failing ([68f5a3c](https://github.com/runecraftai/squad/commit/68f5a3c1f509f780d1db38a73bfe2b7dc75381a2))
+
 ## [0.1.3](https://github.com/runecraftai/squad/compare/drill-v0.1.2...drill-v0.1.3) (2026-08-24)
 
 
