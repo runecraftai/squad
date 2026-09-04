@@ -586,7 +586,7 @@ describe("terminateBridgeProcess", () => {
         "-e",
         [
           "const { spawn } = require('node:child_process');",
-          "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });",
+          "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore', detached: true });",
           `require('node:fs').writeFileSync(${JSON.stringify(childPidFile)}, String(child.pid));`,
           "process.on('SIGTERM', () => {});",
           "setTimeout(() => {}, 30000);",
