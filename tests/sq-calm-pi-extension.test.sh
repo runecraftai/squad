@@ -50,6 +50,18 @@ wait_for_text() {
   return 1
 }
 
+wait_for_export_file() {
+  local file=$1 i=0
+  while [ "$i" -lt 120 ]; do
+    if [ -s "$file" ] && grep -Fq '</html>' "$file" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+
 find_chrome() {
   local candidate
   if [ -n "${SQUAD_CHROME_BIN:-}" ] && [ -x "$SQUAD_CHROME_BIN" ]; then
@@ -827,6 +839,7 @@ const operationalMode = {
   chatContainer: operationalChat,
   editor: { addToHistory: (value) => operationalHistory.push(value) },
   getMarkdownThemeWithSettings: () => undefined,
+  getMarkdownTransformers: () => [],
   getUserMessageText: (message) => typeof message.content === "string"
     ? message.content
     : message.content.filter((item) => item.type === "text").map((item) => item.text).join(""),
@@ -2584,6 +2597,9 @@ const ctx = { ui };
 const fire = async (event, payload = {}) => {
   for (const handler of handlers.get(event) ?? []) await handler(payload, ctx);
 };
+const fireWithContext = async (event, context, payload = {}) => {
+  for (const handler of handlers.get(event) ?? []) await handler(payload, context);
+};
 const reset = () => {
   ui.workingVisible.length = 0;
   ui.widgetOps.length = 0;
@@ -2764,6 +2780,46 @@ for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
   check(ui.widgets.size === 0, `session_start(${reason}) installed a stale widget`);
   check(liveTimers === 0, `session_start(${reason}) left ${liveTimers} animation timers`);
 }
+
+// --- Stale lifecycle contexts are harmless, while unrelated UI errors still surface -
+const staleContextError =
+  "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx.";
+const staleContext = {};
+Object.defineProperty(staleContext, "ui", {
+  get() {
+    throw new Error(staleContextError);
+  },
+});
+reset();
+await fire("agent_start");
+await fireWithContext("agent_settled", staleContext);
+check(liveTimers === 1, "stale agent_settled unexpectedly altered the active widget before cleanup");
+await fire("agent_settled");
+check(liveTimers === 0 && ui.widgets.size === 0, "active agent_settled did not retry cleanup after a stale context");
+await fire("agent_start");
+await fireWithContext("session_shutdown", staleContext, { reason: "reload" });
+check(liveTimers === 1, "stale session_shutdown unexpectedly altered the active widget before cleanup");
+await fire("session_shutdown", { reason: "reload" });
+check(liveTimers === 0 && ui.widgets.size === 0, "active session_shutdown did not retry cleanup after a stale context");
+const unrelatedContext = {
+  ui: {
+    setWidget() {
+      throw new Error("unrelated Calm UI failure");
+    },
+    setWorkingVisible() {},
+  },
+};
+let unrelatedError;
+try {
+  await fireWithContext("agent_start", unrelatedContext);
+} catch (error) {
+  unrelatedError = error;
+}
+check(
+  unrelatedError instanceof Error && unrelatedError.message === "unrelated Calm UI failure",
+  "Calm swallowed an unrelated UI error while handling a lifecycle event",
+);
+await fire("agent_settled");
 
 // --- Toggling Calm off during an active run restores the stock row immediately -----
 await fire("session_start", { reason: "startup" });
@@ -3238,8 +3294,10 @@ JS
 
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" -l "/export $export_file"
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" M-s
-  wait_for_text "$export_snapshot" "Session exported to: $export_file" \
-    || fail "/export did not complete while calm mode was on"
+  if ! wait_for_text "$export_snapshot" "Session exported to: $export_file"; then
+    wait_for_export_file "$export_file" \
+      || fail "/export did not complete while calm mode was on"
+  fi
   node - "$export_file" <<'JS' || fail "calm-mode HTML export lost tool data or persisted synthetic provenance"
 const html = require("node:fs").readFileSync(process.argv[2], "utf8");
 const match = html.match(/<script id="session-data" type="application\/json">([^<]+)<\/script>/);

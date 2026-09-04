@@ -135,6 +135,14 @@ export default function (pi: ExtensionAPI) {
   // Pi session starts at the normal initial position. Never module-global.
   const workingShipAnimation = createCalmWorkingShipAnimation();
 
+  // Pi can deliver final lifecycle events with a UI context invalidated by session
+  // replacement or reload. Those events must not crash the process, but unrelated UI
+  // failures must remain visible to Pi.
+  const isInactiveUiContextError = (error: unknown): boolean => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.startsWith("This extension ctx is stale after session replacement or reload");
+  };
+
   // Single owner of Calm's working-row presentation choice. The widget is only created
   // or removed on a real transition, so repeated starts cannot duplicate its timer.
   const applyWorkingPresentation = (
@@ -142,17 +150,21 @@ export default function (pi: ExtensionAPI) {
     forceStockVisibility = false,
   ): void => {
     const showShip = agentRunActive && calmPresentationIsActive();
-    if (showShip !== workingShipShown) {
-      workingShipShown = showShip;
-      ui.setWidget(
-        CALM_WORKING_SHIP_WIDGET_KEY,
-        showShip
-          ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
-          : undefined,
-      );
-      ui.setWorkingVisible(!showShip);
-    } else if (forceStockVisibility && !showShip) {
-      ui.setWorkingVisible(true);
+    try {
+      if (showShip !== workingShipShown) {
+        ui.setWidget(
+          CALM_WORKING_SHIP_WIDGET_KEY,
+          showShip
+            ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
+            : undefined,
+        );
+        workingShipShown = showShip;
+        ui.setWorkingVisible(!showShip);
+      } else if (forceStockVisibility && !showShip) {
+        ui.setWorkingVisible(true);
+      }
+    } catch (error) {
+      if (!isInactiveUiContextError(error)) throw error;
     }
   };
 
@@ -392,15 +404,14 @@ export default function (pi: ExtensionAPI) {
     setCalmStockExportRendering(false);
     publishPresentationState();
     agentRunActive = false;
-    workingShipShown = false;
     // A genuine new session lifetime starts the boat at the normal initial position.
     workingShipAnimation.reset();
     applyWorkingPresentation(ctx.ui, true);
     ctx.ui.setHiddenThinkingLabel(calmPresentationIsActive() ? "" : undefined);
     ctx.ui.setStatus("Squad-calm", undefined);
     removeTerminalInputHandler?.();
-    removeTerminalInputHandler = ctx.ui.onTerminalInput((data) => {
-      if (!getKeybindings().matches(data, "tui.input.submit")) return;
+    removeTerminalInputHandler = ctx.ui.onTerminalInput((data): undefined => {
+      if (!getKeybindings().matches(data, "tui.input.submit")) return undefined;
 
       const input = ctx.ui.getEditorText().trim();
       if (
@@ -408,7 +419,7 @@ export default function (pi: ExtensionAPI) {
         input !== "/export" &&
         !input.startsWith("/export ")
       ) {
-        return;
+        return undefined;
       }
 
       exportRendering = true;
@@ -422,6 +433,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.setToolsExpanded(!expanded);
         ctx.ui.setToolsExpanded(expanded);
       }, 0);
+      return undefined;
     });
   });
 
@@ -430,15 +442,25 @@ export default function (pi: ExtensionAPI) {
     applyWorkingPresentation(ctx.ui);
   });
 
+  // The lifecycle context itself can be stale, so ctx.ui must be read inside the
+  // same narrow stale-error boundary as the presentation calls.
+  const applyLifecycleWorkingPresentation = (ctx: { ui: ExtensionUIContext }): void => {
+    try {
+      applyWorkingPresentation(ctx.ui);
+    } catch (error) {
+      if (!isInactiveUiContextError(error)) throw error;
+    }
+  };
+
   // agent_settled is emitted from a finally block, so it also covers abort and failure.
   pi.on("agent_settled", (_event, ctx) => {
     agentRunActive = false;
-    applyWorkingPresentation(ctx.ui);
+    applyLifecycleWorkingPresentation(ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     agentRunActive = false;
-    applyWorkingPresentation(ctx.ui);
+    applyLifecycleWorkingPresentation(ctx);
   });
 
   pi.registerCommand("calm", {
