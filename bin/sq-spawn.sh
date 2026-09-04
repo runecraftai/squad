@@ -2081,11 +2081,11 @@ function stopDelivery(): void {
   } catch {}
 }
 
-function startDelivery(): void {
+function startDelivery(pi: any): void {
   if (deliveryWatcher) return;
   try {
     mkdirSync(deliveryDir, { recursive: true });
-    deliveryWatcher = watch(deliveryDir, () => scanDeliveryRequests());
+    deliveryWatcher = watch(deliveryDir, () => scanDeliveryRequests(pi));
     const processStat = readFileSync("/proc/" + process.pid + "/stat", "utf8");
     const processFields = processStat.slice(processStat.lastIndexOf(") ") + 2).trim().split(/\s+/);
     const processStart = processFields[19];
@@ -2095,13 +2095,13 @@ function startDelivery(): void {
       String(process.pid) + String.fromCharCode(10) + processStart + String.fromCharCode(10),
     );
     renameSync(deliveryReadyTemp, deliveryReady);
-    scanDeliveryRequests();
+    scanDeliveryRequests(pi);
   } catch {
     stopDelivery();
   }
 }
 
-async function processDeliveryRequest(requestPath: string): Promise<void> {
+async function processDeliveryRequest(requestPath: string, pi: any): Promise<void> {
   const processingPath = requestPath + ".processing";
   const requestName = requestPath.slice((deliveryDir + "/").length);
   const expectedRequestId = requestName.slice(0, -".request".length);
@@ -2132,7 +2132,7 @@ async function processDeliveryRequest(requestPath: string): Promise<void> {
   }
 }
 
-function scanDeliveryRequests(): void {
+function scanDeliveryRequests(pi: any): void {
   let names: string[];
   try {
     names = readdirSync(deliveryDir);
@@ -2141,14 +2141,14 @@ function scanDeliveryRequests(): void {
   }
   for (const name of names) {
     if (!name.startsWith(deliveryRequestPrefix) || !name.endsWith(".request")) continue;
-    void processDeliveryRequest(deliveryDir + "/" + name);
+    void processDeliveryRequest(deliveryDir + "/" + name, pi);
   }
 }
 
 export default function (pi: any) {
   pi.on("session_start", () => {
     piAgentRunning = false;
-    startDelivery();
+    startDelivery(pi);
   });
   pi.on("session_shutdown", () => {
     piAgentRunning = false;
