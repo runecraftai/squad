@@ -638,9 +638,10 @@ SQUAD_BUSY_REGEX=          # optional override for rendered delivery guards and 
 SQUAD_COMPOSER_IDLE_RE=    # optional empty-composer regex, applied after ghost and border stripping
 SQUAD_COMPOSER_GHOST_LUMA_MAX=128   # unit-wide: max perceived luminance (0.299R+0.587G+0.114B, 0-255) for a TRUECOLOR foreground to count as de-emphasised ghost/placeholder text and be stripped; dim/faint (SGR 2) is stripped regardless. Assumes a dark terminal theme (bin/sq-composer-lib.sh's fm_composer_strip_ghost, shared by the tmux and herdr composer readers)
 GROK_HOME=              # optional Grok config home for Squad's global grok turn-end hook; defaults to ~/.grok
-SQUAD_SEND_RETRIES=3       # sq-send Enter-retry attempts after typing the line once
-SQUAD_SEND_SLEEP=0.4       # seconds between sq-send submit checks
+SQUAD_SEND_RETRIES=3       # sq-send backend-submit Enter-retry attempts after typing the line once
+SQUAD_SEND_SLEEP=0.4       # seconds between sq-send backend-submit checks
 SQUAD_SEND_SETTLE=1        # seconds sq-send waits after a successful text submit; 0 disables
+SQUAD_PI_DELIVERY_TIMEOUT=5 # seconds sq-send waits for native Pi delivery confirmation before failing
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before a completed turn without a correlated parent report is eligible for its one recovery repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback

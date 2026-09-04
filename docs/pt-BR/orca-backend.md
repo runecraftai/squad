@@ -54,10 +54,10 @@ O spawn registra o repositório, cria um worktree independente, reutiliza apenas
 Flags exatas de comando e parsing de resposta são de propriedade do `bin/backends/orca.sh` e do help do script.
 
 O `sq-peek.sh` lê com `orca terminal read`.
-O `sq-send.sh` digita e verifica a liberação do composer, segue o `oldestCursor` quando o Orca devolve uma página limitada, e repete o Enter sem redigitar quando um popup de slash primeiro preenche um placeholder de argumento.
+Para alvos não-Pi, ou quando a entrega nativa do Pi está indisponível, o `sq-send.sh` digita e verifica a liberação do composer, segue o `oldestCursor` quando o Orca devolve uma página limitada, e repete o Enter sem redigitar quando um popup de slash primeiro preenche um placeholder de argumento.
 Uma linha de shell puro é `unknown`, não um composer vazio do agente.
-Operadores pi lançados a partir de um brief posicional completam seu turno e saem para o shell em vez de ficarem ociosos num composer, então no Linux eles nunca renderizam a linha de composer com borda contra a qual o classificador de clearance verifica.
-Um steer enviado enquanto tal operador está no meio do turno é entregue e colocado na fila - verificado ao vivo na v1.4.188, o terminal mostra a mensagem na fila e o operador depois age sobre ela - mas a verificação ainda devolve `unknown` e o `sq-send.sh` sai reportando entrega não confirmada.
+Operadores Pi lançados a partir de um brief posicional completam seu turno e saem para o shell em vez de ficarem ociosos num composer, então no Linux eles nunca renderizam a linha de composer com borda contra a qual o classificador de clearance verifica.
+Quando a entrega nativa do Pi está indisponível, um steer enviado enquanto tal operador está no meio do turno é entregue e colocado na fila - verificado ao vivo na v1.4.188, o terminal mostra a mensagem na fila e o operador depois age sobre ela - mas a verificação ainda devolve `unknown` e o `sq-send.sh` sai reportando entrega não confirmada.
 Esse veredito fica genuinamente não confirmado nos dois casos: dê peek no terminal antes de agir sobre ele, e nunca reenvie às cegas, porque o mesmo `unknown` também cobre texto estacionado no prompt de shell puro de um operador que já saiu.
 A sentinela não tem sinal nativo de ocupado do Orca, então o ciclo de vida semântico de cada adaptador de harness fornece o estado do worker.
 Apenas o Grok mantém seu fallback isolado de cauda renderizada.

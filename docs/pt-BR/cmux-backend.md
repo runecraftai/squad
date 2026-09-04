@@ -92,7 +92,7 @@ Captura permanece limitada e trimada localmente depois que `read-screen` fica di
 `current_directory` segue um `cd` de shell no nível superior mas não o subshell em primeiro plano aberto pelo `fob get`.
 Descoberta de worktree no momento de spawn envia marcadores de início e fim ao redor do `pwd`, captura o bloco marcado e junta linhas de caminho quebradas.
 
-Send literal e Enter são chamadas separadas.
+Para envios roteados pelo backend, texto literal e Enter são chamadas separadas.
 Enter, Escape e Ctrl-C são suportados.
 O verificador de composer localiza a última linha de composer com borda e delega a decisão de conteúdo para `bin/sq-composer-lib.sh`.
 Um prompt de shell puro é `unknown`, e um placeholder de popup de slash permanece `pending`, então apenas Enter é retentado e texto nunca é redigitado.
