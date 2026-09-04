@@ -122,8 +122,8 @@ fm_send_id_from_meta() {  # <meta-file>
 fm_send_pi_native() {  # <state-dir> <task-id> <message>
   local state_dir=$1 task_id=$2 message=$3 dir ready request_id request tmp timeout
   local response deadline status ready_pid ready_start current_start
-  dir="$state_dir/.pi-delivery"
-  ready="$dir/$task_id.ready"
+  dir="$state_dir/.pi-delivery/$task_id"
+  ready="$dir/ready"
   [ -d "$dir" ] || return 2
   [ -f "$ready" ] || return 2
   ready_pid=$(sed -n '1p' "$ready" 2>/dev/null || true)

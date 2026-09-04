@@ -2394,16 +2394,11 @@ remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 retire_watcher_markers "$STATE" "$ID" "$T"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
-  "$STATE/$ID.pi-ext.ts" "$STATE/.pi-delivery/$ID.ready" \
-  "$STATE/.pi-delivery/$ID.ready.tmp" \
-  "$STATE/.pi-delivery/$ID."*.request \
-  "$STATE/.pi-delivery/$ID."*.request.processing \
-  "$STATE/.pi-delivery/$ID."*.response \
-  "$STATE/.pi-delivery/$ID."*.request.tmp \
-  "$STATE/$ID.grok-turnend-token" \
+  "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" \
   "$STATE/.$ID.open-decisions-cursor"
+rm -rf -- "$STATE/.pi-delivery/$ID"
 if [ "$KIND" != recon ] && [ "$KIND" != xo ] && [ "$MODE" != local-only ]; then
   "$SQUAD_ROOT/bin/sq-unit-sync.sh" "$PROJ" || true
 fi

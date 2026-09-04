@@ -2045,9 +2045,9 @@ const busyEvent = (state: string, event: string) =>
     ], () => resolve());
   });
 const deliveryDir = "$STATE_REAL/.pi-delivery";
-const deliveryReady = deliveryDir + "/$ID.ready";
+const deliveryTaskDir = deliveryDir + "/$ID";
+const deliveryReady = deliveryTaskDir + "/ready";
 const deliveryReadyTemp = deliveryReady + ".tmp";
-const deliveryRequestPrefix = "$ID.";
 let deliveryWatcher: ReturnType<typeof watch> | undefined;
 let piAgentRunning = false;
 
@@ -2060,7 +2060,7 @@ async function waitForProcessing(): Promise<boolean> {
 }
 
 function writeDeliveryResponse(requestId: string, status: string): void {
-  const responsePath = deliveryDir + "/" + requestId + ".response";
+  const responsePath = deliveryTaskDir + "/" + requestId + ".response";
   const responseTemp = responsePath + ".tmp";
   writeFileSync(responseTemp, status + String.fromCharCode(10));
   renameSync(responseTemp, responsePath);
@@ -2084,8 +2084,8 @@ function stopDelivery(): void {
 function startDelivery(pi: any): void {
   if (deliveryWatcher) return;
   try {
-    mkdirSync(deliveryDir, { recursive: true });
-    deliveryWatcher = watch(deliveryDir, () => scanDeliveryRequests(pi));
+    mkdirSync(deliveryTaskDir, { recursive: true });
+    deliveryWatcher = watch(deliveryTaskDir, () => scanDeliveryRequests(pi));
     const processStat = readFileSync("/proc/" + process.pid + "/stat", "utf8");
     const processFields = processStat.slice(processStat.lastIndexOf(") ") + 2).trim().split(/\s+/);
     const processStart = processFields[19];
@@ -2103,7 +2103,7 @@ function startDelivery(pi: any): void {
 
 async function processDeliveryRequest(requestPath: string, pi: any): Promise<void> {
   const processingPath = requestPath + ".processing";
-  const requestName = requestPath.slice((deliveryDir + "/").length);
+  const requestName = requestPath.slice((deliveryTaskDir + "/").length);
   const expectedRequestId = requestName.slice(0, -".request".length);
   let requestId = "";
   let claimed = false;
@@ -2135,13 +2135,13 @@ async function processDeliveryRequest(requestPath: string, pi: any): Promise<voi
 function scanDeliveryRequests(pi: any): void {
   let names: string[];
   try {
-    names = readdirSync(deliveryDir);
+    names = readdirSync(deliveryTaskDir);
   } catch {
     return;
   }
   for (const name of names) {
-    if (!name.startsWith(deliveryRequestPrefix) || !name.endsWith(".request")) continue;
-    void processDeliveryRequest(deliveryDir + "/" + name, pi);
+    if (!name.endsWith(".request")) continue;
+    void processDeliveryRequest(deliveryTaskDir + "/" + name, pi);
   }
 }
 
