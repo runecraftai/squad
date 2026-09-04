@@ -54,11 +54,14 @@ export const FmPrimaryPretoolCheck = async ({ directory, worktree }) => {
       const command = output?.args?.command;
       if (!command || typeof command !== "string") return;
 
-      const result = await runProcess(`${root}/bin/sq-arm-pretool-check.sh`, ["--command", command]);
-      if (result.code !== 2) return;
-
-      const reason = result.stderr.trim() || "denied by the sentry-arm PreToolUse seatbelt";
-      throw new Error(reason);
+      for (const [script, fallback] of [
+        ["sq-backend-pretool-check.sh", "denied by the session-provider CLI seatbelt"],
+        ["sq-poll-pretool-check.sh", "denied by the state-polling seatbelt"],
+        ["sq-arm-pretool-check.sh", "denied by the sentry-arm PreToolUse seatbelt"],
+      ]) {
+        const result = await runProcess(`${root}/bin/${script}`, ["--command", command]);
+        if (result.code === 2) throw new Error(result.stderr.trim() || fallback);
+      }
     },
   };
 };

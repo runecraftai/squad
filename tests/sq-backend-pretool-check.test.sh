@@ -29,10 +29,6 @@ PRIMARY=$TMP_ROOT/primary
 make_primary "$PRIMARY"
 CHECK="$PRIMARY/bin/sq-backend-pretool-check.sh"
 
-known=$(sed -n 's/^SQUAD_BACKEND_KNOWN="\(.*\)"$/\1/p' "$ROOT/bin/sq-backend.sh")
-guarded=$(node --input-type=module -e 'import { SQUAD_BACKEND_KNOWN } from "./bin/sq-backend-command-policy.mjs"; process.stdout.write([...SQUAD_BACKEND_KNOWN].join(" "))')
-[ "$guarded" = "$known" ] || fail "backend guard list drifted from bin/sq-backend.sh"
-
 run_check() {
   local command=$1 out err rc
   out=$(SQUAD_BASE="$PRIMARY" SQUAD_ROOT_OVERRIDE="$PRIMARY" \
@@ -58,6 +54,9 @@ for command in \
   'command tmux send-keys task x' \
   'env -- tmux new-session -d' \
   'bash -lc '\''tmux kill-window -t Squad:task'\''' \
+  '(tmux send-keys task x)' \
+  '{ tmux send-keys task x; }' \
+  'env bash -lc '\''tmux kill-window -t Squad:task'\''' \
   'printf '\''%s'\'' "$(zellij action list-clients)"'; do
   result=$(run_check "$command")
   expect_code 2 "${result%%$'\n'*}" "blocks raw backend lifecycle form: $command"

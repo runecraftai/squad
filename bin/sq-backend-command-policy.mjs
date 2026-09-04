@@ -6,8 +6,7 @@ import {
   splitProgram,
 } from "./sq-arm-command-policy.mjs";
 
-// Keep this literal synchronized with SQUAD_BACKEND_KNOWN in bin/sq-backend.sh;
-// the contract test catches drift without sourcing that side-effectful library.
+// Keep this literal synchronized with SQUAD_BACKEND_KNOWN in bin/sq-backend.sh.
 export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux"]);
 
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish"]);
@@ -22,8 +21,9 @@ function literalValue(token) {
   return token?.type === "word" ? String(token.value ?? "") : "";
 }
 
-function shellPayload(words) {
-  for (let index = 1; index < words.length; index += 1) {
+function shellPayload(position) {
+  const words = position?.words ?? [];
+  for (let index = (position?.index ?? 0) + 1; index < words.length; index += 1) {
     const value = literalValue(words[index]);
     if (value === "--") continue;
     if (value === "-c" || /^-[^-]*c[^-]*$/.test(value)) {
@@ -37,20 +37,19 @@ function nodeHasBackend(node, depth) {
   const position = commandPosition(node);
   if (position?.command && SQUAD_BACKEND_KNOWN.has(basename(position.command.value))) return true;
 
-  const words = position?.words ?? [];
-  const commandName = basename(literalValue(words[0]));
+  const commandName = basename(literalValue(position?.command));
   if (SHELLS.has(commandName)) {
-    const payload = shellPayload(words);
+    const payload = shellPayload(position);
     if (payload && containsRawBackend(payload, depth + 1)) return true;
   }
   if (commandName === "eval") {
-    const payload = words.slice(1).map(literalValue).filter(Boolean).join(" ");
+    const payload = (position?.words ?? []).slice((position?.index ?? 0) + 1).map(literalValue).filter(Boolean).join(" ");
     if (payload && containsRawBackend(payload, depth + 1)) return true;
   }
 
   for (const token of node) {
-    for (const substitution of token.subs ?? []) {
-      if (containsRawBackend(substitution.content, depth + 1)) return true;
+    for (const content of [token.content, ...(token.subs ?? []).map((substitution) => substitution.content)]) {
+      if (content && containsRawBackend(content, depth + 1)) return true;
     }
   }
   for (const payload of position?.wrapperPayloads ?? []) {

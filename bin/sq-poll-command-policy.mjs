@@ -33,47 +33,55 @@ function basename(value) {
   return parts[parts.length - 1] || "";
 }
 
-function wordsFor(node) {
-  return commandPosition(node).words.map((word) => String(word.value ?? ""));
-}
-
-function effectiveCommand(words) {
-  const first = basename(words[0] ?? "");
-  if (CONTROL_PREFIXES.has(first)) return basename(words[1] ?? "");
-  return first;
+function commandInfo(node) {
+  const position = commandPosition(node);
+  const words = position.words.map((word) => String(word.value ?? ""));
+  let index = position.index;
+  if (CONTROL_PREFIXES.has(basename(words[index] ?? ""))) index += 1;
+  return {
+    position,
+    words,
+    index,
+    command: basename(words[index] ?? ""),
+  };
 }
 
 function hasStatePath(words) {
   return words.some((word) => /(?:^|\/|[A-Za-z0-9_$.-]+\/)state\//.test(word));
 }
 
-function nodeHasStateRead(node) {
-  const words = wordsFor(node);
-  if (!hasStatePath(words)) return false;
-  const command = effectiveCommand(words);
-  if (READ_COMMANDS.has(command)) return true;
-  return words.some((word, index) =>
-    ["-d", "-e", "-f", "-r", "-s"].includes(word) && hasStatePath(words.slice(index + 1)),
+function isStateDirectory(value) {
+  return /(?:^|\/)state(?:\/|$)/.test(value);
+}
+
+function hasReadTarget(words, index) {
+  return words.slice(index + 1).some((word) => word !== "--" && !word.startsWith("-"));
+}
+
+function nodeChangesToStateDirectory(info) {
+  if (info.command !== "cd") return false;
+  return info.words.slice(info.index + 1).some(isStateDirectory);
+}
+
+function nodeLeavesStateDirectory(info) {
+  if (info.command !== "cd") return false;
+  return info.words.slice(info.index + 1).some((word) => word === ".." || word === "../");
+}
+
+function nodeHasStateRead(info, stateCwd) {
+  const explicitStatePath = hasStatePath(info.words);
+  if (READ_COMMANDS.has(info.command) && (explicitStatePath || (stateCwd && hasReadTarget(info.words, info.index)))) return true;
+  return info.words.slice(info.index + 1).some((word, index) =>
+    ["-d", "-e", "-f", "-r", "-s"].includes(word) && hasStatePath(info.words.slice(info.index + 2 + index)),
   );
 }
 
-function hasSleepConstruct(nodes) {
-  return nodes.some((node) => {
-    const words = wordsFor(node);
-    const command = effectiveCommand(words);
-    return command === "sleep";
-  });
-}
-
-function hasWhileConstruct(nodes) {
-  return nodes.some((node) => wordsFor(node)[0] === "while");
-}
-
-function shellPayload(words) {
-  for (let index = 1; index < words.length; index += 1) {
-    const value = words[index];
+function shellPayload(position) {
+  const words = position?.words ?? [];
+  for (let index = (position?.index ?? 0) + 1; index < words.length; index += 1) {
+    const value = String(words[index]?.value ?? "");
     if (value === "--") continue;
-    if (value === "-c" || /^-[^-]*c[^-]*$/.test(value)) return words[index + 1] ?? "";
+    if (value === "-c" || /^-[^-]*c[^-]*$/.test(value)) return String(words[index + 1]?.value ?? "");
   }
   return "";
 }
@@ -83,17 +91,21 @@ function analyze(command, depth = 0) {
   const lexed = new Lexer(String(command)).tokenize();
   if (lexed.error) return { loop: false, stateRead: false };
   const { nodes } = splitProgram(lexed.tokens);
-  const result = {
-    loop: hasSleepConstruct(nodes) || hasWhileConstruct(nodes),
-    stateRead: nodes.some(nodeHasStateRead),
-  };
+  const result = { loop: false, stateRead: false };
+  let stateCwd = false;
   for (const node of nodes) {
-    const position = commandPosition(node);
-    const words = position.words.map((word) => String(word.value ?? ""));
+    const info = commandInfo(node);
+    result.loop ||= info.command === "sleep" || info.words[info.position.index] === "while";
+    result.stateRead ||= nodeHasStateRead(info, stateCwd);
+    if (nodeChangesToStateDirectory(info)) stateCwd = true;
+    if (nodeLeavesStateDirectory(info)) stateCwd = false;
+
     const nested = [];
-    if (SHELLS.has(basename(words[0] ?? ""))) nested.push(shellPayload(words));
+    if (SHELLS.has(info.command)) nested.push(shellPayload(info.position));
     for (const token of node) {
-      for (const substitution of token.subs ?? []) nested.push(substitution.content);
+      for (const content of [token.content, ...(token.subs ?? []).map((substitution) => substitution.content)]) {
+        if (content) nested.push(content);
+      }
     }
     for (const payload of nested) {
       const child = analyze(payload, depth + 1);
