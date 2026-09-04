@@ -124,7 +124,7 @@ test_key_path_never_pauses() {
 }
 
 test_pi_native_delivery_avoids_tmux_for_parked_operator() {
-  local dir fb log home delivery processor pid ready_start message rc task_id
+  local dir fb log home delivery processor pid ready_identity message rc task_id
   dir="$TMP_ROOT/pi-native"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/sleep.log"
   home="$dir/home"; mkdir -p "$home/state" "$home/project"
@@ -157,12 +157,13 @@ SH
   chmod +x "$processor"
   "$processor" "$delivery" "$dir/native-message" &
   pid=$!
-  ready_start=$(awk '{print $22}' "/proc/$pid/stat")
-  printf '%s\n%s\n' "$pid" "$ready_start" > "$delivery/ready"
+  ready_identity=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  printf '%s\n%s\n' "$pid" "ps-lstart=$ready_identity" > "$delivery/ready"
   message='native parked steer'
   env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
     SQUAD_TMUX_LOG="$dir/tmux.log" SQUAD_REAL_SLEEP=1 SQUAD_SEND_SETTLE=0 \
-    SQUAD_PI_DELIVERY_TIMEOUT=3 "$SEND" "$task_id" "$message" 2>/dev/null
+    SQUAD_PROC_ROOT_OVERRIDE="$home/no-proc" SQUAD_PI_DELIVERY_TIMEOUT=3 \
+    "$SEND" "$task_id" "$message" 2>/dev/null
   rc=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true

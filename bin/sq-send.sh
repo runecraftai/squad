@@ -115,28 +115,46 @@ fm_send_id_from_meta() {  # <meta-file>
   printf '%s' "${base%.meta}"
 }
 
+fm_send_pi_process_identity() {  # <pid>
+  local pid=$1 proc_root stat_line starttime out
+  local -a stat_fields
+  proc_root=${SQUAD_PROC_ROOT_OVERRIDE:-/proc}
+  if [ -r "$proc_root/$pid/stat" ]; then
+    stat_line=$(cat "$proc_root/$pid/stat" 2>/dev/null) || return 1
+    read -r -a stat_fields <<< "${stat_line##*)}"
+    [ "${#stat_fields[@]}" -ge 20 ] || return 1
+    starttime=${stat_fields[19]}
+    case "$starttime" in ''|*[!0-9]*) return 1 ;; esac
+    printf 'proc-starttime=%s\n' "$starttime"
+    return 0
+  fi
+  out=$(LC_ALL=C ps -p "$pid" -o lstart= 2>/dev/null) || return 1
+  out=$(printf '%s\n' "$out" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$out" ] || return 1
+  case "$out" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  printf 'ps-lstart=%s\n' "$out"
+}
+
 # fm_send_pi_native: deliver through the task extension's private dropbox.
 # Return 0 only after the extension reports sendUserMessage accepted the text
 # and an agent_start busy edge proved Pi is processing it. Return 2 when the
 # extension is unavailable so the caller can use the normal backend path.
 fm_send_pi_native() {  # <state-dir> <task-id> <message>
   local state_dir=$1 task_id=$2 message=$3 dir ready request_id request tmp timeout
-  local response deadline status ready_pid ready_start current_start
+  local response deadline status ready_pid ready_identity current_identity
   dir="$state_dir/.pi-delivery/$task_id"
   ready="$dir/ready"
   [ -d "$dir" ] || return 2
   [ -f "$ready" ] || return 2
   ready_pid=$(sed -n '1p' "$ready" 2>/dev/null || true)
-  ready_start=$(sed -n '2p' "$ready" 2>/dev/null || true)
+  ready_identity=$(sed -n '2p' "$ready" 2>/dev/null || true)
   case "$ready_pid" in
     ''|*[!0-9]*) return 2 ;;
   esac
-  case "$ready_start" in
-    ''|*[!0-9]*) return 2 ;;
-  esac
+  [ -n "$ready_identity" ] || return 2
   kill -0 "$ready_pid" 2>/dev/null || return 2
-  current_start=$(awk '{print $22}' "/proc/$ready_pid/stat" 2>/dev/null || true)
-  [ "$current_start" = "$ready_start" ] || return 2
+  current_identity=$(fm_send_pi_process_identity "$ready_pid" 2>/dev/null || true)
+  [ "$current_identity" = "$ready_identity" ] || return 2
 
   request_id="$task_id.$$.$RANDOM"
   request="$dir/$request_id.request"

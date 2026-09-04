@@ -2027,7 +2027,7 @@ EOF
 // current-state truth.
 // The private delivery dropbox lets sq-send reach a parked Pi session through
 // sendUserMessage instead of typing into a composer that may swallow Enter.
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import {
   mkdirSync,
   readFileSync,
@@ -2081,18 +2081,34 @@ function stopDelivery(): void {
   } catch {}
 }
 
+function deliveryProcessIdentity(pid: number): string | undefined {
+  try {
+    const processStat = readFileSync("/proc/" + pid + "/stat", "utf8");
+    const processFields = processStat.slice(processStat.lastIndexOf(") ") + 2).trim().split(/\s+/);
+    const processStart = processFields[19];
+    if (processStart && /^[0-9]+$/.test(processStart)) return "proc-starttime=" + processStart;
+  } catch {}
+  try {
+    const output = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C" },
+    }).trim();
+    return output ? "ps-lstart=" + output : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function startDelivery(pi: any): void {
   if (deliveryWatcher) return;
   try {
     mkdirSync(deliveryTaskDir, { recursive: true });
     deliveryWatcher = watch(deliveryTaskDir, () => scanDeliveryRequests(pi));
-    const processStat = readFileSync("/proc/" + process.pid + "/stat", "utf8");
-    const processFields = processStat.slice(processStat.lastIndexOf(") ") + 2).trim().split(/\s+/);
-    const processStart = processFields[19];
-    if (!processStart) throw new Error("process identity unavailable");
+    const processIdentity = deliveryProcessIdentity(process.pid);
+    if (!processIdentity) throw new Error("process identity unavailable");
     writeFileSync(
       deliveryReadyTemp,
-      String(process.pid) + String.fromCharCode(10) + processStart + String.fromCharCode(10),
+      String(process.pid) + String.fromCharCode(10) + processIdentity + String.fromCharCode(10),
     );
     renameSync(deliveryReadyTemp, deliveryReady);
     scanDeliveryRequests(pi);
