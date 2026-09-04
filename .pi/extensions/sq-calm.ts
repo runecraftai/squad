@@ -158,8 +158,8 @@ export default function (pi: ExtensionAPI) {
             ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
             : undefined,
         );
-        ui.setWorkingVisible(!showShip);
         workingShipShown = showShip;
+        ui.setWorkingVisible(!showShip);
       } else if (forceStockVisibility && !showShip) {
         ui.setWorkingVisible(true);
       }
