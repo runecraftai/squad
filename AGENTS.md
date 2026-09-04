@@ -87,7 +87,7 @@ data/                personal unit records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history
   commander.md         this base's domain-local commander preferences and working style; LOCAL, gitignored, canonical even if harness memory mirrors it, and updated with inspect-then-update
   commander-shared.md  main-authoritative shared commander preferences propagated read-only to XO bases; LOCAL, gitignored, owned by xo-provisioning
-  learnings.md       unit-local operational facts and gotchas; LOCAL, gitignored; dated, evidence-backed, curated, and updated with inspect-then-update - rewrite and prune rather than append forever, the same contract as commander.md; created lazily, absent until this base has a learning to store
+  learnings.md       unit-local operational facts and gotchas; LOCAL, gitignored; see docs/configuration.md "Operational learnings" for capture and curation
   projects.md        thin unit navigation registry recording each project's standing delivery posture; Squad-private, parsed for mechanical sync and seeding by sq-project-mode.sh (section 6)
   XOs.md             local and remote XO routing table; Squad-private, maintained by the XO seed helpers (section 6)
   <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
@@ -586,6 +586,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `hijack` - load before evaluating an existing open-source product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
 - `obsidian-axi` - load before running any `obsidian-axi` CLI command, or when a task needs to search, read, or explore the commander's personal Obsidian vault via that CLI.
+- `sq-learn` - load when saving a lesson, capturing learning, recording a gotcha, logging a lesson, or invoking `sq-learn`.
 
 ## 14. Relay
 

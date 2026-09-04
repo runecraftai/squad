@@ -180,6 +180,10 @@
    "audience": "agent-runtime"
   },
   {
+   "path": ".agents/skills/sq-learn/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
    "path": ".agents/skills/squad-coding-guidelines/SKILL.md",
    "audience": "agent-runtime"
   },

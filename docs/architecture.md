@@ -283,7 +283,7 @@ The full ownership rule - what is project-intrinsic versus unit-private, and how
 
 `/debrief` sweeps the current session for durable knowledge that only exists in conversation and routes each finding to the most specific disk base.
 Base-domain commander preferences go to `data/commander.md`, cross-domain shared commander preferences go to the primary base's `data/commander-shared.md`, unit-local operational facts and gotchas go to base-local `data/learnings.md`, project-intrinsic knowledge goes through normal operator delivery into that project's committed `AGENTS.md`, and task-scoped notes or undone next steps go to the backlog.
-Memory writes use inspect-then-update: read the current destination first, then rewrite or prune matching bullets or notes in place instead of appending by default.
+`/debrief` memory curation uses inspect-then-update: it reads the current destination first, then rewrites or prunes matching bullets or notes in place instead of appending by default.
 Task-scoped notes use `sq-tasks show <id> --full` followed by `sq-tasks update <id> --body-file <path>`, adding `--archive-body` when the prior body should remain recoverable.
 Generalizable Squad knowledge goes to shared tracked docs through the normal PR pipeline; the Squad-internal `/debrief` deliberately never stores findings in either skill directory.
 Invoked in a primary base, `/debrief` then cascades the same sweep to every registered XO, enumerated through `bin/sq-debrief-cascade.sh`: each base is accounted and curated against its own startup-memory allowance, a live XO sweeps its own session, and a slow or unreachable base is reported as an exception rather than blocking the primary.
