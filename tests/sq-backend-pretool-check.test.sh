@@ -29,9 +29,9 @@ PRIMARY=$TMP_ROOT/primary
 make_primary "$PRIMARY"
 CHECK="$PRIMARY/bin/sq-backend-pretool-check.sh"
 
-known=$(sed -n 's/^SQUAD_BACKEND_KNOWN="\(.*\)"$/\1/p' "$ROOT/bin/sq-backend.sh")
-guarded=$(node --input-type=module -e 'import { SQUAD_BACKEND_KNOWN } from "./bin/sq-backend-command-policy.mjs"; process.stdout.write([...SQUAD_BACKEND_KNOWN].join(" "))')
-[ "$guarded" = "$known" ] || fail "backend guard list drifted from bin/sq-backend.sh"
+known=$(bash -c '. "$1/bin/sq-backend.sh"; printf "%s" "$SQUAD_BACKEND_KNOWN"' _ "$ROOT" | tr ' ' '\n' | sort | paste -sd' ' -)
+guarded=$(node --input-type=module -e 'import { SQUAD_BACKEND_KNOWN } from "./bin/sq-backend-command-policy.mjs"; process.stdout.write([...SQUAD_BACKEND_KNOWN].sort().join(" "))')
+[ "$guarded" = "$known" ] || fail "backend guard list drifted from the runtime backend contract"
 
 run_check() {
   local command=$1 out err rc
@@ -57,6 +57,8 @@ for command in \
   'herdr pane close task' \
   'command tmux send-keys task x' \
   'env -- tmux new-session -d' \
+  'env bash -c '\''tmux send-keys task x'\''' \
+  'command bash -lc '\''zellij action list-clients'\''' \
   'bash -lc '\''tmux kill-window -t Squad:task'\''' \
   'printf '\''%s'\'' "$(zellij action list-clients)"'; do
   result=$(run_check "$command")

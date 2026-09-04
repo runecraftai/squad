@@ -22,8 +22,8 @@ function literalValue(token) {
   return token?.type === "word" ? String(token.value ?? "") : "";
 }
 
-function shellPayload(words) {
-  for (let index = 1; index < words.length; index += 1) {
+function shellPayload(words, commandIndex) {
+  for (let index = commandIndex + 1; index < words.length; index += 1) {
     const value = literalValue(words[index]);
     if (value === "--") continue;
     if (value === "-c" || /^-[^-]*c[^-]*$/.test(value)) {
@@ -38,13 +38,14 @@ function nodeHasBackend(node, depth) {
   if (position?.command && SQUAD_BACKEND_KNOWN.has(basename(position.command.value))) return true;
 
   const words = position?.words ?? [];
-  const commandName = basename(literalValue(words[0]));
+  const commandIndex = position?.index ?? 0;
+  const commandName = basename(String(position?.command?.value ?? ""));
   if (SHELLS.has(commandName)) {
-    const payload = shellPayload(words);
+    const payload = shellPayload(words, commandIndex);
     if (payload && containsRawBackend(payload, depth + 1)) return true;
   }
   if (commandName === "eval") {
-    const payload = words.slice(1).map(literalValue).filter(Boolean).join(" ");
+    const payload = words.slice(commandIndex + 1).map(literalValue).filter(Boolean).join(" ");
     if (payload && containsRawBackend(payload, depth + 1)) return true;
   }
 

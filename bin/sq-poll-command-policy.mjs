@@ -24,7 +24,7 @@ const READ_COMMANDS = new Set([
   "watch",
   "wc",
 ]);
-const CONTROL_PREFIXES = new Set(["do", "elif", "else", "then", "until", "while"]);
+const CONTROL_PREFIXES = new Set(["do", "elif", "else", "then"]);
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish"]);
 const MAX_DEPTH = 8;
 
@@ -37,10 +37,13 @@ function wordsFor(node) {
   return commandPosition(node).words.map((word) => String(word.value ?? ""));
 }
 
-function effectiveCommand(words) {
-  const first = basename(words[0] ?? "");
-  if (CONTROL_PREFIXES.has(first)) return basename(words[1] ?? "");
-  return first;
+function effectiveCommand(node) {
+  const position = commandPosition(node);
+  const command = basename(String(position.command?.value ?? ""));
+  if (CONTROL_PREFIXES.has(command)) {
+    return basename(String(position.words[(position.index ?? 0) + 1]?.value ?? ""));
+  }
+  return command;
 }
 
 function hasStatePath(words) {
@@ -50,7 +53,7 @@ function hasStatePath(words) {
 function nodeHasStateRead(node) {
   const words = wordsFor(node);
   if (!hasStatePath(words)) return false;
-  const command = effectiveCommand(words);
+  const command = effectiveCommand(node);
   if (READ_COMMANDS.has(command)) return true;
   return words.some((word, index) =>
     ["-d", "-e", "-f", "-r", "-s"].includes(word) && hasStatePath(words.slice(index + 1)),
@@ -58,19 +61,18 @@ function nodeHasStateRead(node) {
 }
 
 function hasSleepConstruct(nodes) {
-  return nodes.some((node) => {
-    const words = wordsFor(node);
-    const command = effectiveCommand(words);
-    return command === "sleep";
-  });
+  return nodes.some((node) => effectiveCommand(node) === "sleep");
 }
 
 function hasWhileConstruct(nodes) {
-  return nodes.some((node) => wordsFor(node)[0] === "while");
+  return nodes.some((node) => {
+    const command = effectiveCommand(node);
+    return command === "while" || command === "until";
+  });
 }
 
-function shellPayload(words) {
-  for (let index = 1; index < words.length; index += 1) {
+function shellPayload(words, commandIndex) {
+  for (let index = commandIndex + 1; index < words.length; index += 1) {
     const value = words[index];
     if (value === "--") continue;
     if (value === "-c" || /^-[^-]*c[^-]*$/.test(value)) return words[index + 1] ?? "";
@@ -90,8 +92,11 @@ function analyze(command, depth = 0) {
   for (const node of nodes) {
     const position = commandPosition(node);
     const words = position.words.map((word) => String(word.value ?? ""));
+    const commandIndex = position.index ?? 0;
+    const command = effectiveCommand(node);
     const nested = [];
-    if (SHELLS.has(basename(words[0] ?? ""))) nested.push(shellPayload(words));
+    if (SHELLS.has(command)) nested.push(shellPayload(words, commandIndex));
+    if (command === "eval") nested.push(words.slice(commandIndex + 1).join(" "));
     for (const token of node) {
       for (const substitution of token.subs ?? []) nested.push(substitution.content);
     }

@@ -2,11 +2,9 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 
-// PreToolUse seatbelt for OpenCode: the arm mechanism itself lives entirely in
-// sq-primary-sentry-arm.js (a plugin-owned child process, never a model tool
-// call), so the residual risk here is the AGENT shelling `bin/sq-sentry-arm.sh`
-// wrong through its own bash tool - the anti-pattern bin/sq-arm-pretool-check.sh
-// guards against (see that script's header and docs/arm-pretool-check.md).
+// PreToolUse seatbelts for OpenCode. The plugin-owned sentry arm is not a
+// model tool call, but the model's bash tool still passes through the same
+// primary-only arm, backend, and state-poll policies as the other harnesses.
 // tool.execute.before can block by throwing (verified 2026-07-09 against
 // OpenCode 1.17.15: throwing here prevents the bash command from running and
 // surfaces the thrown message as the failed tool result).
@@ -54,11 +52,16 @@ export const FmPrimaryPretoolCheck = async ({ directory, worktree }) => {
       const command = output?.args?.command;
       if (!command || typeof command !== "string") return;
 
-      const result = await runProcess(`${root}/bin/sq-arm-pretool-check.sh`, ["--command", command]);
-      if (result.code !== 2) return;
-
-      const reason = result.stderr.trim() || "denied by the sentry-arm PreToolUse seatbelt";
-      throw new Error(reason);
+      const checks = [
+        ["sq-arm-pretool-check.sh", "denied by the sentry-arm PreToolUse seatbelt"],
+        ["sq-backend-pretool-check.sh", "denied by the session-provider CLI seatbelt"],
+        ["sq-poll-pretool-check.sh", "denied by the state-polling seatbelt"],
+      ];
+      for (const [checker, fallback] of checks) {
+        const result = await runProcess(`${root}/bin/${checker}`, ["--command", command]);
+        if (result.code !== 2) continue;
+        throw new Error(result.stderr.trim() || fallback);
+      }
     },
   };
 };

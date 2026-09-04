@@ -7,9 +7,10 @@ set -u
 TMP_ROOT=$(fm_test_tmproot sq-primary-pretool-wiring)
 REPO=$TMP_ROOT/repo
 HOME_DIR=$TMP_ROOT/home
-mkdir -p "$REPO/.pi/extensions/lib" "$REPO/bin" "$HOME_DIR/state"
+mkdir -p "$REPO/.pi/extensions/lib" "$REPO/.opencode/plugins" "$REPO/bin" "$HOME_DIR/state"
 cp "$ROOT/.pi/extensions/sq-primary-turnend-guard.ts" "$REPO/.pi/extensions/"
 cp "$ROOT/.pi/extensions/lib/sq-operational-input.ts" "$REPO/.pi/extensions/lib/"
+cp "$ROOT/.opencode/plugins/sq-primary-pretool-check.js" "$REPO/.opencode/plugins/"
 cp "$ROOT/bin/sq-operational-input.sh" "$REPO/bin/"
 
 cat > "$REPO/bin/sq-handoff-surface.sh" <<'SH'
@@ -72,4 +73,40 @@ assert_grep 'poll:--command sleep 1; cat state/task.status' "$TMP_ROOT/check.log
 assert_grep 'arm' "$TMP_ROOT/check.log" "arm checker remains wired after new guards"
 [ "$(grep -c '^arm$' "$TMP_ROOT/check.log")" = 1 ] || fail "arm checker ran after a new guard denied a command"
 
-pass "Pi primary PreToolUse guard wiring"
+out=$(PLUGIN="$REPO/.opencode/plugins/sq-primary-pretool-check.js" REPO="$REPO" CHECK_LOG="$TMP_ROOT/check.log" node --input-type=module 2>&1 <<'NODE'
+import { pathToFileURL } from "node:url";
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const hooks = await mod.FmPrimaryPretoolCheck({ directory: process.env.REPO });
+const before = hooks["tool.execute.before"];
+if (!before) throw new Error("OpenCode pretool hook was not registered");
+let blocked = false;
+try {
+  await before({ tool: "bash" }, { args: { command: "tmux send-keys task x" } });
+} catch {
+  blocked = true;
+}
+if (!blocked) throw new Error("backend guard did not block OpenCode bash tool");
+NODE
+)
+status=$?
+expect_code 0 "$status" "OpenCode plugin invokes backend guard"
+[ -z "$out" ] || fail "OpenCode pretool wiring test printed output: $out"
+
+out=$(PLUGIN="$REPO/.opencode/plugins/sq-primary-pretool-check.js" REPO="$REPO" CHECK_LOG="$TMP_ROOT/check.log" node --input-type=module 2>&1 <<'NODE'
+import { pathToFileURL } from "node:url";
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const hooks = await mod.FmPrimaryPretoolCheck({ directory: process.env.REPO });
+let blocked = false;
+try {
+  await hooks["tool.execute.before"]({ tool: "bash" }, { args: { command: "sleep 1; cat state/task.status" } });
+} catch {
+  blocked = true;
+}
+if (!blocked) throw new Error("poll guard did not block OpenCode bash tool");
+NODE
+)
+status=$?
+expect_code 0 "$status" "OpenCode plugin invokes poll guard"
+[ -z "$out" ] || fail "OpenCode poll wiring test printed output: $out"
+
+pass "Primary PreToolUse guard wiring"

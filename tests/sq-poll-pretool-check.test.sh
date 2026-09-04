@@ -40,6 +40,9 @@ for command in \
   'while true; do cat state/task.status; done' \
   'while [ -f state/task.status ]; do sleep 1; done' \
   'while true; do sleep 1; tail -n 1 ./state/task.status; done' \
+  'until false; do cat state/task.status; done' \
+  'env bash -lc '\''sleep 1; cat /tmp/state/task.status'\''' \
+  'command bash -lc '\''while true; do cat state/task.status; done'\''' \
   'bash -lc '\''while true; do sleep 1; cat /tmp/state/task.status; done'\'''; do
   result=$(run_check "$command")
   expect_code 2 "${result%%$'\n'*}" "blocks state poll loop: $command"

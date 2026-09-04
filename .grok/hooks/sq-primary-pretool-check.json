@@ -8,6 +8,16 @@
             "type": "command",
             "command": "bash -lc '[ -n \"${GROK_WORKSPACE_ROOT:-}\" ] || exit 0; exec \"${GROK_WORKSPACE_ROOT:-}/bin/sq-arm-pretool-check.sh\"'",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash -lc '[ -n \"${GROK_WORKSPACE_ROOT:-}\" ] || exit 0; exec \"${GROK_WORKSPACE_ROOT:-}/bin/sq-backend-pretool-check.sh\"'",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash -lc '[ -n \"${GROK_WORKSPACE_ROOT:-}\" ] || exit 0; exec \"${GROK_WORKSPACE_ROOT:-}/bin/sq-poll-pretool-check.sh\"'",
+            "timeout": 10
           }
         ]
       }
