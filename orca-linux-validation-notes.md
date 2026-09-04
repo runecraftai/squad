@@ -8,8 +8,8 @@ Date: 2026-08-22 · Machine: Omarchy (Arch) x86_64, kernel 7.1.8-arch1-3 · Orca
 
 ### Verdict
 
-**YES with one required adapter change.** Squad's Orca backend works end to end on this machine
-today for spawn → peek → send. The single blocking defect is at teardown: Orca on Linux returns
+**YES with one required adapter change at the time of this validation.** Squad's Orca backend worked end to end on this machine
+for spawn → peek → send. The single blocking defect observed then was at teardown: Orca on Linux returns
 **composite worktree ids** (`repoId::path`) that `bin/sq-backend.sh`'s endpoint atom validation
 rejects, so `bin/sq-teardown.sh` refuses cleanup ("Orca endpoint metadata ... malformed or
 inconsistent"). Spawn, runtime checks, terminal read, send, and worktree removal via raw CLI all
@@ -42,7 +42,7 @@ Scratch recon task `orca-smoke` against throwaway repo `/tmp/orca-smoke-repo`
 | `orca worktree create` (Orca-managed isolation) | ✅ worktree at `/home/rehem/orca/workspaces/orca-smoke-repo/sq-orca-smoke` |
 | `orca terminal create` + harness launch | ✅ pi launched in Orca terminal; meta recorded `backend=orca`, `terminal=term_…`, `orca_worktree_id=…` |
 | `sq-peek` (`orca terminal read`) | ✅ read agent output incl. completion transcript |
-| `sq-send` steer delivery | ⚠️ text delivered and executed by the worker, but returned `verdict=unknown` ("delivery unconfirmed") because the post-send composer-clearance classifier found no bordered composer row to verify against (pi's prompt shape here doesn't match the classifier's expectations — same conservative `unknown` behavior documented for bare shell rows; delivery itself succeeded) |
+| `sq-send` steer delivery (pre-native Pi delivery) | ⚠️ text delivered and executed by the worker, but returned `verdict=unknown` ("delivery unconfirmed") because the post-send composer-clearance classifier found no bordered composer row to verify against (pi's prompt shape here doesn't match the classifier's expectations - same conservative `unknown` behavior documented for bare shell rows; delivery itself succeeded) |
 | Teardown | ❌ REFUSED: composite worktree id fails `fm_backend_endpoint_atom_valid` (see below) |
 
 Cleanup completed manually via raw CLI (equivalent to what teardown would do): terminal closed,
@@ -93,9 +93,9 @@ Regression entry points for the follow-up strike: `tests/sq-backend-orca.test.sh
 
 ### Goal A evidence summary
 
-`config/backend=orca` works on this machine today: spawns land in real isolated Orca-managed
-worktrees with working terminals, peek/send operate them, readiness gating passes. Only teardown
-is blocked pending R1.
+At the time of this validation, `config/backend=orca` worked on this machine: spawns landed in real isolated Orca-managed
+worktrees with working terminals, peek/send operated them, and readiness gating passed. Teardown
+was blocked pending R1; see [`docs/orca-backend.md`](docs/orca-backend.md) and [`docs/verification/runtime-backends.md`](docs/verification/runtime-backends.md#orca) for the current contract and evidence.
 
 ---
 
