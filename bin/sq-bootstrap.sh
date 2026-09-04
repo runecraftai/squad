@@ -998,17 +998,17 @@ harness_to_executable() {
   esac
 }
 
-# Validate that every configured model id in crew-dispatch resolves to exactly
-# one model via the harness's own listing surface. Zero matches or multiple
-# prefix matches are both actionable: the former means the id was removed or
-# mistyped, the latter means the id is ambiguous (the silent fuzzy-match bug
-# this check was introduced to prevent).
+# Validate that every configured model id in crew-dispatch resolves via the
+# harness's own listing surface. Zero matches are actionable because the id was
+# removed or mistyped, while multiple prefix matches are actionable only when
+# none is an exact provider/model ID match (the silent fuzzy-match bug this
+# check was introduced to prevent).
 # A probe that cannot run is reported as explicit uncertainty rather than a hard
 # failure, because the check is defence-in-depth and the harness is still usable
 # when the listing surface is unreachable.
 crew_validate_model_existence() {
   local file=$1
-  local models harness exec probe_out rc total_matches pattern
+  local models harness exec probe_out rc total_matches pattern listing_ids
   models=$(jq -r '[.. | objects | select(.model != null) | select(.harness == "pi" or .harness == "pi-signed" or .harness == "opencode") | .model] | .[]' "$file" 2>/dev/null) || return 0
   [ -n "$models" ] || return 0
   local -a seen=()
@@ -1034,26 +1034,21 @@ crew_validate_model_existence() {
       echo "CREW_DISPATCH: model existence: model listing probe failed for $harness: $exec --list-models exited $rc"
       continue
     fi
-    total_matches=$(printf '%s\n' "$probe_out" | grep -v '^provider ' | grep -vi '^No models matching' | grep -c .)
+    # Normalize both the current two-column table (provider model) and the
+    # canonical provider/model form used by some older pi releases.  Filtering
+    # the table semantically avoids counting the header as a model and lets an
+    # exact canonical ID suppress fuzzy-prefix ambiguity reliably.
+    listing_ids=$(printf '%s\n' "$probe_out" | awk '
+      tolower($1) == "provider" && tolower($2) == "model" { next }
+      tolower($1) == "no" && tolower($2) == "models" && tolower($3) == "matching" { next }
+      index($1, "/") > 0 { print $1; next }
+      NF >= 2 { print $1 "/" $2 }
+    ')
+    total_matches=$(printf '%s\n' "$listing_ids" | awk 'NF { n++ } END { print n + 0 }')
     if [ "$total_matches" -eq 0 ]; then
       echo "CREW_DISPATCH: model existence: $pattern matches zero models for $harness"
-    elif [ "$total_matches" -gt 1 ]; then
-      # Check if the pattern is an exact match on the provider/model ID column.
-      # Pi fuzzy-matches the search term against model IDs; a configured
-      # "opencode-go/mimo-v2.5" that matches both mimo-v2.5 and mimo-v2.5-pro
-      # is not ambiguous when the exact ID exists in the listing.
-      exact_match=false
-      while IFS= read -r line; do
-        provider=$(echo "$line" | awk '{print $1}')
-        model_id=$(echo "$line" | awk '{print $2}')
-        if [ "$provider/$model_id" = "$pattern" ] || [ "$model_id" = "$pattern" ]; then
-          exact_match=true
-          break
-        fi
-      done <<< "$(printf '%s\n' "$probe_out" | grep -v '^provider ' | grep -vi '^No models matching')"
-      if [ "$exact_match" = false ]; then
-        echo "CREW_DISPATCH: model existence: $pattern matches $total_matches model(s) for $harness - pin an exact model id"
-      fi
+    elif [ "$total_matches" -gt 1 ] && ! printf '%s\n' "$listing_ids" | grep -Fxq "$pattern"; then
+      echo "CREW_DISPATCH: model existence: $pattern matches $total_matches model(s) for $harness - pin an exact model id"
     fi
   done <<< "$models"
 }
