@@ -9,7 +9,7 @@ LEARN="$ROOT/bin/sq-learn.sh"
 TMP_ROOT=$(fm_test_tmproot sq-learn)
 
 make_home() {
-  local name=$1 home="$TMP_ROOT/$1"
+  local home="$TMP_ROOT/$1"
   mkdir -p "$home/data"
   printf '%s\n' "$home"
 }
