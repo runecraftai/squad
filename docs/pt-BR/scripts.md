@@ -34,6 +34,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab   |
 | `sq-herdr-lab.sh`        | Provisionar e operar protegidamente uma sessão de lab Herdr isolada, nunca padrão         |
 | `sq-install-herdr.sh`    | Instalar o pin exato de versão do Herdr usado pelo CI com URL oficial de asset, SHA-256 e checagens de protocolo |
+| `sq-learn.sh`            | Capturar um aprendizado operacional limitado e filtrado por quase-duplicatas em `data/learnings.md` |
 | `sq-install-fob.sh`| Compilar e instalar o packages/fob vendado da fonte para E2E real-Herdr que precise de worktrees de spawn |
 | `sq-herdr-ci-cleanup.sh` | Snapshotar e derrubar apenas sessões `sq-lab-*` de propriedade do job na lane CI do Herdr       |
 | `sq-test-run.sh`         | Runner de testes de comportamento: seleção, lanes portáteis, `--jobs` provadamente isolados, guard de cobertura, timing/JSON |

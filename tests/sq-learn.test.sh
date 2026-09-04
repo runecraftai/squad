@@ -1,140 +1,125 @@
 #!/usr/bin/env bash
-# Integration tests for bin/sq-learn.sh.
+# End-to-end behavior tests for durable operational lesson capture.
 set -u
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$ROOT/bin/sq-learn.sh"
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-if [ ! -x "$SCRIPT" ]; then
-  printf 'FAIL - required executable bin/sq-learn.sh is missing\n' >&2
-  exit 1
-fi
+LEARN="$ROOT/bin/sq-learn.sh"
+TMP_ROOT=$(fm_test_tmproot sq-learn)
 
-passed=0
-failed=0
-
-pass() {
-  passed=$((passed + 1))
-  printf 'PASS - %s\n' "$1"
-}
-
-fail() {
-  failed=$((failed + 1))
-  printf 'FAIL - %s: %s\n' "$1" "$2" >&2
-}
-
-run_test() {
-  local name=$1
-  shift
-  if "$@"; then
-    pass "$name"
-  else
-    fail "$name" "assertion failed"
-  fi
-}
-
-new_home() {
-  local home
-  home=$(mktemp -d "${TMPDIR:-/tmp}/sq-learn.XXXXXX") || return 1
+make_home() {
+  local home="$TMP_ROOT/$1"
   mkdir -p "$home/data"
   printf '%s\n' "$home"
-}
-
-cleanup_home() {
-  rm -rf "$1"
 }
 
 run_learn() {
   local home=$1
   shift
-  SQUAD_BASE="$home" "$SCRIPT" "$@"
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
+    SQUAD_DATA_OVERRIDE="$home/data" SQUAD_CONFIG_OVERRIDE="$home/config" \
+    "$LEARN" "$@"
 }
 
-test_basic_append() {
-  local home output
-  home=$(new_home) || return 1
-  output=$(run_learn "$home" 'Use the guarded sync command after a merged change.') || {
-    cleanup_home "$home"
-    return 1
-  }
-  grep -Fq 'Use the guarded sync command after a merged change.' "$home/data/learnings.md"
-  cleanup_home "$home"
+with_budget() {
+  local home=$1 budget=$2
+  mkdir -p "$home/config"
+  printf '%s\n' "$budget" > "$home/config/startup-memory-budget"
 }
 
-test_metadata() {
-  local home
-  home=$(new_home) || return 1
-  run_learn "$home" 'The API requires an explicit timeout.' --task task-42 --source 'integration test' >/dev/null || {
-    cleanup_home "$home"
-    return 1
-  }
-  grep -Eq '20[0-9]{2}-[0-9]{2}-[0-9]{2}' "$home/data/learnings.md" &&
-    grep -Eiq 'task[^[:alnum:]]*task-42' "$home/data/learnings.md" &&
-    grep -Eiq 'source[^[:alnum:]]*integration test' "$home/data/learnings.md"
-  local result=$?
-  cleanup_home "$home"
-  return "$result"
+expect_rejected() {
+  local home=$1 expected=$2 out rc
+  shift 2
+  set +e
+  out=$(run_learn "$home" "$@" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "lesson unexpectedly accepted: $expected"
+  assert_contains "$out" "$expected" "rejection did not explain $expected"
 }
 
-test_truncation() {
-  local home lesson entry payload
-  home=$(new_home) || return 1
-  lesson=$(printf '%600s' '' | tr ' ' 'x')
-  run_learn "$home" "$lesson" >/dev/null || {
-    cleanup_home "$home"
-    return 1
-  }
+test_capture_normalizes_and_deduplicates() {
+  local home output before after entry
+  home=$(make_home capture)
+  with_budget "$home" 7500
+
+  output=$(run_learn "$home" $'A lesson\nwith  extra spaces' --task $'task\nid' --source $'evidence\nref') 
+  [ "$output" = 'lesson captured' ] || fail "capture did not report success: $output"
+  entry=$(<"$home/data/learnings.md")
+  assert_contains "$entry" 'A lesson with extra spaces' "captured lesson was not flattened"
+  assert_contains "$entry" '[task: task id]' "task metadata was not flattened"
+  assert_contains "$entry" '[source: evidence ref]' "source metadata was not flattened"
+  [ "$(printf '%s' "$entry" | wc -l | tr -d ' ')" = 2 ] \
+    || fail "lesson capture wrote more than one Markdown entry line"
+
+  before=$(sha256sum "$home/data/learnings.md" | awk '{print $1}')
+  output=$(run_learn "$home" 'a LESSON with extra spaces' --task another-task)
+  after=$(sha256sum "$home/data/learnings.md" | awk '{print $1}')
+  [ "$output" = 'duplicate skipped' ] || fail "near-duplicate was not skipped: $output"
+  [ "$before" = "$after" ] || fail "duplicate detection changed persisted learnings"
+  pass "capture persists a flattened lesson and skips a case-insensitive near duplicate"
+}
+
+test_invalid_input_is_rejected_before_truncation() {
+  local home whitespace long
+  home=$(make_home invalid)
+  with_budget "$home" 7500
+  whitespace=$(printf ' %.0s' {1..600})
+  long=$(printf 'x%.0s' {1..600})
+  expect_rejected "$home" 'lesson must not be empty' "$whitespace"
+  [ ! -e "$home/data/learnings.md" ] || fail "whitespace-only input created a lesson file"
+  run_learn "$home" "$long" >/dev/null || fail "valid long lesson was rejected"
+  [ "$(grep -c '^-' "$home/data/learnings.md")" = 1 ] || fail "long lesson did not create one entry"
+  local entry payload
   entry=$(grep '^-' "$home/data/learnings.md")
   payload=${entry#*):** }
-  [ "${#payload}" -eq 500 ]
-  local result=$?
-  cleanup_home "$home"
-  return "$result"
+  [ "${#payload}" = 500 ] || fail "long lesson was not capped at 500 characters: ${#payload}"
+  pass "whitespace-only input is rejected while a long valid lesson is captured and capped"
 }
 
-test_deduplication() {
-  local home second count
-  home=$(new_home) || return 1
-  run_learn "$home" 'Do not parse status logs as current state.' >/dev/null || {
-    cleanup_home "$home"
-    return 1
-  }
-  second=$(run_learn "$home" 'Do not parse status logs as current state.') || {
-    cleanup_home "$home"
-    return 1
-  }
-  count=$(grep -Fc 'Do not parse status logs as current state.' "$home/data/learnings.md")
-  cleanup_home "$home"
-  [ "$count" -eq 1 ] && printf '%s\n' "$second" | grep -Eqi 'skip|duplicate|already'
+test_budget_and_hardlink_safety_refuse_without_mutation() {
+  local home outside before output
+  home=$(make_home safety)
+  with_budget "$home" 1
+  expect_rejected "$home" 'startup-memory budget would be exceeded' 'budget should refuse this lesson'
+  [ ! -e "$home/data/learnings.md" ] || fail "over-budget capture created learnings"
+
+  home=$(make_home hardlink)
+  with_budget "$home" 7500
+  outside="$TMP_ROOT/external-learnings"
+  printf '# existing\n' > "$outside"
+  ln "$outside" "$home/data/learnings.md"
+  before=$(sha256sum "$outside" | awk '{print $1}')
+  expect_rejected "$home" 'learnings file is hardlinked' 'new lesson'
+  output=$(sha256sum "$outside" | awk '{print $1}')
+  [ "$before" = "$output" ] || fail "hardlink refusal changed the external source"
+  [ "$(stat -c %h "$outside" 2>/dev/null || stat -f %l "$outside")" = 2 ] \
+    || fail "hardlink refusal altered link count"
+  pass "budget overflow and hardlinked persistence are refused without mutation"
 }
 
-test_missing_file() {
-  local home
-  home=$(mktemp -d "${TMPDIR:-/tmp}/sq-learn.XXXXXX") || return 1
-  run_learn "$home" 'Create the memory file on first use.' >/dev/null || {
-    cleanup_home "$home"
-    return 1
-  }
-  [ -s "$home/data/learnings.md" ]
-  local result=$?
-  cleanup_home "$home"
-  return "$result"
+test_concurrent_captures_are_serialized() {
+  local home output1 output2 p1 p2 entries
+  home=$(make_home concurrent)
+  with_budget "$home" 7500
+  (run_learn "$home" 'first concurrent lesson' > "$home/one.out") & p1=$!
+  (run_learn "$home" 'second concurrent lesson' > "$home/two.out") & p2=$!
+  wait "$p1" || fail "first concurrent capture failed"
+  wait "$p2" || fail "second concurrent capture failed"
+  output1=$(<"$home/one.out")
+  output2=$(<"$home/two.out")
+  [ "$output1" = 'lesson captured' ] || fail "first concurrent capture did not succeed"
+  [ "$output2" = 'lesson captured' ] || fail "second concurrent capture did not succeed"
+  entries=$(grep -c '^-' "$home/data/learnings.md")
+  [ "$entries" = 2 ] || fail "concurrent captures lost an entry: $entries"
+  assert_contains "$(<"$home/data/learnings.md")" 'first concurrent lesson' "first concurrent lesson missing"
+  assert_contains "$(<"$home/data/learnings.md")" 'second concurrent lesson' "second concurrent lesson missing"
+  pass "concurrent captures retain both persisted lessons"
 }
 
-test_help() {
-  local output
-  output=$($SCRIPT --help 2>&1) || return 1
-  printf '%s\n' "$output" | grep -Fq 'sq-learn' &&
-    printf '%s\n' "$output" | grep -Fq -- '--task' &&
-    printf '%s\n' "$output" | grep -Fq -- '--source'
-}
-
-run_test 'basic append' test_basic_append
-run_test 'metadata includes date, task, and source' test_metadata
-run_test 'lesson is limited to 500 characters' test_truncation
-run_test 'duplicate lesson is skipped' test_deduplication
-run_test 'missing learnings.md is created' test_missing_file
-run_test 'help output describes usage' test_help
-
-printf '%s passed, %s failed\n' "$passed" "$failed"
-[ "$failed" -eq 0 ]
+test_capture_normalizes_and_deduplicates
+test_invalid_input_is_rejected_before_truncation
+test_budget_and_hardlink_safety_refuse_without_mutation
+test_concurrent_captures_are_serialized
+printf '# all sq-learn tests passed\n'
