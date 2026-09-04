@@ -8,7 +8,7 @@ O escopo primário vive em `bin/sq-primary-scope-lib.sh`, compartilhado com os a
 Os arquivos de hook de cada harness adaptam o mecanismo de fim de turno daquela integração primária habilitada a esse predicado compartilhado.
 
 Guards PreToolUse relacionados negam comandos inseguros antes da execução em vez de detectar um fim de turno às cegas depois.
-Seus donos separados são [`arm-pretool-check.md`](arm-pretool-check.md), [`cd-guard.md`](cd-guard.md) e [`subagent-guard.md`](subagent-guard.md).
+Seus donos separados são [`arm-pretool-check.md`](arm-pretool-check.md), [`cd-guard.md`](cd-guard.md), [`subagent-guard.md`](subagent-guard.md), `bin/sq-backend-pretool-check.sh` e `bin/sq-poll-pretool-check.sh`.
 Não infira o escopo, segurança de loop ou tradeoffs de compatibilidade deste guard para aqueles.
 
 ## Invariante atual

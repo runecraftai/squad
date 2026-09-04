@@ -6,7 +6,7 @@ Este documento é o contrato autoritativo legível por humanos do cinto PreToolU
 `bin/sq-arm-command-policy.mjs` é o único dono semântico.
 `bin/sq-arm-pretool-check.sh` é apenas o transporte estável de harness e renderizador de saída.
 Os adaptadores rastreados de harness encaminham o texto do comando sem classificá-lo.
-`bin/sq-arm-command-policy.mjs` também é o único dono da classificação shell do Squad: exporta o tokenizer e a análise de posição de comando, que o cinto irmão cd-guard (`bin/sq-cd-pretool-check.sh`, `docs/cd-guard.md`) reutiliza em vez de duplicar lexing shell.
+`bin/sq-arm-command-policy.mjs` também é o único dono da classificação shell do Squad: exporta o tokenizer e a análise de posição de comando, que os cintos irmãos cd-guard, backend e polling reutilizam em vez de duplicar lexing shell.
 
 ## Propósito e fronteira
 

@@ -4,7 +4,7 @@ This document is the authoritative human-readable contract for the sentry arm Pr
 `bin/sq-arm-command-policy.mjs` is the single semantic owner.
 `bin/sq-arm-pretool-check.sh` is only the stable harness transport and output renderer.
 The tracked harness adapters forward command text without classifying it.
-`bin/sq-arm-command-policy.mjs` is also the sole owner of Squad's shell classification: it exports the tokenizer and command-position analysis, which the sibling cd-guard seatbelt (`bin/sq-cd-pretool-check.sh`, `docs/cd-guard.md`) reuses instead of duplicating shell lexing.
+`bin/sq-arm-command-policy.mjs` is also the sole owner of Squad's shell classification: it exports the tokenizer and command-position analysis, which the sibling cd-guard, backend, and polling seatbelts reuse instead of duplicating shell lexing.
 
 ## Purpose and boundary
 

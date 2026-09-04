@@ -7,8 +7,8 @@ Este documento é o contrato autoritativo legível por humanos do cinto PreToolU
 `bin/sq-cd-pretool-check.sh` é o transporte estável de harness, escopo de checkout primário e renderizador de saída.
 Os adaptadores rastreados de harness encaminham o texto do comando sem classificá-lo.
 
-É o terceiro membro de uma família de guards de sessão primária que compartilham a mesma maquinaria de hook cross-harness:
-o cinto PreToolUse do sentry-arm (`bin/sq-arm-pretool-check.sh`, `docs/arm-pretool-check.md`) e o guard de supervisão turn-end (`bin/sq-turnend-guard.sh`, `docs/turnend-guard.md`).
+É o quinto membro de uma família de guards de sessão primária que compartilham a mesma maquinaria de hook cross-harness:
+o cinto PreToolUse do sentry-arm (`bin/sq-arm-pretool-check.sh`, `docs/arm-pretool-check.md`), o guard de supervisão turn-end (`bin/sq-turnend-guard.sh`, `docs/turnend-guard.md`), o guard de CLI bruto do provedor de sessão (`bin/sq-backend-pretool-check.sh`) e o guard de loop de polling de estado (`bin/sq-poll-pretool-check.sh`).
 
 ## Propósito e fronteira
 

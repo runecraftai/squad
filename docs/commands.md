@@ -135,5 +135,5 @@ This refuses when the branch's work is not reachable from a remote and not cover
 
 - [docs/scripts.md](scripts.md) - the complete `bin/` toolbelt reference, one purpose clause per script.
 - [docs/tmux-backend.md](tmux-backend.md) - the tmux reference runtime backend's own setup and window-naming conventions, for the cases where inspecting a window directly by hand is still appropriate (attaching to watch, not to control).
-- [docs/cd-guard.md](cd-guard.md), [docs/arm-pretool-check.md](arm-pretool-check.md), [docs/subagent-guard.md](subagent-guard.md) - the five PreToolUse seatbelts that mechanically enforce a subset of these rules.
+- [docs/cd-guard.md](cd-guard.md), [docs/arm-pretool-check.md](arm-pretool-check.md), [docs/subagent-guard.md](subagent-guard.md), `bin/sq-backend-pretool-check.sh`, and `bin/sq-poll-pretool-check.sh` - the five PreToolUse seatbelts that mechanically enforce a subset of these rules.
 - [`AGENTS.md`](../AGENTS.md) - the operating contract these tools implement; section 8 owns the supervision protocol and the mandatory tool-usage rule, section 7 owns the task lifecycle these commands drive.
