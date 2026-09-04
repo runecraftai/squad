@@ -2046,6 +2046,9 @@ const busyEvent = (state: string, event: string) =>
   });
 const deliveryDir = "$STATE_REAL/.pi-delivery";
 const deliveryReady = deliveryDir + "/$ID.ready";
+const deliveryReadyTemp = deliveryReady + ".tmp";
+const deliveryRequestPrefix = "$ID.";
+let deliveryWatcher: ReturnType<typeof watch> | undefined;
 let piAgentRunning = false;
 
 async function waitForProcessing(): Promise<boolean> {
@@ -2056,35 +2059,75 @@ async function waitForProcessing(): Promise<boolean> {
   return piAgentRunning;
 }
 
+function writeDeliveryResponse(requestId: string, status: string): void {
+  const responsePath = deliveryDir + "/" + requestId + ".response";
+  const responseTemp = responsePath + ".tmp";
+  writeFileSync(responseTemp, status + String.fromCharCode(10));
+  renameSync(responseTemp, responsePath);
+}
+
+function stopDelivery(): void {
+  if (deliveryWatcher) {
+    deliveryWatcher.close();
+    deliveryWatcher = undefined;
+  }
+  try {
+    unlinkSync(deliveryReady);
+  } catch {
+    // Cleanup may already have retired the marker.
+  }
+  try {
+    unlinkSync(deliveryReadyTemp);
+  } catch {}
+}
+
+function startDelivery(): void {
+  if (deliveryWatcher) return;
+  try {
+    mkdirSync(deliveryDir, { recursive: true });
+    deliveryWatcher = watch(deliveryDir, () => scanDeliveryRequests());
+    const processStat = readFileSync("/proc/" + process.pid + "/stat", "utf8");
+    const processFields = processStat.slice(processStat.lastIndexOf(") ") + 2).trim().split(/\s+/);
+    const processStart = processFields[19];
+    if (!processStart) throw new Error("process identity unavailable");
+    writeFileSync(
+      deliveryReadyTemp,
+      String(process.pid) + String.fromCharCode(10) + processStart + String.fromCharCode(10),
+    );
+    renameSync(deliveryReadyTemp, deliveryReady);
+    scanDeliveryRequests();
+  } catch {
+    stopDelivery();
+  }
+}
+
 async function processDeliveryRequest(requestPath: string): Promise<void> {
   const processingPath = requestPath + ".processing";
+  const requestName = requestPath.slice((deliveryDir + "/").length);
+  const expectedRequestId = requestName.slice(0, -".request".length);
   let requestId = "";
+  let claimed = false;
   try {
     renameSync(requestPath, processingPath);
+    claimed = true;
     const raw = readFileSync(processingPath, "utf8");
     const separator = raw.indexOf(String.fromCharCode(10));
     if (separator < 0) throw new Error("malformed request");
-    requestId = raw.slice(0, separator);
+    const requestIdCandidate = raw.slice(0, separator);
+    if (requestIdCandidate !== expectedRequestId) throw new Error("request identity mismatch");
+    requestId = requestIdCandidate;
     const message = raw.slice(separator + 1).replace(new RegExp(String.fromCharCode(10) + "$"), "");
     if (typeof pi.sendUserMessage !== "function") throw new Error("sendUserMessage unavailable");
     await pi.sendUserMessage(message, { deliverAs: "followUp" });
     const processing = await waitForProcessing();
-    writeFileSync(
-      deliveryDir + "/" + requestId + ".response",
-      (processing ? "processing" : "unconfirmed") + String.fromCharCode(10),
-    );
+    writeDeliveryResponse(requestId, processing ? "processing" : "unconfirmed");
   } catch {
-    if (requestId) {
-      writeFileSync(
-        deliveryDir + "/" + requestId + ".response",
-        "unavailable" + String.fromCharCode(10),
-      );
-    }
+    if (requestId) writeDeliveryResponse(requestId, "unavailable");
   } finally {
-    try {
-      unlinkSync(processingPath);
-    } catch {
-      // Another delivery scan claimed this request first.
+    if (claimed) {
+      try {
+        unlinkSync(processingPath);
+      } catch {}
     }
   }
 }
@@ -2097,29 +2140,20 @@ function scanDeliveryRequests(): void {
     return;
   }
   for (const name of names) {
-    if (!name.endsWith(".request")) continue;
+    if (!name.startsWith(deliveryRequestPrefix) || !name.endsWith(".request")) continue;
     void processDeliveryRequest(deliveryDir + "/" + name);
   }
 }
 
 export default function (pi: any) {
-  try {
-    mkdirSync(deliveryDir, { recursive: true });
-    const deliveryWatcher = watch(deliveryDir, () => scanDeliveryRequests());
-    writeFileSync(deliveryReady, String(process.pid) + String.fromCharCode(10));
-    process.once("exit", () => {
-      deliveryWatcher.close();
-      try {
-        unlinkSync(deliveryReady);
-      } catch {
-        // Cleanup may already have retired the marker.
-      }
-    });
-    scanDeliveryRequests();
-  } catch {
-    // sq-send sees the missing ready marker and safely uses the backend fallback.
-  }
-
+  pi.on("session_start", () => {
+    piAgentRunning = false;
+    startDelivery();
+  });
+  pi.on("session_shutdown", () => {
+    piAgentRunning = false;
+    stopDelivery();
+  });
   pi.on("agent_start", () => {
     piAgentRunning = true;
     return busyEvent("busy", "agent-start");

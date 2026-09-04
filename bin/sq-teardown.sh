@@ -2395,6 +2395,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 retire_watcher_markers "$STATE" "$ID" "$T"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/.pi-delivery/$ID.ready" \
+  "$STATE/.pi-delivery/$ID.ready.tmp" \
   "$STATE/.pi-delivery/$ID."*.request \
   "$STATE/.pi-delivery/$ID."*.request.processing \
   "$STATE/.pi-delivery/$ID."*.response \
