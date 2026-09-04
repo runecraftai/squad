@@ -258,13 +258,13 @@ This section is the single owner of the canonical schema and its per-field seman
     {
       "when": "<natural-language condition describing a kind of task>",
       "use": [
-        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>" }
+        { "harness": "<adapter>", "model": "<optional model>", "effort": "<low|medium|high|xhigh|max, optional>", "account": "<optional Claude account label, harness=claude only>" }
       ],
       "why": "<optional rationale that helps Squad choose>"
     }
   ],
   "default": [
-    { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>" }
+    { "harness": "<adapter>", "model": "<optional model>", "effort": "<optional effort>", "account": "<optional account>" }
   ]
 }
 ```
@@ -272,8 +272,9 @@ This section is the single owner of the canonical schema and its per-field seman
 Per rule, `when` and `use` are required.
 Both `use` and the optional top-level `default` accept either one profile object or a non-empty array of profile objects.
 The single-object form stays fully backward-compatible, and every profile needs `harness`.
-Profile `model` and `effort` fields and rule `why` are optional.
+Profile `model`, `effort`, and `account` fields and rule `why` are optional.
 An omitted model or effort means the selected harness uses its own default for that axis.
+`account` is a label Squad resolves against "Claude account selection" below and translates into `sq-spawn.sh --account`, exactly as `model` and `effort` become `--model`/`--effort`; it is meaningful only when that profile's `harness` is `claude`, and bootstrap does not validate it against the registry (unlike model existence for pi-family harnesses below), so a stale or misspelled label is caught only at spawn time by `sq-claude-account.sh`'s own refusal.
 Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
 If no dispatch rule fits, Squad resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.
 If a selected profile carries an effort value the chosen harness does not accept, `sq-spawn.sh` records the requested `effort=` in task meta for traceability but omits the launch flag, and bootstrap reports the invalid harness/effort pair as a `CREW_DISPATCH` diagnostic when it is visible in the file.
@@ -287,6 +288,42 @@ Additionally, for pi-family harnesses (pi, pi-signed, opencode), bootstrap resol
 A probe that cannot run surfaces explicit uncertainty rather than a hard failure.
 While the file remains present, no operator or recon spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 XO bases inherit this file from the primary, so an XO's own operators apply the same dispatch profile behavior.
+
+## Claude account selection (config/claude-accounts)
+
+`config/claude-accounts` is an optional local, gitignored registry mapping short labels to absolute `CLAUDE_CONFIG_DIR` paths, one already-authenticated Claude account each.
+It exists because Claude Code holds one authenticated session per credential store: when the active account hits its session limit, every `harness=claude` operator stalls at once, and this registry is what lets Squad move future spawns onto another Claude account the commander already owns.
+Registering an account - running `claude auth login` against its own config dir - remains the commander's own action; Squad only ever reads the registry and reads (never writes) an account's auth state.
+The axis applies to `harness=claude` only; no other harness has an equivalent per-spawn credential selector.
+
+Format: one non-comment, non-blank line per account, `<label> <absolute-config-dir-path>`, whitespace-separated.
+`#` starts a comment.
+A malformed line (wrong token count, a relative path, or a label reused on a later line) is refused rather than guessed around.
+
+```
+work /Users/example/.claude-work
+personal /Users/example/.claude-personal
+```
+
+`bin/sq-claude-account.sh` is the single owner of registry parsing and verification.
+`list` prints every registered `<label> <dir>` pair, `resolve <label>` prints one account's config dir or refuses naming the known labels, and `verify <label>` additionally runs one bounded, read-only `claude auth status --json` under that config dir and refuses unless it reports both a clean exit and a parsed `loggedIn: true` field - two independent signals from the one vendor command, matching the harness-dependent-check discipline in `squad-coding-guidelines`.
+It never runs `claude auth login`, `claude auth logout`, or any other mutating or interactive claude command.
+
+`bin/sq-spawn.sh --account <label>` selects one registered account for a single spawn.
+It applies only when the resolved harness is `claude`; an unregistered label, a config dir that fails verification, or a non-claude harness refuses the spawn before any endpoint exists, rather than silently falling back to whatever `CLAUDE_CONFIG_DIR` Squad's own process happens to carry.
+On success it forwards `CLAUDE_CONFIG_DIR=<the account's dir>` onto the claude launch, overriding the pre-existing behavior of forwarding whatever `CLAUDE_CONFIG_DIR` Squad's own process carries, and records `account=<label>` in `state/<id>.meta`.
+Absent `--account`, spawn behavior is unchanged: an ambient `CLAUDE_CONFIG_DIR` already in Squad's own environment is still forwarded onto claude launches exactly as before this axis existed, and no `account=` line is written.
+`--account` is refused for a remote XO route: `config/claude-accounts` directories are host-local paths that do not resolve on another host, so `sq-spawn.sh` refuses before any transport or readiness work rather than sending an inapplicable selector.
+XO bases inherit this file from the primary through the same allowlisted local-material propagation as `config/crew-dispatch.json` (`xo-provisioning`), so a local XO's own operators can use the same registered accounts; an inherited copy on a remote XO base resolves host-local paths that generally do not exist there, which fails the same closed `verify` check rather than doing anything unsafe.
+
+`config/crew-dispatch.json` profiles may carry the same label as an optional `"account"` field (see above), scoped to `harness: claude` the same way.
+The registry stays a separate file rather than folding entirely into crew-dispatch profiles because it owns genuinely different data - a label-to-filesystem-path-and-credential mapping that needs its own live verification, not a dispatch rule - the same reason the verified-harness vocabulary itself is not defined inside crew-dispatch.json.
+A profile's `account` field is only ever a label this registry resolves.
+
+Per-account quota: `sq-quota --provider claude --json` scopes its inspection to `CLAUDE_CONFIG_DIR` (verified empirically: an authenticated config dir and a fresh, never-authenticated one report different `state.error` values), so reading one registered account's quota is running that command with `CLAUDE_CONFIG_DIR` temporarily set to the account's registered directory, then restoring or unsetting it.
+Whether that call actually returns quota *numbers* is independent of the account axis: in a base where reading claude quota requires interactive keychain approval (`sq-quota`'s own `auth_required`/`keychain_prompt_required` gap, surfaced as its `--allow-keychain-prompt` remedy), that gap applies per account and blocks headroom evidence for every registered account equally, not only the one added here.
+Squad never runs `--allow-keychain-prompt` on the commander's behalf; approving that interactive prompt is the commander's own action.
+`docs/verification/claude-accounts.md` records the dated evidence for both the `CLAUDE_CONFIG_DIR` isolation mechanism and this `sq-quota` scoping behavior.
 
 ## Toolchain
 
@@ -327,7 +364,7 @@ When a running base advances and its loaded instruction surface (`AGENTS.md`, `b
 If that send fails, bootstrap keeps an idempotent retry marker and emits `NUDGE_XOS:` with the failure reason.
 The same bootstrap run emits `XO_LIVENESS:` only when a registered XO is skipped or its relaunch fails; already-live and successfully relaunched XOs are handled silently.
 For a mid-session inherited local-material edit where tracked-file sync is not needed, run `bin/sq-config-push.sh`.
-It uses the same live XO discovery and propagation helper as bootstrap, prints each live base's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, and `data/commander-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
+It uses the same live XO discovery and propagation helper as bootstrap, prints each live base's `crew-dispatch.json`, `crew-harness`, `backlog-backend`, `backend`, `herdr-presentation-spaces`, `startup-memory-budget`, `trace-context`, `claude-accounts`, and `data/commander-shared.md` result as `pushed`, `unchanged`, `skipped`, or `error`, and exits non-zero for real propagation errors or config-reread send failures.
 When an allowlisted config item changes for an already-running local base, it sends the literal-content reread pointer described in [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md); unchanged allowlisted config sends no pointer unless a previous delivery is pending.
 A changed remote base instead receives one durably recorded marked re-read instruction after the allowlisted bytes have transferred because primary-local generation paths are not meaningful on another host.
 The locked bootstrap inheritance pass uses the same placement-specific behavior; see `xo-provisioning` for the single contract owner.

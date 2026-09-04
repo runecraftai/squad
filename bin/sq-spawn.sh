@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Spawn a direct report: an operator in a fob or Orca worktree, or a
 # XO in its isolated Squad base.
-# Usage: sq-spawn.sh <task-id> <project-dir> --mode <drill|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        sq-spawn.sh <task-id> <project-dir> --recon [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        sq-spawn.sh <task-id> [<Squad-base>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --xo
+# Usage: sq-spawn.sh <task-id> <project-dir> --mode <drill|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--account <label>]
+#        sq-spawn.sh <task-id> <project-dir> --recon [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--account <label>]
+#        sq-spawn.sh <task-id> [<Squad-base>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--account <label>] --xo
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --recon and --xo spawns. Squad resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the commander's
@@ -42,6 +42,16 @@
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported XO mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
+#   --account <label> selects one of the commander's registered Claude
+#   accounts (config/claude-accounts; bin/sq-claude-account.sh owns lookup and
+#   verification) so an operator can move off an account that hit its session
+#   limit. It applies only when the resolved harness is claude - a mismatched
+#   harness, an unregistered label, or a config dir that is not logged in
+#   refuses the spawn before any endpoint exists rather than falling back to
+#   whatever CLAUDE_CONFIG_DIR this Squad process happens to carry. It is
+#   refused for a remote --xo route (docs/configuration.md "Claude account
+#   selection"). Absent --account leaves today's ambient-forwarding behavior
+#   unchanged, and state/<id>.meta records account= only when it was passed.
 #   A herdr operator or recon is placed in the exact workspace of the Squad
 #   or XO process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -231,6 +241,7 @@ BACKEND_ARG=
 MODE=
 YOLO=
 TRACEPARENT_ARG=
+ACCOUNT_ARG=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
@@ -238,6 +249,7 @@ BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
+ACCOUNT_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -253,6 +265,7 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
+      account) ACCOUNT_ARG=$a; ACCOUNT_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -275,6 +288,8 @@ for a in "$@"; do
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --traceparent) want_value=traceparent ;;
     --traceparent=*) TRACEPARENT_ARG=${a#--traceparent=}; TRACEPARENT_SET=1 ;;
+    --account) want_value=account ;;
+    --account=*) ACCOUNT_ARG=${a#--account=}; ACCOUNT_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
@@ -286,6 +301,7 @@ done
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
+[ "$ACCOUNT_SET" -eq 0 ] || [ -n "$ACCOUNT_ARG" ] || { echo "error: --account requires a non-empty value" >&2; exit 1; }
 # A parent-delivered carrier replaces this base's own resolution, so it is
 # refused unless it is an XO spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -363,6 +379,16 @@ spawn_remote_XO() {
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
     return 3
+  fi
+  # The Claude account axis (docs/configuration.md "Claude account
+  # selection") maps a label to a CLAUDE_CONFIG_DIR path on THIS host; a
+  # remote XO route runs on a different host where that path is meaningless,
+  # so refuse rather than silently sending an inapplicable selector.
+  if [ "$ACCOUNT_SET" -eq 1 ]; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: --account is not supported for a remote XO route; config/claude-accounts directories are host-local paths that do not resolve on another host" >&2
+    return 1
   fi
   host=$(XO_registry_field "$DATA/XOs.md" "$id" host)
   root=$(XO_registry_field "$DATA/XOs.md" "$id" root)
@@ -753,6 +779,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ -z "$MODEL" ] || shared_args+=(--model "$MODEL")
   [ -z "$EFFORT" ] || shared_args+=(--effort "$EFFORT")
   [ -z "$BACKEND_ARG" ] || shared_args+=(--backend "$BACKEND_ARG")
+  [ "$ACCOUNT_SET" -eq 0 ] || shared_args+=(--account "$ACCOUNT_ARG")
   # One delivery contract applies to every pair in a batch, exactly like the shared
   # harness. Each pair still re-validates it against its own brief, so a batch
   # spanning several modes is two invocations rather than a silent mixed dispatch.
@@ -938,6 +965,23 @@ fi
 if [ "$HARNESS" = pi-signed ] && ! command -v pi-signed >/dev/null 2>&1; then
   echo "error: pi-signed executable not found on PATH; install the signed Pi wrapper or select a different verified harness" >&2
   exit 1
+fi
+
+# Claude account axis (docs/configuration.md "Claude account selection"):
+# --account is a per-spawn selector into config/claude-accounts, scoped to
+# harness=claude only, so Squad can move an operator onto a different
+# already-authenticated Claude account when the active one hits its session
+# limit. It fails closed - an unknown label or a config dir that is not
+# logged in refuses here, before any endpoint exists, rather than silently
+# falling back to whatever CLAUDE_CONFIG_DIR this Squad process happens to
+# already carry.
+SPAWN_CLAUDE_CONFIG_DIR=
+if [ "$ACCOUNT_SET" -eq 1 ]; then
+  [ "$HARNESS" = claude ] || {
+    echo "error: --account applies only to harness=claude; got harness=$HARNESS" >&2
+    exit 1
+  }
+  SPAWN_CLAUDE_CONFIG_DIR=$("$SCRIPT_DIR/sq-claude-account.sh" verify "$ACCOUNT_ARG") || exit 1
 fi
 
 # config/xo-harness may carry optional model/effort tokens alongside the
@@ -2211,6 +2255,10 @@ META_WINDOW=$T
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
+  # Absent account= means the ambient/default Claude account, exactly like
+  # backend= staying absent means tmux: the default path's meta stays
+  # byte-identical to before this axis existed.
+  [ "$ACCOUNT_SET" -eq 0 ] || echo "account=$ACCOUNT_ARG"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   # Default-off writes no traceparent= line (meta stays byte-identical).
   # backend= is written only for a non-default (non-tmux) backend, so the
@@ -2263,11 +2311,16 @@ LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 # inherit Squad's current environment, so a bare `claude` in the pane falls
 # back to the default ~/.claude store even when Squad itself runs under a
 # different CLAUDE_CONFIG_DIR (for example a work-vs-personal subscription split).
-# Forward Squad's own resolved store onto the claude launch so the operator
-# uses the same credential/config Squad is authenticated with. Only when set;
-# an unset value is the single-store default and needs no prefix.
-if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-  LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$CLAUDE_CONFIG_DIR") $LAUNCH"
+# An explicit --account (verified above, SPAWN_CLAUDE_CONFIG_DIR) always wins;
+# otherwise forward Squad's own resolved store onto the claude launch so the
+# operator uses the same credential/config Squad is authenticated with. Only
+# when one or the other is set; the fully-absent case is the single-store
+# default and needs no prefix.
+if [ "$HARNESS" = claude ]; then
+  claude_config_dir=${SPAWN_CLAUDE_CONFIG_DIR:-${CLAUDE_CONFIG_DIR:-}}
+  if [ -n "$claude_config_dir" ]; then
+    LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$claude_config_dir") $LAUNCH"
+  fi
 fi
 if [ "$KIND" = xo ]; then
   sq_home=$(shell_quote "$PROJ_ABS")

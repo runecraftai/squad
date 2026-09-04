@@ -180,6 +180,7 @@ family_for_basename() {
       printf '%s\n' session-bootstrap
       ;;
     sq-afk-pi-herdr-return-e2e.test.sh|\
+    sq-claude-account-live-e2e.test.sh|\
     sq-codex-continuity-live-e2e.test.sh|sq-grok-continuity-live-e2e.test.sh|\
     sq-grok-stop-live-e2e.test.sh|sq-harness-liveness-drift-live-e2e.test.sh|\
     sq-muse-signals-live-e2e.test.sh|\
@@ -191,6 +192,7 @@ family_for_basename() {
       ;;
     sq-backend-herdr.test.sh|sq-backend-tmux-smoke.test.sh|sq-backend.test.sh|\
     sq-tmux-agent-liveness.test.sh|\
+    sq-claude-account.test.sh|\
     sq-herdr-session-cleanup.test.sh|sq-send-resolve-key.test.sh|sq-send-strict.test.sh|sq-spawn-batch.test.sh|\
     sq-spawn-dispatch-profile.test.sh|\
     sq-trace-context-spawn.test.sh|sq-spawn-worktree-settle.test.sh|\
