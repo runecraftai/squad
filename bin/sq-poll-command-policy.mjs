@@ -34,7 +34,19 @@ function basename(value) {
 }
 
 function wordsFor(node) {
-  return commandPosition(node).words.map((word) => String(word.value ?? ""));
+  const words = commandPosition(node).words.map((word) => String(word.value ?? ""));
+  let redirectionTarget = false;
+  for (const token of node) {
+    if (token.type === "redir") {
+      redirectionTarget = !token.inlineTarget;
+      continue;
+    }
+    if (redirectionTarget && token.type === "word") {
+      words.push(String(token.value ?? ""));
+      redirectionTarget = false;
+    }
+  }
+  return words;
 }
 
 function effectiveCommand(node) {
@@ -98,6 +110,7 @@ function analyze(command, depth = 0) {
     if (SHELLS.has(command)) nested.push(shellPayload(words, commandIndex));
     if (command === "eval") nested.push(words.slice(commandIndex + 1).join(" "));
     for (const token of node) {
+      if (token.type === "group") nested.push(token.content);
       for (const substitution of token.subs ?? []) nested.push(substitution.content);
     }
     for (const payload of nested) {

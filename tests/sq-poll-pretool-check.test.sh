@@ -43,7 +43,9 @@ for command in \
   'until false; do cat state/task.status; done' \
   'env bash -lc '\''sleep 1; cat /tmp/state/task.status'\''' \
   'command bash -lc '\''while true; do cat state/task.status; done'\''' \
-  'bash -lc '\''while true; do sleep 1; cat /tmp/state/task.status; done'\'''; do
+  'bash -lc '\''while true; do sleep 1; cat /tmp/state/task.status; done'\''' \
+  'while :; do (sleep 1; cat state/task.status); done' \
+  'while :; do read < state/task.status; done'; do
   result=$(run_check "$command")
   expect_code 2 "${result%%$'\n'*}" "blocks state poll loop: $command"
   assert_contains "$result" "state-poll-loop" "reports state poll code: $command"

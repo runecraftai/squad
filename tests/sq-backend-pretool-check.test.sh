@@ -60,6 +60,9 @@ for command in \
   'env bash -c '\''tmux send-keys task x'\''' \
   'command bash -lc '\''zellij action list-clients'\''' \
   'bash -lc '\''tmux kill-window -t Squad:task'\''' \
+  'if :; then tmux send-keys task x; fi' \
+  'while :; do (tmux send-keys task x); done' \
+  $'bash -s <<EOF\ntmux send-keys task x\nEOF' \
   'printf '\''%s'\'' "$(zellij action list-clients)"'; do
   result=$(run_check "$command")
   expect_code 2 "${result%%$'\n'*}" "blocks raw backend lifecycle form: $command"

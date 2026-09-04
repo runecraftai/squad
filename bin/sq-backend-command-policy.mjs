@@ -11,6 +11,7 @@ import {
 export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux"]);
 
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish"]);
+const RESERVED_COMMAND_PREFIXES = new Set(["!", "coproc", "elif", "else", "if", "then", "time", "until", "while"]);
 const MAX_DEPTH = 8;
 
 function basename(value) {
@@ -33,6 +34,28 @@ function shellPayload(words, commandIndex) {
   return "";
 }
 
+function shellStdinPayloads(node, position) {
+  const commandName = basename(String(position.command?.value ?? ""));
+  if (!SHELLS.has(commandName)) return [];
+  const words = position.words;
+  for (let index = (position.index ?? 0) + 1; index < words.length; index += 1) {
+    const value = literalValue(words[index]);
+    if (value === "--" || !value.startsWith("-")) return [];
+    if (value === "-c" || /^-[^-]*c[^-]*$/.test(value)) return [];
+  }
+  return node
+    .filter((token) => token.type === "redir" && token.fd === 0 && typeof token.heredoc === "string")
+    .map((token) => token.heredoc);
+}
+
+function reservedCommand(node) {
+  const first = node.findIndex((token) => token.type === "word");
+  if (first === -1 || !RESERVED_COMMAND_PREFIXES.has(literalValue(node[first]))) return [];
+  let start = first + 1;
+  if (literalValue(node[first]) === "time" && literalValue(node[start]) === "-p") start += 1;
+  return node.slice(start);
+}
+
 function nodeHasBackend(node, depth) {
   const position = commandPosition(node);
   if (position?.command && SQUAD_BACKEND_KNOWN.has(basename(position.command.value))) return true;
@@ -48,13 +71,18 @@ function nodeHasBackend(node, depth) {
     const payload = words.slice(commandIndex + 1).map(literalValue).filter(Boolean).join(" ");
     if (payload && containsRawBackend(payload, depth + 1)) return true;
   }
-
+  const reserved = reservedCommand(node);
+  if (reserved.length > 0 && nodeHasBackend(reserved, depth + 1)) return true;
   for (const token of node) {
+    if (token.type === "group" && containsRawBackend(token.content, depth + 1)) return true;
     for (const substitution of token.subs ?? []) {
       if (containsRawBackend(substitution.content, depth + 1)) return true;
     }
   }
   for (const payload of position?.wrapperPayloads ?? []) {
+    if (containsRawBackend(payload, depth + 1)) return true;
+  }
+  for (const payload of shellStdinPayloads(node, position)) {
     if (containsRawBackend(payload, depth + 1)) return true;
   }
   return false;
