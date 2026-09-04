@@ -176,6 +176,18 @@ tests/sq-busy-adapter-wiring.test.sh
 tests/sq-crew-state.test.sh
 ```
 
+## Bash PreToolUse guards
+
+The backend-raw and poll-loop policies are covered by deterministic transport and policy suites, and the primary adapter wiring suite verifies that Pi and OpenCode invoke them in the Bash tool path.
+The tracked Claude and Grok hook inventory remains pinned by `tests/sq-turnend-guard.test.sh`.
+
+```sh
+tests/sq-backend-pretool-check.test.sh
+tests/sq-poll-pretool-check.test.sh
+tests/sq-primary-pretool-wiring.test.sh
+tests/sq-turnend-guard.test.sh
+```
+
 ## Turn-end guard
 
 The direct and passive mechanisms were validated across all five harnesses on 2026-07-08 through 2026-07-12, with Claude's replacement Stop-owned path revalidated on 2026-07-24.
