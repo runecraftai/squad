@@ -73,7 +73,7 @@ assert_grep 'poll:--command sleep 1; cat state/task.status' "$TMP_ROOT/check.log
 assert_grep 'arm' "$TMP_ROOT/check.log" "arm checker remains wired after new guards"
 [ "$(grep -c '^arm$' "$TMP_ROOT/check.log")" = 1 ] || fail "arm checker ran after a new guard denied a command"
 
-out=$(PLUGIN="$REPO/.opencode/plugins/sq-primary-pretool-check.js" REPO="$REPO" CHECK_LOG="$TMP_ROOT/check.log" node --input-type=module 2>&1 <<'NODE'
+out=$(env PLUGIN="$REPO/.opencode/plugins/sq-primary-pretool-check.js" REPO="$REPO" CHECK_LOG="$TMP_ROOT/check.log" node --input-type=module 2>&1 <<'NODE'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const hooks = await mod.FmPrimaryPretoolCheck({ directory: process.env.REPO });
@@ -92,7 +92,7 @@ status=$?
 expect_code 0 "$status" "OpenCode plugin invokes backend guard"
 [ -z "$out" ] || fail "OpenCode pretool wiring test printed output: $out"
 
-out=$(PLUGIN="$REPO/.opencode/plugins/sq-primary-pretool-check.js" REPO="$REPO" CHECK_LOG="$TMP_ROOT/check.log" node --input-type=module 2>&1 <<'NODE'
+out=$(env PLUGIN="$REPO/.opencode/plugins/sq-primary-pretool-check.js" REPO="$REPO" CHECK_LOG="$TMP_ROOT/check.log" node --input-type=module 2>&1 <<'NODE'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const hooks = await mod.FmPrimaryPretoolCheck({ directory: process.env.REPO });
