@@ -221,19 +221,20 @@ SUBAGENT_TOOL=no
 `multi_tool_use.parallel` batches calls to the tools above; it does not spawn an agent.
 Codex is therefore not applicable today, and this table row is the tripwire: if a future Codex release adds a delegated-agent tool, wire `.codex/hooks.json` the same way its `Bash` PreToolUse entries already forward stdin to a checker.
 
-### Grok, OpenCode, and Pi, inspected but not wired
+### Grok, OpenCode, and Pi delegation guard, still unwired
 
-The integration surface of each was inspected and each is structurally wireable for the shipped guard.
+The delegation-shaped tool guard remains unwired on all three; the backend-raw and poll-loop guards added in this change are separate Bash-command policies and do not provide delegation-tool coverage.
 
-- Grok's tracked hooks (`.grok/hooks/sq-primary-pretool-check.json`, `.grok/hooks/sq-primary-cd-check.json`) use a `PreToolUse` matcher, currently `Bash`, and pipe stdin to a checker.
-  The checker already reads Grok's `.toolName` field, so only the matcher token is missing.
+- Grok's tracked PreToolUse hooks use a `Bash` matcher and now route Bash command text to the arm, backend, poll-loop, and cd checkers.
+  No tracked Grok registration matches a non-Bash delegation tool, although the delegation checker can read Grok's `.toolName` field if such a registration is validated.
   Grok does expose a delegation surface: `docs/supervision-protocols/grok.md` documents `get_command_or_subagent_output(<task_id>)`, which implies a corresponding dispatch tool.
-- OpenCode's tracked plugins gate on `input?.tool !== "bash"` inside `tool.execute.before`, and block by throwing.
-  Swapping that comparison for a call into this checker with `--tool` is the whole change.
-- Pi's tracked extension gates on `event.toolName !== "bash"` inside `pi.on("tool_call", ...)` and blocks by returning `{block: true}`.
-  The same change applies. A parallel evaluation reports that Pi exposes no delegation tool at all, which would make it not applicable, but that was not verified here.
+- OpenCode's tracked plugins gate on `input?.tool !== "bash"` inside `tool.execute.before`, and the Bash path now runs the arm, backend, and poll-loop checkers alongside the cd checker.
+  No non-Bash delegation tool reaches `bin/sq-subagent-pretool-check.sh`.
+- Pi's tracked extension gates on `event.toolName !== "bash"` inside `pi.on("tool_call", ...)`, and the Bash path now runs the cd, backend, poll-loop, and arm checkers.
+  No non-Bash delegation tool reaches `bin/sq-subagent-pretool-check.sh`.
+  A parallel evaluation reports that Pi exposes no delegation tool at all, which would make it not applicable, but that was not verified here.
 
-None of the three is wired in this change because none of the three binaries is installed on the host where this work was done, so the exact tool-name tokens could not be confirmed and the wiring could not be validated against the real harness.
+None of the three has the delegation guard wired because the exact non-Bash tool-name tokens could not be confirmed and the wiring could not be validated against the real harness.
 This repo's rule in the `squad-coding-guidelines` skill is that a harness hook must be validated in a scratch project before it is trusted, and `arm-pretool-check.md` records the concrete cost of guessing: a Grok hook whose `command` string is even slightly wrong fails to launch the hook at all.
 Wiring an unvalidated matcher would trade a known gap for an unknown breakage.
 
@@ -366,7 +367,7 @@ tests/sq-subagent-pretool-check.test.sh
 ## Known residual gap
 
 The other tracked Claude hook entries in `.claude/settings.json` refuse to run under Grok's Claude-compatible settings loading (docs/turnend-guard.md "Harness integrations"), because Grok already covers each of those events through its own `.grok/hooks/` registration and running both creates a duplicate path.
-This entry is the deliberate exception and stays unguarded: Grok is "inspected but not wired" above, so no `.grok/hooks/` registration covers the subagent-spawn event at all, and guarding it would remove the guard from Grok entirely rather than deduplicate it.
+This entry is the deliberate exception and stays unguarded: the delegation guard remains unwired above, so no `.grok/hooks/` registration covers the subagent-spawn event at all, and guarding it would remove the guard from Grok entirely rather than deduplicate it.
 The coverage it leaves is partial rather than correct - the tracked entry passes `--claude`, which suppresses exactly the stdout decision object Grok consumes - so treat this as incidental reach, not as Grok being wired.
 Wiring Grok properly still requires the matcher-token verification described above, and that is what closes this exception.
 

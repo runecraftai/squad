@@ -223,19 +223,20 @@ SUBAGENT_TOOL=no
 `multi_tool_use.parallel` agrupa chamadas às ferramentas acima; ele não spawna um agente.
 O Codex portanto não é aplicável hoje, e esta linha da tabela é o tripwire: se um release futuro do Codex adicionar uma ferramenta delegated-agent, fie `.codex/hooks.json` da mesma forma que suas entradas Bash PreToolUse já encaminham stdin para um checker.
 
-### Grok, OpenCode e Pi, inspecionados mas não fiados
+### Guard de delegação do Grok, OpenCode e Pi, ainda não fiado
 
-A superfície de integração de cada um foi inspecionada e cada um é estruturalmente fiaável para o guard embarcado.
+O guard de ferramentas com formato de delegação continua sem fiação nos três; os guards backend-raw e poll-loop adicionados nesta mudança são políticas separadas de comandos Bash e não cobrem ferramentas de delegação.
 
-- Os hooks rastreados do Grok (`.grok/hooks/sq-primary-pretool-check.json`, `.grok/hooks/sq-primary-cd-check.json`) usam um matcher `PreToolUse`, atualmente `Bash`, e canalizam stdin para um checker.
-  O checker já lê o campo `.toolName` do Grok, então só falta o token do matcher.
+- Os hooks rastreados do Grok usam um matcher `Bash` e agora encaminham o texto dos comandos Bash aos checkers de arm, backend, poll-loop e cd.
+  Nenhum registro rastreado do Grok corresponde a uma ferramenta de delegação não-Bash, embora o checker de delegação possa ler o campo `.toolName` do Grok se tal registro for validado.
   O Grok expõe sim uma superfície de delegação: `docs/supervision-protocols/grok.md` documenta `get_command_or_subagent_output(<task_id>)`, o que implica uma ferramenta de despacho correspondente.
-- Os plugins rastreados do OpenCode condicionam em `input?.tool !== "bash"` dentro de `tool.execute.before` e bloqueiam lançando exceção.
-  Trocar essa comparação por uma chamada a este checker com `--tool` é a mudança inteira.
-- A extensão rastreada do Pi condiciona em `event.toolName !== "bash"` dentro de `pi.on("tool_call", ...)` e bloqueia retornando `{block: true}`.
-  A mesma mudança se aplica. Uma avaliação paralela reporta que o Pi não expõe nenhuma ferramenta de delegação, o que o tornaria não aplicável, mas isso não foi verificado aqui.
+- Os plugins rastreados do OpenCode condicionam em `input?.tool !== "bash"` dentro de `tool.execute.before`, e o caminho Bash agora roda os checkers de arm, backend e poll-loop junto com o checker cd.
+  Nenhuma ferramenta de delegação não-Bash alcança `bin/sq-subagent-pretool-check.sh`.
+- A extensão rastreada do Pi condiciona em `event.toolName !== "bash"` dentro de `pi.on("tool_call", ...)`, e o caminho Bash agora roda os checkers cd, backend, poll-loop e arm.
+  Nenhuma ferramenta de delegação não-Bash alcança `bin/sq-subagent-pretool-check.sh`.
+  Uma avaliação paralela reporta que o Pi não expõe nenhuma ferramenta de delegação, o que o tornaria não aplicável, mas isso não foi verificado aqui.
 
-Nenhum dos três está fiaado nesta mudança porque nenhum dos três binários está instalado no host onde este trabalho foi feito, então os tokens exatos de nomes de ferramenta não puderam ser confirmados e a fiação não pôde ser validada contra o harness real.
+Nenhum dos três tem o guard de delegação fiado porque os tokens exatos dos nomes de ferramentas não-Bash não puderam ser confirmados e a fiação não pôde ser validada contra o harness real.
 A regra neste repo na skill `squad-coding-guidelines` é que um hook de harness deve ser validado num projeto de rascunho antes de ser confiável, e `arm-pretool-check.md` registra o custo concreto de adivinhar: um hook do Grok cuja string `command` está mesmo um pouco errada falha em lançar o hook completamente.
 Fiar um matcher não validado trocaria uma lacuna conhecida por uma falha desconhecida.
 
@@ -368,7 +369,7 @@ tests/sq-subagent-pretool-check.test.sh
 ## Lacuna residual conhecida
 
 As outras entradas rastreadas de hook Claude em `.claude/settings.json` se recusam a rodar sob o carregamento de settings compatíveis-com-Claude do Grok (docs/turnend-guard.md "Harness integrations"), porque o Grok já cobre cada um daqueles eventos através do próprio registro dele em `.grok/hooks/` e rodar ambos cria caminho duplicado.
-Esta entrada é a exceção deliberada e continua sem guarda: Grok é "inspecionado mas não fiado" acima, então nenhum registro `.grok/hooks/` cobre o evento de spawn de subagent de forma alguma, e guardá-lo removeria o guard do Grok completamente em vez de deduplicá-lo.
+Esta entrada é a exceção deliberada e continua sem guarda: o guard de delegação continua sem fiação acima, então nenhum registro `.grok/hooks/` cobre o evento de spawn de subagent de forma alguma, e guardá-lo removeria o guard do Grok completamente em vez de deduplicá-lo.
 A cobertura que ele deixa é parcial em vez de correta - a entrada rastreada passa `--claude`, que suprime exatamente o objeto stdout decision que o Grok consome - então trate isso como alcance incidental, não como Grok sendo fiado.
 
 Fiar o Grok adequadamente ainda requer a verificação por token-matcher descrita acima, e é isso que fecha esta exceção.
