@@ -212,6 +212,34 @@ def without_fenced_code_and_html_comments(text):
             offset += len(line)
             continue
         if not in_comment and inline_ticks is None:
+            opening = _HTML_BLOCK_OPEN.match(content)
+            if opening:
+                tag = opening.group("tag").lower()
+                html_stack = (
+                    []
+                    if tag in _HTML_VOID_TAGS or _is_self_closing(opening)
+                    else [tag]
+                )
+                html_comment = False
+                masked, html_stack, html_comment = _mask_html_line(
+                    line, html_stack, html_comment, opening.end()
+                )
+                lines.append(masked)
+                offset += len(line)
+                continue
+            opener = _HTML_OPEN_START.match(content)
+            if opener:
+                html_opener = {
+                    "tag": opener.group("tag").lower(),
+                    "quote": None,
+                    "last_nonspace": opener.group("tag")[-1],
+                }
+                masked, html_opener, html_stack, html_comment = _consume_html_opener(
+                    line, html_opener, opener.end()
+                )
+                lines.append(masked)
+                offset += len(line)
+                continue
             opening = _FENCE_OPEN.match(content)
             if opening:
                 fence_char = opening.group(1)[0]
@@ -229,34 +257,6 @@ def without_fenced_code_and_html_comments(text):
             line, text, offset, False, None
         )
         if in_comment or inline_ticks is not None:
-            lines.append(masked)
-            offset += len(line)
-            continue
-        opening = _HTML_BLOCK_OPEN.match(masked.rstrip("\r\n"))
-        if opening:
-            tag = opening.group("tag").lower()
-            html_stack = (
-                []
-                if tag in _HTML_VOID_TAGS or _is_self_closing(opening)
-                else [tag]
-            )
-            html_comment = False
-            masked, html_stack, html_comment = _mask_html_line(
-                masked, html_stack, html_comment, opening.end()
-            )
-            lines.append(masked)
-            offset += len(line)
-            continue
-        opener = _HTML_OPEN_START.match(masked.rstrip("\r\n"))
-        if opener:
-            html_opener = {
-                "tag": opener.group("tag").lower(),
-                "quote": None,
-                "last_nonspace": opener.group("tag")[-1],
-            }
-            masked, html_opener, html_stack, html_comment = _consume_html_opener(
-                masked, html_opener, opener.end()
-            )
             lines.append(masked)
             offset += len(line)
             continue

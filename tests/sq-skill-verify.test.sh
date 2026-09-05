@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/opener-comment" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: drill
@@ -160,6 +160,15 @@ Fake declaration.
 Fake declaration.
 </div>
 EOF
+cat > "$tmp_dir/opener-comment/SKILL.md" <<'EOF'
+<div><!--
+-->
+## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+</div>
+EOF
 cat > "$tmp_dir/raw-html/SKILL.md" <<'EOF'
 <div>
 <script>
@@ -257,7 +266,7 @@ Triggers:
 Do NOT use for:   
 EOF
 printf '\377\376' > "$tmp_dir/invalid/SKILL.md"
-for verified_fixture in fenced hidden fenced-comment concat bare h1 custom-html multiline-html nested-html comment-html raw-html inline pre fenced-inline inline-comment; do
+for verified_fixture in fenced hidden fenced-comment concat bare h1 custom-html multiline-html nested-html comment-html opener-comment raw-html inline pre fenced-inline inline-comment; do
     {
         printf '%s\n' '---' 'name: drill' 'description: Test skill.' '---' ''
         cat "$tmp_dir/$verified_fixture/SKILL.md"
@@ -346,7 +355,7 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/concat" >/dev/null 2>&1
     echo "concatenated HTML-comment declarations unexpectedly passed trigger checking" >&2
     exit 1
 fi
-for malformed in bare h1 custom-html multiline-html nested-html comment-html raw-html inline pre; do
+for malformed in bare h1 custom-html multiline-html nested-html comment-html opener-comment raw-html inline pre; do
     if malformed_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/$malformed"); then
         echo "$malformed Markdown unexpectedly passed verification" >&2
         exit 1
