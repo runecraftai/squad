@@ -7,6 +7,14 @@ _HTML_BLOCK_OPEN = re.compile(
     r"^ {0,3}<(?P<tag>[A-Za-z][A-Za-z0-9-]*)(?=[ \t/>])(?:[^\"'<>]|\"[^\"]*\"|'[^']*')*>",
     re.IGNORECASE,
 )
+_HTML_TAG = re.compile(
+    r"<(?P<closing>/)?(?P<tag>[A-Za-z][A-Za-z0-9-]*)(?=[ \t/>])(?:[^\"'<>]|\"[^\"]*\"|'[^']*')*>",
+    re.IGNORECASE,
+)
+_HTML_VOID_TAGS = frozenset(
+    {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+)
+_HTML_RAW_TAGS = frozenset({"script", "style", "textarea", "title"})
 _FRONT_MATTER_OPEN = re.compile(r"\A---[ \t]*(?:\r?\n|\Z)")
 _FRONT_MATTER = re.compile(
     r"\A---[ \t]*\r?\n(.*?)(?:\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n|\Z)",
@@ -88,19 +96,60 @@ def _mask_inline_and_comments(line, text, offset, in_comment, inline_ticks):
     return "".join(output), in_comment, inline_ticks
 
 
-def _mask_html_block(line, tag):
-    content = line.rstrip("\r\n")
-    close = re.search(rf"</{re.escape(tag)}[ \t]*>", content, re.IGNORECASE)
-    if close:
-        return _mask_text(line[: close.end()]) + line[close.end() :], None
-    return _mask_text(line), tag
+def _is_self_closing(match):
+    return bool(re.search(r"/[ \t]*>$", match.group(0)))
+
+
+def _scan_html_line(line, stack, in_comment, position=0):
+    while position < len(line):
+        if stack and stack[-1] in _HTML_RAW_TAGS:
+            raw_tag = stack[-1]
+            close = re.search(rf"</{re.escape(raw_tag)}[ \t]*>", line[position:], re.IGNORECASE)
+            if not close:
+                return stack, in_comment, len(line)
+            position += close.end()
+            stack.pop()
+            if not stack:
+                return stack, False, position
+            continue
+        if in_comment:
+            end = line.find("-->", position)
+            if end < 0:
+                return stack, True, len(line)
+            position = end + 3
+            in_comment = False
+            continue
+        comment_start = line.find("<!--", position)
+        tag_match = _HTML_TAG.search(line, position)
+        if comment_start >= 0 and (tag_match is None or comment_start < tag_match.start()):
+            position = comment_start + 4
+            in_comment = True
+            continue
+        if tag_match is None:
+            return stack, in_comment, len(line)
+        tag = tag_match.group("tag").lower()
+        if tag_match.group("closing"):
+            if stack and stack[-1] == tag:
+                stack.pop()
+                if not stack:
+                    return stack, False, tag_match.end()
+        elif tag not in _HTML_VOID_TAGS and not _is_self_closing(tag_match):
+            stack.append(tag)
+        position = tag_match.end()
+    return stack, in_comment, position
+
+
+def _mask_html_line(line, stack, in_comment, position=0):
+    stack, in_comment, end = _scan_html_line(line, stack, in_comment, position)
+    return _mask_text(line[:end]) + line[end:], stack, in_comment
 
 
 def without_fenced_code_and_html_comments(text):
     lines = []
     fence_char = None
     fence_length = 0
-    html_tag = None
+    html_stack = []
+    html_comment = False
     in_comment = False
     inline_ticks = None
     offset = 0
@@ -115,8 +164,10 @@ def without_fenced_code_and_html_comments(text):
                 fence_char = None
             offset += len(line)
             continue
-        if html_tag:
-            masked, html_tag = _mask_html_block(line, html_tag)
+        if html_stack:
+            masked, html_stack, html_comment = _mask_html_line(
+                line, html_stack, html_comment
+            )
             lines.append(masked)
             offset += len(line)
             continue
@@ -143,7 +194,16 @@ def without_fenced_code_and_html_comments(text):
             continue
         opening = _HTML_BLOCK_OPEN.match(masked.rstrip("\r\n"))
         if opening:
-            masked, html_tag = _mask_html_block(masked, opening.group("tag"))
+            tag = opening.group("tag").lower()
+            html_stack = (
+                []
+                if tag in _HTML_VOID_TAGS or _is_self_closing(opening)
+                else [tag]
+            )
+            html_comment = False
+            masked, html_stack, html_comment = _mask_html_line(
+                masked, html_stack, html_comment, opening.end()
+            )
             lines.append(masked)
             offset += len(line)
             continue
