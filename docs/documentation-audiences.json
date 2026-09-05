@@ -728,6 +728,46 @@
    "audience": "public-product"
   },
   {
+   "path": "skills/grill-me/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/grill-with-docs/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/wayfinder/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/domain-modeling/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/improve-codebase-architecture/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/spec-driven-development/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/planning-and-task-breakdown/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/security-and-hardening/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/performance-optimization/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/api-and-interface-design/SKILL.md",
+   "audience": "public-product"
+  },
+  {
    "path": "docs/pr-review.md",
    "audience": "operator-current"
   },
