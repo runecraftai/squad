@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Verify the basic behavioral sections of a skill directory.
+"""Verify the basic behavioral sections of an allowlisted skill directory.
 
 Usage: sq-skill-verify.py <skill-directory>
+
+Only names in the hard-coded VERIFIED_SKILLS set proceed. An unlisted skill
+prints exactly ``skill not in verified list`` and exits with status 1. A listed
+skill emits compact JSON with its name, section booleans, and pass/fail status;
+it exits 0 only when SKILL.md is readable and both required sections have
+content.
 """
 
 import json

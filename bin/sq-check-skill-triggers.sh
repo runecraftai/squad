@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Check that a skill has a non-empty Triggers section.
+# Usage: sq-check-skill-triggers.sh <skill-directory>
+# Exit 0 only when SKILL.md is readable and its Triggers section has content.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then

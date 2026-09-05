@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Check that a skill has SKILL.md front matter and required headings.
+# Usage: sq-check-skill-format.sh <skill-directory>
+# Exit 0 only when name and description front matter plus both required headings exist.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
