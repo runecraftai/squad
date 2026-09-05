@@ -11,7 +11,7 @@ from pathlib import Path
 from sq_skill_markdown import front_matter, section
 
 
-VERIFIED_SKILLS = ["drill", "no-mistakes", "humanizer"]
+VERIFIED_SKILLS = {"drill", "no-mistakes", "humanizer"}
 
 
 def main():
