@@ -15,6 +15,9 @@ _HTML_OPEN_START = re.compile(
     r"^ {0,3}<(?P<tag>[A-Za-z][A-Za-z0-9-]*)(?=[ \t/>]|$)",
     re.IGNORECASE,
 )
+_HTML_ATTRIBUTE_START = re.compile(
+    r"^[ \t]*(?:/?>|[A-Za-z_:][A-Za-z0-9_.:-]*(?=[ \t=>/]|$))"
+)
 _HTML_VOID_TAGS = frozenset(
     {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 )
@@ -104,6 +107,12 @@ def _is_self_closing(match):
     return bool(re.search(r"/[ \t]*>$", match.group(0)))
 
 
+def _is_html_opener_continuation(line, opener):
+    if opener["quote"]:
+        return True
+    return bool(_HTML_ATTRIBUTE_START.match(line.rstrip("\r\n")))
+
+
 def _consume_html_opener(line, opener, position=0):
     quote = opener["quote"]
     last_nonspace = opener["last_nonspace"]
@@ -183,6 +192,7 @@ def without_fenced_code_and_html_comments(text):
     html_stack = []
     html_comment = False
     html_opener = None
+    html_pending = []
     in_comment = False
     inline_ticks = None
     offset = 0
@@ -198,12 +208,20 @@ def without_fenced_code_and_html_comments(text):
             offset += len(line)
             continue
         if html_opener:
-            masked, html_opener, html_stack, html_comment = _consume_html_opener(
-                line, html_opener
-            )
-            lines.append(masked)
-            offset += len(line)
-            continue
+            if not _is_html_opener_continuation(line, html_opener):
+                lines.extend(raw for raw, masked in html_pending)
+                html_pending = []
+                html_opener = None
+            else:
+                masked, html_opener, html_stack, html_comment = _consume_html_opener(
+                    line, html_opener
+                )
+                html_pending.append((line, masked))
+                if html_opener is None:
+                    lines.extend(masked for raw, masked in html_pending)
+                    html_pending = []
+                offset += len(line)
+                continue
         if html_stack:
             masked, html_stack, html_comment = _mask_html_line(
                 line, html_stack, html_comment
@@ -237,7 +255,10 @@ def without_fenced_code_and_html_comments(text):
                 masked, html_opener, html_stack, html_comment = _consume_html_opener(
                     line, html_opener, opener.end()
                 )
-                lines.append(masked)
+                if html_opener:
+                    html_pending.append((line, masked))
+                else:
+                    lines.append(masked)
                 offset += len(line)
                 continue
             opening = _FENCE_OPEN.match(content)
@@ -262,6 +283,8 @@ def without_fenced_code_and_html_comments(text):
             continue
         lines.append(masked)
         offset += len(line)
+    if html_pending:
+        lines.extend(raw for raw, masked in html_pending)
     return "".join(lines)
 
 

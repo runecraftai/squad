@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/unverified" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/opener-comment" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/unverified" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/opener-comment" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/literal-html-opener" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: drill
@@ -256,6 +256,14 @@ Use for example requests.
 ## Do NOT use for
 Unrelated requests.
 EOF
+cat > "$tmp_dir/literal-html-opener/SKILL.md" <<'EOF'
+<example
+## Triggers
+Use for example requests.
+
+## Do NOT use for
+Unrelated requests.
+EOF
 cat > "$tmp_dir/promoted/SKILL.md" <<'EOF'
 ```yaml
 ---
@@ -280,7 +288,7 @@ Triggers:
 Do NOT use for:   
 EOF
 printf '\377\376' > "$tmp_dir/invalid/SKILL.md"
-for verified_fixture in fenced hidden fenced-comment concat bare h1 custom-html multiline-html nested-html comment-html opener-comment raw-html inline pre fenced-inline inline-comment; do
+for verified_fixture in fenced hidden fenced-comment concat bare h1 custom-html multiline-html nested-html comment-html opener-comment raw-html inline pre fenced-inline inline-comment literal-html-opener; do
     {
         printf '%s\n' '---' 'name: drill' 'description: Test skill.' '---' ''
         cat "$tmp_dir/$verified_fixture/SKILL.md"
@@ -299,6 +307,15 @@ assert report == {
     "has_dont_use": True,
     "status": "pass",
 }
+PY
+literal_html_opener_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/literal-html-opener")
+python3 - "$literal_html_opener_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is True
+assert report["has_dont_use"] is True
+assert report["status"] == "pass"
 PY
 
 if unverified_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/unverified"); then
@@ -535,6 +552,8 @@ fi
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/good"
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/void-html"
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/self-closing-html"
+"$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/literal-html-opener"
+"$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/literal-html-opener"
 printf 'raise RuntimeError("shadowed parser")\n' > "$tmp_dir/shadow/sq_skill_markdown.py"
 (
     cd "$tmp_dir/shadow"
