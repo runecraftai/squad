@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -35,6 +35,16 @@ Use for example requests.
 ## Do NOT use for
 Unrelated requests.
 ```
+EOF
+cat > "$tmp_dir/body/SKILL.md" <<'EOF'
+name: fake
+description: Fake skill.
+
+## Triggers
+Use for example requests.
+
+## Do NOT use for
+Unrelated requests.
 EOF
 printf '\377\376' > "$tmp_dir/invalid/SKILL.md"
 
@@ -68,6 +78,18 @@ assert report["has_triggers"] is False
 assert report["has_dont_use"] is False
 assert report["status"] == "fail"
 PY
+if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/fenced" >/dev/null 2>&1; then
+    echo "fenced triggers unexpectedly passed" >&2
+    exit 1
+fi
+if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/fenced" >/dev/null 2>&1; then
+    echo "fenced format declarations unexpectedly passed" >&2
+    exit 1
+fi
+if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/body" >/dev/null 2>&1; then
+    echo "body declarations unexpectedly passed as front matter" >&2
+    exit 1
+fi
 
 if invalid_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
     echo "invalid UTF-8 unexpectedly passed" >&2

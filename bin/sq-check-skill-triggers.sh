@@ -7,18 +7,20 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 
-python3 - "$1" <<'PY'
-import re
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}" python3 - "$1" <<'PY'
 import sys
 from pathlib import Path
 
-text = (Path(sys.argv[1]) / "SKILL.md").read_text(encoding="utf-8")
-match = re.search(r"(?im)^##\s+Triggers\s*$\n(.*?)(?=^##\s+|\Z)", text, re.DOTALL)
-if match:
-    present = bool(match.group(1).strip())
-else:
-    present = bool(re.search(r"(?im)^Triggers:\s*.+$", text))
-if not present:
+from sq_skill_markdown import section
+
+skill_file = Path(sys.argv[1]) / "SKILL.md"
+try:
+    text = skill_file.read_text(encoding="utf-8")
+except (OSError, UnicodeError):
+    print("missing or unreadable SKILL.md", file=sys.stderr)
+    raise SystemExit(1)
+if not section(text, "Triggers"):
     print("missing or empty Triggers section", file=sys.stderr)
     raise SystemExit(1)
 PY
