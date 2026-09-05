@@ -8,10 +8,11 @@ if [[ $# -ne 1 ]]; then
 fi
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}" python3 - "$1" <<'PY'
+python3 - "$1" "$script_dir" <<'PY'
 import sys
 from pathlib import Path
 
+sys.path.insert(0, sys.argv[2])
 from sq_skill_markdown import section
 
 skill_file = Path(sys.argv[1]) / "SKILL.md"

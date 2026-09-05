@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -91,6 +91,25 @@ Use for example requests.
 ## Do NOT use for
 Unrelated requests.
 EOF
+cat > "$tmp_dir/fenced-comment/SKILL.md" <<'EOF'
+```markdown
+<!-- unclosed comment in a code example
+## Triggers
+Fake declaration.
+```
+
+## Triggers
+Use for example requests.
+
+## Do NOT use for
+Unrelated requests.
+EOF
+cat > "$tmp_dir/concat/SKILL.md" <<'EOF'
+<!-- hidden -->## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+EOF
 cat > "$tmp_dir/promoted/SKILL.md" <<'EOF'
 ```yaml
 ---
@@ -171,6 +190,10 @@ if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/boundary" >/dev/null 2>&1
     exit 1
 fi
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/comment-fence"
+if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/fenced-comment" >/dev/null 2>&1; then
+    echo "fenced code without front matter unexpectedly passed format checking" >&2
+    exit 1
+fi
 if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/promoted" >/dev/null 2>&1; then
     echo "non-leading front matter unexpectedly passed" >&2
     exit 1
@@ -192,6 +215,11 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/boundary" >/dev/null 2>
     exit 1
 fi
 "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/comment-fence"
+"$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/fenced-comment"
+if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/concat" >/dev/null 2>&1; then
+    echo "concatenated HTML-comment declarations unexpectedly passed trigger checking" >&2
+    exit 1
+fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1; then
     echo "empty labels unexpectedly passed trigger checking" >&2
     exit 1
@@ -249,6 +277,27 @@ assert report["has_triggers"] is True
 assert report["has_dont_use"] is True
 assert report["status"] == "pass"
 PY
+fenced_comment_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/fenced-comment")
+python3 - "$fenced_comment_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is True
+assert report["has_dont_use"] is True
+assert report["status"] == "pass"
+PY
+if concat_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/concat"); then
+    echo "concatenated HTML-comment declarations unexpectedly passed verification" >&2
+    exit 1
+fi
+python3 - "$concat_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is False
+assert report["has_dont_use"] is True
+assert report["status"] == "fail"
+PY
 if empty_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/empty"); then
     echo "empty labels unexpectedly passed verification" >&2
     exit 1
@@ -281,6 +330,12 @@ PY
 
 "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/good"
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/good"
+printf 'raise RuntimeError("shadowed parser")\n' > "$tmp_dir/shadow/sq_skill_markdown.py"
+(
+    cd "$tmp_dir/shadow"
+    "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/good"
+    "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/good"
+)
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/bad" >/dev/null 2>&1; then
     echo "missing triggers unexpectedly passed" >&2
     exit 1

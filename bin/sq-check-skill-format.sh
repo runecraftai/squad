@@ -10,10 +10,11 @@ fi
 skill_file="$1/SKILL.md"
 [[ -f "$skill_file" ]] || { echo "missing SKILL.md" >&2; exit 1; }
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}" python3 - "$skill_file" <<'PY'
+python3 - "$skill_file" "$script_dir" <<'PY'
 import sys
 from pathlib import Path
 
+sys.path.insert(0, sys.argv[2])
 from sq_skill_markdown import front_matter, has_section
 
 skill_file = Path(sys.argv[1])
