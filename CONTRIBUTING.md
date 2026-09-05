@@ -36,15 +36,15 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
 - This repo is a template for running a Squad orchestrator agent.
   `AGENTS.md` is the agent's main job description and names when to load bundled Squad skills; `CLAUDE.md` is a symlink to it, and `.claude/skills` is a symlink to `.agents/skills`.
 - Feature branches use the `sq/` prefix (for example `sq/feature-name`), never the retired `fm/` prefix.
-- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `.github/pull_request_template.md`, `bin/`, `.agents/skills/`, and `skills/`.
+- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `.github/pull_request_template.md`, `bin/`, `.agents/skills/`, `skills/`, and `config/skill-verification.json`.
   `.agents/skills/` holds agent-loaded skills that assume a live Squad base and carry `metadata.internal: true` so installers such as [skills.sh](https://skills.sh) hide them from discovery; `skills/` holds standalone, installer-facing public skills with no Squad dependency (see the README's "Two-tier skill layout").
-  Everything personal to one commander's unit (`.env`, `data/`, `state/`, `config/`, `projects/`, `.drill/`) is gitignored; never commit it.
+  Everything personal to one commander's unit (`.env`, `data/`, `state/`, `projects/`, `.drill/`, and all `config/` files except tracked `config/skill-verification.json`) is gitignored; never commit it.
   The root `.tasks.toml` is tracked `sq-tasks` config for `data/backlog.md`; compatible `sq-tasks` is the default backend for routine backlog mutations, with the compatibility definition owned by [`docs/configuration.md`](docs/configuration.md) ("Backlog backend").
   A local `config/backlog-backend=manual` opt-out forces Squad's routine backlog updates to hand-editing and stays gitignored; validated XO handoffs still delegate through `sq-tasks mv`.
   A local `config/backend` file explicitly overrides runtime auto-detection for new task endpoints and stays gitignored; spawn-supported values are `tmux` plus experimental `herdr`, `zellij`, `orca`, and `cmux`, while `codex-app` is documented only in `docs/codex-app-backend.md`.
   It does not make `data/` tracked.
-- Helper scripts in `bin/` are plain bash.
-  Each starts with a usage header comment; keep it accurate when you change behavior.
+- Most helper scripts in `bin/` are plain bash; `sq-skill-verify.py` is the Python skill-verification entrypoint.
+  Command-line helpers start with a usage header comment or docstring; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
   `bin/sq-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, and pinned shellcheck version), and both CI and the drill pre-push gate run it, so local and CI can never diverge.
   It pins one exact shellcheck version and refuses to run under any other; print it with `bin/sq-lint.sh --required-version` and install that build locally.
