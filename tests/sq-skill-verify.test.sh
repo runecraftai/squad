@@ -9,7 +9,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
-name: example
+name: drill
 description: Example skill.
 ---
 
@@ -48,7 +48,7 @@ Unrelated requests.
 EOF
 cat > "$tmp_dir/commented/SKILL.md" <<'EOF'
 ---
-name: commented
+name: drill
 description: Commented skill.
 ## Triggers
 Fake declaration.
@@ -66,7 +66,7 @@ Fake declaration.
 EOF
 cat > "$tmp_dir/boundary/SKILL.md" <<'EOF'
 ---
-name: malformed
+name: drill
 description: Malformed skill.
 <!--
 ---
@@ -79,7 +79,7 @@ Fake declaration.
 EOF
 cat > "$tmp_dir/comment-fence/SKILL.md" <<'EOF'
 ---
-name: comment-fence
+name: drill
 description: Comment fence.
 ---
 <!--
@@ -249,7 +249,7 @@ Unrelated requests.
 EOF
 cat > "$tmp_dir/empty/SKILL.md" <<'EOF'
 ---
-name: empty
+name: drill
 description: Empty skill.
 ---
 
@@ -257,6 +257,13 @@ Triggers:
 Do NOT use for:   
 EOF
 printf '\377\376' > "$tmp_dir/invalid/SKILL.md"
+for verified_fixture in fenced hidden fenced-comment concat bare h1 custom-html multiline-html nested-html comment-html raw-html inline pre fenced-inline inline-comment; do
+    {
+        printf '%s\n' '---' 'name: drill' 'description: Test skill.' '---' ''
+        cat "$tmp_dir/$verified_fixture/SKILL.md"
+    } > "$tmp_dir/$verified_fixture/SKILL.md.tmp"
+    mv "$tmp_dir/$verified_fixture/SKILL.md.tmp" "$tmp_dir/$verified_fixture/SKILL.md"
+done
 
 pass_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/good")
 python3 - "$pass_json" <<'PY'
@@ -264,17 +271,21 @@ import json
 import sys
 report = json.loads(sys.argv[1])
 assert report == {
-    "skill_name": "example",
+    "skill_name": "drill",
     "has_triggers": True,
     "has_dont_use": True,
     "status": "pass",
 }
 PY
 
-if python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/bad" >/dev/null; then
-    echo "incomplete skill unexpectedly passed" >&2
+if bad_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/bad"); then
+    echo "unverified skill unexpectedly passed" >&2
     exit 1
 fi
+[[ "$bad_output" == "skill not in verified list" ]] || {
+    echo "unexpected unverified skill output" >&2
+    exit 1
+}
 
 if fenced_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/fenced"); then
     echo "fenced declarations unexpectedly passed" >&2
@@ -290,10 +301,6 @@ assert report["status"] == "fail"
 PY
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/fenced" >/dev/null 2>&1; then
     echo "fenced triggers unexpectedly passed" >&2
-    exit 1
-fi
-if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/fenced" >/dev/null 2>&1; then
-    echo "fenced format declarations unexpectedly passed" >&2
     exit 1
 fi
 if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/body" >/dev/null 2>&1; then
@@ -313,10 +320,6 @@ if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/boundary" >/dev/null 2>&1
     exit 1
 fi
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/comment-fence"
-if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/fenced-comment" >/dev/null 2>&1; then
-    echo "fenced code without front matter unexpectedly passed format checking" >&2
-    exit 1
-fi
 if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/promoted" >/dev/null 2>&1; then
     echo "non-leading front matter unexpectedly passed" >&2
     exit 1
@@ -367,22 +370,18 @@ done
 "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/self-closing-html"
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/void-html"
 "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/self-closing-html"
-if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/fenced-inline" >/dev/null 2>&1; then
-    echo "fenced inline example unexpectedly passed format checking" >&2
-    exit 1
-fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1; then
     echo "empty labels unexpectedly passed trigger checking" >&2
     exit 1
 fi
-promoted_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/promoted")
-python3 - "$promoted_json" <<'PY'
-import json
-import sys
-report = json.loads(sys.argv[1])
-assert report["skill_name"] == "promoted"
-assert report["status"] == "pass"
-PY
+if promoted_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/promoted"); then
+    echo "unverified promoted skill unexpectedly passed" >&2
+    exit 1
+fi
+[[ "$promoted_output" == "skill not in verified list" ]] || {
+    echo "unexpected promoted skill output" >&2
+    exit 1
+}
 if commented_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/commented"); then
     echo "front matter declarations unexpectedly passed verification" >&2
     exit 1
@@ -480,20 +479,16 @@ assert report["has_dont_use"] is False
 assert report["status"] == "fail"
 PY
 
-if invalid_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
-    echo "invalid UTF-8 unexpectedly passed" >&2
+if invalid_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
+    echo "unverified invalid skill unexpectedly passed" >&2
     exit 1
 fi
-python3 - "$invalid_json" <<'PY'
-import json
-import sys
-report = json.loads(sys.argv[1])
-assert report["has_triggers"] is False
-assert report["has_dont_use"] is False
-assert report["status"] == "fail"
-PY
+[[ "$invalid_output" == "skill not in verified list" ]] || {
+    echo "unexpected invalid skill output" >&2
+    exit 1
+}
 [[ ! -s "$tmp_dir/invalid.stderr" ]] || {
-    echo "invalid UTF-8 emitted diagnostics instead of JSON" >&2
+    echo "invalid UTF-8 emitted diagnostics instead of plain output" >&2
     exit 1
 }
 

@@ -26,6 +26,9 @@ def main():
     except (OSError, UnicodeError):
         text = ""
     name = front_matter(text, "name") or skill_dir.name
+    if name not in VERIFIED_SKILLS:
+        print("skill not in verified list")
+        return 1
     has_triggers = bool(section(text, "Triggers"))
     has_dont_use = bool(section(text, "Do NOT use for"))
     report = {
