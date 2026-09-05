@@ -9,7 +9,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/opener-comment" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
-name: drill
+name: example
 description: Example skill.
 ---
 
@@ -280,21 +280,28 @@ import json
 import sys
 report = json.loads(sys.argv[1])
 assert report == {
-    "skill_name": "drill",
+    "skill_name": "example",
     "has_triggers": True,
     "has_dont_use": True,
     "status": "pass",
 }
 PY
 
-if bad_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/bad"); then
-    echo "unverified skill unexpectedly passed" >&2
+if bad_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/bad"); then
+    echo "incomplete skill unexpectedly passed" >&2
     exit 1
 fi
-[[ "$bad_output" == "skill not in verified list" ]] || {
-    echo "unexpected unverified skill output" >&2
-    exit 1
+python3 - "$bad_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report == {
+    "skill_name": "incomplete",
+    "has_triggers": False,
+    "has_dont_use": False,
+    "status": "fail",
 }
+PY
 
 if fenced_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/fenced"); then
     echo "fenced declarations unexpectedly passed" >&2
@@ -383,14 +390,16 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1;
     echo "empty labels unexpectedly passed trigger checking" >&2
     exit 1
 fi
-if promoted_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/promoted"); then
-    echo "unverified promoted skill unexpectedly passed" >&2
-    exit 1
-fi
-[[ "$promoted_output" == "skill not in verified list" ]] || {
-    echo "unexpected promoted skill output" >&2
-    exit 1
-}
+promoted_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/promoted")
+python3 - "$promoted_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["skill_name"] == "promoted"
+assert report["has_triggers"] is True
+assert report["has_dont_use"] is True
+assert report["status"] == "pass"
+PY
 if commented_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/commented"); then
     echo "front matter declarations unexpectedly passed verification" >&2
     exit 1
@@ -488,16 +497,23 @@ assert report["has_dont_use"] is False
 assert report["status"] == "fail"
 PY
 
-if invalid_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
-    echo "unverified invalid skill unexpectedly passed" >&2
+if invalid_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
+    echo "invalid skill unexpectedly passed" >&2
     exit 1
 fi
-[[ "$invalid_output" == "skill not in verified list" ]] || {
-    echo "unexpected invalid skill output" >&2
-    exit 1
+python3 - "$invalid_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report == {
+    "skill_name": "invalid",
+    "has_triggers": False,
+    "has_dont_use": False,
+    "status": "fail",
 }
+PY
 [[ ! -s "$tmp_dir/invalid.stderr" ]] || {
-    echo "invalid UTF-8 emitted diagnostics instead of plain output" >&2
+    echo "invalid UTF-8 emitted diagnostics" >&2
     exit 1
 }
 

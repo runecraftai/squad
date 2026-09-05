@@ -6,6 +6,14 @@ user-invocable: true
 
 # drill
 
+## Triggers
+
+Use when the user asks to run drill, gate, ship, or validate changes.
+
+## Do NOT use for
+
+Do not use for unrelated coding tasks without a validation request.
+
 `drill` is a local gate that validates your code changes through a pipeline
 (intent, rebase, review, test, document, lint, push, PR, CI) before they reach
 the configured push target. You drive it through the `drill axi` command family, which prints
