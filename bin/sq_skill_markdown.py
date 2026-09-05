@@ -4,7 +4,7 @@ import re
 _FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _HTML_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 _HTML_BLOCK_OPEN = re.compile(
-    r"^ {0,3}<(?P<tag>address|article|aside|blockquote|body|caption|center|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|head|header|hgroup|h1|h2|h3|h4|h5|h6|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|ol|p|pre|script|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul|style|textarea)(?:[ \t/>]|$)",
+    r"^ {0,3}<(?P<tag>[A-Za-z][A-Za-z0-9-]*)(?=[ \t/>])(?:[^\"'<>]|\"[^\"]*\"|'[^']*')*>",
     re.IGNORECASE,
 )
 _FRONT_MATTER_OPEN = re.compile(r"\A---[ \t]*(?:\r?\n|\Z)")

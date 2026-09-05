@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -123,6 +123,14 @@ Fake declaration.
 ## Do NOT use for
 Fake declaration.
 </h1>
+EOF
+cat > "$tmp_dir/custom-html/SKILL.md" <<'EOF'
+<my-widget>
+## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+</my-widget>
 EOF
 cat > "$tmp_dir/inline/SKILL.md" <<'EOF'
 `before
@@ -270,7 +278,7 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/concat" >/dev/null 2>&1
     echo "concatenated HTML-comment declarations unexpectedly passed trigger checking" >&2
     exit 1
 fi
-for malformed in bare h1 inline pre; do
+for malformed in bare h1 custom-html inline pre; do
     if malformed_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/$malformed"); then
         echo "$malformed Markdown unexpectedly passed verification" >&2
         exit 1
