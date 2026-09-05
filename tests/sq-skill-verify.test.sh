@@ -6,10 +6,10 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/opener-comment" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/unverified" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/h1" "$tmp_dir/custom-html" "$tmp_dir/multiline-html" "$tmp_dir/nested-html" "$tmp_dir/comment-html" "$tmp_dir/opener-comment" "$tmp_dir/raw-html" "$tmp_dir/void-html" "$tmp_dir/self-closing-html" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/inline-comment" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
-name: example
+name: drill
 description: Example skill.
 ---
 
@@ -23,9 +23,23 @@ Unrelated requests.
 EOF
 cat > "$tmp_dir/bad/SKILL.md" <<'EOF'
 ---
-name: incomplete
+name: drill
 description: Incomplete skill.
 ---
+EOF
+cat > "$tmp_dir/unverified/SKILL.md" <<'EOF'
+---
+name: example
+description: Unverified skill.
+---
+
+## Triggers
+
+Use for example requests.
+
+## Do NOT use for
+
+Unrelated requests.
 EOF
 cat > "$tmp_dir/fenced/SKILL.md" <<'EOF'
 ```markdown
@@ -280,12 +294,21 @@ import json
 import sys
 report = json.loads(sys.argv[1])
 assert report == {
-    "skill_name": "example",
+    "skill_name": "drill",
     "has_triggers": True,
     "has_dont_use": True,
     "status": "pass",
 }
 PY
+
+if unverified_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/unverified"); then
+    echo "unverified skill unexpectedly passed" >&2
+    exit 1
+fi
+[[ "$unverified_output" == "skill not in verified list" ]] || {
+    echo "unexpected unverified skill output" >&2
+    exit 1
+}
 
 if bad_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/bad"); then
     echo "incomplete skill unexpectedly passed" >&2
@@ -296,7 +319,7 @@ import json
 import sys
 report = json.loads(sys.argv[1])
 assert report == {
-    "skill_name": "incomplete",
+    "skill_name": "drill",
     "has_triggers": False,
     "has_dont_use": False,
     "status": "fail",
@@ -390,16 +413,14 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1;
     echo "empty labels unexpectedly passed trigger checking" >&2
     exit 1
 fi
-promoted_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/promoted")
-python3 - "$promoted_json" <<'PY'
-import json
-import sys
-report = json.loads(sys.argv[1])
-assert report["skill_name"] == "promoted"
-assert report["has_triggers"] is True
-assert report["has_dont_use"] is True
-assert report["status"] == "pass"
-PY
+if promoted_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/promoted"); then
+    echo "unverified promoted skill unexpectedly passed" >&2
+    exit 1
+fi
+[[ "$promoted_output" == "skill not in verified list" ]] || {
+    echo "unexpected promoted skill output" >&2
+    exit 1
+}
 if commented_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/commented"); then
     echo "front matter declarations unexpectedly passed verification" >&2
     exit 1
@@ -497,21 +518,14 @@ assert report["has_dont_use"] is False
 assert report["status"] == "fail"
 PY
 
-if invalid_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
+if invalid_output=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/invalid" 2>"$tmp_dir/invalid.stderr"); then
     echo "invalid skill unexpectedly passed" >&2
     exit 1
 fi
-python3 - "$invalid_json" <<'PY'
-import json
-import sys
-report = json.loads(sys.argv[1])
-assert report == {
-    "skill_name": "invalid",
-    "has_triggers": False,
-    "has_dont_use": False,
-    "status": "fail",
+[[ "$invalid_output" == "skill not in verified list" ]] || {
+    echo "unexpected invalid skill output" >&2
+    exit 1
 }
-PY
 [[ ! -s "$tmp_dir/invalid.stderr" ]] || {
     echo "invalid UTF-8 emitted diagnostics" >&2
     exit 1

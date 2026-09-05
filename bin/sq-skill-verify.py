@@ -11,6 +11,9 @@ from pathlib import Path
 from sq_skill_markdown import front_matter, section
 
 
+VERIFIED_SKILLS = {"drill", "no-mistakes", "humanizer"}
+
+
 def main():
     if len(sys.argv) != 2:
         print(f"usage: {Path(sys.argv[0]).name} <skill-directory>", file=sys.stderr)
@@ -23,6 +26,9 @@ def main():
     except (OSError, UnicodeError):
         text = ""
     name = front_matter(text, "name") or skill_dir.name
+    if name not in VERIFIED_SKILLS:
+        print("skill not in verified list")
+        return 1
     has_triggers = bool(section(text, "Triggers"))
     has_dont_use = bool(section(text, "Do NOT use for"))
     report = {
