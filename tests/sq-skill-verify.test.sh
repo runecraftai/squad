@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -55,6 +55,14 @@ Fake declaration.
 ## Do NOT use for
 Fake declaration.
 ---
+EOF
+cat > "$tmp_dir/hidden/SKILL.md" <<'EOF'
+<!--
+## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+-->
 EOF
 cat > "$tmp_dir/promoted/SKILL.md" <<'EOF'
 ```yaml
@@ -127,6 +135,10 @@ if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/commented" >/dev/null 2>&
     echo "front matter declarations unexpectedly passed as sections" >&2
     exit 1
 fi
+if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/hidden" >/dev/null 2>&1; then
+    echo "HTML-comment declarations unexpectedly passed format checking" >&2
+    exit 1
+fi
 if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/promoted" >/dev/null 2>&1; then
     echo "non-leading front matter unexpectedly passed" >&2
     exit 1
@@ -137,6 +149,10 @@ if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/empty" >/dev/null 2>&1; t
 fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/commented" >/dev/null 2>&1; then
     echo "front matter declarations unexpectedly passed trigger checking" >&2
+    exit 1
+fi
+if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/hidden" >/dev/null 2>&1; then
+    echo "HTML-comment declarations unexpectedly passed trigger checking" >&2
     exit 1
 fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1; then
@@ -156,6 +172,18 @@ if commented_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/commen
     exit 1
 fi
 python3 - "$commented_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is False
+assert report["has_dont_use"] is False
+assert report["status"] == "fail"
+PY
+if hidden_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/hidden"); then
+    echo "HTML-comment declarations unexpectedly passed verification" >&2
+    exit 1
+fi
+python3 - "$hidden_json" <<'PY'
 import json
 import sys
 report = json.loads(sys.argv[1])

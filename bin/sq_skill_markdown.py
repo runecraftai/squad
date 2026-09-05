@@ -2,6 +2,7 @@ import re
 
 
 _FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_HTML_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 _FRONT_MATTER_OPEN = re.compile(r"\A---[ \t]*(?:\r?\n|\Z)")
 _FRONT_MATTER = re.compile(
     r"\A---[ \t]*\r?\n(.*?)(?:\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n|\Z)",
@@ -31,13 +32,19 @@ def without_fenced_code(text):
     return "\n".join(lines)
 
 
+def without_html_comments(text):
+    return _HTML_COMMENT.sub("", text)
+
+
 def _document_body(text):
     front = _FRONT_MATTER.match(text)
     if front:
-        return without_fenced_code(text[front.end():])
-    if _FRONT_MATTER_OPEN.match(text):
+        body = text[front.end():]
+    elif _FRONT_MATTER_OPEN.match(text):
         return ""
-    return without_fenced_code(text)
+    else:
+        body = text
+    return without_html_comments(without_fenced_code(body))
 
 
 def section(text, heading):
@@ -65,5 +72,6 @@ def front_matter(text, key):
     match = _FRONT_MATTER.match(text)
     if not match:
         return ""
-    field = re.search(rf"(?im)^{re.escape(key)}:[ \t]*(.+?)[ \t]*$", match.group(1))
+    metadata = without_html_comments(match.group(1))
+    field = re.search(rf"(?im)^{re.escape(key)}:[ \t]*(.+?)[ \t]*$", metadata)
     return field.group(1).strip() if field else ""
