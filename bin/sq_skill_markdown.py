@@ -11,6 +11,10 @@ _HTML_TAG = re.compile(
     r"<(?P<closing>/)?(?P<tag>[A-Za-z][A-Za-z0-9-]*)(?=[ \t/>])(?:[^\"'<>]|\"[^\"]*\"|'[^']*')*>",
     re.IGNORECASE,
 )
+_HTML_OPEN_START = re.compile(
+    r"^ {0,3}<(?P<tag>[A-Za-z][A-Za-z0-9-]*)(?=[ \t/>]|$)",
+    re.IGNORECASE,
+)
 _HTML_VOID_TAGS = frozenset(
     {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 )
@@ -100,6 +104,34 @@ def _is_self_closing(match):
     return bool(re.search(r"/[ \t]*>$", match.group(0)))
 
 
+def _consume_html_opener(line, opener, position=0):
+    quote = opener["quote"]
+    last_nonspace = opener["last_nonspace"]
+    while position < len(line):
+        char = line[position]
+        if quote:
+            if char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char == ">":
+            stack = (
+                []
+                if opener["tag"] in _HTML_VOID_TAGS or last_nonspace == "/"
+                else [opener["tag"]]
+            )
+            stack, in_comment, end = _scan_html_line(
+                line, stack, False, position + 1
+            )
+            return _mask_text(line[:end]) + line[end:], None, stack, in_comment
+        if not char.isspace():
+            last_nonspace = char
+        position += 1
+    opener["quote"] = quote
+    opener["last_nonspace"] = last_nonspace
+    return _mask_text(line), opener, [], False
+
+
 def _scan_html_line(line, stack, in_comment, position=0):
     while position < len(line):
         if stack and stack[-1] in _HTML_RAW_TAGS:
@@ -150,6 +182,7 @@ def without_fenced_code_and_html_comments(text):
     fence_length = 0
     html_stack = []
     html_comment = False
+    html_opener = None
     in_comment = False
     inline_ticks = None
     offset = 0
@@ -162,6 +195,13 @@ def without_fenced_code_and_html_comments(text):
             )
             if closing:
                 fence_char = None
+            offset += len(line)
+            continue
+        if html_opener:
+            masked, html_opener, html_stack, html_comment = _consume_html_opener(
+                line, html_opener
+            )
+            lines.append(masked)
             offset += len(line)
             continue
         if html_stack:
@@ -203,6 +243,19 @@ def without_fenced_code_and_html_comments(text):
             html_comment = False
             masked, html_stack, html_comment = _mask_html_line(
                 masked, html_stack, html_comment, opening.end()
+            )
+            lines.append(masked)
+            offset += len(line)
+            continue
+        opener = _HTML_OPEN_START.match(masked.rstrip("\r\n"))
+        if opener:
+            html_opener = {
+                "tag": opener.group("tag").lower(),
+                "quote": None,
+                "last_nonspace": opener.group("tag")[-1],
+            }
+            masked, html_opener, html_stack, html_comment = _consume_html_opener(
+                masked, html_opener, opener.end()
             )
             lines.append(masked)
             offset += len(line)
