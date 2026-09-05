@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/fenced-comment" "$tmp_dir/concat" "$tmp_dir/bare" "$tmp_dir/inline" "$tmp_dir/pre" "$tmp_dir/fenced-inline" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/shadow" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -109,6 +109,39 @@ cat > "$tmp_dir/concat/SKILL.md" <<'EOF'
 Fake declaration.
 ## Do NOT use for
 Fake declaration.
+EOF
+cat > "$tmp_dir/bare/SKILL.md" <<'EOF'
+## Triggers
+##
+## Do NOT use for
+##
+EOF
+cat > "$tmp_dir/inline/SKILL.md" <<'EOF'
+`before
+## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+`
+EOF
+cat > "$tmp_dir/pre/SKILL.md" <<'EOF'
+<pre>
+## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+</pre>
+EOF
+cat > "$tmp_dir/fenced-inline/SKILL.md" <<'EOF'
+`inline example
+## Fake heading
+`
+
+## Triggers
+Use for example requests.
+
+## Do NOT use for
+Unrelated requests.
 EOF
 cat > "$tmp_dir/promoted/SKILL.md" <<'EOF'
 ```yaml
@@ -220,6 +253,29 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/concat" >/dev/null 2>&1
     echo "concatenated HTML-comment declarations unexpectedly passed trigger checking" >&2
     exit 1
 fi
+for malformed in bare inline pre; do
+    if malformed_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/$malformed"); then
+        echo "$malformed Markdown unexpectedly passed verification" >&2
+        exit 1
+    fi
+    python3 - "$malformed_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is False
+assert report["has_dont_use"] is False
+assert report["status"] == "fail"
+PY
+    if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/$malformed" >/dev/null 2>&1; then
+        echo "$malformed Markdown unexpectedly passed trigger checking" >&2
+        exit 1
+    fi
+done
+"$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/fenced-inline"
+if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/fenced-inline" >/dev/null 2>&1; then
+    echo "fenced inline example unexpectedly passed format checking" >&2
+    exit 1
+fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1; then
     echo "empty labels unexpectedly passed trigger checking" >&2
     exit 1
@@ -297,6 +353,15 @@ report = json.loads(sys.argv[1])
 assert report["has_triggers"] is False
 assert report["has_dont_use"] is True
 assert report["status"] == "fail"
+PY
+fenced_inline_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/fenced-inline")
+python3 - "$fenced_inline_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is True
+assert report["has_dont_use"] is True
+assert report["status"] == "pass"
 PY
 if empty_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/empty"); then
     echo "empty labels unexpectedly passed verification" >&2
