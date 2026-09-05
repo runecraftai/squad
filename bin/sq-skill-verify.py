@@ -10,6 +10,31 @@ import sys
 from pathlib import Path
 
 
+_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def without_fenced_code(text):
+    lines = []
+    fence_char = None
+    fence_length = 0
+    for line in text.splitlines():
+        if fence_char:
+            closing = re.match(
+                rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_length},}}[ \t]*$",
+                line,
+            )
+            if closing:
+                fence_char = None
+            continue
+        opening = _FENCE_OPEN.match(line)
+        if opening:
+            fence_char = opening.group(1)[0]
+            fence_length = len(opening.group(1))
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def section(text, heading):
     match = re.search(
         rf"(?im)^##\s+{re.escape(heading)}\s*$\n(.*?)(?=^##\s+|\Z)",
@@ -34,10 +59,14 @@ def main():
 
     skill_dir = Path(sys.argv[1])
     skill_file = skill_dir / "SKILL.md"
-    text = skill_file.read_text(encoding="utf-8") if skill_file.is_file() else ""
-    name = front_matter(text, "name") or skill_dir.name
-    has_triggers = bool(section(text, "Triggers"))
-    has_dont_use = bool(section(text, "Do NOT use for"))
+    try:
+        text = skill_file.read_text(encoding="utf-8") if skill_file.is_file() else ""
+    except (OSError, UnicodeError):
+        text = ""
+    parsed_text = without_fenced_code(text)
+    name = front_matter(parsed_text, "name") or skill_dir.name
+    has_triggers = bool(section(parsed_text, "Triggers"))
+    has_dont_use = bool(section(parsed_text, "Do NOT use for"))
     report = {
         "skill_name": name,
         "has_triggers": has_triggers,
