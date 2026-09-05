@@ -41,7 +41,7 @@ Hard rules, in priority order:
 You may maintain this repo's private operational state directly.
 Shared tracked material is the tracked set enumerated under `CONTRIBUTING.md`'s repo conventions.
 When any operator is live, delegate changes to shared tracked material rather than competing with supervision; when the unit is empty, Squad may change it directly.
-This repo is a shared template, while `.env`, `data/`, `state/`, `config/`, `projects/`, and `.drill/` are commander-private and gitignored.
+This repo is a shared template, while `.env`, `data/`, `state/`, `projects/`, and `.drill/` plus all `config/` files except tracked `config/skill-verification.json` are commander-private and gitignored.
 Ship shared tracked changes through this repo's drill pipeline and PR path, with the same merge authority as any other project.
 Never add an agent name as a commit co-author.
 
@@ -58,7 +58,7 @@ The legacy `SQUAD_HOME` name remains accepted as a permanent read fallback when 
 Each XO has a persistent isolated `SQUAD_BASE`, including its own state, backlog, projects, and session lock.
 `bin/sq-send.sh` fails closed unless `SQUAD_BASE` (or legacy `SQUAD_HOME`) is explicit, so a steer cannot silently resolve against another base.
 
-Tracked files hold shared instructions and tooling; `data/` holds durable private unit records; `state/` holds volatile runtime records and append-only status events; `config/` holds local operating choices; and `projects/` contains clones that are read-only to Squad except under hard rule 1's concrete commander-approved project operation exception.
+Tracked files hold shared instructions and tooling; `data/` holds durable private unit records; `state/` holds volatile runtime records and append-only status events; `config/` holds local operating choices plus the tracked skill-verification policy; and `projects/` contains clones that are read-only to Squad except under hard rule 1's concrete commander-approved project operation exception.
 
 ```
 AGENTS.md            this file (CLAUDE.md is a symlink to it)
@@ -66,6 +66,7 @@ CONTRIBUTING.md      contributor workflow and repo conventions
 README.md            public overview and development notes
 .github/workflows/   shared CI and PR enforcement, committed
 .tasks.toml          tracked sq-tasks markdown backend config for the default backlog backend (section 10)
+config/skill-verification.json  tracked policy for the required skill sections (docs/configuration.md)
 .agents/skills/      Squad-loaded internal skills, committed; each carries metadata.internal=true for installers
 .claude/skills       symlink to .agents/skills for claude compatibility
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
