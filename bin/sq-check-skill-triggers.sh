@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Check that a skill has a non-empty Triggers section.
+# Usage: sq-check-skill-triggers.sh <skill-directory>
+# Exit 0 only when SKILL.md is readable and its Triggers section has content.
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: $0 <skill-directory>" >&2
+  exit 2
+fi
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+python3 - "$1" "$script_dir" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[2])
+from sq_skill_markdown import section
+
+skill_file = Path(sys.argv[1]) / "SKILL.md"
+try:
+    text = skill_file.read_text(encoding="utf-8")
+except (OSError, UnicodeError):
+    print("missing or unreadable SKILL.md", file=sys.stderr)
+    raise SystemExit(1)
+if not section(text, "Triggers"):
+    print("missing or empty Triggers section", file=sys.stderr)
+    raise SystemExit(1)
+PY

@@ -43,8 +43,8 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
   A local `config/backlog-backend=manual` opt-out forces Squad's routine backlog updates to hand-editing and stays gitignored; validated XO handoffs still delegate through `sq-tasks mv`.
   A local `config/backend` file explicitly overrides runtime auto-detection for new task endpoints and stays gitignored; spawn-supported values are `tmux` plus experimental `herdr`, `zellij`, `orca`, and `cmux`, while `codex-app` is documented only in `docs/codex-app-backend.md`.
   It does not make `data/` tracked.
-- Helper scripts in `bin/` are plain bash.
-  Each starts with a usage header comment; keep it accurate when you change behavior.
+- Most helper scripts in `bin/` are plain bash; `sq-skill-verify.py` is the Python skill-verification entrypoint.
+  Command-line helpers start with a usage header comment or docstring; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
   `bin/sq-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, and pinned shellcheck version), and both CI and the drill pre-push gate run it, so local and CI can never diverge.
   It pins one exact shellcheck version and refuses to run under any other; print it with `bin/sq-lint.sh --required-version` and install that build locally.

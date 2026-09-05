@@ -1,7 +1,7 @@
 # The bin/ toolbelt
 
 The sergeant at arms drives these; interactive entrypoints work by hand too, while `*-lib.sh` files are sourced helpers.
-Each row is one purpose clause only: the script's own header comment is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
+Each row is one purpose clause only: the script's own header comment or docstring is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
 If you have changed away from the Squad base in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
 The shared drill gate refusal for unit lifecycle entrypoints is summarized in [architecture.md](architecture.md#drill-gate-authority-boundary), while `docs/sessionstart-nudge.md` covers the silent session-open hook use; `sq-gate-refuse-lib.sh`'s header owns its exact contract.
 
@@ -111,6 +111,9 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-peek.sh`             | Print a bounded tail of an operator endpoint                                          |
 | `sq-check-register.sh`   | Bind an intentional custom sentry check to its current bytes                       |
 | `sq-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
+| `sq-check-skill-format.sh` | Check SKILL.md front matter plus `Triggers` and `Do NOT use for` headings          |
+| `sq-check-skill-triggers.sh` | Check SKILL.md for a non-empty `Triggers` section                                  |
+| `sq-skill-verify.py`     | Emit compact JSON verification results for allowlisted skills and their required behavioral sections |
 | `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
