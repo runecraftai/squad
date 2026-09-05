@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -63,6 +63,19 @@ Fake declaration.
 ## Do NOT use for
 Fake declaration.
 -->
+EOF
+cat > "$tmp_dir/boundary/SKILL.md" <<'EOF'
+---
+name: malformed
+description: Malformed skill.
+<!--
+---
+## Triggers
+Fake declaration.
+## Do NOT use for
+Fake declaration.
+-->
+---
 EOF
 cat > "$tmp_dir/promoted/SKILL.md" <<'EOF'
 ```yaml
@@ -139,6 +152,10 @@ if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/hidden" >/dev/null 2>&1; 
     echo "HTML-comment declarations unexpectedly passed format checking" >&2
     exit 1
 fi
+if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/boundary" >/dev/null 2>&1; then
+    echo "commented front matter boundary unexpectedly passed format checking" >&2
+    exit 1
+fi
 if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/promoted" >/dev/null 2>&1; then
     echo "non-leading front matter unexpectedly passed" >&2
     exit 1
@@ -153,6 +170,10 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/commented" >/dev/null 2
 fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/hidden" >/dev/null 2>&1; then
     echo "HTML-comment declarations unexpectedly passed trigger checking" >&2
+    exit 1
+fi
+if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/boundary" >/dev/null 2>&1; then
+    echo "commented front matter boundary unexpectedly passed trigger checking" >&2
     exit 1
 fi
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1; then
@@ -184,6 +205,18 @@ if hidden_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/hidden");
     exit 1
 fi
 python3 - "$hidden_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is False
+assert report["has_dont_use"] is False
+assert report["status"] == "fail"
+PY
+if boundary_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/boundary"); then
+    echo "commented front matter boundary unexpectedly passed verification" >&2
+    exit 1
+fi
+python3 - "$boundary_json" <<'PY'
 import json
 import sys
 report = json.loads(sys.argv[1])

@@ -36,8 +36,19 @@ def without_html_comments(text):
     return _HTML_COMMENT.sub("", text)
 
 
+def _mask_html_comments(text):
+    def mask(match):
+        return "".join("\r" if char == "\r" else "\n" if char == "\n" else " " for char in match.group())
+
+    return _HTML_COMMENT.sub(mask, text)
+
+
+def _front_matter_match(text):
+    return _FRONT_MATTER.match(_mask_html_comments(text))
+
+
 def _document_body(text):
-    front = _FRONT_MATTER.match(text)
+    front = _front_matter_match(text)
     if front:
         body = text[front.end():]
     elif _FRONT_MATTER_OPEN.match(text):
@@ -69,9 +80,9 @@ def has_section(text, heading):
 
 
 def front_matter(text, key):
-    match = _FRONT_MATTER.match(text)
+    match = _front_matter_match(text)
     if not match:
         return ""
-    metadata = without_html_comments(match.group(1))
+    metadata = without_html_comments(text[match.start(1):match.end(1)])
     field = re.search(rf"(?im)^{re.escape(key)}:[ \t]*(.+?)[ \t]*$", metadata)
     return field.group(1).strip() if field else ""
