@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/runecraftai/squad/compare/drill-v0.1.4...drill-v0.1.5) (2026-09-05)
+
+
+### Features
+
+* **drill:** add skill verification gate ([#130](https://github.com/runecraftai/squad/issues/130)) ([09bcc67](https://github.com/runecraftai/squad/commit/09bcc67a0b0e9761c1ef35226a442de2f2298b1e))
+
 ## [0.1.4](https://github.com/runecraftai/squad/compare/drill-v0.1.3...drill-v0.1.4) (2026-09-04)
 
 
