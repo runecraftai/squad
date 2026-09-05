@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
-mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
+mkdir "$tmp_dir/good" "$tmp_dir/bad" "$tmp_dir/fenced" "$tmp_dir/body" "$tmp_dir/commented" "$tmp_dir/hidden" "$tmp_dir/boundary" "$tmp_dir/comment-fence" "$tmp_dir/promoted" "$tmp_dir/empty" "$tmp_dir/invalid"
 cat > "$tmp_dir/good/SKILL.md" <<'EOF'
 ---
 name: example
@@ -76,6 +76,20 @@ Fake declaration.
 Fake declaration.
 -->
 ---
+EOF
+cat > "$tmp_dir/comment-fence/SKILL.md" <<'EOF'
+---
+name: comment-fence
+description: Comment fence.
+---
+<!--
+```
+-->
+## Triggers
+Use for example requests.
+
+## Do NOT use for
+Unrelated requests.
 EOF
 cat > "$tmp_dir/promoted/SKILL.md" <<'EOF'
 ```yaml
@@ -156,6 +170,7 @@ if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/boundary" >/dev/null 2>&1
     echo "commented front matter boundary unexpectedly passed format checking" >&2
     exit 1
 fi
+"$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/comment-fence"
 if "$repo_root/bin/sq-check-skill-format.sh" "$tmp_dir/promoted" >/dev/null 2>&1; then
     echo "non-leading front matter unexpectedly passed" >&2
     exit 1
@@ -176,6 +191,7 @@ if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/boundary" >/dev/null 2>
     echo "commented front matter boundary unexpectedly passed trigger checking" >&2
     exit 1
 fi
+"$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/comment-fence"
 if "$repo_root/bin/sq-check-skill-triggers.sh" "$tmp_dir/empty" >/dev/null 2>&1; then
     echo "empty labels unexpectedly passed trigger checking" >&2
     exit 1
@@ -223,6 +239,15 @@ report = json.loads(sys.argv[1])
 assert report["has_triggers"] is False
 assert report["has_dont_use"] is False
 assert report["status"] == "fail"
+PY
+comment_fence_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/comment-fence")
+python3 - "$comment_fence_json" <<'PY'
+import json
+import sys
+report = json.loads(sys.argv[1])
+assert report["has_triggers"] is True
+assert report["has_dont_use"] is True
+assert report["status"] == "pass"
 PY
 if empty_json=$(python3 "$repo_root/bin/sq-skill-verify.py" "$tmp_dir/empty"); then
     echo "empty labels unexpectedly passed verification" >&2

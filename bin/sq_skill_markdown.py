@@ -55,7 +55,7 @@ def _document_body(text):
         return ""
     else:
         body = text
-    return without_html_comments(without_fenced_code(body))
+    return without_fenced_code(without_html_comments(body))
 
 
 def section(text, heading):
