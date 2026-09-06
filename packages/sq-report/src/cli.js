@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import net from "node:net";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -1115,45 +1116,72 @@ function isHtmlPath(file) {
   return file.toLowerCase().endsWith(".html") || file.toLowerCase().endsWith(".htm");
 }
 
+const MAX_AUTO_PORT_ATTEMPTS = 100;
+
 async function ensureServer({ forceRestart = false } = {}) {
-  const port = defaultPort();
-  const baseUrl = `http://${hostForUrl(clientHost())}:${port}`;
-  const existing = await fetchHealth(baseUrl);
-  if (existing && !shouldRestartServer(VERSION, existing, forceRestart)) {
-    return baseUrl;
-  }
-  if (existing) {
-    if (!(await canControlServerOnPort(port, existing, processOnPortMatchesLavish))) {
-      throw new AxiError(`Port ${port} is occupied by a non-sq-report server`, "SERVER_ERROR", [
-        `Stop the process using port ${port}, or set SQ_REPORT_PORT to another port`,
-      ]);
-    }
-    // Stale server from an older release is squatting on the port. Ask it to shut down
-    // gracefully so the upgraded client doesn't keep handing users an old chrome.
-    await requestShutdown(baseUrl);
-    const freed = await waitForPortFree(baseUrl, 2000);
-    if (!freed) {
-      // Pre-handshake servers (any release older than this change) don't expose /shutdown
-      // so the POST 404'd. Fall back to SIGTERM by PID so the very first upgrade still
-      // works, then keep waiting.
-      if (shouldKillProcessOnPort(VERSION, existing)) {
-        killProcessOnPort(port);
-        await waitForPortFree(baseUrl, 3000);
-      }
-    }
-  }
-  await startServer(port);
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    const health = await fetchHealth(baseUrl);
-    if (health && !shouldRestartServer(VERSION, health)) {
+  const firstPort = defaultPort();
+  for (let offset = 0; offset < MAX_AUTO_PORT_ATTEMPTS; offset += 1) {
+    const port = firstPort + offset;
+    const baseUrl = `http://${hostForUrl(clientHost())}:${port}`;
+    const existing = await fetchHealth(baseUrl);
+
+    if (existing && !shouldRestartServer(VERSION, existing, forceRestart)) {
       return baseUrl;
     }
+
+    if (existing) {
+      if (!(await canControlServerOnPort(port, existing, processOnPortMatchesLavish))) {
+        continue;
+      }
+      await requestShutdown(baseUrl);
+      let freed = await waitForPortFree(baseUrl, 2000);
+      if (!freed && shouldKillProcessOnPort(VERSION, existing)) {
+        killProcessOnPort(port);
+        freed = await waitForPortFree(baseUrl, 3000);
+      }
+      if (!freed) continue;
+    } else if (!(await isPortAvailable(clientHost(), port))) {
+      // A stale pre-health-check sq-report or an unrelated process can occupy the
+      // preferred port. Never kill an unverified process; continue with the next port.
+      if (processOnPortMatchesLavish(port)) {
+        killProcessOnPort(port);
+        if (!(await waitForPortFree(baseUrl, 3000))) continue;
+      } else {
+        continue;
+      }
+    }
+
+    await startServer(port);
+    const health = await waitForServerHealth(baseUrl, VERSION, 5000);
+    if (health) return baseUrl;
+  }
+
+  throw new AxiError(`No available sq-report port found starting at ${firstPort}`, "SERVER_ERROR", [
+    `Free a port in the range ${firstPort}-${firstPort + MAX_AUTO_PORT_ATTEMPTS - 1}, then retry`,
+  ]);
+}
+
+async function waitForServerHealth(baseUrl, version, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const health = await fetchHealth(baseUrl);
+    if (health && !shouldRestartServer(version, health)) return health;
     await delay(100);
   }
-  throw new AxiError("sq-report server did not start", "SERVER_ERROR", [
-    `Run \`sq-report server --port ${port}\` to inspect server startup`,
-  ]);
+  return null;
+}
+
+export function isPortAvailable(host, port, timeoutMs = 250) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    const finish = (available) => {
+      socket.destroy();
+      resolve(available);
+    };
+    socket.once("connect", () => finish(false));
+    socket.once("error", (error) => finish(error.code === "ECONNREFUSED"));
+    socket.setTimeout(timeoutMs, () => finish(false));
+  });
 }
 
 // Pure helper so the upgrade-detection logic is unit-testable without spinning up HTTP.

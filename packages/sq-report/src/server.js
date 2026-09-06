@@ -201,7 +201,8 @@ export async function serve({
   );
 
   app.get("/health", (req, res) => {
-    res.json({ ok: true, app: "sq-report", version });
+    res.setHeader("cache-control", "no-store");
+    res.json({ ok: true, app: "sq-report", version, status: "healthy" });
   });
 
   let shutdownResolve;
