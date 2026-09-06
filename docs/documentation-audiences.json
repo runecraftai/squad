@@ -184,6 +184,10 @@
    "audience": "agent-runtime"
   },
   {
+   "path": ".agents/skills/skill-creator/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
    "path": ".agents/skills/squad-coding-guidelines/SKILL.md",
    "audience": "agent-runtime"
   },

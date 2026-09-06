@@ -544,7 +544,7 @@ test_XO_spawn_resolves_punctuated_registry_projects() {
   mkdir -p "$sub/data" "$sub/state" "$sub/config" "$sub/projects"
   mark_Squad_home "$sub"
   printf 'punctuated\n' > "$sub/.sq-xo-home"
-  printf '# Charter\n\nHandled work.\n' > "$sub/data/charter.md"
+  printf '# Charter\n\nHandled work.\n\necho '"'"'{state}: {note}'"'"' >> '"'"'<state-file>.status'"'"'\n' > "$sub/data/charter.md"
   sub_abs=$(cd "$sub" && pwd -P)
   printf -- '- punctuated - launch notes (parenthetical) (home: %s; scope: launch (child); semicolon is valid; projects: alpha, beta; added 2026-07-30)' \
     "$sub_abs" > "$home/data/XOs.md"
