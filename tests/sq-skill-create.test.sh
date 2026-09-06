@@ -106,6 +106,36 @@ test_generated_skill_has_required_sections() {
   pass "generated SKILL.md has all required sections"
 }
 
+test_generated_skill_has_metadata() {
+  local target skill_md
+  target="$TMP_ROOT/metadata-check"
+  mkdir -p "$target"
+  "$SCRIPT" "Monitor disk usage across servers" \
+    --name disk-monitor --dir "$target" --approve >/dev/null 2>&1
+  skill_md="$target/disk-monitor/SKILL.md"
+  [ -f "$skill_md" ] || fail "SKILL.md missing"
+  # Check metadata fields
+  grep -q 'user-invocable: true' "$skill_md" || fail "missing user-invocable"
+  grep -q 'category:' "$skill_md" || fail "missing category in metadata"
+  grep -q 'tags:' "$skill_md" || fail "missing tags in metadata"
+  pass "generated SKILL.md has complete metadata"
+}
+
+test_skill_creator_knowledge_reference() {
+  local target skill_md
+  target="$TMP_ROOT/knowledge-ref"
+  mkdir -p "$target"
+  "$SCRIPT" "Create a test skill" \
+    --name test-skill --dir "$target" --approve >/dev/null 2>&1
+  skill_md="$target/test-skill/SKILL.md"
+  [ -f "$skill_md" ] || fail "SKILL.md missing"
+  # Check that generated content follows skill-creator knowledge
+  # (proper frontmatter structure, required sections)
+  grep -q '## Example usage' "$skill_md" || fail "missing Example usage heading"
+  grep -q '## Validation checklist' "$skill_md" || fail "missing Validation checklist"
+  pass "generated SKILL.md follows skill-creator knowledge"
+}
+
 # Run all tests
 test_usage_no_args
 test_usage_help_flag
@@ -116,3 +146,5 @@ test_approve_copies_skill
 test_approve_refuses_existing_dir
 test_tests_flag_creates_stub
 test_generated_skill_has_required_sections
+test_generated_skill_has_metadata
+test_skill_creator_knowledge_reference

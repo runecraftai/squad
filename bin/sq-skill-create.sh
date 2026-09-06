@@ -4,6 +4,10 @@
 # Triggers, Do NOT use for, example usage, validation checklist),
 # optional tests/ stub, and format/trigger validation.
 #
+# Knowledge source: .agents/skills/skill-creator/SKILL.md
+# The skill-creator skill defines the DISCOVER, DESIGN, AUTHOR,
+# VALIDATE, OPTIMIZE, DELIVER phases for skill creation.
+#
 # Usage:
 #   sq-skill-create.sh "<description>"
 #     Interactive mode — prints generated content for review.
@@ -36,6 +40,8 @@ Arguments:
   --tests         Create a tests/ stub inside the skill directory.
 
 Without --approve the script prints the generated SKILL.md for review and exits.
+
+Knowledge source: .agents/skills/skill-creator/SKILL.md
 EOF
 }
 
@@ -106,6 +112,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ── generate trigger phrases from description ────────────────────────────────
+# Phase: DISCOVER - Extract trigger phrases from the description
 
 generate_triggers() {
   local desc="$1"
@@ -129,6 +136,7 @@ generate_triggers() {
 }
 
 # ── generate anti-triggers from description ──────────────────────────────────
+# Phase: DISCOVER - Define scope boundaries
 
 generate_anti_triggers() {
   local desc="$1"
@@ -141,7 +149,59 @@ generate_anti_triggers() {
   printf '%s\n' "${anti[@]}"
 }
 
+# ── determine category from description ──────────────────────────────────────
+# Phase: DESIGN - Categorize the skill
+
+determine_category() {
+  local desc="$1"
+  local desc_lower
+  desc_lower=$(echo "$desc" | tr '[:upper:]' '[:lower:]')
+
+  case "$desc_lower" in
+    *browser*|*web*|*page*|*screenshot*|*click*)
+      echo "automation" ;;
+    *task*|*backlog*|*todo*|*plan*|*schedule*)
+      echo "productivity" ;;
+    *doc*|*readme*|*write*|*edit*|*markdown*)
+      echo "documentation" ;;
+    *monitor*|*alert*|*health*|*status*)
+      echo "devops" ;;
+    *github*)
+      echo "devops" ;;
+    *git*|*pr*|*commit*|*branch*)
+      echo "devops" ;;
+    *test*|*lint*|*validate*|*verify*)
+      echo "development" ;;
+    *)
+      echo "development" ;;
+  esac
+}
+
+# ── determine tags from description ──────────────────────────────────────────
+# Phase: DESIGN - Extract relevant tags
+
+determine_tags() {
+  local desc="$1"
+  local desc_lower
+  desc_lower=$(echo "$desc" | tr '[:upper:]' '[:lower:]')
+
+  # Extract significant words as tags (max 5)
+  local tags=()
+  local word
+  for word in $(echo "$desc_lower" | tr -cs '[:alnum:]' '\n' | \
+    grep -vxE '(a|an|the|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|shall|should|may|might|can|could|must|need|to|of|in|for|on|with|at|by|from|as|into|through|during|before|after|above|below|between|out|off|over|under|again|further|then|once|that|this|these|those|and|but|or|nor|not|no|so|if|when|while|where|how|what|which|who|whom|whose|it|its|you|your|i|my|we|our|they|their|he|she|his|her|me|us|them|also|just|only|very|more|most|some|any|all|each|every|both|few|many|much|such|the|user|skill|create|generate|new|make)' | \
+    sort -u | head -5); do
+    tags+=("$word")
+  done
+
+  # Ensure at least one tag
+  [[ ${#tags[@]} -gt 0 ]] || tags+=("general")
+
+  printf '%s\n' "${tags[@]}"
+}
+
 # ── generate SKILL.md content ────────────────────────────────────────────────
+# Phase: AUTHOR - Generate complete skill structure
 
 generate_skill_md() {
   local name="$1"
@@ -156,6 +216,13 @@ generate_skill_md() {
   local short_desc
   short_desc=$(echo "$desc" | head -c 200)
 
+  # Determine category and tags
+  local category
+  category=$(determine_category "$desc")
+
+  local tags
+  tags=$(determine_tags "$desc")
+
   # Collect triggers
   local trigger_lines
   trigger_lines=$(generate_triggers "$desc")
@@ -164,14 +231,22 @@ generate_skill_md() {
   local anti_lines
   anti_lines=$(generate_anti_triggers "$desc")
 
+  # Format tags as YAML array
+  local yaml_tags
+  yaml_tags=$(echo "$tags" | sed 's/^/    - /' | tr '\n' ',' | sed 's/,$//')
+
   cat > "$tmpfile" <<SKILLEOF
 ---
 name: ${name}
 description: >-
   ${short_desc}.
 user-invocable: true
+author: Squad contributors
 metadata:
-  generated: true
+  hermes:
+    tags:
+${yaml_tags}
+    category: ${category}
 ---
 
 # ${title}
