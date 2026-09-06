@@ -61,8 +61,11 @@ metadata:
 
 ${skillCommandText(home.description)}
 
+**Operator flow:** Do NOT run \`sq-report server\`; Squad manages the shared local server. Only create the HTML artifact, then run \`sq-report <html-file>\` (or the equivalent installed-package command below).
+
 You do not need sq-report installed globally - invoke it with \`npx -y @runecraft/report <html-file>\`.
 If sq-report output shows a follow-up command starting with \`sq-report\`, run it as \`npx -y @runecraft/report ...\` instead.
+The CLI tries port 4387 first, reuses a healthy sq-report server, cleans up stale sq-report processes when safe, and automatically tries 4388, 4389, and higher when the port is occupied. If it reports a port/server error, do not start \`sq-report server\` yourself: retry \`sq-report <html-file>\` once; if it still fails, report the error to Squad and include the server log path shown by the error.
 In restricted subprocess sandboxes, CI, or agent harnesses where \`npx -y\` exits opaquely (for example with status 216), use an already-installed copy directly: \`node "$(npm root)/@runecraft/report/dist/cli.mjs" <html-file>\` for a local install, \`node "$(npm root -g)/@runecraft/report/dist/cli.mjs" <html-file>\` for a global install, or the bare \`sq-report <html-file>\` bin after installing once.
 
 ## Request
