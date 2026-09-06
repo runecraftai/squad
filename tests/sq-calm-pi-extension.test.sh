@@ -2819,6 +2819,16 @@ check(
   unrelatedError instanceof Error && unrelatedError.message === "unrelated Calm UI failure",
   "Calm swallowed an unrelated UI error while handling a lifecycle event",
 );
+let staleStartError;
+try {
+  await fireWithContext("agent_start", staleContext);
+} catch (error) {
+  staleStartError = error;
+}
+check(
+  staleStartError instanceof Error && staleStartError.message === staleContextError,
+  "Calm swallowed a stale-context error from agent_start instead of preserving the active-run failure",
+);
 await fire("agent_settled");
 
 // --- Toggling Calm off during an active run restores the stock row immediately -----

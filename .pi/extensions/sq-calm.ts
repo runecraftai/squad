@@ -150,21 +150,17 @@ export default function (pi: ExtensionAPI) {
     forceStockVisibility = false,
   ): void => {
     const showShip = agentRunActive && calmPresentationIsActive();
-    try {
-      if (showShip !== workingShipShown) {
-        ui.setWidget(
-          CALM_WORKING_SHIP_WIDGET_KEY,
-          showShip
-            ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
-            : undefined,
-        );
-        workingShipShown = showShip;
-        ui.setWorkingVisible(!showShip);
-      } else if (forceStockVisibility && !showShip) {
-        ui.setWorkingVisible(true);
-      }
-    } catch (error) {
-      if (!isInactiveUiContextError(error)) throw error;
+    if (showShip !== workingShipShown) {
+      ui.setWidget(
+        CALM_WORKING_SHIP_WIDGET_KEY,
+        showShip
+          ? (tui) => createCalmWorkingShipWidget(tui, workingShipAnimation)
+          : undefined,
+      );
+      workingShipShown = showShip;
+      ui.setWorkingVisible(!showShip);
+    } else if (forceStockVisibility && !showShip) {
+      ui.setWorkingVisible(true);
     }
   };
 
