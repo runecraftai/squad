@@ -1,0 +1,22 @@
+{
+  "name": "@runecraft/squad-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Squad UI — dashboard for the Squad agent harness",
+  "scripts": {
+    "dev:web": "cd web && npm run dev",
+    "dev:bridge": "cd bridge && bun run dev",
+    "dev": "concurrently \"npm run dev:bridge\" \"npm run dev:web\"",
+    "build": "cd web && npm run build",
+    "typecheck": "cd web && tsc --noEmit && cd ../bridge && tsc --noEmit",
+    "lint": "oxlint --exclude node_modules ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "oxlint": "^0.16.0"
+  },
+  "workspaces": [
+    "web",
+    "bridge"
+  ]
+}

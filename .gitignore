@@ -18,6 +18,7 @@ __pycache__/
 packages/*/node_modules/
 packages/*/dist/
 packages/*/.turbo/
+packages/*/package-lock.json
 node_modules/
 .turbo/
 .lavish/
