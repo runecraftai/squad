@@ -100,7 +100,7 @@ unit_json_output() {
 
   # Count JSON objects between brackets
   local json_lines
-  json_lines=$(echo "$out" | grep '^{' | wc -l || true)
+  json_lines=$(echo "$out" | grep -c '^{' || true)
   if [ "$json_lines" -gt 0 ]; then
     pass "json: $json_lines JSON objects found"
   else
