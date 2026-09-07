@@ -9,7 +9,7 @@
     "dev": "concurrently \"npm run dev:bridge\" \"npm run dev:web\"",
     "build": "cd web && npm run build",
     "typecheck": "cd web && tsc --noEmit && cd ../bridge && tsc --noEmit",
-    "lint": "oxlint ."
+    "lint": "oxlint --exclude node_modules ."
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

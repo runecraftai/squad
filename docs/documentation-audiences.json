@@ -740,14 +740,6 @@
    "audience": "maintainer-architecture"
   },
   {
-   "path": "packages/squad-ui/AGENTS.md",
-   "audience": "agent-runtime"
-  },
-  {
-   "path": "packages/squad-ui/README.md",
-   "audience": "public-product"
-  },
-  {
    "path": "packages/fob/CHANGELOG.md",
    "audience": "public-product"
   },
@@ -765,6 +757,14 @@
   },
   {
    "path": "packages/fob/VISION.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "packages/squad-ui/AGENTS.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/squad-ui/README.md",
    "audience": "public-product"
   },
   {
