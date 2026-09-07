@@ -25,6 +25,24 @@ run_heal() {
   SQUAD_BASE="$base" "$HEAL_BIN" "$@"
 }
 
+# Helper: backdate a lock file to 2 hours ago, failing hard if touch fails
+backdate_lock() {
+  local file=$1
+  local two_hours_ago
+  two_hours_ago=$(date -d '2 hours ago' +%s 2>/dev/null || date -v-2H +%s 2>/dev/null || date -u -d "@$(($(date +%s) - 7200))" +%s 2>/dev/null)
+  if [ -z "$two_hours_ago" ]; then
+    fail "could not compute 2 hours ago timestamp"
+  fi
+  touch -t "$(date -d @"$two_hours_ago" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$two_hours_ago" +%Y%m%d%H%M.%S 2>/dev/null)" "$file" 2>/dev/null || \
+    TZ=UTC touch -d "@$two_hours_ago" "$file" 2>/dev/null || true
+  local now file_epoch
+  now=$(date +%s 2>/dev/null)
+  file_epoch=$(date -r "$file" +%s 2>/dev/null || stat -c %Y "$file" 2>/dev/null || echo "")
+  if [ -z "$file_epoch" ] || [ $((now - file_epoch)) -lt 3600 ]; then
+    fail "backdate_lock: mtime not >3600s old for $file (now=$now, mtime=$file_epoch)"
+  fi
+}
+
 # Helper: set up a minimal base directory structure
 make_base() {
   local base=$1
@@ -195,12 +213,8 @@ test_stale_lock_detection() {
   local base="$TMP_ROOT/stale-lock"
   make_base "$base"
 
-  # Create a lock file and backdate it to 2 hours ago
   touch "$base/state/.sentry.lock"
-  local two_hours_ago
-  two_hours_ago=$(date -d '2 hours ago' +%s 2>/dev/null || date -v-2H +%s 2>/dev/null)
-  touch -t "$(date -d @"$two_hours_ago" +%Y%m%d%H%M.%S 2>/dev/null || date -r "$two_hours_ago" +%Y%m%d%H%M.%S 2>/dev/null)" "$base/state/.sentry.lock" 2>/dev/null || \
-    TZ=UTC touch -d "@$two_hours_ago" "$base/state/.sentry.lock" 2>/dev/null || true
+  backdate_lock "$base/state/.sentry.lock"
 
   local output
   output=$(run_heal "$base" 2>&1)
@@ -225,11 +239,8 @@ test_stale_lock_apply() {
   local base="$TMP_ROOT/stale-lock-apply"
   make_base "$base"
 
-  # Create a lock and backdate it
   touch "$base/state/.handoff-queue.lock"
-  local two_hours_ago
-  two_hours_ago=$(date -d '2 hours ago' +%s 2>/dev/null || date -v-2H +%s 2>/dev/null)
-  TZ=UTC touch -d "@$two_hours_ago" "$base/state/.handoff-queue.lock" 2>/dev/null || true
+  backdate_lock "$base/state/.handoff-queue.lock"
 
   run_heal "$base" --apply >/dev/null 2>&1
 
@@ -242,9 +253,7 @@ test_stale_lock_dry_run_no_remove() {
   make_base "$base"
 
   touch "$base/state/.sentry.lock"
-  local two_hours_ago
-  two_hours_ago=$(date -d '2 hours ago' +%s 2>/dev/null || date -v-2H +%s 2>/dev/null)
-  TZ=UTC touch -d "@$two_hours_ago" "$base/state/.sentry.lock" 2>/dev/null || true
+  backdate_lock "$base/state/.sentry.lock"
 
   run_heal "$base" >/dev/null 2>&1
 
@@ -257,9 +266,7 @@ test_stale_lock_idempotent() {
   make_base "$base"
 
   touch "$base/state/.sentry.lock"
-  local two_hours_ago
-  two_hours_ago=$(date -d '2 hours ago' +%s 2>/dev/null || date -v-2H +%s 2>/dev/null)
-  TZ=UTC touch -d "@$two_hours_ago" "$base/state/.sentry.lock" 2>/dev/null || true
+  backdate_lock "$base/state/.sentry.lock"
 
   run_heal "$base" --apply >/dev/null 2>&1
   run_heal "$base" --apply >/dev/null 2>&1
