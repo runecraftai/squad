@@ -89,6 +89,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
 | `sq-cost.sh`           | Price real operator transcripts per model and print per-task cost, degrading to a per-model estimate when no transcript exists |
 | `sq-cost-lib.sh`       | Shared transcript parsing, model normalization, and per-model pricing table used by `sq-cost.sh` |
+| `sq-dispatch-tune.sh`  | Analyze operator performance per dispatch profile and recommend harness/model/effort adjustments |
 | `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
