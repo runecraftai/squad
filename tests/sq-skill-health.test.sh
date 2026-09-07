@@ -84,18 +84,11 @@ unit_json_output() {
   local out
   out=$(SQUAD_STATE_OVERRIDE=/dev/null SQUAD_BASE="$ROOT" "$SCRIPT" --json 2>&1) || true
 
-  # Must start with [
-  if echo "$out" | head -1 | grep -q '^\[$'; then
-    pass "json: starts with ["
+  # Validate complete JSON structure using python3
+  if echo "$out" | python3 -m json.tool > /dev/null 2>&1; then
+    pass "json: valid JSON structure"
   else
-    fail "json: does not start with ["
-  fi
-
-  # Must end with ]
-  if echo "$out" | tail -1 | grep -q '^\]$'; then
-    pass "json: ends with ]"
-  else
-    fail "json: does not end with ]"
+    fail "json: invalid JSON structure"
   fi
 
   # Must contain a valid JSON object for afk
@@ -105,7 +98,7 @@ unit_json_output() {
     fail "json: afk entry not found"
   fi
 
-  # Each line between brackets must be a valid JSON object (basic check)
+  # Count JSON objects between brackets
   local json_lines
   json_lines=$(echo "$out" | grep '^{' | wc -l || true)
   if [ "$json_lines" -gt 0 ]; then
@@ -151,7 +144,7 @@ unit_empty_skills() {
   # JSON mode should return empty array
   local json_out
   json_out=$(SQUAD_STATE_OVERRIDE=/dev/null SQUAD_BASE="$tmpdir" bash "$ROOT/bin/sq-skill-health.sh" --json 2>&1) || true
-  if echo "$json_out" | grep -q '^\[\]$' || echo "$json_out" | grep -q '^\[\]$'; then
+  if echo "$json_out" | grep -q '^\[\]$'; then
     pass "empty-skills: JSON returns empty array"
   else
     # Check it's just brackets with no content

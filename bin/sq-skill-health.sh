@@ -193,7 +193,7 @@ process_skill() {
   [ -z "$desc" ] && desc=$(extract_field "$skill_md" "description")
 
   # File size in bytes
-  file_size=$(stat -c %s "$skill_md" 2>/dev/null || stat -f z "$skill_md" 2>/dev/null) || file_size="?"
+  file_size=$(stat -c %s "$skill_md" 2>/dev/null || stat -f %z "$skill_md" 2>/dev/null) || file_size="?"
 
   # Last modified
   last_mod=$(date -r "$skill_md" +%Y-%m-%d 2>/dev/null || stat -f "%Sm" -t "%Y-%m-%d" "$skill_md" 2>/dev/null) || last_mod="?"
@@ -248,6 +248,7 @@ if [ "$MODE" = "json" ]; then
 fi
 
 HEADER_PRINTED=0
+JSON_FIRST=1
 for dir in "${SKILL_DIRS[@]}"; do
   for skill_dir in "$dir"/*/; do
     [ -d "$skill_dir" ] || continue
@@ -260,6 +261,12 @@ for dir in "${SKILL_DIRS[@]}"; do
       echo "| Skill | Description | Size | Modified | Tests | Used (30d) |"
       echo "|-------|-------------|------|----------|-------|------------|"
       HEADER_PRINTED=1
+    fi
+    if [ "$MODE" = "json" ]; then
+      if [ "$JSON_FIRST" -eq 0 ]; then
+        echo ","
+      fi
+      JSON_FIRST=0
     fi
     process_skill "$skill_dir"
   done
