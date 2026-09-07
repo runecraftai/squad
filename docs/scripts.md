@@ -38,6 +38,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-test-run.sh`         | Behavior-test runner: selection, portable lanes, proven-isolated `--jobs`, coverage guard, timing/JSON |
 | `sq-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
 | `sq-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` symlink, and the canonical self-governance section |
+| `sq-self-heal.sh`        | Diagnose and auto-fix common Squad base failures: stale worktrees, orphan status logs, broken symlinks, stale locks, corrupted learnings (dry-run by default, `--apply` to fix, `--check` for CI gate) |
 | `sq-guard.sh`            | Warn on primary-checkout tangles, pending queued wakes, and unhealthy supervision    |
 | `sq-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-base predicate for tracked hooks             |
 | `sq-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for sq-lock.sh and the Claude Stop auto-arm |

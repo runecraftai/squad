@@ -40,6 +40,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-test-run.sh`         | Runner de testes de comportamento: seleção, lanes portáteis, `--jobs` provadamente isolados, guard de cobertura, timing/JSON |
 | `sq-test-isolation-proof.sh` | Prova de isolamento concorrente e dono do conjunto candidato provadamente isolado |
 | `sq-ensure-agents-md.sh` | Garantir o `AGENTS.md` real de um projeto, o symlink `CLAUDE.md` dele e a seção canônica de autogovernança |
+| `sq-self-heal.sh`        | Diagnosticar e corrigir automaticamente falhas comuns da base Squad: worktrees obsoletos, logs de status órfãos, symlinks quebrados, locks obsoletos, learnings corrompidos (dry-run por padrão, `--apply` para corrigir, `--check` para gate CI) |
 | `sq-guard.sh`            | Avisar sobre tangles no checkout primário, acordos pendentes na fila e supervisão insalubre    |
 | `sq-primary-scope-lib.sh` | Predicado compartilhado marcador-ou-checkout-simples de base primária para hooks rastreados             |
 | `sq-session-lock-lib.sh` | Identidade compartilhada do harness no lock de sessão (caminhada de ancestralidade e vitalidade do detentor) para sq-lock.sh e o auto-arm do Stop do Claude |
