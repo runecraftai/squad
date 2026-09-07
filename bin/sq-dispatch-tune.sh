@@ -131,7 +131,7 @@ fmt_duration() { # <seconds>
 
 # Escape a string for safe embedding in JSON double-quoted values.
 json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\t/g" | tr '\n' ' '
 }
 
 # Epoch seconds for N days ago.
@@ -367,8 +367,8 @@ emit_json() {
     [ "$first" -eq 0 ] && profiles_json+=","
     first=0
     local escaped
-  escaped=$(json_escape "$profile")
-  profiles_json+=$(printf '{"profile":"%s","tasks":%s,"success":%s,"failure":%s,"success_rate":%s,"avg_duration_sec":%.0f}' \
+    escaped=$(json_escape "$profile")
+    profiles_json+=$(printf '{"profile":"%s","tasks":%s,"success":%s,"failure":%s,"success_rate":%s,"avg_duration_sec":%.0f}' \
       "$escaped" "$total" "$success" "$failure" "$rate" "$avg_dur")
   done < "$metrics_file"
   profiles_json+="]"
