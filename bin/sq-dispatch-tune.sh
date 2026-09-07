@@ -131,7 +131,7 @@ fmt_duration() { # <seconds>
 
 # Escape a string for safe embedding in JSON double-quoted values.
 json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\t/g" | tr '\n' ' '
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\\\t/g" | tr '\n' ' '
 }
 
 # Epoch seconds for N days ago.
