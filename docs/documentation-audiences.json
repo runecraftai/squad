@@ -744,6 +744,10 @@
    "audience": "agent-runtime"
   },
   {
+   "path": "packages/squad-ui/README.md",
+   "audience": "public-product"
+  },
+  {
    "path": "packages/fob/CHANGELOG.md",
    "audience": "public-product"
   },

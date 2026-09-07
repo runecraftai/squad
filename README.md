@@ -157,6 +157,7 @@ Squad's tooling ships as standalone packages under `packages/`, each with its ow
 | sq-quota   | Reports local Claude, Codex, Cursor, GitHub Copilot, Grok, Kimi, and OpenCode quota windows in one data-only call                 | [README](packages/sq-quota/README.md)        |
 | sq-report  | Opens agent-generated HTML in a local browser editor so you can annotate elements and send feedback to the agent                  | [README](packages/sq-report/README.md)       |
 | sq-board   | Mission-planning board that renders the backlog queue with live operational state from Squad's durable state files                | [README](packages/operation-board/README.md) |
+| squad-ui   | Dashboard for the Squad agent harness                                                                                           | [README](packages/squad-ui/README.md)        |
 
 ## Skills
 
