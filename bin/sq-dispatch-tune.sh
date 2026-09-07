@@ -395,7 +395,7 @@ emit_json() {
     fi
   done < "$metrics_file"
 
-  local bp ep fp wp
+  local bp ep wp
   bp=$(json_escape "$best_profile")
   ep=$(json_escape "$fastest_profile")
   wp=$(json_escape "$worst_profile")
