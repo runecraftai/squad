@@ -12,7 +12,8 @@
     "lint": "oxlint ."
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "oxlint": "^0.16.0"
   },
   "workspaces": [
     "web",
