@@ -101,14 +101,14 @@ meta_value() { # <meta_file> <key>
 # Get file birth time (seconds since epoch). Returns 0 if unavailable.
 file_birth() { # <path>
   local ts
-  ts=$(stat -c %W "$1" 2>/dev/null) || ts=0
-  [ "$ts" = "0" ] && ts=$(stat -c %Y "$1" 2>/dev/null) || true
+  ts=$(stat -f %SB "$1" 2>/dev/null) || ts=$(stat -c %W "$1" 2>/dev/null) || ts=0
+  [ "$ts" = "0" ] && ts=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || true
   echo "${ts:-0}"
 }
 
 # Get file mtime (seconds since epoch).
 file_mtime() { # <path>
-  stat -c %Y "$1" 2>/dev/null || echo 0
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
 }
 
 # Format seconds as human-readable duration.
@@ -137,6 +137,8 @@ CUTOFF=$(days_ago "$PERIOD_DAYS")
 # Collect task records: id harness model effort outcome duration profile
 # Stored as tab-separated lines in a temp file.
 TASKS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-tune.XXXXXX")
+METRICS_FILE=""
+trap 'rm -f "$TASKS_FILE" "$METRICS_FILE"' EXIT
 TASKS_COUNT=0
 
 collect_tasks() {
@@ -431,4 +433,4 @@ else
   emit_markdown "$METRICS_FILE"
 fi
 
-rm -f "$TASKS_FILE" "$METRICS_FILE"
+
