@@ -101,14 +101,20 @@ meta_value() { # <meta_file> <key>
 # Get file birth time (seconds since epoch). Returns 0 if unavailable.
 file_birth() { # <path>
   local ts
-  ts=$(stat -f %SB "$1" 2>/dev/null) || ts=$(stat -c %W "$1" 2>/dev/null) || ts=0
-  [ "$ts" = "0" ] && ts=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || true
+  ts=$(stat -c %W "$1" 2>/dev/null)
+  case "$ts" in ''|*[!0-9]*) ts=$(stat -f %SB "$1" 2>/dev/null) ;; esac
+  case "$ts" in ''|*[!0-9]*) ts=0 ;; esac
+  [ "$ts" = "0" ] && ts=$(stat -c %Y "$1" 2>/dev/null)
+  case "$ts" in ''|*[!0-9]*) ts=$(stat -f %m "$1" 2>/dev/null) ;; esac
   echo "${ts:-0}"
 }
 
 # Get file mtime (seconds since epoch).
 file_mtime() { # <path>
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
+  local ts
+  ts=$(stat -c %Y "$1" 2>/dev/null)
+  case "$ts" in ''|*[!0-9]*) ts=$(stat -f %m "$1" 2>/dev/null) ;; esac
+  echo "${ts:-0}"
 }
 
 # Format seconds as human-readable duration.
@@ -121,6 +127,11 @@ fmt_duration() { # <seconds>
   else
     printf '%dh%dm' $((secs / 3600)) $(((secs % 3600) / 60))
   fi
+}
+
+# Escape a string for safe embedding in JSON double-quoted values.
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
 }
 
 # Epoch seconds for N days ago.
@@ -355,8 +366,10 @@ emit_json() {
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
     [ "$first" -eq 0 ] && profiles_json+=","
     first=0
-    profiles_json+=$(printf '{"profile":"%s","tasks":%s,"success":%s,"failure":%s,"success_rate":%s,"avg_duration_sec":%.0f}' \
-      "$profile" "$total" "$success" "$failure" "$rate" "$avg_dur")
+    local escaped
+  escaped=$(json_escape "$profile")
+  profiles_json+=$(printf '{"profile":"%s","tasks":%s,"success":%s,"failure":%s,"success_rate":%s,"avg_duration_sec":%.0f}' \
+      "$escaped" "$total" "$success" "$failure" "$rate" "$avg_dur")
   done < "$metrics_file"
   profiles_json+="]"
 
@@ -382,36 +395,42 @@ emit_json() {
     fi
   done < "$metrics_file"
 
+  local bp ep fp wp
+  bp=$(json_escape "$best_profile")
+  ep=$(json_escape "$fastest_profile")
+  wp=$(json_escape "$worst_profile")
+
   if [ -n "$best_profile" ] && [ "${best_rate%.*}" -ge 80 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+=","
+    [ "$first_rec" -eq 0 ] && recs_json+="," 
     first_rec=0
     recs_json+=$(printf '{"action":"increase","profile":"%s","reason":"%.1f%% success rate"}' \
-      "$best_profile" "$best_rate")
+      "$bp" "$best_rate")
   fi
 
   if [ -n "$fastest_profile" ] && [ "$fastest_dur" -lt 999999 ] 2>/dev/null && \
      [ "$fastest_profile" != "$best_profile" ] && [ "${fastest_rate%.*}" -ge 50 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+=","
+    [ "$first_rec" -eq 0 ] && recs_json+="," 
     first_rec=0
     recs_json+=$(printf '{"action":"increase","profile":"%s","reason":"fastest avg completion (%.0fs)"}' \
-      "$fastest_profile" "$fastest_dur")
+      "$ep" "$fastest_dur")
   fi
 
   if [ -n "$worst_profile" ] && [ "${worst_rate%.*}" -lt 50 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+=","
+    [ "$first_rec" -eq 0 ] && recs_json+="," 
     first_rec=0
     recs_json+=$(printf '{"action":"reduce","profile":"%s","reason":"%.1f%% success rate"}' \
-      "$worst_profile" "$worst_rate")
+      "$wp" "$worst_rate")
   fi
 
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
     if [ "$failure" -ge 3 ] 2>/dev/null && [ "$total" -ge 3 ] 2>/dev/null; then
-      local fail_pct
+      local fail_pct ep2
       fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $total) * 100 }")
-      [ "$first_rec" -eq 0 ] && recs_json+=","
+      ep2=$(json_escape "$profile")
+      [ "$first_rec" -eq 0 ] && recs_json+="," 
       first_rec=0
       recs_json+=$(printf '{"action":"avoid","profile":"%s","reason":"%d%% failure rate (%d/%d tasks)"}' \
-        "$profile" "$fail_pct" "$failure" "$total")
+        "$ep2" "$fail_pct" "$failure" "$total")
     fi
   done < "$metrics_file"
 
