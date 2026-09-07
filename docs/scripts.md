@@ -113,6 +113,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `sq-check-skill-format.sh` | Check SKILL.md front matter plus `Triggers` and `Do NOT use for` headings          |
 | `sq-check-skill-triggers.sh` | Check SKILL.md for a non-empty `Triggers` section                                  |
+| `sq-skill-health.sh`     | Generate a health report for all installed skills with markdown table or JSON output |
 | `sq-skill-verify.py`     | Emit compact JSON verification results for allowlisted skills and their required behavioral sections |
 | `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
