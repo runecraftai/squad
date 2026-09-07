@@ -31,6 +31,13 @@ fi
 SKILL_NAME=$1
 TIMESTAMP=${2:-}
 
+case "$SKILL_NAME" in
+  */*|*..*)
+    printf 'error: invalid skill name (must not contain "/" or ".."): %s\n' "$SKILL_NAME" >&2
+    exit 1
+    ;;
+esac
+
 # Locate the skill directory: .agents/skills/ first, then skills/ (public).
 find_skill_dir() {
   local candidate
