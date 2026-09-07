@@ -143,6 +143,7 @@ family_for_basename() {
     sq-backend-pretool-check.test.sh|sq-poll-pretool-check.test.sh|\
     sq-primary-pretool-wiring.test.sh|\
     sq-send-popup-settle.test.sh|sq-send-settle.test.sh|\
+    sq-self-heal.test.sh|\
     sq-subagent-pretool-check.test.sh|\
     sq-supervision-instructions.test.sh|sq-task-delivery.test.sh|\
     sq-tmux-submit-busy.test.sh|sq-trace-context-lib.test.sh|\
@@ -421,6 +422,7 @@ tests/sq-xo-safety.test.sh 24432
 tests/sq-xo-sync.test.sh 12289
 tests/sq-send-XO-marker-herdr-e2e.test.sh 27
 tests/sq-send-XO-marker.test.sh 2136
+tests/sq-self-heal.test.sh 390
 tests/sq-session-start.test.sh 37289
 tests/sq-sessionstart-nudge.test.sh 264
 tests/sq-shared-commander-inheritance.test.sh 3506
