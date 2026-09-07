@@ -3,7 +3,7 @@
 ## Architecture
 
 - **FSD v2.1** (Feature-Sliced Design) — seguir https://fsd.how
-- **Stack:** Bun + TypeScript (bridge), React 19 + Vite + Tailwind + shadcn (frontend)
+- **Stack:** Bun + TypeScript (bridge), React 19 + Vite + Tailwind (frontend)
 - **Monorepo:** `packages/squad-ui/` com `bridge/` e `web/`
 
 ## Structure
@@ -11,10 +11,11 @@
 ```
 packages/squad-ui/
 ├── bridge/              # Backend Bun
-│   ├── api/             # HTTP API routes
-│   ├── adapters/        # tmux, orca, herdr adapters
-│   ├── state/           # Unit snapshot service
-│   └── commands/        # Command gateway
+│   └── src/
+│       ├── api/             # HTTP API routes
+│       ├── adapters/        # tmux, orca, herdr adapters
+│       ├── state/           # Unit snapshot service
+│       └── commands/        # Command gateway
 ├── web/                 # Frontend React
 │   └── src/
 │       ├── app/         # Providers, router, global config
