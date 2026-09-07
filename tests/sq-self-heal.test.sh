@@ -4,7 +4,7 @@
 # Covers all five capabilities:
 #   1. Stale worktree detection
 #   2. Orphan status log cleanup
-#   3. Broken symlink repair
+#   3. Broken symlink detection
 #   4. Lock file cleanup
 #   5. Learnings file repair
 #
@@ -16,6 +16,7 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot sq-self-heal-tests)
 HEAL_BIN="$ROOT/bin/sq-self-heal.sh"
+TEST_COUNT=0
 
 # Helper: run sq-self-heal.sh with a custom SQUAD_BASE
 run_heal() {
@@ -33,6 +34,7 @@ make_base() {
 # === Capability 1: Stale worktree detection =================================
 
 test_stale_worktree_dirty_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-wt-dirty"
   make_base "$base"
 
@@ -49,6 +51,7 @@ test_stale_worktree_dirty_detection() {
 }
 
 test_stale_worktree_missing_path_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-wt-missing"
   make_base "$base"
 
@@ -65,6 +68,7 @@ test_stale_worktree_missing_path_detection() {
 }
 
 test_stale_worktree_clean() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-wt-clean"
   make_base "$base"
 
@@ -77,6 +81,7 @@ test_stale_worktree_clean() {
 # === Capability 2: Orphan status log cleanup =================================
 
 test_orphan_status_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/orphan-status"
   make_base "$base"
 
@@ -89,6 +94,7 @@ test_orphan_status_detection() {
 }
 
 test_orphan_status_not_triggered_with_meta() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/orphan-status-meta"
   make_base "$base"
 
@@ -101,6 +107,7 @@ test_orphan_status_not_triggered_with_meta() {
 }
 
 test_orphan_status_apply() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/orphan-status-apply"
   make_base "$base"
 
@@ -113,6 +120,7 @@ test_orphan_status_apply() {
 }
 
 test_orphan_status_dry_run_no_move() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/orphan-status-dryrun"
   make_base "$base"
 
@@ -125,6 +133,7 @@ test_orphan_status_dry_run_no_move() {
 }
 
 test_orphan_status_idempotent() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/orphan-status-idem"
   make_base "$base"
 
@@ -139,9 +148,10 @@ test_orphan_status_idempotent() {
   assert_present "$base/state/archived/idem1.status" "archived correctly"
 }
 
-# === Capability 3: Broken symlink repair ====================================
+# === Capability 3: Broken symlink detection =================================
 
 test_broken_symlink_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/broken-symlink"
   make_base "$base"
 
@@ -154,6 +164,7 @@ test_broken_symlink_detection() {
 }
 
 test_broken_symlink_not_triggered_when_valid() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/good-symlink"
   make_base "$base"
 
@@ -166,6 +177,7 @@ test_broken_symlink_not_triggered_when_valid() {
 }
 
 test_broken_symlink_in_skills() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/broken-symlink-skills"
   mkdir -p "$base"/{state,bin,data,projects,.agents/skills}
 
@@ -179,6 +191,7 @@ test_broken_symlink_in_skills() {
 # === Capability 4: Lock file cleanup ========================================
 
 test_stale_lock_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-lock"
   make_base "$base"
 
@@ -195,6 +208,7 @@ test_stale_lock_detection() {
 }
 
 test_stale_lock_not_triggered_when_recent() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/fresh-lock"
   make_base "$base"
 
@@ -207,6 +221,7 @@ test_stale_lock_not_triggered_when_recent() {
 }
 
 test_stale_lock_apply() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-lock-apply"
   make_base "$base"
 
@@ -222,6 +237,7 @@ test_stale_lock_apply() {
 }
 
 test_stale_lock_dry_run_no_remove() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-lock-dryrun"
   make_base "$base"
 
@@ -236,6 +252,7 @@ test_stale_lock_dry_run_no_remove() {
 }
 
 test_stale_lock_idempotent() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/stale-lock-idem"
   make_base "$base"
 
@@ -253,6 +270,7 @@ test_stale_lock_idempotent() {
 # === Capability 5: Learnings file repair ====================================
 
 test_empty_learnings_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/empty-learnings"
   make_base "$base"
 
@@ -264,6 +282,7 @@ test_empty_learnings_detection() {
 }
 
 test_corrupted_learnings_detection() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/corrupt-learnings"
   make_base "$base"
 
@@ -275,6 +294,7 @@ test_corrupted_learnings_detection() {
 }
 
 test_valid_learnings_not_flagged() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/valid-learnings"
   make_base "$base"
 
@@ -291,6 +311,7 @@ EOF
 }
 
 test_learnings_apply_from_backup() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/learnings-backup"
   make_base "$base"
 
@@ -310,6 +331,7 @@ EOF
 }
 
 test_learnings_apply_scaffold() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/learnings-scaffold"
   make_base "$base"
 
@@ -323,6 +345,7 @@ test_learnings_apply_scaffold() {
 }
 
 test_learnings_idempotent() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/learnings-idem"
   make_base "$base"
 
@@ -337,6 +360,7 @@ test_learnings_idempotent() {
 # === Check mode =============================================================
 
 test_check_mode_clean() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/check-clean"
   make_base "$base"
 
@@ -346,6 +370,7 @@ test_check_mode_clean() {
 }
 
 test_check_mode_dirty() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/check-dirty"
   make_base "$base"
 
@@ -359,12 +384,14 @@ test_check_mode_dirty() {
 # === Usage / argument handling ==============================================
 
 test_help_flag() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local output
   output=$("$HEAL_BIN" --help 2>&1)
   assert_contains "$output" "Usage" "should print usage"
 }
 
 test_invalid_flag() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local exit_code=0
   "$HEAL_BIN" --bogus >/dev/null 2>&1 || exit_code=$?
   expect_code 1 "$exit_code" "invalid flag should exit 1"
@@ -373,6 +400,7 @@ test_invalid_flag() {
 # === Projects directory not touched =========================================
 
 test_projects_never_modified() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/projects-safe"
   make_base "$base"
 
@@ -391,6 +419,7 @@ test_projects_never_modified() {
 # === No state directory edge case ===========================================
 
 test_no_state_dir() {
+  TEST_COUNT=$((TEST_COUNT + 1))
   local base="$TMP_ROOT/no-state"
   mkdir -p "$base"/{bin,data,projects}
 
@@ -437,4 +466,4 @@ test_invalid_flag
 test_projects_never_modified
 test_no_state_dir
 
-printf 'all %d self-heal tests passed\n' "$(( 28 ))"
+printf 'all %d self-heal tests passed\n' "$TEST_COUNT"

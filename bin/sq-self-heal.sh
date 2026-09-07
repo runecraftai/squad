@@ -9,7 +9,7 @@
 # Capabilities:
 #   1. Stale worktree detection and cleanup
 #   2. Orphan status log cleanup
-#   3. Broken symlink repair
+#   3. Broken symlink detection
 #   4. Lock file cleanup
 #   5. Learnings file repair
 #
@@ -152,7 +152,7 @@ sh_apply_orphan_status_cleanup() {
   done
 }
 
-# === Capability 3: Broken symlink repair ====================================
+# === Capability 3: Broken symlink detection =================================
 #
 # Detects broken symlinks in bin/ and .agents/skills/ and reports them.
 
@@ -163,10 +163,6 @@ sh_check_broken_symlinks() {
     [ -d "$dir" ] || continue
     while IFS= read -r -d '' link; do
       link_target=$(readlink "$link" 2>/dev/null) || continue
-      if [ ! -e "$link" ] && [ ! -L "$link" ]; then
-        # Broken symlink: -L is true but -e is false
-        :
-      fi
       if [ -L "$link" ] && [ ! -e "$link" ]; then
         sh_log_issue "broken symlink: $link -> $link_target"
         ISSUES_FOUND=1
@@ -283,7 +279,7 @@ Modes:
 Capabilities:
   1. Stale worktree detection and cleanup
   2. Orphan status log cleanup
-  3. Broken symlink repair
+  3. Broken symlink detection
   4. Lock file cleanup
   5. Learnings file repair
 EOF
