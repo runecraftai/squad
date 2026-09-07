@@ -106,10 +106,11 @@ extract_triggers() {
   local file="$1"
   awk '
     /^---$/ { if (in_fm) exit; in_fm=1; next }
-    in_fm && /^[[:space:]]*triggers:/ || /^[[:space:]]*trigger:/ {
+    in_fm && (/^[[:space:]]*triggers:/ || /^[[:space:]]*trigger:/) {
       folding = 1
       next
     }
+    !in_fm { folding = 0 }
     folding && /^[[:space:]]*-[[:space:]]*/ {
       gsub(/^[[:space:]]*-[[:space:]]*/, "")
       printf "%s\n", $0
@@ -223,9 +224,9 @@ process_skill() {
   if [ "$MODE" = "json" ]; then
     # Escape JSON strings
     local jname jdesc jtriggers
-    jname=$(printf '%s' "$name" | sed 's/"/\\"/g')
-    jdesc=$(printf '%s' "$desc" | sed 's/"/\\"/g' | head -c 200)
-    jtriggers=$(printf '%s' "$triggers" | sed 's/"/\\"/g' | tr '\n' '|' | sed 's/|$//')
+    jname=$(printf '%s' "$name" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    jdesc=$(printf '%s' "$desc" | sed 's/\\/\\\\/g; s/"/\\"/g' | head -c 200)
+    jtriggers=$(printf '%s' "$triggers" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' '|' | sed 's/|$//')
     printf '{"name":"%s","description":"%s","size_bytes":%s,"last_modified":"%s","has_tests":%s,"used_last_30d":%s,"triggers":"%s"}\n' \
       "$jname" "$jdesc" "$file_size" "$last_mod" \
       "$([ "$test_count" = "yes" ] && echo true || echo false)" \
