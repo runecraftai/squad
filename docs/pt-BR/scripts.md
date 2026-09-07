@@ -114,6 +114,8 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-peek.sh`             | Imprimir uma cauda limitada de um endpoint de operador                                          |
 | `sq-check-register.sh`   | Vincular uma checagem customizada intencional de sentinela aos bytes atuais dela                       |
 | `sq-check-lib.sh`        | Validar registros de checagem customizada e preparar snapshots privados de execução          |
+| `sq-skill-snapshot.sh`   | Snapshotar um diretório de skill antes de uma atualização, com dedup por hash e poda do mais antigo |
+| `sq-skill-rollback.sh`   | Reverter uma skill para um snapshot anterior, interativamente ou por timestamp             |
 | `sq-pr-lib.sh`           | Ser dono da validação canônica de tarefa e PR mais publicação atômica privada de PR-poll e aposentadoria ligada a identidade |
 | `sq-pr-poll.sh`          | Fornecer o programa byte-estático de sentinela para sidecars validados de poll de PR/MR           |
 | `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
