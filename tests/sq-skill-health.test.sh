@@ -130,8 +130,6 @@ unit_empty_skills() {
 
   # Create empty skills directory with no SKILL.md files
   local out
-  out=$(SQUAD_STATE_OVERRIDE=/dev/null SQUAD_BASE="$tmpdir" "$tmpdir/bin/sq-skill-health.sh" 2>&1) || true
-  # Script won't exist in tmpdir, so we need to use the real script with overridden root
   out=$(SQUAD_STATE_OVERRIDE=/dev/null SQUAD_BASE="$tmpdir" bash "$ROOT/bin/sq-skill-health.sh" 2>&1) || true
 
   # With no SKILL.md files, should say no skills found
