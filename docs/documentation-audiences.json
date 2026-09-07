@@ -740,6 +740,10 @@
    "audience": "maintainer-architecture"
   },
   {
+   "path": "packages/squad-ui/AGENTS.md",
+   "audience": "agent-runtime"
+  },
+  {
    "path": "packages/fob/CHANGELOG.md",
    "audience": "public-product"
   },
