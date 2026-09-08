@@ -26,12 +26,12 @@ axi:
   provider: github
 ---
 EOF
-json=$($ROOT/bin/sq-workflow.sh parse "$WF")
+json=$("$ROOT"/bin/sq-workflow.sh parse "$WF")
 [ "$(printf '%s' "$json" | jq -r .schema_version)" = 1.0.0 ]
 [ "$(printf '%s' "$json" | jq -r .hooks.before_run.command[0])" = git ]
-[ "$($ROOT/bin/sq-workflow.sh get "$WF" execution.max_retry_attempts)" = 3 ]
-[ "$($ROOT/bin/sq-workflow.sh get "$WF" hooks.before_run.command | jq -r '.[1]')" = fetch ]
-$ROOT/bin/sq-workflow.sh validate "$WF" >/dev/null
+[ "$("$ROOT"/bin/sq-workflow.sh get "$WF" execution.max_retry_attempts)" = 3 ]
+[ "$("$ROOT"/bin/sq-workflow.sh get "$WF" hooks.before_run.command | jq -r '.[1]')" = fetch ]
+"$ROOT"/bin/sq-workflow.sh validate "$WF" >/dev/null
 
 cat > "$TMP/missing.md" <<'EOF'
 ---
@@ -39,21 +39,21 @@ tracker:
   kind: github
 ---
 EOF
-if $ROOT/bin/sq-workflow.sh parse "$TMP/missing.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh parse "$TMP/missing.md" >/dev/null 2>&1; then exit 1; fi
 cat > "$TMP/unknown.md" <<'EOF'
 ---
 schema_version: "1.0.0"
 unknown: true
 ---
 EOF
-if $ROOT/bin/sq-workflow.sh validate "$TMP/unknown.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh validate "$TMP/unknown.md" >/dev/null 2>&1; then exit 1; fi
 cat > "$TMP/malformed.md" <<'EOF'
 ---
 schema_version: "1.0.0"
 tracker: [
 ---
 EOF
-if $ROOT/bin/sq-workflow.sh parse "$TMP/malformed.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh parse "$TMP/malformed.md" >/dev/null 2>&1; then exit 1; fi
 cat > "$TMP/value.md" <<'EOF'
 ---
 schema_version: "1.0.0"
@@ -61,7 +61,7 @@ execution:
   max_retry_attempts: nope
 ---
 EOF
-if $ROOT/bin/sq-workflow.sh validate "$TMP/value.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh validate "$TMP/value.md" >/dev/null 2>&1; then exit 1; fi
 
 mkdir -p "$TMP/sim"
 cat > "$TMP/sim/WORKFLOW.md" <<'WEOF'
@@ -75,13 +75,13 @@ workspace:
   root: "/tmp/workspaces"
 ---
 WEOF
-sim_json=$($ROOT/bin/sq-workflow.sh parse "$TMP/sim/WORKFLOW.md")
+sim_json=$("$ROOT"/bin/sq-workflow.sh parse "$TMP/sim/WORKFLOW.md")
 [ "$(printf '%s' "$sim_json" | jq -r .tracker.kind)" = github ]
 [ "$(printf '%s' "$sim_json" | jq -r .tracker.provider.repo)" = acme/example ]
 [ "$(printf '%s' "$sim_json" | jq -r .workspace.root)" = /tmp/workspaces ]
 
 mkdir -p "$TMP/no-wf-project"
-if $ROOT/bin/sq-workflow.sh parse "$TMP/no-wf-project/WORKFLOW.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh parse "$TMP/no-wf-project/WORKFLOW.md" >/dev/null 2>&1; then exit 1; fi
 cat > "$TMP/tracker-array.md" <<'EOF'
 ---
 schema_version: "1.0.0"
@@ -89,7 +89,7 @@ tracker:
   - github
 ---
 EOF
-if $ROOT/bin/sq-workflow.sh parse "$TMP/tracker-array.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh parse "$TMP/tracker-array.md" >/dev/null 2>&1; then exit 1; fi
 cat > "$TMP/provider-array.md" <<'EOF'
 ---
 schema_version: "1.0.0"
@@ -101,5 +101,5 @@ tracker:
     - map
 ---
 EOF
-if $ROOT/bin/sq-workflow.sh validate "$TMP/provider-array.md" >/dev/null 2>&1; then exit 1; fi
+if "$ROOT"/bin/sq-workflow.sh validate "$TMP/provider-array.md" >/dev/null 2>&1; then exit 1; fi
 printf 'ok - sq-workflow parser and spawn integration\n'
