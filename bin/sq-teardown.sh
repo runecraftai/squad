@@ -417,6 +417,8 @@ BACKEND=$SQUAD_BACKEND_VALIDATED_BACKEND
 T=$SQUAD_BACKEND_VALIDATED_TARGET
 WT=$(fm_meta_get "$META" worktree)
 PROJ=$(fm_meta_get "$META" project)
+WORKFLOW_PATH=$(fm_meta_get "$META" workflow)
+PROJECT_NAME=$(basename "$PROJ")
 T_ORCA=
 [ "$BACKEND" != orca ] || T_ORCA=$T
 if [ "${SQUAD_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
@@ -2228,6 +2230,16 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
     else
       exit 1
     fi
+  fi
+fi
+
+# The optional hook is the final workspace-specific check before any process,
+# branch, or worktree cleanup. A failure preserves the workspace for inspection.
+if [ "$KIND" != xo ] && [ -n "$WORKFLOW_PATH" ]; then
+  if ! WORKFLOW_PATH="$WORKFLOW_PATH" SQUAD_BASE="$SQUAD_BASE" \
+      "$SCRIPT_DIR/sq-hooks.sh" before_remove "$WT" "$ID" 0 released "$(fm_meta_get "$META" workflow_version)" "$PROJECT_NAME"; then
+    echo "REFUSED: before_remove hook failed; workspace preserved" >&2
+    exit 1
   fi
 fi
 

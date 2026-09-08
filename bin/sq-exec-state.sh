@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manage the per-attempt execution state sidecar at state/<id>.exec.
 #
-# Usage: sq-exec-state.sh get|claim|running|retry|release|heartbeat|recover <id>
+# Usage: sq-exec-state.sh get|claim|running|retry|release|after_run|heartbeat|recover <id>
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
@@ -19,7 +19,7 @@ STALE_AFTER="${SQUAD_EXEC_STALE_AFTER:-300}"
 case "$STALE_AFTER" in ''|*[!0-9]*) STALE_AFTER=300 ;; esac
 
 usage() {
-  printf '%s\n' "usage: sq-exec-state.sh {get|claim|running|retry|release|heartbeat|recover|transition|recover-all} <id> [state]"
+  printf '%s\n' "usage: sq-exec-state.sh {get|claim|running|retry|release|after_run|heartbeat|recover|transition|recover-all} <id> [state]"
 }
 valid_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac; }
 valid_state() { case "$1" in unclaimed|claimed|running|retry_queued|released) return 0 ;; *) return 1 ;; esac; }
@@ -129,6 +129,17 @@ recover_locked() {
   esac
 }
 
+run_after_run_hook() {
+  local id=$1 workflow workspace attempt state
+  workflow=$(meta_field workflow "$id")
+  [ -n "$workflow" ] || return 0
+  workspace=$(get_field exec_workspace "$id"); [ -n "$workspace" ] || workspace=$(meta_field worktree "$id")
+  attempt=$(get_field exec_attempt "$id"); [ -n "$attempt" ] || attempt=0
+  state=$(get_state "$id")
+  WORKFLOW_PATH="$workflow" SQUAD_BASE="$SQUAD_BASE" \
+    "$SCRIPT_DIR/sq-hooks.sh" after_run "$workspace" "$id" "$attempt" "$state" "$(get_field exec_workflow_version "$id")" "$(basename "$(meta_field project "$id")")"
+}
+
 mkdir -p "$STATE"
 cmd=${1:-}; id=${2:-}
 case "$cmd" in
@@ -145,6 +156,19 @@ case "$cmd" in
   running) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" running ;;
   retry|retry_queued) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" retry_queued ;;
   release|released) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" released ;;
+  after_run)
+    valid_id "$id" || { usage >&2; exit 2; }
+    if run_after_run_hook "$id"; then
+      exit 0
+    else
+      hook_rc=$?
+      current=$(get_state "$id")
+      if [ "$current" = running ] || [ "$current" = claimed ]; then
+        with_lock "$id" transition_locked "$id" retry_queued >/dev/null 2>&1 || true
+      fi
+      exit "$hook_rc"
+    fi
+    ;;
   heartbeat) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" _heartbeat "$id" ;;
   recover) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" recover_locked "$id" ;;
   transition) valid_id "$id" && [ -n "${3:-}" ] || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" "$3" ;;
