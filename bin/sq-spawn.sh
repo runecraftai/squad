@@ -1327,6 +1327,25 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
+
+# WORKFLOW.md is per-project mechanical configuration. The tracked repository
+# manifest wins over the private base-local fallback; absence preserves the
+# historical built-in defaults.
+WORKFLOW_PATH=
+WORKFLOW_JSON=
+WORKFLOW_REPO="$PROJ_ABS/WORKFLOW.md"
+WORKFLOW_PRIVATE="$CONFIG/workflow/$(basename "$PROJ_ABS").md"
+if [ -f "$WORKFLOW_REPO" ]; then
+  WORKFLOW_PATH="$WORKFLOW_REPO"
+elif [ -f "$WORKFLOW_PRIVATE" ]; then
+  WORKFLOW_PATH="$WORKFLOW_PRIVATE"
+fi
+if [ -n "$WORKFLOW_PATH" ]; then
+  WORKFLOW_JSON=$("$SQUAD_ROOT/bin/sq-workflow.sh" parse "$WORKFLOW_PATH") || {
+    echo "error: invalid WORKFLOW.md at $WORKFLOW_PATH" >&2
+    exit 1
+  }
+fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
 # Brief status instruction enforcement: refuse to launch if the brief
@@ -2357,6 +2376,10 @@ META_WINDOW=$T
   # default path's meta stays byte-identical (absent backend= means tmux;
   # data/sq-backend-design-d7's P1 compatibility contract).
   [ "$BACKEND" = tmux ] || echo "backend=$BACKEND"
+  if [ -n "$WORKFLOW_PATH" ]; then
+    echo "workflow=$WORKFLOW_PATH"
+    printf 'workflow_config=%s\n' "$(printf '%s' "$WORKFLOW_JSON" | base64 | tr -d '\n')"
+  fi
   if [ "$BACKEND" = herdr ]; then
     echo "herdr_session=$HERDR_SES"
     echo "herdr_workspace_id=$HERDR_WORKSPACE_ID"
