@@ -102,4 +102,13 @@ tracker:
 ---
 EOF
 if "$ROOT"/bin/sq-workflow.sh validate "$TMP/provider-array.md" >/dev/null 2>&1; then exit 1; fi
+cat > "$TMP/hook-no-command.md" <<'EOF'
+---
+schema_version: "1.0.0"
+hooks:
+  before_run:
+    timeout_ms: 30000
+---
+EOF
+if "$ROOT"/bin/sq-workflow.sh validate "$TMP/hook-no-command.md" >/dev/null 2>&1; then exit 1; fi
 printf 'ok - sq-workflow parser and spawn integration\n'
