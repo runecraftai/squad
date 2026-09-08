@@ -152,9 +152,11 @@ execution:
 ---
 WEOF
 
-run_spawn "$id_with" "$proj_with" "$base_with" || true
+run_spawn "$id_with" "$proj_with" "$base_with"
+spawn_exit=$?
 
 meta="$base_with/state/$id_with.meta"
+[ "$spawn_exit" -eq 0 ] || { echo "FAIL: spawn exited with code $spawn_exit for WITH case"; exit 1; }
 [ -f "$meta" ] || { echo "FAIL: meta file not created for WITH case"; exit 1; }
 
 workflow_line=$(grep '^workflow=' "$meta" || true)
@@ -187,9 +189,11 @@ id_without="tw-no-$$"
 proj_without="test-project-without"
 base_without=$(setup_squad_base "$id_without" "$proj_without")
 
-run_spawn "$id_without" "$proj_without" "$base_without" || true
+run_spawn "$id_without" "$proj_without" "$base_without"
+spawn_exit=$?
 
 meta="$base_without/state/$id_without.meta"
+[ "$spawn_exit" -eq 0 ] || { echo "FAIL: spawn exited with code $spawn_exit for WITHOUT case"; exit 1; }
 [ -f "$meta" ] || { echo "FAIL: meta file not created for WITHOUT case"; exit 1; }
 
 has_workflow=$(grep -c '^workflow=' "$meta" || true)
@@ -218,9 +222,11 @@ tracker:
 ---
 WEOF
 
-run_spawn "$id_fb" "$proj_fb" "$base_fb" || true
+run_spawn "$id_fb" "$proj_fb" "$base_fb"
+spawn_exit=$?
 
 meta="$base_fb/state/$id_fb.meta"
+[ "$spawn_exit" -eq 0 ] || { echo "FAIL: spawn exited with code $spawn_exit for fallback case"; exit 1; }
 [ -f "$meta" ] || { echo "FAIL: meta file not created for fallback case"; exit 1; }
 
 workflow_line=$(grep '^workflow=' "$meta" || true)
