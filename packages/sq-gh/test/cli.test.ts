@@ -107,7 +107,7 @@ describe("main CLI", () => {
   });
 
   it("documents the top-level version flags in help output", () => {
-    expect(TOP_HELP).toContain("flags[4]:");
+    expect(TOP_HELP).toContain("flags[5]:");
     expect(TOP_HELP).toContain("-R/--repo <OWNER/NAME> (after command)");
     expect(TOP_HELP).toContain(
       "--hostname <host> (after command) or GH_HOST env",
@@ -202,9 +202,53 @@ describe("main CLI", () => {
     expect(options.getCommandHelp("missing")).toBeUndefined();
   });
 
-  it("lists secret and variable in the top-level command index", () => {
+  it("lists secret, variable, and capabilities in the top-level command index", () => {
     expect(TOP_HELP).toContain("secret");
     expect(TOP_HELP).toContain("variable");
+    expect(TOP_HELP).toContain("capabilities");
+  });
+
+  it("returns capabilities with a schema and version", async () => {
+    await main({ argv: ["capabilities"] });
+
+    const options = vi.mocked(runAxiCli).mock.calls[0]?.[0];
+    const output = JSON.parse(await options.commands.capabilities([]));
+
+    expect(output.$schema).toContain("/schemas/");
+    expect(output.version).toBe(packageVersion.version);
+    expect(output.operations.issue).toContain("list");
+  });
+
+  it("wraps command output as JSON and removes --json before dispatch", async () => {
+    await main({ argv: ["issue", "list", "--json"] });
+
+    const options = vi.mocked(runAxiCli).mock.calls[0]?.[0];
+    const output = JSON.parse(
+      await options.commands.issue(["list", "--json"], undefined),
+    );
+
+    expect(output.$schema).toContain("/schemas/");
+    expect(output.version).toBe(packageVersion.version);
+    expect(output.data).toBe("issue output");
+    expect(vi.mocked(issueCommand)).toHaveBeenCalledWith(["list"], undefined);
+  });
+
+  it("formats JSON errors with the common envelope", async () => {
+    await main({ argv: ["issue", "list", "--json"] });
+
+    const options = vi.mocked(runAxiCli).mock.calls[0]?.[0];
+    const formatted = options.formatError?.({
+      code: "NOT_FOUND",
+      message: "Issue #42 does not exist",
+    });
+    const output = JSON.parse(formatted?.output ?? "{}");
+
+    expect(output.$schema).toContain("/schemas/");
+    expect(output.version).toBe(packageVersion.version);
+    expect(output.error).toEqual({
+      code: "NOT_FOUND",
+      message: "Issue #42 does not exist",
+    });
   });
 
   it("strips -R before invoking the secret handler", async () => {
