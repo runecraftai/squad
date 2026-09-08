@@ -1351,6 +1351,14 @@ if [ -n "$WORKFLOW_PATH" ]; then
   [ -d "$SQUAD_ROOT/.agents/skills" ] && WORKFLOW_BUNDLE+=("$SQUAD_ROOT/.agents/skills")
   WORKFLOW_VERSION=$("$SQUAD_ROOT/bin/sq-workflow.sh" hash "${WORKFLOW_BUNDLE[@]}")
 fi
+
+run_workspace_hook() {
+  local phase=$1
+  [ -n "$WORKFLOW_PATH" ] || return 0
+  WORKFLOW_PATH="$WORKFLOW_PATH" SQUAD_BASE="$SQUAD_BASE" \
+    "$SCRIPT_DIR/sq-hooks.sh" "$phase" "$WT" "$ID" \
+    "${EXEC_ATTEMPT:-0}" "${EXEC_STATE:-}" "${WORKFLOW_VERSION:-}" "$(basename "$PROJ_ABS")"
+}
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
 # Brief status instruction enforcement: refuse to launch if the brief
@@ -1900,6 +1908,15 @@ if [ "$KIND" != xo ] && [ "$BACKEND" != orca ]; then
   validate_spawn_worktree "fob get" "$T"
 fi
 
+# Workspace preparation hook runs only for a newly-created task workspace.
+# XO bases are persistent and therefore do not receive after_create on relaunch.
+if [ "$KIND" != xo ]; then
+  run_workspace_hook after_create || {
+    echo "error: after_create hook failed; workspace preserved" >&2
+    exit 1
+  }
+fi
+
 # Per-task temp root: /tmp/sq-<id>/ with Go's build temp nested at gotmp/. Go won't
 # create GOTMPDIR, so mkdir before it is used; sq-teardown removes the whole root.
 # Nested (not a bare /tmp/sq-<id>/gotmp) so other per-task temp can live alongside
@@ -2413,6 +2430,13 @@ META_WINDOW=$T
 # Claim the per-attempt sidecar only after all dispatch validation and metadata
 # publication have succeeded, so a competing dispatch cannot launch this task.
 "$SCRIPT_DIR/sq-exec-state.sh" claim "$ID" >/dev/null
+EXEC_ATTEMPT=$(grep '^exec_attempt=' "$STATE/$ID.exec" | cut -d= -f2-)
+EXEC_STATE=claimed
+if ! run_workspace_hook before_run; then
+  "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null 2>&1 || true
+  echo "error: before_run hook failed; attempt queued for retry" >&2
+  exit 1
+fi
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")

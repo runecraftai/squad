@@ -80,12 +80,13 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-sentry-arm.sh`        | Verified base-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `sq-sentry-checkpoint.sh` | Run one bounded foreground sentry checkpoint for Codex-style supervision            |
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
+| `sq-stall-detect.sh`      | Detect stalled execution attempts, interrupt conclusive stalls, and schedule retry with exponential backoff |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
-| `sq-exec-state.sh`       | Manage per-attempt execution state sidecar (`<id>.exec`): atomic claim, transition, heartbeat, crash recovery; unclaimed default for legacy tasks |
+| `sq-exec-state.sh`       | Manage per-attempt execution state sidecar (`<id>.exec`): atomic claim, transition, after_run hook, heartbeat, crash recovery; unclaimed default for legacy tasks |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator, including exec state            |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
@@ -107,6 +108,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |
 | `sq-handoff-request.sh`      | Record, resolve, and list durable new-session handoff requests at milestone closes (docs/handoff-request.md) |
 | `sq-handoff-surface.sh`      | Mark pending handoff requests surfaced exactly once and print the handoff card (docs/handoff-request.md) |
+| `sq-hooks.sh`            | Run optional structured WORKFLOW.md workspace lifecycle hooks (after_create, before_run, after_run, before_remove) with timeout enforcement |
 | `sq-classify-lib.sh`     | Shared wake-classification vocabulary and durable keyed-decision folds and scans     |
 | `sq-send.sh`             | Send one verified literal line or supported key through the target's recorded backend |
 | `sq-busy-lib.sh`         | Single owner of the semantic busy-state contract: verdicts, source attribution, and per-harness sources |
