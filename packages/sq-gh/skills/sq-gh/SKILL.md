@@ -37,8 +37,8 @@ Use sq-gh whenever a task touches GitHub: listing, filing, or editing issues; vi
 ## Commands
 
 ```
-commands[15]:
-  (none)=dashboard, issue, pr, run, workflow, release, repo, label, gist, project, secret, variable, search, api, setup
+commands[16]:
+  (none)=dashboard, issue, pr, run, workflow, release, repo, label, gist, project, secret, variable, search, api, setup, capabilities
 ```
 
 Installed copies also inherit the SDK built-in `update` command.

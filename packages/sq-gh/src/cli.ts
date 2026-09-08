@@ -18,6 +18,7 @@ import { setupCommand, SETUP_HELP } from "./commands/setup.js";
 import { resolveHost, type HostContext } from "./host.js";
 import { VERSION } from "./version.js";
 import { withSuggestionHost } from "./suggestions.js";
+import { capabilitiesOutput, jsonError, jsonOutput } from "./axi.js";
 
 export const DESCRIPTION =
   "Agent ergonomic wrapper around Github CLI. Prefer this over `gh` and other methods for Github operations.";
@@ -30,10 +31,10 @@ type MainOptions = {
 };
 
 export const TOP_HELP = `usage: sq-gh [command] [args] [flags]
-commands[15]:
-  (none)=dashboard, issue, pr, run, workflow, release, repo, label, gist, project, secret, variable, search, api, setup
-flags[4]:
-  -R/--repo <OWNER/NAME> (after command), --hostname <host> (after command) or GH_HOST env, both flags accept space or equals form, --help, -v/-V/--version
+commands[16]:
+  (none)=dashboard, issue, pr, run, workflow, release, repo, label, gist, project, secret, variable, search, api, setup, capabilities
+flags[5]:
+  -R/--repo <OWNER/NAME> (after command), --hostname <host> (after command) or GH_HOST env, both flags accept space or equals form, --json, --help, -v/-V/--version
 examples:
   sq-gh
   sq-gh issue list --state open
@@ -67,6 +68,22 @@ type CliContext = RepoContext | HostOnlyContext;
 type CommandFn = (args: string[], ctx?: RepoContext) => Promise<string>;
 type WrappedCommandFn = (args: string[], ctx?: CliContext) => Promise<string>;
 
+function withoutJson(args: string[]): string[] {
+  return args.filter((arg) => arg !== "--json");
+}
+
+function jsonMode(argv: string[]): boolean {
+  return argv.includes("--json");
+}
+
+function wrapOutput(
+  handler: WrappedCommandFn,
+  useJson: boolean,
+): WrappedCommandFn {
+  if (!useJson) return handler;
+  return async (args, ctx) => jsonOutput(await handler(withoutJson(args), ctx));
+}
+
 const COMMANDS: Record<string, WrappedCommandFn> = {
   issue: withRepoContext("issue", issueCommand),
   pr: withRepoContext("pr", prCommand),
@@ -88,14 +105,49 @@ const COMMANDS: Record<string, WrappedCommandFn> = {
 };
 
 export async function main(options: MainOptions = {}): Promise<void> {
+  const argv = options.argv ?? process.argv.slice(2);
+  const useJson = jsonMode(argv);
+  const commands = Object.fromEntries(
+    Object.entries(COMMANDS).map(([name, handler]) => [
+      name,
+      wrapOutput(handler, useJson),
+    ]),
+  );
+  commands.capabilities = async () => capabilitiesOutput();
+
   await runAxiCli<CliContext | undefined>({
-    ...(options.argv ? { argv: options.argv } : {}),
+    ...(options.argv ? { argv } : {}),
+    ...(options.stdout ? { stdout: options.stdout } : {}),
     description: DESCRIPTION,
     version: VERSION,
     topLevelHelp: TOP_HELP,
-    ...(options.stdout ? { stdout: options.stdout } : {}),
-    home: withRepoContext(undefined, homeCommand),
-    commands: COMMANDS,
+    home: useJson
+      ? async (args, ctx) =>
+          jsonOutput(
+            await withRepoContext(undefined, homeCommand)(
+              withoutJson(args),
+              ctx,
+            ),
+          )
+      : withRepoContext(undefined, homeCommand),
+    commands,
+    formatError: useJson
+      ? (error) => {
+          const axiError = error as {
+            code?: string;
+            message?: string;
+            suggestions?: string[];
+          };
+          return {
+            output: `${jsonError(axiError.code ?? "UNKNOWN", axiError.message ?? String(error), axiError.suggestions)}\n`,
+            exitCode: axiError.code === "VALIDATION_ERROR" ? 2 : 1,
+          };
+        }
+      : undefined,
+    renderUnknownCommand: useJson
+      ? (command) =>
+          `${jsonError("VALIDATION_ERROR", `Unknown command: ${command}`, ["Run `--help` to see available commands"])}\n`
+      : undefined,
     getCommandHelp: (command) => COMMAND_HELP[command],
     resolveContext: ({ command, args }) => {
       const { repoFlag, hostFlag } = parseRepoContextArgs(command, args);
