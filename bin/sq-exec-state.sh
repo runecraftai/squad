@@ -105,9 +105,12 @@ transition_locked() {
 }
 
 _heartbeat() {
-  local id=$1 state
-  state=$(get_state "$id")
-  write_record "$id" "$state" "$state"
+  local id=$1 now tmp
+  now=$(date +%s)
+  tmp=$(mktemp "$STATE/.exec.$id.XXXXXX")
+  umask 077
+  sed "s/^exec_last_activity=.*/exec_last_activity=$now/" "$(path_for "$id")" >"$tmp"
+  mv -f -- "$tmp" "$(path_for "$id")"
 }
 
 recover_locked() {

@@ -1096,9 +1096,14 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
-    # Refresh exec_last_activity for active tasks before stale recovery.
-    # This keeps liveness signals current so recover_locked only marks
-    # genuinely stale tasks for retry.
+    # Reconcile abandoned execution attempts first: mark stale tasks for retry
+    # before refreshing liveness, so tasks that crashed before this sentry
+    # cycle are caught. Missing sidecars remain unclaimed for backwards
+    # compatibility.
+    "$SCRIPT_DIR/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
+    # Refresh exec_last_activity for surviving active tasks. This keeps
+    # liveness signals current so recover_locked only marks genuinely stale
+    # tasks for retry on the next heartbeat cycle.
     for _hb_exec in "$STATE"/*.exec; do
       [ -f "$_hb_exec" ] || continue
       _hb_id=${_hb_exec##*/}; _hb_id=${_hb_id%.exec}
@@ -1107,9 +1112,6 @@ EOF
         claimed|running) "$SCRIPT_DIR/sq-exec-state.sh" heartbeat "$_hb_id" >/dev/null 2>&1 || true ;;
       esac
     done
-    # Reconcile abandoned execution attempts before the normal heartbeat scan.
-    # Missing sidecars remain unclaimed for backwards compatibility.
-    "$SCRIPT_DIR/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
     # Triage: in always-on mode a heartbeat is benign unless the cheap unit-scan
     # turns up a commander-relevant status the per-wake path missed. Absorb the
     # no-change case (advance the schedule and back off exactly as wake() would,
