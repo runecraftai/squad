@@ -79,4 +79,7 @@ sim_json=$($ROOT/bin/sq-workflow.sh parse "$TMP/sim/WORKFLOW.md")
 [ "$(printf '%s' "$sim_json" | jq -r .tracker.kind)" = github ]
 [ "$(printf '%s' "$sim_json" | jq -r .tracker.provider.repo)" = acme/example ]
 [ "$(printf '%s' "$sim_json" | jq -r .workspace.root)" = /tmp/workspaces ]
+
+mkdir -p "$TMP/no-wf-project"
+if $ROOT/bin/sq-workflow.sh parse "$TMP/no-wf-project/WORKFLOW.md" >/dev/null 2>&1; then exit 1; fi
 printf 'ok - sq-workflow parser and spawn integration\n'
