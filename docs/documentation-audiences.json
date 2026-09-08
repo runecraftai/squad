@@ -1374,6 +1374,26 @@
   {
    "path": "orca-linux-validation-notes.md",
    "audience": "maintainer-verification"
+  },
+  {
+   "path": "docs/personal-os/README.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "docs/personal-os/adr-001-lifeforge-interface.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/personal-os/adr-002-task-identity.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/personal-os/adr-003-pi-boundary.md",
+   "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/personal-os/adr-004-durable-state.md",
+   "audience": "maintainer-architecture"
   }
  ]
 }
