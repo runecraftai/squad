@@ -1096,6 +1096,9 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
+    # Reconcile abandoned execution attempts before the normal heartbeat scan.
+    # Missing sidecars remain unclaimed for backwards compatibility.
+    "$SCRIPT_DIR/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
     # Triage: in always-on mode a heartbeat is benign unless the cheap unit-scan
     # turns up a commander-relevant status the per-wake path missed. Absorb the
     # no-change case (advance the schedule and back off exactly as wake() would,

@@ -2404,6 +2404,9 @@ META_WINDOW=$T
     echo "projects=$XO_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
+# Claim the per-attempt sidecar only after all dispatch validation and metadata
+# publication have succeeded, so a competing dispatch cannot launch this task.
+"$SCRIPT_DIR/sq-exec-state.sh" claim "$ID" >/dev/null
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")
@@ -2476,6 +2479,7 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
+"$SCRIPT_DIR/sq-exec-state.sh" running "$ID" >/dev/null
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "kimi did not show a verified ready signal before brief delivery"
