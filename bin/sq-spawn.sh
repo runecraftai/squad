@@ -1340,11 +1340,16 @@ if [ -f "$WORKFLOW_REPO" ]; then
 elif [ -f "$WORKFLOW_PRIVATE" ]; then
   WORKFLOW_PATH="$WORKFLOW_PRIVATE"
 fi
+WORKFLOW_VERSION=
 if [ -n "$WORKFLOW_PATH" ]; then
   WORKFLOW_JSON=$("$SQUAD_ROOT/bin/sq-workflow.sh" parse "$WORKFLOW_PATH") || {
     echo "error: invalid WORKFLOW.md at $WORKFLOW_PATH" >&2
     exit 1
   }
+  WORKFLOW_BUNDLE=("$WORKFLOW_PATH")
+  [ -f "$PROJ_ABS/AGENTS.md" ] && WORKFLOW_BUNDLE+=("$PROJ_ABS/AGENTS.md")
+  [ -d "$SQUAD_ROOT/.agents/skills" ] && WORKFLOW_BUNDLE+=("$SQUAD_ROOT/.agents/skills")
+  WORKFLOW_VERSION=$("$SQUAD_ROOT/bin/sq-workflow.sh" hash "${WORKFLOW_BUNDLE[@]}")
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
@@ -2379,6 +2384,7 @@ META_WINDOW=$T
   if [ -n "$WORKFLOW_PATH" ]; then
     echo "workflow=$WORKFLOW_PATH"
     printf 'workflow_config=%s\n' "$(printf '%s' "$WORKFLOW_JSON" | base64 | tr -d '\n')"
+    echo "workflow_version=$WORKFLOW_VERSION"
   fi
   if [ "$BACKEND" = herdr ]; then
     echo "herdr_session=$HERDR_SES"

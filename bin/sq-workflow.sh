@@ -3,6 +3,7 @@
 # Usage: sq-workflow.sh parse <path>
 #        sq-workflow.sh validate <path>
 #        sq-workflow.sh get <path> <key>
+#        sq-workflow.sh hash <path> [bundle-path ...]
 #
 # WORKFLOW.md contains YAML front matter only. Parsing uses Ruby's standard
 # Psych library and emits JSON without requiring an additional dependency.
@@ -15,7 +16,7 @@ usage() {
 command_name=${1:-}
 case "$command_name" in
   -h|--help) usage; exit 0 ;;
-  parse|validate|get) ;;
+  parse|validate|get|hash|version) ;;
   *) usage >&2; exit 2 ;;
 esac
 path=${2:-}
@@ -28,6 +29,7 @@ fi
 ruby - "$command_name" "$path" "${3:-}" <<'RUBY'
 require 'json'
 require 'yaml'
+require 'digest'
 
 command, path, key = ARGV
 begin
@@ -149,7 +151,24 @@ if value['hooks'].is_a?(Hash)
   end
 end
 
-if command == 'validate'
+if command == 'hash' || command == 'version'
+  # Hash bytes, not parsed YAML, so semantically insignificant edits still pin
+  # the exact instruction bundle that the worker received. Directories are
+  # walked in sorted order and paths are included to avoid concatenation
+  # collisions.
+  paths = [path] + ARGV.drop(2).reject(&:empty?)
+  digest = Digest::SHA256.new
+  paths.each do |entry|
+    files = File.directory?(entry) ? Dir[File.join(entry, '**', '*')].select { |f| File.file?(f) }.sort : [entry]
+    files.each do |file|
+      digest << file
+      digest << "\0"
+      digest << File.binread(file)
+      digest << "\0"
+    end
+  end
+  puts digest.hexdigest
+elsif command == 'validate'
   puts 'valid'
 elsif command == 'get'
   result = value

@@ -53,7 +53,15 @@ write_record() {
   workspace=$(get_field exec_workspace "$id"); [ -n "$workspace" ] || workspace=$(meta_field worktree "$id")
   backend=$(get_field exec_backend "$id"); [ -n "$backend" ] || backend=$(meta_field backend "$id"); [ -n "$backend" ] || backend=tmux
   harness=$(get_field exec_harness "$id"); [ -n "$harness" ] || harness=$(meta_field harness "$id")
-  workflow=$(get_field exec_workflow_version "$id"); [ -n "$workflow" ] || workflow=$(meta_field workflow "$id")
+  workflow=$(get_field exec_workflow_version "$id"); [ -n "$workflow" ] || workflow=$(meta_field workflow_version "$id")
+  # A fresh claim is a new execution version. Running attempts retain the
+  # value already written to the sidecar, while retries pick up changed bytes.
+  if [ "$state" = claimed ] && [ "$old" = retry_queued ]; then
+    workflow_path=$(meta_field workflow "$id")
+    if [ -n "$workflow_path" ] && [ -f "$workflow_path" ]; then
+      workflow=$("$SQUAD_ROOT/bin/sq-workflow-reload.sh" check "$workflow_path" "$STATE" | sed 's/.*version=//')
+    fi
+  fi
   max_retries=$(get_field exec_max_retries "$id"); [ -n "$max_retries" ] || max_retries=3
   [ "$state" = claimed ] && attempt=$((attempt + 1))
   [ "$state" = claimed ] && [ "$old" = retry_queued ] && retry=$((retry + 1))
