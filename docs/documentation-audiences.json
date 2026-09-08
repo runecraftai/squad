@@ -724,6 +724,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/workflow-spec.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/zellij-backend.md",
    "audience": "operator-current"
   },
