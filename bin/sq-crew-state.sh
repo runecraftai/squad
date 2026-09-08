@@ -55,6 +55,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+EXEC_STATE_BIN="$SCRIPT_DIR/sq-exec-state.sh"
 
 # shellcheck source=bin/sq-tmux-lib.sh
 . "$SCRIPT_DIR/sq-tmux-lib.sh"
@@ -72,6 +73,7 @@ ID=${1:-}
 
 META="$STATE/$ID.meta"
 LOG="$STATE/$ID.status"
+EXEC_STATE=unclaimed
 DRILL_TIMEOUT=${SQUAD_CREW_STATE_DRILL_TIMEOUT:-10}
 case "$DRILL_TIMEOUT" in ''|*[!0-9]*) DRILL_TIMEOUT=10 ;; esac
 # How many of the most recent `drill runs` rows the cross-branch fallback
@@ -84,8 +86,9 @@ SEP=' · '
 
 # Emit the one canonical line and exit 0. Detail is optional.
 emit() {  # <state> <source> [detail]
-  local line="state: $1${SEP}source: $2"
-  [ -n "${3:-}" ] && line="$line${SEP}$3"
+  local line="state: $1${SEP}source: $2" detail="${3:-}"
+  [ -n "${EXEC_STATE:-}" ] && detail="${detail:+$detail$SEP}exec_state=$EXEC_STATE"
+  [ -n "$detail" ] && line="$line${SEP}$detail"
   printf '%s\n' "$line"
   exit 0
 }
@@ -93,6 +96,7 @@ emit() {  # <state> <source> [detail]
 # --- meta resolution --------------------------------------------------------
 
 [ -f "$META" ] || emit unknown none "no metadata for $ID"
+EXEC_STATE=$("$EXEC_STATE_BIN" get "$ID" 2>/dev/null || printf 'unclaimed')
 
 meta_value() {  # <key>
   grep "^$1=" "$META" 2>/dev/null | tail -1 | cut -d= -f2- || true
