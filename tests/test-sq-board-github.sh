@@ -54,6 +54,7 @@ report=$(run report)
 printf '%s' "$report" | jq -e '.total == 2 and .pending_suggestions == 2' >/dev/null
 run approve 12 | jq -e '.status == "approved"' >/dev/null
 [ "$(jq '[.[]|select(.status=="approved")]|length' "$TMP/state/github-monitor/suggestions.json")" = 1 ]
+mkdir -p "$TMP/data"
 # Approval only records intent; no backlog/provider mutation is possible.
 [ ! -e "$TMP/data/backlog.md" ]
 
