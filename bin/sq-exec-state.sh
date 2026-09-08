@@ -104,6 +104,12 @@ transition_locked() {
   printf '%s\n' "$next"
 }
 
+_heartbeat() {
+  local id=$1 state
+  state=$(get_state "$id")
+  write_record "$id" "$state" "$state"
+}
+
 recover_locked() {
   local id=$1 current age now last
   current=$(get_state "$id")
@@ -136,7 +142,7 @@ case "$cmd" in
   running) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" running ;;
   retry|retry_queued) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" retry_queued ;;
   release|released) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" released ;;
-  heartbeat) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" "$(get_state "$id")" ;;
+  heartbeat) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" _heartbeat "$id" ;;
   recover) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" recover_locked "$id" ;;
   transition) valid_id "$id" && [ -n "${3:-}" ] || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" "$3" ;;
   *) usage >&2; exit 2 ;;

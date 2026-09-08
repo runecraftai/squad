@@ -1096,6 +1096,17 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
+    # Refresh exec_last_activity for active tasks before stale recovery.
+    # This keeps liveness signals current so recover_locked only marks
+    # genuinely stale tasks for retry.
+    for _hb_exec in "$STATE"/*.exec; do
+      [ -f "$_hb_exec" ] || continue
+      _hb_id=${_hb_exec##*/}; _hb_id=${_hb_id%.exec}
+      _hb_state=$("$SCRIPT_DIR/sq-exec-state.sh" get "$_hb_id" 2>/dev/null) || continue
+      case "$_hb_state" in
+        claimed|running) "$SCRIPT_DIR/sq-exec-state.sh" heartbeat "$_hb_id" >/dev/null 2>&1 || true ;;
+      esac
+    done
     # Reconcile abandoned execution attempts before the normal heartbeat scan.
     # Missing sidecars remain unclaimed for backwards compatibility.
     "$SCRIPT_DIR/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
