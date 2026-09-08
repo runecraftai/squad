@@ -80,6 +80,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-sentry-arm.sh`        | Verified base-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `sq-sentry-checkpoint.sh` | Run one bounded foreground sentry checkpoint for Codex-style supervision            |
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
+| `sq-stall-detect.sh`      | Detect stalled execution attempts, interrupt conclusive stalls, and schedule retry with exponential backoff |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
