@@ -45,7 +45,7 @@ with_lock() {
 }
 
 write_record() {
-  local id=$1 state=$2 old=$3 now tmp attempt retry started workspace backend harness workflow max_retries
+  local id=$1 state=$2 old=$3 now tmp attempt retry started workspace backend harness workflow max_retries error next_retry
   now=$(date +%s)
   attempt=$(get_field exec_attempt "$id"); [ -n "$attempt" ] || attempt=0
   retry=$(get_field exec_retry_count "$id"); [ -n "$retry" ] || retry=0
@@ -55,7 +55,20 @@ write_record() {
   harness=$(get_field exec_harness "$id"); [ -n "$harness" ] || harness=$(meta_field harness "$id")
   workflow=$(get_field exec_workflow_version "$id"); [ -n "$workflow" ] || workflow=$(meta_field workflow "$id")
   max_retries=$(get_field exec_max_retries "$id"); [ -n "$max_retries" ] || max_retries=3
+  error=${SQUAD_EXEC_ERROR:-$(get_field exec_error "$id")}
+  next_retry=$(get_field exec_next_retry_at "$id")
   [ "$state" = claimed ] && attempt=$((attempt + 1))
+  if [ "$state" = retry_queued ]; then
+    local backoff=${SQUAD_RETRY_BACKOFF_BASE:-10} cap=${SQUAD_RETRY_BACKOFF_MAX:-300} n
+    case "$backoff:$cap" in *[!0-9:]*|*:0) backoff=10; cap=300 ;; esac
+    n=$backoff
+    local remaining=$retry
+    while [ "$remaining" -gt 0 ] && [ "$n" -lt "$cap" ]; do
+      n=$((n * 2)); remaining=$((remaining - 1))
+    done
+    [ "$n" -gt "$cap" ] && n=$cap
+    next_retry=$((now + n))
+  fi
   [ "$state" = claimed ] && [ "$old" = retry_queued ] && retry=$((retry + 1))
   [ "$state" = running ] && [ -n "$started" ] || started=$now
   tmp=$(mktemp "$STATE/.exec.$id.XXXXXX")
@@ -67,7 +80,8 @@ write_record() {
     printf 'exec_started_at=%s\n' "$started"
     printf 'exec_last_activity=%s\n' "$now"
     printf 'exec_previous_state=%s\n' "$old"
-    printf 'exec_error=%s\n' "$(get_field exec_error "$id")"
+    printf 'exec_error=%s\n' "$error"
+    printf 'exec_next_retry_at=%s\n' "$next_retry"
     printf 'exec_max_retries=%s\n' "$max_retries"
     printf 'exec_workflow_version=%s\n' "$workflow"
     printf 'exec_workspace=%s\n' "$workspace"
