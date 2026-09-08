@@ -82,4 +82,24 @@ sim_json=$($ROOT/bin/sq-workflow.sh parse "$TMP/sim/WORKFLOW.md")
 
 mkdir -p "$TMP/no-wf-project"
 if $ROOT/bin/sq-workflow.sh parse "$TMP/no-wf-project/WORKFLOW.md" >/dev/null 2>&1; then exit 1; fi
+cat > "$TMP/tracker-array.md" <<'EOF'
+---
+schema_version: "1.0.0"
+tracker:
+  - github
+---
+EOF
+if $ROOT/bin/sq-workflow.sh parse "$TMP/tracker-array.md" >/dev/null 2>&1; then exit 1; fi
+cat > "$TMP/provider-array.md" <<'EOF'
+---
+schema_version: "1.0.0"
+tracker:
+  kind: github
+  provider:
+    - not
+    - a
+    - map
+---
+EOF
+if $ROOT/bin/sq-workflow.sh validate "$TMP/provider-array.md" >/dev/null 2>&1; then exit 1; fi
 printf 'ok - sq-workflow parser and spawn integration\n'

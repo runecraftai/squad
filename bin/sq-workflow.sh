@@ -95,7 +95,9 @@ unless value['schema_version'] =~ /\A1\.\d+\.\d+\z/
 end
 keys(value, TOP, '')
 keys(value['tracker'], SCHEMA['tracker'], 'tracker.')
-keys(value['tracker'] && value['tracker']['provider'], SCHEMA['provider'], 'tracker.provider.')
+if value['tracker'].is_a?(Hash) && value['tracker'].key?('provider')
+  keys(value['tracker']['provider'], SCHEMA['provider'], 'tracker.provider.')
+end
 if value['tracker'].is_a?(Hash) && !value['tracker'].key?('kind')
   warn 'error: tracker.kind is required when tracker is present'
   exit 1
@@ -109,6 +111,12 @@ end
   next if object.nil? || object.is_a?(Hash)
   warn "error: #{name} must be a map"
   exit 1
+end
+if value['tracker'].is_a?(Hash) && value['tracker'].key?('provider')
+  unless value['tracker']['provider'].is_a?(Hash)
+    warn 'error: tracker.provider must be a map'
+    exit 1
+  end
 end
 keys(value['execution'], SCHEMA['execution'], 'execution.')
 keys(value['stall'], SCHEMA['stall'], 'stall.')
