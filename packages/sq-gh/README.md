@@ -12,8 +12,9 @@
 
 GitHub CLI for agents, part of the [Runecraft](https://github.com/runecraftai/squad) monorepo.
 
-sq-gh wraps the official `gh` CLI with token-efficient TOON output, contextual next-step suggestions, and structured error handling.
+sq-gh wraps the official `gh` CLI with token-efficient TOON output, contextual next-step suggestions, structured error handling, and AXI-standard JSON output.
 It is built for autonomous agents that interact with GitHub via shell execution: one short command, a compact answer, and a hint about what to run next.
+Append `--json` to any command for a stable JSON envelope with `$schema`, `version`, and `data` fields.
 
 ## Benchmarks
 
@@ -174,11 +175,13 @@ JSON responses are normally stripped of noisy fields before TOON encoding, but a
 | `variable` | Actions variables, list, set, delete                                        |
 | `search`   | Search issues, PRs, repos, commits, code                                    |
 | `api`      | Raw GitHub API access                                                       |
+| `capabilities` | Discover supported operations, output formats, and schema version      |
 | `setup`    | Install optional agent session hooks                                        |
 | `update`   | Built-in self-update command                                                |
 
 ### Global flags
 
+- `--json` - output every command result as a stable AXI JSON envelope with `$schema`, `version`, and `data` fields
 - `--help` - show help for any command
 - `-v`, `-V`, `--version` - show the installed `sq-gh` version
 - `--hostname <host>` / `--hostname=<host>` - target a custom GitHub host; explicit flags win over `GH_HOST`
