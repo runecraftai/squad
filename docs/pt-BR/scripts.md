@@ -29,6 +29,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-ask.sh`              | Picker interativo de cartões de decisão: lê um JSON de cartão no stdin e renderiza um picker de terminal | 
 | `sq-backlog-handoff.sh`  | Validar e delegar movimentos enfileirados de itens de backlog para uma base XO               |
 | `sq-backlog-receive.sh`  | Ingerir idempotentemente um outbox confinado de handoff remoto através do sq-tasks             |
+| `sq-board-github.sh`     | Monitor opt-in de issues GitHub: listar issues elegíveis, pollar mudanças, reportar status agregado, aprovar sugestões de dispatch (requer tracker.kind: github no WORKFLOW.md) |
 | `sq-decision-hold.sh`    | Criar, verificar, completar e resolver decisões duráveis retidas pelo comandante                 |
 | `sq-learn.sh`            | Capturar uma lição operacional durável em `data/learnings.md`                         |
 | `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab   |
