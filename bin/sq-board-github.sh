@@ -67,11 +67,11 @@ poll_cmd() {
   old='[]'
   [ -f "$ISSUES_FILE" ] && old=$(cat "$ISSUES_FILE")
   diff=$(jq -n --argjson old "$old" --argjson new "$current" '
-    [$new[] as $n | ($old[] | select((.number // "") == ($n.number // ""))) as $o |
+    [$new[] as $n |
+      [($old[] | select((.number // "") == ($n.number // "")))] as $matches |
+      (if ($matches|length) == 0 then null else $matches[0] end) as $o |
       select($o == null or (($o | del(.body,.comments)) != ($n | del(.body,.comments)))) |
-      {change:(if $o == null then "new" else "changed" end), issue:$n}]
-    + [$new[] as $n | select([ $old[].number ] | index($n.number) | not) |
-      {change:"new", issue:$n}] | unique_by(.issue.number)')
+      {change:(if $o == null then "new" else "changed" end), issue:$n}] | unique_by(.issue.number)')
   tmp=$(mktemp "$MONITOR_DIR/.issues.XXXXXX")
   printf '%s\n' "$current" | jq '.' > "$tmp" && mv "$tmp" "$ISSUES_FILE"
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
