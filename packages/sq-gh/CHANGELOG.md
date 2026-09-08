@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/runecraftai/squad/compare/sq-gh-v0.1.2...sq-gh-v0.1.3) (2026-09-08)
+
+
+### Features
+
+* **sq-gh:** add AXI provider contract with capabilities discovery and JSON output ([45681c2](https://github.com/runecraftai/squad/commit/45681c2bddb486c17f6d928530864f0d84e46656))
+* **sq-gh:** retrofit AXI provider contract ([1f407d0](https://github.com/runecraftai/squad/commit/1f407d05fe5744a2f6c24bc47c2e173275961f50))
+
 ## [0.1.2](https://github.com/runecraftai/squad/compare/sq-gh-v0.1.1...sq-gh-v0.1.2) (2026-08-18)
 
 
