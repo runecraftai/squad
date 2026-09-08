@@ -1345,6 +1345,7 @@ if [ -n "$WORKFLOW_PATH" ]; then
     echo "error: invalid WORKFLOW.md at $WORKFLOW_PATH" >&2
     exit 1
   }
+  WORKFLOW_VERSION=$(printf '%s' "$WORKFLOW_JSON" | jq -r '.schema_version // empty')
 fi
 
 run_workspace_hook() {
