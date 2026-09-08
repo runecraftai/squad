@@ -82,6 +82,8 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/sq-pending-reply-lib.sh"
 # shellcheck source=bin/sq-busy-lib.sh
 . "$SCRIPT_DIR/sq-busy-lib.sh"
+# shellcheck source=bin/sq-stall-detect.sh
+. "$SCRIPT_DIR/sq-stall-detect.sh"
 
 WATCH_LOCK="$STATE/.sentry.lock"
 WATCH_PATH="$SCRIPT_DIR/sq-sentry.sh"
@@ -1096,6 +1098,10 @@ EOF
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
+    # Detect attempt-level stalls before the heartbeat refreshes activity.
+    # The detector interrupts only conclusive stalls and preserves the
+    # workspace; ambiguous evidence remains for technical recovery.
+    stall_run_check >/dev/null 2>&1 || true
     # Reconcile abandoned execution attempts first: mark stale tasks for retry
     # before refreshing liveness, so tasks that crashed before this sentry
     # cycle are caught. Missing sidecars remain unclaimed for backwards
