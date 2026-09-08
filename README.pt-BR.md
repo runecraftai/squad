@@ -156,7 +156,7 @@ As ferramentas do Squad são distribuídas como pacotes standalone sob `packages
 | sq-browser | Automação de navegador ergonômica para agentes que envolve o chrome-devtools-mcp com uma CLI eficiente em tokens                              | [README](packages/sq-browser/README.md)      |
 | sq-quota   | Reporta janelas de quota locais de Claude, Codex, Cursor, GitHub Copilot, Grok, Kimi e OpenCode em uma única chamada somente de dados                 | [README](packages/sq-quota/README.md)        |
 | sq-report  | Abre HTML gerado por agentes em um editor local no navegador para você anotar elementos e mandar feedback ao agente                  | [README](packages/sq-report/README.md)       |
-| sq-board   | Quadro de planejamento de missão que renderiza a fila do backlog com estado operacional ao vivo dos arquivos de estado duráveis do Squad                | [README](packages/operation-board/README.md) |
+| sq-board   | Quadro de planejamento de missão que renderiza a fila do backlog com estado operacional ao vivo e monitoramento opcional de issues do GitHub dos arquivos de estado duráveis do Squad | [README](packages/operation-board/README.md) |
 
 ## Skills
 
