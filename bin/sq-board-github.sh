@@ -57,9 +57,6 @@ fetch_issues() {
   printf '%s' "$raw" | jq -c 'if type == "array" then . elif (.data|type) == "array" then .data else [] end'
 }
 
-issue_key() { jq -r '"\(.number)"'; }
-fingerprint() { jq -c 'del(.body, .comments) | .' | sha256sum | cut -d' ' -f1; }
-
 list_cmd() {
   fetch_issues | jq '.'
 }
@@ -106,7 +103,10 @@ approve_cmd() {
   tmp=$(mktemp "$MONITOR_DIR/.suggestions.XXXXXX")
   jq --argjson n "$number" 'map(if .issue.number == $n then . + {status:"approved", approved_at:(now|todateiso8601)} else . end)' "$SUGGESTIONS_FILE" > "$tmp"
   mv "$tmp" "$SUGGESTIONS_FILE"
-  jq --argjson n "$number" '[.[]|select(.issue.number==$n)]|first // {approved:false}' "$SUGGESTIONS_FILE"
+  local result
+  result=$(jq --argjson n "$number" '[.[]|select(.issue.number==$n)]|first // empty' "$SUGGESTIONS_FILE")
+  [ -n "$result" ] || err "no suggestion for issue #$number"
+  printf '%s\n' "$result"
 }
 
 case "${1:-}" in
