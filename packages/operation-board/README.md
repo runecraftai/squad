@@ -11,6 +11,7 @@ Mission-planning board for [Squad](https://github.com/runecraftai/squad) — com
 - **Endpoint truth** (`state/window-states`) — per-window operator state from `sq-window-state.sh`
 - **Status events** (`state/<id>.status`) — latest wake event per task
 - **Elapsed time** (`state/<id>.busy-gen`) — mtime-derived busy duration
+- **GitHub board** (optional) — when `tracker.kind: github` is set in `WORKFLOW.md`, the table output appends open-issue and pending-suggestion counts from `sq-board-github.sh report`
 
 ## Live sidebar (vendored workmux)
 

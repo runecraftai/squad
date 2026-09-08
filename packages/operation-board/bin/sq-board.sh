@@ -364,9 +364,25 @@ render_table() {
   rm -f "$board_data"
 }
 
+render_github_monitor() {
+  local workflow="${SQ_BOARD_GITHUB_WORKFLOW:-${SQUAD_WORKFLOW:-$SQUAD_BASE/WORKFLOW.md}}"
+  [ -f "$workflow" ] || return 0
+  command -v sq-board-github >/dev/null 2>&1 || [ -x "$SCRIPT_DIR/../../../bin/sq-board-github.sh" ] || return 0
+  local monitor="sq-board-github"
+  [ -x "$SCRIPT_DIR/../../../bin/sq-board-github.sh" ] && monitor="$SCRIPT_DIR/../../../bin/sq-board-github.sh"
+  local report
+  report=$(SQUAD_BASE="$SQUAD_BASE" SQ_BOARD_GITHUB_WORKFLOW="$workflow" "$monitor" report 2>/dev/null) || return 0
+  [ "$(printf '%s' "$report" | jq -r '.enabled // false' 2>/dev/null)" = true ] || return 0
+  printf '\n  %s\n' "${CYN}GITHUB BOARD${RST}"
+  printf '  %s\n' "────────────────────────────────────────────────────────────"
+  printf '  %s open issues  ·  %s pending suggestions\n' \
+    "$(printf '%s' "$report" | jq -r '.total')" \
+    "$(printf '%s' "$report" | jq -r '.pending_suggestions')"
+}
+
 # --- Entry point ---
 case "$MODE" in
   json)    render_json ;;
   compact) render_compact ;;
-  *)       render_table ;;
+  *)       render_table; render_github_monitor ;;
 esac
