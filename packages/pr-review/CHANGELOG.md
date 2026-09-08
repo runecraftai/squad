@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/runecraftai/squad/compare/v0.2.1...v0.2.2) (2026-09-08)
+
+
+### Miscellaneous Chores
+
+* trigger drill signature check ([e0b0cb0](https://github.com/runecraftai/squad/commit/e0b0cb0ef2b6b79fe91618769494070fbdb8d0b9))
+
 ## [0.2.1](https://github.com/runecraftai/squad/compare/v0.2.0...v0.2.1) (2026-09-04)
 
 
