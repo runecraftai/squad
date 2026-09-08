@@ -30,6 +30,8 @@ A WORKFLOW.md manifest does not override or add axes to those files.
 ## Schema fields
 
 All fields below are optional except `schema_version`.
+When tracker is present, kind is required.
+kind must be one of: github, gitlab, jira, linear.
 When a section is present, its values must follow the types validated by `bin/sq-workflow.sh`.
 
 - `schema_version`: required semantic version string; currently `1.x.y`.

@@ -63,6 +63,20 @@ execution:
 EOF
 if $ROOT/bin/sq-workflow.sh validate "$TMP/value.md" >/dev/null 2>&1; then exit 1; fi
 
-grep -q 'WORKFLOW_REPO=' "$ROOT/bin/sq-spawn.sh"
-grep -q 'workflow_config=' "$ROOT/bin/sq-spawn.sh"
+mkdir -p "$TMP/sim"
+cat > "$TMP/sim/WORKFLOW.md" <<'WEOF'
+---
+schema_version: "1.0.0"
+tracker:
+  kind: github
+  provider:
+    repo: acme/example
+workspace:
+  root: "/tmp/workspaces"
+---
+WEOF
+sim_json=$($ROOT/bin/sq-workflow.sh parse "$TMP/sim/WORKFLOW.md")
+[ "$(printf '%s' "$sim_json" | jq -r .tracker.kind)" = github ]
+[ "$(printf '%s' "$sim_json" | jq -r .tracker.provider.repo)" = acme/example ]
+[ "$(printf '%s' "$sim_json" | jq -r .workspace.root)" = /tmp/workspaces ]
 printf 'ok - sq-workflow parser and spawn integration\n'

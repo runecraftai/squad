@@ -89,8 +89,7 @@ unless value.key?('schema_version') && value['schema_version'].is_a?(String) && 
   warn 'error: schema_version is required and must be a non-empty string'
   exit 1
 end
-major = value['schema_version'].split('.').first
-unless major == '1' && value['schema_version'] =~ /\A1\.\d+\.\d+\z/
+unless value['schema_version'] =~ /\A1\.\d+\.\d+\z/
   warn 'error: schema_version must be a supported 1.x.y version'
   exit 1
 end
