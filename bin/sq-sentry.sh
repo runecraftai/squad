@@ -677,8 +677,14 @@ event_wait_or_sleep() {
     return
   fi
 
-  rec=$(SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED=1 fm_backend_wait_transition "$first_backend" "$first_session" "$POLL" "$STATE" "${windows[@]}")
-  rc=$?
+  # Keep a clean no-event return from triggering the caller's errexit. A
+  # command substitution assignment is itself a failing simple command when
+  # the backend reports its normal "wait elapsed" result (rc=1).
+  if rec=$(SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED=1 fm_backend_wait_transition "$first_backend" "$first_session" "$POLL" "$STATE" "${windows[@]}" ); then
+    rc=0
+  else
+    rc=$?
+  fi
   case "$rc" in
     0)
       _event_cap_fails=0

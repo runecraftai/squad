@@ -1529,6 +1529,71 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
+# Existing metadata is a relaunch only after the recorded endpoint is
+# authoritatively gone or agent-free. Requeue an active execution sidecar before
+# creating the replacement endpoint so claim starts a new attempt instead of
+# mistaking a recovery launch for a duplicate. Ambiguous endpoint state is never
+# enough to authorize a second agent.
+prepare_relaunch_execution() {
+  local meta="$STATE/$ID.meta" old_backend old_target endpoint_state previous
+  if [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
+    # A missing metadata record is the recovery signal used after a process
+    # died between attempts. There is no recorded endpoint to probe, so reuse
+    # the execution sidecar's recovery state and let normal spawn recreate it.
+    previous=$("$SCRIPT_DIR/sq-exec-state.sh" get "$ID" 2>/dev/null || printf 'unclaimed\n')
+    case "$previous" in
+      claimed|running)
+        "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null || {
+          echo "error: could not requeue the abandoned execution for $ID" >&2
+          return 1
+        }
+        ;;
+      released)
+        echo "error: task $ID is released; refusing relaunch" >&2
+        return 1
+        ;;
+    esac
+    return 0
+  fi
+  [ -f "$meta" ] && [ ! -L "$meta" ] || {
+    echo "error: existing metadata for $ID is not a regular file; refusing relaunch" >&2
+    return 1
+  }
+  old_backend=$(fm_backend_of_meta "$meta")
+  old_target=$(fm_backend_target_of_meta "$meta")
+  [ -n "$old_target" ] || {
+    echo "error: existing metadata for $ID has no endpoint; refusing relaunch" >&2
+    return 1
+  }
+  endpoint_state=$(fm_backend_agent_state "$old_backend" "$old_target")
+  case "$endpoint_state" in
+    dead|missing) ;;
+    alive)
+      echo "error: existing $old_backend endpoint for $ID is alive; refusing duplicate launch" >&2
+      return 1
+      ;;
+    *)
+      echo "error: existing $old_backend endpoint for $ID is $endpoint_state; refusing relaunch" >&2
+      return 1
+      ;;
+  esac
+  previous=$("$SCRIPT_DIR/sq-exec-state.sh" get "$ID" 2>/dev/null || printf 'unclaimed\n')
+  case "$previous" in
+    claimed|running)
+      "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null || {
+        echo "error: could not requeue the abandoned execution for $ID" >&2
+        return 1
+      }
+      ;;
+    released)
+      echo "error: task $ID is released; refusing relaunch" >&2
+      return 1
+      ;;
+  esac
+}
+
+prepare_relaunch_execution || exit 1
+
 W="sq-$ID"
 case "$BACKEND" in
   tmux)

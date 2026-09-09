@@ -2406,7 +2406,12 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 retire_watcher_markers "$STATE" "$ID" "$T"
-"$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+# A remote XO teardown removes the home before reaching this common cleanup
+# path. Avoid invoking sq-exec-state in that case because its startup mkdir
+# would recreate the just-removed remote state directory.
+if [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
+  "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
