@@ -394,7 +394,11 @@ test_relaunch_reuses_recorded_carrier() {
 
   # Relaunch the same task: the recorded carrier must be reused verbatim for both
   # the meta and the injected export, so an observer keeps one identity across
-  # restarts.
+  # restarts. Transition the exec state from the first spawn to retry_queued so
+  # the relaunch claim succeeds (the production path retries before a deliberate
+  # relaunch).
+  SQUAD_STATE_OVERRIDE="$HOME_DIR/state" SQUAD_BASE="$HOME_DIR" \
+    "$ROOT/bin/sq-exec-state.sh" retry "$CASE_ID" >/dev/null 2>&1 || true
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$CASE_ID" "$PROJ_DIR")
   status=$?
   expect_code 0 "$status" "relaunch spawn should succeed"
@@ -529,6 +533,8 @@ test_two_routed_tasks_through_one_XO_root_distinct_traces() {
 
   # Same environment, same task: a relaunch must reuse task A's recorded
   # carrier verbatim, so the per-task boundary never costs recovery identity.
+  SQUAD_STATE_OVERRIDE="$sm/state" SQUAD_BASE="$sm" \
+    "$ROOT/bin/sq-exec-state.sh" retry "$id_a" >/dev/null 2>&1 || true
   out=$(TRACEPARENT="$sm_tp" run_spawn "$sm" "$wt_a" "$fakebin" "$log_a" "$id_a" "$proj_a")
   status=$?
   expect_code 0 "$status" "routed task A relaunch should succeed"
