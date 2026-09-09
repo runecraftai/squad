@@ -377,7 +377,7 @@ remote_XO_teardown() {
   retire_watcher_markers "$STATE" "$ID" "$(fm_backend_target_of_meta "$META")"
   "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
   rm -f -- "$STATE/$ID.status" "$STATE/$ID.meta" "$STATE/$ID.turn-ended" \
-    "$STATE/$ID.exec" "$STATE/.$ID.open-decisions-cursor"
+    "$STATE/.$ID.open-decisions-cursor"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
   return 0
 }
@@ -2408,7 +2408,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 retire_watcher_markers "$STATE" "$ID" "$T"
 "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
-  "$STATE/$ID.exec" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
+  "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
   "$STATE/$ID.muse-session-current" \
   "$STATE/.$ID.open-decisions-cursor"

@@ -37,7 +37,6 @@ BASE_PATH="$TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 # fake launchctl report an existing Aqua login session.
 new_case() {
   local platform=$1 want_herdr=${2:-with-herdr} want_gui=${3:-gui}
-  CASE_WANT_HERDR=$want_herdr
   unset CASE_REMOTE_JOB_ACTIVE
   unset CASE_PLATFORM_OVERRIDE
   CASE_N=$((CASE_N + 1))
@@ -217,33 +216,10 @@ SH
 # capturing merged output in DOCTOR_OUT and its status in DOCTOR_RC.
 doctor() {
   set +e
-  local doctor_path="$CASE_HOME/.local/bin:$CASE_BIN:$BASE_PATH"
-  # When the case wants no herdr, replace directories containing herdr with
-  # filtered copies that exclude it, so the doctor sees a host without the CLI.
-  if [ "${CASE_WANT_HERDR:-with-herdr}" = no-herdr ]; then
-    local filtered="" d safe_dir bn f
-    IFS=':' read -ra _dirs <<< "$doctor_path"
-    for d in "${_dirs[@]}"; do
-      if [ -x "$d/herdr" ] 2>/dev/null; then
-        safe_dir="$TMP_ROOT/filtered-$(basename "$d")-$CASE_N"
-        if [ ! -d "$safe_dir" ]; then
-          mkdir -p "$safe_dir"
-          for f in "$d"/*; do
-            bn=$(basename "$f")
-            [ "$bn" = herdr ] || ln -sf "$f" "$safe_dir/" 2>/dev/null || true
-          done
-        fi
-        filtered="${filtered:+$filtered:}$safe_dir"
-      else
-        filtered="${filtered:+$filtered:}$d"
-      fi
-    done
-    doctor_path="$filtered"
-  fi
   DOCTOR_OUT=$(
     HOME="$CASE_HOME" \
     SQUAD_BASE="$CASE_PROJECT_HOME" \
-    PATH="$doctor_path" \
+    PATH="$CASE_HOME/.local/bin:$CASE_BIN:$BASE_PATH" \
     SQUAD_FAKE_STATE="$CASE_STATE" \
     SQUAD_FAKE_LAUNCHCTL_LOG="$CASE_LAUNCHCTL_LOG" \
     SQUAD_FAKE_FORBIDDEN_LOG="$CASE_FORBIDDEN_LOG" \
