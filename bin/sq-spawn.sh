@@ -1606,6 +1606,9 @@ case "$BACKEND" in
               HERDR_PROJECTION_ABORT_SESSION=$HERDR_SES
               HERDR_PROJECTION_ABORT_TASK_PANE=$HERDR_PANE_ID
               HERDR_PROJECTION_ABORT_SEEDED_PANE=""
+              # The old pane is dead and the reclaim has created a new one,
+              # so release the stale exec state to allow the claim below.
+              "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null 2>&1 || true
               ;;
             2)
               spawn_herdr_presentation_order_lock_release
