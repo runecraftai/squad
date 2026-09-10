@@ -403,6 +403,8 @@ teardown_task() {  # <id> <home>
 normalize_meta() {  # <meta>
   sed -E \
     -e 's|^window=.*$|window=<herdr-container-id>|' \
+    -e 's|^endpoint_task_id=.*$|endpoint_task_id=<task-id>|' \
+    -e 's|^tasktmp=.*$|tasktmp=<tasktmp>|' \
     -e 's|^herdr_workspace_id=.*$|herdr_workspace_id=<herdr-container-id>|' \
     -e 's|^herdr_tab_id=.*$|herdr_tab_id=<herdr-container-id>|' \
     -e 's|^herdr_pane_id=.*$|herdr_pane_id=<herdr-container-id>|' \
@@ -455,13 +457,14 @@ mkdir -p "$HOME_DIR/state" "$HOME_DIR/config" \
   "$HOME_DIR/data/order-fail" "$HOME_DIR/data/sq-hibit-resume-r1" \
   "$HOME_DIR/data/wheelhouse-healing-r1"
 mkdir -p "$HOME_DIR/data/active-seeded" "$HOME_DIR/data/abort-a" "$HOME_DIR/data/abort-b" \
-  "$HOME_DIR/data/lock-contended" "$HOME_DIR/data/default-on"
+  "$HOME_DIR/data/lock-contended" "$HOME_DIR/data/default-on" "$HOME_DIR/data/shape-projected"
 touch "$HOME_DIR/state/.last-sentry-beat"
 # Presentation spaces are on by default, so the flat baseline below opts out
 # explicitly; the projected cases each restate the setting they exercise.
 printf 'off\n' > "$HOME_DIR/config/herdr-presentation-spaces"
 printf 'Projection anchor fixture.\necho done >> %s.status\n' "$HOME_DIR/data/anchor" > "$HOME_DIR/data/anchor/brief.md"
 printf 'Projection E2E fixture.\necho done >> %s.status\n' "$HOME_DIR/data/shape" > "$HOME_DIR/data/shape/brief.md"
+printf 'Projected presentation fixture.\necho done >> %s.status\n' "$HOME_DIR/data/shape-projected" > "$HOME_DIR/data/shape-projected/brief.md"
 printf 'Projection ordering fixture A.\necho done >> %s.status\n' "$HOME_DIR/data/order-a" > "$HOME_DIR/data/order-a/brief.md"
 printf 'Projection ordering fixture B.\necho done >> %s.status\n' "$HOME_DIR/data/order-b" > "$HOME_DIR/data/order-b/brief.md"
 printf 'Projection ordering failure fixture.\necho done >> %s.status\n' "$HOME_DIR/data/order-fail" > "$HOME_DIR/data/order-fail/brief.md"
@@ -504,9 +507,12 @@ fi
 pass "real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls"
 teardown_task shape "$HOME_DIR" > "$TMP_ROOT/off-teardown.out" 2> "$TMP_ROOT/off-teardown.err" \
   || fail "opted-out teardown failed: $(cat "$TMP_ROOT/off-teardown.err")"
-# The teardown sets the exec sidecar to 'released', which prevents relaunching
-# the same task id.  Clear it so the next spawn of the same id can proceed.
-rm -f "$HOME_DIR/state/shape.exec"
+if spawn_task shape "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/released.out" 2> "$TMP_ROOT/released.err"; then
+  fail "released task was unexpectedly relaunchable"
+fi
+grep -F "error: task shape is released; refusing relaunch" "$TMP_ROOT/released.err" >/dev/null 2>&1 \
+  || fail "released task refusal did not name the durable release protection"
+pass "portable execution-state guard: teardown releases shape and a later spawn refuses relaunch"
 
 # A home that configured nothing at all follows the version floor: it is
 # projected on a release at or above it, and takes the ordinary flat layout with
@@ -578,16 +584,16 @@ assert_focus_is "$COMMANDER_FOCUS" "focused XO fixture"
 # so no home that had already enabled the projection is turned off by the default.
 : > "$HOME_DIR/config/herdr-presentation-spaces"
 SHAPE_FOCUS_AUDIT_START=$(focus_audit_line_count)
-spawn_task shape "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/on.out" 2> "$TMP_ROOT/on.err" \
+spawn_task shape-projected "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/on.out" 2> "$TMP_ROOT/on.err" \
   || fail "projected spawn failed: $(cat "$TMP_ROOT/on.err")"
 assert_focus_is "$COMMANDER_FOCUS" "projected spawn"
 assert_raw_presentation_mutations_preserved_since "$SHAPE_FOCUS_AUDIT_START" "projected spawn"
 ON_META="$TMP_ROOT/on.meta"
-cp "$HOME_DIR/state/shape.meta" "$ON_META"
+cp "$HOME_DIR/state/shape-projected.meta" "$ON_META"
 ON_WT=$(remember_meta_worktree "$ON_META")
 cmp -s "$TMP_ROOT/off-fob.log" "$FOB_CALL_LOG" \
   || fail "FOB command sequence changed between opted-out and projected spawns"
-JOURNAL="$HOME_DIR/state/shape.herdr-presentation"
+JOURNAL="$HOME_DIR/state/shape-projected.herdr-presentation"
 [ -f "$JOURNAL" ] || fail "projected spawn did not publish its presentation journal"
 TOKEN=$(grep '^projection_id=' "$JOURNAL" | cut -d= -f2-)
 [ "${#TOKEN}" -eq 22 ] || fail "projection id is not the compact 22-character encoding of 128 bits"
@@ -596,7 +602,7 @@ PROJECTED_TAB=$(grep '^herdr_tab_id=' "$ON_META" | cut -d= -f2-)
 PROJECTED_PANE=$(grep '^herdr_pane_id=' "$ON_META" | cut -d= -f2-)
 PROJECTED_INFO=$(lab workspace get "$PROJECTED_WSID") || fail "could not inspect the projected workspace"
 PROJECTED_LABEL=$(printf '%s' "$PROJECTED_INFO" | jq -r '.result.workspace.label // empty')
-[ "$PROJECTED_LABEL" = "└ shape · p:$TOKEN" ] \
+[ "$PROJECTED_LABEL" = "└ shape-projected · p:$TOKEN" ] \
   || fail "projected workspace label did not use the corner format with full token: $PROJECTED_LABEL"
 PROJECTED_TABS=$(lab tab list --workspace "$PROJECTED_WSID")
 PROJECTED_PANES=$(lab pane list --workspace "$PROJECTED_WSID")
@@ -605,8 +611,8 @@ PROJECTED_PANES=$(lab pane list --workspace "$PROJECTED_WSID")
 [ "$(printf '%s' "$PROJECTED_PANES" | jq -r '.result.panes | length')" = 1 ] \
   || fail "projected workspace did not contain exactly one task pane"
 printf '%s' "$PROJECTED_TABS" | jq -e --arg tab "$PROJECTED_TAB" \
-  '.result.tabs[0].tab_id == $tab and .result.tabs[0].label == "sq-shape"' >/dev/null 2>&1 \
-  || fail "projected workspace's only tab was not the normal sq-shape task tab"
+  '.result.tabs[0].tab_id == $tab and .result.tabs[0].label == "sq-shape-projected"' >/dev/null 2>&1 \
+  || fail "projected workspace's only tab was not the normal sq-shape-projected task tab"
 printf '%s' "$PROJECTED_PANES" | jq -e --arg pane "$PROJECTED_PANE" \
   '.result.panes[0].pane_id == $pane' >/dev/null 2>&1 \
   || fail "projected workspace's only pane was not the exact recorded task pane"
@@ -843,7 +849,7 @@ rm -f "$HOME_DIR/state/abort-a.herdr-presentation" "$HOME_DIR/state/abort-b.herd
 pass "real Herdr lab: concurrent post-create abort cleanup stays serialized with exact focus restoration"
 
 SHAPE_CLEANUP_AUDIT_START=$(focus_audit_line_count)
-teardown_task shape "$HOME_DIR" > "$TMP_ROOT/on-teardown.out" 2> "$TMP_ROOT/on-teardown.err" \
+teardown_task shape-projected "$HOME_DIR" > "$TMP_ROOT/on-teardown.out" 2> "$TMP_ROOT/on-teardown.err" \
   || fail "projected teardown failed: $(cat "$TMP_ROOT/on-teardown.err")"
 assert_focus_is "$COMMANDER_FOCUS" "projected teardown"
 assert_cleanup_focus_preserved "$SHAPE_CLEANUP_AUDIT_START" "$PROJECTED_PANE" "$COMMANDER_FOCUS"
