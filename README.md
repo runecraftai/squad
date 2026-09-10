@@ -140,7 +140,7 @@ Agent-only reference skills live under `.agents/skills/` and are loaded by Squad
 Squad's skills live in two separate places with different audiences:
 
 - `.agents/skills/` - agent-loaded skills (the table above, plus Squad's agent-only reference skills). Every one assumes a live Squad base and is meaningless - or actively misleading - installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how Squad itself loads them.
-- `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of Squad. Today that is `skills/debrief`, a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.debrief-notes.md` fallback in the current directory. It intentionally shares no code with the Squad-internal `.agents/skills/debrief` it is named after, so the two can evolve independently.
+- `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of Squad. The collection includes `debrief` plus planning, design, architecture, security, performance, and interface skills. Public skills are standalone and intentionally share no code with similarly named Squad-internal skills.
 
 ## Packages
 
