@@ -97,9 +97,16 @@ LOCK="$REC.lock"
 # Serialize writers. The lock protects seq advancement and the sidecar/record
 # pair; a holder that died mid-write is broken after SQUAD_BUSY_LOCK_STALE_SECS.
 lock_acquire() {
-  local tries=0 now mtime age
+  local tries=0 now mtime age parent
   while ! mkdir "$LOCK" 2>/dev/null; do
     tries=$((tries + 1))
+    if [ "$tries" -eq 1 ]; then
+      parent=$(dirname "$LOCK")
+      if [ ! -w "$parent" ] 2>/dev/null; then
+        echo "error: busy-state lock directory is not writable: Permission denied" >&2
+        return 1
+      fi
+    fi
     if [ "$tries" -ge 40 ]; then
       now=$(date +%s)
       mtime=$(stat -f %m "$LOCK" 2>/dev/null || stat -c %Y "$LOCK" 2>/dev/null || echo "$now")
