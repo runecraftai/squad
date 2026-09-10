@@ -664,7 +664,7 @@ test_spawn_preserves_orca_metadata_when_abort_cleanup_fails() {
   pass "sq-spawn.sh --backend orca: preserves metadata when abort cleanup fails"
 }
 
-test_spawn_releases_orca_resources_when_metadata_write_fails() {
+test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   local proj wt data state config id out status
   id="orcametafailz9"
   proj="$TMP_ROOT/meta-fail-project"
@@ -685,14 +685,15 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 )
   status=$?
-  [ "$status" -ne 0 ] || fail "Orca spawn should fail when metadata cannot be written"
-  assert_contains "$out" "Is a directory" "spawn should fail at metadata publication"
-  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-meta-fail'$'\x1f''--json' \
-    "Orca spawn should close the recorded terminal when a later abort occurs"
-  assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:wt-meta-fail'$'\x1f''--force'$'\x1f''--json' \
-    "Orca spawn should remove the recorded worktree when a later abort occurs"
-  [ ! -f "$state/$id.meta" ] || fail "metadata-write abort should not publish a regular metadata file"
-  pass "sq-spawn.sh --backend orca: releases terminal and worktree on later aborts"
+  [ "$status" -ne 0 ] || fail "Orca spawn should refuse non-regular metadata"
+  assert_contains "$out" "not a regular file" \
+    "spawn should identify the non-regular metadata refusal"
+  assert_contains "$out" "refusing relaunch" \
+    "spawn should refuse relaunch for non-regular metadata"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''repo' \
+    "non-regular metadata refusal should happen before Orca resource creation"
+  [ ! -f "$state/$id.meta" ] || fail "non-regular metadata refusal should not publish a regular metadata file"
+  pass "sq-spawn.sh --backend orca: refuses non-regular metadata before resource creation"
 }
 
 test_peek_send_and_crew_state_route_through_orca_meta() {
@@ -1397,7 +1398,7 @@ test_spawn_refuses_orca_when_runtime_not_ready
 test_spawn_refuses_orca_nonisolated_worktree
 test_spawn_removes_orca_worktree_when_terminal_create_fails
 test_spawn_preserves_orca_metadata_when_abort_cleanup_fails
-test_spawn_releases_orca_resources_when_metadata_write_fails
+test_spawn_refuses_nonregular_metadata_before_resource_creation
 test_peek_send_and_crew_state_route_through_orca_meta
 test_peek_and_crew_state_fail_closed_on_orca_error_json
 test_target_exists_rejects_orca_error_json

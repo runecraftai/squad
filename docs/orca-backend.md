@@ -48,7 +48,8 @@ On Linux builds (verified against v1.4.188) it records the composite form `<repo
 
 ## Current lifecycle and safety
 
-Spawn registers the repository, creates an independent worktree, reuses only the verified `result.terminal.handle` returned by Orca or creates a terminal explicitly, installs harness hooks, records metadata, and launches the selected harness.
+Spawn validates that any existing metadata file is regular, registers the repository, creates an independent worktree, reuses only the verified `result.terminal.handle` returned by Orca or creates a terminal explicitly, installs harness hooks, records metadata, and launches the selected harness.
+Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any Orca resource is created.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
 
 `sq-peek.sh` reads with `orca terminal read`.

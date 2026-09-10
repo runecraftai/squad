@@ -504,6 +504,9 @@ fi
 pass "real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls"
 teardown_task shape "$HOME_DIR" > "$TMP_ROOT/off-teardown.out" 2> "$TMP_ROOT/off-teardown.err" \
   || fail "opted-out teardown failed: $(cat "$TMP_ROOT/off-teardown.err")"
+# The teardown sets the exec sidecar to 'released', which prevents relaunching
+# the same task id.  Clear it so the next spawn of the same id can proceed.
+rm -f "$HOME_DIR/state/shape.exec"
 
 # A home that configured nothing at all follows the version floor: it is
 # projected on a release at or above it, and takes the ordinary flat layout with
