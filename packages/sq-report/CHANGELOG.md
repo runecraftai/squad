@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/runecraftai/squad/compare/sq-report-v0.1.3...sq-report-v0.1.4) (2026-09-08)
+
+
+### Bug Fixes
+
+* **sq-report:** auto-port selection and orphaned server cleanup ([275c443](https://github.com/runecraftai/squad/commit/275c44393774e5f04787400a345a4e6066fefd7a))
+* **sq-report:** recover and select local server ports ([3ab2dfe](https://github.com/runecraftai/squad/commit/3ab2dfefe08187624a4f98a032a960a313013c5c))
+
 ## [0.1.3](https://github.com/runecraftai/squad/compare/sq-report-v0.1.2...sq-report-v0.1.3) (2026-08-24)
 
 
