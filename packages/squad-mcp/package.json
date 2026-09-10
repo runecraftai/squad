@@ -1,0 +1,23 @@
+{
+  "name": "@runecraft/squad-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin stdio MCP adapter for the Squad Personal OS V1 proof.",
+  "bin": { "squad-mcp": "dist/bin/squad-mcp.js" },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx bin/squad-mcp.ts",
+    "test": "tsx --test test/*.test.ts",
+    "lint": "eslint src bin test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.0"
+  }
+}
