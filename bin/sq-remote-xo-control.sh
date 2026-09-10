@@ -160,7 +160,15 @@ cmd_launch() {
           || die "could not remove the confirmed agent-less endpoint"
         ;;
       missing) ;;
-      *) die "remote endpoint state is $current; refusing duplicate launch" ;;
+      *) die "remote endpoint state is $current; refusing duplicate launch" ;
+    esac
+    # The endpoint is confirmed gone, so an active sidecar can only describe
+    # the abandoned attempt that created the old metadata. Requeue it before
+    # the replacement sq-spawn claims the next attempt.
+    case "$(SQUAD_STATE_OVERRIDE="$CONTROL_STATE" "$SCRIPT_DIR/sq-exec-state.sh" get "$id" 2>/dev/null || printf 'unclaimed\n')" in
+      claimed|running)
+        SQUAD_STATE_OVERRIDE="$CONTROL_STATE" "$SCRIPT_DIR/sq-exec-state.sh" retry "$id" >/dev/null
+        ;;
     esac
   fi
   ARGS=("$id" "$TARGET_HOME" --xo --harness "$harness" --backend "$selected_backend")
