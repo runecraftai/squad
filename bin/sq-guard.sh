@@ -27,10 +27,15 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Export overrides first so sourced libraries (sq-stand-to-lib.sh) inherit them.
+export SQUAD_ROOT_OVERRIDE
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+export SQUAD_BASE
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+export SQUAD_STATE_OVERRIDE
 CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+export SQUAD_CONFIG_OVERRIDE
 WATCH="$SCRIPT_DIR/sq-sentry.sh"
 GRACE=${SQUAD_GUARD_GRACE:-300}
 queue_pending=false

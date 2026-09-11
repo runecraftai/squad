@@ -153,6 +153,7 @@ test_guard_warnings() {
   mkdir -p "$dir/config"
   printf 'project=x\n' > "$state/task.meta"
   : > "$dir/config/x-mode.env"
+  unset SQUAD_BASE
   CLAUDECODE=1 PI_CODING_AGENT='' GROK_AGENT='' SQUAD_ROOT_OVERRIDE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_GUARD_GRACE=1 "$ROOT/bin/sq-guard.sh" 2> "$err" >/dev/null || fail "guard failed"
   grep -F "source '$dir/config/x-mode.env' first" "$err" >/dev/null || fail "guard repair line did not source the X-mode cadence config"
 
