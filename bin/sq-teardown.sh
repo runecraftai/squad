@@ -34,8 +34,10 @@
 # device. It refuses and preserves task state when that proof fails; otherwise
 # it removes the task's check, trust record, PR sidecar, publication record, and
 # quarantine entries, Pi delivery dropbox records, with the rest of the volatile
-# state, and retires the watcher's per-window markers for the released window (state/.stale-*,
-# .stale-since-*, .wedge-escalations-*, .seen-*) so it leaves no marker residue.
+# state, and retires the watcher's per-window markers for the released window
+# (state/.stale-*, .stale-since-*, .wedge-escalations-*, .seen-*) plus the
+# sub-supervisor daemon markers (.subsuper-stale-*, .subsuper-paused-*,
+# .subsuper-seen-status-*) so it leaves no marker residue.
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
@@ -206,15 +208,18 @@ remote_teardown_locks_release() {
   fi
 }
 
-# Retire the watcher's (sentry) per-window internal markers for a released
-# task so a torn-down window stops leaving residue that can generate phantom
-# stale wakes. The window-keyed families (.stale-*, .stale-since-*,
-# .wedge-escalations-*) use the same ':/.' -> '_' key transform the sentry
-# applies to the recorded backend target (window=, terminal= for Orca); the
-# .seen-* signatures are keyed by the task status/turn-ended basenames. All
-# four are inert once the task's meta and status files are gone, but until the
-# meta is removed the watcher can still poll the released window and re-fire
-# stale for it, so the markers are retired together with the volatile state.
+# Retire the watcher's (sentry) per-window internal markers and the
+# sub-supervisor daemon markers for a released task so a torn-down window stops
+# leaving residue that can generate phantom stale wakes. The window-keyed
+# sentry families (.stale-*, .stale-since-*, .wedge-escalations-*) use the
+# same ':/.' -> '_' key transform the sentry applies to the recorded backend
+# target (window=, terminal= for Orca); the .seen-* signatures are keyed by
+# the task status/turn-ended basenames. The daemon's task-keyed markers
+# (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*) are retired
+# by task id so the daemon never re-resolves a torn-down window. All markers
+# are inert once the task's meta and status files are gone, but until the meta
+# is removed the watcher can still poll the released window and re-fire stale
+# for it, so the markers are retired together with the volatile state.
 # Defined before the remote-XO main-flow call below (bash resolves functions
 # at call time, and that call site runs before the later helper block).
 retire_watcher_markers() {  # <state-dir> <task-id> <window>
