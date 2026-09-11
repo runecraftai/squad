@@ -218,7 +218,10 @@ remote_teardown_locks_release() {
 # Defined before the remote-XO main-flow call below (bash resolves functions
 # at call time, and that call site runs before the later helper block).
 retire_watcher_markers() {  # <state-dir> <task-id> <window>
-  local state=$1 id=$2 win=$3 key sfx
+  local state=$1 id=$2 win=$3 key sfx task_key
+  task_key=$(printf '%s' "$id" | tr ':/.' '___')
+  rm -f "$state/.subsuper-stale-$task_key" "$state/.subsuper-paused-$task_key" \
+    "$state/.subsuper-seen-status-$task_key"
   [ -n "$win" ] || return 0
   key=$(printf '%s' "$win" | tr ':/.' '___')
   sfx=$(printf '%s' "$id" | tr '.' '_')

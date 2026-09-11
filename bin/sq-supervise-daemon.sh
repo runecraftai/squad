@@ -995,8 +995,7 @@ housekeeping() {  # <state>
   for marker in "$state"/.subsuper-stale-*; do
     [ -e "$marker" ] || continue
     key="${marker##*.subsuper-stale-}"
-    # Reconstruct the backend target from metadata, with the live tmux list as the
-    # legacy fallback for old markers that predate meta lookup.
+    # Reconstruct the backend target from current task metadata only.
     win=$(window_for_task "$key" "$state" 2>/dev/null || true)
     if [ -z "$win" ]; then
       # Window gone (task torn down): drop the marker and the sentry's
@@ -1079,19 +1078,17 @@ housekeeping() {  # <state>
   fi
 }
 
-# Find a recorded or live window target whose task id matches the marker key.
+# Find a currently recorded window target whose task id matches the marker key.
+# A live backend window without task metadata is not attributable to this base and
+# must never revive stale tracking after task teardown.
 window_for_task() {  # <task-key> [state]
-  local key=$1 state=${2:-$(_state_root)} meta task w t
+  local key=$1 state=${2:-$(_state_root)} meta task w
   for meta in "$state"/*.meta; do
     [ -e "$meta" ] || continue
     task=$(basename "$meta"); task=${task%.meta}
     [ "$(_stale_key "$task")" = "$key" ] || continue
     w=$(fm_backend_target_of_meta "$meta")
     [ -n "$w" ] && { printf '%s' "$w"; return 0; }
-  done
-  for w in $(tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | grep ':sq-' || true); do
-    t=$(window_to_task "$w" "$state")
-    [ "$(_stale_key "$t")" = "$key" ] && { printf '%s' "$w"; return 0; }
   done
   return 1
 }
