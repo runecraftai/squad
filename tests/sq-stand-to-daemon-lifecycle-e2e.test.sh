@@ -113,6 +113,9 @@ test_stale_pane_transient_persistent_resume() {
   win="sess:sq-stale-w2"
   key=$(printf '%s' "stale-w2" | tr ':/.' '___')
   printf 'working: compiling\n' > "$state/stale-w2.status"
+  # Persist task metadata so housekeeping can resolve the stale marker to a
+  # live window (the legacy tmux list fallback was removed in this PR).
+  fm_write_meta "$state/stale-w2.meta" "window=$win" "backend=tmux"
 
   # Transient: first stale observation self-handles and records a marker.
   stale_marker_record "$win" "$state"
