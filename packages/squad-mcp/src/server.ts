@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -138,7 +138,7 @@ function parseTaskList(json: string): Result[] {
 }
 
 export function createServer(): McpServer {
-  const server = new McpServer({ name: "squad-mcp", version: "0.2.0" });
+  const server = new McpServer({ name: "squad-mcp", version: "0.3.0" });
 
   // ── Read tools (never write) ──────────────────────────────────────────
 
@@ -190,7 +190,6 @@ export function createServer(): McpServer {
               const eq = line.indexOf("=");
               if (eq > 0) fields[line.slice(0, eq)] = line.slice(eq + 1);
             }
-            // Read the last status line for a quick state hint.
             const statusFile = `${stateDir}/${id}.status`;
             let lastStatus = "";
             if (existsSync(statusFile)) {
@@ -253,27 +252,55 @@ export function createServer(): McpServer {
     },
   );
 
+  // ── Decisions (pending + resolved, from durable status logs) ──────────
+
   server.tool(
     "squad_decisions",
-    "Read pending commander decisions (needs-decision and blocked states) from the durable status logs.",
-    {},
-    async () => {
+    "Read commander decisions from durable status logs. By default returns only pending (needs-decision/blocked). Pass includeResolved=true to also return resolved decisions with the commander's recorded answer.",
+    {
+      includeResolved: z
+        .boolean()
+        .optional()
+        .describe("Include resolved decisions (default: false, pending only)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Max decisions to return (default: 50)"),
+    },
+    async ({ includeResolved, limit: maxItems }) => {
       try {
-        // Use the classify-lib's open-decisions scan via the drain script's logic.
-        // We run a lightweight grep-based scan of status files for needs-decision/blocked lines.
         const decisions: Result[] = [];
+        const cap = maxItems || 50;
         if (!existsSync(state)) return ok({ decisions: [] });
         const entries = readdirSync(state, { withFileTypes: true });
         for (const entry of entries) {
+          if (decisions.length >= cap) break;
           if (!entry.isFile() || !entry.name.endsWith(".status")) continue;
           const id = entry.name.replace(/\.status$/, "");
           try {
             const content = readFileSync(`${state}/${entry.name}`, "utf8");
             const lines = content.trimEnd().split("\n");
-            // Walk backwards for the latest decision-bearing line per key.
-            const seen = new Set<string>();
-            for (let i = lines.length - 1; i >= 0 && seen.size < 3; i--) {
+            const seenKeys = new Set<string>();
+            for (let i = lines.length - 1; i >= 0 && decisions.length < cap; i--) {
               const line = lines[i];
+              // Match resolved [key=X]: <answer>
+              const rm =
+                /^resolved\s*\[key=([^\]]+)\]\s*:\s*(.+)$/.exec(line);
+              if (rm && includeResolved) {
+                const key = rm[1];
+                if (seenKeys.has(key)) continue;
+                seenKeys.add(key);
+                decisions.push({
+                  taskId: id,
+                  key,
+                  verb: "resolved",
+                  answer: bounded(rm[2]),
+                });
+                continue;
+              }
               // Match needs-decision: or blocked: lines.
               const m =
                 /^(needs-decision|blocked)\s*(?:\[key=([^\]]+)\])?\s*:\s*(.+)$/.exec(
@@ -282,8 +309,8 @@ export function createServer(): McpServer {
               if (!m) continue;
               const verb = m[1];
               const key = m[2] || "default";
-              if (seen.has(key)) continue;
-              seen.add(key);
+              if (seenKeys.has(key)) continue;
+              seenKeys.add(key);
               // Check if there's a resolved line for this key after it.
               const resolvedPattern = new RegExp(
                 `^resolved\\s*\\[key=${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]`,
@@ -301,9 +328,201 @@ export function createServer(): McpServer {
             // skip unreadable
           }
         }
-        return ok({ decisions });
+        return ok({ decisions, count: decisions.length });
       } catch {
         return fail("INTERNAL_ERROR", "Decision scan failed");
+      }
+    },
+  );
+
+  // ── Report tools (read from authoritative data/<id>/report.md) ────────
+
+  server.tool(
+    "squad_reports",
+    "List recon and status reports from the authoritative data directory. Returns task identity, file size in lines, and last-modified date for each report.",
+    {
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Max reports to return (default: 30)"),
+    },
+    async ({ limit: maxItems }) => {
+      try {
+        const cap = maxItems || 30;
+        const reports: Result[] = [];
+        if (!existsSync(data)) return ok({ reports: [] });
+        const entries = readdirSync(data, { withFileTypes: true });
+        for (const entry of entries) {
+          if (reports.length >= cap) break;
+          if (!entry.isDirectory()) continue;
+          const reportPath = `${data}/${entry.name}/report.md`;
+          if (!existsSync(reportPath)) continue;
+          try {
+            const stat = statSync(reportPath);
+            const content = readFileSync(reportPath, "utf8");
+            const lineCount = content.trimEnd().split("\n").length;
+            reports.push({
+              taskId: entry.name,
+              path: reportPath,
+              lines: lineCount,
+              sizeBytes: stat.size,
+              modified: stat.mtime.toISOString(),
+            });
+          } catch {
+            // skip unreadable
+          }
+        }
+        return ok({ reports, count: reports.length });
+      } catch {
+        return fail("INTERNAL_ERROR", "Report scan failed");
+      }
+    },
+  );
+
+  server.tool(
+    "squad_report_read",
+    "Read a report from the authoritative data/<taskId>/report.md. Supports bounded paging (offset/limit lines) and a section index (markdown headers). Reports can exceed a thousand lines; always page or index rather than reading whole.",
+    {
+      taskId: z.string().describe("Task id whose report to read"),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Line offset to start reading from (0-based, default: 0)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(500)
+        .optional()
+        .describe("Max lines to read (default: 200)"),
+      section: z
+        .string()
+        .optional()
+        .describe("Set to 'index' to return the section index (all markdown headers with line numbers) instead of content"),
+    },
+    async ({ taskId: input, offset, limit: maxLines, section }) => {
+      const id = taskId(input);
+      if (!id) return fail("INVALID_INPUT", "taskId is malformed");
+      const reportPath = `${data}/${id}/report.md`;
+      if (!existsSync(reportPath))
+        return fail("TASK_NOT_FOUND", `No report for ${id}`);
+      try {
+        const content = readFileSync(reportPath, "utf8");
+        const lines = content.trimEnd().split("\n");
+        const totalLines = lines.length;
+        // Section index mode: return all markdown headers with line numbers.
+        if (section === "index") {
+          const headers: Result[] = [];
+          for (let i = 0; i < lines.length; i++) {
+            const m = /^(#{1,6})\s+(.+)$/.exec(lines[i]);
+            if (m) {
+              headers.push({
+                level: m[1].length,
+                title: m[2],
+                line: i,
+              });
+            }
+          }
+          return ok({
+            taskId: id,
+            totalLines,
+            sections: headers,
+          });
+        }
+        // Bounded paging mode.
+        const start = offset || 0;
+        const cap = maxLines || 200;
+        const end = Math.min(start + cap, totalLines);
+        const sliced = lines.slice(start, end);
+        return ok({
+          taskId: id,
+          totalLines,
+          offset: start,
+          limit: cap,
+          returned: sliced.length,
+          truncated: end < totalLines,
+          content: sliced.join("\n"),
+        });
+      } catch {
+        return fail("INTERNAL_ERROR", "Could not read report");
+      }
+    },
+  );
+
+  // ── Completion history (read from backlog.md and done-archive.md) ────
+
+  server.tool(
+    "squad_history",
+    "Read recent completion history from the authoritative backlog and done-archive. Returns done items with their completion artifact link (PR URL or report path), date, and kind.",
+    {
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Max done items to return (default: 20)"),
+    },
+    async ({ limit: maxItems }) => {
+      try {
+        const cap = maxItems || 20;
+        const items: Result[] = [];
+        const backlogPath = `${data}/backlog.md`;
+        const archivePath = `${data}/done-archive.md`;
+        for (const filePath of [backlogPath, archivePath]) {
+          if (items.length >= cap) break;
+          if (!existsSync(filePath)) continue;
+          try {
+            const content = readFileSync(filePath, "utf8");
+            const lines = content.trimEnd().split("\n");
+            for (const line of lines) {
+              if (items.length >= cap) break;
+              // Match done items: - [x] <id> - <title> ...
+              const m = /^-\s+\[x\]\s+(\S+)\s+-\s+(.+)$/.exec(line);
+              if (!m) continue;
+              const taskIdVal = m[1];
+              const rest = m[2];
+              // Extract date.
+              const dateM = /\(done\s+(\d{4}-\d{2}-\d{2})\)/.exec(rest)
+                || /\(merged\s+(\d{4}-\d{2}-\d{2})\)/.exec(rest);
+              const date = dateM?.[1];
+              // Extract PR URL.
+              const prM = /(https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d+)/.exec(rest);
+              const prUrl = prM?.[1];
+              // Extract report path.
+              const reportM = /(data\/[^\/]+\/report\.md)/.exec(rest);
+              const reportPath = reportM?.[1];
+              // Extract kind.
+              const kindM = /\(kind:\s+([^)]+)\)/.exec(rest);
+              const kind = kindM?.[1];
+              // Extract repo.
+              const repoM = /\(repo:\s+([^)]+)\)/.exec(rest);
+              const repo = repoM?.[1];
+              // Title is everything before the first parenthetical.
+              const titleEnd = rest.indexOf(" (");
+              const title = titleEnd > 0 ? rest.slice(0, titleEnd).trim() : rest.trim();
+              items.push({
+                taskId: taskIdVal,
+                title: bounded(title, 200),
+                date: date || "unknown",
+                kind: kind || "unknown",
+                repo: repo || "",
+                prUrl: prUrl || "",
+                reportPath: reportPath || "",
+              });
+            }
+          } catch {
+            // skip unreadable
+          }
+        }
+        return ok({ items, count: items.length });
+      } catch {
+        return fail("INTERNAL_ERROR", "History scan failed");
       }
     },
   );
@@ -333,7 +552,6 @@ export function createServer(): McpServer {
     async ({ id, title, kind, project }) => {
       if (!title.trim())
         return fail("INVALID_INPUT", "title must not be empty");
-      // Validate project if provided.
       if (project && !safeProject(project))
         return fail("PROJECT_NOT_ALLOWED", "project is not registered");
       try {
@@ -349,10 +567,10 @@ export function createServer(): McpServer {
         } catch {
           // Fall back to extracting id from TOON output.
         }
-        const taskId =
+        const taskIdVal =
           (parsed.task as Record<string, unknown>)?.id ||
           (typeof parsed.id === "string" ? parsed.id : undefined);
-        return ok({ taskId: taskId || "created", raw: bounded(result.stdout) });
+        return ok({ taskId: taskIdVal || "created", raw: bounded(result.stdout) });
       } catch {
         return fail("INTERNAL_ERROR", "sq-tasks add failed");
       }
@@ -499,18 +717,13 @@ export function createServer(): McpServer {
       if (!projectPath)
         return fail("PROJECT_NOT_ALLOWED", "project is not registered or unavailable");
       const requestId = makeRequestId();
-      const requestKind = kind || "launch-brief";
       try {
-        // Build the operational-input-encoded body.
         const body = `${requestId} project=${project} objective=${objective}`;
         const encoded = encodeLaunchBrief(body);
-
-        // Enqueue via the sanctioned wake-queue path.
         await command(
           "sq-mcp-wake-append.sh",
           [`${requestId}.status`, encoded],
         );
-
         return ok({
           requestId,
           status: "enqueued",
@@ -527,7 +740,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "squad_replies",
-    "Read unread replies from the MCP outbox for a given request id. Each reply is a JSON object with the reply body and timestamp.",
+    "Read unread replies from the MCP outbox for a given request id.",
     {
       requestId: z.string().describe("Request id to read replies for"),
     },
@@ -542,11 +755,9 @@ export function createServer(): McpServer {
         if (!existsSync(replyFile))
           return ok({ requestId: id, replies: [] });
         const body = readFileSync(replyFile, "utf8");
-        // Mark as read by renaming.
         const readDir = `${outboxDir}/.read`;
         mkdirSync(readDir, { recursive: true });
         const readPath = `${readDir}/${id}.reply`;
-        // Append to read log (supports multiple replies over time).
         const { renameSync, appendFileSync } = await import("node:fs");
         appendFileSync(readPath, body);
         renameSync(replyFile, `${readPath}.delivered`);

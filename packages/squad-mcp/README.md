@@ -10,6 +10,10 @@ sanctioned `sq-tasks` CLI, and a request channel that enqueues `launch-brief`
 operational inputs through Squad's canonical wake-queue path (`fm_wake_append`).
 No tool can spawn an operator, merge a PR, or tear down a task.
 
+All read tools read directly from Squad's authoritative durable records - status
+logs, `data/*/report.md`, backlog, and done-archive. No new summary layer is
+invented.
+
 ### Tools
 
 | Tool | Direction | What it does |
@@ -17,7 +21,10 @@ No tool can spawn an operator, merge a PR, or tear down a task.
 | `squad_status` | Read | Reconciled status of a single task |
 | `squad_situation` | Read | Unit overview: active tasks, states, afk flag |
 | `squad_backlog` | Read | Backlog by state with dependencies |
-| `squad_decisions` | Read | Pending commander decisions |
+| `squad_decisions` | Read | Commander decisions (pending + resolved with answer) |
+| `squad_reports` | Read | List recon/status reports with task identity, date, size |
+| `squad_report_read` | Read | Read a report with bounded paging or section index |
+| `squad_history` | Read | Recent done items with PR URL or report path |
 | `squad_task_create` | Write | Create a task via `sq-tasks add` |
 | `squad_task_update` | Write | Update title/body via `sq-tasks update` |
 | `squad_task_hold` | Write | Place a hold via `sq-tasks hold` |
@@ -25,6 +32,13 @@ No tool can spawn an operator, merge a PR, or tear down a task.
 | `squad_task_unblock` | Write | Remove a dependency via `sq-tasks unblock` |
 | `squad_request` | Write | Enqueue a launch-brief to Squad's wake queue |
 | `squad_replies` | Read | Read replies from the MCP outbox |
+
+### Report paging
+
+Reports can exceed a thousand lines. Use `squad_report_read` with:
+- `offset` + `limit` for bounded line-range paging (max 500 lines per call)
+- `section=index` to get a table of contents (all markdown headers with line numbers)
+- Always page rather than reading the whole report
 
 ### Request flow
 
