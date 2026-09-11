@@ -107,6 +107,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `sq-stand-to-drain.sh`       | Atomically drain queued sentry wakes, emit bounded best-effort status-event annotations, unit-wide OPEN DECISIONS and TEARDOWN PENDING sections, then assert supervision health |
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |
+| `sq-mcp-wake-append.sh`      | Append a wake record to the stand-to queue for MCP requests via the canonical `fm_wake_append` path |
+| `sq-mcp-outbox-write.sh`     | Write a reply to the MCP outbox for a request; Squad-side append path for MCP reply delivery |
 | `sq-handoff-request.sh`      | Record, resolve, and list durable new-session handoff requests at milestone closes (docs/handoff-request.md) |
 | `sq-handoff-surface.sh`      | Mark pending handoff requests surfaced exactly once and print the handoff card (docs/handoff-request.md) |
 | `sq-hooks.sh`            | Run optional structured WORKFLOW.md workspace lifecycle hooks (after_create, before_run, after_run, before_remove) with timeout enforcement |

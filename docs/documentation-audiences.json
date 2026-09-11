@@ -808,6 +808,10 @@
    "audience": "public-product"
   },
   {
+   "path": "packages/squad-mcp/README.md",
+   "audience": "public-product"
+  },
+  {
    "path": "packages/squad-ui/AGENTS.md",
    "audience": "agent-runtime"
   },
