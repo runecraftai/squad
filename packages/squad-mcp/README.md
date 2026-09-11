@@ -7,7 +7,7 @@ Hermes talks through these tools; Squad decides.
 
 The adapter exposes read-only unit introspection, durable task writes through the
 sanctioned `sq-tasks` CLI, and a request channel that enqueues `launch-brief`
-operational inputs through Squad's canonical wake-queue path (`fm_wake_append`).
+operational inputs through Squad's canonical stand-to queue path (`fm_wake_append`).
 No tool can spawn an operator, merge a PR, or tear down a task.
 
 All read tools read directly from Squad's authoritative durable records - status

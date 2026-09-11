@@ -697,7 +697,7 @@ export function createServer(): McpServer {
 
   server.tool(
     "squad_request",
-    "Enqueue a durable request for the running Squad session. This does NOT spawn or start anything directly - it enqueues a launch-brief operational input via the sanctioned wake-queue path. Squad will process it on its next wake cycle and may dispatch work as it sees fit. Returns a stable request identifier for tracking.",
+    "Enqueue a durable request for the running Squad session. This does NOT spawn or start anything directly - it enqueues a launch-brief operational input via the sanctioned stand-to queue path. Squad will process it on its next wake cycle and may dispatch work as it sees fit. Returns a stable request identifier for tracking.",
     {
       project: z.string().describe("Registered project name"),
       objective: z

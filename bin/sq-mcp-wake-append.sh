@@ -2,7 +2,7 @@
 # sq-mcp-wake-append.sh - Append a wake record to the stand-to queue for MCP requests.
 #
 # This script sources sq-stand-to-lib.sh to reuse the canonical lock and append
-# path. It is the sanctioned MCP→wake-queue bridge: the MCP calls this script
+# path. It is the sanctioned MCP→stand-to queue bridge: the MCP calls this script
 # rather than hand-writing the queue file.
 #
 # Usage:
