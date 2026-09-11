@@ -31,7 +31,7 @@ invented.
 | `squad_task_block` | Write | Declare a dependency via `sq-tasks block` |
 | `squad_task_unblock` | Write | Remove a dependency via `sq-tasks unblock` |
 | `squad_request` | Write | Enqueue a launch-brief to Squad's wake queue |
-| `squad_replies` | Read | Read replies from the MCP outbox |
+| `squad_replies` | Write | Read and acknowledge replies from the MCP outbox |
 
 ### Report paging
 

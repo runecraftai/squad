@@ -77,7 +77,6 @@ function parseState(line: string): {
 async function command(
   name: string,
   args: string[],
-  stdin?: string,
   timeout = 30000,
 ): Promise<{ stdout: string; stderr: string }> {
   const result = await run(`${scripts}/${name}`, args, {
@@ -85,7 +84,6 @@ async function command(
     env: { ...process.env, SQUAD_BASE: base },
     timeout,
     maxBuffer: 256 * 1024,
-    ...(stdin !== undefined ? { input: stdin } : {}),
   });
   return { stdout: result.stdout, stderr: result.stderr };
 }
@@ -707,12 +705,8 @@ export function createServer(): McpServer {
         .min(1)
         .max(MAX_TEXT)
         .describe("Bounded engineering objective"),
-      kind: z
-        .enum(["launch-brief", "handoff-request"])
-        .optional()
-        .describe("Request kind (default: launch-brief)"),
     },
-    async ({ project, objective, kind }) => {
+    async ({ project, objective }) => {
       const projectPath = safeProject(project);
       if (!projectPath)
         return fail("PROJECT_NOT_ALLOWED", "project is not registered or unavailable");

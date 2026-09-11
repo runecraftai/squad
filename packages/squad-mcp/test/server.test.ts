@@ -375,3 +375,45 @@ test("squad_decisions returns pending by default, resolved with flag", async () 
     await transport.close();
   }
 });
+
+test("squad_history bounds output on a large backlog", async () => {
+  const base = await mkdtemp(join(tmpdir(), "squad-mcp-"));
+  const dataDir = join(base, "data");
+  await mkdir(dataDir);
+  // Generate 150 done items to exceed any default limit.
+  const doneLines = Array.from({ length: 150 }, (_, i) =>
+    `- [x] task-${String(i).padStart(3, "0")} - Done item ${i} https://github.com/test/repo/pull/${i + 1} (repo: test) (kind: strike) (done 2026-09-${String((i % 28) + 1).padStart(2, "0")})`,
+  );
+  await writeFile(join(dataDir, "backlog.md"), doneLines.join("\n"));
+  await mkdir(join(base, "state"));
+  const { client, transport } = await clientFor(base);
+  try {
+    // Default limit (20): should return exactly 20 items.
+    const defaulted = payload(
+      await client.callTool({ name: "squad_history", arguments: {} }),
+    );
+    assert.equal(defaulted.ok, true);
+    assert.equal(defaulted.count, 20);
+    // Explicit small limit.
+    const limited = payload(
+      await client.callTool({
+        name: "squad_history",
+        arguments: { limit: 5 },
+      }),
+    );
+    assert.equal(limited.count, 5);
+    // First and last returned IDs should match the top and bottom of the slice.
+    assert.equal(limited.items[0].taskId, "task-000");
+    assert.equal(limited.items[4].taskId, "task-004");
+    // Cap at max (100).
+    const capped = payload(
+      await client.callTool({
+        name: "squad_history",
+        arguments: { limit: 100 },
+      }),
+    );
+    assert.equal(capped.count, 100);
+  } finally {
+    await transport.close();
+  }
+});
