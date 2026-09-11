@@ -64,19 +64,47 @@ The installed Personal OS copy is produced from this repository copy.
 ### One-source-of-truth rule
 
 `packages/squad-mcp/` in the Squad repository is canonical.
-The installed Personal OS copy at `~/.config/hermes/tools/squad-mcp/`
-(or wherever Hermes loads it) is built from this source.
+The installed Personal OS copy at `~/.local/share/personal-os/squad-mcp/` is built from this source.
+The package version is `0.3.0`, and the installed copy's `package.json` must carry the same version after each rollout.
 
-To sync:
+To publish a new installed copy:
 
 ```sh
 # From the Squad repo root:
-pnpm --filter @runecraft/squad-mcp build
+bun run --cwd packages/squad-mcp build
 
-# Copy the built output to the Personal OS install location:
-cp -r packages/squad-mcp/dist/* ~/.config/hermes/tools/squad-mcp/dist/
-cp packages/squad-mcp/package.json ~/.config/hermes/tools/squad-mcp/
+INSTALL="$HOME/.local/share/personal-os/squad-mcp"
+BACKUP="$INSTALL.backup-$(date +%Y%m%d-%H%M%S)"
+cp -a "$INSTALL" "$BACKUP"
+test -x "$INSTALL/run-squad-mcp"
+cp -a packages/squad-mcp/dist/. "$INSTALL/dist/"
+cp packages/squad-mcp/package.json "$INSTALL/package.json"
+test -x "$INSTALL/run-squad-mcp"
+
+# Confirm the installed manifest matches this source version.
+test "$(node -p "require('$INSTALL/package.json').version")" = "$(node -p "require('./packages/squad-mcp/package.json').version")"
+
+# Confirm the launcher still works and the installed list has no dispatch or teardown capability.
+(
+  cd "$INSTALL"
+  node --input-type=module <<'NODE'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+const transport = new StdioClientTransport({ command: './run-squad-mcp' });
+const client = new Client({ name: 'rollout-check', version: '1' });
+await client.connect(transport);
+const names = (await client.listTools()).tools.map(({ name }) => name);
+const forbidden = names.filter((name) => /dispatch|spawn|merge|teardown/i.test(name));
+if (forbidden.length) throw new Error(`forbidden tools: ${forbidden.join(', ')}`);
+console.log(names.join('\\n'));
+await client.close();
+NODE
+)
 ```
+
+Keep the existing `run-squad-mcp` launcher in place because Hermes invokes it to start the installed adapter.
+The installed list must remain read-only introspection, sanctioned task writes, request enqueueing, and reply acknowledgement only.
+The commander restarts Hermes after the rollout so Hermes reloads the installed adapter.
 
 The repository copy must never be edited by hand to match the installed copy.
 Always rebuild and copy from repo to install.
@@ -93,9 +121,9 @@ Always rebuild and copy from repo to install.
 ## Development
 
 ```sh
-pnpm install
-pnpm build
-pnpm test
+bun install
+bun run --cwd packages/squad-mcp build
+bun run --cwd packages/squad-mcp test
 ```
 
 ### Adding a tool

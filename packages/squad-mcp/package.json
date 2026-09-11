@@ -1,6 +1,6 @@
 {
   "name": "@runecraft/squad-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "MCP adapter for the Squad Personal OS — read+request control surface where Hermes talks and Squad decides.",
