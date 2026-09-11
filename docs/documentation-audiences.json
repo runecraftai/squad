@@ -1128,6 +1128,10 @@
    "audience": "agent-runtime"
   },
   {
+   "path": ".agents/skills/skill-verification/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
    "path": "docs/handoff-request.md",
    "audience": "operator-current"
   },
