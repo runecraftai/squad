@@ -233,6 +233,7 @@ if "$queue_pending"; then
     echo "WARNING: queued wakes pending - left untouched because this session lacks verified unit-lock ownership." >&2
   else
     echo "WARNING: queued wakes pending - drain them with bin/sq-stand-to-drain.sh before anything else." >&2
+    echo "After draining queued wakes, sentry supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn." >&2
   fi
 fi
 exit 0
