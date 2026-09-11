@@ -96,7 +96,7 @@ await client.connect(transport);
 const names = (await client.listTools()).tools.map(({ name }) => name);
 const forbidden = names.filter((name) => /dispatch|spawn|merge|teardown/i.test(name));
 if (forbidden.length) throw new Error(`forbidden tools: ${forbidden.join(', ')}`);
-console.log(names.join('\\n'));
+console.log(names.join('\n'));
 await client.close();
 NODE
 )
