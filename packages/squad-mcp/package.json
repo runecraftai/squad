@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Thin stdio MCP adapter for the Squad Personal OS V1 proof.",
+  "description": "MCP adapter for the Squad Personal OS — read+request control surface where Hermes talks and Squad decides.",
   "bin": { "squad-mcp": "dist/bin/squad-mcp.js" },
   "scripts": {
     "build": "tsc",
