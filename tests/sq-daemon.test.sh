@@ -314,25 +314,27 @@ test_housekeeping_migrates_sentry_unpaused_marker_to_clear() {
 }
 
 test_housekeeping_retires_sentry_seen_markers_for_torn_down_task() {
-  local dir state key
+  local dir state key win
   dir=$(make_supercase housekeeping-seen-retire)
   state="$dir/state"
   key=$(printf '%s' 'task-gone' | tr ':/.' '___')
+  win='sess:sq-task-gone'
   # A torn-down task: the daemon stale marker (task-id keyed) still exists, no
-  # meta or live window resolves it, and the sentry's task-keyed .seen-*
-  # signatures linger as residue. A live task's .seen-* must be left alone.
+  # meta resolves it, but the retired task window remains in the live tmux
+  # inventory. The stale path must not revive that unowned window.
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
   : > "$state/.seen-${key}_status"
   : > "$state/.seen-${key}_turn-ended"
   : > "$state/.seen-still-live_status"
 
-  SQUAD_STATE_OVERRIDE="$state" SQUAD_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
+  SQUAD_FAKE_TMUX_WINDOW="$win" PATH="$dir/fakebin:$PATH" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
 
   [ ! -e "$state/.subsuper-stale-$key" ] || fail "torn-down stale marker was not dropped"
   [ ! -e "$state/.seen-${key}_status" ] || fail "torn-down .seen-*_status was not retired"
   [ ! -e "$state/.seen-${key}_turn-ended" ] || fail "torn-down .seen-*_turn-ended was not retired"
   [ -e "$state/.seen-still-live_status" ] || fail "a live task's .seen-* marker was retired by mistake"
-  pass "housekeeping retires the sentry's .seen-* markers for a torn-down window"
+  pass "housekeeping ignores a live tmux window without task metadata and retires its stale marker"
 }
 
 test_housekeeping_seeds_pause_marker_from_status() {
@@ -358,6 +360,7 @@ test_housekeeping_paused_resurfaces_and_resets() {
   state="$dir/state"; fakebin="$dir/fakebin"
   win="sess:sq-held-w11"; pane="$dir/pane.txt"
   printf 'paused: holding for the upstream tool release\n' > "$state/held-w11.status"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/held-w11.meta"
   printf 'idle prompt $\n' > "$pane"
   key=$(printf '%s' "held-w11" | tr ':/.' '___')
   echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
@@ -402,6 +405,7 @@ test_housekeeping_paused_unpaused_cleared() {
   state="$dir/state"; fakebin="$dir/fakebin"
   win="sess:sq-held-w13"; pane="$dir/pane.txt"
   printf 'paused: holding for the upstream release\nworking: resumed, upstream landed\n' > "$state/held-w13.status"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/held-w13.meta"
   printf 'idle prompt $\n' > "$pane"
   key=$(printf '%s' "held-w13" | tr ':/.' '___')
   echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
@@ -417,6 +421,7 @@ test_housekeeping_stale_marker_transitions_to_pause() {
   dir=$(make_supercase stale-to-paused)
   state="$dir/state"; fakebin="$dir/fakebin"; win="sess:sq-held-w14"; pane="$dir/pane.txt"
   printf 'paused: awaiting the upstream tool release\n' > "$state/held-w14.status"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/held-w14.meta"
   printf 'idle prompt $\n' > "$pane"
   key=$(printf '%s' "held-w14" | tr ':/.' '___')
   echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-stale-$key"
@@ -433,6 +438,7 @@ test_housekeeping_pause_marker_transitions_to_clear() {
   dir=$(make_supercase paused-to-stale)
   state="$dir/state"; fakebin="$dir/fakebin"; win="sess:sq-held-w15"; pane="$dir/pane.txt"
   printf 'working: upstream landed, resuming\n' > "$state/held-w15.status"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/held-w15.meta"
   printf 'idle prompt $\n' > "$pane"
   key=$(printf '%s' "held-w15" | tr ':/.' '___')
   date +%s > "$state/.subsuper-paused-$key"
@@ -452,6 +458,7 @@ test_housekeeping_persistent_stale_escalates() {
   win="sess:sq-pers-w5"
   pane="$dir/pane.txt"
   printf 'working\n' > "$state/pers-w5.status"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/pers-w5.meta"
   printf 'idle prompt $\n' > "$pane"
   key=$(printf '%s' "pers-w5" | tr ':/.' '___')
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
@@ -1034,6 +1041,7 @@ test_afk_nonterminal_working_merged_keeps_wedge_aging() {
   pane="$dir/pane.txt"
   incident='working: stage 2 setup complete on PR #74 exact source branch rebased onto merged #76; task dates preserved'
   printf '%s\n' "$incident" > "$state/wishlist-w1.status"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/wishlist-w1.meta"
   printf 'idle prompt $\n' > "$pane"
   key=$(printf '%s' "wishlist-w1" | tr ':/.' '___')
   # Simulate an earlier false-positive escalate that wrote the seen marker.

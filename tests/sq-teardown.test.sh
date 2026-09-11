@@ -1449,6 +1449,9 @@ test_teardown_retires_watcher_markers() {
   : > "$case_dir/state/.wedge-escalations-$key"
   : > "$case_dir/state/.seen-task-x1_status"
   : > "$case_dir/state/.seen-task-x1_turn-ended"
+  : > "$case_dir/state/.subsuper-stale-task-x1"
+  : > "$case_dir/state/.subsuper-paused-task-x1"
+  : > "$case_dir/state/.subsuper-seen-status-task-x1"
 
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "watcher-markers: forced teardown failed: $(cat "$case_dir/stderr")"
@@ -1462,7 +1465,13 @@ test_teardown_retires_watcher_markers() {
     || fail "watcher-markers: teardown left .seen-*_status behind"
   [ ! -e "$case_dir/state/.seen-task-x1_turn-ended" ] \
     || fail "watcher-markers: teardown left .seen-*_turn-ended behind"
-  pass "teardown retires the watcher's stale/wedge/seen markers for the released window"
+  [ ! -e "$case_dir/state/.subsuper-stale-task-x1" ] \
+    || fail "watcher-markers: teardown left daemon stale tracking behind"
+  [ ! -e "$case_dir/state/.subsuper-paused-task-x1" ] \
+    || fail "watcher-markers: teardown left daemon pause tracking behind"
+  [ ! -e "$case_dir/state/.subsuper-seen-status-task-x1" ] \
+    || fail "watcher-markers: teardown left daemon status tracking behind"
+  pass "teardown retires both sentry and daemon watcher markers for the released window"
 }
 
 # Flat (non-projected) Herdr endpoint whose fake pane exists until a locked

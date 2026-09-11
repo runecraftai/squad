@@ -133,7 +133,7 @@ state/               volatile runtime signals; gitignored
   .paused-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
-  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
+  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - teardown retires .subsuper-stale-*, .subsuper-paused-*, and .subsuper-seen-status-* for the released task
 .drill/        local validation state and evidence; gitignored
 ```
 
