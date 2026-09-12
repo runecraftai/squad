@@ -74,6 +74,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-project-mode.sh`     | Resolver a postura de entrega registrada de um projeto a partir de `data/projects.md` para unit sync e seeding de bases |
 | `sq-merge-local.sh`      | Fast-forward da branch default local de um projeto `local-only` após aprovação            |
 | `sq-review-diff.sh`      | Revisar uma branch de operador ou head de PR resolvido contra a base autoritativa          |
+| `sq-review-pane.sh`      | Abrir um painel visual de revisão tmux para uma tarefa ativa e devolver correções ao operador    |
 | `sq-marker-lib.sh`       | Ponto de entrada de compatibilidade para o carrier from-squad de propriedade de `sq-operational-input.sh` |
 | `sq-pending-reply-lib.sh` | Expectativas de resposta pendente de XO de propriedade do pai, recovery e ciclo de vida de escalação chaveada |
 | `sq-xo-report.sh` | Helper opcional para appendar um status correlacionado ao pai ou relatório de ponteiro de documento       |

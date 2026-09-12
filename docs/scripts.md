@@ -73,6 +73,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for unit sync and base seeding |
 | `sq-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `sq-review-diff.sh`      | Review an operator branch or resolved PR head against the authoritative base          |
+| `sq-review-pane.sh`      | Open a tmux visual review pane for a live task and hand fixes back to the operator    |
 | `sq-marker-lib.sh`       | Compatibility entry point for the from-squad carrier owned by `sq-operational-input.sh` |
 | `sq-pending-reply-lib.sh` | Parent-owned XO pending-reply expectations, recovery, and keyed escalation lifecycle |
 | `sq-xo-report.sh` | Optional helper to append a correlated parent status or document-pointer report       |
