@@ -74,12 +74,33 @@ function parseState(line: string): {
     summary: bounded(parts.slice(2).join(" · ")),
   };
 }
+/**
+ * Resolve a Squad CLI to an executable path.
+ *
+ * Squad's own scripts live in `bin/`, but the `sq-tasks` CLI ships as a
+ * published package installed globally, so a repo-relative path for it does not
+ * exist and a blind prefix breaks every sq-tasks-backed tool. Resolution order:
+ * explicit SQUAD_CLI_PATH dirs (which is also what makes the read path testable
+ * against a fake CLI), then Squad's own bin/, then the bare name so execFile
+ * resolves it through PATH.
+ */
+function resolveCli(name: string): string {
+  const cliDirs = (process.env.SQUAD_CLI_PATH ?? "").split(":").filter(Boolean);
+  for (const dir of cliDirs) {
+    const candidate = resolve(dir, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  const local = `${scripts}/${name}`;
+  if (existsSync(local)) return local;
+  return name;
+}
+
 async function command(
   name: string,
   args: string[],
   timeout = 30000,
 ): Promise<{ stdout: string; stderr: string }> {
-  const result = await run(`${scripts}/${name}`, args, {
+  const result = await run(resolveCli(name), args, {
     cwd: root,
     env: { ...process.env, SQUAD_BASE: base },
     timeout,
@@ -114,10 +135,57 @@ function tailLines(filePath: string, n: number): string {
   }
 }
 
-/** Parse a sq-tasks --json list output into structured items. */
-function parseTaskList(json: string): Result[] {
+/**
+ * Parse the read output of `sq-tasks list`.
+ *
+ * The CLI has no `list --json` - `--json` is the machine-readable success signal
+ * of a MUTATION, and the read side is the TOON projection:
+ *
+ *   count: 2 of 110 total
+ *   tasks[2]{id,state,kind,repo,title,blocked_by,hold_reason}:
+ *     <id>,<state>,"<title>",...            (two-space indent, CSV-ish quotes)
+ *   help[2]:
+ *     - Run `sq-tasks show <id>` ...        (indented like a row - must be discarded)
+ *
+ * A JSON body is still accepted first, so a future machine-readable list flag is
+ * absorbed without another change here.
+ */
+function splitToonRow(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === "\\" && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else if (ch === ",") {
+      cells.push(current);
+      current = "";
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else {
+      current += ch;
+    }
+  }
+  cells.push(current);
+  return cells.map((cell) => cell.trim());
+}
+
+function parseTaskList(text: string): Result[] {
   try {
-    const parsed = JSON.parse(json);
+    const parsed = JSON.parse(text);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.tasks)) {
       return parsed.tasks.map((t: Record<string, unknown>) => ({
         id: t.id,
@@ -130,9 +198,50 @@ function parseTaskList(json: string): Result[] {
       }));
     }
   } catch {
-    // fall through
+    // Not JSON - fall through to the TOON reader.
   }
-  return [];
+  const items: Result[] = [];
+  const clean = (value: string | undefined) =>
+    value === undefined || value === "" || value === "-" || value === "none"
+      ? undefined
+      : value;
+  let columns: string[] | null = null;
+  let buffer = "";
+  const flush = (line: string) => {
+    const cells = splitToonRow(line.trim());
+    if (columns === null || cells.length !== columns.length) return;
+    // The help block is indented like a data row; a real row starts with a slug id.
+    if (!ID.test(cells[0] ?? "")) return;
+    const row: Record<string, string> = {};
+    columns.forEach((column, index) => {
+      row[column] = cells[index];
+    });
+    items.push({
+      id: row.id,
+      title: clean(row.title),
+      state: (clean(row.state) ?? "").replace(/_/g, "-"),
+      kind: clean(row.kind),
+      repo: clean(row.repo),
+      blockedBy: clean(row.blocked_by),
+      holdReason: clean(row.hold_reason),
+    });
+  };
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    if (columns === null) {
+      const header = /^tasks\[\d+\]\{([^}]*)\}:$/.exec(line.trim());
+      if (header) columns = header[1].split(",").map((column) => column.trim());
+      continue;
+    }
+    if (!line.startsWith("  ") || line.trim() === "") continue;
+    buffer = buffer === "" ? line : `${buffer}\n${line}`;
+    // A quoted field that carried a real newline keeps the row open.
+    if ((buffer.match(/(?<!\\)"/g) ?? []).length % 2 === 1) continue;
+    flush(buffer);
+    buffer = "";
+  }
+  if (buffer !== "") flush(buffer);
+  return items;
 }
 
 export function createServer(): McpServer {
@@ -231,9 +340,10 @@ export function createServer(): McpServer {
     },
     async ({ state: filterState, limit: filterLimit }) => {
       try {
-        const args = ["list", "--json"];
+        const args = ["list", "--fields", "blocked_by,hold_reason"];
         if (filterState && filterState !== "all") {
-          args.push("--state", filterState);
+          // The CLI state vocabulary uses underscores (in_flight).
+          args.push("--state", filterState.replace(/-/g, "_"));
         }
         if (filterLimit) {
           args.push("--limit", String(filterLimit));
@@ -241,10 +351,10 @@ export function createServer(): McpServer {
         const result = await command("sq-tasks", args);
         const items = parseTaskList(result.stdout);
         return ok({ tasks: items, count: items.length });
-      } catch {
+      } catch (error) {
         return fail(
           "INTERNAL_ERROR",
-          "Backlog read failed; sq-tasks may not be installed",
+          `Backlog read failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },
@@ -472,26 +582,31 @@ export function createServer(): McpServer {
         const items: Result[] = [];
         const backlogPath = `${data}/backlog.md`;
         const archivePath = `${data}/done-archive.md`;
-        for (const filePath of [backlogPath, archivePath]) {
-          if (items.length >= cap) break;
+        // The archive carries the authoritative completion record (full PR URLs,
+        // dates); the in-base backlog often only keeps a relative "PR #N". Scan
+        // both, then rank by date so "recent" means recent.
+        for (const filePath of [archivePath, backlogPath]) {
           if (!existsSync(filePath)) continue;
           try {
             const content = readFileSync(filePath, "utf8");
             const lines = content.trimEnd().split("\n");
             for (const line of lines) {
-              if (items.length >= cap) break;
               // Match done items: - [x] <id> - <title> ...
               const m = /^-\s+\[x\]\s+(\S+)\s+-\s+(.+)$/.exec(line);
               if (!m) continue;
               const taskIdVal = m[1];
               const rest = m[2];
               // Extract date.
-              const dateM = /\(done\s+(\d{4}-\d{2}-\d{2})\)/.exec(rest)
-                || /\(merged\s+(\d{4}-\d{2}-\d{2})\)/.exec(rest);
+              const dateM = /\(done\s+(\d{4}-\d{2}-\d{2})/.exec(rest)
+                || /\(merged\s+(\d{4}-\d{2}-\d{2})/.exec(rest);
               const date = dateM?.[1];
               // Extract PR URL.
               const prM = /(https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d+)/.exec(rest);
               const prUrl = prM?.[1];
+              // A relative "PR #N" is the only artifact some in-base entries keep.
+              // It rides inside the date tag: "(done 2026-01-02, PR #6)".
+              const prRefM = /(?:\(|,)\s*PR\s+#(\d+)/.exec(rest);
+              const prRef = prRefM?.[1];
               // Extract report path.
               const reportM = /(data\/[^\/]+\/report\.md)/.exec(rest);
               const reportPath = reportM?.[1];
@@ -501,9 +616,11 @@ export function createServer(): McpServer {
               // Extract repo.
               const repoM = /\(repo:\s+([^)]+)\)/.exec(rest);
               const repo = repoM?.[1];
-              // Title is everything before the first parenthetical.
+              // Title is everything before the first parenthetical, minus any link.
               const titleEnd = rest.indexOf(" (");
-              const title = titleEnd > 0 ? rest.slice(0, titleEnd).trim() : rest.trim();
+              const title = (titleEnd > 0 ? rest.slice(0, titleEnd) : rest)
+                .replace(/https?:\/\/\S+/g, "")
+                .trim();
               items.push({
                 taskId: taskIdVal,
                 title: bounded(title, 200),
@@ -511,6 +628,7 @@ export function createServer(): McpServer {
                 kind: kind || "unknown",
                 repo: repo || "",
                 prUrl: prUrl || "",
+                prRef: prRef ? `PR #${prRef}` : "",
                 reportPath: reportPath || "",
               });
             }
@@ -518,7 +636,14 @@ export function createServer(): McpServer {
             // skip unreadable
           }
         }
-        return ok({ items, count: items.length });
+        items.sort(
+          (a, b) =>
+            (a.date === "unknown" ? "" : String(a.date)).localeCompare(
+              b.date === "unknown" ? "" : String(b.date),
+            ) * -1,
+        );
+        const page = items.slice(0, cap);
+        return ok({ items: page, count: page.length, scanned: items.length });
       } catch {
         return fail("INTERNAL_ERROR", "History scan failed");
       }

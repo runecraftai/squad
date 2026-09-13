@@ -117,6 +117,22 @@ Always rebuild and copy from repo to install.
 | `SQUAD_BASE` | `SQUAD_HOME` or `SQUAD_ROOT` | Squad base (state, data) |
 | `SQUAD_DATA_OVERRIDE` | `$SQUAD_BASE/data` | Data directory override |
 | `SQUAD_STATE_OVERRIDE` | `$SQUAD_BASE/state` | State directory override |
+| `SQUAD_CLI_PATH` | unset | Colon-separated directories searched for a CLI before Squad's own `bin/` (used to point at a specific `sq-tasks`, and to test the reads against a stub CLI) |
+
+### CLI resolution
+
+Squad's own scripts live in `bin/`, but `sq-tasks` is a published package installed
+globally and has no repo-relative path. A CLI is therefore resolved as: each
+`SQUAD_CLI_PATH` directory, then `bin/`, then the bare name through `PATH`.
+A read must never depend on a repo-relative path for a CLI that does not ship in the repo.
+
+### Reading the backlog
+
+`sq-tasks list` has no `--json` flag - `--json` is the machine-readable success
+signal of a **mutation**. The read side is the TOON projection
+(`tasks[N]{colums}:` plus two-space-indented quoted rows), which the adapter parses;
+the trailing `help[N]` block is discarded by requiring a slug id in the first cell.
+Extra columns come from `--fields blocked_by,hold_reason`.
 
 ## Development
 
