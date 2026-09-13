@@ -4,9 +4,12 @@
 # Wraps bin/sq-sentry.sh: runs it as a child, classifies each wake reason, and
 # either SELF-HANDLES the routine majority in bash (no Squad turn) or
 # ESCALATES a batched, distilled digest to the supervisor pane on
-# commander-relevant events plus bounded declared-pause rechecks. This is the
-# token-efficient replacement for the prior always-inject daemon: routine
-# signal/stale/heartbeat wakes cost zero Squad context; only done/
+# commander-relevant events plus bounded declared-pause rechecks. Routine
+# reasons are prefixed with a `routine:` envelope by the sentry's wake
+# function (via afk_wake_is_routine) so the Pi extension suppresses the
+# wake prompt while the daemon still triages the original reason. This is
+# the token-efficient replacement for the prior always-inject daemon:
+# routine signal/stale/heartbeat wakes cost zero Squad context; only done/
 # needs-decision/blocked/failed/persistent-wedge/check-output events and a
 # declared-pause recheck reach the LLM, and even then as one pre-read digest per
 # batch window.

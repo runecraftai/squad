@@ -89,7 +89,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
-| `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
+| `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes (routine envelope for Pi extension coordination), guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `sq-exec-state.sh`       | Manage per-attempt execution state sidecar (`<id>.exec`): atomic claim, transition, after_run hook, heartbeat, crash recovery; unclaimed default for legacy tasks |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator, including exec state            |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |

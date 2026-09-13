@@ -10,7 +10,7 @@ When this session owns supervision and away mode is not active:
 5. The extension starts `bin/sq-sentry-arm.sh --restart`, keeps the child attached to the live Pi process, and owns every later successor launch.
 6. Ordinary same-process session replacement (`/new`, `/resume`, `/fork`, reload) retires only the prior generation; call `sq_watch_arm_pi` once for the first cycle of the replacement session without restarting Pi.
    The generation-owner contract lives in `.pi/extensions/sq-primary-pi-watch.ts`.
-7. After an actionable child close, the extension rechecks session-lock ownership and verifies one successor before it delivers the follow-up wake; its bounded fallback is defined in `docs/sentry-continuity.md`.
+7. After a child close, the extension rechecks session-lock ownership and verifies one successor; actionable closes deliver the follow-up wake while routine away-mode closes (signal, stale, heartbeat reasons classified by `afk_wake_is_routine`) suppress the prompt. Its bounded fallback is defined in `docs/sentry-continuity.md`.
 8. Ordinary work, turn completion, and ordinary signal, stale, check, heartbeat, or other wake handling: do not call `sq_watch_arm_pi` again because continuity is extension-owned rather than model-memory-owned.
 9. An unexpected child close enters bounded exponential retry, and an exhausted retry or lost session lock is surfaced as a sentry failure instead of disappearing.
 10. Missing, failed, or unhealthy cycle only: if a later notification explicitly reports one of those repair conditions, drain queued wakes, inspect the failure text, call `sq_watch_arm_pi`, and restart the selected Pi-family executable with both extensions loaded if needed.

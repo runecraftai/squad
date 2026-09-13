@@ -4,7 +4,7 @@ When this session owns supervision and away mode is not active:
 1. Drain first with `bin/sq-stand-to-drain.sh`.
 2. First cycle: let `.opencode/plugins/sq-primary-sentry-arm.js` arm supervision after the OpenCode session goes idle.
 3. The plugin listens for `session.idle`, spawns `bin/sq-sentry-arm.sh --restart` without awaiting it in the idle handler, and owns every later successor launch.
-4. After an actionable child close, the plugin rechecks session-lock ownership and verifies one singleton successor before it calls `client.session.promptAsync`; its bounded fallback is defined in `docs/sentry-continuity.md`.
+4. After a child close, the plugin rechecks session-lock ownership and verifies one singleton successor; actionable closes call `client.session.promptAsync` while routine away-mode closes suppress the prompt. Its bounded fallback is defined in `docs/sentry-continuity.md`.
 5. Ordinary wake: do not ask the model to re-arm because continuity is plugin-owned.
 6. An unexpected child close enters bounded exponential retry, and an exhausted retry or lost session lock is surfaced as a sentry failure instead of disappearing.
 7. Failure or missing cycle only: if the plugin reports a sentry failure, drain queued wakes, inspect the failure text, and use `bin/sq-sentry-arm.sh` manually only as a short recovery probe.
