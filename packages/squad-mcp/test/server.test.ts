@@ -8,12 +8,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = join(import.meta.dirname, "..", "..", "..");
-async function clientFor(base: string) {
+async function clientFor(base: string, extraEnv: Record<string, string> = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [join(root, "packages/squad-mcp/dist/bin/squad-mcp.js")],
     cwd: root,
-    env: { ...process.env, SQUAD_ROOT: root, SQUAD_BASE: base },
+    env: { ...process.env, SQUAD_ROOT: root, SQUAD_BASE: base, ...extraEnv },
   });
   const client = new Client({ name: "squad-mcp-test", version: "1" });
   await client.connect(transport);
@@ -402,9 +402,9 @@ test("squad_history bounds output on a large backlog", async () => {
       }),
     );
     assert.equal(limited.count, 5);
-    // First and last returned IDs should match the top and bottom of the slice.
-    assert.equal(limited.items[0].taskId, "task-000");
-    assert.equal(limited.items[4].taskId, "task-004");
+    // "Recent" means recent: the page is ranked by completion date, newest first.
+    const dates = limited.items.map((item: any) => item.date);
+    assert.deepEqual(dates, [...dates].sort().reverse());
     // Cap at max (100).
     const capped = payload(
       await client.callTool({
@@ -413,6 +413,101 @@ test("squad_history bounds output on a large backlog", async () => {
       }),
     );
     assert.equal(capped.count, 100);
+  } finally {
+    await transport.close();
+  }
+});
+
+test("squad_backlog reads the TOON projection through a CLI resolved outside the repo", async () => {
+  const base = await mkdtemp(join(tmpdir(), "squad-mcp-"));
+  await mkdir(join(base, "data"));
+  await mkdir(join(base, "state"));
+  // The stub CLI is reachable only through SQUAD_CLI_PATH: finding it is the
+  // behavior under test. The adapter used to prefix a repo-relative path, which
+  // does not exist for a globally installed sq-tasks, so every sq-tasks-backed
+  // tool failed with ENOENT.
+  const cliDir = await mkdtemp(join(tmpdir(), "squad-cli-"));
+  const toon = [
+    "count: 2 of 2 total",
+    "tasks[2]{id,state,kind,repo,title,blocked_by,hold_reason}:",
+    '  alpha-task,in_flight,strike,squad,"Fix, ""quoted"" title",beta-task,-',
+    '  beta-task,queued,recon,squad,"Plain title",none,none',
+    "help[2]:",
+    "  - Run `sq-tasks show <id>` for full notes on a task",
+    "  - Run `sq-tasks ready` to see unblocked queued work",
+  ].join("\n");
+  await writeFile(
+    join(cliDir, "sq-tasks"),
+    `#!/bin/sh\ncat <<'SQTOON'\n${toon}\nSQTOON\n`,
+    { mode: 0o755 },
+  );
+  const { client, transport } = await clientFor(base, {
+    SQUAD_CLI_PATH: cliDir,
+  });
+  try {
+    const result = payload(
+      await client.callTool({ name: "squad_backlog", arguments: {} }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.count, 2);
+    assert.deepEqual(result.tasks, [
+      {
+        id: "alpha-task",
+        title: 'Fix, "quoted" title',
+        state: "in-flight",
+        kind: "strike",
+        repo: "squad",
+        blockedBy: "beta-task",
+      },
+      {
+        id: "beta-task",
+        title: "Plain title",
+        state: "queued",
+        kind: "recon",
+        repo: "squad",
+      },
+    ]);
+  } finally {
+    await transport.close();
+  }
+});
+
+test("squad_history ranks the archive together with the in-base backlog", async () => {
+  const base = await mkdtemp(join(tmpdir(), "squad-mcp-"));
+  const dataDir = join(base, "data");
+  await mkdir(dataDir);
+  await mkdir(join(base, "state"));
+  await writeFile(
+    join(dataDir, "backlog.md"),
+    "- [x] old-in-base - Old item (repo: squad) (kind: strike) (done 2026-01-02, PR #6)\n",
+  );
+  await writeFile(
+    join(dataDir, "done-archive.md"),
+    [
+      "- [x] fresh-one - Fresh item https://github.com/runecraftai/squad/pull/99 (repo: squad) (kind: strike) (merged 2026-09-10)",
+      "- [x] middle-one - Middle item https://github.com/runecraftai/squad/pull/98 (repo: squad) (kind: recon) (done 2026-05-05)",
+    ].join("\n") + "\n",
+  );
+  const { client, transport } = await clientFor(base);
+  try {
+    const result = payload(
+      await client.callTool({ name: "squad_history", arguments: {} }),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.count, 3);
+    assert.equal(result.scanned, 3);
+    assert.deepEqual(
+      result.items.map((item: any) => item.taskId),
+      ["fresh-one", "middle-one", "old-in-base"],
+    );
+    assert.equal(
+      result.items[0].prUrl,
+      "https://github.com/runecraftai/squad/pull/99",
+    );
+    // A link never leaks into the title.
+    assert.equal(result.items[0].title, "Fresh item");
+    // An in-base entry keeps its relative reference instead of losing the artifact.
+    assert.equal(result.items[2].prRef, "PR #6");
   } finally {
     await transport.close();
   }
