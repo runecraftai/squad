@@ -9,7 +9,7 @@ Squad's always-loaded operating contract and routing index for conditional proce
 ## Event-driven supervision
 
 A zero-token bash sentry (`bin/sq-sentry.sh`) sleeps on the unit, classifies detected wakes in bash, and wakes the sergeant at arms only when something is actionable.
-Actionable wakes include commander-relevant status signals, no-verb signals whose crew is not provably working, authenticated check output such as PR merge polling or a Relay mention, stale panes whose crew is not provably working whether their status log looks terminal or non-terminal, provably-working stale panes that persist past `SQUAD_STALE_ESCALATE_SECS`, declared external waits that remain paused past `SQUAD_PAUSE_RESURFACE_SECS`, and heartbeat backstop hits.
+Actionable wakes include commander-relevant status signals, no-verb signals whose crew is not provably working, authenticated check output such as PR merge polling or a Relay mention, stale panes whose crew is not provably working whether their status log looks terminal or non-terminal, finished-task stale panes absorbed when current state already proves the task done or failed, provably-working stale panes that persist past `SQUAD_STALE_ESCALATE_SECS`, declared external waits that remain paused past `SQUAD_PAUSE_RESURFACE_SECS`, and heartbeat backstop hits.
 Repeated provably-working stale escalations on the same unchanged pane add an escalation count to the wake reason and, at `SQUAD_WEDGE_DEMAND_INSPECT_COUNT`, a `demand-deep-inspection` marker.
 A busy pane is otherwise exempt from staleness, but only until its latest `state/<id>.turn-ended` marker reaches `SQUAD_BUSY_TURN_MAX_SECS`, or its `state/<id>.meta` spawn record reaches that age before any turn completes; past that bound it is routed through the same wedge escalation, with the identical reason, escalation count, and `demand-deep-inspection` marker, for inspection only - never an automatic interrupt, signal, or restart.
 Those actionable wakes are written to a durable local queue (`state/.stand-to-queue`) before detector state advances, so a missed process exit can be recovered by draining the queue.
@@ -22,7 +22,7 @@ A crew that declares `paused:` for a known external wait is separately absorbed 
 For an ordinary crew that has stopped, the normal-mode sentry first surfaces one stale wake, then applies that same cadence to an unchanged `paused:` or durable `commander-held` endpoint only when the backend confidently reports its agent dead.
 Live or inconclusive liveness remains fail-open at that initial surface, and the XO idle-endpoint exemption is unchanged.
 Its initial normal-mode status signal still surfaces through the no-verb path, while away mode self-handles that routine signal and owns the later recheck.
-Fresh stale panes use the same current-state read before trusting the status log, so an active run or a proven busy worker outranks an old commander-relevant status-log line left behind before validation.
+Fresh stale panes use the same current-state read before trusting the status log, so a finished task, an active run, or a proven busy worker outranks an old commander-relevant status-log line left behind before validation.
 No-change heartbeats are also benign.
 Absorbed wakes advance their suppression markers, log to `state/.sentry-triage.log`, and keep the sentry blocking without a queue record or LLM turn.
 After each drain, `sq-stand-to-drain.sh` runs the same liveness guard as the supervision scripts, so a lapsed sentry chain surfaces even on a turn that only drains and handles queued wakes.

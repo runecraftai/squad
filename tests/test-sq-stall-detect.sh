@@ -50,6 +50,22 @@ printf 'exec_phase=working\n' >>"$STATE/working.exec"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=alive SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
 assert_eq "$("$EXEC" get working)" running
 
+# A deliberate pause outranks a stale running sidecar. The detector must not
+# append `working:` or interrupt the worker after the pause event.
+"$EXEC" claim paused >/dev/null
+"$EXEC" running paused >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/paused.exec"
+printf 'paused: waiting for upstream\n' >"$STATE/paused.status"
+cat >"$TMP/no-interrupt" <<'EOF'
+#!/usr/bin/env bash
+printf interrupted >"$TMP/paused-interrupted"
+EOF
+chmod +x "$TMP/no-interrupt"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/no-interrupt" "$STALL"
+assert_eq "$($EXEC get paused)" running
+assert_eq "$(cat "$STATE/paused.status")" 'paused: waiting for upstream'
+[ ! -e "$TMP/paused-interrupted" ] || { printf 'paused worker was interrupted\n' >&2; exit 1; }
+
 # Exhausted retries are released after the worker is interrupted.
 "$EXEC" claim exhausted >/dev/null
 "$EXEC" running exhausted >/dev/null
