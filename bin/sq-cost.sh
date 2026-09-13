@@ -30,6 +30,8 @@
 # PR bodies and can update one marked comment idempotently.
 #
 # When no transcript is found, the legacy command prints an estimate line.
+# The humanized-count and agent-label patterns are based on LangWatch
+# (https://github.com/langwatch/langwatch), Apache-2.0 License.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -129,13 +131,23 @@ cmd_report() {
   done < <(jq -r '.models[] | [.model,.provider,(.reported_cost|tojson)] | @tsv' <<<"$raw")
   local jq_program
   jq_program=$(cat <<'JQ'
+    def humanize:
+      if . < 1000 then tostring
+      elif . < 1000000 then (((. / 1000 * 10) | round) / 10 | tostring) + " thousand"
+      elif . < 1000000000 then (((. / 1000000 * 10) | round) / 10 | tostring) + " million"
+      elif . < 1000000000000 then (((. / 1000000000 * 10) | round) / 10 | tostring) + " billion"
+      else (((. / 1000000000000 * 10) | round) / 10 | tostring) + " trillion" end;
+    def agent_label:
+      {pi:"Pi", "pi-signed":"Pi", claude:"Claude Code", codex:"Codex", opencode:"OpenCode", grok:"Grok", kimi:"Kimi", muse:"Muse"} as $labels |
+      if $labels[.] then $labels[.]
+      else (split("[-_]") | map((.[0:1] | ascii_upcase) + .[1:]) | join(" ")) end;
     def money: if . == null then "not applicable" else ("$" + (.|tostring)) end;
     (.models | map(.total) | add // 0) as $total |
     "## Coding agent usage on this pull request\n\n" +
     "| Contributor | Agent | Sessions | Total tokens | Estimated cost |\n|---|---|---:|---:|---:|\n" +
-    ("| Squad task \(.task) | \(.agent) | \(.sessions) | \($total) | " + (([.models[].cost] | map(select(. != null)) | add) | money) + " |\n\n") +
+    ("| Squad task \(.task) | \(.agent | agent_label) | \(.sessions) | \($total | humanize) | " + (([.models[].cost] | map(select(. != null)) | add) | money) + " |\n\n") +
     "### Token and model breakdown\n\n| Model | Input | Output | Cache read | Cache write | Total tokens | Estimated cost |\n|---|---:|---:|---:|---:|---:|---:|\n" +
-    ([.models[] | "| \(.model) | \(.input) | \(.output) | \(.cache_read) | \(.cache_write) | \(.total) | \(.cost_basis): \(.cost // $na) |\n"] | join("")) +
+    ([.models[] | "| \(.model) | \(.input | humanize) | \(.output | humanize) | \(.cache_read | humanize) | \(.cache_write | humanize) | \(.total | humanize) | \(.cost_basis): \(.cost // $na) |\n"] | join("")) +
     "\n_Source: Pi session JSONL usage records, covering the task lifetime from \(.started) through report generation. Costs are provider-recorded where available, otherwise list-price estimates; subscription usage is not represented as spend._"
 JQ
   )

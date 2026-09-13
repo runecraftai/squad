@@ -335,7 +335,7 @@ test_pi_task_report() {
   cat > "$pi_dir/matched.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
-{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":101,"output":53,"cacheRead":7,"cacheWrite":2,"totalTokens":163,"cost":{"total":0.02}}}}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":2600000000,"output":53,"cacheRead":7,"cacheWrite":2,"totalTokens":2600000062,"cost":{"total":0.02}}}}
 EOF
   cat > "$pi_dir/wrong-worktree.jsonl" <<EOF
 {"type":"session","version":3,"id":"other-task","timestamp":"2026-01-01T00:00:00Z","cwd":"$TMP_ROOT/other"}
@@ -344,7 +344,7 @@ EOF
 EOF
   local output
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
-  assert_contains "$output" '"input": 101' "Pi report finds matching worktree session"
+  assert_contains "$output" '"input": 2600000000' "Pi report finds matching worktree session"
   assert_contains "$output" '"sessions": 1' "Pi report counts one matching session"
   assert_contains "$output" '"reported_cost": 0.02' "Pi report preserves provider cost"
   if printf '%s' "$output" | grep -q '9999'; then fail "Pi report counted another worktree"; fi
@@ -354,6 +354,8 @@ EOF
 {"type":"message","message":{"role":"assistant","model":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15}}}
 EOF
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task)
+  assert_contains "$output" "2.6 billion" "large token counts are humanized"
+  assert_contains "$output" "Pi" "Pi harness is rendered as a product label"
   assert_contains "$output" "flat-rate subscription" "flat-rate providers are labelled without fabricated spend"
   pass "Pi task report attributes sessions exactly and avoids zero-result regression"
 }
