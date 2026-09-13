@@ -717,11 +717,19 @@ test_afk_delivery_classifier_and_non_afk_wake() {
   if afk_wake_is_routine "signal: $state/terminal.status" "$state"; then
     fail "away classifier suppressed a commander-relevant signal"
   fi
+  afk_wake_is_routine "heartbeat" "$state" \
+    || fail "away classifier did not suppress a bare heartbeat"
+  afk_wake_is_routine "heartbeat: stale-check" "$state" \
+    || fail "away classifier did not suppress a heartbeat with reason"
   : > "$state/.afk"
   out=$(SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; STATE="$2"; wake "signal: $STATE/routine.status"' _ "$ROOT/bin/sq-push-transition-lib.sh" "$state" 2>&1) || true
   assert_contains "$out" "routine: signal: $state/routine.status" "away routine wake was not marked for daemon-only delivery"
   SQUAD_STATE_OVERRIDE="$state" handle_wake "routine: signal: $state/routine.status" "$state"
   [ ! -s "$state/.subsuper-escalations" ] || fail "daemon escalated a routine envelope"
+  out=$(SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; STATE="$2"; wake "heartbeat"' _ "$ROOT/bin/sq-push-transition-lib.sh" "$state" 2>&1) || true
+  assert_contains "$out" "routine: heartbeat" "away heartbeat wake was not marked for daemon-only delivery"
+  SQUAD_STATE_OVERRIDE="$state" handle_wake "routine: heartbeat" "$state"
+  [ ! -s "$state/.subsuper-escalations" ] || fail "daemon escalated a routine heartbeat envelope"
   rm -f "$state/.afk"
   out=$(SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; STATE="$2"; wake "signal: $STATE/terminal.status"' _ "$ROOT/bin/sq-push-transition-lib.sh" "$state" 2>&1) || true
   assert_contains "$out" "signal: $state/terminal.status" "non-away wake delivery changed"
