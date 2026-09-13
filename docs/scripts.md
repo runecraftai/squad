@@ -54,6 +54,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-backend-command-policy.mjs` | Semantic owner of the raw session-provider CLI policy |
 | `sq-poll-pretool-check.sh` | Primary-base `state/` polling-loop PreToolUse guard |
 | `sq-poll-command-policy.mjs` | Semantic owner of the narrow `state/` polling-loop policy |
+| `sq-push-pretool-check.sh` | Drill-task manual branch-push PreToolUse guard |
+| `sq-push-command-policy.mjs` | Semantic owner of the `git push` command classification |
 | `sq-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `sq-home-seed.sh`        | Transactionally provision a local XO base and maintain `data/XOs.md` |
 | `sq-remote-home-seed.sh` | Register and provision a whole XO base on an SSH-reachable host              |
