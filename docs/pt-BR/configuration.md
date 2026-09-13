@@ -148,7 +148,7 @@ Preferências compartilhadas do comandante que se aplicam entre domínios de XO 
 
 Fatos operacionais e armadilhas locais da unidade vivem localmente em `data/learnings.md`; é gitignored e impresso após os arquivos de preferência do comandante no digest de contexto do início de sessão.
 O arquivo é criado lentamente por `bin/sq-learn.sh`, que captura novos aprendizados somente quando a superfície de memória de startup resultante permanece dentro da cota; o cabeçalho do script é dono das flags exatas e do comportamento de captura.
-A habilidade interna [`/debrief`](../../.agents/skills/debrief/SKILL.md) é dona da curadoria inspect-then-update, incluindo reescrever ou podar entradas obsoletas em vez de anexar para sempre.
+A habilidade interna [`learnings-curation`](../../.agents/skills/learnings-curation/SKILL.md), invocada por [`/debrief`](../../.agents/skills/debrief/SKILL.md), é a única dona da curadoria inspect-then-update, incluindo CONSOLIDATE, SLIM e roteamento de fatos procedimentais para owners autoritários existentes em vez de anexar para sempre.
 Não existe arquivo compartilhado de aprendizados por decisão do comandante.
 
 ## Orçamento de memória de startup (config/startup-memory-budget)
@@ -162,8 +162,9 @@ Valores malformados, multi-linha, symlinked, hardlinked, especiais ou de outra f
 Use `bin/sq-startup-memory-budget.sh read` para validar e imprimir o valor efetivo, ou `bin/sq-startup-memory-budget.sh report` para contabilizar os três arquivos.
 A estimativa local estável é `ceil(UTF-8 bytes / 3)` por arquivo, uma aproximação portátil conservadora em vez de um tokenizador exato do provedor.
 Um `data/commander-shared.md` herdado conta no total de um XO mas continua sendo de propriedade do primário e somente-leitura lá.
-A habilidade interna [`/debrief`](../../.agents/skills/debrief/SKILL.md) é dona da curadoria e de seu cascade XO automático, que contabiliza cada base contra essa mesma cota por base separadamente em vez de contra um total da unidade.
+A habilidade interna [`/debrief`](../../.agents/skills/debrief/SKILL.md) é dona do varredura de sessão e do cascade XO automático, enquanto [`learnings-curation`](../../.agents/skills/learnings-curation/SKILL.md) é dona do procedimento de curadoria de arquivos; cada base é contabilizada contra essa mesma cota por base separadamente em vez de contra um total da unidade.
 O cabeçalho do helper é dono da mecânica exata de parsing, publicação e saída do relatório.
+O início de sessão emite uma linha `STARTUP_MEMORY_BUDGET` acionável quando o total excede a cota ou não pode ser verificado, direcionando o agente para `/debrief`; `bin/sq-learn.sh` repete essa direção quando recusa uma nova lição.
 
 ## Rotas de XO (data/XOs.md)
 
