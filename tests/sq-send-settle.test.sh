@@ -147,8 +147,8 @@ while :; do
       IFS= read -r _request_line
       IFS= read -r message
     } < "$request"
-    printf '%s\n' "$message" > "$log"
-    printf 'processing\n' > "$dir/$request_id.response"
+    printf '%s\n' "$message" >> "$log"
+    printf 'delivered\n' > "$dir/$request_id.response"
     rm -f "$request"
   done
   /usr/bin/sleep 0.01
@@ -170,8 +170,54 @@ SH
   expect_code 0 "$rc" "Pi native delivery should succeed"
   [ "$(cat "$dir/native-message")" = "$message" ] \
     || fail "Pi native delivery did not preserve the message"
+  [ "$(wc -l < "$dir/native-message")" -eq 1 ] \
+    || fail "Pi native delivery delivered the steer more than once"
   [ ! -s "$dir/tmux.log" ] || fail "Pi native delivery unexpectedly used tmux"
-  pass "sq-send: parked Pi delivery uses sendUserMessage's native dropbox instead of tmux"
+  pass "sq-send: accepted Pi follow-ups report success and arrive exactly once"
+}
+
+test_pi_native_failure_names_dropbox_path() {
+  local dir fb home delivery processor pid ready_identity err rc task_id
+  dir="$TMP_ROOT/pi-native-failure"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir")
+  home="$dir/home"; mkdir -p "$home/state" "$home/project"
+  task_id=task-native-failure
+  fm_write_meta "$home/state/$task_id.meta" \
+    "window=sess:win" "worktree=$home/wt" "project=$home/project" \
+    "harness=pi" "kind=strike" "mode=drill" "yolo=off"
+  delivery="$home/state/.pi-delivery/$task_id"; mkdir -p "$delivery"
+  processor="$dir/process-delivery.sh"
+  cat > "$processor" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=$1
+while :; do
+  for request in "$dir"/*.request; do
+    [ -e "$request" ] || continue
+    request_id=$(basename "$request" .request)
+    printf 'unconfirmed\n' > "$dir/$request_id.response"
+    rm -f "$request"
+  done
+  /usr/bin/sleep 0.01
+done
+SH
+  chmod +x "$processor"
+  "$processor" "$delivery" &
+  pid=$!
+  ready_identity=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  printf '%s\n%s\n' "$pid" "ps-lstart=$ready_identity" > "$delivery/ready"
+  err="$dir/send.err"
+  env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SEND_SETTLE=0 \
+    SQUAD_PROC_ROOT_OVERRIDE="$home/no-proc" SQUAD_PI_DELIVERY_TIMEOUT=3 \
+    "$SEND" "$task_id" 'native failure' >/dev/null 2>"$err"; rc=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  [ "$rc" -ne 0 ] || fail "an unconfirmed native Pi delivery reported success"
+  assert_contains "$(cat "$err")" "native Pi dropbox" \
+    "native delivery failure did not name the failed dropbox path"
+  assert_not_contains "$(cat "$err")" "tmux send failed" \
+    "native delivery failure was mislabeled as a tmux failure"
+  pass "sq-send: native Pi failures identify the dropbox path"
 }
 
 test_pi_fallback_to_tmux_when_extension_unavailable() {
@@ -217,5 +263,6 @@ test_zero_disables_pause
 test_pause_is_tunable
 test_key_path_never_pauses
 test_pi_native_delivery_avoids_tmux_for_parked_operator
+test_pi_native_failure_names_dropbox_path
 test_pi_fallback_to_tmux_when_extension_unavailable
 test_claude_escape_records_interrupt_idle

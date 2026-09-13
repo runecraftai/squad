@@ -587,6 +587,87 @@ test_pi_signed_persistent_XO_uses_pi_extensions_and_identity() {
   pass "pi-signed is a distinct persistent XO runtime with shared Pi supervision semantics"
 }
 
+test_generated_pi_delivery_accepts_queued_messages_and_recovers_polling() {
+  local rec id out status ext delivery node_out
+  id=profile-pi-delivery-z8e
+  rec=$(make_spawn_case profile-pi-delivery pi "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "Pi delivery fixture spawn should succeed"
+  ext="$HOME_DIR/state/$id.pi-ext.ts"
+  delivery="$HOME_DIR/state/.pi-delivery/$id"
+  node_out=$(EXT="$ext" DELIVERY="$delivery" BASE="$HOME_DIR" TASK_ID="$id" SEND_BIN="$ROOT/bin/sq-send.sh" FAKEBIN="$FAKEBIN_DIR" node --input-type=module <<'EOF'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+const handlers = new Map();
+const messages = [];
+const pi = {
+  on(event, handler) {
+    handlers.set(event, handler);
+  },
+  async sendUserMessage(message, options) {
+    if (options?.deliverAs !== "followUp") throw new Error("delivery was not queued as a follow-up");
+    messages.push(message);
+  },
+};
+const mod = await import(pathToFileURL(process.env.EXT).href);
+mod.default(pi);
+let failure;
+try {
+  await handlers.get("session_start")?.();
+  // Model the observed mid-turn race: Pi accepts the follow-up but does not
+  // emit a fresh agent_start edge before the delivery response is needed.
+  const sendOnce = () => new Promise((resolve, reject) => {
+    const send = spawn(process.env.SEND_BIN, [process.env.TASK_ID, "mid-turn message"], {
+      env: {
+        ...process.env,
+        PATH: `${process.env.FAKEBIN}:${process.env.PATH}`,
+        SQUAD_BASE: process.env.BASE,
+        SQUAD_SEND_SETTLE: "0",
+        SQUAD_PI_DELIVERY_TIMEOUT: "5",
+      },
+    });
+    send.on("error", reject);
+    send.on("close", resolve);
+  });
+  let sendStatus = await sendOnce();
+  // A caller may retry after a reported failure. The accepted follow-up must
+  // still be observed exactly once, never once per caller attempt.
+  if (sendStatus !== 0) sendStatus = await sendOnce();
+  if (sendStatus !== 0) throw new Error(`mid-turn sq-send failed with exit ${sendStatus}`);
+  if (messages.length !== 1 || messages[0] !== "mid-turn message") throw new Error(`expected one exact mid-turn follow-up, got ${JSON.stringify(messages)}`);
+
+  rmSync(process.env.DELIVERY, { recursive: true, force: true });
+  mkdirSync(process.env.DELIVERY, { recursive: true });
+  const request = "recovered-request";
+  writeFileSync(`${process.env.DELIVERY}/${request}.request`, `${request}\nrecovered message\n`);
+  const response = `${process.env.DELIVERY}/${request}.response`;
+  const ready = `${process.env.DELIVERY}/ready`;
+  for (let i = 0; i < 100 && (!existsSync(response) || !existsSync(ready)); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  if (!existsSync(response)) throw new Error("a request remained pending after the watcher directory was replaced");
+  if (!existsSync(ready)) throw new Error("the delivery ready marker was not restored after the watcher directory was replaced");
+  if (readFileSync(response, "utf8").trim() !== "delivered") throw new Error(`unexpected delivery verdict: ${readFileSync(response, "utf8")}`);
+  if (messages.length !== 2 || messages[1] !== "recovered message") throw new Error(`expected one exact recovered follow-up, got ${JSON.stringify(messages)}`);
+} catch (error) {
+  failure = error;
+} finally {
+  await handlers.get("session_shutdown")?.();
+}
+if (failure) throw failure;
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "generated Pi extension should report accepted follow-ups as delivered and recover missed watcher events"
+  [ -z "$node_out" ] || fail "generated Pi delivery test printed output: $node_out"
+  pass "generated Pi delivery accepts queued messages and recovers a replaced dropbox watcher"
+}
+
 test_batch_forwards_shared_profile_flags() {
   local rec id1 id2 out status
   id1=profile-batch-a-z9
@@ -694,6 +775,7 @@ test_pi_threads_model_and_max_effort
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_XO_uses_pi_extensions_and_identity
+test_generated_pi_delivery_accepts_queued_messages_and_recovers_polling
 test_batch_forwards_shared_profile_flags
 test_claude_forwards_Squad_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset

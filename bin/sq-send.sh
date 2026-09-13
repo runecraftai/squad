@@ -136,9 +136,9 @@ fm_send_pi_process_identity() {  # <pid>
 }
 
 # fm_send_pi_native: deliver through the task extension's private dropbox.
-# Return 0 only after the extension reports sendUserMessage accepted the text
-# and an agent_start busy edge proved Pi is processing it. Return 2 when the
-# extension is unavailable so the caller can use the normal backend path.
+# Return 0 only after the extension reports sendUserMessage accepted and queued
+# the text. Return 2 when the extension is unavailable so the caller can use the
+# normal backend path.
 fm_send_pi_native() {  # <state-dir> <task-id> <message>
   local state_dir=$1 task_id=$2 message=$3 dir ready request_id request tmp timeout
   local response deadline status ready_pid ready_identity current_identity
@@ -182,7 +182,7 @@ fm_send_pi_native() {  # <state-dir> <task-id> <message>
   status=$(sed -n '1p' "$response")
   rm -f "$response"
   case "$status" in
-    processing) return 0 ;;
+    delivered|processing) return 0 ;;
     unavailable) return 2 ;;
     *) return 1 ;;
   esac
@@ -545,6 +545,7 @@ else
   # verdict preserves the loud refusal boundary. Pi's task extension is the
   # preferred delivery path because it bypasses the parked composer entirely.
   send_rc=0
+  failure_path=
   native_rc=2
   if [ "$TARGET_BACKEND" != remote ] \
     && [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] \
@@ -560,6 +561,7 @@ else
           verdict=empty
         elif [ "$native_rc" -ne 2 ]; then
           send_rc=$native_rc
+          failure_path="native Pi dropbox"
         fi
         ;;
     esac
@@ -571,11 +573,13 @@ else
       else
         send_rc=$?
         verdict=send-failed
+        failure_path="remote XO transport"
       fi
     elif verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
       :
     else
       send_rc=$?
+      failure_path="$TARGET_BACKEND terminal"
     fi
   fi
   if [ "$send_rc" -ne 0 ]; then
@@ -587,7 +591,7 @@ else
     if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
       fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
     fi
-    echo "error: text not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
+    echo "error: text not sent to $T (${failure_path:-$TARGET_BACKEND terminal} failed; tried $RESOLUTION_TRIED)" >&2
     exit 1
   fi
   case "$verdict" in
@@ -597,14 +601,14 @@ else
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
-      echo "error: text not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
+      echo "error: text not sent to $T (${failure_path:-$TARGET_BACKEND terminal} failed; tried $RESOLUTION_TRIED)" >&2
       exit 1
       ;;
     *)
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
-      echo "error: text not submitted to $T (delivery unconfirmed; verdict=${verdict:-unknown}; tried $RESOLUTION_TRIED)" >&2
+      echo "error: text not submitted to $T (${failure_path:-$TARGET_BACKEND terminal} delivery unconfirmed; verdict=${verdict:-unknown}; tried $RESOLUTION_TRIED)" >&2
       exit 1
       ;;
   esac
