@@ -146,7 +146,7 @@ Shared commander preferences that apply across XO domains live only in the prima
 
 Unit-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed after the commander-preference files in the session-start context digest.
 The file is created lazily by `bin/sq-learn.sh`, which captures new lessons only when the resulting startup-memory surface remains within budget; the script header owns its exact capture flags and behavior.
-The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns inspect-then-update curation, including rewriting or pruning stale entries instead of appending forever.
+The internal [`learnings-curation` skill](../.agents/skills/learnings-curation/SKILL.md), invoked by [`/debrief`](../.agents/skills/debrief/SKILL.md), is the single owner of inspect-then-update curation, including CONSOLIDATE, SLIM, and routing procedural facts to existing authoritative owners instead of appending forever.
 There is no shared learnings file by commander decision.
 
 ## Startup memory budget (config/startup-memory-budget)
@@ -160,8 +160,9 @@ Malformed, multi-line, symlinked, hardlinked, special, or otherwise unsafe value
 Use `bin/sq-startup-memory-budget.sh read` to validate and print the effective value, or `bin/sq-startup-memory-budget.sh report` to account for the three files.
 The stable local estimate is `ceil(UTF-8 bytes / 3)` per file, a conservative portable approximation rather than a provider-exact tokenizer.
 An inherited `data/commander-shared.md` counts in an XO's total but remains primary-owned and read-only there.
-The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns curation and its automatic XO cascade, which accounts every base against this same per-base allowance separately rather than against a unit total.
+The internal [`/debrief` skill](../.agents/skills/debrief/SKILL.md) owns the session sweep and automatic XO cascade, while [`learnings-curation`](../.agents/skills/learnings-curation/SKILL.md) owns the file curation procedure; every base is accounted against this same per-base allowance separately rather than against a unit total.
 The helper's header owns exact parsing, publication, and report output mechanics.
+Session start emits an actionable `STARTUP_MEMORY_BUDGET` line when the total exceeds the allowance or cannot be verified, directing the agent to `/debrief`; `bin/sq-learn.sh` repeats that direction when it refuses a new lesson.
 
 ## XO routes (data/XOs.md)
 

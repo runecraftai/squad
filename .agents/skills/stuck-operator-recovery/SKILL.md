@@ -34,6 +34,14 @@ Preserve its uncommitted changes and commits, keep the same task identity, and r
 Do not use a fresh generic spawn while the recorded worktree is unaccounted for, because allocating another worktree can split one task across two copies.
 If the worktree or ownership cannot be reconciled safely, leave all state intact and report the task failed or blocked with the conflicting evidence.
 
+## False stall notifications
+
+A `working: stall interrupted` event after an intentional `done:` or `paused:` event is an ordering artifact, not proof of a stuck worker.
+First confirm the current state with `bin/sq-crew-state.sh <id>` and inspect the endpoint before relaunching.
+If the terminal event is authoritative, release the execution attempt with `bin/sq-exec-state.sh release <id>` and reaffirm that terminal line at the end of the log; never overwrite unlanded work.
+An idle worker waiting for a decision or merge can legitimately be reported as stale, so reconcile the current state before escalating.
+A Herdr idle pane is not a failure by itself; relaunch only after `bin/sq-crew-state.sh <id>` confirms a real failure.
+
 ## Live-endpoint escalation
 
 Escalate in order:

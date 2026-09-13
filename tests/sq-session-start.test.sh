@@ -2231,7 +2231,29 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+test_over_budget_emits_actionable_curation_trigger() {
+  local rec root home fakebin out
+  rec=$(new_world startup-budget-trigger)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  printf '1\n' > "$home/config/startup-memory-budget"
+  printf 'commander\n' > "$home/data/commander.md"
+  printf 'shared\n' > "$home/data/commander-shared.md"
+  printf 'learning\n' > "$home/data/learnings.md"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "STARTUP_MEMORY_BUDGET: exceeded" \
+    "over-budget startup did not emit an actionable trigger"
+  assert_contains "$out" "load /debrief to CONSOLIDATE, SLIM, and route learnings" \
+    "startup trigger did not name the curation procedure"
+  pass "over-budget startup emits an actionable curation trigger"
+}
+
 test_context_digest_absent_empty_present
+test_over_budget_emits_actionable_curation_trigger
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path
 test_trace_context_effective_state_is_frozen_after_lock

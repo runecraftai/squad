@@ -11,6 +11,7 @@ metadata:
 # debrief
 
 Sweep this session for durable knowledge that exists only in conversation, then leave the next session with a compact current operating map rather than an accumulating journal.
+This skill coordinates routine curation through the single-owner `learnings-curation` skill rather than inventing a parallel procedure.
 This skill writes only through the existing Squad ownership and write boundaries.
 
 ## Required startup-memory pass
@@ -30,9 +31,7 @@ Every `/debrief` invocation performs this complete pass, even when the session c
 3. Build one whole-file retention plan before editing.
    Retain, in order: current commander preferences, authority and safety boundaries, and recurring working style; stable base-local operating facts that repeatedly affect future work and are expensive to rediscover; then concise pointers to an existing authoritative report, project document, configuration, or backlog item.
    Retain lower-priority material only while budget remains.
-4. Consolidate every editable memory file as needed, not only the file apparently related to a new finding.
-   Prefer one concise current rule or authoritative pointer over duplicate prose.
-   Remove, merge, or route completed incident and release chronology, stale versions and paths, transient task state, resolved alternatives, old metrics, superseded claims, duplicates, and report-sized procedures.
+4. Load `learnings-curation` and follow its CONSOLIDATE, SLIM, and ROUTE procedure for every editable memory file, not only the file apparently related to a new finding.
    Do not remove a unique current fact unless it is preserved directly elsewhere through a stronger existing owner.
 5. Run `bin/sq-startup-memory-budget.sh report` again after the complete pass.
    Finish at or below the effective budget unless a concrete inability remains.
@@ -48,7 +47,7 @@ Never describe the session as reset-safe while the memory total is over budget o
 1. **Sweep the session for uncaptured durable knowledge.**
    Look for operational learnings, commander preferences expressed in passing, project-intrinsic facts, standing decisions, and undone next steps.
 2. **Route each finding using AGENTS.md's knowledge-routing table.**
-   AGENTS.md section 6 is the source of truth for destinations.
+   AGENTS.md section 6 is the source of truth for destinations; `learnings-curation` owns the concrete CONSOLIDATE, SLIM, and ROUTE procedure.
    Do not re-derive or duplicate that mapping here.
 3. **Write within the existing boundaries.**
    - Commander preferences and unit-local operational facts belong in the destination selected by AGENTS.md after the required whole-file curation pass.
@@ -107,8 +106,7 @@ Extend the completion receipt with one entry per XO alongside the primary's own,
 Keep those entries in the same plain commander-facing language the rest of the receipt uses.
 The session is reset-safe only when every base is within its own budget with no unresolved exception.
 
-## Scope exclusion: no skill storage
+## Scope exclusion: no ad hoc skill storage
 
-`/debrief` must never store, create, or edit a skill as a destination for any finding.
-There is no "graduate this to a skill" move in this skill's routing.
-Until a human deliberately scopes a skill change as Squad repository work, route generalizable knowledge to shared tracked material through its pipeline and unit-local knowledge to `data/`, never to `.agents/skills/` or public `skills/`.
+`/debrief` must not create a new skill or use a skill as an unreviewed journal.
+`learnings-curation` is the designated existing skill for this curation procedure; changes to it still use the normal branch, drill, PR, and merge path.

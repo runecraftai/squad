@@ -157,6 +157,12 @@
 # compatible sq-tasks is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
+# STARTUP MEMORY: after bootstrap, report the effective allowance for the three
+# startup-memory files. Stay silent within budget; an exceeded or unverifiable
+# allowance prints STARTUP_MEMORY_BUDGET with `/debrief` as the curation action.
+# `bin/sq-learn.sh` owns the corresponding refusal when a new lesson would cross
+# the allowance.
+#
 # STATUS TAILS: SQUAD_SESSION_START_STATUS_TAIL bounds how many lines each task's
 # tail prints, and bin/sq-line-cap-lib.sh bounds how long each of those lines
 # may be. Both bounds are safe because the section prints every task's full
@@ -585,6 +591,20 @@ if [ -n "$BOOT_OUT" ]; then
   printf '%s\n' "$BOOT_OUT"
 else
   printf '(silent - all good)\n'
+fi
+
+# Startup memory is checked after bootstrap because the locked path may have
+# materialized the effective budget.  Keep the normal path silent, but surface
+# an actionable curation instruction before the rest of the digest when capture
+# is already refused or the budget cannot be verified safely.
+STARTUP_MEMORY_RC=0
+STARTUP_MEMORY_OUT=$("$SCRIPT_DIR/sq-startup-memory-budget.sh" report 2>&1) || STARTUP_MEMORY_RC=$?
+if [ "$STARTUP_MEMORY_RC" -ne 0 ]; then
+  printf 'STARTUP_MEMORY_BUDGET: unavailable - %s\n' "${STARTUP_MEMORY_OUT//$'\n'/ }"
+  printf 'STARTUP_MEMORY_BUDGET: load /debrief to CONSOLIDATE, SLIM, and route learnings before recording another lesson.\n'
+elif printf '%s\n' "$STARTUP_MEMORY_OUT" | grep -q 'budget_status=over-budget'; then
+  printf 'STARTUP_MEMORY_BUDGET: exceeded - new lessons are refused until curation brings startup memory within budget.\n'
+  printf 'STARTUP_MEMORY_BUDGET: load /debrief to CONSOLIDATE, SLIM, and route learnings.\n'
 fi
 
 # --- 3. stand-to drain -------------------------------------------------------

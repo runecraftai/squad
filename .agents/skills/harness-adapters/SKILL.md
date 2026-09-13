@@ -126,6 +126,7 @@ The supported launch-profile flags below are verified locally; each row records 
 
 The concrete `harness` field owns adapter identity independently of the model provider: `harness=pi` with `model=xai/grok-*` is Pi using xAI, not `harness=grok`, and does not require Grok CLI login; `harness=grok` remains the standalone Grok Build CLI adapter.
 No script resolves that split for you: establish which credential store a tuple reads from the discovery surfaces below plus `sq-quota auth --json`'s per-provider sources, and show that reasoning rather than inferring it from a harness, model, or source name.
+A provider outage or quota refusal is intake-local evidence: recheck it on every new implementation dispatch, and use a fallback only when the current candidate evidence supports it.
 
 ### Model support discovery
 
@@ -142,7 +143,10 @@ Use the discovery surface in the current authenticated environment because suppo
 | kimi | Run `kimi provider list --json`, which lists the current provider and model configuration. |
 
 For an unfamiliar harness or model namespace, establish support and provider identity from that harness's authoritative CLI help, model listing, or current documentation rather than guessing from a name or prefix.
+Pi fuzzy-matches partial model IDs, so validate the exact ID against `pi --list-models`; a cosmetic `-pro` match is not proof that the requested model changed.
 A listing that reaches the account and does not contain the model is concrete evidence the model is unsupported: block that candidate and quote the result.
+When an operator reports an installation or MCP version, verify the declared version against both the repository and installed copy before relying on the report.
+When `sq-browser` fails with mise's `No version is set for shim sq-browser`, treat it as an orphaned shim and repair the `packages/sq-browser` link before browser work; do not misdiagnose it as a browser failure.
 A discovery surface you could not reach establishes nothing; report that as uncertainty rather than turning it into a supported or unsupported verdict.
 
 When a requested effort value is outside the harness-specific accepted set, `sq-spawn` records the requested `effort=` in meta but emits no effort flag for that harness.

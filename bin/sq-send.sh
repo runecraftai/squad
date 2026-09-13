@@ -39,6 +39,10 @@
 #
 # Decision closure (answerer-closes): pass --resolve-key <key> (repeatable,
 # before the message) when this send answers an open keyed needs-decision: or
+# blocked: record. Put the flag before the message and target the task id, not
+# an explicit backend target; status_open_decisions parses the key token between
+# the verb and its colon, so text such as `needs-decision: [key=x]` has key
+# `default` rather than `x`.
 # blocked: record in the target task's state/<id>.status. After the submit is
 # confirmed, sq-send itself appends the closing
 # "resolved [key=<key>]: answered: <capped excerpt>" line to that status file,

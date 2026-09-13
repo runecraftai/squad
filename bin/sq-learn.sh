@@ -183,7 +183,7 @@ PROJECTED_LEARNINGS_BYTES=$((LEARNINGS_BYTES + HEADER_BYTES + ENTRY_BYTES))
 PROJECTED_LEARNINGS_TOKENS=$(fm_startup_memory_estimated_tokens_for_bytes "$PROJECTED_LEARNINGS_BYTES")
 PROJECTED_TOTAL=$((COMMANDER_TOKENS + SHARED_TOKENS + PROJECTED_LEARNINGS_TOKENS))
 if ! fm_startup_memory_decimal_le "$PROJECTED_TOTAL" "$BUDGET"; then
-  printf 'error: startup-memory budget would be exceeded; lesson not captured\n' >&2
+  printf 'error: startup-memory budget would be exceeded; lesson not captured; load /debrief to CONSOLIDATE, SLIM, and route learnings\n' >&2
   exit 1
 fi
 

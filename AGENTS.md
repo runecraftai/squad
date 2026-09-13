@@ -321,6 +321,9 @@ The path's worker, automated gates, and commander approval remain authoritative:
 - **direct-PR** has the worker push and open a PR without the drill pipeline, then waits for the configured merge authority.
 - **local-only** has the worker stop with a clean ready branch, then waits for the configured merge authority before Squad uses the guarded fast-forward merge path.
 
+In drill mode, a commit is not completion: the worker must never push or open a PR and must invoke `/drill` after committing.
+Never edit `~/.drill/config.yaml` or restart the shared drill daemon; report gate and credential problems as blockers.
+
 Delivery mode and `yolo` are orthogonal.
 With `yolo` off, the commander owns ask-user findings, PR merges, and local-only merge approval.
 With `yolo` on, Squad decides routine gates only within the commander's original request and accepted task criteria, and merges only green work.

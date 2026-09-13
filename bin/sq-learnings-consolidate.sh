@@ -281,38 +281,25 @@ BACKUP="$LEARNINGS.bak"
 cp "$LEARNINGS" "$BACKUP"
 printf '\nBackup created: %s\n' "$BACKUP"
 
-# Build new file
-{
-  while IFS= read -r line || [ -n "$line" ]; do
-    printf '%s\n' "$line"
-  done < "$LEARNINGS"
-} > "$LEARNINGS.tmp"
-
-# Rewrite in place: skip removed lines, trim long ones
-: > "$LEARNINGS"
-while IFS= read -r line || [ -n "$line" ]; do
-  # Find this line's index
-  found_idx=-1
-  for (( i=0; i<${#LINES[@]}; i++ )); do
-    if [ "${LINES[$i]}" = "$line" ]; then
-      found_idx=$i
-      break
-    fi
-  done
-
-  if [ "$found_idx" -ge 0 ] && [ -n "${REMOVE[$found_idx]:-}" ]; then
-    # Skip removed line
+# Build the replacement from the indexed input array. Writing directly to a
+# sibling temporary file avoids truncating the source before it has been read,
+# and indexing preserves duplicate lines correctly.
+OUTPUT="$LEARNINGS.tmp"
+: > "$OUTPUT"
+for (( i=0; i<${#LINES[@]}; i++ )); do
+  line="${LINES[$i]}"
+  if [ -n "${REMOVE[$i]:-}" ]; then
     continue
   fi
 
-  if [ "$found_idx" -ge 0 ] && [ -n "${TRIM[$found_idx]:-}" ]; then
+  if [ -n "${TRIM[$i]:-}" ]; then
     # Trim to 500 chars: keep prefix up to the 500th char, add ellipsis
     trimmed="${line:0:497}..."
-    printf '%s\n' "$trimmed"
+    printf '%s\n' "$trimmed" >> "$OUTPUT"
   else
-    printf '%s\n' "$line"
+    printf '%s\n' "$line" >> "$OUTPUT"
   fi
-done < "$LEARNINGS.tmp"
-rm -f "$LEARNINGS.tmp"
+done
+mv -f -- "$OUTPUT" "$LEARNINGS"
 
 printf 'Changes applied.\n'

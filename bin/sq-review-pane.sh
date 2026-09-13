@@ -9,6 +9,8 @@
 # Usage: sq-review-pane.sh <task-id> [--base <ref>] [--print-command]
 # The default base is origin/<default-branch>, resolved from the recorded
 # project clone using the same default-branch rule as sq-review-diff.sh.
+# This pane shows gitsigns' current working-tree diff; once the worker commits,
+# review the committed change on its PR instead of expecting this pane to show it.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
