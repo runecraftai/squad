@@ -48,6 +48,15 @@ expect_code 0 "$rc" "git push in quoted data is allowed"
 result=$(run_check "bash -lc 'git push origin sq/task'"); rc=${result%%$'\n'*}
 expect_code 2 "$rc" "wrapped manual branch push from drill task is denied"
 
+result=$(run_check "dash -c 'git push origin sq/task'"); rc=${result%%$'\n'*}
+expect_code 2 "$rc" "dash -c wrapped push from drill task is denied"
+
+result=$(run_check "ksh -c 'git push origin sq/task'"); rc=${result%%$'\n'*}
+expect_code 2 "$rc" "ksh -c wrapped push from drill task is denied"
+
+result=$(run_check "fish -c 'git push origin sq/task'"); rc=${result%%$'\n'*}
+expect_code 2 "$rc" "fish -c wrapped push from drill task is denied"
+
 result=$(cd "$PIPELINE" && SQUAD_BASE="$HOME_DIR" "$PRIMARY/bin/sq-push-pretool-check.sh" --command 'git push origin sq/task' 2>"$TMP_ROOT/err"); rc=$?
 expect_code 0 "$rc" "pipeline worktree push is allowed"
 [ -z "$result" ] || fail "pipeline worktree push produced output: $result"
