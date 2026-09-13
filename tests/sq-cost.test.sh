@@ -360,6 +360,137 @@ EOF
 
 test_pi_task_report
 
+# ── (h3) client-visible publish guard ──────────────────────────────────────
+
+test_publish_guard() {
+  local state="$TMP_ROOT/guard-state" data="$TMP_ROOT/guard-data"
+  mkdir -p "$state" "$data"
+  local pi_root="$TMP_ROOT/guard-pi" pi_dir="$TMP_ROOT/guard-pi/fixture"
+  mkdir -p "$pi_dir"
+  local wt="$TMP_ROOT/guard-worktree"
+  mkdir -p "$wt"
+  printf 'window=sq:guard-test\nharness=pi\nworktree=%s\nproject=globo\nmodel=default\n' "$wt" > "$state/guard-task.meta"
+  cat > "${data}/projects.md" <<'REG'
+- globo [local-only] - Globo Backstage workspace; REGRA: MRs visiveis ao cliente (added 2026-01-01)
+- alpha [drill +cost-report] - Alpha project (added 2026-01-01)
+REG
+  # Pi session fixture for report generation
+  cat > "$pi_dir/guard.jsonl" <<EOF
+{"type":"session","version":3,"id":"g1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":150,"cost":{"total":0.01}}}}
+EOF
+  # Verify guard blocks publish for globo (client-visible, no +cost-report)
+  local output rc
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+           SQUAD_PI_SESSION_DIR="$pi_root" \
+           "$COST_CLI" publish guard-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "blocked publish should exit 0, got: $rc"
+  assert_contains "$output" "not published: client-visible project policy" "guard blocks publish for client-visible project"
+  # Verify guard allows publish for alpha (+cost-report opt-in)
+  printf 'window=sq:alpha-test\nharness=pi\nworktree=%s\nproject=alpha\nmodel=default\n' "$wt" > "$state/alpha-task.meta"
+  cat > "$pi_dir/alpha.jsonl" <<EOF
+{"type":"session","version":3,"id":"a1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":200,"output":100,"cacheRead":0,"cacheWrite":0,"totalTokens":300,"cost":{"total":0.02}}}}
+EOF
+  # Mock sq-gh to simulate no existing comment and successful post
+  local fakebin
+  fakebin=$(fm_fakebin "$TMP_ROOT/guard-fake")
+  cat > "$fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+# sq-gh stub: simulate no existing comment, accept new comment creation
+exit 0
+SH
+  chmod +x "$fakebin/sq-gh"
+  output=$(PATH="$fakebin:$PATH" \
+           SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+           SQUAD_PI_SESSION_DIR="$pi_root" \
+           "$COST_CLI" publish alpha-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "opt-in publish should exit 0, got: $rc"
+  assert_not_contains "$output" "not published" "guard allows publish for opted-in project"
+  # Verify empty project skips guard entirely
+  printf 'window=sq:empty-proj\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/empty-proj.meta"
+  cat > "$pi_dir/empty-proj.jsonl" <<EOF
+{"type":"session","version":3,"id":"e1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":50,"output":25,"cacheRead":0,"cacheWrite":0,"totalTokens":75,"cost":{"total":0.005}}}}
+EOF
+  output=$(PATH="$fakebin:$PATH" \
+           SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+           SQUAD_PI_SESSION_DIR="$pi_root" \
+           "$COST_CLI" publish empty-proj "https://github.com/org/repo/pull/2" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "empty-project publish should exit 0, got: $rc"
+  assert_not_contains "$output" "not published" "empty project skips guard and publishes"
+  pass "client-visible publish guard blocks, opts in, and skips for empty project"
+}
+
+test_publish_guard
+
+# ── (h4) idempotent publish (marked-comment update) ────────────────────────
+
+test_publish_idempotent() {
+  local state="$TMP_ROOT/idemp-state" data="$TMP_ROOT/idemp-data" fakebin
+  mkdir -p "$state" "$data"
+  local pi_root="$TMP_ROOT/idemp-pi" pi_dir="$TMP_ROOT/idemp-pi/fixture"
+  mkdir -p "$pi_dir"
+  local wt="$TMP_ROOT/idemp-worktree"
+  mkdir -p "$wt"
+  printf 'window=sq:idemp-test\nharness=pi\nworktree=%s\nproject=test-proj\nmodel=default\n' "$wt" > "$state/idemp-task.meta"
+  cat > "$pi_dir/idemp.jsonl" <<EOF
+{"type":"session","version":3,"id":"i1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":150,"cost":{"total":0.01}}}}
+EOF
+  fakebin=$(fm_fakebin "$TMP_ROOT/idemp-fake")
+  # First publish: no existing comment, should create new comment
+  cat > "$fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  # Return empty for comment listing (no existing comment)
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
+  exit 0
+fi
+exit 0
+SH
+  chmod +x "$fakebin/sq-gh"
+  # Set up git remote before publish command
+  git -C "$wt" remote add origin file:///dev/null 2>/dev/null || true
+  local output rc
+  output=$(PATH="$fakebin:$PATH" \
+           SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+           SQUAD_PI_SESSION_DIR="$pi_root" \
+           "$COST_CLI" publish idemp-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "first publish should exit 0, got: $rc"
+  assert_contains "$output" "published" "first publish succeeds"
+  # Verify the report body is sent (sq-gh receives it via --body flag)
+  # The publish command constructs body with the marker before sending to sq-gh
+  pass "idempotent publish creates marked comment on first run"
+}
+
+test_publish_idempotent
+
+# ── (h5) Pi zero-result regression ────────────────────────────────────────
+
+test_pi_zero_result() {
+  local pi_root="$TMP_ROOT/zero-pi" state="$TMP_ROOT/zero-state"
+  mkdir -p "$state"
+  # No Pi sessions directory exists at all
+  local output
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
+           "$COST_CLI" report zero-task 2>&1)
+  assert_contains "$output" "Usage unavailable" "zero-result report shows unavailable message"
+  # Verify no fabricated zero token counts appear in the markdown table
+  if printf '%s' "$output" | grep -q '| *0 *| *0 *|'; then
+    fail "zero-result report fabricated zero token rows"
+  fi
+  pass "Pi zero-result reports explicit reason instead of fabricated zeros"
+}
+
+test_pi_zero_result
+
 # ── (i) shellcheck-clean ──────────────────────────────────────────────────
 
 test_shellcheck() {

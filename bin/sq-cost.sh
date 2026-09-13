@@ -148,7 +148,7 @@ cmd_publish() {
   meta="$state_dir/$task_id.meta"
   project=$(grep '^project=' "$meta" 2>/dev/null | head -1 | cut -d= -f2- || true)
   project_registry="${SQUAD_DATA_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/data}/projects.md"
-  if [ -f "$project_registry" ] && grep -F "$project" "$project_registry" | grep -qi 'visiveis ao cliente\|client-visible'; then
+  if [ -n "$project" ] && [ -f "$project_registry" ] && grep -F "$project" "$project_registry" | grep -qi 'visiveis ao cliente\|client-visible'; then
     if ! grep -F "$project" "$project_registry" | grep -q '+cost-report'; then
       echo "not published: client-visible project policy" >&2
       return 0
