@@ -456,6 +456,38 @@ test_terminal_stale_surfaced() {
   pass "a stale pane sitting on a terminal status is surfaced (queue + exit)"
 }
 
+# A current finished result makes an idle pane intentional. Keep the legacy
+# terminal-status surface above when current-state evidence is unavailable, but
+# do not repeatedly wake on a green finished task awaiting merge.
+test_finished_stale_is_absorbed() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case finished-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:sq-finished"
+  printf 'finished, awaiting merge' > "$capture_file"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/finished.meta"
+  printf 'done: PR https://example.test/pr/7 checks green\n' > "$state/finished.status"
+  sig=$(seen_sig "$state/finished.status"); printf '%s' "$sig" > "$state/.seen-finished_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "finished, awaiting merge")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export SQUAD_FAKE_CREW_STATE='state: done · source: run-step · checks green, awaiting merge'
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry surfaced a current finished task as stale: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "finished task printed a stale wake: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "finished task queued a stale wake"
+  reap "$pid"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "a current finished task awaiting merge is absorbed without a stale wake"
+}
+
 # --- stale pane, STALE terminal status overridden by an active run: absorbed ---
 # Regression for the 2026-07 herdr false-surface incidents: an operator's own status
 # log gets no new entry once Squad hands it to a drill validation
@@ -1813,6 +1845,7 @@ test_turn_ended_not_working_surfaced
 test_working_note_not_working_surfaced
 test_actionable_signal_surfaced
 test_terminal_stale_surfaced
+test_finished_stale_is_absorbed
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold

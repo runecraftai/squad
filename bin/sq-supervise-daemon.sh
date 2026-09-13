@@ -372,6 +372,10 @@ classify_stale() {  # <window> <state>
   local win=$1 state=$2 task last seen
   task=$(window_to_task "$win" "$state")
   last=$(last_status_line "$state/$task.status")
+  if operator_is_finished "$task"; then
+    printf 'finished|task already finished: %s' "$last"
+    return
+  fi
   if [ -n "$last" ] && status_is_paused "$last"; then
     # A DECLARED external-wait pause (sq-classify-lib.sh): an idle pane is EXPECTED,
     # so this is not a wedge. The caller records a pause marker (long re-surface
@@ -1004,6 +1008,10 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
+    if operator_is_finished "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     last=$(last_status_line "$state/$task.status")
     if [ -n "$last" ] && status_is_paused "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
@@ -1038,6 +1046,10 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
+    if operator_is_finished "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     last=$(last_status_line "$state/$task.status")
     if [ -z "$last" ] || ! status_is_paused "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
@@ -1245,6 +1257,14 @@ handle_wake() {  # <reason> <state>
         pause_marker_record "$arg" "$state"
       fi
       log "self-handle (paused): $reason -> $distilled"
+      ;;
+    finished)
+      # A finished current-state result outranks an old terminal status line.
+      # Drop all daemon-side stale tracking without creating a new escalation.
+      if [ "$kind" = "stale" ]; then
+        clear_pause_tracking "$arg" "$state"
+      fi
+      log "self-handle (finished): $reason -> $distilled"
       ;;
     *)
       # Transient (non-terminal) stale: record/refresh the wedge marker so

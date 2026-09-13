@@ -205,6 +205,25 @@ test_stale_terminal_escalates() {
   pass "stale + terminal status escalates immediately"
 }
 
+test_stale_finished_state_self_handles() {
+  local dir state out key win
+  dir=$(make_case stale-finished-state)
+  state="$dir/state"
+  win="sess:sq-fin-state"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/fin-state.meta"
+  printf 'done: PR https://example.test/pr/7 checks green\n' > "$state/fin-state.status"
+  key=$(printf '%s' 'fin-state' | tr ':/.' '___')
+  date +%s > "$state/.subsuper-stale-$key"
+  export SQUAD_FAKE_CREW_STATE='state: done · source: run-step · checks green, awaiting merge'
+  out=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" classify_stale "$win" "$state")
+  case "$out" in finished\|*) ;; *) fail "current finished state did not self-handle stale: $out" ;; esac
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "finished stale marker was retained"
+  [ ! -s "$state/.subsuper-escalations" ] || fail "finished stale was escalated"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "current finished state clears stale tracking without escalation"
+}
+
 # A DECLARED external-wait pause (paused:) is neither a wedge nor a terminal
 # escalation: classify_stale returns the `pause` action so handle_wake records a
 # pause marker (long re-surface cadence) rather than a wedge stale marker.
@@ -1867,6 +1886,7 @@ test_classify_check_and_unknown_escalate
 test_stale_transient_self_records_marker
 test_stale_diagnostic_wedge_survives_busy_housekeeping
 test_stale_terminal_escalates
+test_stale_finished_state_self_handles
 test_stale_paused_classifies_pause
 test_handle_wake_paused_records_pause_marker
 test_handle_wake_paused_signal_records_pause_marker

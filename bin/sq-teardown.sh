@@ -230,7 +230,8 @@ retire_watcher_markers() {  # <state-dir> <task-id> <window>
   [ -n "$win" ] || return 0
   key=$(printf '%s' "$win" | tr ':/.' '___')
   sfx=$(printf '%s' "$id" | tr '.' '_')
-  rm -f "$state/.stale-$key" "$state/.stale-since-$key" "$state/.wedge-escalations-$key" \
+  rm -f "$state/.hash-$key" "$state/.count-$key" "$state/.stale-$key" \
+    "$state/.stale-since-$key" "$state/.wedge-escalations-$key" "$state/.paused-$key" \
     "$state/.seen-${sfx}_status" "$state/.seen-${sfx}_turn-ended"
 }
 

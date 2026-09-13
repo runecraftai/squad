@@ -979,42 +979,37 @@ EOF
             wake "stale: $w"
           fi
         elif stale_is_terminal "$w" "$STATE"; then
-          # The log's last line is commander-relevant - but that alone is not
-          # proof the operator is actually done: an operator's own status log gets no
-          # new entry once Squad hands it to a drill validation
-          # (AGENTS.md's sparse status-reporting contract), so the log can
-          # keep showing a "done:"/needs-decision/blocked leftover from
-          # BEFORE that validation started for the run's entire (possibly
-          # many-minutes) duration, while stale_is_terminal - which has no
-          # run-step awareness - keeps reporting it as still-current on every
-          # poll. Root cause of the 2026-07 herdr false-surface incidents: a
-          # validating crew was surfaced as stale every few minutes despite an
-          # actively-running pipeline, purely because of this stale leftover
-          # line. On a NEW hash, give an active run/busy pane (the same
-          # authoritative source sq-crew-state.sh itself already prioritizes
-          # over the log) a chance to override before trusting the log.
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if operator_is_provably_working "$(window_to_task "$w" "$STATE")"; then
+          # A terminal status line is actionable only while current state does
+          # not already prove the task finished. The status log is append-only,
+          # so a current done/failed result must outrank its idle pane and stale
+          # terminal line just as an active run outranks an old terminal line.
+          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ] || [ -e "$ssf" ]; then
+            if operator_is_finished "$task"; then
               printf '%s' "$h" > "$sf"
-              date +%s > "$ssf"
-              triage_log "absorbed stale (provably working, overriding a stale commander-relevant status): $w"
+              rm -f "$ssf" "$ewf"
+              triage_log "absorbed stale (task already finished): $w"
+            elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+              if operator_is_provably_working "$task"; then
+                printf '%s' "$h" > "$sf"
+                date +%s > "$ssf"
+                triage_log "absorbed stale (provably working, overriding a stale commander-relevant status): $w"
+              else
+                fm_wake_append stale "$w" "stale: $w" || exit 1
+                printf '%s' "$h" > "$sf"
+                rm -f "$ssf"
+                mark_surfaced "$STATE/$task.status"
+                wake "stale: $w"
+              fi
             else
-              fm_wake_append stale "$w" "stale: $w" || exit 1
-              printf '%s' "$h" > "$sf"
-              rm -f "$ssf"
-              mark_surfaced "$STATE/$(window_to_task "$w" "$STATE").status"
-              wake "stale: $w"
+              # This exact hash was already overridden as provably-working (a
+              # wedge timer is running for it) - keep treating it that way
+              # without re-reading the operator state, and without letting the
+              # still-commander-relevant log line re-surface it.
+              wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf"
             fi
-          elif [ -e "$ssf" ]; then
-            # This exact hash was already overridden as provably-working (a
-            # wedge timer is running for it) - keep treating it that way
-            # without re-reading the operator state every poll, and without
-            # letting the still-commander-relevant log line re-surface it.
-            wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf"
           fi
           # else: already surfaced as genuinely terminal on a prior poll of
-          # this same hash - nothing left to do (matches the original,
-          # unmodified terminal-status behavior).
+          # this same hash - nothing left to do.
         else
           # Non-terminal stale: an operator gone quiet without a commander-relevant status.
           # Decided once per distinct stale hash (the costly state reads run only

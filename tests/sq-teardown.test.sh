@@ -1444,9 +1444,12 @@ test_teardown_retires_watcher_markers() {
   # window-keyed stale/wedge set uses the recorded window with ':/.' -> '_',
   # and the task-keyed .seen-* signatures use the status/turn-ended basenames.
   key=$(printf '%s' 'Squad:sq-task-x1' | tr ':/.' '___')
+  : > "$case_dir/state/.hash-$key"
+  : > "$case_dir/state/.count-$key"
   : > "$case_dir/state/.stale-$key"
   : > "$case_dir/state/.stale-since-$key"
   : > "$case_dir/state/.wedge-escalations-$key"
+  : > "$case_dir/state/.paused-$key"
   : > "$case_dir/state/.seen-task-x1_status"
   : > "$case_dir/state/.seen-task-x1_turn-ended"
   : > "$case_dir/state/.subsuper-stale-task-x1"
@@ -1455,12 +1458,18 @@ test_teardown_retires_watcher_markers() {
 
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "watcher-markers: forced teardown failed: $(cat "$case_dir/stderr")"
+  [ ! -e "$case_dir/state/.hash-$key" ] \
+    || fail "watcher-markers: teardown left .hash-* behind"
+  [ ! -e "$case_dir/state/.count-$key" ] \
+    || fail "watcher-markers: teardown left .count-* behind"
   [ ! -e "$case_dir/state/.stale-$key" ] \
     || fail "watcher-markers: teardown left .stale-* behind"
   [ ! -e "$case_dir/state/.stale-since-$key" ] \
     || fail "watcher-markers: teardown left .stale-since-* behind"
   [ ! -e "$case_dir/state/.wedge-escalations-$key" ] \
     || fail "watcher-markers: teardown left .wedge-escalations-* behind"
+  [ ! -e "$case_dir/state/.paused-$key" ] \
+    || fail "watcher-markers: teardown left .paused-* behind"
   [ ! -e "$case_dir/state/.seen-task-x1_status" ] \
     || fail "watcher-markers: teardown left .seen-*_status behind"
   [ ! -e "$case_dir/state/.seen-task-x1_turn-ended" ] \
