@@ -445,11 +445,22 @@ test_publish_idempotent() {
 {"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":150,"cost":{"total":0.01}}}}
 EOF
   fakebin=$(fm_fakebin "$TMP_ROOT/idemp-fake")
-  # First publish: no existing comment, should create new comment
+  local invocations_file="$TMP_ROOT/idemp-invocations"
+  printf '' > "$invocations_file"
+  # Mock sq-gh: first api call returns an existing comment with the marker,
+  # second api call (PATCH) returns nothing to signal update was processed.
+  # pr comment (create) also exits 0 but should not be reached on re-publish.
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
+invocations_file="${SQUAD_STATE_OVERRIDE}/../idemp-invocations"
+printf '%s\n' "$*" >> "$invocations_file"
 if [ "$1" = "api" ]; then
-  # Return empty for comment listing (no existing comment)
+  shift
+  if [ "$1" = "PATCH" ]; then
+    exit 0
+  fi
+  # comment listing: return one existing comment with the marker
+  printf '12345\t<!-- squad-cost-report --> existing body\n'
   exit 0
 fi
 if [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
@@ -458,18 +469,30 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/sq-gh"
-  # Set up git remote before publish command
   git -C "$wt" remote add origin file:///dev/null 2>/dev/null || true
   local output rc
+  # First publish: should detect existing comment and PATCH it
   output=$(PATH="$fakebin:$PATH" \
            SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
            SQUAD_PI_SESSION_DIR="$pi_root" \
            "$COST_CLI" publish idemp-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
   [ "$rc" -eq 0 ] || fail "first publish should exit 0, got: $rc"
   assert_contains "$output" "published" "first publish succeeds"
-  # Verify the report body is sent (sq-gh receives it via --body flag)
-  # The publish command constructs body with the marker before sending to sq-gh
-  pass "idempotent publish creates marked comment on first run"
+  # Verify sq-gh api was called (for comment listing)
+  assert_contains "$(cat "$invocations_file")" "api" "sq-gh api was invoked for comment lookup"
+  # Second publish: should detect existing comment again and PATCH again
+  printf '' > "$invocations_file"
+  output=$(PATH="$fakebin:$PATH" \
+           SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+           SQUAD_PI_SESSION_DIR="$pi_root" \
+           "$COST_CLI" publish idemp-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "second publish (re-publish) should exit 0, got: $rc"
+  assert_contains "$output" "published" "re-publish succeeds"
+  local all_invocations
+  all_invocations=$(cat "$invocations_file")
+  assert_contains "$all_invocations" "PATCH" "re-publish uses PATCH for idempotent update"
+  assert_not_contains "$all_invocations" "pr comment" "re-publish does not create a duplicate comment"
+  pass "idempotent publish uses PATCH to update existing marked comment"
 }
 
 test_publish_idempotent
