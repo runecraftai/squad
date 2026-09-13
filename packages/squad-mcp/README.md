@@ -130,7 +130,7 @@ A read must never depend on a repo-relative path for a CLI that does not ship in
 
 `sq-tasks list` has no `--json` flag - `--json` is the machine-readable success
 signal of a **mutation**. The read side is the TOON projection
-(`tasks[N]{colums}:` plus two-space-indented quoted rows), which the adapter parses;
+(`tasks[N]{columns}:` plus two-space-indented quoted rows), which the adapter parses;
 the trailing `help[N]` block is discarded by requiring a slug id in the first cell.
 Extra columns come from `--fields blocked_by,hold_reason`.
 
