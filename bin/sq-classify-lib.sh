@@ -620,6 +620,18 @@ signal_reason_is_actionable() {  # <file> ...
 # NOT a pure read: sq-crew-state.sh may make a bounded drill call, so callers
 # run it only on no-verb signal and first-sighting stale paths, never every wake.
 # SQUAD_CREW_STATE_BIN lets tests stub the verdict.
+operator_current_state() {  # <id> -> canonical state, or unknown
+  local id=$1 line state
+  [ -n "$id" ] || { printf 'unknown'; return; }
+  line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  case "$line" in state:*) ;; *) printf 'unknown'; return ;; esac
+  state=${line#state: }; state=${state%% *}
+  case "$state" in
+    working|parked|done|blocked|paused|failed) printf '%s' "$state" ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 operator_absorb_class() {  # <id>
   local id=$1 line state src
   [ -n "$id" ] || { printf 'none'; return; }
@@ -632,6 +644,16 @@ operator_absorb_class() {  # <id>
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
   printf 'none'
+}
+
+# 0 if crew <id> is already in a terminal state. This is a current-state check,
+# not a status-log tail check: a finished task's idle pane must not be mistaken for
+# a stopped worker, while an unknown or merely parked task keeps existing handling.
+operator_is_finished() {  # <id>
+  case "$(operator_current_state "$1")" in
+    done|failed) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (operator_absorb_class

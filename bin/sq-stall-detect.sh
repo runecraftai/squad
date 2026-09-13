@@ -16,8 +16,17 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 STALL_TIMEOUT="${SQUAD_STALL_TIMEOUT:-300}"
 case "$STALL_TIMEOUT" in ''|*[!0-9]*) STALL_TIMEOUT=300 ;; esac
 
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
+
 field() { grep "^$1=" "$STATE/$2.exec" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
 meta_field() { grep "^$1=" "$STATE/$2.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
+
+stall_status_is_nonworking() {  # <id>
+  local last
+  last=$(last_status_line "$STATE/$1.status")
+  [ -n "$last" ] && { status_is_paused "$last" || status_is_terminal_verb "$last"; }
+}
 
 # Public for tests and for the execution-state owner.
 stall_backoff_seconds() {
@@ -83,6 +92,11 @@ handle_task() {
   last=$(field exec_last_activity "$id"); [ -n "$last" ] || last=0
   age=$((now - last))
   [ "$age" -ge "$STALL_TIMEOUT" ] || return 0
+  # A running sidecar can outlive the event that intentionally parked or
+  # finished its worker. Never append a synthetic `working:` event after a
+  # paused or terminal status - doing so resurrects a non-working task and
+  # feeds the stale-pane detector a false wedge signal.
+  stall_status_is_nonworking "$id" && return 0
   retries=$(field exec_retry_count "$id"); [ -n "$retries" ] || retries=0
   max=$(field exec_max_retries "$id"); [ -n "$max" ] || max=3
 
