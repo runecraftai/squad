@@ -372,6 +372,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/cost-observability.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/codex-app-backend.md",
    "audience": "operator-current"
   },

@@ -16,10 +16,22 @@
 #                                              # quick cost estimate
 #   bin/sq-cost.sh price <model>               # show pricing for a model
 #
-# Output format (task/transcript/dir/cwd):
+# Output format (transcript/dir/cwd):
 #   input_tokens|output_tokens|cache_read|cache_write|model|cost_usd
 #
-# When no transcript is found, prints an estimate line with [estimate] label.
+# `task <task-id>` preserves that legacy line unless `--json` is supplied.
+# `report <task-id>` (or `task <task-id> --json`) emits the complete privacy-safe
+# report and never includes prompt or response content. Pi sessions are counted
+# only when their session header cwd exactly matches the recorded task worktree,
+# the task has a recorded window, and its recorded harness is pi or pi-signed.
+# This excludes primary sessions and sessions from another base; missing matches
+# are reported explicitly. The PR hook is `publish <task-id> <pr-url>`, normally
+# called by sq-pr-check after a PR becomes ready, because it survives generated
+# PR bodies and can update one marked comment idempotently.
+#
+# When no transcript is found, the legacy command prints an estimate line.
+# The humanized-count and agent-label patterns are based on LangWatch
+# (https://github.com/langwatch/langwatch), Apache-2.0 License.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,7 +43,9 @@ usage() {
 Usage: sq-cost.sh <command> [args...]
 
 Commands:
-  task <task-id>                                  Cost from task's recorded endpoint
+  task <task-id> [--json]                         Legacy line or complete task report
+  report <task-id>                                Complete task report (Markdown)
+  publish <task-id> <pr-url>                      Idempotently publish report comment
   transcript <path.jsonl>                         Cost for one JSONL transcript
   dir <path>                                      Cost for all transcripts in directory
   cwd <working-dir>                               Cost for Claude transcripts by cwd
@@ -82,8 +96,96 @@ resolve_task_transcripts() {
 
 # ── Commands ───────────────────────────────────────────────────────────────
 
+cmd_report() {
+  local task_id="${1:?task-id required}" state_dir="${SQUAD_STATE_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/state}"
+  local session_root="${SQUAD_PI_SESSION_DIR:-$HOME/.pi/agent/sessions}" raw
+  raw=$(sq_cost_pi_task_json "$task_id" "$state_dir" "$session_root")
+  if [ "${2:-}" = "--json" ]; then
+    printf '%s\n' "$raw"
+    return 0
+  fi
+  if ! jq -e '.found == true' >/dev/null 2>&1 <<<"$raw"; then
+    local reason
+    reason=$(jq -r '.reason // empty' <<<"$raw")
+    printf '## Coding agent usage on this pull request\n\nUsage unavailable: %s.\n' "${reason:-no attributable sessions}"
+    return 0
+  fi
+  local enriched model cost mode provider in_tokens out_tokens cache_read cache_write
+  enriched=$(mktemp "${TMPDIR:-/tmp}/sq-cost-report.XXXXXX")
+  trap 'rm -f "$enriched"' RETURN
+  while IFS=$'\t' read -r model provider reported; do
+    if [ "$provider" = "opencode-go" ] || [[ "$model" == *opencode-go* ]]; then
+      cost="null"; mode="flat-rate subscription"
+    elif [ "$reported" != "null" ]; then
+      cost="$reported"; mode="provider-recorded"
+    else
+      in_tokens=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.input' <<<"$raw")
+      out_tokens=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.output' <<<"$raw")
+      cache_read=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.cache_read' <<<"$raw")
+      cache_write=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.cache_write' <<<"$raw")
+      cost=$(sq_cost_estimate "$model" "$in_tokens" "$out_tokens" "$cache_read" "$cache_write")
+      mode="estimate"
+    fi
+    jq --arg m "$model" --arg mode "$mode" --argjson cost "$cost" '.models |= map(if .model == $m then . + {cost:$cost,cost_basis:$mode} else . end)' <<<"$raw" > "$enriched"
+    raw=$(cat "$enriched")
+  done < <(jq -r '.models[] | [.model,.provider,(.reported_cost|tojson)] | @tsv' <<<"$raw")
+  local jq_program
+  jq_program=$(cat <<'JQ'
+    def humanize:
+      if . < 1000 then tostring
+      elif . < 1000000 then (((. / 1000 * 10) | round) / 10 | tostring) + " thousand"
+      elif . < 1000000000 then (((. / 1000000 * 10) | round) / 10 | tostring) + " million"
+      elif . < 1000000000000 then (((. / 1000000000 * 10) | round) / 10 | tostring) + " billion"
+      else (((. / 1000000000000 * 10) | round) / 10 | tostring) + " trillion" end;
+    def agent_label:
+      {pi:"Pi", "pi-signed":"Pi", claude:"Claude Code", codex:"Codex", opencode:"OpenCode", grok:"Grok", kimi:"Kimi", muse:"Muse"} as $labels |
+      if $labels[.] then $labels[.]
+      else (split("[-_]") | map((.[0:1] | ascii_upcase) + .[1:]) | join(" ")) end;
+    def money: if . == null then "not applicable" else ("$" + (.|tostring)) end;
+    (.models | map(.total) | add // 0) as $total |
+    "## Coding agent usage on this pull request\n\n" +
+    "| Contributor | Agent | Sessions | Total tokens | Estimated cost |\n|---|---|---:|---:|---:|\n" +
+    ("| Squad task \(.task) | \(.agent | agent_label) | \(.sessions) | \($total | humanize) | " + (([.models[].cost] | map(select(. != null)) | add) | money) + " |\n\n") +
+    "### Token and model breakdown\n\n| Model | Input | Output | Cache read | Cache write | Total tokens | Estimated cost |\n|---|---:|---:|---:|---:|---:|---:|\n" +
+    ([.models[] | "| \(.model) | \(.input | humanize) | \(.output | humanize) | \(.cache_read | humanize) | \(.cache_write | humanize) | \(.total | humanize) | \(.cost_basis): \(.cost // $na) |\n"] | join("")) +
+    "\n_Source: Pi session JSONL usage records, covering the task lifetime from \(.started) through report generation. Costs are provider-recorded where available, otherwise list-price estimates; subscription usage is not represented as spend._"
+JQ
+  )
+  jq -r --arg na "not applicable" "$jq_program" <<<"$raw"
+}
+
+cmd_publish() {
+  local task_id="${1:?task-id required}" url="${2:?pr-url required}" state_dir="${SQUAD_STATE_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/state}"
+  local project meta project_registry body number repo
+  meta="$state_dir/$task_id.meta"
+  project=$(grep '^project=' "$meta" 2>/dev/null | head -1 | cut -d= -f2- || true)
+  project_registry="${SQUAD_DATA_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/data}/projects.md"
+  if [ -n "$project" ] && [ -f "$project_registry" ] && grep -F "$project" "$project_registry" | grep -qi 'visiveis ao cliente\|client-visible'; then
+    if ! grep -F "$project" "$project_registry" | grep -q '+cost-report'; then
+      echo "not published: client-visible project policy" >&2
+      return 0
+    fi
+  fi
+  number=$(printf '%s' "$url" | sed -nE 's#^.*/(pull|merge_requests)/([0-9]+).*#\2#p')
+  [ -n "$number" ] || { echo "error: invalid PR URL" >&2; return 1; }
+  body=$(cmd_report "$task_id")
+  body=$(printf '<!-- squad-cost-report -->\n%s' "$body")
+  repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]##;s#\.git$##' || true)
+  [ -n "$repo" ] || { echo "error: repository cannot be resolved" >&2; return 1; }
+  local comments comment_id
+  comments=$(sq-gh api "/repos/$repo/issues/$number/comments" --paginate --jq '.[] | select(.body | contains("<!-- squad-cost-report -->")) | [.id,.body] | @tsv' 2>/dev/null || true)
+  comment_id=$(printf '%s\n' "$comments" | head -1 | cut -f1)
+  if [ -n "$comment_id" ]; then
+    sq-gh api PATCH "/repos/$repo/issues/comments/$comment_id" --field "body=$body" >/dev/null
+  else
+    sq-gh pr comment "$number" --body "$body" >/dev/null
+  fi
+  echo "published: $url"
+}
+
 cmd_task() {
   local task_id="${1:?task-id required}"
+  if [ "${2:-}" = "--json" ]; then cmd_report "$task_id" --json; return; fi
   local dir
   dir=$(resolve_task_transcripts "$task_id" || true)
 
@@ -186,6 +288,8 @@ cmd_pricing_table() {
 
 case "${1:-}" in
   task)           shift; cmd_task "$@" ;;
+  report)         shift; cmd_report "$@" ;;
+  publish)        shift; cmd_publish "$@" ;;
   transcript)     shift; cmd_transcript "$@" ;;
   dir)            shift; cmd_dir "$@" ;;
   cwd)            shift; cmd_cwd "$@" ;;

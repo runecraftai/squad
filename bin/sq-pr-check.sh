@@ -119,4 +119,9 @@ fm_pr_poll_publish_prepared || {
   echo "error: could not publish PR poll" >&2
   exit 1
 }
+# Publish cost telemetry after the PR is canonical and ready. sq-cost.sh owns
+# the client-visible project guard and idempotent marked-comment update.
+"$SCRIPT_DIR/sq-cost.sh" publish "$ID" "$URL" || {
+  echo "warning: cost report could not be published" >&2
+}
 printf 'armed: state/%s.check.sh\n' "$ID"
