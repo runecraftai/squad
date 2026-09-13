@@ -31,7 +31,7 @@ type ArmResult = {
 type LockOwnership = "owned" | "missing" | "other";
 
 type CloseClassification = {
-  kind: "actionable" | "failure";
+  kind: "actionable" | "routine" | "failure";
   message: string;
 };
 
@@ -153,9 +153,16 @@ function actionableLine(output: string): string {
   return lines.find((line) => /^(signal:|stale:|check:|heartbeat($|:))/.test(line)) || "";
 }
 
+function routineLine(output: string): string {
+  const lines = output.split(/\r?\n/);
+  return lines.find((line) => /^routine: (signal:|stale:|heartbeat($|:))/.test(line)) || "";
+}
+
 function classifyClose(stdout: string, stderr: string, code: number | null, signal: NodeJS.Signals | null): CloseClassification {
   const combined = `${stdout}\n${stderr}`.trim();
   const reason = actionableLine(combined);
+  const routine = routineLine(combined);
+  if (routine) return { kind: "routine", message: routine };
   if (reason) return { kind: "actionable", message: reason };
   const healthy = combined.split(/\r?\n/).find((line) => /^sentry: healthy\b/.test(line));
   if (healthy) {
@@ -422,13 +429,17 @@ export default function (pi: ExtensionAPI) {
       if (!generationIsLive(owner)) return;
       const classification = classifyClose(stdout, stderr, code, signal);
       const predecessor = String(armChild.pid ?? "");
-      if (classification.kind === "actionable") {
+      if (classification.kind === "actionable" || classification.kind === "routine") {
         owner.retryFailures = 0;
         owner.restoring = true;
         void (async () => {
           const failure = await restoreAfterActionableClose(owner, predecessor);
           if (generationIsLive(owner)) owner.restoring = false;
           if (!generationIsLive(owner)) return;
+          if (classification.kind === "routine") {
+            if (failure) surfaceFailure(owner, failure);
+            return;
+          }
           const message = failure ? `${classification.message}\n\n${failure}` : classification.message;
           await sendWake(owner, message);
         })().catch(() => {

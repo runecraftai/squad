@@ -1206,7 +1206,7 @@ should_force_self() {  # <reason>
 is_wake_reason() {  # <reason>
   local reason=$1
   case "$reason" in
-    signal:*|stale:*|check:*|heartbeat|heartbeat:*) return 0 ;;
+    signal:*|stale:*|check:*|heartbeat|heartbeat:*|routine:*) return 0 ;;
   esac
   return 1
 }
@@ -1216,6 +1216,9 @@ is_wake_reason() {  # <reason>
 handle_wake() {  # <reason> <state>
   local reason=$1 state=$2 decision action distilled task last stale_detail
   local kind="" arg=""
+  case "$reason" in
+    routine:*) reason=${reason#routine: } ;;
+  esac
   if should_force_self "$reason"; then
     log "wake force-self (SQUAD_INJECT_SKIP): $reason"
     return

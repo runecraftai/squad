@@ -706,6 +706,29 @@ test_handle_wake_routes_self_and_escalate() {
   pass "handle_wake routes routine->self and commander->escalate"
 }
 
+test_afk_delivery_classifier_and_non_afk_wake() {
+  local dir state out
+  dir=$(make_supercase afk-delivery-classifier)
+  state="$dir/state"
+  printf 'working: turn ended\n' > "$state/routine.status"
+  afk_wake_is_routine "signal: $state/routine.status" "$state" \
+    || fail "away classifier did not suppress a routine signal"
+  printf 'done: result\n' > "$state/terminal.status"
+  if afk_wake_is_routine "signal: $state/terminal.status" "$state"; then
+    fail "away classifier suppressed a commander-relevant signal"
+  fi
+  : > "$state/.afk"
+  out=$(SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; STATE="$2"; wake "signal: $STATE/routine.status"' _ "$ROOT/bin/sq-push-transition-lib.sh" "$state" 2>&1) || true
+  assert_contains "$out" "routine: signal: $state/routine.status" "away routine wake was not marked for daemon-only delivery"
+  SQUAD_STATE_OVERRIDE="$state" handle_wake "routine: signal: $state/routine.status" "$state"
+  [ ! -s "$state/.subsuper-escalations" ] || fail "daemon escalated a routine envelope"
+  rm -f "$state/.afk"
+  out=$(SQUAD_STATE_OVERRIDE="$state" bash -c '. "$1"; STATE="$2"; wake "signal: $STATE/terminal.status"' _ "$ROOT/bin/sq-push-transition-lib.sh" "$state" 2>&1) || true
+  assert_contains "$out" "signal: $state/terminal.status" "non-away wake delivery changed"
+  assert_not_contains "$out" "routine:" "non-away wake was marked routine"
+  pass "away classifier suppresses routine, preserves commander events, and leaves non-away delivery unchanged"
+}
+
 test_inject_skip_forces_self() {
   local dir state
   dir=$(make_supercase skip)
@@ -722,6 +745,7 @@ test_is_wake_reason_distinguishes_status_stdout() {
   is_wake_reason "signal: /x/y.status" || fail "signal: not recognized as wake"
   is_wake_reason "stale: s:sq-x" || fail "stale: not recognized as wake"
   is_wake_reason "check: /s/c.sh: merged" || fail "check: not recognized as wake"
+  is_wake_reason "routine: signal: /s/x.status" || fail "routine envelope: not recognized as wake"
   is_wake_reason "heartbeat" || fail "heartbeat not recognized as wake"
   is_wake_reason "sentry: already running" && fail "singleton status line misclassified as wake"
   is_wake_reason "sentry: already running pid 123" && fail "singleton status (pid) misclassified as wake"
@@ -1910,6 +1934,7 @@ test_escalate_batches_into_one_digest
 test_escalate_batch_age_uses_first_append
 test_heartbeat_scan_dedup
 test_handle_wake_routes_self_and_escalate
+test_afk_delivery_classifier_and_non_afk_wake
 test_inject_skip_forces_self
 test_is_wake_reason_distinguishes_status_stdout
 test_terminal_stale_escalate_leaves_no_marker

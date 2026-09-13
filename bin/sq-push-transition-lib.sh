@@ -82,14 +82,19 @@ triage_log() {
 
 # Exit after reporting one actionable wake. Tests override this callback.
 wake() {
-  local output_status=0
+  local output_status=0 output_reason=$1
   case "$1" in
     heartbeat*) echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak" ;;
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
   esac
+  # In away mode the sentry's durable queue remains the lossless handoff, while
+  # the daemon consumes routine reasons without making Pi start a turn.
+  if [ -e "$STATE/.afk" ] && afk_wake_is_routine "$1" "$STATE"; then
+    output_reason="routine: $1"
+  fi
   trap '' HUP INT TERM
   [ -z "$SQUAD_WAKE_POST_OUTPUT_ACTION" ] || trap '' PIPE
-  if echo "$1"; then
+  if echo "$output_reason"; then
     output_status=0
     watch_delivery_publish "$1" || true
   else
