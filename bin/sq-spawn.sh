@@ -2135,6 +2135,7 @@ EOF
 // sendUserMessage instead of typing into a composer that may swallow Enter.
 import { execFile, execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -2155,14 +2156,59 @@ const deliveryTaskDir = deliveryDir + "/$ID";
 const deliveryReady = deliveryTaskDir + "/ready";
 const deliveryReadyTemp = deliveryReady + ".tmp";
 let deliveryWatcher: ReturnType<typeof watch> | undefined;
+let deliveryScanTimer: ReturnType<typeof setInterval> | undefined;
+let deliveryWatcherRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let deliveryStopped = false;
 let piAgentRunning = false;
 
-async function waitForProcessing(): Promise<boolean> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (piAgentRunning) return true;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+const deliveryPollMs = 250;
+
+function scheduleDeliveryWatcherRetry(pi: any): void {
+  if (deliveryStopped || deliveryWatcherRetryTimer) return;
+  deliveryWatcherRetryTimer = setTimeout(() => {
+    deliveryWatcherRetryTimer = undefined;
+    armDeliveryWatcher(pi);
+    scanDeliveryRequests(pi);
+  }, deliveryPollMs);
+}
+
+function armDeliveryWatcher(pi: any): void {
+  if (deliveryStopped || deliveryWatcher) return;
+  let watcher: ReturnType<typeof watch>;
+  try {
+    watcher = watch(deliveryTaskDir, () => scanDeliveryRequests(pi));
+  } catch {
+    scheduleDeliveryWatcherRetry(pi);
+    return;
   }
-  return piAgentRunning;
+  deliveryWatcher = watcher;
+  try {
+    writeDeliveryReady();
+  } catch {}
+  const rearm = () => {
+    if (deliveryWatcher !== watcher) return;
+    deliveryWatcher = undefined;
+    try {
+      watcher.close();
+    } catch {}
+    scheduleDeliveryWatcherRetry(pi);
+  };
+  watcher.on("error", rearm);
+  watcher.on("close", rearm);
+}
+
+function scanDeliveryTick(pi: any): void {
+  if (!existsSync(deliveryReady)) {
+    if (deliveryWatcher) {
+      const watcher = deliveryWatcher;
+      deliveryWatcher = undefined;
+      try {
+        watcher.close();
+      } catch {}
+    }
+    armDeliveryWatcher(pi);
+  }
+  scanDeliveryRequests(pi);
 }
 
 function writeDeliveryResponse(requestId: string, status: string): void {
@@ -2173,9 +2219,19 @@ function writeDeliveryResponse(requestId: string, status: string): void {
 }
 
 function stopDelivery(): void {
+  deliveryStopped = true;
+  if (deliveryScanTimer) {
+    clearInterval(deliveryScanTimer);
+    deliveryScanTimer = undefined;
+  }
+  if (deliveryWatcherRetryTimer) {
+    clearTimeout(deliveryWatcherRetryTimer);
+    deliveryWatcherRetryTimer = undefined;
+  }
   if (deliveryWatcher) {
-    deliveryWatcher.close();
+    const watcher = deliveryWatcher;
     deliveryWatcher = undefined;
+    watcher.close();
   }
   try {
     unlinkSync(deliveryReady);
@@ -2205,18 +2261,24 @@ function deliveryProcessIdentity(pid: number): string | undefined {
   }
 }
 
+function writeDeliveryReady(): void {
+  const processIdentity = deliveryProcessIdentity(process.pid);
+  if (!processIdentity) throw new Error("process identity unavailable");
+  writeFileSync(
+    deliveryReadyTemp,
+    String(process.pid) + String.fromCharCode(10) + processIdentity + String.fromCharCode(10),
+  );
+  renameSync(deliveryReadyTemp, deliveryReady);
+}
+
 function startDelivery(pi: any): void {
-  if (deliveryWatcher) return;
+  if (deliveryScanTimer) return;
+  deliveryStopped = false;
   try {
     mkdirSync(deliveryTaskDir, { recursive: true });
-    deliveryWatcher = watch(deliveryTaskDir, () => scanDeliveryRequests(pi));
-    const processIdentity = deliveryProcessIdentity(process.pid);
-    if (!processIdentity) throw new Error("process identity unavailable");
-    writeFileSync(
-      deliveryReadyTemp,
-      String(process.pid) + String.fromCharCode(10) + processIdentity + String.fromCharCode(10),
-    );
-    renameSync(deliveryReadyTemp, deliveryReady);
+    writeDeliveryReady();
+    armDeliveryWatcher(pi);
+    deliveryScanTimer = setInterval(() => scanDeliveryTick(pi), deliveryPollMs);
     scanDeliveryRequests(pi);
   } catch {
     stopDelivery();
@@ -2241,8 +2303,10 @@ async function processDeliveryRequest(requestPath: string, pi: any): Promise<voi
     const message = raw.slice(separator + 1).replace(new RegExp(String.fromCharCode(10) + "$"), "");
     if (typeof pi.sendUserMessage !== "function") throw new Error("sendUserMessage unavailable");
     await pi.sendUserMessage(message, { deliverAs: "followUp" });
-    const processing = await waitForProcessing();
-    writeDeliveryResponse(requestId, processing ? "processing" : "unconfirmed");
+    // sendUserMessage resolves only after Pi accepts the follow-up into its
+    // queue. Do not wait for agent_start: a busy Pi can take longer than
+    // sq-send's confirmation deadline even though the message is delivered.
+    writeDeliveryResponse(requestId, "delivered");
   } catch {
     if (requestId) writeDeliveryResponse(requestId, "unavailable");
   } finally {
