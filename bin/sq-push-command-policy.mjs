@@ -39,7 +39,7 @@ function isGitPush(tokens) {
 function nestedShellCommands(position) {
   if (!position.command) return [];
   const name = basename(position.command.value);
-  if (!['sh', 'bash', 'zsh'].includes(name)) return [];
+  if (!['sh', 'bash', 'dash', 'zsh', 'ksh', 'fish'].includes(name)) return [];
 
   const words = position.words;
   for (let index = position.index + 1; index < words.length; index += 1) {
