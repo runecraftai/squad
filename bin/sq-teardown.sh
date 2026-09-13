@@ -22,6 +22,9 @@
 # A gh lookup error falls back to the content check; if that is also inconclusive,
 # teardown refuses rather than risk discarding unlanded work.
 # Uncommitted changes are never landed.
+# If a landed-work check cites a remote-tracking ref that is known to be stale,
+# refresh the recorded project clone with `git fetch origin` and retry; never
+# force cleanup around an inconclusive check.
 # local-only projects additionally accept work merged into the local default
 # branch (Squad performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.

@@ -78,6 +78,7 @@ Positive reserve means usage is behind reset pace.
 `on_pace` is neutral.
 Conservation pressure is present for effective pace status `ahead`, effective pace status is `mixed` and any `aheadWindowIds` remain, or a bounding window is `ahead`.
 `unknown` is valid explicit uncertainty from sq-quota, not parser failure or permission to assume health.
+For DeepSeek, treat the observed 01:00-04:00 and 06:00-10:00 UTC windows as likely quota-pressure periods when explaining pace evidence; this is diagnostic context, not a hard routing rule.
 
 ## Selection order
 

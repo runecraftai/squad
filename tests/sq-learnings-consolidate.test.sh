@@ -200,6 +200,23 @@ test_backup_created_on_apply() {
   pass "backup is created before applying changes"
 }
 
+test_apply_preserves_surviving_content() {
+  local home result
+  home=$(make_home apply-survival)
+  make_learnings "$home/data/learnings.md" \
+    '- **Keep (2026-09-01):** This surviving fact must remain after apply.' \
+    '- **Remove (2026-09-01):** This duplicate is removed.' \
+    '- **Remove (2026-09-01):** This duplicate is removed.'
+
+  run_consolidate "$home" --apply >/dev/null 2>&1
+  result=$(<"$home/data/learnings.md")
+  assert_contains "$result" "This surviving fact must remain" \
+    "--apply should preserve surviving content"
+  [ "$(printf '%s\n' "$result" | grep -c 'This duplicate is removed')" = 1 ] || \
+    fail "--apply should retain exactly one copy of a duplicate entry"
+  pass "applied consolidation preserves surviving content"
+}
+
 test_backup_not_created_in_dryrun() {
   local home
   home=$(make_home backup-dryrun)
@@ -280,6 +297,7 @@ test_long_entry_applied_trim
 test_important_entry_not_trimmed
 test_never_entry_not_trimmed
 test_backup_created_on_apply
+test_apply_preserves_surviving_content
 test_backup_not_created_in_dryrun
 test_dryrun_shows_report
 test_no_changes_outputs_clean
