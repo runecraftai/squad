@@ -445,6 +445,10 @@ test_publish_idempotent() {
 {"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":150,"cost":{"total":0.01}}}}
 EOF
   fakebin=$(fm_fakebin "$TMP_ROOT/idemp-fake")
+  local different_checkout="$TMP_ROOT/idemp-other-checkout"
+  mkdir -p "$different_checkout"
+  git -C "$different_checkout" init -q
+  git -C "$different_checkout" remote add origin https://github.com/wrong/current-repository.git
   local invocations_file="$TMP_ROOT/idemp-invocations"
   printf '' > "$invocations_file"
   # Mock sq-gh: first api call returns an existing comment with the marker,
@@ -472,20 +476,21 @@ SH
   git -C "$wt" remote add origin file:///dev/null 2>/dev/null || true
   local output rc
   # First publish: should detect existing comment and PATCH it
-  output=$(PATH="$fakebin:$PATH" \
+  output=$(cd "$different_checkout" && PATH="$fakebin:$PATH" \
            SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
            SQUAD_PI_SESSION_DIR="$pi_root" \
-           "$COST_CLI" publish idemp-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
+           "$COST_CLI" publish idemp-task "https://github.com/url-owner/url-repository/pull/42" 2>&1) && rc=$? || rc=$?
   [ "$rc" -eq 0 ] || fail "first publish should exit 0, got: $rc"
   assert_contains "$output" "published" "first publish succeeds"
   # Verify sq-gh api was called (for comment listing)
-  assert_contains "$(cat "$invocations_file")" "api" "sq-gh api was invoked for comment lookup"
+  assert_contains "$(cat "$invocations_file")" "/repos/url-owner/url-repository/issues/42/comments" "publish targets repository and number from PR URL"
+  assert_not_contains "$(cat "$invocations_file")" "wrong/current-repository" "publish ignores the current checkout repository"
   # Second publish: should detect existing comment again and PATCH again
   printf '' > "$invocations_file"
-  output=$(PATH="$fakebin:$PATH" \
+  output=$(cd "$different_checkout" && PATH="$fakebin:$PATH" \
            SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
            SQUAD_PI_SESSION_DIR="$pi_root" \
-           "$COST_CLI" publish idemp-task "https://github.com/org/repo/pull/1" 2>&1) && rc=$? || rc=$?
+           "$COST_CLI" publish idemp-task "https://github.com/url-owner/url-repository/pull/42" 2>&1) && rc=$? || rc=$?
   [ "$rc" -eq 0 ] || fail "second publish (re-publish) should exit 0, got: $rc"
   assert_contains "$output" "published" "re-publish succeeds"
   local all_invocations
@@ -497,7 +502,22 @@ SH
 
 test_publish_idempotent
 
-# ── (h5) Pi zero-result regression ────────────────────────────────────────
+# ── (h5) invalid PR URL has no repository fallback ─────────────────────────
+
+test_publish_invalid_url() {
+  local state="$TMP_ROOT/invalid-url-state" output rc
+  mkdir -p "$state"
+  : > "$state/invalid-url-task.meta"
+  output=$(SQUAD_STATE_OVERRIDE="$state" "$COST_CLI" publish invalid-url-task \
+           "https://github.com/owner/repository/pull/not-a-number" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -ne 0 ] || fail "invalid PR URL should fail"
+  assert_contains "$output" "error: invalid PR URL" "invalid PR URL reports a clear error"
+  pass "invalid PR URL cannot fall back to the current repository"
+}
+
+test_publish_invalid_url
+
+# ── (h6) Pi zero-result regression ────────────────────────────────────────
 
 test_pi_zero_result() {
   local pi_root="$TMP_ROOT/zero-pi" state="$TMP_ROOT/zero-state"

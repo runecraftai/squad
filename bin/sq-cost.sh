@@ -37,6 +37,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091 # sourced at runtime
 . "$SCRIPT_DIR/sq-cost-lib.sh"
+# shellcheck disable=SC1091 # sourced at runtime
+. "$SCRIPT_DIR/sq-pr-lib.sh"
 
 usage() {
   cat <<'EOF'
@@ -166,12 +168,12 @@ cmd_publish() {
       return 0
     fi
   fi
-  number=$(printf '%s' "$url" | sed -nE 's#^.*/(pull|merge_requests)/([0-9]+).*#\2#p')
-  [ -n "$number" ] || { echo "error: invalid PR URL" >&2; return 1; }
+  fm_pr_url_parse "$url" || { echo "error: invalid PR URL: repository and number cannot be resolved" >&2; return 1; }
+  number="$SQUAD_PR_NUMBER"
+  repo="$SQUAD_PR_PATH"
+  [ -n "$repo" ] || { echo "error: invalid PR URL: repository cannot be resolved" >&2; return 1; }
   body=$(cmd_report "$task_id")
   body=$(printf '<!-- squad-cost-report -->\n%s' "$body")
-  repo=$(git remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]##;s#\.git$##' || true)
-  [ -n "$repo" ] || { echo "error: repository cannot be resolved" >&2; return 1; }
   local comments comment_id
   comments=$(sq-gh api "/repos/$repo/issues/$number/comments" --paginate --jq '.[] | select(.body | contains("<!-- squad-cost-report -->")) | [.id,.body] | @tsv' 2>/dev/null || true)
   comment_id=$(printf '%s\n' "$comments" | head -1 | cut -f1)
