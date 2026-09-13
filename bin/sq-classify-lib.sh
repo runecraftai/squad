@@ -622,13 +622,12 @@ afk_wake_is_routine() {  # <reason> <state>
       return 0
       ;;
     stale:*)
-      arg=${reason#stale: }
-      case "$arg" in *" ("*) arg=${arg%% \(*} ;; esac
-      task=$(window_to_task "$arg" "$state")
-      last=$(last_status_line "$state/$task.status")
-      status_is_paused "$last" && return 0
-      [ -n "$last" ] && status_is_commander_relevant "$last" && return 1
-      return 0
+      # Stale events always preserve their exact Pi wake-delivery path: the
+      # durable queue is the lossless handoff and the daemon triages them
+      # regardless of the routine envelope. Returning 1 (not-routine) keeps the
+      # plain window identity intact so the daemon can resolve the owning task
+      # without re-decorating the reason.
+      return 1
       ;;
     *) return 1 ;;
   esac
