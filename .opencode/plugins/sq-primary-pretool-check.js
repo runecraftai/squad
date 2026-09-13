@@ -57,6 +57,7 @@ export const FmPrimaryPretoolCheck = async ({ directory, worktree }) => {
       for (const [script, fallback] of [
         ["sq-backend-pretool-check.sh", "denied by the session-provider CLI seatbelt"],
         ["sq-poll-pretool-check.sh", "denied by the state-polling seatbelt"],
+        ["sq-push-pretool-check.sh", "denied by the drill-push PreToolUse seatbelt"],
         ["sq-arm-pretool-check.sh", "denied by the sentry-arm PreToolUse seatbelt"],
       ]) {
         const result = await runProcess(`${root}/bin/${script}`, ["--command", command]);

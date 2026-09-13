@@ -140,7 +140,7 @@ family_for_basename() {
     sq-documentation-audiences.test.sh|sq-ensure-agents-md.test.sh|sq-grok-harness.test.sh|\
     sq-kimi-harness.test.sh|sq-muse-harness.test.sh|sq-herdr-lab.test.sh|sq-lint.test.sh|\
     sq-operational-input.test.sh|sq-pi-primary-types.test.sh|\
-    sq-backend-pretool-check.test.sh|sq-poll-pretool-check.test.sh|\
+    sq-backend-pretool-check.test.sh|sq-poll-pretool-check.test.sh|sq-push-pretool-check.test.sh|\
     sq-primary-pretool-wiring.test.sh|\
     sq-send-popup-settle.test.sh|sq-send-settle.test.sh|\
     sq-self-heal.test.sh|\
@@ -908,6 +908,7 @@ families_for_changed_path() {
       printf '%s\n' session-bootstrap
       ;;
     bin/sq-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json|\
+    .grok/hooks/sq-primary-push-check.json|.opencode/plugins/sq-primary-pretool-check.js|\
     .pi/extensions/sq-primary-turnend-guard.ts)
       # The run tier's two harness-supplied facts (source vocabulary and
       # context-reset stdout injection) only show up against a real harness.

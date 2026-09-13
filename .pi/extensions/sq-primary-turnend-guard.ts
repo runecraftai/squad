@@ -207,6 +207,10 @@ function runPollCheck(command: string): Promise<{ code: number; stderr: string }
   return runChecker("sq-poll-pretool-check.sh", command);
 }
 
+function runPushCheck(command: string): Promise<{ code: number; stderr: string }> {
+  return runChecker("sq-push-pretool-check.sh", command);
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on?.("session_start", async (event) => {
     const reason = String((event as { reason?: unknown }).reason ?? "");
@@ -237,6 +241,10 @@ export default function (pi: ExtensionAPI) {
     const pollResult = await runPollCheck(command);
     if (pollResult.code === 2) {
       return { block: true, reason: pollResult.stderr.trim() || "denied by the state-polling seatbelt" };
+    }
+    const pushResult = await runPushCheck(command);
+    if (pushResult.code === 2) {
+      return { block: true, reason: pushResult.stderr.trim() || "denied by the drill-push seatbelt" };
     }
     const result = await runPretoolCheck(command);
     if (result.code !== 2) return {};

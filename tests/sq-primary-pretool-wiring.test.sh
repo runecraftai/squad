@@ -42,6 +42,12 @@ printf 'poll:%s\n' "$*" >> "${CHECK_LOG:?}"
 case "$*" in *state/*) exit 2;; esac
 exit 0
 SH
+cat > "$REPO/bin/sq-push-pretool-check.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'push:%s\n' "$*" >> "${CHECK_LOG:?}"
+case "$*" in *git\ push*) exit 2;; esac
+exit 0
+SH
 chmod +x "$REPO/bin/"*.sh
 git init -q "$REPO"
 : > "$REPO/AGENTS.md"
@@ -60,15 +66,18 @@ let result = await run("tmux send-keys task x");
 if (!result.block) throw new Error("backend guard was not wired");
 result = await run("sleep 1; cat state/task.status");
 if (!result.block) throw new Error("poll guard was not wired");
+result = await run("git push origin branch");
+if (!result.block) throw new Error("push guard was not wired");
 result = await run("echo ordinary");
 if (result.block) throw new Error("ordinary command was blocked");
 NODE
 )
 status=$?
-expect_code 0 "$status" "Pi extension wires backend and state-poll guards"
+expect_code 0 "$status" "Pi extension wires backend, state-poll, and push guards"
 [ -z "$out" ] || fail "Pi pretool wiring test printed output: $out"
 assert_grep 'backend:--command tmux send-keys task x' "$TMP_ROOT/check.log" "backend checker ran"
 assert_grep 'poll:--command sleep 1; cat state/task.status' "$TMP_ROOT/check.log" "poll checker ran"
+assert_grep 'push:--command git push origin branch' "$TMP_ROOT/check.log" "push checker ran"
 assert_grep 'arm' "$TMP_ROOT/check.log" "arm checker remains wired after new guards"
 [ "$(grep -c '^arm$' "$TMP_ROOT/check.log")" = 1 ] || fail "arm checker ran after a new guard denied a command"
 
