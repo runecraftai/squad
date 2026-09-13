@@ -326,6 +326,40 @@ test_cli_dir
 test_cli_price
 test_cli_pricing_table
 
+# ── (h2) Pi task discovery and exact attribution ───────────────────────────
+
+test_pi_task_report() {
+  local pi_root="$TMP_ROOT/pi-sessions" pi_dir="$TMP_ROOT/pi-sessions/fixture" state="$TMP_ROOT/pi-state" wt="$TMP_ROOT/pi-worktree"
+  mkdir -p "$pi_dir" "$state"
+  printf 'window=sq:pi-test\nharness=pi\nworktree=%s\nproject=test\nmodel=default\n' "$wt" > "$state/pi-task.meta"
+  cat > "$pi_dir/matched.jsonl" <<EOF
+{"type":"session","version":3,"id":"pi-session-1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":101,"output":53,"cacheRead":7,"cacheWrite":2,"totalTokens":163,"cost":{"total":0.02}}}}
+EOF
+  cat > "$pi_dir/wrong-worktree.jsonl" <<EOF
+{"type":"session","version":3,"id":"other-task","timestamp":"2026-01-01T00:00:00Z","cwd":"$TMP_ROOT/other"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-opus-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-opus-4","usage":{"input":9999,"output":9999,"totalTokens":19998,"cost":{"total":9}}}}
+EOF
+  local output
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
+  assert_contains "$output" '"input": 101' "Pi report finds matching worktree session"
+  assert_contains "$output" '"sessions": 1' "Pi report counts one matching session"
+  assert_contains "$output" '"reported_cost": 0.02' "Pi report preserves provider cost"
+  if printf '%s' "$output" | grep -q '9999'; then fail "Pi report counted another worktree"; fi
+  cat > "$pi_dir/subscription.jsonl" <<EOF
+{"type":"session","version":3,"id":"pi-session-2","timestamp":"2026-01-02T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"opencode-go","modelId":"opencode-go"}
+{"type":"message","message":{"role":"assistant","model":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15}}}
+EOF
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task)
+  assert_contains "$output" "flat-rate subscription" "flat-rate providers are labelled without fabricated spend"
+  pass "Pi task report attributes sessions exactly and avoids zero-result regression"
+}
+
+test_pi_task_report
+
 # ── (i) shellcheck-clean ──────────────────────────────────────────────────
 
 test_shellcheck() {

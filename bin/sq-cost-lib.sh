@@ -5,8 +5,13 @@
 # (MIT, Chaitanya Giri). Reads real operator transcripts (JSONL) and prices
 # them per model to get per-operation cost.
 #
-# Supports Claude Code JSONL transcripts. Other harnesses (opencode, codex,
-# grok, kimi) are estimated from token counts when available.
+# Supports Claude Code JSONL transcripts and Pi session JSONL files. Other harnesses
+# (opencode, codex, grok, kimi) are estimated from token counts when available.
+# Pi attribution is exact: a session is eligible only when its session header cwd
+# equals the task metadata worktree, the task metadata has a recorded window, and
+# the recorded harness is pi or pi-signed. The session directory is scoped by
+# SQUAD_PI_SESSION_DIR (or ~/.pi/agent/sessions), so another base and the primary
+# session cannot be counted accidentally. No prompt or response content is read.
 #
 # Usage:
 #   . bin/sq-cost-lib.sh
@@ -214,6 +219,63 @@ sq_cost_from_transcript() {
 
   cost=$(sq_cost_estimate "$model" "$in" "$out" "$cr" "$cw")
   echo "${in}|${out}|${cr}|${cw}|${model}|${cost}"
+}
+
+# ── Pi task reporting ─────────────────────────────────────────────────────
+
+# sq_cost_pi_task_json — return privacy-safe aggregated usage for a Pi task.
+# Args: $1=task id, $2=state directory, $3=session root.
+# The JSON is intentionally an interface for sq-cost.sh and its tests.
+sq_cost_pi_task_json() {
+  local task_id="${1:?task-id required}" state_dir="${2:?state dir required}" session_root="${3:?session root required}"
+  local meta="$state_dir/$task_id.meta" worktree window harness model
+  [ -f "$meta" ] || { printf '{"found":false,"reason":"task metadata is unavailable"}\n'; return 0; }
+  worktree=$(grep '^worktree=' "$meta" | head -1 | cut -d= -f2- || true)
+  window=$(grep '^window=' "$meta" | head -1 | cut -d= -f2- || true)
+  harness=$(grep '^harness=' "$meta" | head -1 | cut -d= -f2- || true)
+  model=$(grep '^model=' "$meta" | head -1 | cut -d= -f2- || true)
+  if [ -z "$worktree" ] || [ -z "$window" ] || [[ "$harness" != pi && "$harness" != pi-signed ]]; then
+    jq -cn --arg reason "task metadata lacks an attributable Pi worktree, window, or harness" \
+      '{found:false,reason:$reason}'
+    return 0
+  fi
+
+  local -a files=() file
+  while IFS= read -r -d '' file; do files+=("$file"); done < <(
+    find "$session_root" -type f -name '*.jsonl' -print0 2>/dev/null
+  )
+  if [ "${#files[@]}" -eq 0 ]; then
+    jq -cn --arg reason "no Pi sessions were found under the configured session directory" \
+      '{found:false,reason:$reason}'
+    return 0
+  fi
+
+  local packed
+  packed=$(mktemp "${TMPDIR:-/tmp}/sq-cost.XXXXXX")
+  trap 'rm -f "$packed"' RETURN
+  for file in "${files[@]}"; do
+    jq -s -c . "$file" >> "$packed" 2>/dev/null || true
+  done
+  jq -s -n --arg cwd "$worktree" --arg task "$task_id" --arg agent "$harness" \
+    --arg configured_model "$model" --slurpfile sessions "$packed" '
+    ($sessions | map(select(.[0].type == "session" and .[0].cwd == $cwd))) as $matched |
+    [ $matched[] as $s | $s[] | select(.type == "message" and .message.role == "assistant" and .message.usage != null) |
+      {model:(.message.model // (($s | map(select(.type == "model_change") | .modelId) | last) // $configured_model)),
+       provider:(($s | map(select(.type == "model_change") | .provider) | last) // ""), session:($s[0].id // "unknown"),
+       started:($s[0].timestamp // ""), input:(.message.usage.input // 0), output:(.message.usage.output // 0),
+       cache_read:(.message.usage.cacheRead // 0), cache_write:(.message.usage.cacheWrite // 0),
+       total:(.message.usage.totalTokens // ((.message.usage.input // 0)+(.message.usage.output // 0)+(.message.usage.cacheRead // 0)+(.message.usage.cacheWrite // 0))),
+       reported_cost:(.message.usage.cost.total // null)} ] as $rows |
+    {found:($matched|length > 0), task:$task, agent:$agent, worktree:$cwd, sessions:($matched|length),
+     started:($matched|map(.[0].timestamp // "")|min // ""),
+     models:([ $rows[].model ] | unique | map(. as $m | {model:$m,
+       sessions:([$rows[] | select(.model == $m) | .session] | unique | length),
+       input:([$rows[] | select(.model == $m) | .input] | add // 0), output:([$rows[] | select(.model == $m) | .output] | add // 0),
+       cache_read:([$rows[] | select(.model == $m) | .cache_read] | add // 0), cache_write:([$rows[] | select(.model == $m) | .cache_write] | add // 0),
+       total:([$rows[] | select(.model == $m) | .total] | add // 0),
+       reported_cost:([$rows[] | select(.model == $m) | .reported_cost] | map(select(. != null)) | add // null),
+       provider:([$rows[] | select(.model == $m) | .provider] | map(select(. != "")) | first // "")}))}
+  ' 2>/dev/null || printf '{"found":false,"reason":"Pi session data could not be read"}\n'
 }
 
 # ── Directory scanning ────────────────────────────────────────────────────
