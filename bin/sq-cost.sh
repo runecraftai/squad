@@ -181,7 +181,11 @@ cmd_publish() {
     comment_id=$(printf '%s\n' "$comments" | awk -F '"' '/body:/ { print $2 }' | grep -oE '[1-9][0-9]*' | head -1 || true)
   fi
   if [ -n "$comment_id" ]; then
-    sq-gh api PATCH "/repos/$repo/issues/comments/$comment_id" --field "body=$body" >/dev/null
+    local patch_output
+    if ! patch_output=$(sq-gh api PATCH "/repos/$repo/issues/comments/$comment_id" --field "body=$body" 2>&1); then
+      printf '%s\n' "$patch_output" >&2
+      return 1
+    fi
   else
     local publish_output
     if ! publish_output=$(sq-gh pr comment "$number" --repo "$repo" --body "$body" 2>&1); then
