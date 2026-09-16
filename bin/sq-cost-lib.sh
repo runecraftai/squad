@@ -8,10 +8,11 @@
 # Supports Claude Code JSONL transcripts and Pi session JSONL files. Other harnesses
 # (opencode, codex, grok, kimi) are estimated from token counts when available.
 # Pi attribution is exact: a session is eligible only when its session header cwd
-# equals the task metadata worktree, the task metadata has a recorded window, and
-# the recorded harness is pi or pi-signed. The session directory is scoped by
-# SQUAD_PI_SESSION_DIR (or ~/.pi/agent/sessions), so another base and the primary
-# session cannot be counted accidentally. No prompt or response content is read.
+# equals the task execution workspace, its header timestamp falls within the
+# recorded execution attempt window, and the recorded harness is pi or pi-signed.
+# The session directory is scoped by SQUAD_PI_SESSION_DIR (or ~/.pi/agent/sessions),
+# so another base and the primary session cannot be counted accidentally. No
+# prompt or response content is read.
 #
 # Usage:
 #   . bin/sq-cost-lib.sh
@@ -228,14 +229,25 @@ sq_cost_from_transcript() {
 # The JSON is intentionally an interface for sq-cost.sh and its tests.
 sq_cost_pi_task_json() {
   local task_id="${1:?task-id required}" state_dir="${2:?state dir required}" session_root="${3:?session root required}"
-  local meta="$state_dir/$task_id.meta" worktree window harness model
+  local meta="$state_dir/$task_id.meta" exec_file worktree window harness model start end
   [ -f "$meta" ] || { printf '{"found":false,"reason":"task metadata is unavailable"}\n'; return 0; }
+  exec_file="$state_dir/$task_id.exec"
   worktree=$(grep '^worktree=' "$meta" | head -1 | cut -d= -f2- || true)
   window=$(grep '^window=' "$meta" | head -1 | cut -d= -f2- || true)
   harness=$(grep '^harness=' "$meta" | head -1 | cut -d= -f2- || true)
   model=$(grep '^model=' "$meta" | head -1 | cut -d= -f2- || true)
+  start=$(grep '^exec_started_at=' "$exec_file" 2>/dev/null | head -1 | cut -d= -f2- || true)
+  end=$(grep '^exec_last_activity=' "$exec_file" 2>/dev/null | head -1 | cut -d= -f2- || true)
+  local exec_workspace
+  exec_workspace=$(grep '^exec_workspace=' "$exec_file" 2>/dev/null | head -1 | cut -d= -f2- || true)
+  [ -n "$exec_workspace" ] && worktree="$exec_workspace"
   if [ -z "$worktree" ] || [ -z "$window" ] || [[ "$harness" != pi && "$harness" != pi-signed ]]; then
     jq -cn --arg reason "task metadata lacks an attributable Pi worktree, window, or harness" \
+      '{found:false,reason:$reason}'
+    return 0
+  fi
+  if [[ ! "$start" =~ ^[0-9]+$ ]] || [[ ! "$end" =~ ^[0-9]+$ ]] || [ "$end" -lt "$start" ]; then
+    jq -cn --arg reason "task execution window is unavailable or invalid" \
       '{found:false,reason:$reason}'
     return 0
   fi
@@ -257,8 +269,11 @@ sq_cost_pi_task_json() {
     jq -s -c . "$file" >> "$packed" 2>/dev/null || true
   done
   jq -s -n --arg cwd "$worktree" --arg task "$task_id" --arg agent "$harness" \
-    --arg configured_model "$model" --slurpfile sessions "$packed" '
-    ($sessions | map(select(.[0].type == "session" and .[0].cwd == $cwd))) as $matched |
+    --arg configured_model "$model" --arg start "$start" --arg end "$end" \
+    --slurpfile sessions "$packed" '
+    ($sessions | map(select(.[0].type == "session" and .[0].cwd == $cwd and
+      ((try (.[0].timestamp | fromdateiso8601) catch null) as $ts |
+       $ts != null and $ts >= ($start | tonumber) and $ts <= ($end | tonumber))))) as $matched |
     [ $matched[] as $s | $s[] | select(.type == "message" and .message.role == "assistant" and .message.usage != null) |
       {model:(.message.model // (($s | map(select(.type == "model_change") | .modelId) | last) // $configured_model)),
        provider:(($s | map(select(.type == "model_change") | .provider) | last) // ""), session:($s[0].id // "unknown"),

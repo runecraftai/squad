@@ -29,6 +29,12 @@ TMP_ROOT=$(fm_test_tmproot sq-cost)
 FIXTURE_DIR="$TMP_ROOT/transcripts"
 mkdir -p "$FIXTURE_DIR"
 
+write_exec_window() {
+  local state=$1 id=$2 workspace=$3 start=$4 end=$5
+  printf 'exec_state=released\nexec_started_at=%s\nexec_last_activity=%s\nexec_workspace=%s\n' \
+    "$start" "$end" "$workspace" > "$state/$id.exec"
+}
+
 # Synthetic Claude transcript with known token counts
 # Model: claude-sonnet-4-20250514
 # Record 1: input=1000, output=500, cache_read=2000, cache_write=500
@@ -332,6 +338,7 @@ test_pi_task_report() {
   local pi_root="$TMP_ROOT/pi-sessions" pi_dir="$TMP_ROOT/pi-sessions/fixture" state="$TMP_ROOT/pi-state" wt="$TMP_ROOT/pi-worktree"
   mkdir -p "$pi_dir" "$state"
   printf 'window=sq:pi-test\nharness=pi\nworktree=%s\nproject=test\nmodel=default\n' "$wt" > "$state/pi-task.meta"
+  write_exec_window "$state" pi-task "$wt" 1767225600 1767484800
   cat > "$pi_dir/matched.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
@@ -342,12 +349,20 @@ EOF
 {"type":"model_change","provider":"anthropic","modelId":"claude-opus-4"}
 {"type":"message","message":{"role":"assistant","model":"claude-opus-4","usage":{"input":9999,"output":9999,"totalTokens":19998,"cost":{"total":9}}}}
 EOF
+  cat > "$pi_dir/reused-slot.jsonl" <<EOF
+{"type":"session","version":3,"id":"previous-mission","timestamp":"2025-12-31T23:59:59Z","cwd":"$wt"}
+{"type":"model_change","provider":"openai-codex","modelId":"gpt-6-astra"}
+{"type":"message","message":{"role":"assistant","model":"gpt-6-astra","usage":{"input":8888,"output":7777,"totalTokens":16665,"cost":{"total":12.59}}}}
+EOF
   local output
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
   assert_contains "$output" '"input": 2600000000' "Pi report finds matching worktree session"
   assert_contains "$output" '"sessions": 1' "Pi report counts one matching session"
   assert_contains "$output" '"reported_cost": 0.02' "Pi report preserves provider cost"
   if printf '%s' "$output" | grep -q '9999'; then fail "Pi report counted another worktree"; fi
+  if printf '%s' "$output" | grep -q 'gpt-6-astra\|8888\|12.59'; then
+    fail "Pi report counted a prior mission from the reused worktree slot"
+  fi
   cat > "$pi_dir/subscription.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-2","timestamp":"2026-01-02T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"opencode-go","modelId":"opencode-go"}
@@ -362,6 +377,27 @@ EOF
 
 test_pi_task_report
 
+# ── (h2b) Pi execution-window requirement ─────────────────────────────────
+
+test_pi_requires_execution_window() {
+  local state="$TMP_ROOT/no-exec-state" pi_root="$TMP_ROOT/no-exec-pi" wt="$TMP_ROOT/no-exec-worktree"
+  mkdir -p "$state" "$pi_root/fixture" "$wt"
+  printf 'window=sq:no-exec\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/no-exec.meta"
+  cat > "$pi_root/fixture/session.jsonl" <<EOF
+{"type":"session","version":3,"id":"no-exec-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"totalTokens":150}}}
+EOF
+  local output
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
+    "$COST_CLI" report no-exec --json)
+  assert_contains "$output" '"found":false' "Pi report refuses path-only attribution without an execution window"
+  assert_contains "$output" 'execution window is unavailable' "missing execution window explains unavailable attribution"
+  pass "Pi task report requires the recorded execution window"
+}
+
+test_pi_requires_execution_window
+
 # ── (h3) client-visible publish guard ──────────────────────────────────────
 
 test_publish_guard() {
@@ -372,6 +408,7 @@ test_publish_guard() {
   local wt="$TMP_ROOT/guard-worktree"
   mkdir -p "$wt"
   printf 'window=sq:guard-test\nharness=pi\nworktree=%s\nproject=globo\nmodel=default\n' "$wt" > "$state/guard-task.meta"
+  write_exec_window "$state" guard-task "$wt" 1767225600 1767484800
   cat > "${data}/projects.md" <<'REG'
 - globo [local-only] - Globo Backstage workspace; REGRA: MRs visiveis ao cliente (added 2026-01-01)
 - alpha [drill +cost-report] - Alpha project (added 2026-01-01)
@@ -391,6 +428,7 @@ EOF
   assert_contains "$output" "not published: client-visible project policy" "guard blocks publish for client-visible project"
   # Verify guard allows publish for alpha (+cost-report opt-in)
   printf 'window=sq:alpha-test\nharness=pi\nworktree=%s\nproject=alpha\nmodel=default\n' "$wt" > "$state/alpha-task.meta"
+  write_exec_window "$state" alpha-task "$wt" 1767225600 1767484800
   cat > "$pi_dir/alpha.jsonl" <<EOF
 {"type":"session","version":3,"id":"a1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
@@ -413,6 +451,7 @@ SH
   assert_not_contains "$output" "not published" "guard allows publish for opted-in project"
   # Verify empty project skips guard entirely
   printf 'window=sq:empty-proj\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/empty-proj.meta"
+  write_exec_window "$state" empty-proj "$wt" 1767225600 1767484800
   cat > "$pi_dir/empty-proj.jsonl" <<EOF
 {"type":"session","version":3,"id":"e1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
@@ -439,6 +478,7 @@ test_publish_idempotent() {
   local wt="$TMP_ROOT/idemp-worktree"
   mkdir -p "$wt"
   printf 'window=sq:idemp-test\nharness=pi\nworktree=%s\nproject=test-proj\nmodel=default\n' "$wt" > "$state/idemp-task.meta"
+  write_exec_window "$state" idemp-task "$wt" 1767225600 1767484800
   cat > "$pi_dir/idemp.jsonl" <<EOF
 {"type":"session","version":3,"id":"i1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
@@ -510,6 +550,7 @@ test_publish_create_targets_pr_repository() {
   local pi_root="$TMP_ROOT/create-pi" pi_dir="$TMP_ROOT/create-pi/fixture" wt="$TMP_ROOT/create-worktree"
   mkdir -p "$pi_dir" "$wt"
   printf 'window=sq:create-test\nharness=pi\nworktree=%s\nproject=test-proj\nmodel=default\n' "$wt" > "$state/create-task.meta"
+  write_exec_window "$state" create-task "$wt" 1767225600 1767484800
   cat > "$pi_dir/create.jsonl" <<EOF
 {"type":"session","version":3,"id":"c1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
