@@ -66,13 +66,14 @@ assert_eq "$($EXEC get paused)" running
 assert_eq "$(cat "$STATE/paused.status")" 'paused: waiting for upstream'
 [ ! -e "$TMP/paused-interrupted" ] || { printf 'paused worker was interrupted\n' >&2; exit 1; }
 
-# Exhausted retries are released after the worker is interrupted.
+# Exhausted retries are queued for retry_run_claim to release. The stall
+# detect always transitions to retry_queued to keep the attempt supervised.
 "$EXEC" claim exhausted >/dev/null
 "$EXEC" running exhausted >/dev/null
 sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/exhausted.exec"
 sed -i 's/^exec_retry_count=.*/exec_retry_count=3/' "$STATE/exhausted.exec"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
-assert_eq "$("$EXEC" get exhausted)" released
+assert_eq "$("$EXEC" get exhausted)" retry_queued
 assert_contains "$(cat "$STATE/exhausted.exec")" 'exec_error=stall_timeout'
 
 # Ambiguous evidence is surfaced for technical recovery and not killed.
@@ -129,5 +130,50 @@ rm -f "$TMP/decision-interrupted"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/decision-interrupt" "$STALL"
 assert_eq "$("$EXEC" get resolved-decision)" retry_queued
 assert_contains "$(cat "$STATE/resolved-decision.status")" 'stall interrupted'
+
+# --- retry_queued supervision tests ---
+
+# A retry_queued task whose scheduled moment has arrived is claimed and
+# returns to running, keeping it within supervision.
+"$EXEC" claim retry-ready >/dev/null
+"$EXEC" running retry-ready >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-ready.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-ready.exec"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
+assert_eq "$("$EXEC" get retry-ready)" retry_queued
+# Set next_retry_at to now so retry_run_claim will pick it up.
+now_ts=$(date +%s)
+sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$now_ts/" "$STATE/retry-ready.exec"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-ready)" running
+
+# A retry_queued task that has exhausted retries is released by retry_run_claim.
+# The stall detect always transitions to retry_queued; the claim step handles
+# the limit, keeping the attempt within supervision until its moment arrives.
+"$EXEC" claim retry-exhausted >/dev/null
+"$EXEC" running retry-exhausted >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-exhausted.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=3/' "$STATE/retry-exhausted.exec"
+sed -i 's/^exec_max_retries=.*/exec_max_retries=3/' "$STATE/retry-exhausted.exec"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
+assert_eq "$("$EXEC" get retry-exhausted)" retry_queued
+now_ts=$(date +%s)
+sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$now_ts/" "$STATE/retry-exhausted.exec"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-exhausted)" released
+assert_contains "$(cat "$STATE/retry-exhausted.exec")" 'exec_error=retry_limit_reached'
+assert_contains "$(cat "$STATE/retry-exhausted.status")" 'retry limit reached'
+
+# A retry_queued task whose moment has not arrived yet stays queued.
+"$EXEC" claim retry-pending >/dev/null
+"$EXEC" running retry-pending >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-pending.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-pending.exec"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
+assert_eq "$("$EXEC" get retry-pending)" retry_queued
+# Set next_retry_at to far future so retry_run_claim skips it.
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=9999999999/' "$STATE/retry-pending.exec"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-pending)" retry_queued
 
 printf 'test-sq-stall-detect: ok\n'

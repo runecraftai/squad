@@ -129,14 +129,41 @@ handle_task() {
     append_status "$id" "stall detected but worker interruption was not confirmed" blocked
     return 0
   fi
-  if [ "$retries" -ge "$max" ]; then
-    SQUAD_EXEC_ERROR=$reason "$SCRIPT_DIR/sq-exec-state.sh" release "$id" >/dev/null
-    append_status "$id" "retry exhausted after stall" failed
-  else
-    SQUAD_EXEC_ERROR=$reason "$SCRIPT_DIR/sq-exec-state.sh" retry "$id" >/dev/null
-    next=$(field exec_next_retry_at "$id")
-    append_status "$id" "stall interrupted; retry scheduled for $next" working
-  fi
+  # Always transition to retry_queued so the attempt stays within supervision.
+  # retry_run_claim handles the case where retries are exhausted.
+  SQUAD_EXEC_ERROR=$reason "$SCRIPT_DIR/sq-exec-state.sh" retry "$id" >/dev/null
+  next=$(field exec_next_retry_at "$id")
+  append_status "$id" "stall interrupted; retry scheduled for $next" working
+}
+
+retry_run_claim() {
+  local file id state next_retry now retries max
+  mkdir -p "$STATE"
+  for file in "$STATE"/*.exec; do
+    [ -f "$file" ] || continue
+    id=${file##*/}; id=${id%.exec}
+    state=$(field exec_state "$id")
+    [ "$state" = retry_queued ] || continue
+    next_retry=$(field exec_next_retry_at "$id"); [ -n "$next_retry" ] || next_retry=0
+    now=$(date +%s)
+    if [ "$now" -lt "$next_retry" ]; then
+      continue
+    fi
+    retries=$(field exec_retry_count "$id"); [ -n "$retries" ] || retries=0
+    max=$(field exec_max_retries "$id"); [ -n "$max" ] || max=3
+    if [ "$retries" -ge "$max" ]; then
+      SQUAD_EXEC_ERROR=retry_limit_reached "$SCRIPT_DIR/sq-exec-state.sh" release "$id" >/dev/null
+      append_status "$id" "retry limit reached without successful resume" failed
+    else
+      if "$SCRIPT_DIR/sq-exec-state.sh" claim "$id" >/dev/null 2>&1; then
+        if "$SCRIPT_DIR/sq-exec-state.sh" running "$id" >/dev/null 2>&1; then
+          append_status "$id" "retry resumed" working
+        else
+          append_status "$id" "retry claimed but could not transition to running" blocked
+        fi
+      fi
+    fi
+  done
 }
 
 stall_run_check() {
