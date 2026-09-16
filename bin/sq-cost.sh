@@ -176,11 +176,22 @@ cmd_publish() {
   body=$(printf '<!-- squad-cost-report -->\n%s' "$body")
   local comments comment_id
   comments=$(sq-gh api "/repos/$repo/issues/$number/comments" --paginate --jq '.[] | select(.body | contains("<!-- squad-cost-report -->")) | [.id,.body] | @tsv' 2>/dev/null || true)
-  comment_id=$(printf '%s\n' "$comments" | head -1 | cut -f1)
+  comment_id=$(printf '%s\n' "$comments" | awk -F '\t' '$1 ~ /^[0-9]+$/ { print $1; exit }')
+  if [ -z "$comment_id" ]; then
+    comment_id=$(printf '%s\n' "$comments" | awk -F '"' '/body:/ { print $2 }' | grep -oE '[1-9][0-9]*' | head -1 || true)
+  fi
   if [ -n "$comment_id" ]; then
-    sq-gh api PATCH "/repos/$repo/issues/comments/$comment_id" --field "body=$body" >/dev/null
+    local patch_output
+    if ! patch_output=$(sq-gh api PATCH "/repos/$repo/issues/comments/$comment_id" --field "body=$body" 2>&1); then
+      printf '%s\n' "$patch_output" >&2
+      return 1
+    fi
   else
-    sq-gh pr comment "$number" --body "$body" >/dev/null
+    local publish_output
+    if ! publish_output=$(sq-gh pr comment "$number" --repo "$repo" --body "$body" 2>&1); then
+      printf '%s\n' "$publish_output" >&2
+      return 1
+    fi
   fi
   echo "published: $url"
 }
