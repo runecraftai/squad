@@ -6,7 +6,9 @@
 # A stall is an attempt that has exceeded SQUAD_STALL_TIMEOUT seconds without
 # activity and has no positive evidence of a live tool call or active phase.
 # Ambiguous endpoint evidence is surfaced for stuck-operator-recovery; it is
-# never interrupted automatically. Workspaces and branches are not modified.
+# never interrupted automatically. An open needs-decision or blocked record
+# means the operator is legitimately stopped and must not be interrupted.
+# Workspaces and branches are not modified.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
