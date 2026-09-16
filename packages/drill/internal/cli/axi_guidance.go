@@ -21,7 +21,7 @@ const staleMonitorGuidance = "If this PR later falls behind the default branch o
 // that drops prior pipeline work. This same guidance is mirrored in the skill
 // body and the published agents guide, with CLI-reference coverage in
 // docs/.../reference/cli.md.
-const preserveGateFixCommitsGuidance = "Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits."
+const preserveGateFixCommitsGuidance = "Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits. The pipeline enforces a fix-round limit (default 3) - when exceeded, the run fails with a non-convergence message indicating how many rounds occurred."
 
 // branchSyncAgentGuidance is emitted only when a relevant branch_sync object
 // is present. Keeping it conditional avoids flooding ordinary runs whose local

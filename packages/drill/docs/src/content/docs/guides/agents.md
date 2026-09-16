@@ -180,7 +180,7 @@ When `next_action.code` is `recover_custody` - a terminal run left unpublished p
 A `branch_sync.state` of `user_owned` means the run went terminal before changing the submitted head and cancellation released the branch: it is immediately usable and needs no sync action.
 When `next_action.code` is `continue_active_run`, run the reported command and keep driving the active run.
 If synchronization is blocked, process that state instead of improvising reset, stash, merge, rebase, force, or branch replacement.
-Then commit follow-up work on top so every pipeline fix commit remains in the branch.
+Then commit follow-up work on top so every pipeline fix commit remains in the branch. The pipeline enforces a fix-round limit (default 3) - when exceeded, the run fails with a non-convergence message indicating how many rounds occurred.
 
 The full driving protocol - how to read the home view and `gate:` objects, when to respond, fix, approve, or relay `ask-user` findings, and how to interpret `axi status` fields like `awaiting_agent` and `active_steps` - is owned by the skill itself and by the live `axi` output.
 Each `axi` response carries version-matched `help` lines for its state, and `drill axi run --help` and `drill axi respond --help` describe the loop authoritatively for the installed binary, so agents driving a gate never need this page open.

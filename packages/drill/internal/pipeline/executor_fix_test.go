@@ -851,3 +851,156 @@ func TestExecutor_PreviousFindingsEmptyOnFirstExecution(t *testing.T) {
 		t.Errorf("PreviousFindings should be empty on first execution, got: %s", capturedFindings)
 	}
 }
+
+func TestNonConvergenceExceedsMaxFixRounds(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	// Step that always has blocking findings and always needs approval.
+	// With MaxFixRounds=2, two user-fix rounds should trigger non-convergence.
+	cfg := &config.Config{}
+	cfg.AutoFix.MaxFixRounds = 2
+
+	callCount := 0
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			callCount++
+			return &StepOutcome{
+				NeedsApproval: true,
+				Findings:      `{"items":[{"severity":"error","description":"always-fail","action":"auto-fix"}]}`,
+			}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	// Wait for initial awaiting-approval
+	waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusAwaitingApproval)
+
+	// User-fix round 1
+	if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
+		t.Fatalf("first Respond failed: %v", err)
+	}
+	// After a fix round, the step parks as fix_review (not awaiting-approval)
+	// because sctx.Fixing is true.
+	waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusFixReview)
+
+	// User-fix round 2 - this should trigger non-convergence
+	if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
+		t.Fatalf("second Respond failed: %v", err)
+	}
+
+	// The run should fail with a non-convergence error
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected non-convergence error, got nil")
+		}
+		if !strings.Contains(err.Error(), "non-convergence") {
+			t.Errorf("expected non-convergence error, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for non-convergence error")
+	}
+
+	// Verify step is marked failed in DB
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName == types.StepReview {
+			if s.Status != types.StepStatusFailed {
+				t.Errorf("step status = %s, want failed", s.Status)
+			}
+			if s.Error == nil || !strings.Contains(*s.Error, "non-convergence") {
+				t.Errorf("step error = %v, want non-convergence message", s.Error)
+			}
+		}
+	}
+}
+
+func TestSingleFixRoundCompletesNormally(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	cfg := &config.Config{}
+	cfg.AutoFix.MaxFixRounds = 3
+
+	callCount := 0
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			callCount++
+			if callCount == 1 {
+				// First call: needs approval with blocking findings
+				return &StepOutcome{
+					NeedsApproval: true,
+					Findings:      `{"items":[{"severity":"error","description":"fix-me","action":"auto-fix"}]}`,
+				}, nil
+			}
+			// After fix: clean
+			return &StepOutcome{NeedsApproval: false}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	// Wait for initial awaiting-approval
+	waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusAwaitingApproval)
+
+	// Single fix round
+	exec.Respond(types.StepReview, types.ActionFix, nil)
+
+	// Should complete without error
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for completion")
+	}
+
+	// Verify step completed
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName == types.StepReview {
+			if s.Status != types.StepStatusCompleted {
+				t.Errorf("step status = %s, want completed", s.Status)
+			}
+		}
+	}
+}
+
+func TestNonConvergenceErrorMessage(t *testing.T) {
+	err := nonConvergenceError(types.StepReview, 5, 3, 2, 3)
+	msg := err.Error()
+
+	if !strings.Contains(msg, "non-convergence") {
+		t.Errorf("error missing 'non-convergence': %s", msg)
+	}
+	if !strings.Contains(msg, "review") {
+		t.Errorf("error missing step name: %s", msg)
+	}
+	if !strings.Contains(msg, "5/3") {
+		t.Errorf("error missing round count 5/3: %s", msg)
+	}
+	if !strings.Contains(msg, "2 auto + 3 user") {
+		t.Errorf("error missing auto/user breakdown: %s", msg)
+	}
+}

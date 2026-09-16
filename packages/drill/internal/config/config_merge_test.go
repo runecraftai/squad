@@ -176,3 +176,45 @@ func TestAutoFixLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoFixMaxFixRoundsDefault(t *testing.T) {
+	cfg := &Config{
+		AutoFix: autoFixDefaults(),
+	}
+	got := cfg.MaxFixRounds()
+	if got != 3 {
+		t.Errorf("MaxFixRounds() = %d, want 3 (default)", got)
+	}
+}
+
+func TestAutoFixMaxFixRoundsOverride(t *testing.T) {
+	cfg := &Config{
+		AutoFix: AutoFix{MaxFixRounds: 5},
+	}
+	got := cfg.MaxFixRounds()
+	if got != 5 {
+		t.Errorf("MaxFixRounds() = %d, want 5 (override)", got)
+	}
+}
+
+func TestAutoFixMaxFixRoundsZeroFallsBackToDefault(t *testing.T) {
+	cfg := &Config{
+		AutoFix: AutoFix{MaxFixRounds: 0},
+	}
+	got := cfg.MaxFixRounds()
+	if got != 3 {
+		t.Errorf("MaxFixRounds() = %d, want 3 (zero falls back to default)", got)
+	}
+}
+
+func TestAutoFixMaxFixRoundsApplyAllSteps(t *testing.T) {
+	cfg := &Config{
+		AutoFix: AutoFix{MaxFixRounds: 7},
+	}
+	// MaxFixRounds is a global setting, not per-step: verify it returns
+	// the same value regardless of which step we might conceptually ask about.
+	got := cfg.MaxFixRounds()
+	if got != 7 {
+		t.Errorf("MaxFixRounds() = %d, want 7", got)
+	}
+}
