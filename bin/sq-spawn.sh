@@ -2333,6 +2333,7 @@ function scanDeliveryRequests(pi: any): void {
 
 export default function (pi: any) {
   pi.on("session_start", () => {
+    pi.appendEntry("squad-task-attribution", { taskId: "$ID" });
     piAgentRunning = false;
     startDelivery(pi);
   });

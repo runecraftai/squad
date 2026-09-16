@@ -31,8 +31,11 @@ mkdir -p "$FIXTURE_DIR"
 
 write_exec_window() {
   local state=$1 id=$2 workspace=$3 start=$4 end=$5
-  printf 'exec_state=released\nexec_started_at=%s\nexec_last_activity=%s\nexec_workspace=%s\n' \
-    "$start" "$end" "$workspace" > "$state/$id.exec"
+  shift 5
+  {
+    printf 'exec_state=released\nexec_started_at=%s\nexec_last_activity=%s\n' "$start" "$end"
+    printf 'exec_workspace=%s\n' "$workspace" "$@"
+  } > "$state/$id.exec"
 }
 
 # Synthetic Claude transcript with known token counts
@@ -335,13 +338,13 @@ test_cli_pricing_table
 # ── (h2) Pi task discovery and exact attribution ───────────────────────────
 
 test_pi_task_report() {
-  local pi_root="$TMP_ROOT/pi-sessions" pi_dir="$TMP_ROOT/pi-sessions/fixture" state="$TMP_ROOT/pi-state" wt="$TMP_ROOT/pi-worktree"
+  local pi_root="$TMP_ROOT/pi-sessions" pi_dir="$TMP_ROOT/pi-sessions/fixture" state="$TMP_ROOT/pi-state" wt="$TMP_ROOT/pi-worktree" retry_wt="$TMP_ROOT/pi-retry-worktree"
   mkdir -p "$pi_dir" "$state"
   printf 'window=sq:pi-test\nharness=pi\nworktree=%s\nproject=test\nmodel=default\n' "$wt" > "$state/pi-task.meta"
-  write_exec_window "$state" pi-task "$wt" 1767225600 1767484800
+  write_exec_window "$state" pi-task "$retry_wt" 1767225600 1767484800 "$wt"
   cat > "$pi_dir/matched.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
-{"type":"message","message":{"role":"user","content":"task pi-task"}}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pi-task"}}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
 {"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":2600000000,"output":53,"cacheRead":7,"cacheWrite":2,"totalTokens":2600000062,"cost":{"total":0.02}}}}
 EOF
@@ -356,13 +359,15 @@ EOF
 {"type":"message","message":{"role":"assistant","model":"gpt-6-astra","usage":{"input":8888,"output":7777,"totalTokens":16665,"cost":{"total":12.59}}}}
 EOF
   cat > "$pi_dir/retry-attempt.jsonl" <<EOF
-{"type":"session","version":3,"id":"pi-session-retry","timestamp":"2025-12-20T00:00:00Z","cwd":"$wt"}
-{"type":"message","message":{"role":"user","content":"task pi-task"}}
+{"type":"session","version":3,"id":"pi-session-retry","timestamp":"2025-12-20T00:00:00Z","cwd":"$retry_wt"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pi-task"}}
 {"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
 {"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":400,"output":200,"totalTokens":600,"cost":{"total":0.03}}}}
 EOF
   cat > "$pi_dir/foreign-same-worktree.jsonl" <<EOF
 {"type":"session","version":3,"id":"foreign-mission","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pi-task-followup"}}
+{"type":"message","message":{"role":"user","content":"Read the brief at data/pi-task-followup/brief.md for sq/pi-task-followup"}}
 {"type":"model_change","provider":"anthropic","modelId":"claude-opus-4"}
 {"type":"message","message":{"role":"assistant","model":"claude-opus-4","usage":{"input":7000,"output":6000,"totalTokens":13000,"cost":{"total":7}}}}
 EOF
@@ -382,7 +387,7 @@ EOF
   esac
   cat > "$pi_dir/subscription.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-2","timestamp":"2026-01-02T00:00:00Z","cwd":"$wt"}
-{"type":"message","message":{"role":"user","content":"task pi-task"}}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pi-task"}}
 {"type":"model_change","provider":"opencode-go","modelId":"opencode-go"}
 {"type":"message","message":{"role":"assistant","model":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15}}}
 EOF
@@ -411,7 +416,14 @@ EOF
     "$COST_CLI" report no-exec --json)
   assert_contains "$output" '"found":false' "Pi report refuses path-only attribution without an execution window"
   assert_contains "$output" 'execution window is unavailable' "missing execution window explains unavailable attribution"
-  pass "Pi task report requires the recorded execution window"
+  cat >> "$pi_root/fixture/session.jsonl" <<'EOF'
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"no-exec"}}
+EOF
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
+    "$COST_CLI" report no-exec --json)
+  assert_contains "$output" '"found": true' "exact task identity remains attributable without an execution window"
+  assert_contains "$output" '"input": 100' "identity attribution preserves usage without a window"
+  pass "Pi task report uses the execution window only for legacy sessions"
 }
 
 test_pi_requires_execution_window

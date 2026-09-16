@@ -8,9 +8,10 @@
 # Supports Claude Code JSONL transcripts and Pi session JSONL files. Other harnesses
 # (opencode, codex, grok, kimi) are estimated from token counts when available.
 # Pi attribution is exact: a session is eligible when its session header cwd
-# equals the task execution workspace and its record carries the task identity.
-# The recorded execution-attempt window remains the fallback for legacy sessions
-# without that identity, and the recorded harness must be pi or pi-signed.
+# equals any recorded task execution workspace and its record carries an exact
+# task-attribution entry. The recorded execution-attempt window remains the
+# fallback for legacy sessions without any task-attribution entry, and the
+# recorded harness must be pi or pi-signed.
 # The session directory is scoped by SQUAD_PI_SESSION_DIR (or ~/.pi/agent/sessions),
 # so another base and the primary session cannot be counted accidentally. No
 # prompt or response content is read.
@@ -230,7 +231,7 @@ sq_cost_from_transcript() {
 # The JSON is intentionally an interface for sq-cost.sh and its tests.
 sq_cost_pi_task_json() {
   local task_id="${1:?task-id required}" state_dir="${2:?state dir required}" session_root="${3:?session root required}"
-  local meta="$state_dir/$task_id.meta" exec_file worktree window harness model start end
+  local meta="$state_dir/$task_id.meta" exec_file worktree window harness model start end window_valid workspaces_json
   [ -f "$meta" ] || { printf '{"found":false,"reason":"task metadata is unavailable"}\n'; return 0; }
   exec_file="$state_dir/$task_id.exec"
   worktree=$(grep '^worktree=' "$meta" | head -1 | cut -d= -f2- || true)
@@ -239,18 +240,20 @@ sq_cost_pi_task_json() {
   model=$(grep '^model=' "$meta" | head -1 | cut -d= -f2- || true)
   start=$(grep '^exec_started_at=' "$exec_file" 2>/dev/null | head -1 | cut -d= -f2- || true)
   end=$(grep '^exec_last_activity=' "$exec_file" 2>/dev/null | head -1 | cut -d= -f2- || true)
-  local exec_workspace
-  exec_workspace=$(grep '^exec_workspace=' "$exec_file" 2>/dev/null | head -1 | cut -d= -f2- || true)
-  [ -n "$exec_workspace" ] && worktree="$exec_workspace"
+  workspaces_json=$(grep '^exec_workspace=' "$exec_file" 2>/dev/null | cut -d= -f2- | jq -Rsc 'split("\n") | map(select(length > 0))' || true)
+  [ -n "$workspaces_json" ] || workspaces_json='[]'
+  if [ "$workspaces_json" = '[]' ] && [ -n "$worktree" ]; then
+    workspaces_json=$(jq -cn --arg worktree "$worktree" '[$worktree]')
+  fi
+  worktree=$(jq -r 'last // ""' <<<"$workspaces_json")
   if [ -z "$worktree" ] || [ -z "$window" ] || [[ "$harness" != pi && "$harness" != pi-signed ]]; then
     jq -cn --arg reason "task metadata lacks an attributable Pi worktree, window, or harness" \
       '{found:false,reason:$reason}'
     return 0
   fi
-  if [[ ! "$start" =~ ^[0-9]+$ ]] || [[ ! "$end" =~ ^[0-9]+$ ]] || [ "$end" -lt "$start" ]; then
-    jq -cn --arg reason "task execution window is unavailable or invalid" \
-      '{found:false,reason:$reason}'
-    return 0
+  window_valid=false
+  if [[ "$start" =~ ^[0-9]+$ ]] && [[ "$end" =~ ^[0-9]+$ ]] && [ "$end" -ge "$start" ]; then
+    window_valid=true
   fi
 
   local -a files=() file
@@ -269,31 +272,50 @@ sq_cost_pi_task_json() {
   for file in "${files[@]}"; do
     jq -s -c . "$file" >> "$packed" 2>/dev/null || true
   done
-  jq -s -n --arg cwd "$worktree" --arg task "$task_id" --arg agent "$harness" \
-    --arg configured_model "$model" --arg start "$start" --arg end "$end" \
+  if [ "$window_valid" = false ] && ! jq -s -e --argjson workspaces "$workspaces_json" --arg task "$task_id" '
+    any(.[]; . as $session |
+      $session[0].type == "session" and
+      ($session[0].cwd as $session_cwd | $workspaces | index($session_cwd) != null) and
+      any($session[]; .type == "custom" and .customType == "squad-task-attribution" and .data.taskId? == $task))
+  ' "$packed" >/dev/null 2>&1; then
+    jq -cn --arg reason "task execution window is unavailable or invalid" '{found:false,reason:$reason}'
+    return 0
+  fi
+  jq -s -n --argjson workspaces "$workspaces_json" --arg task "$task_id" --arg agent "$harness" \
+    --arg configured_model "$model" --arg start "$start" --arg end "$end" --argjson window_valid "$window_valid" \
     --slurpfile sessions "$packed" '
-    ($sessions | map(select(.[0].type == "session" and .[0].cwd == $cwd))) as $workspace_sessions |
-    ($workspace_sessions | map(select(any(.[]; .type == "message" and .message.role == "user" and
-      ((.message.content // "") | tostring | contains($task)))))) as $identity_matched |
-    (if ($identity_matched | length) > 0 then $identity_matched else
-      ($workspace_sessions | map(select(((try (.[0].timestamp | fromdateiso8601) catch null) as $ts |
-       $ts != null and $ts >= ($start | tonumber) and $ts <= ($end | tonumber))))) end) as $matched |
-    [ $matched[] as $s | $s[] | select(.type == "message" and .message.role == "assistant" and .message.usage != null) |
-      {model:(.message.model // (($s | map(select(.type == "model_change") | .modelId) | last) // $configured_model)),
-       provider:(($s | map(select(.type == "model_change") | .provider) | last) // ""), session:($s[0].id // "unknown"),
-       started:($s[0].timestamp // ""), input:(.message.usage.input // 0), output:(.message.usage.output // 0),
-       cache_read:(.message.usage.cacheRead // 0), cache_write:(.message.usage.cacheWrite // 0),
-       total:(.message.usage.totalTokens // ((.message.usage.input // 0)+(.message.usage.output // 0)+(.message.usage.cacheRead // 0)+(.message.usage.cacheWrite // 0))),
-       reported_cost:(.message.usage.cost.total // null)} ] as $rows |
-    {found:($matched|length > 0), task:$task, agent:$agent, worktree:$cwd, sessions:($matched|length),
-     started:($matched|map(.[0].timestamp // "")|min // ""),
-     models:([ $rows[].model ] | unique | map(. as $m | {model:$m,
-       sessions:([$rows[] | select(.model == $m) | .session] | unique | length),
-       input:([$rows[] | select(.model == $m) | .input] | add // 0), output:([$rows[] | select(.model == $m) | .output] | add // 0),
-       cache_read:([$rows[] | select(.model == $m) | .cache_read] | add // 0), cache_write:([$rows[] | select(.model == $m) | .cache_write] | add // 0),
-       total:([$rows[] | select(.model == $m) | .total] | add // 0),
-       reported_cost:([$rows[] | select(.model == $m) | .reported_cost] | map(select(. != null)) | add // null),
-       provider:([$rows[] | select(.model == $m) | .provider] | map(select(. != "")) | first // "")}))}
+    def has_task_identity:
+      any(.[]; .type == "custom" and .customType == "squad-task-attribution" and .data.taskId? == $task);
+    def has_any_task_identity:
+      any(.[]; .type == "custom" and .customType == "squad-task-attribution");
+    def report($matched):
+      [ $matched[] as $s | $s[] | select(.type == "message" and .message.role == "assistant" and .message.usage != null) |
+        {model:(.message.model // (($s | map(select(.type == "model_change") | .modelId) | last) // $configured_model)),
+         provider:(($s | map(select(.type == "model_change") | .provider) | last) // ""), session:($s[0].id // "unknown"),
+         started:($s[0].timestamp // ""), input:(.message.usage.input // 0), output:(.message.usage.output // 0),
+         cache_read:(.message.usage.cacheRead // 0), cache_write:(.message.usage.cacheWrite // 0),
+         total:(.message.usage.totalTokens // ((.message.usage.input // 0)+(.message.usage.output // 0)+(.message.usage.cacheRead // 0)+(.message.usage.cacheWrite // 0))),
+         reported_cost:(.message.usage.cost.total // null)} ] as $rows |
+      {found:($matched|length > 0), task:$task, agent:$agent, worktree:($workspaces | last), sessions:($matched|length),
+       started:($matched|map(.[0].timestamp // "")|min // ""),
+       models:([ $rows[].model ] | unique | map(. as $m | {model:$m,
+         sessions:([$rows[] | select(.model == $m) | .session] | unique | length),
+         input:([$rows[] | select(.model == $m) | .input] | add // 0), output:([$rows[] | select(.model == $m) | .output] | add // 0),
+         cache_read:([$rows[] | select(.model == $m) | .cache_read] | add // 0), cache_write:([$rows[] | select(.model == $m) | .cache_write] | add // 0),
+         total:([$rows[] | select(.model == $m) | .total] | add // 0),
+         reported_cost:([$rows[] | select(.model == $m) | .reported_cost] | map(select(. != null)) | add // null),
+         provider:([$rows[] | select(.model == $m) | .provider] | map(select(. != "")) | first // "")}))};
+    ($sessions | map(select(.[0].type == "session" and
+      (.[0].cwd as $session_cwd | $workspaces | index($session_cwd) != null)))) as $workspace_sessions |
+    ($workspace_sessions | map(select(has_task_identity))) as $identity_matched |
+    (if $window_valid then
+      ($workspace_sessions | map(select((has_any_task_identity | not) and
+        ((try (.[0].timestamp | fromdateiso8601) catch null) as $ts |
+         $ts != null and $ts >= ($start | tonumber) and $ts <= ($end | tonumber)))))
+     else [] end) as $legacy_matched |
+    if ($identity_matched | length) == 0 and ($window_valid | not) then
+      {found:false,reason:"task execution window is unavailable or invalid"}
+    else report($identity_matched + $legacy_matched) end
   ' 2>/dev/null || printf '{"found":false,"reason":"Pi session data could not be read"}\n'
 }
 
