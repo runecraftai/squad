@@ -12,11 +12,12 @@ Unrecognized identifiers fall back to a title-cased form.
 
 The humanized-count and agent-label patterns are based on [LangWatch](https://github.com/langwatch/langwatch) (Apache-2.0 License).
 
-Pi sessions are attributable only when the recorded harness is `pi` or `pi-signed`, the session header `cwd` exactly equals the execution workspace recorded in the task's `.exec` sidecar, and the session header timestamp falls within the execution attempt window (`exec_started_at` through `exec_last_activity`).
+Pi sessions are attributable only when the recorded harness is `pi` or `pi-signed` and the session header `cwd` exactly equals the execution workspace recorded in the task's `.exec` sidecar.
+When one or more workspace sessions carry the task identity in their own user launch record, those identity-bound sessions are used across all attempts, including sessions before the current attempt window.
+For legacy sessions without that identity, the session header timestamp must fall within the execution attempt window (`exec_started_at` through `exec_last_activity`).
 When the execution workspace is absent, the meta-file `worktree` is used as a fallback.
-When the execution window is missing or invalid (non-numeric timestamps, or end before start), attribution is refused with an explicit reason rather than falling back to path-only matching.
-This exact rule excludes the primary session, other tasks, and sessions from another base.
-Retried attempts and validation sessions are included when they match the execution workspace and fall within the execution window.
+When the execution window is missing or invalid (non-numeric timestamps, or end before start), attribution is refused unless task-identity sessions are available.
+This rule excludes the primary session, other tasks, and sessions from another base without widening a pooled workspace's time range.
 When no attributable session exists, the report says why instead of fabricating zero usage.
 
 Provider-recorded costs are preferred.
