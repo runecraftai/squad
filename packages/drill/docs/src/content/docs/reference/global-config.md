@@ -49,6 +49,7 @@ auto_fix:
   document: 3
   lint: 3
   ci: 3
+  max_fix_rounds: 3
 
 ci:
   rerun_transient: 0
@@ -311,6 +312,7 @@ For empty `commands.lint`, the document step's combined housekeeping pass also a
 | `auto_fix.document` | `int` | `3`     | Not used by the automatic document pass                                                     |
 | `auto_fix.lint`     | `int` | `3`     | Lint issue auto-fix attempts                                                                |
 | `auto_fix.ci`       | `int` | `3`     | CI auto-fix attempts for CI failures, plus GitHub, GitLab, and Azure DevOps merge conflicts |
+| `auto_fix.max_fix_rounds` | `int` | `3` | Global cap on total fix rounds (auto-fix + user-fix) per step before non-convergence failure |
 
 Legacy alias: `auto_fix.babysit`.
 
