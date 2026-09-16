@@ -3,7 +3,8 @@
 #
 # The workmux sidebar reads from Squad's ground-truth state directory.
 # These tests verify:
-#   (a) tmux/workmux-sidebar.tmux loads and binds C-M-s to the vendored binary
+#   (a) tmux/workmux-sidebar.tmux loads and binds C-M-s and C-M-d to the
+#       vendored binary, using run-shell and a popup respectively
 #   (b) The plugin fails closed when the vendored binary is not built
 #   (c) The plugin pins any visible SQUAD_BASE/SQUAD_HOME into the tmux
 #       server's global environment (so the run-shell binding always sees
@@ -50,6 +51,8 @@ PATH="$TMP_ROOT:$PATH" SQUAD_WORKMUX_BIN="$FAKE_WORKMUX_BIN" bash "$ROOT/tmux/wo
 
 assert_grep "bind-key -n C-M-s run-shell \"$FAKE_WORKMUX_BIN\" sidebar" "$FAKE_TMUX_LOG" \
   "C-M-s is bound to the vendored sidebar binary"
+assert_grep "bind-key -n C-M-d display-popup -E \"$FAKE_WORKMUX_BIN\" dashboard" "$FAKE_TMUX_LOG" \
+  "C-M-d opens the dashboard with the vendored binary in a popup"
 
 # --- (b) plugin fails closed when the vendored binary is not built ---
 
@@ -81,6 +84,8 @@ assert_grep "set-environment -g SQUAD_HOME /squad/home" "$FAKE_TMUX_LOG" \
   "loader pins SQUAD_HOME into the server environment"
 assert_grep "bind-key -n C-M-s run-shell \"$FAKE_WORKMUX_BIN\" sidebar" "$FAKE_TMUX_LOG" \
   "C-M-s is still bound when a Squad base is pinned"
+assert_grep "bind-key -n C-M-d display-popup -E \"$FAKE_WORKMUX_BIN\" dashboard" "$FAKE_TMUX_LOG" \
+  "C-M-d is still bound when a Squad base is pinned"
 
 # --- (d) plugin issues no set-environment when no Squad base is visible ---
 

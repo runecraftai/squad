@@ -40,13 +40,14 @@ Adicione ao `~/.config/tmux/tmux.conf`:
 run-shell "/caminho/para/squad/tmux/workmux-sidebar.tmux"
 ```
 
-O plugin vincula `C-M-s` ao toggle da sidebar, e exige o binário vendado da sidebar compilado como descrito acima.
+O plugin vincula `C-M-s` ao toggle da sidebar e `C-M-d` ao abrir o dashboard em um popup temporário em tela cheia, e exige o binário vendado compilado como descrito acima.
 
 ## Uso
 
 | Tecla | Ação |
 | --- | ------ |
 | `C-M-s` | Alternar painel da sidebar (global em todas as janelas) |
+| `C-M-d` | Abrir o dashboard interativo em um popup temporário |
 
 A sidebar aparece automaticamente em toda janela tmux, e novas janelas ganham o painel via hooks do tmux.
 
