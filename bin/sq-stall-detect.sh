@@ -136,7 +136,7 @@ retry_run_claim() {
     [ "$state" = retry_queued ] || continue
     next_retry=$(field exec_next_retry_at "$id"); [ -n "$next_retry" ] || next_retry=0
     now=$(date +%s)
-    if [ "$((now - next_retry))" -lt "$grace" ]; then
+    if [ "$now" -lt "$next_retry" ] || [ "$((now - next_retry))" -lt "$grace" ]; then
       continue
     fi
     retries=$(field exec_retry_count "$id"); [ -n "$retries" ] || retries=0
@@ -149,6 +149,7 @@ retry_run_claim() {
         if "$SCRIPT_DIR/sq-exec-state.sh" running "$id" >/dev/null 2>&1; then
           append_status "$id" "retry resumed" working
         else
+          SQUAD_EXEC_ERROR=running_transition_failed "$SCRIPT_DIR/sq-exec-state.sh" retry "$id" >/dev/null 2>&1 || true
           append_status "$id" "retry claimed but could not transition to running" blocked
         fi
       fi
