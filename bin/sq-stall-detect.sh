@@ -7,6 +7,10 @@
 # activity and has no positive evidence of a live tool call or active phase.
 # Ambiguous endpoint evidence is surfaced for stuck-operator-recovery; it is
 # never interrupted automatically. Workspaces and branches are not modified.
+#
+# The retry_run_claim function scans retry_queued tasks and claims them when
+# their scheduled moment arrives, or releases them when retries are exhausted.
+# This keeps retry attempts within supervision instead of leaving them unwatched.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
