@@ -22,11 +22,12 @@
 # `task <task-id>` preserves that legacy line unless `--json` is supplied.
 # `report <task-id>` (or `task <task-id> --json`) emits the complete privacy-safe
 # report and never includes prompt or response content. Pi sessions are counted
-# only when their session header cwd exactly matches the recorded task worktree,
-# the task has a recorded window, and its recorded harness is pi or pi-signed.
-# This excludes primary sessions and sessions from another base; missing matches
-# are reported explicitly. The PR hook is `publish <task-id> <pr-url>`, normally
-# called by sq-pr-check after a PR becomes ready, because it survives generated
+# only when their session header cwd exactly matches the recorded execution
+# workspace, their timestamp falls inside the recorded execution window, and the
+# recorded harness is pi or pi-signed. This excludes primary sessions and sessions
+# from another base; missing matches are reported explicitly. The PR hook is
+# `publish <task-id> <pr-url>`, normally called by sq-pr-check after a PR becomes
+# ready, because it survives generated
 # PR bodies and can update one marked comment idempotently.
 #
 # When no transcript is found, the legacy command prints an estimate line.
