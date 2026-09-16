@@ -83,4 +83,51 @@ SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=ambiguous SQUAD_STALL_INTERRUPT_CM
 assert_eq "$("$EXEC" get ambiguous)" running
 assert_contains "$(cat "$STATE/ambiguous.status")" 'stuck-operator-recovery'
 
+# --- Open-decision tests: an open needs-decision or blocked must not be interrupted ---
+# Clean up stale exec files from earlier tests to avoid cross-contamination
+# when the stall detector processes all .exec files in a single run.
+rm -f "$STATE"/*.exec "$STATE"/*.meta "$STATE"/*.status
+cat >"$TMP/decision-interrupt" <<'EOF'
+#!/usr/bin/env bash
+printf interrupted >"$TMP/decision-interrupted"
+EOF
+chmod +x "$TMP/decision-interrupt"
+
+# An open needs-decision means the operator is legitimately stopped. The detector
+# must not interrupt it for inactivity.
+"$EXEC" claim open-decision >/dev/null
+"$EXEC" running open-decision >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/open-decision.exec"
+printf 'needs-decision [key=test-choice]: what to do\n' >"$STATE/open-decision.status"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/decision-interrupt" "$STALL"
+assert_eq "$("$EXEC" get open-decision)" running
+assert_contains "$(cat "$STATE/open-decision.status")" 'needs-decision'
+[ ! -e "$TMP/decision-interrupted" ] || { printf 'open-decision worker was interrupted\n' >&2; exit 1; }
+
+# An open blocked: means the operator is waiting for Squad help. The detector
+# must not interrupt it for inactivity.
+rm -f "$STATE"/*.exec "$STATE"/*.status
+"$EXEC" claim open-blocked >/dev/null
+"$EXEC" running open-blocked >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/open-blocked.exec"
+printf 'blocked: waiting for credential\n' >"$STATE/open-blocked.status"
+rm -f "$TMP/decision-interrupted"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/decision-interrupt" "$STALL"
+assert_eq "$("$EXEC" get open-blocked)" running
+assert_contains "$(cat "$STATE/open-blocked.status")" 'blocked:'
+[ ! -e "$TMP/decision-interrupted" ] || { printf 'open-blocked worker was interrupted\n' >&2; exit 1; }
+
+# A resolved decision means the operator is no longer waiting. A subsequent stall
+# IS interrupted - the resolution clears the gate.
+rm -f "$STATE"/*.exec "$STATE"/*.status
+"$EXEC" claim resolved-decision >/dev/null
+"$EXEC" running resolved-decision >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/resolved-decision.exec"
+printf 'needs-decision [key=old-choice]: what to do\n' >"$STATE/resolved-decision.status"
+printf 'resolved [key=old-choice]: commander decided\n' >>"$STATE/resolved-decision.status"
+rm -f "$TMP/decision-interrupted"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/decision-interrupt" "$STALL"
+assert_eq "$("$EXEC" get resolved-decision)" retry_queued
+assert_contains "$(cat "$STATE/resolved-decision.status")" 'stall interrupted'
+
 printf 'test-sq-stall-detect: ok\n'

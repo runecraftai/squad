@@ -28,6 +28,13 @@ stall_status_is_nonworking() {  # <id>
   [ -n "$last" ] && { status_is_paused "$last" || status_is_terminal_verb "$last"; }
 }
 
+stall_has_open_decisions() {  # <id>
+  local status_file open
+  status_file="$STATE/$1.status"
+  open=$(status_open_decisions "$status_file") 2>/dev/null || true
+  [ -n "$open" ]
+}
+
 # Public for tests and for the execution-state owner.
 stall_backoff_seconds() {
   local retry=${1:-0} base=${SQUAD_RETRY_BACKOFF_BASE:-10} cap=${SQUAD_RETRY_BACKOFF_MAX:-300} n
@@ -92,6 +99,10 @@ handle_task() {
   last=$(field exec_last_activity "$id"); [ -n "$last" ] || last=0
   age=$((now - last))
   [ "$age" -ge "$STALL_TIMEOUT" ] || return 0
+  # An open needs-decision or blocked record means the operator is
+  # legitimately stopped waiting for a commander decision or Squad reply.
+  # Do not interrupt - the operator is not stuck, it is stopped on purpose.
+  stall_has_open_decisions "$id" && return 0
   # A running sidecar can outlive the event that intentionally parked or
   # finished its worker. Never append a synthetic `working:` event after a
   # paused or terminal status - doing so resurrects a non-working task and
