@@ -2,16 +2,18 @@
 # workmux-sidebar.tmux - tmux plugin loader for the workmux sidebar.
 #
 # Sourced by tmux (or run by a plugin manager) from inside a running tmux
-# server. It binds C-M-s to toggle the workmux sidebar pane.
+# server. It binds C-M-s to toggle the workmux sidebar pane and C-M-d to open
+# the workmux dashboard in a popup.
 #
-# The workmux sidebar reads from Squad's ground-truth state directory when
-# SQUAD_BASE or SQUAD_HOME is set (auto-detected by workmux). The C-M-s
-# binding runs `workmux sidebar` through tmux run-shell, which executes in
-# the tmux server's environment, so this loader pins any Squad base visible
-# at load time into the server's global environment instead of relying on
-# whatever the server happened to start with. See docs/sq-sidebar.md for the
-# integration details and the vendored workmux README
-# (packages/operation-board/sidebar/README.md) for full sidebar documentation.
+# The workmux sidebar and dashboard read from Squad's ground-truth state
+# directory when SQUAD_BASE or SQUAD_HOME is set (auto-detected by workmux).
+# The C-M-s binding runs `workmux sidebar` through tmux run-shell, and the
+# C-M-d binding runs `workmux dashboard` through a tmux popup. Both execute in
+# the tmux server's environment, so this loader pins any Squad base visible at
+# load time into the server's global environment instead of relying on whatever
+# the server happened to start with. See docs/sq-sidebar.md for the integration
+# details and the vendored workmux README
+# (packages/operation-board/sidebar/README.md) for full documentation.
 set -euo pipefail
 
 # Resolve the vendored workmux binary. Squad vendors the workmux source under
@@ -65,3 +67,6 @@ fi
 
 # Bind C-M-s to toggle the workmux sidebar
 tmux bind-key -n C-M-s run-shell "\"$_workmux_bin\" sidebar"
+
+# Bind C-M-d to open the interactive workmux dashboard in a popup
+tmux bind-key -n C-M-d display-popup -E "\"$_workmux_bin\" dashboard"
