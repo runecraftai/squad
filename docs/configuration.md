@@ -575,6 +575,7 @@ SQUAD_HEARTBEAT_MAX=7200   # heartbeat backoff cap
 SQUAD_STALL_TIMEOUT=300    # seconds without activity before a running attempt is considered stalled (bin/sq-stall-detect.sh)
 SQUAD_RETRY_BACKOFF_BASE=10 # base seconds for exponential retry backoff on stall or failure
 SQUAD_RETRY_BACKOFF_MAX=300 # cap seconds for exponential retry backoff
+SQUAD_RETRY_GRACE_PERIOD=5  # minimum seconds past next_retry_at before claiming a retry-queued attempt (bin/sq-stall-detect.sh)
 SQUAD_STALL_AGENT_STATE=   # override for agent-state probe during stall detection (set by tests; bin/sq-stall-detect.sh)
 SQUAD_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, custom checks, or Relay dispatch)
 SQUAD_CHECK_TIMEOUT=30     # seconds allowed per slow check script

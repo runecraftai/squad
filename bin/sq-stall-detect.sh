@@ -9,6 +9,10 @@
 # never interrupted automatically. An open needs-decision or blocked record
 # means the operator is legitimately stopped and must not be interrupted.
 # Workspaces and branches are not modified.
+#
+# The retry_run_claim function scans retry_queued tasks and claims them when
+# their scheduled moment arrives, or releases them when retries are exhausted.
+# This keeps retry attempts within supervision instead of leaving them unwatched.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
