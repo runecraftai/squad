@@ -502,7 +502,76 @@ SH
 
 test_publish_idempotent
 
-# ── (h5) invalid PR URL has no repository fallback ─────────────────────────
+# ── (h5) creation targets the parsed PR repository ─────────────────────────
+
+test_publish_create_targets_pr_repository() {
+  local state="$TMP_ROOT/create-state" data="$TMP_ROOT/create-data" fakebin invocations
+  mkdir -p "$state" "$data"
+  local pi_root="$TMP_ROOT/create-pi" pi_dir="$TMP_ROOT/create-pi/fixture" wt="$TMP_ROOT/create-worktree"
+  mkdir -p "$pi_dir" "$wt"
+  printf 'window=sq:create-test\nharness=pi\nworktree=%s\nproject=test-proj\nmodel=default\n' "$wt" > "$state/create-task.meta"
+  cat > "$pi_dir/create.jsonl" <<EOF
+{"type":"session","version":3,"id":"c1","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0,"totalTokens":150,"cost":{"total":0.01}}}}
+EOF
+  fakebin=$(fm_fakebin "$TMP_ROOT/create-fake")
+  invocations="$TMP_ROOT/create-invocations"
+  : > "$invocations"
+  cat > "$fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_CREATE_INVOCATIONS"
+if [ "$1" = "api" ]; then
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "comment" ]; then
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$fakebin/sq-gh"
+  local output rc
+  output=$(PATH="$fakebin:$PATH" SQUAD_CREATE_INVOCATIONS="$invocations" \
+           SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+           SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" publish create-task \
+           "https://github.com/url-owner/url-repository/pull/42" 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "create publish should exit 0, got: $rc"
+  assert_contains "$(cat "$invocations")" "pr comment 42 --repo url-owner/url-repository" \
+    "create publish passes the PR repository explicitly"
+  pass "new cost comment targets the repository parsed from the PR URL"
+}
+
+test_publish_create_targets_pr_repository
+
+# ── (h6) publication failure reason reaches stderr ─────────────────────────
+
+test_publish_failure_reason() {
+  local state="$TMP_ROOT/failure-state" fakebin err rc
+  mkdir -p "$state"
+  : > "$state/failure-task.meta"
+  fakebin=$(fm_fakebin "$TMP_ROOT/failure-fake")
+  cat > "$fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  exit 0
+fi
+printf 'target repository rejected the comment\n'
+exit 1
+SH
+  chmod +x "$fakebin/sq-gh"
+  err="$TMP_ROOT/failure-stderr"
+  PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" \
+    "$COST_CLI" publish failure-task "https://github.com/org/repo/pull/1" \
+    > /dev/null 2> "$err" && rc=$? || rc=$?
+  [ "$rc" -ne 0 ] || fail "failed publication should exit non-zero"
+  assert_contains "$(cat "$err")" "target repository rejected the comment" \
+    "publication failure preserves the underlying reason on stderr"
+  pass "publication failure reason reaches stderr"
+}
+
+test_publish_failure_reason
+
+# ── (h7) invalid PR URL has no repository fallback ─────────────────────────
 
 test_publish_invalid_url() {
   local state="$TMP_ROOT/invalid-url-state" output rc
@@ -517,7 +586,7 @@ test_publish_invalid_url() {
 
 test_publish_invalid_url
 
-# ── (h6) Pi zero-result regression ────────────────────────────────────────
+# ── (h8) Pi zero-result regression ────────────────────────────────────────
 
 test_pi_zero_result() {
   local pi_root="$TMP_ROOT/zero-pi" state="$TMP_ROOT/zero-state"
