@@ -94,11 +94,25 @@ sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-ready.exec
 sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-ready.exec"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
 assert_eq "$("$EXEC" get retry-ready)" retry_queued
-# Set next_retry_at to now so retry_run_claim will pick it up.
-now_ts=$(date +%s)
-sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$now_ts/" "$STATE/retry-ready.exec"
+# Set next_retry_at well in the past so retry_run_claim picks it up.
+# The grace period (default 5s) requires next_retry_at to be at least
+# that many seconds in the past before claiming.
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-ready.exec"
 retry_run_claim
 assert_eq "$("$EXEC" get retry-ready)" running
+
+# A retry_queued task within the grace period stays queued, enforcing backoff.
+"$EXEC" claim retry-grace >/dev/null
+"$EXEC" running retry-grace >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-grace.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-grace.exec"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
+assert_eq "$("$EXEC" get retry-grace)" retry_queued
+# Set next_retry_at to now (within grace period) so retry_run_claim skips it.
+now_ts=$(date +%s)
+sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$now_ts/" "$STATE/retry-grace.exec"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-grace)" retry_queued
 
 # A retry_queued task that has exhausted retries is released by retry_run_claim.
 # The stall detect always transitions to retry_queued; the claim step handles
@@ -110,8 +124,8 @@ sed -i 's/^exec_retry_count=.*/exec_retry_count=3/' "$STATE/retry-exhausted.exec
 sed -i 's/^exec_max_retries=.*/exec_max_retries=3/' "$STATE/retry-exhausted.exec"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
 assert_eq "$("$EXEC" get retry-exhausted)" retry_queued
-now_ts=$(date +%s)
-sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$now_ts/" "$STATE/retry-exhausted.exec"
+# Set next_retry_at well in the past so retry_run_claim picks it up.
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-exhausted.exec"
 retry_run_claim
 assert_eq "$("$EXEC" get retry-exhausted)" released
 assert_contains "$(cat "$STATE/retry-exhausted.exec")" 'exec_error=retry_limit_reached'

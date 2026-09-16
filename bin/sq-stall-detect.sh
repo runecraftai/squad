@@ -124,7 +124,10 @@ handle_task() {
 }
 
 retry_run_claim() {
-  local file id state next_retry now retries max
+  local file id state next_retry now retries max grace
+  # Minimum seconds past next_retry_at before claiming, so the exponential
+  # backoff is enforced even within the same heartbeat cycle.
+  grace=${SQUAD_RETRY_GRACE_PERIOD:-5}
   mkdir -p "$STATE"
   for file in "$STATE"/*.exec; do
     [ -f "$file" ] || continue
@@ -133,7 +136,7 @@ retry_run_claim() {
     [ "$state" = retry_queued ] || continue
     next_retry=$(field exec_next_retry_at "$id"); [ -n "$next_retry" ] || next_retry=0
     now=$(date +%s)
-    if [ "$now" -lt "$next_retry" ]; then
+    if [ "$((now - next_retry))" -lt "$grace" ]; then
       continue
     fi
     retries=$(field exec_retry_count "$id"); [ -n "$retries" ] || retries=0
