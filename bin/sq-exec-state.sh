@@ -45,12 +45,17 @@ with_lock() {
 }
 
 write_record() {
-  local id=$1 state=$2 old=$3 now tmp attempt retry started workspace backend harness workflow max_retries error next_retry
+  local id=$1 state=$2 old=$3 now tmp attempt retry started workspace workspace_history backend harness workflow max_retries error next_retry
   now=$(date +%s)
   attempt=$(get_field exec_attempt "$id"); [ -n "$attempt" ] || attempt=0
   retry=$(get_field exec_retry_count "$id"); [ -n "$retry" ] || retry=0
   started=$(get_field exec_started_at "$id")
-  workspace=$(get_field exec_workspace "$id"); [ -n "$workspace" ] || workspace=$(meta_field worktree "$id")
+  workspace=$(meta_field worktree "$id"); [ -n "$workspace" ] || workspace=$(get_field exec_workspace "$id")
+  workspace_history=$(grep '^exec_workspace=' "$(path_for "$id")" 2>/dev/null || true)
+  if [ -n "$workspace" ] && ! printf '%s\n' "$workspace_history" | grep -qxF -- "exec_workspace=$workspace"; then
+    workspace_history="${workspace_history}${workspace_history:+
+}exec_workspace=$workspace"
+  fi
   backend=$(get_field exec_backend "$id"); [ -n "$backend" ] || backend=$(meta_field backend "$id"); [ -n "$backend" ] || backend=tmux
   harness=$(get_field exec_harness "$id"); [ -n "$harness" ] || harness=$(meta_field harness "$id")
   workflow=$(get_field exec_workflow_version "$id"); [ -n "$workflow" ] || workflow=$(meta_field workflow_version "$id")
@@ -92,7 +97,7 @@ write_record() {
     printf 'exec_next_retry_at=%s\n' "$next_retry"
     printf 'exec_max_retries=%s\n' "$max_retries"
     printf 'exec_workflow_version=%s\n' "$workflow"
-    printf 'exec_workspace=%s\n' "$workspace"
+    [ -z "$workspace_history" ] || printf '%s\n' "$workspace_history"
     printf 'exec_backend=%s\n' "$backend"
     printf 'exec_harness=%s\n' "$harness"
   } >"$tmp"

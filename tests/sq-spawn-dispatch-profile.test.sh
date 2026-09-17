@@ -605,9 +605,13 @@ import { pathToFileURL } from "node:url";
 
 const handlers = new Map();
 const messages = [];
+const entries = [];
 const pi = {
   on(event, handler) {
     handlers.set(event, handler);
+  },
+  appendEntry(customType, data) {
+    entries.push({ customType, data });
   },
   async sendUserMessage(message, options) {
     if (options?.deliverAs !== "followUp") throw new Error("delivery was not queued as a follow-up");

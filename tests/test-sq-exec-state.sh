@@ -26,6 +26,19 @@ assert_eq "$("$EXEC" running task)" running
 assert_eq "$("$EXEC" release task)" released
 assert_eq "$("$EXEC" release task)" released
 
+mkdir -p "$TMP/workspace-a" "$TMP/workspace-b"
+printf 'worktree=%s\n' "$TMP/workspace-a" > "$STATE/workspace-history.meta"
+assert_eq "$("$EXEC" claim workspace-history)" claimed
+assert_eq "$("$EXEC" running workspace-history)" running
+assert_eq "$("$EXEC" retry workspace-history)" retry_queued
+printf 'worktree=%s\n' "$TMP/workspace-b" > "$STATE/workspace-history.meta"
+assert_eq "$("$EXEC" claim workspace-history)" claimed
+assert_eq "$("$EXEC" running workspace-history)" running
+mapfile -t workspaces < <(sed -n 's/^exec_workspace=//p' "$STATE/workspace-history.exec")
+assert_eq "${#workspaces[@]}" 2
+assert_eq "${workspaces[0]}" "$TMP/workspace-a"
+assert_eq "${workspaces[1]}" "$TMP/workspace-b"
+
 # Two concurrent claims can produce at most one successful claim.
 for n in $(seq 1 20); do
   ("$EXEC" claim atomic >"$TMP/claim-$n" 2>/dev/null && echo success >"$TMP/result-$n" || true) &

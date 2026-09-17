@@ -82,14 +82,18 @@ classify() {  # <harness> <id> <state-dir>
 }
 
 # drive_pi_ext <ext-path> <mode>: load the generated Pi extension in a plain
-# Node host and fire one lifecycle handler. Modes: agent-start, settle-idle,
-# settle-continuing, settle-stale-ctx, turn-end.
+# Node host and fire one lifecycle handler. Modes: session-start, agent-start,
+# settle-idle, settle-continuing, settle-stale-ctx, turn-end.
 drive_pi_ext() {
   EXT_PATH="$1" MODE="$2" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.EXT_PATH).href);
 const handlers = {};
-mod.default({ on: (name, fn) => { handlers[name] = fn; } });
+const entries = [];
+mod.default({
+  on: (name, fn) => { handlers[name] = fn; },
+  appendEntry: (customType, data) => { entries.push({ customType, data }); },
+});
 const ctx = { isIdle: () => {
   if (process.env.MODE === "settle-stale-ctx") {
     throw new Error("This extension ctx is stale after session replacement or reload");
@@ -97,6 +101,11 @@ const ctx = { isIdle: () => {
   return process.env.MODE !== "settle-continuing";
 } };
 switch (process.env.MODE) {
+  case "session-start":
+    await handlers["session_start"]({ reason: "startup" }, ctx);
+    await handlers["session_shutdown"]({ reason: "quit" }, ctx);
+    console.log(JSON.stringify(entries));
+    break;
   case "agent-start": await handlers["agent_start"]({}, ctx); break;
   case "settle-idle":
   case "settle-continuing":
@@ -125,6 +134,11 @@ test_pi_extension_semantic_lifecycle() {
   state="$HOME_DIR/state"
   ext="$state/$id.pi-ext.ts"
   assert_present "$ext" "pi spawn did not write the per-task extension"
+
+  out=$(drive_pi_ext "$ext" session-start) || fail "session_start drive failed: $out"
+  printf '%s\n' "$out" | jq -e --arg id "$id" \
+    'length == 1 and .[0].customType == "squad-task-attribution" and .[0].data.taskId == $id' >/dev/null \
+    || fail "session_start did not append the exact task-attribution entry: $out"
 
   out=$(classify pi "$id" "$state")
   [ "$out" = "busy sq-spawn" ] || fail "seed after spawn must be 'busy sq-spawn', got '$out'"
