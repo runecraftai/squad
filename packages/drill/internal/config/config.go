@@ -336,13 +336,14 @@ type Commands struct {
 // AutoFixRaw is the YAML representation of auto-fix config.
 // Pointer fields distinguish "not set" (nil) from "set to 0" (disabled).
 type AutoFixRaw struct {
-	Lint     *int `yaml:"lint"`
-	Test     *int `yaml:"test"`
-	Review   *int `yaml:"review"`
-	Document *int `yaml:"document"`
-	CI       *int `yaml:"ci"`
-	Babysit  *int `yaml:"babysit"`
-	Rebase   *int `yaml:"rebase"`
+	Lint          *int `yaml:"lint"`
+	Test          *int `yaml:"test"`
+	Review        *int `yaml:"review"`
+	Document      *int `yaml:"document"`
+	CI            *int `yaml:"ci"`
+	Babysit       *int `yaml:"babysit"`
+	Rebase        *int `yaml:"rebase"`
+	MaxFixRounds  *int `yaml:"max_fix_rounds"`
 }
 
 // CIRaw is the YAML representation of CI-step settings.
@@ -364,12 +365,13 @@ type CI struct {
 // AutoFix holds resolved per-step auto-fix attempt limits.
 // A value of 0 means auto-fix is disabled (requires manual approval).
 type AutoFix struct {
-	Lint     int
-	Test     int
-	Review   int
-	Document int
-	CI       int
-	Rebase   int
+	Lint          int
+	Test          int
+	Review        int
+	Document      int
+	CI            int
+	Rebase        int
+	MaxFixRounds  int
 }
 
 // Config is the merged result of global + per-repo configuration.
@@ -1552,12 +1554,13 @@ func validateTestRaw(test TestRaw) error {
 // autoFixDefaults returns the default auto-fix configuration.
 func autoFixDefaults() AutoFix {
 	return AutoFix{
-		Lint:     3,
-		Test:     3,
-		Review:   0,
-		Document: 3,
-		CI:       3,
-		Rebase:   3,
+		Lint:         3,
+		Test:         3,
+		Review:       0,
+		Document:     3,
+		CI:           3,
+		Rebase:       3,
+		MaxFixRounds: 3,
 	}
 }
 
@@ -1601,6 +1604,9 @@ func applyAutoFixOverrides(dst *AutoFix, src *AutoFixRaw) {
 	if src.Rebase != nil {
 		dst.Rebase = *src.Rebase
 	}
+	if src.MaxFixRounds != nil {
+		dst.MaxFixRounds = *src.MaxFixRounds
+	}
 }
 
 // AutoFixLimit returns the max auto-fix attempts for a given step.
@@ -1622,6 +1628,17 @@ func (c *Config) AutoFixLimit(step types.StepName) int {
 	default:
 		return 0
 	}
+}
+
+// MaxFixRounds returns the maximum total fix rounds (auto-fix + user-fix)
+// allowed per step before the run declares non-convergence and fails.
+// This is a global safety bound, not per-step: every step shares the same
+// cap so a single misconfigured step cannot loop indefinitely.
+func (c *Config) MaxFixRounds() int {
+	if c.AutoFix.MaxFixRounds <= 0 {
+		return 3
+	}
+	return c.AutoFix.MaxFixRounds
 }
 
 // Merge combines global and per-repo config. Per-repo agent values, including

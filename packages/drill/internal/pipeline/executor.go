@@ -224,6 +224,7 @@ type stepExecutionState struct {
 	previousFindings string
 	roundNum         int
 	autoFixAttempts  int
+	userFixAttempts  int
 	executionMS      int64
 	currentRoundID   string
 }
@@ -663,6 +664,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 	// roundNum is shared with the perf wrapper's round closure below: an
 	// invocation during execution of round N+1 sees roundNum still at N.
 	autoFixAttempts := state.autoFixAttempts
+	userFixAttempts := state.userFixAttempts
 	roundNum := state.roundNum
 
 	stepAgent := e.agent
@@ -799,8 +801,18 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			fixableFindings := autoFixableFindingsJSON(outcome.Findings)
 			if fixableFindings != "" {
 				autoFixAttempts++
+				totalRounds := autoFixAttempts + userFixAttempts
+				maxRounds := e.maxFixRounds()
+				if totalRounds >= maxRounds {
+					slog.Error("fix loop non-convergence", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
+					err := nonConvergenceError(stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
+					if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
+						slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
+					}
+					return false, err
+				}
 				telemetry.Track("fix", e.fixTelemetryFields("auto", stepName, findingsCount(fixableFindings), autoFixAttempts))
-				slog.Info("auto-fixing step", "step", stepName, "attempt", autoFixAttempts, "max", autoFixLimit)
+				slog.Info("auto-fixing step", "step", stepName, "attempt", autoFixAttempts, "max", autoFixLimit, "total_rounds", totalRounds, "max_fix_rounds", maxRounds)
 				executionMS += time.Since(phaseStart).Milliseconds()
 				fixCount := findingsCount(fixableFindings)
 				writeLog(fmt.Sprintf("auto-fix round %d/%d starting after round %d (%d %s)", autoFixAttempts, autoFixLimit, roundNum, fixCount, pluralize(fixCount, "finding", "findings")))
@@ -924,11 +936,22 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			return false, fmt.Errorf("step %s: aborted by user", stepName)
 
 		case types.ActionFix:
+			userFixAttempts++
+			totalRounds := autoFixAttempts + userFixAttempts
+			maxRounds := e.maxFixRounds()
+			if totalRounds >= maxRounds {
+				slog.Error("fix loop non-convergence", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
+				err := nonConvergenceError(stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
+				if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
+					slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
+				}
+				return false, err
+			}
 			telemetry.Track("fix", e.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), 0))
 			// Fix - mark step as fixing, resume execution timer, re-execute.
 			phaseStart = time.Now()
 			selectedCount := selectedFindingCount(outcome.Findings, response.findingIDs)
-			writeLog(fmt.Sprintf("user-fix round starting after round %d (%d %s selected)", roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
+			writeLog(fmt.Sprintf("user-fix round %d/%d starting after round %d (%d %s selected)", userFixAttempts, maxRounds, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
 			if dbErr := e.db.UpdateStepStatus(sr.ID, types.StepStatusFixing); dbErr != nil {
 				slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 			}
@@ -989,6 +1012,22 @@ func roundInsertID(_ string, inserted *db.StepRound, err error) string {
 		return ""
 	}
 	return inserted.ID
+}
+
+// maxFixRounds returns the configured maximum total fix rounds per step.
+func (e *Executor) maxFixRounds() int {
+	if e.config == nil {
+		return 3
+	}
+	return e.config.MaxFixRounds()
+}
+
+// nonConvergenceError returns a descriptive error when the fix-round limit
+// is exceeded. The error message carries the evidence a supervisor needs:
+// total rounds, auto vs user breakdown, and the configured limit.
+func nonConvergenceError(stepName types.StepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts int) error {
+	return fmt.Errorf("non-convergence: %s reached %d/%d fix rounds (%d auto + %d user); last round did not clear blocking findings",
+		stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
 }
 
 type gateStepBoundaryAgent struct {

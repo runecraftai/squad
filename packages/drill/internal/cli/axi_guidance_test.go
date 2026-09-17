@@ -31,6 +31,7 @@ var canonicalPreserveGateFixPhrases = []string{
 	"post-pipeline",
 	"on top",
 	"every pipeline fix commit",
+	"fix-round limit",
 }
 
 var canonicalBranchSyncPhrases = []string{
@@ -244,4 +245,13 @@ func readAgentsGuide(t *testing.T) string {
 		t.Fatalf("read agents guide %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func TestGuidanceMentionsFixRoundLimit(t *testing.T) {
+	if !strings.Contains(preserveGateFixCommitsGuidance, "fix-round limit") {
+		t.Errorf("preserveGateFixCommitsGuidance must mention fix-round limit")
+	}
+	if !strings.Contains(preserveGateFixCommitsGuidance, "non-convergence") {
+		t.Errorf("preserveGateFixCommitsGuidance must mention non-convergence")
+	}
 }

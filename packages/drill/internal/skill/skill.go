@@ -337,7 +337,7 @@ help[6]:
   Run ` + "`drill axi respond --action skip`" + ` to skip this step
   Run ` + "`drill axi logs --step review --full`" + ` to read the full step log
   A long-running call is working, not stalled - background it if your harness needs to, but the run never advances past a gate on its own. Read every return; on a ` + "`gate:`" + `, respond; loop until an ` + "`outcome:`" + `.
-  Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits.
+  Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits. The pipeline enforces a fix-round limit (default 3) - when exceeded, the run fails with a non-convergence message indicating how many rounds occurred.
 ` + "```" + `
 
 Read the ` + "`action`" + ` column per row: decide ` + "`r1`" + ` (auto-fix) on your own

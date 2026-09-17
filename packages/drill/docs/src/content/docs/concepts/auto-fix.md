@@ -58,6 +58,9 @@ Per-step attempt limits come from the `auto_fix` config object; the [`auto_fix` 
 Setting a step to `0` disables the follow-up auto-fix loop, so the pipeline pauses for human input when that step finds issues; `auto_fix.review` defaults to `0`, so review findings require manual approval unless you opt in.
 Repo config overlays global config field by field - you can set `auto_fix.lint: 5` in a repo's `.drill.yaml` to override just that step while inheriting the rest from global.
 
+A global `max_fix_rounds` limit (default 3) caps the total number of fix rounds (auto-fix + user-fix) per step.
+When exceeded, the run fails with a non-convergence error indicating how many rounds occurred.
+
 ## Finding actions
 
 Agent-driven findings now use an `action` field instead of `requires_human_review`:

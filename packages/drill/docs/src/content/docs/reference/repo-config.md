@@ -63,6 +63,7 @@ auto_fix:
   document: 3
   lint: 5
   ci: 3
+  max_fix_rounds: 3
 
 # Read only from the trusted default branch: each rerun is another workflow run.
 ci:
