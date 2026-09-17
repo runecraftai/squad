@@ -236,6 +236,7 @@ type recoveredGate struct {
 	findings        string
 	round           int
 	autoFixes       int
+	userFixes       int
 	lastRoundID     string
 	reviewedHeadSHA string
 }
@@ -414,6 +415,7 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 			previousFindings: merged,
 			roundNum:         gate.round,
 			autoFixAttempts:  gate.autoFixes,
+			userFixAttempts:  gate.userFixes,
 			executionMS:      duration,
 			currentRoundID:   gate.lastRoundID,
 		})
@@ -456,9 +458,15 @@ func (e *Executor) recoveredGate(runID string) (*recoveredGate, error) {
 				return nil, fmt.Errorf("recovered approval gate findings are incomplete")
 			}
 			autoFixes := 0
+			userFixes := 0
 			for _, round := range rounds {
-				if round.SelectionSource != nil && *round.SelectionSource == db.RoundSelectionSourceAutoFix {
-					autoFixes++
+				if round.SelectionSource != nil {
+					switch *round.SelectionSource {
+					case db.RoundSelectionSourceAutoFix:
+						autoFixes++
+					case db.RoundSelectionSourceUser:
+						userFixes++
+					}
 				}
 			}
 			gate = &recoveredGate{
@@ -468,6 +476,7 @@ func (e *Executor) recoveredGate(runID string) (*recoveredGate, error) {
 				findings:    *result.FindingsJSON,
 				round:       latest.Round,
 				autoFixes:   autoFixes,
+				userFixes:   userFixes,
 				lastRoundID: latest.ID,
 			}
 			if latest.ReviewedHeadSHA != nil {
@@ -936,6 +945,25 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			return false, fmt.Errorf("step %s: aborted by user", stepName)
 
 		case types.ActionFix:
+			// Record the user's selection before checking limits, so the
+			// selection is preserved even when non-convergence stops the loop.
+			selectedFindings := filterFindingsJSON(outcome.Findings, response.findingIDs)
+			mergedFindings := mergeUserOverridesJSON(selectedFindings, response.instructions, response.addedFindings)
+			if currentRoundID != "" {
+				allSelectedIDs := combineSelectedFindingIDs(response.findingIDs, mergedFindings)
+				if idsJSON := marshalFindingIDs(allSelectedIDs); idsJSON != "" {
+					if dbErr := e.db.SetStepRoundSelection(currentRoundID, &idsJSON, db.RoundSelectionSourceUser); dbErr != nil {
+						slog.Warn("failed to record selected finding ids", "step", stepName, "round", roundNum, "error", dbErr)
+					}
+				}
+				if mergedFindings != "" && mergedFindings != selectedFindings {
+					merged := mergedFindings
+					if dbErr := e.db.SetStepRoundUserFindings(currentRoundID, &merged); dbErr != nil {
+						slog.Warn("failed to record user findings", "step", stepName, "round", roundNum, "error", dbErr)
+					}
+				}
+			}
+			// Guard: same pattern as auto-fix - increment, compute total, check limit.
 			userFixAttempts++
 			totalRounds := autoFixAttempts + userFixAttempts
 			maxRounds := e.maxFixRounds()
@@ -956,26 +984,10 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 				slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 			}
 			sctx.Fixing = true
-			selectedFindings := filterFindingsJSON(outcome.Findings, response.findingIDs)
-			mergedFindings := mergeUserOverridesJSON(selectedFindings, response.instructions, response.addedFindings)
 			sctx.PreviousFindings = mergedFindings
 			nextTrigger = "auto_fix"
-			if currentRoundID != "" {
-				allSelectedIDs := combineSelectedFindingIDs(response.findingIDs, mergedFindings)
-				if idsJSON := marshalFindingIDs(allSelectedIDs); idsJSON != "" {
-					if dbErr := e.db.SetStepRoundSelection(currentRoundID, &idsJSON, db.RoundSelectionSourceUser); dbErr != nil {
-						slog.Warn("failed to record selected finding ids", "step", stepName, "round", roundNum, "error", dbErr)
-					}
-				}
-				if mergedFindings != "" && mergedFindings != selectedFindings {
-					merged := mergedFindings
-					if dbErr := e.db.SetStepRoundUserFindings(currentRoundID, &merged); dbErr != nil {
-						slog.Warn("failed to record user findings", "step", stepName, "round", roundNum, "error", dbErr)
-					}
-				}
-			}
 			e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFixing), "", "", nil)
-			slog.Info("step fix requested, re-executing", "step", stepName)
+			slog.Info("step fix requested, re-executing", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds)
 			continue // loop back to step.Execute
 		}
 	}
