@@ -142,24 +142,27 @@ sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-ready.exec"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
 assert_eq "$("$EXEC" get retry-ready)" retry_queued
 # Set next_retry_at well in the past so retry_run_claim picks it up.
-# The grace period (default 5s) requires next_retry_at to be at least
-# that many seconds in the past before claiming.
 sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-ready.exec"
 retry_run_claim
 assert_eq "$("$EXEC" get retry-ready)" running
 
-# A retry_queued task within the grace period stays queued, enforcing backoff.
-"$EXEC" claim retry-grace >/dev/null
-"$EXEC" running retry-grace >/dev/null
-sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-grace.exec"
-sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-grace.exec"
+# Backoff enforcement: a retry_queued task with a future next_retry_at is
+# NOT claimed before its moment, and IS claimed after it.
+"$EXEC" claim retry-backoff >/dev/null
+"$EXEC" running retry-backoff >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-backoff.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-backoff.exec"
 SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
-assert_eq "$("$EXEC" get retry-grace)" retry_queued
-# Set next_retry_at to now (within grace period) so retry_run_claim skips it.
-now_ts=$(date +%s)
-sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$now_ts/" "$STATE/retry-grace.exec"
+assert_eq "$("$EXEC" get retry-backoff)" retry_queued
+# Set next_retry_at 60 seconds in the future.
+future_ts=$(( $(date +%s) + 60 ))
+sed -i "s/^exec_next_retry_at=.*/exec_next_retry_at=$future_ts/" "$STATE/retry-backoff.exec"
 retry_run_claim
-assert_eq "$("$EXEC" get retry-grace)" retry_queued
+assert_eq "$("$EXEC" get retry-backoff)" retry_queued
+# Now set next_retry_at to the past so retry_run_claim picks it up.
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-backoff.exec"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-backoff)" running
 
 # A retry_queued task that has exhausted retries is released by retry_run_claim.
 # The stall detect always transitions to retry_queued; the claim step handles
@@ -189,5 +192,36 @@ assert_eq "$("$EXEC" get retry-pending)" retry_queued
 sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=9999999999/' "$STATE/retry-pending.exec"
 retry_run_claim
 assert_eq "$("$EXEC" get retry-pending)" retry_queued
+
+# A failed claim surfaces a blocked status instead of being silently swallowed.
+"$EXEC" claim retry-claim-fail >/dev/null
+"$EXEC" running retry-claim-fail >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-claim-fail.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-claim-fail.exec"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
+assert_eq "$("$EXEC" get retry-claim-fail)" retry_queued
+# Set next_retry_at well in the past.
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-claim-fail.exec"
+# Hold the lock so claim fails with a lock conflict.
+mkdir "$STATE/.exec-retry-claim-fail.lock"
+retry_run_claim
+# The task should have a blocked status from the failed claim attempt.
+assert_contains "$(cat "$STATE/retry-claim-fail.status")" 'retry claim failed'
+assert_eq "$("$EXEC" get retry-claim-fail)" retry_queued
+# Clean up the lock.
+rmdir "$STATE/.exec-retry-claim-fail.lock"
+
+# A successful claim does not append a spurious failure status.
+"$EXEC" claim retry-claim-ok >/dev/null
+"$EXEC" running retry-claim-ok >/dev/null
+sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/retry-claim-ok.exec"
+sed -i 's/^exec_retry_count=.*/exec_retry_count=0/' "$STATE/retry-claim-ok.exec"
+SQUAD_STALL_TIMEOUT=1 SQUAD_STALL_AGENT_STATE=dead SQUAD_STALL_INTERRUPT_CMD="$TMP/interrupt" "$STALL"
+assert_eq "$("$EXEC" get retry-claim-ok)" retry_queued
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-claim-ok.exec"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-claim-ok)" running
+# No failure status should be appended.
+! grep -q 'retry claim failed' "$STATE/retry-claim-ok.status"
 
 printf 'test-sq-stall-detect: ok\n'

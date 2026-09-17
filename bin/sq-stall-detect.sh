@@ -141,10 +141,7 @@ handle_task() {
 }
 
 retry_run_claim() {
-  local file id state next_retry now retries max grace
-  # Minimum seconds past next_retry_at before claiming, so the exponential
-  # backoff is enforced even within the same heartbeat cycle.
-  grace=${SQUAD_RETRY_GRACE_PERIOD:-5}
+  local file id state next_retry now retries max
   mkdir -p "$STATE"
   for file in "$STATE"/*.exec; do
     [ -f "$file" ] || continue
@@ -153,7 +150,9 @@ retry_run_claim() {
     [ "$state" = retry_queued ] || continue
     next_retry=$(field exec_next_retry_at "$id"); [ -n "$next_retry" ] || next_retry=0
     now=$(date +%s)
-    if [ "$now" -lt "$next_retry" ] || [ "$((now - next_retry))" -lt "$grace" ]; then
+    # Do not claim before the scheduled moment - the exponential backoff
+    # between retries is enforced by exec_next_retry_at.
+    if [ "$now" -lt "$next_retry" ]; then
       continue
     fi
     retries=$(field exec_retry_count "$id"); [ -n "$retries" ] || retries=0
@@ -169,6 +168,8 @@ retry_run_claim() {
           SQUAD_EXEC_ERROR=running_transition_failed "$SCRIPT_DIR/sq-exec-state.sh" retry "$id" >/dev/null 2>&1 || true
           append_status "$id" "retry claimed but could not transition to running" blocked
         fi
+      else
+        append_status "$id" "retry claim failed" blocked
       fi
     fi
   done
