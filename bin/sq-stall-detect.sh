@@ -6,7 +6,9 @@
 # A stall is an attempt that has exceeded SQUAD_STALL_TIMEOUT seconds without
 # activity and has no positive evidence of a live tool call or active phase.
 # Ambiguous endpoint evidence is surfaced for stuck-operator-recovery; it is
-# never interrupted automatically. Workspaces and branches are not modified.
+# never interrupted automatically. An open needs-decision or blocked record
+# means the operator is legitimately stopped and must not be interrupted.
+# Workspaces and branches are not modified.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +28,13 @@ stall_status_is_nonworking() {  # <id>
   local last
   last=$(last_status_line "$STATE/$1.status")
   [ -n "$last" ] && { status_is_paused "$last" || status_is_terminal_verb "$last"; }
+}
+
+stall_has_open_decisions() {  # <id>
+  local status_file open
+  status_file="$STATE/$1.status"
+  open=$(status_open_decisions "$status_file") 2>/dev/null || true
+  [ -n "$open" ]
 }
 
 # Public for tests and for the execution-state owner.
@@ -92,6 +101,10 @@ handle_task() {
   last=$(field exec_last_activity "$id"); [ -n "$last" ] || last=0
   age=$((now - last))
   [ "$age" -ge "$STALL_TIMEOUT" ] || return 0
+  # An open needs-decision or blocked record means the operator is
+  # legitimately stopped waiting for a commander decision or Squad reply.
+  # Do not interrupt - the operator is not stuck, it is stopped on purpose.
+  stall_has_open_decisions "$id" && return 0
   # A running sidecar can outlive the event that intentionally parked or
   # finished its worker. Never append a synthetic `working:` event after a
   # paused or terminal status - doing so resurrects a non-working task and
