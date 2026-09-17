@@ -222,6 +222,6 @@ sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-claim-ok.e
 retry_run_claim
 assert_eq "$("$EXEC" get retry-claim-ok)" running
 # No failure status should be appended.
-! grep -q 'retry claim failed' "$STATE/retry-claim-ok.status"
+grep -q 'retry claim failed' "$STATE/retry-claim-ok.status" && exit 1
 
 printf 'test-sq-stall-detect: ok\n'
