@@ -1004,3 +1004,165 @@ func TestNonConvergenceErrorMessage(t *testing.T) {
 		t.Errorf("error missing auto/user breakdown: %s", msg)
 	}
 }
+
+// TestSymmetricGuardPlacement proves that both the auto-fix path and the
+// user-fix path enforce MaxFixRounds at the same effective cap. Each path
+// is driven to the limit and the total round count is asserted to be
+// identical, ensuring the documented global limit is honoured regardless
+// of which path triggers the non-convergence.
+func TestSymmetricGuardPlacement(t *testing.T) {
+	const maxRounds = 3
+
+	// --- auto-fix path ---
+	autoFixRounds := driveToNonConvergenceAutoFix(t, maxRounds)
+	if autoFixRounds != maxRounds {
+		t.Errorf("auto-fix path: got %d rounds, want %d", autoFixRounds, maxRounds)
+	}
+
+	// --- user-fix path ---
+	userFixRounds := driveToNonConvergenceUserFix(t, maxRounds)
+	if userFixRounds != maxRounds {
+		t.Errorf("user-fix path: got %d rounds, want %d", userFixRounds, maxRounds)
+	}
+
+	// Both paths must hit exactly the same cap.
+	if autoFixRounds != userFixRounds {
+		t.Errorf("asymmetric cap: auto-fix hit %d rounds, user-fix hit %d rounds; both must be %d",
+			autoFixRounds, userFixRounds, maxRounds)
+	}
+}
+
+// driveToNonConvergenceAutoFix runs a step through the auto-fix path until
+// non-convergence is declared. Returns the total number of fix rounds.
+func driveToNonConvergenceAutoFix(t *testing.T, maxRounds int) int {
+	t.Helper()
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	cfg := &config.Config{}
+	cfg.AutoFix.MaxFixRounds = maxRounds
+	cfg.AutoFix.Review = maxRounds // enable auto-fix for review step
+
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			return &StepOutcome{
+				NeedsApproval: true,
+				AutoFixable:   true,
+				Findings:      `{"items":[{"severity":"error","description":"always-fail","action":"auto-fix"}]}`,
+			}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "non-convergence") {
+			t.Fatalf("auto-fix: expected non-convergence error, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("auto-fix: timed out waiting for non-convergence")
+	}
+
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName == types.StepReview {
+			rounds, err := database.GetRoundsByStep(s.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(rounds)
+		}
+	}
+	t.Fatal("review step not found")
+	return 0
+}
+
+// driveToNonConvergenceUserFix runs a step through the user-fix path until
+// non-convergence is declared. Returns the total number of fix rounds.
+func driveToNonConvergenceUserFix(t *testing.T, maxRounds int) int {
+	t.Helper()
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	cfg := &config.Config{}
+	cfg.AutoFix.MaxFixRounds = maxRounds
+	cfg.AutoFix.Review = 0 // disable auto-fix to test user-fix path
+
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			return &StepOutcome{
+				NeedsApproval: true,
+				Findings:      `{"items":[{"severity":"error","description":"always-fail","action":"auto-fix"}]}`,
+			}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	// Wait for initial awaiting-approval
+	waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusAwaitingApproval)
+
+	// Send maxRounds-1 fix responses. Each succeeds and parks the step.
+	for i := 0; i < maxRounds-1; i++ {
+		if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
+			t.Fatalf("Respond failed on round %d: %v", i+1, err)
+		}
+		// Wait for the step to be parked again (fix_review after fix)
+		waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusFixReview)
+	}
+
+	// Wait for the step to be in a responding state before sending the final Respond.
+	deadline := time.Now().Add(5 * time.Second)
+	var respondErr error
+	for time.Now().Before(deadline) {
+		respondErr = exec.Respond(types.StepReview, types.ActionFix, nil)
+		if respondErr == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if respondErr != nil {
+		t.Fatalf("Respond failed on final round after retry: %v", respondErr)
+	}
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "non-convergence") {
+			t.Fatalf("user-fix: expected non-convergence error, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("user-fix: timed out waiting for non-convergence")
+	}
+
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName == types.StepReview {
+			rounds, err := database.GetRoundsByStep(s.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(rounds)
+		}
+	}
+	t.Fatal("review step not found")
+	return 0
+}
