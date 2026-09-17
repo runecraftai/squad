@@ -1108,6 +1108,10 @@ EOF
     # cycle are caught. Missing sidecars remain unclaimed for backwards
     # compatibility.
     "$SCRIPT_DIR/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
+    # Claim retry-queued attempts whose scheduled moment has arrived, so
+    # retries actually resume instead of sitting in retry_queued with no
+    # supervisor watching them.
+    retry_run_claim >/dev/null 2>&1 || true
     # Refresh exec_last_activity for surviving active tasks. This keeps
     # liveness signals current so recover_locked only marks genuinely stale
     # tasks for retry on the next heartbeat cycle.
