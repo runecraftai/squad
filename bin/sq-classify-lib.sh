@@ -607,27 +607,20 @@ signal_reason_is_actionable() {  # <file> ...
 # 0 when an away-mode sentry reason is routine for the daemon and must not be
 # delivered as a primary turn. The sentry still queues the original reason, and
 # the daemon receives it with a routine envelope so its existing triage runs.
-# This is deliberately conservative for stale terminal statuses: they remain
-# commander-relevant and reach the primary, while checks and unknown reasons do
-# the same. The daemon remains the owner of the resulting side effects.
+# The daemon owns every sentry wake while away mode is active. This includes
+# stale events whose daemon-side triage may still escalate a terminal or wedge
+# condition; the routine envelope only prevents the Pi extension from starting a
+# direct turn, while handle_wake keeps the original reason for daemon triage.
 afk_wake_is_routine() {  # <reason> <state>
-  local reason=$1 state=$2 arg task last f
+  local reason=$1 state=$2 arg
   case "$reason" in
-    heartbeat|heartbeat:*) return 0 ;;
+    heartbeat|heartbeat:*|stale:*) return 0 ;;
     check:*|unknown:*) return 1 ;;
     signal:*)
       arg=${reason#signal: }
       # shellcheck disable=SC2086 # signal reasons are a space-separated file list.
       signal_reason_is_actionable $arg && return 1
       return 0
-      ;;
-    stale:*)
-      # Stale events always preserve their exact Pi wake-delivery path: the
-      # durable queue is the lossless handoff and the daemon triages them
-      # regardless of the routine envelope. Returning 1 (not-routine) keeps the
-      # plain window identity intact so the daemon can resolve the owning task
-      # without re-decorating the reason.
-      return 1
       ;;
     *) return 1 ;;
   esac

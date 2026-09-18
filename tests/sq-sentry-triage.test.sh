@@ -1822,7 +1822,7 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 40 || fail "AFK paused changed pane did not hand off a stale wake"
-  grep -Fx "stale: $window" "$out" >/dev/null || fail "AFK paused stale did not preserve its plain window identity: $(cat "$out")"
+  grep -F "stale: $window" "$out" >/dev/null || fail "AFK paused stale did not hand off its window identity: $(cat "$out")"
   grep -F "awaiting external" "$out" >/dev/null && fail "AFK sentry decorated a stale identity instead of handing it to the daemon"
   [ ! -e "$state/.paused-$key" ] || fail "AFK sentry recorded normal-mode pause tracking instead of handing off"
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after AFK paused stale failed"
