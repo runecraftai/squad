@@ -621,10 +621,11 @@ task_json_lines() {
 # Meta inventory remains the sole source of live workers; this object only
 # discloses backlog↔task inconsistency for renderers (Sitrep omitted/gates).
 main_inventory_json() {  # <backlog-json> <tasks-json>
-  jq -n \
-    --argjson backlog "$1" \
+  printf '%s' "$1" | jq -n \
+    --slurpfile backlog /dev/stdin \
     --argjson tasks "$2" '
-    ([ $backlog.records[]?
+    ($backlog[0]) as $backlog
+    | ([ $backlog.records[]?
        | select((.state == "in_flight" or .state == "queued") and (.structured | not)) ]) as $unstructured_current
     | ([ $backlog.records[]?
          | select(.state == "in_flight" and .structured and .requires_child_metadata) ]) as $owned_in_flight
@@ -649,15 +650,17 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
 # This mode never reads parent events or terminal text and never aggregates
 # nested XOs.
 XO_home_summary_json() {  # <backlog-json> <tasks-json>
-  jq -n \
+  printf '%s' "$1" | jq -n \
     --arg generated "$SNAPSHOT_NOW" \
     --arg home "$SQUAD_BASE" \
     --argjson child_n "$SQUAD_SNAPSHOT_XO_CHILDREN" \
     --argjson queued_n "$SQUAD_SNAPSHOT_XO_QUEUED" \
     --argjson decisions_n "$SQUAD_SNAPSHOT_XO_DECISIONS" \
     --argjson landed_n "$SQUAD_SNAPSHOT_XO_LANDED_PER_HOME" \
-    --argjson backlog "$1" \
+    --slurpfile backlog /dev/stdin \
     --argjson tasks "$2" '
+    ($backlog[0]) as $backlog
+    |
     def trunc($n):
       tostring | gsub("\\s+"; " ")
       | if length > $n then .[:$n] + "…" else . end;
@@ -1375,7 +1378,8 @@ XO_CURRENT_JSON=$(XO_current_json "$TASKS_JSON") \
 XO_LANDED_JSON=$(XO_landed_from_current_json "$XO_CURRENT_JSON") \
   || { echo "sq-unit-snapshot: XO landed projection failed" >&2; exit 1; }
 
-jq -n \
+printf '%s' "$BACKLOG_JSON" | jq -n \
+  --slurpfile backlog /dev/stdin \
   --arg generated "$SNAPSHOT_NOW" \
   --arg fm_home "$SQUAD_BASE" \
   --arg fm_root "$SQUAD_ROOT" \
@@ -1383,13 +1387,13 @@ jq -n \
   --arg data "$DATA" \
   --arg config "$CONFIG" \
   --arg projects "$PROJECTS" \
-  --argjson backlog "$BACKLOG_JSON" \
   --argjson tasks "$TASKS_JSON" \
   --argjson main_inventory "$MAIN_INVENTORY_JSON" \
   --argjson scout_reports "$SCOUT_REPORTS_JSON" \
   --argjson XO_current "$XO_CURRENT_JSON" \
   --argjson XO_landed "$XO_LANDED_JSON" \
-  'def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
+  '($backlog[0]) as $backlog
+   | def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
    def task_by_id($id): ($tasks[]? | select(.id == $id) | .) // null;
    def report_kind($id): (task_by_id($id).kind // backlog_by_id($id).kind // "recon");
    {
