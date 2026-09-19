@@ -276,6 +276,20 @@ ROWS
 # The registry is the commander's standing posture, not this task's answer: the
 # scaffold must follow the explicit flag even when the project is registered
 # with a different mode, and must not consult the registry at all.
+test_absorbed_playbook_names_are_not_selectable() {
+  local home name out status
+  home="$TMP_ROOT/absorbed-playbook-home"
+  mkdir -p "$home/data"
+  for name in session-pickup pause-safely babysit worktree-cleanup authoring-a-skill; do
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "absorbed-$name" repo --mode drill --playbook "$name@1" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$name must not be selectable as a playbook"
+    assert_contains "$out" "unknown execution playbook" "$name refusal must identify an unknown playbook"
+    assert_absent "$home/data/absorbed-$name/brief.md" "$name refusal must not leave a partial brief"
+  done
+  pass "sq-brief.sh: absorbed playbook names are refused and leave no selectable brief"
+}
+
 test_ship_mode_is_explicit_not_registry() {
   local home brief
   home="$TMP_ROOT/explicit-over-registry-home"
@@ -820,6 +834,7 @@ EOF
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_playbook_selection_and_legacy_compatibility
+test_absorbed_playbook_names_are_not_selectable
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_ship_mode_is_required_and_closed_set

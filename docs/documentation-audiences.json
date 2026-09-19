@@ -696,6 +696,10 @@
    "audience": "maintainer-verification"
   },
   {
+   "path": "docs/verification/playbook-absorptions.md",
+   "audience": "maintainer-verification"
+  },
+  {
    "path": "docs/verification/dispatch-auth.md",
    "audience": "maintainer-verification"
   },
