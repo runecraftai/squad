@@ -46,6 +46,9 @@ batched digest rather than per-wake injections.
    Both paths share `bin/sq-afk-start.sh` as the daemon entry.
    The native path tells it that the launcher already prepared lifecycle state; the terminal-backed path lets the entry perform its existing state setup inside the new terminal.
    It exits immediately if the identity-backed daemon lock already names a live process, otherwise it execs `bin/sq-supervise-daemon.sh` in the foreground.
+   After launching, verify the lifecycle with the read-only command
+   `bin/sq-afk-launch.sh status`; it reports the away flag, exact recorded terminal, daemon lock, and marker ages, and exits zero only when healthy.
+   Raw session-provider CLI commands such as `tmux ls` are blocked by policy and must never be attempted as a health check.
    The daemon is **presence-gated**: it injects escalations only while
    `state/.afk` exists, and stays quiet otherwise.
 

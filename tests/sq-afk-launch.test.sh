@@ -835,6 +835,57 @@ unit_flag_write_failure_aborts() {
   rm -rf "$st"
 }
 
+unit_status_read_only_and_health() {
+  local st out before after
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-status.XXXXXX")
+  mkdir -p "$st/state"
+
+  date '+%s' > "$st/state/.afk"
+  printf 'tmux\texact-session\towned\n' > "$st/state/.afk-daemon-terminal"
+  date '+%s' > "$st/state/.subsuper-last-housekeep"
+  date '+%s' > "$st/state/.subsuper-last-scan"
+  out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+    . "$1"
+    daemon_lock_held_by_live_daemon() { return 0; }
+    fm_afk_launch_terminal_alive() { [ "$2" = exact-session ]; }
+    fm_afk_launch_status
+  ' _ "$LAUNCH")
+  if [ "$out" = 'afk=active terminal=alive daemon=alive housekeep_age=0 scan_age=0' ]; then
+    pass "status: active healthy fixture is machine-readable and exits successfully"
+  else
+    fail "status: active healthy fixture was not reported correctly ($out)"
+  fi
+
+  out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+    . "$1"
+    daemon_lock_held_by_live_daemon() { return 0; }
+    fm_afk_launch_terminal_alive() { return 1; }
+    ! fm_afk_launch_status
+  ' _ "$LAUNCH")
+  if [ "$out" = 'afk=active terminal=dead daemon=alive housekeep_age=0 scan_age=0' ]; then
+    pass "status: active dead-terminal fixture reports unhealthy and exits non-zero"
+  else
+    fail "status: active dead-terminal fixture was not reported correctly ($out)"
+  fi
+
+  rm -f "$st/state/.afk" "$st/state/.afk-daemon-terminal" "$st/state/.subsuper-last-housekeep" "$st/state/.subsuper-last-scan"
+  : > "$st/state/.sentinel"
+  before=$(find "$st/state" -mindepth 1 -maxdepth 1 -printf '%f\\t%T@\\n' | sort)
+  out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status 2>/dev/null || true)
+  after=$(find "$st/state" -mindepth 1 -maxdepth 1 -printf '%f\\t%T@\\n' | sort)
+  if [ "$out" = 'afk=inactive terminal=missing daemon=dead housekeep_age=missing scan_age=missing' ]; then
+    pass "status: inactive fixture reports non-zero without mutating state"
+  else
+    fail "status: inactive fixture was not reported correctly ($out)"
+  fi
+  if [ "$before" = "$after" ]; then
+    pass "status: inactive check leaves every state marker untouched"
+  else
+    fail "status: inactive check mutated state"
+  fi
+  rm -rf "$st"
+}
+
 # ---------------------------------------------------------------------------
 # E2E herdr: topology invariant.
 # ---------------------------------------------------------------------------
@@ -964,6 +1015,7 @@ unit_clear_failure_aborts_entry
 unit_confirmed_absence_succeeds
 unit_incomplete_restore_retains_backup
 unit_flag_write_failure_aborts
+unit_status_read_only_and_health
 e2e_herdr
 e2e_tmux
 
