@@ -28,6 +28,10 @@
 #      is an ancestor of the run head (pipeline fix commits advanced the run on
 #      the same line of history). Local work that advanced past the run head, or
 #      diverged from it, invalidates attribution.
+#      After a pipeline rebase, the matcher can still bind an earlier failed
+#      execution if the operator's commit is no longer an ancestor of the new
+#      head; before treating `failed` as current, inspect
+#      `~/.drill/logs/<run-id>/review.log` and whether the review's pi process is alive.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while

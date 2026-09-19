@@ -59,6 +59,14 @@
 # leased base releases its durable fob lease so the pool slot is freed,
 # never left leased forever. If the fob return fails, teardown leaves the
 # leased base and state in place instead of hiding a still-held lease.
+# Teardown can otherwise return the working copy to the pool and stop before
+# clearing meta, exec, and marker files, leaving the window offline, the item in
+# TEARDOWN PENDING, and the PR merge check armed without printing the complete
+# line; before repeating it, confirm the returned slot was not reused by checking
+# the new task's window and meta plus a live process whose cwd is that path,
+# because repeating teardown kills by working-copy path.
+# A worker killed this way cannot be relaunched under the same id, which remains
+# released; continue with a replacement mission under a new id and identical brief.
 # Usage: sq-teardown.sh <task-id> [--force]
 #   --force skips ordinary-task dirty and landed-work checks, skips recon report
 #   checks, and discards XO child work for kind=xo. Only use it
