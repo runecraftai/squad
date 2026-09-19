@@ -47,8 +47,10 @@ Reports can exceed a thousand lines. Use `squad_report_read` with:
 3. It enqueues a `signal` wake record through `sq-mcp-wake-append.sh`, which
    sources `sq-stand-to-lib.sh` and uses `fm_wake_append` with its lock.
 4. Squad drains the wake queue on its next cycle and processes the request.
-5. Squad writes replies to `state/mcp-outbox/<request-id>.reply` via
-   `sq-mcp-outbox-write.sh`.
+5. Squad dispatches the task and, for MCP-originated requests, runs
+   `sq-mcp-link.sh <task-id> <request-id>` to record `mcp_request=<request-id>`
+   in the task meta and write the durable `{"taskId":"<task-id>"}` reply to
+   `state/mcp-outbox/<request-id>.reply`.
 6. Hermes reads replies via `squad_replies`.
 
 ### Outbox
