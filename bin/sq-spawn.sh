@@ -230,6 +230,8 @@ EFFORT=
 BACKEND_ARG=
 MODE=
 YOLO=
+PLAYBOOK_META=
+PLAYBOOK_VERSION_META=
 TRACEPARENT_ARG=
 HARNESS_SET=0
 MODEL_SET=0
@@ -1367,6 +1369,26 @@ run_workspace_hook() {
 if ! grep -q '>>.*\.status' "$BRIEF"; then
   echo "error: brief $BRIEF is missing the status reporting instruction (>> ...status). Regenerate with bin/sq-brief.sh or add: echo '{state}: {note}' >> '<state-file>.status'" >&2
   exit 1
+fi
+
+# Optional execution-playbook identity is validated before endpoint creation.
+PLAYBOOK_LINES=$(grep -c '^Execution playbook: ' "$BRIEF" 2>/dev/null || true)
+if [ "$PLAYBOOK_LINES" -gt 1 ]; then
+  echo "error: brief $ID contains a duplicated execution playbook identity" >&2
+  exit 1
+fi
+if [ "$PLAYBOOK_LINES" -eq 1 ]; then
+  PLAYBOOK_LINE=$(grep '^Execution playbook: ' "$BRIEF")
+  case "$PLAYBOOK_LINE" in
+    'Execution playbook: id=bug-fix version=1')
+      [ "$KIND" = strike ] || { echo "error: bug-fix@1 is compatible only with kind: strike" >&2; exit 1; }
+      PLAYBOOK_META=bug-fix
+      PLAYBOOK_VERSION_META=1
+      # shellcheck disable=SC2016 # Backticks are literal brief syntax.
+      grep -q "^# Execution playbook: \`bug-fix@1\`$" "$BRIEF" || { echo "error: bug-fix@1 identity has no materialized contract" >&2; exit 1; }
+      ;;
+    *) echo "error: malformed or unsupported execution playbook identity in $BRIEF" >&2; exit 1 ;;
+  esac
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
@@ -2517,6 +2539,8 @@ META_WINDOW=$T
   echo "project=$PROJ_ABS"
   echo "harness=$HARNESS"
   echo "kind=$KIND"
+  [ -z "$PLAYBOOK_META" ] || echo "playbook=$PLAYBOOK_META"
+  [ -z "$PLAYBOOK_VERSION_META" ] || echo "playbook_version=$PLAYBOOK_VERSION_META"
   [ -z "$MODE" ] || echo "mode=$MODE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
   echo "tasktmp=$TASK_TMP"

@@ -6,7 +6,7 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> [--herdr-lab]
+# Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> [--playbook <id>@<version>] [--herdr-lab]
 #        sq-brief.sh <task-id> <repo-name> --recon [--herdr-lab]
 #        sq-brief.sh <task-id> --xo {<project>...|--no-projects}
 #   --recon writes the recon contract instead: the deliverable is a report at
@@ -106,6 +106,8 @@ HERDR_LAB=0
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
+PLAYBOOK=
+PLAYBOOK_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -115,6 +117,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      playbook) PLAYBOOK=$a; PLAYBOOK_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -127,6 +130,8 @@ for a in "$@"; do
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --playbook) want_value=playbook ;;
+    --playbook=*) PLAYBOOK=${a#--playbook=}; PLAYBOOK_SET=1 ;;
     # yolo never reaches the worker: it is Squad's approval authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -155,6 +160,23 @@ elif [ "$MODE_SET" -eq 1 ]; then
   exit 1
 fi
 ID=${POS[0]}
+
+# Playbooks are explicit method contracts, separate from kind and delivery mode.
+# Validate before creating the task directory so rejected selections leave no partial brief.
+PLAYBOOK_SECTION=
+if [ "$PLAYBOOK_SET" -eq 1 ]; then
+  case "$PLAYBOOK" in
+    bug-fix@1) PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md") ;;
+    '') echo "error: --playbook requires a value" >&2; exit 1 ;;
+    bug-fix@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
+    *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
+    *) echo "error: unknown execution playbook '$PLAYBOOK'" >&2; exit 1 ;;
+  esac
+  if [ "$KIND" != strike ]; then
+    echo "error: bug-fix@1 accepts only kind: strike (not $KIND)" >&2
+    exit 1
+  fi
+fi
 
 if [ "$KIND" = xo ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to operator strike or recon briefs" >&2
@@ -434,6 +456,10 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 
 $HERDR_SECTION
 
+${PLAYBOOK_SECTION:+Execution playbook: id=bug-fix version=1
+
+$PLAYBOOK_SECTION
+}
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 

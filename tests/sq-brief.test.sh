@@ -194,6 +194,35 @@ EOF
 # against any *new* unescaped apostrophe or unbalanced quote later added to
 # one of these DOD blocks, since a broken heredoc corrupts or empties the
 # generated brief content, not just the script's own syntax.
+test_playbook_selection_and_legacy_compatibility() {
+  local home brief baseline out status
+  home="$TMP_ROOT/playbook-home"
+  mkdir -p "$home/data"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" playbook-good repo --mode drill --playbook bug-fix@1 >/dev/null 2>&1
+  brief="$home/data/playbook-good/brief.md"
+  [ "$(grep -c '^Execution playbook: id=bug-fix version=1$' "$brief")" -eq 1 ] || fail "bug-fix@1 identity must occur exactly once"
+  assert_grep "Reproduction before fix" "$brief" "playbook brief missing reproduction evidence"
+  assert_grep "diagnostic-reasoning" "$brief" "playbook brief missing diagnostic-reasoning"
+  assert_grep "tlc-implement" "$brief" "playbook brief missing tlc-implement"
+  baseline="$home/legacy.md"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" legacy repo --mode drill >/dev/null 2>&1
+  cp "$home/data/legacy/brief.md" "$baseline"
+  rm -f "$home/data/legacy/brief.md"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" legacy repo --mode drill >/dev/null 2>&1
+  cmp -s "$baseline" "$home/data/legacy/brief.md" || fail "legacy brief changed across no-playbook regeneration"
+  assert_no_grep "Execution playbook:" "$baseline" "legacy brief unexpectedly contains playbook identity"
+  for args in "--playbook nope@1" "--playbook bug-fix@2" "--playbook bug-fix@"; do
+    # shellcheck disable=SC2086 # args intentionally contains the flag and value pair.
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "bad-${RANDOM}" repo --mode drill $args 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "invalid playbook $args should fail"
+  done
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" playbook-recon repo --recon --playbook bug-fix@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "bug-fix@1 on recon should fail"
+  assert_contains "$out" "kind: strike" "recon playbook refusal should name strike compatibility"
+  assert_absent "$home/data/playbook-recon/brief.md" "rejected playbook must not leave a partial brief"
+  pass "sq-brief.sh: explicit bug-fix@1 materializes and legacy no-playbook briefs remain stable"
+}
+
 test_ship_modes_generate_clean_briefs() {
   local home id mode brief status
   home="$TMP_ROOT/ship-home"
@@ -790,6 +819,7 @@ EOF
 
 test_script_parses
 test_no_heredoc_in_command_substitution
+test_playbook_selection_and_legacy_compatibility
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_ship_mode_is_required_and_closed_set
