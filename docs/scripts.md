@@ -30,7 +30,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-board-github.sh`     | Opt-in GitHub issue monitor: list eligible issues, poll for changes, report aggregate status, approve dispatch suggestions (requires tracker.kind: github in WORKFLOW.md) |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
 | `sq-learn.sh`            | Capture a durable operational lesson in `data/learnings.md`                         |
-| `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs   |
+| `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs; `--playbook` selects an execution playbook   |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `sq-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
 | `sq-learn.sh`            | Capture a bounded, near-duplicate-filtered operational lesson in `data/learnings.md` |
@@ -134,6 +134,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
+| `sq-playbook-validate.sh` | Validate structural evidence for a materialized execution playbook (bug-fix@1) |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |

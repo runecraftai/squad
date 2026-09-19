@@ -204,6 +204,23 @@ has_config=$(grep -c '^workflow_config=' "$meta" || true)
 
 echo "ok - spawn without WORKFLOW.md omits workflow= and workflow_config= from meta"
 
+# An explicit materialized playbook identity is preserved in execution metadata.
+id_playbook="tw-playbook-$$"
+proj_playbook="test-project-playbook"
+base_playbook=$(setup_squad_base "$id_playbook" "$proj_playbook")
+cat > "$base_playbook/data/$id_playbook/brief.md" <<'BRIEF'
+Execution playbook: id=bug-fix version=1
+# Execution playbook: `bug-fix@1`
+The operator must report status: echo '{state}: {note}' >> 'state/task.status'
+BRIEF
+spawn_exit=0
+run_spawn "$id_playbook" "$proj_playbook" "$base_playbook" || spawn_exit=$?
+meta="$base_playbook/state/$id_playbook.meta"
+[ "$spawn_exit" -eq 0 ] || { echo "FAIL: playbook spawn exited with code $spawn_exit"; exit 1; }
+grep -qx 'playbook=bug-fix' "$meta" || { echo "FAIL: playbook identity missing from meta"; exit 1; }
+grep -qx 'playbook_version=1' "$meta" || { echo "FAIL: playbook version missing from meta"; exit 1; }
+echo "ok - spawn records optional playbook identity"
+
 # ===========================================================================
 # Test 3: spawn with WORKFLOW.md in config/workflow/ fallback
 # ===========================================================================
