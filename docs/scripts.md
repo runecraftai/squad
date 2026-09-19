@@ -112,6 +112,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |
 | `sq-mcp-wake-append.sh`      | Append a wake record to the stand-to queue for MCP requests via the canonical `fm_wake_append` path |
 | `sq-mcp-outbox-write.sh`     | Write a reply to the MCP outbox for a request; Squad-side append path for MCP reply delivery |
+| `sq-mcp-link.sh`             | Record `mcp_request=` on a task and write its machine-readable task-id reply; no-op without a request id |
 | `sq-handoff-request.sh`      | Record, resolve, and list durable new-session handoff requests at milestone closes (docs/handoff-request.md) |
 | `sq-handoff-surface.sh`      | Mark pending handoff requests surfaced exactly once and print the handoff card (docs/handoff-request.md) |
 | `sq-hooks.sh`            | Run optional structured WORKFLOW.md workspace lifecycle hooks (after_create, before_run, after_run, before_remove) with timeout enforcement |

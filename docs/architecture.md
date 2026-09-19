@@ -233,6 +233,13 @@ The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, inv
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
 [`bin/sq-teardown.sh`](../bin/sq-teardown.sh)'s header owns the landed-work proofs, PR-discovery fallback, and stale-lock recovery procedure.
 
+## MCP task correlation
+
+An MCP `squad_request` carries its leading request id into the launch-brief body.
+When Squad dispatches that request, `bin/sq-mcp-link.sh <task-id> <request-id>` records `mcp_request=<request-id>` in the task meta and writes the exact reply body `{"taskId":"<task-id>"}` to `state/mcp-outbox/<request-id>.reply`.
+The helper rewrites both representations idempotently, and is a no-op when no request id is present, so ordinary dispatches create no MCP reply.
+The MCP reply reader remains the existing `squad_replies` tool and task status remains the existing `squad_status(taskId)` tool.
+
 ## Optional Relay
 
 Relay is opt-in presence for the shared `@mySquad` bot on both public surfaces it supports, X and Discord.

@@ -219,6 +219,30 @@ test("squad_replies returns empty when no outbox exists", async () => {
   }
 });
 
+
+test("squad_replies returns the durable task id reply", async () => {
+  const base = await mkdtemp(join(tmpdir(), "squad-mcp-"));
+  await mkdir(join(base, "data"));
+  await mkdir(join(base, "state", "mcp-outbox"), { recursive: true });
+  await writeFile(
+    join(base, "state", "mcp-outbox", "mcp-task-001.reply"),
+    '{"taskId":"task-001"}',
+  );
+  const { client, transport } = await clientFor(base);
+  try {
+    const result = payload(
+      await client.callTool({
+        name: "squad_replies",
+        arguments: { requestId: "mcp-task-001" },
+      }),
+    );
+    assert.deepEqual(result.replies, [{ body: '{"taskId":"task-001"}' }]);
+    assert.equal(existsSync(join(base, "state", "mcp-outbox", "mcp-task-001.reply")), false);
+  } finally {
+    await transport.close();
+  }
+});
+
 test("squad_reports lists reports from data directories", async () => {
   const base = await mkdtemp(join(tmpdir(), "squad-mcp-"));
   const dataDir = join(base, "data");
