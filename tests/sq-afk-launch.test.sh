@@ -959,6 +959,27 @@ unit_status_health() {
   else
     fail "status: inactive read mutated markers"
   fi
+
+  # --- malformed record returns exit 2 ---
+  rm -rf "$st"
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-status.XXXXXX")
+  mkdir -p "$st/state/.supervise-daemon.lock"
+  date +%s > "$st/state/.afk"
+  printf 'tmux\ttoo-few\n' > "$st/state/.afk-daemon-terminal"
+  before=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
+  rc=0
+  out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status) || rc=$?
+  if [ "$rc" -eq 2 ] && [ "$out" = "active=1 terminal=invalid daemon=dead housekeeping_age=na scan_age=na" ]; then
+    pass "status: malformed record returns exit 2 with terminal=invalid"
+  else
+    fail "status: malformed record returned rc=$rc out='$out' (expected rc=2 terminal=invalid)"
+  fi
+  after=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
+  if [ "$before" = "$after" ]; then
+    pass "status: malformed record read does not mutate state"
+  else
+    fail "status: malformed record read mutated state"
+  fi
   rm -rf "$st"
 }
 
