@@ -69,6 +69,13 @@ SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 # one owner.
 # shellcheck disable=SC2034 # Read by the sentry and daemon (sq-sentry.sh, sq-supervise-daemon.sh), not this lib.
 SQUAD_PAUSE_RESURFACE_SECS_DEFAULT=3600
+# Closing a decision, wait, or blocker with `resolved:` on a deliberately idle
+# task makes that line last, so the wedge detector can re-read the task as a
+# possible wedge on its short cadence; send a fresh `paused:` line naming the
+# continuing wait in the same instruction.
+# A wake repeating about every 60s indicates the stale/wedge path, not pause
+# resurfacing: the default is 3600s, while `SQUAD_CHECK_INTERVAL=30` only sets
+# Relay loop granularity and does not explain the repetition.
 
 # The resolution verb and durable-backlog-transfer verb that CLOSE a keyed
 # status decision opened by needs-decision or blocked. See status_open_decisions

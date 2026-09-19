@@ -34,6 +34,9 @@
 #   direct-PR    implement -> push + open PR via sq-gh (no pipeline) -> configured merge authority
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
 #                the configured merge authority approves, Squad merges to local main
+# When a project has an upstream, the brief must name the exact PR target, such
+# as `sq-gh pr create -R <owner>/<repo>`; forbidding the upstream alone is not
+# enough to tell the operator which repository to target.
 # drill-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable

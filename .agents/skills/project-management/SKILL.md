@@ -72,6 +72,9 @@ The commander's request to create that local project authorizes this local initi
 
 ## Initialize
 
+Before dispatching implementation on a greenfield project, guarantee a root commit with real content and a minimal `.github/workflows` workflow that runs the project's verification command.
+A newly created repository without a commit can make spawn fail with `fob get did not enter a worktree within 60s`, and one without a CI workflow can leave the pipeline waiting at `drill CI remains running with no CI checks reported`.
+
 Run drill initialization only for `drill` and `drill-prod-only` projects:
 
 ```sh
