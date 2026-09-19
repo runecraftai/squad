@@ -897,6 +897,72 @@ e2e_herdr() {
 }
 
 # ---------------------------------------------------------------------------
+# UNIT status: health is read-only and reports active, exact terminal, daemon
+# lock, and marker ages.
+# ---------------------------------------------------------------------------
+unit_status_health() {
+  command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (status)"; return 0; }
+  local st session sleeper_pid out before after
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-status.XXXXXX")
+  mkdir -p "$st/state/.supervise-daemon.lock"
+  session="sq-afk-status-$$"
+  tmux new-session -d -s "$session" 2>/dev/null || { fail "status: could not create exact terminal"; rm -rf "$st"; return 0; }
+  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $session"
+  sleep 600 & sleeper_pid=$!
+  printf '%s\n' "$sleeper_pid" > "$st/state/.supervise-daemon.lock/pid"
+  ( . "$ROOT/bin/sq-stand-to-lib.sh"; fm_pid_identity "$sleeper_pid" > "$st/state/.supervise-daemon.lock/pid-identity" )
+  date +%s > "$st/state/.afk"
+  printf 'tmux\t%s\towned\n' "$session" > "$st/state/.afk-daemon-terminal"
+  date +%s > "$st/state/.subsuper-last-housekeep"
+  date +%s > "$st/state/.subsuper-last-scan"
+  before=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
+  if out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status); then
+    if [ "$out" = "active=1 terminal=alive daemon=alive housekeeping_age=0 scan_age=0" ]; then
+      pass "status: active healthy line reports exact terminal, daemon, and marker ages"
+    else
+      fail "status: active healthy line was '$out'"
+    fi
+  else
+    fail "status: healthy state returned non-zero ('$out')"
+  fi
+  after=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
+  if [ "$before" = "$after" ]; then
+    pass "status: healthy read does not mutate state"
+  else
+    fail "status: healthy read mutated state"
+  fi
+
+  tmux kill-session -t "$session" 2>/dev/null || true
+  if out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status); then
+    fail "status: dead terminal unexpectedly returned zero ('$out')"
+  elif [ "$out" = "active=1 terminal=dead daemon=alive housekeeping_age=0 scan_age=0" ]; then
+    pass "status: active dead terminal is distinguished from live daemon"
+  else
+    fail "status: active dead terminal line was '$out'"
+  fi
+
+  kill "$sleeper_pid" 2>/dev/null || true
+  wait "$sleeper_pid" 2>/dev/null || true
+  rm -f "$st/state/.afk" "$st/state/.afk-daemon-terminal" "$st/state/.supervise-daemon.lock/pid" "$st/state/.supervise-daemon.lock/pid-identity"
+  rmdir "$st/state/.supervise-daemon.lock" 2>/dev/null || true
+  before=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
+  if out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status); then
+    fail "status: inactive state unexpectedly returned zero ('$out')"
+  elif [ "$out" = "active=0 terminal=absent daemon=dead housekeeping_age=0 scan_age=0" ]; then
+    pass "status: inactive state reports inactive and non-live components"
+  else
+    fail "status: inactive line was '$out'"
+  fi
+  after=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
+  if [ "$before" = "$after" ]; then
+    pass "status: inactive read does not mutate markers"
+  else
+    fail "status: inactive read mutated markers"
+  fi
+  rm -rf "$st"
+}
+
+# ---------------------------------------------------------------------------
 # E2E tmux: topology invariant (commander window untouched; daemon in a separate
 # detached session).
 # ---------------------------------------------------------------------------
@@ -964,6 +1030,7 @@ unit_clear_failure_aborts_entry
 unit_confirmed_absence_succeeds
 unit_incomplete_restore_retains_backup
 unit_flag_write_failure_aborts
+unit_status_health
 e2e_herdr
 e2e_tmux
 

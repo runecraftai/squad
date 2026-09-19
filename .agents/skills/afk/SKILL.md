@@ -23,6 +23,10 @@ batched digest rather than per-wake injections.
    terminal record, and rollback.
    The flag survives a Squad restart, so recovery re-enters afk when it is present.
 
+   To verify health without changing state, run `bin/sq-afk-launch.sh status`.
+   It prints one machine-readable line covering active state, the exact recorded daemon-terminal liveness, identity-backed daemon-lock liveness, and the ages of the last housekeeping and scan markers.
+   Raw session-provider commands such as `tmux ls` are blocked by policy and must never be attempted.
+
 2. **Ensure the sub-supervisor daemon is running as a tracked background process.**
    Its hosting differs by harness.
    Pick the right path:

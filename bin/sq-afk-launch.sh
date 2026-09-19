@@ -35,6 +35,8 @@
 #                              id, then clear state/.afk last.
 #   sq-afk-launch.sh reconcile Close a recorded-but-dead daemon terminal by exact
 #                              id and drop the record (recovery after a crash).
+#   sq-afk-launch.sh status   Print one read-only machine-readable health line and
+#                              return zero only when active state is healthy.
 #
 # Supported backends: herdr, tmux. Others (zellij, orca, cmux) have no verified
 # non-visible-launch primitive here yet and refuse loudly.
@@ -249,6 +251,50 @@ fm_afk_launch_terminal_absent() {  # <backend> <target>
       ;;
     *) return 1 ;;
   esac
+}
+
+fm_afk_launch_marker_age() {
+  local marker=$1 stamp now
+  [ -f "$marker" ] || { printf 'na'; return 0; }
+  stamp=$(cat "$marker" 2>/dev/null) || { printf 'na'; return 0; }
+  case "$stamp" in
+    ''|*[!0-9]*) printf 'na'; return 0 ;;
+  esac
+  now=$(date '+%s')
+  [ "$stamp" -le "$now" ] || stamp=$now
+  printf '%s' "$((now - stamp))"
+}
+
+fm_afk_launch_status() {
+  local active=0 terminal=absent daemon=dead housekeeping_age scan_age read_result healthy=0
+  [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk" ] && active=1
+  if daemon_lock_held_by_live_daemon; then daemon=alive; fi
+  fm_afk_launch_record_read >/dev/null 2>&1
+  read_result=$?
+  case "$read_result" in
+    0)
+      if [ "$SQUAD_AFK_REC_BACKEND" = none ]; then
+        terminal=not-applicable
+      elif fm_afk_launch_terminal_alive "$SQUAD_AFK_REC_BACKEND" "$SQUAD_AFK_REC_TARGET"; then
+        terminal=alive
+      else
+        terminal=dead
+      fi
+      ;;
+    1) terminal=absent ;;
+    2) terminal=invalid ;;
+  esac
+  housekeeping_age=$(fm_afk_launch_marker_age "$SQUAD_AFK_LAUNCH_STATE/.subsuper-last-housekeep")
+  scan_age=$(fm_afk_launch_marker_age "$SQUAD_AFK_LAUNCH_STATE/.subsuper-last-scan")
+  if [ "$active" -eq 1 ] && [ "$daemon" = alive ] \
+    && { [ "$terminal" = alive ] || [ "$terminal" = not-applicable ]; } \
+    && [ "$read_result" -eq 0 ]; then
+    healthy=1
+  fi
+  printf 'active=%s terminal=%s daemon=%s housekeeping_age=%s scan_age=%s\n' \
+    "$active" "$terminal" "$daemon" "$housekeeping_age" "$scan_age"
+  [ "$read_result" -eq 2 ] && return 2
+  [ "$healthy" -eq 1 ]
 }
 
 fm_afk_launch_close_recorded() {
@@ -633,6 +679,10 @@ fm_afk_launch_main() {
   # the lock directory, which then blocks the next away-mode launch until the
   # stale-owner reclaim path clears it. fm_afk_launch_lock_release only removes
   # a lock this process owns, so arming it before acquisition is safe.
+  if [ "${1:-start}" = status ]; then
+    fm_afk_launch_status
+    return $?
+  fi
   trap fm_afk_launch_lock_release EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
