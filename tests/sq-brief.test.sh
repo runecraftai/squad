@@ -321,6 +321,58 @@ ROWS
 # The registry is the commander's standing posture, not this task's answer: the
 # scaffold must follow the explicit flag even when the project is registered
 # with a different mode, and must not consult the registry at all.
+test_wave_two_playbooks_materialize_and_enforce_forms() {
+  local home id playbook kind brief out status
+  home="$TMP_ROOT/wave-two-playbooks-home"
+  mkdir -p "$home/data"
+  while IFS='|' read -r id playbook kind; do
+    if [ "$kind" = recon ]; then
+      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" repo --recon --playbook "$playbook@1" >/dev/null 2>&1 || fail "$playbook should materialize as recon"
+    else
+      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook "$playbook@1" >/dev/null 2>&1 || fail "$playbook should materialize as strike"
+    fi
+    brief="$home/data/$id/brief.md"
+    grep -qx "Execution playbook: id=$playbook version=1" "$brief" || fail "$playbook identity missing"
+    assert_grep "# Execution playbook: \`$playbook@1\`" "$brief" "$playbook contract missing"
+  done <<'ROWS'
+wave-perf|perf|strike
+wave-hillclimb|hillclimb|strike
+wave-runtime|runtime-forensics|recon
+wave-trace|trace-forensics|recon
+wave-visual-recon|visual-parity|recon
+wave-visual-strike|visual-parity|strike
+ROWS
+  while IFS='|' read -r playbook kind; do
+    id="wave-two-invalid-$playbook-$kind"
+    if [ "$kind" = recon ]; then
+      out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" repo --recon --playbook "$playbook@1" 2>&1); status=$?
+    elif [ "$kind" = xo ]; then
+      out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" --xo --no-projects --playbook "$playbook@1" 2>&1); status=$?
+    else
+      out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook "$playbook@1" 2>&1); status=$?
+    fi
+    [ "$status" -ne 0 ] || fail "$playbook should refuse $kind"
+    assert_contains "$out" "accepts only kind" "$playbook refusal should explain compatibility"
+    assert_absent "$home/data/$id/brief.md" "$playbook refusal left a partial brief"
+  done <<'ROWS'
+perf|recon
+perf|xo
+hillclimb|recon
+hillclimb|xo
+runtime-forensics|strike
+runtime-forensics|xo
+trace-forensics|strike
+trace-forensics|xo
+visual-parity|xo
+ROWS
+  for playbook in nope bug-fix@2 perf@2; do
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "wave-two-invalid-identity-$RANDOM" repo --mode drill --playbook "$playbook" 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "invalid identity $playbook should fail"
+    assert_contains "$out" "unknown execution playbook" "$playbook refusal should identify an invalid identity"
+  done
+  pass "sq-brief.sh: wave-two contracts materialize, preserve visual dual form, and reject incompatible identities"
+}
+
 test_absorbed_playbook_names_are_not_selectable() {
   local home name out status
   home="$TMP_ROOT/absorbed-playbook-home"
@@ -880,6 +932,7 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_playbook_selection_and_legacy_compatibility
 test_wave_one_playbooks_materialize_and_enforce_forms
+test_wave_two_playbooks_materialize_and_enforce_forms
 test_absorbed_playbook_names_are_not_selectable
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs

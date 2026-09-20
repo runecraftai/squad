@@ -176,12 +176,25 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
     feature@1) PLAYBOOK_ID=feature; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/feature-v1.md"); EXPECTED_KIND=strike ;;
     refactoring@1) PLAYBOOK_ID=refactoring; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/refactoring-v1.md"); EXPECTED_KIND=strike ;;
     prototype@1) PLAYBOOK_ID=prototype; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/prototype-v1.md"); EXPECTED_KIND=recon ;;
+    perf@1) PLAYBOOK_ID=perf; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/perf-v1.md"); EXPECTED_KIND=strike ;;
+    hillclimb@1) PLAYBOOK_ID=hillclimb; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/hillclimb-v1.md"); EXPECTED_KIND=strike ;;
+    runtime-forensics@1) PLAYBOOK_ID=runtime-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/runtime-forensics-v1.md"); EXPECTED_KIND=recon ;;
+    trace-forensics@1) PLAYBOOK_ID=trace-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/trace-forensics-v1.md"); EXPECTED_KIND=recon ;;
+    visual-parity@1) PLAYBOOK_ID=visual-parity; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/visual-parity-v1.md"); EXPECTED_KIND='recon|strike' ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
     *@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
     *) echo "error: unknown execution playbook '$PLAYBOOK'" >&2; exit 1 ;;
   esac
-  if [ "$KIND" != "$EXPECTED_KIND" ]; then
+  if [ "$PLAYBOOK_ID" = visual-parity ]; then
+    case "$KIND" in
+      recon|strike) ;;
+      *)
+        echo "error: $PLAYBOOK accepts only kind: recon or strike (not $KIND)" >&2
+        exit 1
+        ;;
+    esac
+  elif [ "$KIND" != "$EXPECTED_KIND" ]; then
     echo "error: $PLAYBOOK accepts only kind: $EXPECTED_KIND (not $KIND)" >&2
     exit 1
   fi
