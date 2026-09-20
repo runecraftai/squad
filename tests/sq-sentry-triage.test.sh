@@ -709,6 +709,50 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   pass "a declared pause is absorbed on first sight, then re-surfaced as a recheck past the threshold, never wedge-escalated"
 }
 
+# A live declared pause can have a changing pane footer on every poll. The first
+# stale observation is surfaced for confirmation, then the stable per-key cadence
+# marker suppresses footer-driven repeats.
+test_live_paused_churning_pane_is_throttled() {
+  local dir state fakebin out capture_file statusf window key sig pid round wakes
+  dir=$(make_case live-paused-churning); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/held.status"
+  window="test:sq-held"
+  printf 'window=%s\nkind=strike\nharness=grok\nbackend=tmux\n' "$window" > "$state/held.meta"
+  printf 'paused: waiting at an active external-decision gate\n' > "$statusf"
+  sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  # The live endpoint is present but its current-state read is inconclusive, so
+  # pause_state_class deliberately returns none and the confirmation path runs.
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · current state unavailable'
+
+  # Seed a prior pane state so the first poll enters the confirmation path. Before
+  # the fix every later changed footer emitted another stale wake.
+  printf 'old-pane-state' > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf 'idle external-decision gate token-0 elapsed-0\n' > "$capture_file"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_TMUX_CURRENT_COMMAND=grok SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_PAUSE_RESURFACE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+    "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "initial live paused confirmation did not surface"
+  round=1
+  while [ "$round" -le 5 ]; do
+    printf 'idle external-decision gate token-%s elapsed-%s\n' "$round" "$round" > "$capture_file"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+      SQUAD_FAKE_TMUX_CURRENT_COMMAND=grok SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_PAUSE_RESURFACE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+      "$WATCH" >> "$out" &
+    pid=$!
+    if wait_live "$pid" 20; then reap "$pid"; else wait "$pid" || true; fi
+    round=$((round + 1))
+  done
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf '0')
+  [ "$wakes" -eq 1 ] || fail "live paused churning pane emitted $wakes stale wakes across five polls"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "a live declared pause with a churning pane is surfaced once per cadence, not once per poll"
+}
+
 # A commander-held crew can leave a stable backend endpoint after its agent exits.
 # sq-crew-state then authoritatively reports stopped rather than paused, but the
 # confirmed-dead agent plus the declared wait or commander-held transfer must retain
@@ -1858,6 +1902,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_pane_default_turn_age_bound_is_3600s
 test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
+test_live_paused_churning_pane_is_throttled
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_XO_paused_resurfaces_in_normal_mode
 test_XO_nonpaused_stale_remains_suppressed
