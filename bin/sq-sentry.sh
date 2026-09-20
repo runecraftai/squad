@@ -906,17 +906,21 @@ EOF
     #   - the away-mode daemon owns triage (afk) and wants every wake;
     #   - any status file carries a commander-relevant verb;
     #   - or it is a no-verb wake (a bare turn-end, a working: note) whose crew is
-    #     NOT provably working - the operator stopped its turn with no actively-running
-    #     pipeline and no busy pane, so it may be done (even via an interactive menu
-    #     that wrote no done: status), waiting on a decision, or wedged. Absorbing
-    #     such a turn-end is exactly the swallowed-finish this change guards against.
+    #     NOT provably working AND NOT paused - the operator stopped its turn with
+    #     no actively-running pipeline and no busy pane, so it may be done (even via
+    #     an interactive menu that wrote no done: status), waiting on a decision, or
+    #     wedged. Absorbing such a turn-end is exactly the swallowed-finish this
+    #     change guards against. A paused operator is expected to idle (declared
+    #     external wait), so its turn-end is absorbed like the stale path's
+    #     handle_paused_stale.
     # Actionable -> enqueue, advance .seen-* markers, exit. Benign (a no-verb wake
-    # whose crew IS provably working) in always-on mode -> advance the markers so it
-    # will not re-fire, log, and keep blocking without enqueuing. The provably-working
-    # check is the only costly one (it may run a bounded drill call), so the ||
-    # ordering evaluates it ONLY for a non-afk, no-commander-verb signal.
+    # whose crew IS provably working, or a paused operator) in always-on mode ->
+    # advance the markers so it will not re-fire, log, and keep blocking without
+    # enqueuing. The provably-working check is the only costly one (it may run a
+    # bounded drill call), so the || ordering evaluates it ONLY for a non-afk,
+    # no-commander-verb signal.
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || ! signal_operator_provably_working $files; then
+    if afk_present || signal_reason_is_actionable $files || { ! signal_operator_provably_working $files && ! signal_operator_is_paused $files; }; then
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1

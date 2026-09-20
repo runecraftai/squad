@@ -726,6 +726,29 @@ signal_operator_provably_working() {  # <file> ...
   return 0
 }
 
+# 0 when every task referenced by the signal files is in a declared external-wait
+# pause. Used by the signal path to absorb no-verb signals for paused operators
+# (matching the stale path's handle_paused_stale absorption) instead of surfacing
+# them as wakes. A paused operator is expected to idle, so a turn-end signal is
+# not actionable.
+signal_operator_is_paused() {  # <file> ...
+  local f base task seen=""
+  for f in "$@"; do
+    base=${f##*/}
+    case "$base" in
+      *.status)     task=${base%.status} ;;
+      *.turn-ended) task=${base%.turn-ended} ;;
+      *)            continue ;;
+    esac
+    [ -n "$task" ] || continue
+    case " $seen " in *" $task "*) continue ;; esac
+    seen="$seen $task"
+    operator_is_paused "$task" || return 1
+  done
+  [ -n "$seen" ] || return 1
+  return 0
+}
+
 # 0 (terminal/actionable) if a stale window's last status line is
 # commander-relevant; 1 otherwise, including the no-status case. A 1 only means
 # "non-terminal"; the always-on sentry then applies operator_is_provably_working,

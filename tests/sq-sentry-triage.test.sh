@@ -331,6 +331,60 @@ test_signal_operator_provably_working_classifier() {
   pass "signal_operator_provably_working: benign only when every referenced crew is provably working"
 }
 
+# signal_operator_is_paused: a no-verb "signal:" wake is benign when EVERY
+# task it references is in a declared external-wait pause. This matches the
+# stale path's handle_paused_stale absorption so paused operators are not
+# woken by the signal path independently.
+test_signal_operator_is_paused_classifier() {
+  local dir fakebin state
+  dir=$(make_case signal-is-paused); fakebin="$dir/fakebin"; state="$dir/state"
+  export SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh"
+  export SQUAD_FAKE_CREW_STATE_a='state: paused · source: status-log · awaiting external'
+  export SQUAD_FAKE_CREW_STATE_b='state: working · source: run-step · running'
+  signal_operator_is_paused "$state/a.status" "$state/a.turn-ended" \
+    || fail "a single paused crew (status+turn-end) was not recognized as paused"
+  ! signal_operator_is_paused "$state/a.status" "$state/b.turn-ended" \
+    || fail "a coalesced batch including a working crew was treated as paused"
+  ! signal_operator_is_paused "$state/b.turn-ended" \
+    || fail "a working crew's bare turn-end was treated as paused"
+  ! signal_operator_is_paused \
+    || fail "an empty signal file list was treated as paused"
+  unset SQUAD_FAKE_CREW_STATE_a SQUAD_FAKE_CREW_STATE_b
+  pass "signal_operator_is_paused: true only when every referenced crew is paused"
+}
+
+# --- a no-verb signal for a paused operator is absorbed (defect regression) ------
+# The signal path previously surfaced .turn-ended signals for paused operators
+# because signal_operator_provably_working returned false for "paused" (only
+# "working" returns true). The stale path correctly absorbed these via
+# handle_paused_stale, but the signal path independently found the turn-ended
+# file and surfaced it. This test verifies the fix: paused operators' turn-end
+# signals are absorbed, matching the stale path's behavior.
+test_paused_signal_absorbed() {
+  local dir state fakebin out drain_out status_file pid
+  dir=$(make_case paused-signal); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  status_file="$state/task.status"
+  printf 'paused: awaiting external review\n' > "$status_file"
+  : > "$state/task.turn-ended"
+  # The crew is in a declared external-wait pause: the signal path must absorb.
+  export SQUAD_FAKE_CREW_STATE='state: paused · source: status-log · awaiting external'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry exited for a turn-end signal on a paused operator (should absorb): $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "paused signal printed a wake reason: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "paused signal enqueued a durable wake record"
+  [ -s "$state/.seen-task_status" ] || fail "paused signal did not advance its .seen-* suppressor"
+  [ -e "$state/.last-sentry-beat" ] || fail "sentry beacon was not touched while absorbing"
+  # Verify the triage log recorded the absorption.
+  grep -q "absorbed benign" "$state/.sentry-triage.log" 2>/dev/null \
+    || fail "triage log did not record the absorbed benign signal"
+  reap "$pid"
+  pass "a no-verb signal for a paused operator is absorbed (no exit, no queue, triage logged)"
+}
+
 # --- benign wakes are absorbed ONLY when the operator is provably working ---------
 
 test_provably_working_signal_absorbed() {
@@ -1883,6 +1937,8 @@ test_operator_is_provably_working_classifier
 test_status_is_paused_classifier
 test_operator_absorb_class_classifier
 test_signal_operator_provably_working_classifier
+test_signal_operator_is_paused_classifier
+test_paused_signal_absorbed
 test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
