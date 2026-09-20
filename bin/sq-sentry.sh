@@ -414,13 +414,28 @@ pause_state_class() {  # <window> <task>
 }
 
 surface_nonterminal_stale() {  # <window> <hash>
-  local win=$1 h=$2 key task last
+  local win=$1 h=$2 key task last rf rf_age
   key=$(printf '%s' "$win" | tr ':/.' '___')
+  task=$(window_to_task "$win" "$STATE")
+  last=$(last_status_line "$STATE/$task.status")
+  if status_is_paused_or_commander_held "$last"; then
+    # A live declared pause is intentionally surfaced once so Squad can confirm
+    # the external wait, but changing pane footer text must not turn that
+    # confirmation into a wake on every poll. Use the same per-key cadence marker
+    # as pause re-surfacing; its mtime is independent of pane content.
+    rf="$STATE/.paused-resurfaced-$key"
+    rf_age=$(age_of "$rf")
+    if [ -e "$rf" ] && [ "$rf_age" -lt "$PAUSE_RESURFACE_SECS" ]; then
+      printf '%s' "$h" > "$STATE/.stale-$key"
+      : > "$STATE/.paused-$key"
+      rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+      triage_log "absorbed stale (paused live recheck throttle): $win"
+      return
+    fi
+  fi
   fm_wake_append stale "$win" "stale: $win" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
   rm -f "$STATE/.stale-since-$key"
-  task=$(window_to_task "$win" "$STATE")
-  last=$(last_status_line "$STATE/$task.status")
   if status_is_paused_or_commander_held "$last"; then
     : > "$STATE/.paused-$key"
     date +%s > "$STATE/.paused-rechecked-$key"
