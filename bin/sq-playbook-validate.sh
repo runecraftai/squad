@@ -15,7 +15,7 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
@@ -148,6 +148,28 @@ case "$PLAYBOOK@$VERSION" in
       "reexecuted|repeatable;comparison;command"
       "divergence|no-diff;named|list"
       "recon;strike;report|validation"
+    )
+    ;;
+  multi-phase-plan@1)
+    CRITERIA_LABELS=("outcome and dependencies" "verifiable units" "no layer task decomposition" "backlog handoff" "next action")
+    CRITERIA_PATTERNS=("outcome" "verification" "layer" "backlog" "action")
+    CRITERIA_CHECKS=(
+      "outcome;dependency|dependencies"
+      "unit;verification|verify"
+      "layer;not|never|no"
+      "backlog;handoff|queue"
+      "next;action|unresolved|stop"
+    )
+    ;;
+  eval@1)
+    CRITERIA_LABELS=("baseline and variant" "sanitized candidate view" "blinded evaluation" "chain elicitation prevention" "promotion boundary")
+    CRITERIA_PATTERNS=("baseline" "sanitized" "blinded" "chain" "promotion")
+    CRITERIA_CHECKS=(
+      "baseline;variant;metric|rubric"
+      "sanitized;path|directory;cue"
+      "blind|blinded;case|judge"
+      "chain;elicitation;prevent|stop"
+      "recommendation;promote|reject;production|promotion"
     )
     ;;
 esac

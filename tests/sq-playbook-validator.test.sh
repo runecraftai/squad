@@ -165,6 +165,27 @@ for playbook in perf hillclimb runtime-forensics trace-forensics visual-parity; 
   [ "$rc" -ne 0 ] || fail "$playbook non-comparable or incomplete evidence should fail"
   assert_contains "$out" "quality" "$playbook refusal should identify an evidence quality failure"
 done
+for playbook in multi-phase-plan eval; do
+  id="lifecycle-$playbook"
+  mkdir -p "$HOME/data/$id/artifacts"
+  printf 'playbook=%s\nplaybook_version=1\n' "$playbook" > "$HOME/state/$id.meta"
+  {
+    printf '# %s@1 checklist\n' "$playbook"
+    case "$playbook" in
+      multi-phase-plan)
+        printf '%s\n' '## Criterion 1' 'Proof: outcome and real dependencies command path' '## Criterion 2' 'Proof: unit verification command path' '## Criterion 3' 'Proof: not a layer task decomposition command path' '## Criterion 4' 'Proof: existing backlog handoff queue command path' '## Criterion 5' 'Proof: next action unresolved question command path' ;;
+      eval)
+        printf '%s\n' '## Criterion 1' 'Proof: baseline variant metric rubric command path' '## Criterion 2' 'Proof: sanitized candidate-visible path directory cue command path' '## Criterion 3' 'Proof: blinded cases judge command path' '## Criterion 4' 'Proof: chain elicitation prevention stop command path' '## Criterion 5' 'Proof: recommendation promote or reject production promotion command path' ;;
+    esac
+  } > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  expect_code 0 "$rc" "$playbook evidence should validate"
+  assert_contains "$out" "playbook evidence valid: $playbook@1" "$playbook validator identity missing"
+done
+printf 'playbook=shipping\nplaybook_version=1\n' > "$HOME/state/rejected.meta"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" rejected 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "rejected shipping identity should be refused"
+assert_contains "$out" "unsupported execution playbook identity" "rejected identity refusal missing"
 printf 'playbook=unknown\nplaybook_version=1\n' > "$HOME/state/invalid.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" invalid 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "invalid playbook identity should be refused"

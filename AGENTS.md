@@ -354,6 +354,7 @@ Once ownership is settled, validate exactly once against that final head so no o
 
 An ask-user finding returns as `needs-decision`; Squad decides only when the configured authority permits, otherwise escalates to the commander.
 For a strike brief with an explicit execution playbook, run its structural validator before sending the implementation to drill or the selected delivery path; the playbook validator never replaces drill.
+Versioned planning and evaluation playbooks are methods only, while delivery remains owned by mode and drill and merge remains commander-authorized.
 Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
 Resume unit supervision immediately after the decision lands.

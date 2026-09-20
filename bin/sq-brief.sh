@@ -181,6 +181,9 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
     runtime-forensics@1) PLAYBOOK_ID=runtime-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/runtime-forensics-v1.md"); EXPECTED_KIND=recon ;;
     trace-forensics@1) PLAYBOOK_ID=trace-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/trace-forensics-v1.md"); EXPECTED_KIND=recon ;;
     visual-parity@1) PLAYBOOK_ID=visual-parity; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/visual-parity-v1.md"); EXPECTED_KIND='recon|strike' ;;
+    multi-phase-plan@1) PLAYBOOK_ID=multi-phase-plan; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/multi-phase-plan-v1.md"); EXPECTED_KIND=recon ;;
+    "eval@1") PLAYBOOK_ID='eval'; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/eval-v1.md"); EXPECTED_KIND=recon ;;
+    shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
     *@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
