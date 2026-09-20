@@ -928,6 +928,40 @@ test_status_instruction_is_present_in_all_scaffolds() {
   pass "sq-brief.sh: all scaffold types include the status reporting instruction"
 }
 
+test_autonomous_policy_refusals_and_topology_boundaries() {
+  local home name out status
+  home="$TMP_ROOT/autonomous-policy-home"
+  mkdir -p "$home/data"
+  while IFS='|' read -r name disposition marker; do
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "policy-$name" repo --mode drill --playbook "$name@1" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$name must be refused"
+    assert_contains "$out" "$disposition" "$name refusal must name disposition"
+    assert_contains "$out" "$marker" "$name refusal must name owner or trigger"
+    if [ "$name" = orchestrate ]; then
+      assert_contains "$out" "backlog" "$name refusal must preserve the existing coordination owners"
+    elif [ "$name" = autonomous-run ]; then
+      assert_contains "$out" "supervision" "$name refusal must name the current owner"
+    else
+      assert_contains "$out" "commander" "$name refusal must preserve commander authority"
+    fi
+    assert_absent "$home/data/policy-$name/brief.md" "$name refusal must leave no partial brief"
+  done <<'ROWS'
+orchestrate|reject|Commander
+autopilot-full|defer|multi-PR
+autopilot-stack|defer|multi-PR
+autonomous-run|defer|terminal predicate
+ROWS
+  for topology in arena swarm interrogate; do
+    [ ! -e ".agents/skills/execution-playbooks/references/$topology-v1.md" ] \
+      || fail "$topology must not be an execution playbook reference"
+  done
+  assert_grep "auxiliary topologies" "$ROOT/AGENTS.md" "topology policy must preserve auxiliary distinction"
+  assert_grep "@runecraft/pr-review" "$ROOT/AGENTS.md" "interrogate policy must name maintained review owner"
+  assert_grep "22 playbooks" "$ROOT/docs/verification/playbook-absorptions.md" "policy must preserve the 22-playbook count"
+  pass "sq-brief.sh: autonomous identities are refused and auxiliary topologies remain outside dispatch"
+}
+
 # The status instruction validation refuses to scaffold if the pattern is
 # absent. We simulate this by writing a brief manually without the pattern
 # and verifying the validation catches it at spawn time (sq-spawn.sh check).
@@ -968,6 +1002,7 @@ test_wave_one_playbooks_materialize_and_enforce_forms
 test_wave_two_playbooks_materialize_and_enforce_forms
 test_absorbed_playbook_names_are_not_selectable
 test_remaining_lifecycle_playbooks
+test_autonomous_policy_refusals_and_topology_boundaries
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_ship_mode_is_required_and_closed_set
