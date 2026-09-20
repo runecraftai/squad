@@ -454,11 +454,14 @@ EOF
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=drill
-A commit alone is not completion: it is only the handoff point for validation.
-Invoke /drill and respond to its gates until the validation pipeline has run and produced a PR with green CI.
-Append \`done: {summary}\` only after that green PR exists, then stop.
 
-You drive drill by responding to its gates, not by implementing fixes.
+## Phase 1: implement and commit
+Implement the change and commit it on your branch.
+A commit is NOT completion - it is the input to the validation pipeline.
+
+## Phase 2: run the pipeline
+After committing, invoke \`/drill\` immediately.
+The pipeline owns review, fixes, tests, docs, push, PR, and CI; you respond to its gates.
 Follow the guidance drill itself provides for the mechanics: it loads when you invoke /drill, and \`drill axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting drill, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Squad requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
@@ -466,10 +469,17 @@ Do not hand-edit, commit, or fix findings yourself while a run is active - the p
 Two Squad-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to Squad (rule 6) and stop.
   Squad applies the authority contract in its \`AGENTS.md\` and obtains any required commander decision.
-  When the decision comes back, feed it to the gate with \`drill axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+  When the decision comes back, feed it to the gate with \`drill axi respond\` and let the pipeline apply it - do not route the question to \"the user\" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass Squad's authority check and any required commander escalation.
 
-After /drill reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+## Phase 3: self-check before done
+Before appending \`done:\`, verify ALL of the following - if any is false, the task is not done:
+- A PR exists for your branch (the pipeline opened it).
+- CI checks on that PR are green (\`/drill\` reported CI green).
+If the PR is not open or CI is not green, keep working through the pipeline gates instead of appending \`done:\`.
+
+## done signal
+After /drill reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` to the status file and stop. You are finished.
 EOF
     ;;
 esac
