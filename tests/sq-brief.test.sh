@@ -429,7 +429,7 @@ test_ship_mode_is_explicit_not_registry() {
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=drill" "$brief" \
     || fail "registered direct-PR posture overrode the explicit --mode"
-  assert_grep "Squad will then instruct you to run /drill" "$brief" \
+  assert_grep "Invoke /drill and respond to its gates until the validation pipeline has run and produced a PR with green CI." "$brief" \
     "explicit drill brief did not render the pipeline definition of done"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
@@ -502,6 +502,12 @@ test_drill_dod_wording() {
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
+  assert_grep "A commit alone is not completion: it is only the handoff point for validation." "$brief" \
+    "drill DOD must reject a bare commit as completion"
+  assert_grep "Invoke /drill and respond to its gates until the validation pipeline has run and produced a PR with green CI." "$brief" \
+    "drill DOD must require a pipeline run and green PR before completion"
+  assert_grep 'Append `done: {summary}` only after that green PR exists, then stop.' "$brief" \
+    "drill DOD must restrict done: to a green PR"
   assert_grep "drill itself provides for the mechanics" "$brief" \
     "drill DOD lost its guidance-reference sentence"
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
@@ -524,7 +530,15 @@ test_drill_dod_wording() {
   # guards the structure that makes it safe.
   assert_grep "Squad's authority check" "$brief" \
     "drill DOD lost the apostrophe prose that the structural fix makes parse-safe"
-  pass "sq-brief.sh: drill DOD keeps its apostrophe prose, now parse-safe"
+  id="brief-wording-direct-b2"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+  assert_no_grep "A commit alone is not completion" "$home/data/$id/brief.md" \
+    "direct-PR brief unexpectedly inherited drill-only completion wording"
+  id="brief-wording-local-b3"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode local-only >/dev/null 2>&1
+  assert_no_grep "A commit alone is not completion" "$home/data/$id/brief.md" \
+    "local-only brief unexpectedly inherited drill-only completion wording"
+  pass "sq-brief.sh: drill DOD requires a green PR and other modes remain unchanged"
 }
 
 test_ship_project_memory_wording() {

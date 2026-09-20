@@ -454,9 +454,9 @@ EOF
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=drill
-The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Squad will then instruct you to run /drill to validate and ship a PR.
+A commit alone is not completion: it is only the handoff point for validation.
+Invoke /drill and respond to its gates until the validation pipeline has run and produced a PR with green CI.
+Append \`done: {summary}\` only after that green PR exists, then stop.
 
 You drive drill by responding to its gates, not by implementing fixes.
 Follow the guidance drill itself provides for the mechanics: it loads when you invoke /drill, and \`drill axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
