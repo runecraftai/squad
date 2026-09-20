@@ -130,6 +130,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-skill-snapshot.sh`   | Snapshot a skill directory before an update, with hash dedup and oldest-first pruning |
 | `sq-skill-rollback.sh`   | Roll back a skill to a previous snapshot, interactively or by timestamp             |
 | `sq-skill-verify.py`     | Emit compact JSON verification results for allowlisted skills and their required behavioral sections |
+| `sq-skill-lockfile.sh`   | Generate or verify a skill lockfile tracking installed skills with integrity hashes                   |
+| `sq-skill-registry.sh`   | Generate or query a skills registry JSON file for CDN-based distribution                              |
 | `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
