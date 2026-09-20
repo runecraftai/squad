@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Focused behavior tests for bug-fix@1 evidence validation.
+# Focused behavior tests for execution playbook evidence validation.
 set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -40,6 +40,57 @@ out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "incomplete evidence should fail"
 assert_contains "$out" "criterion 1" "validator omitted criterion 1 failure"
 assert_contains "$out" "criterion 3" "validator did not list all missing evidence"
+# Criterion-specific quality checks: criterion 1 must contain before or pre-fix.
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 1
+Proof: reproduction command: reproduce failure
+## Criterion 2
+Proof: causal explanation with refutable observation command
+## Criterion 3
+Proof: regression test pre-fix and post-fix command
+## Criterion 4
+Proof: relevant suite command green pass
+## Criterion 5
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "criterion 1 without before/pre-fix should fail"
+assert_contains "$out" "quality" "validator should report quality check failure"
+# Criterion-specific quality checks: criterion 3 must contain both pre-fix and post-fix.
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 1
+Proof: reproduction before fix command
+## Criterion 2
+Proof: causal explanation refutable observation command
+## Criterion 3
+Proof: regression test pre-fix command only
+## Criterion 4
+Proof: relevant suite command green pass
+## Criterion 5
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "criterion 3 without post-fix should fail"
+assert_contains "$out" "criterion 3" "validator should report criterion 3 quality failure"
+# Duplicate-proof detection: adjacent criteria must not reuse identical proof.
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 1
+Proof: reproduction before fix command
+## Criterion 2
+Proof: reproduction before fix command
+## Criterion 3
+Proof: regression test pre-fix and post-fix command
+## Criterion 4
+Proof: relevant suite green pass command
+## Criterion 5
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "duplicate proofs for criteria 1 and 2 should fail"
+assert_contains "$out" "reuse one generic proof" "validator should report duplicate proof"
 pass "sq-playbook validator: complete and incomplete evidence are distinguished"
 
 for playbook in investigation feature refactoring prototype; do
@@ -50,13 +101,13 @@ for playbook in investigation feature refactoring prototype; do
     printf '# %s@1 checklist\n' "$playbook"
     case "$playbook" in
       investigation)
-        printf '%s\n' '## Criterion 1' 'Proof: facts and inferences command' '## Criterion 2' 'Proof: source command' '## Criterion 3' 'Proof: uncertainty path: report command' '## Criterion 4' 'Proof: implication command' ;;
+        printf '%s\n' '## Criterion 1' 'Proof: facts and inferences observation command' '## Criterion 2' 'Proof: source citation artifact command' '## Criterion 3' 'Proof: uncertainty gap report command' '## Criterion 4' 'Proof: implication decision hold command' ;;
       feature)
-        printf '%s\n' '## Criterion 1' 'Proof: behavior command' '## Criterion 2' 'Proof: data shape command' '## Criterion 3' 'Proof: vertical implementation command' '## Criterion 4' 'Proof: surface command' ;;
+        printf '%s\n' '## Criterion 1' 'Proof: behavior contract expected rejected command' '## Criterion 2' 'Proof: data shape boundary caller command' '## Criterion 3' 'Proof: vertical slice implementation command' '## Criterion 4' 'Proof: surface test command result' ;;
       refactoring)
-        printf '%s\n' '## Criterion 1' 'Proof: characterization command' '## Criterion 2' 'Proof: invariants command' '## Criterion 3' 'Proof: bounded transformation command' '## Criterion 4' 'Proof: equivalence command' ;;
+        printf '%s\n' '## Criterion 1' 'Proof: characterization capture before command' '## Criterion 2' 'Proof: invariants target shape command' '## Criterion 3' 'Proof: bounded transformation subtract command' '## Criterion 4' 'Proof: equivalence preserve behavior command' ;;
       prototype)
-        printf '%s\n' '## Criterion 1' 'Proof: decision question command' '## Criterion 2' 'Proof: alternatives command' '## Criterion 3' 'Proof: timebox command' '## Criterion 4' 'Proof: decision command' ;;
+        printf '%s\n' '## Criterion 1' 'Proof: decision question scope command' '## Criterion 2' 'Proof: alternatives reference gather command' '## Criterion 3' 'Proof: timebox observation start end command' '## Criterion 4' 'Proof: decision cite recommendation command' ;;
     esac
   } > "$HOME/data/$id/artifacts/checks.md"
   out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
