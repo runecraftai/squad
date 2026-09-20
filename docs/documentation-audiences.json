@@ -1458,6 +1458,26 @@
   {
    "path": ".agents/skills/execution-playbooks/references/refactoring-v1.md",
    "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/execution-playbooks/references/hillclimb-v1.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/execution-playbooks/references/perf-v1.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/execution-playbooks/references/runtime-forensics-v1.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/execution-playbooks/references/trace-forensics-v1.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/execution-playbooks/references/visual-parity-v1.md",
+   "audience": "agent-runtime"
   }
  ]
 }

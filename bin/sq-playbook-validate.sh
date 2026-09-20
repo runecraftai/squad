@@ -15,7 +15,7 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
@@ -95,6 +95,59 @@ case "$PLAYBOOK@$VERSION" in
       "timebox|start|end|exhaust"
       "surface|observation|comparison"
       "decision|cite|recommendation|throwaway"
+    )
+    ;;
+  perf@1)
+    CRITERIA_LABELS=("baseline" "profile or trace" "hypothesis and smallest change" "same command numeric comparison" "regression and stop")
+    CRITERIA_PATTERNS=("baseline" "profile" "hypothesis" "comparison" "regression")
+    CRITERIA_CHECKS=(
+      "baseline;reproducible|repeat"
+      "profile|trace;path|artifact"
+      "hypothesis;smallest|bounded"
+      "same command;numeric|measurement"
+      "regression;incompatible|unstable|budget|decision"
+    )
+    ;;
+  hillclimb@1)
+    CRITERIA_LABELS=("target metric baseline" "single cycle" "decision" "accepted gain commit" "stop conditions")
+    CRITERIA_PATTERNS=("target" "cycle" "decision" "commit" "stop")
+    CRITERIA_CHECKS=(
+      "target;metric;baseline;command"
+      "one|single;hypothesis;alteration|change;measurement"
+      "decision;keep|reject|revert"
+      "gain;commit;accepted|retained"
+      "incompatible|unstable|budget|decision;stop|reject"
+    )
+    ;;
+  runtime-forensics@1)
+    CRITERIA_LABELS=("live symptom capture" "timeline reduction" "mechanism proof" "source diagnosis")
+    CRITERIA_PATTERNS=("live" "timeline" "mechanism" "source")
+    CRITERIA_CHECKS=(
+      "live;capture|instrument;before|pre"
+      "timeline;reduced|smoking"
+      "mechanism;proof|causal"
+      "source;diagnosis;recon|fix"
+    )
+    ;;
+  trace-forensics@1)
+    CRITERIA_LABELS=("artifact identity" "queryable transformation" "trace evidence" "source attribution")
+    CRITERIA_PATTERNS=("artifact" "queryable" "evidence" "source")
+    CRITERIA_CHECKS=(
+      "artifact;path;hash"
+      "queryable;transform|query;command"
+      "trace;event|query|range;evidence"
+      "source;diagnosis;unknown|symbol|recapture|decision|budget"
+    )
+    ;;
+  visual-parity@1)
+    CRITERIA_LABELS=("paired references" "controlled surface" "repeatable comparison" "named divergences" "form predicate")
+    CRITERIA_PATTERNS=("reference" "surface" "comparison" "divergence" "predicate")
+    CRITERIA_CHECKS=(
+      "prior;posterior;path"
+      "viewport;data;state"
+      "reexecuted|repeatable;comparison;command"
+      "divergence|no-diff;named|list"
+      "recon;strike;report|validation"
     )
     ;;
 esac

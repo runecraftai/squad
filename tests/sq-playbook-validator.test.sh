@@ -131,6 +131,40 @@ for playbook in investigation feature refactoring prototype; do
   expect_code 0 "$rc" "$playbook evidence should validate"
   assert_contains "$out" "playbook evidence valid: $playbook@1" "$playbook validator identity missing"
 done
+
+for playbook in perf hillclimb runtime-forensics trace-forensics visual-parity; do
+  id="wave-two-$playbook"
+  mkdir -p "$HOME/data/$id/artifacts"
+  printf 'playbook=%s\nplaybook_version=1\n' "$playbook" > "$HOME/state/$id.meta"
+  {
+    printf '# %s@1 checklist\n' "$playbook"
+    case "$playbook" in
+      perf)
+        printf '%s\n' '## Criterion 1' 'Proof: reproducible baseline repeat command path' '## Criterion 2' 'Proof: profile artifact path command' '## Criterion 3' 'Proof: hypothesis smallest change command' '## Criterion 4' 'Proof: same command numeric comparison measurement' '## Criterion 5' 'Proof: regression check incompatible baseline stop command' ;;
+      hillclimb)
+        printf '%s\n' '## Criterion 1' 'Proof: target metric baseline command' '## Criterion 2' 'Proof: one cycle hypothesis alteration measurement command' '## Criterion 3' 'Proof: decision keep command' '## Criterion 4' 'Proof: accepted gain commit retained command' '## Criterion 5' 'Proof: incompatible measurement stop command' ;;
+      runtime-forensics)
+        printf '%s\n' '## Criterion 1' 'Proof: live capture before instrumentation command path' '## Criterion 2' 'Proof: timeline reduced smoking gun command' '## Criterion 3' 'Proof: mechanism proof causal command' '## Criterion 4' 'Proof: source diagnosis recon command' ;;
+      trace-forensics)
+        printf '%s\n' '## Criterion 1' 'Proof: artifact path hash command' '## Criterion 2' 'Proof: queryable transform command' '## Criterion 3' 'Proof: trace event evidence query command' '## Criterion 4' 'Proof: source diagnosis unknown symbols stop command' ;;
+      visual-parity)
+        printf '%s\n' '## Criterion 1' 'Proof: prior posterior reference path command' '## Criterion 2' 'Proof: surface viewport data state command' '## Criterion 3' 'Proof: reexecuted comparison command' '## Criterion 4' 'Proof: named divergence list command' '## Criterion 5' 'Proof: predicate recon report and strike validation command' ;;
+    esac
+  } > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  expect_code 0 "$rc" "$playbook evidence should validate"
+  assert_contains "$out" "playbook evidence valid: $playbook@1" "$playbook validator identity missing"
+  case "$playbook" in
+    perf) sed -i 's/same command numeric comparison measurement/numeric comparison measurement/' "$HOME/data/$id/artifacts/checks.md" ;;
+    hillclimb) sed -i 's/one cycle hypothesis alteration measurement/one cycle hypothesis alteration/' "$HOME/data/$id/artifacts/checks.md" ;;
+    runtime-forensics) sed -i 's/live capture before instrumentation/capture after instrumentation/' "$HOME/data/$id/artifacts/checks.md" ;;
+    trace-forensics) sed -i 's/artifact path hash/artifact path/' "$HOME/data/$id/artifacts/checks.md" ;;
+    visual-parity) sed -i 's/surface viewport data state/surface viewport/' "$HOME/data/$id/artifacts/checks.md" ;;
+  esac
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "$playbook non-comparable or incomplete evidence should fail"
+  assert_contains "$out" "quality" "$playbook refusal should identify an evidence quality failure"
+done
 printf 'playbook=unknown\nplaybook_version=1\n' > "$HOME/state/invalid.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" invalid 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "invalid playbook identity should be refused"
