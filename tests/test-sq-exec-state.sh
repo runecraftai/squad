@@ -54,4 +54,16 @@ sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/stale.exec"
 SQUAD_EXEC_STALE_AFTER=1 "$EXEC" recover stale >/dev/null
 assert_eq "$("$EXEC" get stale)" retry_queued
 
+# recover-all removes orphaned exec files (meta absent) but preserves live ones.
+printf 'exec_state=running\nexec_attempt=1\n' > "$STATE/orphan.exec"
+printf 'window=Squad\n' > "$STATE/live-task.meta"
+NOW=$(date +%s)
+printf 'exec_state=claimed\nexec_attempt=2\nexec_last_activity=%s\n' "$NOW" > "$STATE/live-task.exec"
+[ -f "$STATE/orphan.exec" ] || { echo 'setup: orphan.exec missing' >&2; exit 1; }
+[ -f "$STATE/live-task.exec" ] || { echo 'setup: live-task.exec missing' >&2; exit 1; }
+"$EXEC" recover-all >/dev/null || true
+[ ! -f "$STATE/orphan.exec" ] || { echo 'fail: orphan.exec was not removed by recover-all' >&2; exit 1; }
+[ -f "$STATE/live-task.exec" ] || { echo 'fail: live-task.exec was incorrectly removed by recover-all' >&2; exit 1; }
+assert_eq "$("$EXEC" get live-task)" claimed
+
 printf 'test-sq-exec-state: ok\n'

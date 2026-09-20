@@ -2622,6 +2622,49 @@ EOF
   pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
 }
 
+test_teardown_removes_exec_sidecar() {
+  local case_dir rc
+  case_dir=$(make_case exec-sidecar-retirement)
+  write_meta "$case_dir" drill strike
+  land_shippable_commit "$case_dir"
+  # Create an exec sidecar for the task.
+  printf 'exec_state=running\nexec_attempt=1\n' > "$case_dir/state/task-x1.exec"
+  [ -f "$case_dir/state/task-x1.exec" ] \
+    || fail "exec-sidecar-retirement: setup did not create sidecar"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "exec-sidecar-retirement: teardown should succeed"
+  assert_absent "$case_dir/state/task-x1.exec" \
+    "exec-sidecar-retirement: exec sidecar was not removed after teardown"
+  pass "teardown removes the exec sidecar for the torn-down task"
+}
+
+test_teardown_does_not_remove_other_tasks_exec_sidecar() {
+  local case_dir rc
+  case_dir=$(make_case exec-sidecar-preservation)
+  write_meta "$case_dir" drill strike
+  land_shippable_commit "$case_dir"
+  # Create sidecars for the torn-down task AND a live task.
+  printf 'exec_state=running\nexec_attempt=1\n' > "$case_dir/state/task-x1.exec"
+  printf 'exec_state=claimed\nexec_attempt=2\n' > "$case_dir/state/live-task.exec"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "exec-sidecar-preservation: teardown should succeed"
+  assert_absent "$case_dir/state/task-x1.exec" \
+    "exec-sidecar-preservation: torn-down task sidecar was not removed"
+  assert_present "$case_dir/state/live-task.exec" \
+    "exec-sidecar-preservation: live task sidecar was incorrectly removed"
+  pass "teardown removes only the torn-down task exec sidecar, not others"
+}
+
 test_local_only_fork_remote_allows
 test_teardown_prompts_tasks_axi_done_when_compatible
 test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
@@ -2681,4 +2724,6 @@ test_exec_changed_process_is_still_reaped
 test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
+test_teardown_removes_exec_sidecar
+test_teardown_does_not_remove_other_tasks_exec_sidecar
 test_run_abort_precedes_process_reap_precedes_worktree_removal
