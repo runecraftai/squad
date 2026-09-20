@@ -355,6 +355,9 @@ Once ownership is settled, validate exactly once against that final head so no o
 An ask-user finding returns as `needs-decision`; Squad decides only when the configured authority permits, otherwise escalates to the commander.
 For a strike brief with an explicit execution playbook, run its structural validator before sending the implementation to drill or the selected delivery path; the playbook validator never replaces drill.
 Versioned planning and evaluation playbooks are methods only, while delivery remains owned by mode and drill and merge remains commander-authorized.
+`orchestrate` is rejected because Commander, XO, backlog, and supervision already own programme coordination; `autopilot-full`, `autopilot-stack`, and `autonomous-run` remain deferred until their documented measurable triggers are proven, and none adds merge, discard, or destructive authority.
+`arena` means competing approaches to one problem with one selected base, `swarm` means parallel coverage of distinct slices, and `interrogate` means independent attacks on one artifact with deduplication and judgment; these are auxiliary topologies, not playbook identities, dispatch owners, or inferences from free-form `sq-tasks` `kind`.
+For a PR or diff, `interrogate` reuses maintained `@runecraft/pr-review` in `packages/pr-review`; a separate review happens only when requested or when the deliverable is a knowledge review.
 Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
 Resume unit supervision immediately after the decision lands.

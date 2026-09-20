@@ -183,6 +183,9 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
     visual-parity@1) PLAYBOOK_ID=visual-parity; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/visual-parity-v1.md"); EXPECTED_KIND='recon|strike' ;;
     multi-phase-plan@1) PLAYBOOK_ID=multi-phase-plan; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/multi-phase-plan-v1.md"); EXPECTED_KIND=recon ;;
     "eval@1") PLAYBOOK_ID='eval'; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/eval-v1.md"); EXPECTED_KIND=recon ;;
+    orchestrate@1) echo "error: orchestrate@1 disposition=reject; Commander, XO, backlog, and supervision already own programme coordination" >&2; exit 1 ;;
+    autopilot-full@1|autopilot-stack@1) echo "error: $PLAYBOOK disposition=defer; re-evaluate only for a real multi-PR programme where commander merge approval is the measured bottleneck and yolo cannot cover it; no auto-merge or drill bypass" >&2; exit 1 ;;
+    autonomous-run@1) echo "error: autonomous-run disposition=defer; re-evaluate only with a real task whose cycle the current supervision cannot conduct, plus a verifiable terminal predicate, budget, stop conditions, and duplicate prevention" >&2; exit 1 ;;
     shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;

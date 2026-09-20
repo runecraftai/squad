@@ -35,3 +35,18 @@ find .agents/skills/execution-playbooks -maxdepth 2 -type f -print | sort
 ```
 
 Its expected output contains `SKILL.md` and the reference files for all twelve selectable execution playbook contracts.
+
+## Deferred and auxiliary policy
+
+`orchestrate` is rejected because Commander, XO, backlog, and supervision already own programme coordination.
+
+`autopilot-full` and `autopilot-stack` are deferred until a real multi-PR programme demonstrates that commander merge approval is the measured bottleneck and `yolo` cannot cover it.
+They cannot auto-merge, bypass drill, or turn standing autonomy into destructive authority.
+
+`autonomous-run` is deferred until a real task requires a verifiable terminal predicate, budget, stop conditions, duplicate prevention, and a cycle the current supervision cannot conduct.
+
+The three auxiliary topologies are not execution playbook identities or dispatch owners.
+`arena` competes on one problem and selects one base, `swarm` covers distinct slices, and `interrogate` independently attacks one artifact with deduplication and judgment.
+For PR or diff surfaces, `interrogate` points to maintained [`@runecraft/pr-review`](../../packages/pr-review/README.md), and separate review is limited to requested reviews or knowledge-review deliverables.
+
+The catalog remains 22 playbooks because these topology names and the four refused or deferred names are not selectable identities.
