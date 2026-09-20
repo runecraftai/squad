@@ -135,7 +135,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
-| `sq-playbook-validate.sh` | Validate structural evidence for a materialized execution playbook (bug-fix@1) |
+| `sq-playbook-validate.sh` | Validate structural evidence for a materialized execution playbook (bug-fix@1, investigation@1, feature@1, refactoring@1, prototype@1) |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |

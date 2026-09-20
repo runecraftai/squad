@@ -12,54 +12,152 @@ ID=${1:-}
 META="$STATE/$ID.meta"
 ARTIFACTS="$DATA/$ID/artifacts"
 [ -f "$META" ] || { echo "missing: $META"; exit 1; }
-[ "$(sed -n 's/^playbook=//p' "$META" | head -n 1)" = bug-fix ] || { echo "error: task $ID is not bug-fix@1"; exit 1; }
-[ "$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)" = 1 ] || { echo "error: task $ID is not bug-fix@1"; exit 1; }
+PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
+VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
+case "$PLAYBOOK@$VERSION" in
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1) ;;
+  *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
+esac
 CHECKLIST=
 if [ -d "$ARTIFACTS" ]; then
   for candidate in "$ARTIFACTS"/*.md; do
     [ -f "$candidate" ] || continue
-    grep -q '^#.*[Cc]hecklist\|^#.*bug-fix@1' "$candidate" || continue
+    grep -q '^#.*[Cc]hecklist\|^#.*@1' "$candidate" || continue
     CHECKLIST=$candidate
     break
   done
 fi
 [ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS"; exit 1; }
 FAIL=0
-PROOF_1=
-PROOF_2=
-PROOF_3=
-PROOF_4=
-PROOF_5=
-require_proof() {
-  local number=$1 label=$2 pattern=$3 proof
+proof_for() {
+  local number=$1 proof
   proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
-  case "$number" in
-    1) PROOF_1=$proof ;;
-    2) PROOF_2=$proof ;;
-    3) PROOF_3=$proof ;;
-    4) PROOF_4=$proof ;;
-    5) PROOF_5=$proof ;;
-  esac
-  if [ -z "$proof" ]; then echo "missing: criterion $number $label proof"; FAIL=1; return; fi
-  case "$proof" in *"$pattern"*) ;; *) echo "incompatible: criterion $number $label proof"; FAIL=1 ;; esac
-  case "$proof" in *"command"*|*"path:"*) ;; *) echo "incompatible: criterion $number $label proof lacks a bound command or path"; FAIL=1 ;; esac
-  case "$number" in
-    1) case "$proof" in *before*|*pre-fix*) ;; *) echo "incompatible: criterion 1 reproduction is not before the fix"; FAIL=1 ;; esac ;;
-    2) case "$proof" in *refutable*|*observation*) ;; *) echo "incompatible: criterion 2 causal proof lacks a refutable observation"; FAIL=1 ;; esac ;;
-    3) case "$proof" in *pre-fix*|*before*) ;; *) echo "incompatible: criterion 3 regression proof lacks the pre-fix failure"; FAIL=1 ;; esac
-       case "$proof" in *post-fix*|*after*) ;; *) echo "incompatible: criterion 3 regression proof lacks the post-fix pass"; FAIL=1 ;; esac ;;
-    4) case "$proof" in *green*|*pass*) ;; *) echo "incompatible: criterion 4 suite proof is not a passing result"; FAIL=1 ;; esac ;;
-    5) case "$proof" in *same*) ;; *) echo "incompatible: criterion 5 surface proof does not match the original surface"; FAIL=1 ;; esac ;;
-  esac
+  printf '%s' "$proof"
 }
-require_proof 1 "reproduction before fix" "reproduction"
-require_proof 2 "causal explanation with refutable evidence" "causal"
-require_proof 3 "regression test" "regression"
-require_proof 4 "relevant suite" "suite"
-require_proof 5 "original surface re-exercised" "surface"
-if [ -n "$PROOF_1" ] && [ "$PROOF_1" = "$PROOF_2" ]; then echo "incompatible: criteria 1 and 2 reuse one generic proof"; FAIL=1; fi
-if [ -n "$PROOF_2" ] && [ "$PROOF_2" = "$PROOF_3" ]; then echo "incompatible: criteria 2 and 3 reuse one generic proof"; FAIL=1; fi
-if [ -n "$PROOF_3" ] && [ "$PROOF_3" = "$PROOF_4" ]; then echo "incompatible: criteria 3 and 4 reuse one generic proof"; FAIL=1; fi
-if [ -n "$PROOF_4" ] && [ "$PROOF_4" = "$PROOF_5" ]; then echo "incompatible: criteria 4 and 5 reuse one generic proof"; FAIL=1; fi
+# Catalogue-driven criteria definitions.
+# Format: CRITERIA_LABELS, CRITERIA_PATTERNS, CRITERIA_CHECKS are indexed arrays.
+# CRITERIA_CHECKS[i] is a semicolon-separated list of keyword groups.
+# Each group is pipe-separated (OR). All groups must match (AND).
+# Example: "before|pre-fix;refutable|observation" means:
+#   - Must contain (before OR pre-fix) AND
+#   - Must contain (refutable OR observation)
+declare -a CRITERIA_LABELS=()
+declare -a CRITERIA_PATTERNS=()
+declare -a CRITERIA_CHECKS=()
+case "$PLAYBOOK@$VERSION" in
+  bug-fix@1)
+    CRITERIA_LABELS=("reproduction before fix" "causal explanation with refutable evidence" "regression test" "relevant suite" "original surface re-exercised")
+    CRITERIA_PATTERNS=("reproduction" "causal" "regression" "suite" "surface")
+    CRITERIA_CHECKS=(
+      "before|pre-fix"
+      "refutable|observation"
+      "pre-fix|before;post-fix|after"
+      "green|pass"
+      "same"
+    )
+    ;;
+  investigation@1)
+    CRITERIA_LABELS=("facts and inferences" "sources" "uncertainties" "practical implication and decision hold")
+    CRITERIA_PATTERNS=("facts" "source" "uncertainty" "implication")
+    CRITERIA_CHECKS=(
+      "facts;inferences"
+      "source|citation|artifact"
+      "uncertainty|gap"
+      "implication|decision"
+    )
+    ;;
+  feature@1)
+    CRITERIA_LABELS=("behavior contract" "data shape and boundaries" "vertical implementation" "real surface and test")
+    CRITERIA_PATTERNS=("behavior" "data" "vertical" "surface")
+    CRITERIA_CHECKS=(
+      "behavior|contract|expected|rejected"
+      "data|shape|boundary|caller"
+      "vertical|slice|implementation"
+      "surface|test|command"
+    )
+    ;;
+  refactoring@1)
+    CRITERIA_LABELS=("characterization" "invariants" "bounded transformation" "equivalence")
+    CRITERIA_PATTERNS=("characterization" "invariant" "bounded" "equivalence")
+    CRITERIA_CHECKS=(
+      "characterization|capture|before"
+      "invariant|target|shape"
+      "bounded|transformation|subtract"
+      "equivalence|preserve|behavior"
+    )
+    ;;
+  prototype@1)
+    CRITERIA_LABELS=("decision question" "alternatives" "timebox" "surface observations and comparison" "cited decision")
+    CRITERIA_PATTERNS=("question" "alternative" "timebox" "observation" "decision")
+    CRITERIA_CHECKS=(
+      "question|scope|decision"
+      "alternative|reference|gather"
+      "timebox|start|end|exhaust"
+      "surface|observation|comparison"
+      "decision|cite|recommendation|throwaway"
+    )
+    ;;
+esac
+COUNT=${#CRITERIA_LABELS[@]}
+# Collect all proofs first for duplicate detection.
+declare -a PROOFS=()
+for (( i=0; i<COUNT; i++ )); do
+  NUM=$((i+1))
+  PROOF=$(proof_for "$NUM")
+  PROOFS+=("$PROOF")
+done
+# Validate each criterion: presence, pattern, bound command/path, and quality checks.
+for (( i=0; i<COUNT; i++ )); do
+  NUM=$((i+1))
+  LABEL="${CRITERIA_LABELS[$i]}"
+  PATTERN="${CRITERIA_PATTERNS[$i]}"
+  CHECKS="${CRITERIA_CHECKS[$i]}"
+  PROOF="${PROOFS[$i]}"
+  if [ -z "$PROOF" ]; then
+    echo "missing: criterion $NUM $LABEL proof"
+    FAIL=1
+    continue
+  fi
+  case "$PROOF" in *"$PATTERN"*) ;; *) echo "incompatible: criterion $NUM $LABEL proof"; FAIL=1 ;; esac
+  case "$PROOF" in *command*|*path:*) ;; *) echo "incompatible: criterion $NUM proof lacks a bound command or path"; FAIL=1 ;; esac
+  # Apply criterion-specific quality checks (all groups must match).
+  REST="$CHECKS"
+  while [ -n "$REST" ]; do
+    if case "$REST" in *";"*) true ;; *) false ;; esac; then
+      group="${REST%%;*}"
+      REST="${REST#*;}"
+    else
+      group="$REST"
+      REST=""
+    fi
+    FOUND=0
+    KREST="$group"
+    while [ -n "$KREST" ]; do
+      if case "$KREST" in *"|"*) true ;; *) false ;; esac; then
+        kwd="${KREST%%|*}"
+        KREST="${KREST#*|}"
+      else
+        kwd="$KREST"
+        KREST=""
+      fi
+      case "$PROOF" in *"$kwd"*) FOUND=1; break ;; esac
+    done
+    if [ "$FOUND" -eq 0 ]; then
+      echo "incompatible: criterion $NUM $LABEL proof quality: expected one of $group"
+      FAIL=1
+    fi
+  done
+done
+# Duplicate-proof detection: no two criteria may share identical proof text.
+for (( i=0; i<COUNT; i++ )); do
+  for (( j=i+1; j<COUNT; j++ )); do
+    A="${PROOFS[$i]}"
+    B="${PROOFS[$j]}"
+    if [ -n "$A" ] && [ "$A" = "$B" ]; then
+      echo "incompatible: criteria $((i+1)) and $((j+1)) reuse one generic proof"
+      FAIL=1
+    fi
+  done
+done
 [ "$FAIL" -eq 0 ] || exit 1
-echo "playbook evidence valid: bug-fix@1 ($CHECKLIST)"
+echo "playbook evidence valid: $PLAYBOOK@$VERSION ($CHECKLIST)"

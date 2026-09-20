@@ -221,6 +221,22 @@ grep -qx 'playbook=bug-fix' "$meta" || { echo "FAIL: playbook identity missing f
 grep -qx 'playbook_version=1' "$meta" || { echo "FAIL: playbook version missing from meta"; exit 1; }
 echo "ok - spawn records optional playbook identity"
 
+id_wave="tw-feature-playbook-$$"
+proj_wave="test-project-feature-playbook"
+base_wave=$(setup_squad_base "$id_wave" "$proj_wave")
+cat > "$base_wave/data/$id_wave/brief.md" <<'BRIEF'
+Execution playbook: id=feature version=1
+# Execution playbook: `feature@1`
+The operator must report status: echo '{state}: {note}' >> 'state/task.status'
+BRIEF
+spawn_exit=0
+run_spawn "$id_wave" "$proj_wave" "$base_wave" || spawn_exit=$?
+meta="$base_wave/state/$id_wave.meta"
+[ "$spawn_exit" -eq 0 ] || { echo "FAIL: feature playbook spawn exited with code $spawn_exit"; exit 1; }
+grep -qx 'playbook=feature' "$meta" || { echo "FAIL: feature playbook identity missing from meta"; exit 1; }
+grep -qx 'playbook_version=1' "$meta" || { echo "FAIL: feature playbook version missing from meta"; exit 1; }
+echo "ok - spawn records a second playbook identity without collision"
+
 # ===========================================================================
 # Test 3: spawn with WORKFLOW.md in config/workflow/ fallback
 # ===========================================================================

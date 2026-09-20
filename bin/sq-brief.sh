@@ -167,16 +167,22 @@ ID=${POS[0]}
 # Playbooks are explicit method contracts, separate from kind and delivery mode.
 # Validate before creating the task directory so rejected selections leave no partial brief.
 PLAYBOOK_SECTION=
+PLAYBOOK_ID=
+PLAYBOOK_VERSION=
 if [ "$PLAYBOOK_SET" -eq 1 ]; then
   case "$PLAYBOOK" in
-    bug-fix@1) PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md") ;;
+    bug-fix@1) PLAYBOOK_ID=bug-fix; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md"); EXPECTED_KIND=strike ;;
+    investigation@1) PLAYBOOK_ID=investigation; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/investigation-v1.md"); EXPECTED_KIND=recon ;;
+    feature@1) PLAYBOOK_ID=feature; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/feature-v1.md"); EXPECTED_KIND=strike ;;
+    refactoring@1) PLAYBOOK_ID=refactoring; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/refactoring-v1.md"); EXPECTED_KIND=strike ;;
+    prototype@1) PLAYBOOK_ID=prototype; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/prototype-v1.md"); EXPECTED_KIND=recon ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
-    bug-fix@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
+    *@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
     *) echo "error: unknown execution playbook '$PLAYBOOK'" >&2; exit 1 ;;
   esac
-  if [ "$KIND" != strike ]; then
-    echo "error: bug-fix@1 accepts only kind: strike (not $KIND)" >&2
+  if [ "$KIND" != "$EXPECTED_KIND" ]; then
+    echo "error: $PLAYBOOK accepts only kind: $EXPECTED_KIND (not $KIND)" >&2
     exit 1
   fi
 fi
@@ -338,7 +344,10 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 # Task
 {TASK}
 
-$HERDR_SECTION
+${PLAYBOOK_SECTION:+Execution playbook: id=$PLAYBOOK_ID version=$PLAYBOOK_VERSION
+
+$PLAYBOOK_SECTION
+}$HERDR_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -459,7 +468,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 
 $HERDR_SECTION
 
-${PLAYBOOK_SECTION:+Execution playbook: id=bug-fix version=1
+${PLAYBOOK_SECTION:+Execution playbook: id=$PLAYBOOK_ID version=$PLAYBOOK_VERSION
 
 $PLAYBOOK_SECTION
 }
