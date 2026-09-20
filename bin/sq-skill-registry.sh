@@ -41,9 +41,55 @@ while [ $# -gt 0 ]; do
 done
 
 # Extract YAML frontmatter field value.
+# Handles both single-line values and YAML block scalars (>- and |).
 frontmatter_field() {
   local file="$1" field="$2"
-  sed -n '/^---$/,/^---$/p' "$file" 2>/dev/null | grep -m1 "^${field}:" | sed "s/^${field}:[[:space:]]*//" | tr -d '"' || echo ""
+  local frontmatter
+  frontmatter=$(sed -n '/^---$/,/^---$/p' "$file" 2>/dev/null)
+  
+  local line
+  line=$(echo "$frontmatter" | grep -m1 "^${field}:")
+  if [ -z "$line" ]; then
+    echo ""
+    return
+  fi
+  
+  local value
+  value=$(echo "$line" | sed "s/^${field}:[[:space:]]*//" | tr -d '"')
+  
+  # Check for YAML block scalar indicators.
+  if [ "$value" = ">-" ] || [ "$value" = ">" ] || [ "$value" = "|" ] || [ "$value" = "|-" ]; then
+    # Read subsequent indented lines to collect the block scalar content.
+    local collecting=false
+    local block_content=""
+    while IFS= read -r block_line; do
+      if [ "$collecting" = false ]; then
+        # First indented line after block scalar marker.
+        if echo "$block_line" | grep -q '^  '; then
+          collecting=true
+          block_content=$(echo "$block_line" | sed 's/^  //')
+        fi
+      else
+        # Continue collecting while line is indented or empty.
+        if echo "$block_line" | grep -q '^  '; then
+          if [ -n "$block_line" ]; then
+            block_content="$block_content $(echo "$block_line" | sed 's/^  //')"
+          fi
+        else
+          # Non-indented line ends the block scalar.
+          break
+        fi
+      fi
+    done <<< "$frontmatter"
+    
+    if [ -n "$block_content" ]; then
+      echo "$block_content" | tr -d '"'
+    else
+      echo ""
+    fi
+  else
+    echo "$value"
+  fi
 }
 
 # Discover all skills and extract metadata.
