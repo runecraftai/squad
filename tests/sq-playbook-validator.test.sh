@@ -91,6 +91,23 @@ EOF
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "duplicate proofs for criteria 1 and 2 should fail"
 assert_contains "$out" "reuse one generic proof" "validator should report duplicate proof"
+# Duplicate-proof detection: non-adjacent criteria must not reuse identical proof.
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 1
+Proof: reproduction before fix command
+## Criterion 2
+Proof: causal explanation refutable observation command
+## Criterion 3
+Proof: reproduction before fix command
+## Criterion 4
+Proof: relevant suite green pass command
+## Criterion 5
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "duplicate proofs for criteria 1 and 3 should fail"
+assert_contains "$out" "criteria 1 and 3" "validator should report non-adjacent duplicate proof"
 pass "sq-playbook validator: complete and incomplete evidence are distinguished"
 
 for playbook in investigation feature refactoring prototype; do
@@ -107,7 +124,7 @@ for playbook in investigation feature refactoring prototype; do
       refactoring)
         printf '%s\n' '## Criterion 1' 'Proof: characterization capture before command' '## Criterion 2' 'Proof: invariants target shape command' '## Criterion 3' 'Proof: bounded transformation subtract command' '## Criterion 4' 'Proof: equivalence preserve behavior command' ;;
       prototype)
-        printf '%s\n' '## Criterion 1' 'Proof: decision question scope command' '## Criterion 2' 'Proof: alternatives reference gather command' '## Criterion 3' 'Proof: timebox observation start end command' '## Criterion 4' 'Proof: decision cite recommendation command' ;;
+        printf '%s\n' '## Criterion 1' 'Proof: decision question scope command' '## Criterion 2' 'Proof: alternatives reference gather command' '## Criterion 3' 'Proof: timebox start end command' '## Criterion 4' 'Proof: surface observation comparison command' '## Criterion 5' 'Proof: decision cite recommendation command' ;;
     esac
   } > "$HOME/data/$id/artifacts/checks.md"
   out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?

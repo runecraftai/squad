@@ -87,12 +87,13 @@ case "$PLAYBOOK@$VERSION" in
     )
     ;;
   prototype@1)
-    CRITERIA_LABELS=("decision question" "alternatives" "timebox and observations" "cited decision")
-    CRITERIA_PATTERNS=("question" "alternatives" "timebox" "decision")
+    CRITERIA_LABELS=("decision question" "alternatives" "timebox" "surface observations and comparison" "cited decision")
+    CRITERIA_PATTERNS=("question" "alternative" "timebox" "observation" "decision")
     CRITERIA_CHECKS=(
       "question|scope|decision"
       "alternative|reference|gather"
-      "timebox|observation|start|end"
+      "timebox|start|end|exhaust"
+      "surface|observation|comparison"
       "decision|cite|recommendation|throwaway"
     )
     ;;
@@ -147,14 +148,16 @@ for (( i=0; i<COUNT; i++ )); do
     fi
   done
 done
-# Duplicate-proof detection: adjacent criteria must not share identical proof text.
-for (( i=0; i<COUNT-1; i++ )); do
-  A="${PROOFS[$i]}"
-  B="${PROOFS[$i+1]}"
-  if [ -n "$A" ] && [ "$A" = "$B" ]; then
-    echo "incompatible: criteria $((i+1)) and $((i+2)) reuse one generic proof"
-    FAIL=1
-  fi
+# Duplicate-proof detection: no two criteria may share identical proof text.
+for (( i=0; i<COUNT; i++ )); do
+  for (( j=i+1; j<COUNT; j++ )); do
+    A="${PROOFS[$i]}"
+    B="${PROOFS[$j]}"
+    if [ -n "$A" ] && [ "$A" = "$B" ]; then
+      echo "incompatible: criteria $((i+1)) and $((j+1)) reuse one generic proof"
+      FAIL=1
+    fi
+  done
 done
 [ "$FAIL" -eq 0 ] || exit 1
 echo "playbook evidence valid: $PLAYBOOK@$VERSION ($CHECKLIST)"
