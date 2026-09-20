@@ -17,7 +17,7 @@ Share one working directory and agents step on each other.
 fob keeps a pool of reusable, isolated worktrees per repository, so each agent gets its own environment instantly: no cloning, no conflicts, no coordination overhead.
 
 - **Instant isolation** - `fob` puts you into a clean worktree with zero hassle.
-- **Reusable worktrees** - worktrees are preserved in a pool when you're done, dependencies and build cache intact, ready for the next agent.
+- **Reusable worktrees** - worktrees are preserved in a pool when you're done, dependencies intact and git-ignored build artifacts cleaned, ready for the next agent.
 - **Conflict-free** - automatic detection of in-use worktrees means your agents never step on each other's toes.
 
 ## Quick Start
