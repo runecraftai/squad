@@ -20,7 +20,7 @@ On 2026-09-19, the focused `sq-brief` test exercised `--playbook <name>@1` for e
 sq-brief.sh: absorbed playbook names are refused and leave no selectable brief
 ```
 
-The test is [`test_absorbed_playbook_names_are_not_selectable`](../../tests/sq-brief.test.sh), and the registry contains `bug-fix@1`, `feature@1`, `investigation@1`, `prototype@1`, and `refactoring@1` under `.agents/skills/execution-playbooks/references/`.
+The test is [`test_absorbed_playbook_names_are_not_selectable`](../../tests/sq-brief.test.sh), and the registry contains wave-1 contracts `bug-fix@1`, `feature@1`, `investigation@1`, `prototype@1`, `refactoring@1` plus wave-2 contracts `perf@1`, `hillclimb@1`, `runtime-forensics@1`, `trace-forensics@1`, and `visual-parity@1` under `.agents/skills/execution-playbooks/references/`.
 
 The focused test command is:
 
@@ -34,4 +34,4 @@ The registry inventory command is:
 find .agents/skills/execution-playbooks -maxdepth 2 -type f -print | sort
 ```
 
-Its expected output contains `SKILL.md` and `references/bug-fix-v1.md`, `references/feature-v1.md`, `references/investigation-v1.md`, `references/prototype-v1.md`, and `references/refactoring-v1.md`.
+Its expected output contains `SKILL.md` and the reference files for all ten selectable execution playbook contracts.
