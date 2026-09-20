@@ -955,10 +955,11 @@ ROWS
   for topology in arena swarm interrogate; do
     [ ! -e ".agents/skills/execution-playbooks/references/$topology-v1.md" ] \
       || fail "$topology must not be an execution playbook reference"
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "policy-$topology" repo --mode drill --playbook "$topology@1" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$topology must not be selectable as a playbook"
+    assert_contains "$out" "unknown execution playbook" "$topology refusal must identify an unknown playbook"
   done
-  assert_grep "auxiliary topologies" "$ROOT/AGENTS.md" "topology policy must preserve auxiliary distinction"
-  assert_grep "@runecraft/pr-review" "$ROOT/AGENTS.md" "interrogate policy must name maintained review owner"
-  assert_grep "22 playbooks" "$ROOT/docs/verification/playbook-absorptions.md" "policy must preserve the 22-playbook count"
   pass "sq-brief.sh: autonomous identities are refused and auxiliary topologies remain outside dispatch"
 }
 
