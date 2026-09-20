@@ -2622,7 +2622,7 @@ EOF
   pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
 }
 
-test_teardown_removes_exec_sidecar() {
+test_teardown_preserves_exec_sidecar_for_recover_all() {
   local case_dir rc
   case_dir=$(make_case exec-sidecar-retirement)
   write_meta "$case_dir" drill strike
@@ -2638,12 +2638,19 @@ test_teardown_removes_exec_sidecar() {
   set -e
 
   expect_code 0 "$rc" "exec-sidecar-retirement: teardown should succeed"
+  # Teardown transitions to released but keeps the sidecar so sq-spawn can
+  # detect the released state and refuse relaunch.
+  assert_present "$case_dir/state/task-x1.exec" \
+    "exec-sidecar-retirement: exec sidecar must survive teardown for release protection"
+  # recover-all prunes the orphaned sidecar (meta is gone).
+  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
   assert_absent "$case_dir/state/task-x1.exec" \
-    "exec-sidecar-retirement: exec sidecar was not removed after teardown"
-  pass "teardown removes the exec sidecar for the torn-down task"
+    "exec-sidecar-retirement: recover-all should prune the orphaned sidecar"
+  pass "teardown preserves the exec sidecar for release protection; recover-all prunes it"
 }
 
-test_teardown_does_not_remove_other_tasks_exec_sidecar() {
+test_teardown_preserves_both_exec_sidecars_for_recover_all() {
   local case_dir rc
   case_dir=$(make_case exec-sidecar-preservation)
   write_meta "$case_dir" drill strike
@@ -2651,6 +2658,7 @@ test_teardown_does_not_remove_other_tasks_exec_sidecar() {
   # Create sidecars for the torn-down task AND a live task.
   printf 'exec_state=running\nexec_attempt=1\n' > "$case_dir/state/task-x1.exec"
   printf 'exec_state=claimed\nexec_attempt=2\n' > "$case_dir/state/live-task.exec"
+  printf 'window=Squad\n' > "$case_dir/state/live-task.meta"
 
   set +e
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -2658,11 +2666,20 @@ test_teardown_does_not_remove_other_tasks_exec_sidecar() {
   set -e
 
   expect_code 0 "$rc" "exec-sidecar-preservation: teardown should succeed"
-  assert_absent "$case_dir/state/task-x1.exec" \
-    "exec-sidecar-preservation: torn-down task sidecar was not removed"
+  # Teardown transitions the torn-down task to released but does not delete
+  # either sidecar; both survive for release protection and recover-all.
+  assert_present "$case_dir/state/task-x1.exec" \
+    "exec-sidecar-preservation: torn-down task sidecar must survive for release protection"
   assert_present "$case_dir/state/live-task.exec" \
     "exec-sidecar-preservation: live task sidecar was incorrectly removed"
-  pass "teardown removes only the torn-down task exec sidecar, not others"
+  # recover-all prunes the orphaned sidecar (meta is gone) and preserves the live one.
+  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/sq-exec-state.sh" recover-all >/dev/null 2>&1 || true
+  assert_absent "$case_dir/state/task-x1.exec" \
+    "exec-sidecar-preservation: recover-all should prune the orphaned sidecar"
+  assert_present "$case_dir/state/live-task.exec" \
+    "exec-sidecar-preservation: recover-all should preserve the live task sidecar"
+  pass "teardown preserves both sidecars; recover-all prunes only the orphan"
 }
 
 test_local_only_fork_remote_allows
@@ -2724,6 +2741,6 @@ test_exec_changed_process_is_still_reaped
 test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
-test_teardown_removes_exec_sidecar
-test_teardown_does_not_remove_other_tasks_exec_sidecar
+test_teardown_preserves_exec_sidecar_for_recover_all
+test_teardown_preserves_both_exec_sidecars_for_recover_all
 test_run_abort_precedes_process_reap_precedes_worktree_removal

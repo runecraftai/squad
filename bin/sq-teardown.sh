@@ -2431,7 +2431,6 @@ retire_watcher_markers "$STATE" "$ID" "$T"
 # would recreate the just-removed remote state directory.
 if [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
   "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
-  rm -f "$STATE/$ID.exec"
 fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \
