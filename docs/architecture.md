@@ -20,7 +20,8 @@ A concurrent replacement remains armed, every non-merged or invalid observation 
 No-verb wakes, such as `working:` notes and bare turn-ended signals, are benign only when `bin/sq-crew-state.sh` reports positive evidence that the operator is still working: an actively running drill step attributed to that crew's current code, or an exact busy verdict from the semantic busy-state contract.
 A crew that declares `paused:` for a known external wait is separately absorbed while idle and re-surfaced only on the longer pause cadence, rather than being treated as a possible wedge.
 For an ordinary crew that has stopped, the normal-mode sentry first surfaces one stale wake, then applies that same cadence to an unchanged `paused:` or durable `commander-held` endpoint only when the backend confidently reports its agent dead.
-Live or inconclusive liveness remains fail-open at that initial surface, and the XO idle-endpoint exemption is unchanged.
+Live or inconclusive liveness remains fail-open at that initial surface, but changing pane footer content must not turn that confirmation into a wake on every subsequent poll: the stable per-key `paused-resurfaced` cadence marker (mtime-based, independent of pane content) absorbs repeated stale wakes within the same cadence window, so at most one bounded recheck per cadence is emitted regardless of how often the pane hash changes.
+The XO idle-endpoint exemption is unchanged.
 Its initial normal-mode status signal still surfaces through the no-verb path, while away mode self-handles that routine signal and owns the later recheck.
 Fresh stale panes use the same current-state read before trusting the status log, so a finished task, an active run, or a proven busy worker outranks an old commander-relevant status-log line left behind before validation.
 No-change heartbeats are also benign.
