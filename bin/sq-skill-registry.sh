@@ -65,15 +65,15 @@ frontmatter_field() {
     while IFS= read -r block_line; do
       if [ "$collecting" = false ]; then
         # First indented line after block scalar marker.
-        if echo "$block_line" | grep -q '^  '; then
+        if echo "$block_line" | grep -q '^ '; then
           collecting=true
-          block_content=$(echo "$block_line" | sed 's/^  //')
+          block_content=$(echo "$block_line" | sed 's/^[[:space:]]*//')
         fi
       else
         # Continue collecting while line is indented or empty.
-        if echo "$block_line" | grep -q '^  '; then
+        if echo "$block_line" | grep -q '^ '; then
           if [ -n "$block_line" ]; then
-            block_content="$block_content $(echo "$block_line" | sed 's/^  //')"
+            block_content="$block_content $(echo "$block_line" | sed 's/^[[:space:]]*//')"
           fi
         else
           # Non-indented line ends the block scalar.
