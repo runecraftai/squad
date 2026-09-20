@@ -387,6 +387,39 @@ test_absorbed_playbook_names_are_not_selectable() {
   pass "sq-brief.sh: absorbed playbook names are refused and leave no selectable brief"
 }
 
+test_remaining_lifecycle_playbooks() {
+  local home brief out status
+  home="$TMP_ROOT/remaining-lifecycle-playbooks-home"
+  mkdir -p "$home/data"
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-shipping repo --mode drill --playbook shipping@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "shipping@1 must be refused"
+  assert_contains "$out" "mode" "shipping refusal must point to mode"
+  assert_contains "$out" "drill" "shipping refusal must point to drill"
+  assert_contains "$out" "commander" "shipping refusal must preserve merge authority"
+  assert_absent "$home/data/lifecycle-shipping/brief.md" "shipping refusal must not leave a partial brief"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-plan repo --recon --playbook multi-phase-plan@1 >/dev/null 2>&1 || fail "multi-phase-plan@1 should materialize"
+  brief="$home/data/lifecycle-plan/brief.md"
+  assert_grep "Execution playbook: id=multi-phase-plan version=1" "$brief" "multi-phase-plan identity missing"
+  assert_grep "real dependency" "$brief" "multi-phase-plan contract missing dependency boundary"
+  assert_grep "not a layer-by-layer" "$brief" "multi-phase-plan contract missing layer boundary"
+  assert_grep "existing backlog" "$brief" "multi-phase-plan contract missing backlog handoff"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-eval repo --recon --playbook eval@1 >/dev/null 2>&1 || fail "eval@1 should materialize"
+  brief="$home/data/lifecycle-eval/brief.md"
+  assert_grep "Execution playbook: id=eval version=1" "$brief" "eval identity missing"
+  assert_grep "candidate-visible" "$brief" "eval contract missing candidate blinding"
+  assert_grep "chain-elicitation" "$brief" "eval contract missing chain-elicitation prevention"
+  assert_grep "does not enter production" "$brief" "eval contract missing promotion boundary"
+
+  for playbook in shipping@2 multi-phase-plan@2 eval@2; do
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "lifecycle-invalid-$RANDOM" repo --mode drill --playbook "$playbook" 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "$playbook should be refused"
+    assert_contains "$out" "unknown execution playbook" "$playbook should identify invalid identity"
+  done
+  pass "sq-brief.sh: shipping is refused and planning/evaluation methods materialize narrowly"
+}
+
 test_ship_mode_is_explicit_not_registry() {
   local home brief
   home="$TMP_ROOT/explicit-over-registry-home"
@@ -934,6 +967,7 @@ test_playbook_selection_and_legacy_compatibility
 test_wave_one_playbooks_materialize_and_enforce_forms
 test_wave_two_playbooks_materialize_and_enforce_forms
 test_absorbed_playbook_names_are_not_selectable
+test_remaining_lifecycle_playbooks
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_ship_mode_is_required_and_closed_set
