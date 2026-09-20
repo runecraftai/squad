@@ -252,6 +252,7 @@ Route durable knowledge to its most specific owner:
 - Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`.
 - Knowledge general to every Squad user belongs in this repo's shared tracked surface.
 
+Projects may adopt a `CONSTRAINTS.md` at their root for non-negotiable quality bars (testing, code quality, security, review standards) - see `skills/constraints-pattern` for the pattern.
 Squad never writes a project's `AGENTS.md` directly.
 An operator creates or updates it lazily through the project's selected delivery path, using `bin/sq-ensure-agents-md.sh` and preferring pointers to authoritative sources over copied detail.
 Keep unit delivery posture and commander-private strategy out of project memory.
