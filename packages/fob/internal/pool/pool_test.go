@@ -2291,6 +2291,108 @@ func waitForProcessExit(t *testing.T, cmd *exec.Cmd, timeout time.Duration) {
 	}
 }
 
+// TestAcquire_CleansIgnoredBuildArtifacts verifies that a worktree returned to
+// the pool and re-acquired has git-ignored build artifacts removed. This is the
+// regression test for the shadowing defect: stale src/*.js files in a reused
+// worktree shadowed .ts sources and caused 68 missing-export compilation errors.
+func TestAcquire_CleansIgnoredBuildArtifacts(t *testing.T) {
+	repoDir, poolDir := setupRepo(t)
+
+	// Acquire a worktree so we can seed build artifacts into it.
+	wtPath, err := Acquire(repoDir, poolDir, 4, nil)
+	if err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+
+	// Seed a .gitignore and ignored build artifacts that would shadow sources.
+	dotGitignore := filepath.Join(wtPath, ".gitignore")
+	if err := os.WriteFile(dotGitignore, []byte("src/*.js\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Create a tracked .ts source file and an ignored .js shadow.
+	srcDir := filepath.Join(wtPath, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "mod.ts"), []byte("export const x = 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The shadow: an ignored .js file with a broken export.
+	if err := os.WriteFile(filepath.Join(srcDir, "mod.js"), []byte("export const missing = 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Commit and push to origin so ResetWorktree resets to this state.
+	runGit(t, wtPath, "add", ".gitignore", "src/mod.ts")
+	runGit(t, wtPath, "commit", "-m", "add source and gitignore")
+	runGit(t, wtPath, "push", "-u", "origin", "HEAD:main")
+
+	// Return to pool (this runs ResetWorktree which should clean ignored files).
+	if err := Release(poolDir, wtPath); err != nil {
+		t.Fatalf("Release failed: %v", err)
+	}
+
+	// Verify the ignored .js artifact is gone after return.
+	if _, err := os.Stat(filepath.Join(srcDir, "mod.js")); !os.IsNotExist(err) {
+		t.Fatalf("expected ignored build artifact mod.js to be cleaned on Release, but it exists")
+	}
+	// Verify the tracked source survives.
+	if _, err := os.Stat(filepath.Join(srcDir, "mod.ts")); err != nil {
+		t.Fatalf("expected tracked source mod.ts to survive Release: %v", err)
+	}
+
+	// Also verify the acquire path: re-acquire the same worktree.
+	wtPath2, err := Acquire(repoDir, poolDir, 4, nil)
+	if err != nil {
+		t.Fatalf("second Acquire failed: %v", err)
+	}
+	if wtPath2 != wtPath {
+		t.Fatalf("expected re-acquire of same worktree, got %s", wtPath2)
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "mod.js")); !os.IsNotExist(err) {
+		t.Fatalf("expected ignored build artifact mod.js to be cleaned on Acquire, but it exists")
+	}
+	if _, err := os.Stat(filepath.Join(srcDir, "mod.ts")); err != nil {
+		t.Fatalf("expected tracked source mod.ts to survive Acquire: %v", err)
+	}
+}
+
+// TestAcquire_DoesNotCleanIgnoredFilesOfInUseWorktree verifies that the cleanup
+// of ignored files only happens during ResetWorktree (Release or Acquire), and
+// does not touch a worktree that is still owned by a live task.
+func TestAcquire_DoesNotCleanIgnoredFilesOfInUseWorktree(t *testing.T) {
+	repoDir, poolDir := setupRepo(t)
+
+	// Acquire and hold the worktree (simulating an active task).
+	wtPath, err := Acquire(repoDir, poolDir, 4, nil)
+	if err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+
+	// Seed ignored artifact while in use.
+	dotGitignore := filepath.Join(wtPath, ".gitignore")
+	if err := os.WriteFile(dotGitignore, []byte("*.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(wtPath, "debug.log")
+	if err := os.WriteFile(sentinel, []byte("log data\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The ignored file must still exist while the worktree is in use.
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("expected ignored file to exist while worktree is in use: %v", err)
+	}
+
+	// Release the worktree - now the ignored file should be cleaned.
+	if err := Release(poolDir, wtPath); err != nil {
+		t.Fatalf("Release failed: %v", err)
+	}
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("expected ignored file to be cleaned after Release, but it exists")
+	}
+}
+
 func TestHoldCwdProbe(t *testing.T) {
 	if os.Getenv("FOB_HOLD_CWD_PROBE") != "1" {
 		return

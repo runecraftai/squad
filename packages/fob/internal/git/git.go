@@ -173,7 +173,7 @@ func ResetWorktree(worktreePath, branch string) error {
 	if _, err := runGit(worktreePath, "reset", "--hard", ref); err != nil {
 		return err
 	}
-	_, err = runGit(worktreePath, "clean", "-fd")
+	_, err = runGit(worktreePath, "clean", "-fdx")
 	return err
 }
 
