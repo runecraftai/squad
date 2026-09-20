@@ -469,7 +469,7 @@ Do not hand-edit, commit, or fix findings yourself while a run is active - the p
 Two Squad-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to Squad (rule 6) and stop.
   Squad applies the authority contract in its \`AGENTS.md\` and obtains any required commander decision.
-  When the decision comes back, feed it to the gate with \`drill axi respond\` and let the pipeline apply it - do not route the question to \"the user\" or implement the fix yourself.
+  When the decision comes back, feed it to the gate with \`drill axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass Squad's authority check and any required commander escalation.
 
 ## Phase 3: self-check before done
