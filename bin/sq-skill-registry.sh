@@ -50,12 +50,16 @@ frontmatter_field() {
   local line
   line=$(echo "$frontmatter" | grep -m1 "^${field}:")
   if [ -z "$line" ]; then
-    echo ""
-    return
+    # Fall back to searching for a nested field (e.g. source: under metadata:).
+    line=$(echo "$frontmatter" | grep -m1 "${field}:")
+    if [ -z "$line" ]; then
+      echo ""
+      return
+    fi
   fi
   
   local value
-  value=$(echo "$line" | sed "s/^${field}:[[:space:]]*//" | tr -d '"')
+  value=$(echo "$line" | sed "s/^.*${field}:[[:space:]]*//" | tr -d '"')
   
   # Check for YAML block scalar indicators.
   if [ "$value" = ">-" ] || [ "$value" = ">" ] || [ "$value" = "|" ] || [ "$value" = "|-" ]; then

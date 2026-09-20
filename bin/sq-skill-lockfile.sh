@@ -84,7 +84,20 @@ skill_description() {
 skill_source() {
   local skill_md="$1/SKILL.md"
   if [ -f "$skill_md" ]; then
-    sed -n '/^---$/,/^---$/p' "$skill_md" | grep -m1 'source:' | sed 's/^.*source:[[:space:]]*//' | tr -d '"' || echo ""
+    local frontmatter
+    frontmatter=$(sed -n '/^---$/,/^---$/p' "$skill_md" 2>/dev/null)
+    local line
+    # Try top-level source: first.
+    line=$(echo "$frontmatter" | grep -m1 '^source:')
+    if [ -z "$line" ]; then
+      # Fall back to nested source: (e.g. under metadata:).
+      line=$(echo "$frontmatter" | grep -m1 'source:')
+    fi
+    if [ -n "$line" ]; then
+      echo "$line" | sed 's/^.*source:[[:space:]]*//' | tr -d '"'
+    else
+      echo ""
+    fi
   else
     echo ""
   fi
