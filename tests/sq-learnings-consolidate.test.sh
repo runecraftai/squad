@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for sq-learnings-consolidate.sh — dedup, stale removal, trim, backup, dry-run.
+# Tests for sq-learnings-consolidate.sh — dedup, age-based stale removal, archive, trim, backup, dry-run.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -19,18 +19,6 @@ make_learnings() {
   shift
   : > "$file"
   printf '# Learnings (home-local)\n\n' > "$file"
-  while [ "$#" -gt 0 ]; do
-    printf '%s\n' "$1" >> "$file"
-    shift
-  done
-}
-
-make_backlog() {
-  local file=$1
-  shift
-  : > "$file"
-  printf '# Backlog\n\n' > "$file"
-  printf '## In flight\n\n' >> "$file"
   while [ "$#" -gt 0 ]; do
     printf '%s\n' "$1" >> "$file"
     shift
@@ -86,47 +74,118 @@ test_different_entries_preserved() {
   pass "distinct entries are preserved"
 }
 
-# --- age-based removal ------------------------------------------------------
+# --- age-based removal (60-day threshold) -----------------------------------
 
-test_stale_done_task_removal() {
+test_stale_entry_retired() {
   local home output
-  home=$(make_home stale-done)
-  # Task done 100 days ago → entry is 100 days old → should be removed
+  home=$(make_home stale-retire)
+  # Entry dated 100 days ago → should be retired
   make_learnings "$home/data/learnings.md" \
-    '- **Old lesson (2025-05-28):** This lesson references an old finished task. [task: finished-task]'
-
-  make_backlog "$home/data/backlog.md" \
-    '- [x] finished-task - Old project (done 2025-05-25)'
+    '- **Old lesson (2025-05-28):** This lesson is old and should be retired.'
 
   output=$(run_consolidate "$home" 2>&1)
-  assert_contains "$output" "Entries to remove: 1" "should remove stale done-task entry"
+  assert_contains "$output" "Entries to remove: 1" "should remove stale entry"
   assert_contains "$output" "stale" "should label as stale"
-  pass "old entries referencing done tasks are removed"
+  pass "entries >= 60 days old are retired"
 }
 
-test_recent_done_task_preserved() {
+test_recent_entry_preserved() {
   local home output
   home=$(make_home stale-recent)
   make_learnings "$home/data/learnings.md" \
-    '- **Recent lesson (2026-08-01):** This is recent. [task: recent-done]'
-
-  make_backlog "$home/data/backlog.md" \
-    '- [x] recent-done - Recent project (done 2026-08-01)'
+    '- **Recent lesson (2026-09-01):** This is recent and should stay.'
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "No changes needed" "recent entries should not be removed"
-  pass "recent entries referencing done tasks are preserved"
+  pass "entries < 60 days old are preserved"
 }
 
-test_no_task_reference_preserved() {
+test_undated_entry_exempt() {
   local home output
-  home=$(make_home stale-notask)
+  home=$(make_home stale-undated)
   make_learnings "$home/data/learnings.md" \
-    '- **General lesson (2025-01-01):** Very old general lesson without a task reference.'
+    '- **No date entry:** This has no date and should be exempt from retirement.'
 
   output=$(run_consolidate "$home" 2>&1)
-  assert_contains "$output" "No changes needed" "entries without task refs should not be age-removed"
-  pass "entries without task references are never age-removed"
+  assert_contains "$output" "No changes needed" "undated entries should be exempt"
+  pass "undated entries are exempt from age-based retirement"
+}
+
+test_boundary_entry_exactly_60_days() {
+  local home output
+  home=$(make_home stale-boundary)
+  # Entry dated exactly 60 days ago should be retired
+  local sixty_days_ago
+  sixty_days_ago=$(date -d '60 days ago' '+%Y-%m-%d')
+  make_learnings "$home/data/learnings.md" \
+    "- **Boundary lesson ($sixty_days_ago):** Entry at exactly the 60-day boundary."
+
+  output=$(run_consolidate "$home" 2>&1)
+  assert_contains "$output" "Entries to remove: 1" "entries at exactly 60 days should be retired"
+  pass "entries at exactly 60 days are retired"
+}
+
+test_important_entry_not_retired() {
+  local home output
+  home=$(make_home stale-important)
+  make_learnings "$home/data/learnings.md" \
+    '- **Critical lesson (2020-01-01):** CRITICAL: This must never be archived.'
+
+  output=$(run_consolidate "$home" 2>&1)
+  assert_not_contains "$output" "Entries to remove" "CRITICAL entries should not be retired"
+  pass "CRITICAL entries are exempt from retirement"
+}
+
+test_never_entry_not_retired() {
+  local home output
+  home=$(make_home stale-never)
+  make_learnings "$home/data/learnings.md" \
+    '- **Never lesson (2020-01-01):** NEVER do this under any circumstances.'
+
+  output=$(run_consolidate "$home" 2>&1)
+  assert_not_contains "$output" "Entries to remove" "NEVER entries should not be retired"
+  pass "NEVER entries are exempt from retirement"
+}
+
+# --- archive behavior -------------------------------------------------------
+
+test_archive_created_on_apply() {
+  local home
+  home=$(make_home archive-create)
+  make_learnings "$home/data/learnings.md" \
+    '- **Old lesson (2025-05-28):** This should go to archive.'
+
+  run_consolidate "$home" --apply >/dev/null 2>&1
+  assert_present "$home/data/learnings.md.archive" "archive file should be created"
+  assert_contains "$(<"$home/data/learnings.md.archive")" "Old lesson" "archive should contain retired entry"
+  pass "archive is created with retired entries"
+}
+
+test_archive_appends_to_existing() {
+  local home
+  home=$(make_home archive-append)
+  # Pre-create archive with existing content
+  printf '# Learnings Archive\n\n' > "$home/data/learnings.md.archive"
+  printf -- '- **Prior archived (2020-01-01):** Already archived.\n' >> "$home/data/learnings.md.archive"
+
+  make_learnings "$home/data/learnings.md" \
+    '- **New stale (2025-05-28):** New entry to archive.'
+
+  run_consolidate "$home" --apply >/dev/null 2>&1
+  assert_contains "$(<"$home/data/learnings.md.archive")" "Prior archived" "should preserve existing archive"
+  assert_contains "$(<"$home/data/learnings.md.archive")" "New stale" "should append new archive entry"
+  pass "archive appends to existing archive file"
+}
+
+test_no_archive_in_dryrun() {
+  local home
+  home=$(make_home archive-dryrun)
+  make_learnings "$home/data/learnings.md" \
+    '- **Old lesson (2025-05-28):** Should not be archived in dry run.'
+
+  run_consolidate "$home" >/dev/null 2>&1
+  assert_absent "$home/data/learnings.md.archive" "archive should not exist in dry run"
+  pass "archive is not created during dry run"
 }
 
 # --- trim behavior ----------------------------------------------------------
@@ -289,9 +348,15 @@ test_help_flag() {
 test_exact_duplicate_removal
 test_near_duplicate_removal
 test_different_entries_preserved
-test_stale_done_task_removal
-test_recent_done_task_preserved
-test_no_task_reference_preserved
+test_stale_entry_retired
+test_recent_entry_preserved
+test_undated_entry_exempt
+test_boundary_entry_exactly_60_days
+test_important_entry_not_retired
+test_never_entry_not_retired
+test_archive_created_on_apply
+test_archive_appends_to_existing
+test_no_archive_in_dryrun
 test_long_entry_trimmed
 test_long_entry_applied_trim
 test_important_entry_not_trimmed

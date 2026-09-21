@@ -6,6 +6,8 @@ description: >
   evaluating whether a skill improves output quality. Covers the full lifecycle: DISCOVER,
   DESIGN, AUTHOR, VALIDATE, OPTIMIZE, DELIVER. Produces skills that follow the open
   SKILL.md format (YAML frontmatter + Markdown body, progressive disclosure, validation loops).
+  skill-forge is the canonical tool for creating and absorbing skills into the catalog;
+  skill-creator is retired.
   EN triggers: /forge, create a skill, write a skill, build a skill, new skill, author a skill,
   package this as a skill, validate a skill, improve skill triggering, optimize skill description,
   evaluate skill quality.

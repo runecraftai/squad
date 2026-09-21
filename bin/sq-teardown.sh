@@ -32,6 +32,19 @@
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared
 # unresolved-decision completion gate verifies its commander-held inventory.
+# After release, the exec state sidecar reads 'released' and sq-spawn refuses
+# to relaunch the same id (released has no unclaimed or claimed transition;
+# sq-exec-state recover only treats running/claimed). To redespatch the same
+# work you need a new id (the status path and branch name are stamped in the
+# brief). Do not discard a task id before confirming the operator won't need it.
+#
+# Slot pool hazard: closing an old task returns its fob slot to the pool.
+# If a new task was already dispatched into that same slot, the return resets
+# the worktree, kills the new agent, and leaves sq-send targeting a dead
+# shell. Close the old task BEFORE dispatching a new one, or confirm each
+# task's slot in its meta. Recovery: copy the brief to a new id and
+# re-dispatch; the branch survives in the repo (check git log main..<branch>).
+#
 # Before destructive cleanup, teardown validates task check artifacts and any
 # matching quarantine entries as ordinary single-link files on the state
 # device. It refuses and preserves task state when that proof fails; otherwise

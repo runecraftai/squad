@@ -277,6 +277,7 @@ For one-off or infrequent operational work, start with the simplest direct end-t
 Do not build wrappers, control planes, policy layers, custom verifiers, or automation unless the direct path exposes a concrete blocker or repeated need that justifies the added machinery.
 
 Before commissioning an investigation, consult existing reports and established evidence.
+Before recommending or dispatching a bug fix, verify the bug still exists in the current code - backlog tickets can become stale after fixes land in main.
 Classify the deliverable:
 
 - **Strike** is the default and produces a project change through the selected delivery mode; once implementation is authorized, dispatch a strike and keep any remaining bounded research inside it unless unresolved uncertainty could materially change whether or what to build.
