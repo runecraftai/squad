@@ -813,7 +813,7 @@ test_live_paused_churning_pane_is_throttled() {
 # calling surface_nonterminal_stale via subshells (it calls wake/exit) with
 # a fresh vs stale marker.
 test_paused_churning_pane_throttle_refreshes_marker() {
-  local dir state window key h sub shell_libs
+  local dir state window key h shell_libs
   dir=$(make_case paused-throttle-unit); state="$dir/state"
   window="test:sq-held"
   printf 'window=%s\nkind=strike\n' "$window" > "$state/held.meta"
