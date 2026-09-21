@@ -3,7 +3,7 @@ name: squad-coding-guidelines
 description: >-
   Agent-only reference for changing Squad's shared, tracked material per AGENTS.md section 1.
   Use before editing any of that material, whether working as Squad directly or as an operator briefed on a Squad-repo task.
-  Covers the knowledge-placement decision tree, the one-owner rule for contracts, the inline-stub pattern for content moved into a skill, AGENTS.md size discipline, trigger hygiene for new skills, and repo style rules (one sentence per line, plain dash, no agent co-author, shellcheck-clean bin scripts, colocated tests, and maintainer-verification evidence).
+  Covers the knowledge-placement decision tree, the one-owner rule for contracts, the inline-stub pattern for content moved into a skill, AGENTS.md size discipline, trigger hygiene for new skills, and repo style rules (one sentence per line, plain dash, no agent co-author, shellcheck-clean bin scripts, colocated tests, maintainer-verification evidence, and leading-words).
 user-invocable: false
 metadata:
   internal: true
