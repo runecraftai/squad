@@ -8,7 +8,7 @@ This maintainer-verification record proves that five upstream playbook names rem
 - `pause-safely` points to the brief contract in [`bin/sq-brief.sh`](../../bin/sq-brief.sh) and [`session-handoff`](../../.agents/skills/session-handoff/SKILL.md).
 - `babysit` points to the PR lifecycle in [`AGENTS.md`](../../AGENTS.md), the delivery validation owned by drill, and merge monitoring owned by [`bin/sq-pr-check.sh`](../../bin/sq-pr-check.sh).
 - `worktree-cleanup` points to [`bin/sq-teardown.sh`](../../bin/sq-teardown.sh), which retains landed-work and discard-authority checks.
-- `authoring-a-skill` points to [`skill-creator`](../../.agents/skills/skill-creator/SKILL.md) for authoring and [`skill-verification`](../../.agents/skills/skill-verification/SKILL.md) for promotion validation.
+- `authoring-a-skill` points to [`skill-forge`](../../.agents/skills/skill-forge/SKILL.md) for authoring and [`skill-verification`](../../.agents/skills/skill-verification/SKILL.md) for promotion validation.
 
 These references do not add an alias, state, cleanup heuristic, review layer, or authority.
 

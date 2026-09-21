@@ -100,10 +100,10 @@ test_generated_skill_has_required_sections() {
   # Check frontmatter
   grep -q '^name: net-latency' "$skill_md" || fail "missing name in frontmatter"
   grep -q '^description:' "$skill_md" || fail "missing description in frontmatter"
-  # Check required headings
-  grep -q '## Triggers' "$skill_md" || fail "missing Triggers heading"
-  grep -q '## Do NOT use for' "$skill_md" || fail "missing Do NOT use for heading"
-  pass "generated SKILL.md has all required sections"
+  # Check that description contains trigger and exclusion keywords
+  grep -qi 'use when\|triggers:\|EN triggers:' "$skill_md" || fail "missing trigger declaration in description"
+  grep -qi 'do not use for' "$skill_md" || fail "missing exclusion declaration in description"
+  pass "generated SKILL.md has required frontmatter and description-based triggers"
 }
 
 test_generated_skill_has_metadata() {
@@ -116,12 +116,11 @@ test_generated_skill_has_metadata() {
   [ -f "$skill_md" ] || fail "SKILL.md missing"
   # Check metadata fields
   grep -q 'user-invocable: true' "$skill_md" || fail "missing user-invocable"
-  grep -q 'category:' "$skill_md" || fail "missing category in metadata"
-  grep -q 'tags:' "$skill_md" || fail "missing tags in metadata"
+  grep -q 'version:' "$skill_md" || fail "missing version in metadata"
   pass "generated SKILL.md has complete metadata"
 }
 
-test_skill_creator_knowledge_reference() {
+test_skill_forge_knowledge_reference() {
   local target skill_md
   target="$TMP_ROOT/knowledge-ref"
   mkdir -p "$target"
@@ -129,11 +128,13 @@ test_skill_creator_knowledge_reference() {
     --name test-skill --dir "$target" --approve >/dev/null 2>&1
   skill_md="$target/test-skill/SKILL.md"
   [ -f "$skill_md" ] || fail "SKILL.md missing"
-  # Check that generated content follows skill-creator knowledge
-  # (proper frontmatter structure, required sections)
+  # Check that generated content follows skill-forge conventions
+  # (open SKILL.md format: description-based triggers, no separate Triggers section)
   grep -q '## Example usage' "$skill_md" || fail "missing Example usage heading"
   grep -q '## Validation checklist' "$skill_md" || fail "missing Validation checklist"
-  pass "generated SKILL.md follows skill-creator knowledge"
+  # Ensure no legacy Triggers section (skill-forge uses description)
+  ! grep -q '^## Triggers$' "$skill_md" || fail "should not have legacy ## Triggers section"
+  pass "generated SKILL.md follows skill-forge conventions"
 }
 
 # Run all tests
@@ -147,4 +148,4 @@ test_approve_refuses_existing_dir
 test_tests_flag_creates_stub
 test_generated_skill_has_required_sections
 test_generated_skill_has_metadata
-test_skill_creator_knowledge_reference
+test_skill_forge_knowledge_reference
