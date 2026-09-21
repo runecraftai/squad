@@ -217,6 +217,7 @@ printf '\nBackup created: %s\n' "$BACKUP"
 # and indexing preserves duplicate lines correctly.
 OUTPUT="$LEARNINGS.tmp"
 ARCHIVE_TMP="$LEARNINGS.archive.tmp"
+trap 'rm -f -- "$OUTPUT" "$ARCHIVE_TMP"' EXIT
 : > "$OUTPUT"
 : > "$ARCHIVE_TMP"
 for (( i=0; i<${#LINES[@]}; i++ )); do
