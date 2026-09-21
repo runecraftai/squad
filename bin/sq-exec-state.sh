@@ -175,6 +175,7 @@ case "$cmd" in
       [ -f "$file" ] || continue
       id=${file##*/}; id=${id%.exec}
       valid_id "$id" || continue
+      [ -f "$STATE/$id.meta" ] || { rm -f "$file"; continue; }
       with_lock "$id" recover_locked "$id" >/dev/null || true
     done
     ;;
