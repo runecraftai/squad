@@ -429,7 +429,7 @@ test_ship_mode_is_explicit_not_registry() {
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=drill" "$brief" \
     || fail "registered direct-PR posture overrode the explicit --mode"
-  assert_grep "Squad will then instruct you to run /drill" "$brief" \
+  assert_grep "Phase 2: run the pipeline" "$brief" \
     "explicit drill brief did not render the pipeline definition of done"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
@@ -525,6 +525,47 @@ test_drill_dod_wording() {
   assert_grep "Squad's authority check" "$brief" \
     "drill DOD lost the apostrophe prose that the structural fix makes parse-safe"
   pass "sq-brief.sh: drill DOD keeps its apostrophe prose, now parse-safe"
+}
+
+# The drill DOD must make explicit that a commit is not completion and that
+# done: requires the pipeline to have run and the PR to be green. This
+# guards against the defect where operators report done after a bare commit.
+test_drill_dod_requires_pipeline_before_done() {
+  local home id brief
+  home="$TMP_ROOT/pipeline-before-done-home"
+  mkdir -p "$home/data"
+  id="brief-pipeline-c1"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+  # Commit must be explicitly marked as NOT completion.
+  assert_grep "commit is NOT completion" "$brief" \
+    "drill DOD must state that a commit is not completion"
+  # The DOD must be structured in phases so the pipeline comes before done.
+  assert_grep "Phase 1: implement and commit" "$brief" \
+    "drill DOD must have Phase 1 for implement and commit"
+  assert_grep "Phase 2: run the pipeline" "$brief" \
+    "drill DOD must have Phase 2 for running the pipeline"
+  assert_grep "Phase 3: self-check before done" "$brief" \
+    "drill DOD must have Phase 3 for self-check before done"
+  # The self-check must require a PR to exist and CI to be green.
+  assert_grep "A PR exists for your branch" "$brief" \
+    "drill DOD self-check must require a PR to exist"
+  assert_grep "CI checks on that PR are green" "$brief" \
+    "drill DOD self-check must require CI to be green"
+  # done: must only appear in the final signal section, after the self-check.
+  # Verify the ordering: the self-check section comes before the done signal.
+  local self_check_line done_line
+  self_check_line=$(grep -n 'Phase 3: self-check before done' "$brief" | head -1 | cut -d: -f1)
+  done_line=$(grep -n '## done signal' "$brief" | head -1 | cut -d: -f1)
+  [ -n "$self_check_line" ] || fail "drill DOD missing self-check section line number"
+  [ -n "$done_line" ] || fail "drill DOD missing done signal section line number"
+  [ "$done_line" -gt "$self_check_line" ] \
+    || fail "drill DOD: done signal (line $done_line) must come after self-check (line $self_check_line)"
+  # The old misleading "complete only when committed" must not appear.
+  assert_no_grep "The task is complete only when committed" "$brief" \
+    "drill DOD must not say task is complete only when committed"
+  pass "sq-brief.sh: drill DOD requires pipeline before done and has self-check"
 }
 
 test_ship_project_memory_wording() {
@@ -1011,6 +1052,7 @@ test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_drill_dod_wording
+test_drill_dod_requires_pipeline_before_done
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_Squad_path
