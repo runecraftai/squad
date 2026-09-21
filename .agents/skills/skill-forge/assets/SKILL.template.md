@@ -69,5 +69,5 @@ Result: [specific output]
 
 Load these only when the relevant step is reached:
 
-- [references/spec.md](references/spec.md) — domain spec
-- [references/api.md](references/api.md) — API reference (load when step 2 fails)
+- [references/spec.md](../references/spec.md) — domain spec
+- [references/spec.md](../references/spec.md) — API reference (load when step 2 fails)

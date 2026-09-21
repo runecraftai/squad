@@ -159,7 +159,7 @@ Implications for skill design:
 When referencing other files, use **relative paths from the skill root**:
 
 ```markdown
-See [the reference guide](references/spec.md) for details.
+See [the reference guide](scripts-guide.md) for details.
 
 Run the validator:
 

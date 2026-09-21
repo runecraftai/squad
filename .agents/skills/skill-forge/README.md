@@ -35,7 +35,7 @@ DISCOVER → DESIGN → AUTHOR → VALIDATE → OPTIMIZE → DELIVER
 
 ### Installation
 
-Install manually by copying `skills/skill-forge/` into your agent's skills directory, or use the `grimoire` installer TUI shipped with the package (see the [catalog README](../../README.md)):
+Install manually by copying `skills/skill-forge/` into your agent's skills directory, or use the `grimoire` installer TUI shipped with the package (see the [catalog README](../../../README.md)):
 
 | Agent | Path |
 |---|---|
