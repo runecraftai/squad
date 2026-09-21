@@ -14,6 +14,19 @@ Use when the user asks to run drill, gate, ship, or validate changes.
 
 Do not use for unrelated coding tasks without a validation request.
 
+## Why you might skip this (and why you shouldn't)
+
+| Excuse | Rebuttal |
+|---|---|
+| "It's a tiny change, drill will slow me down" | Tiny changes break in tiny, hard-to-debug ways. The pipeline catches lint, type, and test regressions in seconds. |
+| "I already tested locally" | Local tests do not run the full suite against a clean branch state. Drill catches environment drift and merge regressions. |
+| "The review step always flags noise" | Noise is a signal that the review config needs tuning, not a reason to skip review entirely. Fix the config. |
+| "CI will catch it anyway" | CI runs after push. Drill catches problems before they reach the remote, saving a round-trip and keeping the default branch clean. |
+| "I'm in a hurry" | A failed drill run takes minutes. A broken default branch blocks everyone for hours. |
+| "The tests are flaky" | Flaky tests need fixing, not skipping. Skipping them hides real failures behind the flakiness excuse. |
+
+Every skip weakens the gate for the next person. If a step genuinely does not apply to your change, use `--skip` with a reason - do not skip silently.
+
 `drill` is a local gate that validates your code changes through a pipeline
 (intent, rebase, review, test, document, lint, push, PR, CI) before they reach
 the configured push target. You drive it through the `drill axi` command family, which prints
@@ -97,6 +110,16 @@ development-only evaluation, not live-LLM CI.
 
 For a regression, reproduce the reported failure when feasible: the test should
 fail before the fix and pass after it.
+
+## Test distribution guideline
+
+Aim for roughly 80% unit tests, 15% integration tests, and 5% end-to-end tests.
+Unit tests are fast and surgical; integration tests prove components work together;
+E2E tests verify the full user path and should be reserved for critical flows.
+
+The Beyonce Rule applies: if it didn't happen in a test, it didn't happen.
+Every accepted behavior change needs a corresponding test that would fail before
+the fix and pass after it.
 
 
 Everything below - preconditions, intent, the validate-and-decide loop - applies

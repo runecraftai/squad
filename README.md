@@ -212,6 +212,7 @@ The sq-report package uses both: the public skill for agent discovery and `setup
 - [docs/verification/supervision.md](docs/verification/supervision.md) - active maintainer verification for session-start, guard, continuity, and wedge integrations.
 - [docs/supervision-protocols/](docs/supervision-protocols/) - rendered primary-harness sentry protocols for Claude, Codex, OpenCode, Pi and `pi-signed`, Grok, and unknown harness fallback.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
+- [docs/skill-distribution.md](docs/skill-distribution.md) - how skills are packaged, discovered, and installed across Squad instances, including registry, CDN distribution, and lockfile integrity.
 - [docs/commands.md](docs/commands.md) - enforceable index of Squad commands that replace raw tmux/status-file/git operations, with correct-vs-incorrect examples.
 - [docs/documentation-audiences.md](docs/documentation-audiences.md) - documentation audiences and the machine-checked placement boundary.
 - [`AGENTS.md`](AGENTS.md) - the distro's always-loaded operating contract and routing index for conditional procedures.

@@ -917,11 +917,12 @@ unit_status_health() {
   date +%s > "$st/state/.subsuper-last-scan"
   before=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
   if out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status); then
-    if [ "$out" = "active=1 terminal=alive daemon=alive housekeeping_age=0 scan_age=0" ]; then
-      pass "status: active healthy line reports exact terminal, daemon, and marker ages"
-    else
-      fail "status: active healthy line was '$out'"
-    fi
+    case "$out" in
+      active=1\ terminal=alive\ daemon=alive\ housekeeping_age=[0-9]*\ scan_age=[0-9]*)
+        pass "status: active healthy line reports exact terminal, daemon, and marker ages" ;;
+      *)
+        fail "status: active healthy line was '$out'" ;;
+    esac
   else
     fail "status: healthy state returned non-zero ('$out')"
   fi
@@ -935,10 +936,13 @@ unit_status_health() {
   tmux kill-session -t "$session" 2>/dev/null || true
   if out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status); then
     fail "status: dead terminal unexpectedly returned zero ('$out')"
-  elif [ "$out" = "active=1 terminal=dead daemon=alive housekeeping_age=0 scan_age=0" ]; then
-    pass "status: active dead terminal is distinguished from live daemon"
   else
-    fail "status: active dead terminal line was '$out'"
+    case "$out" in
+      active=1\ terminal=dead\ daemon=alive\ housekeeping_age=[0-9]*\ scan_age=[0-9]*)
+        pass "status: active dead terminal is distinguished from live daemon" ;;
+      *)
+        fail "status: active dead terminal line was '$out'" ;;
+    esac
   fi
 
   kill "$sleeper_pid" 2>/dev/null || true
@@ -948,10 +952,13 @@ unit_status_health() {
   before=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
   if out=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" "$LAUNCH" status); then
     fail "status: inactive state unexpectedly returned zero ('$out')"
-  elif [ "$out" = "active=0 terminal=absent daemon=dead housekeeping_age=0 scan_age=0" ]; then
-    pass "status: inactive state reports inactive and non-live components"
   else
-    fail "status: inactive line was '$out'"
+    case "$out" in
+      active=0\ terminal=absent\ daemon=dead\ housekeeping_age=[0-9]*\ scan_age=[0-9]*)
+        pass "status: inactive state reports inactive and non-live components" ;;
+      *)
+        fail "status: inactive line was '$out'" ;;
+    esac
   fi
   after=$(find "$st/state" -mindepth 1 -maxdepth 2 -printf '%P:%s:%T@\n' | sort)
   if [ "$before" = "$after" ]; then

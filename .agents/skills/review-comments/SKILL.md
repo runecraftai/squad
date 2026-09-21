@@ -29,6 +29,23 @@ Load this skill before writing or replying to any code-review thread, before cho
 6. **Post or update.** Post the comment, or replace and resolve the thread, and update the board state.
 7. **Board.** Build the visual thread board and open it with sq-report when the commander needs to review or track the threads.
 
+## Five-axis review framework
+
+Before writing any review comment, evaluate the change across five axes.
+Every axis gets a pass or a finding; do not skip an axis because the others look clean.
+
+| Axis | What to check |
+|---|---|
+| **Correctness** | Does the code do what it claims? Are edge cases handled? Are error paths tested? |
+| **Complexity** | Is the change as simple as it can be? Are there unnecessary abstractions, deep nesting, or cognitive overload? |
+| **Security** | Does the change handle untrusted input safely? Are secrets, auth, and trust boundaries respected? |
+| **Testing** | Are new behaviors tested? Do tests assert observable behavior, not implementation detail? |
+| **Readability** | Will a future reader understand this without the author present? Are names clear and is intent obvious? |
+
+A change under ~100 lines usually fits in one focused review pass.
+Larger changes benefit from axis-by-axis passes or a request to split.
+Severity labels for findings: Nit (trivial), Optional (non-blocking suggestion), FYI (informational), Blocking (must fix before merge).
+
 ## Conventional Comments format
 
 Grammar, in this exact shape:
@@ -106,6 +123,17 @@ Load the humanizer skill at `/home/rehem/.agents/skills/humanizer/SKILL.md` (ins
 
 Default register for this base: short, informal, direct PT-BR, "tu" style with implicit subjects, matching the commander's samples below.
 Do not translate the reviewer's language. Reply in the thread's language.
+
+## Why you might skip this (and why you shouldn't)
+
+| Excuse | Rebuttal |
+|---|---|
+| "It looks fine, I'll approve" | "Looks fine" is not a review. Check correctness, complexity, security, testing, and readability before approving. |
+| "The author knows what they're doing" | Trust is good; verification is better. Even experienced authors miss edge cases and regressions. |
+| "This is too large to review properly" | Large PRs need more review, not less. Ask for a split or review in focused passes by axis. |
+| "I don't have time for a thorough review" | A fast review that misses a bug costs more time than a thorough one. Prioritize the review or defer it. |
+| "The tests pass, so it's fine" | Tests prove the happy path. Review catches missing edge cases, security gaps, and maintenance debt. |
+| "It's just a refactor, no behavior change" | Refactors change internal structure. Verify that public interfaces, error paths, and side effects are preserved. |
 
 ## Client-visible guard
 

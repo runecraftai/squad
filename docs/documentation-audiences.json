@@ -748,6 +748,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "docs/skill-distribution.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "skills/debrief/SKILL.md",
    "audience": "public-product"
   },
@@ -789,6 +793,22 @@
   },
   {
    "path": "skills/api-and-interface-design/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/codebase-design/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/constraints-pattern/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/incident-response/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/modular-decomposition/SKILL.md",
    "audience": "public-product"
   },
   {
