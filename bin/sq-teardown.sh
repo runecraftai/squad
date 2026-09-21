@@ -2207,6 +2207,23 @@ if [ "$KIND" = recon ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
+# Cleanup must never erase an unresolved commander decision. A status file that
+# still carries an open needs-decision or blocked key means the decision was not
+# transferred to a durable commander-hold backlog item. Removing the status file
+# would destroy the only record of that open decision, violating the decision-hold-
+# lifecycle policy that holds must not close merely because the originating task
+# was torn down. Refuse unless --force explicitly discards the work.
+if [ "$FORCE" != "--force" ] && [ -f "$STATE/$ID.status" ] && [ ! -L "$STATE/$ID.status" ]; then
+  _open_decisions=$(bash -c '. "$1"; status_open_decisions "$2"' _ \
+    "$SCRIPT_DIR/sq-classify-lib.sh" "$STATE/$ID.status")
+  if [ -n "$_open_decisions" ]; then
+    echo "REFUSED: task $ID still has open commander decisions in its status record." >&2
+    printf '%s\n' "$_open_decisions" >&2
+    echo "Transfer open decisions to commander holds (bin/sq-decision-hold.sh hold + complete), resolve them, or use --force after explicit discard approval." >&2
+    exit 1
+  fi
+fi
+
 # A public commitment is not kept until its final reply lands in the ORIGINAL
 # thread, and this cleanup removes the task records that make the promise
 # reconcilable. Refuse while this base still owes a public reply for exactly this

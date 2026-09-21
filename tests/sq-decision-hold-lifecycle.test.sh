@@ -552,6 +552,122 @@ test_resolve_matches_quoted_blocked_by_edges() {
   pass "resolve matches first/middle/last in quoted blocked_by and rejects a genuinely absent id"
 }
 
+test_teardown_refuses_with_open_status_decisions() {
+  local home id show json
+  home=$(make_home teardown-open-decisions)
+  id=sample-strike-decision
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Build the sample feature" --kind ship --repo sample --start >/dev/null \
+    || fail "could not create strike task fixture"
+  write_origin_meta "$home" "$id" ship
+  # Status file has an OPEN decision - the defect case
+  printf 'needs-decision [key=api-shape]: choose REST or GraphQL for the API\ndone: implementation complete\n' \
+    > "$home/state/$id.status"
+
+  # Verify the open decision is detected
+  local open
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ \
+    "$ROOT/bin/sq-classify-lib.sh" "$home/state/$id.status")
+  [ -n "$open" ] || fail "fixture must have open decisions before teardown"
+  assert_contains "$open" "api-shape" "open decisions must include the api-shape key"
+
+  # Teardown must refuse because of the open decision
+  set +e
+  run_teardown "$home" "$id" > "$home/td-refused.out" 2> "$home/td-refused.err"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "teardown succeeded with open status decisions (defect not fixed)"
+  assert_present "$home/state/$id.status" "refused teardown must preserve the status file"
+  assert_present "$home/state/$id.meta" "refused teardown must preserve metadata"
+  assert_grep "REFUSED" "$home/td-refused.err" "refusal must be explicit"
+  assert_grep "open commander decisions" "$home/td-refused.err" "refusal must name the reason"
+
+  # Now transfer the decision to a commander hold, which closes it in the fold
+  local hold
+  hold=$(run_decisions "$home" hold "$id" api-shape \
+    --title "Choose the API shape" --reason "commander API choice pending" --repo sample) \
+    || fail "could not register hold"
+  run_decisions "$home" complete "$id" api-shape >/dev/null \
+    || fail "could not complete inventory"
+
+  # Verify the open decision is now closed in the fold
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ \
+    "$ROOT/bin/sq-classify-lib.sh" "$home/state/$id.status")
+  [ -z "$open" ] || fail "commander-held transfer did not close the status decision: $open"
+
+  # Now teardown should succeed
+  run_teardown "$home" "$id" >/dev/null 2> "$home/td-allowed.err" \
+    || fail "teardown failed after decision was transferred to hold: $(cat "$home/td-allowed.err")"
+  # The commander hold must survive
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "state: queued" "commander hold must survive teardown"
+  assert_contains "$show" "held: yes" "commander hold must remain held after teardown"
+
+  pass "teardown refuses with open status decisions and succeeds after transfer"
+}
+
+test_reconcile_closes_moot_decision_with_evidence() {
+  local home id hold show
+  home=$(make_home reconcile-decision)
+  id=sample-reconcile-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Review the sample system" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create recon fixture"
+  write_origin_meta "$home" "$id"
+  printf 'done: investigation complete\n' > "$home/state/$id.status"
+  printf '# Sample review\n\nThe original choice is now moot.\n' > "$home/data/$id/report.md"
+
+  # Create a hold
+  hold=$(run_decisions "$home" hold "$id" layout \
+    --title "Choose the sample layout" --reason "commander layout choice pending" --repo sample) \
+    || fail "could not register hold"
+  [ "$hold" = "$id-decision-layout" ] || fail "hold identity mismatch: $hold"
+  run_decisions "$home" complete "$id" layout >/dev/null \
+    || fail "could not complete inventory"
+
+  # Verify the hold is active
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "state: queued" "hold must be queued before reconcile"
+  assert_contains "$show" "held: yes" "hold must be held before reconcile"
+
+  # Create evidence file
+  printf 'The sample layout question is moot because the project switched to a different framework.\n' \
+    > "$home/reconcile-evidence.txt"
+
+  # Reconcile the hold
+  run_decisions "$home" reconcile "$id" layout \
+    --evidence-file "$home/reconcile-evidence.txt" >/dev/null \
+    || fail "reconcile failed"
+
+  # Verify the hold is now resolved (done state)
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "state: done" "reconciled hold must be done"
+  assert_contains "$show" "Reconciliation recorded by sq-decision-hold" \
+    "reconciled hold must carry reconciliation record"
+  assert_contains "$show" "Reconciliation evidence:" \
+    "reconciled hold must carry evidence"
+
+  # Verify reconcile is idempotent
+  run_decisions "$home" reconcile "$id" layout \
+    --evidence-file "$home/reconcile-evidence.txt" >/dev/null \
+    || fail "reconcile retry was not idempotent"
+
+  # Verify the hold is still done after retry
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "state: done" "reconciled hold must remain done after retry"
+
+  # Verify verify_hold_resolved accepts the reconciliation format
+  run_decisions "$home" verify "$id" >/dev/null \
+    || fail "verify must accept a reconciled hold"
+
+  # Verify verify_hold_durable accepts the reconciliation format
+  # (re-run verify which calls verify_hold_durable internally)
+  run_decisions "$home" verify "$id" >/dev/null \
+    || fail "durable check must accept a reconciled hold"
+
+  pass "reconcile closes a moot decision with evidence and is idempotent"
+}
+
 test_uninventoried_report_decision_refuses_completion
 
 test_scout_teardown_always_requires_inventory_verification
@@ -562,3 +678,5 @@ test_none_inventory_and_resolved_prose_do_not_create_holds
 test_terminal_single_owner_status_decision_does_not_block_empty_inventory
 test_XO_hold_stays_in_authoritative_home
 test_resolve_matches_quoted_blocked_by_edges
+test_teardown_refuses_with_open_status_decisions
+test_reconcile_closes_moot_decision_with_evidence
