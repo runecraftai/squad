@@ -9,7 +9,7 @@ metadata:
 
 # Skill verification
 
-Use this skill after the skill-creator validation phase and before promoting an external skill into the Runecraft catalog, and before allowing an imported skill into drill, CI, or production dispatch.
+Use this skill after the skill-forge validation phase and before promoting an external skill into the Runecraft catalog, and before allowing an imported skill into drill, CI, or production dispatch.
 
 ## Workflow
 

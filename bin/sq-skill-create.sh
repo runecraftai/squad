@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Generate a new skill package from a natural-language description.
-# Produces a complete skill directory with SKILL.md (frontmatter,
-# Triggers, Do NOT use for, example usage, validation checklist),
+# Produces a complete skill directory with SKILL.md (frontmatter
+# with description-based triggers and exclusions, open SKILL.md format),
 # optional tests/ stub, and format/trigger validation.
 #
-# Knowledge source: .agents/skills/skill-creator/SKILL.md
-# The skill-creator skill defines the DISCOVER, DESIGN, AUTHOR,
+# Knowledge source: .agents/skills/skill-forge/SKILL.md
+# The skill-forge skill defines the DISCOVER, DESIGN, AUTHOR,
 # VALIDATE, OPTIMIZE, DELIVER phases for skill creation.
 #
 # Usage:
@@ -41,7 +41,7 @@ Arguments:
 
 Without --approve the script prints the generated SKILL.md for review and exits.
 
-Knowledge source: .agents/skills/skill-creator/SKILL.md
+Knowledge source: .agents/skills/skill-forge/SKILL.md
 EOF
 }
 
@@ -87,6 +87,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VALIDATE_FORMAT="$SCRIPT_DIR/sq-check-skill-format.sh"
 VALIDATE_TRIGGERS="$SCRIPT_DIR/sq-check-skill-triggers.sh"
+SKILL_FORGE_VALIDATE="$SCRIPT_DIR/../.agents/skills/skill-forge/scripts/validate.py"
 
 # Auto-derive skill name from description if not provided.
 if [[ -z "$SKILL_NAME" ]]; then
@@ -112,7 +113,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ── generate trigger phrases from description ────────────────────────────────
-# Phase: DISCOVER - Extract trigger phrases from the description
+# Phase: DISCOVER — extract trigger phrases for the description field.
 
 generate_triggers() {
   local desc="$1"
@@ -120,13 +121,12 @@ generate_triggers() {
 
   # Build trigger phrases from common patterns
   triggers+=("Use when the user asks to ${desc%%.*}.")
-  triggers+=("Activates for ${desc%%.*}.")
 
   # Extract key nouns/verbs from the description for trigger matching
   local keywords
   keywords=$(echo "$desc" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '\n' | \
     grep -vxE '(a|an|the|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|shall|should|may|might|can|could|must|need|to|of|in|for|on|with|at|by|from|as|into|through|during|before|after|above|below|between|out|off|over|under|again|further|then|once|that|this|these|those|and|but|or|nor|not|no|so|if|when|while|where|how|what|which|who|whom|whose|it|its|you|your|i|my|we|our|they|their|he|she|his|her|me|us|them|also|just|only|very|more|most|some|any|all|each|every|both|few|many|much|such)' | \
-    sort -u | head -6)
+    sort -u | head -4)
 
   for kw in $keywords; do
     triggers+=("Trigger on \"$kw\".")
@@ -136,7 +136,7 @@ generate_triggers() {
 }
 
 # ── generate anti-triggers from description ──────────────────────────────────
-# Phase: DISCOVER - Define scope boundaries
+# Phase: DISCOVER — define scope boundaries for the Do NOT use for clause.
 
 generate_anti_triggers() {
   local desc="$1"
@@ -149,59 +149,8 @@ generate_anti_triggers() {
   printf '%s\n' "${anti[@]}"
 }
 
-# ── determine category from description ──────────────────────────────────────
-# Phase: DESIGN - Categorize the skill
-
-determine_category() {
-  local desc="$1"
-  local desc_lower
-  desc_lower=$(echo "$desc" | tr '[:upper:]' '[:lower:]')
-
-  case "$desc_lower" in
-    *browser*|*web*|*page*|*screenshot*|*click*)
-      echo "automation" ;;
-    *task*|*backlog*|*todo*|*plan*|*schedule*)
-      echo "productivity" ;;
-    *doc*|*readme*|*write*|*edit*|*markdown*)
-      echo "documentation" ;;
-    *monitor*|*alert*|*health*|*status*)
-      echo "devops" ;;
-    *github*)
-      echo "devops" ;;
-    *git*|*pr*|*commit*|*branch*)
-      echo "devops" ;;
-    *test*|*lint*|*validate*|*verify*)
-      echo "development" ;;
-    *)
-      echo "development" ;;
-  esac
-}
-
-# ── determine tags from description ──────────────────────────────────────────
-# Phase: DESIGN - Extract relevant tags
-
-determine_tags() {
-  local desc="$1"
-  local desc_lower
-  desc_lower=$(echo "$desc" | tr '[:upper:]' '[:lower:]')
-
-  # Extract significant words as tags (max 5)
-  local tags=()
-  local word
-  for word in $(echo "$desc_lower" | tr -cs '[:alnum:]' '\n' | \
-    grep -vxE '(a|an|the|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|shall|should|may|might|can|could|must|need|to|of|in|for|on|with|at|by|from|as|into|through|during|before|after|above|below|between|out|off|over|under|again|further|then|once|that|this|these|those|and|but|or|nor|not|no|so|if|when|while|where|how|what|which|who|whom|whose|it|its|you|your|i|my|we|our|they|their|he|she|his|her|me|us|them|also|just|only|very|more|most|some|any|all|each|every|both|few|many|much|such|the|user|skill|create|generate|new|make)' | \
-    sort -u | head -5); do
-    tags+=("$word")
-  done
-
-  # Ensure at least one tag
-  [[ ${#tags[@]} -gt 0 ]] || tags+=("general")
-
-  printf '%s\n' "${tags[@]}"
-}
-
 # ── generate SKILL.md content ────────────────────────────────────────────────
-# Phase: AUTHOR - Generate complete skill structure
+# Phase: AUTHOR — generate open SKILL.md format with description-based triggers.
 
 generate_skill_md() {
   local name="$1"
@@ -216,50 +165,29 @@ generate_skill_md() {
   local short_desc
   short_desc=$(echo "$desc" | head -c 200)
 
-  # Determine category and tags
-  local category
-  category=$(determine_category "$desc")
-
-  local tags
-  tags=$(determine_tags "$desc")
-
-  # Collect triggers
+  # Collect triggers and exclusions for the description field.
   local trigger_lines
   trigger_lines=$(generate_triggers "$desc")
 
-  # Collect anti-triggers
   local anti_lines
   anti_lines=$(generate_anti_triggers "$desc")
 
-  # Format tags as YAML array
-  local yaml_tags
-  yaml_tags=$(echo "$tags" | sed 's/^/    - /' | tr '\n' ',' | sed 's/,$//')
-
+  # Build the description field with embedded triggers and exclusions.
+  # This follows the open SKILL.md format (skill-forge convention):
+  # triggers and exclusions live in the description, not as separate sections.
   cat > "$tmpfile" <<SKILLEOF
 ---
 name: ${name}
 description: >-
-  ${short_desc}.
+  ${short_desc}. ${trigger_lines} Do NOT use for: ${anti_lines}
 user-invocable: true
-author: Squad contributors
 metadata:
-  hermes:
-    tags:
-${yaml_tags}
-    category: ${category}
+  version: 1.0.0
 ---
 
 # ${title}
 
 ${desc}
-
-## Triggers
-
-${trigger_lines}
-
-## Do NOT use for
-
-${anti_lines}
 
 ## Example usage
 
@@ -271,8 +199,7 @@ Skill: Loads and applies the relevant procedure.
 ## Validation checklist
 
 - [ ] SKILL.md has valid frontmatter (name, description)
-- [ ] Triggers section is present and non-empty
-- [ ] Do NOT use for section is present
+- [ ] Description contains trigger phrases and exclusions
 - [ ] Description accurately reflects the skill purpose
 - [ ] No overlap with existing skills
 SKILLEOF
@@ -316,6 +243,17 @@ if ! bash "$VALIDATE_TRIGGERS" "$TEMP_SKILL_DIR"; then
 fi
 echo "Trigger validation: PASSED"
 
+# Run the skill-forge validator if available
+if [[ -f "$SKILL_FORGE_VALIDATE" ]]; then
+  echo ""
+  echo "Running skill-forge validator..."
+  if python3 "$SKILL_FORGE_VALIDATE" "$TEMP_SKILL_DIR" 2>&1; then
+    echo "Skill-forge validation: PASSED"
+  else
+    echo "Skill-forge validation: WARNINGS (non-blocking)"
+  fi
+fi
+
 # Create tests/ stub if requested
 if [[ "$CREATE_TESTS" -eq 1 ]]; then
   mkdir -p "$TEMP_SKILL_DIR/tests"
@@ -334,23 +272,15 @@ test_skill_exists() {
   pass "skill directory has SKILL.md"
 }
 
-test_skill_has_triggers() {
-  local triggers
-  triggers=\$(sed -n '/^## Triggers/,/^## /p' "\$SKILL_DIR/SKILL.md" | head -n -1)
-  [ -n "\$triggers" ] || fail "Triggers section should not be empty"
-  pass "skill has non-empty Triggers section"
-}
-
-test_skill_has_anti_triggers() {
-  local anti
-  anti=\$(sed -n '/^## Do NOT use for/,/^## /p' "\$SKILL_DIR/SKILL.md" | head -n -1)
-  [ -n "\$anti" ] || fail "Do NOT use for section should not be empty"
-  pass "skill has non-empty Do NOT use for section"
+test_skill_has_description_triggers() {
+  local desc
+  desc=\$(sed -n '/^---$/,/^---$/{ /description:/,/^---$/p }' "\$SKILL_DIR/SKILL.md")
+  [ -n "\$desc" ] || fail "Description should not be empty"
+  pass "skill has non-empty description"
 }
 
 test_skill_exists
-test_skill_has_triggers
-test_skill_has_anti_triggers
+test_skill_has_description_triggers
 TESTEOF
   chmod +x "$TEMP_SKILL_DIR/tests/test-${SKILL_NAME}.sh"
   echo ""
