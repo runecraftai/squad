@@ -192,6 +192,34 @@
    "audience": "agent-runtime"
   },
   {
+   "path": ".agents/skills/skill-forge/README.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/skill-forge/assets/SKILL.template.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/skill-forge/references/authoring-patterns.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/skill-forge/references/description-optimization.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/skill-forge/references/output-evaluation.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/skill-forge/references/scripts-guide.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/skill-forge/references/spec.md",
+   "audience": "agent-runtime"
+  },
+  {
    "path": ".agents/skills/squad-coding-guidelines/SKILL.md",
    "audience": "agent-runtime"
   },
