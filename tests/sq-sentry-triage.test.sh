@@ -822,8 +822,8 @@ test_paused_churning_pane_throttle_refreshes_marker() {
   h="abc123"
   # shell_libs sources every library surface_nonterminal_stale needs, including
   # the sentry source guard that loads the function without entering the loop.
-  shell_libs='. /home/rehem/Projects/squad/bin/sq-push-transition-lib.sh; . /home/rehem/Projects/squad/bin/sq-pr-lib.sh; . /home/rehem/Projects/squad/bin/sq-x-lib.sh; . /home/rehem/Projects/squad/bin/sq-check-lib.sh; . /home/rehem/Projects/squad/bin/sq-pending-reply-lib.sh; . /home/rehem/Projects/squad/bin/sq-busy-lib.sh; . /home/rehem/Projects/squad/bin/sq-stall-detect.sh; . /home/rehem/Projects/squad/bin/sq-sentry.sh 2>/dev/null'
-  sub() { bash -c "$shell_libs; SQUAD_STATE_OVERRIDE='''$state''' SQUAD_PAUSE_RESURFACE_SECS=$1 surface_nonterminal_stale '''$window''' '''$h'''" 2>/dev/null; }
+  shell_libs=". $ROOT/bin/sq-push-transition-lib.sh; . $ROOT/bin/sq-pr-lib.sh; . $ROOT/bin/sq-x-lib.sh; . $ROOT/bin/sq-check-lib.sh; . $ROOT/bin/sq-pending-reply-lib.sh; . $ROOT/bin/sq-busy-lib.sh; . $ROOT/bin/sq-stall-detect.sh; . $ROOT/bin/sq-sentry.sh 2>/dev/null"
+  sub() { bash -c "export SQUAD_STATE_OVERRIDE='$state'; export SQUAD_PAUSE_RESURFACE_SECS=$1; $shell_libs; surface_nonterminal_stale '$window' '$h'" 2>/dev/null; }
 
   # Phase A: fresh marker - absorb path must run and refresh the marker.
   date +%s > "$state/.paused-resurfaced-$key"
@@ -848,12 +848,30 @@ test_paused_churning_pane_throttle_refreshes_marker() {
   mtime_b2=$(file_mtime "$state/.paused-resurfaced-$key")
   [ "${mtime_b2:-0}" -ge "${mtime_b:-0}" ] || fail "stale marker: surfacing path did not refresh the resurfaced marker"
 
-  # Phase C: re-enter absorb path with fresh marker - must still be exactly 1 wake.
-  # This verifies the marker refresh from Phase B actually prevents re-surfacing.
+  # Phase C: age the marker to 300s (older than PAUSE_RESURFACE_SECS=240) so
+  # the absorb path would surface instead of absorb if it weren't for the
+  # throttle check. Then call surface_nonterminal_stale - the marker is old
+  # enough to trigger surfacing. This also refreshes the marker.
+  set_mtime $(( $(date +%s) - 300 )) "$state/.paused-resurfaced-$key"
   sub 240
   local wakes_total
   wakes_total=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf '0')
-  [ "$wakes_total" -eq 1 ] || fail "re-absorb: emitted $wakes_total wakes after surfacing (expected 1)"
+  [ "$wakes_total" -ge 2 ] || fail "aged marker: expected >=2 wakes total after re-surfacing, got $wakes_total"
+
+  # Phase D: age the marker to 200s (fresh enough for absorb, since 200 < 240).
+  # The absorb path should run and refresh the marker. Without the fix, the
+  # marker would stay at 200s old; with the fix, it gets refreshed to ~now.
+  set_mtime $(( $(date +%s) - 200 )) "$state/.paused-resurfaced-$key"
+  sub 240
+  # Should still be exactly 2 wakes - absorb ran, refreshed marker, did NOT surface.
+  wakes_total=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf '0')
+  [ "$wakes_total" -eq 2 ] || fail "re-absorb: emitted $wakes_total wakes total after re-absorb (expected 2)"
+
+  # Phase E: verify the marker was refreshed in Phase D.
+  local mtime_d now_d
+  mtime_d=$(file_mtime "$state/.paused-resurfaced-$key")
+  now_d=$(date +%s)
+  [ "$(( now_d - mtime_d ))" -lt 10 ] || fail "re-absorb: marker mtime is $(( now_d - mtime_d ))s old (should be <10s after refresh)"
 
   pass "surface_nonterminal_stale absorb path refreshes throttle marker; stale marker surfaces; re-absorb works"
 }
