@@ -429,6 +429,10 @@ surface_nonterminal_stale() {  # <window> <hash>
       printf '%s' "$h" > "$STATE/.stale-$key"
       : > "$STATE/.paused-$key"
       rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+      # Refresh the throttle marker so a changing pane footer cannot age it past
+      # PAUSE_RESURFACE_SECS between polls and re-trigger surfacing on the next
+      # first-hash sighting.
+      date +%s > "$rf"
       triage_log "absorbed stale (paused live recheck throttle): $win"
       return
     fi
