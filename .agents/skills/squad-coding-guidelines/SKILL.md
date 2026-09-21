@@ -124,3 +124,4 @@ Run `bin/sq-doc-audience-check.sh`; it enforces classification, README setup rou
 - A maintainer-verification record under `docs/verification/` records active empirical facts, not assumptions or task chronology.
 - Include the date, version, exact commands run, and exact output needed to support the current guarantee.
 - Keep incident chronology and delivery evidence in private task reports or PR evidence unless a concise rationale is required to maintain a current safety boundary.
+- When coining a term for Squad's own material, prefer a compact pre-trained concept over a multi-word description — the term recruits prior model knowledge and anchors behavior better — and hunt for restatements a single word could retire.
