@@ -69,6 +69,7 @@ README.md            public overview and development notes
 .agents/skills/      Squad-loaded internal skills, committed; each carries metadata.internal=true for installers
 .claude/skills       symlink to .agents/skills for claude compatibility
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
+                      interview-me is vendored from runecraftai/skills (packages/skills/skills/interview-me/); refresh by copying that upstream directory
 bin/                 helper scripts, committed; read each script's header before first use
 .env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
 config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO base's own operators (section 4)
