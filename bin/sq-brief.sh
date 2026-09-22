@@ -27,6 +27,10 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
+# The <task-id> must match the backlog item id exactly - the generated status
+# path uses this id, so a mismatch means the operator writes done: to a file
+# no task owns and the real state goes unknown.
+#
 # For strike tasks, --mode is REQUIRED and shapes the definition of done. Squad
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # commander's standing posture as context, and this script never reads it:

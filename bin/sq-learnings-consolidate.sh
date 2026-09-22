@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Consolidate data/learnings.md: deduplicate, remove stale, trim long entries.
-# Usage: sq-learnings-consolidate.sh [--apply] [--data-dir <dir>] [--backlog <file>]
+# Consolidate data/learnings.md: deduplicate, remove stale by age, trim long entries.
+# Stale entries are archived to data/learnings.md.archive (never deleted).
+# Undated entries are exempt from age-based retirement.
+# Usage: sq-learnings-consolidate.sh [--apply] [--data-dir <dir>]
 # Dry-run by default. With --apply, writes changes after creating a backup.
 set -eu
 
@@ -8,7 +10,6 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}
 SQUAD_BASE=${SQUAD_BASE:-${SQUAD_HOME:-$SQUAD_ROOT}}
 DATA_DIR=${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}
-BACKLOG=""
 APPLY=0
 
 while [ "$#" -gt 0 ]; do
@@ -17,17 +18,15 @@ while [ "$#" -gt 0 ]; do
     --data-dir)
       [ "$#" -ge 2 ] || { printf 'error: --data-dir requires a path\n' >&2; exit 1; }
       DATA_DIR=$2; shift 2 ;;
-    --backlog)
-      [ "$#" -ge 2 ] || { printf 'error: --backlog requires a path\n' >&2; exit 1; }
-      BACKLOG=$2; shift 2 ;;
     -h|--help)
-      printf 'Usage: %s [--apply] [--data-dir <dir>] [--backlog <file>]\n' "$(basename "$0")"
+      printf 'Usage: %s [--apply] [--data-dir <dir>]\n' "$(basename "$0")"
       exit 0 ;;
     *) printf 'error: unknown option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
 
 LEARNINGS="$DATA_DIR/learnings.md"
+ARCHIVE="$DATA_DIR/learnings.md.archive"
 
 if [ ! -f "$LEARNINGS" ]; then
   printf 'error: learnings file not found: %s\n' "$LEARNINGS" >&2
@@ -48,40 +47,6 @@ date_diff_days() {
   printf '%s\n' $(( (ts1 - ts2) / 86400 ))
 }
 
-# Levenshtein-like similarity: return ratio 0.0-1.0 (simplified, good enough
-# for short learnings lines).
-string_similarity() {
-  local a=$1 b=$2
-  local len_a=${#a} len_b=${#b}
-  if [ "$len_a" -eq 0 ] && [ "$len_b" -eq 0 ]; then
-    printf '1.0'; return
-  fi
-  if [ "$len_a" -eq 0 ] || [ "$len_b" -eq 0 ]; then
-    printf '0.0'; return
-  fi
-  # Quick char-overlap heuristic: count shared characters
-  local total=$((len_a + len_b))
-  local shared=0
-  local i c
-  local a_copy="$a"
-  for (( i=0; i<len_b; i++ )); do
-    c="${b:$i:1}"
-    if [[ $a_copy == *"$c"* ]]; then
-      shared=$((shared + 1))
-      # Remove one occurrence from a_copy to avoid double-counting
-      a_copy="${a_copy/}" # remove first occurrence via glob trick
-      # Actually: use parameter expansion to remove first match
-      case "$a_copy" in
-        "$c"*) a_copy="${a_copy#"$c"}" ;;
-        *"$c"*) local before="${a_copy%%"$c"*}"
-                local after="${a_copy#*"$c"}"
-                a_copy="${before}${after}" ;;
-      esac
-    fi
-  done
-  printf '%s.%s' $(( shared * 200 / total )) $(( (shared * 2000 / total) % 10 ))
-}
-
 # Extract date from a learnings line: - **Title (YYYY-MM-DD):**
 extract_date() {
   local line=$1
@@ -90,39 +55,10 @@ extract_date() {
   fi
 }
 
-# Extract task id from a learnings line: [task: <id>]
-extract_task() {
-  local line=$1
-  if [[ $line =~ \[task:\ ([^]]+)\] ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-  fi
-}
-
 # Check if a line contains CRITICAL or NEVER
 is_important() {
   local line=$1
   [[ $line == *CRITICAL* ]] || [[ $line == *NEVER* ]]
-}
-
-# Build done-task set from backlog
-DONE_TASKS_FILE=""
-load_done_tasks() {
-  local bl=$1 line
-  if [ ! -f "$bl" ]; then
-    printf 'warning: backlog not found: %s\n' "$bl" >&2
-    return
-  fi
-  DONE_TASKS_FILE=$(mktemp)
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ $line =~ ^-\ \[x\]\ ([[:alnum:]-]+) ]]; then
-      printf '%s\n' "${BASH_REMATCH[1]}" >> "$DONE_TASKS_FILE"
-    fi
-  done < "$bl"
-}
-
-is_done_task() {
-  local task=$1
-  [ -n "$DONE_TASKS_FILE" ] && [ -f "$DONE_TASKS_FILE" ] && grep -qxF "$task" "$DONE_TASKS_FILE"
 }
 
 # Extract lesson content from a learnings line, stripping title/date/metadata.
@@ -143,6 +79,9 @@ extract_content() {
   normalize "$content"
 }
 
+# Retirement age threshold in days.
+RETIREMENT_AGE=60
+
 # --- main logic -------------------------------------------------------------
 
 TODAY=$(date '+%Y-%m-%d')
@@ -152,35 +91,27 @@ while IFS= read -r line || [ -n "$line" ]; do
   LINES+=("$line")
 done < "$LEARNINGS"
 
-# Load backlog if available
-[ -n "$BACKLOG" ] && load_done_tasks "$BACKLOG"
-if [ -f "$DATA_DIR/backlog.md" ]; then
-  load_done_tasks "$DATA_DIR/backlog.md"
-fi
-trap '[ -n "$DONE_TASKS_FILE" ] && rm -f "$DONE_TASKS_FILE"' EXIT
-
-# Pass 1: identify removals (age + done tasks)
+# Pass 1: identify removals by age (>=60 days, undated exempt)
 declare -A REMOVE=()
 for (( i=0; i<${#LINES[@]}; i++ )); do
   line="${LINES[$i]}"
   [[ $line == -* ]] || continue  # only process list entries
 
-  # Skip important entries
+  # Skip important entries (CRITICAL / NEVER)
   if is_important "$line"; then
     continue
   fi
 
-  # Check age-based removal: entry date > 90 days AND references a done task
+  # Extract the date; undated entries are exempt from age-based retirement
   entry_date=$(extract_date "$line")
-  entry_task=$(extract_task "$line")
-  if [ -n "$entry_date" ] && [ -n "$entry_task" ]; then
-    if is_done_task "$entry_task"; then
-      age=$(date_diff_days "$TODAY" "$entry_date")
-      if [ "$age" -ge 90 ]; then
-        REMOVE[$i]="stale: task=$entry_task age=${age}d"
-        continue
-      fi
-    fi
+  if [ -z "$entry_date" ]; then
+    continue
+  fi
+
+  age=$(date_diff_days "$TODAY" "$entry_date")
+  if [ "$age" -ge "$RETIREMENT_AGE" ]; then
+    REMOVE[$i]="stale: age=${age}d (>= ${RETIREMENT_AGE}d)"
+    continue
   fi
 done
 
@@ -285,10 +216,15 @@ printf '\nBackup created: %s\n' "$BACKUP"
 # sibling temporary file avoids truncating the source before it has been read,
 # and indexing preserves duplicate lines correctly.
 OUTPUT="$LEARNINGS.tmp"
+ARCHIVE_TMP="$LEARNINGS.archive.tmp"
+trap 'rm -f -- "$OUTPUT" "$ARCHIVE_TMP"' EXIT
 : > "$OUTPUT"
+: > "$ARCHIVE_TMP"
 for (( i=0; i<${#LINES[@]}; i++ )); do
   line="${LINES[$i]}"
   if [ -n "${REMOVE[$i]:-}" ]; then
+    # Archive removed entries (skip header lines)
+    [[ $line == -* ]] && printf '%s\n' "$line" >> "$ARCHIVE_TMP"
     continue
   fi
 
@@ -301,5 +237,15 @@ for (( i=0; i<${#LINES[@]}; i++ )); do
   fi
 done
 mv -f -- "$OUTPUT" "$LEARNINGS"
+
+# Append archived entries to the archive file (create if absent)
+if [ -s "$ARCHIVE_TMP" ]; then
+  if [ ! -f "$ARCHIVE" ]; then
+    printf '# Learnings Archive\n\n' > "$ARCHIVE"
+  fi
+  cat "$ARCHIVE_TMP" >> "$ARCHIVE"
+  printf 'Archived %d entry/entries to %s\n' "$(wc -l < "$ARCHIVE_TMP")" "$ARCHIVE"
+fi
+rm -f "$ARCHIVE_TMP"
 
 printf 'Changes applied.\n'
