@@ -24,6 +24,8 @@
 #   sq-decision-hold.sh verify <origin-id>
 #   sq-decision-hold.sh resolve <origin-id> <decision-key> \
 #     --decision-file <path> --routed-to <task-id> [--routed-to <task-id>...]
+#   sq-decision-hold.sh reconcile <origin-id> <decision-key> \
+#     --evidence-file <path>
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
@@ -180,6 +182,7 @@ verify_hold_resolved() {  # <hold-id>
   [ "$kind" = commander ] || return 1
   case "$body" in
     *"Resolution recorded by sq-decision-hold."*"Routed work:"*) return 0 ;;
+    *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
   esac
   return 1
 }
@@ -198,6 +201,7 @@ verify_hold_durable() {  # <hold-id>
   if [ "$state" = "done" ] && [ "$kind" = commander ]; then
     case "$body" in
       *"Resolution recorded by sq-decision-hold."*"Routed work:"*) return 0 ;;
+      *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
     esac
   fi
   fail "commander decision $id is neither actively held nor durably resolved"
@@ -322,16 +326,27 @@ EOF
       printf 'decisions_reviewed=1\ndecision_keys=%s\n' "$keys" >> "$meta"
     fi
 
-    # Transfer any still-open status decision to its durable backlog owner so the
-    # live status fold does not duplicate the same Commander's Call item.
-    while IFS=$'\t' read -r key _verb _summary; do
-      [ -n "$key" ] || continue
-      list_has_key "$keys" "$key" || continue
-      printf 'commander-held [key=%s]: tracked by %s\n' "$key" "$(hold_id "$origin" "$key")" >> "$status_file"
-      key_seen=1
-    done <<EOF
+    if [ -n "$keys" ]; then
+      # Transfer inventoried status decisions to their durable backlog owners.
+      while IFS=$'\t' read -r key _verb _summary; do
+        [ -n "$key" ] || continue
+        list_has_key "$keys" "$key" || continue
+        printf 'commander-held [key=%s]: tracked by %s\n' "$key" "$(hold_id "$origin" "$key")" >> "$status_file"
+        key_seen=1
+      done <<EOF
 $raw_open
 EOF
+    elif [ -n "$raw_open" ]; then
+      # complete --none attests no decisions need tracking. Close any stale open
+      # decisions in the status fold so the teardown gate does not see them as
+      # unreviewed new decisions.
+      while IFS=$'\t' read -r key _verb _summary; do
+        [ -n "$key" ] || continue
+        printf 'commander-held [key=%s]: closed by complete --none\n' "$key" >> "$status_file"
+      done <<EOF
+$raw_open
+EOF
+    fi
   fi
   : "$key_seen"
   printf 'complete: %s decision inventory reviewed%s\n' "$origin" "${keys:+ ($keys)}"
@@ -453,12 +468,48 @@ command_resolve() {
   printf 'resolved: %s -> %s\n' "$id" "$routed"
 }
 
+command_reconcile() {
+  local origin=${1:-} key=${2:-} evidence_file='' id evidence evidence_digest body
+  [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --evidence-file) shift; evidence_file=${1:-} ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  validate_slug origin-id "$origin"
+  validate_slug decision-key "$key"
+  [ -n "$evidence_file" ] || fail "--evidence-file is required"
+  [ -f "$evidence_file" ] || fail "evidence file does not exist: $evidence_file"
+  evidence=$(cat "$evidence_file")
+  [ -n "$evidence" ] || fail "evidence file must not be empty"
+  [ "$(printf '%s' "$evidence" | LC_ALL=C wc -c | tr -d ' ')" -le 8192 ] \
+    || fail "evidence file exceeds 8192 bytes"
+  require_tasks_axi
+  id=$(hold_id "$origin" "$key")
+  if verify_hold_resolved "$id"; then
+    printf 'reconciled: %s\n' "$id"
+    return 0
+  fi
+  verify_hold_active "$id"
+  evidence_digest=$(sha256_text "$evidence")
+  body=$(printf 'Reconciliation recorded by sq-decision-hold.\nEvidence digest: %s\n\nReconciliation evidence:\n%s' "$evidence_digest" "$evidence")
+  tasks_axi update "$id" --body "$body" >/dev/null \
+    || fail "could not record reconciliation evidence on $id"
+  tasks_axi "done" "$id" >/dev/null || fail "could not close reconciled hold $id"
+  verify_hold_resolved "$id" || fail "commander hold $id did not retain its reconciliation record"
+  printf 'reconciled: %s\n' "$id"
+}
+
 case "${1:-}" in
   id) shift; command_id "$@" ;;
   hold) shift; command_hold "$@" ;;
   complete) shift; command_complete "$@" ;;
   verify) shift; command_verify "$@" ;;
   resolve) shift; command_resolve "$@" ;;
+  reconcile) shift; command_reconcile "$@" ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;
 esac
