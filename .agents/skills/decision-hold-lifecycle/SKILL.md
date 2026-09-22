@@ -37,4 +37,4 @@ Sitrep reads the resulting structured state and must never compensate by scrapin
 8. Confirm Sitrep no longer shows the closed hold and that routed work remains in structured backlog state.
 
 `bin/sq-decision-hold.sh --help` owns command syntax, identity construction, completion attestation, retry behavior, and close ordering.
-`docs/decision-hold-lifecycle.md` records the mechanism and regression evidence without restating this policy.
+`docs/decision-hold-lifecycle.md` is a short pointer naming the policy owner (this skill) and the mechanism owner (`bin/sq-decision-hold.sh --help`).
