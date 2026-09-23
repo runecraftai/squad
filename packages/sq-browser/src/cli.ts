@@ -91,7 +91,7 @@ environment:
                                     e.g. "/path/to/.chrome-profile"
   SQ_BROWSER_MCP_PATH      Absolute path to a chrome-devtools-mcp script. When set, the
                                     bridge spawns 'node \$MCP_PATH' directly instead of
-                                    'npx -y chrome-devtools-mcp@latest'. Avoids ~30s npx bootstrap
+                                    'npx -y chrome-devtools-mcp@1.10.1'. Avoids ~30s npx bootstrap
                                     on slow/cold systems. Recommended:
                                       npm install -g chrome-devtools-mcp
                                       export SQ_BROWSER_MCP_PATH="\$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
@@ -630,9 +630,17 @@ export function parsePagesList(
 ): { id: number; url: string; selected: boolean }[] {
   const pages: { id: number; url: string; selected: boolean }[] = [];
   for (const line of text.split("\n")) {
-    const m = line.match(/^(\d+):\s+(\S+)(\s+\[selected\])?/);
-    if (m) {
-      pages.push({ id: parseInt(m[1], 10), url: m[2], selected: !!m[3] });
+    const idMatch = line.match(/^(\d+):\s+/);
+    if (!idMatch) continue;
+    const parenthesizedUrl = line.match(/\(([^()]*)\)/)?.[1];
+    const firstToken = line.slice(idMatch[0].length).match(/^(\S+)/)?.[1];
+    const url = parenthesizedUrl ?? firstToken;
+    if (url) {
+      pages.push({
+        id: Number.parseInt(idMatch[1], 10),
+        url,
+        selected: line.includes("[selected]"),
+      });
     }
   }
   return pages;
@@ -1131,13 +1139,18 @@ async function handleOpen(args: string[], full: boolean): Promise<string> {
     ]);
   }
 
-  try {
-    await callTool("navigate_page", { type: "url", url });
-  } catch (error) {
-    if (!isRecoverableOpenError(error)) {
-      throw error;
-    }
+  const pages = parsePagesList(await callTool("list_pages"));
+  if (pages.length === 0) {
     await callTool("new_page", { url });
+  } else {
+    try {
+      await callTool("navigate_page", { type: "url", url });
+    } catch (error) {
+      if (!isRecoverableOpenError(error)) {
+        throw error;
+      }
+      await callTool("new_page", { url });
+    }
   }
   const snapshot = await stampFresh(
     stripSnapshotHeader(await callTool("take_snapshot")),

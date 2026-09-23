@@ -48,7 +48,8 @@ Otherwise it spawns the bridge (`bin/sq-browser-bridge.ts` -> `src/bridge.ts`) *
 The bridge holds one persistent MCP stdio session and exposes a localhost HTTP API on its session port (9224 by default; `SQ_BROWSER_PORT` overrides - see Named sessions): `POST /call`, `GET /tools`, `GET /health[?deep=1]`.
 Teardown is careful about orphans: the bridge kills its own process group on exit, and `terminateBridgeProcess` escalates SIGTERM -> SIGKILL on the group so chrome-devtools-mcp and Chrome children get reaped (group kill only when `ps` confirms the PID is actually a bridge).
 
-`resolveTransportSpec` (`src/bridge.ts`) picks how chrome-devtools-mcp is spawned: explicit `SQ_BROWSER_MCP_PATH`, else an auto-detected global npm install (fast), else `npx -y chrome-devtools-mcp@latest` (slow first run).
+`resolveTransportSpec` (`src/bridge.ts`) uses an explicit `SQ_BROWSER_MCP_PATH`, a global install only when its package version matches `src/mcp-version.ts`, or an npx install of that exact pinned version.
+`handleCallRequest` (`src/bridge.ts`) supplies the selected page ID from `list_pages` whenever the live server schema requires it; `test/bridge.test.ts` guards this adaptation.
 Connection modes are env-driven (`buildTransportArgs`): `AUTO_CONNECT` (Chrome 144+ remote debugging), `BROWSER_URL` (http(s) -> `--browserUrl`, ws(s) -> `--wsEndpoint` + `WS_HEADERS`), `USER_DATA_DIR` (persistent profile) vs the default `--isolated`, `CHANNEL` (`--channel` to pick which installed Chrome release channel is attached to or launched, omitted in `BROWSER_URL`/`wsEndpoint` mode), and `HEADED`.
 
 The launch modes (`--isolated`/`--userDataDir`) pass `KEYCHAIN_ISOLATION_CHROME_ARGS` so browsers we start cannot reach the machine owner's password store; attach modes deliberately omit them because that browser's keychain policy belongs to whoever started it.

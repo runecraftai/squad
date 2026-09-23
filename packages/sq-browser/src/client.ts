@@ -15,6 +15,7 @@ import {
   resolveSessionPidFile,
   resolveSessionPort,
 } from "./sessions.js";
+import { CHROME_DEVTOOLS_MCP_VERSION } from "./mcp-version.js";
 
 const DEFAULT_BRIDGE_TIMEOUT_MS = 30_000;
 const MIN_BRIDGE_TIMEOUT_MS = 1_000;
@@ -342,7 +343,7 @@ export function buildBridgeEarlyExitError(
   }
 
   const suggestions = [
-    "Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@latest --help",
+    `Check that chrome-devtools-mcp can start: npx chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION} --help`,
   ];
   if (process.env.SQ_BROWSER_MCP_PATH) {
     suggestions.push(
@@ -350,7 +351,7 @@ export function buildBridgeEarlyExitError(
     );
   } else {
     suggestions.push(
-      "`npx -y chrome-devtools-mcp@latest` may have failed to resolve/download the package (offline, or a slow cold first run); install it globally and set:",
+      `npx -y chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION} may have failed to resolve/download the pinned package (offline, or a slow cold first run); install it globally and set:`,
       '  export SQ_BROWSER_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
     );
   }
@@ -467,11 +468,11 @@ export async function ensureBridge(
 
   const usingNpx = !process.env.SQ_BROWSER_MCP_PATH;
   const suggestions = [
-    "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help",
+    `Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION} --help`,
   ];
   if (usingNpx) {
     suggestions.push(
-      "If `npx -y chrome-devtools-mcp@latest` is slow on this machine, install mcp globally and set:",
+      `If npx -y chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION} is slow on this machine, install mcp globally and set:`,
       '  export SQ_BROWSER_MCP_PATH="$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"',
     );
   }
