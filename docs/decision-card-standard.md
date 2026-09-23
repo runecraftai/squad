@@ -128,7 +128,7 @@ This standard is additive and does not break existing decision flows:
 - Existing `needs-decision: <summary>` lines without options still work
 - Existing `resolved [key=<slug>]:` closure still works
 - The card format is a presentation layer on top of existing semantics
-- `sq-classify-lib.sh` key parsing is unchanged
+- `sq-classify-lib.sh` key parsing remains backward-compatible; the fold version advances automatically
 - Reference codes (`F1`, `D1`, `O1`, `R1`, `Q1`, `A1`) are the standard for all multi-item commander responses; the card format is reserved for keyed-decision workflows
 
 ## Design Decisions
