@@ -42,7 +42,7 @@ If the terminal event is authoritative, release the execution attempt with `bin/
 An idle worker waiting for a decision or merge can legitimately be reported as stale, so reconcile the current state before escalating.
 A Herdr idle pane is not a failure by itself; relaunch only after `bin/sq-crew-state.sh <id>` confirms a real failure.
 
-When instructing an operator to rebase, have it pin `GIT_EDITOR=true` or use `git -c core.editor=true`; otherwise `git rebase --continue` can stall on an interactive editor, showing a frozen token counter with elapsed time climbing rather than a conflict.
+Operator panes receive non-interactive `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` defaults from `bin/sq-spawn.sh`; these avoid editor stalls while retaining existing commit and rebase messages.
 
 ## Live-endpoint escalation
 

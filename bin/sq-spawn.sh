@@ -2636,6 +2636,10 @@ if [ "$KIND" = xo ]; then
   # injected carrier and this on/off snapshot are guaranteed to agree.
   LAUNCH="SQUAD_ROOT_OVERRIDE= SQUAD_STATE_OVERRIDE= SQUAD_DATA_OVERRIDE= SQUAD_PROJECTS_OVERRIDE= SQUAD_CONFIG_OVERRIDE= SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME=$sq_primary_home SQUAD_BASE=$sq_home SQUAD_HOME=$sq_home SQUAD_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE SQUAD_SUPERVISION_MODEL=$supervision_model $LAUNCH"
 fi
+# Pin git's commit-message and sequence editors in the operator's pane only.
+# `true` accepts the existing message without blocking for input; sequence
+# editor pinning also prevents interactive rebase todo editing.
+spawn_send_text_line "$T" "export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true"
 # Export GOTMPDIR into the operator's pane shell so the agent and every child
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.

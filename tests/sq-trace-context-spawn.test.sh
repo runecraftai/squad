@@ -257,6 +257,7 @@ test_enabled_records_and_injects_identical_carrier_before_launch() {
   tl=$(grep -n '^export TRACEPARENT=' "$LAUNCH_LOG" | tail -1 | cut -d: -f1)
   ll=$(grep -n 'claude' "$LAUNCH_LOG" | tail -1 | cut -d: -f1)
   [ -n "$gl" ] && [ -n "$tl" ] && [ -n "$ll" ] || fail "launch log missing GOTMPDIR/TRACEPARENT/launch lines"
+  grep -Fxq 'export GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true' "$LAUNCH_LOG" || fail "operator pane must pin git editors"
   [ "$tl" -gt "$gl" ] || fail "TRACEPARENT export must ride the GOTMPDIR pre-launch site (gotmp=$gl tp=$tl)"
   [ "$tl" -lt "$ll" ] || fail "TRACEPARENT export must be sent before the launch literal (tp=$tl launch=$ll)"
   pass "enabled: one resolved carrier is recorded in meta and the identical TRACEPARENT is exported before launch"
