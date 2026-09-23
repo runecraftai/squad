@@ -167,9 +167,11 @@ status_is_paused_or_commander_held() {  # <status-line>
 # rule 6), so closure never depends on a busy worker's discipline.
 #
 # Decision key grammar (backward-compatible with the existing "<verb>: <note>"
-# format): an OPTIONAL "[key=<slug>]" token sits between the verb and the colon,
+# format): an OPTIONAL "[key=<slug>]" token may appear between the verb and colon,
+# or immediately after the colon for logs written in that form:
 #   needs-decision [key=api-shape]: <summary>
-#   resolved       [key=api-shape]: <how it was decided>
+#   needs-decision: [key=api-shape] <summary>
+#   resolved [key=api-shape]: <how it was decided>
 # A line with no token uses the key "default", preserving the historical
 # one-open-decision-per-task behavior (a bare "resolved:" closes "default").
 # The three parsers are pure reads of a single line; the verb parser strips any
@@ -188,17 +190,23 @@ status_line_note() {  # <status-line> -> text after the first colon, trimmed
   esac
 }
 _fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
-  local prefix=${1%%:*} k
+  local line=$1 prefix k
+  prefix=${line%%:*}
   case "$prefix" in
-    *\[key=*\]*)
-      k=${prefix#*\[key=}
-      k=${k%%\]*}
-      case "$k" in
-        ''|*[!A-Za-z0-9._-]*) return 1 ;;
-        *) printf '%s' "$k" ;;
+    *\[key=*\]*) k=${prefix#*\[key=} ;;
+    *)
+      line=${line#*:}
+      line=${line#"${line%%[![:space:]]*}"}
+      case "$line" in
+        \[key=*\]*) k=${line#\[key=} ;;
+        *) printf 'default'; return 0 ;;
       esac
       ;;
-    *) printf 'default' ;;
+  esac
+  k=${k%%\]*}
+  case "$k" in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+    *) printf '%s' "$k" ;;
   esac
 }
 # Drop the record for <key> from a newline-terminated "<key>\t<verb>\t<note>" set.
@@ -391,7 +399,7 @@ _fm_open_decisions_cursor_path() {  # <status-file>
   printf '%s/.%s.open-decisions-cursor' "$dir" "${base%.status}"
 }
 
-SQUAD_OPEN_DECISIONS_FOLD_VERSION=2
+SQUAD_OPEN_DECISIONS_FOLD_VERSION=3
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
@@ -640,9 +648,10 @@ afk_wake_is_routine() {  # <reason> <state>
 #             pane; the operator is legitimately mid-work on a static-looking pane
 #             (e.g. waiting on CI);
 #   paused  - the operator's authoritative current state is a declared external-wait
-#             pause (paused:), which is EXPECTED to idle;
-#   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
-#             torn-down/unknown crew, or an unreadable verdict).
+#             pause (paused:), or a parked run-step with an open keyed decision;
+#             both are EXPECTED to idle;
+#   none    - neither, so the wake must surface (a stopped/finished/parked-without-
+#             decision/failed/torn-down/unknown crew, or an unreadable verdict).
 # One sq-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: an operator
 # that appended paused: but then STARTED a run reports working, never paused.
@@ -662,15 +671,18 @@ operator_current_state() {  # <id> -> canonical state, or unknown
 }
 
 operator_absorb_class() {  # <id>
-  local id=$1 line state src
+  local id=$1 line state src open
   [ -n "$id" ] || { printf 'none'; return; }
   line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
   state=${line#state: }; state=${state%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
+  src=${line#*source: }; src=${src%% *}
   if [ "$state" = working ]; then
-    src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac
+  elif [ "$state" = parked ] && [ "$src" = run-step ]; then
+    open=$(status_open_decisions "${STATE:-${SQUAD_STATE_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/state}}/$id.status")
+    [ -n "$open" ] && { printf 'paused'; return; }
   fi
   printf 'none'
 }

@@ -155,7 +155,7 @@ test_scan_commander_relevant_statuses_classifier() {
 }
 
 test_classifier_primitives() {
-  local dir state open activity
+  local dir state open activity cursor ident size
   dir=$(make_case classify-primitives); state="$dir/state"
   printf 'working: a\n\ndone: b\n\n' > "$state/x.status"
   [ "$(last_status_line "$state/x.status")" = "done: b" ] || fail "last_status_line did not return the last non-blank line"
@@ -199,6 +199,27 @@ test_classifier_primitives() {
     && fail "a key token in note prose changed the decision key"
   printf '%s' "$open" | grep -F $'bad key\t' >/dev/null \
     && fail "an invalid key slug entered the open-decision set"
+  printf 'needs-decision: [key=colon-form] select a path\nresolved [key=colon-form]: selected\n' > "$state/colon-form.status"
+  [ -z "$(status_open_decisions "$state/colon-form.status")" ] \
+    || fail "colon-then-bracket keyed opening did not resolve under the same key"
+  [ -z "$(status_open_decisions_incremental "$state/colon-form.status")" ] \
+    || fail "incremental fold disagreed on colon-then-bracket keyed opening"
+  printf 'needs-decision: choose a path\nresolved [key=not-default]: answered\n' > "$state/unkeyed-mismatch.status"
+  open=$(status_open_decisions "$state/unkeyed-mismatch.status")
+  printf '%s' "$open" | grep -F $'default\tneeds-decision\t' >/dev/null \
+    || fail "a resolution with a different key incorrectly closed an unkeyed opening"
+  open=$(status_open_decisions_incremental "$state/unkeyed-mismatch.status")
+  printf '%s' "$open" | grep -F $'default\tneeds-decision\t' >/dev/null \
+    || fail "incremental fold did not preserve a mismatched unkeyed opening"
+  printf 'needs-decision [key=stale]: choose\nresolved [key=stale]: answered\n' > "$state/stale-cursor.status"
+  cursor=$( _fm_open_decisions_cursor_path "$state/stale-cursor.status")
+  ident=$(_fm_open_decisions_file_ident "$state/stale-cursor.status")
+  size=$(wc -c < "$state/stale-cursor.status" | tr -d '[:space:]')
+  printf 'version=2\noffset=%s\nident=%s\nstale\tneeds-decision\tchoose\n' "$size" "$ident" > "$cursor"
+  [ -z "$(status_open_decisions_incremental "$state/stale-cursor.status")" ] \
+    || fail "incremental fold retained a stale persisted key after an earlier resolution"
+  [ -z "$(status_open_decisions "$state/stale-cursor.status")" ] \
+    || fail "whole-file fold disagreed that the stale-cursor decision was closed"
   cat > "$state/activity.status" <<'EOF'
 working [key=phase7]: Phase 7 started
 working [key=phase6]: Phase 6 started
@@ -286,8 +307,9 @@ test_status_is_paused_classifier() {
 # (surface it) - so the sentry's stale path gets both for one bounded call.
 # operator_is_paused delegates to it exactly as operator_is_provably_working does.
 test_operator_absorb_class_classifier() {
-  local dir fakebin
-  dir=$(make_case absorb-class); fakebin="$dir/fakebin"
+  local dir fakebin state
+  dir=$(make_case absorb-class); fakebin="$dir/fakebin"; state="$dir/state"
+  export SQUAD_STATE_OVERRIDE="$state"
   export SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh"
   export SQUAD_FAKE_CREW_STATE
   SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
@@ -304,8 +326,14 @@ test_operator_absorb_class_classifier() {
   [ "$(operator_absorb_class a)" = none ] || fail "unknown crew classed absorbable"
   ! operator_is_paused a || fail "unknown crew classed paused"
   [ "$(operator_absorb_class "")" = none ] || fail "empty id not classed none"
-  unset SQUAD_FAKE_CREW_STATE
-  pass "operator_absorb_class: working/paused/none from one read; operator_is_paused and operator_is_provably_working agree"
+  SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at rebase (ask-user: authority decision)'
+  printf 'needs-decision [key=gate]: choose an authority\n' > "$state/a.status"
+  [ "$(operator_absorb_class a)" = paused ] || fail "parked run-step with an open decision was not classed paused"
+  : > "$state/a.status"
+  SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at rebase'
+  [ "$(operator_absorb_class a)" = none ] || fail "parked run-step without an open decision was classed paused"
+  unset SQUAD_FAKE_CREW_STATE SQUAD_STATE_OVERRIDE
+  pass "operator_absorb_class: working/paused/none from one read; decision-parked run-steps are paused"
 }
 
 # signal_operator_provably_working: a no-verb "signal:" wake is benign ONLY when EVERY
@@ -761,6 +789,45 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the paused re-surface failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "paused re-surface was not queued"
   pass "a declared pause is absorbed on first sight, then re-surfaced as a recheck past the threshold, never wedge-escalated"
+}
+
+# A parked run-step with an open decision is an expected gate wait. It can be
+# surfaced once for recheck after the anchored pause cadence, but not on every poll.
+test_decision_parked_stale_is_throttled() {
+  local dir state fakebin out capture_file statusf window key pane_hash sig pid back wakes
+  dir=$(make_case decision-parked-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/gated.status"
+  window="test:sq-gated"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/gated.meta"
+  printf 'needs-decision [key=authority]: decide who may approve the rebase\n' > "$statusf"
+  back=$(( $(date +%s) - 20 ))
+  if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
+  else touch -m -d "@$back" "$statusf"; fi
+  sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-gated_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'idle at decision gate' > "$capture_file"
+  pane_hash=$(hash_text "idle at decision gate")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at rebase (ask-user: authority decision)'
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_PAUSE_RESURFACE_SECS=10 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "decision-parked gate did not surface its bounded first recheck"
+  grep -F 'stale: ' "$out" >/dev/null || fail "decision-parked recheck omitted the stale reason"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_PAUSE_RESURFACE_SECS=10 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" >> "$out" &
+  pid=$!
+  if ! wait_live "$pid" 25; then reap "$pid"; fail "decision-parked run emitted a repeat wake inside the pause cadence"; fi
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf '0')
+  [ "$wakes" -eq 1 ] || fail "decision-parked run emitted $wakes wakes inside the pause cadence"
+  reap "$pid"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "a decision-parked run is rechecked on the pause cadence instead of waking on every poll"
 }
 
 # A live declared pause can have a changing pane footer on every poll. The first
@@ -2027,6 +2094,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_pane_default_turn_age_bound_is_3600s
 test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
+test_decision_parked_stale_is_throttled
 test_live_paused_churning_pane_is_throttled
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_XO_paused_resurfaces_in_normal_mode

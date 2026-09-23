@@ -130,7 +130,7 @@ Este padrão é aditivo e não quebra fluxos existentes de decisão:
 - Linhas existentes `needs-decision: <resumo>` sem opções continuam funcionando
 - O fechamento existente `resolved [key=<slug>]:` continua funcionando
 - O formato de cartão é uma camada de apresentação sobre a semântica existente
-- O parsing de chaves do `sq-classify-lib.sh` está inalterado
+- O parsing de chaves do `sq-classify-lib.sh` continua retroativamente compatível; a versão fold avança automaticamente
 - Códigos de referência (`F1`, `D1`, `O1`, `R1`, `Q1`, `A1`) são o padrão para toda resposta multi-item ao comandante; o formato de cartão é reservado para workflows de decisão chaveada
 
 ## Decisões de design

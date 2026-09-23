@@ -375,8 +375,13 @@ pause_state_class() {  # <window> <task>
   last=$(last_status_line "$STATE/$task.status")
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_commander_held "$last"; then
+    class=$(operator_absorb_class "$task")
+    if [ "$class" = paused ]; then
+      printf 'paused'
+      return
+    fi
     rm -f "$recheck_file"
-    operator_absorb_class "$task"
+    printf '%s' "$class"
     return
   fi
   if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
@@ -418,8 +423,8 @@ surface_nonterminal_stale() {  # <window> <hash>
   key=$(printf '%s' "$win" | tr ':/.' '___')
   task=$(window_to_task "$win" "$STATE")
   last=$(last_status_line "$STATE/$task.status")
-  if status_is_paused_or_commander_held "$last"; then
-    # A live declared pause is intentionally surfaced once so Squad can confirm
+  if status_is_paused_or_commander_held "$last" || [ "$(operator_absorb_class "$task")" = paused ]; then
+    # A live declared pause or decision-parked run is intentionally surfaced once so Squad can confirm
     # the external wait, but changing pane footer text must not turn that
     # confirmation into a wake on every poll. Use the same per-key cadence marker
     # as pause re-surfacing; its mtime is independent of pane content.
