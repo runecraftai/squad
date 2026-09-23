@@ -37,10 +37,11 @@
 # showing the typed text the whole time. The plain "empty iff composer cleared"
 # acknowledgement above false-positives on a swallowed Enter for every steer
 # sent to a busy opencode pane, and `sq-send` exits non-zero on a normal
-# commander instruction. The submit core now falls back to `fm_pane_is_busy` once
-# the Enter-retry budget is spent: a busy pane means the harness accepted and
-# queued the Enter (report `empty` so the caller does not re-send), while an
-# idle pane keeps the `pending` verdict (a genuine swallow). The herdr backend
+# commander instruction. The submit core now falls back to `fm_pane_is_busy`
+# with OpenCode's signature once the Enter-retry budget is spent: an OpenCode
+# busy pane means the harness accepted and queued Enter (report `empty` so the
+# caller does not re-send), while other harnesses keep the `pending` verdict
+# because their busy indicators do not prove Enter was queued. The herdr backend
 # observes the same opencode behavior but needs a separate fix; it is recorded
 # as a known gap in `docs/herdr-backend.md` rather than patched here, so the
 # tmux adapter does not paper over a herdr-specific shape.
@@ -414,7 +415,7 @@ fm_tmux_submit_enter_core() {  # <target> <retries> <enter-sleep>
   # and queued the message for processing when the current turn ends.
   # Treat it as submitted so the caller does not re-send.
   # On an idle pane, keep reporting pending - a genuine swallow.
-  if fm_pane_is_busy "$target"; then
+  if fm_pane_is_busy "$target" opencode; then
     printf 'empty'
   else
     printf 'pending'

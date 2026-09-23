@@ -1668,13 +1668,25 @@ test_fm_send_exits_nonzero_on_confirmed_swallow() {
   PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$dir/state" SQUAD_FAKE_COMPOSER="$dir/composer" \
     SQUAD_SEND_SLEEP=0.05 "$ROOT/bin/sq-send.sh" sess:win 'route this work' >/dev/null 2>"$err" \
     || fail "sq-send exited non-zero on a clean submit: $(cat "$err")"
-  # Persistent swallow -> exit non-zero with a clear message.
+  # Before the fix, this invocation returned 0 with empty stderr while the
+  # composer still held the steer: PATH="$fakebin:$PATH" SQUAD_BASE="$dir"
+  # SQUAD_STATE_OVERRIDE="$dir/state" SQUAD_FAKE_COMPOSER="$dir/composer"
+  # SQUAD_FAKE_CURSOR_Y=2 SQUAD_FAKE_PANE_FOOTER='Working...'
+  # SQUAD_FAKE_SWALLOW="$dir/.swallow" SQUAD_FAKE_PERSIST_SWALLOW=1
+  # SQUAD_SEND_SLEEP=0.05 "$ROOT/bin/sq-send.sh" pi-task 'fix findings 1 and 3, skip 2'.
+  # Persistent swallow with a Pi Working footer must not be mistaken for
+  # OpenCode's queued-Enter behavior.
+  mkdir -p "$dir/project" "$dir/worktree"
+  fm_write_meta "$dir/state/pi-task.meta" \
+    "window=sess:win" "worktree=$dir/worktree" "project=$dir/project" \
+    "harness=pi" "kind=strike" "mode=drill" "yolo=off"
   printf '╭─────╮\n│ >   │\n╰─────╯\n' > "$dir/composer"
   touch "$dir/.swallow"
   if PATH="$fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$dir/state" SQUAD_FAKE_COMPOSER="$dir/composer" \
+    SQUAD_FAKE_CURSOR_Y=2 SQUAD_FAKE_PANE_FOOTER='Working...' \
     SQUAD_FAKE_SWALLOW="$dir/.swallow" SQUAD_FAKE_PERSIST_SWALLOW=1 SQUAD_SEND_SLEEP=0.05 \
-    "$ROOT/bin/sq-send.sh" sess:win 'fix findings 1 and 3, skip 2' >/dev/null 2>"$err"; then
-    fail "sq-send exited zero despite a swallowed Enter (silent unsubmitted instruction)"
+    "$ROOT/bin/sq-send.sh" pi-task 'fix findings 1 and 3, skip 2' >/dev/null 2>"$err"; then
+    fail "sq-send exited zero despite a swallowed Enter on a Pi pane (silent unsubmitted instruction)"
   fi
   grep -F 'not submitted' "$err" >/dev/null || fail "sq-send did not explain the swallowed submit: $(cat "$err")"
   pass "sq-send exits non-zero on a confirmed swallow, zero on a clean submit"

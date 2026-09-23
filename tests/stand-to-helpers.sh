@@ -213,11 +213,14 @@ write_composer() {
 case "${1:-}" in
   display-message)
     print=0
-    for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
+    for a in "$@"; do case "$a" in *cursor_y*) printf '%s\n' "${SQUAD_FAKE_CURSOR_Y:-1}"; exit 0 ;; esac; done
     for a in "$@"; do [ "$a" = "-p" ] && print=1; done
     [ "$print" = 1 ] && printf 'fakepane\n'
     exit 0 ;;
-  capture-pane) cat "$COMPOSER" 2>/dev/null; exit 0 ;;
+  capture-pane)
+    [ -z "${SQUAD_FAKE_PANE_FOOTER:-}" ] || printf '%s\n' "$SQUAD_FAKE_PANE_FOOTER"
+    cat "$COMPOSER" 2>/dev/null
+    exit 0 ;;
   list-windows) exit 0 ;;
   send-keys)
     shift
