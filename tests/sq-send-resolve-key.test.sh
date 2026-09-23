@@ -132,6 +132,24 @@ test_answer_send_closes_open_decision() {
   pass "sq-send --resolve-key: the answer send itself closes the open decision"
 }
 
+test_send_and_drain_agree_on_colon_then_bracket_key() {
+  local dir fb log home out rc
+  dir="$TMP_ROOT/colon-key"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home colon-key)
+  fm_write_meta "$home/state/t-colon.meta" "window=sess:sq-t-colon" "kind=strike"
+  printf 'needs-decision: [key=authority] choose who approves\n' > "$home/state/t-colon.status"
+  out=$(drain_out "$home")
+  printf '%s' "$out" | grep -F '[key=authority]' >/dev/null \
+    || fail "drain did not list the key parsed from colon-then-bracket form: $out"
+  run_send "$fb" "$home" "$log" t-colon --resolve-key authority "approved"; rc=$?
+  expect_code 0 "$rc" "sq-send did not accept the exact key printed by the drain"
+  out=$(drain_out "$home")
+  printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null \
+    && fail "drain still lists the decision that sq-send resolved: $out"
+  pass "sq-send --resolve-key and the drain agree on colon-then-bracket decision keys"
+}
+
 test_answer_starts_work_never_orphans() {
   local dir fb log home rc out
   dir="$TMP_ROOT/starts-work"; mkdir -p "$dir"
@@ -396,6 +414,7 @@ test_flag_misuse_refuses() {
 }
 
 test_answer_send_closes_open_decision
+test_send_and_drain_agree_on_colon_then_bracket_key
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send
