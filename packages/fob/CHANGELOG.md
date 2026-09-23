@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/runecraftai/squad/compare/fob-v0.1.2...fob-v0.1.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **fob:** clean git-ignored build artifacts during worktree reset ([#192](https://github.com/runecraftai/squad/issues/192)) ([88a8a42](https://github.com/runecraftai/squad/commit/88a8a427a6a19c841ac38526c186de22ddeeaec9))
+
 ## [0.1.2](https://github.com/runecraftai/squad/compare/fob-v0.1.1...fob-v0.1.2) (2026-08-18)
 
 
