@@ -146,6 +146,9 @@ pnpm link
 - **Snapshot parsing** - accessibility tree snapshots are extracted and analyzed for interactive elements (`uid=` refs)
 - **TOON encoding** - structured metadata uses [TOON format](https://www.npmjs.com/package/@toon-format/toon) for compact, token-efficient output
 
+The bridge pins `chrome-devtools-mcp` to `1.10.1` so its tool schemas cannot drift during runtime.
+To deliberately bump it, update `src/mcp-version.ts` and the transport/version regression tests together, then run the package tests and build.
+
 ## CLI Reference
 
 ### Navigation

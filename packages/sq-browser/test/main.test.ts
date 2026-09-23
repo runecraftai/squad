@@ -95,6 +95,7 @@ describe("main", () => {
       .mockImplementation(() => true);
 
     callTool
+      .mockResolvedValueOnce("7: https://airlockhq.com [selected]")
       .mockRejectedValueOnce(new CdpError("Not connected", "BROWSER_ERROR"))
       .mockResolvedValueOnce("")
       .mockResolvedValueOnce('RootWebArea "Airlock"\n  uid=1 link "Sign in"');
@@ -102,15 +103,14 @@ describe("main", () => {
     await main(["open", "https://airlockhq.com"]);
 
     expect(callTool.mock.calls).toEqual([
+      ["list_pages"],
       ["navigate_page", { type: "url", url: "https://airlockhq.com" }],
       ["new_page", { url: "https://airlockhq.com" }],
       ["take_snapshot"],
       [
         "evaluate_script",
         {
-          function: expect.stringContaining(
-            "__sqBrowserSnapshotGeneration",
-          ),
+          function: expect.stringContaining("__sqBrowserSnapshotGeneration"),
         },
       ],
     ]);

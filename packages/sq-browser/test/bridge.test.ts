@@ -109,7 +109,7 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).toEqual([
       "-y",
-      "chrome-devtools-mcp@latest",
+      "chrome-devtools-mcp@1.10.1",
       "--isolated",
       "--headless",
       "--chrome-arg=--use-mock-keychain",
@@ -122,7 +122,7 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).toEqual([
       "-y",
-      "chrome-devtools-mcp@latest",
+      "chrome-devtools-mcp@1.10.1",
       "--isolated",
       "--chrome-arg=--use-mock-keychain",
       "--chrome-arg=--password-store=basic",
@@ -361,7 +361,7 @@ describe("resolveTransportSpec", () => {
     const spec = resolveTransportSpec(probe);
     expect(spec.command).toBe("npx");
     expect(spec.args[0]).toBe("-y");
-    expect(spec.args[1]).toBe("chrome-devtools-mcp@latest");
+    expect(spec.args[1]).toBe("chrome-devtools-mcp@1.10.1");
     // Default mcp args follow
     expect(spec.args).toContain("--isolated");
     expect(spec.args).toContain("--headless");
@@ -373,9 +373,9 @@ describe("resolveTransportSpec", () => {
     const spec = resolveTransportSpec();
     expect(spec.command).toBe(process.execPath);
     expect(spec.args[0]).toBe("/opt/mcp/build/src/bin/chrome-devtools-mcp.js");
-    // Strips the npx-only `-y, chrome-devtools-mcp@latest` prefix
+    // Strips the npx-only package spec prefix.
     expect(spec.args).not.toContain("-y");
-    expect(spec.args).not.toContain("chrome-devtools-mcp@latest");
+    expect(spec.args).not.toContain("chrome-devtools-mcp@1.10.1");
     // Preserves the mcp-specific args
     expect(spec.args).toContain("--isolated");
     expect(spec.args).toContain("--headless");
@@ -406,6 +406,7 @@ describe("resolveTransportSpec", () => {
       existsSync: (path: string) =>
         path ===
         "/usr/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+      readVersion: () => "1.10.1",
       getNpmPrefix: () => "/usr",
     };
     const spec = resolveTransportSpec(probe);
@@ -414,8 +415,19 @@ describe("resolveTransportSpec", () => {
       "/usr/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
     );
     expect(spec.args).not.toContain("-y");
-    expect(spec.args).not.toContain("chrome-devtools-mcp@latest");
+    expect(spec.args).not.toContain("chrome-devtools-mcp@1.10.1");
     expect(spec.args).toContain("--isolated");
+  });
+
+  it("ignores a globally-installed server with a different version", () => {
+    const probe = {
+      existsSync: () => true,
+      readVersion: () => "1.10.0",
+      getNpmPrefix: () => "/usr",
+    };
+    const spec = resolveTransportSpec(probe);
+    expect(spec.command).toBe("npx");
+    expect(spec.args[1]).toBe("chrome-devtools-mcp@1.10.1");
   });
 
   it("falls back to npx when auto-detection finds nothing", () => {
@@ -455,6 +467,7 @@ describe("detectGlobalMcpPath", () => {
       existsSync: (path: string) =>
         path ===
         "/opt/npm/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+      readVersion: () => "1.10.1",
       getNpmPrefix: () => "/opt/npm",
     };
 
@@ -882,6 +895,57 @@ describe("handleBridgeRequest anti-rebinding gate", () => {
     );
 
     expect(callToolCalls).toBe(0);
+  });
+
+  it("supplies the numeric pageId required by the server tool schema", async () => {
+    const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+    const schemaClient: BridgeClient = {
+      listTools: async () => ({
+        tools: [
+          {
+            name: "take_snapshot",
+            inputSchema: { required: ["pageId"] },
+          },
+          { name: "list_pages", inputSchema: { required: [] } },
+        ],
+      }),
+      callTool: async (request) => {
+        calls.push(request);
+        if (request.name === "list_pages") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "## Pages\n42: Example Domain (https://example.com/) [selected]",
+              },
+            ],
+          };
+        }
+        if (typeof request.arguments.pageId !== "number") {
+          throw new Error("pageId must be numeric");
+        }
+        return { content: [{ type: "text", text: "RootWebArea Example" }] };
+      },
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      schemaClient,
+      makeRequest(
+        "POST",
+        "/call",
+        { host: "127.0.0.1:9224" },
+        JSON.stringify({ name: "take_snapshot" }),
+      ),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(calls).toEqual([
+      { name: "list_pages", arguments: {} },
+      { name: "take_snapshot", arguments: { pageId: 42 } },
+    ]);
   });
 
   it("allows a loopback Host with no Origin through to /call", async () => {

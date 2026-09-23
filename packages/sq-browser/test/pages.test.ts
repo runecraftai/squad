@@ -84,6 +84,16 @@ describe("parsePagesList", () => {
     ]);
   });
 
+  it("parses the current server page title and URL format", () => {
+    const result = parsePagesList(
+      "## Pages\n1: Example Domain (https://example.com/)\n2: Example Domain (https://example.com/) [selected]",
+    );
+    expect(result).toEqual([
+      { id: 1, url: "https://example.com/", selected: false },
+      { id: 2, url: "https://example.com/", selected: true },
+    ]);
+  });
+
   it("returns empty array for no pages", () => {
     const result = parsePagesList("## Pages");
     expect(result).toEqual([]);

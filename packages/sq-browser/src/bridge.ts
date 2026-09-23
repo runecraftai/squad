@@ -39,6 +39,7 @@ import {
   resolveSessionPidFile,
   resolveSessionPort,
 } from "./sessions.js";
+import { CHROME_DEVTOOLS_MCP_VERSION } from "./mcp-version.js";
 
 // Re-exported so existing bridge consumers keep a single import surface; the
 // definitions live in the MCP-free ./bridge-script.js (see its header).
@@ -57,6 +58,7 @@ export interface BridgeCallPayload {
 interface BridgeToolDescription {
   name: string;
   description?: string;
+  inputSchema?: { required?: string[] };
 }
 
 export interface BridgeClient {
@@ -309,9 +311,35 @@ async function handleCallRequest(
 ): Promise<void> {
   const body = await readRequestBody(req);
   const payload = parseBridgeCallPayload(body);
+  let args = payload.args;
+  const tool = (await client.listTools()).tools.find(
+    (candidate) => candidate.name === payload.name,
+  );
+  if (
+    tool?.inputSchema?.required?.includes("pageId") &&
+    typeof args.pageId !== "number"
+  ) {
+    const pagesResult = await client.callTool({
+      name: "list_pages",
+      arguments: {},
+    });
+    const pages = extractToolText(getToolContent(pagesResult));
+    const pageLines = pages.split("\n");
+    const selected =
+      pageLines.find(
+        (line) => /^\d+:\s+/.test(line) && line.includes("[selected]"),
+      ) ?? pageLines.find((line) => /^\d+:\s+/.test(line));
+    const pageId = selected
+      ? Number.parseInt(selected.match(/^(\d+):/)![1], 10)
+      : NaN;
+    if (!Number.isFinite(pageId)) {
+      throw new Error("No open browser page; open a page before this command");
+    }
+    args = { ...args, pageId };
+  }
   const result = await client.callTool({
     name: payload.name,
-    arguments: payload.args,
+    arguments: args,
   });
   writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
 }
@@ -452,7 +480,7 @@ export const KEYCHAIN_ISOLATION_CHROME_ARGS = [
 ] as const;
 
 export function buildTransportArgs(): string[] {
-  const args = ["-y", "chrome-devtools-mcp@latest"];
+  const args = ["-y", `chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}`];
 
   const autoConnect = process.env.SQ_BROWSER_AUTO_CONNECT === "1";
   const browserUrl = process.env.SQ_BROWSER_BROWSER_URL;
@@ -533,11 +561,19 @@ export function buildTransportArgs(): string[] {
  */
 export interface McpPathProbe {
   existsSync: (path: string) => boolean;
+  readVersion?: (path: string) => string | null;
   getNpmPrefix: () => string | null;
 }
 
 const DEFAULT_MCP_PATH_PROBE: McpPathProbe = {
   existsSync: (path) => existsSync(path),
+  readVersion: (path) => {
+    try {
+      return JSON.parse(readFileSync(path, "utf8")).version ?? null;
+    } catch {
+      return null;
+    }
+  },
   getNpmPrefix: () => {
     try {
       return execSync("npm prefix -g", {
@@ -554,8 +590,9 @@ const DEFAULT_MCP_PATH_PROBE: McpPathProbe = {
  * Auto-detect a globally-installed chrome-devtools-mcp by probing
  * `$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js`.
  *
- * Returns the resolved path on success, or null if npm is unavailable or the
- * package isn't installed. Used as the auto-fallback in
+ * Returns the resolved path only when the installed package matches the
+ * pinned version, or null if npm is unavailable or the package is absent or mismatched.
+ * Used as the auto-fallback in
  * {@link resolveTransportSpec} when `SQ_BROWSER_MCP_PATH` isn't set.
  */
 export function detectGlobalMcpPath(
@@ -573,7 +610,17 @@ export function detectGlobalMcpPath(
     "bin",
     "chrome-devtools-mcp.js",
   );
-  return probe.existsSync(candidate) ? candidate : null;
+  const packageJson = join(
+    prefix,
+    "lib",
+    "node_modules",
+    "chrome-devtools-mcp",
+    "package.json",
+  );
+  return probe.existsSync(candidate) &&
+    probe.readVersion?.(packageJson) === CHROME_DEVTOOLS_MCP_VERSION
+    ? candidate
+    : null;
 }
 
 /**
@@ -585,10 +632,9 @@ export function detectGlobalMcpPath(
  *      `$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js`.
  *      If found, spawn `node <path>` directly — starts in ~1-2s vs. the
  *      30s+ npx-bootstrap path.
- *   3. Fall back to `npx -y chrome-devtools-mcp@latest`. On systems with a
- *      slow link or large global cache this can race the bridge's readiness
- *      deadline; install the package globally to skip it:
- *        npm install -g chrome-devtools-mcp
+ *   3. Fall back to the explicitly pinned chrome-devtools-mcp version. To
+ *      deliberately upgrade it, update CHROME_DEVTOOLS_MCP_VERSION and its
+ *      regression test together; this avoids unreviewed runtime schema changes.
  */
 export function resolveTransportSpec(
   probe: McpPathProbe = DEFAULT_MCP_PATH_PROBE,
@@ -598,7 +644,7 @@ export function resolveTransportSpec(
   const mcpPath =
     explicit && explicit.length > 0 ? explicit : detectGlobalMcpPath(probe);
   if (mcpPath) {
-    // Strip the npx prefix `["-y", "chrome-devtools-mcp@latest"]` — direct
+    // Strip the npx prefix and pinned package spec — direct
     // node spawn doesn't need it.
     return {
       command: process.execPath,
