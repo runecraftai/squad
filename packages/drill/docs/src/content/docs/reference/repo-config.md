@@ -295,7 +295,7 @@ Review execution topology: `single` (one reviewer) or `specialized` (six special
 
 When `single`, the review step runs one agent invocation with the existing behavior and prompt.
 When `specialized`, the review step captures an immutable round-scoped snapshot (base SHA, target HEAD, complete diff, changed paths, intent, path instructions, scope, ignore patterns, and sanitized earlier-round history) and validates that HEAD and base have not changed before recording approval.
-Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. `observe` mode logs lens failures without blocking; `blocking` mode fails the review when any lens fails. Deduplication, consolidation, and approval of specialist findings are not yet implemented (R3).
+Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. `observe` mode logs lens failures without blocking; `blocking` mode fails the review when any lens fails, then runs a session-free consolidator that inspects current source, validates file/line anchors against the snapshot, rejects false evidence and generic advice, deduplicates by violated contract and scenario, normalizes severity and action fields, and produces the only findings that may reach blocking, fixes, or human approval. Raw candidates never trigger correction.
 
 ```yaml
 review:
@@ -313,7 +313,7 @@ How specialist findings are surfaced when `topology` is `specialized`.
 | Default | `observe` |
 | Trust | Read only from the trusted default branch |
 
-`observe` logs findings without gating the run; `blocking` parks the run on specialist findings.
+`observe` logs findings without gating the run; `blocking` consolidates specialist candidates into validated findings and gates the run on the consolidated result.
 Ignored when `topology` is `single`.
 
 ### review.max_parallel

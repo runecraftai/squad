@@ -7,6 +7,25 @@ import (
 	"testing"
 )
 
+func TestLegacyFindingsPayloadRoundTripsThroughCurrentWireShape(t *testing.T) {
+	legacy := `{"items":[{"id":"old-1","severity":"warning","file":"a.go","line":4,"description":"legacy finding","requires_human_review":true}],"summary":"one issue"}`
+	findings, err := ParseFindingsJSON(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings.Items) != 1 || findings.Items[0].Action != ActionAskUser || findings.Items[0].Source != "" {
+		t.Fatalf("legacy finding lost contract fields: %#v", findings)
+	}
+	encoded, err := MarshalFindingsJSON(findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundTrip, err := ParseFindingsJSON(encoded)
+	if err != nil || len(roundTrip.Items) != 1 || roundTrip.Items[0].Description != "legacy finding" || roundTrip.Items[0].Action != ActionAskUser {
+		t.Fatalf("round trip = %#v, %v", roundTrip, err)
+	}
+}
+
 func TestParseFindingsJSON_RiskFields(t *testing.T) {
 	raw := `{"findings":[{"severity":"error","description":"bug"}],"risk_level":"high","risk_rationale":"Critical bug.","risk_scope":"source-or-external"}`
 	f, err := ParseFindingsJSON(raw)

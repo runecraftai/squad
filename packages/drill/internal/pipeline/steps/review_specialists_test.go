@@ -15,6 +15,7 @@ import (
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
+	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
 
 type controlledReviewAgent struct {
@@ -121,6 +122,250 @@ func TestSpecializedReviewBatch_OfficialStateFingerprintDetectsMutation(t *testi
 		t.Fatal("official worktree mutation did not change fingerprint")
 	}
 }
+
+func TestConsolidatorUsesSnapshotAndFreshSession(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("intent", "agent", "base", "head", "diff", []string{"a.go"}, "", "scope", "none", "")
+	var calls atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		calls.Add(1)
+		if opts.Session != nil || opts.Purpose != "review-consolidator" || !strings.Contains(opts.Prompt, snapshot.ID) {
+			t.Fatalf("consolidator invocation did not use fresh snapshot context: %#v", opts)
+		}
+		return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["a.go"]}`)}, nil
+	}}
+	results := []reviewLensResult{{Lens: "security", Output: reviewLensOutput{InspectedFiles: []string{"a.go"}}}}
+	if _, err := consolidateReviewCandidates(context.Background(), a, dir, snapshot, results, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("consolidator calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestConsolidatorRejectsFalseEvidence(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	candidate := reviewLensCandidate{Scenario: "impossible request", Impact: "data loss", Evidence: "no such code", File: ptrString("a.go"), Line: ptrInt(1), SuggestedAction: "fix", SuggestedSeverity: "error"}
+	a := controlledReviewAgent{run: func(_ context.Context, _ agent.RunOpts) (*agent.Result, error) {
+		return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["a.go"]}`)}, nil
+	}}
+	findings, err := consolidateReviewCandidates(context.Background(), a, dir, snapshot, []reviewLensResult{{Lens: "security", Output: reviewLensOutput{Candidates: []reviewLensCandidate{candidate}, InspectedFiles: []string{"a.go"}}}}, time.Second)
+	if err != nil || len(findings.Items) != 0 {
+		t.Fatalf("unsupported candidate survived: %#v, %v", findings, err)
+	}
+}
+
+func TestConsolidatorDeduplicatesByContractScenarioAndRange(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("line one\nline two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	var calls atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, _ agent.RunOpts) (*agent.Result, error) {
+		calls.Add(1)
+		return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"error","file":"a.go","line":2,"description":"one semantic finding","action":"auto-fix","review_scope":"source"}],"inspected_files":["a.go"]}`)}, nil
+	}}
+	line := 2
+	candidate := reviewLensCandidate{Scenario: "same failure", Impact: "broken contract", Evidence: "line 2 violates invariant", File: ptrString("a.go"), Line: &line, SuggestedAction: "fix", SuggestedSeverity: "warning"}
+	findings, err := consolidateReviewCandidates(context.Background(), a, dir, snapshot, []reviewLensResult{{Lens: "security", Output: reviewLensOutput{Candidates: []reviewLensCandidate{candidate}, InspectedFiles: []string{"a.go"}}}, {Lens: "architecture", Output: reviewLensOutput{Candidates: []reviewLensCandidate{candidate}, InspectedFiles: []string{"a.go"}}}}, time.Second)
+	if err != nil || len(findings.Items) != 1 || findings.Items[0].Severity != "error" || calls.Load() != 1 {
+		t.Fatalf("semantic duplicate consolidation = %#v calls=%d err=%v", findings, calls.Load(), err)
+	}
+}
+
+func TestConsolidatorValidatesAnchorsAndOutsideDiffClaims(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "changed.go"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"changed.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{{File: "changed.go", Line: 2, Description: "valid"}, {File: "changed.go", Line: 9, Description: "past EOF"}, {File: "outside.go", Line: 1, Description: "no affected path proof"}, {File: "../escape.go", Line: 1, Description: "traversal"}}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 1 || filtered.Items[0].Description != "valid" {
+		t.Fatalf("invalid anchors survived: %#v", filtered.Items)
+	}
+}
+
+func TestConsolidatorRetainsUnanchoredNonLocalFindings(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{Description: "architectural concern across modules", ReviewScope: "source"},
+		{Description: "cross-cutting intent violation", ReviewScope: "pipeline-owned-delivery"},
+		{Description: "external contract issue", ReviewScope: "external-delivery"},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 3 {
+		t.Fatalf("unanchored non-local findings dropped: got %d, want 3", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorDropsUnanchoredFindingsWithInvalidScope(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{Description: "issue with invalid scope", ReviewScope: "invalid"},
+		{Description: "issue with empty scope", ReviewScope: ""},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 0 {
+		t.Fatalf("invalid-scope unanchored findings survived: got %d, want 0", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorDropsUnanchoredFindingsWithEmptyDescription(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{Description: "", ReviewScope: "source"},
+		{Description: "  ", ReviewScope: "source"},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 0 {
+		t.Fatalf("empty-description unanchored findings survived: got %d, want 0", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorDropsPartiallyAnchoredFindings(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{File: "a.go", Line: 0, Description: "file but no line", ReviewScope: "source"},
+		{File: "", Line: 5, Description: "line but no file", ReviewScope: "source"},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 0 {
+		t.Fatalf("partially-anchored findings survived: got %d, want 0", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorCoverageGapBoundedPass(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"missing.go"}, "", "", "", "")
+	var calls atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		call := calls.Add(1)
+		if call == 1 {
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":[]}`)}, nil
+		}
+		if opts.Purpose != "review-coverage-complement" {
+			t.Fatalf("second invocation purpose = %q", opts.Purpose)
+		}
+		return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["missing.go"]}`)}, nil
+	}}
+	results := []reviewLensResult{{Lens: "security", Output: reviewLensOutput{InspectedFiles: []string{}}}}
+	if _, err := consolidateReviewCandidates(context.Background(), a, dir, snapshot, results, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d, want one initial and one complement", calls.Load())
+	}
+}
+
+func TestConsolidatorCoverageFailsAfterOneIncompleteComplement(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"missing.go"}, "", "", "", "")
+	var calls atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, _ agent.RunOpts) (*agent.Result, error) {
+		calls.Add(1)
+		return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":[]}`)}, nil
+	}}
+	results := []reviewLensResult{{Lens: "security", Output: reviewLensOutput{InspectedFiles: []string{}}}}
+	_, err := consolidateReviewCandidates(context.Background(), a, dir, snapshot, results, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "coverage incomplete") || calls.Load() != 2 {
+		t.Fatalf("incomplete coverage result err=%v calls=%d", err, calls.Load())
+	}
+}
+
+func TestConsolidatorNormalizesNativeTaxonomy(t *testing.T) {
+	findings := normalizeConsolidatedFindings(Findings{Items: []Finding{{Severity: "P0", Action: "invented", ReviewScope: "other"}}})
+	item := findings.Items[0]
+	if item.Severity != "warning" || item.Action != "ask-user" || item.ReviewScope != "source" {
+		t.Fatalf("normalized finding = %#v", item)
+	}
+}
+
+func TestSpecializedReviewOnlyConsolidatedFindingsReachGate(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	var mono, consolidations atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review":
+			mono.Add(1)
+			return &agent.Result{Output: json.RawMessage(`{"summary":"mono says clean","findings":[]}`)}, nil
+		case "review-consolidator":
+			consolidations.Add(1)
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"error","file":"feature.txt","line":1,"description":"consolidated issue","action":"auto-fix","review_scope":"source"}],"inspected_files":[]}`)}, nil
+		case "review-coverage-complement":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"error","file":"feature.txt","line":1,"description":"consolidated issue","action":"auto-fix","review_scope":"source"}],"inspected_files":["feature.txt"]}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := types.ParseFindingsJSON(outcome.Findings)
+	if err != nil || len(parsed.Items) != 1 || parsed.Items[0].Description != "consolidated issue" || !outcome.NeedsApproval || mono.Load() != 1 || consolidations.Load() != 1 {
+		t.Fatalf("gate used non-consolidated result: findings=%#v outcome=%#v mono=%d consolidator=%d err=%v", parsed, outcome, mono.Load(), consolidations.Load(), err)
+	}
+}
+
+func TestReviewStep_RereviewRunsFreshFullSpecializedBatch(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	var fixer, reviewer, lenses, consolidator atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		if opts.Session != nil {
+			t.Errorf("review invocation reused a session: %s", opts.Purpose)
+		}
+		switch opts.Purpose {
+		case "review-fix":
+			fixer.Add(1)
+			if err := os.WriteFile(filepath.Join(dir, "fix-round.txt"), []byte("fixed"), 0o644); err != nil {
+				return nil, err
+			}
+			return &agent.Result{Output: json.RawMessage(`{"summary":"apply fix"}`)}, nil
+		case "review":
+			reviewer.Add(1)
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"summary":"mono"}`)}, nil
+		case "review-consolidator":
+			consolidator.Add(1)
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt","fix-round.txt"]}`)}, nil
+		case "review-coverage-complement":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt","fix-round.txt"]}`)}, nil
+		default:
+			if strings.HasPrefix(opts.Purpose, "review-lens:") {
+				lenses.Add(1)
+				return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt","fix-round.txt"]}`)}, nil
+			}
+			return nil, fmt.Errorf("unexpected agent purpose %s", opts.Purpose)
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Fixing = true
+	sctx.PreviousFindings = `{"findings":[{"id":"previous","severity":"warning","description":"prior claim"}]}`
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	if _, err := (&ReviewStep{}).Execute(sctx); err != nil {
+		t.Fatal(err)
+	}
+	if fixer.Load() != 1 || reviewer.Load() != 1 || lenses.Load() != int32(len(reviewLensInstructions)) || consolidator.Load() != 1 {
+		t.Fatalf("rereview counts fixer=%d reviewer=%d lenses=%d consolidator=%d", fixer.Load(), reviewer.Load(), lenses.Load(), consolidator.Load())
+	}
+}
+
+func ptrString(value string) *string { return &value }
+func ptrInt(value int) *int          { return &value }
 
 func TestSpecializedReviewBatch_ValidatesStructuredCandidates(t *testing.T) {
 	line := 7
