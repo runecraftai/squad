@@ -284,7 +284,7 @@ Like `document.instructions`, this field steers gate behavior, so it is honored 
 
 ### review.topology
 
-Review execution topology: `single` (one reviewer) or `specialized` (six specialist lenses plus one consolidator).
+Review execution topology: `single` (one reviewer) or `specialized` (six specialist lenses).
 
 | | |
 | --- | --- |
