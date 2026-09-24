@@ -174,6 +174,7 @@ type DocumentRaw struct {
 
 // ReviewRaw is the YAML representation of review-step settings.
 type ReviewRaw struct {
+	TopologyConfig ReviewTopologyConfig `yaml:",inline"`
 	// PathInstructions scope extra review guidance to the paths a change
 	// actually touches. The review step appends the blocks whose glob matches
 	// at least one changed file; a run that touches nothing matching leaves
@@ -418,6 +419,7 @@ type Document struct {
 // changed paths each glob matches.
 type Review struct {
 	PathInstructions []PathInstruction
+	Topology         ReviewMode
 }
 
 // TestRaw is the YAML representation of test-step settings.
@@ -1317,6 +1319,9 @@ func parseRepoConfig(data []byte) (*RepoConfig, error) {
 // invalid block has to fail here, before it merges, rather than brick the
 // repository's pipeline afterwards. Do not scope this to the trusted copy.
 func validateReviewRaw(review ReviewRaw) error {
+	if _, err := review.TopologyConfig.Resolve(); err != nil {
+		return err
+	}
 	if len(review.PathInstructions) > MaxReviewPathInstructions {
 		return fmt.Errorf("review.path_instructions has %d entries, at most %d are allowed", len(review.PathInstructions), MaxReviewPathInstructions)
 	}
@@ -1673,6 +1678,7 @@ func Merge(global *GlobalConfig, repo *RepoConfig) *Config {
 		commit.FixMessage = *repo.Commit.FixMessage
 	}
 
+	reviewTopology, _ := repo.Review.TopologyConfig.Resolve() // parseRepoConfig validates this before resolution.
 	cfg := &Config{
 		Agent:                global.Agent,
 		Agents:               copyAgents(global.Agents),
@@ -1692,7 +1698,7 @@ func Merge(global *GlobalConfig, repo *RepoConfig) *Config {
 		Intent:               intent,
 		Test:                 test,
 		Document:             Document{Instructions: strings.TrimSpace(repo.Document.Instructions)},
-		Review:               Review{PathInstructions: resolvePathInstructions(repo.Review.PathInstructions)},
+		Review:               Review{PathInstructions: resolvePathInstructions(repo.Review.PathInstructions), Topology: reviewTopology},
 		// repo is the EffectiveRepoConfig result, so this value is already
 		// trusted-only (EffectiveRepoConfig sourced it from the trusted copy).
 		DisableProjectSettings: repo.DisableProjectSettings,

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
+	"github.com/runecraftai/squad/packages/drill/internal/config"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 	"github.com/runecraftai/squad/packages/drill/internal/testguidance"
@@ -129,7 +130,28 @@ Previous review findings to address:
 	}
 	changed := changedPathList(changedFiles)
 
+	var reviewSnapshot *ReviewSnapshot
+	if sctx.Config.Review.Topology.Topology == config.ReviewTopologySpecialized {
+		diffArgs := []string{"diff", "--no-ext-diff", "--binary"}
+		if sctx.Fixing {
+			diffArgs = append(diffArgs, baseSHA)
+		} else {
+			diffArgs = append(diffArgs, baseSHA+".."+sctx.Run.HeadSHA)
+		}
+		diff, diffErr := git.Run(ctx, sctx.WorkDir, diffArgs...)
+		if diffErr != nil {
+			return nil, fmt.Errorf("capture review snapshot diff: %w", diffErr)
+		}
+		reviewSnapshot = ptrReviewSnapshot(newReviewSnapshot(sctx.UserIntent, string(sctx.IntentSource), baseSHA, sctx.Run.HeadSHA, diff, changed, "", reviewScope, ignorePatterns, roundHistoryPromptSection(sctx)))
+		sctx.Log("captured review snapshot " + reviewSnapshot.ID)
+	}
+
 	if len(reviewablePaths(changed, sctx.Config.IgnorePatterns)) == 0 {
+		if reviewSnapshot != nil {
+			if err := validateReviewSnapshotContinuity(ctx, sctx, reviewSnapshot.BaseSHA, reviewSnapshot.TargetHeadSHA, reviewSnapshot.ID); err != nil {
+				return nil, err
+			}
+		}
 		sctx.Log("no changes to review")
 		noChangeFindings := Findings{
 			RiskLevel:     "low",
@@ -175,6 +197,10 @@ Previous review findings to address:
 	pathInstructionMatches := matchPathInstructions(changed, sctx.Config.Review.PathInstructions)
 	logPathInstructions(sctx.Log, pathInstructionMatches)
 	pathInstructions := reviewPathInstructionsSection(pathInstructionMatches)
+	if reviewSnapshot != nil {
+		reviewSnapshot.PathInstructions = pathInstructions
+		reviewSnapshot.ID = reviewSnapshotID(*reviewSnapshot)
+	}
 
 	prompt := fmt.Sprintf(
 		`Review the code changes and return structured findings with a risk assessment.
@@ -259,6 +285,11 @@ Risk assessment (after listing all findings):
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent review: %w", err)
+	}
+	if reviewSnapshot != nil {
+		if err := validateReviewSnapshotContinuity(ctx, sctx, reviewSnapshot.BaseSHA, reviewSnapshot.TargetHeadSHA, reviewSnapshot.ID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Parse structured findings
