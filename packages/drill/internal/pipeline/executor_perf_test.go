@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,15 +16,25 @@ import (
 
 // usageAgent is a minimal agent that reports token usage and echoes session
 // starts, for perf-recording tests.
-type usageAgent struct{ resumable bool }
+type usageAgent struct {
+	resumable bool
+	output    json.RawMessage
+}
 
 func (u *usageAgent) Name() string                { return "usage-agent" }
 func (u *usageAgent) Close() error                { return nil }
 func (u *usageAgent) SupportsSessionResume() bool { return u.resumable }
 
 func (u *usageAgent) Run(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+	output := u.output
+	if strings.HasPrefix(opts.Purpose, "review-lens:") {
+		output = json.RawMessage(`{"candidates":[{},{}]}`)
+	}
+	if output == nil {
+		output = json.RawMessage(`{}`)
+	}
 	result := &agent.Result{
-		Output: json.RawMessage(`{}`),
+		Output: output,
 		Model:  "test-model-1",
 		Usage:  agent.TokenUsage{InputTokens: 100, OutputTokens: 20, CacheReadTokens: 60},
 	}
@@ -112,6 +123,73 @@ func TestExecutor_RecordsAgentInvocationsLocally(t *testing.T) {
 	evidence := invocations[1]
 	if evidence.SessionMode != db.InvocationModeCold || evidence.Purpose != "review" {
 		t.Fatalf("evidence row = %+v", evidence)
+	}
+}
+
+func TestExecutor_RecordsSpecializedReviewInvocations(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	workload := &agent.InvocationWorkload{Files: 3, Lines: 21}
+	step := &adaptiveCallStep{name: types.StepReview, fn: func(sctx *StepContext) (*StepOutcome, error) {
+		for _, call := range []struct {
+			purpose string
+			output  string
+		}{
+			{"review-lens:security", `{"candidates":[{},{}]}`},
+			{"review-consolidator", `{"findings":[{}]}`},
+		} {
+			if _, err := sctx.Agent.Run(sctx.Ctx, agent.RunOpts{Purpose: call.purpose, Workload: workload}); err != nil {
+				return nil, err
+			}
+		}
+		return &StepOutcome{}, nil
+	}}
+	agentImpl := &usageAgent{output: json.RawMessage(`{"findings":[{}]}`)}
+	exec := NewExecutor(database, p, &config.Config{}, agentImpl, []Step{step}, nil)
+	if err := exec.Execute(context.Background(), run, repo, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := database.GetAgentInvocationsByRun(run.ID)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("invocations=%d err=%v", len(rows), err)
+	}
+	for i, row := range rows {
+		wantCount := 1
+		if i == 0 {
+			wantCount = 2
+		}
+		if row.Agent != "usage-agent" || row.Model != "test-model-1" || row.ExitStatus != "ok" || row.DurationMS < 0 || row.WorkloadFiles == nil || *row.WorkloadFiles != 3 || row.WorkloadLines == nil || *row.WorkloadLines != 21 || row.FindingCount == nil || *row.FindingCount != wantCount || row.InputTokens != 100 || row.OutputTokens != 20 {
+			t.Fatalf("specialized invocation metrics = %+v", row)
+		}
+	}
+	if rows[0].Purpose != "review-lens:security" || rows[1].Purpose != "review-consolidator" {
+		t.Fatalf("purpose attribution = %q, %q", rows[0].Purpose, rows[1].Purpose)
+	}
+}
+
+func TestPerfRecordingAgentRecordsTimeoutAndSpecialistCandidates(t *testing.T) {
+	database, _, run, _ := setupTest(t)
+	wrapped := &perfRecordingAgent{
+		inner:    &fallbackUsageAgent{name: "reviewer", err: context.DeadlineExceeded},
+		db:       database,
+		runID:    run.ID,
+		stepName: types.StepReview,
+		round:    func() int { return 1 },
+	}
+	_, _ = wrapped.Run(context.Background(), agent.RunOpts{Purpose: "review-lens:security"})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	wrapped.inner = &fallbackUsageAgent{name: "reviewer", err: context.Canceled}
+	_, _ = wrapped.Run(ctx, agent.RunOpts{Purpose: "review-lens:architecture"})
+
+	invocations, err := database.GetAgentInvocationsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(invocations) != 2 || invocations[0].ExitStatus != "timeout" || invocations[1].ExitStatus != "cancelled" {
+		t.Fatalf("completion outcomes = %+v, want timeout and cancelled", invocations)
+	}
+	if got, ok := countOutputFindings(json.RawMessage(`{"candidates":[{},{}]}`)); !ok || got != 2 {
+		t.Fatalf("specialist candidate count = %d, recognized=%v; want 2", got, ok)
 	}
 }
 

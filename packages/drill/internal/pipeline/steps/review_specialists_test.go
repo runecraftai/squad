@@ -28,9 +28,70 @@ func (a controlledReviewAgent) Run(ctx context.Context, opts agent.RunOpts) (*ag
 }
 func (a controlledReviewAgent) Close() error { return nil }
 
+func TestSpecializedReviewBatchTelemetryUsesWallTimeAndAdditiveUsage(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
+	var mu sync.Mutex
+	var logs []string
+	a := controlledReviewAgent{run: func(ctx context.Context, _ agent.RunOpts) (*agent.Result, error) {
+		select {
+		case <-time.After(80 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`), UsageReported: true, Usage: agent.TokenUsage{InputTokens: 10, OutputTokens: 2}}, nil
+	}}
+	started := time.Now()
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, func(line string) {
+		mu.Lock()
+		logs = append(logs, line)
+		mu.Unlock()
+	})
+	wall := time.Since(started)
+	var summed time.Duration
+	for _, result := range results {
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+		summed += result.Duration
+	}
+	if summed <= wall {
+		t.Fatalf("sum of concurrent invocation durations %s should exceed batch wall time %s", summed, wall)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	joined := strings.Join(logs, "\n")
+	if !strings.Contains(joined, "pending at HEAD "+head+": security,requirements,tests-behavior,architecture,regression-hallucination,performance-resources") || !strings.Contains(joined, "batch completed in") || !strings.Contains(joined, "review lens security completed: 0 candidates") {
+		t.Fatalf("missing bounded lens state, candidate provenance, or batch wall-time record: %v", logs)
+	}
+}
+
+func TestSpecializedReviewRetryUsesNewBatchAndCurrentHead(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
+	a := controlledReviewAgent{run: func(context.Context, agent.RunOpts) (*agent.Result, error) {
+		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
+	}}
+	first := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, nil)
+	second := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, nil)
+	if len(first) != len(reviewLensInstructions) || len(second) != len(reviewLensInstructions) {
+		t.Fatalf("batch lens counts = %d/%d", len(first), len(second))
+	}
+	if first[0].BatchID == second[0].BatchID || !strings.HasPrefix(second[0].BatchID, shortReviewSHA(head)+"-") {
+		t.Fatalf("retry batch identity %q did not renew and bind HEAD %q (prior %q)", second[0].BatchID, head, first[0].BatchID)
+	}
+	for i := range second {
+		if second[i].BatchID != second[0].BatchID || second[i].Err != nil || len(second[i].Output.Candidates) != 0 {
+			t.Fatalf("retry reused partial output or mixed batch identities: %#v", second[i])
+		}
+	}
+}
+
 func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) {
 	dir, base, head := setupGitRepo(t)
 	var active, peak atomic.Int32
+	var completionMu sync.Mutex
+	var completionOrder []string
 	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 		validPurpose := false
 		for _, lens := range reviewLensInstructions {
@@ -47,17 +108,29 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			}
 		}
 		defer active.Add(-1)
+		delay := 20 * time.Millisecond
+		if opts.Purpose == "review-lens:security" {
+			delay = 80 * time.Millisecond
+		} else if opts.Purpose == "review-lens:requirements" {
+			delay = 5 * time.Millisecond
+		}
 		select {
-		case <-time.After(20 * time.Millisecond):
+		case <-time.After(delay):
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
+		completionMu.Lock()
+		completionOrder = append(completionOrder, opts.Purpose)
+		completionMu.Unlock()
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
 	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, time.Second, nil)
 	if peak.Load() != 2 {
 		t.Fatalf("peak concurrency = %d, want 2", peak.Load())
+	}
+	if len(completionOrder) < 2 || completionOrder[0] != "review-lens:requirements" {
+		t.Fatalf("test did not complete out of order: %v", completionOrder)
 	}
 	for i, result := range results {
 		if result.Lens != reviewLensInstructions[i].name || result.Err != nil {
@@ -309,13 +382,79 @@ func TestSpecializedReviewOnlyConsolidatedFindingsReachGate(t *testing.T) {
 	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
 	sctx.Config.Review.Topology.MaxParallel = 6
 	sctx.Config.Review.Topology.Timeout = time.Second
+	var logsMu sync.Mutex
+	var logs []string
+	sctx.Log = func(line string) { logsMu.Lock(); logs = append(logs, line); logsMu.Unlock() }
 	outcome, err := (&ReviewStep{}).Execute(sctx)
 	if err != nil {
 		t.Fatal(err)
 	}
+	logsMu.Lock()
+	joinedLogs := strings.Join(logs, "\n")
+	logsMu.Unlock()
+	for _, want := range []string{"topology=specialized enforcement=blocking snapshot_head=" + head, " pending at HEAD " + head, "review lens ", "consolidator running", "consolidator completed"} {
+		if !strings.Contains(joinedLogs, want) {
+			t.Errorf("review operational log missing %q: %s", want, joinedLogs)
+		}
+	}
 	parsed, err := types.ParseFindingsJSON(outcome.Findings)
 	if err != nil || len(parsed.Items) != 1 || parsed.Items[0].Description != "consolidated issue" || !outcome.NeedsApproval || mono.Load() != 1 || consolidations.Load() != 1 {
 		t.Fatalf("gate used non-consolidated result: findings=%#v outcome=%#v mono=%d consolidator=%d err=%v", parsed, outcome, mono.Load(), consolidations.Load(), err)
+	}
+}
+
+func TestReviewStep_ExplicitSpecialistRetryIsSingleFreshBatch(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	var lensCalls, failed atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch {
+		case opts.Purpose == "review":
+			return &agent.Result{Output: json.RawMessage(`{"summary":"mono clean","findings":[]}`)}, nil
+		case strings.HasPrefix(opts.Purpose, "review-lens:"):
+			lensCalls.Add(1)
+			if failed.CompareAndSwap(0, 1) {
+				return nil, fmt.Errorf("transient specialist failure")
+			}
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
+		case opts.Purpose == "review-consolidator":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"]}`)}, nil
+		case opts.Purpose == "review-coverage-complement":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"]}`)}, nil
+		default:
+			return nil, fmt.Errorf("unexpected invocation %q", opts.Purpose)
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	sctx.RetrySpecializedReview = true
+	var logsMu sync.Mutex
+	var logs []string
+	sctx.Log = func(line string) { logsMu.Lock(); logs = append(logs, line); logsMu.Unlock() }
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil || outcome == nil || outcome.NeedsApproval || lensCalls.Load() != int32(2*len(reviewLensInstructions)) {
+		t.Fatalf("explicit retry outcome=%#v err=%v lens calls=%d", outcome, err, lensCalls.Load())
+	}
+	logsMu.Lock()
+	joined := strings.Join(logs, "\n")
+	logsMu.Unlock()
+	var batchIDs []string
+	for _, line := range strings.Split(joined, "\n") {
+		if strings.Contains(line, " pending at HEAD ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				batchIDs = append(batchIDs, fields[3])
+			}
+		}
+	}
+	if len(batchIDs) != 2 || batchIDs[0] == batchIDs[1] || !strings.HasPrefix(batchIDs[1], shortReviewSHA(head)+"-") || !strings.Contains(joined, "discarding partial results and starting one fresh batch") {
+		t.Fatalf("expected exactly one distinct fresh retry batch bound to current HEAD, got IDs %v: %s", batchIDs, joined)
+	}
+	parsed, err := types.ParseFindingsJSON(outcome.Findings)
+	if err != nil || len(parsed.Items) != 0 {
+		t.Fatalf("partial first-batch findings leaked into approval: %#v, err=%v", parsed.Items, err)
 	}
 }
 
@@ -411,12 +550,46 @@ func TestReviewStep_SpecializedObserveFailureKeepsLegacyReview(t *testing.T) {
 	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementObserve
 	sctx.Config.Review.Topology.MaxParallel = 2
 	sctx.Config.Review.Topology.Timeout = time.Second
+	var logsMu sync.Mutex
+	var logs []string
+	sctx.Log = func(line string) { logsMu.Lock(); logs = append(logs, line); logsMu.Unlock() }
 	outcome, err := (&ReviewStep{}).Execute(sctx)
 	if err != nil || outcome == nil {
 		t.Fatalf("observe failure affected authoritative reviewer: outcome=%#v err=%v", outcome, err)
 	}
+	logsMu.Lock()
+	joinedLogs := strings.Join(logs, "\n")
+	logsMu.Unlock()
+	if !strings.Contains(joinedLogs, "review lens security failed") || strings.Contains(joinedLogs, "controlled lens failure") {
+		t.Fatalf("observe failure should be visible without persisting raw error text: %s", joinedLogs)
+	}
 	if calls.Load() != 7 {
 		t.Fatalf("agent calls = %d, want reviewer plus six lenses", calls.Load())
+	}
+}
+
+func TestReviewStep_SpecializedConsolidatorFailureBlocks(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review":
+			return &agent.Result{Output: json.RawMessage(`{"summary":"mono clean","findings":[]}`)}, nil
+		case "review-consolidator":
+			return nil, fmt.Errorf("controlled consolidator failure")
+		case "review-coverage-complement":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"]}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err == nil || outcome != nil || !strings.Contains(err.Error(), "specialized review consolidation failed") {
+		t.Fatalf("failed consolidator must withhold clean conclusion: outcome=%#v err=%v", outcome, err)
 	}
 }
 

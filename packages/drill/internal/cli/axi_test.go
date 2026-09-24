@@ -685,6 +685,47 @@ func TestAxiStatusEscapesControlBytesInAwaitingTestGate(t *testing.T) {
 	}
 }
 
+func TestAxiLogsExposeSpecializedReviewProgress(t *testing.T) {
+	repoDir, p, database, repo := setupAxiQueryRepo(t)
+	chdir(t, repoDir)
+	dbRun, err := database.InsertRun(repo.ID, "feature/review-progress", "head", "base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpdateRunStatus(dbRun.ID, types.RunRunning); err != nil {
+		t.Fatal(err)
+	}
+	logDir := p.RunLogDir(dbRun.ID)
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	progress := "specialized review topology=specialized enforcement=blocking snapshot_head=abc123\nspecialized review batch abc123-1 pending at HEAD abc123: security,requirements,tests-behavior,architecture,regression-hallucination,performance-resources\nreview lens security started\nreview lens requirements completed: 2 candidates\nreview lens architecture failed\nspecialized review batch completed in 200ms: 1/6 lenses failed\nspecialized review incomplete: 1 required lenses failed\nspecialized review consolidator running\nspecialized review consolidator completed: 1 findings\n"
+	if err := os.WriteFile(filepath.Join(logDir, "review.log"), []byte(progress), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetOut(&out)
+	if _, err := runAxiLogs(cmd, "review", dbRun.ID, true); err != nil {
+		t.Fatalf("axi logs: %v", err)
+	}
+	for _, want := range []string{"topology=specialized", "snapshot_head=abc123", "security started", "requirements completed", "batch completed", "consolidator completed"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("AXI logs missing %q: %s", want, out.String())
+		}
+	}
+	out.Reset()
+	if _, err := runAxiStatus(cmd, dbRun.ID); err != nil {
+		t.Fatalf("axi status: %v", err)
+	}
+	for _, want := range []string{"specialized_review:", "topology: specialized", "enforcement: blocking", "snapshot_head: abc123", "wall_time: 200ms", "security,started,0", "requirements,completed,2", "architecture,failed,0", "tests-behavior,pending,0", "consolidator: \"completed: 1 findings\"", "incomplete: 1 required lenses failed"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("AXI status missing %q: %s", want, out.String())
+		}
+	}
+}
+
 func TestAxiLogsFullEscapesControlByteOutsideTailWithoutRewritingLog(t *testing.T) {
 	repoDir, p, database, repo := setupAxiQueryRepo(t)
 	chdir(t, repoDir)
