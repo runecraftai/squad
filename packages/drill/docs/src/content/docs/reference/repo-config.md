@@ -8,7 +8,7 @@ Per-repo configuration lives in `.drill.yaml` at the root of your repository.
 :::caution[Security: gate-control fields are read from the default branch]
 `commands.*` execute arbitrary shell on the daemon host via `sh -c` / `cmd.exe /c`, and `agent` selects which process launches there (including ordered fallback lists, ACP aliases such as `cursor`, and `acp:` targets) with the maintainer's credentials.
 To prevent a supply-chain attack where a contributor lands a hostile value on a gated branch, the daemon always reads **`commands` and `agent` from your default branch** (e.g. `origin/main`), never from the pushed SHA, and reads them at the exact commit a fresh fetch resolved (so a stale `origin/<default>` ref cannot serve a value the live default branch removed).
-The daemon also reads `document.instructions`, `review.path_instructions`, `disable_project_settings`, `no_ci`, `ci.rerun_transient`, and `test.evidence.branch` only from that trusted copy.
+The daemon also reads `document.instructions`, `review.path_instructions`, `review.topology`, `review.enforcement`, `review.max_parallel`, `review.timeout`, `disable_project_settings`, `no_ci`, `ci.rerun_transient`, and `test.evidence.branch` only from that trusted copy.
 If the default branch cannot be fetched and resolved to a readable commit, or its present `.drill.yaml` cannot be read and parsed, the run aborts before launching an agent.
 A readable default-branch tree with no `.drill.yaml` is valid and uses defaults.
 Commit the gate-control settings you want to your default branch.
@@ -281,6 +281,72 @@ These checks run on whichever copy of the file is parsed, including the pushed b
 #### Trust
 
 Like `document.instructions`, this field steers gate behavior, so it is honored **only from the trusted default-branch copy** of `.drill.yaml`, regardless of [`allow_repo_commands`](#allow_repo_commands): a value present only on a pushed branch is ignored, so a contributor cannot inject instructions into the review that gates them.
+
+### review.topology
+
+Review execution topology: `single` (one reviewer) or `specialized` (six specialist lenses plus one consolidator).
+
+| | |
+| --- | --- |
+| Type | `string` |
+| Values | `single`, `specialized` |
+| Default | `single` |
+| Trust | Read only from the trusted default branch |
+
+When `single`, the review step runs one agent invocation with the existing behavior and prompt.
+When `specialized`, the review step captures an immutable round-scoped snapshot (base SHA, target HEAD, complete diff, changed paths, intent, path instructions, scope, ignore patterns, and sanitized earlier-round history) and validates that HEAD and base have not changed before recording approval.
+Specialist execution, concurrency, deduplication, verification, and approval of findings are not yet implemented (R2/R3).
+
+```yaml
+review:
+  topology: specialized
+```
+
+### review.enforcement
+
+How specialist findings are surfaced when `topology` is `specialized`.
+
+| | |
+| --- | --- |
+| Type | `string` |
+| Values | `observe`, `blocking` |
+| Default | `observe` |
+| Trust | Read only from the trusted default branch |
+
+`observe` logs findings without gating the run; `blocking` parks the run on specialist findings.
+Ignored when `topology` is `single`.
+
+### review.max_parallel
+
+Maximum number of specialist review agents when `topology` is `specialized`.
+
+| | |
+| --- | --- |
+| Type | `int` |
+| Range | `1` to `6` |
+| Default | `6` |
+| Trust | Read only from the trusted default branch |
+
+### review.timeout
+
+Timeout for each specialist review invocation when `topology` is `specialized`.
+
+| | |
+| --- | --- |
+| Type | `string` (duration) |
+| Range | `1m` to `30m` |
+| Default | `10m` |
+| Trust | Read only from the trusted default branch |
+
+All four `review.topology`, `review.enforcement`, `review.max_parallel`, and `review.timeout` are honored **only from the trusted default-branch copy** of `.drill.yaml`, regardless of [`allow_repo_commands`](#allow_repo_commands): a pushed branch cannot steer the review topology or override enforcement and budget constraints.
+
+```yaml
+review:
+  topology: specialized
+  enforcement: blocking
+  max_parallel: 4
+  timeout: 5m
+```
 
 ### Command process lifetime
 
