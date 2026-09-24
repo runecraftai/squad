@@ -49,6 +49,14 @@ func newAwaitingModel(t *testing.T, findings string) Model {
 	return m
 }
 
+func TestLegacyFindingsPayloadRendersInTUI(t *testing.T) {
+	legacy := `{"items":[{"id":"old-1","severity":"warning","description":"legacy finding","requires_human_review":true}],"summary":"old payload"}`
+	m := newAwaitingModel(t, legacy)
+	if !strings.Contains(stripANSI(m.View()), "legacy finding") {
+		t.Fatal("legacy finding not rendered")
+	}
+}
+
 func TestEditInstruction_OpensEditorWithExistingNote(t *testing.T) {
 	findings := `{"findings":[{"id":"review-1","severity":"error","file":"a.go","line":1,"description":"bug","action":"auto-fix"}],"summary":"1 issue"}`
 	m := newAwaitingModel(t, findings)

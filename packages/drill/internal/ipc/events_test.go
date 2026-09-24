@@ -7,6 +7,22 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
 )
 
+func TestLegacyFindingsPayloadCrossesIPCEventWire(t *testing.T) {
+	legacy := `{"items":[{"severity":"warning","description":"legacy"}],"summary":"old"}`
+	event := ipc.Event{Type: ipc.EventStepCompleted, RunID: "r1", Findings: &legacy}
+	raw, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ipc.Event
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Findings == nil || *decoded.Findings != legacy {
+		t.Fatalf("findings payload changed across IPC: %#v", decoded.Findings)
+	}
+}
+
 // The taxonomy is the single owner of "may this event be dropped?". Every
 // broker and consumer reads it from here instead of re-deriving it from names.
 func TestClassOfPartitionsEventsByLossTolerance(t *testing.T) {

@@ -131,6 +131,7 @@ Previous review findings to address:
 	changed := changedPathList(changedFiles)
 
 	var reviewSnapshot *ReviewSnapshot
+	var specializedFindings *Findings
 	if sctx.Config.Review.Topology.Topology == config.ReviewTopologySpecialized {
 		diffArgs := []string{"diff", "--no-ext-diff", "--binary"}
 		if sctx.Fixing {
@@ -315,6 +316,13 @@ Risk assessment (after listing all findings):
 		if specialistFailures > 0 && sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
 			return nil, fmt.Errorf("specialized review incomplete: %d of %d lenses failed", specialistFailures, len(specialistResults))
 		}
+		if sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
+			consolidated, err := consolidateReviewCandidates(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, specialistResults, sctx.Config.Review.Topology.Timeout)
+			if err != nil {
+				return nil, fmt.Errorf("specialized review consolidation failed: %w", err)
+			}
+			specializedFindings = &consolidated
+		}
 	}
 
 	// Parse structured findings
@@ -324,6 +332,10 @@ Risk assessment (after listing all findings):
 			sctx.Log("could not parse structured output, using text response")
 			findings = Findings{Summary: result.Text}
 		}
+	}
+
+	if specializedFindings != nil {
+		findings = *specializedFindings
 	}
 
 	// Phase ownership boundary: drop findings that only claim later pipeline-
