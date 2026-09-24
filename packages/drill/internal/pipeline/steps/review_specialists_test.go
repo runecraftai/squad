@@ -253,6 +253,10 @@ func TestSpecializedReviewBatch_CancellationReapsAgentProcess(t *testing.T) {
 
 func TestSpecializedReviewBatch_CancellationAndTimeoutReleaseResources(t *testing.T) {
 	dir, base, head := setupGitRepo(t)
+	tempRoot := t.TempDir()
+	t.Setenv("TMPDIR", tempRoot)
+	t.Setenv("TMP", tempRoot)
+	t.Setenv("TEMP", tempRoot)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	a := controlledReviewAgent{run: func(ctx context.Context, _ agent.RunOpts) (*agent.Result, error) { <-ctx.Done(); return nil, ctx.Err() }}
@@ -270,7 +274,7 @@ func TestSpecializedReviewBatch_CancellationAndTimeoutReleaseResources(t *testin
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}}
-	before, _ := filepath.Glob(filepath.Join(os.TempDir(), "drill-review-lens-*"))
+	before, _ := filepath.Glob(filepath.Join(tempRoot, "drill-review-lens-*"))
 	results = runReviewSpecialists(context.Background(), timed, dir, snapshot, 1, time.Millisecond, nil)
 	for _, result := range results {
 		if result.Err == nil || result.Duration <= 0 {
@@ -280,7 +284,7 @@ func TestSpecializedReviewBatch_CancellationAndTimeoutReleaseResources(t *testin
 	if active.Load() != 0 {
 		t.Fatalf("lens goroutine remained active: %d", active.Load())
 	}
-	after, _ := filepath.Glob(filepath.Join(os.TempDir(), "drill-review-lens-*"))
+	after, _ := filepath.Glob(filepath.Join(tempRoot, "drill-review-lens-*"))
 	if len(after) != len(before) {
 		t.Fatalf("temporary lens directories leaked: before=%d after=%d", len(before), len(after))
 	}
