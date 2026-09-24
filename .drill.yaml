@@ -36,6 +36,11 @@ document:
 commands:
   lint: 'bin/sq-lint.sh'
 
+# Run the specialized review in shadow while the mono-agent review remains authoritative.
+review:
+  topology: specialized
+  enforcement: observe
+
 # Keep test evidence out of this repo; it stays in a temp dir instead.
 test:
   evidence:

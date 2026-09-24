@@ -568,6 +568,47 @@ func TestReviewStep_SpecializedObserveFailureKeepsLegacyReview(t *testing.T) {
 	}
 }
 
+func TestReviewStep_SpecializedObserveKeepsMonoAuthoritativeAndConsolidatesShadow(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	var mono, consolidations atomic.Int32
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review":
+			mono.Add(1)
+			return &agent.Result{Output: json.RawMessage(`{"summary":"mono clean","findings":[]}`)}, nil
+		case "review-consolidator":
+			consolidations.Add(1)
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"error","file":"feature.txt","line":1,"description":"shadow-only issue","action":"auto-fix","review_scope":"source"}],"inspected_files":[]}`)}, nil
+		case "review-coverage-complement":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"]}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementObserve
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	var logsMu sync.Mutex
+	var logs []string
+	sctx.Log = func(line string) { logsMu.Lock(); logs = append(logs, line); logsMu.Unlock() }
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil || outcome == nil {
+		t.Fatalf("observe outcome=%#v err=%v", outcome, err)
+	}
+	parsed, err := types.ParseFindingsJSON(outcome.Findings)
+	if err != nil || len(parsed.Items) != 0 || outcome.NeedsApproval || outcome.AutoFixable || mono.Load() != 1 || consolidations.Load() != 1 {
+		t.Fatalf("shadow result affected authority: findings=%#v outcome=%#v mono=%d consolidator=%d err=%v", parsed, outcome, mono.Load(), consolidations.Load(), err)
+	}
+	logsMu.Lock()
+	joined := strings.Join(logs, "\n")
+	logsMu.Unlock()
+	if !strings.Contains(joined, "completed: 1 shadow findings (not authoritative)") || strings.Contains(joined, "shadow-only issue") {
+		t.Fatalf("observe telemetry exposed shadow content or omitted shadow marker: %s", joined)
+	}
+}
+
 func TestReviewStep_SpecializedConsolidatorFailureBlocks(t *testing.T) {
 	dir, base, head := setupGitRepo(t)
 	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {

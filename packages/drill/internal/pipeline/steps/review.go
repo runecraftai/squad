@@ -332,15 +332,19 @@ Risk assessment (after listing all findings):
 		if specialistFailures > 0 && sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
 			return nil, fmt.Errorf("specialized review incomplete: %d of %d lenses failed", specialistFailures, len(specialistResults))
 		}
-		if sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
-			sctx.Log("specialized review consolidator running")
-			consolidated, err := consolidateReviewCandidates(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, specialistResults, sctx.Config.Review.Topology.Timeout)
-			if err != nil {
+		sctx.Log("specialized review consolidator running")
+		consolidated, err := consolidateReviewCandidates(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, specialistResults, sctx.Config.Review.Topology.Timeout)
+		if err != nil {
+			if sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
 				sctx.Log("specialized review consolidator failed; approval withheld")
 				return nil, fmt.Errorf("specialized review consolidation failed: %w", err)
 			}
-			sctx.Log(fmt.Sprintf("specialized review consolidator completed: %d findings", len(consolidated.Items)))
-			specializedFindings = &consolidated
+			sctx.Log("specialized review consolidator failed in observe mode; mono-agent review remains authoritative")
+		} else {
+			sctx.Log(fmt.Sprintf("specialized review consolidator completed: %d shadow findings (not authoritative)", len(consolidated.Items)))
+			if sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
+				specializedFindings = &consolidated
+			}
 		}
 	}
 
