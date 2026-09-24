@@ -173,81 +173,23 @@ func wrapIndentedText(text string, width, indent int) string {
 }
 
 func renderSpecializedReviewProgress(logs []string, width int) string {
-	topology, enforcement, head, batchID, consolidator, incomplete := "", "", "", "", "", ""
-	type lensProgress struct {
-		name, status string
-		candidates   string
-	}
-	lenses := make([]lensProgress, 0, 6)
-	indexes := make(map[string]int)
-	for _, line := range logs {
-		fields := strings.Fields(line)
-		switch {
-		case strings.HasPrefix(line, "specialized review topology="):
-			for _, field := range fields {
-				key, value, ok := strings.Cut(field, "=")
-				if !ok {
-					continue
-				}
-				switch key {
-				case "topology":
-					topology = value
-				case "enforcement":
-					enforcement = value
-				case "snapshot_head":
-					head = value
-				}
-			}
-		case strings.HasPrefix(line, "specialized review batch ") && strings.Contains(line, " pending at HEAD "):
-			lenses = lenses[:0]
-			indexes = make(map[string]int)
-			consolidator = ""
-			incomplete = ""
-			if len(fields) >= 4 {
-				batchID = fields[3]
-			}
-			if _, after, ok := strings.Cut(line, ": "); ok {
-				for _, name := range strings.Split(after, ",") {
-					name = strings.TrimSpace(name)
-					if name != "" {
-						indexes[name] = len(lenses)
-						lenses = append(lenses, lensProgress{name: name, status: "pending"})
-					}
-				}
-			}
-		case strings.HasPrefix(line, "review lens ") && len(fields) >= 4:
-			if i, ok := indexes[fields[2]]; ok {
-				lenses[i].status = strings.TrimSuffix(fields[3], ":")
-				if fields[3] == "completed:" && len(fields) >= 5 {
-					lenses[i].candidates = fields[4]
-				}
-			}
-		case line == "specialized review consolidator running":
-			consolidator = "running"
-		case strings.HasPrefix(line, "specialized review consolidator completed:"):
-			consolidator = strings.TrimPrefix(line, "specialized review consolidator ")
-		case strings.HasPrefix(line, "specialized review consolidator failed"):
-			consolidator = "failed"
-		case strings.HasPrefix(line, "specialized review incomplete:"):
-			incomplete = strings.TrimPrefix(line, "specialized review incomplete: ")
-		}
-	}
-	if topology == "" || len(lenses) == 0 {
+	parsed := nmtypes.ParseSpecializedReviewProgress(logs, 0)
+	if parsed == nil {
 		return ""
 	}
-	lines := []string{fmt.Sprintf("%s · %s · HEAD %s · batch %s", enforcement, topology, shortDisplaySHA(head), batchID)}
-	for _, lens := range lenses {
-		detail := lens.status
-		if lens.candidates != "" {
-			detail += " · " + lens.candidates + " candidates"
+	lines := []string{fmt.Sprintf("%s · %s · HEAD %s · batch %s", parsed.Enforcement, parsed.Topology, shortDisplaySHA(parsed.SnapshotHEAD), parsed.BatchID)}
+	for _, lens := range parsed.Lenses {
+		detail := lens.Status
+		if lens.Candidates > 0 {
+			detail += fmt.Sprintf(" · %d candidates", lens.Candidates)
 		}
-		lines = append(lines, lens.name+": "+detail)
+		lines = append(lines, lens.Lens+": "+detail)
 	}
-	if consolidator != "" {
-		lines = append(lines, "consolidator: "+consolidator)
+	if parsed.Consolidator != "" {
+		lines = append(lines, "consolidator: "+parsed.Consolidator)
 	}
-	if incomplete != "" {
-		lines = append(lines, "incomplete: "+incomplete)
+	if parsed.Incomplete != "" {
+		lines = append(lines, "incomplete: "+parsed.Incomplete)
 	}
 	return renderBox("Specialized review", strings.Join(lines, "\n"), width)
 }

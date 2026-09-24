@@ -105,7 +105,8 @@ type reviewLensProgressRow struct {
 	Candidates int    `toon:"candidates"`
 }
 
-type specializedReviewProgress struct {
+// specializedReviewProgressView wraps types.SpecializedReviewProgress for TOON output.
+type specializedReviewProgressView struct {
 	BatchID      string                  `toon:"batch_id"`
 	WallTime     string                  `toon:"wall_time"`
 	Topology     string                  `toon:"topology"`
@@ -116,9 +117,29 @@ type specializedReviewProgress struct {
 	Incomplete   string                  `toon:"incomplete"`
 }
 
-// specializedReviewProgress folds the bounded, privacy-safe operational log
+func toReviewView(p *types.SpecializedReviewProgress) *specializedReviewProgressView {
+	if p == nil {
+		return nil
+	}
+	lenses := make([]reviewLensProgressRow, len(p.Lenses))
+	for i, l := range p.Lenses {
+		lenses[i] = reviewLensProgressRow{Lens: l.Lens, Status: l.Status, Candidates: l.Candidates}
+	}
+	return &specializedReviewProgressView{
+		BatchID:      p.BatchID,
+		WallTime:     p.WallTime,
+		Topology:     p.Topology,
+		Enforcement:  p.Enforcement,
+		SnapshotHEAD: p.SnapshotHEAD,
+		Lenses:       lenses,
+		Consolidator: p.Consolidator,
+		Incomplete:   p.Incomplete,
+	}
+}
+
+// readSpecializedReviewProgress folds the bounded, privacy-safe operational log
 // events for a run into current per-lens state; it never exposes agent output.
-func readSpecializedReviewProgress(env *axiEnv, runID string) *specializedReviewProgress {
+func readSpecializedReviewProgress(env *axiEnv, runID string) *specializedReviewProgressView {
 	path := filepath.Join(env.p.RunLogDir(runID), "review.log")
 	f, err := os.Open(path)
 	if err != nil {
@@ -143,77 +164,9 @@ func readSpecializedReviewProgress(env *axiEnv, runID string) *specializedReview
 	if len(lines) > 256 {
 		lines = lines[len(lines)-256:]
 	}
-	progress := &specializedReviewProgress{}
-	lensIndexes := make(map[string]int)
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		switch {
-		case strings.HasPrefix(line, "specialized review topology="):
-			for _, field := range fields {
-				key, value, ok := strings.Cut(field, "=")
-				if !ok {
-					continue
-				}
-				switch key {
-				case "topology":
-					progress.Topology = value
-				case "enforcement":
-					progress.Enforcement = value
-				case "snapshot_head":
-					progress.SnapshotHEAD = value
-				}
-			}
-		case strings.HasPrefix(line, "specialized review batch ") && strings.Contains(line, " pending at HEAD "):
-			progress.Lenses = nil
-			lensIndexes = make(map[string]int)
-			progress.Consolidator = ""
-			progress.Incomplete = ""
-			progress.WallTime = ""
-			if len(fields) >= 4 {
-				progress.BatchID = fields[3]
-			}
-			if _, after, ok := strings.Cut(line, ": "); ok {
-				for _, name := range strings.Split(after, ",") {
-					name = strings.TrimSpace(name)
-					if name != "" {
-						lensIndexes[name] = len(progress.Lenses)
-						progress.Lenses = append(progress.Lenses, reviewLensProgressRow{Lens: name, Status: "pending"})
-					}
-				}
-			}
-		case strings.HasPrefix(line, "review lens ") && len(fields) >= 4:
-			name := fields[2]
-			if i, ok := lensIndexes[name]; ok {
-				progress.Lenses[i].Status = fields[3]
-				if fields[3] == "completed:" && len(fields) >= 5 {
-					progress.Lenses[i].Status = "completed"
-					fmt.Sscanf(fields[4], "%d", &progress.Lenses[i].Candidates)
-				}
-			}
-		case line == "specialized review consolidator running":
-			progress.Consolidator = "running"
-		case strings.HasPrefix(line, "specialized review consolidator completed:"):
-			progress.Consolidator = strings.TrimPrefix(line, "specialized review consolidator ")
-		case strings.HasPrefix(line, "specialized review consolidator failed"):
-			progress.Consolidator = "failed"
-		case strings.HasPrefix(line, "specialized review batch completed in "):
-			value := strings.TrimPrefix(line, "specialized review batch completed in ")
-			if duration, _, ok := strings.Cut(value, ":"); ok {
-				if _, err := time.ParseDuration(duration); err == nil {
-					progress.WallTime = duration
-				}
-			}
-		case strings.HasPrefix(line, "specialized review incomplete:"):
-			progress.Incomplete = strings.TrimPrefix(line, "specialized review incomplete: ")
-			if len(progress.Incomplete) > 120 {
-				progress.Incomplete = progress.Incomplete[:120]
-			}
-		}
-	}
-	if progress.Topology == "" && len(progress.Lenses) == 0 {
-		return nil
-	}
-	return progress
+	const incompleteLimit = 120
+	parsed := types.ParseSpecializedReviewProgress(lines, incompleteLimit)
+	return toReviewView(parsed)
 }
 
 // runStateFingerprint summarizes a run's observable state for telemetry
