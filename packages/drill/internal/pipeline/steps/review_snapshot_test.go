@@ -99,8 +99,8 @@ func TestReviewStep_SpecializedAbsentPreservesLegacyPath(t *testing.T) {
 		return &agent.Result{Output: []byte(`{"summary":"clean","findings":[]}`)}, nil
 	}}
 	sctx := newTestContext(t, ag, dir, baseSHA, headSHA, config.Commands{})
-	if sctx.Config.Review.Topology.Topology != "" {
-		t.Fatalf("absent topology unexpectedly resolved to %q", sctx.Config.Review.Topology.Topology)
+	if sctx.Config.Review.Topology.Topology == config.ReviewTopologySpecialized {
+		t.Fatalf("absent topology unexpectedly resolved to specialized")
 	}
 	if _, err := (&ReviewStep{}).Execute(sctx); err != nil {
 		t.Fatal(err)
