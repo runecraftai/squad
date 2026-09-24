@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.6](https://github.com/runecraftai/squad/compare/drill-v0.1.5...drill-v0.1.6) (2026-09-23)
+
+
+### Features
+
+* **skills:** adopt skills catalog with new skills, lockfile integrity, and CDN distribution ([#197](https://github.com/runecraftai/squad/issues/197)) ([e099ea0](https://github.com/runecraftai/squad/commit/e099ea05d578deaa3be1be7bafd81474cc140856))
+
+
+### Bug Fixes
+
+* **drill:** persist recovery counter and make guard placement symmetric ([#177](https://github.com/runecraftai/squad/issues/177)) ([91be79e](https://github.com/runecraftai/squad/commit/91be79e9eae8b15266ca24792d049762b6ac2243))
+* **pipeline:** enforce fix-round limit to prevent review/fix loop non-convergence ([#173](https://github.com/runecraftai/squad/issues/173)) ([2299770](https://github.com/runecraftai/squad/commit/22997709918229e2f4813701da74b28f9e89dbf7))
+
 ## [0.1.5](https://github.com/runecraftai/squad/compare/drill-v0.1.4...drill-v0.1.5) (2026-09-08)
 
 
