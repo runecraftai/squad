@@ -52,7 +52,13 @@ case "${1:-}" in
     esac
     ;;
   runs)
-    printf '%s\n' "${SQUAD_FAKE_RUNS_LIST:-}" ;;
+    if [ -n "${SQUAD_FAKE_RUNS_LIST:-}" ]; then printf '%s\n' "$SQUAD_FAKE_RUNS_LIST"
+    else
+      branch=$(printf '%s\n' "${SQUAD_FAKE_AXI_STATUS:-}" | sed -n 's/^[[:space:]]*branch: *//p' | head -1)
+      status=$(printf '%s\n' "${SQUAD_FAKE_AXI_STATUS:-}" | sed -n 's/^[[:space:]]*status: *//p' | head -1)
+      head=$(printf '%s\n' "${SQUAD_FAKE_AXI_STATUS:-}" | sed -n 's/^[[:space:]]*head: *//p' | head -1 | tr -d '"')
+      [ -z "$branch" ] || printf '%s %s %.7s 2026-09-17\n' "$status" "$branch" "$head"
+    fi ;;
 esac
 exit 0
 SH

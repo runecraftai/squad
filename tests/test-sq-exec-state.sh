@@ -54,6 +54,61 @@ sed -i 's/^exec_last_activity=.*/exec_last_activity=1/' "$STATE/stale.exec"
 SQUAD_EXEC_STALE_AFTER=1 "$EXEC" recover stale >/dev/null
 assert_eq "$("$EXEC" get stale)" retry_queued
 
+# A completed PR task with a stale running sidecar is released, and recovery
+# cannot make it claimable again.
+printf 'window=Squad\npr=https://github.com/o/r/pull/1\n' > "$STATE/finished.meta"
+printf 'exec_state=running\nexec_attempt=2\nexec_last_activity=1\n' > "$STATE/finished.exec"
+printf 'working: validating\ndone: PR https://github.com/o/r/pull/1 checks green\n' > "$STATE/finished.status"
+SQUAD_EXEC_STALE_AFTER=1 "$EXEC" recover finished >/dev/null
+assert_eq "$("$EXEC" get finished)" released
+"$EXEC" recover-all >/dev/null
+if "$EXEC" claim finished >/dev/null 2>&1; then
+  echo 'finished attempt was claimable' >&2
+  exit 1
+fi
+
+# A terminal failed task and a local-only done task are released without PR metadata.
+for task in finished-failed finished-local; do
+  printf 'window=Squad\n' > "$STATE/$task.meta"
+  printf 'exec_state=claimed\nexec_attempt=1\nexec_last_activity=1\n' > "$STATE/$task.exec"
+done
+printf 'failed: validation could not proceed\n' > "$STATE/finished-failed.status"
+printf 'done: recon report saved\n' > "$STATE/finished-local.status"
+SQUAD_EXEC_STALE_AFTER=1 "$EXEC" recover finished-failed >/dev/null
+SQUAD_EXEC_STALE_AFTER=1 "$EXEC" recover finished-local >/dev/null
+assert_eq "$("$EXEC" get finished-failed)" released
+assert_eq "$("$EXEC" get finished-local)" released
+
+# PR metadata and decision/wait/progress lines alone are not completion evidence.
+for task in pr-working pr-decision pr-blocked pr-paused pr-resolved; do
+  printf 'window=Squad\npr=https://github.com/o/r/pull/1\n' > "$STATE/$task.meta"
+  printf 'exec_state=running\nexec_attempt=1\nexec_last_activity=1\n' > "$STATE/$task.exec"
+done
+printf 'working: still validating\n' > "$STATE/pr-working.status"
+printf 'needs-decision [key=x]: choose\n' > "$STATE/pr-decision.status"
+printf 'blocked: waiting\n' > "$STATE/pr-blocked.status"
+printf 'paused: external wait\n' > "$STATE/pr-paused.status"
+printf 'resolved: answered\n' > "$STATE/pr-resolved.status"
+for task in pr-working pr-decision pr-blocked pr-paused pr-resolved; do
+  SQUAD_EXEC_STALE_AFTER=9999999999 "$EXEC" recover "$task" >/dev/null
+  assert_eq "$("$EXEC" get "$task")" running
+done
+
+# A retry_queued terminal record is retired by recovery, and claim itself is a
+# final safety check when recovery has not run first.
+for task in queued-done queued-direct; do
+  printf 'window=Squad\npr=https://github.com/o/r/pull/2\n' > "$STATE/$task.meta"
+  printf 'exec_state=retry_queued\nexec_attempt=3\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/$task.exec"
+  printf 'done: PR checks green\n' > "$STATE/$task.status"
+done
+"$EXEC" recover queued-done >/dev/null
+assert_eq "$("$EXEC" get queued-done)" released
+if "$EXEC" claim queued-direct >/dev/null 2>&1; then
+  echo 'terminal retry_queued attempt was claimable without recovery' >&2
+  exit 1
+fi
+assert_eq "$("$EXEC" get queued-direct)" released
+
 # recover-all removes orphaned exec files (meta absent) but preserves live ones.
 printf 'exec_state=running\nexec_attempt=1\n' > "$STATE/orphan.exec"
 printf 'window=Squad\n' > "$STATE/live-task.meta"

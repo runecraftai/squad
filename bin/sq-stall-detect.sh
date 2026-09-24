@@ -163,12 +163,19 @@ retry_run_claim() {
     else
       if "$SCRIPT_DIR/sq-exec-state.sh" claim "$id" >/dev/null 2>&1; then
         if "$SCRIPT_DIR/sq-exec-state.sh" running "$id" >/dev/null 2>&1; then
-          append_status "$id" "retry resumed" working
+          "$SCRIPT_DIR/sq-exec-state.sh" recover "$id" >/dev/null 2>&1 || true
+          [ "$(field exec_state "$id")" = released ] || append_status "$id" "retry resumed" working
         else
+          if [ "$(field exec_state "$id")" = released ]; then
+            continue
+          fi
           SQUAD_EXEC_ERROR=running_transition_failed "$SCRIPT_DIR/sq-exec-state.sh" retry "$id" >/dev/null 2>&1 || true
           append_status "$id" "retry claimed but could not transition to running" blocked
         fi
       else
+        if [ "$(field exec_state "$id")" = released ]; then
+          continue
+        fi
         append_status "$id" "retry claim failed" blocked
       fi
     fi
