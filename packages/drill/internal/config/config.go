@@ -1678,7 +1678,10 @@ func Merge(global *GlobalConfig, repo *RepoConfig) *Config {
 		commit.FixMessage = *repo.Commit.FixMessage
 	}
 
-	reviewTopology, _ := repo.Review.TopologyConfig.Resolve() // parseRepoConfig validates this before resolution.
+	reviewTopology, err := repo.Review.TopologyConfig.Resolve()
+	if err != nil {
+		panic("config: review topology resolution failed after earlier validation: " + err.Error())
+	}
 	cfg := &Config{
 		Agent:                global.Agent,
 		Agents:               copyAgents(global.Agents),
