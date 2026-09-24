@@ -110,7 +110,7 @@ func TestSpecializedReviewBatch_OfficialStateFingerprintDetectsMutation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, "empty-intrusion"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "intrusion.txt"), []byte("hostile"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	after, err := officialReviewState(context.Background(), dir)

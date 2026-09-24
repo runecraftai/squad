@@ -12,9 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runecraftai/squad/packages/drill/internal/git"
-
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
+	"github.com/runecraftai/squad/packages/drill/internal/git"
 )
 
 var reviewLensInstructions = []struct{ name, prompt string }{
@@ -50,8 +49,10 @@ type reviewLensResult struct {
 	Err      error
 }
 
-// runReviewSpecialists executes each specialist against an independently disposable
-// detached worktree, never exposing the official working directory to an agent.
+// officialReviewState returns a fingerprint of the official worktree derived from
+// git status and HEAD. Git status captures tracked modifications, staged changes,
+// deletions, renames, and untracked files; HEAD captures branch/commit state.
+// Together they are sufficient to detect any mutation between two snapshots.
 func officialReviewState(ctx context.Context, repoDir string) (string, error) {
 	status, err := git.Run(ctx, repoDir, "status", "--porcelain=v2", "--untracked-files=all")
 	if err != nil {
@@ -63,49 +64,6 @@ func officialReviewState(ctx context.Context, repoDir string) (string, error) {
 	}
 	h := sha256.New()
 	_, _ = h.Write([]byte(status + "\x00" + head))
-	err = filepath.WalkDir(repoDir, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(repoDir, path)
-		if err != nil {
-			return err
-		}
-		if rel == ".git" {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		info, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-		_, _ = h.Write([]byte(rel + "\x00" + info.Mode().String() + "\x00"))
-		if entry.IsDir() {
-			return nil
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			_, _ = h.Write([]byte(target))
-			return nil
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		_, _ = h.Write(data)
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("hash official worktree: %w", err)
-	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
