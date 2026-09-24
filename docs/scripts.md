@@ -84,13 +84,13 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-sentry-arm.sh`        | Verified base-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `sq-sentry-checkpoint.sh` | Run one bounded foreground sentry checkpoint for Codex-style supervision            |
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
-| `sq-stall-detect.sh`      | Detect stalled execution attempts, interrupt conclusive stalls, schedule retry with exponential backoff, and claim retry-queued attempts when their moment arrives |
+| `sq-stall-detect.sh`      | Detect stalled execution attempts, interrupt conclusive stalls, schedule retry with exponential backoff, and claim retry-queued attempts when their moment arrives; declined terminal claims are normal skips with no status append |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes (routine envelope for Pi extension coordination), guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
-| `sq-exec-state.sh`       | Manage per-attempt execution state sidecar (`<id>.exec`): atomic claim, transition, after_run hook, heartbeat, crash recovery; unclaimed default for legacy tasks |
+| `sq-exec-state.sh`       | Manage per-attempt execution state sidecar (`<id>.exec`): atomic claim, transition, after_run hook, heartbeat, crash recovery; unclaimed default for legacy tasks; terminal done:/failed: in .status blocks claim and transition to running, and triggers release during recovery |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator, including exec state            |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
