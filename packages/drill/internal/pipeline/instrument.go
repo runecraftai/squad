@@ -98,7 +98,10 @@ func (a *perfRecordingAgent) record(ctx context.Context, opts agent.RunOpts, age
 	}
 	a.recordResult(&inv, sessionKey, result)
 	if runErr != nil {
-		if ctx.Err() != nil || errors.Is(runErr, context.Canceled) {
+		if errors.Is(runErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			inv.ExitStatus = "timeout"
+			inv.FailureCategory = "timeout"
+		} else if ctx.Err() != nil || errors.Is(runErr, context.Canceled) {
 			inv.ExitStatus = "cancelled"
 			inv.FailureCategory = "cancelled"
 		} else {
@@ -197,6 +200,9 @@ func countOutputFindings(output json.RawMessage) (int, bool) {
 		return 0, false
 	}
 	raw, ok := envelope["findings"]
+	if !ok {
+		raw, ok = envelope["candidates"]
+	}
 	if !ok {
 		return 0, false
 	}

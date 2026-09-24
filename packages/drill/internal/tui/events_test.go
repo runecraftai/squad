@@ -29,6 +29,26 @@ func TestModel_ApplyEvent_LogChunk(t *testing.T) {
 	}
 }
 
+func TestModel_ApplyEvent_SpecializedReviewProgressRemainsVisible(t *testing.T) {
+	run := testRun()
+	m := NewModel("/tmp/sock", nil, run)
+	for _, line := range strings.Split("specialized review topology=specialized enforcement=blocking snapshot_head=abc123\nspecialized review batch abc123-1 pending at HEAD abc123: security,requirements,tests-behavior,architecture,regression-hallucination,performance-resources\nreview lens security started\nreview lens security completed: 2 candidates\nspecialized review consolidator running", "\n") {
+		m.applyEvent(ipc.Event{Type: ipc.EventLogChunk, RunID: run.ID, Content: ptr(line + "\n")})
+	}
+	if len(m.logs) != 5 || !strings.Contains(strings.Join(m.logs, "\n"), "security completed: 2 candidates") {
+		t.Fatalf("specialist progress not visible in TUI logs (count=%d): %#v", len(m.logs), m.logs)
+	}
+	view := m.View()
+	for _, want := range []string{"Specialized review", "blocking · specialized · HEAD abc123", "security: completed · 2 candidates", "requirements: pending", "consolidator: running"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("TUI missing %q: %s", want, view)
+		}
+	}
+	if len(m.findingSelections) != 0 {
+		t.Fatalf("operational progress unexpectedly changed finding selection: %#v", m.findingSelections)
+	}
+}
+
 func TestModel_ApplyEvent_LogChunk_Truncation(t *testing.T) {
 	run := testRun()
 	m := NewModel("/tmp/sock", nil, run)

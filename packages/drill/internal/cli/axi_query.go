@@ -81,6 +81,9 @@ func runAxiStatus(cmd *cobra.Command, runID string) (string, error) {
 	rv := runViewFromDB(run, steps)
 	annotateRunView(env, &rv)
 	fields := []toon.Field{runObjectField(rv)}
+	if progress := readSpecializedReviewProgress(env, run.ID); progress != nil {
+		fields = append(fields, toon.Field{Key: "specialized_review", Value: progress})
+	}
 	if syncField := cachedBranchSyncField(cmd, run.ID); syncField != nil {
 		fields = append(fields, *syncField)
 	}
@@ -94,6 +97,76 @@ func runAxiStatus(cmd *cobra.Command, runID string) (string, error) {
 	}
 	emitDoc(cmd, fields...)
 	return runStateFingerprint(rv), nil
+}
+
+type reviewLensProgressRow struct {
+	Lens       string `toon:"lens"`
+	Status     string `toon:"status"`
+	Candidates int    `toon:"candidates"`
+}
+
+// specializedReviewProgressView wraps types.SpecializedReviewProgress for TOON output.
+type specializedReviewProgressView struct {
+	BatchID      string                  `toon:"batch_id"`
+	WallTime     string                  `toon:"wall_time"`
+	Topology     string                  `toon:"topology"`
+	Enforcement  string                  `toon:"enforcement"`
+	SnapshotHEAD string                  `toon:"snapshot_head"`
+	Lenses       []reviewLensProgressRow `toon:"lenses"`
+	Consolidator string                  `toon:"consolidator"`
+	Incomplete   string                  `toon:"incomplete"`
+}
+
+func toReviewView(p *types.SpecializedReviewProgress) *specializedReviewProgressView {
+	if p == nil {
+		return nil
+	}
+	lenses := make([]reviewLensProgressRow, len(p.Lenses))
+	for i, l := range p.Lenses {
+		lenses[i] = reviewLensProgressRow{Lens: l.Lens, Status: l.Status, Candidates: l.Candidates}
+	}
+	return &specializedReviewProgressView{
+		BatchID:      p.BatchID,
+		WallTime:     p.WallTime,
+		Topology:     p.Topology,
+		Enforcement:  p.Enforcement,
+		SnapshotHEAD: p.SnapshotHEAD,
+		Lenses:       lenses,
+		Consolidator: p.Consolidator,
+		Incomplete:   p.Incomplete,
+	}
+}
+
+// readSpecializedReviewProgress folds the bounded, privacy-safe operational log
+// events for a run into current per-lens state; it never exposes agent output.
+func readSpecializedReviewProgress(env *axiEnv, runID string) *specializedReviewProgressView {
+	path := filepath.Join(env.p.RunLogDir(runID), "review.log")
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	const maxReviewProgressBytes = 64 * 1024
+	if info.Size() > maxReviewProgressBytes {
+		if _, err := f.Seek(-maxReviewProgressBytes, io.SeekEnd); err != nil {
+			return nil
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxReviewProgressBytes))
+	if err != nil {
+		return nil
+	}
+	lines := splitLogLines(string(data))
+	if len(lines) > 256 {
+		lines = lines[len(lines)-256:]
+	}
+	const incompleteLimit = 120
+	parsed := types.ParseSpecializedReviewProgress(lines, incompleteLimit)
+	return toReviewView(parsed)
 }
 
 // runStateFingerprint summarizes a run's observable state for telemetry

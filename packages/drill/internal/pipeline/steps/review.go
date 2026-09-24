@@ -18,6 +18,16 @@ type ReviewStep struct{}
 
 func (s *ReviewStep) Name() types.StepName { return types.StepReview }
 
+func countSpecialistFailures(results []reviewLensResult) int {
+	failures := 0
+	for _, result := range results {
+		if result.Err != nil {
+			failures++
+		}
+	}
+	return failures
+}
+
 func (s *ReviewStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, error) {
 	ctx := sctx.Ctx
 	baseSHA := resolveBranchBaseSHA(ctx, sctx.WorkDir, sctx.Run.BaseSHA, sctx.Repo.DefaultBranch)
@@ -144,6 +154,7 @@ Previous review findings to address:
 			return nil, fmt.Errorf("capture review snapshot diff: %w", diffErr)
 		}
 		reviewSnapshot = ptrReviewSnapshot(newReviewSnapshot(sctx.UserIntent, string(sctx.IntentSource), baseSHA, sctx.Run.HeadSHA, diff, changed, "", reviewScope, ignorePatterns, roundHistoryPromptSection(sctx)))
+		reviewSnapshot.Workload = workload
 		sctx.Log("captured review snapshot " + reviewSnapshot.ID)
 	}
 
@@ -295,12 +306,17 @@ Risk assessment (after listing all findings):
 		if stateErr != nil {
 			return nil, fmt.Errorf("official worktree boundary check before specialized review: %w", stateErr)
 		}
+		sctx.Log(fmt.Sprintf("specialized review topology=%s enforcement=%s snapshot_head=%s", sctx.Config.Review.Topology.Topology, sctx.Config.Review.Topology.Enforcement, reviewSnapshot.TargetHeadSHA))
 		specialistResults := runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log)
-		var specialistFailures int
+		specialistFailures := countSpecialistFailures(specialistResults)
+		if specialistFailures > 0 && sctx.RetrySpecializedReview && ctx.Err() == nil {
+			sctx.Log("specialized review explicit retry: discarding partial results and starting one fresh batch")
+			specialistResults = runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log)
+			specialistFailures = countSpecialistFailures(specialistResults)
+		}
 		for _, specialist := range specialistResults {
 			if specialist.Err != nil {
-				specialistFailures++
-				sctx.Log(fmt.Sprintf("review lens %s failed after %s: %v", specialist.Lens, specialist.Duration, specialist.Err))
+				sctx.Log(fmt.Sprintf("review lens %s failed after %s", specialist.Lens, specialist.Duration))
 			}
 		}
 		afterState, stateErr := officialReviewState(ctx, sctx.WorkDir)
@@ -317,10 +333,13 @@ Risk assessment (after listing all findings):
 			return nil, fmt.Errorf("specialized review incomplete: %d of %d lenses failed", specialistFailures, len(specialistResults))
 		}
 		if sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
+			sctx.Log("specialized review consolidator running")
 			consolidated, err := consolidateReviewCandidates(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, specialistResults, sctx.Config.Review.Topology.Timeout)
 			if err != nil {
+				sctx.Log("specialized review consolidator failed; approval withheld")
 				return nil, fmt.Errorf("specialized review consolidation failed: %w", err)
 			}
+			sctx.Log(fmt.Sprintf("specialized review consolidator completed: %d findings", len(consolidated.Items)))
 			specializedFindings = &consolidated
 		}
 	}

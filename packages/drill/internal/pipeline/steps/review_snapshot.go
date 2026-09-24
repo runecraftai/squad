@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 )
@@ -19,6 +20,7 @@ type ReviewSnapshot struct {
 	PathInstructions               string
 	Scope, IgnorePatterns, History string
 	ID                             string
+	Workload                       *agent.InvocationWorkload
 }
 
 func newReviewSnapshot(intent, source, base, head, diff string, paths []string, instructions, scope, ignores, history string) ReviewSnapshot {

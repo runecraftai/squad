@@ -143,6 +143,10 @@ func (m Model) View() string {
 		}
 	}
 
+	if !m.showHelp && !m.editorActive() {
+		appendExtraSection(renderSpecializedReviewProgress(m.logs, rightWidth))
+	}
+
 	// CI-specific view when CI step is active.
 	if !m.showHelp && !m.editorActive() && hasCI {
 		findings := ""

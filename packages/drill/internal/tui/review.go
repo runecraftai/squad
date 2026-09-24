@@ -172,6 +172,35 @@ func wrapIndentedText(text string, width, indent int) string {
 	return b.String()
 }
 
+func renderSpecializedReviewProgress(logs []string, width int) string {
+	parsed := nmtypes.ParseSpecializedReviewProgress(logs, 0)
+	if parsed == nil {
+		return ""
+	}
+	lines := []string{fmt.Sprintf("%s · %s · HEAD %s · batch %s", parsed.Enforcement, parsed.Topology, shortDisplaySHA(parsed.SnapshotHEAD), parsed.BatchID)}
+	for _, lens := range parsed.Lenses {
+		detail := lens.Status
+		if lens.Candidates > 0 {
+			detail += fmt.Sprintf(" · %d candidates", lens.Candidates)
+		}
+		lines = append(lines, lens.Lens+": "+detail)
+	}
+	if parsed.Consolidator != "" {
+		lines = append(lines, "consolidator: "+parsed.Consolidator)
+	}
+	if parsed.Incomplete != "" {
+		lines = append(lines, "incomplete: "+parsed.Incomplete)
+	}
+	return renderBox("Specialized review", strings.Join(lines, "\n"), width)
+}
+
+func shortDisplaySHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
+}
+
 func logLineStyle(line string) lipgloss.Style {
 	switch {
 	case strings.HasPrefix(line, "PASS"):
