@@ -100,6 +100,14 @@ func validateConsolidatedAnchors(findings Findings, snapshot ReviewSnapshot, rep
 	}
 	valid := findings.Items[:0]
 	for _, item := range findings.Items {
+		if item.File == "" && item.Line == 0 {
+			if item.ReviewScope == "source" || item.ReviewScope == "pipeline-owned-delivery" || item.ReviewScope == "external-delivery" {
+				if strings.TrimSpace(item.Description) != "" {
+					valid = append(valid, item)
+				}
+			}
+			continue
+		}
 		if item.File == "" || item.Line < 1 || filepath.IsAbs(item.File) || !changed[filepath.Clean(item.File)] {
 			continue
 		}

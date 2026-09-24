@@ -188,6 +188,59 @@ func TestConsolidatorValidatesAnchorsAndOutsideDiffClaims(t *testing.T) {
 	}
 }
 
+func TestConsolidatorRetainsUnanchoredNonLocalFindings(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{Description: "architectural concern across modules", ReviewScope: "source"},
+		{Description: "cross-cutting intent violation", ReviewScope: "pipeline-owned-delivery"},
+		{Description: "external contract issue", ReviewScope: "external-delivery"},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 3 {
+		t.Fatalf("unanchored non-local findings dropped: got %d, want 3", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorDropsUnanchoredFindingsWithInvalidScope(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{Description: "issue with invalid scope", ReviewScope: "invalid"},
+		{Description: "issue with empty scope", ReviewScope: ""},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 0 {
+		t.Fatalf("invalid-scope unanchored findings survived: got %d, want 0", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorDropsUnanchoredFindingsWithEmptyDescription(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{Description: "", ReviewScope: "source"},
+		{Description: "  ", ReviewScope: "source"},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 0 {
+		t.Fatalf("empty-description unanchored findings survived: got %d, want 0", len(filtered.Items))
+	}
+}
+
+func TestConsolidatorDropsPartiallyAnchoredFindings(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	findings := Findings{Items: []Finding{
+		{File: "a.go", Line: 0, Description: "file but no line", ReviewScope: "source"},
+		{File: "", Line: 5, Description: "line but no file", ReviewScope: "source"},
+	}}
+	filtered := validateConsolidatedAnchors(findings, snapshot, dir)
+	if len(filtered.Items) != 0 {
+		t.Fatalf("partially-anchored findings survived: got %d, want 0", len(filtered.Items))
+	}
+}
+
 func TestConsolidatorCoverageGapBoundedPass(t *testing.T) {
 	dir := t.TempDir()
 	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"missing.go"}, "", "", "", "")
