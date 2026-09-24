@@ -75,7 +75,14 @@ case "${1:-}" in
     esac
     ;;
   runs)
-    printf '%s\n' "${SQUAD_FAKE_RUNS_LIST:-}" ;;
+    if [ "${SQUAD_FAKE_RUNS_UNAVAILABLE:-0}" = 1 ]; then exit 1; fi
+    if [ -n "${SQUAD_FAKE_RUNS_LIST:-}" ]; then printf '%s\n' "$SQUAD_FAKE_RUNS_LIST"
+    else
+      branch=$(printf '%s\n' "${SQUAD_FAKE_AXI_STATUS:-}" | sed -n 's/^[[:space:]]*branch: *//p' | head -1)
+      status=$(printf '%s\n' "${SQUAD_FAKE_AXI_STATUS:-}" | sed -n 's/^[[:space:]]*status: *//p' | head -1)
+      head=$(printf '%s\n' "${SQUAD_FAKE_AXI_STATUS:-}" | sed -n 's/^[[:space:]]*head: *//p' | head -1 | tr -d '"')
+      [ -z "$branch" ] || printf '%s %s %.7s 2026-09-17\n' "$status" "$branch" "$head"
+    fi ;;
 esac
 exit 0
 SH
@@ -163,6 +170,7 @@ reset_fakes() {
   SQUAD_FAKE_AXI_STATUS=""
   SQUAD_FAKE_AXI_STATUS_RUN=""
   SQUAD_FAKE_RUNS_LIST=""
+  SQUAD_FAKE_RUNS_UNAVAILABLE=0
   SQUAD_FAKE_BUSY=0
   SQUAD_FAKE_BUSY_TEXT=
   SQUAD_FAKE_TMUX_MISSING=0
@@ -170,7 +178,7 @@ reset_fakes() {
   SQUAD_FAKE_HERDR_MISSING=0
   SQUAD_FAKE_HERDR_AGENT_STATUS=""
   SQUAD_FAKE_CI_LOGS=""
-  export SQUAD_FAKE_AXI_STATUS SQUAD_FAKE_AXI_STATUS_RUN SQUAD_FAKE_RUNS_LIST SQUAD_FAKE_BUSY SQUAD_FAKE_BUSY_TEXT SQUAD_FAKE_TMUX_MISSING
+  export SQUAD_FAKE_AXI_STATUS SQUAD_FAKE_AXI_STATUS_RUN SQUAD_FAKE_RUNS_LIST SQUAD_FAKE_RUNS_UNAVAILABLE SQUAD_FAKE_BUSY SQUAD_FAKE_BUSY_TEXT SQUAD_FAKE_TMUX_MISSING
   export SQUAD_FAKE_HERDR_BUSY SQUAD_FAKE_HERDR_MISSING SQUAD_FAKE_HERDR_AGENT_STATUS SQUAD_FAKE_CI_LOGS
 }
 
@@ -1246,6 +1254,37 @@ test_historical_same_branch_rewritten_head_not_current() {
   pass "historical same-branch rewritten head is not attributed as current"
 }
 
+# Only the newest same-branch execution may supply a terminal verdict. An older
+# failed run must not survive a newer rebased/divergent run on the same branch.
+test_newest_same_branch_divergence_hides_older_failure() {
+  reset_fakes
+  local d old_head new_head out
+  d=$(new_case newest-divergent)
+  make_repo_on_branch "$d/wt" sq/rebased
+  old_head=$(git -C "$d/wt" rev-parse HEAD)
+  git -C "$d/wt" checkout -q --orphan tmp-newest
+  git -C "$d/wt" commit -q --allow-empty -m 'newer divergent run'
+  git -C "$d/wt" branch -q -M sq/rebased
+  new_head=$(git -C "$d/wt" rev-parse HEAD)
+  git -C "$d/wt" reset -q --hard "$old_head"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/rebased.meta" "window=fm:sq-rebased" "worktree=$d/wt" "kind=strike"
+  printf 'working: rebased work continues\n' > "$d/state/rebased.status"
+  SQUAD_FAKE_RUN_HEAD="$old_head"
+  SQUAD_FAKE_AXI_STATUS="$(run_failed sq/rebased)"
+  SQUAD_FAKE_RUNS_LIST=$(printf 'running sq/rebased %s 2026-09-18\nfailed sq/rebased %s 2026-09-17' "${new_head:0:7}" "${old_head:0:7}")
+  out=$(run_crew_state "$d" rebased)
+  assert_not_contains "$out" 'state: failed' 'older matching failed run is not current'
+  assert_contains "$out" 'state: unknown' 'divergent newest run must not yield a terminal verdict'
+  SQUAD_FAKE_RUNS_LIST=$(printf 'failed sq/rebased deadbee 2026-09-18\nfailed sq/rebased %s 2026-09-17' "${old_head:0:7}")
+  out=$(run_crew_state "$d" rebased)
+  assert_contains "$out" 'state: unknown' 'unresolvable newest run head stays unknown'
+  SQUAD_FAKE_RUNS_UNAVAILABLE=1
+  out=$(run_crew_state "$d" rebased)
+  assert_contains "$out" 'state: unknown' 'unavailable run listing stays unknown for terminal status'
+  pass 'newest divergent same-branch run prevents stale failed attribution'
+}
+
 # Head-binding: an active pipeline whose run head is a descendant of the local
 # tip (fix commits on the same history) remains current.
 test_active_run_descendant_fix_head_remains_current() {
@@ -1355,6 +1394,7 @@ test_provably_working_via_runs_list_fallback
 test_not_provably_working_when_stopped
 test_usage_error
 test_historical_same_branch_rewritten_head_not_current
+test_newest_same_branch_divergence_hides_older_failure
 test_active_run_descendant_fix_head_remains_current
 test_local_advanced_past_run_head_invalidates
 test_missing_run_head_falls_back_to_current_state

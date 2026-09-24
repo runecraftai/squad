@@ -357,10 +357,11 @@ drill_runs_status_for_branch() {  # <branch>
     rest=$(trim "$rest")
     sha=${rest%% *}
     if [ "$br" = "$branch" ]; then
-      # Same code-identity rule as axi status: skip a same-branch row whose
-      # short-sha does not match this worktree (rewritten or advanced tip).
-      if ! drill_coarse_head_matches_worktree "$sha"; then
-        continue
+      # Only the newest same-branch run is eligible; an unbindable head makes
+      # attribution unknown rather than exposing an older terminal execution.
+      if [ -z "$sha" ] || ! drill_coarse_head_matches_worktree "$sha"; then
+        printf 'unknown'
+        return 0
       fi
       printf '%s' "$st"
       return 0
@@ -422,7 +423,17 @@ if [ "$KIND" = strike ] && [ -n "$CREW_BRANCH" ] && command -v drill >/dev/null 
   if [ -n "$RUN_OUT" ]; then
     run_branch=$(strip_quotes "$(drill_field branch)")
     if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] && drill_run_head_matches_worktree; then
-      HAVE_RUN=1
+      run_status=$(strip_quotes "$(drill_field status)")
+      run_outcome=$(strip_quotes "$(drill_field outcome)")
+      if [ "$run_status" = failed ] || [ "$run_status" = cancelled ] || [ "$run_status" = completed ] || [ "$run_outcome" = failed ] || [ "$run_outcome" = passed ]; then
+        COARSE_STATUS=$(drill_runs_status_for_branch "$CREW_BRANCH")
+        case "$COARSE_STATUS" in
+          unknown|'') emit unknown none "latest same-branch execution could not be verified" ;;
+          *) HAVE_RUN=1 ;;
+        esac
+      else
+        HAVE_RUN=1
+      fi
     else
       # The active-or-most-recent run is for another branch, or same branch with
       # a rewritten/diverged head (the CLI is alive and answered; only the
@@ -432,7 +443,7 @@ if [ "$KIND" = strike ] && [ -n "$CREW_BRANCH" ] && command -v drill >/dev/null 
       # immediately with a second bounded call would just double the wait
       # for no better answer.
       COARSE_STATUS=$(drill_runs_status_for_branch "$CREW_BRANCH")
-      if [ -n "$COARSE_STATUS" ]; then
+      if [ -n "$COARSE_STATUS" ] && [ "$COARSE_STATUS" != unknown ]; then
         HAVE_RUN=1
         RUN_SOURCE=coarse
       fi

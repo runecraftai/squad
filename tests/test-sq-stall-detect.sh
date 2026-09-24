@@ -133,6 +133,33 @@ assert_contains "$(cat "$STATE/resolved-decision.status")" 'stall interrupted'
 
 # --- retry_queued supervision tests ---
 
+# If completion lands after the retry scan but before claim/running finishes,
+# the locked claim recheck and caller must leave the terminal event untouched.
+"$EXEC" claim interleaved >/dev/null
+"$EXEC" running interleaved >/dev/null
+"$EXEC" retry interleaved >/dev/null
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/interleaved.exec"
+printf 'exec_retry_count=0\n' >> "$STATE/interleaved.exec"
+REAL_DATE=$(command -v date)
+export REAL_DATE STATE TMP
+mkdir -p "$TMP/datebin"
+cat > "$TMP/datebin/date" <<'EOF'
+#!/usr/bin/env bash
+count=0
+[ ! -f "$TMP/date-count" ] || count=$(cat "$TMP/date-count")
+count=$((count + 1))
+printf '%s\n' "$count" > "$TMP/date-count"
+if [ "$count" -eq 1 ]; then
+  printf 'done: PR checks green\n' >> "$STATE/interleaved.status"
+fi
+exec "$REAL_DATE" "$@"
+EOF
+chmod +x "$TMP/datebin/date"
+PATH="$TMP/datebin:$PATH" retry_run_claim
+assert_eq "$("$EXEC" get interleaved)" released
+assert_eq "$(grep '^exec_attempt=' "$STATE/interleaved.exec" | cut -d= -f2)" 1
+assert_eq "$(tail -1 "$STATE/interleaved.status")" 'done: PR checks green'
+
 # A retry_queued task whose scheduled moment has arrived is claimed and
 # returns to running, keeping it within supervision.
 "$EXEC" claim retry-ready >/dev/null

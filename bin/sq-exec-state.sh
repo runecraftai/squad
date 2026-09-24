@@ -36,18 +36,31 @@ get_field() { grep "^$1=" "$(path_for "$2")" 2>/dev/null | tail -1 | cut -d= -f2
 meta_field() { grep "^$1=" "$STATE/$2.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
 get_state() { local value; value=$(get_field exec_state "$1"); printf '%s\n' "${value:-unclaimed}"; }
 
+terminal_status() {  # <id>: 0 only for a last nonblank done: or failed: line
+  local line verb pr
+  line=$(grep -v '^[[:space:]]*$' "$STATE/$1.status" 2>/dev/null | tail -1 || true)
+  pr=$(meta_field pr "$1")
+  [ -n "$line" ] || return 1
+  verb=${line%%:*}
+  verb=${verb%%[key=*}
+  verb=${verb#"${verb%%[![:space:]]*}"}
+  # PR metadata is corroborating only; local and recon deliveries need none.
+  case "$verb:$pr" in done:*|failed:*) return 0 ;; *) return 1 ;; esac
+}
+
 with_lock() {
   local id=$1; shift
-  local lock tmp
+  local lock tmp rc=0
   lock=$(lock_for "$id")
   if ! mkdir "$lock" 2>/dev/null; then
     printf 'error: execution state is locked for %s\n' "$id" >&2
     return 1
   fi
   trap 'rmdir "$lock" 2>/dev/null || true' RETURN
-  "$@"
+  "$@" || rc=$?
   trap - RETURN
   rmdir "$lock" 2>/dev/null || true
+  return "$rc"
 }
 
 write_record() {
@@ -113,6 +126,11 @@ write_record() {
 claim_locked() {
   local id=$1 state
   state=$(get_state "$id")
+  if terminal_status "$id"; then
+    transition_locked "$id" released >/dev/null
+    printf 'error: task %s has terminal status\n' "$id" >&2
+    return 1
+  fi
   case "$state" in
     unclaimed|retry_queued)
       write_record "$id" claimed "$state"
@@ -128,6 +146,11 @@ transition_locked() {
   local id=$1 next=$2 current
   current=$(get_state "$id")
   valid_state "$next" || { printf 'error: invalid execution state %s\n' "$next" >&2; return 2; }
+  if [ "$next" = running ] && terminal_status "$id"; then
+    case "$current" in claimed|retry_queued) write_record "$id" released "$current" ;; esac
+    printf '%s\n' released
+    return 1
+  fi
   case "$current:$next" in
     unclaimed:claimed|unclaimed:released|claimed:running|claimed:retry_queued|claimed:released|running:retry_queued|running:released|retry_queued:claimed|retry_queued:released|released:released) : ;;
     "$next:$next") printf '%s\n' "$current"; return 0 ;;
@@ -149,6 +172,14 @@ _heartbeat() {
 recover_locked() {
   local id=$1 current age now last
   current=$(get_state "$id")
+  case "$current" in
+    running|claimed|retry_queued)
+      if terminal_status "$id"; then
+        transition_locked "$id" released
+        return
+      fi
+      ;;
+  esac
   case "$current" in
     running|claimed)
       now=$(date +%s); last=$(get_field exec_last_activity "$id"); [ -n "$last" ] || last=0
