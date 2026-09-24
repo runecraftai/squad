@@ -284,7 +284,7 @@ Like `document.instructions`, this field steers gate behavior, so it is honored 
 
 ### review.topology
 
-Review execution topology: `single` (one reviewer) or `specialized` (six specialist lenses plus one consolidator).
+Review execution topology: `single` (one reviewer) or `specialized` (six specialist lenses).
 
 | | |
 | --- | --- |
@@ -295,7 +295,7 @@ Review execution topology: `single` (one reviewer) or `specialized` (six special
 
 When `single`, the review step runs one agent invocation with the existing behavior and prompt.
 When `specialized`, the review step captures an immutable round-scoped snapshot (base SHA, target HEAD, complete diff, changed paths, intent, path instructions, scope, ignore patterns, and sanitized earlier-round history) and validates that HEAD and base have not changed before recording approval.
-Specialist execution, concurrency, deduplication, verification, and approval of findings are not yet implemented (R2/R3).
+Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. `observe` mode logs lens failures without blocking; `blocking` mode fails the review when any lens fails. Deduplication, consolidation, and approval of specialist findings are not yet implemented (R3).
 
 ```yaml
 review:
