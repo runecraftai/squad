@@ -290,6 +290,31 @@ Risk assessment (after listing all findings):
 		if err := validateReviewSnapshotContinuity(ctx, sctx, reviewSnapshot.BaseSHA, reviewSnapshot.TargetHeadSHA, reviewSnapshot.ID); err != nil {
 			return nil, err
 		}
+		beforeState, stateErr := officialReviewState(ctx, sctx.WorkDir)
+		if stateErr != nil {
+			return nil, fmt.Errorf("official worktree boundary check before specialized review: %w", stateErr)
+		}
+		specialistResults := runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log)
+		var specialistFailures int
+		for _, specialist := range specialistResults {
+			if specialist.Err != nil {
+				specialistFailures++
+				sctx.Log(fmt.Sprintf("review lens %s failed after %s: %v", specialist.Lens, specialist.Duration, specialist.Err))
+			}
+		}
+		afterState, stateErr := officialReviewState(ctx, sctx.WorkDir)
+		if stateErr != nil {
+			return nil, fmt.Errorf("official worktree boundary check after specialized review: %w", stateErr)
+		}
+		if beforeState != afterState {
+			return nil, fmt.Errorf("review snapshot %s invalidated: official worktree state changed during specialist batch; review approval withheld", reviewSnapshot.ID)
+		}
+		if err := validateReviewSnapshotContinuity(ctx, sctx, reviewSnapshot.BaseSHA, reviewSnapshot.TargetHeadSHA, reviewSnapshot.ID); err != nil {
+			return nil, err
+		}
+		if specialistFailures > 0 && sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
+			return nil, fmt.Errorf("specialized review incomplete: %d of %d lenses failed", specialistFailures, len(specialistResults))
+		}
 	}
 
 	// Parse structured findings

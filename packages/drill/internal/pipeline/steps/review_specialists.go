@@ -1,0 +1,200 @@
+package steps
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/runecraftai/squad/packages/drill/internal/git"
+
+	"github.com/runecraftai/squad/packages/drill/internal/agent"
+)
+
+var reviewLensInstructions = []struct{ name, prompt string }{
+	{"security", "Identify concrete security vulnerabilities introduced by this change."},
+	{"requirements", "Check behavior against the stated intent and requirements."},
+	{"tests-behavior", "Find concrete behavior defects and missing or misleading tests."},
+	{"architecture", "Find concrete architectural correctness and integration defects."},
+	{"regression-hallucination", "Check for regressions and claims unsupported by repository evidence."},
+	{"performance-resources", "Find concrete performance, resource, and lifecycle defects."},
+}
+
+const reviewCandidateSchema = `{"type":"object","required":["candidates","inspected_files"],"properties":{"candidates":{"type":"array","items":{"type":"object","required":["scenario","impact","evidence","suggested_action","suggested_severity"],"properties":{"scenario":{"type":"string"},"impact":{"type":"string"},"evidence":{"type":"string"},"file":{"type":["string","null"]},"line":{"type":["integer","null"]},"suggested_action":{"type":"string"},"suggested_severity":{"type":"string"}}}},"inspected_files":{"type":"array","items":{"type":"string"}}}}`
+
+type reviewLensCandidate struct {
+	Scenario          string  `json:"scenario"`
+	Impact            string  `json:"impact"`
+	Evidence          string  `json:"evidence"`
+	File              *string `json:"file"`
+	Line              *int    `json:"line"`
+	SuggestedAction   string  `json:"suggested_action"`
+	SuggestedSeverity string  `json:"suggested_severity"`
+}
+
+type reviewLensOutput struct {
+	Candidates     []reviewLensCandidate `json:"candidates"`
+	InspectedFiles []string              `json:"inspected_files"`
+}
+
+type reviewLensResult struct {
+	Lens     string
+	Duration time.Duration
+	Output   reviewLensOutput
+	Err      error
+}
+
+// runReviewSpecialists executes each specialist against an independently disposable
+// detached worktree, never exposing the official working directory to an agent.
+func officialReviewState(ctx context.Context, repoDir string) (string, error) {
+	status, err := git.Run(ctx, repoDir, "status", "--porcelain=v2", "--untracked-files=all")
+	if err != nil {
+		return "", fmt.Errorf("read official worktree status: %w", err)
+	}
+	head, err := git.Run(ctx, repoDir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("read official worktree HEAD: %w", err)
+	}
+	h := sha256.New()
+	_, _ = h.Write([]byte(status + "\x00" + head))
+	err = filepath.WalkDir(repoDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(repoDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == ".git" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		_, _ = h.Write([]byte(rel + "\x00" + info.Mode().String() + "\x00"))
+		if entry.IsDir() {
+			return nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			_, _ = h.Write([]byte(target))
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		_, _ = h.Write(data)
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("hash official worktree: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func validateReviewLensOutput(output reviewLensOutput) error {
+	if output.InspectedFiles == nil {
+		return fmt.Errorf("inspected_files must be an array")
+	}
+	for i, candidate := range output.Candidates {
+		if strings.TrimSpace(candidate.Scenario) == "" || strings.TrimSpace(candidate.Impact) == "" || strings.TrimSpace(candidate.Evidence) == "" || strings.TrimSpace(candidate.SuggestedAction) == "" || strings.TrimSpace(candidate.SuggestedSeverity) == "" {
+			return fmt.Errorf("candidate %d lacks scenario, impact, evidence, suggested action, or suggested severity", i)
+		}
+		if candidate.Line != nil && *candidate.Line < 1 {
+			return fmt.Errorf("candidate %d has a non-positive line", i)
+		}
+	}
+	return nil
+}
+
+func runReviewSpecialists(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, maxParallel int, timeout time.Duration, logf func(string)) []reviewLensResult {
+	results := make([]reviewLensResult, len(reviewLensInstructions))
+	jobs := make(chan int)
+	workers := maxParallel
+	if workers > len(results) {
+		workers = len(results)
+	}
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				results[i] = runReviewLens(ctx, a, repoDir, snapshot, i, timeout, logf)
+			}
+		}()
+	}
+dispatch:
+	for i := range results {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			break dispatch
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	for i := range results {
+		if results[i].Lens == "" {
+			results[i] = reviewLensResult{Lens: reviewLensInstructions[i].name, Err: ctx.Err()}
+		}
+	}
+	return results
+}
+
+func runReviewLens(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, index int, timeout time.Duration, logf func(string)) (out reviewLensResult) {
+	lens := reviewLensInstructions[index]
+	out.Lens = lens.name
+	started := time.Now()
+	defer func() { out.Duration = time.Since(started) }()
+	root, err := os.MkdirTemp("", "drill-review-lens-")
+	if err != nil {
+		out.Err = err
+		return
+	}
+	defer os.RemoveAll(root)
+	checkout := filepath.Join(root, "checkout")
+	if _, err := git.Run(ctx, repoDir, "clone", "--shared", "--no-checkout", repoDir, checkout); err != nil {
+		out.Err = fmt.Errorf("create isolated lens repository: %w", err)
+		return
+	}
+	if _, err := git.Run(ctx, checkout, "checkout", "--detach", snapshot.TargetHeadSHA); err != nil {
+		out.Err = fmt.Errorf("checkout isolated lens snapshot: %w", err)
+		return
+	}
+	lensCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	prompt := string(snapshot.ContextForLens(lens.prompt)) + "\nReturn JSON only matching the supplied schema. Include every inspected file."
+	if logf != nil {
+		logf("review lens " + lens.name + " started")
+	}
+	result, err := a.Run(lensCtx, agent.RunOpts{Prompt: prompt, CWD: checkout, JSONSchema: json.RawMessage(reviewCandidateSchema), Purpose: "review-lens:" + lens.name})
+	if err != nil {
+		out.Err = fmt.Errorf("lens %s: %w", lens.name, err)
+	} else if err := json.Unmarshal(result.Output, &out.Output); err != nil {
+		out.Err = fmt.Errorf("lens %s candidate output: %w", lens.name, err)
+	} else if err := validateReviewLensOutput(out.Output); err != nil {
+		out.Err = fmt.Errorf("lens %s candidate output: %w", lens.name, err)
+	}
+	if logf != nil {
+		logf("review lens " + lens.name + " finished")
+	}
+	return out
+}
