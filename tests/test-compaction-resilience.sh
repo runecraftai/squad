@@ -79,7 +79,7 @@ test_event_handlers() {
   local required_handlers=(
     "session_before_compact"
     "turn_end"
-    "agent_settled"
+    "agent_before_settle"
     "session_start"
   )
   

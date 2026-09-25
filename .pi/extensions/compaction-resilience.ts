@@ -10,7 +10,7 @@
  * This extension hooks into Pi's compaction lifecycle:
  * - session_before_compact: Captures and preserves critical state
  * - turn_end: Detects stalls after compaction and re-engages
- * - agent_settled: Handles the case where operator ends idle post-compaction
+ * - agent_before_settle: Handles the case where operator ends idle post-compaction
  *
  * Usage:
  *   pi --extension .pi/extensions/compaction-resilience.ts
@@ -255,12 +255,15 @@ export default function (pi: ExtensionAPI) {
     // Update operator state
     if (task) operatorState.currentTask = task;
     if (checklist.length > 0) {
-      // Merge with existing checklist, avoiding duplicates
+      // Merge with existing checklist, avoiding duplicates, capped at 20
       const existingSet = new Set(operatorState.checklistItems);
       for (const item of checklist) {
         if (!existingSet.has(item)) {
           operatorState.checklistItems.push(item);
         }
+      }
+      if (operatorState.checklistItems.length > 20) {
+        operatorState.checklistItems = operatorState.checklistItems.slice(0, 20);
       }
     }
     if (modifiedFiles.length > 0) {
