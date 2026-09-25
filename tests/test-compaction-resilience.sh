@@ -47,6 +47,7 @@ log_fail() {
 }
 
 # Cleanup function
+# shellcheck disable=SC2329
 cleanup() {
   rm -rf "$TEST_DIR"
 }
