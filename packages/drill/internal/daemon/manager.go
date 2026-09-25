@@ -943,13 +943,7 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 	}
 
 	execSteps := m.steps()
-	reviewMode := "mono-agent"
-	if cfg.Review.Topology.Topology == config.ReviewTopologySpecialized {
-		reviewMode = "specialized-shadow"
-		if cfg.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
-			reviewMode = "specialized-blocking"
-		}
-	}
+	reviewMode := config.ReviewModeString(cfg.Review.Topology.Topology, cfg.Review.Topology.Enforcement)
 	telemetry.Track("run", telemetry.Fields{
 		"action":      "started",
 		"trigger":     trigger,

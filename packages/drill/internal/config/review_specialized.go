@@ -77,3 +77,13 @@ func (r ReviewTopologyConfig) Resolve() (ReviewMode, error) {
 	}
 	return mode, nil
 }
+
+func ReviewModeString(topology, enforcement string) string {
+	if topology == ReviewTopologySpecialized {
+		if enforcement == ReviewEnforcementBlocking {
+			return "specialized-blocking"
+		}
+		return "specialized-shadow"
+	}
+	return "mono-agent"
+}
