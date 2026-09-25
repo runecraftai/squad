@@ -104,6 +104,9 @@ func consolidateReviewCandidates(ctx context.Context, a agent.Agent, repoDir str
 	}
 	missing = missingReviewCoverage(snapshot.ChangedPaths, manifests)
 	if len(missing) > 0 {
+		initialRiskLevel := output.RiskLevel
+		initialRiskRationale := output.RiskRationale
+		initialRiskScope := output.RiskScope
 		complement, err := runReviewConsolidator(ctx, a, repoDir, snapshot, candidates, output.Items, missing, timeout, "review-coverage-complement")
 		if err != nil {
 			return Findings{}, err
@@ -113,6 +116,9 @@ func consolidateReviewCandidates(ctx context.Context, a agent.Agent, repoDir str
 				return Findings{}, fmt.Errorf("specialized review coverage incomplete: %s was not inspected after complementary pass", file)
 			}
 		}
+		complement.RiskLevel = initialRiskLevel
+		complement.RiskRationale = initialRiskRationale
+		complement.RiskScope = initialRiskScope
 		output = complement
 	}
 	findings := normalizeConsolidatedFindings(Findings{Items: output.Items, RiskLevel: output.RiskLevel, RiskRationale: output.RiskRationale, RiskScope: output.RiskScope})
