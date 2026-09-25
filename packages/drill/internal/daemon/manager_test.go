@@ -165,6 +165,9 @@ func TestPushReceivedSpecializedReviewOptInTracksShadowMode(t *testing.T) {
 	if started == nil || started.fields["review_mode"] != "specialized-shadow" {
 		t.Fatalf("review mode telemetry = %#v, want specialized-shadow", started)
 	}
+	if got := started.fields["run_id"]; got != result.RunID {
+		t.Fatalf("review mode run id = %v, want %q", got, result.RunID)
+	}
 }
 
 func TestPushReceivedSkipStepsConfiguresExecutor(t *testing.T) {

@@ -947,6 +947,7 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 	telemetry.Track("run", telemetry.Fields{
 		"action":      "started",
 		"trigger":     trigger,
+		"run_id":      run.ID,
 		"agent":       string(cfg.Agent),
 		"branch_role": branchRole,
 		"step_count":  len(execSteps),
