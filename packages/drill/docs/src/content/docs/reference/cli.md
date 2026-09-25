@@ -21,6 +21,28 @@ Unlike `drill attach`, bare `drill` only auto-attaches to an active run on the c
 `--skip` only applies when bare `drill` starts a new pipeline run through the wizard; it does not skip a step on an already-active run.
 Valid step names are `intent`, `rebase`, `review`, `test`, `document`, `lint`, `push`, `pr`, and `ci`.
 
+## drill review
+
+Review an existing local commit range with the specialized review engine without starting a delivery run.
+The command captures a disposable checkout at the requested head, runs the same snapshot, specialist lenses, and consolidator as the Review step, then removes the checkout.
+It never fixes findings, commits, pushes, opens a PR, monitors CI, publishes GitHub comments or reviews, merges, or records a delivery approval.
+
+```sh
+drill review --base origin/main --head HEAD
+drill review --base 0123456789abcdef --head feature --intent "Preserve compatibility for existing clients"
+drill review --base origin/main --head feature --format json
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--base` | `string` | required | Local base ref to review. |
+| `--head` | `string` | required | Local head ref to review. |
+| `--intent` | `string` | (none) | Optional review intent. |
+| `--format` | `string` | `text` | `text` or `json`; both include the repository, exact SHAs, and native findings. |
+
+This is an audit result only and cannot satisfy the `Require drill` delivery gate.
+For an open GitHub PR, Squad's `sq-pr-review.sh <number>` resolves and fetches the PR before invoking this local-range command and withholds the output if the head moves during review.
+
 ## drill init
 
 Initialize or refresh the gate for the current repository.
