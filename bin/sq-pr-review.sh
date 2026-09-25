@@ -56,7 +56,7 @@ git -C "$ROOT" fetch --no-tags --quiet "$HEAD_REMOTE_URL" "$HEAD_SHA" || die 'co
 [ "$(git -C "$ROOT" rev-parse 'FETCH_HEAD^{commit}')" = "$HEAD_SHA" ] || die 'fetched head SHA diverges from PR metadata'
 git -C "$ROOT" update-ref "$BASE_REF" "$BASE_SHA" || die 'could not bind immutable base ref'
 git -C "$ROOT" update-ref "$HEAD_REF" "$HEAD_SHA" || die 'could not bind immutable head ref'
-drill review --base "$BASE_REF" --head "$HEAD_REF" "${INTENT[@]}" >"$TMP/result" || die 'Drill review failed'
+drill review --base "$BASE_REF" --head "$HEAD_REF" ${INTENT[@]+"${INTENT[@]}"} >"$TMP/result" || die 'Drill review failed'
 CURRENT=$(gh pr view "$PR" --json headRefOid --jq .headRefOid --repo "$REPO" 2>/dev/null) || die 'could not verify PR head after review'
 [ "$CURRENT" = "$HEAD_SHA" ] || die "stale review: PR head moved from $HEAD_SHA to $CURRENT; result withheld"
 cat "$TMP/result"

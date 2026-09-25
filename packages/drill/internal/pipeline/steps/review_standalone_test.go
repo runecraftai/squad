@@ -19,7 +19,7 @@ func TestStandaloneReviewUsesReviewStepEngine(t *testing.T) {
 		purposes = append(purposes, opts.Purpose)
 		mu.Unlock()
 		if opts.Purpose == "review-consolidator" {
-			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"]}`)}, nil
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"],"risk_level":"low","risk_rationale":"no issues","risk_scope":"source-or-external"}`)}, nil
 		}
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
 	}}
@@ -44,5 +44,14 @@ func TestStandaloneReviewUsesReviewStepEngine(t *testing.T) {
 	}
 	if len(findings.Items) != 0 {
 		t.Fatalf("findings=%+v", findings)
+	}
+	if findings.RiskLevel != "low" {
+		t.Fatalf("risk_level=%q", findings.RiskLevel)
+	}
+	if findings.RiskRationale != "no issues" {
+		t.Fatalf("risk_rationale=%q", findings.RiskRationale)
+	}
+	if findings.RiskScope != "source-or-external" {
+		t.Fatalf("risk_scope=%q", findings.RiskScope)
 	}
 }

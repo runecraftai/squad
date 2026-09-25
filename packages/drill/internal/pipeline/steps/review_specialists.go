@@ -73,7 +73,7 @@ func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, h
 	paths := changedPathList(changedOutput)
 	snapshot := newReviewSnapshot(intent, "agent", baseSHA, headSHA, diff, paths, "", fmt.Sprintf("local changes between %s and %s", baseSHA, headSHA), "none", "")
 	if len(paths) == 0 {
-		return Findings{RiskLevel: "low", RiskRationale: "no changes to review"}, nil
+		return Findings{RiskLevel: "low", RiskRationale: "no changes to review", RiskScope: "source-or-external"}, nil
 	}
 	results := runReviewSpecialists(ctx, a, repoDir, snapshot, maxParallel, timeout, logf)
 	if failures := countSpecialistFailures(results); failures > 0 {
