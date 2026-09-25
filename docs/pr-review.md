@@ -1,37 +1,26 @@
-# Strike PR review (maintained pr-review)
+# Requested PR and diff reviews
 
-Squad maintains `@runecraft/pr-review` (0.1.0) in `packages/pr-review` and
-wires it into the strike flow between PR creation and the commander's merge
-decision (AGENTS.md section 7).
+Squad uses Drill's read-only standalone review surface for requested PR/diff reviews and knowledge-only reviews.
+Run `bin/sq-pr-review.sh <pr-number>` to resolve an open PR, fetch its exact base and head commits, and call `drill review`.
+For local refs, use `drill review --base <base> --head <head> [--intent <intent>]` directly.
+This is an audit that returns local native findings, not a delivery gate, approval, or GitHub publication path.
+Delivery continues through the complete `git push drill` pipeline.
+
+`packages/pr-review` remains present until the separate R7 retirement task.
 
 ## Surface
 
-- `.pi/extensions/sq-pr-review.ts` — Squad-named bootstrapper that registers
-  the maintained package extension in the Pi session (`/pr-review <n>`, focus
-  viewer, findings table). The package's own `pi` manifest also enables
-  auto-discovery through the root workspace.
-- `bin/sq-pr-review.sh [<pr-number>]` — thin wrapper for CI/scripting. It
-  validates, with clear failure messages (REQ-M3-02 AC3):
-  1. `gh` and `git` are on PATH;
-  2. the command runs inside a git checkout;
-  3. the PR resolves (explicit number, or from the current branch) and exists
-     as an OPEN PR readable by `gh`;
-  4. `gh` is authenticated.
-  It never starts a review by itself — the review runs in the Pi session —
-  and prints the in-session command to run.
+- `drill review --base <base> --head <head> [--intent <intent>]` reviews local refs non-interactively with Drill's snapshot, specialist lenses, and consolidator.
+- `bin/sq-pr-review.sh <pr-number>` validates an open PR and authentication, fetches immutable base/head refs, invokes Drill, then verifies that the remote head is unchanged before releasing the result.
+- `drill review --format json` emits repository identity, reviewed SHAs, and native findings; text output includes the same structured result.
 
 ## Guards
 
-- Publication is COMMENT-only (the package default; auto-approve is disabled).
-- The review never merges and never approves; the commander alone decides
-  merges. `+yolo` posture does not let the review self-approve.
-- Findings feed the commander decision; they are a review deliverable, not an
-  authority override.
+- Standalone review never runs fixes or delivery steps and performs no GitHub writes.
+- A standalone audit cannot satisfy `Require drill` or approve a delivery HEAD.
+- Findings are local review deliverables; external publication and merge remain human actions.
 
 ## Validation
 
-- Wrapper guard paths are unit-checked in `tests/sq-pr-review-guard.test.sh`
-  (no repo / no PR / no gh auth / closed PR → clear failures, exit 1).
-- One documented live run against a scratch repo is A-08 (manual, not a CI
-  gate): run `/pr-review <n>` in a Pi session on a test PR and confirm the
-  COMMENT-only findings table.
+- Wrapper guard, stale-head, and side-effect checks run in `tests/sq-pr-review-guard.test.sh`.
+- Drill's CLI and shared-engine checks are colocated in `packages/drill/internal/cli` and `packages/drill/internal/pipeline/steps`.

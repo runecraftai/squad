@@ -47,6 +47,6 @@ They cannot auto-merge, bypass drill, or turn standing autonomy into destructive
 
 The three auxiliary topologies are not execution playbook identities or dispatch owners.
 `arena` competes on one problem and selects one base, `swarm` covers distinct slices, and `interrogate` independently attacks one artifact with deduplication and judgment.
-For PR or diff surfaces, `interrogate` points to maintained [`@runecraft/pr-review`](../../packages/pr-review/README.md), and separate review is limited to requested reviews or knowledge-review deliverables.
+For PR or diff surfaces, `interrogate` points to the read-only Drill surface documented in [`docs/pr-review.md`](../pr-review.md), and separate reviews are limited to requested or knowledge-only review deliverables.
 
 The catalog remains 22 playbooks because these topology names and the four refused or deferred names are not selectable identities.

@@ -54,6 +54,7 @@ const body = `
 (intent, rebase, review, test, document, lint, push, PR, CI) before they reach
 the configured push target. You drive it through the ` + "`drill axi`" + ` command family, which prints
 machine-readable [TOON](https://toonformat.dev) to stdout and progress to stderr.
+For a requested read-only audit of existing local refs, ` + "`drill review --base <base> --head <head>`" + ` runs the review engine without satisfying or replacing delivery validation.
 
 ` + gateguidance.SkillBoundary + `
 

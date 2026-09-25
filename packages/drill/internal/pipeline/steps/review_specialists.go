@@ -57,6 +57,28 @@ type reviewConsolidation struct {
 
 const reviewConsolidationSchema = `{"type":"object","required":["findings","inspected_files"],"properties":{"findings":{"type":"array","items":{"type":"object","required":["severity","description","action","review_scope"],"properties":{"severity":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"review_scope":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"}}}},"inspected_files":{"type":"array","items":{"type":"string"}}}}`
 
+// RunStandaloneReview captures a local immutable range and runs the same specialist and consolidation engine used by ReviewStep.
+func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, headSHA, intent string, maxParallel int, timeout time.Duration, logf func(string)) (Findings, error) {
+	diff, err := git.Run(ctx, repoDir, "diff", "--no-ext-diff", "--binary", baseSHA+".."+headSHA)
+	if err != nil {
+		return Findings{}, fmt.Errorf("capture review snapshot diff: %w", err)
+	}
+	changedOutput, err := git.Run(ctx, repoDir, "diff", "--name-only", "-z", "--no-renames", baseSHA+".."+headSHA)
+	if err != nil {
+		return Findings{}, fmt.Errorf("get changed files: %w", err)
+	}
+	paths := changedPathList(changedOutput)
+	snapshot := newReviewSnapshot(intent, "agent", baseSHA, headSHA, diff, paths, "", fmt.Sprintf("local changes between %s and %s", baseSHA, headSHA), "none", "")
+	if len(paths) == 0 {
+		return Findings{RiskLevel: "low", RiskRationale: "no changes to review"}, nil
+	}
+	results := runReviewSpecialists(ctx, a, repoDir, snapshot, maxParallel, timeout, logf)
+	if failures := countSpecialistFailures(results); failures > 0 {
+		return Findings{}, fmt.Errorf("specialized review incomplete: %d of %d lenses failed", failures, len(results))
+	}
+	return consolidateReviewCandidates(ctx, a, repoDir, snapshot, results, timeout)
+}
+
 func consolidateReviewCandidates(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, results []reviewLensResult, timeout time.Duration) (Findings, error) {
 	var candidates []reviewLensCandidate
 	manifests := make(map[string]bool)
