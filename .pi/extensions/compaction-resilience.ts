@@ -19,7 +19,7 @@
  *   "extensions": ["compaction-resilience.ts"]
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // State tracking for compaction resilience
 interface OperatorState {
@@ -225,7 +225,7 @@ export default function (pi: ExtensionAPI) {
     operatorState.turnCount++;
     operatorState.lastActivity = Date.now();
     
-    // Check if we just had a compaction
+    // Check if we just had a compaction - set flag for agent_before_settle to handle
     if (lastCompactionDetected && !reengagementSent) {
       // Extract current task context from recent messages
       const branch = ctx.sessionManager.getBranch();
@@ -237,16 +237,8 @@ export default function (pi: ExtensionAPI) {
         if (checklist.length > 0) operatorState.checklistItems = checklist;
       }
       
-      // Send re-engagement message
-      const reengagementMsg = generateReengagementMessage(operatorState);
-      await ctx.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
-      
-      reengagementSent = true;
-      lastCompactionDetected = false;
-      
-      if (ctx.hasUI) {
-        ctx.ui.notify("Post-compaction re-engagement sent", "info");
-      }
+      // Flag will be checked by agent_before_settle
+      // Don't send re-engagement here to avoid race condition
     }
   });
 
@@ -322,8 +314,9 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
-  // Handle compaction completion and detect stalls
-  pi.on("agent_settled", async (event, ctx) => {
+  // Handle compaction detection and re-engagement via agent_before_settle
+  // agent_before_settle is the final actionable boundary that can append entries and request one continuation
+  pi.on("agent_before_settle", async (event, ctx) => {
     // Check if we're settling after a compaction
     const branch = ctx.sessionManager.getBranch();
     if (!branch) return;
@@ -340,7 +333,7 @@ export default function (pi: ExtensionAPI) {
       reengagementSent = false;
       
       if (ctx.hasUI) {
-        ctx.ui.notify("Compaction detected - will re-engage on next turn", "info");
+        ctx.ui.notify("Compaction detected - will re-engage", "info");
       }
     }
     
@@ -351,7 +344,11 @@ export default function (pi: ExtensionAPI) {
     if (lastCompactionDetected && timeSinceLastActivity > idleThreshold && !reengagementSent) {
       // Operator seems idle after compaction - send re-engagement
       const reengagementMsg = generateReengagementMessage(operatorState);
-      await ctx.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
+      
+      // Use pi.sendUserMessage (on ExtensionAPI) instead of ctx.sendUserMessage
+      // agent_before_settle can request one continuation via return { continue: true }
+      // but we need to send a message to re-engage the operator
+      pi.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
       
       reengagementSent = true;
       lastCompactionDetected = false;
@@ -414,7 +411,7 @@ export default function (pi: ExtensionAPI) {
     description: "Manually trigger post-compaction re-engagement",
     handler: async (args, ctx) => {
       const reengagementMsg = generateReengagementMessage(operatorState);
-      await ctx.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
+      pi.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
       ctx.ui.notify("Re-engagement message sent", "info");
     },
   });
