@@ -58,6 +58,9 @@ func reviewGitOutput(t *testing.T, root string, args ...string) string {
 func prepareStandaloneReviewRepo(t *testing.T) (root, base, head string) {
 	t.Helper()
 	root = setupTestRepo(t)
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	base = reviewGitOutput(t, root, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("review me\n"), 0600); err != nil {
 		t.Fatal(err)
