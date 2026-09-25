@@ -196,14 +196,12 @@ export default function (pi: ExtensionAPI) {
 
   // Track tool calls for activity monitoring
   pi.on("tool_call", async (event, ctx) => {
-    const toolName = event.toolCall.type === "function" ? event.toolCall.function?.name : "unknown";
+    const toolName = event.toolName;
     
     // Track file modifications
     if (toolName === "edit" || toolName === "write") {
       try {
-        const args = typeof event.toolCall.function?.arguments === "string" 
-          ? JSON.parse(event.toolCall.function!.arguments)
-          : event.toolCall.function?.arguments;
+        const args = event.input;
         if (args?.path) {
           operatorState.filesModified.push(args.path);
           // Keep only last 50 files
