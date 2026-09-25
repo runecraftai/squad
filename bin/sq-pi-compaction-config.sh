@@ -287,7 +287,7 @@ main() {
       ;;
     configure)
       shift
-      configure_compaction "$project_dir" "$@"
+      configure_compaction "$project_dir" "${@:2}"
       ;;
     *)
       log_error "Unknown command: $command"
