@@ -184,11 +184,10 @@ test_tool_call_handling() {
   log_test "Extension handles tool calls"
   TESTS_RUN=$((TESTS_RUN + 1))
   
-  if grep -q "pi.on(\"tool_call\"" "$EXTENSION_PATH" && \
-     grep -q "filesModified" "$EXTENSION_PATH"; then
-    log_pass "Tool call handling present"
+  if EXTENSION_PATH="$(realpath "$EXTENSION_PATH")" bun -e 'const {default:extension}=await import(process.env.EXTENSION_PATH);const handlers=new Map(),commands=new Map(),notify=[];extension({on:(n,h)=>handlers.set(n,h),registerCommand:(n,c)=>commands.set(n,c),sendUserMessage:()=>{}});const ctx={hasUI:true,ui:{notify:m=>notify.push(m)}};await handlers.get("tool_call")({type:"tool_call",toolName:"edit",input:{path:"tracked.txt"}},ctx);await commands.get("compaction-status").handler("",ctx);if(!notify.at(-1).includes("Files modified: 1")||!notify.at(-1).includes("Tool calls: 1"))throw Error(notify.at(-1));await handlers.get("tool_call")({type:"tool_call",toolName:"bash",input:{command:"pwd"}},ctx);await commands.get("compaction-status").handler("",ctx);if(!notify.at(-1).includes("Tool calls: 2"))throw Error(notify.at(-1));'; then
+    log_pass "Public Pi tool_call event tracks file modifications and normal tool calls"
   else
-    log_fail "Tool call handling missing"
+    log_fail "Public Pi tool_call event regression"
   fi
 }
 
