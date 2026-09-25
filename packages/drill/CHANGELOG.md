@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.7](https://github.com/runecraftai/squad/compare/drill-v0.1.6...drill-v0.1.7) (2026-09-25)
+
+
+### Features
+
+* **daemon:** include run id in run-start telemetry event ([#219](https://github.com/runecraftai/squad/issues/219)) ([a3b5f90](https://github.com/runecraftai/squad/commit/a3b5f908e59012a8850b85a2b428b240a187ba6b))
+* **drill:** add --specialized-review opt-in for observe-mode shadow batch ([#216](https://github.com/runecraftai/squad/issues/216)) ([47aded4](https://github.com/runecraftai/squad/commit/47aded4a97d90b381d10e0ca988136c6a634b30b))
+* **drill:** add standalone read-only review ([b00fe8b](https://github.com/runecraftai/squad/commit/b00fe8bb2b58161b5bc9d63a16a709ed69795c38))
+* **drill:** standalone read-only review surface for local diffs and PRs ([d3896a2](https://github.com/runecraftai/squad/commit/d3896a2b7cd56cfe66ad77f0c5274214cfe2bd1c))
+* **pipeline:** add session-free consolidator for specialized review findings ([#214](https://github.com/runecraftai/squad/issues/214)) ([081a1be](https://github.com/runecraftai/squad/commit/081a1be563bff6f25cfe73073bff21271bf9671f))
+* **pipeline:** implement parallel specialist review lenses with isolated worktree enforcement ([#213](https://github.com/runecraftai/squad/issues/213)) ([ff8d284](https://github.com/runecraftai/squad/commit/ff8d28404d541d7d1c0399847ff5411c3919e812))
+* **pipeline:** specialized review R4 — operational telemetry, TUI/AXI visibility, safe retry, and attribution ([#215](https://github.com/runecraftai/squad/issues/215)) ([90a49ee](https://github.com/runecraftai/squad/commit/90a49ee06714ee526daa6a40355b00cafb543bf7))
+* **review:** specialized review topology config and immutable round snapshot ([#211](https://github.com/runecraftai/squad/issues/211)) ([2194982](https://github.com/runecraftai/squad/commit/219498277ae70f6514c73de3999876a95cd055d8))
+
 ## [0.1.6](https://github.com/runecraftai/squad/compare/drill-v0.1.5...drill-v0.1.6) (2026-09-23)
 
 
