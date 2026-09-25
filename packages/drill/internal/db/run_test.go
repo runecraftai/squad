@@ -32,6 +32,9 @@ func TestRunInsertAndGet(t *testing.T) {
 	if got.HeadSHA != "abc123" {
 		t.Errorf("head sha = %q, want %q", got.HeadSHA, "abc123")
 	}
+	if got.SpecializedReview {
+		t.Fatal("default run unexpectedly enabled specialized review")
+	}
 }
 
 func TestRunInsertAndUpdatePreserveBuildIdentity(t *testing.T) {
@@ -78,6 +81,22 @@ func TestInsertRunWithIntent(t *testing.T) {
 	}
 	if got.IntentSource == nil || *got.IntentSource != intent.Source {
 		t.Fatalf("intent source = %v, want %q", got.IntentSource, intent.Source)
+	}
+}
+
+func TestInsertRunStoresCallerSpecializedReviewOptIn(t *testing.T) {
+	d := openTestDB(t)
+	repo, _ := d.InsertRepo("/home/user/project", "git@github.com:user/project.git", "main")
+	run, err := d.InsertRunWithIntentAndReviewMode(repo.ID, "feature", "abc123", "def456", nil, true)
+	if err != nil {
+		t.Fatalf("insert opted-in run: %v", err)
+	}
+	got, err := d.GetRun(run.ID)
+	if err != nil {
+		t.Fatalf("get opted-in run: %v", err)
+	}
+	if !got.SpecializedReview {
+		t.Fatal("caller opt-in was not persisted")
 	}
 }
 

@@ -29,6 +29,14 @@ func countSpecialistFailures(results []reviewLensResult) int {
 }
 
 func (s *ReviewStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, error) {
+	reviewMode := "mono-agent"
+	if sctx.Config.Review.Topology.Topology == config.ReviewTopologySpecialized {
+		reviewMode = "specialized-shadow"
+		if sctx.Config.Review.Topology.Enforcement == config.ReviewEnforcementBlocking {
+			reviewMode = "specialized-blocking"
+		}
+	}
+	sctx.Log(fmt.Sprintf("review mode=%s enforcement=%s", reviewMode, sctx.Config.Review.Topology.Enforcement))
 	ctx := sctx.Ctx
 	baseSHA := resolveBranchBaseSHA(ctx, sctx.WorkDir, sctx.Run.BaseSHA, sctx.Repo.DefaultBranch)
 	branch := sctx.Run.Branch

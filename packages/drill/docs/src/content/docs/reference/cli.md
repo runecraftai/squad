@@ -87,6 +87,7 @@ An active run on another branch does not block starting validation for the curre
 ```sh
 drill axi run --intent "the user's goal"
 drill axi run --intent "the user's goal" --skip test,lint
+drill axi run --intent "the user's goal" --specialized-review
 drill axi run --intent "the user's goal" --yes
 ```
 
@@ -95,7 +96,12 @@ drill axi run --intent "the user's goal" --yes
 | `--intent`    | `string` | (none)  | What the user set out to accomplish; required to start a new run |
 | `-y`, `--yes` | `bool`   | `false` | Auto-resolve every gate until a decision point or outcome        |
 | `--skip`      | `string` | (none)  | Comma-separated pipeline steps to skip                           |
+| `--specialized-review` | `bool` | `false` | Opt into the six-lens shadow review for this run only |
 
+`--specialized-review` is caller-supplied and defaults off; it is never read from branch or repository content.
+It enables only the observe-mode shadow batch, requires trusted `review.enforcement: observe`, and cannot change gate authority.
+The option applies only when `axi run` starts a new run; it never changes an existing run during reattachment.
+The run stores this option so daemon recovery preserves the requested mode; `axi status` reports the mode once the review starts.
 `--intent` is not a description of the diff.
 It is the user's goal or request, and drill uses it verbatim instead of transcript inference.
 Err on the side of completeness: include the goal, important decisions and tradeoffs, constraints or approaches ruled in or out, and explicit requests that might otherwise look surprising in the diff.

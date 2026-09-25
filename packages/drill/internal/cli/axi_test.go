@@ -496,12 +496,15 @@ func TestConfigErrorForFreshAxiRunAllowsReattach(t *testing.T) {
 }
 
 func TestRerunParamsIncludeSkipSteps(t *testing.T) {
-	params := rerunParams("repo-1", "feature/x", []types.StepName{types.StepReview}, "user goal")
+	params := rerunParams("repo-1", "feature/x", []types.StepName{types.StepReview}, "user goal", true)
 	if params.RepoID != "repo-1" || params.Branch != "feature/x" || params.Intent != "user goal" {
 		t.Fatalf("unexpected rerun params: %#v", params)
 	}
 	if len(params.SkipSteps) != 1 || params.SkipSteps[0] != types.StepReview {
 		t.Fatalf("SkipSteps = %#v, want review", params.SkipSteps)
+	}
+	if !params.SpecializedReview {
+		t.Fatal("SpecializedReview = false, want caller opt-in preserved")
 	}
 }
 
@@ -699,7 +702,7 @@ func TestAxiLogsExposeSpecializedReviewProgress(t *testing.T) {
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	progress := "specialized review topology=specialized enforcement=blocking snapshot_head=abc123\nspecialized review batch abc123-1 pending at HEAD abc123: security,requirements,tests-behavior,architecture,regression-hallucination,performance-resources\nreview lens security started\nreview lens requirements completed: 2 candidates\nreview lens architecture failed\nspecialized review batch completed in 200ms: 1/6 lenses failed\nspecialized review incomplete: 1 required lenses failed\nspecialized review consolidator running\nspecialized review consolidator completed: 1 findings\n"
+	progress := "review mode=specialized-blocking enforcement=blocking\nspecialized review topology=specialized enforcement=blocking snapshot_head=abc123\nspecialized review batch abc123-1 pending at HEAD abc123: security,requirements,tests-behavior,architecture,regression-hallucination,performance-resources\nreview lens security started\nreview lens requirements completed: 2 candidates\nreview lens architecture failed\nspecialized review batch completed in 200ms: 1/6 lenses failed\nspecialized review incomplete: 1 required lenses failed\nspecialized review consolidator running\nspecialized review consolidator completed: 1 findings\n"
 	if err := os.WriteFile(filepath.Join(logDir, "review.log"), []byte(progress), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -719,7 +722,7 @@ func TestAxiLogsExposeSpecializedReviewProgress(t *testing.T) {
 	if _, err := runAxiStatus(cmd, dbRun.ID); err != nil {
 		t.Fatalf("axi status: %v", err)
 	}
-	for _, want := range []string{"specialized_review:", "topology: specialized", "enforcement: blocking", "snapshot_head: abc123", "wall_time: 200ms", "security,started,0", "requirements,completed,2", "architecture,failed,0", "tests-behavior,pending,0", "consolidator: \"completed: 1 findings\"", "incomplete: 1 required lenses failed"} {
+	for _, want := range []string{"review_mode: specialized-blocking", "specialized_review:", "mode: specialized-blocking", "topology: specialized", "enforcement: blocking", "snapshot_head: abc123", "wall_time: 200ms", "security,started,0", "requirements,completed,2", "architecture,failed,0", "tests-behavior,pending,0", "consolidator: \"completed: 1 findings\"", "incomplete: 1 required lenses failed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("AXI status missing %q: %s", want, out.String())
 		}
@@ -867,7 +870,7 @@ func TestAxiRunReportsInvalidGlobalConfig(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 	cmd.SetOut(&out)
-	if err := runAxiRun(cmd, false, nil, "user goal"); err == nil {
+	if err := runAxiRun(cmd, false, nil, "user goal", false); err == nil {
 		t.Fatalf("axi run should fail on invalid global config:\n%s", out.String())
 	}
 	got := out.String()

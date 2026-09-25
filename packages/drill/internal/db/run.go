@@ -25,13 +25,15 @@ type Run struct {
 	// ReviewApprovedHeadSHA is the exact commit approved by the last
 	// successfully completed full review. It is nil for legacy runs and until
 	// review completes; mutable run/worktree heads never infer this authority.
-	ReviewApprovedHeadSHA  *string
-	Status                 types.RunStatus
-	PRURL                  *string
-	PRState                *string
-	PRStateObservedAt      *int64
-	CIReadyAt              *int64
-	CIReadyNoCI            bool
+	ReviewApprovedHeadSHA *string
+	Status                types.RunStatus
+	PRURL                 *string
+	PRState               *string
+	PRStateObservedAt     *int64
+	CIReadyAt             *int64
+	CIReadyNoCI           bool
+	// SpecializedReview is the caller's explicit per-run opt-in, persisted so daemon recovery keeps the run's requested shadow mode.
+	SpecializedReview      bool
 	LastPushedSHA          *string
 	PushTargetKind         *string
 	PushTargetFingerprint  *string
@@ -66,14 +68,14 @@ type Run struct {
 	UpdatedAt       int64
 }
 
-const runColumns = `id, repo_id, branch, head_sha, base_sha, submitted_head_sha, drill_version, drill_build_sha, review_approved_head_sha, status, pr_url, pr_state, pr_state_observed_at, ci_ready_at, COALESCE(ci_ready_no_ci, 0), last_pushed_sha, push_target_kind, push_target_fingerprint, push_ref, last_pushed_at, push_generation, COALESCE(push_active, 0), terminal_head_verified_at, custody_returned_at, error, awaiting_agent_since, COALESCE(parked_ms, 0), intent, intent_source, intent_session_id, intent_score, created_at, updated_at`
+const runColumns = `id, repo_id, branch, head_sha, base_sha, submitted_head_sha, drill_version, drill_build_sha, review_approved_head_sha, status, pr_url, pr_state, pr_state_observed_at, ci_ready_at, COALESCE(ci_ready_no_ci, 0), COALESCE(specialized_review_enabled, 0), last_pushed_sha, push_target_kind, push_target_fingerprint, push_ref, last_pushed_at, push_generation, COALESCE(push_active, 0), terminal_head_verified_at, custody_returned_at, error, awaiting_agent_since, COALESCE(parked_ms, 0), intent, intent_source, intent_session_id, intent_score, created_at, updated_at`
 
 func scanRun(row interface {
 	Scan(...any) error
 }, r *Run) error {
 	return row.Scan(
 		&r.ID, &r.RepoID, &r.Branch, &r.HeadSHA, &r.BaseSHA, &r.SubmittedHeadSHA, &r.DrillVersion, &r.DrillBuildSHA, &r.ReviewApprovedHeadSHA, &r.Status,
-		&r.PRURL, &r.PRState, &r.PRStateObservedAt, &r.CIReadyAt, &r.CIReadyNoCI,
+		&r.PRURL, &r.PRState, &r.PRStateObservedAt, &r.CIReadyAt, &r.CIReadyNoCI, &r.SpecializedReview,
 		&r.LastPushedSHA, &r.PushTargetKind, &r.PushTargetFingerprint, &r.PushRef,
 		&r.LastPushedAt, &r.PushGeneration, &r.PushActive, &r.TerminalHeadVerifiedAt,
 		&r.CustodyReturnedAt, &r.Error, &r.AwaitingAgentSince, &r.ParkedMS,
@@ -88,21 +90,26 @@ func (d *DB) InsertRun(repoID, branch, headSHA, baseSHA string) (*Run, error) {
 }
 
 func (d *DB) InsertRunWithIntent(repoID, branch, headSHA, baseSHA string, intent *RunIntent) (*Run, error) {
+	return d.InsertRunWithIntentAndReviewMode(repoID, branch, headSHA, baseSHA, intent, false)
+}
+
+func (d *DB) InsertRunWithIntentAndReviewMode(repoID, branch, headSHA, baseSHA string, intent *RunIntent, specializedReview bool) (*Run, error) {
 	ts := now()
 	version := buildinfo.CurrentVersion()
 	buildSHA := buildinfo.Commit
 	r := &Run{
-		ID:               newID(),
-		RepoID:           repoID,
-		Branch:           branch,
-		HeadSHA:          headSHA,
-		BaseSHA:          baseSHA,
-		SubmittedHeadSHA: &headSHA,
-		DrillVersion:     &version,
-		DrillBuildSHA:    &buildSHA,
-		Status:           types.RunPending,
-		CreatedAt:        ts,
-		UpdatedAt:        ts,
+		ID:                newID(),
+		RepoID:            repoID,
+		Branch:            branch,
+		HeadSHA:           headSHA,
+		BaseSHA:           baseSHA,
+		SubmittedHeadSHA:  &headSHA,
+		DrillVersion:      &version,
+		DrillBuildSHA:     &buildSHA,
+		Status:            types.RunPending,
+		SpecializedReview: specializedReview,
+		CreatedAt:         ts,
+		UpdatedAt:         ts,
 	}
 	if intent != nil {
 		r.Intent = &intent.Summary
@@ -111,8 +118,8 @@ func (d *DB) InsertRunWithIntent(repoID, branch, headSHA, baseSHA string, intent
 		r.IntentScore = &intent.Score
 	}
 	_, err := d.sql.Exec(
-		`INSERT INTO runs (id, repo_id, branch, head_sha, base_sha, submitted_head_sha, drill_version, drill_build_sha, status, pr_state, intent, intent_source, intent_session_id, intent_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.RepoID, r.Branch, r.HeadSHA, r.BaseSHA, headSHA, r.DrillVersion, r.DrillBuildSHA, r.Status, r.Intent, r.IntentSource, r.IntentSessionID, r.IntentScore, r.CreatedAt, r.UpdatedAt,
+		`INSERT INTO runs (id, repo_id, branch, head_sha, base_sha, submitted_head_sha, drill_version, drill_build_sha, status, pr_state, specialized_review_enabled, intent, intent_source, intent_session_id, intent_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.RepoID, r.Branch, r.HeadSHA, r.BaseSHA, headSHA, r.DrillVersion, r.DrillBuildSHA, r.Status, r.SpecializedReview, r.Intent, r.IntentSource, r.IntentSessionID, r.IntentScore, r.CreatedAt, r.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert run: %w", err)
