@@ -707,3 +707,88 @@ func TestSpecializedReviewBatch_CancellationAndTimeoutReleaseResources(t *testin
 		t.Fatalf("temporary lens directories leaked: before=%d after=%d", len(before), len(after))
 	}
 }
+
+func TestConsolidatorRiskFieldsPassthrough(t *testing.T) {
+	dir := t.TempDir()
+	snapshot := newReviewSnapshot("", "", "base", "head", "diff", []string{"a.go"}, "", "", "", "")
+	a := controlledReviewAgent{run: func(_ context.Context, _ agent.RunOpts) (*agent.Result, error) {
+		return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"warning","description":"test finding","action":"auto-fix","review_scope":"source"}],"inspected_files":["a.go"],"risk_level":"medium","risk_rationale":"some risk","risk_scope":"source-or-external"}`)}, nil
+	}}
+	results := []reviewLensResult{{Lens: "security", Output: reviewLensOutput{InspectedFiles: []string{"a.go"}}}}
+	findings, err := consolidateReviewCandidates(context.Background(), a, dir, snapshot, results, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings.RiskLevel != "medium" {
+		t.Fatalf("RiskLevel = %q, want %q", findings.RiskLevel, "medium")
+	}
+	if findings.RiskRationale != "some risk" {
+		t.Fatalf("RiskRationale = %q, want %q", findings.RiskRationale, "some risk")
+	}
+	if findings.RiskScope != "source-or-external" {
+		t.Fatalf("RiskScope = %q, want %q", findings.RiskScope, "source-or-external")
+	}
+}
+
+func TestStandaloneReviewPopulatesRiskFields(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review-consolidator":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"info","description":"minor note","action":"no-op","review_scope":"source"}],"inspected_files":["feature.txt"],"risk_level":"low","risk_rationale":"trivial change","risk_scope":"source-or-external"}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
+		}
+	}}
+	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings.RiskLevel != "low" {
+		t.Fatalf("standalone RiskLevel = %q, want %q", findings.RiskLevel, "low")
+	}
+	if findings.RiskRationale != "trivial change" {
+		t.Fatalf("standalone RiskRationale = %q, want %q", findings.RiskRationale, "trivial change")
+	}
+	if findings.RiskScope != "source-or-external" {
+		t.Fatalf("standalone RiskScope = %q, want %q", findings.RiskScope, "source-or-external")
+	}
+}
+
+func TestReviewStepPopulatesRiskFieldsFromConsolidator(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review":
+			return &agent.Result{Output: json.RawMessage(`{"summary":"mono clean","findings":[]}`)}, nil
+		case "review-consolidator":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"warning","file":"feature.txt","line":1,"description":"consolidated issue","action":"auto-fix","review_scope":"source"}],"inspected_files":["feature.txt"],"risk_level":"high","risk_rationale":"significant risk","risk_scope":"source-or-external"}`)}, nil
+		case "review-coverage-complement":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"warning","file":"feature.txt","line":1,"description":"consolidated issue","action":"auto-fix","review_scope":"source"}],"inspected_files":["feature.txt"]}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := types.ParseFindingsJSON(outcome.Findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.RiskLevel != "high" {
+		t.Fatalf("pipeline RiskLevel = %q, want %q", parsed.RiskLevel, "high")
+	}
+	if parsed.RiskRationale != "significant risk" {
+		t.Fatalf("pipeline RiskRationale = %q, want %q", parsed.RiskRationale, "significant risk")
+	}
+	if parsed.RiskScope != "source-or-external" {
+		t.Fatalf("pipeline RiskScope = %q, want %q", parsed.RiskScope, "source-or-external")
+	}
+}
