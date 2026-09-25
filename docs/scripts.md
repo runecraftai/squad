@@ -72,6 +72,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `backends/orca.sh`       | Experimental Orca backend adapter owning both worktree and terminal                  |
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
 | `sq-config-push.sh`      | Push declared inherited local material to live local or remote XOs and send the placement-specific config reread when changed |
+| `sq-pi-compaction-config.sh` | Configure Pi context compaction settings and load the compaction-resilience extension |
 | `sq-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for unit sync and base seeding |
 | `sq-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `sq-review-diff.sh`      | Review an operator branch or resolved PR head against the authoritative base          |
