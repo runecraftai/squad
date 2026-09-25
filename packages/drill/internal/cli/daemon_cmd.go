@@ -106,6 +106,10 @@ func newDaemonNotifyPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			specializedReview, err := parseSpecializedReviewPushOptions(pushOptions)
+			if err != nil {
+				return err
+			}
 			gatePath, err := normalizeNotifyGatePath(gate)
 			if err != nil {
 				return err
@@ -124,12 +128,13 @@ func newDaemonNotifyPushCmd() *cobra.Command {
 
 			var result ipc.PushReceivedResult
 			return client.Call(ipc.MethodPushReceived, &ipc.PushReceivedParams{
-				Gate:      gatePath,
-				Ref:       ref,
-				Old:       oldSHA,
-				New:       newSHA,
-				SkipSteps: skipSteps,
-				Intent:    intent,
+				Gate:              gatePath,
+				Ref:               ref,
+				Old:               oldSHA,
+				New:               newSHA,
+				SkipSteps:         skipSteps,
+				Intent:            intent,
+				SpecializedReview: specializedReview,
 			}, &result)
 		},
 	}
@@ -193,6 +198,20 @@ func parseSkipSteps(value string) ([]types.StepName, error) {
 // The value is base64-encoded so multi-line or special-character intents
 // survive the push-option transport (which is line-oriented).
 const intentPushOptionPrefix = "drill.intent="
+const specializedReviewPushOption = "drill.specialized-review=1"
+
+func parseSpecializedReviewPushOptions(options []string) (bool, error) {
+	enabled := false
+	for _, option := range options {
+		if strings.HasPrefix(option, "drill.specialized-review=") {
+			if option != specializedReviewPushOption {
+				return false, fmt.Errorf("invalid specialized review push option")
+			}
+			enabled = true
+		}
+	}
+	return enabled, nil
+}
 
 // formatIntentPushOption encodes intent as a single push option, or returns ""
 // when there is no intent to carry.

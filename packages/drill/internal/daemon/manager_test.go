@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
+	"github.com/runecraftai/squad/packages/drill/internal/config"
 	"github.com/runecraftai/squad/packages/drill/internal/db"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
@@ -19,6 +20,26 @@ import (
 )
 
 // --- RunManager integration tests ---
+
+func TestEnableSpecializedReviewShadowPreservesObserveAuthority(t *testing.T) {
+	mode := config.ReviewMode{Topology: config.ReviewTopologySingle, Enforcement: config.ReviewEnforcementObserve}
+	if err := enableSpecializedReviewShadow(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if mode.Topology != config.ReviewTopologySpecialized || mode.Enforcement != config.ReviewEnforcementObserve {
+		t.Fatalf("caller opt-in mode = %+v, want specialized/observe", mode)
+	}
+}
+
+func TestEnableSpecializedReviewShadowRejectsBlockingAuthority(t *testing.T) {
+	mode := config.ReviewMode{Topology: config.ReviewTopologySingle, Enforcement: config.ReviewEnforcementBlocking}
+	if err := enableSpecializedReviewShadow(&mode); err == nil {
+		t.Fatal("caller opt-in must not enable specialized review under blocking enforcement")
+	}
+	if mode.Topology != config.ReviewTopologySingle || mode.Enforcement != config.ReviewEnforcementBlocking {
+		t.Fatalf("rejected opt-in changed trusted mode: %+v", mode)
+	}
+}
 
 func TestValidateRecoveredSessionProviders_RejectsUnavailableFixerProvider(t *testing.T) {
 	database, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -94,6 +115,9 @@ func TestPushReceivedTracksRunTelemetry(t *testing.T) {
 	if got := started.fields["branch_role"]; got != "default" {
 		t.Fatalf("started branch_role = %v, want default", got)
 	}
+	if got := started.fields["review_mode"]; got != "mono-agent" {
+		t.Fatalf("default review mode telemetry = %v, want mono-agent", got)
+	}
 
 	// The executor persists terminal status before its owner goroutine emits
 	// terminal telemetry. Wait for that asynchronous handoff instead of
@@ -108,6 +132,38 @@ func TestPushReceivedTracksRunTelemetry(t *testing.T) {
 	}
 	if _, ok := finished.fields["duration_ms"]; !ok {
 		t.Fatal("expected duration_ms in run finished telemetry")
+	}
+}
+
+func TestPushReceivedSpecializedReviewOptInTracksShadowMode(t *testing.T) {
+	recorder := &telemetryRecorder{}
+	restore := telemetry.SetDefaultForTesting(recorder)
+	defer restore()
+
+	step := &mockPassStep{name: types.StepReview}
+	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step { return []pipeline.Step{step} })
+	_, headSHA := setupTestGitRepo(t, p, d, "specialized-review-run-repo")
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	var result ipc.PushReceivedResult
+	err = client.Call(ipc.MethodPushReceived, &ipc.PushReceivedParams{
+		Gate: p.RepoDir("specialized-review-run-repo"),
+		Ref:  "refs/heads/main", Old: "0000000000000000000000000000000000000000", New: headSHA,
+		SpecializedReview: true,
+	}, &result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run := waitForRunTerminalState(t, d, result.RunID); run.Status != types.RunCompleted {
+		t.Fatalf("run status = %q, want %q", run.Status, types.RunCompleted)
+	}
+	started := recorder.find("run", "action", "started")
+	if started == nil || started.fields["review_mode"] != "specialized-shadow" {
+		t.Fatalf("review mode telemetry = %#v, want specialized-shadow", started)
 	}
 }
 

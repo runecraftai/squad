@@ -294,8 +294,9 @@ Review execution topology: `single` (one reviewer) or `specialized` (six special
 | Trust | Read only from the trusted default branch |
 
 When `single`, the review step runs one agent invocation with the existing behavior and prompt.
-When `specialized`, the review step captures an immutable round-scoped snapshot (base SHA, target HEAD, complete diff, changed paths, intent, path instructions, scope, ignore patterns, and sanitized earlier-round history) and validates that HEAD and base have not changed before recording approval.
-Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. `observe` mode logs lens failures without blocking; `blocking` mode fails the review when any lens fails, then runs a session-free consolidator that inspects current source, validates file/line anchors against the snapshot, rejects false evidence and generic advice, deduplicates by violated contract and scenario, normalizes severity and action fields, and produces the only findings that may reach blocking, fixes, or human approval. Raw candidates never trigger correction. Each batch emits bounded operational telemetry: a batch ID, wall time, per-lens status with candidate counts, and consolidator status. This progress is visible in the TUI sidebar and through `axi status` as structured operational data; it never exposes agent prompts or outputs.
+When `specialized`, whether selected by trusted configuration or the caller's per-run `--specialized-review` flag, the review step captures an immutable round-scoped snapshot (base SHA, target HEAD, complete diff, changed paths, intent, path instructions, scope, ignore patterns, and sanitized earlier-round history) and validates that HEAD and base have not changed before recording approval.
+The per-run flag defaults off, is never read from branch or repository content, and only opts into the shadow batch when trusted enforcement is `observe`; it cannot change gate authority.
+Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. In both modes a session-free consolidator inspects current source, validates file/line anchors against the snapshot, rejects false evidence and generic advice, deduplicates by violated contract and scenario, and normalizes severity and action fields. `observe` mode logs lens failures without blocking, runs the consolidator to produce shadow findings (telemetry only; never authoritative for gating, fixes, or approval), and logs consolidation failures as warnings. `blocking` mode fails the review when any lens fails, then runs the same consolidator and makes its validated findings the only ones that may reach blocking, fixes, or human approval; consolidation failure in `blocking` withholds approval. Raw candidates never trigger correction. Each batch emits bounded operational telemetry: a batch ID, wall time, per-lens status with candidate counts, and consolidator status. This progress is visible in the TUI sidebar and through `axi status` as structured operational data; it never exposes agent prompts or outputs.
 
 ```yaml
 review:
@@ -313,7 +314,7 @@ How specialist findings are surfaced when `topology` is `specialized`.
 | Default | `observe` |
 | Trust | Read only from the trusted default branch |
 
-`observe` logs findings without gating the run; `blocking` consolidates specialist candidates into validated findings and gates the run on the consolidated result.
+`observe` runs the consolidator in shadow mode (findings are telemetry only; the mono-agent review remains authoritative) and logs lens or consolidation failures without blocking; `blocking` consolidates specialist candidates into validated findings and gates the run on the consolidated result.
 Ignored when `topology` is `single`.
 
 ### review.max_parallel
@@ -339,6 +340,7 @@ Timeout for each specialist review invocation when `topology` is `specialized`.
 | Trust | Read only from the trusted default branch |
 
 All four `review.topology`, `review.enforcement`, `review.max_parallel`, and `review.timeout` are honored **only from the trusted default-branch copy** of `.drill.yaml`, regardless of [`allow_repo_commands`](#allow_repo_commands): a pushed branch cannot steer the review topology or override enforcement and budget constraints.
+The caller's `--specialized-review` flag is a separate per-run opt-in that can select specialized topology only under trusted `observe` enforcement; trusted limits still bound the batch, and the flag cannot enable blocking enforcement.
 
 ```yaml
 review:

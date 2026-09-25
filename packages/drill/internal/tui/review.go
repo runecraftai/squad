@@ -177,7 +177,13 @@ func renderSpecializedReviewProgress(logs []string, width int) string {
 	if parsed == nil {
 		return ""
 	}
-	lines := []string{fmt.Sprintf("%s · %s · HEAD %s · batch %s", parsed.Enforcement, parsed.Topology, shortDisplaySHA(parsed.SnapshotHEAD), parsed.BatchID)}
+	lines := make([]string, 0, len(parsed.Lenses)+4)
+	if parsed.Mode != "" {
+		lines = append(lines, "mode: "+parsed.Mode)
+	}
+	if parsed.Topology != "" {
+		lines = append(lines, fmt.Sprintf("%s · %s · HEAD %s · batch %s", parsed.Enforcement, parsed.Topology, shortDisplaySHA(parsed.SnapshotHEAD), parsed.BatchID))
+	}
 	for _, lens := range parsed.Lenses {
 		detail := lens.Status
 		if lens.Candidates > 0 {
@@ -191,7 +197,10 @@ func renderSpecializedReviewProgress(logs []string, width int) string {
 	if parsed.Incomplete != "" {
 		lines = append(lines, "incomplete: "+parsed.Incomplete)
 	}
-	return renderBox("Specialized review", strings.Join(lines, "\n"), width)
+	if len(lines) == 0 {
+		return ""
+	}
+	return renderBox("Review", strings.Join(lines, "\n"), width)
 }
 
 func shortDisplaySHA(sha string) string {

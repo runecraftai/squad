@@ -9,6 +9,29 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
 
+func TestParseSpecializedReviewPushOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		options []string
+		want    bool
+		wantErr bool
+	}{
+		{name: "default off"},
+		{name: "caller opted in", options: []string{specializedReviewPushOption}, want: true},
+		{name: "reject malformed value", options: []string{"drill.specialized-review=true"}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseSpecializedReviewPushOptions(tc.options)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("parseSpecializedReviewPushOptions() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Fatalf("parseSpecializedReviewPushOptions() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseSkipPushOptions(t *testing.T) {
 	got, err := parseSkipPushOptions([]string{
 		"ci.skip",

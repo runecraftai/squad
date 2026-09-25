@@ -39,13 +39,20 @@ func TestModel_ApplyEvent_SpecializedReviewProgressRemainsVisible(t *testing.T) 
 		t.Fatalf("specialist progress not visible in TUI logs (count=%d): %#v", len(m.logs), m.logs)
 	}
 	view := m.View()
-	for _, want := range []string{"Specialized review", "blocking · specialized · HEAD abc123", "security: completed · 2 candidates", "requirements: pending", "consolidator: running"} {
+	for _, want := range []string{"Review", "blocking · specialized · HEAD abc123", "security: completed · 2 candidates", "requirements: pending", "consolidator: running"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("TUI missing %q: %s", want, view)
 		}
 	}
 	if len(m.findingSelections) != 0 {
 		t.Fatalf("operational progress unexpectedly changed finding selection: %#v", m.findingSelections)
+	}
+}
+
+func TestReviewProgressViewShowsMonoAgentMode(t *testing.T) {
+	view := renderSpecializedReviewProgress([]string{"review mode=mono-agent enforcement=observe"}, 80)
+	if !strings.Contains(view, "mode: mono-agent") {
+		t.Fatalf("review mode not visible in TUI: %s", view)
 	}
 }
 

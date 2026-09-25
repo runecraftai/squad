@@ -16,6 +16,7 @@ type ReviewLensProgress struct {
 // SpecializedReviewProgress holds the parsed state from specialized review operational logs.
 // It exposes bounded, privacy-safe operational telemetry without agent output.
 type SpecializedReviewProgress struct {
+	Mode         string
 	BatchID      string
 	WallTime     string
 	Topology     string
@@ -37,6 +38,13 @@ func ParseSpecializedReviewProgress(lines []string, incompleteLimit int) *Specia
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		switch {
+		case strings.HasPrefix(line, "review mode="):
+			for _, field := range fields {
+				key, value, ok := strings.Cut(field, "=")
+				if ok && key == "mode" {
+					progress.Mode = value
+				}
+			}
 		case strings.HasPrefix(line, "specialized review topology="):
 			for _, field := range fields {
 				key, value, ok := strings.Cut(field, "=")
@@ -100,7 +108,7 @@ func ParseSpecializedReviewProgress(lines []string, incompleteLimit int) *Specia
 		}
 	}
 
-	if progress.Topology == "" && len(progress.Lenses) == 0 {
+	if progress.Mode == "" && progress.Topology == "" && len(progress.Lenses) == 0 {
 		return nil
 	}
 	return progress

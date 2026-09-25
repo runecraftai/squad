@@ -11,6 +11,13 @@ func TestParseSpecializedReviewProgress_EmptyLog(t *testing.T) {
 	}
 }
 
+func TestParseSpecializedReviewProgress_ReportsMonoAgentMode(t *testing.T) {
+	result := ParseSpecializedReviewProgress([]string{"review mode=mono-agent enforcement=observe"}, 0)
+	if result == nil || result.Mode != "mono-agent" {
+		t.Fatalf("review mode = %+v, want mono-agent", result)
+	}
+}
+
 func TestParseSpecializedReviewProgress_TopologyOnly(t *testing.T) {
 	lines := []string{
 		"specialized review topology=full enforcement=strict snapshot_head=abc123def",

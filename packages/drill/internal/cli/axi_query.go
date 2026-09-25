@@ -82,7 +82,10 @@ func runAxiStatus(cmd *cobra.Command, runID string) (string, error) {
 	annotateRunView(env, &rv)
 	fields := []toon.Field{runObjectField(rv)}
 	if progress := readSpecializedReviewProgress(env, run.ID); progress != nil {
-		fields = append(fields, toon.Field{Key: "specialized_review", Value: progress})
+		fields = append(fields,
+			toon.Field{Key: "review_mode", Value: progress.Mode},
+			toon.Field{Key: "specialized_review", Value: progress},
+		)
 	}
 	if syncField := cachedBranchSyncField(cmd, run.ID); syncField != nil {
 		fields = append(fields, *syncField)
@@ -107,6 +110,7 @@ type reviewLensProgressRow struct {
 
 // specializedReviewProgressView wraps types.SpecializedReviewProgress for TOON output.
 type specializedReviewProgressView struct {
+	Mode         string                  `toon:"mode"`
 	BatchID      string                  `toon:"batch_id"`
 	WallTime     string                  `toon:"wall_time"`
 	Topology     string                  `toon:"topology"`
@@ -126,6 +130,7 @@ func toReviewView(p *types.SpecializedReviewProgress) *specializedReviewProgress
 		lenses[i] = reviewLensProgressRow{Lens: l.Lens, Status: l.Status, Candidates: l.Candidates}
 	}
 	return &specializedReviewProgressView{
+		Mode:         p.Mode,
 		BatchID:      p.BatchID,
 		WallTime:     p.WallTime,
 		Topology:     p.Topology,
