@@ -1146,11 +1146,14 @@ teardown_fob_return() {
 
 validate_worktree_teardown_safety() {
   local dirty_raw dirty unpushed_raw unpushed DEFAULT unmerged_raw unmerged branch
-  [ -d "$WT" ] || return 0
   [ "$FORCE" != "--force" ] || return 0
   case "$KIND" in
     xo|recon) return 0 ;;
   esac
+  [ -d "$WT" ] || {
+    echo "REFUSED: worktree $WT does not exist; cannot verify teardown safety." >&2
+    return 1
+  }
 
   if ! dirty_raw=$(git -C "$WT" status --porcelain 2>/dev/null); then
     if worktree_safety_blocked_by_lock "uncommitted changes"; then

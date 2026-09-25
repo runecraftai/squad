@@ -19,6 +19,20 @@
 #     git index.lock that blocks teardown. The return path retries on the lock
 #     error signature (even if the lock self-clears mid-check), then only removes a
 #     provably stale lock before re-running safety checks.
+#   - a missing worktree during that re-check refuses, while a legitimately returned
+#     worktree still skips the standalone safety check and completes cleanup.
+#
+# Incident checklist (mechanism authority: data/recon-task-state-loss/report.md):
+#   - The former exact line was `[ -d "$WT" ] || return 0`, which treated absence
+#     as proof of safety.
+#   - The standalone caller at bin/sq-teardown.sh:2275 runs before cleanup, but only
+#     when the worktree exists; the stale-lock callback at bin/sq-teardown.sh:1123
+#     runs after failed fob returns and may observe a partially removed worktree.
+#   - Fix 1 makes that callback refuse on absence. Fix 3 is unnecessary for this
+#     documented stale-lock race: its dangerous second check now stops before a
+#     retry can proceed, and no success-path post-check is being added.
+#   - A worktree already absent before teardown remains valid: the standalone call
+#     is gated at bin/sq-teardown.sh:2275 and fob return is gated at :2350.
 #
 # Matrix:
 #   (a) local-only + HEAD on a fork remote-tracking branch     -> ALLOW  (fork fix)
@@ -951,6 +965,76 @@ test_gh_error_and_content_absent_refuses() {
   expect_code 1 "$rc" "gh-error: teardown should refuse when the PR lookup errors and content is not landed"
   grep -q REFUSED "$case_dir/stderr" || fail "gh-error: no REFUSED line in stderr"
   pass "gh lookup error with content not in default refuses (fail-safe)"
+}
+
+test_missing_worktree_after_stale_lock_cleanup_refuses() {
+  local case_dir rc lock
+  case_dir=$(make_case missing-after-stale-lock)
+  write_meta "$case_dir" drill strike
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin sq/task-x1
+  git -C "$case_dir/project" fetch -q origin
+
+  cat > "$case_dir/fakebin/fob" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then
+  printf '%s\n' raced > "${SQUAD_TEST_WT:?}/raced-dirty-change"
+  echo "fatal: Unable to create '${SQUAD_TEST_LOCK:?}': File exists." >&2
+  exit 128
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" -d cwd "*) exit 0 ;;
+esac
+for target in "$@"; do
+  if [ "$target" = "${SQUAD_TEST_LOCK:?}" ]; then
+    rm -rf -- "${SQUAD_TEST_WT:?}"
+  fi
+done
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/fob" "$case_dir/fakebin/lsof"
+
+  lock=$(git_index_lock_path "$case_dir/wt")
+  mkdir -p "$(dirname "$lock")"
+  : > "$lock"
+  touch -t 200001010000 "$lock"
+
+  set +e
+  SQUAD_TEST_LOCK="$lock" SQUAD_TEST_WT="$case_dir/wt" \
+  SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=0 SQUAD_STALE_WORKTREE_LOCK_AGE_SECS=1 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "missing-after-stale-lock: teardown should refuse when safety cannot inspect the worktree"
+  assert_grep "REFUSED: worktree $case_dir/wt does not exist; cannot verify teardown safety." "$case_dir/stderr" \
+    "missing-after-stale-lock: absent worktree did not produce a safety refusal: $(cat "$case_dir/stderr")"
+  [ -f "$case_dir/state/task-x1.meta" ] \
+    || fail "missing-after-stale-lock: teardown erased task metadata after the worktree disappeared"
+  pass "worktree removed after a failed return makes the stale-lock safety re-check refuse and preserve task metadata"
+}
+
+test_legitimately_returned_worktree_still_tears_down() {
+  local case_dir rc
+  case_dir=$(make_case already-returned-worktree)
+  write_meta "$case_dir" drill strike
+  git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "already-returned-worktree: teardown should complete without a worktree"
+  assert_not_contains "$(cat "$case_dir/stderr")" "REFUSED" \
+    "already-returned-worktree: legitimate absent worktree unexpectedly refused"
+  [ ! -f "$case_dir/state/task-x1.meta" ] \
+    || fail "already-returned-worktree: teardown did not finish cleanup"
+  pass "legitimately returned worktree remains eligible for teardown"
 }
 
 test_stale_index_lock_cleared_and_teardown_succeeds() {
@@ -2715,6 +2799,8 @@ test_dirty_worktree_refuses
 test_gh_error_and_content_absent_refuses
 test_stale_index_lock_cleared_and_teardown_succeeds
 test_live_index_lock_is_never_removed_and_teardown_refuses
+test_missing_worktree_after_stale_lock_cleanup_refuses
+test_legitimately_returned_worktree_still_tears_down
 test_lsof_error_never_clears_index_lock
 test_stale_index_lock_cleanup_rechecks_dirty_worktree
 test_non_linked_index_lock_path_is_checked_from_worktree
