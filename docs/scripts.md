@@ -86,6 +86,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-cost-lib.sh`       | Shared Claude transcript and Pi session parsing, attribution, model normalization, and per-model pricing used by `sq-cost.sh` |
 | `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata; sq-cost, .meta, .exec, and status remain owners of truth |
 | `sq-dispatch-tune.sh`  | Analyze operator performance per dispatch profile and recommend harness/model/effort adjustments |
+| `sq-policy-lab.sh`     | Private non-promoting comparison laboratory for validating, running, and reporting policy candidate experiments |
 | `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
