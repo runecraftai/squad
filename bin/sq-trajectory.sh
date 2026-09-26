@@ -34,7 +34,7 @@ build_task() {
   local id=$1 meta="$STATE/$1.meta" exec="$STATE/$1.exec" status="$STATE/$1.status"
   valid_id "$id" || error 'invalid task id'
   [[ -f "$meta" && -f "$exec" && -f "$status" ]] || error "task or required source is missing: $id"
-  local task harness model attempt retries started ended endstate cost_json sources
+  local task harness model attempt retries started ended endstate cost_json sources receipts='[]'
   awk 'NF && $0 !~ /^[A-Za-z_][A-Za-z0-9_]*=/ { exit 1 }' "$meta" || error "malformed metadata source for $id"
   awk 'NF && $0 !~ /^[A-Za-z_][A-Za-z0-9_]*=/ { exit 1 }' "$exec" || error "malformed execution source for $id"
   task=$(field "$meta" task)
@@ -61,9 +61,13 @@ build_task() {
   else cost_json='{}'; fi
   jq -e 'type == "object"' >/dev/null 2>&1 <<<"$cost_json" || cost_json='{}'
   sources=$(jq -cn --argjson m "$(source_json "$meta")" --argjson e "$(source_json "$exec")" --argjson s "$(source_json "$status")" '[$m,$e,$s]')
+  local evidence_dir="$DATA/$id/artifacts/evidence"
+  if [[ -d "$evidence_dir" ]]; then
+    receipts=$(find "$evidence_dir" -maxdepth 1 -type f -name '*.json' -print0 | xargs -0 -r jq -c '{id,sha256,range_count:(.spans|length)}' | jq -s 'sort_by(.id)')
+  fi
   jq -cn --arg id "$id" --arg harness "$harness" --arg model "$model" \
     --arg attempt "$attempt" --arg retries "$retries" --arg started "$started" --arg ended "$ended" \
-    --arg outcome "$endstate" --argjson cost "$cost_json" --argjson sources "$sources" '
+    --arg outcome "$endstate" --argjson cost "$cost_json" --argjson sources "$sources" --argjson receipts "$receipts" '
     def metric($v;$ok;$why): {value:$v,availability:(if $ok then "known" else "unknown" end),reason:(if $ok then "" else $why end)};
     ($started|tonumber?) as $start | ($ended|tonumber?) as $finish |
     (.models // []) as $models |
@@ -84,7 +88,7 @@ build_task() {
      cost:metric($reported_cost;($reported_cost!=null);"sq-cost has no attributable provider-recorded cost"),
      checks:metric(null;false;"no task-attributable structured check summary is available"),
      repairs:metric(null;false;"no task-attributable structured repair count is available"),
-     outcome:metric($outcome;true;""),sources:$sources}'
+     outcome:metric($outcome;true;""),sources:$sources, evidence_receipts:$receipts}'
 }
 
 cmd_task() {
