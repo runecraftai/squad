@@ -372,7 +372,7 @@ pause_state_class() {  # <window> <task>
   key=${win//:/_}
   key=${key//\//_}
   key=${key//./_}
-  last=$(last_status_line "$STATE/$task.status")
+  last=$(last_status_state_line "$STATE/$task.status")
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_commander_held "$last"; then
     class=$(operator_absorb_class "$task")
@@ -422,7 +422,7 @@ surface_nonterminal_stale() {  # <window> <hash>
   local win=$1 h=$2 key task last rf rf_age
   key=$(printf '%s' "$win" | tr ':/.' '___')
   task=$(window_to_task "$win" "$STATE")
-  last=$(last_status_line "$STATE/$task.status")
+  last=$(last_status_state_line "$STATE/$task.status")
   if status_is_paused_or_commander_held "$last" || [ "$(operator_absorb_class "$task")" = paused ]; then
     # A live declared pause or decision-parked run is intentionally surfaced once so Squad can confirm
     # the external wait, but changing pane footer text must not turn that

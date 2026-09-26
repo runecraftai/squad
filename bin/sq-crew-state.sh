@@ -118,11 +118,6 @@ fi
 
 # --- status log ------------------------------------------------------------
 
-# Last non-empty status line, and its leading verb (the word before the colon).
-log_last_line() {
-  [ -f "$LOG" ] || return 1
-  grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1
-}
 # Map a status-log verb onto a canonical state for the fallback path. `paused` is
 # the deliberate-external-wait verb (sq-classify-lib.sh's SQUAD_CLASSIFY_PAUSED_VERB):
 # an operator with no active run and an idle pane that declared a known external wait
@@ -143,7 +138,7 @@ map_log_state() {  # <line>
   esac
 }
 
-LOG_LINE=$(log_last_line || true)
+LOG_LINE=$(last_status_state_line "$LOG")
 LOG_VERB=$(status_line_verb "$LOG_LINE")
 
 # pane_readable is consulted ONLY in the no-run fallback below. The run-step path
