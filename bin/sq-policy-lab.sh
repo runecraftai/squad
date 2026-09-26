@@ -119,7 +119,10 @@ def report(i, asjson):
  doc={'experiment_id':i,'verdict':verdict,'primary_metric':m['primary_metric'],'delta':delta,'quality':{'baseline':avg(b,'capability'),'candidate':avg(c,'capability')},'cost':{a:sum(x['result'].get('cost',0) for x in results if x['arm']==a and isinstance(x['result'].get('cost'),(int,float))) for a in ('baseline','candidate')},'tokens':{a:sum(x['result'].get('tokens',0) for x in results if x['arm']==a and isinstance(x['result'].get('tokens'),(int,float))) for a in ('baseline','candidate')},'duration_seconds':{a:sum(x['result'].get('duration_seconds',0) for x in results if x['arm']==a and isinstance(x['result'].get('duration_seconds'),(int,float))) for a in ('baseline','candidate')},'failures':[{'arm':x['arm'],'case_id':x['case_id'],'result':x['result'].get('result')} for x in results if x['result'].get('result') not in ('ok','pass','passed')],'case_intervals':[],'human_action':'A human must review and promote the candidate through the normal policy change process; this laboratory does not promote it.'}
  for case in m['public_cases']:
   vals=[x['result'].get('metric') for x in results if x['case_id']==case['id'] and isinstance(x['result'].get('metric'),(int,float))]
-  doc['case_intervals'].append({'case_id':case['id'],'low':min(vals) if vals else None,'high':max(vals) if vals else None})
+  doc['case_intervals'].append({'case_id':case['id'],'type':'public','low':min(vals) if vals else None,'high':max(vals) if vals else None})
+ for case in m['reserved_cases']:
+  vals=[x['result'].get('metric') for x in results if x['case_id']==case['id'] and isinstance(x['result'].get('metric'),(int,float))]
+  doc['case_intervals'].append({'case_id':case['id'],'type':'reserved','low':min(vals) if vals else None,'high':max(vals) if vals else None})
  if asjson: print(json.dumps(doc,sort_keys=True)); return
  print(f'# Policy experiment {i}\n\nVerdict: **{verdict}**\n\n- Primary metric: {m["primary_metric"]}\n- Delta: {delta}\n- Quality: {doc["quality"]}\n- Cost: {doc["cost"]}\n- Tokens: {doc["tokens"]}\n- Duration (seconds): {doc["duration_seconds"]}\n- Failures: {len(doc["failures"])}\n- Per-case intervals: {doc["case_intervals"]}\n\nHuman action: '+doc['human_action'])
 
