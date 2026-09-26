@@ -1,7 +1,7 @@
 # The bin/ toolbelt
 
 The sergeant at arms drives these; interactive entrypoints work by hand too, while `*-lib.sh` files are sourced helpers.
-Each row is one purpose clause only: the script's own header comment or docstring is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
+Each row is one purpose clause only: the script's own header comment is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
 If you have changed away from the Squad base in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
 The shared drill gate refusal for unit lifecycle entrypoints is summarized in [architecture.md](architecture.md#drill-gate-authority-boundary), while `docs/sessionstart-nudge.md` covers the silent session-open hook use; `sq-gate-refuse-lib.sh`'s header owns its exact contract.
 
@@ -27,19 +27,15 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-ask.sh`              | Interactive decision card picker: reads a card JSON on stdin and renders a terminal picker | 
 | `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
 | `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through sq-tasks             |
-| `sq-board-github.sh`     | Opt-in GitHub issue monitor: list eligible issues, poll for changes, report aggregate status, approve dispatch suggestions (requires tracker.kind: github in WORKFLOW.md) |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
-| `sq-learn.sh`            | Capture a durable operational lesson in `data/learnings.md`                         |
-| `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs; `--playbook` selects an execution playbook   |
+| `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs   |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `sq-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
-| `sq-learn.sh`            | Capture a bounded, near-duplicate-filtered operational lesson in `data/learnings.md` |
 | `sq-install-fob.sh`| Build and install the vendored packages/fob from source for real-Herdr E2E that needs spawn worktrees |
 | `sq-herdr-ci-cleanup.sh` | Snapshot and tear down only job-owned `sq-lab-*` sessions in the Herdr CI lane       |
 | `sq-test-run.sh`         | Behavior-test runner: selection, portable lanes, proven-isolated `--jobs`, coverage guard, timing/JSON |
 | `sq-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
 | `sq-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` symlink, and the canonical self-governance section |
-| `sq-self-heal.sh`        | Diagnose and auto-fix common Squad base failures: stale worktrees, orphan status logs, broken symlinks, stale locks, corrupted learnings (dry-run by default, `--apply` to fix, `--check` for CI gate) |
 | `sq-guard.sh`            | Warn on primary-checkout tangles, pending queued wakes, and unhealthy supervision    |
 | `sq-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-base predicate for tracked hooks             |
 | `sq-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for sq-lock.sh and the Claude Stop auto-arm |
@@ -50,18 +46,13 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-arm-pretool-check.sh` | Stable PreToolUse transport for the sentry-arm command policy (docs/arm-pretool-check.md) |
 | `sq-arm-command-policy.mjs` | Semantic owner of the sentry-arm PreToolUse policy (docs/arm-pretool-check.md)   |
 | `sq-subagent-pretool-check.sh` | Primary-base delegation-shape PreToolUse guard (docs/subagent-guard.md) |
-| `sq-backend-pretool-check.sh` | Primary-base raw session-provider CLI PreToolUse guard |
-| `sq-backend-command-policy.mjs` | Semantic owner of the raw session-provider CLI policy |
-| `sq-poll-pretool-check.sh` | Primary-base `state/` polling-loop PreToolUse guard |
-| `sq-poll-command-policy.mjs` | Semantic owner of the narrow `state/` polling-loop policy |
-| `sq-push-pretool-check.sh` | Drill-task manual branch-push PreToolUse guard |
-| `sq-push-command-policy.mjs` | Semantic owner of the `git push` command classification |
 | `sq-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `sq-home-seed.sh`        | Transactionally provision a local XO base and maintain `data/XOs.md` |
 | `sq-remote-home-seed.sh` | Register and provision a whole XO base on an SSH-reachable host              |
 | `sq-remote-readiness-lib.sh` | Shared remote second-mate readiness gate: check and, when needed, repair then re-check through `sq-remote-doctor.sh` |
 | [`sq-project-origin-lib.sh`](../bin/sq-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
 | `sq-spawn.sh`            | Spawn operators, scouts, `id=repo` batches, and XOs on the resolved harness and runtime backend |
+| `sq-claude-account.sh`   | Parse `config/claude-accounts` and verify a registered Claude account's login state (`docs/configuration.md`) |
 | `sq-workflow.sh`         | Parse and validate YAML-front-matter WORKFLOW.md manifests; emit JSON, validate, or get typed fields |
 | `sq-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `sq-backend-hometag-lib.sh` | Shared per-installation base-tag derivation for zellij tab and cmux workspace titles |
@@ -72,11 +63,9 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `backends/orca.sh`       | Experimental Orca backend adapter owning both worktree and terminal                  |
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
 | `sq-config-push.sh`      | Push declared inherited local material to live local or remote XOs and send the placement-specific config reread when changed |
-| `sq-pi-compaction-config.sh` | Configure Pi context compaction settings and load the compaction-resilience extension |
 | `sq-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for unit sync and base seeding |
 | `sq-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `sq-review-diff.sh`      | Review an operator branch or resolved PR head against the authoritative base          |
-| `sq-review-pane.sh`      | Open a tmux visual review pane for a live task and hand fixes back to the operator    |
 | `sq-marker-lib.sh`       | Compatibility entry point for the from-squad carrier owned by `sq-operational-input.sh` |
 | `sq-pending-reply-lib.sh` | Parent-owned XO pending-reply expectations, recovery, and keyed escalation lifecycle |
 | `sq-xo-report.sh` | Optional helper to append a correlated parent status or document-pointer report       |
@@ -85,14 +74,12 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-sentry-arm.sh`        | Verified base-scoped sentry arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `sq-sentry-checkpoint.sh` | Run one bounded foreground sentry checkpoint for Codex-style supervision            |
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
-| `sq-stall-detect.sh`      | Detect stalled execution attempts, interrupt conclusive stalls, schedule retry with exponential backoff, and claim retry-queued attempts when their moment arrives; declined terminal claims are normal skips with no status append |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
-| `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes (routine envelope for Pi extension coordination), guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
-| `sq-exec-state.sh`       | Manage per-attempt execution state sidecar (`<id>.exec`): atomic claim, transition, after_run hook, heartbeat, crash recovery; unclaimed default for legacy tasks; terminal done:/failed: in .status blocks claim and transition to running, and triggers release during recovery |
-| `sq-crew-state.sh`       | Print one deterministic current-state line for an operator, including exec state            |
+| `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
+| `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
 | `sq-cost.sh`           | Price real operator transcripts per model, render task usage reports, and publish an idempotent PR comment |
@@ -112,12 +99,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `sq-stand-to-drain.sh`       | Atomically drain queued sentry wakes, emit bounded best-effort status-event annotations, unit-wide OPEN DECISIONS and TEARDOWN PENDING sections, then assert supervision health |
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |
-| `sq-mcp-wake-append.sh`      | Append a wake record to the stand-to queue for MCP requests via the canonical `fm_wake_append` path |
-| `sq-mcp-outbox-write.sh`     | Write a reply to the MCP outbox for a request; Squad-side append path for MCP reply delivery |
-| `sq-mcp-link.sh`             | Record `mcp_request=` on a task and write its machine-readable task-id reply; no-op without a request id |
 | `sq-handoff-request.sh`      | Record, resolve, and list durable new-session handoff requests at milestone closes (docs/handoff-request.md) |
 | `sq-handoff-surface.sh`      | Mark pending handoff requests surfaced exactly once and print the handoff card (docs/handoff-request.md) |
-| `sq-hooks.sh`            | Run optional structured WORKFLOW.md workspace lifecycle hooks (after_create, before_run, after_run, before_remove) with timeout enforcement |
 | `sq-classify-lib.sh`     | Shared wake-classification vocabulary and durable keyed-decision folds and scans     |
 | `sq-send.sh`             | Send one verified literal line or supported key through the target's recorded backend |
 | `sq-busy-lib.sh`         | Single owner of the semantic busy-state contract: verdicts, source attribution, and per-harness sources |
@@ -126,20 +109,11 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-peek.sh`             | Print a bounded tail of an operator endpoint                                          |
 | `sq-check-register.sh`   | Bind an intentional custom sentry check to its current bytes                       |
 | `sq-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
-| `sq-check-skill-format.sh` | Check SKILL.md front matter plus `Triggers` and `Do NOT use for` headings          |
-| `sq-check-skill-triggers.sh` | Check SKILL.md for a non-empty `Triggers` section                                  |
-| `sq-skill-health.sh`     | Generate a health report for all installed skills with markdown table or JSON output |
-| `sq-skill-snapshot.sh`   | Snapshot a skill directory before an update, with hash dedup and oldest-first pruning |
-| `sq-skill-rollback.sh`   | Roll back a skill to a previous snapshot, interactively or by timestamp             |
-| `sq-skill-verify.py`     | Emit compact JSON verification results for allowlisted skills and their required behavioral sections |
-| `sq-skill-lockfile.sh`   | Generate or verify a skill lockfile tracking installed skills with integrity hashes                   |
-| `sq-skill-registry.sh`   | Generate or query a skills registry JSON file for CDN-based distribution                              |
 | `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
-| `sq-playbook-validate.sh` | Validate structural evidence for a materialized execution playbook (bug-fix@1, investigation@1, feature@1, refactoring@1, prototype@1, perf@1, hillclimb@1, runtime-forensics@1, trace-forensics@1, visual-parity@1, multi-phase-plan@1, eval@1) |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |

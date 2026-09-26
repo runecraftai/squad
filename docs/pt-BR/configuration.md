@@ -248,7 +248,7 @@ Para lançamentos de XO Pi e pi-signed, `sq-spawn.sh` inicia o executável selec
 ## Perfis de dispatch de crew (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` é um arquivo opcional, local, gitignored contendo regras em linguagem natural que Squad lê antes de despachar um operador ou recon.
-Os scripts shell não correspondem a essas regras; Squad escolhe a regra mais correspondente com julgamento, resolve seu objeto ou array de perfil sob o contrato operacional na seção 4 do `AGENTS.md` e `quota-array-dispatch`, e passa apenas flags concretas `--harness`, `--model` e `--effort` para `sq-spawn.sh`.
+Os scripts shell não correspondem a essas regras; Squad escolhe a regra mais correspondente com julgamento, resolve seu objeto ou array de perfil sob o contrato operacional na seção 4 do `AGENTS.md` e `quota-array-dispatch`, e passa flags concretas `--harness`, `--model`, `--effort` e (para `harness=claude`) `--account` para `sq-spawn.sh`.
 Quando o arquivo existe, `sq-spawn.sh` aplica esse contrato recusando spawns de operador e recon que não possuem um harness explícito (`--harness`, um adaptador posicional ou um comando de lançamento bruto).
 Spawns em lote satisfazem o mesmo requisito com um `--harness` compartilhado.
 Spawns de XO são isentos e ainda resolvem através de `config/xo-harness` e seus tokens opcionais de modelo e esforço.
@@ -261,13 +261,13 @@ A seção 4 do `AGENTS.md` é dona do limite de intake de dispatch sempre carreg
     {
       "when": "<condição em linguagem natural descrevendo um tipo de tarefa>",
       "use": [
-        { "harness": "<adaptador>", "model": "<modelo opcional>", "effort": "<low|medium|high|xhigh|max, opcional>" }
+        { "harness": "<adaptador>", "model": "<modelo opcional>", "effort": "<low|medium|high|xhigh|max, opcional>", "account": "<rótulo opcional de conta Claude, apenas harness=claude>" }
       ],
       "why": "<raciocínio opcional que ajuda Squad a escolher>"
     }
   ],
   "default": [
-    { "harness": "<adaptador>", "model": "<modelo opcional>", "effort": "<esforço opcional>" }
+    { "harness": "<adaptador>", "model": "<modelo opcional>", "effort": "<esforço opcional>", "account": "<conta opcional>" }
   ]
 }
 ```
@@ -275,7 +275,7 @@ A seção 4 do `AGENTS.md` é dona do limite de intake de dispatch sempre carreg
 Por regra, `when` e `use` são obrigatórios.
 Ambos `use` e o `default` opcional de nível superior aceitam um objeto de perfil ou um array não vazio de objetos de perfil.
 A forma de objeto único continua totalmente compatível, e cada perfil precisa de `harness`.
-Os campos `model` e `effort` do perfil e o `why` da regra são opcionais.
+Os campos `model`, `effort` e `account` do perfil e o `why` da regra são opcionais.
 Um modelo ou esforço omitido significa que o harness selecionado usa seu próprio padrão para aquele eixo.
 Cada array de perfil é uma escolha implícita ciente de quota resolvida através de `quota-array-dispatch`.
 Se nenhuma regra de dispatch se encaixa, Squad resolve `default` através do mesmo caminho de objeto ou array antes de recuar para `config/crew-harness`.
