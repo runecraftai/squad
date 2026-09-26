@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.8](https://github.com/runecraftai/squad/compare/drill-v0.1.7...drill-v0.1.8) (2026-09-26)
+
+
+### Bug Fixes
+
+* **drill:** gate release jobs on manifest output ([977eb20](https://github.com/runecraftai/squad/commit/977eb20a0a5f83bfa4a4ced07209d43508639837))
+* **release:** use manifest-mode releases_created output from release-please ([4c7ac94](https://github.com/runecraftai/squad/commit/4c7ac94c14f9faec6c88dd63e0fb2c336a3c9bf3))
+
 ## [0.1.7](https://github.com/runecraftai/squad/compare/drill-v0.1.6...drill-v0.1.7) (2026-09-25)
 
 
