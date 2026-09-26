@@ -9,7 +9,7 @@ DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
 COST="$ROOT/bin/sq-cost.sh"
 
 usage() {
-  printf '%s\n' 'Usage: sq-trajectory.sh task <task-id> --json' '       sq-trajectory.sh snapshot <task-id>' '       sq-trajectory.sh coverage --limit <1-1000> [--json]'
+  printf '%s\n' 'Usage: sq-trajectory.sh task <task-id> --json' '       sq-trajectory.sh snapshot <task-id>' '       sq-trajectory.sh coverage --limit <1-20> [--json]'
 }
 error() { printf 'error: %s\n' "$*" >&2; exit 2; }
 valid_id() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; }
@@ -115,8 +115,8 @@ cmd_coverage() {
       *) error "unknown coverage option: $1" ;;
     esac
   done
-  if [[ ! "$limit" =~ ^[0-9]+$ ]] || ((limit < 1 || limit > 1000)); then
-    error 'coverage requires --limit from 1 to 1000'
+  if [[ ! "$limit" =~ ^[0-9]+$ ]] || ((limit < 1 || limit > 20)); then
+    error 'coverage requires --limit from 1 to 20'
   fi
   local docs='[]' id doc count=0
   while IFS= read -r id; do

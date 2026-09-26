@@ -55,3 +55,15 @@ jq -e '.analyzed==1 and (.tasks|map(.id)|unique|length)==1 and (.coverage|length
 human=$("$CLI" coverage --limit 20)
 grep -q 'Most frequent unknown reasons:' <<<"$human" || fail 'human coverage omits unknown reasons'
 pass 'criteria 7-8: distinct bounded coverage and human unknown-reason summary'
+
+# 9: coverage --limit 20 clips to 20 when more tasks exist; >20 is rejected.
+for i in $(seq 1 21); do
+  fixture "task$(printf '%02d' $i)"
+done
+report=$("$CLI" coverage --limit 20 --json)
+jq -e '.analyzed==20 and (.tasks|length)==20' <<<"$report" >/dev/null || fail 'coverage did not clip to limit of 20'
+set +e
+"$CLI" coverage --limit 21 --json >/dev/null 2>&1; rc=$?
+set -e
+[[ $rc == 2 ]] || fail 'coverage --limit 21 should be rejected'
+pass 'criterion 9: coverage limit clips at 20 and rejects >20'
