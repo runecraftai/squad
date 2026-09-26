@@ -33,6 +33,12 @@ first=$(sha256sum "$snapshot" | cut -d' ' -f1)
 second=$(sha256sum "$snapshot" | cut -d' ' -f1)
 [[ "$first" == "$second" ]] || fail 'snapshot bytes changed without source changes'
 pass 'criteria 4-5: private atomic snapshot is deterministic and records sources'
+printf 'private cited material\\n' > "$BASE/evidence.log"
+evidence=$("$ROOT"/bin/sq-evidence-receipt.sh create --task alpha --source "$BASE/evidence.log" --range 1:1)
+"$CLI" snapshot alpha >/dev/null
+jq -e '.evidence_receipts|length==1 and .[0].id=="'"$(awk '{print $1}' <<<"$evidence")"'" and .[0].range_count==1' "$snapshot" >/dev/null || fail 'trajectory receipt summary missing'
+if grep -q 'private cited material' "$snapshot"; then fail 'cited text leaked into trajectory'; fi
+pass 'criterion 7: snapshot exposes receipt identity metadata, not cited text'
 
 # 6: missing task and malformed required source return 2 without artifact.
 set +e

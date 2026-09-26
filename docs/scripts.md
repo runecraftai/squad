@@ -84,7 +84,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
 | `sq-cost.sh`           | Price real operator transcripts per model, render task usage reports, and publish an idempotent PR comment |
 | `sq-cost-lib.sh`       | Shared Claude transcript and Pi session parsing, attribution, model normalization, and per-model pricing used by `sq-cost.sh` |
-| `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata; sq-cost, .meta, .exec, and status remain owners of truth |
+| `sq-evidence-receipt.sh` | Create, verify, and render private deterministic evidence receipts for local source citations |
+| `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata including evidence receipt summaries; sq-cost, .meta, .exec, and status remain owners of truth |
 | `sq-dispatch-tune.sh`  | Analyze operator performance per dispatch profile and recommend harness/model/effort adjustments |
 | `sq-policy-lab.sh`     | Private non-promoting comparison laboratory for validating, running, and reporting policy candidate experiments |
 | `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
