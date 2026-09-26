@@ -53,13 +53,30 @@ func TestReleaseWorkflowRunsReleasePleaseWithoutValidationGuards(t *testing.T) {
 }
 
 func TestReleaseWorkflowBuildStartsOnlyWhenReleaseIsCreated(t *testing.T) {
+	wf := loadReleaseWorkflowDoc(t)
+	release := wf.Jobs["release-please"]
+	if release == nil || release.Outputs["releases_created"] != "${{ steps.release.outputs.releases_created }}" {
+		t.Fatalf("release-please must expose its manifest-mode releases_created output, got %#v", release)
+	}
+	for _, name := range []string{"build-darwin", "build-and-upload", "checksums", "finalize"} {
+		job := wf.Jobs[name]
+		if job == nil {
+			t.Fatalf("release workflow missing %q job", name)
+		}
+		if !strings.Contains(job.If, "needs.release-please.outputs.releases_created == 'true'") {
+			t.Errorf("%s job must gate on release-please's manifest-mode releases_created output, got %q", name, job.If)
+		}
+	}
+}
+
+func TestReleaseWorkflowBuildJobHasNoLegacyGuards(t *testing.T) {
 	data, err := os.ReadFile(".github/workflows/release.yml")
 	if err != nil {
 		t.Fatalf("read workflow: %v", err)
 	}
 
 	block := extractJobBlock(t, string(data), "build-and-upload")
-	if !strings.Contains(block, "if: needs.release-please.outputs.release_created == 'true'") {
+	if !strings.Contains(block, "if: needs.release-please.outputs.releases_created == 'true'") {
 		t.Fatalf("build-and-upload must run only when release-please created a release")
 	}
 	for _, unexpected := range []string{"!cancelled()", "needs.release-please.result == 'success'"} {
@@ -166,7 +183,7 @@ func TestReleaseWorkflowPublishesReleaseOnlyAfterAssetsComplete(t *testing.T) {
 		"needs.release-please.result == 'success'",
 		"needs.build-and-upload.result == 'success'",
 		"needs.checksums.result == 'success'",
-		"needs.release-please.outputs.release_created == 'true'",
+		"needs.release-please.outputs.releases_created == 'true'",
 		"gh release edit",
 		"--draft=false",
 	}
