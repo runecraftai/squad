@@ -34,7 +34,7 @@ build_task() {
   local id=$1 meta="$STATE/$1.meta" exec="$STATE/$1.exec" status="$STATE/$1.status"
   valid_id "$id" || error 'invalid task id'
   [[ -f "$meta" && -f "$exec" && -f "$status" ]] || error "task or required source is missing: $id"
-  local task harness model attempt retries started ended endstate cost_json sources receipts='[]'
+  local task harness model attempt retries started ended endstate cost_json sources receipts='[]' observations='{"pack_count":0,"raw_bytes_archived":0,"card_bytes_emitted":0}'
   awk 'NF && $0 !~ /^[A-Za-z_][A-Za-z0-9_]*=/ { exit 1 }' "$meta" || error "malformed metadata source for $id"
   awk 'NF && $0 !~ /^[A-Za-z_][A-Za-z0-9_]*=/ { exit 1 }' "$exec" || error "malformed execution source for $id"
   task=$(field "$meta" task)
@@ -65,9 +65,19 @@ build_task() {
   if [[ -d "$evidence_dir" ]]; then
     receipts=$(find "$evidence_dir" -maxdepth 1 -type f -name '*.json' -print0 | xargs -0 -r jq -c '{id,sha256,range_count:(.spans|length)}' | jq -s 'sort_by(.id)')
   fi
+  local observations_dir="$DATA/$id/artifacts/observations"
+  if [[ -d "$observations_dir" ]]; then
+    observations=$(jq -s '{pack_count:length,raw_bytes_archived:(map(.bytes)|add // 0),card_bytes_emitted:0}' "$observations_dir"/*.json 2>/dev/null) || error "invalid observation manifest for $id"
+    local card_log="$observations_dir/card-bytes.log"
+    if [[ -f "$card_log" ]]; then
+      local card_bytes
+      card_bytes=$(awk 'NF { if ($0 !~ /^[0-9]+$/) exit 1; total += $0 } END { print total+0 }' "$card_log") || error "invalid observation card metrics for $id"
+      observations=$(jq -c --argjson bytes "$card_bytes" '.card_bytes_emitted=$bytes' <<<"$observations")
+    fi
+  fi
   jq -cn --arg id "$id" --arg harness "$harness" --arg model "$model" \
     --arg attempt "$attempt" --arg retries "$retries" --arg started "$started" --arg ended "$ended" \
-    --arg outcome "$endstate" --argjson cost "$cost_json" --argjson sources "$sources" --argjson receipts "$receipts" '
+    --arg outcome "$endstate" --argjson cost "$cost_json" --argjson sources "$sources" --argjson receipts "$receipts" --argjson observations "$observations" '
     def metric($v;$ok;$why): {value:$v,availability:(if $ok then "known" else "unknown" end),reason:(if $ok then "" else $why end)};
     ($started|tonumber?) as $start | ($ended|tonumber?) as $finish |
     (.models // []) as $models |
@@ -88,7 +98,7 @@ build_task() {
      cost:metric($reported_cost;($reported_cost!=null);"sq-cost has no attributable provider-recorded cost"),
      checks:metric(null;false;"no task-attributable structured check summary is available"),
      repairs:metric(null;false;"no task-attributable structured repair count is available"),
-     outcome:metric($outcome;true;""),sources:$sources, evidence_receipts:$receipts}'
+     outcome:metric($outcome;true;""),sources:$sources, evidence_receipts:$receipts, observation_packs:$observations}'
 }
 
 cmd_task() {

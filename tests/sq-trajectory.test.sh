@@ -39,6 +39,19 @@ evidence=$("$ROOT"/bin/sq-evidence-receipt.sh create --task alpha --source "$BAS
 jq -e '.evidence_receipts|length==1 and .[0].id=="'"$(awk '{print $1}' <<<"$evidence")"'" and .[0].range_count==1' "$snapshot" >/dev/null || fail 'trajectory receipt summary missing'
 if grep -q 'private cited material' "$snapshot"; then fail 'cited text leaked into trajectory'; fi
 pass 'criterion 7: snapshot exposes receipt identity metadata, not cited text'
+# 8: observation packs contribute aggregate counts, raw bytes, and emitted card bytes only.
+python3 - "$BASE/observation.log" <<'PY'
+import sys
+with open(sys.argv[1], 'w') as f:
+    for i in range(1024): f.write(f'line-{i:04d}-xxxxx\n')
+PY
+pack=$("$ROOT/bin/sq-observation-pack.sh" create --task alpha --source "$BASE/observation.log")
+card_output=$("$ROOT/bin/sq-observation-pack.sh" card "$pack")
+card_bytes=$(printf '%s\n' "$card_output" | wc -c | tr -d ' ')
+"$CLI" snapshot alpha >/dev/null
+jq -e '.observation_packs.pack_count==1 and .observation_packs.raw_bytes_archived==16384 and .observation_packs.card_bytes_emitted=='"$card_bytes"' ' "$snapshot" >/dev/null || fail 'observation pack aggregate metrics missing'
+if grep -q 'line-0000' "$snapshot"; then fail 'observation content leaked into trajectory'; fi
+pass 'criterion 8: trajectory aggregates observation metrics without content'
 
 # 6: missing task and malformed required source return 2 without artifact.
 set +e
