@@ -246,7 +246,7 @@ For Pi and pi-signed XO launches, `sq-spawn.sh` starts the selected executable w
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that Squad reads before dispatching an operator or recon.
-The shell scripts do not match those rules; Squad chooses the best matching rule with judgment, resolves its profile object or array under the operating contract in `AGENTS.md` section 4 and `quota-array-dispatch`, and passes only concrete `--harness`, `--model`, and `--effort` flags to `sq-spawn.sh`.
+The shell scripts do not match those rules; Squad chooses the best matching rule with judgment, resolves its profile object or array under the operating contract in `AGENTS.md` section 4 and `quota-array-dispatch`, and passes concrete `--harness`, `--model`, `--effort`, and (for `harness=claude`) `--account` flags to `sq-spawn.sh`.
 When the file exists, `sq-spawn.sh` enforces that contract by refusing operator and recon spawns that lack an explicit harness (`--harness`, a positional adapter, or a raw launch command).
 Batch spawns satisfy the same requirement with a shared `--harness`.
 XO spawns are exempt and still resolve through `config/xo-harness` and its optional model and effort tokens.
