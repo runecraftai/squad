@@ -284,6 +284,11 @@ test_operator_is_provably_working_classifier() {
 # that merely mentions "paused" does not false-match, and a genuine blocker stays a
 # blocker.
 test_status_is_paused_classifier() {
+  local dir file
+  dir=$(make_case resolved-after-pause); file="$dir/state/held.status"
+  printf 'paused: waiting for commander\nresolved: commander answered the separate decision\n' > "$file"
+  [ "$(last_status_state_line "$file")" = 'paused: waiting for commander' ] \
+    || fail "resolved event masked the active declared wait"
   status_is_paused 'paused: holding for the upstream release' || fail "paused verb not recognized"
   status_is_paused '  paused:   waiting on a rate-limit reset' || fail "leading-space paused verb not recognized"
   status_is_paused 'blocked: the build is paused upstream' && fail "a blocked line mentioning paused false-matched"

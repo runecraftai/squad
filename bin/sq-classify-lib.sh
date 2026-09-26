@@ -91,6 +91,19 @@ last_status_line() {
   grep -v '^[[:space:]]*$' "$f" 2>/dev/null | tail -1
 }
 
+# Return the latest status event that establishes worker state. `resolved:` closes
+# a decision but does not say that an earlier declared external wait ended.
+last_status_state_line() {  # <status-file>
+  local f=$1 line effective=
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "${line//[[:space:]]/}" ] || continue
+    [ "$(status_line_verb "$line")" = resolved ] && continue
+    effective=$line
+  done < "$f"
+  printf '%s' "$effective"
+}
+
 # 0 if the given (last) status line's leading verb is a real terminal commander verb
 # (done, needs-decision, blocked, failed). Free-text tokens alone never count here;
 # callers that need legacy free-text matching use status_is_commander_relevant.

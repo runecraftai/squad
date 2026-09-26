@@ -374,7 +374,7 @@ classify_signal() {  # <reason-after-colon> <state>
 classify_stale() {  # <window> <state>
   local win=$1 state=$2 task last seen
   task=$(window_to_task "$win" "$state")
-  last=$(last_status_line "$state/$task.status")
+  last=$(last_status_state_line "$state/$task.status")
   if operator_is_finished "$task"; then
     printf 'finished|task already finished: %s' "$last"
     return
@@ -504,7 +504,7 @@ migrate_sentry_pause_markers() {  # <state>
     task=$(basename "$meta"); task=${task%.meta}
     key=$(_stale_key "$task")
     sentry_key=$(_stale_key "$win")
-    last=$(last_status_line "$state/$task.status")
+    last=$(last_status_state_line "$state/$task.status")
     if status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$sentry_key" ]; then
       reconcile_pause_tracking "$win" "$state" "$last"
     fi
@@ -518,7 +518,7 @@ sync_pause_markers_from_signal() {  # <state> <signal files>
   for f in "${files[@]}"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || continue
-    last=$(last_status_line "$f")
+    last=$(last_status_state_line "$f")
     task=$(basename "$f"); task=${task%.status}
     win=$(window_for_task "$task" "$state" 2>/dev/null || true)
     [ -n "$win" ] || continue
@@ -1015,7 +1015,7 @@ housekeeping() {  # <state>
       clear_pause_tracking "$win" "$state"
       continue
     fi
-    last=$(last_status_line "$state/$task.status")
+    last=$(last_status_state_line "$state/$task.status")
     if [ -n "$last" ] && status_is_paused "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
@@ -1053,7 +1053,7 @@ housekeeping() {  # <state>
       clear_pause_tracking "$win" "$state"
       continue
     fi
-    last=$(last_status_line "$state/$task.status")
+    last=$(last_status_state_line "$state/$task.status")
     if [ -z "$last" ] || ! status_is_paused "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
@@ -1065,7 +1065,7 @@ housekeeping() {  # <state>
       0) rm -f "$marker" ;;
       2) rm -f "$marker" ;;
       *)
-        last=$(last_status_line "$state/$task.status")
+        last=$(last_status_state_line "$state/$task.status")
         if [ -n "$last" ] && status_is_paused "$last"; then
           escalate_add "$state" "paused ${age}s (awaiting external, recheck whether the wait still holds): $win"
           _now > "$marker"

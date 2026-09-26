@@ -118,11 +118,6 @@ fi
 
 # --- status log ------------------------------------------------------------
 
-# Last non-empty status line, and its leading verb (the word before the colon).
-log_last_line() {
-  [ -f "$LOG" ] || return 1
-  grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1
-}
 # Map a status-log verb onto a canonical state for the fallback path. `paused` is
 # the deliberate-external-wait verb (sq-classify-lib.sh's SQUAD_CLASSIFY_PAUSED_VERB):
 # an operator with no active run and an idle pane that declared a known external wait
@@ -143,8 +138,17 @@ map_log_state() {  # <line>
   esac
 }
 
-LOG_LINE=$(log_last_line || true)
+LOG_LINE=$(last_status_state_line "$LOG")
 LOG_VERB=$(status_line_verb "$LOG_LINE")
+
+# A needs-decision or blocked line is only a live state verb if its keyed
+# decision is still open per the durable fold. A trailing needs-decision that
+# was closed by a later resolved: for the same key must not surface as parked;
+# the decision-closing event already cleared the open set, so the crew is idle.
+if [ "$LOG_VERB" = needs-decision ] || [ "$LOG_VERB" = blocked ]; then
+  OPEN_DECISIONS=$(status_open_decisions "$LOG")
+  [ -n "$OPEN_DECISIONS" ] || { LOG_LINE=''; LOG_VERB=''; }
+fi
 
 # pane_readable is consulted ONLY in the no-run fallback below. The run-step path
 # stays authoritative regardless of pane liveness - judge by the run-step, not the
