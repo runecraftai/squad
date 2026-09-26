@@ -138,7 +138,7 @@ cmd_coverage() {
     local reasons
     reasons=$(jq -cn --argjson tasks "$docs" '[ $tasks[] | [.harness,.model,.attempts,.retries,.timestamps.started_at,.timestamps.ended_at,.duration_seconds,.tokens.input,.tokens.output,.cache.read,.cache.write,.cost,.checks,.repairs,.outcome][] | select(.availability=="unknown") | .reason ] | group_by(.) | map({reason:.[0],count:length}) | sort_by(-.count,.reason) | .[:3]')
     printf '%s\n' 'Most frequent unknown reasons:'
-    jq -r 'if length == 0 then "  none" else .[] | "  \\(.count)x \\(.reason)" end' <<<"$reasons"
+    jq -r 'if length == 0 then "  none" else .[] | "  \(.count)x \(.reason)" end' <<<"$reasons"
   fi
 }
 
