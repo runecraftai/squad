@@ -31,6 +31,8 @@ Registered `state/procevent/*.source` records also require supervision even thou
 The default cross-harness mode exits silently with no supervision need.
 Every mode treats `state/x-sentry.check.sh` as supervision need, so Relay polling remains guarded without an in-flight task.
 Otherwise it calls `fm_sentry_healthy <state-dir> <watch-path> [grace-seconds] [home]` from `bin/sq-stand-to-lib.sh`, the same PID-strict identity-matched lock and fresh-beacon check used by `bin/sq-sentry-arm.sh`: a stale beacon blocks even when a sentry pid is live, and a fresh leftover beacon blocks when the lock is missing, dead, or identity-mismatched.
+When `fm_sentry_healthy` rejects and `state/.afk` exists, the guard falls back to the AFK daemon lock: it reads `state/.supervise-daemon.lock/pid` and `state/.supervise-daemon.lock/pid-identity`, verifies the PID is alive and the identity matches the current process identity, and exits 0 when both hold.
+This prevents a false alarm in AFK mode where the sentry runs as a child of the AFK daemon and its PID identity differs from the primary session's, which `fm_sentry_healthy` rejects.
 The turn-end guard needs that strict check because it fires at the turn boundary, where the auto-arm is bringing a fresh sentry up for the upcoming idle period, and it cooperates with that arm rather than trusting a beacon left by the cycle that just ended.
 `bin/sq-guard.sh`, the pull warning, instead uses the model-aware `fm_sentry_supervision_verdict` from the same library, because it fires mid-turn when the auto-arm model runs no sentry at all.
 Under the Claude Stop auto-arm model a beacon fresh within grace is healthy even with no live sentry process, and only a beacon stale beyond grace (or absent) alarms.

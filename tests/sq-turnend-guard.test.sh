@@ -1590,6 +1590,80 @@ test_hook_claude_mode_away_mode_never_uses_stop_autoarm_fail_open() {
   pass "sq-turnend-guard --claude: away ownership excludes the Stop-autoarm fail-open"
 }
 
+# AFK daemon lock recognition: when the AFK daemon is alive and identity-matched,
+# the guard must recognize it as valid supervision and allow the turn to end.
+# This is the fix for the false alarm where fm_sentry_healthy rejected the
+# sentry's child-of-daemon PID identity but the guard had no fallback.
+test_hook_afk_daemon_lock_allows_turn_end() {
+  local dir afk_pid afk_identity out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-afk-daemon-lock")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.afk"
+  touch "$dir/state/.last-sentry-beat"
+  # Spawn a background process to serve as the AFK daemon PID.
+  sleep 60 &
+  afk_pid=$!
+  afk_identity=$(sentry_identity "$dir" "$afk_pid") || {
+    kill "$afk_pid" 2>/dev/null || true
+    wait "$afk_pid" 2>/dev/null || true
+    fail "could not identify live AFK daemon holder"
+  }
+  # Create the daemon lock with matching PID and identity.
+  mkdir -p "$dir/state/.supervise-daemon.lock"
+  printf '%s\n' "$afk_pid" > "$dir/state/.supervise-daemon.lock/pid"
+  printf '%s\n' "$afk_identity" > "$dir/state/.supervise-daemon.lock/pid-identity"
+  # Run the guard: it must recognize the daemon lock and allow the turn.
+  out=$(run_hook "$dir" false); status=$?
+  kill "$afk_pid" 2>/dev/null || true
+  wait "$afk_pid" 2>/dev/null || true
+  expect_code 0 "$status" "AFK daemon lock with live PID and matching identity must allow the turn"
+  [ -z "$out" ] || fail "AFK daemon lock allow produced output: $out"
+  pass "sq-turnend-guard: AFK daemon lock recognition allows turn end when daemon is alive and identity-matched"
+}
+
+# Same test but in default (non-Claude) mode, confirming the AFK daemon lock
+# path is exercised outside --claude cooperative mode.
+test_hook_afk_daemon_lock_allows_turn_end_default_mode() {
+  local dir afk_pid afk_identity out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-afk-daemon-default")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.afk"
+  touch "$dir/state/.last-sentry-beat"
+  sleep 60 &
+  afk_pid=$!
+  afk_identity=$(sentry_identity "$dir" "$afk_pid") || {
+    kill "$afk_pid" 2>/dev/null || true
+    wait "$afk_pid" 2>/dev/null || true
+    fail "could not identify live AFK daemon holder"
+  }
+  mkdir -p "$dir/state/.supervise-daemon.lock"
+  printf '%s\n' "$afk_pid" > "$dir/state/.supervise-daemon.lock/pid"
+  printf '%s\n' "$afk_identity" > "$dir/state/.supervise-daemon.lock/pid-identity"
+  out=$(run_hook "$dir" false); status=$?
+  kill "$afk_pid" 2>/dev/null || true
+  wait "$afk_pid" 2>/dev/null || true
+  expect_code 0 "$status" "AFK daemon lock must allow in default mode too"
+  [ -z "$out" ] || fail "default mode AFK daemon allow produced output: $out"
+  pass "sq-turnend-guard: AFK daemon lock allows turn end in default (non-Claude) mode"
+}
+
+# When AFK mode is set but the daemon PID is dead, the guard must still block.
+test_hook_afk_daemon_dead_blocks() {
+  local dir dead_pid out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-afk-daemon-dead")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.afk"
+  touch "$dir/state/.last-sentry-beat"
+  dead_pid=$(nonexistent_pid)
+  mkdir -p "$dir/state/.supervise-daemon.lock"
+  printf '%s\n' "$dead_pid" > "$dir/state/.supervise-daemon.lock/pid"
+  printf 'dead-identity\n' > "$dir/state/.supervise-daemon.lock/pid-identity"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "AFK mode with dead daemon PID must still block"
+  assert_contains "$out" "TURN WOULD END BLIND" "AFK dead daemon must still produce the blind-turn alarm"
+  pass "sq-turnend-guard: dead AFK daemon PID falls through to blocking path"
+}
+
 test_hook_claude_mode_allow_resets_budget() {
   local dir pid identity out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-reset")
@@ -1721,6 +1795,9 @@ test_hook_claude_mode_stale_rewake_epoch_blocks
 test_hook_claude_mode_budget_without_verified_failure_keeps_blocking
 test_hook_claude_mode_verified_failure_alarm_is_loud_and_once
 test_hook_claude_mode_fail_open_requires_notice_and_failure_epoch
+test_hook_afk_daemon_lock_allows_turn_end
+test_hook_afk_daemon_lock_allows_turn_end_default_mode
+test_hook_afk_daemon_dead_blocks
 test_hook_claude_mode_away_mode_never_uses_stop_autoarm_fail_open
 test_hook_claude_mode_allow_resets_budget
 test_hook_claude_mode_waits_for_late_claim
