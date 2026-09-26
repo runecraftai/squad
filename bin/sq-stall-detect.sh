@@ -148,6 +148,12 @@ retry_run_claim() {
     id=${file##*/}; id=${id%.exec}
     state=$(field exec_state "$id")
     [ "$state" = retry_queued ] || continue
+    # A terminal event may arrive after the stall scan queued this retry.
+    # Retire it without appending progress or retry-limit failure events.
+    if stall_status_is_nonworking "$id"; then
+      "$SCRIPT_DIR/sq-exec-state.sh" release "$id" >/dev/null 2>&1 || true
+      continue
+    fi
     next_retry=$(field exec_next_retry_at "$id"); [ -n "$next_retry" ] || next_retry=0
     now=$(date +%s)
     # Do not claim before the scheduled moment - the exponential backoff
@@ -174,6 +180,10 @@ retry_run_claim() {
         fi
       else
         if [ "$(field exec_state "$id")" = released ]; then
+          continue
+        fi
+        if stall_status_is_nonworking "$id"; then
+          "$SCRIPT_DIR/sq-exec-state.sh" release "$id" >/dev/null 2>&1 || true
           continue
         fi
         append_status "$id" "retry claim failed" blocked

@@ -160,6 +160,19 @@ assert_eq "$("$EXEC" get interleaved)" released
 assert_eq "$(grep '^exec_attempt=' "$STATE/interleaved.exec" | cut -d= -f2)" 1
 assert_eq "$(tail -1 "$STATE/interleaved.status")" 'done: PR checks green'
 
+# A completed task queued for retry is released without re-engagement,
+# including when retries are exhausted (which must not overwrite done with failed).
+"$EXEC" claim retry-terminal-done >/dev/null
+"$EXEC" running retry-terminal-done >/dev/null
+"$EXEC" retry retry-terminal-done >/dev/null
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-terminal-done.exec"
+printf 'exec_retry_count=3\nexec_max_retries=3\n' >> "$STATE/retry-terminal-done.exec"
+printf 'done: work verified\n' >> "$STATE/retry-terminal-done.status"
+retry_run_claim
+assert_eq "$("$EXEC" get retry-terminal-done)" released
+assert_eq "$(grep '^exec_attempt=' "$STATE/retry-terminal-done.exec" | cut -d= -f2)" 1
+assert_eq "$(tail -1 "$STATE/retry-terminal-done.status")" 'done: work verified'
+
 # A retry_queued task whose scheduled moment has arrived is claimed and
 # returns to running, keeping it within supervision.
 "$EXEC" claim retry-ready >/dev/null
