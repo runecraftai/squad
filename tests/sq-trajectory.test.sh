@@ -58,7 +58,7 @@ pass 'criteria 7-8: distinct bounded coverage and human unknown-reason summary'
 
 # 9: coverage --limit 20 clips to 20 when more tasks exist; >20 is rejected.
 for i in $(seq 1 21); do
-  fixture "task$(printf '%02d' $i)"
+  fixture "task$(printf '%02d' "$i")"
 done
 report=$("$CLI" coverage --limit 20 --json)
 jq -e '.analyzed==20 and (.tasks|length)==20' <<<"$report" >/dev/null || fail 'coverage did not clip to limit of 20'
