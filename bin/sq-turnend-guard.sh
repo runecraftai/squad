@@ -152,6 +152,25 @@ if fm_sentry_healthy "$STATE" "$WATCH" "$GRACE" "$SQUAD_BASE"; then
   exit 2
 fi
 
+# AFK mode: the away-mode daemon owns supervision when it is alive.
+# The sentry runs as a child of the daemon, so its PID identity differs from
+# the primary session's, which fm_sentry_healthy rejects. Check for the
+# daemon's lock directly to recognize this as valid supervision.
+if [ -e "$STATE/.afk" ]; then
+  afk_lock_dir="$STATE/.supervise-daemon.lock"
+  afk_pid=$(cat "$afk_lock_dir/pid" 2>/dev/null || true)
+  if fm_pid_alive "$afk_pid" 2>/dev/null; then
+    afk_identity=$(cat "$afk_lock_dir/pid-identity" 2>/dev/null || true)
+    if [ -n "$afk_identity" ]; then
+      afk_current=$(fm_pid_identity "$afk_pid" 2>/dev/null || true)
+      if [ "$afk_current" = "$afk_identity" ]; then
+        # AFK daemon is alive and identity-matched; supervision is valid.
+        exit 0
+      fi
+    fi
+  fi
+fi
+
 block_stop() {
   local afk x_mode reason rule
   afk=0
