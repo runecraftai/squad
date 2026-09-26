@@ -11,8 +11,11 @@
 # Workspaces and branches are not modified.
 #
 # The retry_run_claim function scans retry_queued tasks and claims them when
-# their scheduled moment arrives, or releases them when retries are exhausted.
-# This keeps retry attempts within supervision instead of leaving them unwatched.
+# their scheduled moment arrives, releases them when retries are exhausted,
+# and proactively releases them if their latest status event is terminal or
+# paused — a terminal outcome must not be overwritten by a retry claim or a
+# synthetic retry-limit failure. This keeps retry attempts within supervision
+# instead of leaving them unwatched.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
