@@ -13,17 +13,20 @@
 # daemon keeps its escalation-digest seen-markers; the sentry keeps its .seen-*
 # signatures).
 #
-# There are two documented exceptions. The absorb classification
-# (operator_absorb_class and its working/paused wrappers) is NOT a pure status-file
-# read: it reuses bin/sq-crew-state.sh, which may make a bounded drill call,
-# to decide whether an operator that just stopped its turn or went stale is working,
+# There are two documented exceptions among the status-file readers. The absorb
+# classification (operator_absorb_class and its working/paused wrappers) is NOT a
+# pure status-file read: it reuses bin/sq-crew-state.sh, which may make a bounded
+# drill call, to decide whether an operator that just stopped its turn or went
+# stale is working,
 # deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
 # stays cheap. status_open_decisions_incremental (see "incremental (cursor-backed)
 # open-decisions fold" below) also writes: it persists a per-status-file byte
 # cursor and folded open-set as a side effect, so a per-drain unit-wide scan
 # stays bounded by new appends instead of re-reading each task's whole lifetime
-# log every time.
+# log every time. The write side of that same stream is status_line_append (see
+# "status stream appends" below): the one shared append path callers use instead
+# of appending directly, so a line always starts its own physical record.
 
 # Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
