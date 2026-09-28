@@ -454,21 +454,24 @@ fi
 # fully confirmed. An append failure exits nonzero with the manual close
 # command; the decision then stays open and re-surfaces, never silently lost.
 fm_send_close_resolved_keys() {  # <answer-text>
-  local note=$1 k line close_cmd
+  local note=$1 k line close_cmd fail_detail
   note=$(printf '%s' "$note" | tr '\n\r\t' '   ' | LC_ALL=C tr -d '\000-\037\177')
   for k in $RESOLVE_KEYS; do
     line="resolved [key=$k]: answered: $note"
     fm_cap_line_var "$line"
+    close_cmd=
+    fail_detail=
     if [ -s "$RESOLVE_STATUS_FILE" ] && [ -n "$(tail -c 1 "$RESOLVE_STATUS_FILE")" ]; then
       if ! printf '\n' >> "$RESOLVE_STATUS_FILE"; then
         close_cmd="printf '\\n%s\\n' 'resolved [key=$k]: <how it was answered>' >> \"$RESOLVE_STATUS_FILE\""
-        echo "error: the answer was delivered to $T, but decision key '$k' could not be closed in $RESOLVE_STATUS_FILE, whose final line is missing a trailing newline. Close it manually with: $close_cmd - do not resend the answer." >&2
-        return 1
+        fail_detail=", whose final line is missing a trailing newline"
       fi
     fi
-    if ! printf '%s\n' "$SQUAD_LINE_CAP_LINE" >> "$RESOLVE_STATUS_FILE"; then
+    if [ -z "$close_cmd" ] && ! printf '%s\n' "$SQUAD_LINE_CAP_LINE" >> "$RESOLVE_STATUS_FILE"; then
       close_cmd="echo 'resolved [key=$k]: <how it was answered>' >> \"$RESOLVE_STATUS_FILE\""
-      echo "error: the answer was delivered to $T, but decision key '$k' could not be closed in $RESOLVE_STATUS_FILE. Close it manually with: $close_cmd - do not resend the answer." >&2
+    fi
+    if [ -n "$close_cmd" ]; then
+      echo "error: the answer was delivered to $T, but decision key '$k' could not be closed in $RESOLVE_STATUS_FILE$fail_detail. Close it manually with: $close_cmd - do not resend the answer." >&2
       return 1
     fi
   done
