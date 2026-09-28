@@ -412,6 +412,59 @@ test_terminal_single_owner_status_decision_does_not_block_empty_inventory() {
   pass "terminal single-owner stale status decisions do not block empty inventory"
 }
 
+# Regression for the writer side of the same ledger: both commander-held
+# writers (the transfer line and the complete --none close) must start their
+# line on its own physical record when the ledger's final record is
+# unterminated, so the fold can see the close.
+test_complete_separates_unterminated_status_records() {
+  local home id hold status expected open
+  home=$(make_home unterminated-transfer)
+  id=sample-unterminated-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Review unterminated status sample" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create investigation backlog fixture"
+  write_origin_meta "$home" "$id"
+  hold=$(run_decisions "$home" hold "$id" route \
+    --title "Choose the sample route" --reason "commander route choice pending" --repo sample) \
+    || fail "could not register route hold"
+  status="$home/state/$id.status"
+  printf 'needs-decision [key=route]: choose route north or route south' > "$status"
+  assert_contains "$(bash -c '. "$1"; status_open_decisions "$2"' _ \
+    "$ROOT/bin/sq-classify-lib.sh" "$status")" $'route\tneeds-decision' \
+    "precondition: the unterminated record should open a decision"
+
+  run_decisions "$home" complete "$id" route >/dev/null \
+    || fail "completion over an unterminated status ledger failed"
+  expected="$TMP_ROOT/unterminated-transfer.expected"
+  printf 'needs-decision [key=route]: choose route north or route south\ncommander-held [key=route]: tracked by %s\n' \
+    "$hold" > "$expected"
+  cmp -s "$expected" "$status" \
+    || fail "the commander-held transfer folded into the unterminated record: $(cat "$status")"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/sq-classify-lib.sh" "$status")
+  [ -z "$open" ] || fail "the transferred decision stayed open: $open"
+  pass "complete separates an unterminated record when transferring a decision"
+
+  home=$(make_home unterminated-none)
+  id=sample-unterminated-none
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Review stale sample decision" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create investigation backlog fixture"
+  write_origin_meta "$home" "$id"
+  status="$home/state/$id.status"
+  printf 'needs-decision [key=default]: choose route A or route B\ndone: report complete' > "$status"
+
+  run_decisions "$home" complete "$id" --none >/dev/null \
+    || fail "no-decision completion over an unterminated status ledger failed"
+  expected="$TMP_ROOT/unterminated-none.expected"
+  printf 'needs-decision [key=default]: choose route A or route B\ndone: report complete\ncommander-held [key=default]: closed by complete --none\n' \
+    > "$expected"
+  cmp -s "$expected" "$status" \
+    || fail "the complete --none close folded into the unterminated record: $(cat "$status")"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/sq-classify-lib.sh" "$status")
+  [ -z "$open" ] || fail "the stale decision stayed open after the --none close: $open"
+  pass "complete --none separates an unterminated final status record"
+}
+
 test_XO_hold_stays_in_authoritative_home() {
   local parent mate origin hold json
   parent=$(make_home main-routing)
@@ -676,6 +729,7 @@ test_origin_slug_validation_precedes_path_construction
 test_visual_review_uses_shared_completion_owner
 test_none_inventory_and_resolved_prose_do_not_create_holds
 test_terminal_single_owner_status_decision_does_not_block_empty_inventory
+test_complete_separates_unterminated_status_records
 test_XO_hold_stays_in_authoritative_home
 test_resolve_matches_quoted_blocked_by_edges
 test_teardown_refuses_with_open_status_decisions

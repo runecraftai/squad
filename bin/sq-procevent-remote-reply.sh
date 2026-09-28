@@ -285,7 +285,7 @@ normalize_payload() { # <source> <destination>
 # Returns 0 appended, 1 already present, 2 the write itself failed.
 append_status_once() { # <status-file> <line>
   grep -Fqx -- "$2" "$1" 2>/dev/null && return 1
-  printf '%s\n' "$2" >> "$1" || return 2
+  status_line_append "$1" "$2" || return 2
   return 0
 }
 

@@ -331,7 +331,7 @@ EOF
       while IFS=$'\t' read -r key _verb _summary; do
         [ -n "$key" ] || continue
         list_has_key "$keys" "$key" || continue
-        printf 'commander-held [key=%s]: tracked by %s\n' "$key" "$(hold_id "$origin" "$key")" >> "$status_file"
+        status_line_append "$status_file" "commander-held [key=$key]: tracked by $(hold_id "$origin" "$key")"
         key_seen=1
       done <<EOF
 $raw_open
@@ -342,7 +342,7 @@ EOF
       # unreviewed new decisions.
       while IFS=$'\t' read -r key _verb _summary; do
         [ -n "$key" ] || continue
-        printf 'commander-held [key=%s]: closed by complete --none\n' "$key" >> "$status_file"
+        status_line_append "$status_file" "commander-held [key=$key]: closed by complete --none"
       done <<EOF
 $raw_open
 EOF

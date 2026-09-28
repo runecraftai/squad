@@ -74,15 +74,15 @@ if [ "$DOC_MODE" = 1 ]; then
   shift
   NOTE=$*
   if [ -n "$NOTE" ]; then
-    printf '%s [%s]: %s (%s via-helper)\n' "$VERB" "$token" "$NOTE" "$DOC_PATH" >> "$STATUS_FILE"
+    status_line_append "$STATUS_FILE" "$VERB [$token]: $NOTE ($DOC_PATH via-helper)"
   else
-    printf '%s [%s]: %s (via-helper)\n' "$VERB" "$token" "$DOC_PATH" >> "$STATUS_FILE"
+    status_line_append "$STATUS_FILE" "$VERB [$token]: $DOC_PATH (via-helper)"
   fi
 else
   NOTE=$*
   if [ -n "$NOTE" ]; then
-    printf '%s [%s]: %s (via-helper)\n' "$VERB" "$token" "$NOTE" >> "$STATUS_FILE"
+    status_line_append "$STATUS_FILE" "$VERB [$token]: $NOTE (via-helper)"
   else
-    printf '%s [%s]: (via-helper)\n' "$VERB" "$token" >> "$STATUS_FILE"
+    status_line_append "$STATUS_FILE" "$VERB [$token]: (via-helper)"
   fi
 fi

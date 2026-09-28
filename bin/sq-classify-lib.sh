@@ -13,17 +13,20 @@
 # daemon keeps its escalation-digest seen-markers; the sentry keeps its .seen-*
 # signatures).
 #
-# There are two documented exceptions. The absorb classification
-# (operator_absorb_class and its working/paused wrappers) is NOT a pure status-file
-# read: it reuses bin/sq-crew-state.sh, which may make a bounded drill call,
-# to decide whether an operator that just stopped its turn or went stale is working,
+# There are two documented exceptions among the status-file readers. The absorb
+# classification (operator_absorb_class and its working/paused wrappers) is NOT a
+# pure status-file read: it reuses bin/sq-crew-state.sh, which may make a bounded
+# drill call, to decide whether an operator that just stopped its turn or went
+# stale is working,
 # deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
 # stays cheap. status_open_decisions_incremental (see "incremental (cursor-backed)
 # open-decisions fold" below) also writes: it persists a per-status-file byte
 # cursor and folded open-set as a side effect, so a per-drain unit-wide scan
 # stays bounded by new appends instead of re-reading each task's whole lifetime
-# log every time.
+# log every time. The write side of that same stream is status_line_append (see
+# "status stream appends" below): the one shared append path callers use instead
+# of appending directly, so a line always starts its own physical record.
 
 # Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
@@ -162,6 +165,25 @@ status_is_paused_or_commander_held() {  # <status-line>
   [ -n "$line" ] || return 1
   verb=$(status_line_verb "$line")
   [ "$verb" = "${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}" ]
+}
+
+# --- status stream appends --------------------------------------------------
+#
+# Writer side of the append-only stream the fold below reads: append ONE line
+# as its own physical record. The fold treats an unterminated final record as
+# first-class input, but a bare append onto such a file folds the new line's
+# verb into that record, so the transition never reaches the fold and a keyed
+# decision can stay open forever. When the file's last byte is not a newline,
+# a separator newline is written first; an already-terminated file gains
+# exactly the appended line, and existing records are never rewritten.
+# Returns 0 when the line was appended, 1 when the separator write failed
+# (nothing was written), 2 when the line write itself failed.
+status_line_append() {  # <status-file> <line>
+  local file=$1 line=$2
+  if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+    printf '\n' >> "$file" || return 1
+  fi
+  printf '%s\n' "$line" >> "$file" || return 2
 }
 
 # --- durable keyed decisions ------------------------------------------------

@@ -227,6 +227,8 @@ SUB_HOME_MARKER=".sq-xo-home"
 . "$SCRIPT_DIR/sq-trace-context-lib.sh"
 # shellcheck source=bin/sq-remote-readiness-lib.sh
 . "$SCRIPT_DIR/sq-remote-readiness-lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
 # Fail closed before any unit mutation: a drill gate agent must never spawn
 # a direct report (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -1986,7 +1988,7 @@ kimi_wait_for_delivery() {
 }
 
 kimi_spawn_fail() {  # <detail>
-  printf 'failed: %s\n' "$1" >> "$STATE/$ID.status"
+  status_line_append "$STATE/$ID.status" "failed: $1"
   echo "error: $1; inspect window $T" >&2
 }
 
