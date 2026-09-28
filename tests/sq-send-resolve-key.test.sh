@@ -369,22 +369,36 @@ test_remote_transport_failure_does_not_close() {
 }
 
 test_resolve_appends_after_unterminated_status_line() {
-  local dir fb log home rc out
+  local dir fb log home rc out expected
   dir="$TMP_ROOT/unterminated"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/send.log"
   home=$(setup_home unterminated)
+  expected="$dir/expected.status"
   fm_write_meta "$home/state/t8.meta" "window=sess:sq-t8" "kind=strike"
   printf 'blocked [key=tail]: answer required' > "$home/state/t8.status"
 
   run_send "$fb" "$home" "$log" t8 --resolve-key tail "answered"; rc=$?
   expect_code 0 "$rc" "resolving a decision after an unterminated final status line should succeed"
-  grep -Fx 'resolved [key=tail]: answered: answered' "$home/state/t8.status" >/dev/null \
+  printf 'blocked [key=tail]: answer required\nresolved [key=tail]: answered: answered\n' > "$expected"
+  cmp -s "$expected" "$home/state/t8.status" \
     || fail "resolved did not start its own line: $(cat "$home/state/t8.status")"
   out=$(drain_out "$home")
   if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
     fail "the decision remained open after resolving an unterminated status file: $out"
   fi
-  pass "sq-send --resolve-key: unterminated status records are separated before append"
+
+  fm_write_meta "$home/state/t9.meta" "window=sess:sq-t9" "kind=strike"
+  printf 'blocked [key=steady]: answer required\n' > "$home/state/t9.status"
+  run_send "$fb" "$home" "$log" t9 --resolve-key steady "answered"; rc=$?
+  expect_code 0 "$rc" "resolving a decision after a terminated final status line should succeed"
+  printf 'blocked [key=steady]: answer required\nresolved [key=steady]: answered: answered\n' > "$expected"
+  cmp -s "$expected" "$home/state/t9.status" \
+    || fail "an already-terminated ledger changed bytes beyond the append: $(cat "$home/state/t9.status")"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
+    fail "the decision remained open after resolving a terminated status file: $out"
+  fi
+  pass "sq-send --resolve-key: unterminated status records are separated, terminated ones untouched"
 }
 
 test_flag_misuse_refuses() {
