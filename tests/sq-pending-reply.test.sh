@@ -394,6 +394,38 @@ test_close_separates_unterminated_escalation_record() {
   pass "pending-reply close separates an unterminated escalation record"
 }
 
+# Regression for the opener side of the same ledger: the blocked escalation
+# line must start its own physical record when the parent ledger's final
+# record is unterminated, so the fold registers the escalation key (and a
+# later close can match it).
+test_escalation_separates_unterminated_parent_record() {
+  local home state corr first second open
+  home=$(setup_parent unterminated-escalate)
+  state="$home/state"
+  export SQUAD_PENDING_REPLY_NOW=4850
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "unterminated escalation")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  export SQUAD_PENDING_REPLY_SEND_HOOK='true'
+  fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  printf 'done: prior work' > "$state/hibit.status"
+  fm_pending_reply_maybe_escalate "$state" "$corr" \
+    || fail "escalation should fire over an unterminated parent ledger"
+  [ "$(phase_of "$state" "$corr")" = escalated ] || fail "phase should be escalated"
+  first=$(sed -n '1p' "$state/hibit.status")
+  [ "$first" = 'done: prior work' ] || fail "the unterminated record was altered: [$first]"
+  second=$(sed -n '2p' "$state/hibit.status")
+  case "$second" in
+    "blocked [key=pending-reply-$corr]:"*) : ;;
+    *) fail "the escalation did not start its own record: [$second]" ;;
+  esac
+  open=$(status_open_decisions "$state/hibit.status")
+  assert_contains "$open" "pending-reply-$corr" \
+    "the escalation key should fold open after separation: $open"
+  pass "pending-reply escalation separates an unterminated parent record"
+}
+
 test_legacy_escalation_does_not_close_taken_default_decision() {
   local home state corr rec open
   home=$(setup_parent legacy-escalation)
@@ -813,6 +845,26 @@ test_helper_report_resolves() {
   pass "optional helper report resolves without being required for correctness"
 }
 
+# Regression for the helper writer: a report appended after an unterminated
+# parent record must land on its own physical line and still resolve.
+test_helper_report_separates_unterminated_record() {
+  local home state corr expected
+  home=$(setup_parent helper-unterminated)
+  state="$home/state"
+  export SQUAD_PENDING_REPLY_NOW=9150
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "quick answer")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  printf 'blocked: awaiting input' > "$state/hibit.status"
+  "$REPORT" "$state/hibit.status" "done" "$corr" "all good" \
+    || fail "helper report over an unterminated ledger failed"
+  expected="$TMP_ROOT/helper-unterminated.expected"
+  printf 'blocked: awaiting input\ndone [corr=%s]: all good (via-helper)\n' "$corr" > "$expected"
+  cmp -s "$expected" "$state/hibit.status" \
+    || fail "helper report folded into the unterminated record: $(cat "$state/hibit.status")"
+  fm_pending_reply_try_resolve "$state" "$corr" || fail "helper report should resolve"
+  pass "optional helper report separates an unterminated status record"
+}
+
 test_busy_idle_observation_via_backend_abstraction() {
   local home state corr
   home=$(setup_parent busy-idle)
@@ -1085,6 +1137,7 @@ test_second_missed_turn_escalates_once_and_stays_durable
 test_escalation_publication_failure_retries
 test_legacy_escalation_closes_default_decision
 test_close_separates_unterminated_escalation_record
+test_escalation_separates_unterminated_parent_record
 test_legacy_escalation_does_not_close_taken_default_decision
 test_foreign_blocker_is_not_selected_as_escalation
 test_concurrent_resolution_closes_escalation_once
@@ -1099,6 +1152,7 @@ test_unmarked_commander_input_creates_no_expectation
 test_fm_send_marked_XO_creates_pending_and_embeds_corr
 test_document_pointer_resolves
 test_helper_report_resolves
+test_helper_report_separates_unterminated_record
 test_busy_idle_observation_via_backend_abstraction
 test_unknown_backend_state_uses_capture_fallback
 test_kimi_capture_fallback_uses_recorded_harness

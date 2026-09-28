@@ -59,7 +59,7 @@ stall_backoff_seconds() {
 append_status() {
   local id=$1 note=$2
   [ -f "$STATE/$id.status" ] || : >"$STATE/$id.status"
-  printf '%s: %s\n' "${3:-stalled}" "$note" >>"$STATE/$id.status"
+  status_line_append "$STATE/$id.status" "${3:-stalled}: $note"
 }
 
 positive_activity() {
