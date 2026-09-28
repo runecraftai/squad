@@ -378,7 +378,7 @@ test_resolve_appends_after_unterminated_status_line() {
 
   run_send "$fb" "$home" "$log" t8 --resolve-key tail "answered"; rc=$?
   expect_code 0 "$rc" "resolving a decision after an unterminated final status line should succeed"
-  grep -F 'resolved [key=tail]: answered: answered' "$home/state/t8.status" >/dev/null \
+  grep -Fx 'resolved [key=tail]: answered: answered' "$home/state/t8.status" >/dev/null \
     || fail "resolved did not start its own line: $(cat "$home/state/t8.status")"
   out=$(drain_out "$home")
   if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
