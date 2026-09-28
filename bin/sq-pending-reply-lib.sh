@@ -905,7 +905,7 @@ fm_pending_reply_close_escalation() {  # <state-dir> <corr_id>
 
 _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 rec escalated closed parent_status escalation key note
-  local open_line open_key open_note now
+  local open_line open_key open_note now line
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] || return 0
@@ -926,10 +926,8 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
       open_note=${open_line#*$'\t'}
       open_note=${open_note#*$'\t'}
       [ "$open_note" = "$note" ] || continue
-      printf 'resolved [key=%s]: pending-reply-resolved: task=%s pending-reply-id=%s via=%s\n' \
-        "$key" "$(fm_pending_reply_get "$rec" task_id)" "$corr" \
-        "$(fm_pending_reply_get "$rec" resolved_via)" \
-        >> "$parent_status" 2>/dev/null || return 1
+      line="resolved [key=$key]: pending-reply-resolved: task=$(fm_pending_reply_get "$rec" task_id) pending-reply-id=$corr via=$(fm_pending_reply_get "$rec" resolved_via)"
+      status_line_append "$parent_status" "$line" 2>/dev/null || return 1
       break
     done <<EOF
 $(status_open_decisions "$parent_status")

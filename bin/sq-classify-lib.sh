@@ -164,6 +164,25 @@ status_is_paused_or_commander_held() {  # <status-line>
   [ "$verb" = "${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}" ]
 }
 
+# --- status stream appends --------------------------------------------------
+#
+# Writer side of the append-only stream the fold below reads: append ONE line
+# as its own physical record. The fold treats an unterminated final record as
+# first-class input, but a bare append onto such a file folds the new line's
+# verb into that record, so the transition never reaches the fold and a keyed
+# decision can stay open forever. When the file's last byte is not a newline,
+# a separator newline is written first; an already-terminated file gains
+# exactly the appended line, and existing records are never rewritten.
+# Returns 0 when the line was appended, 1 when the separator write failed
+# (nothing was written), 2 when the line write itself failed.
+status_line_append() {  # <status-file> <line>
+  local file=$1 line=$2
+  if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+    printf '\n' >> "$file" || return 1
+  fi
+  printf '%s\n' "$line" >> "$file" || return 2
+}
+
 # --- durable keyed decisions ------------------------------------------------
 #
 # The status stream is an append-only EVENT log. Reading it last-event-wins

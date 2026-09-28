@@ -358,6 +358,42 @@ test_legacy_escalation_closes_default_decision() {
   pass "legacy escalation closes under the shared default key"
 }
 
+# Regression for the writer side of the same ledger: the closing resolved
+# line must start its own physical record even when the escalation record it
+# closes is the unterminated final line, so the fold can see the close.
+test_close_separates_unterminated_escalation_record() {
+  local home state corr rec summary via line expected open
+  home=$(setup_parent unterminated-close)
+  state="$home/state"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "unterminated close")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  fm_pending_reply_set "$rec" phase resolved
+  fm_pending_reply_set "$rec" resolved_epoch 4780
+  via=corr-report
+  fm_pending_reply_set "$rec" resolved_via "$via"
+  fm_pending_reply_set "$rec" escalated_epoch 4750
+  summary=$(fm_pending_reply_get "$rec" request_summary)
+  line="blocked [key=pending-reply-$corr]: pending-reply-missed: task=hibit pending-reply-id=$corr request=$summary"
+  printf '%s' "$line" > "$state/hibit.status"
+  open=$(status_open_decisions "$state/hibit.status")
+  assert_contains "$open" "pending-reply-$corr" \
+    "precondition: the unterminated escalation record should open a decision"
+
+  fm_pending_reply_close_escalation "$state" "$corr" \
+    || fail "closing an escalated record over an unterminated ledger failed"
+  expected="$TMP_ROOT/unterminated-close.expected"
+  printf '%s\nresolved [key=pending-reply-%s]: pending-reply-resolved: task=hibit pending-reply-id=%s via=%s\n' \
+    "$line" "$corr" "$corr" "$via" > "$expected"
+  cmp -s "$expected" "$state/hibit.status" \
+    || fail "the closing resolved line folded into the unterminated escalation: $(cat "$state/hibit.status")"
+  open=$(status_open_decisions "$state/hibit.status")
+  [ -z "$open" ] || fail "the escalation decision stayed open after the close: $open"
+  [ -n "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
+    || fail "the escalation closure was not recorded"
+  pass "pending-reply close separates an unterminated escalation record"
+}
+
 test_legacy_escalation_does_not_close_taken_default_decision() {
   local home state corr rec open
   home=$(setup_parent legacy-escalation)
@@ -1048,6 +1084,7 @@ test_recovery_reply_resolves_original
 test_second_missed_turn_escalates_once_and_stays_durable
 test_escalation_publication_failure_retries
 test_legacy_escalation_closes_default_decision
+test_close_separates_unterminated_escalation_record
 test_legacy_escalation_does_not_close_taken_default_decision
 test_foreign_blocker_is_not_selected_as_escalation
 test_concurrent_resolution_closes_escalation_once
