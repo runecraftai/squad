@@ -20,10 +20,16 @@ set -u
 
 CLASSIFY="$ROOT/bin/sq-classify-lib.sh"
 ADAPTER="$ROOT/bin/sq-procevent-remote-reply.sh"
+STALL="$ROOT/bin/sq-stall-detect.sh"
 TMP_ROOT=$(fm_test_tmproot sq-status-line-append)
 
 append_status_line() { # <status-file> <line> -> status_line_append's return code
   bash -c '. "$1"; status_line_append "$2" "$3"' _ "$CLASSIFY" "$1" "$2"
+}
+
+append_stall_status() { # <state-dir> <id> <note> <verb> -> append_status's return code
+  env SQUAD_STATE_OVERRIDE="$1" bash -c '. "$1"; append_status "$2" "$3" "$4"' \
+    _ "$STALL" "$2" "$3" "$4"
 }
 
 fold_open() { # <status-file>
@@ -165,9 +171,37 @@ test_adapter_ingest_separates_unterminated_parent_status() {
   pass "remote-reply ingest separates an unterminated parent status record"
 }
 
+# The stall detector's programmatic writer (append_status) is another sibling
+# writing the same ledgers. Drive its real function against an unterminated
+# record and assert both the persisted bytes and the real fold.
+test_stall_detect_writer_separates_unterminated_record() {
+  local dir state f expected
+  dir="$TMP_ROOT/stall"; mkdir -p "$dir/state"
+  state="$dir/state"
+  f="$state/t1.status"
+  printf 'blocked [key=slot]: answer required' > "$f"
+  append_stall_status "$state" t1 "answered" "resolved [key=slot]" \
+    || fail "append_status over an unterminated ledger failed"
+  expected="$dir/expected.status"
+  printf 'blocked [key=slot]: answer required\nresolved [key=slot]: answered\n' > "$expected"
+  cmp -s "$expected" "$f" \
+    || fail "append_status folded into the unterminated record: $(cat "$f")"
+  [ -z "$(fold_open "$f")" ] \
+    || fail "the decision stayed open after append_status separated the close: $(fold_open "$f")"
+
+  printf 'working: prior\n' > "$f"
+  append_stall_status "$state" t1 "resumed" "working" \
+    || fail "append_status over a terminated ledger failed"
+  printf 'working: prior\nworking: resumed\n' > "$expected"
+  cmp -s "$expected" "$f" \
+    || fail "append_status changed a terminated ledger beyond the append: $(cat "$f")"
+  pass "stall-detector append_status separates an unterminated record"
+}
+
 test_append_separates_unterminated_record
 test_append_preserves_terminated_ledger
 test_append_creates_missing_ledger
 test_append_reports_separator_write_failure
 test_append_reports_line_write_failure
 test_adapter_ingest_separates_unterminated_parent_status
+test_stall_detect_writer_separates_unterminated_record

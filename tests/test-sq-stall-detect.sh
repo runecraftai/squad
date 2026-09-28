@@ -22,17 +22,6 @@ assert_eq "$(stall_backoff_seconds 1)" 20
 assert_eq "$(stall_backoff_seconds 2)" 40
 assert_eq "$(stall_backoff_seconds 8)" 300
 
-# The programmatic status writer must start its line on its own physical
-# record when the ledger's final record is unterminated, so downstream folds
-# still see the appended verb; an already-terminated ledger keeps its bytes.
-printf 'blocked [key=tail]: awaiting input' >"$STATE/sep.status"
-append_status sep "interrupted" blocked
-assert_eq "$(cat "$STATE/sep.status")" $'blocked [key=tail]: awaiting input\nblocked: interrupted'
-printf 'working: prior\n' >"$STATE/sep2.status"
-append_status sep2 "resumed" working
-assert_eq "$(cat "$STATE/sep2.status")" $'working: prior\nworking: resumed'
-rm -f "$STATE/sep.status" "$STATE/sep2.status"
-
 # A conclusive dead endpoint is interrupted and queued without touching the workspace.
 "$EXEC" claim stalled >/dev/null
 "$EXEC" running stalled >/dev/null
