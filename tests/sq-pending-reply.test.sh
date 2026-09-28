@@ -370,7 +370,7 @@ test_close_separates_unterminated_escalation_record() {
   rec=$(fm_pending_reply_path "$state" "$corr")
   fm_pending_reply_set "$rec" phase resolved
   fm_pending_reply_set "$rec" resolved_epoch 4780
-  via=corr-report
+  via='corr-report'
   fm_pending_reply_set "$rec" resolved_via "$via"
   fm_pending_reply_set "$rec" escalated_epoch 4750
   summary=$(fm_pending_reply_get "$rec" request_summary)

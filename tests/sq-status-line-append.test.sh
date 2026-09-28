@@ -28,6 +28,7 @@ append_status_line() { # <status-file> <line> -> status_line_append's return cod
 }
 
 append_stall_status() { # <state-dir> <id> <note> <verb> -> append_status's return code
+  # shellcheck disable=SC2016 # Positional parameters expand inside the child bash, not here.
   env SQUAD_STATE_OVERRIDE="$1" bash -c '. "$1"; append_status "$2" "$3" "$4"' \
     _ "$STALL" "$2" "$3" "$4"
 }
