@@ -461,7 +461,7 @@ fm_send_close_resolved_keys() {  # <answer-text>
     fm_cap_line_var "$line"
     if [ -s "$RESOLVE_STATUS_FILE" ] && [ -n "$(tail -c 1 "$RESOLVE_STATUS_FILE")" ]; then
       if ! printf '\n' >> "$RESOLVE_STATUS_FILE"; then
-        close_cmd="printf '\\nresolved [key=$k]: <how it was answered>\\n' >> \"$RESOLVE_STATUS_FILE\""
+        close_cmd="printf '\\n%s\\n' 'resolved [key=$k]: <how it was answered>' >> \"$RESOLVE_STATUS_FILE\""
         echo "error: the answer was delivered to $T, but decision key '$k' could not be closed in $RESOLVE_STATUS_FILE, whose final line is missing a trailing newline. Close it manually with: $close_cmd - do not resend the answer." >&2
         return 1
       fi
