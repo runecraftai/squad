@@ -180,6 +180,9 @@ test_backend_detect_precedence() {
   if out=$(unset TMUX HERDR_ENV CMUX_WORKSPACE_ID __CFBundleIdentifier; PATH="$FAKE_NONDARWIN_BIN:$PATH" fm_backend_detect); then
     fail "fm_backend_detect should return 1 (undetected) with no markers set, got '$out'"
   fi
+  if out=$(unset TMUX HERDR_ENV CMUX_WORKSPACE_ID __CFBundleIdentifier; SQUAD_TUIOS_SESSION=owned TUIOS_SESSION=owned PATH="$FAKE_NONDARWIN_BIN:$PATH" fm_backend_detect); then
+    fail "TUIOS session names must not auto-select the backend, got '$out'"
+  fi
 
   out=$(unset TMUX CMUX_WORKSPACE_ID; HERDR_ENV=1 fm_backend_detect) \
     || fail "fm_backend_detect should succeed when HERDR_ENV=1"
@@ -217,7 +220,7 @@ test_backend_detect_precedence() {
     || fail "fm_backend_detect should succeed with all three markers present"
   [ "$out" = tmux ] || fail "fm_backend_detect should resolve nesting innermost-first with all three markers (tmux wins), got '$out'"
 
-  pass "fm_backend_detect: no markers -> undetected, HERDR_ENV=1 -> herdr, \$TMUX -> tmux, CMUX_WORKSPACE_ID -> cmux, nested combinations resolve innermost-first"
+  pass "fm_backend_detect: TUIOS session markers remain explicit-only; no markers -> undetected, HERDR_ENV=1 -> herdr, \$TMUX -> tmux, CMUX_WORKSPACE_ID -> cmux, nested combinations resolve innermost-first"
 }
 
 # fm_backend_detect's cmux FALLBACK signals (docs/cmux-backend.md "Runtime

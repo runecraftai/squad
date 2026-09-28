@@ -677,3 +677,13 @@ The host-tool sequence was:
 Observed guarantee: a Desktop-owned thread can write Squad lifecycle files when the prompt provides an authorized absolute path, and create, send, read, and archive work at the Desktop host-tool layer.
 The missing guarantee remains a supported shell-callable bridge that lets Squad perform those operations against the same visible Desktop endpoint.
 App-server partial methods and raw socket experiments do not satisfy that bridge contract.
+
+## TUIOS
+
+TUIOS 0.8.0 was the version available during the implementation investigation. The current executable regression is fake-CLI-only and deliberately does not access live sessions:
+
+```sh
+tests/sq-backend-tuios.test.sh
+```
+
+The fixture verifies explicit session selection, opaque window identity, exact cleanup targeting, inventory-based missing classification, ambiguous-agent handling, the `has_foreground_process=false` mismatch case, and uncertain UI submission. It is not evidence of live TUIOS behavior. Live lifecycle, daemon restart, permissions, and Pi delivery remain unverified and must be established in an explicitly disposable, separately authorized session. Never use the commander's watched sessions as a test fixture.

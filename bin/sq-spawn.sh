@@ -31,11 +31,11 @@
 #   docs/cmux-backend.md),
 #   then tmux.
 #   Spawn-capable backends are the reference tmux adapter and experimental
-#   herdr, zellij, orca, and cmux. Orca owns both the task worktree and
-#   terminal, so ship/recon Orca spawns do not run fob get; cmux is a
-#   session provider only, exactly like herdr/zellij, so it does. An
+#   herdr, zellij, orca, cmux, and TUIOS. Orca owns both the task worktree and
+#   terminal, so ship/recon Orca spawns do not run fob get; cmux and TUIOS are
+#   session providers only, exactly like herdr/zellij, so they do. An
 #   auto-detected herdr or cmux spawn prints a loud stderr notice;
-#   auto-detected tmux stays silent; zellij and orca are never auto-detected.
+#   auto-detected tmux stays silent; zellij, orca, and TUIOS are never auto-detected.
 #   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
 #   blocked backend contract. Default tmux spawns do not write backend= to meta;
 #   absent backend= means tmux. cmux does not support --xo spawns yet.
@@ -642,6 +642,10 @@ if [ "$BACKEND" = orca ] && [ "$KIND" = xo ]; then
 fi
 if [ "$BACKEND" = cmux ] && [ "$KIND" = xo ]; then
   echo "error: backend=cmux does not support --xo spawns yet" >&2
+  exit 1
+fi
+if [ "$BACKEND" = tuios ] && [ "$KIND" = xo ]; then
+  echo "error: backend=tuios does not support --xo spawns yet" >&2
   exit 1
 fi
 if [ "$BACKEND" = orca ]; then
@@ -1856,6 +1860,11 @@ EOF
     fi
     T="$ZELLIJ_SES:$ZELLIJ_PANE_ID"
     ;;
+  tuios)
+    TUIOS_SES=$(fm_backend_tuios_container_ensure "$PROJ_ABS") || exit 1
+    TUIOS_WINDOW_ID=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
+    T="$TUIOS_SES:$TUIOS_WINDOW_ID"
+    ;;
   cmux)
     fm_backend_cmux_container_ensure || exit 1
     CMUX_TASK_IDS=$(fm_backend_cmux_create_task "$W" "$PROJ_ABS") || exit 1
@@ -1912,6 +1921,7 @@ spawn_send_text_line() {  # <target> <text>
     zellij) fm_backend_zellij_send_text_line "$1" "$2" "$W" ;;
     orca) fm_backend_orca_send_text_line "$1" "$2" ;;
     cmux) fm_backend_cmux_send_text_line "$1" "$2" "$W" ;;
+    tuios) fm_backend_tuios_send_text_line "$1" "$2" "$W" ;;
   esac
 }
 spawn_current_path() {  # <target>
@@ -1920,6 +1930,7 @@ spawn_current_path() {  # <target>
     herdr) fm_backend_herdr_current_path "$1" ;;
     zellij) fm_backend_zellij_current_path "$1" "$W" ;;
     cmux) fm_backend_cmux_current_path "$1" "$W" ;;
+    tuios) fm_backend_tuios_current_path "$1" ;;
   esac
 }
 spawn_send_literal() {  # <target> <text>
@@ -1929,6 +1940,7 @@ spawn_send_literal() {  # <target> <text>
     zellij) fm_backend_zellij_send_literal "$1" "$2" "$W" ;;
     orca) fm_backend_orca_send_literal "$1" "$2" ;;
     cmux) fm_backend_cmux_send_literal "$1" "$2" "$W" ;;
+    tuios) fm_backend_tuios_send_literal "$1" "$2" "$W" ;;
   esac
 }
 spawn_send_key() {  # <target> <key>
@@ -1938,6 +1950,7 @@ spawn_send_key() {  # <target> <key>
     zellij) fm_backend_zellij_send_key "$1" "$2" "$W" ;;
     orca) fm_backend_orca_send_key "$1" "$2" ;;
     cmux) fm_backend_cmux_send_key "$1" "$2" "$W" ;;
+    tuios) fm_backend_tuios_send_key "$1" "$2" "$W" ;;
   esac
 }
 
@@ -2603,6 +2616,10 @@ META_WINDOW=$T
   # default path's meta stays byte-identical (absent backend= means tmux;
   # data/sq-backend-design-d7's P1 compatibility contract).
   [ "$BACKEND" = tmux ] || echo "backend=$BACKEND"
+  if [ "$BACKEND" = tuios ]; then
+    echo "tuios_session=$TUIOS_SES"
+    echo "tuios_window_id=$TUIOS_WINDOW_ID"
+  fi
   if [ -n "$WORKFLOW_PATH" ]; then
     echo "workflow=$WORKFLOW_PATH"
     printf 'workflow_config=%s\n' "$(printf '%s' "$WORKFLOW_JSON" | base64 | tr -d '\n')"

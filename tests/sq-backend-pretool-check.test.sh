@@ -38,7 +38,7 @@ run_check() {
   printf '%s\n%s\n' "$rc" "$err"
 }
 
-for backend in tmux herdr zellij orca cmux; do
+for backend in tmux herdr zellij orca cmux tuios; do
   result=$(run_check "$backend lifecycle-control --target task")
   expect_code 2 "${result%%$'\n'*}" "blocks raw $backend CLI"
   assert_contains "$result" "backend-raw-session-control" "reports raw backend guard code for $backend"
@@ -50,6 +50,8 @@ for command in \
   'zellij action write-chars x' \
   'orca send-keys task Enter' \
   'cmux send-text task x' \
+  'tuios send-text x --window task' \
+  'tuios tmux kill-pane -t %7' \
   'herdr pane close task' \
   'command tmux send-keys task x' \
   'env -- tmux new-session -d' \

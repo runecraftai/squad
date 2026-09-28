@@ -33,7 +33,7 @@
 # treats that as `tmux` (fm_backend_of_meta), and sq-spawn.sh does not write
 # `backend=tmux` for a default-backend task, so existing and newly spawned
 # default-path metas stay byte-identical. Only a task spawned on a non-tmux
-# spawn-capable backend, currently experimental herdr, zellij, orca, or cmux,
+# spawn-capable backend, currently experimental herdr, zellij, orca, cmux, or TUIOS,
 # carries an explicit `backend=` line.
 #
 # Event-source framing (herdr-addendum "Events as the core abstraction"): a
@@ -66,8 +66,8 @@ SQUAD_BACKEND_CONFIG_DIR="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 # cmux is EXPERIMENTAL and spawn-capable, session-provider-only like
 # herdr/zellij - verified against the real 0.64.17 binary (docs/cmux-backend.md).
 # codex-app remains deliberately absent; see docs/codex-app-backend.md.
-SQUAD_BACKEND_KNOWN="tmux herdr zellij orca cmux"
-SQUAD_BACKEND_SPAWN="tmux herdr zellij orca cmux"
+SQUAD_BACKEND_KNOWN="tmux herdr zellij orca cmux tuios"
+SQUAD_BACKEND_SPAWN="tmux herdr zellij orca cmux tuios"
 
 # fm_backend_list_contains: whitespace-delimited membership without relying on
 # shell word splitting. sq-backend.sh is normally sourced by bash scripts, but
@@ -299,12 +299,12 @@ fm_backend_validate_spawn() {  # <name>
 # docs/configuration.md "Toolchain" and bootstrap's COMMON list). This is the
 # single owner of the per-backend dependency delta, so bootstrap follows the
 # RESOLVED backend instead of demanding an inactive backend's tools. Each set is:
-#   - the session-provider CLI itself (tmux/herdr/zellij/orca/cmux);
-#   - jq, for the JSON-emitting experimental adapters (herdr, zellij, cmux) whose
+#   - the session-provider CLI itself (tmux/herdr/zellij/orca/cmux/tuios);
+#   - jq, for the JSON-emitting experimental adapters (herdr, zellij, cmux, tuios) whose
 #     spawn/liveness paths parse the backend's JSON output (see each adapter's
 #     tool check, e.g. fm_backend_herdr_tool_check);
 #   - the fob worktree provider for every session-provider-only backend
-#     (tmux, herdr, zellij, cmux); orca owns its own task worktree and terminal,
+#     (tmux, herdr, zellij, cmux, tuios); orca owns its own task worktree and terminal,
 #     so it drops both fob and any other backend's session CLI.
 # Prints a single space-separated line and returns 0 for a known backend; returns
 # 1 and prints nothing for an unknown backend.
@@ -314,6 +314,7 @@ fm_backend_required_tools() {  # <backend>
     herdr)  printf '%s' 'herdr jq fob' ;;
     zellij) printf '%s' 'zellij jq fob' ;;
     cmux)   printf '%s' 'cmux jq fob' ;;
+    tuios)  printf '%s' 'tuios jq fob' ;;
     orca)   printf '%s' 'orca' ;;
     *) return 1 ;;
   esac
@@ -324,6 +325,10 @@ fm_backend_required_tool_available() {  # <backend> <tool>
   required=$(fm_backend_required_tools "$backend") || return 1
   fm_backend_list_contains "$required" "$tool" || return 1
   case "$backend:$tool" in
+    tuios:tuios)
+      fm_backend_source tuios >/dev/null 2>&1 || return 1
+      fm_backend_tuios_tool_check
+      ;;
     cmux:cmux)
       fm_backend_source cmux >/dev/null 2>&1 || return 1
       fm_backend_cmux_bin >/dev/null 2>&1
@@ -551,6 +556,21 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
         return 1
       fi
       ;;
+    tuios)
+      [ "$binding" = "$id" ] || {
+        echo "REFUSED: TUIOS endpoint metadata for task $id lacks an exact task binding; preserving task state." >&2
+        return 1
+      }
+      recorded_session=$(fm_backend_meta_exact_value "$meta" tuios_session) || recorded_session=
+      pane=$(fm_backend_meta_exact_value "$meta" tuios_window_id) || pane=
+      if [ -z "$recorded_session" ] || [ -z "$pane" ] \
+        || [ "$window" != "$recorded_session:$pane" ] \
+        || ! fm_backend_endpoint_atom_valid "$recorded_session" \
+        || ! fm_backend_endpoint_atom_valid "$pane"; then
+        echo "REFUSED: TUIOS endpoint metadata for task $id is malformed or inconsistent; preserving task state." >&2
+        return 1
+      fi
+      ;;
   esac
   # shellcheck disable=SC2034 # Output globals are consumed by sourcing callers.
   SQUAD_BACKEND_VALIDATED_BACKEND=$backend
@@ -659,6 +679,13 @@ fm_backend_source() {  # <name>
         _SQUAD_BACKEND_CMUX_SOURCED=1
       fi
       ;;
+    tuios)
+      if [ -z "${_SQUAD_BACKEND_TUIOS_SOURCED:-}" ]; then
+        # shellcheck source=/dev/null
+        . "$SQUAD_BACKEND_LIB_DIR/backends/tuios.sh" || return 1
+        _SQUAD_BACKEND_TUIOS_SOURCED=1
+      fi
+      ;;
   esac
 }
 
@@ -730,6 +757,7 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
     zellij) fm_backend_zellij_capture "$@" ;;
     orca) fm_backend_orca_capture "$@" ;;
     cmux) fm_backend_cmux_capture "$@" ;;
+    tuios) fm_backend_tuios_capture "$@" ;;
     *) echo "error: no capture implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -745,6 +773,7 @@ fm_backend_send_key() {  # <backend> <target> <key> [expected-label]
     zellij) fm_backend_zellij_send_key "$@" ;;
     orca) fm_backend_orca_send_key "$@" ;;
     cmux) fm_backend_cmux_send_key "$@" ;;
+    tuios) fm_backend_tuios_send_key "$@" ;;
     *) echo "error: no send-key implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -762,6 +791,7 @@ fm_backend_send_text_submit() {  # <backend> <target> <text> <retries> <enter-sl
     zellij) fm_backend_zellij_send_text_submit "$@" ;;
     orca) fm_backend_orca_send_text_submit "$@" ;;
     cmux) fm_backend_cmux_send_text_submit "$@" ;;
+    tuios) fm_backend_tuios_send_text_submit "$@" ;;
     *) echo "error: no send-text implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -780,6 +810,7 @@ fm_backend_kill() {  # <backend> <target>
     zellij) fm_backend_zellij_kill "$@" ;;
     orca) fm_backend_orca_kill "$@" ;;
     cmux) fm_backend_cmux_kill "$@" ;;
+    tuios) fm_backend_tuios_kill "$@" ;;
     *) echo "error: no kill implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -817,6 +848,7 @@ fm_backend_busy_state() {  # <backend> <target>
   fm_backend_source "$backend" || { printf 'unknown'; return 0; }
   case "$backend" in
     herdr) fm_backend_herdr_busy_state "$@" ;;
+    tuios) fm_backend_tuios_busy_state "$@" ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -842,6 +874,7 @@ fm_backend_composer_state() {  # <backend> <target> -> empty|pending|pending-unp
     herdr) fm_backend_herdr_composer_state "$@" ;;
     orca) fm_backend_orca_composer_state "$@" ;;
     cmux) fm_backend_cmux_composer_state "$@" ;;
+    tuios) fm_backend_tuios_composer_state "$@" ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -891,6 +924,10 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
       fm_backend_source cmux || return 1
       fm_backend_cmux_target_ready "$target" "$expected_label"
       ;;
+    tuios)
+      fm_backend_source tuios || return 1
+      fm_backend_tuios_target_exists "$target" "$expected_label"
+      ;;
     *)
       return 1
       ;;
@@ -918,6 +955,7 @@ fm_backend_agent_state() {  # <backend> <target>
   case "$backend" in
     tmux) fm_backend_tmux_agent_state "$target" ;;
     herdr) fm_backend_herdr_agent_state "$target" ;;
+    tuios) fm_backend_tuios_agent_state "$target" ;;
     *) printf 'unverified' ;;
   esac
 }
