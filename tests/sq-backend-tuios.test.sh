@@ -114,6 +114,16 @@ case "${1:-}" in
     ;;
   queue)
     if [ "${2:-}" = ls ]; then
+      if [ -n "${SQUAD_TUIOS_FAKE_QUEUE_LS_SEQ:-}" ]; then
+        seq_file=${SQUAD_TUIOS_FAKE_QUEUE_LS_COUNT_FILE:?}
+        n=$(cat "$seq_file" 2>/dev/null || echo 0)
+        n=$((n + 1))
+        printf '%s' "$n" > "$seq_file"
+        state=$(printf '%s' "$SQUAD_TUIOS_FAKE_QUEUE_LS_SEQ" | cut -d, -f"$n")
+        [ -n "$state" ] || state=$(printf '%s' "$SQUAD_TUIOS_FAKE_QUEUE_LS_SEQ" | awk -F, '{print $NF}')
+        printf '{"entries":[{"id":"%s","state":"%s"}]}\n' "${SQUAD_TUIOS_FAKE_QUEUE_ID:-q1}" "$state"
+        exit 0
+      fi
       if [ -n "${SQUAD_TUIOS_FAKE_QUEUE_LS:-}" ]; then
         printf '%s\n' "$SQUAD_TUIOS_FAKE_QUEUE_LS"
       else
@@ -299,13 +309,18 @@ export SQUAD_TUIOS_FAKE_QUEUE_LS
   || fail 'a queue entry waiting for the next rest is a confirmed queueing'
 unset SQUAD_TUIOS_FAKE_QUEUE_LS
 
-# A being-typed entry that then stalls is observed before any verdict.
-SQUAD_TUIOS_FAKE_QUEUE_DELIVERING=true
-SQUAD_TUIOS_FAKE_QUEUE_LS=$(printf '%s' '{"entries":[{"id":"q1","state":"stalled"}]}')
-export SQUAD_TUIOS_FAKE_QUEUE_DELIVERING SQUAD_TUIOS_FAKE_QUEUE_LS
+# A being-typed entry that then stalls is observed across polls before any
+# verdict: the first poll must see `delivering`, and only a later `stalled` poll
+# may resolve it.
+SQUAD_TUIOS_FAKE_QUEUE_LS_SEQ='delivering,stalled'
+SQUAD_TUIOS_FAKE_QUEUE_LS_COUNT_FILE="$TMP_ROOT/queue-ls-count"
+export SQUAD_TUIOS_FAKE_QUEUE_LS_SEQ SQUAD_TUIOS_FAKE_QUEUE_LS_COUNT_FILE
+printf '0' > "$SQUAD_TUIOS_FAKE_QUEUE_LS_COUNT_FILE"
 [ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = stalled ] \
   || fail 'a delivering entry that stalls must be reported as stalled'
-unset SQUAD_TUIOS_FAKE_QUEUE_DELIVERING SQUAD_TUIOS_FAKE_QUEUE_LS
+[ "$(cat "$SQUAD_TUIOS_FAKE_QUEUE_LS_COUNT_FILE")" -ge 2 ] \
+  || fail 'the delivering->stalled transition must be observed across polls, not resolved on the first'
+unset SQUAD_TUIOS_FAKE_QUEUE_LS_SEQ SQUAD_TUIOS_FAKE_QUEUE_LS_COUNT_FILE
 
 # A full queue is a refusal that typed nothing, and says so distinctly. The
 # second wording is the live TUIOS 0.8.0 message, which carries no code token.
@@ -346,6 +361,10 @@ unset SQUAD_TUIOS_FAKE_QUEUE_FAIL SQUAD_TUIOS_FAKE_QUEUE_ERROR
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"working","harness_id":"pi","confidence":"certain"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_resume_agent owned:w-opaque_7 pi)" = live ] || fail 'a live agent must never be resumed over'
+unset SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"idle","harness_id":"pi","confidence":"certain","agent_session_id":"sid"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_resume_agent owned:w-opaque_7 pi)" = live ] || fail 'an attributed agent between turns must never be resumed over'
 unset SQUAD_TUIOS_FAKE_AGENTS
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"none","harness_id":"","confidence":"none","agent_session_id":""}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
@@ -390,6 +409,15 @@ if fm_backend_tuios_reuse_restored_task owned sq-other-1 boot-old >/dev/null 2>&
   fail 'a window without the task label must never be reused'
 fi
 unset SQUAD_TUIOS_FAKE_RESTORED_WINDOW SQUAD_TUIOS_FAKE_AGENTS
+
+# The same-label lookup must read identity through the shared normalizer, so an
+# inventory that reports the documented `id` key (the default TUIOS shape) is
+# reusable after a restart exactly like a `window_id` one.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"none","harness_id":"","confidence":"none"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_reuse_restored_task owned sq-task-1 boot-old)" = 'w-opaque_7' ] \
+  || fail 'a restored id-keyed window after a boot change must be reusable'
+unset SQUAD_TUIOS_FAKE_AGENTS
 
 # --- inventory safety (unchanged contract) ------------------------------
 SQUAD_TUIOS_FAKE_MISSING=1

@@ -78,6 +78,9 @@ case "${1:-}" in
     fi
     ;;
   send-text)
+    if [ "${SQUAD_FAKE_TUIOS_SEND_TEXT_FAIL:-0}" = 1 ]; then
+      exit 1
+    fi
     # Record any top-level `cd` as the window's new shell cwd. A `fob get`
     # subshell must NOT move it - that is the defect this test guards.
     payload=${*: -1}
@@ -200,7 +203,29 @@ test_tuios_spawn_returns_lease_on_failure() {
   pass 'a TUIOS spawn that cannot enter the lease fails and returns the lease'
 }
 
+# A failure to type the top-level cd (e.g. the daemon refuses send-text right
+# after window creation) must also return the durable lease. The acquisition
+# guard runs before any metadata exists, so teardown could never recover it.
+test_tuios_spawn_returns_lease_on_send_failure() {
+  local rec id label out status
+  id=tuios-spawn-lease-t3
+  label="sq-$id"
+  rec=$(make_case tuios-lease-send-fail "$id")
+  read_case "$rec"
+
+  SQUAD_FAKE_TUIOS_SEND_TEXT_FAIL=1
+  export SQUAD_FAKE_TUIOS_SEND_TEXT_FAIL
+  out=$(run_spawn "$id" "$label" 0)
+  status=$?
+  unset SQUAD_FAKE_TUIOS_SEND_TEXT_FAIL
+  [ "$status" -ne 0 ] || fail 'a refused worktree cd must fail the spawn'
+  [ -f "$HOME_DIR/state/$id.meta" ] && fail 'a failed spawn must not publish metadata'
+  assert_contains "$(cat "$CASE_DIR/fob.log")" "return --force $WT_DIR" 'a send failure must return the durable lease'
+  pass 'a TUIOS spawn whose worktree cd is refused fails and returns the lease'
+}
+
 test_tuios_spawn_leases_and_records_worktree
 test_tuios_spawn_returns_lease_on_failure
+test_tuios_spawn_returns_lease_on_send_failure
 
 echo "# all sq-spawn-tuios-worktree tests passed"

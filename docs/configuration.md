@@ -74,7 +74,7 @@ A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herd
 A zellij task additionally records `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
 An Orca task additionally records `orca_worktree_id=` and `terminal=`, with `window=sq-<id>` kept as the shared Squad alias.
 A cmux task additionally records `cmux_workspace_id=` and `cmux_surface_id=`.
-A TUIOS task additionally records `tuios_session=` and `tuios_window_id=`.
+A TUIOS task additionally records `tuios_session=`, `tuios_window_id=`, and `tuios_boot_id=`.
 Task selectors for `sq-peek.sh`, `sq-send.sh`, and `sq-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.
 A selector containing `:` is passed through as an explicit backend endpoint escape hatch.
 Otherwise an exact task id matching `state/<id>.meta` wins before the legacy `sq-<id>` label fallback, so task ids that themselves start with `sq-` route to their own metadata instead of being stripped.

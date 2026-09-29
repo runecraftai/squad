@@ -535,6 +535,13 @@ fm_backend_tuios_resume_agent() {  # <target> [harness]
   report=$(fm_backend_tuios_agent_report_json "$target") || { printf 'unreadable'; return 0; }
   [ "$(printf '%s' "$report" | jq -r '.present')" = true ] || { printf 'unreadable'; return 0; }
   [ "$(printf '%s' "$report" | jq -r '.contradictory')" = true ] && { printf 'unreadable'; return 0; }
+  # Any positively attributed report is a reporting agent that still owns the
+  # pane, exactly like fm_backend_tuios_agent_state's `alive`. Never type the
+  # conversation resume command into a pane a live agent is still driving, even
+  # when it is between turns or finished its last one.
+  if fm_backend_tuios_attributed "$report"; then
+    printf 'live'; return 0
+  fi
   state=$(printf '%s' "$report" | jq -r '.state')
   case "$state" in
     working|needs_input) printf 'live'; return 0 ;;
@@ -613,7 +620,7 @@ fm_backend_tuios_same_label_window() {  # <session> <task-label> -> opaque id, o
     [.windows[] | select((tlabels | index($label)) != null)] | length' 2>/dev/null) || return 1
   [ "$count" = 1 ] || return 1
   printf '%s' "$windows" | jq -r --arg label "$label" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    [.windows[] | select((tlabels | index($label)) != null)][0].window_id // empty'
+    [.windows[] | select((tlabels | index($label)) != null)][0] | tids[0] // empty'
 }
 
 fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID

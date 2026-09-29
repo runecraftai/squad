@@ -667,6 +667,7 @@ HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
 SPAWN_TASK_LOCK=
 SPAWN_TASK_LOCK_HELD=0
+SPAWN_TUIOS_LEASE=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -734,6 +735,9 @@ spawn_abort_cleanup() {
         fi
       fi
     fi
+  fi
+  if [ -n "${SPAWN_TUIOS_LEASE:-}" ]; then
+    tuios_release_lease "$SPAWN_TUIOS_LEASE" || true
   fi
   if [ "$SPAWN_TASK_LOCK_HELD" = 1 ]; then
     SPAWN_TASK_LOCK_HELD=0
@@ -2093,6 +2097,7 @@ validate_spawn_worktree "fob get" "$T"
 # verification must return it rather than leaking it out of the pool.
 tuios_release_lease() {  # <lease-path>
   local lease=$1
+  SPAWN_TUIOS_LEASE=
   ( cd "$PROJ_ABS" && fob return --force "$lease" ) >/dev/null 2>&1 \
     || echo "warning: could not return the leased worktree $lease; return it manually" >&2
 }
@@ -2115,6 +2120,10 @@ spawn_acquire_worktree_tuios() {  # <target>
       exit 1
     }
     lease_acquired=1
+    # Track the freshly acquired lease so any failure between here and a
+    # verified worktree is returned by the EXIT trap instead of leaking out of
+    # the pool.
+    SPAWN_TUIOS_LEASE=$lease
   fi
   case "$lease" in
     /*) : ;;
@@ -2138,6 +2147,9 @@ spawn_acquire_worktree_tuios() {  # <target>
     [ "$lease_acquired" = 0 ] || tuios_release_lease "$lease"
     exit 1
   fi
+  # Acquisition is verified: the task now owns the durable lease, so a later
+  # failure must not return it from under a launched agent.
+  SPAWN_TUIOS_LEASE=
 }
 
 spawn_acquire_worktree() {  # <target>
