@@ -41,7 +41,15 @@ fm_backend_tuios_cli() {  # <session> <verb> <args...>
 fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
   local session=$1 json
   json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
-  printf '%s' "$json" | jq -e 'type == "object" and (.windows | type == "array") and all(.windows[]; type == "object")' >/dev/null 2>&1 || return 1
+  printf '%s' "$json" | jq -e '
+    type == "object"
+    and (.windows | type == "array")
+    and all(.windows[];
+      type == "object"
+      and ((.id // .window_id // (.window | if type == "object" then .id else . end)) as $wid
+           | ($wid | type == "string") and ($wid | length > 0))
+    )
+  ' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
 }
 
@@ -135,7 +143,7 @@ fm_backend_tuios_agent_state() {  # <target>
   local target=$1 info agents windows state foreground id present
   fm_backend_tuios_parse_target "$target" || { printf 'unreadable'; return 0; }
   windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || { printf 'unreadable'; return 0; }
-  present=$(printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" '[.windows[] | select(.id == $id)] | length' 2>/dev/null) || { printf 'unreadable'; return 0; }
+  present=$(printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" '[.windows[] | select((.id // .window_id // (.window | if type == "object" then .id else . end)) == $id)] | length' 2>/dev/null) || { printf 'unreadable'; return 0; }
   if [ "$present" = 0 ]; then printf 'missing'; return 0; fi
   [ "$present" = 1 ] || { printf 'unreadable'; return 0; }
   info=$(fm_backend_tuios_window_info "$SQUAD_BACKEND_TUIOS_SESSION" "$SQUAD_BACKEND_TUIOS_WINDOW") || { printf 'unreadable'; return 0; }
@@ -143,9 +151,9 @@ fm_backend_tuios_agent_state() {  # <target>
   id=$(printf '%s' "$info" | jq -r '.window.id // .window_id // .id // empty')
   # Agent inventory is authoritative for identity. get-window's process hint
   # is not: live Pi may report foreground=false while list-agents identifies Pi.
-  foreground=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // .window) == $id)) | unique_by(.id // .window_id // .window) | if length == 1 then (.[0].foreground // .[0].harness_id // .[0].harness // .[0].program // empty) else empty end' 2>/dev/null)
+  foreground=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // (.window | if type == "object" then .id else . end)) == $id)) | unique_by(.id // .window_id // (.window | if type == "object" then .id else . end)) | if length == 1 then (.[0].foreground // .[0].harness_id // .[0].harness // .[0].program // empty) else empty end' 2>/dev/null)
   [ -n "$foreground" ] || { printf 'ambiguous'; return 0; }
-  state=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // .window) == $id)) | unique_by(.id // .window_id // .window) | if length == 1 then (.[0].state // empty) else empty end' 2>/dev/null)
+  state=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // (.window | if type == "object" then .id else . end)) == $id)) | unique_by(.id // .window_id // (.window | if type == "object" then .id else . end)) | if length == 1 then (.[0].state // empty) else empty end' 2>/dev/null)
   case "$state" in working|needs_input|done|idle|errored) printf 'alive' ;; *) printf 'ambiguous' ;; esac
 }
 

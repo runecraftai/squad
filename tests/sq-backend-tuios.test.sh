@@ -21,6 +21,10 @@ case "${1:-}" in
       exit 1
     elif [ "${SQUAD_TUIOS_FAKE_BAD_ELEMENT:-0}" = 1 ]; then
       printf '{"windows":["x"]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE:-0}" = 1 ]; then
+      printf '{"windows":[{"window_id":"w-opaque_7","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_NO_IDENTITY:-0}" = 1 ]; then
+      printf '{"windows":[{"name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"}}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
@@ -90,6 +94,24 @@ if fm_backend_tuios_create_task owned sq-element /tmp/wt >/dev/null 2>&1; then
 fi
 [ "$(grep -c 'new-window sq-element' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'malformed inventory must not authorize window creation'
 unset SQUAD_TUIOS_FAKE_BAD_ELEMENT
+
+# A window identified as window_id must corroborate presence, never read as
+# missing, or the recovery path would authorize a duplicate relaunch.
+SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE=1
+export SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'window_id-identified inventory must corroborate presence, never report missing'
+unset SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE
+
+# An element without a recognizable identity must invalidate the whole
+# inventory as unreadable instead of reading as a reliable omission.
+SQUAD_TUIOS_FAKE_NO_IDENTITY=1
+export SQUAD_TUIOS_FAKE_NO_IDENTITY
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = unreadable ] || fail 'an identity-less window element must stay unreadable, never missing'
+if fm_backend_tuios_create_task owned sq-noid /tmp/wt >/dev/null 2>&1; then
+  fail 'an identity-less inventory must refuse duplicate-name creation'
+fi
+[ "$(grep -c 'new-window sq-noid' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'identity-less inventory must not authorize window creation'
+unset SQUAD_TUIOS_FAKE_NO_IDENTITY
 
 SQUAD_TUIOS_FAKE_LIST_FAIL=1
 export SQUAD_TUIOS_FAKE_LIST_FAIL
