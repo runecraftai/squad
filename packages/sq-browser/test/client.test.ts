@@ -142,6 +142,7 @@ interface FakeBridgeOptions {
   deepDelayMs?: number;
   session?: string;
   buildId?: string;
+  snapshot?: string;
 }
 
 /** The build identity `ensureBridge` derives for the bridge it would spawn. */
@@ -186,6 +187,12 @@ function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
         } else {
           sendResponse();
         }
+        return;
+      }
+      if (req.method === "POST" && req.url === "/call") {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 200;
+        res.end(JSON.stringify({ result: opts.snapshot ?? "" }));
         return;
       }
       res.statusCode = 404;
@@ -486,7 +493,7 @@ describe("ensureBridge early-exit fast-fail", () => {
   });
 });
 
-describe("ensureBridge stale-build recycling", () => {
+describe("running-bridge stale-build protection", () => {
   const savedSession = process.env.SQ_BROWSER_SESSION;
   const savedHome = process.env.HOME;
   const savedPort = process.env.SQ_BROWSER_PORT;
@@ -599,6 +606,51 @@ describe("ensureBridge stale-build recycling", () => {
     expect(spawned).toBe(false);
     expect(port).toBe(fake.port);
     expect(await waitForProcessExit(pid, 100)).toBe(false);
+  });
+
+  it("does not surface a stale bridge's snapshot after a rebuild", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: "build-from-before-rebuild",
+      snapshot: "stale snapshot",
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, "build-from-before-rebuild", pid);
+
+    await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+  });
+
+  it("does not surface a snapshot when the live server reports a different build", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: "build-from-before-rebuild",
+      snapshot: "stale snapshot",
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, currentBridgeBuildId(), pid);
+
+    await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+  });
+
+  it("returns a snapshot from a bridge whose build matches", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: currentBridgeBuildId(),
+      snapshot: "live snapshot",
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, currentBridgeBuildId(), pid);
+
+    await expect(getSessionSnapshotIfRunning()).resolves.toBe("live snapshot");
   });
 });
 

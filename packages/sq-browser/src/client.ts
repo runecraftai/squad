@@ -598,10 +598,11 @@ export function mapErrorMessage(message: string): CdpError {
 /**
  * Get the current page snapshot without starting the bridge.
  *
- * Returns null if the bridge is not running or healthy. This is the ambient
- * home view / SessionStart probe, so it must stay cheap and never throw: an
- * invalid `SQ_BROWSER_SESSION` degrades to "no active session" (null)
- * here, while action commands (`ensureBridge` / `stopBridge`) still fail loudly.
+ * Returns null if the bridge is not running, healthy, or built from the
+ * current dist. This is the ambient home view / SessionStart probe, so it must
+ * stay cheap and never throw: an invalid `SQ_BROWSER_SESSION` degrades to "no
+ * active session" (null) here, while action commands (`ensureBridge` /
+ * `stopBridge`) still fail loudly.
  */
 export async function getSessionSnapshotIfRunning(): Promise<string | null> {
   let sessionName: string;
@@ -615,8 +616,19 @@ export async function getSessionSnapshotIfRunning(): Promise<string | null> {
   if (!pidInfo || !isProcessAlive(pidInfo.pid)) {
     return null;
   }
+  const currentBuildId = resolveCurrentBridgeBuildId();
+  if (!isBridgeBuildCurrent(pidInfo.buildId, currentBuildId)) {
+    return null;
+  }
+  const expectedBuildId =
+    process.env.SQ_BROWSER_SKIP_BUILD_CHECK === "1"
+      ? undefined
+      : (currentBuildId ?? undefined);
   if (
-    !(await checkBridgeHealth(pidInfo.port, { expectedSession: sessionName }))
+    !(await checkBridgeHealth(pidInfo.port, {
+      expectedSession: sessionName,
+      expectedBuildId,
+    }))
   ) {
     return null;
   }
