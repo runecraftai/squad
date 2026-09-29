@@ -38,17 +38,26 @@ fm_backend_tuios_cli() {  # <session> <verb> <args...>
   "$(fm_backend_tuios_bin)" "$@" --session "$session"
 }
 
+# Shared jq definitions - the single owner for how a TUIOS window record is read.
+# Identity candidates are collected from every documented shape and a record
+# whose candidates disagree is a contradiction, never something a lookup order
+# may silently resolve.
+SQUAD_BACKEND_TUIOS_JQ_LIB='
+  def tids: [ (.id // empty), (.window_id // empty),
+              (if (.window | type) == "object" then (.window.id // empty) else (.window // empty) end) ]
+            | map(select(type == "string" and length > 0));
+  def tlabels: [ (.name // empty), (.title // empty),
+                 (if (.window | type) == "object" then (.window.name // empty), (.window.title // empty) else empty end) ]
+            | map(select(type == "string" and length > 0));
+'
+
 fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
   local session=$1 json
   json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
-  printf '%s' "$json" | jq -e '
+  printf '%s' "$json" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     type == "object"
     and (.windows | type == "array")
-    and all(.windows[];
-      type == "object"
-      and (((.window | if type == "object" then .id else . end) // .window_id // .id) as $wid
-           | ($wid | type == "string") and ($wid | length > 0))
-    )
+    and all(.windows[]; type == "object" and ((tids | unique | length) == 1))
   ' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
 }
@@ -64,20 +73,22 @@ fm_backend_tuios_parse_target() {  # <target> -> session and opaque window id gl
 }
 
 fm_backend_tuios_window_info() {  # <session> <opaque-window-id>
-  local session=$1 window=$2 json id
+  local session=$1 window=$2 json
   json=$(fm_backend_tuios_cli "$session" get-window "$window" --json 2>/dev/null) || return 1
-  id=$(printf '%s' "$json" | jq -r '(.window | if type == "object" then .id else . end) // .window_id // .id // empty' 2>/dev/null) || return 1
-  [ "$id" = "$window" ] || return 1
+  printf '%s' "$json" | jq -e --arg id "$window" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    (tids | unique | length) == 1 and (tids | index($id)) != null
+  ' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
 }
 
 fm_backend_tuios_target_ready() {  # <target> [expected-label]
-  local target=$1 expected=${2:-} info name
+  local target=$1 expected=${2:-} info
   fm_backend_tuios_parse_target "$target" || return 1
   info=$(fm_backend_tuios_window_info "$SQUAD_BACKEND_TUIOS_SESSION" "$SQUAD_BACKEND_TUIOS_WINDOW") || return 1
   if [ -n "$expected" ]; then
-    name=$(printf '%s' "$info" | jq -r '.window.name // .name // .window.title // .title // empty')
-    [ "$name" = "$expected" ] || return 1
+    printf '%s' "$info" | jq -e --arg label "$expected" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+      (tlabels | index($label)) != null
+    ' >/dev/null 2>&1 || return 1
   fi
 }
 
@@ -140,20 +151,30 @@ fm_backend_tuios_busy_state() {  # <target>
 }
 
 fm_backend_tuios_agent_state() {  # <target>
-  local target=$1 info agents windows state foreground id present
+  local target=$1 info agents windows state foreground present
   fm_backend_tuios_parse_target "$target" || { printf 'unreadable'; return 0; }
   windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || { printf 'unreadable'; return 0; }
-  present=$(printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" '[.windows[] | select(((.window | if type == "object" then .id else . end) // .window_id // .id) == $id)] | length' 2>/dev/null) || { printf 'unreadable'; return 0; }
+  # Presence matches the requested id against every identity candidate, so a
+  # field disagreement can never turn a live window into authoritative absence.
+  present=$(printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    [.windows[] | select((tids | index($id)) != null)] | length' 2>/dev/null) || { printf 'unreadable'; return 0; }
   if [ "$present" = 0 ]; then printf 'missing'; return 0; fi
   [ "$present" = 1 ] || { printf 'unreadable'; return 0; }
   info=$(fm_backend_tuios_window_info "$SQUAD_BACKEND_TUIOS_SESSION" "$SQUAD_BACKEND_TUIOS_WINDOW") || { printf 'unreadable'; return 0; }
   agents=$(fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" list-agents --all --json 2>/dev/null) || { printf 'unreadable'; return 0; }
-  id=$(printf '%s' "$info" | jq -r '(.window | if type == "object" then .id else . end) // .window_id // .id // empty')
   # Agent inventory is authoritative for identity. get-window's process hint
   # is not: live Pi may report foreground=false while list-agents identifies Pi.
-  foreground=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select(((.window | if type == "object" then .id else . end) // .window_id // .id) == $id)) | unique_by((.window | if type == "object" then .id else . end) // .window_id // .id) | if length == 1 then (.[0].foreground // .[0].harness_id // .[0].harness // .[0].program // empty) else empty end' 2>/dev/null)
+  foreground=$(printf '%s' "$agents" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    [.agents[]?, .windows[]?]
+    | map(select((tids | index($id)) != null))
+    | unique_by(tids | unique | join(","))
+    | if length == 1 then (.[0].foreground // .[0].harness_id // .[0].harness // .[0].program // empty) else empty end' 2>/dev/null)
   [ -n "$foreground" ] || { printf 'ambiguous'; return 0; }
-  state=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select(((.window | if type == "object" then .id else . end) // .window_id // .id) == $id)) | unique_by((.window | if type == "object" then .id else . end) // .window_id // .id) | if length == 1 then (.[0].state // empty) else empty end' 2>/dev/null)
+  state=$(printf '%s' "$agents" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    [.agents[]?, .windows[]?]
+    | map(select((tids | index($id)) != null))
+    | unique_by(tids | unique | join(","))
+    | if length == 1 then (.[0].state // empty) else empty end' 2>/dev/null)
   case "$state" in working|needs_input|done|idle|errored) printf 'alive' ;; *) printf 'ambiguous' ;; esac
 }
 
@@ -199,7 +220,9 @@ fm_backend_tuios_container_ensure() {  # <project-cwd> -> existing explicit sess
 fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID
   local session=$1 label=$2 cwd=$3 windows id
   windows=$(fm_backend_tuios_list_windows_json "$session") || { echo "error: cannot read TUIOS window inventory for '$session'" >&2; return 1; }
-  if printf '%s' "$windows" | jq -e --arg label "$label" '[.windows[] | select(.name == $label or .title == $label)] | length > 0' >/dev/null; then
+  if printf '%s' "$windows" | jq -e --arg label "$label" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    [.windows[] | select((tlabels | index($label)) != null)] | length > 0
+  ' >/dev/null; then
     echo "error: TUIOS task label '$label' already exists in '$session'" >&2
     return 1
   fi
