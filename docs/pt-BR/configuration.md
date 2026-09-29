@@ -309,7 +309,7 @@ Esse delta é dono no código por `fm_backend_required_tools` em `bin/sq-backend
 Disponibilidade de ferramentas do backend usa o resolvedor executável do próprio adaptador, então bootstrap e spawn concordam em locais não-`PATH` suportados como o CLI empacotado do cmux.
 Um backend resolvido desconhecido emite `BACKEND_INVALID` e bloqueia o dispatch em vez de silenciosamente descartar seu delta de dependência ou recuar para tmux.
 Orca fornece tanto o worktree da tarefa quanto o endpoint de terminal (veja "Backend de runtime" acima), então `backend=orca` requer apenas `orca` além da toolchain universal e pula tanto `fob` quanto o CLI de sessão de cada outro backend.
-Uma base herdr, zellij ou cmux portanto nunca é instruída de que `tmux` está ausente, e a verificação de upgrade de aluguel durável `fob` é executada apenas para backends que realmente usam fob.
+Uma base herdr, zellij, cmux ou tuios portanto nunca é instruída de que `tmux` está ausente, e a verificação de upgrade de aluguel durável `fob` é executada apenas para backends que realmente usam fob.
 Quando `config/crew-dispatch.json` existe, bootstrap também requer `jq` para validação de perfil de dispatch.
 Quando Relay está ativado, bootstrap também requer `curl` e `jq` antes de armar o shim de poll do relay.
 `sq-tasks` e `sq-quota` são ferramentas obrigatórias de bootstrap em cada perfil, a mesma classe de `sq-report`.

@@ -163,7 +163,7 @@ Um pedido explícito para qualquer outro backend é recusado em vez de honrado, 
 Um endpoint remoto existente registrado em outra sessão Herdr, incluindo `default`, é classificado como não verificado e deixado intocado; launch, recovery de vitalidade, controle e aposentadoria recusam-no até que um operador explicitamente o migre em vez de tentar um cutover ao vivo.
 Um launch depois que um host divergiu da prontidão falha com o próprio texto de gaps do doctor em vez de deixar um endpoint meio-criado.
 Comandos de launch brutos não são aceitos para XOs remotos.
-Backends que já recusam launch de XO, atualmente Orca e cmux, permanecem não suportados no host remoto.
+Backends que já recusam launch de XO, atualmente Orca, cmux e TUIOS, permanecem não suportados no host remoto.
 
 Recovery de vitalidade no startup relança um second mate remoto morto ou ausente através deste mesmo comando, então recovery passa pelo mesmo gate de prontidão em vez de um mais fraco.
 
