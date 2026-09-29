@@ -32,10 +32,10 @@ fm_backend_tuios_tool_check() {
 }
 
 fm_backend_tuios_cli() {  # <session> <verb> <args...>
-  local session=$1
-  shift
+  local session=$1 verb=$2
+  shift 2
   [ -n "$session" ] || { echo 'error: TUIOS session is required' >&2; return 1; }
-  "$(fm_backend_tuios_bin)" "$@" --session "$session"
+  "$(fm_backend_tuios_bin)" "$verb" --session "$session" "$@"
 }
 
 # Shared jq definitions - the single owner for how a TUIOS window record is read.
@@ -74,7 +74,7 @@ fm_backend_tuios_parse_target() {  # <target> -> session and opaque window id gl
 
 fm_backend_tuios_window_info() {  # <session> <opaque-window-id>
   local session=$1 window=$2 json
-  json=$(fm_backend_tuios_cli "$session" get-window "$window" --json 2>/dev/null) || return 1
+  json=$(fm_backend_tuios_cli "$session" get-window --json -- "$window" 2>/dev/null) || return 1
   printf '%s' "$json" | jq -e --arg id "$window" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     (tids | unique | length) == 1 and (tids | index($id)) != null
   ' >/dev/null 2>&1 || return 1
@@ -103,14 +103,14 @@ fm_backend_tuios_send_literal() {  # <target> <text> [expected-label]
   local target=$1 text=$2 expected=${3:-}
   fm_backend_tuios_target_ready "$target" "$expected" || return 1
   fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" send-text \
-    --window "$SQUAD_BACKEND_TUIOS_WINDOW" "$text"
+    --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$text"
 }
 
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   local target=$1 key=$2 expected=${3:-}
   fm_backend_tuios_target_ready "$target" "$expected" || return 1
   fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" send-keys \
-    --window "$SQUAD_BACKEND_TUIOS_WINDOW" "$key"
+    --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key"
 }
 
 fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]

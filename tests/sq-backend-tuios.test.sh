@@ -66,7 +66,19 @@ fm_backend_tuios_tool_check || fail 'minimum TUIOS version should pass'
 
 [ "$(fm_backend_tuios_target_exists owned:w-opaque_7 sq-task-1 && echo yes)" = yes ] || fail 'exact opaque target should resolve'
 [ "$(fm_backend_tuios_capture owned:w-opaque_7 10 sq-task-1)" = 'captured output' ] || fail 'capture failed'
-assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'capture-pane --window w-opaque_7 --scrollback --lines 10 --session owned' 'capture did not use supported bounded scrollback flags'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'capture-pane --session owned --window w-opaque_7 --scrollback --lines 10' 'capture did not use supported bounded scrollback flags'
+
+# Operator-controlled payload text must never be parsed as TUIOS options: a
+# leading-dash message is a literal payload after `--`, and the exact session
+# binding must still precede it.
+fm_backend_tuios_send_literal owned:w-opaque_7 '--session evil --window evil' >/dev/null 2>&1 \
+  || fail 'leading-dash literal send should reach the CLI'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'send-text --session owned --window w-opaque_7 -- --session evil --window evil' \
+  'leading-dash payload must stay literal after -- and keep the explicit session binding'
+fm_backend_tuios_send_literal owned:w-opaque_7 '--' >/dev/null 2>&1 \
+  || fail 'bare -- literal send should reach the CLI'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'send-text --session owned --window w-opaque_7 -- --' \
+  'a bare -- payload must not consume the appended session flag'
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'agent inventory should corroborate Pi despite foreground=false'
 [ "$(fm_backend_tuios_busy_state owned:w-opaque_7)" = unknown ] || fail 'a TUIOS-reported agent state must not become a native busy verdict'
 
