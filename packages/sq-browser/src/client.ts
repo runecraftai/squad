@@ -10,6 +10,7 @@ import {
   BRIDGE_PORT_IN_USE_EXIT_CODE,
   resolveBridgeScript,
 } from "./bridge-script.js";
+import { computeBuildFingerprint } from "./build-guard.js";
 import {
   resolveSessionName,
   resolveSessionPidFile,
@@ -60,6 +61,7 @@ export class CdpError extends AxiError {
 interface PidInfo {
   pid: number;
   port: number;
+  buildId?: string;
 }
 
 function readPidFile(
@@ -84,6 +86,33 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Identity of the bridge build this CLI would spawn. Derived from the resolved
+ * bridge entry so it matches what the bridge process records about itself.
+ */
+function resolveCurrentBridgeBuildId(): string | null {
+  try {
+    return computeBuildFingerprint(resolveBridgeScript(import.meta.dirname));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a running bridge's recorded build still matches the on-disk build.
+ * When the fingerprint cannot be derived (published layouts, test harnesses)
+ * the check is inert; when it can, a missing recorded id (a pre-fingerprint
+ * bridge) is treated as stale so outdated bridges cannot survive a rebuild.
+ */
+function isBridgeBuildCurrent(
+  recordedBuildId: string | undefined,
+  currentBuildId: string | null,
+): boolean {
+  if (process.env.SQ_BROWSER_SKIP_BUILD_CHECK === "1") return true;
+  if (currentBuildId === null) return true;
+  return recordedBuildId === currentBuildId;
 }
 
 function httpGet(
@@ -162,11 +191,19 @@ function httpPost(
  * `SQ_BROWSER_PORT`). A bridge that omits the field (older version) is
  * accepted, since there is no mismatch to detect.
  *
+ * With `expectedBuildId`, a bridge whose reported build identity differs is
+ * treated as unhealthy; a bridge that omits the field (older version) is
+ * treated as stale rather than accepted, so a rebuilt dist recycles it.
+ *
  * Exported for tests; production code uses it via `ensureBridge`.
  */
 export async function checkBridgeHealth(
   port: number,
-  opts: { deep?: boolean; expectedSession?: string } = {},
+  opts: {
+    deep?: boolean;
+    expectedSession?: string;
+    expectedBuildId?: string;
+  } = {},
 ): Promise<boolean> {
   try {
     const path = opts.deep ? "/health?deep=1" : "/health";
@@ -178,6 +215,15 @@ export async function checkBridgeHealth(
       opts.expectedSession !== undefined &&
       typeof data.session === "string" &&
       data.session !== opts.expectedSession
+    ) {
+      return false;
+    }
+    // Build identity is a hard match: a bridge that cannot prove it is the
+    // current build (including an older one that omits the field) is treated
+    // as a different, stale endpoint rather than accepted for reuse.
+    if (
+      opts.expectedBuildId !== undefined &&
+      data.buildId !== opts.expectedBuildId
     ) {
       return false;
     }
@@ -356,7 +402,7 @@ export function buildBridgeEarlyExitError(
     );
   }
   suggestions.push(
-    "Or Chrome failed to launch; confirm a usable Chrome is installed.",
+    "Or the browser failed to launch; confirm a usable Chrome/Chromium is installed, or point SQ_BROWSER_EXECUTABLE_PATH at the browser binary.",
   );
   return new CdpError(message, "BRIDGE_NOT_READY", suggestions);
 }
@@ -380,16 +426,24 @@ export async function ensureBridge(
   const sessionName = resolveSessionName();
   const port = resolveSessionPort(sessionName);
   const pidFile = resolveSessionPidFile(sessionName);
+  const currentBuildId = resolveCurrentBridgeBuildId();
+  const expectedBuildId =
+    process.env.SQ_BROWSER_SKIP_BUILD_CHECK === "1"
+      ? undefined
+      : (currentBuildId ?? undefined);
 
-  // Check existing bridge via PID file. Use a deep probe so a bridge whose
-  // attached CDP target has gone away gets recycled instead of returned.
+  // Check existing bridge via PID file. Recycle it when it was built from a
+  // different (older) dist than the current CLI, or when a deep probe shows
+  // its attached CDP target has gone away.
   const pidInfo = readPidFile(pidFile);
   if (pidInfo && isProcessAlive(pidInfo.pid)) {
     if (
-      await checkBridgeHealth(pidInfo.port, {
+      isBridgeBuildCurrent(pidInfo.buildId, currentBuildId) &&
+      (await checkBridgeHealth(pidInfo.port, {
         deep: true,
         expectedSession: sessionName,
-      })
+        expectedBuildId,
+      }))
     ) {
       return pidInfo.port;
     }
@@ -428,6 +482,7 @@ export async function ensureBridge(
       await checkBridgeHealth(port, {
         deep: true,
         expectedSession: sessionName,
+        expectedBuildId,
       })
     ) {
       return port;
@@ -437,6 +492,7 @@ export async function ensureBridge(
         await checkBridgeHealth(port, {
           deep: true,
           expectedSession: sessionName,
+          expectedBuildId,
         })
       ) {
         return port;
@@ -459,9 +515,10 @@ export async function ensureBridge(
       "Bridge is running but the attached CDP target appears to have gone away",
       "BRIDGE_NOT_READY",
       [
-        "The Chrome/Electron instance the bridge was attached to may have exited.",
+        "The Chrome/Electron instance the bridge was attached to may have exited, or the browser may have failed to launch.",
         "Verify the target is still listening on its remote-debugging port, then re-run the command.",
         "If the target was restarted, the bridge has already been recycled — this run will succeed once the target is reachable.",
+        "Confirm a usable Chrome/Chromium is installed, or point SQ_BROWSER_EXECUTABLE_PATH at the browser binary.",
       ],
     );
   }
@@ -478,6 +535,7 @@ export async function ensureBridge(
   }
   suggestions.push(
     "Or extend the deadline: export SQ_BROWSER_BRIDGE_TIMEOUT_MS=60000",
+    "Or the browser failed to launch; confirm a usable Chrome/Chromium is installed, or point SQ_BROWSER_EXECUTABLE_PATH at the browser binary.",
   );
   throw new CdpError(
     `Bridge failed to start within ${seconds}s`,
@@ -544,10 +602,11 @@ export function mapErrorMessage(message: string): CdpError {
 /**
  * Get the current page snapshot without starting the bridge.
  *
- * Returns null if the bridge is not running or healthy. This is the ambient
- * home view / SessionStart probe, so it must stay cheap and never throw: an
- * invalid `SQ_BROWSER_SESSION` degrades to "no active session" (null)
- * here, while action commands (`ensureBridge` / `stopBridge`) still fail loudly.
+ * Returns null if the bridge is not running, healthy, or built from the
+ * current dist. This is the ambient home view / SessionStart probe, so it must
+ * stay cheap and never throw: an invalid `SQ_BROWSER_SESSION` degrades to "no
+ * active session" (null) here, while action commands (`ensureBridge` /
+ * `stopBridge`) still fail loudly.
  */
 export async function getSessionSnapshotIfRunning(): Promise<string | null> {
   let sessionName: string;
@@ -561,8 +620,19 @@ export async function getSessionSnapshotIfRunning(): Promise<string | null> {
   if (!pidInfo || !isProcessAlive(pidInfo.pid)) {
     return null;
   }
+  const currentBuildId = resolveCurrentBridgeBuildId();
+  if (!isBridgeBuildCurrent(pidInfo.buildId, currentBuildId)) {
+    return null;
+  }
+  const expectedBuildId =
+    process.env.SQ_BROWSER_SKIP_BUILD_CHECK === "1"
+      ? undefined
+      : (currentBuildId ?? undefined);
   if (
-    !(await checkBridgeHealth(pidInfo.port, { expectedSession: sessionName }))
+    !(await checkBridgeHealth(pidInfo.port, {
+      expectedSession: sessionName,
+      expectedBuildId,
+    }))
   ) {
     return null;
   }

@@ -52,6 +52,17 @@ const LAUNCH_ONLY_ENV_MATRIX: Array<{
     env: { SQ_BROWSER_CHANNEL: "beta" },
   },
   {
+    name: "isolated mode with an explicit executable path",
+    env: { SQ_BROWSER_EXECUTABLE_PATH: "/usr/bin/chromium" },
+  },
+  {
+    name: "persistent profile mode with an explicit executable path",
+    env: {
+      SQ_BROWSER_USER_DATA_DIR: "/tmp/profile",
+      SQ_BROWSER_EXECUTABLE_PATH: "/usr/bin/chromium",
+    },
+  },
+  {
     name: "isolated mode with caller-supplied chrome args",
     env: { SQ_BROWSER_CHROME_ARGS: "--enable-unsafe-webgpu" },
   },
@@ -80,6 +91,7 @@ const MANAGED_ENV_KEYS = [
   "SQ_BROWSER_CHROME_ARGS",
   "SQ_BROWSER_BROWSER_URL",
   "SQ_BROWSER_USER_DATA_DIR",
+  "SQ_BROWSER_EXECUTABLE_PATH",
   "SQ_BROWSER_AUTO_CONNECT",
   "SQ_BROWSER_CHANNEL",
   "SQ_BROWSER_WS_HEADERS",

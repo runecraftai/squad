@@ -5,7 +5,7 @@
  * persistent MCP session. Exposes a simple HTTP API:
  *   POST /call  { name, args }  → { result }
  *   GET  /tools                 → [{ name, description }]
- *   GET  /health                → { status: "ok", session } or 503 { status: "error", error }
+ *   GET  /health                → { status: "ok", session, buildId } or 503 { status: "error", error }
  *   GET  /health?deep=1         → also verifies the attached CDP target; 503 may include reason
  *
  * Writes a PID file to the active session's state dir on startup
@@ -39,6 +39,7 @@ import {
   resolveSessionPidFile,
   resolveSessionPort,
 } from "./sessions.js";
+import { computeBuildFingerprint } from "./build-guard.js";
 import { CHROME_DEVTOOLS_MCP_VERSION } from "./mcp-version.js";
 
 // Re-exported so existing bridge consumers keep a single import surface; the
@@ -93,17 +94,29 @@ export async function isBridgeTargetReachable(
   client: BridgeClient,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
-    await client.callTool({ name: "list_pages", arguments: {} });
+    const result = await client.callTool({
+      name: "list_pages",
+      arguments: {},
+    });
+    const toolError = getToolError(result);
+    if (toolError) {
+      return { ok: false, reason: toolError };
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, reason: getErrorMessage(error) };
   }
 }
 
-function writePidFile(port: number): void {
+function writePidFile(port: number, buildId?: string): void {
   const pidFile = resolveSessionPidFile();
   mkdirSync(dirname(pidFile), { recursive: true });
-  writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port }));
+  const payload: { pid: number; port: number; buildId?: string } = {
+    pid: process.pid,
+    port,
+  };
+  if (buildId !== undefined) payload.buildId = buildId;
+  writeFileSync(pidFile, JSON.stringify(payload));
 }
 
 /**
@@ -249,6 +262,26 @@ function getToolContent(result: unknown): BridgeContentBlock[] {
   return result.content as BridgeContentBlock[];
 }
 
+/**
+ * chrome-devtools-mcp reports tool failures as a resolved result carrying
+ * `isError: true` (see ToolHandler.handle's catch), not as a rejected promise.
+ * Treating such a result as success is what let a browser that never launched
+ * look like a healthy-but-empty CDP target. Returns the error text, or
+ * undefined for a successful result.
+ */
+function getToolError(result: unknown): string | undefined {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "isError" in result &&
+    (result as { isError?: unknown }).isError === true
+  ) {
+    const text = extractToolText(getToolContent(result)).trim();
+    return text.length > 0 ? text : "Browser tool call failed";
+  }
+  return undefined;
+}
+
 export function parseBridgeCallPayload(body: string): BridgeCallPayload {
   let payload: { name?: unknown; args?: unknown };
   try {
@@ -323,6 +356,10 @@ async function handleCallRequest(
       name: "list_pages",
       arguments: {},
     });
+    const pagesError = getToolError(pagesResult);
+    if (pagesError) {
+      throw new Error(pagesError);
+    }
     const pages = extractToolText(getToolContent(pagesResult));
     const pageLines = pages.split("\n");
     const selected =
@@ -341,6 +378,10 @@ async function handleCallRequest(
     name: payload.name,
     arguments: args,
   });
+  const toolError = getToolError(result);
+  if (toolError) {
+    throw new Error(toolError);
+  }
   writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
 }
 
@@ -350,6 +391,7 @@ export async function handleBridgeRequest(
   res: ServerResponse,
   sessionName?: string,
   logForbidden?: (message: string) => void,
+  buildId?: string,
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
@@ -389,7 +431,7 @@ export async function handleBridgeRequest(
         return;
       }
     }
-    writeJson(res, 200, { status: "ok", session: sessionName });
+    writeJson(res, 200, { status: "ok", session: sessionName, buildId });
     return;
   }
 
@@ -414,9 +456,17 @@ export async function handleBridgeRequest(
 export function createBridgeServer(
   client: BridgeClient,
   sessionName?: string,
+  buildId?: string,
 ): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res, sessionName, logBridgeMessage);
+    void handleBridgeRequest(
+      client,
+      req,
+      res,
+      sessionName,
+      logBridgeMessage,
+      buildId,
+    );
   });
 }
 
@@ -485,7 +535,10 @@ export function buildTransportArgs(): string[] {
   const autoConnect = process.env.SQ_BROWSER_AUTO_CONNECT === "1";
   const browserUrl = process.env.SQ_BROWSER_BROWSER_URL;
   const userDataDir = process.env.SQ_BROWSER_USER_DATA_DIR;
+  const executablePath = process.env.SQ_BROWSER_EXECUTABLE_PATH?.trim();
   const channel = process.env.SQ_BROWSER_CHANNEL?.trim();
+  const launchExecutablePath =
+    executablePath && !autoConnect && !browserUrl ? executablePath : undefined;
 
   if (autoConnect) {
     // Chrome 144+ built-in remote debugging via chrome://inspect/#remote-debugging.
@@ -529,6 +582,9 @@ export function buildTransportArgs(): string[] {
     if (process.env.SQ_BROWSER_HEADED !== "1") {
       args.push("--headless");
     }
+    if (launchExecutablePath) {
+      args.push(`--executablePath=${launchExecutablePath}`);
+    }
     // Launch modes only: `--chrome-arg` is ignored when chrome-devtools-mcp
     // attaches to a browser somebody else started, and that browser's keychain
     // policy is its owner's to decide, not ours.
@@ -541,7 +597,7 @@ export function buildTransportArgs(): string[] {
   // targets: the running instance --autoConnect attaches to, or the one launched
   // by default. It is irrelevant when attaching to an explicit endpoint, so it is
   // omitted in BROWSER_URL/wsEndpoint mode. Validation is left to chrome-devtools-mcp.
-  if (channel && !browserUrl) {
+  if (channel && !browserUrl && !launchExecutablePath) {
     args.push(`--channel=${channel}`);
   }
 
@@ -687,12 +743,13 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
   logBridgeMessage("Connected to chrome-devtools-mcp");
 
   const sessionName = resolveSessionName();
-  const server = createBridgeServer(client, sessionName);
+  const buildId = computeBuildFingerprint(import.meta.filename) ?? undefined;
+  const server = createBridgeServer(client, sessionName, buildId);
   server.on("error", (error: NodeJS.ErrnoException) => {
     handleBridgeServerError(error, port);
   });
   server.listen(port, "127.0.0.1", () => {
-    writePidFile(port);
+    writePidFile(port, buildId);
     logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
     writeReadySignal();
   });

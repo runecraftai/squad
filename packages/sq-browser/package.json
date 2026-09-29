@@ -31,7 +31,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/bin/sq-browser.js",
+    "build": "tsc && node scripts/write-build-manifest.mjs && chmod +x dist/bin/sq-browser.js",
     "build:skill": "tsx scripts/build-skill.ts",
     "dev": "tsx bin/sq-browser.ts",
     "test": "vitest run",

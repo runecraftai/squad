@@ -5,7 +5,7 @@ This file provides guidance to coding agents when working with code in this repo
 ## Commands
 
 ```sh
-pnpm run build       # tsc to dist/ + chmod the CLI entrypoint
+pnpm run build       # tsc to dist/, write the build manifest, chmod the CLI entrypoint
 pnpm run build:skill # Regenerate skills/sq-browser/SKILL.md from shared CLI guidance and SDK built-ins
 pnpm run dev         # Run the CLI from source with tsx
 pnpm test            # vitest run (test/*.test.ts)
@@ -42,7 +42,8 @@ Every invocation is a short-lived process, so anything that must survive across 
 Three processes: CLI -> bridge -> chrome-devtools-mcp (which drives headless Chrome over CDP).
 
 The CLI (`bin/sq-browser.ts` -> `src/cli.ts`) parses args, calls MCP tools through the bridge, and formats output.
-`ensureBridge` (`src/client.ts`) reads its session's `bridge.pid` (`~/.sq-browser/bridge.pid` for the default session) and reuses a live bridge only after a **deep** health check (`/health?deep=1` drives one CDP-backed `list_pages` call), so a bridge whose attached browser died gets terminated and respawned instead of reused as a stale endpoint.
+Before anything else, `bin/sq-browser.ts` runs the stale-build guard (`src/build-guard.ts`): when the running compiled entry lives under `dist/bin/` and the package also ships `src/`, the guard compares a package-local build manifest (`dist/sq-browser-build.json`, written by the `build` script after `tsc`) against the current source and dist content fingerprints. A missing manifest, drifted source, or mutated dist makes the CLI exit with `STALE_BUILD_EXIT_CODE` (49) and a rebuild instruction instead of silently running old behavior; because the decision is content based, timestamp-preserving cache restores are handled correctly. The guard is inert for published packages (no `src/`) and for source-mode entrypoints outside `dist/bin/`, and `SQ_BROWSER_SKIP_BUILD_CHECK=1` bypasses it; `test/build-guard.test.ts` covers the decision and the process boundary.
+`ensureBridge` (`src/client.ts`) reads its session's `bridge.pid` (`~/.sq-browser/bridge.pid` for the default session) and reuses a live bridge only when its recorded build fingerprint (`computeBuildFingerprint` over the resolved bridge entry, also reported by `/health`) still matches the on-disk build, and only after a **deep** health check (`/health?deep=1` drives one CDP-backed `list_pages` call); a bridge built from older code - or one whose attached browser died - is terminated and respawned instead of reused as a stale endpoint.
 Otherwise it spawns the bridge (`bin/sq-browser-bridge.ts` -> `src/bridge.ts`) **detached** as a process group leader and polls health until the `SQ_BROWSER_BRIDGE_TIMEOUT_MS` deadline (default 30s).
 
 The bridge holds one persistent MCP stdio session and exposes a localhost HTTP API on its session port (9224 by default; `SQ_BROWSER_PORT` overrides - see Named sessions): `POST /call`, `GET /tools`, `GET /health[?deep=1]`.
@@ -50,7 +51,7 @@ Teardown is careful about orphans: the bridge kills its own process group on exi
 
 `resolveTransportSpec` (`src/bridge.ts`) uses an explicit `SQ_BROWSER_MCP_PATH`, a global install only when its package version matches `src/mcp-version.ts`, or an npx install of that exact pinned version.
 `handleCallRequest` (`src/bridge.ts`) supplies the selected page ID from `list_pages` whenever the live server schema requires it; `test/bridge.test.ts` guards this adaptation.
-Connection modes are env-driven (`buildTransportArgs`): `AUTO_CONNECT` (Chrome 144+ remote debugging), `BROWSER_URL` (http(s) -> `--browserUrl`, ws(s) -> `--wsEndpoint` + `WS_HEADERS`), `USER_DATA_DIR` (persistent profile) vs the default `--isolated`, `CHANNEL` (`--channel` to pick which installed Chrome release channel is attached to or launched, omitted in `BROWSER_URL`/`wsEndpoint` mode), and `HEADED`.
+Connection modes are env-driven (`buildTransportArgs`): `AUTO_CONNECT` (Chrome 144+ remote debugging), `BROWSER_URL` (http(s) -> `--browserUrl`, ws(s) -> `--wsEndpoint` + `WS_HEADERS`), `USER_DATA_DIR` (persistent profile) vs the default `--isolated`, `EXECUTABLE_PATH` (launch a specific Chromium/Chrome binary with `--executablePath` in launch modes; ignored in attach modes and mutually exclusive with `CHANNEL`), `CHANNEL` (`--channel` to pick which installed Chrome release channel is attached to or launched, omitted in `BROWSER_URL`/`wsEndpoint` mode and when `EXECUTABLE_PATH` is set), and `HEADED`.
 
 The launch modes (`--isolated`/`--userDataDir`) pass `KEYCHAIN_ISOLATION_CHROME_ARGS` so browsers we start cannot reach the machine owner's password store; attach modes deliberately omit them because that browser's keychain policy belongs to whoever started it.
 `test/keychain-isolation.test.ts` owns the regression rationale and structural invariant; README.md documents the user-facing behavior.
@@ -92,7 +93,7 @@ Only the script's own `console.log` output reaches stdout: handlers return text 
 - The CLI module graph must stay free of `@modelcontextprotocol/sdk` (~45ms); only the bridge subprocess constructs an MCP client. That is why `resolveBridgeScript`/`BRIDGE_PORT_IN_USE_EXIT_CODE` live in the node-builtins-only `src/bridge-script.ts` (re-exported from `src/bridge.ts`) rather than beside the SDK imports. `test/version-path.test.ts` enforces it by tracing the loaded module graph.
 - `resolveOutputPath` (`src/paths.ts`) is the chokepoint for local output artifacts sent to the bridge.
   Use it for any new command or flag that asks the bridge/MCP to write a caller-supplied output file or directory, so relative paths resolve against the invoking CLI's `process.cwd()` and output can report the absolute path.
-- `getSessionSnapshotIfRunning` deliberately never starts the bridge - the home view and SessionStart hook must stay cheap and side-effect free when no session exists; it also degrades an invalid `SQ_BROWSER_SESSION` to null here, while action commands (`ensureBridge`/`stopBridge`) still fail loudly.
+- `getSessionSnapshotIfRunning` deliberately never starts the bridge - the home view and SessionStart hook must stay cheap and side-effect free when no session exists; it also degrades an invalid `SQ_BROWSER_SESSION` to null here, treats a bridge whose recorded build fingerprint does not match the on-disk build as not running, while action commands (`ensureBridge`/`stopBridge`) still fail loudly.
 - Generation-counter writes are best-effort; a failed write degrades to one missed stale-ref detection, never a hang (`src/generation.ts`).
 - Some `test/client.test.ts` cases exercise real SIGTERM/SIGKILL escalation timing and take a couple of seconds each; that is expected, not flakiness.
 

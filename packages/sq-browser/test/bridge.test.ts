@@ -83,6 +83,8 @@ describe("buildTransportArgs", () => {
     savedEnv.SQ_BROWSER_CHROME_ARGS = process.env.SQ_BROWSER_CHROME_ARGS;
     savedEnv.SQ_BROWSER_BROWSER_URL = process.env.SQ_BROWSER_BROWSER_URL;
     savedEnv.SQ_BROWSER_USER_DATA_DIR = process.env.SQ_BROWSER_USER_DATA_DIR;
+    savedEnv.SQ_BROWSER_EXECUTABLE_PATH =
+      process.env.SQ_BROWSER_EXECUTABLE_PATH;
     savedEnv.SQ_BROWSER_AUTO_CONNECT = process.env.SQ_BROWSER_AUTO_CONNECT;
     savedEnv.SQ_BROWSER_WS_HEADERS = process.env.SQ_BROWSER_WS_HEADERS;
     savedEnv.SQ_BROWSER_CHANNEL = process.env.SQ_BROWSER_CHANNEL;
@@ -90,6 +92,7 @@ describe("buildTransportArgs", () => {
     delete process.env.SQ_BROWSER_CHROME_ARGS;
     delete process.env.SQ_BROWSER_BROWSER_URL;
     delete process.env.SQ_BROWSER_USER_DATA_DIR;
+    delete process.env.SQ_BROWSER_EXECUTABLE_PATH;
     delete process.env.SQ_BROWSER_AUTO_CONNECT;
     delete process.env.SQ_BROWSER_WS_HEADERS;
     delete process.env.SQ_BROWSER_CHANNEL;
@@ -100,6 +103,8 @@ describe("buildTransportArgs", () => {
     process.env.SQ_BROWSER_CHROME_ARGS = savedEnv.SQ_BROWSER_CHROME_ARGS;
     process.env.SQ_BROWSER_BROWSER_URL = savedEnv.SQ_BROWSER_BROWSER_URL;
     process.env.SQ_BROWSER_USER_DATA_DIR = savedEnv.SQ_BROWSER_USER_DATA_DIR;
+    process.env.SQ_BROWSER_EXECUTABLE_PATH =
+      savedEnv.SQ_BROWSER_EXECUTABLE_PATH;
     process.env.SQ_BROWSER_AUTO_CONNECT = savedEnv.SQ_BROWSER_AUTO_CONNECT;
     process.env.SQ_BROWSER_WS_HEADERS = savedEnv.SQ_BROWSER_WS_HEADERS;
     process.env.SQ_BROWSER_CHANNEL = savedEnv.SQ_BROWSER_CHANNEL;
@@ -172,6 +177,41 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args).toContain("--chrome-arg=--some-flag");
+  });
+
+  it("uses a custom browser binary in launch mode", () => {
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    expect(buildTransportArgs()).toContain(
+      "--executablePath=/usr/bin/chromium",
+    );
+  });
+
+  it("omits --channel when an explicit executable path is set in launch mode", () => {
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--executablePath=/usr/bin/chromium");
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
+  it("keeps --channel with an executable path in auto-connect mode", () => {
+    process.env.SQ_BROWSER_AUTO_CONNECT = "1";
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--autoConnect");
+    expect(args).toContain("--channel=beta");
+    expect(args.some((a) => a.startsWith("--executablePath"))).toBe(false);
+  });
+
+  it("ignores an explicit executable path when connecting via --browserUrl", () => {
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
+    expect(args.some((a) => a.startsWith("--executablePath"))).toBe(false);
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
   });
 
   it("uses --userDataDir when SQ_BROWSER_USER_DATA_DIR is set", () => {
@@ -558,6 +598,28 @@ describe("isBridgeTargetReachable", () => {
       expect(result.reason).toContain("Target closed");
     }
   });
+
+  it("returns ok=false when list_pages resolves with an isError result", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({
+        content: [
+          {
+            type: "text",
+            text: "Could not start Chrome. Set an executable path.",
+          },
+        ],
+        isError: true,
+      }),
+      close: async () => {},
+    };
+
+    const result = await isBridgeTargetReachable(client);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("Could not start Chrome");
+    }
+  });
 });
 
 function makeRequest(
@@ -646,6 +708,31 @@ describe("handleBridgeRequest /health", () => {
     });
   });
 
+  it("stamps the build identity into the /health response when provided", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({ content: [] }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health"),
+      res,
+      "worker-1",
+      undefined,
+      "build-abc",
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({
+      status: "ok",
+      session: "worker-1",
+      buildId: "build-abc",
+    });
+  });
+
   it("returns 503 when MCP server is disconnected", async () => {
     const client: BridgeClient = {
       listTools: async () => {
@@ -685,6 +772,31 @@ describe("handleBridgeRequest /health", () => {
     expect(body.status).toBe("error");
     expect(body.error).toContain("CDP target unreachable");
     expect(body.reason).toContain("Target closed");
+  });
+
+  it("returns 503 from /health?deep=1 when list_pages resolves with an isError result", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({
+        content: [
+          { type: "text", text: "Could not start Chrome: no executable" },
+        ],
+        isError: true,
+      }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health?deep=1"),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(503);
+    const body = JSON.parse(captured.body);
+    expect(body.status).toBe("error");
+    expect(body.reason).toContain("Could not start Chrome");
   });
 
   it("returns 200 from /health?deep=1 when both MCP and CDP target are healthy", async () => {
@@ -1015,6 +1127,75 @@ describe("handleBridgeRequest anti-rebinding gate", () => {
 
     expect(captured.statusCode).toBe(200);
     expect(isRequestAllowed(makeRequest("GET", "/tools"))).toBe(true);
+  });
+});
+
+describe("handleBridgeRequest /call tool errors", () => {
+  it("surfaces a resolved isError tool result as an error instead of an empty success", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [{ name: "list_pages" }] }),
+      callTool: async () => ({
+        content: [
+          {
+            type: "text",
+            text: "Could not start Chrome. Set SQ_BROWSER_EXECUTABLE_PATH.",
+          },
+        ],
+        isError: true,
+      }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest(
+        "POST",
+        "/call",
+        { host: "127.0.0.1:9224" },
+        JSON.stringify({ name: "list_pages" }),
+      ),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(500);
+    expect(JSON.parse(captured.body).error).toContain("Could not start Chrome");
+  });
+
+  it("propagates a list_pages isError during pageId selection instead of reporting no open page", async () => {
+    const calls: string[] = [];
+    const client: BridgeClient = {
+      listTools: async () => ({
+        tools: [
+          { name: "take_snapshot", inputSchema: { required: ["pageId"] } },
+          { name: "list_pages", inputSchema: { required: [] } },
+        ],
+      }),
+      callTool: async ({ name }) => {
+        calls.push(name);
+        return {
+          content: [{ type: "text", text: "Could not start Chrome" }],
+          isError: true,
+        };
+      },
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest(
+        "POST",
+        "/call",
+        { host: "127.0.0.1:9224" },
+        JSON.stringify({ name: "take_snapshot" }),
+      ),
+      res,
+    );
+
+    expect(captured.statusCode).toBe(500);
+    expect(JSON.parse(captured.body).error).toContain("Could not start Chrome");
+    expect(calls).toEqual(["list_pages"]);
   });
 });
 

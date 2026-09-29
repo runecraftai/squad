@@ -3,11 +3,23 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxiError } from "axi-sdk-js";
 import { BRIDGE_PORT_IN_USE_EXIT_CODE } from "../src/bridge.js";
+import { resolveBridgeScript } from "../src/bridge-script.js";
+import { computeBuildFingerprint } from "../src/build-guard.js";
+import {
+  resolveSessionPidFile,
+  resolveSessionStateDir,
+} from "../src/sessions.js";
 import {
   buildBridgeEarlyExitError,
   CdpError,
@@ -129,6 +141,19 @@ interface FakeBridgeOptions {
   deep: "ok" | "error";
   deepDelayMs?: number;
   session?: string;
+  buildId?: string;
+  snapshot?: string;
+}
+
+/** The build identity `ensureBridge` derives for the bridge it would spawn. */
+function currentBridgeBuildId(): string {
+  const buildId = computeBuildFingerprint(
+    resolveBridgeScript(import.meta.dirname),
+  );
+  if (buildId === null) {
+    throw new Error("test setup: could not compute the bridge build id");
+  }
+  return buildId;
 }
 
 function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
@@ -145,7 +170,13 @@ function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
         const sendResponse = () => {
           if (outcome === "ok") {
             res.statusCode = 200;
-            res.end(JSON.stringify({ status: "ok", session: opts.session }));
+            res.end(
+              JSON.stringify({
+                status: "ok",
+                session: opts.session,
+                buildId: opts.buildId,
+              }),
+            );
           } else {
             res.statusCode = 503;
             res.end(JSON.stringify({ status: "error" }));
@@ -156,6 +187,12 @@ function startFakeBridgeServer(opts: FakeBridgeOptions): Promise<{
         } else {
           sendResponse();
         }
+        return;
+      }
+      if (req.method === "POST" && req.url === "/call") {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 200;
+        res.end(JSON.stringify({ result: opts.snapshot ?? "" }));
         return;
       }
       res.statusCode = 404;
@@ -423,7 +460,11 @@ describe("ensureBridge early-exit fast-fail", () => {
         res.end(
           JSON.stringify(
             healthy
-              ? { status: "ok", session: "early-exit-worker" }
+              ? {
+                  status: "ok",
+                  session: "early-exit-worker",
+                  buildId: currentBridgeBuildId(),
+                }
               : { status: "error" },
           ),
         );
@@ -449,6 +490,167 @@ describe("ensureBridge early-exit fast-fail", () => {
     } finally {
       await new Promise<void>((r) => winner.close(() => r()));
     }
+  });
+});
+
+describe("running-bridge stale-build protection", () => {
+  const savedSession = process.env.SQ_BROWSER_SESSION;
+  const savedHome = process.env.HOME;
+  const savedPort = process.env.SQ_BROWSER_PORT;
+  const savedSkip = process.env.SQ_BROWSER_SKIP_BUILD_CHECK;
+  let tmpHome: string;
+  let fake: Awaited<ReturnType<typeof startFakeBridgeServer>> | null = null;
+  let childPid: number | null = null;
+
+  const restore = (key: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  };
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "axi-ensure-bridge-stale-"));
+    process.env.HOME = tmpHome;
+    process.env.SQ_BROWSER_SESSION = "stale-build-worker";
+    delete process.env.SQ_BROWSER_PORT;
+    delete process.env.SQ_BROWSER_SKIP_BUILD_CHECK;
+  });
+
+  afterEach(async () => {
+    restore("SQ_BROWSER_SESSION", savedSession);
+    restore("HOME", savedHome);
+    restore("SQ_BROWSER_PORT", savedPort);
+    restore("SQ_BROWSER_SKIP_BUILD_CHECK", savedSkip);
+    if (fake) {
+      await fake.close();
+      fake = null;
+    }
+    if (childPid !== null) {
+      try {
+        process.kill(childPid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      childPid = null;
+    }
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  function startBridgeChild(): number {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);",
+      ],
+      { stdio: "ignore", detached: true },
+    );
+    child.unref();
+    if (child.pid === undefined) throw new Error("child did not start");
+    childPid = child.pid;
+    return child.pid;
+  }
+
+  function writePid(
+    port: number,
+    buildId: string | undefined,
+    pid: number,
+  ): void {
+    const pidFile = resolveSessionPidFile("stale-build-worker");
+    mkdirSync(resolveSessionStateDir("stale-build-worker"), {
+      recursive: true,
+    });
+    const payload: Record<string, unknown> = { pid, port };
+    if (buildId !== undefined) payload.buildId = buildId;
+    writeFileSync(pidFile, JSON.stringify(payload));
+  }
+
+  it("recycles a bridge whose recorded build differs from the current build", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: currentBridgeBuildId(),
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, "build-from-before-rebuild", pid);
+
+    let spawned = false;
+    const port = await ensureBridge(() => {
+      spawned = true;
+      return new EventEmitter() as unknown as SpawnedBridge;
+    });
+
+    expect(spawned).toBe(true);
+    expect(port).toBe(fake.port);
+    expect(await waitForProcessExit(pid, 2000)).toBe(true);
+  });
+
+  it("reuses a bridge whose recorded build matches the current build", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: currentBridgeBuildId(),
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, currentBridgeBuildId(), pid);
+
+    let spawned = false;
+    const port = await ensureBridge(() => {
+      spawned = true;
+      return new EventEmitter() as unknown as SpawnedBridge;
+    });
+
+    expect(spawned).toBe(false);
+    expect(port).toBe(fake.port);
+    expect(await waitForProcessExit(pid, 100)).toBe(false);
+  });
+
+  it("does not surface a stale bridge's snapshot after a rebuild", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: "build-from-before-rebuild",
+      snapshot: "stale snapshot",
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, "build-from-before-rebuild", pid);
+
+    await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+  });
+
+  it("does not surface a snapshot when the live server reports a different build", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: "build-from-before-rebuild",
+      snapshot: "stale snapshot",
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, currentBridgeBuildId(), pid);
+
+    await expect(getSessionSnapshotIfRunning()).resolves.toBeNull();
+  });
+
+  it("returns a snapshot from a bridge whose build matches", async () => {
+    const pid = startBridgeChild();
+    fake = await startFakeBridgeServer({
+      shallow: "ok",
+      deep: "ok",
+      session: "stale-build-worker",
+      buildId: currentBridgeBuildId(),
+      snapshot: "live snapshot",
+    });
+    process.env.SQ_BROWSER_PORT = String(fake.port);
+    writePid(fake.port, currentBridgeBuildId(), pid);
+
+    await expect(getSessionSnapshotIfRunning()).resolves.toBe("live snapshot");
   });
 });
 
