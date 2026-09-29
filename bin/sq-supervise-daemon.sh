@@ -185,8 +185,8 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# and cmux are real backends elsewhere in Squad (bin/sq-backend.sh) but this
-# daemon has no verified composer/busy primitives wired up for them yet - see
+# cmux, and tuios are real backends elsewhere in Squad (bin/sq-backend.sh) but
+# this daemon has no verified composer/busy primitives wired up for them yet - see
 # docs/herdr-backend.md and AGENTS.md section 4's
 # harness-verification discipline. Selecting one refuses loudly at startup
 # instead of silently running tmux primitives against a pane that is not a tmux

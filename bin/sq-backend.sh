@@ -65,6 +65,9 @@ SQUAD_BACKEND_CONFIG_DIR="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 # spawn-capable; unlike tmux/herdr/zellij it is also the worktree provider.
 # cmux is EXPERIMENTAL and spawn-capable, session-provider-only like
 # herdr/zellij - verified against the real 0.64.17 binary (docs/cmux-backend.md).
+# tuios is EXPERIMENTAL (P6) and spawn-capable, session-provider-only like
+# herdr/zellij/cmux; it binds to an explicitly configured existing session and
+# permits no auto-detection or session creation (docs/tuios-backend.md).
 # codex-app remains deliberately absent; see docs/codex-app-backend.md.
 SQUAD_BACKEND_KNOWN="tmux herdr zellij orca cmux tuios"
 SQUAD_BACKEND_SPAWN="tmux herdr zellij orca cmux tuios"

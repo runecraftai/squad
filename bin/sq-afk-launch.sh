@@ -38,8 +38,8 @@
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
 #
-# Supported backends: herdr, tmux. Others (zellij, orca, cmux) have no verified
-# non-visible-launch primitive here yet and refuse loudly.
+# Supported backends: herdr, tmux. Others (zellij, orca, cmux, tuios) have no
+# verified non-visible-launch primitive here yet and refuse loudly.
 #
 # Test seam: SQUAD_AFK_LAUNCH_ENTRY overrides the command run in the created
 # terminal (default bin/sq-afk-start.sh), so a topology test can run a harmless
