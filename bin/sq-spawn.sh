@@ -2147,9 +2147,6 @@ spawn_acquire_worktree_tuios() {  # <target>
     [ "$lease_acquired" = 0 ] || tuios_release_lease "$lease"
     exit 1
   fi
-  # Acquisition is verified: the task now owns the durable lease, so a later
-  # failure must not return it from under a launched agent.
-  SPAWN_TUIOS_LEASE=
 }
 
 spawn_acquire_worktree() {  # <target>
@@ -2760,6 +2757,7 @@ META_WINDOW=$T
     echo "projects=$XO_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
+SPAWN_TUIOS_LEASE=
 # Claim the per-attempt sidecar only after all dispatch validation and metadata
 # publication have succeeded, so a competing dispatch cannot launch this task.
 "$SCRIPT_DIR/sq-exec-state.sh" claim "$ID" >/dev/null

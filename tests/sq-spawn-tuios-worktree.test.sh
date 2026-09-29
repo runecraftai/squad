@@ -224,8 +224,37 @@ test_tuios_spawn_returns_lease_on_send_failure() {
   pass 'a TUIOS spawn whose worktree cd is refused fails and returns the lease'
 }
 
+# A failure in the window between verified acquisition and metadata publication
+# (here the after_create workspace hook) must also return the durable lease:
+# no metadata exists yet, so teardown could never recover it.
+test_tuios_spawn_returns_lease_before_metadata() {
+  local rec id label out status
+  id=tuios-spawn-lease-t4
+  label="sq-$id"
+  rec=$(make_case tuios-lease-pre-meta "$id")
+  read_case "$rec"
+
+  cat > "$PROJ_DIR/WORKFLOW.md" <<'EOF'
+---
+schema_version: "1.0.0"
+hooks:
+  after_create:
+    command: ["bash", "-c", "exit 1"]
+    timeout_ms: 2000
+---
+EOF
+  out=$(run_spawn "$id" "$label" 0)
+  status=$?
+  [ "$status" -ne 0 ] || fail 'a failed after_create hook must fail the spawn'
+  assert_contains "$out" 'after_create hook failed' 'the failure must name the workspace hook'
+  [ -f "$HOME_DIR/state/$id.meta" ] && fail 'a failed spawn must not publish metadata'
+  assert_contains "$(cat "$CASE_DIR/fob.log")" "return --force $WT_DIR" 'a pre-metadata failure must return the durable lease'
+  pass 'a TUIOS spawn that fails before metadata returns the lease'
+}
+
 test_tuios_spawn_leases_and_records_worktree
 test_tuios_spawn_returns_lease_on_failure
 test_tuios_spawn_returns_lease_on_send_failure
+test_tuios_spawn_returns_lease_before_metadata
 
 echo "# all sq-spawn-tuios-worktree tests passed"
