@@ -327,7 +327,7 @@ fm_backend_required_tool_available() {  # <backend> <tool>
   case "$backend:$tool" in
     tuios:tuios)
       fm_backend_source tuios >/dev/null 2>&1 || return 1
-      fm_backend_tuios_tool_check
+      fm_backend_tuios_cli_check
       ;;
     cmux:cmux)
       fm_backend_source cmux >/dev/null 2>&1 || return 1

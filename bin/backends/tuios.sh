@@ -9,11 +9,10 @@ fm_backend_tuios_bin() {
   printf '%s' "${SQUAD_TUIOS_BIN:-tuios}"
 }
 
-fm_backend_tuios_tool_check() {
+fm_backend_tuios_cli_check() {
   local bin version major minor patch
   bin=$(fm_backend_tuios_bin)
   command -v "$bin" >/dev/null 2>&1 || { echo "error: tuios CLI not found: $bin" >&2; return 1; }
-  command -v jq >/dev/null 2>&1 || { echo "error: backend=tuios selected but 'jq' is not installed (required to parse TUIOS JSON output)" >&2; return 1; }
   version=$("$bin" --version 2>/dev/null) || { echo 'error: tuios version query failed' >&2; return 1; }
   version=$(printf '%s\n' "$version" | sed -nE 's/^tuios version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1)
   [ -n "$version" ] || { echo 'error: unrecognized tuios version output' >&2; return 1; }
@@ -27,11 +26,23 @@ EOF
   }
 }
 
+fm_backend_tuios_tool_check() {
+  fm_backend_tuios_cli_check || return 1
+  command -v jq >/dev/null 2>&1 || { echo "error: backend=tuios selected but 'jq' is not installed (required to parse TUIOS JSON output)" >&2; return 1; }
+}
+
 fm_backend_tuios_cli() {  # <session> <verb> <args...>
   local session=$1
   shift
   [ -n "$session" ] || { echo 'error: TUIOS session is required' >&2; return 1; }
   "$(fm_backend_tuios_bin)" "$@" --session "$session"
+}
+
+fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
+  local session=$1 json
+  json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
+  printf '%s' "$json" | jq -e 'type == "object" and (.windows | type == "array")' >/dev/null 2>&1 || return 1
+  printf '%s' "$json"
 }
 
 fm_backend_tuios_parse_target() {  # <target> -> session and opaque window id globals
@@ -123,8 +134,8 @@ fm_backend_tuios_busy_state() {  # <target>
 fm_backend_tuios_agent_state() {  # <target>
   local target=$1 info agents windows state foreground id present
   fm_backend_tuios_parse_target "$target" || { printf 'unreadable'; return 0; }
-  windows=$(fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" list-windows --json 2>/dev/null) || { printf 'unreadable'; return 0; }
-  present=$(printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" '[.windows[]? | select(.id == $id)] | length' 2>/dev/null) || { printf 'unreadable'; return 0; }
+  windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || { printf 'unreadable'; return 0; }
+  present=$(printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" '[.windows[] | select(.id == $id)] | length' 2>/dev/null) || { printf 'unreadable'; return 0; }
   if [ "$present" = 0 ]; then printf 'missing'; return 0; fi
   [ "$present" = 1 ] || { printf 'unreadable'; return 0; }
   info=$(fm_backend_tuios_window_info "$SQUAD_BACKEND_TUIOS_SESSION" "$SQUAD_BACKEND_TUIOS_WINDOW") || { printf 'unreadable'; return 0; }
@@ -179,8 +190,8 @@ fm_backend_tuios_container_ensure() {  # <project-cwd> -> existing explicit sess
 
 fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID
   local session=$1 label=$2 cwd=$3 windows id
-  windows=$("$(fm_backend_tuios_bin)" list-windows --session "$session" --json 2>/dev/null) || return 1
-  if printf '%s' "$windows" | jq -e --arg label "$label" '[.windows[]? | select(.name == $label or .title == $label)] | length > 0' >/dev/null; then
+  windows=$(fm_backend_tuios_list_windows_json "$session") || { echo "error: cannot read TUIOS window inventory for '$session'" >&2; return 1; }
+  if printf '%s' "$windows" | jq -e --arg label "$label" '[.windows[] | select(.name == $label or .title == $label)] | length > 0' >/dev/null; then
     echo "error: TUIOS task label '$label' already exists in '$session'" >&2
     return 1
   fi

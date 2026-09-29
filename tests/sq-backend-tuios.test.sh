@@ -14,7 +14,9 @@ case "${1:-}" in
   --version) printf 'tuios version %s\n' "${SQUAD_TUIOS_FAKE_VERSION:-0.8.0}" ;;
   session-info) printf '{"name":"%s"}\n' "${SQUAD_TUIOS_FAKE_SESSION:-owned}" ;;
   list-windows)
-    if [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
+    if [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
+      printf '{"error":{"code":"daemon_unreachable"}}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
       printf '{"windows":[]}\n'
     else
       printf '{"windows":[{"id":"w-opaque_7","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
@@ -58,6 +60,14 @@ export SQUAD_TUIOS_FAKE_MISSING
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = missing ] || fail 'successful inventory omission should report missing'
 unset SQUAD_TUIOS_FAKE_MISSING
 
+SQUAD_TUIOS_FAKE_ERROR_INVENTORY=1
+export SQUAD_TUIOS_FAKE_ERROR_INVENTORY
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = unreadable ] || fail 'a windows-less JSON object must stay unreadable, never missing'
+if fm_backend_tuios_create_task owned sq-dupe /tmp/wt >/dev/null 2>&1; then
+  fail 'an unreadable window inventory must refuse duplicate-name creation'
+fi
+unset SQUAD_TUIOS_FAKE_ERROR_INVENTORY
+
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = ambiguous ] || fail 'unattributed agent must remain ambiguous'
@@ -93,6 +103,12 @@ if PATH="$no_jq_bin" bash -c 'source "$1/bin/sq-backend.sh"; fm_backend_source t
   fail 'missing jq must be refused by the TUIOS tool check'
 fi
 assert_contains "$(cat "$TMP_ROOT/jq-err")" 'jq' 'missing jq refusal must name the missing tool'
+if ! PATH="$no_jq_bin" bash -c 'source "$1/bin/sq-backend.sh"; fm_backend_required_tool_available tuios tuios' _ "$ROOT" >/dev/null 2>&1; then
+  fail 'an installed TUIOS CLI must remain available when jq is absent'
+fi
+if PATH="$no_jq_bin" bash -c 'source "$1/bin/sq-backend.sh"; fm_backend_required_tool_available tuios jq' _ "$ROOT" >/dev/null 2>&1; then
+  fail 'the jq dependency must still be reported unavailable when jq is absent'
+fi
 
 TARGET=owned:w-opaque_7
 SQUAD_TUIOS_FAKE_PANES='%7 other-window'
