@@ -93,7 +93,14 @@ export async function isBridgeTargetReachable(
   client: BridgeClient,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
-    await client.callTool({ name: "list_pages", arguments: {} });
+    const result = await client.callTool({
+      name: "list_pages",
+      arguments: {},
+    });
+    const toolError = getToolError(result);
+    if (toolError) {
+      return { ok: false, reason: toolError };
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, reason: getErrorMessage(error) };
@@ -249,6 +256,26 @@ function getToolContent(result: unknown): BridgeContentBlock[] {
   return result.content as BridgeContentBlock[];
 }
 
+/**
+ * chrome-devtools-mcp reports tool failures as a resolved result carrying
+ * `isError: true` (see ToolHandler.handle's catch), not as a rejected promise.
+ * Treating such a result as success is what let a browser that never launched
+ * look like a healthy-but-empty CDP target. Returns the error text, or
+ * undefined for a successful result.
+ */
+function getToolError(result: unknown): string | undefined {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "isError" in result &&
+    (result as { isError?: unknown }).isError === true
+  ) {
+    const text = extractToolText(getToolContent(result)).trim();
+    return text.length > 0 ? text : "Browser tool call failed";
+  }
+  return undefined;
+}
+
 export function parseBridgeCallPayload(body: string): BridgeCallPayload {
   let payload: { name?: unknown; args?: unknown };
   try {
@@ -323,6 +350,10 @@ async function handleCallRequest(
       name: "list_pages",
       arguments: {},
     });
+    const pagesError = getToolError(pagesResult);
+    if (pagesError) {
+      throw new Error(pagesError);
+    }
     const pages = extractToolText(getToolContent(pagesResult));
     const pageLines = pages.split("\n");
     const selected =
@@ -341,6 +372,10 @@ async function handleCallRequest(
     name: payload.name,
     arguments: args,
   });
+  const toolError = getToolError(result);
+  if (toolError) {
+    throw new Error(toolError);
+  }
   writeJson(res, 200, { result: extractToolText(getToolContent(result)) });
 }
 

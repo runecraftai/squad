@@ -459,9 +459,10 @@ export async function ensureBridge(
       "Bridge is running but the attached CDP target appears to have gone away",
       "BRIDGE_NOT_READY",
       [
-        "The Chrome/Electron instance the bridge was attached to may have exited.",
+        "The Chrome/Electron instance the bridge was attached to may have exited, or the browser may have failed to launch.",
         "Verify the target is still listening on its remote-debugging port, then re-run the command.",
         "If the target was restarted, the bridge has already been recycled — this run will succeed once the target is reachable.",
+        "Confirm a usable Chrome/Chromium is installed, or point SQ_BROWSER_EXECUTABLE_PATH at the browser binary.",
       ],
     );
   }
@@ -478,6 +479,7 @@ export async function ensureBridge(
   }
   suggestions.push(
     "Or extend the deadline: export SQ_BROWSER_BRIDGE_TIMEOUT_MS=60000",
+    "Or the browser failed to launch; confirm a usable Chrome/Chromium is installed, or point SQ_BROWSER_EXECUTABLE_PATH at the browser binary.",
   );
   throw new CdpError(
     `Bridge failed to start within ${seconds}s`,

@@ -70,7 +70,7 @@ environment:
                                     canary, or dev. Selects which installed Chrome --autoConnect
                                     attaches to, and which one is launched in the default and
                                     USER_DATA_DIR modes. Ignored with SQ_BROWSER_BROWSER_URL
-                                    and SQ_BROWSER_EXECUTABLE_PATH.
+                                    and, in launch modes, with SQ_BROWSER_EXECUTABLE_PATH.
   SQ_BROWSER_HEADED        Set to 1 to run Chrome in headed (visible) mode
   SQ_BROWSER_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
                                     (no shell-style quoting; flags with spaces are not supported)
