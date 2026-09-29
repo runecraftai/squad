@@ -18,4 +18,6 @@ TUIOS does not currently provide a recovery-grade Squad busy or composer signal.
 
 ## Limits and verification
 
+Active maintainer verification for runtime backends, including what is and is not established for TUIOS, lives in [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios).
+
 This backend is experimental. The portable contract is covered by `tests/sq-backend-tuios.test.sh` using a fake CLI; that test never contacts or changes a live TUIOS session. Do not use the watched primary sessions for backend tests. Real-session lifecycle, restart, permissions, and Pi delivery evidence must be collected in a separately authorized disposable session before treating those behaviors as live-verified.

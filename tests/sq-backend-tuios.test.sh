@@ -84,13 +84,15 @@ if SQUAD_TUIOS_FAKE_VERSION=0.7.9 fm_backend_tuios_tool_check >/dev/null 2>&1; t
 no_jq_bin="$TMP_ROOT/no-jq-bin"
 mkdir -p "$no_jq_bin"
 cp "$TMP_ROOT/fakebin/tuios" "$no_jq_bin/tuios"
-for tool in bash sed head; do
+# dirname is required while sourcing sq-backend.sh, so it must stay on this
+# isolated PATH or the adapter never loads and the check is never reached.
+for tool in bash sed head dirname; do
   ln -sf "$(command -v "$tool")" "$no_jq_bin/$tool"
 done
-real_bash=$(command -v bash)
-if PATH="$no_jq_bin" "$real_bash" -c 'source "$1/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_tool_check' _ "$ROOT" >/dev/null 2>&1; then
+if PATH="$no_jq_bin" bash -c 'source "$1/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_tool_check' _ "$ROOT" 2>"$TMP_ROOT/jq-err" >/dev/null; then
   fail 'missing jq must be refused by the TUIOS tool check'
 fi
+assert_contains "$(cat "$TMP_ROOT/jq-err")" 'jq' 'missing jq refusal must name the missing tool'
 
 TARGET=owned:w-opaque_7
 SQUAD_TUIOS_FAKE_PANES='%7 other-window'
