@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  computeBuildFingerprint,
   detectStaleBuild,
   findStaleBuild,
   formatStaleBuildError,
@@ -119,6 +120,56 @@ describe("detectStaleBuild", () => {
     expect(detectStaleBuild(pathToFileURL(entry).href)?.newestSourcePath).toBe(
       binSource,
     );
+  });
+});
+
+describe("computeBuildFingerprint", () => {
+  it("changes when a nested compiled module changes in a built layout", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(join(root, "dist", "bin", "sq-browser-bridge.js"));
+    const dependency = writeFile(
+      join(root, "dist", "src", "bridge.js"),
+      "export const a = 1;\n",
+    );
+
+    const before = computeBuildFingerprint(entry);
+    writeFileSync(dependency, "export const a = 2;\n");
+    const after = computeBuildFingerprint(entry);
+
+    expect(before).not.toBeNull();
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+  });
+
+  it("is stable for an unchanged built layout", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(join(root, "dist", "bin", "sq-browser-bridge.js"));
+    writeFile(join(root, "dist", "src", "bridge.js"));
+    writeFile(join(root, "dist", "src", "bridge.d.ts"));
+
+    expect(computeBuildFingerprint(entry)).toBe(computeBuildFingerprint(entry));
+  });
+
+  it("fingerprints source files for an unbundled source entry", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(join(root, "bin", "sq-browser-bridge.ts"));
+    const dependency = writeFile(
+      join(root, "src", "bridge.ts"),
+      "export const a = 1;\n",
+    );
+
+    const before = computeBuildFingerprint(entry);
+    writeFileSync(dependency, "export const a = 2;\n");
+
+    expect(before).not.toBeNull();
+    expect(computeBuildFingerprint(entry)).not.toBe(before);
+  });
+
+  it("is inert for an entry outside a package source/build layout", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(join(root, "scripts", "tool.js"));
+
+    expect(computeBuildFingerprint(entry)).toBeNull();
   });
 });
 

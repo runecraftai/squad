@@ -708,6 +708,31 @@ describe("handleBridgeRequest /health", () => {
     });
   });
 
+  it("stamps the build identity into the /health response when provided", async () => {
+    const client: BridgeClient = {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => ({ content: [] }),
+      close: async () => {},
+    };
+    const { res, captured } = makeResponse();
+
+    await handleBridgeRequest(
+      client,
+      makeRequest("GET", "/health"),
+      res,
+      "worker-1",
+      undefined,
+      "build-abc",
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(JSON.parse(captured.body)).toEqual({
+      status: "ok",
+      session: "worker-1",
+      buildId: "build-abc",
+    });
+  });
+
   it("returns 503 when MCP server is disconnected", async () => {
     const client: BridgeClient = {
       listTools: async () => {

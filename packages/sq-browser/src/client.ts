@@ -10,6 +10,7 @@ import {
   BRIDGE_PORT_IN_USE_EXIT_CODE,
   resolveBridgeScript,
 } from "./bridge-script.js";
+import { computeBuildFingerprint } from "./build-guard.js";
 import {
   resolveSessionName,
   resolveSessionPidFile,
@@ -60,6 +61,7 @@ export class CdpError extends AxiError {
 interface PidInfo {
   pid: number;
   port: number;
+  buildId?: string;
 }
 
 function readPidFile(
@@ -84,6 +86,33 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Identity of the bridge build this CLI would spawn. Derived from the resolved
+ * bridge entry so it matches what the bridge process records about itself.
+ */
+function resolveCurrentBridgeBuildId(): string | null {
+  try {
+    return computeBuildFingerprint(resolveBridgeScript(import.meta.dirname));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a running bridge's recorded build still matches the on-disk build.
+ * When the fingerprint cannot be derived (published layouts, test harnesses)
+ * the check is inert; when it can, a missing recorded id (a pre-fingerprint
+ * bridge) is treated as stale so outdated bridges cannot survive a rebuild.
+ */
+function isBridgeBuildCurrent(
+  recordedBuildId: string | undefined,
+  currentBuildId: string | null,
+): boolean {
+  if (process.env.SQ_BROWSER_SKIP_BUILD_CHECK === "1") return true;
+  if (currentBuildId === null) return true;
+  return recordedBuildId === currentBuildId;
 }
 
 function httpGet(
@@ -166,7 +195,11 @@ function httpPost(
  */
 export async function checkBridgeHealth(
   port: number,
-  opts: { deep?: boolean; expectedSession?: string } = {},
+  opts: {
+    deep?: boolean;
+    expectedSession?: string;
+    expectedBuildId?: string;
+  } = {},
 ): Promise<boolean> {
   try {
     const path = opts.deep ? "/health?deep=1" : "/health";
@@ -178,6 +211,15 @@ export async function checkBridgeHealth(
       opts.expectedSession !== undefined &&
       typeof data.session === "string" &&
       data.session !== opts.expectedSession
+    ) {
+      return false;
+    }
+    // Build identity is a hard match: a bridge that cannot prove it is the
+    // current build (including an older one that omits the field) is treated
+    // as a different, stale endpoint rather than accepted for reuse.
+    if (
+      opts.expectedBuildId !== undefined &&
+      data.buildId !== opts.expectedBuildId
     ) {
       return false;
     }
@@ -380,16 +422,24 @@ export async function ensureBridge(
   const sessionName = resolveSessionName();
   const port = resolveSessionPort(sessionName);
   const pidFile = resolveSessionPidFile(sessionName);
+  const currentBuildId = resolveCurrentBridgeBuildId();
+  const expectedBuildId =
+    process.env.SQ_BROWSER_SKIP_BUILD_CHECK === "1"
+      ? undefined
+      : (currentBuildId ?? undefined);
 
-  // Check existing bridge via PID file. Use a deep probe so a bridge whose
-  // attached CDP target has gone away gets recycled instead of returned.
+  // Check existing bridge via PID file. Recycle it when it was built from a
+  // different (older) dist than the current CLI, or when a deep probe shows
+  // its attached CDP target has gone away.
   const pidInfo = readPidFile(pidFile);
   if (pidInfo && isProcessAlive(pidInfo.pid)) {
     if (
-      await checkBridgeHealth(pidInfo.port, {
+      isBridgeBuildCurrent(pidInfo.buildId, currentBuildId) &&
+      (await checkBridgeHealth(pidInfo.port, {
         deep: true,
         expectedSession: sessionName,
-      })
+        expectedBuildId,
+      }))
     ) {
       return pidInfo.port;
     }
@@ -428,6 +478,7 @@ export async function ensureBridge(
       await checkBridgeHealth(port, {
         deep: true,
         expectedSession: sessionName,
+        expectedBuildId,
       })
     ) {
       return port;
@@ -437,6 +488,7 @@ export async function ensureBridge(
         await checkBridgeHealth(port, {
           deep: true,
           expectedSession: sessionName,
+          expectedBuildId,
         })
       ) {
         return port;

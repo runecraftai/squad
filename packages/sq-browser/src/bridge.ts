@@ -39,6 +39,7 @@ import {
   resolveSessionPidFile,
   resolveSessionPort,
 } from "./sessions.js";
+import { computeBuildFingerprint } from "./build-guard.js";
 import { CHROME_DEVTOOLS_MCP_VERSION } from "./mcp-version.js";
 
 // Re-exported so existing bridge consumers keep a single import surface; the
@@ -107,10 +108,15 @@ export async function isBridgeTargetReachable(
   }
 }
 
-function writePidFile(port: number): void {
+function writePidFile(port: number, buildId?: string): void {
   const pidFile = resolveSessionPidFile();
   mkdirSync(dirname(pidFile), { recursive: true });
-  writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port }));
+  const payload: { pid: number; port: number; buildId?: string } = {
+    pid: process.pid,
+    port,
+  };
+  if (buildId !== undefined) payload.buildId = buildId;
+  writeFileSync(pidFile, JSON.stringify(payload));
 }
 
 /**
@@ -385,6 +391,7 @@ export async function handleBridgeRequest(
   res: ServerResponse,
   sessionName?: string,
   logForbidden?: (message: string) => void,
+  buildId?: string,
 ): Promise<void> {
   res.setHeader("Content-Type", "application/json");
 
@@ -424,7 +431,7 @@ export async function handleBridgeRequest(
         return;
       }
     }
-    writeJson(res, 200, { status: "ok", session: sessionName });
+    writeJson(res, 200, { status: "ok", session: sessionName, buildId });
     return;
   }
 
@@ -449,9 +456,17 @@ export async function handleBridgeRequest(
 export function createBridgeServer(
   client: BridgeClient,
   sessionName?: string,
+  buildId?: string,
 ): Server {
   return createServer((req, res) => {
-    void handleBridgeRequest(client, req, res, sessionName, logBridgeMessage);
+    void handleBridgeRequest(
+      client,
+      req,
+      res,
+      sessionName,
+      logBridgeMessage,
+      buildId,
+    );
   });
 }
 
@@ -728,12 +743,13 @@ export async function runBridge(port = resolveSessionPort()): Promise<void> {
   logBridgeMessage("Connected to chrome-devtools-mcp");
 
   const sessionName = resolveSessionName();
-  const server = createBridgeServer(client, sessionName);
+  const buildId = computeBuildFingerprint(import.meta.filename) ?? undefined;
+  const server = createBridgeServer(client, sessionName, buildId);
   server.on("error", (error: NodeJS.ErrnoException) => {
     handleBridgeServerError(error, port);
   });
   server.listen(port, "127.0.0.1", () => {
-    writePidFile(port);
+    writePidFile(port, buildId);
     logBridgeMessage(`Listening on http://127.0.0.1:${port}`);
     writeReadySignal();
   });
