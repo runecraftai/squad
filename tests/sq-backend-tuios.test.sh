@@ -12,9 +12,14 @@ set -u
 printf '%s\n' "$*" >> "$SQUAD_TUIOS_LOG"
 case "${1:-}" in
   --version) printf 'tuios version %s\n' "${SQUAD_TUIOS_FAKE_VERSION:-0.8.0}" ;;
-  session-info) printf '{"name":"%s"}\n' "${SQUAD_TUIOS_FAKE_SESSION:-owned}" ;;
+  session-info)
+    [ "${SQUAD_TUIOS_FAKE_SESSION_DEAD:-0}" = 1 ] && exit 1
+    printf '{"name":"%s"}\n' "${SQUAD_TUIOS_FAKE_SESSION:-owned}"
+    ;;
   list-windows)
-    if [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
+    if [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ]; then
+      exit 1
+    elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"}}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
       printf '{"windows":[]}\n'
@@ -35,7 +40,7 @@ case "${1:-}" in
     fi
     ;;
   get-agent-state) printf '{"state":"%s"}\n' "${SQUAD_TUIOS_FAKE_AGENT_STATE:-working}" ;;
-  capture-pane) printf 'captured output\n' ;;
+  capture-pane) printf '%s\n' "${SQUAD_TUIOS_FAKE_CAPTURE:-captured output}" ;;
   new-window) printf 'w-opaque_7\n' ;;
   *) : ;;
 esac
@@ -68,6 +73,16 @@ if fm_backend_tuios_create_task owned sq-dupe /tmp/wt >/dev/null 2>&1; then
 fi
 unset SQUAD_TUIOS_FAKE_ERROR_INVENTORY
 
+if fm_backend_tuios_create_task owned sq-task-1 /tmp/wt >/dev/null 2>&1; then
+  fail 'an existing TUIOS task label must refuse duplicate-name creation'
+fi
+[ "$(grep -c 'new-window sq-task-1' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'duplicate-label refusal must not create a new window'
+
+SQUAD_TUIOS_FAKE_LIST_FAIL=1
+export SQUAD_TUIOS_FAKE_LIST_FAIL
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = unreadable ] || fail 'a failed inventory read after a restart must stay unreadable'
+unset SQUAD_TUIOS_FAKE_LIST_FAIL
+
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = ambiguous ] || fail 'unattributed agent must remain ambiguous'
@@ -81,6 +96,12 @@ unset SQUAD_TUIOS_FAKE_AGENTS
 SQUAD_TUIOS_SESSION=owned
 export SQUAD_TUIOS_SESSION
 [ "$(fm_backend_tuios_container_ensure /tmp/project)" = owned ] || fail 'explicitly configured live session should be accepted'
+SQUAD_TUIOS_FAKE_SESSION_DEAD=1
+export SQUAD_TUIOS_FAKE_SESSION_DEAD
+if fm_backend_tuios_container_ensure /tmp/project >/dev/null 2>&1; then
+  fail 'a lost or restarted TUIOS session must refuse adoption'
+fi
+unset SQUAD_TUIOS_FAKE_SESSION_DEAD
 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-spawn-test
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 [ "$(fm_backend_tuios_create_task owned sq-spawn-test /tmp/wt)" = w-opaque_7 ] || fail 'task window creation failed'
@@ -121,6 +142,14 @@ if fm_backend_tuios_kill "$TARGET" '' wrong-label; then fail 'mismatched expecte
 fm_backend_tuios_kill "$TARGET" '' sq-task-1 || fail 'exact task window close failed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux list-panes -F #{pane_id} #{tuios_window_id}' 'cleanup did not inventory exact TUIOS pane identity'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux kill-pane -t %7' 'cleanup did not close only the mapped exact pane'
+
+SQUAD_TUIOS_FAKE_CAPTURE='Permission required: allow tool? [y/N]'
+export SQUAD_TUIOS_FAKE_CAPTURE
+assert_contains "$(fm_backend_tuios_capture owned:w-opaque_7 10 sq-task-1)" 'Permission required' 'permission-prompt fixture must be readable'
+[ "$(fm_backend_tuios_busy_state owned:w-opaque_7)" = unknown ] || fail 'a permission prompt must not produce a busy or idle verdict'
+[ "$(fm_backend_composer_state tuios owned:w-opaque_7)" = unknown ] || fail 'a permission prompt must not be classified as an empty composer'
+[ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'allow' 3 0 0 sq-task-1)" = uncertain-delivery ] || fail 'a permission prompt must never be treated as accepted delivery'
+unset SQUAD_TUIOS_FAKE_CAPTURE
 
 # The generic UI submit path never claims delivery, even after transport success.
 [ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = uncertain-delivery ] || fail 'UI submit must remain uncertain'
