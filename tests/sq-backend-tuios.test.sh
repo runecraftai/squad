@@ -29,6 +29,8 @@ case "${1:-}" in
       printf '{"windows":[{"window":{"id":"w-opaque_7"},"id":"stale-id","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_NESTED_LABEL:-0}" = 1 ]; then
       printf '{"windows":[{"id":"w-opaque_7","window":{"id":"w-opaque_7","name":"sq-nested"},"cwd":"/tmp/wt"}]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_DURABLE_LABEL:-0}" = 1 ]; then
+      printf '{"windows":[{"id":"w-opaque_7","custom_name":"sq-durable","title":"pi - live","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"}}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
@@ -43,7 +45,15 @@ case "${1:-}" in
       kill-pane) printf 'killed %s\n' "${4:-}" ;;
     esac
     ;;
-  get-window) printf '{"window":{"id":"w-opaque_7","name":"%s","cwd":"/tmp/wt","has_foreground_process":false}}\n' "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}" ;;
+  get-window)
+    # A session with an attached client omits the daemon cwd from this shape;
+    # list-windows is the shape that always carries it.
+    if [ "${SQUAD_TUIOS_FAKE_ATTACHED_CLIENT:-0}" = 1 ]; then
+      printf '{"window":{"id":"w-opaque_7","name":"%s","has_foreground_process":true}}\n' "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}"
+    else
+      printf '{"window":{"id":"w-opaque_7","name":"%s","cwd":"/tmp/wt","has_foreground_process":false}}\n' "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}"
+    fi
+    ;;
   list-agents)
     if [ -n "${SQUAD_TUIOS_FAKE_AGENTS:-}" ]; then printf '%s\n' "$SQUAD_TUIOS_FAKE_AGENTS"; else
       printf '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done"}]}\n'
@@ -66,6 +76,13 @@ fm_backend_tuios_tool_check || fail 'minimum TUIOS version should pass'
 
 [ "$(fm_backend_tuios_target_exists owned:w-opaque_7 sq-task-1 && echo yes)" = yes ] || fail 'exact opaque target should resolve'
 [ "$(fm_backend_tuios_capture owned:w-opaque_7 10 sq-task-1)" = 'captured output' ] || fail 'capture failed'
+
+# The worktree-discovery probe must work on an attached session, where
+# get-window omits the daemon cwd.
+SQUAD_TUIOS_FAKE_ATTACHED_CLIENT=1
+export SQUAD_TUIOS_FAKE_ATTACHED_CLIENT
+[ "$(fm_backend_tuios_current_path owned:w-opaque_7)" = '/tmp/wt' ] || fail 'cwd must come from the daemon inventory while a client is attached'
+unset SQUAD_TUIOS_FAKE_ATTACHED_CLIENT
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'capture-pane --session owned --window w-opaque_7 --scrollback --lines 10' 'capture did not use supported bounded scrollback flags'
 
 # Operator-controlled payload text must never be parsed as TUIOS options: a
@@ -138,6 +155,15 @@ if fm_backend_tuios_create_task owned sq-nested /tmp/wt >/dev/null 2>&1; then
 fi
 [ "$(grep -c 'new-window sq-nested' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'nested-label refusal must not create a new window'
 unset SQUAD_TUIOS_FAKE_NESTED_LABEL
+
+# A live retitle must not hide the durable label that identifies the task.
+SQUAD_TUIOS_FAKE_DURABLE_LABEL=1
+export SQUAD_TUIOS_FAKE_DURABLE_LABEL
+if fm_backend_tuios_create_task owned sq-durable /tmp/wt >/dev/null 2>&1; then
+  fail 'a durable custom_name label must refuse duplicate-name creation after a live retitle'
+fi
+[ "$(grep -c 'new-window sq-durable' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'durable-label refusal must not create a new window'
+unset SQUAD_TUIOS_FAKE_DURABLE_LABEL
 
 # An element without a recognizable identity must invalidate the whole
 # inventory as unreadable instead of reading as a reliable omission.
@@ -212,7 +238,7 @@ unset SQUAD_TUIOS_FAKE_PANES
 if fm_backend_tuios_kill "$TARGET" '' wrong-label; then fail 'mismatched expected label must refuse cleanup'; fi
 [ "$(grep -c 'tmux kill-pane' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'mismatched label issued a destructive command'
 fm_backend_tuios_kill "$TARGET" '' sq-task-1 || fail 'exact task window close failed'
-assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux list-panes -F #{pane_id} #{tuios_window_id}' 'cleanup did not inventory exact TUIOS pane identity'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux list-panes -a -F #{pane_id} #{tuios_window_id}' 'cleanup did not inventory session-wide exact TUIOS pane identity'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux kill-pane -t %7' 'cleanup did not close only the mapped exact pane'
 
 SQUAD_TUIOS_FAKE_CAPTURE='Permission required: allow tool? [y/N]'

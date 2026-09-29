@@ -319,7 +319,7 @@ The mechanics are owned by the `/updatesquad` skill and Squad's operating manual
 
 ## Restart-proof
 
-Unit state lives in each task's session-provider backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca when explicitly selected), drill run records, status event logs, local markdown under `data/` including `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, and persistent XO bases.
+Unit state lives in each task's session-provider backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca/tuios when explicitly selected), drill run records, status event logs, local markdown under `data/` including `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, and persistent XO bases.
 For herdr, respawning after a server-restored layout closes and replaces confirmed no-agent or dead task-tab husks instead of requiring manual tab cleanup.
 At session start, confirmed-dead XO agent endpoints are closed and relaunched through the same XO spawn path, while ambiguous liveness reads are left untouched to avoid duplicate supervisors.
 Use `/debrief` before an intentional reset when the conversation may hold durable knowledge that has not yet been written to disk; after that, the next Squad session can reconcile and carry on.

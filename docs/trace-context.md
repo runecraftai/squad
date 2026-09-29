@@ -25,7 +25,7 @@ This feature parents no SDK span by itself.
 Because the injected carrier and the recorded carrier are the same string, an observer that reads the metadata reconstructs exactly the identity the child received.
 The injection sits at the unconditional pre-launch export site, so it covers ship and recon spawns across `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, and `muse`, plus XO spawns across that same set except the deliberately operator-only `muse` adapter.
 This is the same coverage `GOTMPDIR` already has and requires no trace-specific `launch_template()` behavior.
-Ship and recon spawns reach that site on every spawn backend (`tmux`, `herdr`, `zellij`, `orca`, `cmux`); an XO reaches it on every backend that accepts an XO spawn (`tmux`, `herdr`, `zellij`), because `bin/sq-spawn.sh` rejects an XO on `orca` and `cmux`.
+Ship and recon spawns reach that site on every spawn backend (`tmux`, `herdr`, `zellij`, `orca`, `cmux`, `tuios`); an XO reaches it on every backend that accepts an XO spawn (`tmux`, `herdr`, `zellij`), because `bin/sq-spawn.sh` rejects an XO on `orca`, `cmux`, and `tuios`.
 
 ### Remote XO routes
 

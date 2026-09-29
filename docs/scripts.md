@@ -62,6 +62,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `backends/zellij.sh`     | Experimental zellij session-provider adapter                                         |
 | `backends/orca.sh`       | Experimental Orca backend adapter owning both worktree and terminal                  |
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
+| `backends/tuios.sh`      | Experimental TUIOS session-provider adapter (explicit session, opaque window ids)    |
 | `sq-config-push.sh`      | Push declared inherited local material to live local or remote XOs and send the placement-specific config reread when changed |
 | `sq-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for unit sync and base seeding |
 | `sq-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |

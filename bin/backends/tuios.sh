@@ -46,8 +46,8 @@ SQUAD_BACKEND_TUIOS_JQ_LIB='
   def tids: [ (.id // empty), (.window_id // empty),
               (if (.window | type) == "object" then (.window.id // empty) else (.window // empty) end) ]
             | map(select(type == "string" and length > 0));
-  def tlabels: [ (.name // empty), (.title // empty),
-                 (if (.window | type) == "object" then (.window.name // empty), (.window.title // empty) else empty end) ]
+  def tlabels: [ (.name // empty), (.title // empty), (.custom_name // empty), (.display_name // empty),
+                 (if (.window | type) == "object" then (.window.name // empty), (.window.title // empty), (.window.custom_name // empty), (.window.display_name // empty) else empty end) ]
             | map(select(type == "string" and length > 0));
 '
 
@@ -122,10 +122,14 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
 }
 
 fm_backend_tuios_current_path() {  # <target>
-  local target=$1 info
-  fm_backend_tuios_target_ready "$target" || return 1
-  info=$(fm_backend_tuios_window_info "$SQUAD_BACKEND_TUIOS_SESSION" "$SQUAD_BACKEND_TUIOS_WINDOW") || return 1
-  printf '%s' "$info" | jq -r '.window.cwd // .cwd // .window.current_directory // .current_directory // empty'
+  local target=$1 windows
+  fm_backend_tuios_parse_target "$target" || return 1
+  # list-windows always carries the daemon cwd, while get-window omits it for a
+  # session with an attached client, so read the validated inventory instead.
+  windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || return 1
+  printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    [.windows[] | select((tids | index($id)) != null)]
+    | if length == 1 then (.[0].cwd // .[0].window.cwd // empty) else empty end'
 }
 
 fm_backend_tuios_composer_state() {  # Pi UI is not proof of delivery: return unknown.
@@ -186,7 +190,7 @@ fm_backend_tuios_kill() {  # <target> [unused] [expected-label]
   # TUIOS exposes close-window on its control protocol but not as a CLI verb.
   # Its documented tmux shim provides a session-scoped pane id; resolve that
   # id by the exact opaque TUIOS id before issuing the one-pane kill.
-  inventory=$(TUIOS_SESSION="$session" "$(fm_backend_tuios_bin)" tmux list-panes \
+  inventory=$(TUIOS_SESSION="$session" "$(fm_backend_tuios_bin)" tmux list-panes -a \
     -F '#{pane_id} #{tuios_window_id}' 2>/dev/null) || return 1
   while IFS=' ' read -r candidate matched; do
     [ "$matched" = "$window" ] || continue
