@@ -77,8 +77,8 @@ assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'send-text --session owned --window 
   'leading-dash payload must stay literal after -- and keep the explicit session binding'
 fm_backend_tuios_send_literal owned:w-opaque_7 '--' >/dev/null 2>&1 \
   || fail 'bare -- literal send should reach the CLI'
-assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'send-text --session owned --window w-opaque_7 -- --' \
-  'a bare -- payload must not consume the appended session flag'
+[ "$(tail -n1 "$SQUAD_TUIOS_LOG")" = 'send-text --session owned --window w-opaque_7 -- --' ] \
+  || fail 'a bare -- payload must not consume the appended session flag'
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'agent inventory should corroborate Pi despite foreground=false'
 [ "$(fm_backend_tuios_busy_state owned:w-opaque_7)" = unknown ] || fail 'a TUIOS-reported agent state must not become a native busy verdict'
 
