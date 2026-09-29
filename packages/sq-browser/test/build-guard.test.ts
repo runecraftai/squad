@@ -14,11 +14,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   computeBuildFingerprint,
+  computeDistBuildFingerprint,
+  computeSourceBuildFingerprint,
   detectStaleBuild,
   findStaleBuild,
   formatStaleBuildError,
   guardFreshBuild,
   STALE_BUILD_EXIT_CODE,
+  writeBuildManifest,
 } from "../src/build-guard.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -53,43 +56,90 @@ afterEach(() => {
 });
 
 describe("detectStaleBuild", () => {
-  it("flags a dist entry whose TypeScript source is newer", () => {
+  it("accepts a fresh dist even when source mtimes are newer than the entry", () => {
     const root = makePackageRoot();
-    const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
-    const source = writeFile(join(root, "src", "cli.ts"));
+    const entry = writeFile(
+      join(root, "dist", "bin", "sq-browser.js"),
+      "#!/usr/bin/env node\n",
+    );
+    const source = writeFile(
+      join(root, "src", "cli.ts"),
+      "export const a = 1;\n",
+    );
+    writeBuildManifest(root);
+
+    // A cache/rsync restore preserves old dist mtimes while a fresh checkout
+    // stamps source mtimes at checkout time. Content is what must decide.
     setMtime(entry, 1_000);
     setMtime(source, 2_000);
-
-    const stale = detectStaleBuild(pathToFileURL(entry).href);
-
-    expect(stale).not.toBeNull();
-    expect(stale?.entryPath).toBe(entry);
-    expect(stale?.newestSourcePath).toBe(source);
-    expect(stale?.sourceMtimeMs).toBeGreaterThan(stale!.buildMtimeMs);
-  });
-
-  it("accepts an up-to-date build whose entry is newer than every source file", () => {
-    const root = makePackageRoot();
-    const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
-    writeFile(join(root, "src", "cli.ts"));
-    setMtime(join(root, "src", "cli.ts"), 1_000);
-    setMtime(entry, 2_000);
 
     expect(detectStaleBuild(pathToFileURL(entry).href)).toBeNull();
   });
 
-  it("ignores declaration files and reports the newest emitted source", () => {
+  it("rejects an old dist when source content changed but its mtime is not newer", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(
+      join(root, "dist", "bin", "sq-browser.js"),
+      "#!/usr/bin/env node\n",
+    );
+    const source = writeFile(
+      join(root, "src", "cli.ts"),
+      "export const a = 1;\n",
+    );
+    writeBuildManifest(root);
+
+    // Source moves on after the build, but a timestamp-preserving checkout
+    // leaves it older than the compiled dist.
+    writeFileSync(source, "export const a = 2;\n");
+    setMtime(source, 1_000);
+    setMtime(entry, 2_000);
+
+    expect(detectStaleBuild(pathToFileURL(entry).href)?.reason).toBe(
+      "source-mismatch",
+    );
+  });
+
+  it("rejects a local dist that has no build manifest", () => {
     const root = makePackageRoot();
     const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
-    const declaration = writeFile(join(root, "src", "types.d.ts"));
-    const emitted = writeFile(join(root, "src", "bridge.ts"));
-    setMtime(entry, 1_000);
-    setMtime(declaration, 3_000);
-    setMtime(emitted, 2_000);
+    writeFile(join(root, "src", "cli.ts"));
 
-    const stale = detectStaleBuild(pathToFileURL(entry).href);
+    expect(detectStaleBuild(pathToFileURL(entry).href)?.reason).toBe(
+      "missing-manifest",
+    );
+  });
 
-    expect(stale?.newestSourcePath).toBe(emitted);
+  it("rejects a dist whose compiled files changed after the manifest was recorded", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(
+      join(root, "dist", "bin", "sq-browser.js"),
+      "#!/usr/bin/env node\n",
+    );
+    writeFile(join(root, "src", "cli.ts"), "export const a = 1;\n");
+    writeBuildManifest(root);
+
+    writeFileSync(entry, "#!/usr/bin/env node\n// partial emit\n");
+
+    expect(detectStaleBuild(pathToFileURL(entry).href)?.reason).toBe(
+      "dist-mismatch",
+    );
+  });
+
+  it("detects a change in bin source as well as src", () => {
+    const root = makePackageRoot();
+    const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
+    writeFile(join(root, "src", "cli.ts"), "export const a = 1;\n");
+    const binSource = writeFile(
+      join(root, "bin", "sq-browser.ts"),
+      "export const b = 1;\n",
+    );
+    writeBuildManifest(root);
+
+    writeFileSync(binSource, "export const b = 2;\n");
+
+    expect(detectStaleBuild(pathToFileURL(entry).href)?.reason).toBe(
+      "source-mismatch",
+    );
   });
 
   it("is inert for a built npm package that ships no TypeScript source", () => {
@@ -108,18 +158,6 @@ describe("detectStaleBuild", () => {
     setMtime(source, 2_000);
 
     expect(detectStaleBuild(pathToFileURL(entry).href)).toBeNull();
-  });
-
-  it("scans the bin source directory alongside src", () => {
-    const root = makePackageRoot();
-    const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
-    const binSource = writeFile(join(root, "bin", "sq-browser.ts"));
-    setMtime(entry, 1_000);
-    setMtime(binSource, 2_000);
-
-    expect(detectStaleBuild(pathToFileURL(entry).href)?.newestSourcePath).toBe(
-      binSource,
-    );
   });
 });
 
@@ -171,31 +209,51 @@ describe("computeBuildFingerprint", () => {
 
     expect(computeBuildFingerprint(entry)).toBeNull();
   });
+
+  it("dist and source fingerprints match their dedicated helpers", () => {
+    const root = makePackageRoot();
+    const distEntry = writeFile(
+      join(root, "dist", "bin", "sq-browser.js"),
+      "#!/usr/bin/env node\n",
+    );
+    const sourceEntry = writeFile(
+      join(root, "bin", "sq-browser.ts"),
+      "export const a = 1;\n",
+    );
+
+    expect(computeBuildFingerprint(distEntry)).toBe(
+      computeDistBuildFingerprint(root),
+    );
+    expect(computeBuildFingerprint(sourceEntry)).toBe(
+      computeSourceBuildFingerprint(root),
+    );
+  });
 });
 
 describe("findStaleBuild", () => {
-  it("ignores a source file that is older than the build", () => {
+  it("accepts a source-matched, dist-matched build", () => {
     const root = makePackageRoot();
-    const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
-    const source = writeFile(join(root, "src", "cli.ts"));
-    setMtime(entry, 2_000);
-    setMtime(source, 1_000);
+    const entry = writeFile(
+      join(root, "dist", "bin", "sq-browser.js"),
+      "#!/usr/bin/env node\n",
+    );
+    writeFile(join(root, "src", "cli.ts"), "export const a = 1;\n");
+    writeBuildManifest(root);
 
-    expect(findStaleBuild(entry, [join(root, "src")])).toBeNull();
+    expect(findStaleBuild(entry, root)).toBeNull();
   });
 });
 
 describe("guardFreshBuild", () => {
-  it("returns the rebuild instruction when the build is stale", () => {
+  it("returns the rebuild instruction when the build has no manifest", () => {
     const root = makePackageRoot();
     const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
     writeFile(join(root, "src", "cli.ts"));
-    setMtime(entry, 1_000);
-    setMtime(join(root, "src", "cli.ts"), 2_000);
 
     const message = guardFreshBuild(pathToFileURL(entry).href, {});
 
     expect(message).toContain("stale build");
+    expect(message).toContain(entry);
     expect(message).toContain("pnpm run build");
     expect(message).toContain("SQ_BROWSER_SKIP_BUILD_CHECK=1");
   });
@@ -204,8 +262,6 @@ describe("guardFreshBuild", () => {
     const root = makePackageRoot();
     const entry = writeFile(join(root, "dist", "bin", "sq-browser.js"));
     writeFile(join(root, "src", "cli.ts"));
-    setMtime(entry, 1_000);
-    setMtime(join(root, "src", "cli.ts"), 2_000);
 
     expect(
       guardFreshBuild(pathToFileURL(entry).href, {
@@ -216,16 +272,13 @@ describe("guardFreshBuild", () => {
 });
 
 describe("formatStaleBuildError", () => {
-  it("names the stale build, the newer source, and the remedy", () => {
+  it("names the stale build and the remedy", () => {
     const message = formatStaleBuildError({
       entryPath: "/pkg/dist/bin/sq-browser.js",
-      newestSourcePath: "/pkg/src/cli.ts",
-      buildMtimeMs: 1_000,
-      sourceMtimeMs: 9_000,
+      reason: "source-mismatch",
     });
 
     expect(message).toContain("/pkg/dist/bin/sq-browser.js");
-    expect(message).toContain("/pkg/src/cli.ts");
     expect(message).toContain("pnpm run build");
   });
 });
@@ -261,38 +314,56 @@ describe("stale-build guard process boundary", () => {
   }
 
   it.runIf(canSpawnTsx)(
-    "refuses to run and exits with the stale-build code when source is newer",
+    "refuses to run and exits with the stale-build code when the source changed after the manifest",
     () => {
       const root = makePackageRoot();
+      const source = writeFile(
+        join(root, "src", "cli.ts"),
+        "export const a = 1;\n",
+      );
       const entry = writeFile(
         join(root, "dist", "bin", "guard-entry.ts"),
         guardEntrySource(),
       );
-      const source = writeFile(join(root, "src", "cli.ts"));
-      setMtime(entry, 1_000);
-      setMtime(source, 2_000);
+      writeFile(
+        join(root, "dist", "bin", "sq-browser.js"),
+        "#!/usr/bin/env node\n",
+      );
+      writeBuildManifest(root);
+
+      writeFileSync(source, "export const a = 2;\n");
+      setMtime(source, 1_000);
+      setMtime(entry, 2_000);
 
       const result = runGuardEntry(entry);
 
       expect(result.status).toBe(STALE_BUILD_EXIT_CODE);
       expect(result.stderr).toContain("stale build");
-      expect(result.stderr).toContain(source);
       expect(result.stdout).toBe("");
     },
     30_000,
   );
 
   it.runIf(canSpawnTsx)(
-    "runs normally when the build is newer than its source",
+    "runs normally when the manifest matches the source even if the entry mtime is older",
     () => {
       const root = makePackageRoot();
-      const source = writeFile(join(root, "src", "cli.ts"));
+      const source = writeFile(
+        join(root, "src", "cli.ts"),
+        "export const a = 1;\n",
+      );
       const entry = writeFile(
         join(root, "dist", "bin", "guard-entry.ts"),
         guardEntrySource(),
       );
-      setMtime(source, 1_000);
-      setMtime(entry, 2_000);
+      writeFile(
+        join(root, "dist", "bin", "sq-browser.js"),
+        "#!/usr/bin/env node\n",
+      );
+      writeBuildManifest(root);
+
+      setMtime(entry, 1_000);
+      setMtime(source, 2_000);
 
       const result = runGuardEntry(entry);
 
