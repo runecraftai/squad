@@ -69,7 +69,8 @@ environment:
   SQ_BROWSER_CHANNEL       Chrome release channel to target: stable (default), beta,
                                     canary, or dev. Selects which installed Chrome --autoConnect
                                     attaches to, and which one is launched in the default and
-                                    USER_DATA_DIR modes. Ignored with SQ_BROWSER_BROWSER_URL.
+                                    USER_DATA_DIR modes. Ignored with SQ_BROWSER_BROWSER_URL
+                                    and SQ_BROWSER_EXECUTABLE_PATH.
   SQ_BROWSER_HEADED        Set to 1 to run Chrome in headed (visible) mode
   SQ_BROWSER_CHROME_ARGS   Whitespace-separated Chrome flags forwarded to the browser
                                     (no shell-style quoting; flags with spaces are not supported)
@@ -89,6 +90,11 @@ environment:
                                     e.g. '{"Authorization":"Bearer token"}'
   SQ_BROWSER_USER_DATA_DIR Persistent Chrome profile directory (skips --isolated mode)
                                     e.g. "/path/to/.chrome-profile"
+  SQ_BROWSER_EXECUTABLE_PATH
+                                    Path to a Chromium/Chrome executable to launch instead of
+                                    the channel-selected Chrome. Launch modes only; ignored
+                                    with SQ_BROWSER_BROWSER_URL and SQ_BROWSER_AUTO_CONNECT.
+                                    e.g. "/usr/bin/chromium"
   SQ_BROWSER_MCP_PATH      Absolute path to a chrome-devtools-mcp script. When set, the
                                     bridge spawns 'node \$MCP_PATH' directly instead of
                                     'npx -y chrome-devtools-mcp@1.10.1'. Avoids ~30s npx bootstrap

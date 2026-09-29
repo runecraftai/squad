@@ -356,7 +356,7 @@ export function buildBridgeEarlyExitError(
     );
   }
   suggestions.push(
-    "Or Chrome failed to launch; confirm a usable Chrome is installed.",
+    "Or the browser failed to launch; confirm a usable Chrome/Chromium is installed, or point SQ_BROWSER_EXECUTABLE_PATH at the browser binary.",
   );
   return new CdpError(message, "BRIDGE_NOT_READY", suggestions);
 }

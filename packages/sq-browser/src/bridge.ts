@@ -487,6 +487,8 @@ export function buildTransportArgs(): string[] {
   const userDataDir = process.env.SQ_BROWSER_USER_DATA_DIR;
   const executablePath = process.env.SQ_BROWSER_EXECUTABLE_PATH?.trim();
   const channel = process.env.SQ_BROWSER_CHANNEL?.trim();
+  const launchExecutablePath =
+    executablePath && !autoConnect && !browserUrl ? executablePath : undefined;
 
   if (autoConnect) {
     // Chrome 144+ built-in remote debugging via chrome://inspect/#remote-debugging.
@@ -530,8 +532,8 @@ export function buildTransportArgs(): string[] {
     if (process.env.SQ_BROWSER_HEADED !== "1") {
       args.push("--headless");
     }
-    if (executablePath) {
-      args.push(`--executablePath=${executablePath}`);
+    if (launchExecutablePath) {
+      args.push(`--executablePath=${launchExecutablePath}`);
     }
     // Launch modes only: `--chrome-arg` is ignored when chrome-devtools-mcp
     // attaches to a browser somebody else started, and that browser's keychain
@@ -545,7 +547,7 @@ export function buildTransportArgs(): string[] {
   // targets: the running instance --autoConnect attaches to, or the one launched
   // by default. It is irrelevant when attaching to an explicit endpoint, so it is
   // omitted in BROWSER_URL/wsEndpoint mode. Validation is left to chrome-devtools-mcp.
-  if (channel && !browserUrl) {
+  if (channel && !browserUrl && !launchExecutablePath) {
     args.push(`--channel=${channel}`);
   }
 

@@ -308,7 +308,7 @@ On hosts with Chromium or a nonstandard Chrome location, set `SQ_BROWSER_EXECUTA
 export SQ_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ```
 
-This applies when the bridge launches a browser; it is ignored when connecting to an explicit browser URL or using auto-connect. If the binary cannot be launched, check that it is executable and compatible with the installed `chrome-devtools-mcp` version.
+This applies when the bridge launches a browser; it is ignored when connecting to an explicit browser URL or using auto-connect. In a launch mode it takes precedence over `SQ_BROWSER_CHANNEL`, which `chrome-devtools-mcp` treats as mutually exclusive with an explicit executable. If the binary cannot be launched, check that it is executable and compatible with the installed `chrome-devtools-mcp` version.
 
 Pick which installed Chrome release channel to target with `SQ_BROWSER_CHANNEL` - `stable` (the default), `beta`, `canary`, or `dev`:
 
@@ -318,7 +318,7 @@ export SQ_BROWSER_CHANNEL=beta
 ```
 
 This selects which Chrome `--autoConnect` attaches to, and which one is launched in the default and `SQ_BROWSER_USER_DATA_DIR` modes.
-It is ignored when `SQ_BROWSER_BROWSER_URL` is set, since that connects to an explicit endpoint regardless of channel.
+It is ignored when `SQ_BROWSER_BROWSER_URL` is set, since that connects to an explicit endpoint regardless of channel. It is also ignored in launch modes when `SQ_BROWSER_EXECUTABLE_PATH` is set, because those options are mutually exclusive.
 
 ### Keychain isolation
 

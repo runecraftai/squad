@@ -186,6 +186,34 @@ describe("buildTransportArgs", () => {
     );
   });
 
+  it("omits --channel when an explicit executable path is set in launch mode", () => {
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--executablePath=/usr/bin/chromium");
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
+  it("keeps --channel with an executable path in auto-connect mode", () => {
+    process.env.SQ_BROWSER_AUTO_CONNECT = "1";
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--autoConnect");
+    expect(args).toContain("--channel=beta");
+    expect(args.some((a) => a.startsWith("--executablePath"))).toBe(false);
+  });
+
+  it("ignores an explicit executable path when connecting via --browserUrl", () => {
+    process.env.SQ_BROWSER_BROWSER_URL = "http://127.0.0.1:9222";
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    process.env.SQ_BROWSER_CHANNEL = "beta";
+    const args = buildTransportArgs();
+    expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
+    expect(args.some((a) => a.startsWith("--executablePath"))).toBe(false);
+    expect(args.some((a) => a.startsWith("--channel"))).toBe(false);
+  });
+
   it("uses --userDataDir when SQ_BROWSER_USER_DATA_DIR is set", () => {
     process.env.SQ_BROWSER_USER_DATA_DIR = "/path/to/.chrome-profile";
     const args = buildTransportArgs();
