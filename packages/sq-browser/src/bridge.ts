@@ -485,6 +485,7 @@ export function buildTransportArgs(): string[] {
   const autoConnect = process.env.SQ_BROWSER_AUTO_CONNECT === "1";
   const browserUrl = process.env.SQ_BROWSER_BROWSER_URL;
   const userDataDir = process.env.SQ_BROWSER_USER_DATA_DIR;
+  const executablePath = process.env.SQ_BROWSER_EXECUTABLE_PATH?.trim();
   const channel = process.env.SQ_BROWSER_CHANNEL?.trim();
 
   if (autoConnect) {
@@ -528,6 +529,9 @@ export function buildTransportArgs(): string[] {
     }
     if (process.env.SQ_BROWSER_HEADED !== "1") {
       args.push("--headless");
+    }
+    if (executablePath) {
+      args.push(`--executablePath=${executablePath}`);
     }
     // Launch modes only: `--chrome-arg` is ignored when chrome-devtools-mcp
     // attaches to a browser somebody else started, and that browser's keychain

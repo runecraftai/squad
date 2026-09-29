@@ -83,6 +83,8 @@ describe("buildTransportArgs", () => {
     savedEnv.SQ_BROWSER_CHROME_ARGS = process.env.SQ_BROWSER_CHROME_ARGS;
     savedEnv.SQ_BROWSER_BROWSER_URL = process.env.SQ_BROWSER_BROWSER_URL;
     savedEnv.SQ_BROWSER_USER_DATA_DIR = process.env.SQ_BROWSER_USER_DATA_DIR;
+    savedEnv.SQ_BROWSER_EXECUTABLE_PATH =
+      process.env.SQ_BROWSER_EXECUTABLE_PATH;
     savedEnv.SQ_BROWSER_AUTO_CONNECT = process.env.SQ_BROWSER_AUTO_CONNECT;
     savedEnv.SQ_BROWSER_WS_HEADERS = process.env.SQ_BROWSER_WS_HEADERS;
     savedEnv.SQ_BROWSER_CHANNEL = process.env.SQ_BROWSER_CHANNEL;
@@ -90,6 +92,7 @@ describe("buildTransportArgs", () => {
     delete process.env.SQ_BROWSER_CHROME_ARGS;
     delete process.env.SQ_BROWSER_BROWSER_URL;
     delete process.env.SQ_BROWSER_USER_DATA_DIR;
+    delete process.env.SQ_BROWSER_EXECUTABLE_PATH;
     delete process.env.SQ_BROWSER_AUTO_CONNECT;
     delete process.env.SQ_BROWSER_WS_HEADERS;
     delete process.env.SQ_BROWSER_CHANNEL;
@@ -100,6 +103,8 @@ describe("buildTransportArgs", () => {
     process.env.SQ_BROWSER_CHROME_ARGS = savedEnv.SQ_BROWSER_CHROME_ARGS;
     process.env.SQ_BROWSER_BROWSER_URL = savedEnv.SQ_BROWSER_BROWSER_URL;
     process.env.SQ_BROWSER_USER_DATA_DIR = savedEnv.SQ_BROWSER_USER_DATA_DIR;
+    process.env.SQ_BROWSER_EXECUTABLE_PATH =
+      savedEnv.SQ_BROWSER_EXECUTABLE_PATH;
     process.env.SQ_BROWSER_AUTO_CONNECT = savedEnv.SQ_BROWSER_AUTO_CONNECT;
     process.env.SQ_BROWSER_WS_HEADERS = savedEnv.SQ_BROWSER_WS_HEADERS;
     process.env.SQ_BROWSER_CHANNEL = savedEnv.SQ_BROWSER_CHANNEL;
@@ -172,6 +177,13 @@ describe("buildTransportArgs", () => {
     const args = buildTransportArgs();
     expect(args).toContain("--browserUrl=http://127.0.0.1:9222");
     expect(args).toContain("--chrome-arg=--some-flag");
+  });
+
+  it("uses a custom browser binary in launch mode", () => {
+    process.env.SQ_BROWSER_EXECUTABLE_PATH = "/usr/bin/chromium";
+    expect(buildTransportArgs()).toContain(
+      "--executablePath=/usr/bin/chromium",
+    );
   });
 
   it("uses --userDataDir when SQ_BROWSER_USER_DATA_DIR is set", () => {

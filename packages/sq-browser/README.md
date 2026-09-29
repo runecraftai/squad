@@ -302,6 +302,14 @@ export SQ_BROWSER_BROWSER_URL=wss://cluster.example.com/launch
 export SQ_BROWSER_WS_HEADERS='{"Authorization":"Bearer token"}'
 ```
 
+On hosts with Chromium or a nonstandard Chrome location, set `SQ_BROWSER_EXECUTABLE_PATH` to the browser binary. For example:
+
+```sh
+export SQ_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+```
+
+This applies when the bridge launches a browser; it is ignored when connecting to an explicit browser URL or using auto-connect. If the binary cannot be launched, check that it is executable and compatible with the installed `chrome-devtools-mcp` version.
+
 Pick which installed Chrome release channel to target with `SQ_BROWSER_CHANNEL` - `stable` (the default), `beta`, `canary`, or `dev`:
 
 ```sh
