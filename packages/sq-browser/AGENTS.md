@@ -42,6 +42,7 @@ Every invocation is a short-lived process, so anything that must survive across 
 Three processes: CLI -> bridge -> chrome-devtools-mcp (which drives headless Chrome over CDP).
 
 The CLI (`bin/sq-browser.ts` -> `src/cli.ts`) parses args, calls MCP tools through the bridge, and formats output.
+Before anything else, `bin/sq-browser.ts` runs the stale-build guard (`src/build-guard.ts`): when the running compiled entry lives under `dist/bin/` and the package also ships `src/`, any `.ts` source newer than that entry means the local build predates its source, so the CLI exits with `STALE_BUILD_EXIT_CODE` (49) and a rebuild instruction instead of silently running old behavior. The guard is inert for published packages (no `src/`) and for source-mode entrypoints outside `dist/bin/`, and `SQ_BROWSER_SKIP_BUILD_CHECK=1` bypasses it; `test/build-guard.test.ts` covers the decision and the process boundary.
 `ensureBridge` (`src/client.ts`) reads its session's `bridge.pid` (`~/.sq-browser/bridge.pid` for the default session) and reuses a live bridge only after a **deep** health check (`/health?deep=1` drives one CDP-backed `list_pages` call), so a bridge whose attached browser died gets terminated and respawned instead of reused as a stale endpoint.
 Otherwise it spawns the bridge (`bin/sq-browser-bridge.ts` -> `src/bridge.ts`) **detached** as a process group leader and polls health until the `SQ_BROWSER_BRIDGE_TIMEOUT_MS` deadline (default 30s).
 
