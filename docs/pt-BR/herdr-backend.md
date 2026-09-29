@@ -277,7 +277,7 @@ Ainda existe um processo de sentinela; o event reader é um filho limitado daque
 ## Suporte do supervisor do modo ausente
 
 O daemon away suporta apenas panes supervisor de tmux e Herdr.
-Ele recusa Zellij, Orca e cmux como backends de supervisor em vez de aplicar o transporte errado.
+Ele recusa Zellij, Orca, cmux e TUIOS como backends de supervisor em vez de aplicar o transporte errado.
 Para Herdr, existência do alvo, estado nativo, captura, estado do composer e submit verificado todos roteiam pelo dispatcher compartilhado do backend e o dono explícito de CLI da sessão nomeada.
 O alerta pane-independente de max-defer é configurado em [`wedge-alarm.md`](wedge-alarm.md).
 

@@ -80,7 +80,7 @@
 #                                   resolves the runtime Squad itself is
 #                                   executing inside - $TMUX_PANE selects tmux,
 #                                   $HERDR_ENV=1 selects herdr - falling back to
-#                                   tmux). zellij, orca, and cmux are not yet
+#                                   tmux). zellij, orca, cmux, and tuios are not yet
 #                                   supported as supervisor backends; the daemon
 #                                   refuses loudly at startup rather than trying
 #                                   tmux primitives against a non-tmux pane.
@@ -185,8 +185,8 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# and cmux are real backends elsewhere in Squad (bin/sq-backend.sh) but this
-# daemon has no verified composer/busy primitives wired up for them yet - see
+# cmux, and tuios are real backends elsewhere in Squad (bin/sq-backend.sh) but
+# this daemon has no verified composer/busy primitives wired up for them yet - see
 # docs/herdr-backend.md and AGENTS.md section 4's
 # harness-verification discipline. Selecting one refuses loudly at startup
 # instead of silently running tmux primitives against a pane that is not a tmux
@@ -592,7 +592,9 @@ pane_is_busy() {  # <target> [backend]
   harness=$(fm_daemon_primary_harness)
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
   case "$native" in
-    busy) return 0 ;;
+    # A native blocking prompt (TUIOS `needs_input`/`errored`) is as unsafe to
+    # inject into as a mid-turn pane: the text would land on the prompt.
+    busy|blocked) return 0 ;;
   esac
   tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
   printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
@@ -1384,7 +1386,7 @@ fm_super_main() {
   local BACKEND="$SQUAD_SUPERVISOR_BACKEND"
 
   # --- refuse an unsupported supervisor backend loudly, before ever trying a
-  # tmux/herdr-specific call against it (zellij, orca, and cmux have no verified
+  # tmux/herdr-specific call against it (zellij, orca, cmux, and tuios have no verified
   # composer/busy primitives wired up for this daemon yet - AGENTS.md section 4
   # harness-verification discipline). This is the clear refusal the task calls
   # for, instead of a confusing "does not resolve to a tmux pane" error.

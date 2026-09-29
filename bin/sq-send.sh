@@ -15,6 +15,9 @@
 # submit or reports an inconclusive send. If a swallowed Enter is positively
 # confirmed, sq-send exits NON-ZERO so the caller knows the steer did not land
 # instead of silently leaving an unsubmitted instruction.
+# A backend whose delivery verdict can prove the text WAS typed but not taken
+# (`stalled`, TUIOS's queue stall gate) is reported with its own non-zero
+# message that says so and forbids a blind resend.
 # Submission dispatches through the target's recorded backend; the tmux adapter
 # shares its composer/submit core with the away-mode daemon via bin/sq-tmux-lib.sh.
 # Tune with SQUAD_SEND_RETRIES (default 3) / SQUAD_SEND_SLEEP (0.4).
@@ -616,6 +619,24 @@ else
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
       echo "error: text not sent to $T (${failure_path:-$TARGET_BACKEND terminal} failed; tried $RESOLUTION_TRIED)" >&2
+      exit 1
+      ;;
+    stalled|prompt_stalled)
+      # The bytes were typed and the agent showed no sign of taking them. Never
+      # retype or resend: the text may be sitting in the pane's input box.
+      if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
+        fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+      fi
+      echo "error: text was typed into $T but the agent showed no sign of taking it (verdict=${verdict:-unknown}; tried $RESOLUTION_TRIED); inspect the pane before resending" >&2
+      exit 1
+      ;;
+    agent_blocked|queue_full|not_ready)
+      # The target declined before anything was typed, or its agent queue is
+      # full. The distinct verdict names which; nothing is retried.
+      if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
+        fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+      fi
+      echo "error: text not sent to $T (nothing was typed; verdict=${verdict:-unknown}; tried $RESOLUTION_TRIED)" >&2
       exit 1
       ;;
     *)

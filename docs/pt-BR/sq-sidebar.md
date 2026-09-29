@@ -97,7 +97,7 @@ Veja o cabeçalho de `bin/sq-window-state.sh` para o contrato de formato do arqu
 
 ## Limites
 
-- A sidebar mostra apenas janelas de tarefa do backend tmux; tarefas orca, herdr, zellij, cmux e XO não têm janela tmux para mostrar.
+- A sidebar mostra apenas janelas de tarefa do backend tmux; tarefas orca, herdr, zellij, cmux, tuios e XO não têm janela tmux para mostrar.
 - A sidebar lê do diretório de estado do Squad; ela não escreve de volta ao Squad.
 
 ## Ponto de entrada de regressão

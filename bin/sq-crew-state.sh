@@ -44,7 +44,9 @@
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
 #      agree, and are reported as parked.
 #   4. No run for this crew (pre-validation, or kind=recon): fall back to the
-#      recorded backend's pane busy state, then the status log's last line only
+#      recorded backend's pane busy state (a native `blocked` verdict reports
+#      blocked and carries the prompt the backend read), then the status log's
+#      last line only
 #      when its verb maps to a recognized run-state. Decision-only events such as
 #      `resolved` never become current state or detail.
 #   5. Missing meta or torn-down worktree: report unknown · none. If no run is
@@ -604,6 +606,17 @@ if [ "$KIND" != xo ]; then
   BUSY_VERDICT=$(operator_busy_verdict "$BACKEND_TARGET")
   case "${BUSY_VERDICT%% *}" in
     busy) emit working pane "harness busy (${BUSY_VERDICT#* })" ;;
+    blocked)
+      # A classified blocking prompt is not ordinary work: surface it as
+      # blocked with the prompt the backend read (fm_backend_prompt_summary is
+      # empty for backends with no prompt verb).
+      BLOCKED_PROMPT=$(fm_backend_prompt_summary "$TASK_BACKEND" "$BACKEND_TARGET" 2>/dev/null || true)
+      if [ -n "$BLOCKED_PROMPT" ]; then
+        emit blocked pane "harness waiting on a prompt (${BLOCKED_PROMPT})"
+      else
+        emit blocked pane "harness waiting on a prompt (${BUSY_VERDICT#* })"
+      fi
+      ;;
     idle) ;;
     *) emit unknown pane "harness state unavailable ($BUSY_VERDICT)" ;;
   esac

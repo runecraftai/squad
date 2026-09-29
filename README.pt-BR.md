@@ -99,12 +99,12 @@ O toggle `/calm` do Pi esconde elementos de transcript suportados - incluindo li
 
 ### Mais backends
 
-Os guias de configuração do tmux (o padrão) e de todos os outros backends suportados (herdr, zellij, Orca, cmux) estão linkados em [Documentação](#documentação) abaixo.
+Os guias de configuração do tmux (o padrão) e de todos os outros backends suportados (herdr, zellij, Orca, cmux, tuios) estão linkados em [Documentação](#documentação) abaixo.
 
 ## Funcionalidades
 
 - **Um ponto de contato** - você fala somente com o agente da squad; ele despacha, supervisiona, escala apenas decisões reais e reporta resultados claros.
-- **Uma squad visível** - cada operador trabalha na própria janela do tmux, aba experimental herdr/zellij, workspace cmux ou terminal Orca, que você pode assistir ou usar para digitar; o sargento de armas reconcilia.
+- **Uma squad visível** - cada operador trabalha na própria janela do tmux, aba experimental herdr/zellij, workspace cmux, janela TUIOS ou terminal Orca, que você pode assistir ou usar para digitar; o sargento de armas reconcilia.
 - **Worktrees descartáveis** - cada tarefa roda em um worktree git limpo de um [FOB](https://github.com/runecraftai/squad/tree/main/packages/fob) (pool de worktrees), ou em um worktree gerenciado pelo Orca quando `backend=orca`, então trabalho paralelo em um mesmo repositório nunca colide.
 - **Dois formatos de tarefa** - tarefas strike entregam mudanças autorizadas; tarefas recon deixam relatórios de investigação independentes quando o contrato de intake justifica pesquisa separada.
 - **Modos de projeto explícitos** - cada projeto entrega via `drill`, `direct-PR` ou `local-only`, com a flag opcional de autonomia `+yolo`.
@@ -204,6 +204,7 @@ O pacote sq-report usa ambos: a skill pública para descoberta pelo agente e `se
 - [docs/zellij-backend.md](docs/zellij-backend.md) - setup e limites atuais do backend experimental Zellij ([tradução pt-BR](docs/pt-BR/zellij-backend.md)).
 - [docs/orca-backend.md](docs/orca-backend.md) - setup e limites atuais do backend experimental Orca ([tradução pt-BR](docs/pt-BR/orca-backend.md)).
 - [docs/cmux-backend.md](docs/cmux-backend.md) - setup, segurança de socket e limites atuais do backend experimental cmux ([tradução pt-BR](docs/pt-BR/cmux-backend.md)).
+- [docs/tuios-backend.md](docs/tuios-backend.md) - setup, vinculação de sessão explícita e limites atuais do backend experimental TUIOS.
 - [docs/codex-app-backend.md](docs/codex-app-backend.md) - a fronteira atual bloqueada do backend Codex App e o contrato de rollout ([tradução pt-BR](docs/pt-BR/codex-app-backend.md)).
 - [docs/verification/runtime-backends.md](docs/verification/runtime-backends.md) - verificação ativa para mantenedores das garantias dos backends de runtime.
 - [docs/gitlab-merge-sentry.md](docs/gitlab-merge-sentry.md) - verificação para mantenedores do monitoramento de merge GitLab em instâncias arbitrárias ([tradução pt-BR](docs/pt-BR/gitlab-merge-sentry.md)).

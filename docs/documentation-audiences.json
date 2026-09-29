@@ -31,6 +31,7 @@
   "docs/zellij-backend.md",
   "docs/orca-backend.md",
   "docs/cmux-backend.md",
+  "docs/tuios-backend.md",
   "docs/remote-XOs.md",
   "docs/status-notify.md",
   "docs/web-view.md",
@@ -99,6 +100,10 @@
   },
   {
    "source": "docs/cmux-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/tuios-backend.md",
    "target": "docs/verification/runtime-backends.md"
   },
   {
@@ -538,6 +543,10 @@
   {
    "path": "docs/trace-context.md",
    "audience": "maintainer-architecture"
+  },
+  {
+   "path": "docs/tuios-backend.md",
+   "audience": "operator-current"
   },
   {
    "path": "docs/pt-BR/architecture.md",

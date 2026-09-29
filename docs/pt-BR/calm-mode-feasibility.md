@@ -258,7 +258,7 @@ grok 0.2.106 (bde89716f679)
 Estas conclusões são deliberadamente limitadas às versões nomeadas e superfícies suportadas.
 Elas não afirmam que um harness nunca possa adicionar a API de renderer faltante.
 Para o fix de turno-duplicado e a mudança de apresentação mais recente, os templates de lançamento de Claude, Codex, OpenCode, Pi e Grok e os produtores de sentinela, turn-end, session-start, away-supervisor e from-squad foram reinspecionados.
-O encoder canônico e todo caminho de entrega não-Pi permanecem inalterados, e as superfícies de runtime tmux, Herdr, Zellij, Orca e cmux continuam transportando o mesmo input selecionado pelo adaptador de harness.
+O encoder canônico e todo caminho de entrega não-Pi permanecem inalterados, e as superfícies de runtime tmux, Herdr, Zellij, Orca, cmux e TUIOS continuam transportando o mesmo input selecionado pelo adaptador de harness.
 Apenas a implementação de apresentação Calm do Pi mudou; todo produtor e transporte não-Pi permanecem inalterados.
 
 ## Cobertura de regressão

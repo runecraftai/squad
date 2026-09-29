@@ -193,7 +193,7 @@ family_for_basename() {
     sq-quota-array-dispatch-live-e2e.test.sh|sq-send-XO-marker-herdr-e2e.test.sh)
       printf '%s\n' live-harness-optin
       ;;
-    sq-backend-herdr.test.sh|sq-backend-tmux-smoke.test.sh|sq-backend.test.sh|\
+    sq-backend-herdr.test.sh|sq-backend-tmux-smoke.test.sh|sq-backend-tuios.test.sh|sq-backend.test.sh|\
     sq-tmux-agent-liveness.test.sh|\
     sq-claude-account.test.sh|\
     sq-herdr-session-cleanup.test.sh|sq-send-resolve-key.test.sh|sq-send-strict.test.sh|sq-spawn-batch.test.sh|\
@@ -875,6 +875,9 @@ families_for_changed_path() {
     bin/backends/orca*|bin/backends/tmux.sh)
       printf '%s\n' backend-dispatch
       printf '%s\n' orca
+      ;;
+    bin/backends/tuios*)
+      printf '%s\n' backend-dispatch
       ;;
     bin/sq-backend.sh|bin/sq-backend-hometag-lib.sh)
       printf '%s\n' backend-dispatch

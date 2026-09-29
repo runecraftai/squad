@@ -52,15 +52,15 @@ O formato do arquivo não muda em ambos os modos; sq-tasks e edições manuais p
 ## Backend de runtime (config/backend / SQUAD_BACKEND)
 
 Para adaptadores capazes de spawn, o backend de provedor de sessão de runtime controla onde as janelas/endpoints de tarefas são criadas, capturadas, enviadas, monitoradas e encerradas.
-`tmux` é o backend de referência verificado (veja [`docs/tmux-backend.md`](tmux-backend.md)); `herdr`, `zellij`, `orca` e `cmux` são backends de spawn experimentais (veja [`docs/herdr-backend.md`](herdr-backend.md), [`docs/zellij-backend.md`](zellij-backend.md), [`docs/orca-backend.md`](orca-backend.md) e [`docs/cmux-backend.md`](cmux-backend.md)).
-FOB continua sendo o provedor de worktree para tmux, herdr, zellij e cmux, pois herdr, zellij e cmux são apenas provedores de sessão; Orca fornece tanto o worktree da tarefa quanto o endpoint de terminal.
+`tmux` é o backend de referência verificado (veja [`docs/tmux-backend.md`](tmux-backend.md)); `herdr`, `zellij`, `orca`, `cmux` e `tuios` são backends de spawn experimentais (veja [`docs/herdr-backend.md`](herdr-backend.md), [`docs/zellij-backend.md`](zellij-backend.md), [`docs/orca-backend.md`](orca-backend.md), [`docs/cmux-backend.md`](cmux-backend.md) e [`docs/tuios-backend.md`](../tuios-backend.md)).
+FOB continua sendo o provedor de worktree para tmux, herdr, zellij, cmux e TUIOS, pois esses são apenas provedores de sessão; Orca fornece tanto o worktree da tarefa quanto o endpoint de terminal.
 Novos spawns escolhem o backend nesta ordem: um flag `--backend` explícito que a autoridade atual para essa tarefa exata autorizou (uma instrução do comandante presente ou o brief aceito da própria tarefa; nunca precedente por analogia de outra tarefa), depois `SQUAD_BACKEND`, depois a primeira linha não vazia do `config/backend` local gitignored, depois auto-detecção de runtime a partir de `$TMUX`, `HERDR_ENV=1` ou sinais de runtime do cmux, depois o padrão `tmux`.
 Se mais de um marcador de runtime estiver presente, a detecção resolve de dentro para fora: `$TMUX` é verificado antes de `HERDR_ENV=1`, que é verificado antes do marcador primário `CMUX_WORKSPACE_ID` do cmux e seus sinais de fallback documentados — tmux ou herdr iniciados de dentro de um terminal cmux é a camada mais interna, atualmente em execução, enquanto o próprio cmux (um aplicativo de terminal, não um multiplexador aninhável) é sempre verificado por último.
 Veja [`docs/cmux-backend.md`](cmux-backend.md#detecção-de-runtime) para por que cmux pode ser selecionado quando `CMUX_WORKSPACE_ID` está ausente.
 Herdr ou cmux auto-detectados imprimem um aviso no stderr nomeando `config/backend` e `--backend tmux` como opt-outs; tmux auto-detectado fica silencioso para preservar o comportamento padrão existente.
-Zellij e Orca nunca são auto-detectados; selecione-os colocando o nome em um arquivo local `config/backend`, exportando `SQUAD_BACKEND=<nome>` ou dizendo ao sargento de armas no chat.
-Qualquer valor diferente de `tmux`, `herdr`, `zellij`, `orca` ou `cmux` é rejeitado até que outro adaptador seja implementado e verificado.
-`sq-spawn.sh` aceita `tmux`, `herdr`, `zellij`, `orca` e `cmux` para tarefas de ship e recon; `backend=orca` e `backend=cmux` ainda recusam `--xo` até que a semântica de lançamento de XO seja projetada para cada um.
+Zellij, Orca e TUIOS nunca são auto-detectados; selecione-os colocando o nome em um arquivo local `config/backend`, exportando `SQUAD_BACKEND=<nome>` ou dizendo ao sargento de armas no chat.
+Qualquer valor diferente de `tmux`, `herdr`, `zellij`, `orca`, `cmux` ou `tuios` é rejeitado até que outro adaptador seja implementado e verificado.
+`sq-spawn.sh` aceita `tmux`, `herdr`, `zellij`, `orca`, `cmux` e `tuios` para tarefas de ship e recon; `backend=orca`, `backend=cmux` e `backend=tuios` ainda recusam `--xo` até que a semântica de lançamento de XO seja projetada para cada um.
 `codex-app` ainda não é um backend de runtime aceito; [`docs/codex-app-backend.md`](codex-app-backend.md) é dona do limite do Codex App.
 A varredura de vivacidade de XO no início de sessão usa o classificador de grau de recuperação `fm_backend_agent_state` onde verificado.
 O comentário acima daquela função em `bin/sq-backend.sh` é o único dono de seu contrato de estado detalhado e autorização de recuperação.
@@ -69,12 +69,14 @@ Um spawn herdr adicionalmente faz gate de versão contra o protocolo do binário
 Um spawn zellij adicionalmente faz gate de versão contra a versão do binário `zellij` instalado e requer `jq`, recusando alto e ruidosamente quando qualquer um estiver ausente ou a versão for anterior a 0.44.
 Um spawn cmux adicionalmente faz gate de versão contra a versão do binário `cmux` instalado, requer `jq` e requer que o socket de controle esteja acessível e acessível (veja [`docs/cmux-backend.md`](cmux-backend.md) "Setup" para a configuração de acesso ao socket uma vez que precisa; modo Automation é o modo de controle de socket recomendado, com modo Password suportado via `config/cmux-socket-password`), recusando alto e de forma não retentável em um socket `cmuxOnly`/não autenticado.
 Uma recusa de spawn de backend por dependência ausente, gate de versão ou socket não autenticado é terminal para aquele backend selecionado; Squad o apresenta como um bloqueio em vez de silenciosamente retentar outro backend.
+Um spawn TUIOS requer TUIOS 0.8.0 ou mais novo, `jq`, e uma sessão existente explícita em `SQUAD_TUIOS_SESSION`; nunca seleciona uma sessão TUIOS ambiente incidental nem cria/reinicia uma.
 Metadados de tarefa gravam `backend=` apenas para um backend não padrão; um `backend=` ausente significa `tmux`, preservando metadados existentes do caminho padrão.
 Cada nova tarefa grava `endpoint_task_id=` como o vínculo de limpeza entre o nome do arquivo de metadados e seu endpoint de runtime opaco.
 Uma tarefa herdr adicionalmente grava `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=` e `herdr_pane_id=`.
 Uma tarefa zellij adicionalmente grava `zellij_session=`, `zellij_tab_id=` e `zellij_pane_id=`.
 Uma tarefa Orca adicionalmente grava `orca_worktree_id=` e `terminal=`, com `window=sq-<id>` mantido como o alias Squad compartilhado.
 Uma tarefa cmux adicionalmente grava `cmux_workspace_id=` e `cmux_surface_id=`.
+Uma tarefa TUIOS adicionalmente grava `tuios_session=`, `tuios_window_id=` e `tuios_boot_id=`.
 Seletores de tarefa para `sq-peek.sh`, `sq-send.sh` e `sq-crew-state.sh` resolvem centralmente através de `fm_backend_resolve_selector`.
 Um seletor contendo `:` é passado como escape explícito do endpoint do backend.
 Caso contrário, uma correspondência exata do id da tarefa com `state/<id>.meta` vence antes do fallback legado do label `sq-<id>`, então ids de tarefa que começam com `sq-` roteiam para seus próprios metadados em vez de serem removidos.
@@ -96,6 +98,7 @@ Use o caminho de limpeza protegido descrito em [`docs/zellij-backend.md`](zellij
 cmux não tem camada de sessão — um workspace por tarefa, em qualquer janela cmux aberta — e sua senha de socket (quando configurada) é lida de `config/cmux-socket-password` local, gitignored, sob o diretório de config efetivo, nunca commitada.
 O label voltado para o chamador continua `sq-<id>`, mas o título real do workspace cmux é escopado pelo label legível do `SQUAD_BASE` ativo mais um hash curto do caminho `SQUAD_ROOT` resolvido como `sq-<base-label>-<id>`.
 Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](cmux-backend.md#operação-e-segurança-atuais), nunca enumerar-e-fechar cada workspace.
+TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; suas janelas de tarefa são escopadas por ids opacos e a limpeza nunca remove a sessão.
 `config/backend` é herdado para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
@@ -106,7 +109,7 @@ Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr` e `SQUAD_SUPERVISOR_TARGET=<alvo>` 
 Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois recua para `tmux`.
 Isso mantém um painel tmux aninhado dentro de herdr no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
 A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois o fallback legado `Squad:0` do tmux com um aviso.
-Selecionar qualquer outro backend de supervisor, incluindo `zellij`, `orca` ou `cmux`, recusa na inicialização do daemon em vez de tentar primitivas de injeção tmux contra um painel não-tmux.
+Selecionar qualquer outro backend de supervisor, incluindo `zellij`, `orca`, `cmux` ou `tuios`, recusa na inicialização do daemon em vez de tentar primitivas de injeção tmux contra um painel não-tmux.
 
 ## Canais de alarme wedge de away-mode (config/wedge-alarm)
 
@@ -302,11 +305,11 @@ Esta seção é a única dona dessa lista de toolchain universal; pré-requisito
 Nessa lista, drill executa o pipeline de validação, sq-gh, sq-browser e sq-report cobrem operações de GitHub, browser e review enriquecido, e sq-tasks mais sq-quota dão suporte a mutações de backlog e dispatch de array ciente de quota.
 Ferramentas de validação de frontend — Playwright MCP, o CLI Playwright e o padrão de validação visual automática de PR — são cobertas em [playwright-validation.md](playwright-validation.md).
 O delta por backend é exigido apenas para o backend resolvido a partir de `SQUAD_BACKEND`, depois `config/backend`, depois auto-detecção de runtime, depois o padrão `tmux`, então uma base nunca é instruída a instalar uma ferramenta que um backend ou feature inativo precisaria.
-Esse delta é dono no código por `fm_backend_required_tools` em `bin/sq-backend.sh`: o CLI provedor de sessão do próprio backend resolvido (`tmux`, `herdr`, `zellij`, `orca` ou `cmux`), `jq` para os adaptadores experimentais que emitem JSON (`herdr`, `zellij`, `cmux`) cujos caminhos de spawn e vivacidade parseiam a saída JSON do backend, e o provedor de worktree `fob` para cada backend apenas-provedor-de-sessão (`tmux`, `herdr`, `zellij`, `cmux`).
+Esse delta é dono no código por `fm_backend_required_tools` em `bin/sq-backend.sh`: o CLI provedor de sessão do próprio backend resolvido (`tmux`, `herdr`, `zellij`, `orca`, `cmux` ou `tuios`), `jq` para os adaptadores experimentais que emitem JSON (`herdr`, `zellij`, `cmux`, `tuios`) cujos caminhos de spawn e vivacidade parseiam a saída JSON do backend, e o provedor de worktree `fob` para cada backend apenas-provedor-de-sessão (`tmux`, `herdr`, `zellij`, `cmux`, `tuios`).
 Disponibilidade de ferramentas do backend usa o resolvedor executável do próprio adaptador, então bootstrap e spawn concordam em locais não-`PATH` suportados como o CLI empacotado do cmux.
 Um backend resolvido desconhecido emite `BACKEND_INVALID` e bloqueia o dispatch em vez de silenciosamente descartar seu delta de dependência ou recuar para tmux.
 Orca fornece tanto o worktree da tarefa quanto o endpoint de terminal (veja "Backend de runtime" acima), então `backend=orca` requer apenas `orca` além da toolchain universal e pula tanto `fob` quanto o CLI de sessão de cada outro backend.
-Uma base herdr, zellij ou cmux portanto nunca é instruída de que `tmux` está ausente, e a verificação de upgrade de aluguel durável `fob` é executada apenas para backends que realmente usam fob.
+Uma base herdr, zellij, cmux ou tuios portanto nunca é instruída de que `tmux` está ausente, e a verificação de upgrade de aluguel durável `fob` é executada apenas para backends que realmente usam fob.
 Quando `config/crew-dispatch.json` existe, bootstrap também requer `jq` para validação de perfil de dispatch.
 Quando Relay está ativado, bootstrap também requer `curl` e `jq` antes de armar o shim de poll do relay.
 `sq-tasks` e `sq-quota` são ferramentas obrigatórias de bootstrap em cada perfil, a mesma classe de `sq-report`.
@@ -549,7 +552,7 @@ SQUAD_DATA_OVERRIDE=        # diretório data alternativo, principalmente para t
 SQUAD_PROJECTS_OVERRIDE=    # diretório projects alternativo, principalmente para testes
 SQUAD_CONFIG_OVERRIDE=      # diretório config alternativo, principalmente para testes
 SQUAD_PROC_ROOT_OVERRIDE=   # /proc root alternativo para leituras de identidade de processo Linux em sq-stand-to-lib.sh e sq-teardown.sh, principalmente para testes
-SQUAD_BACKEND=             # sobrescrever backend de runtime opcional para novos spawns; tmux/herdr/zellij/orca/cmux suportam spawns ship/recon, codex-app não é aceito
+SQUAD_BACKEND=             # sobrescrever backend de runtime opcional para novos spawns; tmux/herdr/zellij/orca/cmux/tuios suportam spawns ship/recon, codex-app não é aceito
 SQUAD_TRACE_CONTEXT=       # sobrescrever trace-context opcional; veja "Propagação de trace context"
 HERDR_SESSION=default  # apenas herdr: sessão nomeada para operações normais de backend; insuficiente para limpeza destrutiva (docs/herdr-backend.md)
 SQUAD_BACKEND_HERDR_COMPOSER_LINES=20  # apenas herdr: linhas de cauda escaneadas por caminhos de fallback/guard de composer-state; submissão de confirmação de idle-baseline usa agent-state
@@ -561,6 +564,7 @@ SQUAD_BACKEND_HERDR_SUBMIT_MIN_SLEEP=0.6  # apenas herdr: orçamento mínimo de 
 SQUAD_BACKEND_ORCA_COMPOSER_LINES=200  # apenas orca: linhas de leitura de terminal escaneadas para localizar a linha de composer para verificação de submissão
 SQUAD_BACKEND_ORCA_IDLE_RE='^Type a message\.\.\.$'  # apenas orca: regex de placeholder de composer vazio após remoção de borda/prompt
 SQUAD_ZELLIJ_SESSION=Squad  # apenas zellij: sessão nomeada para operações normais de backend e isolamento de teste (docs/zellij-backend.md)
+SQUAD_TUIOS_SESSION=       # apenas tuios: sessão existente explícita para operações de backend (docs/tuios-backend.md)
 SQUAD_BACKEND_CMUX_COMPOSER_LINES=20  # apenas cmux: linhas de cauda escaneadas para localizar a linha de composer para verificação de submissão
 SQUAD_BACKEND_CMUX_IDLE_RE='^Type a message\.\.\.$'  # apenas cmux: regex de placeholder de composer vazio após remoção de borda/prompt
 CMUX_SOCKET_PASSWORD=   # apenas cmux: fallback de senha de socket quando config/cmux-socket-password está ausente (docs/cmux-backend.md)

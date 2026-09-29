@@ -7,7 +7,7 @@ import {
 } from "./sq-arm-command-policy.mjs";
 
 // Keep this literal synchronized with SQUAD_BACKEND_KNOWN in bin/sq-backend.sh.
-export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux"]);
+export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux", "tuios"]);
 
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish"]);
 const MAX_DEPTH = 8;

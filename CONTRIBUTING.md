@@ -41,7 +41,7 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
   Everything personal to one commander's unit (`.env`, `data/`, `state/`, `config/`, `projects/`, `.drill/`) is gitignored; never commit it.
   The root `.tasks.toml` is tracked `sq-tasks` config for `data/backlog.md`; compatible `sq-tasks` is the default backend for routine backlog mutations, with the compatibility definition owned by [`docs/configuration.md`](docs/configuration.md) ("Backlog backend").
   A local `config/backlog-backend=manual` opt-out forces Squad's routine backlog updates to hand-editing and stays gitignored; validated XO handoffs still delegate through `sq-tasks mv`.
-  A local `config/backend` file explicitly overrides runtime auto-detection for new task endpoints and stays gitignored; spawn-supported values are `tmux` plus experimental `herdr`, `zellij`, `orca`, and `cmux`, while `codex-app` is documented only in `docs/codex-app-backend.md`.
+  A local `config/backend` file explicitly overrides runtime auto-detection for new task endpoints and stays gitignored; [`docs/configuration.md`](docs/configuration.md#runtime-backend-configbackend--squad_backend) owns the spawn-supported values, while `codex-app` is documented only in `docs/codex-app-backend.md`.
   It does not make `data/` tracked.
 - Most helper scripts in `bin/` are plain bash; `sq-skill-verify.py` and `sq-evidence-receipt.sh` are the Python entrypoints (the latter uses a `.sh` extension but runs via `#!/usr/bin/env python3`).
   Command-line helpers start with a usage header comment or docstring; keep it accurate when you change behavior.

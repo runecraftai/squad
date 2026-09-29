@@ -26,13 +26,25 @@ Read the targeted current state with `bin/sq-crew-state.sh <id>` before deciding
 A drill run matched to the operator's branch and current code remains authoritative when the endpoint is dead: handle a terminal or parked run through the normal lifecycle, and keep supervising an active run instead of creating a duplicate worker.
 
 When no authoritative run accounts for the task, inspect only its recorded backend and worktree inventory.
-Use `fob status` for fob-backed tmux, herdr, zellij, or cmux tasks, and use the recorded `orca_worktree_id=` and `terminal=` for Orca tasks.
+Use `fob status` for fob-backed tmux, herdr, zellij, cmux, or TUIOS tasks, and use the recorded `orca_worktree_id=` and `terminal=` for Orca tasks.
 Do not sweep another base's endpoints or infer ownership from a matching window label.
 
 Before relaunch, prove that no live agent still owns the recorded task and that the existing worktree remains available.
 Preserve its uncommitted changes and commits, keep the same task identity, and resume or relaunch the recorded harness in that existing worktree with the same brief plus a concise progress note.
 Do not use a fresh generic spawn while the recorded worktree is unaccounted for, because allocating another worktree can split one task across two copies.
 If the worktree or ownership cannot be reconciled safely, leave all state intact and report the task failed or blocked with the conflicting evidence.
+
+### TUIOS restart recovery
+
+A TUIOS daemon restart restores every window id and name but starts a fresh shell in every pane, so the recorded endpoint classifies as `dead` instead of a live agent; `docs/tuios-backend.md` "Restart recovery" owns the mechanism.
+Before relaunching, attempt the product's own conversation resume for the recorded harness:
+
+```sh
+SQUAD_TUIOS_SESSION=<session> bash -c 'source "$SQUAD_ROOT/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_resume_agent <session>:<window> <harness>'
+```
+
+`resumed` means the conversation is back and the pane is the same task endpoint, so keep it and send the same brief plus a progress note.
+`unsupported` means the installed harness manifest has no resume command (Pi is one), and every other result falls through to the normal safe relaunch path, which reuses the restored window and the task's recorded worktree instead of allocating a second copy.
 
 ## False stall notifications
 

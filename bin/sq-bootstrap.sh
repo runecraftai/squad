@@ -768,6 +768,7 @@ install_cmd() {
 manual_install_url() {
   case "$1" in
     herdr) echo "https://herdr.dev" ;;
+    tuios) echo "https://tuios.dev/docs/getting-started#install" ;;
     *) return 1 ;;
   esac
 }
@@ -783,8 +784,8 @@ missing_tool_diagnostic() {
 
 # Required-tool detection follows the RESOLVED backend, not a one-size default:
 # a universal toolchain every base needs plus the backend-specific delta owned by
-# fm_backend_required_tools (bin/sq-backend.sh). So a herdr/zellij/cmux base is
-# never told tmux is missing, and only orca drops fob. A backend value with
+# fm_backend_required_tools (bin/sq-backend.sh). So a herdr/zellij/cmux/tuios
+# base is never told tmux is missing, and only orca drops fob. A backend value with
 # no verified dependency set is reported before the universal checks continue.
 COMMON_TOOLS="node git gh drill sq-gh sq-browser sq-report sq-quota sq-tasks"
 BACKEND=$(fm_backend_name)

@@ -95,7 +95,7 @@ See `bin/sq-window-state.sh` header for the file format contract.
 
 ## Limits
 
-- The sidebar shows only tmux-backend task windows; orca, herdr, zellij, cmux, and XO tasks have no tmux window to show.
+- The sidebar shows only tmux-backend task windows; orca, herdr, zellij, cmux, tuios, and XO tasks have no tmux window to show.
 - The sidebar reads from Squad's state directory; it does not write back to Squad.
 
 ## Regression entry point
