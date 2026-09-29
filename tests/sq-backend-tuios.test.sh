@@ -25,6 +25,8 @@ case "${1:-}" in
       printf '{"windows":[{"window_id":"w-opaque_7","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_NO_IDENTITY:-0}" = 1 ]; then
       printf '{"windows":[{"name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_CONFLICTING_ID:-0}" = 1 ]; then
+      printf '{"windows":[{"window":{"id":"w-opaque_7"},"id":"stale-id","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"}}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
@@ -101,6 +103,13 @@ SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE=1
 export SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'window_id-identified inventory must corroborate presence, never report missing'
 unset SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE
+
+# The inventory must resolve identity with the same nested-first priority as
+# get-window, so a stale scalar id cannot hide a live window.
+SQUAD_TUIOS_FAKE_CONFLICTING_ID=1
+export SQUAD_TUIOS_FAKE_CONFLICTING_ID
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'nested window id must win over a stale scalar id, never report missing'
+unset SQUAD_TUIOS_FAKE_CONFLICTING_ID
 
 # An element without a recognizable identity must invalidate the whole
 # inventory as unreadable instead of reading as a reliable omission.

@@ -139,7 +139,7 @@ Both recorded runtime identities now classify the exact `pi-launcher` foreground
 Backend applicability was reviewed across every spawn adapter.
 Tmux needs the exact `pi-launcher`, `pi-signed`, `pi`, and `Pi` process identities for recovery-grade liveness.
 Herdr uses native registered-agent state and needs no process-name branch.
-Zellij has no verified recovery-grade agent process probe, while Orca, cmux, and TUIOS do not support XO spawns, so those four retain their existing generic ordinary-launch semantics without a new liveness matcher.
+Zellij has no verified recovery-grade agent process probe, while Orca and cmux do not support XO spawns, so those three retain their existing generic ordinary-launch semantics without a new liveness matcher. TUIOS also refuses XO spawns but adds a recovery-grade classifier that corroborates the exact window against agent inventory.
 
 The structural multi-row composer reader, Kimi pointer-delivery path, and OpenCode 1.18.4 busy-queue behavior are pinned by:
 
