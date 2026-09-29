@@ -33,6 +33,10 @@ case "${1:-}" in
       printf '{"windows":[{"id":"w-opaque_7","custom_name":"sq-durable","title":"pi - live","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"}}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOWS:-0}" = 1 ]; then
+      printf '{"error":{"code":"daemon_unreachable"},"windows":[]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_STRING_WINDOW:-0}" = 1 ]; then
+      printf '{"windows":[{"window":"w-opaque_7","name":"sq-task-1"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
       printf '{"windows":[]}\n'
     else
@@ -48,7 +52,9 @@ case "${1:-}" in
   get-window)
     # A session with an attached client omits the daemon cwd from this shape;
     # list-windows is the shape that always carries it.
-    if [ "${SQUAD_TUIOS_FAKE_ATTACHED_CLIENT:-0}" = 1 ]; then
+    if [ "${SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOW:-0}" = 1 ]; then
+      printf '{"error":{"code":"window_gone"},"window":{"id":"w-opaque_7","name":"sq-task-1"}}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_ATTACHED_CLIENT:-0}" = 1 ]; then
       printf '{"window":{"id":"w-opaque_7","name":"%s","has_foreground_process":true}}\n' "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}"
     else
       printf '{"window":{"id":"w-opaque_7","name":"%s","cwd":"/tmp/wt","has_foreground_process":false}}\n' "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}"
@@ -83,6 +89,16 @@ SQUAD_TUIOS_FAKE_ATTACHED_CLIENT=1
 export SQUAD_TUIOS_FAKE_ATTACHED_CLIENT
 [ "$(fm_backend_tuios_current_path owned:w-opaque_7)" = '/tmp/wt' ] || fail 'cwd must come from the daemon inventory while a client is attached'
 unset SQUAD_TUIOS_FAKE_ATTACHED_CLIENT
+
+# A flat window: string record without a top-level cwd must not raise a jq
+# indexing error from the worktree-discovery probe; it reads as no path.
+SQUAD_TUIOS_FAKE_STRING_WINDOW=1
+export SQUAD_TUIOS_FAKE_STRING_WINDOW
+current_path_out=$(fm_backend_tuios_current_path owned:w-opaque_7 2>"$TMP_ROOT/current-path-err") \
+  || fail 'a string-shaped window record must not fail the discovery probe'
+[ -z "$current_path_out" ] || fail 'a string-shaped window record carries no cwd, so the probe must be empty'
+[ -s "$TMP_ROOT/current-path-err" ] && fail 'a silent read failure must not leak a jq indexing error'
+unset SQUAD_TUIOS_FAKE_STRING_WINDOW
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'capture-pane --session owned --window w-opaque_7 --scrollback --lines 10' 'capture did not use supported bounded scrollback flags'
 
 # Operator-controlled payload text must never be parsed as TUIOS options: a
@@ -111,6 +127,27 @@ if fm_backend_tuios_create_task owned sq-dupe /tmp/wt >/dev/null 2>&1; then
   fail 'an unreadable window inventory must refuse duplicate-name creation'
 fi
 unset SQUAD_TUIOS_FAKE_ERROR_INVENTORY
+
+# An error envelope that still carries a syntactically valid array must never
+# read as an authoritative empty inventory, or recovery would relaunch a task.
+SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOWS=1
+export SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOWS
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = unreadable ] || fail 'an error envelope with an empty windows array must stay unreadable, never missing'
+if fm_backend_tuios_create_task owned sq-errwin /tmp/wt >/dev/null 2>&1; then
+  fail 'an error-envelope inventory must refuse duplicate-name creation'
+fi
+[ "$(grep -c 'new-window sq-errwin' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'error-envelope inventory must not authorize window creation'
+unset SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOWS
+
+# The single-window read has the same envelope gap: an error that happens to
+# carry a matching window object must stay unreadable, never a ready target.
+SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOW=1
+export SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOW
+if fm_backend_tuios_target_exists owned:w-opaque_7 sq-task-1; then
+  fail 'an error envelope that carries a window object must not read as a ready target'
+fi
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = unreadable ] || fail 'an error envelope on get-window must keep agent state unreadable'
+unset SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOW
 
 if fm_backend_tuios_create_task owned sq-task-1 /tmp/wt >/dev/null 2>&1; then
   fail 'an existing TUIOS task label must refuse duplicate-name creation'

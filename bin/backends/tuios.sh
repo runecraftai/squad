@@ -49,6 +49,10 @@ SQUAD_BACKEND_TUIOS_JQ_LIB='
   def tlabels: [ (.name // empty), (.title // empty), (.custom_name // empty), (.display_name // empty),
                  (if (.window | type) == "object" then (.window.name // empty), (.window.title // empty), (.window.custom_name // empty), (.window.display_name // empty) else empty end) ]
             | map(select(type == "string" and length > 0));
+  def terror: [ (.error? // empty)
+                | if type == "object" then (.code // .message // .detail // empty) else . end
+                | select(type == "string" and length > 0) ]
+            | length > 0;
 '
 
 fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
@@ -56,6 +60,7 @@ fm_backend_tuios_list_windows_json() {  # <session> -> validated windows invento
   json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
   printf '%s' "$json" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     type == "object"
+    and (terror | not)
     and (.windows | type == "array")
     and all(.windows[]; type == "object" and ((tids | unique | length) == 1))
   ' >/dev/null 2>&1 || return 1
@@ -76,7 +81,9 @@ fm_backend_tuios_window_info() {  # <session> <opaque-window-id>
   local session=$1 window=$2 json
   json=$(fm_backend_tuios_cli "$session" get-window --json -- "$window" 2>/dev/null) || return 1
   printf '%s' "$json" | jq -e --arg id "$window" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    (tids | unique | length) == 1 and (tids | index($id)) != null
+    (terror | not)
+    and ((tids | unique | length) == 1)
+    and ((tids | index($id)) != null)
   ' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
 }
@@ -129,7 +136,7 @@ fm_backend_tuios_current_path() {  # <target>
   windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || return 1
   printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     [.windows[] | select((tids | index($id)) != null)]
-    | if length == 1 then (.[0].cwd // .[0].window.cwd // empty) else empty end'
+    | if length == 1 then (.[0].cwd // (.[0].window? | .cwd?) // empty) else empty end'
 }
 
 fm_backend_tuios_composer_state() {  # Pi UI is not proof of delivery: return unknown.
