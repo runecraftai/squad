@@ -32,6 +32,7 @@ case "${1:-}" in
       printf '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done"}]}\n'
     fi
     ;;
+  get-agent-state) printf '{"state":"%s"}\n' "${SQUAD_TUIOS_FAKE_AGENT_STATE:-working}" ;;
   capture-pane) printf 'captured output\n' ;;
   new-window) printf 'w-opaque_7\n' ;;
   *) : ;;
@@ -50,7 +51,7 @@ fm_backend_tuios_tool_check || fail 'minimum TUIOS version should pass'
 [ "$(fm_backend_tuios_capture owned:w-opaque_7 10 sq-task-1)" = 'captured output' ] || fail 'capture failed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'capture-pane --window w-opaque_7 --scrollback --lines 10 --session owned' 'capture did not use supported bounded scrollback flags'
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'agent inventory should corroborate Pi despite foreground=false'
-[ "$(fm_backend_tuios_busy_state owned:w-opaque_7)" = unknown ] || fail 'unknown state must not be inferred'
+[ "$(fm_backend_tuios_busy_state owned:w-opaque_7)" = unknown ] || fail 'a TUIOS-reported agent state must not become a native busy verdict'
 
 SQUAD_TUIOS_FAKE_MISSING=1
 export SQUAD_TUIOS_FAKE_MISSING

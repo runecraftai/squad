@@ -710,6 +710,29 @@ test_herdr_install_requires_manual_action() {
   pass "bootstrap: Herdr manual-install guidance is never executed as a shell command"
 }
 
+test_tuios_missing_cli_is_actionable() {
+  local case_dir fakebin out
+  case_dir="$TMP_ROOT/tuios-missing-cli"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  printf '%s\n' tuios > "$case_dir/home/config/backend"
+  fakebin=$(make_fake_toolchain_no_tmux "$case_dir")
+  # A tuios earlier on PATH that cannot satisfy the version probe is treated as
+  # missing, so the dependency diagnostic must still give actionable guidance.
+  cat > "$fakebin/tuios" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$fakebin/tuios"
+  out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
+  assert_contains "$out" "MISSING_MANUAL: tuios (instructions: https://tuios.dev/docs/getting-started#install)" \
+    "backend=tuios must report actionable install guidance when its CLI is unusable"
+  assert_not_contains "$out" "MISSING: tuios (install:" \
+    "backend=tuios must not advertise manual guidance as an executable install command"
+  pass "bootstrap: an unusable TUIOS CLI yields actionable manual install guidance"
+}
+
 test_cmux_bundled_cli_satisfies_dependency() {
   local case_dir fakebin bundle out
   case_dir="$TMP_ROOT/cmux-bundled-cli"
@@ -1265,6 +1288,7 @@ test_workmux_sidebar_detection
 test_session_provider_backends_do_not_require_tmux
 test_session_provider_backends_gate_own_cli_not_tmux
 test_herdr_install_requires_manual_action
+test_tuios_missing_cli_is_actionable
 test_cmux_bundled_cli_satisfies_dependency
 test_unknown_backend_reports_invalid_configuration
 test_json_backends_require_jq_not_tmux

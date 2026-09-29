@@ -115,16 +115,8 @@ fm_backend_tuios_target_exists() {  # <target> [expected-label]
   fm_backend_tuios_target_ready "$@"
 }
 
-fm_backend_tuios_busy_state() {
-  local target=$1 info
-  fm_backend_tuios_parse_target "$target" || { printf 'unknown'; return 0; }
-  info=$(fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" get-agent-state \
-    --window "$SQUAD_BACKEND_TUIOS_WINDOW" --json 2>/dev/null) || { printf 'unknown'; return 0; }
-  case "$(printf '%s' "$info" | jq -r '.state // empty')" in
-    working|needs_input|errored) printf 'busy' ;;
-    idle|done) printf 'idle' ;;
-    *) printf 'unknown' ;;
-  esac
+fm_backend_tuios_busy_state() {  # <target>
+  printf 'unknown'
 }
 
 fm_backend_tuios_agent_state() {  # <target>
