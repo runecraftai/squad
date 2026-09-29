@@ -13,6 +13,7 @@ fm_backend_tuios_tool_check() {
   local bin version major minor patch
   bin=$(fm_backend_tuios_bin)
   command -v "$bin" >/dev/null 2>&1 || { echo "error: tuios CLI not found: $bin" >&2; return 1; }
+  command -v jq >/dev/null 2>&1 || { echo "error: backend=tuios selected but 'jq' is not installed (required to parse TUIOS JSON output)" >&2; return 1; }
   version=$("$bin" --version 2>/dev/null) || { echo 'error: tuios version query failed' >&2; return 1; }
   version=$(printf '%s\n' "$version" | sed -nE 's/^tuios version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -1)
   [ -n "$version" ] || { echo 'error: unrecognized tuios version output' >&2; return 1; }
@@ -131,14 +132,14 @@ fm_backend_tuios_agent_state() {  # <target>
   id=$(printf '%s' "$info" | jq -r '.window.id // .window_id // .id // empty')
   # Agent inventory is authoritative for identity. get-window's process hint
   # is not: live Pi may report foreground=false while list-agents identifies Pi.
-  foreground=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // .window) == $id)) | unique_by(.id // .window_id // .window) | if length == 1 then (.[0].foreground // .harness_id // .harness // .program // empty) else empty end')
+  foreground=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // .window) == $id)) | unique_by(.id // .window_id // .window) | if length == 1 then (.[0].foreground // .[0].harness_id // .[0].harness // .[0].program // empty) else empty end' 2>/dev/null)
   [ -n "$foreground" ] || { printf 'ambiguous'; return 0; }
-  state=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // .window) == $id)) | unique_by(.id // .window_id // .window) | if length == 1 then (.[0].state // empty) else empty end')
+  state=$(printf '%s' "$agents" | jq -r --arg id "$id" '[.agents[]?, .windows[]?] | map(select((.id // .window_id // .window) == $id)) | unique_by(.id // .window_id // .window) | if length == 1 then (.[0].state // empty) else empty end' 2>/dev/null)
   case "$state" in working|needs_input|done|idle|errored) printf 'alive' ;; *) printf 'ambiguous' ;; esac
 }
 
-fm_backend_tuios_kill() {  # <target> [expected-label]
-  local target=$1 expected=${2:-} session window inventory selected='' candidate matched
+fm_backend_tuios_kill() {  # <target> [unused] [expected-label]
+  local target=$1 expected=${3:-} session window inventory selected='' candidate matched
   fm_backend_tuios_target_ready "$target" "$expected" || return 1
   session=$SQUAD_BACKEND_TUIOS_SESSION
   window=$SQUAD_BACKEND_TUIOS_WINDOW

@@ -876,6 +876,9 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' orca
       ;;
+    bin/backends/tuios*)
+      printf '%s\n' backend-dispatch
+      ;;
     bin/sq-backend.sh|bin/sq-backend-hometag-lib.sh)
       printf '%s\n' backend-dispatch
       printf '%s\n' real-herdr-gated

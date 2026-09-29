@@ -63,6 +63,11 @@ export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = ambiguous ] || fail 'unattributed agent must remain ambiguous'
 unset SQUAD_TUIOS_FAKE_AGENTS
 
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":null,"harness_id":"pi","state":"done"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7 2>/dev/null)" = alive ] || fail 'harness identity fallback must corroborate an agent when foreground is absent'
+unset SQUAD_TUIOS_FAKE_AGENTS
+
 SQUAD_TUIOS_SESSION=owned
 export SQUAD_TUIOS_SESSION
 [ "$(fm_backend_tuios_container_ensure /tmp/project)" = owned ] || fail 'explicitly configured live session should be accepted'
@@ -76,13 +81,26 @@ if SQUAD_TUIOS_SESSION='' PATH="$PATH" bash -c 'source "$1/bin/sq-backend.sh"; f
 fi
 if SQUAD_TUIOS_FAKE_VERSION=0.7.9 fm_backend_tuios_tool_check >/dev/null 2>&1; then fail 'old TUIOS must refuse'; fi
 
+no_jq_bin="$TMP_ROOT/no-jq-bin"
+mkdir -p "$no_jq_bin"
+cp "$TMP_ROOT/fakebin/tuios" "$no_jq_bin/tuios"
+for tool in bash sed head; do
+  ln -sf "$(command -v "$tool")" "$no_jq_bin/$tool"
+done
+real_bash=$(command -v bash)
+if PATH="$no_jq_bin" "$real_bash" -c 'source "$1/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_tool_check' _ "$ROOT" >/dev/null 2>&1; then
+  fail 'missing jq must be refused by the TUIOS tool check'
+fi
+
 TARGET=owned:w-opaque_7
 SQUAD_TUIOS_FAKE_PANES='%7 other-window'
 export SQUAD_TUIOS_FAKE_PANES
-if fm_backend_tuios_kill "$TARGET" sq-task-1; then fail 'foreign pane mapping must refuse cleanup'; fi
+if fm_backend_tuios_kill "$TARGET" '' sq-task-1; then fail 'foreign pane mapping must refuse cleanup'; fi
 [ "$(grep -c 'tmux kill-pane' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'foreign mapping issued a destructive command'
 unset SQUAD_TUIOS_FAKE_PANES
-fm_backend_tuios_kill "$TARGET" sq-task-1 || fail 'exact task window close failed'
+if fm_backend_tuios_kill "$TARGET" '' wrong-label; then fail 'mismatched expected label must refuse cleanup'; fi
+[ "$(grep -c 'tmux kill-pane' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'mismatched label issued a destructive command'
+fm_backend_tuios_kill "$TARGET" '' sq-task-1 || fail 'exact task window close failed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux list-panes -F #{pane_id} #{tuios_window_id}' 'cleanup did not inventory exact TUIOS pane identity'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'tmux kill-pane -t %7' 'cleanup did not close only the mapped exact pane'
 
