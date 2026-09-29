@@ -99,7 +99,7 @@ Pi's `/calm` toggle hides supported transcript chrome - including canonically cl
 
 ### More backends
 
-Setup guides for tmux (the default) and every other supported backend (herdr, zellij, Orca, cmux) are linked in [Documentation](#documentation) below.
+Setup guides for tmux (the default) and every other supported backend (herdr, zellij, Orca, cmux, tuios) are linked in [Documentation](#documentation) below.
 
 ## Features
 

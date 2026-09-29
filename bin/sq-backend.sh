@@ -947,8 +947,8 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
 # successful session inventory and returns `missing` only when it omits the
 # exact window; the Herdr adapter reuses its husk
 # classifier. Zellij remains unverified because its XO ghost-tab and
-# agent-process recovery path has not been empirically validated. Orca and cmux
-# do not support XO spawns.
+# agent-process recovery path has not been empirically validated. Orca, cmux,
+# and TUIOS do not support XO spawns.
 fm_backend_agent_state() {  # <backend> <target>
   local backend=$1 target=$2
   fm_backend_source "$backend" || { printf 'unverified'; return 0; }

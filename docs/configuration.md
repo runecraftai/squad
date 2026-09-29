@@ -344,7 +344,7 @@ That delta is owned in code by `fm_backend_required_tools` in `bin/sq-backend.sh
 Backend tool availability uses the adapter's own executable resolver, so bootstrap and spawn agree on supported non-`PATH` locations such as cmux's bundled CLI.
 An unknown resolved backend emits `BACKEND_INVALID` and blocks dispatch instead of silently dropping its dependency delta or falling back to tmux.
 Orca provides both the task worktree and terminal endpoint (see "Runtime backend" above), so `backend=orca` requires only `orca` on top of the universal toolchain and skips both `fob` and every other backend's session CLI.
-A herdr, zellij, or cmux base is therefore never told `tmux` is missing, and the `fob` durable-lease upgrade check runs only for the backends that actually use fob.
+A herdr, zellij, cmux, or tuios base is therefore never told `tmux` is missing, and the `fob` durable-lease upgrade check runs only for the backends that actually use fob.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
 When Relay is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
 `sq-tasks` and `sq-quota` are required bootstrap tools in every profile, the same class as `sq-report`.

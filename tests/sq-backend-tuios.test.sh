@@ -19,6 +19,8 @@ case "${1:-}" in
   list-windows)
     if [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ]; then
       exit 1
+    elif [ "${SQUAD_TUIOS_FAKE_BAD_ELEMENT:-0}" = 1 ]; then
+      printf '{"windows":["x"]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"}}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
@@ -77,6 +79,17 @@ if fm_backend_tuios_create_task owned sq-task-1 /tmp/wt >/dev/null 2>&1; then
   fail 'an existing TUIOS task label must refuse duplicate-name creation'
 fi
 [ "$(grep -c 'new-window sq-task-1' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'duplicate-label refusal must not create a new window'
+
+# A non-object window element must not read as an empty/duplicate-free inventory:
+# jq indexing errors would otherwise fall through and create a second window.
+SQUAD_TUIOS_FAKE_BAD_ELEMENT=1
+export SQUAD_TUIOS_FAKE_BAD_ELEMENT
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = unreadable ] || fail 'a non-object window element must stay unreadable'
+if fm_backend_tuios_create_task owned sq-element /tmp/wt >/dev/null 2>&1; then
+  fail 'a non-object window element must refuse duplicate-name creation'
+fi
+[ "$(grep -c 'new-window sq-element' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'malformed inventory must not authorize window creation'
+unset SQUAD_TUIOS_FAKE_BAD_ELEMENT
 
 SQUAD_TUIOS_FAKE_LIST_FAIL=1
 export SQUAD_TUIOS_FAKE_LIST_FAIL

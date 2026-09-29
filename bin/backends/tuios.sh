@@ -41,7 +41,7 @@ fm_backend_tuios_cli() {  # <session> <verb> <args...>
 fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
   local session=$1 json
   json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
-  printf '%s' "$json" | jq -e 'type == "object" and (.windows | type == "array")' >/dev/null 2>&1 || return 1
+  printf '%s' "$json" | jq -e 'type == "object" and (.windows | type == "array") and all(.windows[]; type == "object")' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
 }
 
