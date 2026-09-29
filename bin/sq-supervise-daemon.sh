@@ -592,7 +592,9 @@ pane_is_busy() {  # <target> [backend]
   harness=$(fm_daemon_primary_harness)
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
   case "$native" in
-    busy) return 0 ;;
+    # A native blocking prompt (TUIOS `needs_input`/`errored`) is as unsafe to
+    # inject into as a mid-turn pane: the text would land on the prompt.
+    busy|blocked) return 0 ;;
   esac
   tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
   printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \

@@ -680,10 +680,32 @@ App-server partial methods and raw socket experiments do not satisfy that bridge
 
 ## TUIOS
 
-TUIOS 0.8.0 was the version available during the implementation investigation. The current executable regression is fake-CLI-only and deliberately does not access live sessions:
+Installed product: `tuios version 0.8.0 [pure-Go backend]`, commit `a169a8f4b0513e8e56af4c75a746a582b7f42dfc`.
+Mechanisms were validated against the installed binary's own `--version`, `list-verbs`, and `--help` surfaces.
+Portable regression coverage (fake CLIs, no live daemon):
 
 ```sh
 tests/sq-backend-tuios.test.sh
+tests/sq-spawn-tuios-worktree.test.sh
 ```
 
-The fixture verifies explicit session selection, opaque window identity, exact cleanup targeting, inventory-based missing classification, ambiguous-agent handling, the `has_foreground_process=false` mismatch case, contradictory and malformed inventory refusal, duplicate-label refusal across the nested and flat label shapes, literal leading-dash payload delivery with the explicit session binding preserved, and uncertain UI submission. It is not evidence of live TUIOS behavior. Live lifecycle, daemon restart, permissions, and Pi delivery remain unverified and must be established in an explicitly disposable, separately authorized session. Never use the commander's watched sessions as a test fixture.
+Live evidence was collected on 2026-09-29 against one disposable session (`sq-tuios-b3-probe`) on the shared daemon, created for the run and destroyed at the end.
+The shared daemon was never restarted, reconfigured, or killed (its boot id stayed `563ac0d7c9eb50f8` throughout), `session-0` and `squad-tuios-live-check` were never read, written, attached to, retitled, or closed (their window counts stayed 0 and 4), and the private daemon used for the restart case had its own fresh `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, and `XDG_CONFIG_HOME` under `/tmp`, removed afterwards.
+
+Established live:
+
+- **Spawn completes and records the exact worktree.** `bin/sq-spawn.sh sq-tuios-b3-spawn <project> --recon --backend tuios --harness pi` with an isolated base and `SQUAD_TUIOS_SESSION` set printed `spawned sq-tuios-b3-spawn harness=pi kind=recon window=sq-tuios-b3-probe:1e6e2289-... worktree=/home/rehem/.fob/squad-b4752b/6/squad`, rc=0. The recorded `worktree=` equalled the `fob get --lease` path, the live window's reported `cwd` equalled it too, and the metadata carried `backend=tuios`, `tuios_session=`, `tuios_window_id=`, and `tuios_boot_id=`. The window only ever received `cd -- '<lease>'`; the nested-shell `fob get` sequence was never sent.
+- **Delivery reports the truth.** Against a real Pi pane the adapter's queue path returned success (`bin/sq-send.sh` exit 0) and the agent answered; the queue entry was taken (empty `tuios queue ls`). A pane on `needs_input` returned `verdict=agent_blocked` with "nothing was typed" and exit 1, and no keystroke reached it. A pane TUIOS believed was at rest but which never took the prompt returned `verdict=stalled` after 5s, exit 1, with the message that the text was typed and must not be resent; `tuios queue ls` showed the entry `stalled`. A full queue returned `verdict=queue_full`, exit 1. A pane with no attributable agent fell back to the literal write and returned `verdict=uncertain-delivery`, exit 1.
+- **State and prompts are real.** `bin/sq-crew-state.sh` reported `state: working ... harness busy (pi-ext)` for the running Pi task instead of a hard-coded unknown. For a pane reported at `needs_input` with a Claude Code approval screen, `tuios peek-prompt` returned `found=true`, `message="Do you want to proceed?"`, numbered options, and a prompt id, and `sq-crew-state` rendered `state: blocked ... harness waiting on a prompt (approval: Do you want to proceed?)`. The adapter's own verdicts on that pane were `agent=alive busy=blocked`.
+- **Restart recovery is classified, not degraded.** On the private daemon a window was recorded with a Claude Code conversation id; the daemon was then killed (boot id `2744b70b81779419`) and restarted (boot id `fdae56582011edb7`). The restored pane kept its window id and label but ran a fresh shell (`-- tuios: session restored, fresh shell in /tmp --`), reported `state=none` with no attribution, and kept its recorded `agent_session_id`. Against that pane the adapter returned `agent_state=dead`, `busy_state=unknown`, `reuse_restored_task=<window>` only with the changed boot id (a same-boot call and an agent-owned window were both refused), `resume_agent` = `resumed` for Claude Code (the typed `claude --resume <id>` was visible in the pane), and `resume_agent` = `unsupported` for Pi. The branch's pre-change classifier, sourced from the committed adapter, returned `ambiguous` on the same live target.
+- **Cleanup closes only the task window.** `bin/sq-teardown.sh sq-tuios-b3-spawn` reported `teardown ... complete (window sq-tuios-b3-probe:1e6e2289-...)`; only that window disappeared, the session's other windows survived, every other session's window count was unchanged, and the leased worktree returned to the pool (`fob status` showed it `available`).
+- **Protocol discovery refuses a narrower daemon.** The catalogue check rejects a missing required verb, a missing required parameter, an unreadable catalogue, and a malformed catalogue before any task window is created; the portable test pins each refusal.
+
+Not established:
+
+- `not_ready` and `prompt_stalled` were not observed live. They are mapped from the daemon's documented refusal codes and covered by the fake-CLI test, but the asynchronous queue path does not raise them; they belong to the synchronous ask path, which Squad does not currently call.
+- A live `queue-prompt` refusal reason other than `queue_full` and the no-attributed-agent refusal was not produced.
+- The bounded queue observation window (10s by default) proved wide enough for the observed 5s stall gate; a slower daemon configuration could close the window while an entry is still being typed, in which case the adapter reports the entry as safely queued and the daemon's Inbox question is the durable signal.
+- Supervision on this backend remains poll-based by design; no event subscription, gap replay, or push-driven wake was implemented or verified.
+
+Never use the commander's watched sessions as a test fixture. A live TUIOS run creates and destroys its own disposable session, and a restart experiment uses a private daemon with fresh `XDG_RUNTIME_DIR`/`XDG_STATE_HOME`/`XDG_CONFIG_HOME` as the installed product skill documents.

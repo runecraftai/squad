@@ -21,7 +21,7 @@ Uma thread visível que não consegue reportar ao ciclo de vida normal do Squad 
 
 ## Bloqueio atual
 
-Os scripts de backend do Squad são pontos de entrada shell e podem chamar tmux, Herdr, Zellij, Orca e cmux diretamente.
+Os scripts de backend do Squad são pontos de entrada shell e podem chamar tmux, Herdr, Zellij, Orca, cmux e TUIOS diretamente.
 As host tools do Codex Desktop estão disponíveis para uma conversa do Desktop, não para subprocessos arbitrários do Squad.
 O componente que falta é um transporte chamável via shell suportado pelo Codex Desktop, não outro ledger local.
 

@@ -70,6 +70,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `backends/zellij.sh`     | Adaptador experimental de provedor de sessão zellij                                     |
 | `backends/orca.sh`       | Adaptador experimental de backend Orca dono tanto do worktree quanto do terminal                  |
 | `backends/cmux.sh`       | Adaptador experimental de provedor de sessão cmux                                           |
+| `backends/tuios.sh`      | Adaptador experimental de provedor de sessão TUIOS (sessão explícita, ids opacos de janela)   |
 | `sq-config-push.sh`      | Empurrar material herdado local declarado para XOs locais ou remotos vivos e enviar a releitura de config específica do posicionamento quando mudar |
 | `sq-project-mode.sh`     | Resolver a postura de entrega registrada de um projeto a partir de `data/projects.md` para unit sync e seeding de bases |
 | `sq-merge-local.sh`      | Fast-forward da branch default local de um projeto `local-only` após aprovação            |

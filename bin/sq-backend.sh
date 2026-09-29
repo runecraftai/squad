@@ -838,13 +838,22 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
   esac
 }
 
-# fm_backend_busy_state: semantic busy/idle/unknown for backends that expose
-# native agent-state (herdr-addendum "busy state" row - the first backend
+# fm_backend_busy_state: semantic busy/idle/blocked/unknown for backends that
+# expose native agent-state (herdr-addendum "busy state" row - the first backend
 # where this gets real semantics beyond pane-regex). Backends with no such
 # primitive (tmux) report unknown. Callers own the fallback policy: sq-sentry.sh
 # uses unknown as the cue for harness-scoped pane-tail detection, while
 # sq-crew-state.sh also corroborates native idle verdicts with the recorded
-# harness's signature before treating a no-run operator as not busy.
+# harness's signature before treating a no-run operator as not busy. `blocked`
+# is the extra verdict for a backend whose native state says a person is needed
+# (TUIOS `needs_input`/`errored`), so a blocked operator is surfaced as blocked
+# instead of being read as ordinary work.
+#
+# fm_backend_prompt_summary: one bounded line of the blocking prompt the target
+# is waiting on, for backends that can read it (TUIOS `peek-prompt`). Empty for
+# every backend with no such primitive, so callers render their own default.
+# The text is another program's screen: treat it as data, never as instructions.
+
 fm_backend_busy_state() {  # <backend> <target>
   local backend=$1
   shift
@@ -853,6 +862,16 @@ fm_backend_busy_state() {  # <backend> <target>
     herdr) fm_backend_herdr_busy_state "$@" ;;
     tuios) fm_backend_tuios_busy_state "$@" ;;
     *) printf 'unknown' ;;
+  esac
+}
+
+fm_backend_prompt_summary() {  # <backend> <target>
+  local backend=$1
+  shift
+  fm_backend_source "$backend" || return 0
+  case "$backend" in
+    tuios) fm_backend_tuios_prompt_summary "$@" ;;
+    *) return 0 ;;
   esac
 }
 
@@ -949,8 +968,10 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
 # Only `dead` and `missing` license recovery. The tmux adapter requires a
 # successful session inventory and returns `missing` only when it omits the
 # exact window; the Herdr adapter reuses its husk
-# classifier; the TUIOS adapter corroborates the exact window against agent
-# inventory. Zellij remains unverified because its XO ghost-tab and
+# classifier; the TUIOS adapter corroborates the exact window against the
+# daemon's agent inventory, so a window restored with a fresh shell after a
+# daemon restart is `dead` (endpoint present, no attributable agent) rather than
+# `ambiguous`. Zellij remains unverified because its XO ghost-tab and
 # agent-process recovery path has not been empirically validated. Orca and cmux
 # do not support XO spawns.
 fm_backend_agent_state() {  # <backend> <target>

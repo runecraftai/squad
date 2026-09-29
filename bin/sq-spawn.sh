@@ -33,7 +33,12 @@
 #   Spawn-capable backends are the reference tmux adapter and experimental
 #   herdr, zellij, orca, cmux, and TUIOS. Orca owns both the task worktree and
 #   terminal, so ship/recon Orca spawns do not run fob get; cmux and TUIOS are
-#   session providers only, exactly like herdr/zellij, so they do. An
+#   session providers only, exactly like herdr/zellij, so they do. TUIOS
+#   acquires its worktree non-interactively (`fob get --lease`, then a top-level
+#   `cd`) because it reports only its own top-level shell's cwd and cannot see
+#   the nested subshell `fob get` opens; every other backend keeps the
+#   historical `fob get` + cwd-poll sequence unchanged
+#   (docs/tuios-backend.md "Worktree acquisition"). An
 #   auto-detected herdr or cmux spawn prints a loud stderr notice;
 #   auto-detected tmux stays silent; zellij, orca, and TUIOS are never auto-detected.
 #   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
@@ -1634,6 +1639,16 @@ prepare_relaunch_execution() {
   }
   old_backend=$(fm_backend_of_meta "$meta")
   old_target=$(fm_backend_target_of_meta "$meta")
+  # Recorded daemon-boot evidence and worktree for a TUIOS relaunch (see the
+  # TUIOS backend case). Empty for every other backend, and for a task spawned
+  # before the boot marker existed: without the boot id the duplicate-label
+  # refusal stands.
+  RELAUNCH_TUIOS_BOOT_ID=
+  RELAUNCH_WORKTREE=
+  if [ "$old_backend" = tuios ]; then
+    RELAUNCH_TUIOS_BOOT_ID=$(fm_backend_meta_exact_value "$meta" tuios_boot_id 2>/dev/null) || RELAUNCH_TUIOS_BOOT_ID=
+    RELAUNCH_WORKTREE=$(fm_backend_meta_exact_value "$meta" worktree 2>/dev/null) || RELAUNCH_WORKTREE=
+  fi
   [ -n "$old_target" ] || {
     echo "error: existing metadata for $ID has no endpoint; refusing relaunch" >&2
     return 1
@@ -1862,7 +1877,21 @@ EOF
     ;;
   tuios)
     TUIOS_SES=$(fm_backend_tuios_container_ensure "$PROJ_ABS") || exit 1
-    TUIOS_WINDOW_ID=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
+    TUIOS_BOOT_ID=$(fm_backend_tuios_boot_id "$TUIOS_SES" 2>/dev/null) || TUIOS_BOOT_ID=
+    TUIOS_WINDOW_ID=
+    # Post-restart relaunch: the daemon restores every session with its names and
+    # window ids but a fresh shell in every pane, so a task's recorded window can
+    # still exist with its label and no agent. Reuse it only on recorded
+    # daemon-boot evidence plus a confirmed agentless inventory; otherwise the
+    # normal duplicate-label refusal stands.
+    if [ -n "${RELAUNCH_TUIOS_BOOT_ID:-}" ]; then
+      TUIOS_WINDOW_ID=$(fm_backend_tuios_reuse_restored_task "$TUIOS_SES" "$W" "$RELAUNCH_TUIOS_BOOT_ID") || TUIOS_WINDOW_ID=
+    fi
+    if [ -n "$TUIOS_WINDOW_ID" ]; then
+      echo "tuios: reusing the restored task window $TUIOS_SES:$TUIOS_WINDOW_ID after a daemon restart" >&2
+    else
+      TUIOS_WINDOW_ID=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
+    fi
     T="$TUIOS_SES:$TUIOS_WINDOW_ID"
     ;;
   cmux)
@@ -2005,54 +2034,121 @@ kimi_spawn_fail() {  # <detail>
   echo "error: $1; inspect window $T" >&2
 }
 
-if [ "$KIND" != xo ] && [ "$BACKEND" != orca ]; then
+# Worktree acquisition. Every session-provider backend except Orca acquires its
+# own fob worktree through this one dispatcher, mirroring spawn_send_text_line
+# above. tmux/herdr/zellij/cmux keep the historical `fob get` + cwd-poll
+# sequence byte for byte; TUIOS cannot use it, see
+# spawn_acquire_worktree_tuios.
+spawn_acquire_worktree_fob() {  # (uses WT_TARGET)
   spawn_send_text_line "$WT_TARGET" 'fob get'
 
-  # Wait for the fob subshell: the pane's cwd moves from the project to the worktree.
-  # Target the stable window id, not the name: if the name is ever lost (e.g. an
-  # automatic-rename slips through), display-message -t <bad-name> falls back to the
-  # active client's window, which would misread Squad's OWN pane path as the
-  # worktree and tangle a hook into the primary checkout. The window id never lies.
-  # Compare against PROJ_ABS_REAL (physical), not PROJ_ABS: a symlinked project
-  # prefix would otherwise make the pane's OS-level cwd read differ from
-  # PROJ_ABS on the very first poll, before the pane has actually moved.
-  #
-  # A single read that already differs from PROJ_ABS_REAL is not proof the pane
-  # settled there: on some tmux/WSL setups a brand-new window's pane_current_path
-  # transiently reports an unrelated stale path (seen live as another real git
-  # checkout entirely) before the shell catches up with fob get's cd. That
-  # stale path still passes the PROJ_ABS_REAL comparison and validate_spawn_worktree
-  # below (it resolves to a real, distinct worktree top-level too), so accepting it
-  # on one read alone silently records the wrong worktree= in state/<id>.meta. Require
-  # two consecutive reads to agree on the same non-project path before accepting it;
-  # a mismatch just becomes the new candidate rather than resetting the wait, so a
-  # pane that is already settled by the first real read only costs the one existing
-  # inter-poll sleep as confirmation, not a whole extra cycle on top.
-  candidate=""
-  for _ in $(seq 1 60); do
-    p=$(spawn_current_path "$WT_TARGET" || true)
-    if [ -n "$p" ]; then
-      p_real=$(real_path_or_raw "$p")
-      if [ "$p_real" != "$PROJ_ABS_REAL" ]; then
-        if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
-          WT="$p"
-          break
-        fi
-        candidate="$p_real"
-      else
-        candidate=""
+# Wait for the fob subshell: the pane's cwd moves from the project to the worktree.
+# Target the stable window id, not the name: if the name is ever lost (e.g. an
+# automatic-rename slips through), display-message -t <bad-name> falls back to the
+# active client's window, which would misread Squad's OWN pane path as the
+# worktree and tangle a hook into the primary checkout. The window id never lies.
+# Compare against PROJ_ABS_REAL (physical), not PROJ_ABS: a symlinked project
+# prefix would otherwise make the pane's OS-level cwd read differ from
+# PROJ_ABS on the very first poll, before the pane has actually moved.
+#
+# A single read that already differs from PROJ_ABS_REAL is not proof the pane
+# settled there: on some tmux/WSL setups a brand-new window's pane_current_path
+# transiently reports an unrelated stale path (seen live as another real git
+# checkout entirely) before the shell catches up with fob get's cd. That
+# stale path still passes the PROJ_ABS_REAL comparison and validate_spawn_worktree
+# below (it resolves to a real, distinct worktree top-level too), so accepting it
+# on one read alone silently records the wrong worktree= in state/<id>.meta. Require
+# two consecutive reads to agree on the same non-project path before accepting it;
+# a mismatch just becomes the new candidate rather than resetting the wait, so a
+# pane that is already settled by the first real read only costs the one existing
+# inter-poll sleep as confirmation, not a whole extra cycle on top.
+candidate=""
+for _ in $(seq 1 60); do
+  p=$(spawn_current_path "$WT_TARGET" || true)
+  if [ -n "$p" ]; then
+    p_real=$(real_path_or_raw "$p")
+    if [ "$p_real" != "$PROJ_ABS_REAL" ]; then
+      if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
+        WT="$p"
+        break
       fi
+      candidate="$p_real"
     else
       candidate=""
+    fi
+  else
+    candidate=""
+  fi
+  sleep 1
+done
+if [ -z "$WT" ]; then
+  echo "error: fob get did not enter a worktree within 60s; inspect window $T" >&2
+  exit 1
+fi
+
+validate_spawn_worktree "fob get" "$T"
+}
+
+# A durable lease is not released when a window closes, so a failed TUIOS
+# verification must return it rather than leaking it out of the pool.
+tuios_release_lease() {  # <lease-path>
+  local lease=$1
+  ( cd "$PROJ_ABS" && fob return --force "$lease" ) >/dev/null 2>&1 \
+    || echo "warning: could not return the leased worktree $lease; return it manually" >&2
+}
+
+# TUIOS reports only its own top-level shell's cwd, so the nested subshell
+# `fob get` opens is invisible to the worktree poll (docs/tuios-backend.md
+# "Worktree acquisition"). Acquire the lease out of band with the
+# non-interactive `fob get --lease` and `cd` the window's own shell into it, so
+# the recorded worktree is verified against the lease path itself. A relaunch
+# whose recorded worktree still exists resumes into that exact worktree: its
+# durable lease is still held, so the pool cannot have handed it to another
+# task, and re-leasing would split the task across two copies.
+spawn_acquire_worktree_tuios() {  # <target>
+  local target=$1 lease p lease_acquired=0
+  if [ -n "${RELAUNCH_WORKTREE:-}" ] && [ -d "$RELAUNCH_WORKTREE" ]; then
+    lease=$RELAUNCH_WORKTREE
+  else
+    lease=$( cd "$PROJ_ABS" && fob get --lease --lease-holder "$ID" ) || {
+      echo "error: fob get --lease could not acquire a worktree for $ID" >&2
+      exit 1
+    }
+    lease_acquired=1
+  fi
+  case "$lease" in
+    /*) : ;;
+    *) echo "error: TUIOS worktree path '$lease' is not absolute; refusing to launch" >&2; exit 1 ;;
+  esac
+  spawn_send_text_line "$target" "cd -- $(shell_quote "$lease")"
+  for _ in $(seq 1 60); do
+    p=$(spawn_current_path "$target" || true)
+    if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" = "$(real_path_or_raw "$lease")" ]; then
+      WT=$lease
+      break
     fi
     sleep 1
   done
   if [ -z "$WT" ]; then
-    echo "error: fob get did not enter a worktree within 60s; inspect window $T" >&2
+    echo "error: TUIOS window did not enter the worktree $lease within 60s; window $T" >&2
+    [ "$lease_acquired" = 0 ] || tuios_release_lease "$lease"
     exit 1
   fi
+  if ! ( validate_spawn_worktree "fob get --lease" "$T" ); then
+    [ "$lease_acquired" = 0 ] || tuios_release_lease "$lease"
+    exit 1
+  fi
+}
 
-  validate_spawn_worktree "fob get" "$T"
+spawn_acquire_worktree() {  # <target>
+  case "$BACKEND" in
+    tuios) spawn_acquire_worktree_tuios "$1" ;;
+    *) spawn_acquire_worktree_fob "$1" ;;
+  esac
+}
+
+if [ "$KIND" != xo ] && [ "$BACKEND" != orca ]; then
+  spawn_acquire_worktree "$WT_TARGET"
 fi
 
 # Workspace preparation hook runs only for a newly-created task workspace.
@@ -2619,6 +2715,9 @@ META_WINDOW=$T
   if [ "$BACKEND" = tuios ]; then
     echo "tuios_session=$TUIOS_SES"
     echo "tuios_window_id=$TUIOS_WINDOW_ID"
+    # Recorded so a later relaunch can tell a genuine daemon restart (every pane
+    # restored as a fresh shell) from an agent that died on its own.
+    [ -z "${TUIOS_BOOT_ID:-}" ] || echo "tuios_boot_id=$TUIOS_BOOT_ID"
   fi
   if [ -n "$WORKFLOW_PATH" ]; then
     echo "workflow=$WORKFLOW_PATH"

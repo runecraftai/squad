@@ -48,8 +48,9 @@
 #   1. dead endpoint (fm_busy_classify_live only) -> dead endpoint-gone
 #   2. standalone Kimi before verification       -> unknown kimi-unverified
 #   3. a valid, gen-matching, source-trusted record -> its state and source
-#   4. no record at all: herdr's native busy verdict is trusted as busy
-#      (generation state is sufficient for busy, not for idle), then the
+#   4. no record at all: a backend's native busy or blocked verdict is trusted
+#      (a reported turn is in flight; a native blocking prompt needs a person),
+#      then the
 #      muse session-log pull source, then the Grok-only temporary regex fallback
 #      classifies a grok task from its rendered tail, then unknown missing
 #   5. malformed, stale, or untrusted records -> unknown, never a fallback
@@ -600,17 +601,23 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
       return 0
       ;;
   esac
-  # No record at all. A native herdr busy verdict is semantic enough to trust
-  # for BUSY (streaming means a turn is running); native idle is narrower
+  # No record at all. A backend's own native verdict is semantic enough to
+  # trust for BUSY (a reported or streaming turn is in flight) and for BLOCKED
+  # (its native state says a person is needed, e.g. TUIOS `needs_input` or
+  # `errored`); native idle is narrower
   # than turn state (a long foreground tool call reads idle) and stays
   # unknown here.
-  if [ "$backend" = herdr ] && command -v fm_backend_busy_state >/dev/null 2>&1; then
-    native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null || true)
-    if [ "$native" = busy ]; then
-      printf 'busy herdr-native'
-      return 0
-    fi
-  fi
+  case "$backend" in
+    herdr|tuios)
+      if command -v fm_backend_busy_state >/dev/null 2>&1; then
+        native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null || true)
+        case "$native" in
+          busy) printf 'busy %s-native' "$backend"; return 0 ;;
+          blocked) printf 'blocked %s-native' "$backend"; return 0 ;;
+        esac
+      fi
+      ;;
+  esac
   case "$harness" in
     muse*)
       # Semantic, on demand: fold this task's bound session log. An open run is
