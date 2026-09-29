@@ -5,7 +5,7 @@ This file provides guidance to coding agents when working with code in this repo
 ## Commands
 
 ```sh
-pnpm run build       # tsc to dist/ + chmod the CLI entrypoint
+pnpm run build       # tsc to dist/, write the build manifest, chmod the CLI entrypoint
 pnpm run build:skill # Regenerate skills/sq-browser/SKILL.md from shared CLI guidance and SDK built-ins
 pnpm run dev         # Run the CLI from source with tsx
 pnpm test            # vitest run (test/*.test.ts)

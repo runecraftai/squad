@@ -191,6 +191,10 @@ function httpPost(
  * `SQ_BROWSER_PORT`). A bridge that omits the field (older version) is
  * accepted, since there is no mismatch to detect.
  *
+ * With `expectedBuildId`, a bridge whose reported build identity differs is
+ * treated as unhealthy; a bridge that omits the field (older version) is
+ * treated as stale rather than accepted, so a rebuilt dist recycles it.
+ *
  * Exported for tests; production code uses it via `ensureBridge`.
  */
 export async function checkBridgeHealth(

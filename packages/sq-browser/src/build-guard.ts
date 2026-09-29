@@ -1,6 +1,6 @@
 // Leaf module: node builtins only. Guards a locally linked dist from silently
 // running when its compiled output does not match its TypeScript source.
-// Published npm packages ship only `dist` (see package.json `files`), so the
+// Published npm packages omit src/bin (see package.json `files`), so the
 // guard is inert there.
 import { createHash } from "node:crypto";
 import {
