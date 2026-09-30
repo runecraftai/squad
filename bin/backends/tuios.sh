@@ -231,8 +231,8 @@ fm_backend_tuios_protocol_check() {  # <session>
   workspace=$(fm_backend_tuios_workspace_setting) || return 1
   if [ -n "$workspace" ]; then
     required="${required}
-list-workspaces:session"
-    required=$(printf '%s\n' "$required" | sed 's/new-window:session,name,cwd,focus$/new-window:session,name,cwd,focus,workspace/')
+list-workspaces:session
+new-window:session,name,cwd,focus,workspace"
   fi
   catalogue=$("$(fm_backend_tuios_bin)" list-verbs --json 2>/dev/null) || {
     echo 'error: TUIOS verb catalogue is unreadable; refusing to drive an unverified daemon' >&2
@@ -693,7 +693,10 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
     id=$("$(fm_backend_tuios_bin)" new-window "$label" --session "$session" --cwd "$cwd" --no-focus --print-id 2>/dev/null) || return 1
   fi
   case "$id" in ''|*[!A-Za-z0-9._@%-]*) echo 'error: TUIOS returned malformed opaque window id' >&2; return 1 ;; esac
-  fm_backend_tuios_target_ready "$session:$id" "$label" || return 1
+  fm_backend_tuios_target_ready "$session:$id" "$label" || {
+    fm_backend_tuios_kill "$session:$id" '' "$label" >/dev/null 2>&1 || true
+    return 1
+  }
   if [ -n "$workspace" ]; then
     windows=$(fm_backend_tuios_list_windows_json "$session") || {
       echo 'error: cannot verify TUIOS task workspace placement' >&2

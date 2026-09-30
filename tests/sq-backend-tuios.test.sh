@@ -89,6 +89,13 @@ case "${1:-}" in
     fi
     ;;
   get-window)
+    if [ "${SQUAD_TUIOS_FAKE_GET_WINDOW_FAIL_ONCE:-0}" = 1 ]; then
+      marker="$SQUAD_TUIOS_CREATED_WINDOW.get-window-failed"
+      if [ ! -f "$marker" ]; then
+        touch "$marker"
+        exit 1
+      fi
+    fi
     # A session with an attached client omits the daemon cwd from this shape;
     # list-windows is the shape that always carries it.
     if [ "${SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOW:-0}" = 1 ]; then
@@ -641,6 +648,15 @@ export SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE SQUAD_TUIOS_FAKE_WINDOW_NAME
 if fm_backend_tuios_create_task owned sq-verify-fail /tmp/wt >/dev/null 2>&1; then fail 'an unreadable post-creation inventory must refuse'; fi
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'an unverifiable placement must close the just-created task window'
 unset SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE
+# A failed post-creation label read must attempt to close the created window so
+# the exact id does not leak and block a retry.
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$SQUAD_TUIOS_CREATED_LABEL" "$SQUAD_TUIOS_CREATED_WINDOW.get-window-failed"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_GET_WINDOW_FAIL_ONCE=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-label-fail
+export SQUAD_TUIOS_FAKE_GET_WINDOW_FAIL_ONCE SQUAD_TUIOS_FAKE_WINDOW_NAME
+if fm_backend_tuios_create_task owned sq-label-fail /tmp/wt >/dev/null 2>&1; then fail 'a failed post-creation label read must refuse'; fi
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'a failed post-creation label read must close the just-created task window'
+unset SQUAD_TUIOS_FAKE_GET_WINDOW_FAIL_ONCE
 SQUAD_TUIOS_FAKE_WORKSPACES_FAIL=1
 export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
 if fm_backend_tuios_create_task owned sq-unreadable-workspaces /tmp/wt >/dev/null 2>&1; then fail 'unreadable workspace inventory must refuse before creation'; fi
