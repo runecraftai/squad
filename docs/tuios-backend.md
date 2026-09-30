@@ -10,7 +10,9 @@ Install TUIOS 0.8.0 or newer and `jq`, and ensure `fob` is available as required
 
 Set `SQUAD_TUIOS_SESSION` explicitly to a TUIOS session that the Squad base is authorized to use. The adapter only validates and uses that existing session. Task windows are created without requesting focus, each task target is `<session-name>:<opaque-window-id>`, and the exact session and opaque window id are recorded in the task metadata.
 
-At detection the adapter validates the daemon's own verb catalogue (`tuios list-verbs --json`) for every verb and parameter it uses, and refuses to drive a daemon that is narrower or older than this adapter. A missing verb or parameter fails loudly and names it.
+Optionally configure `config/tuios-workspace` with one existing numeric workspace number reserved for Squad task windows in that session. When present, every task window is explicitly created there and its exact returned window ID is checked against `list-windows` placement before creation succeeds; invalid inventory or placement refuses rather than falling back. The adapter never creates, names, renumbers, or adopts a workspace and never moves existing windows. Remove the file to disable grouped placement and restore legacy current-workspace placement.
+
+At detection the adapter validates the daemon's own verb catalogue (`tuios list-verbs --json`) for every verb and parameter it uses, and refuses to drive a daemon that is narrower or older than this adapter. Grouped placement additionally requires `list-workspaces` and the `new-window` workspace parameter. A missing verb or parameter fails loudly and names it.
 
 ## Worktree acquisition
 
@@ -80,5 +82,6 @@ Cleanup verifies both the exact opaque window id and the recorded task label bef
 - The daemon's queue, mail, activity, and agent state live in daemon memory and die with it; a restart is reconciled from the inventory and the durable Squad task record, never from a replayed event.
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.
+- Portable regressions validate explicit workspace routing and exact-ID placement verification; they do not prove live focus behavior or non-current-workspace placement.
 
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns the commands and output behind each claim above, and the honest list of what is not yet established. The portable contract is covered by `tests/sq-backend-tuios.test.sh` and `tests/sq-spawn-tuios-worktree.test.sh` using fake CLIs; those tests never contact or change a live TUIOS session.

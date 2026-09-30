@@ -48,13 +48,17 @@ case "${1:-}" in
   list-attention)
     printf '{"boot_id":"%s","success":true,"items":[]}\n' "${SQUAD_TUIOS_FAKE_BOOT_ID:-boot-a}"
     ;;
+  list-workspaces)
+    [ "${SQUAD_TUIOS_FAKE_WORKSPACES_FAIL:-0}" = 1 ] && exit 1
+    printf '{"success":true,"workspaces":[{"workspace":1,"name":"personal","window_count":1},{"workspace":4,"name":"reserved","window_count":1}]}\n'
+    ;;
   list-windows)
     if [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ]; then
       exit 1
     elif [ "${SQUAD_TUIOS_FAKE_BAD_ELEMENT:-0}" = 1 ]; then
       printf '{"windows":["x"]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE:-0}" = 1 ]; then
-      printf '{"windows":[{"window_id":"w-opaque_7","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
+      printf '{"windows":[{"window_id":"w-opaque_7","name":"sq-task-1","workspace":%s,"cwd":"/tmp/wt"}]}\n' "${SQUAD_TUIOS_FAKE_PLACEMENT:-4}"
     elif [ "${SQUAD_TUIOS_FAKE_NO_IDENTITY:-0}" = 1 ]; then
       printf '{"windows":[{"name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_CONFLICTING_ID:-0}" = 1 ]; then
@@ -68,13 +72,15 @@ case "${1:-}" in
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOWS:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"},"windows":[]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_STRING_WINDOW:-0}" = 1 ]; then
-      printf '{"windows":[{"window":"w-opaque_7","name":"sq-task-1"}]}\n'
-    elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ]; then
+      printf '{"windows":[{"window":{"id":"w-opaque_7"},"name":"sq-task-1","workspace":4}]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || { [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ] && [ ! -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; }; then
       printf '{"windows":[]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_RESTORED_WINDOW:-0}" = 1 ]; then
-      printf '{"windows":[{"window_id":"w-opaque_7","custom_name":"sq-task-1","cwd":"%s"}]}\n' "${SQUAD_TUIOS_FAKE_RESTORED_CWD:-/tmp/wt}"
+      printf '{"windows":[{"window_id":"w-opaque_7","custom_name":"sq-task-1","workspace":4,"cwd":"%s"}]}\n' "${SQUAD_TUIOS_FAKE_RESTORED_CWD:-/tmp/wt}"
     else
-      printf '{"windows":[{"id":"w-opaque_7","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
+      name=${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}
+      [ ! -f "$SQUAD_TUIOS_CREATED_LABEL" ] || name=$(<"$SQUAD_TUIOS_CREATED_LABEL")
+      printf '{"windows":[{"id":"w-opaque_7","name":"%s","workspace":%s,"cwd":"/tmp/wt"}]}\n' "$name" "${SQUAD_TUIOS_FAKE_PLACEMENT:-4}"
     fi
     ;;
   get-window)
@@ -156,12 +162,17 @@ case "${1:-}" in
     fi
     ;;
   capture-pane) printf '%s\n' "${SQUAD_TUIOS_FAKE_CAPTURE:-captured output}" ;;
-  new-window) printf 'w-opaque_7\n' ;;
+  new-window)
+    printf '%s\n' "${1:-sq-task-1}" > "$SQUAD_TUIOS_CREATED_LABEL"
+    touch "$SQUAD_TUIOS_CREATED_WINDOW"
+    printf 'w-opaque_7\n'
+    ;;
   *) : ;;
 esac
 SH
 chmod +x "$TMP_ROOT/fakebin/tuios"
-export PATH="$TMP_ROOT/fakebin:$PATH" SQUAD_TUIOS_BIN=tuios SQUAD_TUIOS_LOG="$TMP_ROOT/log"
+export PATH="$TMP_ROOT/fakebin:$PATH" SQUAD_TUIOS_BIN=tuios SQUAD_TUIOS_LOG="$TMP_ROOT/log" \
+  SQUAD_TUIOS_CREATED_WINDOW="$TMP_ROOT/created-window" SQUAD_TUIOS_CREATED_LABEL="$TMP_ROOT/created-label"
 
 source "$ROOT/bin/sq-backend.sh"
 fm_backend_validate_spawn tuios || fail 'TUIOS should be a supported spawn backend'
@@ -563,6 +574,30 @@ export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 [ "$(fm_backend_tuios_create_task owned sq-spawn-test /tmp/wt)" = w-opaque_7 ] || fail 'task window creation failed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-spawn-test --session owned --cwd /tmp/wt --no-focus --print-id' 'spawn did not create an unfocused window in the exact session'
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+
+# Explicit grouped placement uses a reserved workspace without changing focus,
+# and verifies the returned opaque id's exact workspace membership.
+mkdir -p "$TMP_ROOT/config"
+SQUAD_BACKEND_CONFIG_DIR="$TMP_ROOT/config"
+export SQUAD_BACKEND_CONFIG_DIR
+printf '4\n' > "$TMP_ROOT/config/tuios-workspace"
+SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-grouped
+export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+[ "$(fm_backend_tuios_create_task owned sq-grouped /tmp/wt)" = w-opaque_7 ] || fail 'grouped task creation must succeed in the configured workspace'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-grouped --session owned --cwd /tmp/wt --workspace 4 --no-focus --print-id' 'grouped creation must explicitly target the reserved workspace without focus'
+SQUAD_TUIOS_FAKE_PLACEMENT=1
+export SQUAD_TUIOS_FAKE_PLACEMENT
+if fm_backend_tuios_create_task owned sq-wrong-place /tmp/wt >/dev/null 2>&1; then fail 'wrong-workspace creation must refuse'; fi
+unset SQUAD_TUIOS_FAKE_PLACEMENT
+SQUAD_TUIOS_FAKE_WORKSPACES_FAIL=1
+export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
+if fm_backend_tuios_create_task owned sq-unreadable-workspaces /tmp/wt >/dev/null 2>&1; then fail 'unreadable workspace inventory must refuse before creation'; fi
+[ "$(grep -c 'new-window sq-unreadable-workspaces' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'unreadable workspace inventory must not create a window'
+unset SQUAD_TUIOS_FAKE_WORKSPACES_FAIL SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+printf '99\n' > "$TMP_ROOT/config/tuios-workspace"
+if fm_backend_tuios_create_task owned sq-unknown-workspace /tmp/wt >/dev/null 2>&1; then fail 'unknown workspace must refuse'; fi
+[ "$(grep -c 'new-window sq-unknown-workspace' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'unknown workspace must not create a window'
+rm -f "$TMP_ROOT/config/tuios-workspace"
 if SQUAD_TUIOS_SESSION='' PATH="$PATH" bash -c 'source "$1/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_container_ensure /tmp/project' _ "$ROOT" >/dev/null 2>&1; then
   fail 'missing explicit session must refuse'
 fi
