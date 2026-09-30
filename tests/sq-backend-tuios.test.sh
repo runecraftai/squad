@@ -20,6 +20,7 @@ emit_verb_catalogue() {
  {"verb":"list-agents","params":[{"name":"session"},{"name":"all"},{"name":"select"}]},
  {"verb":"list-queued","params":[{"name":"session"},{"name":"window"}]},
  {"verb":"list-windows","params":[{"name":"session"}]},
+ {"verb":"list-workspaces","params":[{"name":"session"}]},
  {"verb":"new-window","params":[{"name":"session"},{"name":"name"},{"name":"cwd"},{"name":"focus"},{"name":"workspace"}]},
  {"verb":"peek-prompt","params":[{"name":"session"},{"name":"window"}]},
  {"verb":"queue-prompt","params":[{"name":"session"},{"name":"window"},{"name":"text"},{"name":"from"}]},
@@ -55,6 +56,8 @@ case "${1:-}" in
   list-windows)
     if [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ]; then
       exit 1
+    elif [ "${SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE:-0}" = 1 ] && [ -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; then
+      exit 1
     elif [ "${SQUAD_TUIOS_FAKE_BAD_ELEMENT:-0}" = 1 ]; then
       printf '{"windows":["x"]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_WINDOW_ID_SHAPE:-0}" = 1 ]; then
@@ -65,6 +68,8 @@ case "${1:-}" in
       printf '{"windows":[{"window":{"id":"w-opaque_7"},"id":"stale-id","name":"sq-task-1","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_NESTED_LABEL:-0}" = 1 ]; then
       printf '{"windows":[{"id":"w-opaque_7","window":{"id":"w-opaque_7","name":"sq-nested"},"cwd":"/tmp/wt"}]}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_NESTED_WORKSPACE:-0}" = 1 ]; then
+      printf '{"windows":[{"window":{"id":"w-opaque_7","workspace":%s}}]}\n' "${SQUAD_TUIOS_FAKE_PLACEMENT:-4}"
     elif [ "${SQUAD_TUIOS_FAKE_DURABLE_LABEL:-0}" = 1 ]; then
       printf '{"windows":[{"id":"w-opaque_7","custom_name":"sq-durable","title":"pi - live","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
@@ -72,7 +77,7 @@ case "${1:-}" in
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_WITH_WINDOWS:-0}" = 1 ]; then
       printf '{"error":{"code":"daemon_unreachable"},"windows":[]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_STRING_WINDOW:-0}" = 1 ]; then
-      printf '{"windows":[{"window":{"id":"w-opaque_7"},"name":"sq-task-1","workspace":4}]}\n'
+      printf '{"windows":[{"window":"w-opaque_7","name":"sq-task-1","workspace":4}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || { [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ] && [ ! -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; }; then
       printf '{"windows":[]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_RESTORED_WINDOW:-0}" = 1 ]; then
@@ -163,7 +168,7 @@ case "${1:-}" in
     ;;
   capture-pane) printf '%s\n' "${SQUAD_TUIOS_FAKE_CAPTURE:-captured output}" ;;
   new-window)
-    printf '%s\n' "${1:-sq-task-1}" > "$SQUAD_TUIOS_CREATED_LABEL"
+    printf '%s\n' "${2:-sq-task-1}" > "$SQUAD_TUIOS_CREATED_LABEL"
     touch "$SQUAD_TUIOS_CREATED_WINDOW"
     printf 'w-opaque_7\n'
     ;;
@@ -580,15 +585,62 @@ unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 mkdir -p "$TMP_ROOT/config"
 SQUAD_BACKEND_CONFIG_DIR="$TMP_ROOT/config"
 export SQUAD_BACKEND_CONFIG_DIR
+# config/tuios-workspace must be exactly one numeric line, with or without a
+# trailing newline; missing, empty, padded, or multi-line files must refuse.
+printf '4' > "$TMP_ROOT/config/tuios-workspace"
+[ "$(fm_backend_tuios_workspace_setting)" = 4 ] || fail 'a single config line without a trailing newline must be accepted'
+printf '4\n5' > "$TMP_ROOT/config/tuios-workspace"
+if fm_backend_tuios_workspace_setting >/dev/null 2>&1; then fail 'a two-line config without a trailing newline must refuse'; fi
+printf '4\n\njunk\n' > "$TMP_ROOT/config/tuios-workspace"
+if fm_backend_tuios_workspace_setting >/dev/null 2>&1; then fail 'a config with extra blank or junk lines must refuse'; fi
+printf '\n' > "$TMP_ROOT/config/tuios-workspace"
+if fm_backend_tuios_workspace_setting >/dev/null 2>&1; then fail 'an empty config line must refuse'; fi
+printf ' 4\n' > "$TMP_ROOT/config/tuios-workspace"
+if fm_backend_tuios_workspace_setting >/dev/null 2>&1; then fail 'a padded config number must refuse'; fi
+printf '4\n' > "$TMP_ROOT/config/tuios-workspace"
+# With a reserved workspace configured, discovery must additionally require the
+# list-workspaces verb and the new-window workspace parameter.
+fm_backend_tuios_protocol_check owned || fail 'a complete grouped catalogue must pass protocol discovery'
+SQUAD_TUIOS_FAKE_VERBS_OMIT=list-workspaces
+export SQUAD_TUIOS_FAKE_VERBS_OMIT
+if fm_backend_tuios_protocol_check owned 2>"$TMP_ROOT/proto-ws-verb-err"; then fail 'a daemon without list-workspaces must refuse grouped placement'; fi
+assert_contains "$(cat "$TMP_ROOT/proto-ws-verb-err")" 'missing verb list-workspaces' 'grouped discovery must name the missing workspace verb'
+unset SQUAD_TUIOS_FAKE_VERBS_OMIT
+SQUAD_TUIOS_FAKE_PARAM_OMIT=new-window:workspace
+export SQUAD_TUIOS_FAKE_PARAM_OMIT
+if fm_backend_tuios_protocol_check owned 2>"$TMP_ROOT/proto-ws-param-err"; then fail 'a new-window without a workspace parameter must refuse grouped placement'; fi
+assert_contains "$(cat "$TMP_ROOT/proto-ws-param-err")" 'new-window has no parameter workspace' 'grouped discovery must name the missing workspace parameter'
+unset SQUAD_TUIOS_FAKE_PARAM_OMIT
+[ "$(fm_backend_tuios_container_ensure /tmp/project)" = owned ] || fail 'grouped container_ensure must validate the reserved workspace'
+printf '99\n' > "$TMP_ROOT/config/tuios-workspace"
+if fm_backend_tuios_container_ensure /tmp/project >/dev/null 2>&1; then fail 'container_ensure must refuse a workspace absent from the session'; fi
 printf '4\n' > "$TMP_ROOT/config/tuios-workspace"
 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-grouped
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 [ "$(fm_backend_tuios_create_task owned sq-grouped /tmp/wt)" = w-opaque_7 ] || fail 'grouped task creation must succeed in the configured workspace'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-grouped --session owned --cwd /tmp/wt --workspace 4 --no-focus --print-id' 'grouped creation must explicitly target the reserved workspace without focus'
-SQUAD_TUIOS_FAKE_PLACEMENT=1
-export SQUAD_TUIOS_FAKE_PLACEMENT
+# A nested window record carrying workspace under `.window` must verify the
+# same placement instead of reading as missing and closing a placed window.
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$SQUAD_TUIOS_CREATED_LABEL"
+SQUAD_TUIOS_FAKE_NESTED_WORKSPACE=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-nested-ws
+export SQUAD_TUIOS_FAKE_NESTED_WORKSPACE SQUAD_TUIOS_FAKE_WINDOW_NAME
+[ "$(fm_backend_tuios_create_task owned sq-nested-ws /tmp/wt)" = w-opaque_7 ] || fail 'a nested window workspace must verify placement'
+unset SQUAD_TUIOS_FAKE_NESTED_WORKSPACE
+# A wrong workspace must refuse and close only the just-created window.
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_PLACEMENT=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-wrong-place
+export SQUAD_TUIOS_FAKE_PLACEMENT SQUAD_TUIOS_FAKE_WINDOW_NAME
 if fm_backend_tuios_create_task owned sq-wrong-place /tmp/wt >/dev/null 2>&1; then fail 'wrong-workspace creation must refuse'; fi
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'a wrong-workspace refusal must close the just-created task window'
 unset SQUAD_TUIOS_FAKE_PLACEMENT
+# An unreadable post-creation inventory must also close the created window.
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$SQUAD_TUIOS_CREATED_LABEL"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-verify-fail
+export SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE SQUAD_TUIOS_FAKE_WINDOW_NAME
+if fm_backend_tuios_create_task owned sq-verify-fail /tmp/wt >/dev/null 2>&1; then fail 'an unreadable post-creation inventory must refuse'; fi
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'an unverifiable placement must close the just-created task window'
+unset SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE
 SQUAD_TUIOS_FAKE_WORKSPACES_FAIL=1
 export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
 if fm_backend_tuios_create_task owned sq-unreadable-workspaces /tmp/wt >/dev/null 2>&1; then fail 'unreadable workspace inventory must refuse before creation'; fi
@@ -624,6 +676,7 @@ fi
 
 # --- cleanup: the native close, scoped to the recorded task window -------
 TARGET=owned:w-opaque_7
+: > "$SQUAD_TUIOS_LOG"
 if fm_backend_tuios_kill "$TARGET" '' wrong-label >/dev/null 2>&1; then fail 'mismatched expected label must refuse cleanup'; fi
 [ "$(grep -c 'run-command' "$SQUAD_TUIOS_LOG" || true)" -eq 0 ] || fail 'mismatched label issued a destructive command'
 : > "$SQUAD_TUIOS_LOG"

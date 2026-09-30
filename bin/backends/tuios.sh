@@ -73,6 +73,9 @@ SQUAD_BACKEND_TUIOS_JQ_LIB='
   def tlabels: [ (.name // empty), (.title // empty), (.custom_name // empty), (.display_name // empty),
                  (if (.window | type) == "object" then (.window.name // empty), (.window.title // empty), (.window.custom_name // empty), (.window.display_name // empty) else empty end) ]
             | map(select(type == "string" and length > 0));
+  def tworkspaces: [ (.workspace // empty),
+                     (if (.window | type) == "object" then (.window.workspace // empty) else empty end) ]
+                   | map(select(type == "number"));
   def terror: [ (.error? // empty)
                 | if type == "object" then (.code // .message // .detail // empty) else . end
                 | select(type == "string" and length > 0) ]
@@ -92,17 +95,19 @@ fm_backend_tuios_list_windows_json() {  # <session> -> validated windows invento
 }
 
 fm_backend_tuios_workspace_setting() {  # -> configured integer, or empty when disabled
-  local file="${SQUAD_BACKEND_CONFIG_DIR}/tuios-workspace" value extra
+  local file="${SQUAD_BACKEND_CONFIG_DIR}/tuios-workspace" value
+  local -a lines=()
   [ -f "$file" ] || { printf ''; return 0; }
-  IFS= read -r value < "$file" || value=
+  mapfile -t lines < "$file" || { echo 'error: cannot read config/tuios-workspace' >&2; return 1; }
+  [ "${#lines[@]}" -eq 1 ] || {
+    echo 'error: config/tuios-workspace must contain exactly one line' >&2
+    return 1
+  }
+  value=${lines[0]}
   [ -n "$value" ] && [[ "$value" =~ ^(0|[1-9][0-9]*)$ ]] || {
     echo 'error: config/tuios-workspace must contain one non-negative workspace number' >&2
     return 1
   }
-  if IFS= read -r extra < <(tail -n +2 "$file") && [ -n "$extra" ]; then
-    echo 'error: config/tuios-workspace must contain exactly one line' >&2
-    return 1
-  fi
   printf '%s' "$value"
 }
 
@@ -690,10 +695,16 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
   case "$id" in ''|*[!A-Za-z0-9._@%-]*) echo 'error: TUIOS returned malformed opaque window id' >&2; return 1 ;; esac
   fm_backend_tuios_target_ready "$session:$id" "$label" || return 1
   if [ -n "$workspace" ]; then
-    windows=$(fm_backend_tuios_list_windows_json "$session") || { echo 'error: cannot verify TUIOS task workspace placement' >&2; return 1; }
+    windows=$(fm_backend_tuios_list_windows_json "$session") || {
+      echo 'error: cannot verify TUIOS task workspace placement' >&2
+      fm_backend_tuios_kill "$session:$id" '' "$label" >/dev/null 2>&1 || true
+      return 1
+    }
     printf '%s' "$windows" | jq -e --arg id "$id" --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
       [.windows[] | select((tids | index($id)) != null)] as $matches
-      | ($matches | length) == 1 and ($matches[0].workspace | type == "number" and floor == . and . == $ws)
+      | ($matches | length) == 1
+        and (($matches[0] | tworkspaces | unique) as $found
+             | ($found | length) == 1 and $found[0] == $ws)
     ' >/dev/null 2>&1 || {
       echo 'error: TUIOS task window placement is missing, contradictory, or incorrect' >&2
       fm_backend_tuios_kill "$session:$id" '' "$label" >/dev/null 2>&1 || true
