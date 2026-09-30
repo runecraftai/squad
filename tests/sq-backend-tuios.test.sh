@@ -70,6 +70,14 @@ case "${1:-}" in
       printf '{"windows":[{"id":"w-opaque_7","window":{"id":"w-opaque_7","name":"sq-nested"},"cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_NESTED_WORKSPACE:-0}" = 1 ]; then
       printf '{"windows":[{"window":{"id":"w-opaque_7","workspace":%s}}]}\n' "${SQUAD_TUIOS_FAKE_PLACEMENT:-4}"
+    elif [ "${SQUAD_TUIOS_FAKE_NO_WORKSPACE:-0}" = 1 ]; then
+      # Pre-creation empty so label conflict does not trip; post-creation a
+      # record that omits every workspace field, i.e. missing placement.
+      if [ ! -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; then
+        printf '{"windows":[]}\n'
+      else
+        printf '{"windows":[{"id":"w-opaque_7","name":"%s","cwd":"/tmp/wt"}]}\n' "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task-1}"
+      fi
     elif [ "${SQUAD_TUIOS_FAKE_DURABLE_LABEL:-0}" = 1 ]; then
       printf '{"windows":[{"id":"w-opaque_7","custom_name":"sq-durable","title":"pi - live","cwd":"/tmp/wt"}]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_ERROR_INVENTORY:-0}" = 1 ]; then
@@ -640,6 +648,16 @@ export SQUAD_TUIOS_FAKE_PLACEMENT SQUAD_TUIOS_FAKE_WINDOW_NAME
 if fm_backend_tuios_create_task owned sq-wrong-place /tmp/wt >/dev/null 2>&1; then fail 'wrong-workspace creation must refuse'; fi
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'a wrong-workspace refusal must close the just-created task window'
 unset SQUAD_TUIOS_FAKE_PLACEMENT
+# A post-creation inventory that omits every workspace field is missing
+# placement and must refuse and close only the just-created window.
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$SQUAD_TUIOS_CREATED_LABEL"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_NO_WORKSPACE=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-missing-place
+export SQUAD_TUIOS_FAKE_NO_WORKSPACE SQUAD_TUIOS_FAKE_WINDOW_NAME
+if fm_backend_tuios_create_task owned sq-missing-place /tmp/wt >/dev/null 2>&1; then fail 'missing placement must refuse'; fi
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-missing-place --session owned --cwd /tmp/wt --workspace 4 --no-focus --print-id' 'missing-placement creation must still target the reserved workspace'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'missing placement must close the just-created task window'
+unset SQUAD_TUIOS_FAKE_NO_WORKSPACE
 # An unreadable post-creation inventory must also close the created window.
 rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$SQUAD_TUIOS_CREATED_LABEL"
 : > "$SQUAD_TUIOS_LOG"

@@ -69,7 +69,7 @@ Um spawn herdr adicionalmente faz gate de versão contra o protocolo do binário
 Um spawn zellij adicionalmente faz gate de versão contra a versão do binário `zellij` instalado e requer `jq`, recusando alto e ruidosamente quando qualquer um estiver ausente ou a versão for anterior a 0.44.
 Um spawn cmux adicionalmente faz gate de versão contra a versão do binário `cmux` instalado, requer `jq` e requer que o socket de controle esteja acessível e acessível (veja [`docs/cmux-backend.md`](cmux-backend.md) "Setup" para a configuração de acesso ao socket uma vez que precisa; modo Automation é o modo de controle de socket recomendado, com modo Password suportado via `config/cmux-socket-password`), recusando alto e de forma não retentável em um socket `cmuxOnly`/não autenticado.
 Uma recusa de spawn de backend por dependência ausente, gate de versão ou socket não autenticado é terminal para aquele backend selecionado; Squad o apresenta como um bloqueio em vez de silenciosamente retentar outro backend.
-Um spawn TUIOS requer TUIOS 0.8.0 ou mais novo, `jq`, e uma sessão existente explícita em `SQUAD_TUIOS_SESSION`; nunca seleciona uma sessão TUIOS ambiente incidental nem cria/reinicia uma.
+Um spawn TUIOS requer TUIOS 0.8.0 ou mais novo, `jq`, e uma sessão existente explícita em `SQUAD_TUIOS_SESSION`; nunca seleciona uma sessão TUIOS ambiente incidental nem cria/reinicia uma. O `config/tuios-workspace` local opcional agrupa explicitamente as janelas de tarefa em um workspace numérico existente naquela sessão; sua ausência preserva o posicionamento no workspace atual. Veja [`tuios-backend.md`](../tuios-backend.md#setup) para configuração e limites.
 Metadados de tarefa gravam `backend=` apenas para um backend não padrão; um `backend=` ausente significa `tmux`, preservando metadados existentes do caminho padrão.
 Cada nova tarefa grava `endpoint_task_id=` como o vínculo de limpeza entre o nome do arquivo de metadados e seu endpoint de runtime opaco.
 Uma tarefa herdr adicionalmente grava `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=` e `herdr_pane_id=`.
@@ -98,7 +98,7 @@ Use o caminho de limpeza protegido descrito em [`docs/zellij-backend.md`](zellij
 cmux não tem camada de sessão — um workspace por tarefa, em qualquer janela cmux aberta — e sua senha de socket (quando configurada) é lida de `config/cmux-socket-password` local, gitignored, sob o diretório de config efetivo, nunca commitada.
 O label voltado para o chamador continua `sq-<id>`, mas o título real do workspace cmux é escopado pelo label legível do `SQUAD_BASE` ativo mais um hash curto do caminho `SQUAD_ROOT` resolvido como `sq-<base-label>-<id>`.
 Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](cmux-backend.md#operação-e-segurança-atuais), nunca enumerar-e-fechar cada workspace.
-TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; suas janelas de tarefa são escopadas por ids opacos e a limpeza nunca remove a sessão.
+TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; o `config/tuios-workspace` opcional seleciona um destino numérico reservado, enquanto sua ausência preserva o posicionamento legado; suas janelas de tarefa são escopadas por ids opacos e a limpeza nunca remove a sessão.
 `config/backend` é herdado para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
@@ -565,6 +565,7 @@ SQUAD_BACKEND_ORCA_COMPOSER_LINES=200  # apenas orca: linhas de leitura de termi
 SQUAD_BACKEND_ORCA_IDLE_RE='^Type a message\.\.\.$'  # apenas orca: regex de placeholder de composer vazio após remoção de borda/prompt
 SQUAD_ZELLIJ_SESSION=Squad  # apenas zellij: sessão nomeada para operações normais de backend e isolamento de teste (docs/zellij-backend.md)
 SQUAD_TUIOS_SESSION=       # apenas tuios: sessão existente explícita para operações de backend (docs/tuios-backend.md)
+# config/tuios-workspace   # apenas tuios, arquivo local opcional: um número de workspace reservado; ausente = posicionamento legado no workspace atual
 SQUAD_BACKEND_CMUX_COMPOSER_LINES=20  # apenas cmux: linhas de cauda escaneadas para localizar a linha de composer para verificação de submissão
 SQUAD_BACKEND_CMUX_IDLE_RE='^Type a message\.\.\.$'  # apenas cmux: regex de placeholder de composer vazio após remoção de borda/prompt
 CMUX_SOCKET_PASSWORD=   # apenas cmux: fallback de senha de socket quando config/cmux-socket-password está ausente (docs/cmux-backend.md)
