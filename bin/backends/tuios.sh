@@ -73,6 +73,9 @@ SQUAD_BACKEND_TUIOS_JQ_LIB='
   def tlabels: [ (.name // empty), (.title // empty), (.custom_name // empty), (.display_name // empty),
                  (if (.window | type) == "object" then (.window.name // empty), (.window.title // empty), (.window.custom_name // empty), (.window.display_name // empty) else empty end) ]
             | map(select(type == "string" and length > 0));
+  def tworkspaces: [ (.workspace // empty),
+                     (if (.window | type) == "object" then (.window.workspace // empty) else empty end) ]
+                   | map(select(type == "number"));
   def terror: [ (.error? // empty)
                 | if type == "object" then (.code // .message // .detail // empty) else . end
                 | select(type == "string" and length > 0) ]
@@ -89,6 +92,46 @@ fm_backend_tuios_list_windows_json() {  # <session> -> validated windows invento
     and all(.windows[]; type == "object" and ((tids | unique | length) == 1))
   ' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
+}
+
+fm_backend_tuios_workspace_setting() {  # -> configured integer, or empty when disabled
+  local file="${SQUAD_BACKEND_CONFIG_DIR}/tuios-workspace" value
+  local -a config_lines=()
+  [ -f "$file" ] || { printf ''; return 0; }
+  mapfile -t config_lines < "$file" || { echo 'error: cannot read config/tuios-workspace' >&2; return 1; }
+  [ "${#config_lines[@]}" -eq 1 ] || {
+    echo 'error: config/tuios-workspace must contain exactly one line' >&2
+    return 1
+  }
+  value=${config_lines[0]}
+  [ -n "$value" ] && [[ "$value" =~ ^(0|[1-9][0-9]*)$ ]] || {
+    echo 'error: config/tuios-workspace must contain one non-negative workspace number' >&2
+    return 1
+  }
+  printf '%s' "$value"
+}
+
+fm_backend_tuios_list_workspaces_json() {  # <session> -> validated authoritative inventory
+  local session=$1 json
+  json=$(fm_backend_tuios_cli "$session" list-workspaces --json 2>/dev/null) || return 1
+  printf '%s' "$json" | jq -e '
+    type == "object" and (.success == true) and (.workspaces | type == "array")
+    and all(.workspaces[]; type == "object" and (.workspace | type == "number" and floor == .))
+    and ([.workspaces[].workspace] | unique | length) == (.workspaces | length)
+  ' >/dev/null 2>&1 || return 1
+  printf '%s' "$json"
+}
+
+fm_backend_tuios_validate_workspace() {  # <session> <workspace>
+  local inventory=$2
+  inventory=$(fm_backend_tuios_list_workspaces_json "$1") || {
+    echo 'error: cannot read authoritative TUIOS workspace inventory' >&2
+    return 1
+  }
+  printf '%s' "$inventory" | jq -e --argjson ws "$2" '[.workspaces[].workspace] | index($ws) != null' >/dev/null || {
+    echo "error: configured TUIOS workspace '$2' does not exist in the session" >&2
+    return 1
+  }
 }
 
 fm_backend_tuios_parse_target() {  # <target> -> session and opaque window id globals
@@ -160,7 +203,7 @@ fm_backend_tuios_current_path() {  # <target>
   windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || return 1
   printf '%s' "$windows" | jq -r --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     [.windows[] | select((tids | index($id)) != null)]
-    | if length == 1 then (.[0].cwd // (.[0].window? | .cwd?) // empty) else empty end'
+    | if length == 1 then (.[0].cwd // (if (.[0].window | type) == "object" then .[0].window.cwd else empty end) // empty) else empty end'
 }
 
 # --- protocol discovery ------------------------------------------------
@@ -184,7 +227,13 @@ send-keys:session,window
 send-text:session,window'
 
 fm_backend_tuios_protocol_check() {  # <session>
-  local catalogue problems
+  local catalogue problems required=$SQUAD_BACKEND_TUIOS_PROTOCOL_REQUIRED workspace
+  workspace=$(fm_backend_tuios_workspace_setting) || return 1
+  if [ -n "$workspace" ]; then
+    required="${required}
+list-workspaces:session
+new-window:session,name,cwd,focus,workspace"
+  fi
   catalogue=$("$(fm_backend_tuios_bin)" list-verbs --json 2>/dev/null) || {
     echo 'error: TUIOS verb catalogue is unreadable; refusing to drive an unverified daemon' >&2
     return 1
@@ -199,7 +248,7 @@ fm_backend_tuios_protocol_check() {  # <session>
     echo 'error: TUIOS verb catalogue is malformed; refusing to drive an unverified daemon' >&2
     return 1
   fi
-  problems=$(printf '%s' "$catalogue" | jq -r --arg required "$SQUAD_BACKEND_TUIOS_PROTOCOL_REQUIRED" '
+  problems=$(printf '%s' "$catalogue" | jq -r --arg required "$required" '
     (.verbs | map({(.verb // .name): ((.params // []) | map(.name) | map(select(type == "string")))}) | add) as $have
     | $required | split("\n") | map(select(length > 0))
     | map(split(":") as $row
@@ -599,10 +648,11 @@ fm_backend_tuios_resolve_bare_selector() {  # <name>
 }
 
 fm_backend_tuios_container_ensure() {  # <project-cwd> -> existing explicit session only
-  local configured=${SQUAD_TUIOS_SESSION:-}
+  local configured=${SQUAD_TUIOS_SESSION:-} workspace
   [ -n "$configured" ] || { echo 'error: set SQUAD_TUIOS_SESSION explicitly to an owned TUIOS session' >&2; return 1; }
   fm_backend_endpoint_atom_valid "$configured" || { echo 'error: SQUAD_TUIOS_SESSION must be a single safe session-name atom' >&2; return 1; }
   fm_backend_tuios_tool_check || return 1
+  workspace=$(fm_backend_tuios_workspace_setting) || return 1
   "$(fm_backend_tuios_bin)" session-info --session "$configured" >/dev/null 2>&1 || {
     echo "error: configured TUIOS session '$configured' is not live; refusing to create or adopt a session" >&2
     return 1
@@ -610,6 +660,7 @@ fm_backend_tuios_container_ensure() {  # <project-cwd> -> existing explicit sess
   # Backend detection validates the daemon's own verb catalogue before any task
   # window is created, so a narrower or older daemon fails here, loudly.
   fm_backend_tuios_protocol_check "$configured" || return 1
+  if [ -n "$workspace" ]; then fm_backend_tuios_validate_workspace "$configured" "$workspace" || return 1; fi
   printf '%s' "$configured"
 }
 
@@ -624,7 +675,11 @@ fm_backend_tuios_same_label_window() {  # <session> <task-label> -> opaque id, o
 }
 
 fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID
-  local session=$1 label=$2 cwd=$3 windows id
+  local session=$1 label=$2 cwd=$3 windows id workspace
+  workspace=$(fm_backend_tuios_workspace_setting) || return 1
+  if [ -n "$workspace" ]; then
+    fm_backend_tuios_validate_workspace "$session" "$workspace" || return 1
+  fi
   windows=$(fm_backend_tuios_list_windows_json "$session") || { echo "error: cannot read TUIOS window inventory for '$session'" >&2; return 1; }
   if printf '%s' "$windows" | jq -e --arg label "$label" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     [.windows[] | select((tlabels | index($label)) != null)] | length > 0
@@ -632,9 +687,33 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
     echo "error: TUIOS task label '$label' already exists in '$session'; close that window or use the recorded task's recovery path" >&2
     return 1
   fi
-  id=$("$(fm_backend_tuios_bin)" new-window "$label" --session "$session" --cwd "$cwd" --no-focus --print-id 2>/dev/null) || return 1
+  if [ -n "$workspace" ]; then
+    id=$("$(fm_backend_tuios_bin)" new-window "$label" --session "$session" --cwd "$cwd" --workspace "$workspace" --no-focus --print-id 2>/dev/null) || return 1
+  else
+    id=$("$(fm_backend_tuios_bin)" new-window "$label" --session "$session" --cwd "$cwd" --no-focus --print-id 2>/dev/null) || return 1
+  fi
   case "$id" in ''|*[!A-Za-z0-9._@%-]*) echo 'error: TUIOS returned malformed opaque window id' >&2; return 1 ;; esac
-  fm_backend_tuios_target_ready "$session:$id" "$label" || return 1
+  fm_backend_tuios_target_ready "$session:$id" "$label" || {
+    fm_backend_tuios_kill "$session:$id" '' "$label" >/dev/null 2>&1 || true
+    return 1
+  }
+  if [ -n "$workspace" ]; then
+    windows=$(fm_backend_tuios_list_windows_json "$session") || {
+      echo 'error: cannot verify TUIOS task workspace placement' >&2
+      fm_backend_tuios_kill "$session:$id" '' "$label" >/dev/null 2>&1 || true
+      return 1
+    }
+    printf '%s' "$windows" | jq -e --arg id "$id" --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+      [.windows[] | select((tids | index($id)) != null)] as $matches
+      | ($matches | length) == 1
+        and (($matches[0] | tworkspaces | unique) as $found
+             | ($found | length) == 1 and $found[0] == $ws)
+    ' >/dev/null 2>&1 || {
+      echo 'error: TUIOS task window placement is missing, contradictory, or incorrect' >&2
+      fm_backend_tuios_kill "$session:$id" '' "$label" >/dev/null 2>&1 || true
+      return 1
+    }
+  fi
   printf '%s' "$id"
 }
 
