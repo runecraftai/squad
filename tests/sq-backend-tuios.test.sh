@@ -616,7 +616,7 @@ printf '4\n' > "$TMP_ROOT/config/tuios-workspace"
 # With a reserved workspace configured, discovery must additionally require the
 # list-workspaces verb and the new-window workspace parameter.
 fm_backend_tuios_protocol_check owned || fail 'a complete grouped catalogue must pass protocol discovery'
-SQUAD_TUIOS_FAKE_VERBS_OMIT=list-workspaces
+SQUAD_TUIOS_FAKE_VERBS_OMIT='list-workspaces'
 export SQUAD_TUIOS_FAKE_VERBS_OMIT
 if fm_backend_tuios_protocol_check owned 2>"$TMP_ROOT/proto-ws-verb-err"; then fail 'a daemon without list-workspaces must refuse grouped placement'; fi
 assert_contains "$(cat "$TMP_ROOT/proto-ws-verb-err")" 'missing verb list-workspaces' 'grouped discovery must name the missing workspace verb'

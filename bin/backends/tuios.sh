@@ -96,14 +96,14 @@ fm_backend_tuios_list_windows_json() {  # <session> -> validated windows invento
 
 fm_backend_tuios_workspace_setting() {  # -> configured integer, or empty when disabled
   local file="${SQUAD_BACKEND_CONFIG_DIR}/tuios-workspace" value
-  local -a lines=()
+  local -a config_lines=()
   [ -f "$file" ] || { printf ''; return 0; }
-  mapfile -t lines < "$file" || { echo 'error: cannot read config/tuios-workspace' >&2; return 1; }
-  [ "${#lines[@]}" -eq 1 ] || {
+  mapfile -t config_lines < "$file" || { echo 'error: cannot read config/tuios-workspace' >&2; return 1; }
+  [ "${#config_lines[@]}" -eq 1 ] || {
     echo 'error: config/tuios-workspace must contain exactly one line' >&2
     return 1
   }
-  value=${lines[0]}
+  value=${config_lines[0]}
   [ -n "$value" ] && [[ "$value" =~ ^(0|[1-9][0-9]*)$ ]] || {
     echo 'error: config/tuios-workspace must contain one non-negative workspace number' >&2
     return 1
