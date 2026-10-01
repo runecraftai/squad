@@ -52,6 +52,14 @@ case "${1:-}" in
     ;;
   list-workspaces)
     [ "${SQUAD_TUIOS_FAKE_WORKSPACES_FAIL:-0}" = 1 ] && exit 1
+    if [ "${SQUAD_TUIOS_FAKE_ALLOC_PAUSE:-0}" = 1 ] && [ ! -e "$SQUAD_TUIOS_FAKE_ALLOC_PAUSE_MARK" ]; then
+      : > "$SQUAD_TUIOS_FAKE_ALLOC_PAUSE_MARK"
+      for _ in $(seq 1 500); do
+        [ ! -e "$SQUAD_TUIOS_FAKE_ALLOC_RELEASE" ] || break
+        sleep 0.01
+      done
+      [ -e "$SQUAD_TUIOS_FAKE_ALLOC_RELEASE" ] || exit 80
+    fi
     rows=()
     for workspace in $(seq 1 9); do
       name= count=0
@@ -229,7 +237,7 @@ SQUAD_BACKEND_CONFIG_DIR="$TMP_ROOT/config"
 SQUAD_BACKEND_STATE_DIR="$TMP_ROOT/state"
 export SQUAD_BACKEND_CONFIG_DIR SQUAD_BACKEND_STATE_DIR
 fm_backend_validate_spawn tuios || fail 'TUIOS should be a supported spawn backend'
-[ "$(fm_backend_required_tools tuios)" = 'tuios jq fob' ] || fail 'required tools mismatch'
+[ "$(fm_backend_required_tools tuios)" = 'tuios jq fob flock' ] || fail 'required tools mismatch'
 fm_backend_source tuios || fail 'adapter did not source'
 fm_backend_tuios_tool_check || fail 'minimum TUIOS version should pass'
 
@@ -627,32 +635,73 @@ export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 [ "$(fm_backend_tuios_create_task owned sq-spawn-test /tmp/wt | cut -f1)" = w-opaque_7 ] || fail 'task window creation failed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-spawn-test --session owned --cwd /tmp/wt --workspace 2 --no-focus --print-id' 'spawn did not create an unfocused task-specific workspace in the exact session'
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
-# A crash between lockdir creation and pid publication must not permanently
-# disable task allocation: a pid-less lock older than the grace window is
-# reclaimed rather than timing out.
-stale_lock="$XDG_RUNTIME_DIR/.squad-tuios-workspace-owned.lock"
-rm -rf "$stale_lock"
-mkdir -p "$stale_lock"
-touch -t 200001010000 "$stale_lock"
+# Legacy pid-lock remnants are inert under the kernel lock and must never be
+# reclaimed or unlinked by a later allocator.
+legacy_lock="$XDG_RUNTIME_DIR/.squad-tuios-workspace-owned.lock"
+rm -rf "$legacy_lock"
+mkdir -p "$legacy_lock"
+printf 'not-a-pid\n' > "$legacy_lock/pid"
 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-stale-lock
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
-created=$(fm_backend_tuios_create_task owned sq-stale-lock /tmp/wt) || fail 'a pid-less stale lock must be reclaimed instead of timing out'
-[ "${created%%$'\t'*}" = w-opaque_7 ] || fail 'reclaiming a stale lock must still create the task window'
+created=$(fm_backend_tuios_create_task owned sq-stale-lock /tmp/wt) || fail 'a legacy corrupt lock must not block task allocation'
+[ "${created%%$'\t'*}" = w-opaque_7 ] || fail 'ignoring a legacy lock must still create the task window'
 [ -n "${created#*$'\t'}" ] || fail 'create_task must return the selected workspace id'
-[ ! -d "$stale_lock" ] || fail 'create_task must release its workspace lock'
-# A lockdir whose pid file exists but is empty or non-numeric (a kill between
-# the redirect creating it and the write) must also be reclaimed instead of
-# busy-looping on a non-empty directory that rmdir cannot remove.
-rm -rf "$stale_lock"
-mkdir -p "$stale_lock"
-printf 'not-a-pid\n' > "$stale_lock/pid"
-touch -t 200001010000 "$stale_lock"
-SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-corrupt-lock
-export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
-created=$(fm_backend_tuios_create_task owned sq-corrupt-lock /tmp/wt) || fail 'a corrupt pid lock must be reclaimed instead of busy-looping'
-[ "${created%%$'\t'*}" = w-opaque_7 ] || fail 'reclaiming a corrupt lock must still create the task window'
-[ ! -d "$stale_lock" ] || fail 'create_task must remove a reclaimed corrupt lock'
+[ -d "$legacy_lock" ] || fail 'the allocator must not remove a legacy lock directory'
+[ -f "$XDG_RUNTIME_DIR/.squad-tuios-workspace-owned.flock" ] || fail 'the stable kernel-lock file must remain after allocation'
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+
+# Two separate bases share the session lock: a waiter cannot enter TUIOS while
+# the first allocator owns the kernel lock, and the later allocation gets a
+# different workspace without relying on shared task metadata.
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$SQUAD_TUIOS_CREATED_LABEL" \
+  "$SQUAD_TUIOS_CREATED_WORKSPACE" "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+mkdir -p "$TMP_ROOT/base-a/state" "$TMP_ROOT/base-a/config" \
+  "$TMP_ROOT/base-b/state" "$TMP_ROOT/base-b/config"
+(
+  SQUAD_BACKEND_STATE_DIR="$TMP_ROOT/base-a/state"
+  SQUAD_BACKEND_CONFIG_DIR="$TMP_ROOT/base-a/config"
+  SQUAD_TUIOS_FAKE_ALLOC_PAUSE=1
+  SQUAD_TUIOS_FAKE_ALLOC_PAUSE_MARK="$TMP_ROOT/alloc-paused"
+  SQUAD_TUIOS_FAKE_ALLOC_RELEASE="$TMP_ROOT/alloc-release"
+  SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1
+  SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-base-a
+  export SQUAD_BACKEND_STATE_DIR SQUAD_BACKEND_CONFIG_DIR \
+    SQUAD_TUIOS_FAKE_ALLOC_PAUSE SQUAD_TUIOS_FAKE_ALLOC_PAUSE_MARK \
+    SQUAD_TUIOS_FAKE_ALLOC_RELEASE SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+  fm_backend_tuios_create_task owned sq-base-a /tmp/base-a
+) > "$TMP_ROOT/base-a.out" 2> "$TMP_ROOT/base-a.err" &
+alloc_a_pid=$!
+for _ in $(seq 1 500); do
+  [ ! -e "$TMP_ROOT/alloc-paused" ] || break
+  sleep 0.01
+done
+[ -e "$TMP_ROOT/alloc-paused" ] || fail 'first allocator did not enter the protected inventory read'
+lockfile="$XDG_RUNTIME_DIR/.squad-tuios-workspace-owned.flock"
+lock_inode_before=$(stat -c '%d:%i' "$lockfile" 2>/dev/null || stat -f '%d:%i' "$lockfile")
+log_lines_before_waiter=$(wc -l < "$SQUAD_TUIOS_LOG")
+(
+  SQUAD_BACKEND_STATE_DIR="$TMP_ROOT/base-b/state"
+  SQUAD_BACKEND_CONFIG_DIR="$TMP_ROOT/base-b/config"
+  SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1
+  SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-base-b
+  export SQUAD_BACKEND_STATE_DIR SQUAD_BACKEND_CONFIG_DIR \
+    SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+  fm_backend_tuios_create_task owned sq-base-b /tmp/base-b
+) > "$TMP_ROOT/base-b.out" 2> "$TMP_ROOT/base-b.err" &
+alloc_b_pid=$!
+sleep 0.1
+[ "$(wc -l < "$SQUAD_TUIOS_LOG")" -eq "$log_lines_before_waiter" ] || fail 'second base reached TUIOS before the first allocation released the session lock'
+touch "$TMP_ROOT/alloc-release"
+wait "$alloc_a_pid" || fail "first base allocation failed: $(cat "$TMP_ROOT/base-a.err")"
+wait "$alloc_b_pid" || fail "second base allocation failed: $(cat "$TMP_ROOT/base-b.err")"
+[ "$(cut -f2 "$TMP_ROOT/base-a.out")" = 2 ] || fail 'the first base did not claim the lowest eligible workspace'
+[ "$(cut -f2 "$TMP_ROOT/base-b.out")" = 3 ] || fail 'the waiting base reused the first base workspace'
+lock_inode_after=$(stat -c '%d:%i' "$lockfile" 2>/dev/null || stat -f '%d:%i' "$lockfile")
+[ "$lock_inode_before" = "$lock_inode_after" ] || fail 'a waiter replaced or unlinked the active session lock inode'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-base-a --session owned --cwd /tmp/base-a --workspace 2 --no-focus --print-id' 'first task was not created without focusing its workspace'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-base-b --session owned --cwd /tmp/base-b --workspace 3 --no-focus --print-id' 'second base did not create an unfocused task in a distinct workspace'
+rm -rf "$legacy_lock"
+pass 'flock serializes concurrent allocations across bases and keeps the per-session lock inode stable'
 printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
 printf 'sq-spawn-test\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
 

@@ -673,6 +673,18 @@ try {
   if (!existsSync(ready)) throw new Error("the delivery ready marker was not restored after the watcher directory was replaced");
   if (readFileSync(response, "utf8").trim() !== "queued") throw new Error(`unexpected delivery verdict: ${readFileSync(response, "utf8")}`);
   if (messages.length !== 2 || messages[1] !== "recovered message") throw new Error(`expected one exact recovered follow-up, got ${JSON.stringify(messages)}`);
+  const consumedThenInterrupted = {
+    messages: [
+      { role: "user", content: [{ type: "text", text: "recovered message" }] },
+      { role: "assistant", stopReason: "aborted" },
+    ],
+  };
+  const statusBeforeConsumedInterrupt = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  await handlers.get("agent_end")?.(consumedThenInterrupted, { mode: "rpc" });
+  const statusAfterConsumedInterrupt = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  if (statusAfterConsumedInterrupt !== statusBeforeConsumedInterrupt) throw new Error("an interrupted run after Pi consumed the queued user message emitted a misleading task status");
+  const receiptsAfterConsumedInterrupt = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
+  if (receiptsAfterConsumedInterrupt.length !== 0) throw new Error(`a consumed follow-up was incorrectly marked interrupted: ${JSON.stringify(receiptsAfterConsumedInterrupt)}`);
 } catch (error) {
   failure = error;
 } finally {

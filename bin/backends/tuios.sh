@@ -47,6 +47,7 @@ EOF
 fm_backend_tuios_tool_check() {
   fm_backend_tuios_cli_check || return 1
   command -v jq >/dev/null 2>&1 || { echo "error: backend=tuios selected but 'jq' is not installed (required to parse TUIOS JSON output)" >&2; return 1; }
+  command -v flock >/dev/null 2>&1 || { echo "error: backend=tuios selected but 'flock' is not installed (required to serialize per-session workspace allocation)" >&2; return 1; }
 }
 
 fm_backend_tuios_cli() {  # <session> <verb> <args...>
@@ -791,40 +792,18 @@ fm_backend_tuios_same_label_window() {  # <session> <task-label> -> opaque id, o
     [.windows[] | select((tlabels | index($label)) != null)][0] | tids[0] // empty'
 }
 
-fm_backend_tuios_lockdir_age() {  # <lockdir> -> whole seconds since it was created
-  local mtime
-  mtime=$(stat -c %Y "$1" 2>/dev/null) || mtime=$(stat -f %m "$1" 2>/dev/null) || { echo 999999; return 0; }
-  echo $(( $(date +%s) - mtime ))
-}
-
 fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID and workspace
   (
-  local session=$1 label=$2 cwd=$3 windows id workspace lockdir lockpid lockroot tries reclaim
+  local session=$1 label=$2 cwd=$3 windows id workspace lockfile lock_fd lockroot
   lockroot=${XDG_RUNTIME_DIR:-$SQUAD_BACKEND_CONFIG_DIR}
-  lockdir="$lockroot/.squad-tuios-workspace-${session}.lock"
+  # Keep a stable file separate from the legacy lock directory: flock releases
+  # ownership on process exit, and this path must never be unlinked while waiters
+  # may have it open or they could lock different inodes.
+  lockfile="$lockroot/.squad-tuios-workspace-${session}.flock"
   mkdir -p "$lockroot" || return 1
-  tries=0
-  until mkdir "$lockdir" 2>/dev/null; do
-    lockpid=
-    if [ -r "$lockdir/pid" ]; then
-      read -r lockpid < "$lockdir/pid" || lockpid=
-    fi
-    reclaim=0
-    if [[ "$lockpid" =~ ^[1-9][0-9]*$ ]]; then
-      kill -0 "$lockpid" 2>/dev/null || reclaim=1
-    elif [ "$(fm_backend_tuios_lockdir_age "$lockdir")" -ge 2 ]; then
-      reclaim=1
-    fi
-    if [ "$reclaim" = 1 ]; then
-      rm -f -- "$lockdir/pid"
-      rmdir "$lockdir" 2>/dev/null || true
-    fi
-    tries=$((tries + 1))
-    [ "$tries" -lt 100 ] || { echo 'error: timed out waiting for TUIOS workspace allocation' >&2; return 1; }
-    sleep 0.1
-  done
-  printf '%s\n' "$BASHPID" > "$lockdir/pid"
-  trap 'rm -f -- "$lockdir/pid"; rmdir "$lockdir" 2>/dev/null || true' EXIT
+  command -v flock >/dev/null 2>&1 || { echo "error: backend=tuios selected but 'flock' is not installed (required to serialize per-session workspace allocation)" >&2; return 1; }
+  exec {lock_fd}>"$lockfile" || { echo "error: cannot open TUIOS workspace lock '$lockfile'" >&2; return 1; }
+  flock -x -w 10 "$lock_fd" || { echo 'error: timed out waiting for TUIOS workspace allocation' >&2; return 1; }
   windows=$(fm_backend_tuios_list_windows_json "$session") || { echo "error: cannot read TUIOS window inventory for '$session'" >&2; return 1; }
   if printf '%s' "$windows" | jq -e --arg label "$label" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     [.windows[] | select((tlabels | index($label)) != null)] | length > 0
