@@ -53,6 +53,9 @@ SQUAD_BACKEND_DEFAULT_ROOT="$(cd "$SQUAD_BACKEND_LIB_DIR/.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_DEFAULT_ROOT}}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 SQUAD_BACKEND_CONFIG_DIR="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+# shellcheck disable=SC2034
+# Sourced backend adapters consume this derived state path for durable leases.
+SQUAD_BACKEND_STATE_DIR="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 # Verified backend adapters. Extend only after a backend gets its own
 # bin/backends/<name>.sh and empirical verification, mirroring AGENTS.md
@@ -306,6 +309,7 @@ fm_backend_validate_spawn() {  # <name>
 #   - jq, for the JSON-emitting experimental adapters (herdr, zellij, cmux, tuios) whose
 #     spawn/liveness paths parse the backend's JSON output (see each adapter's
 #     tool check, e.g. fm_backend_herdr_tool_check);
+#   - flock, for TUIOS's kernel-managed per-session workspace allocation lock;
 #   - the fob worktree provider for every session-provider-only backend
 #     (tmux, herdr, zellij, cmux, tuios); orca owns its own task worktree and terminal,
 #     so it drops both fob and any other backend's session CLI.
@@ -317,7 +321,7 @@ fm_backend_required_tools() {  # <backend>
     herdr)  printf '%s' 'herdr jq fob' ;;
     zellij) printf '%s' 'zellij jq fob' ;;
     cmux)   printf '%s' 'cmux jq fob' ;;
-    tuios)  printf '%s' 'tuios jq fob' ;;
+    tuios)  printf '%s' 'tuios jq fob flock' ;;
     orca)   printf '%s' 'orca' ;;
     *) return 1 ;;
   esac

@@ -599,7 +599,7 @@ test_generated_pi_delivery_accepts_queued_messages_and_recovers_polling() {
   ext="$HOME_DIR/state/$id.pi-ext.ts"
   delivery="$HOME_DIR/state/.pi-delivery/$id"
   node_out=$(EXT="$ext" DELIVERY="$delivery" BASE="$HOME_DIR" TASK_ID="$id" SEND_BIN="$ROOT/bin/sq-send.sh" FAKEBIN="$FAKEBIN_DIR" node --input-type=module <<'EOF'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
@@ -623,8 +623,8 @@ mod.default(pi);
 let failure;
 try {
   await handlers.get("session_start")?.();
-  // Model the observed mid-turn race: Pi accepts the follow-up but does not
-  // emit a fresh agent_start edge before the delivery response is needed.
+  // Model the observed mid-turn race: Pi accepts a follow-up while a run is active.
+  await handlers.get("agent_start")?.();
   const sendOnce = () => new Promise((resolve, reject) => {
     const send = spawn(process.env.SEND_BIN, [process.env.TASK_ID, "mid-turn message"], {
       env: {
@@ -644,6 +644,21 @@ try {
   if (sendStatus !== 0) sendStatus = await sendOnce();
   if (sendStatus !== 0) throw new Error(`mid-turn sq-send failed with exit ${sendStatus}`);
   if (messages.length !== 1 || messages[0] !== "mid-turn message") throw new Error(`expected one exact mid-turn follow-up, got ${JSON.stringify(messages)}`);
+  let editor = "mid-turn message\nindependent draft";
+  await handlers.get("agent_end")?.({ messages: [{ role: "assistant", stopReason: "aborted" }] }, {
+    mode: "tui",
+    ui: {
+      getEditorText: () => editor,
+      setEditorText: (text) => { editor = text; },
+    },
+  });
+  if (editor !== "independent draft") throw new Error(`interrupted Squad text was not separated from the independent draft: ${JSON.stringify(editor)}`);
+  const cancellationReceipts = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
+  if (cancellationReceipts.length !== 1) throw new Error(`expected one interruption receipt, got ${JSON.stringify(cancellationReceipts)}`);
+  const interrupted = readFileSync(`${process.env.DELIVERY}/${cancellationReceipts[0]}`, "utf8").trim();
+  if (interrupted !== "cancelled") throw new Error(`interrupted follow-up was not recorded: ${interrupted}`);
+  const taskStatus = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  if (!taskStatus.includes("queued Squad instruction was interrupted before consumption")) throw new Error("interrupted follow-up did not wake supervision");
 
   rmSync(process.env.DELIVERY, { recursive: true, force: true });
   mkdirSync(process.env.DELIVERY, { recursive: true });
@@ -656,8 +671,47 @@ try {
   }
   if (!existsSync(response)) throw new Error("a request remained pending after the watcher directory was replaced");
   if (!existsSync(ready)) throw new Error("the delivery ready marker was not restored after the watcher directory was replaced");
-  if (readFileSync(response, "utf8").trim() !== "delivered") throw new Error(`unexpected delivery verdict: ${readFileSync(response, "utf8")}`);
+  if (readFileSync(response, "utf8").trim() !== "queued") throw new Error(`unexpected delivery verdict: ${readFileSync(response, "utf8")}`);
   if (messages.length !== 2 || messages[1] !== "recovered message") throw new Error(`expected one exact recovered follow-up, got ${JSON.stringify(messages)}`);
+  const consumedThenInterrupted = {
+    messages: [
+      { role: "user", content: [{ type: "text", text: "recovered message" }] },
+      { role: "assistant", stopReason: "aborted" },
+    ],
+  };
+  const statusBeforeConsumedInterrupt = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  await handlers.get("agent_end")?.(consumedThenInterrupted, { mode: "rpc" });
+  const statusAfterConsumedInterrupt = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  if (statusAfterConsumedInterrupt !== statusBeforeConsumedInterrupt) throw new Error("an interrupted run after Pi consumed the queued user message emitted a misleading task status");
+  const receiptsAfterConsumedInterrupt = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
+  if (receiptsAfterConsumedInterrupt.length !== 0) throw new Error(`a consumed follow-up was incorrectly marked interrupted: ${JSON.stringify(receiptsAfterConsumedInterrupt)}`);
+  // A Pi session replacement must drop follow-up state: a stale accepted
+  // message from the prior session must never be stripped from the new
+  // editor of the new session or recorded as an interruption.
+  const staleRequest = "stale-session-request";
+  writeFileSync(`${process.env.DELIVERY}/${staleRequest}.request`, `${staleRequest}\nstale session message\n`);
+  const staleResponse = `${process.env.DELIVERY}/${staleRequest}.response`;
+  for (let i = 0; i < 100 && !existsSync(staleResponse); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  if (!existsSync(staleResponse) || readFileSync(staleResponse, "utf8").trim() !== "queued") {
+    throw new Error("the stale follow-up was not queued before the session replacement");
+  }
+  await handlers.get("session_start")?.();
+  let staleEditor = "stale session message\nsurviving draft";
+  const statusBeforeStale = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  await handlers.get("agent_end")?.({ messages: [{ role: "assistant", stopReason: "aborted" }] }, {
+    mode: "tui",
+    ui: {
+      getEditorText: () => staleEditor,
+      setEditorText: (text) => { staleEditor = text; },
+    },
+  });
+  if (staleEditor !== "stale session message\nsurviving draft") throw new Error(`a stale pre-replacement follow-up was stripped from the editor of the new session: ${JSON.stringify(staleEditor)}`);
+  const staleReceipts = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
+  if (staleReceipts.length !== 0) throw new Error(`a stale pre-replacement follow-up produced an interruption receipt: ${JSON.stringify(staleReceipts)}`);
+  const statusAfterStale = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  if (statusAfterStale !== statusBeforeStale) throw new Error("a stale pre-replacement follow-up emitted a misleading task status");
 } catch (error) {
   failure = error;
 } finally {
@@ -667,9 +721,9 @@ if (failure) throw failure;
 EOF
 )
   status=$?
-  expect_code 0 "$status" "generated Pi extension should report accepted follow-ups as delivered and recover missed watcher events"
+  expect_code 0 "$status" "generated Pi extension should recover interrupted follow-ups without losing independent drafts"
   [ -z "$node_out" ] || fail "generated Pi delivery test printed output: $node_out"
-  pass "generated Pi delivery accepts queued messages and recovers a replaced dropbox watcher"
+  pass "generated Pi delivery clears interrupted queued text, preserves drafts, and recovers dropbox polling"
 }
 
 test_batch_forwards_shared_profile_flags() {

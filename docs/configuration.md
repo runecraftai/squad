@@ -66,7 +66,7 @@ The compatibility helper `fm_backend_agent_alive` continues to collapse those de
 A herdr spawn additionally version-gates against the installed `herdr` binary's protocol and requires `jq`, refusing loudly on an incompatible or missing installation.
 A zellij spawn additionally version-gates against the installed `zellij` binary's version and requires `jq`, refusing loudly when either is missing or the version is older than 0.44.
 A cmux spawn additionally version-gates against the installed `cmux` binary's version, requires `jq`, and requires the control socket to be reachable and accessible (see [`docs/cmux-backend.md`](cmux-backend.md) "Setup" for the one-time socket-access configuration this needs; Automation mode is the recommended socket control mode, with Password mode supported via `config/cmux-socket-password`), refusing loudly and non-retryably on a `cmuxOnly`/unauthenticated socket.
-A TUIOS spawn requires TUIOS 0.8.0 or newer, `jq`, and an explicit existing session in `SQUAD_TUIOS_SESSION`; it never selects an incidental ambient TUIOS session or creates/restarts one. Optional local `config/tuios-workspace` explicitly groups task windows in one existing numeric workspace in that session; its absence preserves current-workspace placement. See [`tuios-backend.md`](tuios-backend.md#setup) for configuration and limits.
+A TUIOS spawn requires TUIOS 0.8.0 or newer, `jq`, `flock`, and an explicit existing session in `SQUAD_TUIOS_SESSION`; it never selects an incidental ambient TUIOS session or creates/restarts one. Every task receives a distinct existing empty, unnamed workspace; optional local `config/tuios-workspace` expresses a preferred number, not a shared destination. See [`tuios-backend.md`](tuios-backend.md#setup) for configuration and limits.
 A backend spawn refusal from a missing dependency, version gate, or unauthenticated socket is terminal for that selected backend; Squad surfaces it as a blocker instead of silently retrying another backend.
 Task meta records `backend=` only for a non-default backend; an absent `backend=` means `tmux`, preserving existing default-path meta files.
 Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
@@ -74,7 +74,7 @@ A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herd
 A zellij task additionally records `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
 An Orca task additionally records `orca_worktree_id=` and `terminal=`, with `window=sq-<id>` kept as the shared Squad alias.
 A cmux task additionally records `cmux_workspace_id=` and `cmux_surface_id=`.
-A TUIOS task additionally records `tuios_session=`, `tuios_window_id=`, and `tuios_boot_id=`.
+A TUIOS task additionally records `tuios_session=`, `tuios_window_id=`, `tuios_workspace_id=`, and `tuios_boot_id=`.
 Task selectors for `sq-peek.sh`, `sq-send.sh`, and `sq-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.
 A selector containing `:` is passed through as an explicit backend endpoint escape hatch.
 Otherwise an exact task id matching `state/<id>.meta` wins before the legacy `sq-<id>` label fallback, so task ids that themselves start with `sq-` route to their own metadata instead of being stripped.
@@ -94,7 +94,7 @@ For normal zellij operations, `SQUAD_ZELLIJ_SESSION` selects the named session a
 Zellij has no per-base workspace split: primary and XO tasks share that one session, and visible tab titles are scoped by the active `SQUAD_BASE` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<base-label>-<id>`.
 Use the guarded cleanup path described in [`docs/zellij-backend.md`](zellij-backend.md) instead of `kill-all-sessions` or `delete-all-sessions`.
 cmux has no session layer at all - one workspace per task, in whatever cmux window is open - and its socket password (when configured) is read from local, gitignored `config/cmux-socket-password` under the effective config directory, never committed.
-TUIOS uses the explicitly configured `SQUAD_TUIOS_SESSION`; optional `config/tuios-workspace` selects a reserved numeric destination, while its absence preserves legacy placement; task windows are scoped by opaque ids and cleanup never removes the session.
+TUIOS uses the explicitly configured `SQUAD_TUIOS_SESSION`; each task gets its own existing empty, unnamed workspace, with optional `config/tuios-workspace` as a preferred number; task windows are scoped by opaque ids and cleanup never removes the session.
 The caller-facing label remains `sq-<id>`, but the actual cmux workspace title is scoped by the active `SQUAD_BASE` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<base-label>-<id>`.
 Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), never enumerate-and-close every workspace.
 `config/backend` is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
@@ -340,7 +340,7 @@ This section is the single owner of that universal toolchain list; backend guide
 In that list, drill runs the validation pipeline, sq-gh, sq-browser, and sq-report cover GitHub, browser, and rich-review operations, and sq-tasks plus sq-quota back backlog mutations and quota-aware array dispatch.
 Frontend validation tooling - Playwright MCP, the Playwright CLI, and the automatic PR visual-validation pattern - is covered in [playwright-validation.md](playwright-validation.md).
 The per-backend delta is required only for the backend resolved from `SQUAD_BACKEND`, then `config/backend`, then runtime auto-detection, then default `tmux`, so a base is never told to install a tool an inactive backend or feature would need.
-That delta is owned in code by `fm_backend_required_tools` in `bin/sq-backend.sh`: the resolved backend's own session-provider CLI (`tmux`, `herdr`, `zellij`, `orca`, `cmux`, or `tuios`), `jq` for the JSON-emitting experimental adapters (`herdr`, `zellij`, `cmux`, `tuios`) whose spawn and liveness paths parse the backend's JSON output, and the `fob` worktree provider for every session-provider-only backend (`tmux`, `herdr`, `zellij`, `cmux`, `tuios`).
+That delta is owned in code by `fm_backend_required_tools` in `bin/sq-backend.sh`: the resolved backend's own session-provider CLI (`tmux`, `herdr`, `zellij`, `orca`, `cmux`, or `tuios`), `jq` for the JSON-emitting experimental adapters (`herdr`, `zellij`, `cmux`, `tuios`) whose spawn and liveness paths parse the backend's JSON output, `flock` for TUIOS's per-session allocation lock, and the `fob` worktree provider for every session-provider-only backend (`tmux`, `herdr`, `zellij`, `cmux`, `tuios`).
 Backend tool availability uses the adapter's own executable resolver, so bootstrap and spawn agree on supported non-`PATH` locations such as cmux's bundled CLI.
 An unknown resolved backend emits `BACKEND_INVALID` and blocks dispatch instead of silently dropping its dependency delta or falling back to tmux.
 Orca provides both the task worktree and terminal endpoint (see "Runtime backend" above), so `backend=orca` requires only `orca` on top of the universal toolchain and skips both `fob` and every other backend's session CLI.
@@ -599,7 +599,7 @@ SQUAD_BACKEND_ORCA_COMPOSER_LINES=200  # orca-only: terminal-read lines scanned 
 SQUAD_BACKEND_ORCA_IDLE_RE='^Type a message\.\.\.$'  # orca-only: empty-composer placeholder regex after border/prompt stripping
 SQUAD_ZELLIJ_SESSION=Squad  # zellij-only: named session for normal backend ops and test isolation (docs/zellij-backend.md)
 SQUAD_TUIOS_SESSION=       # tuios-only: explicit existing session for backend operations (docs/tuios-backend.md)
-# config/tuios-workspace   # tuios-only, optional local file: one reserved workspace number; absent = legacy current-workspace placement
+# config/tuios-workspace   # tuios-only, optional local file: preferred workspace number; absent = lowest eligible empty, unnamed workspace
 SQUAD_BACKEND_CMUX_COMPOSER_LINES=20  # cmux-only: tail lines scanned to locate the composer row for submit verification
 SQUAD_BACKEND_CMUX_IDLE_RE='^Type a message\.\.\.$'  # cmux-only: empty-composer placeholder regex after border/prompt stripping
 CMUX_SOCKET_PASSWORD=   # cmux-only: socket password fallback when config/cmux-socket-password is absent (docs/cmux-backend.md)

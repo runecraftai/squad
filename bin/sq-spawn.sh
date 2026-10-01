@@ -659,6 +659,8 @@ fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+TUIOS_ABORT_CLEANUP=0
+TUIOS_WORKSPACE_ID=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
@@ -735,6 +737,12 @@ spawn_abort_cleanup() {
         fi
       fi
     fi
+  fi
+  if [ "$TUIOS_ABORT_CLEANUP" = 1 ]; then
+    TUIOS_ABORT_CLEANUP=0
+    fm_backend_tuios_kill "$TUIOS_SES:$TUIOS_WINDOW_ID" '' "sq-$ID" >/dev/null 2>&1 || true
+    fm_backend_tuios_unname_workspace_if_empty "$TUIOS_SES" "$TUIOS_WORKSPACE_ID" "sq-$ID" >/dev/null 2>&1 || \
+      echo "warning: could not release the task workspace for $ID; its exact workspace name is preserved" >&2
   fi
   if [ -n "${SPAWN_TUIOS_LEASE:-}" ]; then
     tuios_release_lease "$SPAWN_TUIOS_LEASE" || true
@@ -1883,6 +1891,7 @@ EOF
     TUIOS_SES=$(fm_backend_tuios_container_ensure "$PROJ_ABS") || exit 1
     TUIOS_BOOT_ID=$(fm_backend_tuios_boot_id "$TUIOS_SES" 2>/dev/null) || TUIOS_BOOT_ID=
     TUIOS_WINDOW_ID=
+    TUIOS_WORKSPACE_ID=
     # Post-restart relaunch: the daemon restores every session with its names and
     # window ids but a fresh shell in every pane, so a task's recorded window can
     # still exist with its label and no agent. Reuse it only on recorded
@@ -1893,8 +1902,20 @@ EOF
     fi
     if [ -n "$TUIOS_WINDOW_ID" ]; then
       echo "tuios: reusing the restored task window $TUIOS_SES:$TUIOS_WINDOW_ID after a daemon restart" >&2
+      TUIOS_WORKSPACE_ID=$(fm_backend_tuios_workspace_for_window "$TUIOS_SES" "$TUIOS_WINDOW_ID") || {
+        echo 'error: TUIOS task workspace provenance could not be read' >&2
+        exit 1
+      }
     else
-      TUIOS_WINDOW_ID=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
+      TUIOS_TASK_IDS=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
+      TUIOS_ABORT_CLEANUP=1
+      read -r TUIOS_WINDOW_ID TUIOS_WORKSPACE_ID <<EOF || true
+$TUIOS_TASK_IDS
+EOF
+      if [ -z "$TUIOS_WINDOW_ID" ] || [ -z "$TUIOS_WORKSPACE_ID" ]; then
+        echo "error: TUIOS did not return a window/workspace id for $W" >&2
+        exit 1
+      fi
     fi
     T="$TUIOS_SES:$TUIOS_WINDOW_ID"
     ;;
@@ -2322,6 +2343,7 @@ EOF
 // sendUserMessage instead of typing into a composer that may swallow Enter.
 import { execFile, execFileSync } from "node:child_process";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -2347,6 +2369,7 @@ let deliveryScanTimer: ReturnType<typeof setInterval> | undefined;
 let deliveryWatcherRetryTimer: ReturnType<typeof setTimeout> | undefined;
 let deliveryStopped = false;
 let piAgentRunning = false;
+const pendingSquadFollowUps = new Map<string, string>();
 
 const deliveryPollMs = 250;
 
@@ -2489,11 +2512,12 @@ async function processDeliveryRequest(requestPath: string, pi: any): Promise<voi
     requestId = requestIdCandidate;
     const message = raw.slice(separator + 1).replace(new RegExp(String.fromCharCode(10) + "$"), "");
     if (typeof pi.sendUserMessage !== "function") throw new Error("sendUserMessage unavailable");
+    const queuedDuringRun = piAgentRunning;
     await pi.sendUserMessage(message, { deliverAs: "followUp" });
-    // sendUserMessage resolves only after Pi accepts the follow-up into its
-    // queue. Do not wait for agent_start: a busy Pi can take longer than
-    // sq-send's confirmation deadline even though the message is delivered.
-    writeDeliveryResponse(requestId, "delivered");
+    if (queuedDuringRun) pendingSquadFollowUps.set(requestId, message);
+    // sendUserMessage resolves when Pi accepts the message, not when the agent
+    // consumes it; distinguish an active-turn queue from an idle acceptance.
+    writeDeliveryResponse(requestId, queuedDuringRun ? "queued" : "accepted");
   } catch {
     if (requestId) writeDeliveryResponse(requestId, "unavailable");
   } finally {
@@ -2522,15 +2546,55 @@ export default function (pi: any) {
   pi.on("session_start", () => {
     pi.appendEntry("squad-task-attribution", { taskId: "$ID" });
     piAgentRunning = false;
+    pendingSquadFollowUps.clear();
     startDelivery(pi);
   });
   pi.on("session_shutdown", () => {
     piAgentRunning = false;
+    pendingSquadFollowUps.clear();
     stopDelivery();
   });
   pi.on("agent_start", () => {
     piAgentRunning = true;
     return busyEvent("busy", "agent-start");
+  });
+  pi.on("agent_end", (event: any, ctx: any) => {
+    const messages = Array.isArray(event?.messages) ? event.messages : [];
+    const userTexts = messages
+      .filter((message: any) => message?.role === "user")
+      .map((message: any) => typeof message.content === "string"
+        ? message.content
+        : Array.isArray(message.content)
+          ? message.content.filter((part: any) => part?.type === "text").map((part: any) => part.text).join("\\n")
+          : "");
+    for (const [requestId, text] of pendingSquadFollowUps) {
+      if (userTexts.includes(text)) pendingSquadFollowUps.delete(requestId);
+    }
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.stopReason !== "aborted" || pendingSquadFollowUps.size === 0) return;
+    const pending = [...pendingSquadFollowUps.entries()];
+    pendingSquadFollowUps.clear();
+    let editor = "";
+    try {
+      if (ctx?.mode === "tui" && typeof ctx.ui?.getEditorText === "function") editor = ctx.ui.getEditorText();
+    } catch {}
+    let resolution = "uncertain";
+    if (pending.length === 1 && typeof editor === "string") {
+      const [requestId, text] = pending[0];
+      if (editor === text || editor.startsWith(text + "\\n")) {
+        const remainder = editor === text ? "" : editor.slice(text.length + 1);
+        try {
+          ctx.ui.setEditorText(remainder);
+          resolution = "cancelled";
+          writeFileSync(deliveryTaskDir + "/" + requestId + ".cancelled", "cancelled\\n");
+        } catch {}
+      }
+    }
+    const statusPath = "$STATE_REAL/$ID.status";
+    const notice = resolution === "cancelled"
+      ? "signal: a queued Squad instruction was interrupted before consumption; the exact restored text was removed from the editor"
+      : "blocked: an interrupted queued Squad instruction could not be safely separated from the editor; inspect before continuing";
+    try { appendFileSync(statusPath, notice + "\\n"); } catch {}
   });
   pi.on("agent_settled", (_event: any, ctx: any) => {
     try {
@@ -2724,6 +2788,7 @@ META_WINDOW=$T
   if [ "$BACKEND" = tuios ]; then
     echo "tuios_session=$TUIOS_SES"
     echo "tuios_window_id=$TUIOS_WINDOW_ID"
+    echo "tuios_workspace_id=$TUIOS_WORKSPACE_ID"
     # Recorded so a later relaunch can tell a genuine daemon restart (every pane
     # restored as a fresh shell) from an agent that died on its own.
     [ -z "${TUIOS_BOOT_ID:-}" ] || echo "tuios_boot_id=$TUIOS_BOOT_ID"
@@ -2757,6 +2822,7 @@ META_WINDOW=$T
     echo "projects=$XO_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
+TUIOS_ABORT_CLEANUP=0
 SPAWN_TUIOS_LEASE=
 # Claim the per-attempt sidecar only after all dispatch validation and metadata
 # publication have succeeded, so a competing dispatch cannot launch this task.

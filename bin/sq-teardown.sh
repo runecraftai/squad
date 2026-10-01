@@ -2445,6 +2445,9 @@ if [ "$BACKEND" = herdr ]; then
     exit 1
   fi
 fi
+if [ "$BACKEND" = tuios ]; then
+  fm_backend_tuios_release_task_workspace "$ID" "$META" || exit 1
+fi
 if [ "$KIND" = xo ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   remove_Squad_home "$HOME_PATH" "XO home" "$ID" || exit $?
