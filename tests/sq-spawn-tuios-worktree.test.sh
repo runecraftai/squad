@@ -42,7 +42,9 @@ case "${1:-}" in
       {"verb":"list-agents","params":[{"name":"session"},{"name":"all"}]},
       {"verb":"list-queued","params":[{"name":"session"},{"name":"window"}]},
       {"verb":"list-windows","params":[{"name":"session"}]},
-      {"verb":"new-window","params":[{"name":"session"},{"name":"name"},{"name":"cwd"},{"name":"focus"}]},
+      {"verb":"list-workspaces","params":[{"name":"session"}]},
+      {"verb":"set-workspace-name","params":[{"name":"session"},{"name":"workspace"},{"name":"name"}]},
+      {"verb":"new-window","params":[{"name":"session"},{"name":"name"},{"name":"cwd"},{"name":"focus"},{"name":"workspace"}]},
       {"verb":"peek-prompt","params":[{"name":"session"},{"name":"window"}]},
       {"verb":"queue-prompt","params":[{"name":"session"},{"name":"window"},{"name":"text"}]},
       {"verb":"resume-agent","params":[{"name":"session"},{"name":"window"}]},
@@ -50,17 +52,44 @@ case "${1:-}" in
       {"verb":"send-text","params":[{"name":"session"},{"name":"window"}]}]}'
     ;;
   list-attention) printf '{"boot_id":"boot-test","success":true,"items":[]}\n' ;;
+  list-workspaces)
+    rows=()
+    for workspace in $(seq 1 9); do
+      name= count=0
+      if [ -f "${SQUAD_FAKE_TUIOS_WORKSPACEFILE:?}" ] && [ "$(cat "$SQUAD_FAKE_TUIOS_WORKSPACEFILE")" = "$workspace" ]; then
+        name=$(cat "${SQUAD_FAKE_TUIOS_WORKSPACENAMEFILE:?}" 2>/dev/null || printf '')
+        [ ! -f "${SQUAD_FAKE_TUIOS_WINDOWFILE:?}" ] || count=1
+      fi
+      rows+=("$(jq -cn --argjson ws "$workspace" --arg name "$name" --argjson count "$count" '{workspace:$ws,name:$name,window_count:$count}')")
+    done
+    printf '{"workspaces":[%s],"success":true}\n' "$(IFS=,; echo "${rows[*]}")"
+    ;;
+  set-workspace-name)
+    shift
+    [ "${1:-}" = --session ] && shift 2
+    printf '%s\n' "${1:-}" > "${SQUAD_FAKE_TUIOS_WORKSPACEFILE:?}"
+    printf '%s\n' "${2:-}" > "${SQUAD_FAKE_TUIOS_WORKSPACENAMEFILE:?}"
+    ;;
   list-windows)
     # The reported cwd is the window's own shell cwd, tracked in a state file.
     cwd=$(cat "${SQUAD_FAKE_TUIOS_CWDFILE:?}" 2>/dev/null || printf '%s' "${SQUAD_FAKE_TUIOS_PROJECT:?}")
     if [ -f "${SQUAD_FAKE_TUIOS_WINDOWFILE:?}" ]; then
-      printf '{"windows":[{"window_id":"%s","custom_name":"%s","cwd":"%s"}],"success":true}\n' \
-        "${SQUAD_FAKE_TUIOS_ID:?}" "${SQUAD_FAKE_TUIOS_LABEL:-}" "$cwd"
+      printf '{"windows":[{"window_id":"%s","custom_name":"%s","workspace":%s,"cwd":"%s"}],"success":true}\n' \
+        "${SQUAD_FAKE_TUIOS_ID:?}" "${SQUAD_FAKE_TUIOS_LABEL:-}" "$(cat "${SQUAD_FAKE_TUIOS_WORKSPACEFILE:?}" 2>/dev/null || printf '1')" "$cwd"
     else
       printf '{"windows":[],"success":true}\n'
     fi
     ;;
   new-window)
+    shift
+    label=$1
+    shift
+    workspace=
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --workspace ]; then workspace=$2; shift 2; else shift; fi
+    done
+    printf '%s\n' "$workspace" > "${SQUAD_FAKE_TUIOS_WORKSPACEFILE:?}"
+    printf '%s\n' "${SQUAD_FAKE_TUIOS_LABEL:-$label}" > "${SQUAD_FAKE_TUIOS_WORKSPACENAMEFILE:?}"
     printf '%s\n' "${SQUAD_FAKE_TUIOS_ID:?}"
     : > "${SQUAD_FAKE_TUIOS_WINDOWFILE:?}"
     printf '%s\n' "${SQUAD_FAKE_TUIOS_PROJECT:?}" > "${SQUAD_FAKE_TUIOS_CWDFILE:?}"
@@ -93,7 +122,10 @@ case "${1:-}" in
     esac
     ;;
   send-keys) : ;;
-  run-command) printf '{"message":"command executed","success":true}\n' ;;
+  run-command)
+    [ "${4:-}" != CloseWindow ] || rm -f "${SQUAD_FAKE_TUIOS_WINDOWFILE:?}"
+    printf '{"message":"command executed","success":true}\n'
+    ;;
   *) : ;;
 esac
 exit 0
@@ -125,7 +157,7 @@ make_case() {
   proj="$case_dir/project"
   wt="$case_dir/wt"
   fakebin=$(make_tuios_fakebin "$case_dir/fake")
-  mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
+  mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config" "$case_dir/runtime"
   printf 'codex\n' > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   mkdir -p "$home/data/$id"
@@ -146,7 +178,7 @@ run_spawn() {
   SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$HOME_DIR" \
     SQUAD_STATE_OVERRIDE="$HOME_DIR/state" SQUAD_DATA_OVERRIDE="$HOME_DIR/data" \
     SQUAD_PROJECTS_OVERRIDE="$HOME_DIR/projects" SQUAD_CONFIG_OVERRIDE="$HOME_DIR/config" \
-    SQUAD_SPAWN_NO_GUARD=1 SQUAD_TUIOS_SESSION=owned \
+    XDG_RUNTIME_DIR="$CASE_DIR/runtime" SQUAD_SPAWN_NO_GUARD=1 SQUAD_TUIOS_SESSION=owned \
     SQUAD_FAKE_TUIOS_LOG="$CASE_DIR/tuios.log" \
     SQUAD_FAKE_FOB_LOG="$CASE_DIR/fob.log" \
     SQUAD_FAKE_FOB_LEASE="$WT_DIR" \
@@ -154,8 +186,15 @@ run_spawn() {
     SQUAD_FAKE_TUIOS_PROJECT="$PROJ_DIR" SQUAD_FAKE_TUIOS_HOLD_LEASE="$hold" \
     SQUAD_FAKE_TUIOS_CWDFILE="$CASE_DIR/cwd" \
     SQUAD_FAKE_TUIOS_WINDOWFILE="$CASE_DIR/window" \
+    SQUAD_FAKE_TUIOS_WORKSPACEFILE="$CASE_DIR/workspace" \
+    SQUAD_FAKE_TUIOS_WORKSPACENAMEFILE="$CASE_DIR/workspace-name" \
     PATH="$FAKEBIN_DIR:$PATH" \
     "$SPAWN" "$id" "$PROJ_DIR" --mode drill --yolo off --backend tuios 2>&1
+}
+
+assert_tuios_abort_released_workspace() {
+  [ ! -f "$CASE_DIR/window" ] || fail 'an aborted TUIOS spawn must close only its task window'
+  [ -z "$(cat "$CASE_DIR/workspace-name" 2>/dev/null || true)" ] || fail 'an aborted TUIOS spawn must release its task workspace name'
 }
 
 # A TUIOS spawn must acquire the lease non-interactively, cd the window's own
@@ -174,6 +213,7 @@ test_tuios_spawn_leases_and_records_worktree() {
   assert_grep "backend=tuios" "$HOME_DIR/state/$id.meta" 'meta did not record backend=tuios'
   assert_grep "tuios_session=owned" "$HOME_DIR/state/$id.meta" 'meta did not record the TUIOS session'
   assert_grep "tuios_window_id=$WINDOW_ID" "$HOME_DIR/state/$id.meta" 'meta did not record the opaque window id'
+  assert_grep 'tuios_workspace_id=1' "$HOME_DIR/state/$id.meta" 'meta did not record the task workspace id'
   assert_grep "tuios_boot_id=boot-test" "$HOME_DIR/state/$id.meta" 'meta did not record the daemon boot id'
   assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" 'meta did not record the leased worktree path'
   assert_contains "$(cat "$CASE_DIR/fob.log")" 'get --lease' 'the worktree must be acquired with a non-interactive lease'
@@ -200,6 +240,7 @@ test_tuios_spawn_returns_lease_on_failure() {
   assert_contains "$out" 'did not enter' 'the failure must say the window never entered the worktree'
   [ -f "$HOME_DIR/state/$id.meta" ] && fail 'a failed spawn must not publish metadata'
   assert_contains "$(cat "$CASE_DIR/fob.log")" "return --force $WT_DIR" 'a failed spawn must return the durable lease'
+  assert_tuios_abort_released_workspace
   pass 'a TUIOS spawn that cannot enter the lease fails and returns the lease'
 }
 
@@ -221,6 +262,7 @@ test_tuios_spawn_returns_lease_on_send_failure() {
   [ "$status" -ne 0 ] || fail 'a refused worktree cd must fail the spawn'
   [ -f "$HOME_DIR/state/$id.meta" ] && fail 'a failed spawn must not publish metadata'
   assert_contains "$(cat "$CASE_DIR/fob.log")" "return --force $WT_DIR" 'a send failure must return the durable lease'
+  assert_tuios_abort_released_workspace
   pass 'a TUIOS spawn whose worktree cd is refused fails and returns the lease'
 }
 
@@ -249,6 +291,7 @@ EOF
   assert_contains "$out" 'after_create hook failed' 'the failure must name the workspace hook'
   [ -f "$HOME_DIR/state/$id.meta" ] && fail 'a failed spawn must not publish metadata'
   assert_contains "$(cat "$CASE_DIR/fob.log")" "return --force $WT_DIR" 'a pre-metadata failure must return the durable lease'
+  assert_tuios_abort_released_workspace
   pass 'a TUIOS spawn that fails before metadata returns the lease'
 }
 

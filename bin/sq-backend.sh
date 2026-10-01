@@ -53,6 +53,9 @@ SQUAD_BACKEND_DEFAULT_ROOT="$(cd "$SQUAD_BACKEND_LIB_DIR/.." && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-${SQUAD_ROOT:-$SQUAD_BACKEND_DEFAULT_ROOT}}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 SQUAD_BACKEND_CONFIG_DIR="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+# shellcheck disable=SC2034
+# Sourced backend adapters consume this derived state path for durable leases.
+SQUAD_BACKEND_STATE_DIR="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 # Verified backend adapters. Extend only after a backend gets its own
 # bin/backends/<name>.sh and empirical verification, mirroring AGENTS.md

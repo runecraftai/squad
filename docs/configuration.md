@@ -66,7 +66,7 @@ The compatibility helper `fm_backend_agent_alive` continues to collapse those de
 A herdr spawn additionally version-gates against the installed `herdr` binary's protocol and requires `jq`, refusing loudly on an incompatible or missing installation.
 A zellij spawn additionally version-gates against the installed `zellij` binary's version and requires `jq`, refusing loudly when either is missing or the version is older than 0.44.
 A cmux spawn additionally version-gates against the installed `cmux` binary's version, requires `jq`, and requires the control socket to be reachable and accessible (see [`docs/cmux-backend.md`](cmux-backend.md) "Setup" for the one-time socket-access configuration this needs; Automation mode is the recommended socket control mode, with Password mode supported via `config/cmux-socket-password`), refusing loudly and non-retryably on a `cmuxOnly`/unauthenticated socket.
-A TUIOS spawn requires TUIOS 0.8.0 or newer, `jq`, and an explicit existing session in `SQUAD_TUIOS_SESSION`; it never selects an incidental ambient TUIOS session or creates/restarts one. Optional local `config/tuios-workspace` explicitly groups task windows in one existing numeric workspace in that session; its absence preserves current-workspace placement. See [`tuios-backend.md`](tuios-backend.md#setup) for configuration and limits.
+A TUIOS spawn requires TUIOS 0.8.0 or newer, `jq`, and an explicit existing session in `SQUAD_TUIOS_SESSION`; it never selects an incidental ambient TUIOS session or creates/restarts one. Every task receives a distinct existing empty, unnamed workspace; optional local `config/tuios-workspace` expresses a preferred number, not a shared destination. See [`tuios-backend.md`](tuios-backend.md#setup) for configuration and limits.
 A backend spawn refusal from a missing dependency, version gate, or unauthenticated socket is terminal for that selected backend; Squad surfaces it as a blocker instead of silently retrying another backend.
 Task meta records `backend=` only for a non-default backend; an absent `backend=` means `tmux`, preserving existing default-path meta files.
 Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
@@ -74,7 +74,7 @@ A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herd
 A zellij task additionally records `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
 An Orca task additionally records `orca_worktree_id=` and `terminal=`, with `window=sq-<id>` kept as the shared Squad alias.
 A cmux task additionally records `cmux_workspace_id=` and `cmux_surface_id=`.
-A TUIOS task additionally records `tuios_session=`, `tuios_window_id=`, and `tuios_boot_id=`.
+A TUIOS task additionally records `tuios_session=`, `tuios_window_id=`, `tuios_workspace_id=`, and `tuios_boot_id=`.
 Task selectors for `sq-peek.sh`, `sq-send.sh`, and `sq-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.
 A selector containing `:` is passed through as an explicit backend endpoint escape hatch.
 Otherwise an exact task id matching `state/<id>.meta` wins before the legacy `sq-<id>` label fallback, so task ids that themselves start with `sq-` route to their own metadata instead of being stripped.
@@ -94,7 +94,7 @@ For normal zellij operations, `SQUAD_ZELLIJ_SESSION` selects the named session a
 Zellij has no per-base workspace split: primary and XO tasks share that one session, and visible tab titles are scoped by the active `SQUAD_BASE` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<base-label>-<id>`.
 Use the guarded cleanup path described in [`docs/zellij-backend.md`](zellij-backend.md) instead of `kill-all-sessions` or `delete-all-sessions`.
 cmux has no session layer at all - one workspace per task, in whatever cmux window is open - and its socket password (when configured) is read from local, gitignored `config/cmux-socket-password` under the effective config directory, never committed.
-TUIOS uses the explicitly configured `SQUAD_TUIOS_SESSION`; optional `config/tuios-workspace` selects a reserved numeric destination, while its absence preserves legacy placement; task windows are scoped by opaque ids and cleanup never removes the session.
+TUIOS uses the explicitly configured `SQUAD_TUIOS_SESSION`; each task gets its own existing empty, unnamed workspace, with optional `config/tuios-workspace` as a preferred number; task windows are scoped by opaque ids and cleanup never removes the session.
 The caller-facing label remains `sq-<id>`, but the actual cmux workspace title is scoped by the active `SQUAD_BASE` readable label plus a short hash of the resolved `SQUAD_ROOT` path as `sq-<base-label>-<id>`.
 Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), never enumerate-and-close every workspace.
 `config/backend` is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).

@@ -189,7 +189,10 @@ fm_send_pi_native() {  # <state-dir> <task-id> <message>
   status=$(sed -n '1p' "$response")
   rm -f "$response"
   case "$status" in
-    delivered|processing) return 0 ;;
+    accepted|queued|delivered|processing)
+      PI_DELIVERY_STATUS=$status
+      return 0
+      ;;
     unavailable) return 2 ;;
     *) return 1 ;;
   esac
@@ -564,6 +567,7 @@ else
   send_rc=0
   failure_path=
   native_rc=2
+  PI_DELIVERY_STATUS=
   if [ "$TARGET_BACKEND" != remote ] \
     && [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] \
     && [ "$(fm_meta_get "$TARGET_META" kind)" != xo ]; then
@@ -672,5 +676,15 @@ else
   # turn before its busy footer shows. Pause so an immediate peek catches the
   # operator actually working instead of the stale idle pane. SQUAD_SEND_SETTLE=0
   # disables it. Scoped to this path only, never the shared submit core.
+  if [ "$native_rc" -eq 0 ]; then
+    case "$PI_DELIVERY_STATUS" in
+      queued|delivered|processing)
+        echo "Pi queued the instruction; consumption is not confirmed."
+        ;;
+      accepted)
+        echo "Pi accepted the instruction; consumption is not confirmed."
+        ;;
+    esac
+  fi
   [ "${SQUAD_SEND_SETTLE:-1}" = 0 ] || sleep "${SQUAD_SEND_SETTLE:-1}"
 fi

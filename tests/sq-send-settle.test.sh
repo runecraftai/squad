@@ -160,14 +160,16 @@ SH
   ready_identity=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   printf '%s\n%s\n' "$pid" "ps-lstart=$ready_identity" > "$delivery/ready"
   message='native parked steer'
-  env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
+  out=$(env PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_SLEEP_LOG="$log" \
     SQUAD_TMUX_LOG="$dir/tmux.log" SQUAD_REAL_SLEEP=1 SQUAD_SEND_SETTLE=0 \
     SQUAD_PROC_ROOT_OVERRIDE="$home/no-proc" SQUAD_PI_DELIVERY_TIMEOUT=3 \
-    "$SEND" "$task_id" "$message" 2>/dev/null
+    "$SEND" "$task_id" "$message" 2>/dev/null)
   rc=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 0 "$rc" "Pi native delivery should succeed"
+  assert_contains "$out" "Pi queued the instruction; consumption is not confirmed." \
+    "sq-send did not distinguish queued delivery from confirmed consumption"
   [ "$(cat "$dir/native-message")" = "$message" ] \
     || fail "Pi native delivery did not preserve the message"
   [ "$(wc -l < "$dir/native-message")" -eq 1 ] \
