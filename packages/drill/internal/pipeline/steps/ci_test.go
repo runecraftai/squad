@@ -427,8 +427,13 @@ func TestCIStep_CIWarningAllowsChecksPassedToBeReannounced(t *testing.T) {
 	defer cancel()
 	sctx.Ctx = ctx
 
+	// Freeze the clock: the idle timeout is measured in wall-clock time, so
+	// real subprocess latency would otherwise be able to trip it on slow CI
+	// hosts before the mocked poll sequence reaches its cancellation.
+	frozen := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
 	waits := 0
 	step := &CIStep{
+		now: func() time.Time { return frozen },
 		waitForNextPoll: func(ctx context.Context, interval time.Duration) error {
 			waits++
 			if waits == 3 {
