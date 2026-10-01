@@ -687,7 +687,7 @@ try {
   if (receiptsAfterConsumedInterrupt.length !== 0) throw new Error(`a consumed follow-up was incorrectly marked interrupted: ${JSON.stringify(receiptsAfterConsumedInterrupt)}`);
   // A Pi session replacement must drop follow-up state: a stale accepted
   // message from the prior session must never be stripped from the new
-  // session's editor or recorded as an interruption.
+  // editor of the new session or recorded as an interruption.
   const staleRequest = "stale-session-request";
   writeFileSync(`${process.env.DELIVERY}/${staleRequest}.request`, `${staleRequest}\nstale session message\n`);
   const staleResponse = `${process.env.DELIVERY}/${staleRequest}.response`;
@@ -707,7 +707,7 @@ try {
       setEditorText: (text) => { staleEditor = text; },
     },
   });
-  if (staleEditor !== "stale session message\nsurviving draft") throw new Error(`a stale pre-replacement follow-up was stripped from the new session's editor: ${JSON.stringify(staleEditor)}`);
+  if (staleEditor !== "stale session message\nsurviving draft") throw new Error(`a stale pre-replacement follow-up was stripped from the editor of the new session: ${JSON.stringify(staleEditor)}`);
   const staleReceipts = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
   if (staleReceipts.length !== 0) throw new Error(`a stale pre-replacement follow-up produced an interruption receipt: ${JSON.stringify(staleReceipts)}`);
   const statusAfterStale = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
