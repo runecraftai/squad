@@ -799,7 +799,7 @@ fm_backend_tuios_lockdir_age() {  # <lockdir> -> whole seconds since it was crea
 
 fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID and workspace
   (
-  local session=$1 label=$2 cwd=$3 windows id workspace lockdir lockpid lockroot tries
+  local session=$1 label=$2 cwd=$3 windows id workspace lockdir lockpid lockroot tries reclaim
   lockroot=${XDG_RUNTIME_DIR:-$SQUAD_BACKEND_CONFIG_DIR}
   lockdir="$lockroot/.squad-tuios-workspace-${session}.lock"
   mkdir -p "$lockroot" || return 1
@@ -809,15 +809,15 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
     if [ -r "$lockdir/pid" ]; then
       read -r lockpid < "$lockdir/pid" || lockpid=
     fi
+    reclaim=0
     if [[ "$lockpid" =~ ^[1-9][0-9]*$ ]]; then
-      if ! kill -0 "$lockpid" 2>/dev/null; then
-        rm -f -- "$lockdir/pid"
-        rmdir "$lockdir" 2>/dev/null || true
-        continue
-      fi
+      kill -0 "$lockpid" 2>/dev/null || reclaim=1
     elif [ "$(fm_backend_tuios_lockdir_age "$lockdir")" -ge 2 ]; then
+      reclaim=1
+    fi
+    if [ "$reclaim" = 1 ]; then
+      rm -f -- "$lockdir/pid"
       rmdir "$lockdir" 2>/dev/null || true
-      continue
     fi
     tries=$((tries + 1))
     [ "$tries" -lt 100 ] || { echo 'error: timed out waiting for TUIOS workspace allocation' >&2; return 1; }

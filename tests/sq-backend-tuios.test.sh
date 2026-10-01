@@ -640,6 +640,18 @@ created=$(fm_backend_tuios_create_task owned sq-stale-lock /tmp/wt) || fail 'a p
 [ "${created%%$'\t'*}" = w-opaque_7 ] || fail 'reclaiming a stale lock must still create the task window'
 [ -n "${created#*$'\t'}" ] || fail 'create_task must return the selected workspace id'
 [ ! -d "$stale_lock" ] || fail 'create_task must release its workspace lock'
+# A lockdir whose pid file exists but is empty or non-numeric (a kill between
+# the redirect creating it and the write) must also be reclaimed instead of
+# busy-looping on a non-empty directory that rmdir cannot remove.
+rm -rf "$stale_lock"
+mkdir -p "$stale_lock"
+printf 'not-a-pid\n' > "$stale_lock/pid"
+touch -t 200001010000 "$stale_lock"
+SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-corrupt-lock
+export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+created=$(fm_backend_tuios_create_task owned sq-corrupt-lock /tmp/wt) || fail 'a corrupt pid lock must be reclaimed instead of busy-looping'
+[ "${created%%$'\t'*}" = w-opaque_7 ] || fail 'reclaiming a corrupt lock must still create the task window'
+[ ! -d "$stale_lock" ] || fail 'create_task must remove a reclaimed corrupt lock'
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
 printf 'sq-spawn-test\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
