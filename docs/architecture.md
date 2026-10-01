@@ -91,7 +91,12 @@ Unsupported supervisor backends refuse at daemon startup.
 Stalled escalation delivery writes `state/.subsuper-inject-wedged` and attempts a configured backend-independent active alert after `SQUAD_MAX_DEFER_SECS` instead of silently deferring forever.
 On an unmarked return, `bin/sq-afk-return.sh` owns ordered shutdown, durable catch-up evidence, and the fail-closed gate that keeps ordinary work behind every live Squad-actionable blocker.
 `sq-send.sh` selects a pre-Enter popup-settle for slash commands and for codex `$...` skill invocations using metadata-routed target `harness=` values, then adds its own `SQUAD_SEND_SETTLE` pause after successful text sends so immediate peeks catch the receiving turn starting; the sub-supervisor uses only the shared submit core and does not pay that post-submit pause.
-For a metadata-routed local non-XO Pi or pi-signed target, `sq-send.sh` first offers text through the task extension's private `state/.pi-delivery` dropbox, which invokes Pi's `sendUserMessage(..., { deliverAs: "followUp" })` without relying on the parked composer; if the extension is missing or unavailable, it falls back to the recorded backend submit, while a timeout after request creation fails instead of risking duplicate delivery.
+For a metadata-routed local non-XO Pi or pi-signed target, `sq-send.sh` first offers text through the task extension's private `state/.pi-delivery` dropbox, which invokes Pi's `sendUserMessage(..., { deliverAs: "followUp" })` without relying on the parked composer.
+An idle Pi reports `accepted` and an active run reports `queued`, and both only prove Pi accepted the message, so `sq-send` reports consumption as unconfirmed instead of claiming the worker took it.
+The extension tracks a queued follow-up until Pi's own turn lists it among the consumed user messages, then drops the pending record exactly once.
+When an interrupted run leaves a tracked follow-up unconsumed, the extension separates it from the editor: it removes exactly the restored text while preserving any independent draft, writes a `cancelled` receipt, and appends a `signal:` status notice; when it cannot safely separate the text, it leaves the editor untouched and appends a `blocked:` notice instead.
+A run interrupted after consumption, or a session replacement, clears the pending state with no receipt and no notice.
+If the extension is missing or unavailable, `sq-send.sh` falls back to the recorded backend submit, while a timeout after request creation fails instead of risking duplicate delivery.
 Teardown removes the dropbox marker and any request, processing, response, or temporary files for the retired task.
 
 ## Busy state is semantic, per adapter
