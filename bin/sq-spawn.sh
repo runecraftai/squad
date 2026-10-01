@@ -2546,10 +2546,12 @@ export default function (pi: any) {
   pi.on("session_start", () => {
     pi.appendEntry("squad-task-attribution", { taskId: "$ID" });
     piAgentRunning = false;
+    pendingSquadFollowUps.clear();
     startDelivery(pi);
   });
   pi.on("session_shutdown", () => {
     piAgentRunning = false;
+    pendingSquadFollowUps.clear();
     stopDelivery();
   });
   pi.on("agent_start", () => {

@@ -814,6 +814,7 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
   workspace=$(fm_backend_tuios_next_workspace "$session") || return 1
   fm_backend_tuios_name_workspace "$session" "$workspace" "$label" || {
     echo "error: could not name TUIOS workspace $workspace for task '$label'" >&2
+    fm_backend_tuios_unname_workspace_if_empty "$session" "$workspace" "$label" >/dev/null 2>&1 || true
     return 1
   }
   id=$("$(fm_backend_tuios_bin)" new-window "$label" --session "$session" --cwd "$cwd" --workspace "$workspace" --no-focus --print-id 2>/dev/null) || {

@@ -52,6 +52,12 @@ case "${1:-}" in
     ;;
   list-workspaces)
     [ "${SQUAD_TUIOS_FAKE_WORKSPACES_FAIL:-0}" = 1 ] && exit 1
+    if [ "${SQUAD_TUIOS_FAKE_WORKSPACES_FAIL_ONCE:-0}" = 1 ] \
+       && [ -f "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME" ] \
+       && [ ! -f "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME.workspaces-failed-once" ]; then
+      : > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME.workspaces-failed-once"
+      exit 1
+    fi
     if [ "${SQUAD_TUIOS_FAKE_ALLOC_PAUSE:-0}" = 1 ] && [ ! -e "$SQUAD_TUIOS_FAKE_ALLOC_PAUSE_MARK" ]; then
       : > "$SQUAD_TUIOS_FAKE_ALLOC_PAUSE_MARK"
       for _ in $(seq 1 500); do
@@ -813,6 +819,18 @@ export SQUAD_TUIOS_FAKE_GET_WINDOW_FAIL_ONCE SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUA
 if fm_backend_tuios_create_task owned sq-label-fail /tmp/wt >/dev/null 2>&1; then fail 'a failed post-creation label read must refuse'; fi
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'run-command --session owned CloseWindow w-opaque_7 --json' 'a failed post-creation label read must close the just-created task window'
 unset SQUAD_TUIOS_FAKE_GET_WINDOW_FAIL_ONCE SQUAD_TUIOS_FAKE_EMPTY_WINDOWS
+# A transient failure of the post-naming verification read must not leak the
+# just-set workspace name: the still-empty workspace is un-named so the pool
+# can reuse it instead of skipping it forever.
+rm -f "$SQUAD_TUIOS_CREATED_WORKSPACE" "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME" \
+  "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME.workspaces-failed-once"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_WORKSPACES_FAIL_ONCE=1 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-name-leak
+export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL_ONCE SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+if fm_backend_tuios_create_task owned sq-name-leak /tmp/wt >/dev/null 2>&1; then fail 'a failed post-naming verification read must refuse'; fi
+[ ! -s "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME" ] || [ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = "" ] || fail 'a failed post-naming verification read leaked the just-set workspace name'
+grep -qx 'set-workspace-name --session owned 2' "$SQUAD_TUIOS_LOG" || fail 'a failed post-naming verification read must clear the just-set workspace name'
+unset SQUAD_TUIOS_FAKE_WORKSPACES_FAIL_ONCE SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 SQUAD_TUIOS_FAKE_WORKSPACES_FAIL=1
 export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
 if fm_backend_tuios_create_task owned sq-unreadable-workspaces /tmp/wt >/dev/null 2>&1; then fail 'unreadable workspace inventory must refuse before creation'; fi

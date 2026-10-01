@@ -685,6 +685,33 @@ try {
   if (statusAfterConsumedInterrupt !== statusBeforeConsumedInterrupt) throw new Error("an interrupted run after Pi consumed the queued user message emitted a misleading task status");
   const receiptsAfterConsumedInterrupt = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
   if (receiptsAfterConsumedInterrupt.length !== 0) throw new Error(`a consumed follow-up was incorrectly marked interrupted: ${JSON.stringify(receiptsAfterConsumedInterrupt)}`);
+  // A Pi session replacement must drop follow-up state: a stale accepted
+  // message from the prior session must never be stripped from the new
+  // session's editor or recorded as an interruption.
+  const staleRequest = "stale-session-request";
+  writeFileSync(`${process.env.DELIVERY}/${staleRequest}.request`, `${staleRequest}\nstale session message\n`);
+  const staleResponse = `${process.env.DELIVERY}/${staleRequest}.response`;
+  for (let i = 0; i < 100 && !existsSync(staleResponse); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  if (!existsSync(staleResponse) || readFileSync(staleResponse, "utf8").trim() !== "queued") {
+    throw new Error("the stale follow-up was not queued before the session replacement");
+  }
+  await handlers.get("session_start")?.();
+  let staleEditor = "stale session message\nsurviving draft";
+  const statusBeforeStale = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  await handlers.get("agent_end")?.({ messages: [{ role: "assistant", stopReason: "aborted" }] }, {
+    mode: "tui",
+    ui: {
+      getEditorText: () => staleEditor,
+      setEditorText: (text) => { staleEditor = text; },
+    },
+  });
+  if (staleEditor !== "stale session message\nsurviving draft") throw new Error(`a stale pre-replacement follow-up was stripped from the new session's editor: ${JSON.stringify(staleEditor)}`);
+  const staleReceipts = readdirSync(process.env.DELIVERY).filter((name) => name.endsWith(".cancelled"));
+  if (staleReceipts.length !== 0) throw new Error(`a stale pre-replacement follow-up produced an interruption receipt: ${JSON.stringify(staleReceipts)}`);
+  const statusAfterStale = readFileSync(`${process.env.BASE}/state/${process.env.TASK_ID}.status`, "utf8");
+  if (statusAfterStale !== statusBeforeStale) throw new Error("a stale pre-replacement follow-up emitted a misleading task status");
 } catch (error) {
   failure = error;
 } finally {
