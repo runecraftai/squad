@@ -1902,14 +1902,21 @@ EOF
     fi
     if [ -n "$TUIOS_WINDOW_ID" ]; then
       echo "tuios: reusing the restored task window $TUIOS_SES:$TUIOS_WINDOW_ID after a daemon restart" >&2
+      TUIOS_WORKSPACE_ID=$(fm_backend_tuios_workspace_for_window "$TUIOS_SES" "$TUIOS_WINDOW_ID") || {
+        echo 'error: TUIOS task workspace provenance could not be read' >&2
+        exit 1
+      }
     else
-      TUIOS_WINDOW_ID=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
+      TUIOS_TASK_IDS=$(fm_backend_tuios_create_task "$TUIOS_SES" "$W" "$PROJ_ABS") || exit 1
       TUIOS_ABORT_CLEANUP=1
+      read -r TUIOS_WINDOW_ID TUIOS_WORKSPACE_ID <<EOF || true
+$TUIOS_TASK_IDS
+EOF
+      if [ -z "$TUIOS_WINDOW_ID" ] || [ -z "$TUIOS_WORKSPACE_ID" ]; then
+        echo "error: TUIOS did not return a window/workspace id for $W" >&2
+        exit 1
+      fi
     fi
-    TUIOS_WORKSPACE_ID=$(fm_backend_tuios_workspace_for_window "$TUIOS_SES" "$TUIOS_WINDOW_ID") || {
-      echo 'error: TUIOS task workspace provenance could not be read' >&2
-      exit 1
-    }
     T="$TUIOS_SES:$TUIOS_WINDOW_ID"
     ;;
   cmux)

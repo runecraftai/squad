@@ -191,6 +191,7 @@ fm_backend_tuios_workspace_for_window() {  # <session> <window> -> exact workspa
 
 fm_backend_tuios_unname_workspace_if_empty() {  # <session> <workspace> <task-label>
   local session=$1 workspace=$2 label=$3 inventory windows
+  [[ "$workspace" =~ ^[1-9][0-9]*$ ]] || return 1
   inventory=$(fm_backend_tuios_list_workspaces_json "$session") || return 1
   windows=$(fm_backend_tuios_list_windows_json "$session") || return 1
   printf '%s' "$windows" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
@@ -790,7 +791,13 @@ fm_backend_tuios_same_label_window() {  # <session> <task-label> -> opaque id, o
     [.windows[] | select((tlabels | index($label)) != null)][0] | tids[0] // empty'
 }
 
-fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID
+fm_backend_tuios_lockdir_age() {  # <lockdir> -> whole seconds since it was created
+  local mtime
+  mtime=$(stat -c %Y "$1" 2>/dev/null) || mtime=$(stat -f %m "$1" 2>/dev/null) || { echo 999999; return 0; }
+  echo $(( $(date +%s) - mtime ))
+}
+
+fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque window ID and workspace
   (
   local session=$1 label=$2 cwd=$3 windows id workspace lockdir lockpid lockroot tries
   lockroot=${XDG_RUNTIME_DIR:-$SQUAD_BACKEND_CONFIG_DIR}
@@ -798,13 +805,19 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
   mkdir -p "$lockroot" || return 1
   tries=0
   until mkdir "$lockdir" 2>/dev/null; do
+    lockpid=
     if [ -r "$lockdir/pid" ]; then
       read -r lockpid < "$lockdir/pid" || lockpid=
-      if [[ "$lockpid" =~ ^[1-9][0-9]*$ ]] && ! kill -0 "$lockpid" 2>/dev/null; then
+    fi
+    if [[ "$lockpid" =~ ^[1-9][0-9]*$ ]]; then
+      if ! kill -0 "$lockpid" 2>/dev/null; then
         rm -f -- "$lockdir/pid"
         rmdir "$lockdir" 2>/dev/null || true
         continue
       fi
+    elif [ "$(fm_backend_tuios_lockdir_age "$lockdir")" -ge 2 ]; then
+      rmdir "$lockdir" 2>/dev/null || true
+      continue
     fi
     tries=$((tries + 1))
     [ "$tries" -lt 100 ] || { echo 'error: timed out waiting for TUIOS workspace allocation' >&2; return 1; }
@@ -860,7 +873,7 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
     fm_backend_tuios_unname_workspace_if_empty "$session" "$workspace" "$label" >/dev/null 2>&1 || true
     return 1
   }
-  printf '%s' "$id"
+  printf '%s\t%s\n' "$id" "$workspace"
   )
 }
 

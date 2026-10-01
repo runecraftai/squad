@@ -624,9 +624,25 @@ fi
 unset SQUAD_TUIOS_FAKE_SESSION_DEAD
 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-spawn-test
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
-[ "$(fm_backend_tuios_create_task owned sq-spawn-test /tmp/wt)" = w-opaque_7 ] || fail 'task window creation failed'
+[ "$(fm_backend_tuios_create_task owned sq-spawn-test /tmp/wt | cut -f1)" = w-opaque_7 ] || fail 'task window creation failed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-spawn-test --session owned --cwd /tmp/wt --workspace 2 --no-focus --print-id' 'spawn did not create an unfocused task-specific workspace in the exact session'
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+# A crash between lockdir creation and pid publication must not permanently
+# disable task allocation: a pid-less lock older than the grace window is
+# reclaimed rather than timing out.
+stale_lock="$XDG_RUNTIME_DIR/.squad-tuios-workspace-owned.lock"
+rm -rf "$stale_lock"
+mkdir -p "$stale_lock"
+touch -t 200001010000 "$stale_lock"
+SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-stale-lock
+export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+created=$(fm_backend_tuios_create_task owned sq-stale-lock /tmp/wt) || fail 'a pid-less stale lock must be reclaimed instead of timing out'
+[ "${created%%$'\t'*}" = w-opaque_7 ] || fail 'reclaiming a stale lock must still create the task window'
+[ -n "${created#*$'\t'}" ] || fail 'create_task must return the selected workspace id'
+[ ! -d "$stale_lock" ] || fail 'create_task must release its workspace lock'
+unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf 'sq-spawn-test\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
 
 # Every task gets a new workspace after the existing range. The adapter
 # requires both workspace discovery and explicit new-window placement support.
@@ -672,7 +688,7 @@ printf 'sq-spawn-test\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS
 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-grouped
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
-[ "$(fm_backend_tuios_create_task owned sq-grouped /tmp/wt)" = w-opaque_7 ] || fail 'per-task workspace creation must succeed'
+[ "$(fm_backend_tuios_create_task owned sq-grouped /tmp/wt | cut -f1)" = w-opaque_7 ] || fail 'per-task workspace creation must succeed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-grouped --session owned --cwd /tmp/wt --workspace 3 --no-focus --print-id' 'a live task window must cause the next task to use another workspace'
 # A nested window record carrying workspace under `.window` must verify the
 # same exact placement instead of reading as absent.
@@ -684,7 +700,7 @@ unset SQUAD_TUIOS_FAKE_NESTED_WORKSPACE SQUAD_TUIOS_FAKE_PLACEMENT
 # workspace the correct allocation rather than sharing the same screen.
 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-next-ws
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
-[ "$(fm_backend_tuios_create_task owned sq-next-ws /tmp/wt)" = w-opaque_7 ] || fail 'second task workspace creation must succeed'
+[ "$(fm_backend_tuios_create_task owned sq-next-ws /tmp/wt | cut -f1)" = w-opaque_7 ] || fail 'second task workspace creation must succeed'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'new-window sq-next-ws --session owned --cwd /tmp/wt --workspace 2 --no-focus --print-id' 'the next task must take another empty workspace, not the occupied one'
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_WINDOW_NAME
 cat > "$TMP_ROOT/state/next-ws.meta" <<'META'
