@@ -27,17 +27,18 @@ PY
 chmod +x "$TMP/runner"
 export TMP CLI
 run_exp() {
- local id=$1 budget=$2 improve=$3 low=$4 overrun=${5:-0} overrun_case=${6:-none}
+ local id=$1 budget=$2 improve=$3 low=$4 overrun=${5:-0} overrun_case=${6:-none} capability=${7:-}
  export SQUAD_BASE="$TMP/base-$id"; mkdir -p "$SQUAD_BASE"
- python3 - "$TMP" "$id" "$budget" "$improve" "$low" "$overrun" "$overrun_case" <<'PY'
+ python3 - "$TMP" "$id" "$budget" "$improve" "$low" "$overrun" "$overrun_case" "$capability" <<'PY'
 import hashlib,json,sys,yaml
 from pathlib import Path
-p=Path(sys.argv[1]); ident,budget,improve,low,overrun,overcase=sys.argv[2:]
+p=Path(sys.argv[1]); ident,budget,improve,low,overrun,overcase,capability=sys.argv[2:]
 b,c=p/'base.txt',p/'candidate.txt'
 d={'version':1,'id':ident,'baseline':{'path':str(b),'sha256':hashlib.sha256(b.read_bytes()).hexdigest()},'candidate':{'path':str(c),'sha256':hashlib.sha256(c.read_bytes()).hexdigest()},'primary_metric':'score','capability_floor':0.8,'max_budget':float(budget),'harness':'test','model':'test-model','configuration':{},'worktree':str(p/'isolated'),'runner':str(p/'runner'),'public_cases':[{'id':f'p{i}','seed':i} for i in range(6)],'reserved_cases':[{'id':f'r{i}','seed':i} for i in range(4)],'rules':{'minimum_improvement':0.1,'promote':'literal','reject':'literal'}}
 (p/f'{ident}.yaml').write_text(yaml.safe_dump(d))
 settings={'improve':improve=='yes','low_reserved':low=='yes'}
 if float(overrun): settings.update(overrun=float(overrun),overrun_case=overcase)
+if capability: settings['capability']=float(capability)
 (p/'settings.json').write_text(json.dumps(settings)); (p/'calls.jsonl').write_text('')
 PY
  "$CLI" validate "$TMP/$id.yaml" >/dev/null
@@ -54,6 +55,14 @@ run_exp reject 10 no no
 run_exp floor 10 yes yes
 "$CLI" run "$TMP/floor.yaml" >/dev/null
 [[ $(report floor | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == reject ]]
+# A demonstrated public candidate floor failure rejects early and stops before reserved cases.
+run_exp publicfloor 10 yes no 0 none 0.5
+"$CLI" run "$TMP/publicfloor.yaml" >/dev/null
+[[ $(wc -l < "$TMP/calls.jsonl") == 12 ]]
+[[ $(report publicfloor | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == reject ]]
+# The same demonstrated failure is inconclusive once coverage is incomplete.
+rm "$SQUAD_BASE/data/policy-lab/publicfloor/trajectories/candidate.p0.json"
+[[ $(report publicfloor | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
 # Exhaustion on resume is cumulative; persisted results are neither rerun nor recounted.
 run_exp resume 0.15 yes no
 "$CLI" run "$TMP/resume.yaml" >/dev/null

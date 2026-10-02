@@ -152,7 +152,10 @@ def report(i, asjson):
  delta=None if avg(c,'metric') is None or avg(b,'metric') is None else avg(c,'metric')-avg(b,'metric')
  floor=float(m['capability_floor']); verdict='inconclusive'
  complete=not invalid and all((arm,c['id']) in found for arm in ('baseline','candidate') for c in m['public_cases']+m['reserved_cases'])
+ public_candidates=[found.get(('candidate',c['id'])) for c in m['public_cases']]
+ public_floor_failure=not invalid and all(x is not None for x in public_candidates) and any(not isinstance(x['result'].get('capability'),(int,float)) or x['result']['capability']<floor for x in public_candidates)
  if state in ('inconclusive_budget','inconclusive_invalid') or invalid: verdict='inconclusive'
+ elif state=='reject' and public_floor_failure: verdict='reject'
  elif complete:
   if any((found[('candidate',c['id'])]['result'].get('capability') is None or found[('candidate',c['id'])]['result']['capability']<floor) for c in m['reserved_cases']): verdict='reject'
   elif delta is not None and delta>=float(m['rules']['minimum_improvement']) and all(isinstance(x['result'].get('cost'),(int,float)) and x['result']['cost']<=float(m['max_budget']) for x in results if x['arm']=='candidate'): verdict='promote'
