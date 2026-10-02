@@ -122,6 +122,34 @@ set +e; "$CLI" run "$TMP/malformed.yaml" >/dev/null 2>&1; rc=$?; set -e
 [[ $rc == 0 ]]
 [[ $(wc -l < "$TMP/calls.jsonl") == "$malformed_calls" ]]
 [[ $(report malformed | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
+# Out-of-range persisted numbers are malformed evidence, not a crash: run stays alive and report is inconclusive.
+run_exp bignum 10 yes no
+"$CLI" run "$TMP/bignum.yaml" >/dev/null
+python3 - "$SQUAD_BASE/data/policy-lab/bignum/trajectories/baseline.p0.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d['result']['cost']=10**400; open(p,'w').write(json.dumps(d))
+PY
+bignum_calls=$(wc -l < "$TMP/calls.jsonl")
+set +e; "$CLI" run "$TMP/bignum.yaml" >/dev/null 2>&1; rc=$?; set -e
+[[ $rc == 0 ]]
+[[ $(wc -l < "$TMP/calls.jsonl") == "$bignum_calls" ]]
+[[ $(report bignum | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
+# Non-finite allowances and thresholds are rejected at validation instead of silently disabling checks.
+for variant in budget floor improvement; do
+python3 - "$TMP" "$variant" <<'PY'
+import hashlib,yaml,sys
+from pathlib import Path
+p=Path(sys.argv[1]); variant=sys.argv[2]; b,c=p/'base.txt',p/'candidate.txt'
+d={'version':1,'id':'nan'+variant,'baseline':{'path':str(b),'sha256':hashlib.sha256(b.read_bytes()).hexdigest()},'candidate':{'path':str(c),'sha256':hashlib.sha256(c.read_bytes()).hexdigest()},'primary_metric':'score','capability_floor':0.8,'max_budget':10.0,'harness':'test','model':'test-model','configuration':{},'worktree':str(p/'isolated'),'runner':str(p/'runner'),'public_cases':[{'id':f'p{i}','seed':i} for i in range(6)],'reserved_cases':[{'id':f'r{i}','seed':i} for i in range(4)],'rules':{'minimum_improvement':0.1,'promote':'literal','reject':'literal'}}
+if variant=='budget': d['max_budget']=float('nan')
+elif variant=='floor': d['capability_floor']=float('nan')
+else: d['rules']['minimum_improvement']=float('nan')
+(p/f'nan{variant}.yaml').write_text(yaml.safe_dump(d))
+PY
+export SQUAD_BASE="$TMP/base-nan$variant"; mkdir -p "$SQUAD_BASE"
+set +e; "$CLI" validate "$TMP/nan$variant.yaml" >/dev/null 2>&1; rc=$?; set -e
+[[ $rc == 2 ]]
+done
 # Existing lightweight input immutability and fail-closed isolation coverage.
 python3 - "$TMP/experiment.yaml" "$TMP/base.txt" "$TMP/candidate.txt" "$TMP/isolated" <<'PY'
 import hashlib,sys,yaml

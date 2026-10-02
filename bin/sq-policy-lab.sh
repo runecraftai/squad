@@ -18,6 +18,10 @@ root, base, cmd, *args = sys.argv[1:]
 base=Path(base).resolve(); root=Path(root).resolve(); data=base/'data/policy-lab'
 def die(msg): print('error: '+msg,file=sys.stderr); sys.exit(2)
 def safe_id(s): return isinstance(s,str) and __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*',s) is not None
+def finite_num(v):
+ if not isinstance(v,(int,float)) or isinstance(v,bool): return False
+ try: return __import__('math').isfinite(float(v))
+ except (OverflowError,ValueError): return False
 def load(path):
  try:
   obj=yaml.safe_load(Path(path).read_text())
@@ -32,15 +36,15 @@ def validate(m):
  for arm in ['baseline','candidate']:
   a=m[arm]
   if not isinstance(a,dict) or not isinstance(a.get('path'),str) or not isinstance(a.get('sha256'),str) or not __import__('re').fullmatch('[0-9a-f]{64}',a['sha256']): die(f'invalid {arm} path/hash')
- if not isinstance(m['primary_metric'],str) or not isinstance(m['capability_floor'],(int,float)): die('invalid metric or capability floor')
- if not isinstance(m['max_budget'],(int,float)) or m['max_budget']<=0: die('max_budget must be positive')
+ if not isinstance(m['primary_metric'],str) or not finite_num(m['capability_floor']): die('invalid metric or capability floor')
+ if not finite_num(m['max_budget']) or m['max_budget']<=0: die('max_budget must be positive')
  for key,n in [('public_cases',6),('reserved_cases',4)]:
   xs=m[key]
   if not isinstance(xs,list) or len(xs)<n: die(f'{key} requires at least {n} cases')
   if any(not isinstance(x,dict) or not safe_id(x.get('id')) for x in xs): die(f'{key} cases require safe ids')
  ids=[x['id'] for x in m['public_cases']+m['reserved_cases']]
  if len(ids)!=len(set(ids)): die('duplicate case id or case present in both sets')
- if not isinstance(m['rules'],dict) or not all(k in m['rules'] for k in ('minimum_improvement','promote','reject')): die('rules requires minimum_improvement, promote, reject')
+ if not isinstance(m['rules'],dict) or not all(k in m['rules'] for k in ('minimum_improvement','promote','reject')) or not finite_num(m['rules'].get('minimum_improvement')): die('rules requires minimum_improvement, promote, reject')
  for a in ('harness','model'):
   if not isinstance(m[a],str) or not m[a]: die(f'{a} must be explicit and identical for both arms')
  return True
@@ -68,11 +72,10 @@ def valid_snapshot(x, m, arm, case):
  r=x.get('result')
  if not isinstance(r,dict) or not isinstance(r.get('result'),str) or not isinstance(r.get('checks'),dict): return False
  for k in ('cost','metric','capability'):
-  v=r.get(k)
-  if not isinstance(v,(int,float)) or isinstance(v,bool) or not __import__('math').isfinite(v): return False
+  if not finite_num(r.get(k)): return False
  for k in ('cost','tokens','duration_seconds'):
   v=r.get(k)
-  if v is not None and (not isinstance(v,(int,float)) or isinstance(v,bool) or not __import__('math').isfinite(v) or v<0): return False
+  if v is not None and (not finite_num(v) or v<0): return False
  return True
 
 def evidence(m, exp):
@@ -130,7 +133,7 @@ def run(m, exp):
      (exp/'state').write_text('inconclusive_invalid\n'); return
     found[(arm,case['id'])]=saved
     cost=r.get('cost')
-    if isinstance(cost,(int,float)) and not isinstance(cost,bool) and __import__('math').isfinite(cost) and cost>=0: spent+=float(cost)
+    if finite_num(cost) and cost>=0: spent+=float(cost)
  (exp/'state').write_text('completed\n')
 
 def report(i, asjson):
