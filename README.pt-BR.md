@@ -99,12 +99,20 @@ O toggle `/calm` do Pi esconde elementos de transcript suportados - incluindo li
 
 ### Mais backends
 
-Os guias de configuração do tmux (o padrão) e de todos os outros backends suportados (herdr, zellij, Orca, cmux, tuios) estão linkados em [Documentação](#documentação) abaixo.
+[tmux](docs/pt-BR/tmux-backend.md) é o backend de referência verificado do Squad; Herdr, Zellij, Orca, cmux e TUIOS são experimentais, com suporte a recursos que varia por backend.
+Veja a [configuração de backend de runtime](docs/pt-BR/configuration.md#backend-de-runtime-configbackend--squad_backend) e cada guia de backend linkado para requisitos e limites atuais.
+
+## Atualizações e releases
+
+Este repositório é a distro do Squad; veja o [histórico curado de mudanças da distro](CHANGELOG.md) para mudanças que afetam usuários, não releases de versão de pacote.
+Para atualizar um Squad em execução e seus XOs registrados, use a skill suportada `/updatesquad`, que faz fast-forward a partir da origem e relê as instruções.
+Veja o [guia de atualização](.agents/skills/updatesquad/SKILL.md).
 
 ## Funcionalidades
 
 - **Um ponto de contato** - você fala somente com o agente da squad; ele despacha, supervisiona, escala apenas decisões reais e reporta resultados claros.
-- **Uma squad visível** - cada operador trabalha na própria janela do tmux, aba experimental herdr/zellij, workspace cmux, janela TUIOS ou terminal Orca, que você pode assistir ou usar para digitar; o sargento de armas reconcilia.
+- **Uma squad visível** - cada operador trabalha no próprio endpoint de backend que você pode assistir ou usar para digitar; o sargento de armas reconcilia.
+  As capacidades variam por backend; veja os [guias de backend](#mais-backends).
 - **Worktrees descartáveis** - cada tarefa roda em um worktree git limpo de um [FOB](https://github.com/runecraftai/squad/tree/main/packages/fob) (pool de worktrees), ou em um worktree gerenciado pelo Orca quando `backend=orca`, então trabalho paralelo em um mesmo repositório nunca colide.
 - **Dois formatos de tarefa** - tarefas strike entregam mudanças autorizadas; tarefas recon deixam relatórios de investigação independentes quando o contrato de intake justifica pesquisa separada.
 - **Modos de projeto explícitos** - cada projeto entrega via `drill`, `direct-PR` ou `local-only`, com a flag opcional de autonomia `+yolo`.
