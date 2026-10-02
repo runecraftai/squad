@@ -134,5 +134,6 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-public-followup.sh`  | Reconcile typed terminal work results into a public commitment and deliver its final reply once |
 | `sq-public-followup-emit.sh` | Report one typed terminal work result into the base that owes the public reply    |
 
-Policy lab verdicts require valid paired baseline and candidate results for every configured case.
-Its maximum budget is cumulative per arm across public and reserved cases and resumes, and reports retain actual runner costs even when they exceed the allowance.
+Policy lab comparison verdicts require valid paired baseline and candidate results for every configured case, while a candidate with a demonstrated public capability-floor failure may be rejected early after complete valid paired public coverage.
+Missing or invalid public evidence remains inconclusive.
+Its maximum budget is cumulative per arm across public and reserved cases and resumes; actual spend above either arm's allowance makes the report inconclusive, and actual runner costs remain visible even when an external runner exceeds its allowance.

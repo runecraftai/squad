@@ -151,16 +151,20 @@ def report(i, asjson):
  b=[x for x in pub if x['arm']=='baseline']; c=[x for x in pub if x['arm']=='candidate']
  delta=None if avg(c,'metric') is None or avg(b,'metric') is None else avg(c,'metric')-avg(b,'metric')
  floor=float(m['capability_floor']); verdict='inconclusive'
+ budget=float(m['max_budget'])
+ costs={a:sum(x['result']['cost'] for x in results if x['arm']==a) for a in ('baseline','candidate')}
+ over_budget=any(cost>budget for cost in costs.values())
  complete=not invalid and all((arm,c['id']) in found for arm in ('baseline','candidate') for c in m['public_cases']+m['reserved_cases'])
+ public_pair_complete=not invalid and all((arm,c['id']) in found for arm in ('baseline','candidate') for c in m['public_cases'])
  public_candidates=[found.get(('candidate',c['id'])) for c in m['public_cases']]
- public_floor_failure=not invalid and all(x is not None for x in public_candidates) and any(not isinstance(x['result'].get('capability'),(int,float)) or x['result']['capability']<floor for x in public_candidates)
- if state in ('inconclusive_budget','inconclusive_invalid') or invalid: verdict='inconclusive'
+ public_floor_failure=public_pair_complete and any(x['result']['capability']<floor for x in public_candidates)
+ if state in ('inconclusive_budget','inconclusive_invalid') or invalid or over_budget: verdict='inconclusive'
  elif state=='reject' and public_floor_failure: verdict='reject'
  elif complete:
-  if any((found[('candidate',c['id'])]['result'].get('capability') is None or found[('candidate',c['id'])]['result']['capability']<floor) for c in m['reserved_cases']): verdict='reject'
-  elif delta is not None and delta>=float(m['rules']['minimum_improvement']) and all(isinstance(x['result'].get('cost'),(int,float)) and x['result']['cost']<=float(m['max_budget']) for x in results if x['arm']=='candidate'): verdict='promote'
+  if any(found[('candidate',c['id'])]['result']['capability']<floor for c in m['reserved_cases']): verdict='reject'
+  elif delta is not None and delta>=float(m['rules']['minimum_improvement']): verdict='promote'
   elif delta is not None: verdict='reject'
- doc={'experiment_id':i,'verdict':verdict,'primary_metric':m['primary_metric'],'delta':delta,'quality':{'baseline':avg(b,'capability'),'candidate':avg(c,'capability')},'cost':{a:sum(x['result'].get('cost',0) for x in results if x['arm']==a and isinstance(x['result'].get('cost'),(int,float))) for a in ('baseline','candidate')},'tokens':{a:sum(x['result'].get('tokens',0) for x in results if x['arm']==a and isinstance(x['result'].get('tokens'),(int,float))) for a in ('baseline','candidate')},'duration_seconds':{a:sum(x['result'].get('duration_seconds',0) for x in results if x['arm']==a and isinstance(x['result'].get('duration_seconds'),(int,float))) for a in ('baseline','candidate')},'failures':[{'arm':x['arm'],'case_id':x['case_id'],'result':x['result'].get('result')} for x in results if x['result'].get('result') not in ('ok','pass','passed')], 'invalid_evidence':invalid,'case_intervals':[],'human_action':'A human must review and promote the candidate through the normal policy change process; this laboratory does not promote it.'}
+ doc={'experiment_id':i,'verdict':verdict,'primary_metric':m['primary_metric'],'delta':delta,'quality':{'baseline':avg(b,'capability'),'candidate':avg(c,'capability')},'cost':costs,'tokens':{a:sum(x['result'].get('tokens',0) for x in results if x['arm']==a and isinstance(x['result'].get('tokens'),(int,float))) for a in ('baseline','candidate')},'duration_seconds':{a:sum(x['result'].get('duration_seconds',0) for x in results if x['arm']==a and isinstance(x['result'].get('duration_seconds'),(int,float))) for a in ('baseline','candidate')},'failures':[{'arm':x['arm'],'case_id':x['case_id'],'result':x['result'].get('result')} for x in results if x['result'].get('result') not in ('ok','pass','passed')], 'invalid_evidence':invalid,'case_intervals':[],'human_action':'A human must review and promote the candidate through the normal policy change process; this laboratory does not promote it.'}
  for case in m['public_cases']:
   vals=[x['result'].get('metric') for x in results if x['case_id']==case['id'] and isinstance(x['result'].get('metric'),(int,float))]
   doc['case_intervals'].append({'case_id':case['id'],'type':'public','low':min(vals) if vals else None,'high':max(vals) if vals else None})

@@ -16,9 +16,9 @@ case=json.load(sys.stdin); policy='baseline' if 'baseline' in Path(arg('--policy
 with open(Path(__file__).with_name('calls.jsonl'),'a') as f:
  f.write(json.dumps({'arm':policy,'case':case['id'],'budget':float(arg('--budget'))})+'\n')
 settings=json.load(open(Path(__file__).with_name('settings.json')))
-if settings.get('overrun') and case['id']==settings['overrun_case']:
+if settings.get('overrun') and case['id']==settings['overrun_case'] and policy==settings.get('overrun_arm','baseline'):
  cost=settings['overrun']
-else: cost=settings.get('cost',0.1)
+else: cost=settings.get('candidate_cost',settings.get('cost',0.1)) if policy=='candidate' else settings.get('baseline_cost',settings.get('cost',0.1))
 cap=settings.get('capability',0.95)
 if settings.get('low_reserved') and case['id'].startswith('r') and policy=='candidate': cap=0.1
 metric=(0.9 if policy=='candidate' else 0.5) if settings.get('improve',True) else 0.5
@@ -27,18 +27,19 @@ PY
 chmod +x "$TMP/runner"
 export TMP CLI
 run_exp() {
- local id=$1 budget=$2 improve=$3 low=$4 overrun=${5:-0} overrun_case=${6:-none} capability=${7:-}
+ local id=$1 budget=$2 improve=$3 low=$4 overrun=${5:-0} overrun_case=${6:-none} capability=${7:-} candidate_cost=${8:-} overrun_arm=${9:-baseline}
  export SQUAD_BASE="$TMP/base-$id"; mkdir -p "$SQUAD_BASE"
- python3 - "$TMP" "$id" "$budget" "$improve" "$low" "$overrun" "$overrun_case" "$capability" <<'PY'
+ python3 - "$TMP" "$id" "$budget" "$improve" "$low" "$overrun" "$overrun_case" "$capability" "$candidate_cost" "$overrun_arm" <<'PY'
 import hashlib,json,sys,yaml
 from pathlib import Path
-p=Path(sys.argv[1]); ident,budget,improve,low,overrun,overcase,capability=sys.argv[2:]
+p=Path(sys.argv[1]); ident,budget,improve,low,overrun,overcase,capability,candidate_cost,overrun_arm=sys.argv[2:]
 b,c=p/'base.txt',p/'candidate.txt'
 d={'version':1,'id':ident,'baseline':{'path':str(b),'sha256':hashlib.sha256(b.read_bytes()).hexdigest()},'candidate':{'path':str(c),'sha256':hashlib.sha256(c.read_bytes()).hexdigest()},'primary_metric':'score','capability_floor':0.8,'max_budget':float(budget),'harness':'test','model':'test-model','configuration':{},'worktree':str(p/'isolated'),'runner':str(p/'runner'),'public_cases':[{'id':f'p{i}','seed':i} for i in range(6)],'reserved_cases':[{'id':f'r{i}','seed':i} for i in range(4)],'rules':{'minimum_improvement':0.1,'promote':'literal','reject':'literal'}}
 (p/f'{ident}.yaml').write_text(yaml.safe_dump(d))
 settings={'improve':improve=='yes','low_reserved':low=='yes'}
-if float(overrun): settings.update(overrun=float(overrun),overrun_case=overcase)
+if float(overrun): settings.update(overrun=float(overrun),overrun_case=overcase,overrun_arm=overrun_arm)
 if capability: settings['capability']=float(capability)
+if candidate_cost: settings['candidate_cost']=float(candidate_cost)
 (p/'settings.json').write_text(json.dumps(settings)); (p/'calls.jsonl').write_text('')
 PY
  "$CLI" validate "$TMP/$id.yaml" >/dev/null
@@ -63,6 +64,11 @@ run_exp publicfloor 10 yes no 0 none 0.5
 # The same demonstrated failure is inconclusive once coverage is incomplete.
 rm "$SQUAD_BASE/data/policy-lab/publicfloor/trajectories/candidate.p0.json"
 [[ $(report publicfloor | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
+# A public floor failure is not decisive when baseline paired coverage is missing.
+run_exp publicfloorbase 10 yes no 0 none 0.5
+"$CLI" run "$TMP/publicfloorbase.yaml" >/dev/null
+rm "$SQUAD_BASE/data/policy-lab/publicfloorbase/trajectories/baseline.p0.json"
+[[ $(report publicfloorbase | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
 # Exhaustion on resume is cumulative; persisted results are neither rerun nor recounted.
 run_exp resume 0.15 yes no
 "$CLI" run "$TMP/resume.yaml" >/dev/null
@@ -84,6 +90,11 @@ PY
 report accumulation | python3 -c 'import json,sys; assert abs(json.load(sys.stdin)["cost"]["baseline"]-0.7)<1e-8'
 "$CLI" run "$TMP/accumulation.yaml" >/dev/null
 [[ $(wc -l < "$TMP/calls.jsonl") == 13 ]]
+# Complete coverage with actual cumulative candidate spend above budget stays inconclusive.
+run_exp completedoverrun 1.0 yes no 0 none '' 0.11
+[[ $("$CLI" run "$TMP/completedoverrun.yaml") == completed ]]
+[[ $(wc -l < "$TMP/calls.jsonl") == 20 ]]
+report completedoverrun | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["verdict"]=="inconclusive" and abs(d["cost"]["candidate"]-1.1)<1e-8 and abs(d["cost"]["baseline"]-1.0)<1e-8'
 # Incomplete and contradictory result identities cannot produce a decisive verdict.
 run_exp invalid 10 yes no
 "$CLI" run "$TMP/invalid.yaml" >/dev/null
