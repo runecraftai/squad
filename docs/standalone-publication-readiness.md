@@ -1,9 +1,8 @@
-# Standalone publication readiness
+# Historical standalone publication readiness snapshot
 
-Prep state for releasing the standalone-candidate packages so they are usable
-without Squad. npm packages publish under the `@runecraft` npm scope; the Go
-binaries ship as compiled GitHub Releases. A live publish is commander-gated and
-out of scope for this change; this document records the dry-run validation.
+This document preserves a historical dry-run assessment, not current publication readiness or release instructions.
+Its package versions, publication observations, and next steps are snapshot-era facts and must be revalidated against current manifests and workflows before any release decision.
+The active package release workflows and package-local changelogs remain authoritative.
 
 ## npm candidates
 
@@ -45,10 +44,7 @@ uploads per-OS/arch archives plus checksums, and drill's finalize publishes the
 draft once every asset job succeeds. drill macOS binaries are Developer ID
 signed in CI.
 
-## Next step (commander-gated)
+## Historical next-step notes
 
-The live npm publish is the commander-gated next step. The six already-published
-packages each require a version bump (their current versions are already
-published), while the new `@runecraft/operation-board` 0.1.0 can publish at its
-current version. The real telemetry/Team ID values are required before any live
-Go release ships.
+The following statements describe the old dry-run snapshot only and are not current release guidance: live npm publication was identified as commander-gated, six package versions were described as already published, and `@runecraft/operation-board` 0.1.0 was described as unpublished.
+The telemetry and Team ID note is likewise historical and must not be treated as evidence of current release requirements.

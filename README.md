@@ -99,12 +99,20 @@ Pi's `/calm` toggle hides supported transcript chrome - including canonically cl
 
 ### More backends
 
-Setup guides for tmux (the default) and every other supported backend (herdr, zellij, Orca, cmux, tuios) are linked in [Documentation](#documentation) below.
+[tmux](docs/tmux-backend.md) is Squad's verified reference backend; Herdr, Zellij, Orca, cmux, and TUIOS are experimental, with feature support that varies by backend.
+See [runtime backend configuration](docs/configuration.md#runtime-backend-configbackend--squad_backend) and each linked backend guide for current requirements and limits.
+
+## Updates and releases
+
+This repository is the Squad distro; see the curated [distro change history](CHANGELOG.md) for user-impact changes, not package version releases.
+To update a running Squad and its registered XOs, use the supported `/updatesquad` skill, which fast-forwards from origin and refreshes instructions.
+See [the update guide](.agents/skills/updatesquad/SKILL.md).
 
 ## Features
 
 - **One point of contact** - you talk only to the squad agent; it dispatches, supervises, escalates only real decisions, and reports plain outcomes.
-- **A visible squad** - every operator works in its own tmux window, experimental herdr/zellij tab, cmux workspace, TUIOS window, or Orca terminal you can watch or type into; the sergeant at arms reconciles.
+- **A visible squad** - every operator works in its own backend endpoint you can watch or type into; the sergeant at arms reconciles.
+  Backend capabilities vary; see the [backend guides](#more-backends).
 - **Disposable worktrees** - each task runs in a clean [FOB](https://github.com/runecraftai/squad/tree/main/packages/fob) (worktree pool) git worktree, or an Orca-managed worktree when `backend=orca`, so parallel work on one repo never collides.
 - **Two task shapes** - strike tasks deliver authorized changes; recon tasks leave standalone investigation reports when the intake contract warrants separate research.
 - **Explicit project modes** - each project deploys via `drill`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.

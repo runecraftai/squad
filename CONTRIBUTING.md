@@ -55,6 +55,15 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
 - `README.md` stays a concise overview plus pointers: it never carries a wall of inline detail.
   Route detail to the most specific `docs/` file (architecture, configuration, or a backend guide) and link to it instead.
 
+## Releases and change history
+
+Released packages retain independent Release Please streams and package-local generated `CHANGELOG.md` files; do not manually edit those generated histories.
+For package changes, use Conventional Commits so Release Please can classify bumps and generate release notes: `fix:` signals a patch, `feat:` a minor release, and `!` or a `BREAKING CHANGE:` footer signals a breaking change.
+The repository's active workflow and package release configuration are authoritative for which packages are released.
+
+The root repository is a distro, not a versioned package with one repository-wide release.
+Maintain the curated root [CHANGELOG.md](CHANGELOG.md) for user-impacting distro changes; it is distinct from package changelogs and is not an exhaustive history.
+
 ## Development
 
 Tracked changes to Squad itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `drill` pipeline on a feature branch and require an explicit merge approval.
