@@ -91,6 +91,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata including evidence receipt summaries and observation pack aggregates; sq-cost, .meta, .exec, and status remain owners of truth |
 | `sq-dispatch-tune.sh`  | Analyze operator performance per dispatch profile and recommend harness/model/effort adjustments |
 | `sq-policy-lab.sh`     | Private non-promoting comparison laboratory for validating, running, and reporting policy candidate experiments |
+
 | `sq-drill-run-lib.sh`       | Shared branch-and-code-identity attribution for drill runs                    |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
@@ -132,3 +133,6 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-public-followup-lib.sh` | Shared relay-activation gate, O(1) presence checks, and private transport paths for promised public replies |
 | `sq-public-followup.sh`  | Reconcile typed terminal work results into a public commitment and deliver its final reply once |
 | `sq-public-followup-emit.sh` | Report one typed terminal work result into the base that owes the public reply    |
+
+Policy lab verdicts require valid paired baseline and candidate results for every configured case.
+Its maximum budget is cumulative per arm across public and reserved cases and resumes, and reports retain actual runner costs even when they exceed the allowance.

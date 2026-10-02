@@ -60,39 +60,77 @@ def snapshot(m, exp, arm, case, result):
  p=exp/'trajectories'; p.mkdir(parents=True,exist_ok=True,mode=0o700)
  (p/f'{arm}.{case["id"]}.json').write_text(json.dumps({'schema_version':1,'experiment':m['id'],'arm':arm,'case_id':case['id'],'seed':case.get('seed'),'configuration':m['configuration'],'harness':m['harness'],'model':m['model'],'tokens':result.get('tokens'),'cost':result.get('cost'),'duration_seconds':result.get('duration_seconds'),'checks':result.get('checks'),'result':result},sort_keys=True)+'\n')
 
+def valid_snapshot(x, m, arm, case):
+ if not isinstance(x,dict) or x.get('schema_version')!=1 or x.get('experiment')!=m['id'] or x.get('arm')!=arm or x.get('case_id')!=case['id']:
+  return False
+ if x.get('seed')!=case.get('seed') or x.get('configuration')!=m['configuration'] or x.get('harness')!=m['harness'] or x.get('model')!=m['model']:
+  return False
+ r=x.get('result')
+ if not isinstance(r,dict) or not isinstance(r.get('result'),str) or not isinstance(r.get('checks'),dict): return False
+ for k in ('cost','metric','capability'):
+  v=r.get(k)
+  if not isinstance(v,(int,float)) or isinstance(v,bool) or not __import__('math').isfinite(v): return False
+ for k in ('cost','tokens','duration_seconds'):
+  v=r.get(k)
+  if v is not None and (not isinstance(v,(int,float)) or isinstance(v,bool) or not __import__('math').isfinite(v) or v<0): return False
+ return True
+
+def evidence(m, exp):
+ expected={(arm,c['id']):(arm,c) for arm in ('baseline','candidate') for c in m['public_cases']+m['reserved_cases']}
+ found={}; invalid=[]
+ for p in sorted((exp/'trajectories').glob('*.json')):
+  try: x=json.loads(p.read_text())
+  except Exception: invalid.append(p.name); continue
+  key=(x.get('arm'),x.get('case_id')) if isinstance(x,dict) else None
+  item=expected.get(key)
+  if item is None or key in found or p.name!=f'{key[0]}.{key[1]}.json' or not valid_snapshot(x,m,*item): invalid.append(p.name); continue
+  found[key]=x
+ return found,invalid
+
 def run(m, exp):
  # A single configured executable, exact same inputs/arguments/environment. Refuse to run if isolation cannot be proven.
  runner=m.get('runner'); worktree=m.get('worktree')
  if not isinstance(runner,str) or not os.path.isfile(runner) or not os.access(runner,os.X_OK) or not isinstance(worktree,str) or not Path(worktree).is_dir(): die('cannot prove isolated worktree/profile/model/budget equivalence; no case run')
  if Path(worktree).resolve()==root or root in Path(worktree).resolve().parents: die('runner worktree must be isolated')
  inputs=copy_inputs(m,exp)
+ (exp/'trajectories').mkdir(parents=True,exist_ok=True,mode=0o700)
+ found,invalid=evidence(m,exp)
+ if invalid:
+  (exp/'state').write_text('inconclusive_invalid\n'); return
+ budget=float(m['max_budget'])
  state='public_running'; (exp/'state').write_text(state+'\n')
  for label,cases in [('public',m['public_cases']),('reserved',m['reserved_cases'])]:
   if label=='reserved':
-   public=[json.loads(p.read_text()) for p in sorted((exp/'trajectories').glob('candidate.*.json'))]
+   public=[found.get(('candidate',c['id'])) for c in m['public_cases']]
    floor=float(m['capability_floor'])
-   if len(public)!=len(m['public_cases']) or any(not isinstance(x['result'].get('capability'),(int,float)) or x['result']['capability']<floor for x in public):
+   if any(x is None for x in public):
+    (exp/'state').write_text('inconclusive_invalid\n'); return
+   if any(not isinstance(x['result'].get('capability'),(int,float)) or x['result']['capability']<floor for x in public):
     (exp/'state').write_text('reject\n'); return
    (exp/'state').write_text('reserved_running\n')
   for arm in ('baseline','candidate'):
-   spent=0.0
+   spent=sum(float(x['result']['cost']) for (a,_),x in found.items() if a==arm and isinstance(x['result'].get('cost'),(int,float)))
    for case in cases:
-    out=exp/'trajectories'/f'{arm}.{case["id"]}.json'
-    if out.exists(): continue
-    started=time.monotonic(); status='harness_failure'
+    if (arm,case['id']) in found: continue
+    remaining=budget-spent
+    if remaining<=0:
+     (exp/'state').write_text('inconclusive_budget\n'); return
+    started=time.monotonic()
     try:
-     # JSON stdin keeps reserved case text out of command-line arguments and reports.
-     proc=subprocess.run([runner,'--policy',str(inputs/arm),'--case-json','--harness',m['harness'],'--model',m['model'],'--budget',str(m['max_budget']),'--configuration-json',json.dumps(m['configuration'],sort_keys=True)],input=json.dumps(case),text=True,capture_output=True,cwd=worktree,timeout=float(m.get('timeout_seconds',600)),env={'PATH':os.environ.get('PATH',''),'HOME':str(Path.home())})
+     proc=subprocess.run([runner,'--policy',str(inputs/arm),'--case-json','--harness',m['harness'],'--model',m['model'],'--budget',str(remaining),'--configuration-json',json.dumps(m['configuration'],sort_keys=True)],input=json.dumps(case),text=True,capture_output=True,cwd=worktree,timeout=float(m.get('timeout_seconds',600)),env={'PATH':os.environ.get('PATH',''),'HOME':str(Path.home())})
      r=json.loads(proc.stdout) if proc.returncode==0 else {'result':'harness_failure','detail':'nonzero runner exit'}
      if not isinstance(r,dict) or not isinstance(r.get('checks'),dict): r={'result':'invalid_check','detail':'runner output lacks checks object'}
      elif not isinstance(r.get('result'),str): r['result']='invalid_check'
-     status=r['result']
-    except subprocess.TimeoutExpired: r={'result':'timeout'}; status='timeout'
-    except Exception: r={'result':'harness_failure'}; status='harness_failure'
+    except subprocess.TimeoutExpired: r={'result':'timeout'}
+    except Exception: r={'result':'harness_failure'}
     r['duration_seconds']=r.get('duration_seconds',round(time.monotonic()-started,6))
     snapshot(m,exp,arm,case,r)
-    if isinstance(r.get('cost'),(int,float)): spent+=r['cost']
-    if spent>float(m['max_budget']): (exp/'state').write_text('inconclusive_budget\n'); return
+    saved=json.loads((exp/'trajectories'/f'{arm}.{case["id"]}.json').read_text())
+    if not valid_snapshot(saved,m,arm,case):
+     (exp/'state').write_text('inconclusive_invalid\n'); return
+    found[(arm,case['id'])]=saved
+    cost=r.get('cost')
+    if isinstance(cost,(int,float)) and not isinstance(cost,bool) and __import__('math').isfinite(cost) and cost>=0: spent+=float(cost)
  (exp/'state').write_text('completed\n')
 
 def report(i, asjson):
@@ -100,23 +138,26 @@ def report(i, asjson):
  exp=data/i
  try:
   m=load(exp/'manifest.yaml'); validate(m)
-  results=[json.loads(p.read_text()) for p in sorted((exp/'trajectories').glob('*.json'))]
   state=(exp/'state').read_text().strip()
+  found,invalid=evidence(m,exp)
+  results=list(found.values())
  except Exception as e: die(f'experiment not reportable: {e}')
- pub=[x for x in results if x['case_id'] in {c['id'] for c in m['public_cases']}]
- res=[x for x in results if x['case_id'] in {c['id'] for c in m['reserved_cases']}]
+ public_ids={c['id'] for c in m['public_cases']}; reserved_ids={c['id'] for c in m['reserved_cases']}
+ pub=[x for x in results if x['case_id'] in public_ids]
+ res=[x for x in results if x['case_id'] in reserved_ids]
  def avg(xs,key):
   vals=[x['result'].get(key) for x in xs if isinstance(x['result'].get(key),(int,float))]
   return sum(vals)/len(vals) if vals else None
  b=[x for x in pub if x['arm']=='baseline']; c=[x for x in pub if x['arm']=='candidate']
  delta=None if avg(c,'metric') is None or avg(b,'metric') is None else avg(c,'metric')-avg(b,'metric')
  floor=float(m['capability_floor']); verdict='inconclusive'
- if state=='inconclusive_budget': verdict='inconclusive'
- elif len(res)==len(m['reserved_cases']):
-  if any((x['result'].get('capability') is None or x['result']['capability']<floor) for x in res if x['arm']=='candidate'): verdict='reject'
+ complete=not invalid and all((arm,c['id']) in found for arm in ('baseline','candidate') for c in m['public_cases']+m['reserved_cases'])
+ if state in ('inconclusive_budget','inconclusive_invalid') or invalid: verdict='inconclusive'
+ elif complete:
+  if any((found[('candidate',c['id'])]['result'].get('capability') is None or found[('candidate',c['id'])]['result']['capability']<floor) for c in m['reserved_cases']): verdict='reject'
   elif delta is not None and delta>=float(m['rules']['minimum_improvement']) and all(isinstance(x['result'].get('cost'),(int,float)) and x['result']['cost']<=float(m['max_budget']) for x in results if x['arm']=='candidate'): verdict='promote'
   elif delta is not None: verdict='reject'
- doc={'experiment_id':i,'verdict':verdict,'primary_metric':m['primary_metric'],'delta':delta,'quality':{'baseline':avg(b,'capability'),'candidate':avg(c,'capability')},'cost':{a:sum(x['result'].get('cost',0) for x in results if x['arm']==a and isinstance(x['result'].get('cost'),(int,float))) for a in ('baseline','candidate')},'tokens':{a:sum(x['result'].get('tokens',0) for x in results if x['arm']==a and isinstance(x['result'].get('tokens'),(int,float))) for a in ('baseline','candidate')},'duration_seconds':{a:sum(x['result'].get('duration_seconds',0) for x in results if x['arm']==a and isinstance(x['result'].get('duration_seconds'),(int,float))) for a in ('baseline','candidate')},'failures':[{'arm':x['arm'],'case_id':x['case_id'],'result':x['result'].get('result')} for x in results if x['result'].get('result') not in ('ok','pass','passed')],'case_intervals':[],'human_action':'A human must review and promote the candidate through the normal policy change process; this laboratory does not promote it.'}
+ doc={'experiment_id':i,'verdict':verdict,'primary_metric':m['primary_metric'],'delta':delta,'quality':{'baseline':avg(b,'capability'),'candidate':avg(c,'capability')},'cost':{a:sum(x['result'].get('cost',0) for x in results if x['arm']==a and isinstance(x['result'].get('cost'),(int,float))) for a in ('baseline','candidate')},'tokens':{a:sum(x['result'].get('tokens',0) for x in results if x['arm']==a and isinstance(x['result'].get('tokens'),(int,float))) for a in ('baseline','candidate')},'duration_seconds':{a:sum(x['result'].get('duration_seconds',0) for x in results if x['arm']==a and isinstance(x['result'].get('duration_seconds'),(int,float))) for a in ('baseline','candidate')},'failures':[{'arm':x['arm'],'case_id':x['case_id'],'result':x['result'].get('result')} for x in results if x['result'].get('result') not in ('ok','pass','passed')], 'invalid_evidence':invalid,'case_intervals':[],'human_action':'A human must review and promote the candidate through the normal policy change process; this laboratory does not promote it.'}
  for case in m['public_cases']:
   vals=[x['result'].get('metric') for x in results if x['case_id']==case['id'] and isinstance(x['result'].get('metric'),(int,float))]
   doc['case_intervals'].append({'case_id':case['id'],'type':'public','low':min(vals) if vals else None,'high':max(vals) if vals else None})
