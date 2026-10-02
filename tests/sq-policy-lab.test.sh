@@ -110,6 +110,17 @@ run_exp incomplete 10 yes no
 "$CLI" run "$TMP/incomplete.yaml" >/dev/null
 rm "$SQUAD_BASE/data/policy-lab/incomplete/trajectories/baseline.r3.json"
 [[ $(report incomplete | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
+# Duplicate persisted evidence for one key is malformed even when the extra file is well-formed.
+run_exp duplicate 10 yes no
+"$CLI" run "$TMP/duplicate.yaml" >/dev/null
+python3 - "$SQUAD_BASE/data/policy-lab/duplicate/trajectories/baseline.p0.json" "$SQUAD_BASE/data/policy-lab/duplicate/trajectories/zzz.json" <<'PY'
+import shutil,sys
+shutil.copyfile(sys.argv[1],sys.argv[2])
+PY
+duplicate_calls=$(wc -l < "$TMP/calls.jsonl")
+"$CLI" run "$TMP/duplicate.yaml" >/dev/null
+[[ $(wc -l < "$TMP/calls.jsonl") == "$duplicate_calls" ]]
+[[ $(report duplicate | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
 # Non-hashable persisted identity is malformed, not a crash: run stays alive and report is inconclusive.
 run_exp malformed 10 yes no
 "$CLI" run "$TMP/malformed.yaml" >/dev/null

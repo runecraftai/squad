@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 # Private, non-promoting comparison laboratory for policy candidates.
+#
+# Comparison verdicts require unique, valid paired baseline and candidate results for every configured case, while a candidate with a demonstrated public capability-floor failure may be rejected early after complete valid paired public coverage.
+# Promote requires sufficient improvement in the primary metric and a candidate at or above the reserved capability floor; insufficient improvement or a candidate below that floor rejects.
+# Missing or invalid necessary public evidence stays inconclusive.
+# max_budget is cumulative per arm across public and reserved cases and across resumes: each retained valid result counts once, already completed valid cases are skipped, and only the remaining allowance is passed to the runner.
+# Actual cumulative spend above either arm's total allowance reports inconclusive and can never promote, including after a complete improved comparison, while requested costs stay truthful when an external runner overspends an allowance this lab cannot enforce.
+# Malformed, duplicate, or identity-contradictory evidence is handled conservatively and never counts toward coverage or spending.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE="${SQUAD_BASE:-${SQUAD_HOME:-$ROOT}}"
@@ -120,6 +127,7 @@ def run(m, exp):
      (exp/'state').write_text('inconclusive_budget\n'); return
     started=time.monotonic()
     try:
+     # JSON stdin keeps reserved case text out of command-line arguments and reports.
      proc=subprocess.run([runner,'--policy',str(inputs/arm),'--case-json','--harness',m['harness'],'--model',m['model'],'--budget',str(remaining),'--configuration-json',json.dumps(m['configuration'],sort_keys=True)],input=json.dumps(case),text=True,capture_output=True,cwd=worktree,timeout=float(m.get('timeout_seconds',600)),env={'PATH':os.environ.get('PATH',''),'HOME':str(Path.home())})
      r=json.loads(proc.stdout) if proc.returncode==0 else {'result':'harness_failure','detail':'nonzero runner exit'}
      if not isinstance(r,dict) or not isinstance(r.get('checks'),dict): r={'result':'invalid_check','detail':'runner output lacks checks object'}
