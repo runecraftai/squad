@@ -1,12 +1,12 @@
 <!-- Portuguese translation. The English original is authoritative; report discrepancies rather than editing the original. -->
 
-# Prontidão para publicação standalone
+# Snapshot histórico de prontidão para publicação standalone
 
-Estado de preparação para liberar os pacotes candidatos a standalone para que fiquem
-utilizáveis sem o Squad. Os pacotes npm publicam sob o escopo npm `@runecraft`; os
-binários Go são distribuídos como GitHub Releases compilados. Uma publicação real é
-controlada pelo comandante e está fora do escopo desta mudança; este documento registra
-a validação de dry-run.
+Este documento preserva uma avaliação histórica de dry-run, não a prontidão atual de
+publicação nem instruções de release. As versões de pacote, observações de publicação e
+próximos passos são fatos da época do snapshot e devem ser revalidados contra os
+manifestos e workflows atuais antes de qualquer decisão de release. Os workflows ativos
+de release de pacotes e os changelogs locais de cada pacote continuam sendo a autoridade.
 
 ## Candidatos npm
 
@@ -46,10 +46,11 @@ matriz de build compila e faz upload de arquivos por OS/arquitetura mais checksu
 finalize do drill publica o draft assim que todos os jobs de asset passam. Binários macOS
 do drill são assinados com Developer ID no CI.
 
-## Próximo passo (controlado pelo comandante)
+## Notas históricas de próximos passos
 
-A publicação real no npm é o próximo passo controlado pelo comandante. Os seis pacotes já
-publicados exigem cada um um version bump (suas versões atuais já estão publicadas),
-enquanto o novo `@runecraft/operation-board` 0.1.0 pode publicar na versão atual. Os
-valores reais de telemetry/Team ID são necessários antes que qualquer release real de Go
-seja distribuído.
+As afirmações a seguir descrevem apenas o snapshot antigo de dry-run e não são orientação
+atual de release: a publicação real no npm foi identificada como controlada pelo
+comandante, seis versões de pacote foram descritas como já publicadas, e o
+`@runecraft/operation-board` 0.1.0 foi descrito como não publicado. A nota de
+telemetria/Team ID também é histórica e não deve ser tratada como evidência dos requisitos
+atuais de release.

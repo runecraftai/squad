@@ -365,6 +365,10 @@
    "audience": "agent-runtime"
   },
   {
+   "path": "CHANGELOG.md",
+   "audience": "public-product"
+  },
+  {
    "path": "CONTRIBUTING.md",
    "audience": "maintainer-architecture"
   },
