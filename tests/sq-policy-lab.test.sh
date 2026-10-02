@@ -90,6 +90,18 @@ run_exp incomplete 10 yes no
 "$CLI" run "$TMP/incomplete.yaml" >/dev/null
 rm "$SQUAD_BASE/data/policy-lab/incomplete/trajectories/baseline.r3.json"
 [[ $(report incomplete | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
+# Non-hashable persisted identity is malformed, not a crash: run stays alive and report is inconclusive.
+run_exp malformed 10 yes no
+"$CLI" run "$TMP/malformed.yaml" >/dev/null
+python3 - "$SQUAD_BASE/data/policy-lab/malformed/trajectories/baseline.p0.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d['arm']=['candidate']; open(p,'w').write(json.dumps(d))
+PY
+malformed_calls=$(wc -l < "$TMP/calls.jsonl")
+set +e; "$CLI" run "$TMP/malformed.yaml" >/dev/null 2>&1; rc=$?; set -e
+[[ $rc == 0 ]]
+[[ $(wc -l < "$TMP/calls.jsonl") == "$malformed_calls" ]]
+[[ $(report malformed | python3 -c 'import json,sys;print(json.load(sys.stdin)["verdict"])') == inconclusive ]]
 # Existing lightweight input immutability and fail-closed isolation coverage.
 python3 - "$TMP/experiment.yaml" "$TMP/base.txt" "$TMP/candidate.txt" "$TMP/isolated" <<'PY'
 import hashlib,sys,yaml

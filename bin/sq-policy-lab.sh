@@ -81,7 +81,7 @@ def evidence(m, exp):
  for p in sorted((exp/'trajectories').glob('*.json')):
   try: x=json.loads(p.read_text())
   except Exception: invalid.append(p.name); continue
-  key=(x.get('arm'),x.get('case_id')) if isinstance(x,dict) else None
+  key=(x.get('arm'),x.get('case_id')) if isinstance(x,dict) and isinstance(x.get('arm'),str) and isinstance(x.get('case_id'),str) else None
   item=expected.get(key)
   if item is None or key in found or p.name!=f'{key[0]}.{key[1]}.json' or not valid_snapshot(x,m,*item): invalid.append(p.name); continue
   found[key]=x
