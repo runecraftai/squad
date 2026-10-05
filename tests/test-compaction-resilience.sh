@@ -191,6 +191,118 @@ test_tool_call_handling() {
   fi
 }
 
+# Test 9: Compaction handler persists state through the pi extension API
+#
+# Regression: the handler context is a real runtime context, which exposes
+# sessionManager, ui, and hasUI but no appendEntry. Durable custom entries are
+# appended with pi.appendEntry(customType, data). Before the fix the compaction
+# handler called ctx.appendEntry and threw TypeError on every compaction.
+test_compaction_handler_persists_via_api() {
+  log_test "session_before_compact persists state via pi.appendEntry (real ctx shape)"
+  TESTS_RUN=$((TESTS_RUN + 1))
+
+  if EXTENSION_PATH="$(realpath "$EXTENSION_PATH")" bun -e '
+    const { default: extension } = await import(process.env.EXTENSION_PATH);
+
+    const appended = [];
+    let handlers = new Map();
+    let commands = new Map();
+    const makePi = () => ({
+      on: (n, h) => handlers.set(n, h),
+      registerCommand: (n, c) => commands.set(n, c),
+      sendUserMessage: () => {},
+      sendMessage: () => {},
+      appendEntry: (customType, data) => appended.push({ customType, data }),
+    });
+
+    // Exactly the real runtime context shape: no appendEntry method.
+    const realContext = () => ({
+      hasUI: false,
+      ui: { notify: () => {} },
+      sessionManager: { getBranch: () => [] },
+    });
+
+    extension(makePi());
+
+    const preparation = {
+      messagesToSummarize: [
+        { role: "user", content: "Fix the confirmed compaction defect in the extension now" },
+        {
+          role: "assistant",
+          content: "Editing",
+          tool_calls: [
+            { type: "function", function: { name: "edit", arguments: JSON.stringify({ path: "a.ts" }) } },
+          ],
+        },
+      ],
+      previousSummary: null,
+      firstKeptEntryId: "entry-1",
+      tokensBefore: 100,
+      fileOps: { readFiles: [], modifiedFiles: ["a.ts"] },
+    };
+
+    const result = await handlers.get("session_before_compact")(
+      { type: "session_before_compact", preparation, signal: undefined },
+      realContext()
+    );
+
+    if (appended.length !== 1) {
+      throw new Error("expected exactly one appendEntry call, got " + appended.length);
+    }
+    if (appended[0].customType !== "compaction_resilience_state") {
+      throw new Error("wrong customType: " + appended[0].customType);
+    }
+    const state = appended[0].data && appended[0].data.operatorState;
+    if (!state || state.compactionCount !== 1) {
+      throw new Error("operator state missing from appended entry: " + JSON.stringify(appended[0].data));
+    }
+    if (!state.currentTask || state.filesModified.indexOf("a.ts") === -1) {
+      throw new Error("operator state not captured: " + JSON.stringify(state));
+    }
+    if (!result || !result.compaction || !result.compaction.summary) {
+      throw new Error("compaction result was not returned");
+    }
+
+    // Round-trip: a fresh extension reconstructs state from a branch entry
+    // shaped exactly as Pi stores a custom entry.
+    const branch = [
+      {
+        type: "custom",
+        id: "e1",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        customType: "compaction_resilience_state",
+        data: appended[0].data,
+      },
+    ];
+    const notices = [];
+    handlers = new Map();
+    commands = new Map();
+    extension({
+      on: (n, h) => handlers.set(n, h),
+      registerCommand: (n, c) => commands.set(n, c),
+      sendUserMessage: () => {},
+      sendMessage: () => {},
+      appendEntry: () => {},
+    });
+    const startCtx = {
+      hasUI: true,
+      ui: { notify: (m) => notices.push(m) },
+      sessionManager: { getBranch: () => branch },
+    };
+    await handlers.get("session_start")({ type: "session_start" }, startCtx);
+    await commands.get("compaction-status").handler("", startCtx);
+    const status = notices[notices.length - 1] || "";
+    if (status.indexOf("Compactions tracked: 1") === -1) {
+      throw new Error("session_start did not reconstruct persisted state: " + JSON.stringify(notices));
+    }
+  '; then
+    log_pass "Compaction handler persists via pi.appendEntry and session_start reconstructs it"
+  else
+    log_fail "Compaction state persistence via the pi API regression"
+  fi
+}
+
 # Run all tests
 main() {
   echo ""
@@ -205,6 +317,7 @@ main() {
   test_config_script
   test_config_commands
   test_tool_call_handling
+  test_compaction_handler_persists_via_api
   
   echo ""
   echo "=== Test Results ==="

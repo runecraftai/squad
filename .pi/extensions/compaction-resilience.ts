@@ -33,11 +33,9 @@ interface OperatorState {
   lastCompactionId: string | null;
 }
 
-// Persistent state stored in a custom entry
+// Durable payload persisted as a Pi custom session entry via pi.appendEntry().
+// Pi stores it on the branch as { type: "custom", customType: "compaction_resilience_state", data }.
 interface CompactionResilienceState {
-  type: "compaction_resilience_state";
-  id: string;
-  parentId: string | null;
   timestamp: string;
   operatorState: OperatorState;
 }
@@ -277,16 +275,15 @@ export default function (pi: ExtensionAPI) {
     operatorState.compactionCount++;
     operatorState.lastActivity = Date.now();
     
-    // Store the compaction state as a custom entry
+    // Store the compaction state as a durable, non-context custom session entry.
+    // Persisting custom entries belongs to the extension API object, not to the
+    // handler context, which exposes no appendEntry method.
     const stateEntry: CompactionResilienceState = {
-      type: "compaction_resilience_state",
-      id: `compaction-resilience-${Date.now()}`,
-      parentId: null,
       timestamp: new Date().toISOString(),
       operatorState: { ...operatorState },
     };
     
-    await ctx.appendEntry(stateEntry);
+    await pi.appendEntry("compaction_resilience_state", stateEntry);
     
     if (ctx.hasUI) {
       ctx.ui.notify(
@@ -365,15 +362,14 @@ export default function (pi: ExtensionAPI) {
     const branch = ctx.sessionManager.getBranch();
     if (!branch) return;
     
-    // Find most recent compaction resilience state
+    // Find the most recent compaction resilience state entry on the active branch.
     const stateEntry = branch
-      .filter((entry): entry is CompactionResilienceState => 
-        entry.type === "compaction_resilience_state"
-      )
+      .map((entry) => entry as unknown as { type?: string; customType?: string; data?: CompactionResilienceState })
+      .filter((entry) => entry.type === "custom" && entry.customType === "compaction_resilience_state")
       .pop();
     
-    if (stateEntry) {
-      operatorState = { ...stateEntry.operatorState };
+    if (stateEntry?.data) {
+      operatorState = { ...stateEntry.data.operatorState };
       if (ctx.hasUI) {
         ctx.ui.notify(
           `Loaded operator state: ${operatorState.compactionCount} compactions tracked`,
