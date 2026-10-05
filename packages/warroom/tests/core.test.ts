@@ -75,6 +75,9 @@ describe("Warroom canonical core", () => {
 		expect(state.comments.find((c) => c.id === "m1")?.state).toBe("outdated");
 		expect(state.comments).toHaveLength(1);
 		expect(state.revisions.find((r) => r.id === "c1")?.stale).toBe(true);
+		const projected = w.db.query("SELECT superseded_at, superseded_by FROM approvals WHERE id='a1'").get() as { superseded_at: string | null; superseded_by: string | null };
+		expect(projected.superseded_at).not.toBeNull();
+		expect(projected.superseded_by).toBe("c2");
 		w.close();
 	});
 });

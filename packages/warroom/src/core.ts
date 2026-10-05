@@ -97,12 +97,12 @@ export class Warroom {
 		case "initiative.create":
 			this.db.query("INSERT INTO initiatives(id,title,working_name,phase,created_at,updated_at) VALUES(?,?,?,'discover',?,?)").run(id, command.title, command.workingName ?? "Runecraft Warroom", now, now); break;
 		case "revision.create": {
-			const state = this.state(command.initiativeId);
-			const previous = [...state.revisions].reverse().find((r) => r.kind === command.kind && r.id !== id)?.id ?? null;
+			const previous = (this.db.query("SELECT id FROM revisions WHERE initiative_id=? AND kind=? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(command.initiativeId, command.kind) as { id: string } | null)?.id ?? null;
 			const digest = digestContent(command.content);
 			this.db.query("INSERT INTO revisions(id,initiative_id,kind,digest,previous_revision_id,content,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)").run(id, command.initiativeId, command.kind, digest, previous, command.content, this.actor.id, now);
 			if (command.kind === "plan") this.db.query("UPDATE initiatives SET current_plan_revision_id=?,updated_at=? WHERE id=?").run(id, now, command.initiativeId);
-			for (const a of this.state(command.initiativeId).approvals) if (!a.superseded && a.revisionId !== id && a.kind === (command.kind === "plan" ? "plan-approval" : "code-review-acceptance")) this.db.query("UPDATE approvals SET superseded_at=?,superseded_by=? WHERE id=?").run(now, id, a.id);
+			const supersededKind = command.kind === "plan" ? "plan-approval" : "code-review-acceptance";
+			this.db.query("UPDATE approvals SET superseded_at=?,superseded_by=? WHERE initiative_id=? AND kind=? AND superseded_at IS NULL AND subject_revision_id<>?").run(now, id, command.initiativeId, supersededKind, id);
 			for (const table of ["validation_evidence", "comments"]) this.db.query(`UPDATE ${table} SET ${table === "comments" ? "state='outdated'" : "stale=1"} WHERE initiative_id=? AND revision_id IN (SELECT id FROM revisions WHERE initiative_id=? AND kind=? AND id<>?)`).run(command.initiativeId, command.initiativeId, command.kind, id);
 			break;
 		}

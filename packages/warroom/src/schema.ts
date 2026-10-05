@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id), kind TEXT NOT NULL CHECK(kind IN ('plan-approval','execution-authorization','code-review-acceptance','merge-permission')),
   subject_revision_id TEXT NOT NULL REFERENCES revisions(id), subject_digest TEXT NOT NULL, evidence_revision_id TEXT REFERENCES validation_evidence(id),
   decision TEXT NOT NULL CHECK(decision IN ('approved','rejected','changes-requested')), actor TEXT NOT NULL, created_at TEXT NOT NULL,
-  superseded_at TEXT, superseded_by TEXT REFERENCES approvals(id),
-  UNIQUE(kind, subject_revision_id, id)
+  superseded_at TEXT, superseded_by TEXT REFERENCES revisions(id)
 );
 CREATE TABLE IF NOT EXISTS comments (
   id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id), revision_id TEXT NOT NULL REFERENCES revisions(id),
