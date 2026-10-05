@@ -1974,6 +1974,66 @@ NODE
   [ "$status" -ne 0 ] || pass "primary Pi handoff: defers while Pi is busy, the editor has a draft, or a prompt is open"
 }
 
+test_primary_pi_handoff_resets_prompt_state_and_survives_stale_context() {
+  command -v node >/dev/null 2>&1 || { echo "skip: node not found (primary Pi handoff resilience test)"; return 0; }
+  local dir state
+  dir=$(make_supercase pi-handoff-resilience)
+  state="$dir/state"
+  mkdir -p "$state"
+  chmod 700 "$state"
+  mkdir -m 700 "$state/.pi-away-handoff"
+  SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE=state TUIOS_ENV=1 TUIOS_SESSION=lab TUIOS_PANE_ID=window \
+    node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module - "$ROOT/.pi/extensions/sq-primary-away-handoff.ts" "$state" <<'NODE'
+import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const [extensionPath, state] = process.argv.slice(2);
+const handoff = `${state}/.pi-away-handoff`;
+mkdirSync(handoff, { recursive: true, mode: 0o700 });
+const requests = (id, message) => writeFileSync(`${handoff}/request.json`, JSON.stringify({ id, session: "lab", window: "window", message }));
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const rejections = [];
+process.on("unhandledRejection", (reason) => rejections.push(reason));
+const listeners = new Map();
+const sent = [];
+const pi = { on: (name, handler) => listeners.set(name, handler), sendUserMessage: async (...args) => sent.push(args) };
+const ctx = { idle: true, editor: "", isIdle() { return this.idle; }, ui: { getEditorText: () => ctx.editor } };
+(await import(pathToFileURL(extensionPath).href)).default(pi);
+
+// A prompt left open when a session ends must not leak into the next session
+// and wedge delivery forever.
+requests("a".repeat(64), "first digest");
+await listeners.get("session_start")({}, ctx);
+await wait(1100);
+assert.equal(sent.length, 1, "the first session should deliver once");
+listeners.get("before_agent_start")({ prompt: sent[0][0] }, ctx);
+listeners.get("ui_prompt_start")({}, ctx);
+listeners.get("session_shutdown")?.();
+requests("b".repeat(64), "second digest");
+await listeners.get("session_start")({}, ctx);
+await wait(1100);
+assert.equal(sent.length, 2, "a replaced session must not inherit a stale open-prompt count");
+
+// A stale/ throwing context must neither crash the primary via an unhandled
+// rejection nor permanently stop delivery once the context is usable again.
+let throwing = true;
+const stale = { isIdle() { if (throwing) throw new Error("stale context"); return true; }, ui: { getEditorText() { if (throwing) throw new Error("stale context"); return ""; } } };
+listeners.get("before_agent_start")({ prompt: sent[1][0] }, ctx);
+listeners.get("session_shutdown")?.();
+requests("c".repeat(64), "third digest");
+await listeners.get("session_start")({}, stale);
+await wait(1100);
+assert.equal(rejections.length, 0, "a throwing context must not cause an unhandled rejection");
+throwing = false;
+await wait(1100);
+assert.equal(sent.length, 3, "delivery must resume once the context is usable again");
+listeners.get("session_shutdown")?.();
+NODE
+  local status=$?
+  [ "$status" -eq 0 ] || fail "primary Pi handoff: session prompt state must reset and a stale context must not crash the primary"
+  [ "$status" -ne 0 ] || pass "primary Pi handoff: resets open-prompt state per session and survives a stale/ throwing context"
+}
+
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack() {
   local dir state
   dir=$(make_supercase inject-tuios-pi-handoff)
@@ -2202,6 +2262,7 @@ test_discover_supervisor_target_herdr
 test_pi_handoff_is_durable_idempotent_and_ack_gated
 test_pi_handoff_ready_requires_v2_delivery_state
 test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present
+test_primary_pi_handoff_resets_prompt_state_and_survives_stale_context
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped

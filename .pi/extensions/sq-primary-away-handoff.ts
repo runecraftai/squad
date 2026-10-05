@@ -111,26 +111,30 @@ export default function (pi: ExtensionAPI): void {
   };
 
   const pump = async (): Promise<void> => {
-    if (!dir || sending || !context || !ensureDir(dir)) return;
-    // Liveness and exact-target binding are published on every tick so a queued
-    // escalation can wait durably for a safe delivery moment. Submission is
-    // gated separately below on idle, an empty editor, and no open prompt.
-    publishReady();
-    if (!context.isIdle() || context.ui.getEditorText().trim() || promptsOpen > 0) return;
-    const request = readJson<HandoffRequest>(`${dir}/request.json`);
-    if (!request || !/^[a-f0-9]{64}$/.test(request.id) || request.session !== targetSession || request.window !== targetWindow || !request.message) return;
-    const result = readJson<{ id?: string; status?: string }>(`${dir}/result.json`);
-    if (result?.id === request.id && result.status !== "new") return;
     try {
-      writeStatus(dir, request.id, "submitting");
-      sending = true;
-      const content = `${request.message}\n\n${markerPrefix}${request.id}]`;
-      await pi.sendUserMessage(content, { deliverAs: "followUp" });
-      const after = readJson<{ id?: string; status?: string }>(`${dir}/result.json`);
-      if (after?.id !== request.id || after.status !== "handled") writeStatus(dir, request.id, "queued");
+      if (!dir || sending || !context || !ensureDir(dir)) return;
+      // Liveness and exact-target binding are published on every tick so a queued
+      // escalation can wait durably for a safe delivery moment. Submission is
+      // gated separately below on idle, an empty editor, and no open prompt.
+      publishReady();
+      if (!context.isIdle() || context.ui.getEditorText().trim() || promptsOpen > 0) return;
+      const request = readJson<HandoffRequest>(`${dir}/request.json`);
+      if (!request || !/^[a-f0-9]{64}$/.test(request.id) || request.session !== targetSession || request.window !== targetWindow || !request.message) return;
+      const result = readJson<{ id?: string; status?: string }>(`${dir}/result.json`);
+      if (result?.id === request.id && result.status !== "new") return;
+      try {
+        writeStatus(dir, request.id, "submitting");
+        sending = true;
+        const content = `${request.message}\n\n${markerPrefix}${request.id}]`;
+        await pi.sendUserMessage(content, { deliverAs: "followUp" });
+        const after = readJson<{ id?: string; status?: string }>(`${dir}/result.json`);
+        if (after?.id !== request.id || after.status !== "handled") writeStatus(dir, request.id, "queued");
+      } catch {
+        writeStatus(dir, request.id, "uncertain");
+      } finally {
+        sending = false;
+      }
     } catch {
-      writeStatus(dir, request.id, "uncertain");
-    } finally {
       sending = false;
     }
   };
@@ -142,6 +146,7 @@ export default function (pi: ExtensionAPI): void {
     targetSession = process.env.TUIOS_SESSION || "";
     targetWindow = process.env.TUIOS_PANE_ID || "";
     processIdentity = identity();
+    promptsOpen = 0;
     if (!dir || !processIdentity || !ensureDir(dir)) {
       dir = null;
       return;
@@ -164,6 +169,7 @@ export default function (pi: ExtensionAPI): void {
     if (timer) clearInterval(timer);
     timer = null;
     context = null;
+    promptsOpen = 0;
     if (dir) {
       try {
         const ready = readJson<{ pid?: number; identity?: string }>(`${dir}/ready.json`);
