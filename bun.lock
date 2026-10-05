@@ -183,7 +183,7 @@
       },
     },
     "packages/warroom": {
-      "name": "@runecraft/warroom-core",
+      "name": "@runecraft/warroom",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "^1.2.0",
@@ -564,7 +564,7 @@
 
     "@runecraft/squad-ui": ["@runecraft/squad-ui@workspace:packages/squad-ui"],
 
-    "@runecraft/warroom-core": ["@runecraft/warroom-core@workspace:packages/warroom"],
+    "@runecraft/warroom": ["@runecraft/warroom@workspace:packages/warroom"],
 
     "@silvia-odwyer/photon-node": ["@silvia-odwyer/photon-node@0.3.4", "", {}, "sha512-bnly4BKB3KDTFxrUIcgCLbaeVVS8lrAkri1pEzskpmxu9MdfGQTy8b8EgcD83ywD3RPMsIulY8xJH5Awa+t9fA=="],
 
