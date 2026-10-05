@@ -1655,8 +1655,9 @@ prepare_relaunch_execution() {
   old_target=$(fm_backend_target_of_meta "$meta")
   # Recorded daemon-boot evidence and worktree for a TUIOS relaunch (see the
   # TUIOS backend case). Empty for every other backend, and for a task spawned
-  # before the boot marker existed: without the boot id the duplicate-label
-  # refusal stands.
+  # before the boot marker existed: an empty boot id only rules out the
+  # post-restart state=none shape, while the finished-and-agentless shape is
+  # proven by the daemon's own report alone.
   RELAUNCH_TUIOS_BOOT_ID=
   RELAUNCH_WORKTREE=
   if [ "$old_backend" = tuios ]; then
