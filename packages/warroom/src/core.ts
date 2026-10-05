@@ -84,9 +84,11 @@ export class Warroom {
 			const expectedKind = command.kind === "plan-approval" || command.kind === "execution-authorization" ? "plan" : "code";
 			if (revision.kind !== expectedKind) throw new Error("approval scope does not match revision kind");
 			if (command.kind === "code-review-acceptance") {
-				if (!command.evidenceId) throw new Error("review acceptance requires validation evidence");
-				const evidence = state.evidence.find((item) => item.id === command.evidenceId);
-				if (!evidence || evidence.stale || evidence.revisionId !== revision.id || evidence.result !== "passed") throw new Error("validation evidence does not cover this revision");
+				if (command.decision === "approved" && !command.evidenceId) throw new Error("review acceptance requires validation evidence");
+				if (command.evidenceId) {
+					const evidence = state.evidence.find((item) => item.id === command.evidenceId);
+					if (!evidence || evidence.stale || evidence.revisionId !== revision.id || (command.decision === "approved" && evidence.result !== "passed")) throw new Error("validation evidence does not cover this revision");
+				}
 			} else if (command.evidenceId != null && !state.evidence.some((item) => item.id === command.evidenceId)) {
 				throw new Error("validation evidence does not exist");
 			}

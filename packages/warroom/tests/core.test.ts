@@ -60,6 +60,19 @@ describe("Warroom canonical core", () => {
 		w.close();
 	});
 
+	test("rejected and changes-requested reviews do not require passing evidence", () => {
+		const w = new Warroom();
+		w.command({ type: "initiative.create", id: "i1", title: "Proof" });
+		w.command({ type: "revision.create", id: "c1", initiativeId: "i1", kind: "code", content: "unvalidated code" });
+		w.command({ type: "validation.record", id: "vf", initiativeId: "i1", revisionId: "c1", provider: "local", result: "failed" });
+		w.command({ type: "approval.record", id: "reject", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "rejected", evidenceId: "vf" });
+		w.command({ type: "approval.record", id: "changes", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "changes-requested" });
+		expect(w.state("i1").approvals.map((approval) => approval.decision)).toEqual(["rejected", "changes-requested"]);
+		expect(() => w.command({ type: "approval.record", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "approved", evidenceId: "vf" })).toThrow("does not cover this revision");
+		expect(() => w.command({ type: "approval.record", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "approved" })).toThrow("requires validation evidence");
+		w.close();
+	});
+
 	test("acceptance is bound to exact revision digest and matching validation", () => {
 		const w = seeded();
 		expect(() => w.command({ type: "approval.record", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "approved" })).toThrow("requires validation");
