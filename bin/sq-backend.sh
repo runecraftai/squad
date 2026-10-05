@@ -974,8 +974,9 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
 # exact window; the Herdr adapter reuses its husk
 # classifier; the TUIOS adapter corroborates the exact window against the
 # daemon's agent inventory, so a window restored with a fresh shell after a
-# daemon restart is `dead` (endpoint present, no attributable agent) rather than
-# `ambiguous`. Zellij remains unverified because its XO ghost-tab and
+# daemon restart, or a finished agent whose foreground program has exited, is
+# `dead` (endpoint present, no running agent) rather than `ambiguous`. Zellij
+# remains unverified because its XO ghost-tab and
 # agent-process recovery path has not been empirically validated. Orca and cmux
 # do not support XO spawns.
 fm_backend_agent_state() {  # <backend> <target>

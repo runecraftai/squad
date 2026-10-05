@@ -57,7 +57,9 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 | `working` | `busy` | `alive` |
 | `needs_input` (approval or question) | `blocked` | `alive` |
 | `errored` | `blocked` | `alive` |
-| `idle`, `done` | `idle` | `alive` |
+| `idle` | `idle` | `alive` |
+| `done`, foreground program present | `idle` | `alive` |
+| `done`, no foreground program, attributed | `idle` | `dead` |
 | `none`, no attributable agent | `unknown` | `dead` |
 | `unknown`, or a state with no attribution | `unknown` | `ambiguous` |
 | unreadable inventory | `unknown` | `unreadable` |
@@ -71,6 +73,19 @@ A daemon restart destroys every running program. The restored session keeps its 
 - Reconciliation is inventory-based. A restored pane has an exact window id, no attributable agent, and `state=none`, so it classifies as `dead` (endpoint present, no agent) instead of the silent `ambiguous` that never licensed recovery. Recovery is not achieved by an event subscription.
 - Conversation resume uses the product's own verb. `tuios resume-agent` builds its command from the harness manifest and the conversation id the daemon recorded for the pane, so nothing caller-chosen is typed. The adapter first confirms the conversation id exists and refuses with `unsupported` when the installed manifest has no resume command for that harness (Pi is one such harness).
 - Otherwise the task routes back into Squad's existing safe relaunch path. Because a restored window still holds the task's label, a relaunch reuses that exact window - only when the recorded boot id differs from the daemon's current boot id and the window is confirmed agentless - and resumes into the task's recorded worktree instead of leasing a second copy.
+
+## Finished-agent recovery
+
+A harness can exit while the daemon keeps its window: Pi prints its resume pointer, the process ends, and the pane falls back to a shell.
+The daemon then still reports `state=done` and still names the harness it recorded, but its `foreground` program is empty.
+That is the second recovery-grade agentless shape, and the exact rule is: `state=done`, empty `foreground`, and positive attribution that does not come from a foreground program (a non-empty `harness_id` or a non-`none` `confidence`).
+The endpoint classifies as `dead`, the product's own `resume-agent` verb becomes available because the daemon kept the conversation id, and the safe-relaunch path reuses the task's recorded window and worktree through the same duplicate-label guard as a post-restart relaunch.
+The rule needs no boot-id change, because the daemon that reports the finished, foreground-less agent is the same daemon generation that still owns the window.
+Every other shape keeps its existing verdict and never authorizes a relaunch: any report with a detected `foreground` program is `alive`, a state other than `done` is `alive` when attributed and `ambiguous` otherwise, a `done` report with no attribution is `ambiguous`, and an unreadable or contradictory inventory is `unreadable`.
+
+What remains unproven: the rule is derived from one daemon build (TUIOS 0.8.0), where every live agent reported a `foreground` program and the one exited Pi agent reported none.
+A daemon build or harness that legitimately reports `state=done` without a `foreground` program while its agent is still running would be misclassified as `dead`.
+The structural signal is the pane's own foreground process, so a build that stops reporting `foreground` for live agents must be re-characterized before this rule is trusted.
 
 ## Cleanup
 

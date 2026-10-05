@@ -340,6 +340,38 @@ export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = ambiguous ] || fail 'unattributed non-empty state must remain ambiguous'
 unset SQUAD_TUIOS_FAKE_AGENTS
 
+# A finished agent whose process has exited: the daemon still names the harness
+# it recorded, but its foreground program is gone. This is recovery-grade
+# `dead`, never `alive`, because nothing is running in the pane to duplicate.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done","harness_id":"pi","source":"report","confidence":"certain","agent_session_id":"01a108df-1fb7-753d-992f-5b9623d45780","finished_unread":false}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = dead ] || fail 'a finished agent with no foreground program must be recovery-grade dead'
+[ "$(fm_backend_tuios_busy_state owned:w-opaque_7)" = idle ] || fail 'a finished, foreground-less agent still reports the daemon rest state'
+unset SQUAD_TUIOS_FAKE_AGENTS
+
+# The same finished report attributed by harness alone is still agentless.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done","harness_id":"pi","confidence":"none"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = dead ] || fail 'a finished agentless pane attributed by harness alone must be dead'
+unset SQUAD_TUIOS_FAKE_AGENTS
+
+# Every state that does not positively indicate a finished agent stays out of
+# the recovery class, even with no foreground program.
+for sig in working needs_input errored idle unknown; do
+  SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' "{\"agents\":[{\"id\":\"w-opaque_7\",\"foreground\":\"\",\"state\":\"$sig\",\"harness_id\":\"pi\",\"confidence\":\"certain\"}]}")
+  export SQUAD_TUIOS_FAKE_AGENTS
+  [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] \
+    || fail "state '$sig' with no foreground must still classify alive, never recoverable"
+  unset SQUAD_TUIOS_FAKE_AGENTS
+done
+
+# A detected foreground program keeps the report live whatever the state, so a
+# running agent is never mistaken for a finished one.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done","harness_id":"pi","confidence":"certain"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = alive ] || fail 'a done agent that still has its foreground program must stay alive'
+unset SQUAD_TUIOS_FAKE_AGENTS
+
 # --- prompt content ----------------------------------------------------
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
@@ -444,6 +476,20 @@ SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground
 export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_resume_agent owned:w-opaque_7 pi)" = live ] || fail 'an attributed agent between turns must never be resumed over'
 unset SQUAD_TUIOS_FAKE_AGENTS
+# A finished, foreground-less agent with a recorded conversation is recoverable
+# through the product's own resume verb instead of being mistaken for live.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done","harness_id":"pi","confidence":"certain","agent_session_id":"sid"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_RESUME_OK=1
+export SQUAD_TUIOS_FAKE_RESUME_OK
+if [ "$(fm_backend_tuios_resume_agent owned:w-opaque_7 claude)" != resumed ]; then
+  fail 'a finished, foreground-less agent with a recorded conversation must be resumable'
+fi
+unset SQUAD_TUIOS_FAKE_RESUME_OK
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done","harness_id":"pi","confidence":"certain","agent_session_id":"sid"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_resume_agent owned:w-opaque_7 claude)" = live ] || fail 'a done agent that still holds a foreground program must never be resumed over'
+unset SQUAD_TUIOS_FAKE_AGENTS
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"none","harness_id":"","confidence":"none","agent_session_id":""}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_resume_agent owned:w-opaque_7 pi)" = no_conversation ] || fail 'a pane with no recorded conversation cannot be resumed'
@@ -465,7 +511,9 @@ export SQUAD_TUIOS_FAKE_RESUME_ERROR
 unset SQUAD_TUIOS_FAKE_RESUME_ERROR SQUAD_TUIOS_FAKE_AGENTS
 
 # Reusing a restored window needs BOTH a changed daemon boot id and a confirmed
-# agentless pane; neither alone is enough to authorize a relaunch.
+# agentless pane; neither alone is enough to authorize a relaunch. A finished
+# agent whose foreground program is gone is the second agentless shape, checked
+# separately below.
 SQUAD_TUIOS_FAKE_RESTORED_WINDOW=1
 export SQUAD_TUIOS_FAKE_RESTORED_WINDOW
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"none","harness_id":"","confidence":"none"}]}')
@@ -486,6 +534,31 @@ fi
 if fm_backend_tuios_reuse_restored_task owned sq-other-1 boot-old >/dev/null 2>&1; then
   fail 'a window without the task label must never be reused'
 fi
+unset SQUAD_TUIOS_FAKE_RESTORED_WINDOW SQUAD_TUIOS_FAKE_AGENTS
+
+# A finished agent whose foreground program is gone authorizes reuse of the
+# recorded window even on the SAME daemon boot id: the daemon's own report is
+# the evidence, and the window label still identifies the task.
+SQUAD_TUIOS_FAKE_RESTORED_WINDOW=1
+export SQUAD_TUIOS_FAKE_RESTORED_WINDOW
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done","harness_id":"pi","confidence":"certain"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(fm_backend_tuios_reuse_restored_task owned sq-task-1 boot-a)" = 'w-opaque_7' ] \
+  || fail 'a finished, foreground-less agent must be reusable on the same daemon boot id'
+# Every live or ambiguous shape still refuses, even after a boot change.
+assert_not_reusable() {  # <agents-json> <message>
+  SQUAD_TUIOS_FAKE_AGENTS=$1
+  export SQUAD_TUIOS_FAKE_AGENTS
+  if fm_backend_tuios_reuse_restored_task owned sq-task-1 boot-old >/dev/null 2>&1; then
+    fail "$2"
+  fi
+}
+assert_not_reusable '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done","harness_id":"pi","confidence":"certain"}]}' \
+  'a done agent whose foreground program is present must never be reused'
+assert_not_reusable '{"agents":[{"id":"w-opaque_7","foreground":"","state":"working","harness_id":"pi","confidence":"certain"}]}' \
+  'a working agent must never be reused'
+assert_not_reusable '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done"}]}' \
+  'a done report with no attribution must never be reused'
 unset SQUAD_TUIOS_FAKE_RESTORED_WINDOW SQUAD_TUIOS_FAKE_AGENTS
 
 # The same-label lookup must read identity through the shared normalizer, so an
@@ -622,9 +695,12 @@ export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_agent_state owned:w-opaque_7)" = ambiguous ] || fail 'unattributed agent must remain ambiguous'
 unset SQUAD_TUIOS_FAKE_AGENTS
 
+# A null foreground normalizes to empty, so this is the same finished,
+# foreground-less shape: harness identity alone corroborates a finished, not a
+# running, agent, and the pane is recovery-grade dead.
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":null,"harness_id":"pi","state":"done"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
-[ "$(fm_backend_tuios_agent_state owned:w-opaque_7 2>/dev/null)" = alive ] || fail 'harness identity fallback must corroborate an agent when foreground is absent'
+[ "$(fm_backend_tuios_agent_state owned:w-opaque_7 2>/dev/null)" = dead ] || fail 'a null foreground on a finished agent must classify dead, never alive'
 unset SQUAD_TUIOS_FAKE_AGENTS
 
 SQUAD_TUIOS_SESSION=owned
@@ -896,4 +972,4 @@ EOF
 fm_backend_validate_task_endpoint "$meta" task-1 || fail 'valid bound endpoint metadata should pass'
 if fm_backend_validate_task_endpoint "$meta" other-task >/dev/null 2>&1; then fail 'mismatched task binding must refuse'; fi
 
-pass 'TUIOS backend: fake CLI covers protocol discovery, real state/prompt mapping, the agent-aware queue verdicts, restart recovery, and the native close'
+pass 'TUIOS backend: fake CLI covers protocol discovery, real state/prompt mapping, the agent-aware queue verdicts, restart and finished-agent recovery, and the native close'

@@ -100,7 +100,9 @@ case "${1:-}" in
       "$(cat "${SQUAD_FAKE_TUIOS_CWDFILE:?}" 2>/dev/null || printf '%s' "${SQUAD_FAKE_TUIOS_PROJECT:?}")"
     ;;
   list-agents)
-    if [ "${SQUAD_FAKE_TUIOS_HOLD_LEASE:-0}" = 1 ]; then
+    if [ -n "${SQUAD_FAKE_TUIOS_AGENTS_JSON:-}" ]; then
+      printf '%s\n' "$SQUAD_FAKE_TUIOS_AGENTS_JSON"
+    elif [ "${SQUAD_FAKE_TUIOS_HOLD_LEASE:-0}" = 1 ]; then
       printf '{"agents":[{"window_id":"%s","state":"none","foreground":"","harness_id":"","confidence":"none"}],"success":true}\n' "${SQUAD_FAKE_TUIOS_ID:?}"
     else
       printf '{"agents":[{"window_id":"%s","state":"working","foreground":"pi","harness_id":"pi","confidence":"certain"}],"success":true}\n' "${SQUAD_FAKE_TUIOS_ID:?}"
@@ -195,6 +197,25 @@ run_spawn() {
 assert_tuios_abort_released_workspace() {
   [ ! -f "$CASE_DIR/window" ] || fail 'an aborted TUIOS spawn must close only its task window'
   [ -z "$(cat "$CASE_DIR/workspace-name" 2>/dev/null || true)" ] || fail 'an aborted TUIOS spawn must release its task workspace name'
+}
+
+# seed_relaunch_meta <id>: publish a recorded TUIOS task endpoint so the next
+# spawn takes the relaunch path instead of creating a fresh task window.
+seed_relaunch_meta() {
+  local id=$1
+  cat > "$HOME_DIR/state/$id.meta" <<EOF
+window=owned:$WINDOW_ID
+endpoint_task_id=$id
+worktree=$WT_DIR
+project=$PROJ_DIR
+backend=tuios
+tuios_session=owned
+tuios_window_id=$WINDOW_ID
+tuios_workspace_id=4
+tuios_boot_id=boot-test
+EOF
+  printf '4\n' > "$CASE_DIR/workspace"
+  : > "$CASE_DIR/window"
 }
 
 # A TUIOS spawn must acquire the lease non-interactively, cd the window's own
@@ -295,9 +316,60 @@ EOF
   pass 'a TUIOS spawn that fails before metadata returns the lease'
 }
 
+# A recorded task window whose endpoint still holds a live agent must refuse a
+# duplicate launch: the recovery path must never relax that guard.
+test_tuios_relaunch_refuses_live_endpoint() {
+  local rec id label out status
+  id=tuios-relaunch-live
+  label="sq-$id"
+  rec=$(make_case tuios-relaunch-live "$id")
+  read_case "$rec"
+
+  seed_relaunch_meta "$id"
+  out=$(run_spawn "$id" "$label" 0)
+  status=$?
+  [ "$status" -ne 0 ] || fail 'a live recorded endpoint must refuse a duplicate launch'
+  assert_contains "$out" "existing tuios endpoint for $id is alive; refusing duplicate launch" \
+    'the refusal must name the live endpoint'
+  if grep -q 'new-window' "$CASE_DIR/tuios.log"; then
+    fail 'a refused duplicate launch must not create a second window'
+  fi
+  pass 'a TUIOS relaunch refuses a live recorded agent instead of duplicating it'
+}
+
+# A finished agent whose foreground program has exited leaves its window behind;
+# the relaunch must reuse that exact window and the recorded worktree rather than
+# refusing on the label or leasing a second copy.
+test_tuios_relaunch_reuses_finished_agentless_window() {
+  local rec id label out status
+  id=tuios-relaunch-finished
+  label="sq-$id"
+  rec=$(make_case tuios-relaunch-finished "$id")
+  read_case "$rec"
+
+  seed_relaunch_meta "$id"
+  SQUAD_FAKE_TUIOS_AGENTS_JSON=$(jq -cn --arg id "$WINDOW_ID" '{agents:[{window_id:$id,state:"done",foreground:"",harness_id:"pi",confidence:"certain"}],success:true}')
+  export SQUAD_FAKE_TUIOS_AGENTS_JSON
+  out=$(run_spawn "$id" "$label" 0)
+  status=$?
+  unset SQUAD_FAKE_TUIOS_AGENTS_JSON
+  expect_code 0 "$status" "a finished, foreground-less recorded agent must relaunch: $out"
+  assert_contains "$out" "reusing the recorded agentless task window owned:$WINDOW_ID" \
+    'the relaunch must reuse the recorded agentless window'
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" 'the relaunch must keep the recorded worktree'
+  assert_grep "tuios_window_id=$WINDOW_ID" "$HOME_DIR/state/$id.meta" 'the relaunch must keep the recorded window id'
+  assert_grep 'tuios_boot_id=boot-test' "$HOME_DIR/state/$id.meta" 'the relaunch must refresh the recorded boot id'
+  if grep -q 'new-window' "$CASE_DIR/tuios.log"; then
+    fail 'an agentless relaunch must reuse the recorded window, not create a new one'
+  fi
+  pass 'a TUIOS relaunch reuses the recorded window for a finished, foreground-less agent'
+}
+
 test_tuios_spawn_leases_and_records_worktree
 test_tuios_spawn_returns_lease_on_failure
 test_tuios_spawn_returns_lease_on_send_failure
 test_tuios_spawn_returns_lease_before_metadata
+test_tuios_relaunch_refuses_live_endpoint
+test_tuios_relaunch_reuses_finished_agentless_window
 
 echo "# all sq-spawn-tuios-worktree tests passed"

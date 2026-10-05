@@ -459,6 +459,31 @@ fm_backend_tuios_attributed() {  # <report-json>
     or (((.confidence // "") | length > 0) and (.confidence != "none"))' >/dev/null 2>&1
 }
 
+# fm_backend_tuios_finished_agentless: 0 when the daemon's own report positively
+# establishes a finished agent whose program has exited: the daemon's finished
+# state (`done`), no detected foreground program, and agent provenance that does
+# not come from a foreground program (a named harness or a non-`none`
+# confidence). A live agent reports a foreground program in every observed
+# shape, and a state that is not positively finished stays out of this class, so
+# an ambiguous or contradictory report never becomes a recovery license.
+fm_backend_tuios_finished_agentless() {  # <report-json>
+  printf '%s' "$1" | jq -e '
+    (.state == "done")
+    and (((.foreground // "") | length) == 0)
+    and ((((.harness_id // "") | length) > 0)
+         or (((.confidence // "") | length > 0) and (.confidence != "none")))' >/dev/null 2>&1
+}
+
+# fm_backend_tuios_agent_running: 0 when the report certifies a running agent -
+# positive attribution that is not the finished, foreground-less shape. This is
+# the single predicate behind `alive` and the resume refusal, so a finished
+# agent whose program is gone can never be mistaken for a live one.
+fm_backend_tuios_agent_running() {  # <report-json>
+  fm_backend_tuios_attributed "$1" || return 1
+  fm_backend_tuios_finished_agentless "$1" && return 1
+  return 0
+}
+
 fm_backend_tuios_composer_state() {  # <target>
   # The daemon exposes no generic "ordinary composer is empty" bit, and raw UI
   # text is not proof of delivery, so this stays unknown. A classified blocking
@@ -488,9 +513,17 @@ fm_backend_tuios_agent_state() {  # <target>
   report=$(fm_backend_tuios_agent_report_json "$target") || { printf 'unreadable'; return 0; }
   [ "$(printf '%s' "$report" | jq -r '.present')" = true ] || { printf 'missing'; return 0; }
   [ "$(printf '%s' "$report" | jq -r '.contradictory')" = true ] && { printf 'unreadable'; return 0; }
-  # Positive attribution is what makes an agent certified as running.
-  if fm_backend_tuios_attributed "$report"; then
+  # Positive attribution that is not the finished, foreground-less shape is what
+  # makes an agent certified as running.
+  if fm_backend_tuios_agent_running "$report"; then
     printf 'alive'
+    return 0
+  fi
+  # A finished agent whose foreground program is gone no longer owns the pane:
+  # this is the second recovery-grade shape, alongside the post-restart `none`
+  # pane below.
+  if fm_backend_tuios_finished_agentless "$report"; then
+    printf 'dead'
     return 0
   fi
   state=$(printf '%s' "$report" | jq -r '.state')
@@ -704,11 +737,12 @@ fm_backend_tuios_resume_agent() {  # <target> [harness]
   report=$(fm_backend_tuios_agent_report_json "$target") || { printf 'unreadable'; return 0; }
   [ "$(printf '%s' "$report" | jq -r '.present')" = true ] || { printf 'unreadable'; return 0; }
   [ "$(printf '%s' "$report" | jq -r '.contradictory')" = true ] && { printf 'unreadable'; return 0; }
-  # Any positively attributed report is a reporting agent that still owns the
-  # pane, exactly like fm_backend_tuios_agent_state's `alive`. Never type the
-  # conversation resume command into a pane a live agent is still driving, even
-  # when it is between turns or finished its last one.
-  if fm_backend_tuios_attributed "$report"; then
+  # A running agent (any positively attributed report that is not the finished,
+  # foreground-less shape) still owns the pane, exactly like
+  # fm_backend_tuios_agent_state's `alive`. Never type the conversation resume
+  # command into a pane a live agent is still driving, even when it is between
+  # turns or finished its last one.
+  if fm_backend_tuios_agent_running "$report"; then
     printf 'live'; return 0
   fi
   state=$(printf '%s' "$report" | jq -r '.state')
@@ -857,23 +891,34 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
   )
 }
 
-# fm_backend_tuios_reuse_restored_task: the post-restart relaunch path. A daemon
-# restart restores every session with its names and window ids but a fresh shell
-# in every pane, so a task's exact recorded window can still exist with its
-# label and no agent. Reusing it is safe only with positive evidence that the
-# daemon actually restarted since the task was spawned (the recorded boot id
-# differs) AND that no agent is attributable to the window now. Anything less
-# keeps the duplicate-label refusal.
+# fm_backend_tuios_reuse_restored_task: reuse the task's recorded window when
+# its endpoint is recovery-grade agentless. Two shapes qualify: a restored pane
+# after a daemon restart (the recorded boot id differs and the pane reports
+# state=none with no attribution), and a finished agent whose program has
+# exited (the daemon's own finished-and-foreground-less report, which needs no
+# boot evidence because the same daemon generation still owns the window).
+# Anything else - a detected foreground program, a live or ambiguous state, an
+# unreadable or contradictory report - keeps the duplicate-label refusal.
 fm_backend_tuios_reuse_restored_task() {  # <session> <task-label> <recorded-boot-id>
-  local session=$1 label=$2 recorded_boot=$3 current_boot id report
+  local session=$1 label=$2 recorded_boot=$3 current_boot id report state
   [ -n "$recorded_boot" ] || return 1
-  current_boot=$(fm_backend_tuios_boot_id "$session") || return 1
-  [ -n "$current_boot" ] && [ "$current_boot" != "$recorded_boot" ] || return 1
   id=$(fm_backend_tuios_same_label_window "$session" "$label") || return 1
   [ -n "$id" ] || return 1
   report=$(fm_backend_tuios_agent_report_json "$session:$id") || return 1
   [ "$(printf '%s' "$report" | jq -r '.present')" = true ] || return 1
   [ "$(printf '%s' "$report" | jq -r '.contradictory')" != true ] || return 1
-  fm_backend_tuios_attributed "$report" && return 1
-  printf '%s' "$id"
+  if fm_backend_tuios_finished_agentless "$report"; then
+    printf '%s' "$id"
+    return 0
+  fi
+  current_boot=$(fm_backend_tuios_boot_id "$session") || return 1
+  [ -n "$current_boot" ] && [ "$current_boot" != "$recorded_boot" ] || return 1
+  state=$(printf '%s' "$report" | jq -r '.state')
+  case "$state" in
+    ''|none)
+      fm_backend_tuios_attributed "$report" && return 1
+      printf '%s' "$id"
+      ;;
+    *) return 1 ;;
+  esac
 }

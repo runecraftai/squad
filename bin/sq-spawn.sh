@@ -1892,16 +1892,17 @@ EOF
     TUIOS_BOOT_ID=$(fm_backend_tuios_boot_id "$TUIOS_SES" 2>/dev/null) || TUIOS_BOOT_ID=
     TUIOS_WINDOW_ID=
     TUIOS_WORKSPACE_ID=
-    # Post-restart relaunch: the daemon restores every session with its names and
-    # window ids but a fresh shell in every pane, so a task's recorded window can
-    # still exist with its label and no agent. Reuse it only on recorded
-    # daemon-boot evidence plus a confirmed agentless inventory; otherwise the
-    # normal duplicate-label refusal stands.
+    # Relaunch of an agentless recorded window: a daemon restart restores every
+    # session with its names and window ids but a fresh shell in every pane, and
+    # a finished agent can exit leaving its window behind. Reuse the recorded
+    # window only on the adapter's own recovery-grade evidence - a changed boot
+    # id plus a confirmed agentless pane, or a finished, foreground-less agent -
+    # and otherwise keep the normal duplicate-label refusal.
     if [ -n "${RELAUNCH_TUIOS_BOOT_ID:-}" ]; then
       TUIOS_WINDOW_ID=$(fm_backend_tuios_reuse_restored_task "$TUIOS_SES" "$W" "$RELAUNCH_TUIOS_BOOT_ID") || TUIOS_WINDOW_ID=
     fi
     if [ -n "$TUIOS_WINDOW_ID" ]; then
-      echo "tuios: reusing the restored task window $TUIOS_SES:$TUIOS_WINDOW_ID after a daemon restart" >&2
+      echo "tuios: reusing the recorded agentless task window $TUIOS_SES:$TUIOS_WINDOW_ID" >&2
       TUIOS_WORKSPACE_ID=$(fm_backend_tuios_workspace_for_window "$TUIOS_SES" "$TUIOS_WINDOW_ID") || {
         echo 'error: TUIOS task workspace provenance could not be read' >&2
         exit 1
