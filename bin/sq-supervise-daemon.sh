@@ -69,21 +69,25 @@
 #          SQUAD_SUPERVISOR_TARGET     supervisor pane target (override; otherwise
 #                                   auto-discovered per backend - $TMUX_PANE
 #                                   under tmux, "<session>:<pane-id>" from
-#                                   $HERDR_PANE_ID under herdr - then
-#                                   Squad:0 fallback). Accepts either a
-#                                   tmux target or a herdr "<session>:<pane-id>"
-#                                   target; which one it's read as is decided by
+#                                   $HERDR_PANE_ID under herdr, and
+#                                   "$TUIOS_SESSION:$TUIOS_PANE_ID" under tuios -
+#                                   then Squad:0 fallback). Accepts a tmux target,
+#                                   a herdr "<session>:<pane-id>" target, or a
+#                                   tuios "<session>:<pane-id>" target; which one
+#                                   it's read as is decided by
 #                                   SQUAD_SUPERVISOR_BACKEND (below), independently.
-#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr;
+#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr|tuios;
 #                                   override; otherwise auto-discovered the same
 #                                   way bin/sq-backend.sh's fm_backend_detect
 #                                   resolves the runtime Squad itself is
 #                                   executing inside - $TMUX_PANE selects tmux,
-#                                   $HERDR_ENV=1 selects herdr - falling back to
-#                                   tmux). zellij, orca, cmux, and tuios are not yet
-#                                   supported as supervisor backends; the daemon
-#                                   refuses loudly at startup rather than trying
-#                                   tmux primitives against a non-tmux pane.
+#                                   $HERDR_ENV=1 selects herdr, and $TUIOS_ENV=1
+#                                   with $TUIOS_SESSION/$TUIOS_PANE_ID selects
+#                                   tuios - falling back to tmux). zellij, orca,
+#                                   and cmux are not yet supported as supervisor
+#                                   backends; the daemon refuses loudly at startup
+#                                   rather than trying tmux primitives against a
+#                                   non-tmux pane.
 #          SQUAD_INJECT_SKIP           |-prefixes force-self-handle bypassing
 #                                   classification (default "heartbeat"); empty
 #                                   disables. Use sparingly: it overrides the
@@ -189,7 +193,7 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# cmux and orca remain unsupported supervisor targets. TUIOS uses its native
+# and cmux remain unsupported supervisor targets. TUIOS uses its native
 # queue and Pi's sendUserMessage handoff when the primary extension is available;
 # otherwise it must pass the same explicit busy/composer/submit guards as other
 # backends. See docs/tuios-backend.md and the away-mode verification evidence.
