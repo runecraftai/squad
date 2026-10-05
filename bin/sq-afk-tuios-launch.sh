@@ -10,6 +10,45 @@ fm_afk_launch_tuios_sessions() {
   printf '%s' "$json"
 }
 
+# Roll back a session this launch just created. It closes only a session whose
+# unique name still matches, that is still unattached, whose recorded id matches
+# when one is known, and that holds no window this launch did not create. Any
+# doubt (absent, attached, changed, foreign window) preserves the session for
+# inspection instead of risking another owner's terminal.
+#   <session-name> <session-id|-> <created-window-count>
+fm_afk_launch_tuios_rollback() {
+  local session=$1 session_id=$2 count=$3 bin sessions owned
+  [ -n "$session" ] || return 1
+  [ "$session_id" = - ] && session_id=
+  case "$count" in ''|*[!0-9]*) return 1 ;; esac
+  fm_backend_source tuios || return 1
+  bin=$(fm_backend_tuios_bin)
+  sessions=$(fm_afk_launch_tuios_sessions) || { fm_afk_launch_log "TUIOS rollback could not read inventory; preserving session '$session'"; return 1; }
+  owned=$(printf '%s' "$sessions" | jq -r --arg name "$session" --arg id "$session_id" --argjson count "$count" '
+    [.[] | select(.name == $name)] as $s
+    | if ($s | length) == 1 and $s[0].attached == false
+        and ($id == "" or $s[0].id == $id)
+        and (($s[0].windows | length) <= $count)
+      then $s[0].id else empty end
+  ' 2>/dev/null) || owned=
+  if [ -z "$owned" ]; then
+    fm_afk_launch_log "TUIOS rollback refused: session '$session' is absent, attached, changed, or holds an unexpected window; preserving it"
+    return 1
+  fi
+  if "$bin" kill-session "$session" >/dev/null 2>&1; then
+    fm_afk_launch_log "rolled back the exact TUIOS daemon session '$session'"
+    # The session is gone, so an ownership record naming it is stale; drop it so
+    # a later status or stop cannot act on a terminal that no longer exists.
+    if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal" ] \
+      && [ "$(cut -f2 "$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal" 2>/dev/null | cut -d: -f1)" = "$session" ]; then
+      rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal"
+    fi
+    return 0
+  fi
+  fm_afk_launch_log "TUIOS rollback could not close session '$session'; preserving it"
+  return 1
+}
+
 fm_afk_launch_tuios_owned() {  # <session:window> <session-id>
   local target=$1 expected_id=$2 session window sessions
   case "$target" in *:*) ;; *) return 1 ;; esac
@@ -73,13 +112,18 @@ fm_afk_launch_create_tuios() {  # <commander-target> <commander-backend>
     return 1
   fi
   created=$(fm_afk_launch_tuios_create_result "$session") || {
-    fm_afk_launch_log "new TUIOS session was not positively identified as detached and singly-windowed"
+    fm_afk_launch_log "new TUIOS session was not positively identified as detached and singly-windowed; rolling it back"
+    fm_afk_launch_tuios_rollback "$session" - 1 || true
     return 1
   }
   IFS=$'\t' read -r session_id boot_window <<< "$created"
-  [ -n "$session_id" ] && [ -n "$boot_window" ] || return 1
+  if [ -z "$session_id" ] || [ -z "$boot_window" ]; then
+    fm_afk_launch_tuios_rollback "$session" - 1 || true
+    return 1
+  fi
   if ! fm_afk_launch_record_write tuios "$session:$boot_window" "$session_id"; then
-    fm_afk_launch_log "failed to record exact TUIOS session ownership; preserving the unclassified session"
+    fm_afk_launch_log "failed to record exact TUIOS session ownership; rolling back the created session"
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 1 || true
     return 1
   fi
   entry=$(fm_afk_launch_entry_cmd)
@@ -87,38 +131,59 @@ fm_afk_launch_create_tuios() {  # <commander-target> <commander-backend>
   out=$("$bin" new-window --json --session "$session" --no-focus --cwd "$SQUAD_BASE" \
     "$label" -- env "SQUAD_BASE=$SQUAD_BASE" "SQUAD_HOME=$SQUAD_BASE" \
     "SQUAD_SUPERVISOR_TARGET=$commander_target" "SQUAD_SUPERVISOR_BACKEND=$commander_backend" "$entry" 2>/dev/null) || {
-      fm_afk_launch_log "TUIOS daemon window creation failed; exact session record retained for safe recovery"
+      fm_afk_launch_log "TUIOS daemon window creation failed; rolling back the created session"
+      fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
       return 1
     }
   daemon_window=$(printf '%s' "$out" | jq -r '.window_id // .result.window_id // empty' 2>/dev/null) || daemon_window=
   if [ -z "$daemon_window" ]; then
-    fm_afk_launch_log "TUIOS did not return the daemon window id; refusing to guess it"
+    fm_afk_launch_log "TUIOS did not return the daemon window id; rolling back the created session"
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
     return 1
   fi
   local windows
-  windows=$(fm_backend_tuios_list_windows_json "$session") || return 1
+  if ! windows=$(fm_backend_tuios_list_windows_json "$session"); then
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
+    return 1
+  fi
   if ! printf '%s' "$windows" | jq -e --arg id "$daemon_window" --arg label "$label" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
       type == "object" and any(.windows[]; (tids | index($id)) != null and (tlabels | index($label)) != null)
     ' >/dev/null 2>&1; then
-    fm_afk_launch_log "TUIOS daemon window identity or label did not validate"
+    fm_afk_launch_log "TUIOS daemon window identity or label did not validate; rolling back the created session"
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
     return 1
   fi
   if ! fm_afk_launch_record_write tuios "$session:$daemon_window" "$session_id"; then
-    fm_afk_launch_log "failed to update the TUIOS daemon terminal record"
+    fm_afk_launch_log "failed to update the TUIOS daemon terminal record; rolling back the created session"
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
     return 1
   fi
   if ! fm_afk_launch_tuios_unattached_pair "$session" "$session_id" "$boot_window" "$daemon_window"; then
-    fm_afk_launch_log "TUIOS session changed or became attached during launch; preserving both windows"
+    fm_afk_launch_log "TUIOS session changed or became attached during launch; rolling back only if it is still provably ours"
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
     return 1
   fi
-  out=$("$bin" run-command --session "$session" CloseWindow "$boot_window" --json 2>/dev/null) || return 1
+  if ! out=$("$bin" run-command --session "$session" CloseWindow "$boot_window" --json 2>/dev/null); then
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
+    return 1
+  fi
   if ! printf '%s' "$out" | jq -e '.success == true or .result.success == true' >/dev/null 2>&1; then
-    fm_afk_launch_log "TUIOS refused to close the exact bootstrap window; preserving session"
+    fm_afk_launch_log "TUIOS refused to close the exact bootstrap window; rolling back the created session"
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 2 || true
     return 1
   fi
-  SQUAD_AFK_REC_BACKEND=tuios
-  SQUAD_AFK_REC_TARGET="$session:$daemon_window"
-  SQUAD_AFK_REC_EXTRA=$session_id
-  fm_afk_launch_commit_terminal tuios "$SQUAD_AFK_REC_TARGET" "$session_id" 1 || return 1
+  # fm_afk_launch_commit_terminal (sq-afk-launch.sh) reads these globals while it
+  # waits for the daemon to become ready and while it closes a failure, so they
+  # are live across files even though this file never reads them directly.
+  # shellcheck disable=SC2034
+  {
+    SQUAD_AFK_REC_BACKEND=tuios
+    SQUAD_AFK_REC_TARGET="$session:$daemon_window"
+    SQUAD_AFK_REC_EXTRA=$session_id
+  }
+  if ! fm_afk_launch_commit_terminal tuios "$SQUAD_AFK_REC_TARGET" "$session_id" 1; then
+    fm_afk_launch_tuios_rollback "$session" "$session_id" 1 || true
+    return 1
+  fi
   fm_afk_launch_log "daemon launched in the new detached TUIOS session, supervising $commander_target"
 }

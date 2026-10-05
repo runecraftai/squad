@@ -1017,6 +1017,53 @@ FAKE_TUIOS
   rm -rf "$lab"
 }
 
+# A failure after the exact detached TUIOS session was created must close that
+# session again, so a failed launch can never leak an unrecorded daemon session.
+unit_tuios_launch_rolls_back_a_created_session() {
+  local lab fakebin statefile output sessions
+  lab=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tuios-rollback.XXXXXX")
+  fakebin="$lab/fakebin"; statefile="$lab/sessions.json"; output="$lab/out"
+  mkdir -p "$fakebin" "$lab/state"
+  printf '[]\n' > "$statefile"
+  cat > "$fakebin/tuios" <<'FAKE_TUIOS'
+#!/usr/bin/env bash
+set -eu
+state=${TUIOS_FAKE_STATE:?}
+cmd=$1; shift
+case "$cmd" in
+  --version) printf 'tuios version 0.8.0\n' ;;
+  list-sessions) jq -c . "$state" ;;
+  new)
+    [ "$1" = --detach ]; name=$2
+    jq --arg n "$name" '. + [{name:$n,id:"session-created",attached:false,windows:[{id:"boot-window",title:"shell"}],window_count:1}]' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  new-window) exit 1 ;;
+  kill-session)
+    name=$1
+    jq --arg n "$name" 'map(select(.name != $n))' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  *) echo "unexpected fake TUIOS command: $cmd" >&2; exit 4 ;;
+esac
+FAKE_TUIOS
+  chmod +x "$fakebin/tuios"
+  if PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" \
+    SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:commander \
+    SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start >"$output" 2>&1; then
+    fail "TUIOS rollback: a launch whose daemon window failed must not report success"
+  fi
+  sessions=$(jq -c . "$statefile")
+  if [ "$sessions" = '[]' ] \
+    && [ ! -e "$lab/state/.afk" ] && [ ! -e "$lab/state/.afk-daemon-terminal" ]; then
+    pass "TUIOS rollback: a failed launch closes the session it created and leaves no lifecycle state"
+  else
+    fail "TUIOS rollback: created session or lifecycle state survived a failed launch (sessions=$sessions)"
+  fi
+  rm -rf "$lab"
+}
+
 # ---------------------------------------------------------------------------
 # UNIT status: health is read-only and reports active, exact terminal, daemon
 # lock, and marker ages.
@@ -1181,6 +1228,7 @@ unit_confirmed_absence_succeeds
 unit_incomplete_restore_retains_backup
 unit_flag_write_failure_aborts
 unit_tuios_launch_and_attached_protection
+unit_tuios_launch_rolls_back_a_created_session
 unit_status_health
 e2e_herdr
 e2e_tmux

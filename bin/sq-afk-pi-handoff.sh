@@ -13,15 +13,16 @@ fm_afk_pi_handoff_ready() {  # <state> <target> -> validated ready JSON
   fm_backend_tuios_target_ready "$target" || return 1
   dir=$(fm_afk_pi_handoff_dir "$state")
   [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/ready.json" ] && [ ! -L "$dir/ready.json" ] || return 1
-  # version 2 adds the positive-delivery state: the extension reports idle,
-  # editor-draft, and open-prompt counts. An older extension cannot describe
-  # that state, so it is refused here and the caller falls back to the
-  # fail-safe composer path instead of trusting an unproven handoff.
+  # version 3 carries the positive-delivery state: the extension reports idle,
+  # editor-draft, open-prompt, and in-flight-send flags. An older extension
+  # cannot describe that state, so it is refused here and the caller falls back
+  # to the fail-safe composer path instead of trusting an unproven handoff.
   ready=$(jq -ce --arg target_session "${target%%:*}" --arg target_window "${target#*:}" '
-    select(type == "object" and .version == 2 and (.pid | type == "number" and floor == .)
+    select(type == "object" and .version == 3 and (.pid | type == "number" and floor == .)
       and (.identity | type == "string") and (.session == $target_session)
       and (.window == $target_window) and (.idle | type == "boolean")
       and (.draft | type == "boolean") and (.prompts | type == "number" and floor == .)
+      and (.sending | type == "boolean")
       and (.heartbeat | type == "number" and floor == .))
   ' "$dir/ready.json" 2>/dev/null) || return 1
   pid=$(printf '%s' "$ready" | jq -r '.pid')
@@ -42,26 +43,62 @@ fm_afk_pi_handoff_ready() {  # <state> <target> -> validated ready JSON
   printf '%s' "$ready"
 }
 
-fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message>
-  local state=$1 target=$2 message=$3 dir ready id request status tmp prior prior_status nonce
+# Seconds since a file was last modified, or 0 when that cannot be established
+# (0 always means "not stale", so a doubt preserves the existing request).
+fm_afk_pi_handoff_age() {  # <path> -> seconds
+  local m now
+  m=$(stat -c %Y "$1" 2>/dev/null) || m=$(stat -f %m "$1" 2>/dev/null) || m=
+  case "$m" in ''|*[!0-9]*) printf '0'; return 0 ;; esac
+  now=$(date '+%s' 2>/dev/null)
+  case "$now" in ''|*[!0-9]*) now=0 ;; esac
+  if [ "$now" -ge "$m" ]; then printf '%s' "$((now - m))"; else printf '0'; fi
+}
+
+fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-lines]
+  local state=$1 target=$2 message=$3 lines=${4:-} dir ready id request status tmp prior prior_status nonce same replaceable
   ready=$(fm_afk_pi_handoff_ready "$state" "$target") || return 2
   dir=$(fm_afk_pi_handoff_dir "$state")
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 2
+  case "$lines" in ''|*[!0-9]*) lines= ;; *) [ "$lines" -gt 0 ] || lines= ;; esac
   request="$dir/request.json"
   if [ -e "$request" ]; then
     [ ! -L "$request" ] || return 2
     prior=$(jq -er '.id' "$request" 2>/dev/null) || return 2
     prior_status=$(jq -er --arg id "$prior" 'select(.id == $id) | .status' "$dir/result.json" 2>/dev/null) || prior_status=new
+    same=0
     if jq -e --arg session "${target%%:*}" --arg window "${target#*:}" --arg message "$message" \
       'select(.session == $session and .window == $window and .message == $message)' "$request" >/dev/null 2>&1; then
-      if [ "$prior_status" = handled ]; then
-        rm -f "$request" || return 1
-        return 0
-      fi
-      return 1
+      same=1
     fi
-    [ "$prior_status" = handled ] || { log "Pi handoff has a different unresolved request; preserving the escalation buffer"; return 1; }
-    rm -f "$request" || return 1
+    # `handled` means Pi consumed the request, so an identical message is already
+    # delivered while a different one may replace it. `uncertain` means the
+    # extension's send never reached Pi, so republishing cannot duplicate it.
+    # A `submitting` record is abandoned only when the live, identity-verified
+    # extension reports no in-flight send AND the record has aged past the bound:
+    # a send that had been in flight that long would have stopped refreshing the
+    # ready heartbeat, so this is never a blind resend.
+    replaceable=0
+    case "$prior_status" in
+      handled) replaceable=1 ;;
+      uncertain) replaceable=1 ;;
+      submitting)
+        if printf '%s' "$ready" | jq -e '.sending == false' >/dev/null 2>&1 \
+          && [ "$(fm_afk_pi_handoff_age "$dir/result.json")" -ge "${SQUAD_PI_HANDOFF_STALE_SECS:-30}" ]; then
+          replaceable=1
+        fi
+        ;;
+    esac
+    if [ "$same" -eq 1 ]; then
+      if [ "$replaceable" -ne 1 ]; then return 1; fi
+      rm -f "$request" || return 1
+      [ "$prior_status" != handled ] || return 0
+    else
+      if [ "$replaceable" -ne 1 ]; then
+        log "Pi handoff has a different unresolved request; preserving the escalation buffer"
+        return 1
+      fi
+      rm -f "$request" || return 1
+    fi
   fi
   nonce="$(date '+%s')-$$-${RANDOM:-0}-${RANDOM:-0}"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -74,7 +111,8 @@ fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message>
   [[ "$id" =~ ^[a-f0-9]{64}$ ]] || return 2
   tmp="$request.pending.$$"
   jq -n --arg id "$id" --arg session "${target%%:*}" --arg window "${target#*:}" --arg message "$message" \
-    '{id:$id,session:$session,window:$window,message:$message}' > "$tmp" || { rm -f "$tmp"; return 2; }
+    --arg lines "$lines" \
+    '{id:$id,session:$session,window:$window,message:$message} + (if $lines == "" then {} else {lines:($lines|tonumber)} end)' > "$tmp" || { rm -f "$tmp"; return 2; }
   chmod 600 "$tmp" || { rm -f "$tmp"; return 2; }
   mv "$tmp" "$request" || { rm -f "$tmp"; return 2; }
   status=$(jq -er --arg id "$id" 'select(.id == $id) | .status' "$dir/result.json" 2>/dev/null) || status=new

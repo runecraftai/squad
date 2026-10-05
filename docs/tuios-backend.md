@@ -104,8 +104,15 @@ Delivery is gated by three positive conditions: Pi must be idle, the editor must
 The last one is a native signal: Pi emits `ui_prompt_start` and `ui_prompt_end` around every built-in dialog (`select`, `confirm`, `input`, `editor`, `custom`), and the extension defers while that count is non-zero.
 A queued escalation stays durable while it waits, so a busy Pi, a typed draft, or an open approval prompt delays delivery instead of losing or duplicating it.
 
-The recorded `ready.json` is a version-2 delivery-state record carrying `idle`, `draft`, and `prompts`; the daemon refuses an older record and falls back to the fail-safe composer path rather than trusting a handoff that cannot describe its state.
-`bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session and refuses cleanup unless the recorded session id, its one owned window, and its unattached state still match.
+The recorded `ready.json` is a version-3 delivery-state record carrying `idle`, `draft`, `prompts`, and `sending`; the daemon refuses an older record and falls back to the fail-safe composer path rather than trusting a handoff that cannot describe its state.
+
+Delivery is idempotent across batches.
+A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
+A request is republished only when replacing it cannot duplicate delivery: Pi consumed it, or the extension's send never reached Pi (`uncertain`), or a `submitting` record has aged past the bound while the live, identity-verified extension reports no in-flight send, since a still-active send keeps the ready heartbeat current.
+An in-flight or merely queued request is never replaced, and the wedge alarm still covers a request that stays undelivered.
+
+`bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session.
+It refuses cleanup unless the recorded session id, its one owned window, and its unattached state still match, and every failure after the session is created closes that exact session again, so a failed launch cannot leak an unrecorded detached session.
 
 `bin/sq-afk-tuios-lab.sh` (guarded by `SQUAD_TUIOS_AFK_LIVE=1`) is the only supported live verification path.
 It uses a private daemon with fresh `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, and `XDG_CONFIG_HOME`, a temporary Squad base, and a loopback-only mock provider, and it destroys only sessions it created.
@@ -122,6 +129,7 @@ See [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios)
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.
 - The away-mode extension, the sender, and the launcher each have portable regression coverage, but the live TUIOS/Pi path is exercised only by the guarded lab above; there is no CI coverage of a real TUIOS daemon or a real Pi TUI.
+- An accepted-but-never-consumed request (`queued` while Pi never starts the turn) is preserved rather than republished, because republishing could duplicate a delivery Pi still holds; the wedge alarm surfaces it instead.
 - The fake-CLI suite covers preferred-workspace selection, occupied/named/leased exclusions, exact-ID placement verification, abort cleanup, and guarded workspace release. A focused check on the existing isolated nine-workspace private TUIOS session created two tasks in distinct non-current workspaces, confirmed the original focused window and current workspace were unchanged, then closed both probe windows and restored both names to empty. The shared daemon and every non-lab session were untouched.
 
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns the commands and output behind each claim above, and the honest list of what is not yet established. The portable contract is covered by `tests/sq-backend-tuios.test.sh` and `tests/sq-spawn-tuios-worktree.test.sh` using fake CLIs; those tests never contact or change a live TUIOS session.

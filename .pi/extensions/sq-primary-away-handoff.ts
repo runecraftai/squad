@@ -98,7 +98,7 @@ export default function (pi: ExtensionAPI): void {
   const publishReady = (): void => {
     if (!dir || !processIdentity || !context) return;
     atomicJson(`${dir}/ready.json`, {
-      version: 2,
+      version: 3,
       pid: process.pid,
       identity: processIdentity,
       session: targetSession,
@@ -106,17 +106,24 @@ export default function (pi: ExtensionAPI): void {
       idle: context.isIdle(),
       draft: context.ui.getEditorText().trim().length > 0,
       prompts: promptsOpen,
+      // Lets the sender distinguish a send that is genuinely in flight from a
+      // stale "submitting" record left by a crashed extension, without ever
+      // guessing that an unacknowledged escalation was delivered.
+      sending,
       heartbeat: Date.now(),
     });
   };
 
   const pump = async (): Promise<void> => {
     try {
-      if (!dir || sending || !context || !ensureDir(dir)) return;
-      // Liveness and exact-target binding are published on every tick so a queued
-      // escalation can wait durably for a safe delivery moment. Submission is
-      // gated separately below on idle, an empty editor, and no open prompt.
+      if (!dir || !context || !ensureDir(dir)) return;
+      // Liveness, exact-target binding, and the delivery state are published on
+      // every tick - including while a send is in flight - so a queued escalation
+      // can wait durably and the sender can tell a live send apart from a stale
+      // record. Submission is gated separately below on idle, an empty editor,
+      // no open prompt, and no in-flight send.
       publishReady();
+      if (sending) return;
       if (!context.isIdle() || context.ui.getEditorText().trim() || promptsOpen > 0) return;
       const request = readJson<HandoffRequest>(`${dir}/request.json`);
       if (!request || !/^[a-f0-9]{64}$/.test(request.id) || request.session !== targetSession || request.window !== targetWindow || !request.message) return;

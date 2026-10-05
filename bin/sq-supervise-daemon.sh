@@ -652,20 +652,73 @@ escalate_add() {  # <state> <distilled-item>
   printf '%s\n' "$item" >> "$buf"
 }
 
+# Canonical single-line digest of the first <lines> buffered escalations. It is
+# used both to build a flush and to prove that a native handoff's acknowledged
+# message still describes exactly the buffer prefix it covered.
+fm_escalation_digest() {  # <state> <lines>
+  local state=$1 lines=$2 items
+  # Join buffered items with the literal " | " separator into one digest line.
+  items=$(head -n "$lines" "$state/.subsuper-escalations" 2>/dev/null \
+    | awk 'NR>1{printf " | "} {printf "%s",$0} END{print ""}')
+  # Single-line wrapper: no embedded newlines (inject_msg also collapses as a
+  # safety net, but keeping the source single-line makes the intent explicit).
+  printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$lines" "$items"
+}
+
+# Retire exactly the buffer prefix a consumed native Pi handoff covered, so a
+# later digest never re-sends an escalation the primary already handled. Refuses
+# on any mismatch (unknown coverage, fewer remaining lines, or a buffer prefix
+# the acknowledged message no longer describes) and preserves the buffer.
+fm_pi_handoff_retire() {  # <state>
+  local state=$1 dir id lines status buf n expected
+  [ "${SQUAD_SUPERVISOR_BACKEND:-}" = tuios ] || return 1
+  dir=$(fm_afk_pi_handoff_dir "$state")
+  [ -f "$dir/request.json" ] && [ ! -L "$dir/request.json" ] || return 1
+  id=$(jq -r '.id // empty' "$dir/request.json" 2>/dev/null) || return 1
+  lines=$(jq -r '.lines // empty' "$dir/request.json" 2>/dev/null) || return 1
+  case "$id" in *[!a-f0-9]*|'') return 1 ;; esac
+  case "$lines" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$lines" -gt 0 ] || return 1
+  status=$(jq -er --arg id "$id" 'select(.id == $id) | .status' "$dir/result.json" 2>/dev/null) || return 1
+  [ "$status" = handled ] || return 1
+  buf="$state/.subsuper-escalations"
+  [ -s "$buf" ] || return 1
+  n=$(wc -l < "$buf" 2>/dev/null) || return 1
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  if [ "$n" -lt "$lines" ]; then
+    log "Pi handoff ack covered $lines buffered line(s) but only $n remain; preserving the buffer"
+    return 1
+  fi
+  expected=$(jq -r '.message // empty' "$dir/request.json" 2>/dev/null) || return 1
+  if [ "$expected" != "$(fm_escalation_digest "$state" "$lines")" ]; then
+    log "Pi handoff ack no longer matches the buffered prefix; preserving the buffer"
+    return 1
+  fi
+  if tail -n "+$((lines + 1))" "$buf" > "$buf.retire.$$" && mv "$buf.retire.$$" "$buf"; then
+    rm -f "$buf.retire.$$"
+    [ -s "$buf" ] || rm -f "${buf}.since"
+    rm -f "$dir/request.json"
+    log "Pi handoff consumed $lines buffered escalation line(s); retired them"
+    return 0
+  fi
+  rm -f "$buf.retire.$$"
+  log "Pi handoff retirement could not rewrite the escalation buffer; preserving it"
+  return 1
+}
+
 # Flush the escalation buffer as ONE batched, single-line digest to the
 # supervisor pane. Returns 0 on successful inject (or empty buffer), non-zero on
 # inject failure (buffer preserved for retry / catch-up).
 escalate_flush() {  # <state>
-  local state=$1 buf item n msg
+  local state=$1 buf n msg
   buf="$state/.subsuper-escalations"
+  # Retire the exact prefix a consumed native handoff covered before rebuilding
+  # the digest, so an acknowledged escalation is never sent a second time.
+  fm_pi_handoff_retire "$state" || true
   [ -s "$buf" ] || return 0
   n=$(wc -l < "$buf" 2>/dev/null || echo 0)
-  # Join buffered items with the literal " | " separator into one digest line.
-  msg=$(awk 'NR>1{printf " | "} {printf "%s",$0} END{print ""}' "$buf" 2>/dev/null)
-  # Single-line wrapper: no embedded newlines (inject_msg also collapses as a
-  # safety net, but keeping the source single-line makes the intent explicit).
-  msg=$(printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$n" "$msg")
-  if inject_msg "$msg" "$state"; then : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"; return 0; fi
+  msg=$(fm_escalation_digest "$state" "$n")
+  if inject_msg "$msg" "$state" "$n"; then : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"; return 0; fi
   return 1
 }
 
@@ -1136,8 +1189,8 @@ window_for_task() {  # <task-key> [state]
 #     after dim/faint ghost text and borders are ignored (a human's half-typed
 #     line, or a previous injection's unsent text), defer entirely - injecting
 #     would merge with the human's text.
-inject_msg() {  # <message> [state]
-  local msg=$1 state target backend retries sleep_s verdict composer encoded
+inject_msg() {  # <message> [state] [handoff-covered-lines]
+  local msg=$1 state target backend retries sleep_s verdict composer encoded covered=${3:-}
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
   # daemon self-handles and stays quiet; Squad drives the normal always-on
@@ -1162,7 +1215,7 @@ inject_msg() {  # <message> [state]
   # it preserves pending human input and queues without terminal typing. Its
   # extension binds the handoff to the exact target and acknowledges consumption.
   if [ "$backend" = tuios ] && fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
-    fm_afk_pi_handoff_submit "$state" "$target" "$msg"
+    fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered"
     return $?
   fi
   # (3) Busy-guard: never inject into an in-use supervisor pane.

@@ -1884,9 +1884,10 @@ test_pi_handoff_is_durable_idempotent_and_ack_gated() {
 }
 
 # The daemon must not trust a handoff record that cannot describe the delivery
-# state. Version 2 added idle/draft/prompts, so a version-1 (or field-less)
-# record is refused and the caller falls back to the fail-safe composer path.
-test_pi_handoff_ready_requires_v2_delivery_state() {
+# state. Version 3 added the in-flight-send flag on top of idle/draft/prompts,
+# so an older (or field-less) record is refused and the caller falls back to the
+# fail-safe composer path.
+test_pi_handoff_ready_requires_v3_delivery_state() {
   local dir state
   dir=$(make_supercase pi-handoff-ready-schema)
   state="$dir/state"
@@ -1899,21 +1900,117 @@ test_pi_handoff_ready_requires_v2_delivery_state() {
     local now
     now=$(date '+%s%3N' 2>/dev/null)
     case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
-    write_ready() {  # <version> [idle] [draft] [prompts]
+    write_ready() {  # <version> [idle] [draft] [prompts] [sending]
       jq -n --argjson version "$1" --argjson pid "$$" --argjson heartbeat "$now" \
-        --argjson idle "${2:-true}" --argjson draft "${3:-false}" --argjson prompts "${4:-0}" \
-        '{version:$version,pid:$pid,identity:"identity",session:"s",window:"w",idle:$idle,draft:$draft,prompts:$prompts,heartbeat:$heartbeat}' \
+        --argjson idle "${2:-true}" --argjson draft "${3:-false}" --argjson prompts "${4:-0}" --argjson sending "${5:-false}" \
+        '{version:$version,pid:$pid,identity:"identity",session:"s",window:"w",idle:$idle,draft:$draft,prompts:$prompts,sending:$sending,heartbeat:$heartbeat}' \
         > "$state/.pi-away-handoff/ready.json"
     }
-    write_ready 1
+    write_ready 2
     if fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null; then
-      fail "a version-1 ready record without delivery-state fields must be refused"
+      fail "a version-2 ready record without the in-flight-send field must be refused"
     fi
-    write_ready 2 true false 0
+    write_ready 3 true false 0 true
     fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null \
-      || fail "a version-2 ready record with the delivery-state fields must be accepted"
+      || fail "a version-3 ready record with the delivery-state fields must be accepted"
   ) || fail "Pi handoff ready-schema test subshell failed"
-  pass "Pi handoff: the ready contract requires the v2 delivery-state schema"
+  pass "Pi handoff: the ready contract requires the v3 delivery-state schema"
+}
+
+# A consumed handoff covers an exact buffer prefix; retiring it is what makes a
+# later digest free of already-delivered escalations.
+test_pi_handoff_retires_only_the_acknowledged_prefix() {
+  local dir state id
+  dir=$(make_supercase pi-handoff-retire)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  id=$(printf 'a%.0s' $(seq 1 64))
+  (
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    local buf="$state/.subsuper-escalations"
+    printf 'first escalation\nsecond escalation\n' > "$buf"
+    jq -n --arg id "$id" --arg msg "$(fm_escalation_digest "$state" 1)" '{id:$id,lines:1,message:$msg}' > "$state/.pi-away-handoff/request.json"
+    jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    fm_pi_handoff_retire "$state" || fail "retirement refused a valid acknowledged prefix"
+    [ "$(cat "$buf")" = 'second escalation' ] || fail "retirement did not remove exactly the acknowledged prefix (buffer=$(cat "$buf"))"
+    [ ! -e "$state/.pi-away-handoff/request.json" ] || fail "retirement left the consumed request in place"
+    # An acknowledgement that no longer describes the buffered prefix must not retire anything.
+    printf 'first escalation\nsecond escalation\n' > "$buf"
+    jq -n --arg id "$id" '{id:$id,lines:1,message:"stale digest"}' > "$state/.pi-away-handoff/request.json"
+    jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    if fm_pi_handoff_retire "$state"; then
+      fail "retirement accepted an acknowledgement that no longer matches the buffer"
+    fi
+    [ "$(wc -l < "$buf")" -eq 2 ] || fail "a refused retirement still changed the buffer"
+  ) || fail "Pi handoff retirement subshell failed"
+  pass "Pi handoff: a consumed request retires exactly the buffer prefix it covered"
+}
+
+# The flush must rebuild its digest from the post-retirement buffer, so an
+# acknowledged escalation is never re-sent when a newer one arrives.
+test_escalate_flush_skips_the_retired_prefix() {
+  local dir state id
+  dir=$(make_supercase escalate-retired-prefix)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  id=$(printf 'a%.0s' $(seq 1 64))
+  (
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    local buf="$state/.subsuper-escalations"
+    printf 'already handled\nstill pending\n' > "$buf"
+    jq -n --arg id "$id" --arg msg "$(fm_escalation_digest "$state" 1)" '{id:$id,lines:1,message:$msg}' > "$state/.pi-away-handoff/request.json"
+    jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    inject_msg() { printf '%s' "$1" > "$dir/digest"; return 0; }
+    escalate_flush "$state" || fail "flush failed after retiring an acknowledged prefix"
+    case "$(<"$dir/digest")" in
+      *'still pending'*) : ;;
+      *) fail "flush digest did not carry the pending escalation" ;;
+    esac
+    case "$(<"$dir/digest")" in
+      *'already handled'*) fail "flush re-sent an escalation the primary had already handled" ;;
+    esac
+  ) || fail "escalate_flush retirement subshell failed"
+  pass "escalate_flush: an acknowledged escalation is retired and never re-sent"
+}
+
+# A request Pi definitively never accepted, or one abandoned by a restarted
+# extension, must be republished instead of wedging the handoff forever.
+test_pi_handoff_replaces_abandoned_requests() {
+  local dir state id
+  dir=$(make_supercase pi-handoff-abandoned)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  id=$(printf 'a%.0s' $(seq 1 64))
+  (
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    fm_afk_pi_handoff_ready() { printf '{"version":3,"sending":false}'; }
+    jq -n --arg id "$id" '{id:$id,lines:1,message:"digest"}' > "$state/.pi-away-handoff/request.json"
+    jq -n --arg id "$id" '{id:$id,status:"uncertain"}' > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'digest'; then
+      fail "a republished request must await its own acknowledgement"
+    fi
+    [ "$(jq -r '.id' "$state/.pi-away-handoff/request.json")" != "$id" ] \
+      || fail "a request Pi never accepted was not republished"
+    # An abandoned `submitting` record is replaceable only with a live, not-sending extension.
+    fm_afk_pi_handoff_age() { printf '60'; }
+    jq -n --arg id "$id" '{id:$id,lines:1,message:"digest"}' > "$state/.pi-away-handoff/request.json"
+    jq -n --arg id "$id" '{id:$id,status:"submitting"}' > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'digest'; then
+      fail "a republished abandoned request must await its own acknowledgement"
+    fi
+    [ "$(jq -r '.id' "$state/.pi-away-handoff/request.json")" != "$id" ] \
+      || fail "an abandoned submitting record was not republished"
+    # But a live in-flight send must never be treated as abandoned.
+    fm_afk_pi_handoff_ready() { printf '{"version":3,"sending":true}'; }
+    jq -n --arg id "$id" '{id:$id,lines:1,message:"digest"}' > "$state/.pi-away-handoff/request.json"
+    jq -n --arg id "$id" '{id:$id,status:"submitting"}' > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'digest'; then
+      fail "an in-flight send must not be reported delivered"
+    fi
+    [ "$(jq -r '.id' "$state/.pi-away-handoff/request.json")" = "$id" ] \
+      || fail "an in-flight send was replaced, risking a duplicate delivery"
+  ) || fail "Pi handoff abandoned-request subshell failed"
+  pass "Pi handoff: failed or abandoned requests are republished without replacing a live send"
 }
 
 test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present() {
@@ -1944,8 +2041,9 @@ const ctx = { idle: false, editor: "draft", isIdle() { return this.idle; }, ui: 
 await listeners.get("session_start")({}, ctx);
 await wait(1100);
 assert.equal(sent.length, 0, "busy Pi must not receive a handoff");
-assert.equal(ready().version, 2, "the handoff extension must report its delivery-state schema");
+assert.equal(ready().version, 3, "the handoff extension must report its delivery-state schema");
 assert.equal(ready().idle, false, "ready state must report the live idle flag");
+assert.equal(ready().sending, false, "ready state must report the in-flight-send flag");
 ctx.idle = true;
 await wait(1100);
 assert.equal(sent.length, 0, "non-empty editor must defer the handoff");
@@ -2260,7 +2358,10 @@ test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
 test_pi_handoff_is_durable_idempotent_and_ack_gated
-test_pi_handoff_ready_requires_v2_delivery_state
+test_pi_handoff_ready_requires_v3_delivery_state
+test_pi_handoff_retires_only_the_acknowledged_prefix
+test_escalate_flush_skips_the_retired_prefix
+test_pi_handoff_replaces_abandoned_requests
 test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present
 test_primary_pi_handoff_resets_prompt_state_and_survives_stale_context
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack
