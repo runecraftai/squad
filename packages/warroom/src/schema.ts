@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS initiatives (
 CREATE TABLE IF NOT EXISTS revisions (
   id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id), kind TEXT NOT NULL,
   digest TEXT NOT NULL, previous_revision_id TEXT REFERENCES revisions(id), content TEXT NOT NULL,
-  created_by TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(initiative_id, kind, digest)
+  created_by TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS decisions (
   id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id), source_revision_id TEXT NOT NULL REFERENCES revisions(id),

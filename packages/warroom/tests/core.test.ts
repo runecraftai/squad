@@ -87,6 +87,22 @@ describe("Warroom canonical core", () => {
 		w.close();
 	});
 
+	test("restoring identical content creates a new revision identity without reviving approval", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "pa", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved" });
+		w.command({ type: "revision.create", id: "p2", initiativeId: "i1", kind: "plan", content: "plan two" });
+		w.command({ type: "revision.create", id: "p3", initiativeId: "i1", kind: "plan", content: "plan one" });
+		const state = w.state("i1");
+		expect(state.revisions.find((r) => r.id === "p3")?.id).not.toBe("p1");
+		expect(state.revisions.find((r) => r.id === "p3")?.digest).toBe(state.revisions.find((r) => r.id === "p1")?.digest);
+		expect(state.revisions.find((r) => r.id === "p1")?.stale).toBe(true);
+		expect(state.approvals.find((a) => a.id === "pa")?.superseded).toBe(true);
+		const persisted = w.db.query("SELECT superseded_at, superseded_by FROM approvals WHERE id='pa'").get() as { superseded_at: string | null; superseded_by: string | null };
+		expect(persisted.superseded_at).not.toBeNull();
+		expect(persisted.superseded_by).toBe("p2");
+		w.close();
+	});
+
 	test("plan-approval is superseded when a newer plan revision is created", () => {
 		const w = seeded();
 		w.command({ type: "approval.record", id: "pa", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved" });
