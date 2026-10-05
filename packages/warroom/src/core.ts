@@ -56,7 +56,7 @@ export class Warroom {
 				for (const prior of revisions.values()) if (prior.initiativeId === p.initiativeId && prior.kind === p.kind) prior.stale = true;
 				revisions.set(p.id, revision);
 				if (p.kind === "plan") initiatives.get(p.initiativeId).currentPlanRevisionId = p.id;
-				for (const a of approvals) if (a.revisionId !== p.id && a.kind === (p.kind === "plan" ? "plan-approval" : "code-review-acceptance") && revisions.get(a.revisionId)?.stale) a.superseded = true;
+				for (const a of approvals) if (a.revisionId !== p.id && revisions.get(a.revisionId)?.stale) a.superseded = true;
 				for (const c of comments) if (c.revisionId !== p.id && revisions.get(c.revisionId)?.stale) c.state = "outdated";
 				for (const e of evidence) if (e.revisionId !== p.id && revisions.get(e.revisionId)?.stale) e.stale = true;
 				break;
@@ -101,8 +101,7 @@ export class Warroom {
 			const digest = digestContent(command.content);
 			this.db.query("INSERT INTO revisions(id,initiative_id,kind,digest,previous_revision_id,content,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)").run(id, command.initiativeId, command.kind, digest, previous, command.content, this.actor.id, now);
 			if (command.kind === "plan") this.db.query("UPDATE initiatives SET current_plan_revision_id=?,updated_at=? WHERE id=?").run(id, now, command.initiativeId);
-			const supersededKind = command.kind === "plan" ? "plan-approval" : "code-review-acceptance";
-			this.db.query("UPDATE approvals SET superseded_at=?,superseded_by=? WHERE initiative_id=? AND kind=? AND superseded_at IS NULL AND subject_revision_id<>?").run(now, id, command.initiativeId, supersededKind, id);
+			this.db.query("UPDATE approvals SET superseded_at=?,superseded_by=? WHERE initiative_id=? AND superseded_at IS NULL AND subject_revision_id IN (SELECT id FROM revisions WHERE initiative_id=? AND kind=? AND id<>?)").run(now, id, command.initiativeId, command.initiativeId, command.kind, id);
 			for (const table of ["validation_evidence", "comments"]) this.db.query(`UPDATE ${table} SET ${table === "comments" ? "state='outdated'" : "stale=1"} WHERE initiative_id=? AND revision_id IN (SELECT id FROM revisions WHERE initiative_id=? AND kind=? AND id<>?)`).run(command.initiativeId, command.initiativeId, command.kind, id);
 			break;
 		}

@@ -12,6 +12,12 @@ function seeded() {
 	return warroom;
 }
 
+function supersession(w: Warroom, approvalId: string) {
+	const derived = w.state("i1").approvals.find((a) => a.id === approvalId)?.superseded;
+	const persisted = w.db.query("SELECT superseded_at, superseded_by FROM approvals WHERE id=?").get(approvalId) as { superseded_at: string | null; superseded_by: string | null };
+	return { derived, persisted };
+}
+
 describe("Warroom canonical core", () => {
 	test("migration can be applied repeatedly", () => {
 		const db = new Database(":memory:");
@@ -78,6 +84,64 @@ describe("Warroom canonical core", () => {
 		const projected = w.db.query("SELECT superseded_at, superseded_by FROM approvals WHERE id='a1'").get() as { superseded_at: string | null; superseded_by: string | null };
 		expect(projected.superseded_at).not.toBeNull();
 		expect(projected.superseded_by).toBe("c2");
+		w.close();
+	});
+
+	test("plan-approval is superseded when a newer plan revision is created", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "pa", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved" });
+		w.command({ type: "revision.create", id: "p2", initiativeId: "i1", kind: "plan", content: "plan two" });
+		const { derived, persisted } = supersession(w, "pa");
+		expect(derived).toBe(true);
+		expect(persisted.superseded_at).not.toBeNull();
+		expect(persisted.superseded_by).toBe("p2");
+		w.close();
+	});
+
+	test("execution-authorization is superseded when a newer plan revision is created", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "ea", initiativeId: "i1", kind: "execution-authorization", revisionId: "p1", decision: "approved" });
+		w.command({ type: "revision.create", id: "p2", initiativeId: "i1", kind: "plan", content: "plan two" });
+		const { derived, persisted } = supersession(w, "ea");
+		expect(derived).toBe(true);
+		expect(persisted.superseded_at).not.toBeNull();
+		expect(persisted.superseded_by).toBe("p2");
+		w.close();
+	});
+
+	test("code-review-acceptance is superseded when a newer code revision is created", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "cr", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "approved", evidenceId: "v1" });
+		w.command({ type: "revision.create", id: "c2", initiativeId: "i1", kind: "code", content: "code two" });
+		const { derived, persisted } = supersession(w, "cr");
+		expect(derived).toBe(true);
+		expect(persisted.superseded_at).not.toBeNull();
+		expect(persisted.superseded_by).toBe("c2");
+		w.close();
+	});
+
+	test("merge-permission is superseded when a newer code revision is created", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "mp", initiativeId: "i1", kind: "merge-permission", revisionId: "c1", decision: "approved" });
+		w.command({ type: "revision.create", id: "c2", initiativeId: "i1", kind: "code", content: "code two" });
+		const { derived, persisted } = supersession(w, "mp");
+		expect(derived).toBe(true);
+		expect(persisted.superseded_at).not.toBeNull();
+		expect(persisted.superseded_by).toBe("c2");
+		w.close();
+	});
+
+	test("supersession is scoped to the changed revision kind", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "pa", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved" });
+		w.command({ type: "approval.record", id: "cr", initiativeId: "i1", kind: "code-review-acceptance", revisionId: "c1", decision: "approved", evidenceId: "v1" });
+		w.command({ type: "revision.create", id: "p2", initiativeId: "i1", kind: "plan", content: "plan two" });
+		const plan = supersession(w, "pa");
+		const code = supersession(w, "cr");
+		expect(plan.derived).toBe(true);
+		expect(plan.persisted.superseded_by).toBe("p2");
+		expect(code.derived).toBe(false);
+		expect(code.persisted.superseded_at).toBeNull();
 		w.close();
 	});
 });
