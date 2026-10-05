@@ -670,7 +670,7 @@ fm_escalation_digest() {  # <state> <lines>
 # on any mismatch (unknown coverage, fewer remaining lines, or a buffer prefix
 # the acknowledged message no longer describes) and preserves the buffer.
 fm_pi_handoff_retire() {  # <state>
-  local state=$1 dir id lines status buf n expected
+  local state=$1 dir id lines status buf n expected expected_digest
   [ "${SQUAD_SUPERVISOR_BACKEND:-}" = tuios ] || return 1
   dir=$(fm_afk_pi_handoff_dir "$state")
   [ -f "$dir/request.json" ] && [ ! -L "$dir/request.json" ] || return 1
@@ -690,7 +690,9 @@ fm_pi_handoff_retire() {  # <state>
     return 1
   fi
   expected=$(jq -r '.message // empty' "$dir/request.json" 2>/dev/null) || return 1
-  if [ "$expected" != "$(fm_escalation_digest "$state" "$lines")" ]; then
+  fm_operational_input_encode away-supervisor \
+    "$(_collapse_newlines "$(fm_escalation_digest "$state" "$lines")")" expected_digest || return 1
+  if [ "$expected" != "$expected_digest" ]; then
     log "Pi handoff ack no longer matches the buffered prefix; preserving the buffer"
     return 1
   fi

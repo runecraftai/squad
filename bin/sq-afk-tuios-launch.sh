@@ -109,6 +109,7 @@ fm_afk_launch_create_tuios() {  # <commander-target> <commander-backend>
   fi
   if ! "$bin" new --detach "$session" >/dev/null 2>&1; then
     fm_afk_launch_log "could not create the uniquely named detached TUIOS daemon session"
+    fm_afk_launch_tuios_rollback "$session" - 1 || true
     return 1
   fi
   created=$(fm_afk_launch_tuios_create_result "$session") || {

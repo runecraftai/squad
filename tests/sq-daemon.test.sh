@@ -1927,9 +1927,13 @@ test_pi_handoff_retires_only_the_acknowledged_prefix() {
   id=$(printf 'a%.0s' $(seq 1 64))
   (
     SQUAD_SUPERVISOR_BACKEND=tuios
-    local buf="$state/.subsuper-escalations"
+    fm_afk_pi_handoff_ready() { printf '{"version":3,"sending":false}'; }
+    local buf="$state/.subsuper-escalations" raw encoded
     printf 'first escalation\nsecond escalation\n' > "$buf"
-    jq -n --arg id "$id" --arg msg "$(fm_escalation_digest "$state" 1)" '{id:$id,lines:1,message:$msg}' > "$state/.pi-away-handoff/request.json"
+    raw=$(fm_escalation_digest "$state" 1)
+    fm_operational_input_encode away-supervisor "$raw" encoded
+    fm_afk_pi_handoff_submit "$state" "primary:window-1" "$encoded" 1 || true
+    id=$(jq -r '.id' "$state/.pi-away-handoff/request.json")
     jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
     fm_pi_handoff_retire "$state" || fail "retirement refused a valid acknowledged prefix"
     [ "$(cat "$buf")" = 'second escalation' ] || fail "retirement did not remove exactly the acknowledged prefix (buffer=$(cat "$buf"))"
@@ -1956,9 +1960,13 @@ test_escalate_flush_skips_the_retired_prefix() {
   id=$(printf 'a%.0s' $(seq 1 64))
   (
     SQUAD_SUPERVISOR_BACKEND=tuios
-    local buf="$state/.subsuper-escalations"
+    fm_afk_pi_handoff_ready() { printf '{"version":3,"sending":false}'; }
+    local buf="$state/.subsuper-escalations" raw encoded
     printf 'already handled\nstill pending\n' > "$buf"
-    jq -n --arg id "$id" --arg msg "$(fm_escalation_digest "$state" 1)" '{id:$id,lines:1,message:$msg}' > "$state/.pi-away-handoff/request.json"
+    raw=$(fm_escalation_digest "$state" 1)
+    fm_operational_input_encode away-supervisor "$raw" encoded
+    fm_afk_pi_handoff_submit "$state" "primary:window-1" "$encoded" 1 || true
+    id=$(jq -r '.id' "$state/.pi-away-handoff/request.json")
     jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
     inject_msg() { printf '%s' "$1" > "$dir/digest"; return 0; }
     escalate_flush "$state" || fail "flush failed after retiring an acknowledged prefix"
