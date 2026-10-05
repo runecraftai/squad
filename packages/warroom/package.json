@@ -1,0 +1,16 @@
+{
+  "name": "@runecraft/warroom-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Product-neutral canonical event and revision core for Runecraft Warroom.",
+  "license": "MIT",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  }
+}
