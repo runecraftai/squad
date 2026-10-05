@@ -1626,6 +1626,7 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
 # enough to authorize a second agent.
 prepare_relaunch_execution() {
   local meta="$STATE/$ID.meta" old_backend old_target endpoint_state previous
+  RELAUNCH_EXISTING_META=
   if [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
     # A missing metadata record is the recovery signal used after a process
     # died between attempts. There is no recorded endpoint to probe, so reuse
@@ -1649,12 +1650,14 @@ prepare_relaunch_execution() {
     echo "error: existing metadata for $ID is not a regular file; refusing relaunch" >&2
     return 1
   }
+  RELAUNCH_EXISTING_META=1
   old_backend=$(fm_backend_of_meta "$meta")
   old_target=$(fm_backend_target_of_meta "$meta")
   # Recorded daemon-boot evidence and worktree for a TUIOS relaunch (see the
   # TUIOS backend case). Empty for every other backend, and for a task spawned
-  # before the boot marker existed: without the boot id the duplicate-label
-  # refusal stands.
+  # before the boot marker existed: an empty boot id only rules out the
+  # post-restart state=none shape, while the finished-and-agentless shape is
+  # proven by the daemon's own report alone.
   RELAUNCH_TUIOS_BOOT_ID=
   RELAUNCH_WORKTREE=
   if [ "$old_backend" = tuios ]; then
@@ -1892,16 +1895,18 @@ EOF
     TUIOS_BOOT_ID=$(fm_backend_tuios_boot_id "$TUIOS_SES" 2>/dev/null) || TUIOS_BOOT_ID=
     TUIOS_WINDOW_ID=
     TUIOS_WORKSPACE_ID=
-    # Post-restart relaunch: the daemon restores every session with its names and
-    # window ids but a fresh shell in every pane, so a task's recorded window can
-    # still exist with its label and no agent. Reuse it only on recorded
-    # daemon-boot evidence plus a confirmed agentless inventory; otherwise the
-    # normal duplicate-label refusal stands.
-    if [ -n "${RELAUNCH_TUIOS_BOOT_ID:-}" ]; then
-      TUIOS_WINDOW_ID=$(fm_backend_tuios_reuse_restored_task "$TUIOS_SES" "$W" "$RELAUNCH_TUIOS_BOOT_ID") || TUIOS_WINDOW_ID=
+    # Relaunch of an agentless recorded window: a daemon restart restores every
+    # session with its names and window ids but a fresh shell in every pane, and
+    # a finished agent can exit leaving its window behind. Reuse the recorded
+    # window only on a relaunch of existing metadata and the adapter's own
+    # recovery-grade evidence - a finished, foreground-less report needs no
+    # boot id, while a restored pane needs a changed boot id plus a confirmed
+    # agentless pane - and otherwise keep the normal duplicate-label refusal.
+    if [ -n "${RELAUNCH_EXISTING_META:-}" ]; then
+      TUIOS_WINDOW_ID=$(fm_backend_tuios_reuse_restored_task "$TUIOS_SES" "$W" "${RELAUNCH_TUIOS_BOOT_ID:-}") || TUIOS_WINDOW_ID=
     fi
     if [ -n "$TUIOS_WINDOW_ID" ]; then
-      echo "tuios: reusing the restored task window $TUIOS_SES:$TUIOS_WINDOW_ID after a daemon restart" >&2
+      echo "tuios: reusing the recorded agentless task window $TUIOS_SES:$TUIOS_WINDOW_ID" >&2
       TUIOS_WORKSPACE_ID=$(fm_backend_tuios_workspace_for_window "$TUIOS_SES" "$TUIOS_WINDOW_ID") || {
         echo 'error: TUIOS task workspace provenance could not be read' >&2
         exit 1

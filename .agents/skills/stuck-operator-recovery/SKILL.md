@@ -34,9 +34,9 @@ Preserve its uncommitted changes and commits, keep the same task identity, and r
 Do not use a fresh generic spawn while the recorded worktree is unaccounted for, because allocating another worktree can split one task across two copies.
 If the worktree or ownership cannot be reconciled safely, leave all state intact and report the task failed or blocked with the conflicting evidence.
 
-### TUIOS restart recovery
+### TUIOS restart and finished-agent recovery
 
-A TUIOS daemon restart restores every window id and name but starts a fresh shell in every pane, so the recorded endpoint classifies as `dead` instead of a live agent; `docs/tuios-backend.md` "Restart recovery" owns the mechanism.
+A TUIOS endpoint classifies as `dead` instead of a live agent either when a daemon restart restores every window id and name with a fresh shell in every pane, or when a finished agent exits leaving its window behind; `docs/tuios-backend.md` "Restart recovery" and "Finished-agent recovery" own both mechanisms.
 Before relaunching, attempt the product's own conversation resume for the recorded harness:
 
 ```sh
