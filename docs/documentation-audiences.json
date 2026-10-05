@@ -1485,6 +1485,10 @@
    "audience": "maintainer-verification"
   },
   {
+   "path": "packages/warroom/README.md",
+   "audience": "public-product"
+  },
+  {
    "path": "evidence/securo-omarchy-webapp.md",
    "audience": "maintainer-verification"
   },
