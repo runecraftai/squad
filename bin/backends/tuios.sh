@@ -19,9 +19,10 @@
 #
 # State is read from the daemon's own report (`list-agents --all` plus
 # `get-agent-state`), preserving source/confidence/harness/blocked_by
-# provenance. A window holding no attributable agent is `dead`, which is the
-# recovery-grade signal after a daemon restart; a classified blocking prompt is
-# `blocked`, never ordinary work.
+# provenance. A window whose agent is gone is `dead` - a restored agentless
+# `none` pane or a finished `done` pane whose foreground program exited - and
+# that is the recovery-grade signal; a classified blocking prompt is `blocked`,
+# never ordinary work.
 
 fm_backend_tuios_bin() {
   printf '%s' "${SQUAD_TUIOS_BIN:-tuios}"
@@ -722,10 +723,11 @@ fm_backend_tuios_target_exists() {  # <target> [expected-label]
 
 # --- recovery ----------------------------------------------------------
 # fm_backend_tuios_resume_agent: resume the conversation the daemon recorded for
-# the pane after a daemon restart, using the product's own resume verb (the
-# command comes from the harness manifest and the recorded conversation id, so
-# nothing caller-chosen is typed). Prints one verdict:
-#   live           a reporting agent still owns the pane; nothing to recover
+# the pane once its agent is gone (a daemon restart or a finished agent exit),
+# using the product's own resume verb (the command comes from the harness
+# manifest and the recorded conversation id, so nothing caller-chosen is typed).
+# Prints one verdict:
+#   live           a running agent still owns the pane; nothing to recover
 #   no_conversation the daemon recorded no conversation for the pane
 #   unsupported    the harness manifest has no [resume] command
 #   not_ready      the pane's shell is not at its prompt

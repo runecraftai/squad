@@ -79,7 +79,7 @@ A daemon restart destroys every running program. The restored session keeps its 
 A harness can exit while the daemon keeps its window: Pi prints its resume pointer, the process ends, and the pane falls back to a shell.
 The daemon then still reports `state=done` and still names the harness it recorded, but its `foreground` program is empty.
 That is the second recovery-grade agentless shape, and the exact rule is: `state=done`, empty `foreground`, and positive attribution that does not come from a foreground program (a non-empty `harness_id` or a non-`none` `confidence`).
-The endpoint classifies as `dead`, the product's own `resume-agent` verb becomes available because the daemon kept the conversation id, and the safe-relaunch path reuses the task's recorded window and worktree through the same duplicate-label guard as a post-restart relaunch.
+The endpoint classifies as `dead`, so the same resume-then-relaunch path as a restart applies, and the safe-relaunch step reuses the task's recorded window and worktree through the same duplicate-label guard as a post-restart relaunch.
 This shape is boot-independent: the daemon's own finished-and-foreground-less report is the proof, so it recovers even when the task metadata predates the `tuios_boot_id=` marker, and only the post-restart `state=none` shape still requires a changed boot id.
 Every other shape keeps its existing verdict and never authorizes a relaunch: any report with a detected `foreground` program is `alive`; a state other than `done` is `alive` when attributed, stays `dead` for the agentless `none`/empty state, and is `ambiguous` otherwise; a `done` report with no attribution is `ambiguous`; and an unreadable or contradictory inventory is `unreadable`.
 
