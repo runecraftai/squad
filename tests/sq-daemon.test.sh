@@ -1739,7 +1739,13 @@ test_discover_supervisor_backend_precedence() {
   out=$(SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p1 discover_supervisor_backend)
   [ "$out" = herdr ] || fail "HERDR_ENV=1 with HERDR_PANE_ID present should resolve to herdr: $out"
 
-  if out=$(SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_backend); then
+  out=$(SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 discover_supervisor_backend)
+  [ "$out" = tuios ] || fail "complete TUIOS markers should resolve to tuios: $out"
+  if out=$(SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID='' discover_supervisor_backend); then
+    fail "incomplete TUIOS markers should not claim a TUIOS target"
+  fi
+
+  if out=$(SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TUIOS_ENV='' TUIOS_SESSION='' TUIOS_PANE_ID='' discover_supervisor_backend); then
     fail "bare fallback (no override, no TMUX_PANE, no HERDR_ENV) should return non-zero"
   fi
   [ "$out" = tmux ] || fail "bare fallback should still print tmux: $out"
@@ -1761,7 +1767,13 @@ test_discover_supervisor_target_herdr() {
   out=$(SQUAD_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p9 HERDR_SESSION=iso1 discover_supervisor_target)
   [ "$out" = "iso1:w1:p9" ] || fail "herdr target should use an explicit HERDR_SESSION: $out"
 
-  if out=$(SQUAD_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+  out=$(SQUAD_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 discover_supervisor_target)
+  [ "$out" = "primary:window-1" ] || fail "TUIOS target should be composed from exact markers: $out"
+  if out=$(SQUAD_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID='' discover_supervisor_target); then
+    fail "incomplete TUIOS markers should not resolve a target"
+  fi
+
+  if out=$(SQUAD_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TUIOS_ENV='' TUIOS_SESSION='' TUIOS_PANE_ID='' discover_supervisor_target); then
     fail "bare fallback should return non-zero"
   fi
   [ "$out" = "Squad:0" ] || fail "bare fallback should still print Squad:0: $out"
@@ -1821,6 +1833,169 @@ test_pane_input_pending_herdr_dispatch() {
       || fail "pane_input_pending should defer on an unrecognized composer state"
   ) || fail "herdr pane_input_pending (future-state case) subshell failed"
   pass "pane_input_pending: dispatches through fm_backend_composer_state for backend=herdr"
+}
+
+test_pi_handoff_is_durable_idempotent_and_ack_gated() {
+  local dir state
+  dir=$(make_supercase pi-handoff-durable)
+  state="$dir/state"
+  mkdir -p "$state"
+  chmod 700 "$state"
+  mkdir -m 700 "$state/.pi-away-handoff"
+  (
+    fm_afk_pi_handoff_ready() { [ "$1" = "$state" ] && [ "$2" = primary:window-1 ]; }
+    export SQUAD_SUPERVISOR_BACKEND=tuios
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'typed envelope'; then
+      fail "new Pi handoff must remain pending until a consumption acknowledgement"
+    fi
+    local id mode
+    id=$(jq -r '.id' "$state/.pi-away-handoff/request.json") || exit 1
+    [ "$(jq -r '.message' "$state/.pi-away-handoff/request.json")" = 'typed envelope' ] \
+      || fail "durable Pi request did not retain its exact message"
+    mode=$(stat -c '%a' "$state/.pi-away-handoff/request.json" 2>/dev/null || stat -f '%Lp' "$state/.pi-away-handoff/request.json")
+    [ "$mode" = 600 ] || fail "Pi request permissions were not private (mode=$mode)"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'typed envelope'; then
+      fail "duplicate Pi request must not be reported delivered before acknowledgement"
+    fi
+    jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    fm_afk_pi_handoff_submit "$state" primary:window-1 'typed envelope' \
+      || fail "matching handled acknowledgement did not confirm delivery"
+    [ ! -e "$state/.pi-away-handoff/request.json" ] || fail "acknowledged request was not retired"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'typed envelope'; then
+      fail "a new identical escalation must receive a new request id, not reuse an old ack"
+    fi
+    local next_id
+    next_id=$(jq -r '.id' "$state/.pi-away-handoff/request.json")
+    [ "$next_id" != "$id" ] || fail "new identical escalation reused the prior request id"
+    jq -n --arg id "$next_id" '{id:$id,status:"queued"}' > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'changed envelope'; then
+      fail "a different message must not replace an unresolved Pi request"
+    fi
+    [ "$(jq -r '.message' "$state/.pi-away-handoff/request.json")" = 'typed envelope' ] \
+      || fail "unresolved Pi request was overwritten"
+    jq -n --arg id "$next_id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'changed envelope'; then
+      fail "replacement Pi request must await its own consumption acknowledgement"
+    fi
+    [ "$(jq -r '.message' "$state/.pi-away-handoff/request.json")" = 'changed envelope' ] \
+      || fail "acknowledged old request was not replaced with the current digest"
+  ) || fail "Pi handoff durability test subshell failed"
+  pass "Pi handoff: private durable request, no duplicate submission, exact consumption acknowledgement, and changed-batch preservation"
+}
+
+# The daemon must not trust a handoff record that cannot describe the delivery
+# state. Version 2 added idle/draft/prompts, so a version-1 (or field-less)
+# record is refused and the caller falls back to the fail-safe composer path.
+test_pi_handoff_ready_requires_v2_delivery_state() {
+  local dir state
+  dir=$(make_supercase pi-handoff-ready-schema)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  (
+    fm_backend_source() { return 0; }
+    fm_backend_tuios_target_ready() { return 0; }
+    fm_pid_identity() { printf 'identity'; }
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    local now
+    now=$(date '+%s%3N' 2>/dev/null)
+    case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
+    write_ready() {  # <version> [idle] [draft] [prompts]
+      jq -n --argjson version "$1" --argjson pid "$$" --argjson heartbeat "$now" \
+        --argjson idle "${2:-true}" --argjson draft "${3:-false}" --argjson prompts "${4:-0}" \
+        '{version:$version,pid:$pid,identity:"identity",session:"s",window:"w",idle:$idle,draft:$draft,prompts:$prompts,heartbeat:$heartbeat}' \
+        > "$state/.pi-away-handoff/ready.json"
+    }
+    write_ready 1
+    if fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null; then
+      fail "a version-1 ready record without delivery-state fields must be refused"
+    fi
+    write_ready 2 true false 0
+    fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null \
+      || fail "a version-2 ready record with the delivery-state fields must be accepted"
+  ) || fail "Pi handoff ready-schema test subshell failed"
+  pass "Pi handoff: the ready contract requires the v2 delivery-state schema"
+}
+
+test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present() {
+  command -v node >/dev/null 2>&1 || { echo "skip: node not found (primary Pi handoff test)"; return 0; }
+  local dir state
+  dir=$(make_supercase pi-handoff-delivery-guard)
+  state="$dir/state"
+  mkdir -p "$state"
+  chmod 700 "$state"
+  mkdir -m 700 "$state/.pi-away-handoff"
+  SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE=state TUIOS_ENV=1 TUIOS_SESSION=lab TUIOS_PANE_ID=window \
+    node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module - "$ROOT/.pi/extensions/sq-primary-away-handoff.ts" "$state" <<'NODE'
+import assert from "node:assert/strict";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const [extensionPath, state] = process.argv.slice(2);
+const handoff = `${state}/.pi-away-handoff`;
+mkdirSync(handoff, { recursive: true, mode: 0o700 });
+const ready = () => JSON.parse(readFileSync(`${handoff}/ready.json`, "utf8"));
+const requests = (id, message) => writeFileSync(`${handoff}/request.json`, JSON.stringify({ id, session: "lab", window: "window", message }));
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+requests("a".repeat(64), "digest");
+const listeners = new Map();
+const sent = [];
+const pi = { on: (name, handler) => listeners.set(name, handler), sendUserMessage: async (...args) => sent.push(args) };
+const ctx = { idle: false, editor: "draft", isIdle() { return this.idle; }, ui: { getEditorText: () => ctx.editor } };
+(await import(pathToFileURL(extensionPath).href)).default(pi);
+await listeners.get("session_start")({}, ctx);
+await wait(1100);
+assert.equal(sent.length, 0, "busy Pi must not receive a handoff");
+assert.equal(ready().version, 2, "the handoff extension must report its delivery-state schema");
+assert.equal(ready().idle, false, "ready state must report the live idle flag");
+ctx.idle = true;
+await wait(1100);
+assert.equal(sent.length, 0, "non-empty editor must defer the handoff");
+assert.equal(ready().draft, true, "ready state must report a present editor draft");
+ctx.editor = "";
+await wait(1100);
+assert.equal(sent.length, 1, "idle Pi with an empty editor should accept one handoff");
+assert.match(sent[0][0], /SQUAD_PI_AFK_HANDOFF:/);
+listeners.get("before_agent_start")({ prompt: sent[0][0] }, ctx);
+assert.equal(JSON.parse(readFileSync(`${handoff}/result.json`, "utf8")).status, "handled", "matching prompt start must acknowledge consumption");
+// Open modal for the second escalation: Pi's own prompt events are the only
+// positive signal, so an open prompt must defer delivery even while idle.
+requests("b".repeat(64), "modal digest");
+listeners.get("ui_prompt_start")({}, ctx);
+await wait(1100);
+assert.equal(sent.length, 1, "an open Pi prompt must defer the handoff");
+assert.equal(ready().prompts, 1, "ready state must report the open prompt count");
+listeners.get("ui_prompt_end")({}, ctx);
+await wait(1100);
+assert.equal(sent.length, 2, "closing the prompt must release the queued handoff");
+assert.match(sent[1][0], /SQUAD_PI_AFK_HANDOFF:/);
+listeners.get("session_shutdown")?.();
+NODE
+  local status=$?
+  [ "$status" -eq 0 ] || fail "primary Pi handoff: busy/draft/prompt guard did not defer safely"
+  [ "$status" -ne 0 ] || pass "primary Pi handoff: defers while Pi is busy, the editor has a draft, or a prompt is open"
+}
+
+test_inject_msg_tuios_pi_handoff_defers_until_native_ack() {
+  local dir state
+  dir=$(make_supercase inject-tuios-pi-handoff)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    fm_backend_target_exists() { [ "$1" = tuios ] && [ "$2" = "primary:window-1" ]; }
+    fm_afk_pi_handoff_ready() { [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ]; }
+    fm_afk_pi_handoff_submit() {
+      [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ] || fail "unexpected Pi handoff target"
+      [[ "$3" == *'SQUAD_OP: v1 away-supervisor:'* ]] || fail "handoff lost the canonical operational envelope"
+      return 1
+    }
+    pane_is_busy() { fail "native Pi handoff must queue safely without composer typing guards"; }
+    fm_backend_composer_state() { fail "native Pi handoff must not inspect or alter composer text"; }
+    if SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1 \
+      inject_msg "hello" "$state"; then
+      fail "unacknowledged native handoff must retain the escalation"
+    fi
+    :
+  ) || fail "Pi handoff deferral test subshell failed"
+  pass "inject_msg: Pi/TUIOS uses native follow-up delivery and retains the buffer until consumption is acknowledged"
 }
 
 test_inject_msg_herdr_busy_guard_defers() {
@@ -2024,6 +2199,10 @@ test_fm_send_exits_nonzero_on_initial_send_failure
 test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
+test_pi_handoff_is_durable_idempotent_and_ack_gated
+test_pi_handoff_ready_requires_v2_delivery_state
+test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present
+test_inject_msg_tuios_pi_handoff_defers_until_native_ack
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted

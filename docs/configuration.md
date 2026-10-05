@@ -102,12 +102,13 @@ Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.
 ## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
 
 The `/afk` sub-supervisor injects escalation digests into Squad's own pane independently of where new task endpoints are spawned.
-It currently supports only `tmux` and `herdr` supervisor panes.
-Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr` and `SQUAD_SUPERVISOR_TARGET=<target>` to override both axes explicitly; for herdr the target is `"<session>:<pane-id>"`.
-Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then falls back to `tmux`.
-That keeps a tmux pane nested inside herdr on the tmux transport, matching the runtime backend's innermost-first rule.
-Target detection uses `SQUAD_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the legacy `Squad:0` tmux fallback with a warning.
-Selecting any other supervisor backend, including `zellij`, `orca`, `cmux`, or `tuios`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+It supports `tmux`, `herdr`, and `tuios` supervisor panes.
+Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios` and `SQUAD_SUPERVISOR_TARGET=<target>` to override both axes explicitly; the herdr target is `"<session>:<pane-id>"` and the TUIOS target is `"<session>:<window-id>"`.
+Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TUIOS_ENV=1` with `TUIOS_SESSION` and `TUIOS_PANE_ID`, then falls back to `tmux`.
+That keeps a tmux pane nested inside herdr or TUIOS on the tmux transport, matching the runtime backend's innermost-first rule.
+Target detection uses `SQUAD_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then `"$TUIOS_SESSION:$TUIOS_PANE_ID"` under TUIOS, then the legacy `Squad:0` tmux fallback with a warning.
+A TUIOS supervisor pane never receives terminal typing: escalation digests go through the Pi-native handoff owned by `.pi/extensions/sq-primary-away-handoff.ts`, which queues a follow-up through Pi's own `sendUserMessage` and acknowledges consumption. See [`tuios-backend.md`](tuios-backend.md#away-mode-supervision).
+Selecting any other supervisor backend, including `zellij`, `orca`, and `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
@@ -690,8 +691,8 @@ SQUAD_SEND_SETTLE=1        # seconds sq-send waits after a successful text submi
 SQUAD_PI_DELIVERY_TIMEOUT=5 # seconds sq-send waits for native Pi delivery confirmation before failing
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before a completed turn without a correlated parent report is eligible for its one recovery repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
-SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback
-SQUAD_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected
+SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr/tuios only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID then TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID before tmux fallback
+SQUAD_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target, herdr <session>:<pane-id>, or tuios <session>:<window-id>, otherwise auto-detected
 SQUAD_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 SQUAD_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
 SQUAD_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables

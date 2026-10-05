@@ -38,8 +38,9 @@
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
 #
-# Supported backends: herdr, tmux. Others (zellij, orca, cmux, tuios) have no
-# verified non-visible-launch primitive here yet and refuse loudly.
+# Supported supervisor targets and non-visible daemon terminals: herdr, tmux,
+# and TUIOS. TUIOS uses an exact newly-created detached session and refuses all
+# cleanup unless its recorded identity still matches and it remains unattached.
 #
 # Test seam: SQUAD_AFK_LAUNCH_ENTRY overrides the command run in the created
 # terminal (default bin/sq-afk-start.sh), so a topology test can run a harmless
@@ -79,6 +80,8 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 
 # shellcheck source=bin/sq-backend.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-afk-tuios-launch.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-afk-tuios-launch.sh"
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
 # sq-afk-start.sh provides the daemon-lock liveness helpers and
@@ -186,8 +189,9 @@ fm_afk_launch_record_read() {
     fm_afk_launch_log "daemon terminal record is malformed; refusing to act on it"
     return 2
   fi
+  SQUAD_AFK_REC_EXTRA=$extra
   case "$SQUAD_AFK_REC_BACKEND" in
-    herdr) [ -n "$extra" ] ;;
+    herdr|tuios) [ -n "$extra" ] ;;
     tmux) : ;;
     none) [ "$SQUAD_AFK_REC_TARGET" = - ] && [ "$extra" = native ] ;;
     *) return 2 ;;
@@ -217,6 +221,12 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
       # target is the dedicated daemon session name - kill exactly it.
       tmux kill-session -t "$target" 2>/dev/null
       ;;
+    tuios)
+      fm_backend_source tuios || return 1
+      fm_afk_launch_tuios_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
+      local tuios_session=${target%%:*}
+      "$(fm_backend_tuios_bin)" kill-session "$tuios_session" >/dev/null 2>&1
+      ;;
     none)
       return 0
       ;;
@@ -230,6 +240,9 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
 fm_afk_launch_terminal_absent() {  # <backend> <target>
   local backend=$1 target=$2 session pane out result code
   case "$backend" in
+    tuios)
+      fm_afk_launch_tuios_session_absent "$target"
+      ;;
     herdr)
       session=${target%%:*}
       pane=${target#*:}
@@ -312,6 +325,9 @@ fm_afk_launch_close_recorded() {
 fm_afk_launch_terminal_alive() {  # <backend> <target>
   local backend=$1 target=$2 session pane
   case "$backend" in
+    tuios)
+      fm_afk_launch_tuios_owned "$target" "$SQUAD_AFK_REC_EXTRA"
+      ;;
     herdr)
       session=${target%%:*}
       pane=${target#*:}
@@ -561,8 +577,9 @@ fm_afk_launch_start() {
     case "$commander_backend" in
       herdr) fm_afk_launch_create_herdr "$commander_target" "$commander_backend"; result=$? ;;
       tmux)  fm_afk_launch_create_tmux "$commander_target" "$commander_backend"; result=$? ;;
+      tuios) fm_afk_launch_create_tuios "$commander_target" "$commander_backend"; result=$? ;;
       *)
-        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux)"
+        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios)"
         result=1
         ;;
     esac
@@ -626,6 +643,12 @@ fm_afk_launch_stop() {
     fm_afk_launch_log "malformed daemon terminal record; refusing to stop away mode"
     return 1
   fi
+  if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = tuios ] \
+    && ! fm_afk_launch_terminal_alive tuios "$SQUAD_AFK_REC_TARGET" \
+    && ! fm_afk_launch_terminal_absent tuios "$SQUAD_AFK_REC_TARGET"; then
+    fm_afk_launch_log "TUIOS daemon session is attached or unreadable; preserving away mode and refusing session cleanup"
+    return 1
+  fi
   # (1) SIGTERM the daemon so its cleanup trap flushes buffered escalations
   # WHILE state/.afk is still present (the exit-ordering fix: clearing .afk
   # first would make that flush a no-op via inject_msg's presence gate).
@@ -640,7 +663,9 @@ fm_afk_launch_stop() {
       fm_afk_launch_log "failed to signal away-mode daemon pid=$pid"
       result=1
     fi
-    for _ in $(seq 1 40); do
+    # The sentry may be inside its configured poll sleep when the daemon is
+    # stopped, so allow one default poll interval for its signal trap to run.
+    for _ in $(seq 1 100); do
       fm_pid_alive "$pid" || break
       sleep 0.25
     done

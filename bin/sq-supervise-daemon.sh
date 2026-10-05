@@ -164,6 +164,10 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 # shellcheck source=bin/sq-operational-input.sh
 . "$SQUAD_DAEMON_DIR/sq-operational-input.sh"
 
+# Durable native Pi follow-up handoff for a TUIOS-hosted primary.
+# shellcheck source=bin/sq-afk-pi-handoff.sh
+. "$SQUAD_DAEMON_DIR/sq-afk-pi-handoff.sh"
+
 # Shared wake classifier (last_status_line, status_is_commander_relevant,
 # window_to_task, scan_commander_relevant_statuses). The SAME library backs the
 # always-on sentry's triage, so the commander-relevant verb set and the
@@ -185,13 +189,11 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# cmux, and tuios are real backends elsewhere in Squad (bin/sq-backend.sh) but
-# this daemon has no verified composer/busy primitives wired up for them yet - see
-# docs/herdr-backend.md and AGENTS.md section 4's
-# harness-verification discipline. Selecting one refuses loudly at startup
-# instead of silently running tmux primitives against a pane that is not a tmux
-# pane.
-SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr"
+# cmux and orca remain unsupported supervisor targets. TUIOS uses its native
+# queue and Pi's sendUserMessage handoff when the primary extension is available;
+# otherwise it must pass the same explicit busy/composer/submit guards as other
+# backends. See docs/tuios-backend.md and the away-mode verification evidence.
+SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr tuios"
 INJECT_SKIP_DEFAULT="heartbeat"
 STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
@@ -1152,6 +1154,13 @@ inject_msg() {  # <message> [state]
   # discovery), matching this function's pre-existing default assumption.
   backend="${SQUAD_SUPERVISOR_BACKEND:-tmux}"
   fm_backend_target_exists "$backend" "$target" || return 1
+  # Pi's native follow-up queue is the only safe route for its TUIOS composer:
+  # it preserves pending human input and queues without terminal typing. Its
+  # extension binds the handoff to the exact target and acknowledges consumption.
+  if [ "$backend" = tuios ] && fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
+    fm_afk_pi_handoff_submit "$state" "$target" "$msg"
+    return $?
+  fi
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
     log "inject deferred: supervisor pane busy (agent mid-turn)"
@@ -1362,12 +1371,11 @@ fm_super_main() {
   echo "$$" > "$PIDFILE"
   fm_pid_identity "${BASHPID:-$$}" > "$LOCK/pid-identity" 2>/dev/null || true
 
-  # --- auto-discover the supervisor BACKEND (tmux vs herdr) first -----------
-  # Priority: SQUAD_SUPERVISOR_BACKEND override > $TMUX_PANE (tmux) > $HERDR_ENV=1
-  # (herdr) > tmux fallback. Resolved before the target below, since target
-  # discovery composes a herdr "<session>:<pane-id>" string using the same
-  # $HERDR_PANE_ID/$HERDR_SESSION markers this checks. Exporting the result
-  # into SQUAD_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending
+  # --- auto-discover the supervisor BACKEND first ---------------------------
+  # Priority: explicit override > TMUX_PANE > HERDR_ENV/HERDR_PANE_ID >
+  # TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID > tmux fallback. Resolved before target discovery,
+  # which composes backend-specific targets from the corresponding environment.
+  # Exporting the result into SQUAD_SUPERVISOR_BACKEND makes injection and state probes
   # (which read that env var) dispatch through the right backend without an
   # extra global thread-through.
   local discovered_backend backend_source
@@ -1377,6 +1385,8 @@ fm_super_main() {
       backend_source="TMUX_PANE"
     elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
       backend_source="HERDR_ENV"
+    elif [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+      backend_source="TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)"
     else
       backend_source="FALLBACK($SQUAD_SUPERVISOR_BACKEND_DEFAULT)"
     fi
@@ -1385,25 +1395,20 @@ fm_super_main() {
   SQUAD_SUPERVISOR_BACKEND="$discovered_backend"
   local BACKEND="$SQUAD_SUPERVISOR_BACKEND"
 
-  # --- refuse an unsupported supervisor backend loudly, before ever trying a
-  # tmux/herdr-specific call against it (zellij, orca, cmux, and tuios have no verified
-  # composer/busy primitives wired up for this daemon yet - AGENTS.md section 4
-  # harness-verification discipline). This is the clear refusal the task calls
-  # for, instead of a confusing "does not resolve to a tmux pane" error.
+  # --- refuse an unsupported supervisor backend loudly before dispatch. TUIOS
+  # uses its native Pi handoff when validated; otherwise unknown composer state
+  # remains fail-safe and non-Pi TUIOS delivery is not attempted.
   if ! fm_backend_list_contains "$SQUAD_SUPERVISOR_SUPPORTED_BACKENDS" "$BACKEND"; then
-    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
+    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
     log "startup failed: unsupported supervisor backend '$BACKEND' (source=$backend_source)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
     exit 1
   fi
 
-  # --- auto-discover the supervisor target (the pane running Squad) -----
-  # Priority: SQUAD_SUPERVISOR_TARGET override > $TMUX_PANE (tmux; inherited from
-  # the pane that launched the daemon, normally Squad's own) >
-  # $HERDR_PANE_ID (herdr, composed into "<session>:<pane-id>") > Squad:0
-  # fallback. Exporting the result into SQUAD_SUPERVISOR_TARGET makes inject_msg
-  # (which reads that env var) use the discovered pane without an extra global.
+  # --- auto-discover the supervisor target (the pane running Squad) --------
+  # Priority and exact TUIOS marker contract live in
+  # bin/sq-supervisor-target-lib.sh. Export the result for all later probes.
   local discovered target_source
   target_source="SQUAD_SUPERVISOR_TARGET"
   if [ -z "${SQUAD_SUPERVISOR_TARGET:-}" ]; then
@@ -1411,6 +1416,8 @@ fm_super_main() {
       target_source="TMUX_PANE"
     elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
       target_source="HERDR_ENV(HERDR_PANE_ID)"
+    elif [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+      target_source="TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)"
     else
       target_source="FALLBACK(Squad:0)"
     fi
@@ -1418,7 +1425,7 @@ fm_super_main() {
   if discovered=$(discover_supervisor_target); then
     : # resolved cleanly
   else
-    echo "warn: could not auto-discover supervisor pane (no SQUAD_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '$discovered' — verify this is Squad's pane" >&2
+    echo "warn: could not auto-discover supervisor pane (no SQUAD_SUPERVISOR_TARGET or complete backend target markers); falling back to '$discovered' — verify this is Squad's pane" >&2
   fi
   SQUAD_SUPERVISOR_TARGET="$discovered"
   local TARGET="$SQUAD_SUPERVISOR_TARGET"
