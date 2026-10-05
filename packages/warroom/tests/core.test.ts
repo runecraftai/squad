@@ -74,6 +74,8 @@ describe("Warroom canonical core", () => {
 		const w = seeded();
 		expect(() => w.command({ type: "approval.record", initiativeId: "i1", kind: "merge-permission", revisionId: "c1", decision: "approved", evidenceId: "missing" })).toThrow("does not exist");
 		expect(() => w.command({ type: "approval.record", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved", evidenceId: "missing" })).toThrow("does not exist");
+		expect(() => w.command({ type: "approval.record", initiativeId: "i1", kind: "merge-permission", revisionId: "c1", decision: "approved", evidenceId: "" })).toThrow("does not exist");
+		expect(w.state("i1").approvals).toHaveLength(0);
 		w.command({ type: "approval.record", id: "mp", initiativeId: "i1", kind: "merge-permission", revisionId: "c1", decision: "approved", evidenceId: "v1" });
 		const persisted = w.db.query("SELECT evidence_revision_id FROM approvals WHERE id='mp'").get() as { evidence_revision_id: string | null };
 		expect(persisted.evidence_revision_id).toBe("v1");

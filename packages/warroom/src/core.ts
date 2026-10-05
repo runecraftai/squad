@@ -87,7 +87,7 @@ export class Warroom {
 				if (!command.evidenceId) throw new Error("review acceptance requires validation evidence");
 				const evidence = state.evidence.find((item) => item.id === command.evidenceId);
 				if (!evidence || evidence.stale || evidence.revisionId !== revision.id || evidence.result !== "passed") throw new Error("validation evidence does not cover this revision");
-			} else if (command.evidenceId && !state.evidence.some((item) => item.id === command.evidenceId)) {
+			} else if (command.evidenceId != null && !state.evidence.some((item) => item.id === command.evidenceId)) {
 				throw new Error("validation evidence does not exist");
 			}
 		}
@@ -108,7 +108,7 @@ export class Warroom {
 			break;
 		}
 		case "decision.record": this.db.query("INSERT INTO decisions(id,initiative_id,source_revision_id,statement,rationale,selected_alternatives,decided_by,decided_at) VALUES(?,?,?,?,?,?,?,?)").run(id, command.initiativeId, command.revisionId, command.statement, command.rationale, JSON.stringify(command.selectedAlternatives ?? []), this.actor.id, now); break;
-		case "approval.record": this.db.query("INSERT INTO approvals(id,initiative_id,kind,subject_revision_id,subject_digest,evidence_revision_id,decision,actor,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(id, command.initiativeId, command.kind, command.revisionId, digestContent(this.revisionContent(command.revisionId)), command.evidenceId ?? null, command.decision, this.actor.id, now); break;
+		case "approval.record": this.db.query("INSERT INTO approvals(id,initiative_id,kind,subject_revision_id,subject_digest,evidence_revision_id,decision,actor,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(id, command.initiativeId, command.kind, command.revisionId, digestContent(this.revisionContent(command.revisionId)), command.evidenceId || null, command.decision, this.actor.id, now); break;
 		case "comment.add": this.db.query("INSERT INTO comments(id,initiative_id,revision_id,body,state,created_by,created_at) VALUES(?,?,?,?,'open',?,?)").run(id, command.initiativeId, command.revisionId, command.body, this.actor.id, now); break;
 		case "validation.record": this.db.query("INSERT INTO validation_evidence(id,initiative_id,revision_id,digest,provider,result,captured_at,stale) VALUES(?,?,?,?,?,?,?,0)").run(id, command.initiativeId, command.revisionId, digestContent(this.revisionContent(command.revisionId)), command.provider, command.result, now); break;
 		}
