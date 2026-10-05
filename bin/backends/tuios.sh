@@ -892,16 +892,16 @@ fm_backend_tuios_create_task() {  # <session> <task-label> <cwd> -> opaque windo
 }
 
 # fm_backend_tuios_reuse_restored_task: reuse the task's recorded window when
-# its endpoint is recovery-grade agentless. Two shapes qualify: a restored pane
-# after a daemon restart (the recorded boot id differs and the pane reports
-# state=none with no attribution), and a finished agent whose program has
-# exited (the daemon's own finished-and-foreground-less report, which needs no
-# boot evidence because the same daemon generation still owns the window).
+# its endpoint is recovery-grade agentless. Two shapes qualify. A finished agent
+# whose program has exited is proven by the daemon's own
+# finished-and-foreground-less report alone, so it needs no boot evidence and
+# works even when the task metadata predates the `tuios_boot_id=` marker. A
+# restored pane after a daemon restart needs a changed boot id plus state=none
+# with no attribution, because only the restart explains its fresh shell.
 # Anything else - a detected foreground program, a live or ambiguous state, an
 # unreadable or contradictory report - keeps the duplicate-label refusal.
 fm_backend_tuios_reuse_restored_task() {  # <session> <task-label> <recorded-boot-id>
   local session=$1 label=$2 recorded_boot=$3 current_boot id report state
-  [ -n "$recorded_boot" ] || return 1
   id=$(fm_backend_tuios_same_label_window "$session" "$label") || return 1
   [ -n "$id" ] || return 1
   report=$(fm_backend_tuios_agent_report_json "$session:$id") || return 1
@@ -911,6 +911,7 @@ fm_backend_tuios_reuse_restored_task() {  # <session> <task-label> <recorded-boo
     printf '%s' "$id"
     return 0
   fi
+  [ -n "$recorded_boot" ] || return 1
   current_boot=$(fm_backend_tuios_boot_id "$session") || return 1
   [ -n "$current_boot" ] && [ "$current_boot" != "$recorded_boot" ] || return 1
   state=$(printf '%s' "$report" | jq -r '.state')

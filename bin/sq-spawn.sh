@@ -1626,6 +1626,7 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
 # enough to authorize a second agent.
 prepare_relaunch_execution() {
   local meta="$STATE/$ID.meta" old_backend old_target endpoint_state previous
+  RELAUNCH_EXISTING_META=
   if [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
     # A missing metadata record is the recovery signal used after a process
     # died between attempts. There is no recorded endpoint to probe, so reuse
@@ -1649,6 +1650,7 @@ prepare_relaunch_execution() {
     echo "error: existing metadata for $ID is not a regular file; refusing relaunch" >&2
     return 1
   }
+  RELAUNCH_EXISTING_META=1
   old_backend=$(fm_backend_of_meta "$meta")
   old_target=$(fm_backend_target_of_meta "$meta")
   # Recorded daemon-boot evidence and worktree for a TUIOS relaunch (see the
@@ -1895,11 +1897,12 @@ EOF
     # Relaunch of an agentless recorded window: a daemon restart restores every
     # session with its names and window ids but a fresh shell in every pane, and
     # a finished agent can exit leaving its window behind. Reuse the recorded
-    # window only on the adapter's own recovery-grade evidence - a changed boot
-    # id plus a confirmed agentless pane, or a finished, foreground-less agent -
-    # and otherwise keep the normal duplicate-label refusal.
-    if [ -n "${RELAUNCH_TUIOS_BOOT_ID:-}" ]; then
-      TUIOS_WINDOW_ID=$(fm_backend_tuios_reuse_restored_task "$TUIOS_SES" "$W" "$RELAUNCH_TUIOS_BOOT_ID") || TUIOS_WINDOW_ID=
+    # window only on a relaunch of existing metadata and the adapter's own
+    # recovery-grade evidence - a finished, foreground-less report needs no
+    # boot id, while a restored pane needs a changed boot id plus a confirmed
+    # agentless pane - and otherwise keep the normal duplicate-label refusal.
+    if [ -n "${RELAUNCH_EXISTING_META:-}" ]; then
+      TUIOS_WINDOW_ID=$(fm_backend_tuios_reuse_restored_task "$TUIOS_SES" "$W" "${RELAUNCH_TUIOS_BOOT_ID:-}") || TUIOS_WINDOW_ID=
     fi
     if [ -n "$TUIOS_WINDOW_ID" ]; then
       echo "tuios: reusing the recorded agentless task window $TUIOS_SES:$TUIOS_WINDOW_ID" >&2

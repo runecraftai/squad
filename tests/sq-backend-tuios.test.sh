@@ -524,7 +524,7 @@ if fm_backend_tuios_reuse_restored_task owned sq-task-1 boot-a >/dev/null 2>&1; 
   fail 'an unchanged daemon boot id must never authorize reuse'
 fi
 if fm_backend_tuios_reuse_restored_task owned sq-task-1 '' >/dev/null 2>&1; then
-  fail 'no recorded boot id must never authorize reuse'
+  fail 'no recorded boot id must never authorize a post-restart reuse'
 fi
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
@@ -545,6 +545,10 @@ SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground
 export SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_backend_tuios_reuse_restored_task owned sq-task-1 boot-a)" = 'w-opaque_7' ] \
   || fail 'a finished, foreground-less agent must be reusable on the same daemon boot id'
+# The finished shape is boot-independent: an empty recorded boot id still reuses
+# the recorded window, so metadata that predates the boot marker recovers too.
+[ "$(fm_backend_tuios_reuse_restored_task owned sq-task-1 '')" = 'w-opaque_7' ] \
+  || fail 'a finished, foreground-less agent must be reusable without recorded boot evidence'
 # Every live or ambiguous shape still refuses, even after a boot change.
 assert_not_reusable() {  # <agents-json> <message>
   SQUAD_TUIOS_FAKE_AGENTS=$1

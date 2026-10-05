@@ -199,21 +199,22 @@ assert_tuios_abort_released_workspace() {
   [ -z "$(cat "$CASE_DIR/workspace-name" 2>/dev/null || true)" ] || fail 'an aborted TUIOS spawn must release its task workspace name'
 }
 
-# seed_relaunch_meta <id>: publish a recorded TUIOS task endpoint so the next
-# spawn takes the relaunch path instead of creating a fresh task window.
+# seed_relaunch_meta <id> [boot-id]: publish a recorded TUIOS task endpoint so
+# the next spawn takes the relaunch path. An empty boot id models metadata that
+# predates the `tuios_boot_id=` marker.
 seed_relaunch_meta() {
-  local id=$1
-  cat > "$HOME_DIR/state/$id.meta" <<EOF
-window=owned:$WINDOW_ID
-endpoint_task_id=$id
-worktree=$WT_DIR
-project=$PROJ_DIR
-backend=tuios
-tuios_session=owned
-tuios_window_id=$WINDOW_ID
-tuios_workspace_id=4
-tuios_boot_id=boot-test
-EOF
+  local id=$1 boot=${2-boot-test}
+  {
+    printf 'window=owned:%s\n' "$WINDOW_ID"
+    printf 'endpoint_task_id=%s\n' "$id"
+    printf 'worktree=%s\n' "$WT_DIR"
+    printf 'project=%s\n' "$PROJ_DIR"
+    printf 'backend=tuios\n'
+    printf 'tuios_session=owned\n'
+    printf 'tuios_window_id=%s\n' "$WINDOW_ID"
+    printf 'tuios_workspace_id=4\n'
+    [ -z "$boot" ] || printf 'tuios_boot_id=%s\n' "$boot"
+  } > "$HOME_DIR/state/$id.meta"
   printf '4\n' > "$CASE_DIR/workspace"
   : > "$CASE_DIR/window"
 }
@@ -365,11 +366,38 @@ test_tuios_relaunch_reuses_finished_agentless_window() {
   pass 'a TUIOS relaunch reuses the recorded window for a finished, foreground-less agent'
 }
 
+# Metadata that predates the tuios_boot_id= marker still recovers: the finished
+# agentless shape is proven by the daemon's own report, not by boot evidence.
+test_tuios_relaunch_reuses_finished_agentless_window_without_boot_id() {
+  local rec id label out status
+  id=tuios-relaunch-legacy
+  label="sq-$id"
+  rec=$(make_case tuios-relaunch-legacy "$id")
+  read_case "$rec"
+
+  seed_relaunch_meta "$id" ''
+  SQUAD_FAKE_TUIOS_AGENTS_JSON=$(jq -cn --arg id "$WINDOW_ID" '{agents:[{window_id:$id,state:"done",foreground:"",harness_id:"pi",confidence:"certain"}],success:true}')
+  export SQUAD_FAKE_TUIOS_AGENTS_JSON
+  out=$(run_spawn "$id" "$label" 0)
+  status=$?
+  unset SQUAD_FAKE_TUIOS_AGENTS_JSON
+  expect_code 0 "$status" "a boot-marker-less finished agent must relaunch: $out"
+  assert_contains "$out" "reusing the recorded agentless task window owned:$WINDOW_ID" \
+    'the relaunch must reuse the recorded window without boot evidence'
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" 'the relaunch must keep the recorded worktree'
+  assert_grep 'tuios_boot_id=boot-test' "$HOME_DIR/state/$id.meta" 'the relaunch must refresh the recorded boot id'
+  if grep -q 'new-window' "$CASE_DIR/tuios.log"; then
+    fail 'a boot-marker-less relaunch must reuse the recorded window, not create a new one'
+  fi
+  pass 'a TUIOS relaunch recovers a finished, foreground-less agent without recorded boot evidence'
+}
+
 test_tuios_spawn_leases_and_records_worktree
 test_tuios_spawn_returns_lease_on_failure
 test_tuios_spawn_returns_lease_on_send_failure
 test_tuios_spawn_returns_lease_before_metadata
 test_tuios_relaunch_refuses_live_endpoint
 test_tuios_relaunch_reuses_finished_agentless_window
+test_tuios_relaunch_reuses_finished_agentless_window_without_boot_id
 
 echo "# all sq-spawn-tuios-worktree tests passed"
