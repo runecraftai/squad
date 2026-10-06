@@ -46,48 +46,49 @@ frontmatter_field() {
   local file="$1" field="$2"
   local frontmatter
   frontmatter=$(sed -n '/^---$/,/^---$/p' "$file" 2>/dev/null)
-  
-  local line
-  line=$(echo "$frontmatter" | grep -m1 "^${field}:")
-  if [ -z "$line" ]; then
+
+  local matched
+  matched=$(printf '%s\n' "$frontmatter" | grep -n -m1 "^${field}:") || true
+  if [ -z "$matched" ]; then
     # Fall back to searching for a nested field (e.g. source: under metadata:).
-    line=$(echo "$frontmatter" | grep -m1 "${field}:")
-    if [ -z "$line" ]; then
+    matched=$(printf '%s\n' "$frontmatter" | grep -n -m1 "${field}:") || true
+    if [ -z "$matched" ]; then
       echo ""
       return
     fi
   fi
-  
+
+  local line_no line
+  line_no="${matched%%:*}"
+  line="${matched#*:}"
+
   local value
-  value=$(echo "$line" | sed "s/^.*${field}:[[:space:]]*//" | tr -d '"')
-  
+  value=$(printf '%s\n' "$line" | sed "s/^.*${field}:[[:space:]]*//" | tr -d '"')
+
   # Check for YAML block scalar indicators.
   if [ "$value" = ">-" ] || [ "$value" = ">" ] || [ "$value" = "|" ] || [ "$value" = "|-" ]; then
-    # Read subsequent indented lines to collect the block scalar content.
-    local collecting=false
-    local block_content=""
+    # Collect indented lines after the field's own line, folding them to a
+    # single space-joined string; a blank line within the block is skipped,
+    # and the first non-indented, non-blank line ends the block.
+    local block_content="" block_line trimmed
     while IFS= read -r block_line; do
-      if [ "$collecting" = false ]; then
-        # First indented line after block scalar marker.
-        if echo "$block_line" | grep -q '^ '; then
-          collecting=true
-          block_content="${block_line##*[![:space:]]}"
+      if printf '%s\n' "$block_line" | grep -q '^[[:space:]]*$'; then
+        continue
+      fi
+      if printf '%s\n' "$block_line" | grep -q '^[[:space:]]'; then
+        trimmed=$(printf '%s' "$block_line" | sed 's/^[[:space:]]*//')
+        if [ -z "$block_content" ]; then
+          block_content="$trimmed"
+        else
+          block_content="$block_content $trimmed"
         fi
       else
-        # Continue collecting while line is indented or empty.
-        if echo "$block_line" | grep -q '^ '; then
-          if [ -n "$block_line" ]; then
-            block_content="$block_content ${block_line##*[![:space:]]}"
-          fi
-        else
-          # Non-indented line ends the block scalar.
-          break
-        fi
+        break
       fi
-    done <<< "$frontmatter"
-    
+    done < <(printf '%s\n' "$frontmatter" | tail -n "+$((line_no + 1))")
+
     if [ -n "$block_content" ]; then
-      echo "$block_content" | tr -d '"'
+      printf '%s\n' "$block_content" | tr -d '"'
     else
       echo ""
     fi
