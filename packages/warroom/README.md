@@ -21,7 +21,7 @@ Slice 2 adds the planning surface on top of the slice 1 core, with no second sou
 
 ## Planning surface hosting (slice 2)
 
-`src/server.ts` hosts the planning surface as a local HTTP server (`Bun.serve`, loopback `127.0.0.1` only) serving a single self-contained static page (`src/web/index.html`, no external scripts, fonts, or stylesheets — the forge-table visual direction from the discovery prototype) plus a small JSON API (`GET /api/initiatives`, `GET /api/initiative/:id`, `GET /api/compare/:initiativeId?a=&b=`, `POST /api/command`) that is a thin wrapper around `Warroom`: it performs no validation of its own beyond what the core already enforces. `createApp()` in `src/server.ts` builds the request handler without binding a socket, which is what the HTTP tests in `tests/server.test.ts` exercise directly.
+`src/server.ts` hosts the planning surface as a local HTTP server (`Bun.serve`, loopback `127.0.0.1` only) serving a single self-contained static page (`src/web/index.html`, no external scripts, fonts, or stylesheets — the forge-table visual direction from the discovery prototype) plus a small JSON API (`GET /api/initiatives`, `GET /api/initiative/:id`, `GET /api/compare/:initiativeId?a=&b=`, `POST /api/command`) that is a thin wrapper around `Warroom`: it performs no domain validation of its own beyond what the core already enforces, and it rejects `POST /api/command` requests whose content type is not `application/json` and whose `Origin`, when present, is not loopback, so a cross-site page cannot drive state changes. `createApp()` in `src/server.ts` builds the request handler without binding a socket, which is what the HTTP tests in `tests/server.test.ts` exercise directly.
 
 Run it with:
 

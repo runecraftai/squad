@@ -329,14 +329,18 @@
 		} catch (error) { alert(error.message); }
 	}
 
-	document.getElementById("initiative-select").addEventListener("change", (event) => loadInitiative(event.target.value));
+	document.getElementById("initiative-select").addEventListener("change", (event) => {
+		loadInitiative(event.target.value).catch((error) => alert(error.message));
+	});
 
 	document.getElementById("create-initiative").addEventListener("click", async () => {
 		const title = document.getElementById("new-initiative-title").value.trim();
 		if (!title) return;
-		await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "initiative.create", title }) });
-		document.getElementById("new-initiative-title").value = "";
-		await loadInitiatives();
+		try {
+			await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "initiative.create", title }) });
+			document.getElementById("new-initiative-title").value = "";
+			await loadInitiatives();
+		} catch (error) { alert(error.message); }
 	});
 
 	document.getElementById("create-revision").addEventListener("click", async () => {
@@ -383,7 +387,7 @@
 		document.querySelector(`.panel[data-panel="${tab.dataset.tab}"]`).classList.add("active");
 	}));
 
-	loadInitiatives();
+	loadInitiatives().catch((error) => alert(error.message));
 </script>
 </body>
 </html>

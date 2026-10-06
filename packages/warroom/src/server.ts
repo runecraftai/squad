@@ -17,6 +17,15 @@ function decodePathSegment(pathname: string, prefix: string): string | null {
 	}
 }
 
+function isLoopbackOrigin(origin: string): boolean {
+	try {
+		const { hostname } = new URL(origin);
+		return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
+	} catch {
+		return false;
+	}
+}
+
 export interface ServerOptions {
 	dbPath?: string;
 	port?: number;
@@ -66,6 +75,14 @@ export function createApp(options: ServerOptions = {}): { warroom: Warroom; fetc
 		}
 
 		if (request.method === "POST" && url.pathname === "/api/command") {
+			const contentType = request.headers.get("content-type") ?? "";
+			if (!/^application\/json\b/i.test(contentType)) {
+				return json({ error: "content-type must be application/json" }, 415);
+			}
+			const origin = request.headers.get("origin");
+			if (origin !== null && !isLoopbackOrigin(origin)) {
+				return json({ error: "cross-origin requests are not allowed" }, 403);
+			}
 			return request.json().then(
 				(command: Command) => {
 					try {

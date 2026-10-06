@@ -95,4 +95,18 @@ describe("planning surface HTTP API", () => {
 		const response = await get(app, "api/initiative/missing");
 		expect(response.status).toBe(404);
 	});
+
+	test("the command endpoint rejects non-JSON content types so cross-site simple requests cannot mutate state", async () => {
+		const app = createApp();
+		const response = await app.fetch(new Request("http://local/api/command", { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
+		expect(response.status).toBe(415);
+		expect(await (await get(app, "api/initiatives")).json()).toEqual([]);
+	});
+
+	test("the command endpoint rejects cross-origin requests", async () => {
+		const app = createApp();
+		const response = await app.fetch(new Request("http://local/api/command", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.example" }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
+		expect(response.status).toBe(403);
+		expect(await (await get(app, "api/initiatives")).json()).toEqual([]);
+	});
 });
