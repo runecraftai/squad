@@ -129,7 +129,7 @@ export function validateRegistry(v) {
 // CLI: node grimoire-registry-validate.mjs <registry.json>
 // Exits 0 and prints "valid" if the file passes; exits 1 and prints the
 // thrown error message otherwise.
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === (await import("node:url")).pathToFileURL(process.argv[1]).href) {
   const fs = await import("node:fs");
   const path = process.argv[2];
   if (!path) {

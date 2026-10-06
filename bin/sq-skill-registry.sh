@@ -198,12 +198,13 @@ grimoire_sanitize_id() {
 # every C0 control character (and DEL) so a skill's text can never emit JSON
 # that a strict parser rejects.
 grimoire_json_escape() {
-  local s="$1" out="" ch i hex
+  local s="$1" out="" ch i hex backslash
+  backslash=$'\\'
   local len=${#s}
   for ((i = 0; i < len; i++)); do
     ch="${s:i:1}"
     case "$ch" in
-      '\') out+='\\' ;;
+      "$backslash") out+="$backslash$backslash" ;;
       '"') out+='\"' ;;
       $'\b') out+='\b' ;;
       $'\t') out+='\t' ;;

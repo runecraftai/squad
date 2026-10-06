@@ -25,6 +25,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export function digestFiles(files) {
   const hash = createHash("sha256");
@@ -36,7 +37,7 @@ export function digestFiles(files) {
   return hash.digest("hex");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const skillDir = process.argv[2];
   const relPaths = process.argv.slice(3);
   if (!skillDir || relPaths.length === 0) {
