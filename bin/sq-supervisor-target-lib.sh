@@ -17,14 +17,14 @@
 # Default supervisor pane target/backend when nothing is configured or detected.
 # "Squad:0" is a tmux session:window name, so the bare fallback (nothing
 # configured, nothing detected) assumes tmux - matching the daemon's pre-herdr
-# behavior byte-for-byte when run outside both tmux and herdr.
+# behavior byte-for-byte when run outside tmux, herdr, and TUIOS.
 SQUAD_SUPERVISOR_TARGET_DEFAULT="Squad:0"
 SQUAD_SUPERVISOR_BACKEND_DEFAULT="tmux"
 
 # discover_supervisor_target: resolve the pane running Squad. Priority:
-#   1. SQUAD_SUPERVISOR_TARGET env (explicit override) - may be a tmux target or a
-#      herdr "<session>:<pane-id>" target (paired with discover_supervisor_backend
-#      to know which).
+#   1. SQUAD_SUPERVISOR_TARGET env (explicit override) - may be a tmux target, a
+#      herdr "<session>:<pane-id>" target, or a TUIOS "<session>:<window-id>"
+#      target (paired with discover_supervisor_backend to know which).
 #   2. $TMUX_PANE - tmux sets this in every pane's environment; inherited by a
 #      process launched from Squad's own pane.
 #   3. $HERDR_ENV=1 + $HERDR_PANE_ID - herdr injects both into every process it

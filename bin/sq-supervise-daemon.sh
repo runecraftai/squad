@@ -73,7 +73,7 @@
 #                                   "$TUIOS_SESSION:$TUIOS_PANE_ID" under tuios -
 #                                   then Squad:0 fallback). Accepts a tmux target,
 #                                   a herdr "<session>:<pane-id>" target, or a
-#                                   tuios "<session>:<pane-id>" target; which one
+#                                   tuios "<session>:<window-id>" target; which one
 #                                   it's read as is decided by
 #                                   SQUAD_SUPERVISOR_BACKEND (below), independently.
 #          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr|tuios;

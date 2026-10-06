@@ -651,6 +651,7 @@ SQUAD_SEND_RETRIES=3       # tentativas de retry de Enter do sq-send no submit d
 SQUAD_SEND_SLEEP=0.4       # segundos entre checks de submit do backend pelo sq-send
 SQUAD_SEND_SETTLE=1        # segundos que sq-send espera após uma submissão de texto bem-sucedida; 0 desativa
 SQUAD_PI_DELIVERY_TIMEOUT=5 # segundos que sq-send espera pela confirmação de entrega nativa do Pi antes de falhar
+SQUAD_PI_HANDOFF_STALE_SECS=30 # segundos que um registro de handoff do Pi em TUIOS pode permanecer em submitting antes que um envio abandonado possa ser republicado; apenas quando a extensão viva relata nenhum envio em andamento
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # segundos após entrega de solicitação marcada antes que um turno concluído sem um relatório pai correlacionado seja elegível para sua única retentativa de repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; apenas tmux/herdr/tuios, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID depois TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID antes de fallback tmux

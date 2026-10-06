@@ -92,9 +92,9 @@ The operational prefix travels with the message text; it does not rely on harnes
 
 ## Busy-guard and composer guard
 
-The daemon never injects into an in-use pane. Two checks run before every
-injection, dispatched through `bin/sq-backend.sh` for the supervisor's own
-backend (tmux or herdr; see "Auto-discovered supervisor pane" below):
+The daemon never injects into an in-use pane.
+A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below and the type-once submit model that follows govern tmux, herdr, and the TUIOS fallback path rather than that native route.
+Two checks run before every such injection, dispatched through `bin/sq-backend.sh` for the supervisor's own backend (tmux, herdr, or tuios; see "Auto-discovered supervisor pane" below):
 
 - **Primary-pane busy guard** - `pane_is_busy` trusts Herdr native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.
   This narrow delivery guard never classifies a recorded worker task and never uses a global union of vendor patterns.
@@ -186,7 +186,7 @@ the operational prefix lets Squad distinguish it from a real commander message.
 - **Single-line digest** - embedded newlines are collapsed to a literal
   separator before injection, so submission is unambiguous regardless of
   harness.
-- **Busy and composer guards on the supervisor pane** - before injecting, the daemon runs the detected-primary-harness rendered busy guard and reads `fm_backend_composer_state` directly.
+- **Busy and composer guards on the supervisor pane** - before injecting on the terminal-typing route (tmux, herdr, or a TUIOS pane without the native handoff), the daemon runs the detected-primary-harness rendered busy guard and reads `fm_backend_composer_state` directly.
   Only `empty` permits injection; `pending` protects half-typed or swallowed input, and `unknown` protects unreadable panes and bare dead-shell prompts.
   Every other result preserves the buffer for retry, so the daemon never merges its digest into the commander's half-typed line or types it into a shell.
 - The shared composer classifier receives a candidate row only after the active backend performs its own capture and structural row recognition.
@@ -224,7 +224,7 @@ the operational prefix lets Squad distinguish it from a real commander message.
   `$HERDR_PANE_ID` present (herdr), then `$TUIOS_ENV=1` with
   `$TUIOS_SESSION` and `$TUIOS_PANE_ID` present (tuios), then a tmux fallback.
   Target: `SQUAD_SUPERVISOR_TARGET` override (a tmux target, a herdr
-  `"<session>:<pane-id>"` target, or a tuios `"<session>:<pane-id>"` target),
+  `"<session>:<pane-id>"` target, or a tuios `"<session>:<window-id>"` target),
   then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under
   herdr, then `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a
   `Squad:0` fallback with a warning. Both resolution sources are logged at
