@@ -78,6 +78,12 @@
 # falls back to the recorded backend's normal submit path.
 set -eu
 
+if [ "$#" -eq 0 ]; then
+  echo "Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>" >&2
+  echo "       sq-send.sh <target> --key Enter" >&2
+  exit 2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 

@@ -244,7 +244,19 @@ test_legacy_squad_home_only_still_resolves() {
   pass "sq-send strict: legacy SQUAD_HOME-only environment still resolves and sends"
 }
 
+test_zero_args_prints_usage_and_exits_2() {
+  local dir err rc
+  dir="$TMP_ROOT/zero-args"; mkdir -p "$dir"; err="$dir/send.err"
+
+  "$SEND" >/dev/null 2>"$err"; rc=$?
+  expect_code 2 "$rc" "zero-argument invocation should exit 2"
+  assert_contains "$(cat "$err")" "Usage: sq-send.sh" "zero-argument invocation should print usage"
+  assert_no_grep "unbound variable" "$err" "zero-argument invocation should never leak a bash unbound-variable error"
+  pass "sq-send strict: zero arguments prints usage and exits 2"
+}
+
 test_exact_lane_id_send_still_works
+test_zero_args_prints_usage_and_exits_2
 test_key_send_exit_status_follows_delivery
 test_legacy_squad_home_only_still_resolves
 test_unset_fm_home_fails
