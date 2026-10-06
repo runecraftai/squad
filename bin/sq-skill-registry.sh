@@ -348,7 +348,7 @@ generate_grimoire_registry() {
       printf '    {"id":"%s","name":"%s","version":"%s","category":"%s","description":"%s","license":"%s","attribution":[{"name":"%s","url":"%s","text":"%s"}],"entrypoint":"SKILL.md","files":%s,"contentSha256":"%s"}' \
         "$id" "$(grimoire_json_escape "$name")" "$(grimoire_json_escape "$version")" "$category" \
         "$(grimoire_json_escape "$description")" "$(grimoire_json_escape "$license")" \
-        "$(grimoire_json_escape "$attrib_name")" "$attrib_url" "$(grimoire_json_escape "$attrib_text")" \
+        "$(grimoire_json_escape "$attrib_name")" "$(grimoire_json_escape "$attrib_url")" "$(grimoire_json_escape "$attrib_text")" \
         "$files_json" "$content_sha256" >> "$tmp"
 
       published=$((published + 1))
