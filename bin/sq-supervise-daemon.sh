@@ -69,21 +69,25 @@
 #          SQUAD_SUPERVISOR_TARGET     supervisor pane target (override; otherwise
 #                                   auto-discovered per backend - $TMUX_PANE
 #                                   under tmux, "<session>:<pane-id>" from
-#                                   $HERDR_PANE_ID under herdr - then
-#                                   Squad:0 fallback). Accepts either a
-#                                   tmux target or a herdr "<session>:<pane-id>"
-#                                   target; which one it's read as is decided by
+#                                   $HERDR_PANE_ID under herdr, and
+#                                   "$TUIOS_SESSION:$TUIOS_PANE_ID" under tuios -
+#                                   then Squad:0 fallback). Accepts a tmux target,
+#                                   a herdr "<session>:<pane-id>" target, or a
+#                                   tuios "<session>:<window-id>" target; which one
+#                                   it's read as is decided by
 #                                   SQUAD_SUPERVISOR_BACKEND (below), independently.
-#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr;
+#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr|tuios;
 #                                   override; otherwise auto-discovered the same
 #                                   way bin/sq-backend.sh's fm_backend_detect
 #                                   resolves the runtime Squad itself is
 #                                   executing inside - $TMUX_PANE selects tmux,
-#                                   $HERDR_ENV=1 selects herdr - falling back to
-#                                   tmux). zellij, orca, cmux, and tuios are not yet
-#                                   supported as supervisor backends; the daemon
-#                                   refuses loudly at startup rather than trying
-#                                   tmux primitives against a non-tmux pane.
+#                                   $HERDR_ENV=1 selects herdr, and $TUIOS_ENV=1
+#                                   with $TUIOS_SESSION/$TUIOS_PANE_ID selects
+#                                   tuios - falling back to tmux). zellij, orca,
+#                                   and cmux are not yet supported as supervisor
+#                                   backends; the daemon refuses loudly at startup
+#                                   rather than trying tmux primitives against a
+#                                   non-tmux pane.
 #          SQUAD_INJECT_SKIP           |-prefixes force-self-handle bypassing
 #                                   classification (default "heartbeat"); empty
 #                                   disables. Use sparingly: it overrides the
@@ -164,6 +168,10 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 # shellcheck source=bin/sq-operational-input.sh
 . "$SQUAD_DAEMON_DIR/sq-operational-input.sh"
 
+# Durable native Pi follow-up handoff for a TUIOS-hosted primary.
+# shellcheck source=bin/sq-afk-pi-handoff.sh
+. "$SQUAD_DAEMON_DIR/sq-afk-pi-handoff.sh"
+
 # Shared wake classifier (last_status_line, status_is_commander_relevant,
 # window_to_task, scan_commander_relevant_statuses). The SAME library backs the
 # always-on sentry's triage, so the commander-relevant verb set and the
@@ -185,13 +193,11 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# cmux, and tuios are real backends elsewhere in Squad (bin/sq-backend.sh) but
-# this daemon has no verified composer/busy primitives wired up for them yet - see
-# docs/herdr-backend.md and AGENTS.md section 4's
-# harness-verification discipline. Selecting one refuses loudly at startup
-# instead of silently running tmux primitives against a pane that is not a tmux
-# pane.
-SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr"
+# and cmux remain unsupported supervisor targets. TUIOS uses its native
+# queue and Pi's sendUserMessage handoff when the primary extension is available;
+# otherwise it must pass the same explicit busy/composer/submit guards as other
+# backends. See docs/tuios-backend.md and the away-mode verification evidence.
+SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr tuios"
 INJECT_SKIP_DEFAULT="heartbeat"
 STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
@@ -646,20 +652,75 @@ escalate_add() {  # <state> <distilled-item>
   printf '%s\n' "$item" >> "$buf"
 }
 
+# Canonical single-line digest of the first <lines> buffered escalations. It is
+# used both to build a flush and to prove that a native handoff's acknowledged
+# message still describes exactly the buffer prefix it covered.
+fm_escalation_digest() {  # <state> <lines>
+  local state=$1 lines=$2 items
+  # Join buffered items with the literal " | " separator into one digest line.
+  items=$(head -n "$lines" "$state/.subsuper-escalations" 2>/dev/null \
+    | awk 'NR>1{printf " | "} {printf "%s",$0} END{print ""}')
+  # Single-line wrapper: no embedded newlines (inject_msg also collapses as a
+  # safety net, but keeping the source single-line makes the intent explicit).
+  printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$lines" "$items"
+}
+
+# Retire exactly the buffer prefix a consumed native Pi handoff covered, so a
+# later digest never re-sends an escalation the primary already handled. Refuses
+# on any mismatch (unknown coverage, fewer remaining lines, or a buffer prefix
+# the acknowledged message no longer describes) and preserves the buffer.
+fm_pi_handoff_retire() {  # <state>
+  local state=$1 dir id lines status buf n expected expected_digest
+  [ "${SQUAD_SUPERVISOR_BACKEND:-}" = tuios ] || return 1
+  dir=$(fm_afk_pi_handoff_dir "$state")
+  [ -f "$dir/request.json" ] && [ ! -L "$dir/request.json" ] || return 1
+  id=$(jq -r '.id // empty' "$dir/request.json" 2>/dev/null) || return 1
+  lines=$(jq -r '.lines // empty' "$dir/request.json" 2>/dev/null) || return 1
+  case "$id" in *[!a-f0-9]*|'') return 1 ;; esac
+  case "$lines" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$lines" -gt 0 ] || return 1
+  status=$(jq -er --arg id "$id" 'select(.id == $id) | .status' "$dir/result.json" 2>/dev/null) || return 1
+  [ "$status" = handled ] || return 1
+  buf="$state/.subsuper-escalations"
+  [ -s "$buf" ] || return 1
+  n=$(wc -l < "$buf" 2>/dev/null) || return 1
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  if [ "$n" -lt "$lines" ]; then
+    log "Pi handoff ack covered $lines buffered line(s) but only $n remain; preserving the buffer"
+    return 1
+  fi
+  expected=$(jq -r '.message // empty' "$dir/request.json" 2>/dev/null) || return 1
+  fm_operational_input_encode away-supervisor \
+    "$(_collapse_newlines "$(fm_escalation_digest "$state" "$lines")")" expected_digest || return 1
+  if [ "$expected" != "$expected_digest" ]; then
+    log "Pi handoff ack no longer matches the buffered prefix; preserving the buffer"
+    return 1
+  fi
+  if tail -n "+$((lines + 1))" "$buf" > "$buf.retire.$$" && mv "$buf.retire.$$" "$buf"; then
+    rm -f "$buf.retire.$$"
+    [ -s "$buf" ] || rm -f "${buf}.since"
+    rm -f "$dir/request.json"
+    log "Pi handoff consumed $lines buffered escalation line(s); retired them"
+    return 0
+  fi
+  rm -f "$buf.retire.$$"
+  log "Pi handoff retirement could not rewrite the escalation buffer; preserving it"
+  return 1
+}
+
 # Flush the escalation buffer as ONE batched, single-line digest to the
 # supervisor pane. Returns 0 on successful inject (or empty buffer), non-zero on
 # inject failure (buffer preserved for retry / catch-up).
 escalate_flush() {  # <state>
-  local state=$1 buf item n msg
+  local state=$1 buf n msg
   buf="$state/.subsuper-escalations"
+  # Retire the exact prefix a consumed native handoff covered before rebuilding
+  # the digest, so an acknowledged escalation is never sent a second time.
+  fm_pi_handoff_retire "$state" || true
   [ -s "$buf" ] || return 0
   n=$(wc -l < "$buf" 2>/dev/null || echo 0)
-  # Join buffered items with the literal " | " separator into one digest line.
-  msg=$(awk 'NR>1{printf " | "} {printf "%s",$0} END{print ""}' "$buf" 2>/dev/null)
-  # Single-line wrapper: no embedded newlines (inject_msg also collapses as a
-  # safety net, but keeping the source single-line makes the intent explicit).
-  msg=$(printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$n" "$msg")
-  if inject_msg "$msg" "$state"; then : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"; return 0; fi
+  msg=$(fm_escalation_digest "$state" "$n")
+  if inject_msg "$msg" "$state" "$n"; then : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"; return 0; fi
   return 1
 }
 
@@ -1130,8 +1191,8 @@ window_for_task() {  # <task-key> [state]
 #     after dim/faint ghost text and borders are ignored (a human's half-typed
 #     line, or a previous injection's unsent text), defer entirely - injecting
 #     would merge with the human's text.
-inject_msg() {  # <message> [state]
-  local msg=$1 state target backend retries sleep_s verdict composer encoded
+inject_msg() {  # <message> [state] [handoff-covered-lines]
+  local msg=$1 state target backend retries sleep_s verdict composer encoded covered=${3:-}
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
   # daemon self-handles and stays quiet; Squad drives the normal always-on
@@ -1152,6 +1213,13 @@ inject_msg() {  # <message> [state]
   # discovery), matching this function's pre-existing default assumption.
   backend="${SQUAD_SUPERVISOR_BACKEND:-tmux}"
   fm_backend_target_exists "$backend" "$target" || return 1
+  # Pi's native follow-up queue is the only safe route for its TUIOS composer:
+  # it preserves pending human input and queues without terminal typing. Its
+  # extension binds the handoff to the exact target and acknowledges consumption.
+  if [ "$backend" = tuios ] && fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
+    fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered"
+    return $?
+  fi
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
     log "inject deferred: supervisor pane busy (agent mid-turn)"
@@ -1362,12 +1430,11 @@ fm_super_main() {
   echo "$$" > "$PIDFILE"
   fm_pid_identity "${BASHPID:-$$}" > "$LOCK/pid-identity" 2>/dev/null || true
 
-  # --- auto-discover the supervisor BACKEND (tmux vs herdr) first -----------
-  # Priority: SQUAD_SUPERVISOR_BACKEND override > $TMUX_PANE (tmux) > $HERDR_ENV=1
-  # (herdr) > tmux fallback. Resolved before the target below, since target
-  # discovery composes a herdr "<session>:<pane-id>" string using the same
-  # $HERDR_PANE_ID/$HERDR_SESSION markers this checks. Exporting the result
-  # into SQUAD_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending
+  # --- auto-discover the supervisor BACKEND first ---------------------------
+  # Priority: explicit override > TMUX_PANE > HERDR_ENV/HERDR_PANE_ID >
+  # TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID > tmux fallback. Resolved before target discovery,
+  # which composes backend-specific targets from the corresponding environment.
+  # Exporting the result into SQUAD_SUPERVISOR_BACKEND makes injection and state probes
   # (which read that env var) dispatch through the right backend without an
   # extra global thread-through.
   local discovered_backend backend_source
@@ -1377,6 +1444,8 @@ fm_super_main() {
       backend_source="TMUX_PANE"
     elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
       backend_source="HERDR_ENV"
+    elif [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+      backend_source="TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)"
     else
       backend_source="FALLBACK($SQUAD_SUPERVISOR_BACKEND_DEFAULT)"
     fi
@@ -1385,25 +1454,20 @@ fm_super_main() {
   SQUAD_SUPERVISOR_BACKEND="$discovered_backend"
   local BACKEND="$SQUAD_SUPERVISOR_BACKEND"
 
-  # --- refuse an unsupported supervisor backend loudly, before ever trying a
-  # tmux/herdr-specific call against it (zellij, orca, cmux, and tuios have no verified
-  # composer/busy primitives wired up for this daemon yet - AGENTS.md section 4
-  # harness-verification discipline). This is the clear refusal the task calls
-  # for, instead of a confusing "does not resolve to a tmux pane" error.
+  # --- refuse an unsupported supervisor backend loudly before dispatch. TUIOS
+  # uses its native Pi handoff when validated; otherwise unknown composer state
+  # remains fail-safe and non-Pi TUIOS delivery is not attempted.
   if ! fm_backend_list_contains "$SQUAD_SUPERVISOR_SUPPORTED_BACKENDS" "$BACKEND"; then
-    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
+    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
     log "startup failed: unsupported supervisor backend '$BACKEND' (source=$backend_source)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
     exit 1
   fi
 
-  # --- auto-discover the supervisor target (the pane running Squad) -----
-  # Priority: SQUAD_SUPERVISOR_TARGET override > $TMUX_PANE (tmux; inherited from
-  # the pane that launched the daemon, normally Squad's own) >
-  # $HERDR_PANE_ID (herdr, composed into "<session>:<pane-id>") > Squad:0
-  # fallback. Exporting the result into SQUAD_SUPERVISOR_TARGET makes inject_msg
-  # (which reads that env var) use the discovered pane without an extra global.
+  # --- auto-discover the supervisor target (the pane running Squad) --------
+  # Priority and exact TUIOS marker contract live in
+  # bin/sq-supervisor-target-lib.sh. Export the result for all later probes.
   local discovered target_source
   target_source="SQUAD_SUPERVISOR_TARGET"
   if [ -z "${SQUAD_SUPERVISOR_TARGET:-}" ]; then
@@ -1411,6 +1475,8 @@ fm_super_main() {
       target_source="TMUX_PANE"
     elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
       target_source="HERDR_ENV(HERDR_PANE_ID)"
+    elif [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+      target_source="TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)"
     else
       target_source="FALLBACK(Squad:0)"
     fi
@@ -1418,7 +1484,7 @@ fm_super_main() {
   if discovered=$(discover_supervisor_target); then
     : # resolved cleanly
   else
-    echo "warn: could not auto-discover supervisor pane (no SQUAD_SUPERVISOR_TARGET, TMUX_PANE, or HERDR_ENV/HERDR_PANE_ID); falling back to '$discovered' — verify this is Squad's pane" >&2
+    echo "warn: could not auto-discover supervisor pane (no SQUAD_SUPERVISOR_TARGET or complete backend target markers); falling back to '$discovered' — verify this is Squad's pane" >&2
   fi
   SQUAD_SUPERVISOR_TARGET="$discovered"
   local TARGET="$SQUAD_SUPERVISOR_TARGET"

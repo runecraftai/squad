@@ -17,14 +17,14 @@
 # Default supervisor pane target/backend when nothing is configured or detected.
 # "Squad:0" is a tmux session:window name, so the bare fallback (nothing
 # configured, nothing detected) assumes tmux - matching the daemon's pre-herdr
-# behavior byte-for-byte when run outside both tmux and herdr.
+# behavior byte-for-byte when run outside tmux, herdr, and TUIOS.
 SQUAD_SUPERVISOR_TARGET_DEFAULT="Squad:0"
 SQUAD_SUPERVISOR_BACKEND_DEFAULT="tmux"
 
 # discover_supervisor_target: resolve the pane running Squad. Priority:
-#   1. SQUAD_SUPERVISOR_TARGET env (explicit override) - may be a tmux target or a
-#      herdr "<session>:<pane-id>" target (paired with discover_supervisor_backend
-#      to know which).
+#   1. SQUAD_SUPERVISOR_TARGET env (explicit override) - may be a tmux target, a
+#      herdr "<session>:<pane-id>" target, or a TUIOS "<session>:<window-id>"
+#      target (paired with discover_supervisor_backend to know which).
 #   2. $TMUX_PANE - tmux sets this in every pane's environment; inherited by a
 #      process launched from Squad's own pane.
 #   3. $HERDR_ENV=1 + $HERDR_PANE_ID - herdr injects both into every process it
@@ -33,7 +33,9 @@ SQUAD_SUPERVISOR_BACKEND_DEFAULT="tmux"
 #      fm_backend_herdr_session) and $HERDR_PANE_ID. Checked after $TMUX_PANE so a
 #      tmux pane nested inside herdr still resolves to tmux, matching
 #      fm_backend_detect's innermost-first rule.
-#   4. SQUAD_SUPERVISOR_TARGET_DEFAULT - legacy tmux fallback (may not resolve if the
+#   4. TUIOS_ENV=1 + TUIOS_SESSION + TUIOS_PANE_ID - TUIOS supplies these markers
+#      inside its managed pane; require all three and compose the exact target.
+#   5. SQUAD_SUPERVISOR_TARGET_DEFAULT - legacy tmux fallback (may not resolve if the
 #      session is named differently). Returns 1 so the caller can warn.
 discover_supervisor_target() {
   if [ -n "${SQUAD_SUPERVISOR_TARGET:-}" ]; then
@@ -48,6 +50,10 @@ discover_supervisor_target() {
     printf '%s:%s' "${HERDR_SESSION:-default}" "$HERDR_PANE_ID"
     return 0
   fi
+  if [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+    printf '%s:%s' "$TUIOS_SESSION" "$TUIOS_PANE_ID"
+    return 0
+  fi
   printf '%s' "$SQUAD_SUPERVISOR_TARGET_DEFAULT"
   return 1
 }
@@ -59,7 +65,8 @@ discover_supervisor_target() {
 #   1. SQUAD_SUPERVISOR_BACKEND env (explicit override).
 #   2. $TMUX_PANE set - tmux.
 #   3. $HERDR_ENV=1 (with $HERDR_PANE_ID present) - herdr.
-#   4. SQUAD_SUPERVISOR_BACKEND_DEFAULT (tmux) - matches the target fallback. Returns 1.
+#   4. TUIOS_ENV=1 with TUIOS_SESSION and TUIOS_PANE_ID - tuios.
+#   5. SQUAD_SUPERVISOR_BACKEND_DEFAULT (tmux) - matches the target fallback. Returns 1.
 discover_supervisor_backend() {
   if [ -n "${SQUAD_SUPERVISOR_BACKEND:-}" ]; then
     printf '%s' "$SQUAD_SUPERVISOR_BACKEND"
@@ -71,6 +78,10 @@ discover_supervisor_backend() {
   fi
   if [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
     printf 'herdr'
+    return 0
+  fi
+  if [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+    printf 'tuios'
     return 0
   fi
   printf '%s' "$SQUAD_SUPERVISOR_BACKEND_DEFAULT"

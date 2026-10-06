@@ -104,12 +104,13 @@ TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; cada tarefa recebe
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
 
 O sub-supervisor `/afk` injeta resumos de escalação no próprio painel do Squad independentemente de onde novos endpoints de tarefa são criados.
-Atualmente suporta apenas painéis de supervisor `tmux` e `herdr`.
-Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr` e `SQUAD_SUPERVISOR_TARGET=<alvo>` para sobrescrever explicitamente ambos os eixos; para herdr o alvo é `"<session>:<pane-id>"`.
-Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois recua para `tmux`.
-Isso mantém um painel tmux aninhado dentro de herdr no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
-A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois o fallback legado `Squad:0` do tmux com um aviso.
-Selecionar qualquer outro backend de supervisor, incluindo `zellij`, `orca`, `cmux` ou `tuios`, recusa na inicialização do daemon em vez de tentar primitivas de injeção tmux contra um painel não-tmux.
+Suporta painéis de supervisor `tmux`, `herdr` e `tuios`.
+Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios` e `SQUAD_SUPERVISOR_TARGET=<alvo>` para sobrescrever explicitamente ambos os eixos; o alvo de herdr é `"<session>:<pane-id>"` e o de TUIOS é `"<session>:<window-id>"`.
+Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois `TUIOS_ENV=1` com `TUIOS_SESSION` e `TUIOS_PANE_ID`, depois recua para `tmux`.
+Isso mantém um painel tmux aninhado dentro de herdr ou TUIOS no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
+A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois `"$TUIOS_SESSION:$TUIOS_PANE_ID"` sob TUIOS, depois o fallback legado `Squad:0` do tmux com um aviso.
+Um painel de supervisor TUIOS nunca recebe digitação no terminal: os resumos de escalação passam pelo handoff nativo do Pi dono de `.pi/extensions/sq-primary-away-handoff.ts`, que enfileira um follow-up pelo próprio `sendUserMessage` do Pi e reconhece o consumo. Veja [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
+Selecionar qualquer outro backend de supervisor, incluindo `zellij`, `orca` ou `cmux`, recusa na inicialização do daemon em vez de tentar primitivas de injeção tmux contra um painel não-tmux.
 
 ## Canais de alarme wedge de away-mode (config/wedge-alarm)
 
@@ -650,10 +651,11 @@ SQUAD_SEND_RETRIES=3       # tentativas de retry de Enter do sq-send no submit d
 SQUAD_SEND_SLEEP=0.4       # segundos entre checks de submit do backend pelo sq-send
 SQUAD_SEND_SETTLE=1        # segundos que sq-send espera após uma submissão de texto bem-sucedida; 0 desativa
 SQUAD_PI_DELIVERY_TIMEOUT=5 # segundos que sq-send espera pela confirmação de entrega nativa do Pi antes de falhar
+SQUAD_PI_HANDOFF_STALE_SECS=30 # segundos que um registro de handoff do Pi em TUIOS pode permanecer em submitting antes que um envio abandonado possa ser republicado; apenas quando a extensão viva relata nenhum envio em andamento
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # segundos após entrega de solicitação marcada antes que um turno concluído sem um relatório pai correlacionado seja elegível para sua única retentativa de repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
-SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; apenas tmux/herdr, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID antes de fallback tmux
-SQUAD_SUPERVISOR_TARGET=              # sobrescrever alvo de painel de supervisor opcional; alvo tmux ou herdr <session>:<pane-id>, caso contrário auto-detectado
+SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; apenas tmux/herdr/tuios, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID depois TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID antes de fallback tmux
+SQUAD_SUPERVISOR_TARGET=              # sobrescrever alvo de painel de supervisor opcional; alvo tmux, herdr <session>:<pane-id>, ou tuios <session>:<window-id>, caso contrário auto-detectado
 SQUAD_INJECT_SKIP=heartbeat           # prefixos |-forçam auto-tratamento ignorando classificação; vazio desativa
 SQUAD_ESCALATE_BATCH_SECS=90          # janela de buffer para resumos de escalação em lote; 0 = esvaziar imediatamente
 SQUAD_MAX_DEFER_SECS=300              # idade máxima de escalação em buffer antes de retentativa mais alarme wedge; 0 desativa

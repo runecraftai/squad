@@ -709,6 +709,32 @@ unit_stop_surfaces_afk_removal_failure() {
   rm -rf "$st"
 }
 
+unit_stop_waits_for_a_full_sentry_poll() {
+  local st checks
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-stop-poll.XXXXXX")
+  mkdir -p "$st/state"
+  : > "$st/state/.afk"
+  checks=$(SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+    . "$1"
+    alive_checks=0
+    daemon_lock_held_by_live_daemon() { return 0; }
+    daemon_lock_pid() { printf 123; }
+    fm_pid_identity() { printf identity; }
+    fm_pid_alive() { alive_checks=$((alive_checks + 1)); [ "$alive_checks" -lt 63 ]; }
+    kill() { return 0; }
+    sleep() { :; }
+    fm_afk_launch_record_read() { return 1; }
+    fm_afk_launch_stop || exit 1
+    printf "%s" "$alive_checks"
+  ' _ "$LAUNCH") || { fail "stop poll: lifecycle refused a daemon that exits after a full 15-second poll"; rm -rf "$st"; return; }
+  if [ "$checks" -ge 63 ] && [ ! -e "$st/state/.afk" ]; then
+    pass "stop poll: waits through a full sentry poll before declaring the daemon stuck"
+  else
+    fail "stop poll: did not wait through the full sentry poll (checks=$checks)"
+  fi
+  rm -rf "$st"
+}
+
 unit_stop_confirms_daemon_exit() {
   local st daemon_pid
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-stop-live.XXXXXX")
@@ -897,6 +923,196 @@ e2e_herdr() {
 }
 
 # ---------------------------------------------------------------------------
+# UNIT TUIOS: exact detached session creation, target ownership, and attached
+# session protection. The fake CLI exercises the lifecycle owner without
+# touching the shared TUIOS daemon.
+# ---------------------------------------------------------------------------
+unit_tuios_launch_and_attached_protection() {
+  local lab fakebin statefile output session record
+  lab=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tuios-unit.XXXXXX")
+  fakebin="$lab/fakebin"; statefile="$lab/sessions.json"
+  mkdir -p "$fakebin" "$lab/state"
+  printf '[]\n' > "$statefile"
+  cat > "$fakebin/tuios" <<'FAKE_TUIOS'
+#!/usr/bin/env bash
+set -eu
+state=${TUIOS_FAKE_STATE:?}
+cmd=$1; shift
+case "$cmd" in
+  --version) printf 'tuios version 0.8.0\n' ;;
+  list-sessions) jq -c . "$state" ;;
+  new)
+    [ "$1" = --detach ]; name=$2
+    jq -e --arg n "$name" 'any(.[]; .name == $n)' "$state" >/dev/null && exit 3
+    jq --arg n "$name" '. + [{name:$n,id:"session-owned",attached:false,windows:[{id:"boot-window",title:"shell"}],window_count:1}]' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  new-window)
+    session= label= parsing=1
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --session) session=$2; shift 2 ;;
+        --json|--no-focus) shift ;;
+        --cwd) shift 2 ;;
+        --) shift; break ;;
+        *) label=$1; shift ;;
+      esac
+    done
+    [ -n "$session" ] && [ -n "$label" ]
+    jq --arg n "$session" --arg label "$label" '.[] |= if .name == $n then .windows += [{id:"daemon-window",title:$label}] | .window_count=2 else . end' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    printf '{"window_id":"daemon-window"}\n'
+    ;;
+  list-windows)
+    session=$2
+    jq -c --arg n "$session" '{success:true,windows:(.[]|select(.name==$n)|.windows)}' "$state"
+    ;;
+  run-command)
+    session=$2; shift 2; [ "$1" = CloseWindow ]; window=$2
+    jq --arg n "$session" --arg w "$window" '.[] |= if .name == $n then .windows |= map(select(.id != $w)) | .window_count=(.windows|length) else . end' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    printf '{"success":true}\n'
+    ;;
+  kill-session)
+    name=$1
+    jq --arg n "$name" 'map(select(.name != $n))' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  *) echo "unexpected fake TUIOS command: $cmd" >&2; exit 4 ;;
+esac
+FAKE_TUIOS
+  chmod +x "$fakebin/tuios"
+  output=$(PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" \
+    SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:commander \
+    SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start 2>&1) || fail "TUIOS launch failed: $output"
+  record=$(<"$lab/state/.afk-daemon-terminal")
+  session=$(printf '%s' "$record" | cut -f2 | cut -d: -f1)
+  if [ "$(printf '%s' "$record" | cut -f1)" = tuios ] \
+    && jq -e --arg n "$session" 'any(.[]; .name==$n and .attached==false and (.windows|length)==1 and .windows[0].id=="daemon-window")' "$statefile" >/dev/null \
+    && [ -e "$lab/state/.afk" ]; then
+    pass "TUIOS launch: creates one exact, detached, non-visible daemon window and records its session identity"
+  else
+    fail "TUIOS launch: session or ownership record did not match the single detached daemon window"
+  fi
+  jq '.[0].attached=true' "$statefile" > "$statefile.tmp" && mv "$statefile.tmp" "$statefile"
+  if PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" "$LAUNCH" stop >/dev/null 2>&1; then
+    fail "TUIOS attached protection: stop unexpectedly removed an attached session"
+  elif [ ! -e "$lab/state/.afk" ] || [ "$(jq 'length' "$statefile")" -ne 1 ]; then
+    fail "TUIOS attached protection: refused cleanup but changed away state or session inventory"
+  else
+    pass "TUIOS attached protection: stop refuses and preserves both the away flag and attached session"
+  fi
+  jq '.[0].attached=false' "$statefile" > "$statefile.tmp" && mv "$statefile.tmp" "$statefile"
+  output=$(PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" "$LAUNCH" stop 2>&1) \
+    || fail "TUIOS stop failed after the exact session returned to detached state: $output"
+  if [ ! -e "$lab/state/.afk" ] && [ ! -e "$lab/state/.afk-daemon-terminal" ] \
+    && [ "$(jq 'length' "$statefile")" -eq 0 ]; then
+    pass "TUIOS stop: removes only the owned detached session and clears away state last"
+  else
+    fail "TUIOS stop: exact detached session or lifecycle artifacts remain"
+  fi
+  rm -rf "$lab"
+}
+
+# A failure after the exact detached TUIOS session was created must close that
+# session again, so a failed launch can never leak an unrecorded daemon session.
+unit_tuios_launch_rolls_back_a_created_session() {
+  local lab fakebin statefile output sessions
+  lab=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tuios-rollback.XXXXXX")
+  fakebin="$lab/fakebin"; statefile="$lab/sessions.json"; output="$lab/out"
+  mkdir -p "$fakebin" "$lab/state"
+  printf '[]\n' > "$statefile"
+  cat > "$fakebin/tuios" <<'FAKE_TUIOS'
+#!/usr/bin/env bash
+set -eu
+state=${TUIOS_FAKE_STATE:?}
+cmd=$1; shift
+case "$cmd" in
+  --version) printf 'tuios version 0.8.0\n' ;;
+  list-sessions) jq -c . "$state" ;;
+  new)
+    [ "$1" = --detach ]; name=$2
+    jq --arg n "$name" '. + [{name:$n,id:"session-created",attached:false,windows:[{id:"boot-window",title:"shell"}],window_count:1}]' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  new-window) exit 1 ;;
+  kill-session)
+    name=$1
+    jq --arg n "$name" 'map(select(.name != $n))' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  *) echo "unexpected fake TUIOS command: $cmd" >&2; exit 4 ;;
+esac
+FAKE_TUIOS
+  chmod +x "$fakebin/tuios"
+  if PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" \
+    SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:commander \
+    SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start >"$output" 2>&1; then
+    fail "TUIOS rollback: a launch whose daemon window failed must not report success"
+  fi
+  sessions=$(jq -c . "$statefile")
+  if [ "$sessions" = '[]' ] \
+    && [ ! -e "$lab/state/.afk" ] && [ ! -e "$lab/state/.afk-daemon-terminal" ]; then
+    pass "TUIOS rollback: a failed launch closes the session it created and leaves no lifecycle state"
+  else
+    fail "TUIOS rollback: created session or lifecycle state survived a failed launch (sessions=$sessions)"
+  fi
+  rm -rf "$lab"
+}
+
+# A 'tuios new' that reports failure after creating the session (post-create
+# error, timeout, transport drop) must still roll back the exact session it
+# created, so a failed launch cannot leak an unrecorded detached daemon session.
+unit_tuios_launch_rolls_back_when_new_reports_failure() {
+  local lab fakebin statefile output sessions
+  lab=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tuios-newfail.XXXXXX")
+  fakebin="$lab/fakebin"; statefile="$lab/sessions.json"; output="$lab/out"
+  mkdir -p "$fakebin" "$lab/state"
+  printf '[]\n' > "$statefile"
+  cat > "$fakebin/tuios" <<'FAKE_TUIOS'
+#!/usr/bin/env bash
+set -eu
+state=${TUIOS_FAKE_STATE:?}
+cmd=$1; shift
+case "$cmd" in
+  --version) printf 'tuios version 0.8.0\n' ;;
+  list-sessions) jq -c . "$state" ;;
+  new)
+    [ "$1" = --detach ]; name=$2
+    jq --arg n "$name" '. + [{name:$n,id:"session-created",attached:false,windows:[{id:"boot-window",title:"shell"}],window_count:1}]' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    exit 1
+    ;;
+  kill-session)
+    name=$1
+    jq --arg n "$name" 'map(select(.name != $n))' "$state" > "$state.tmp"
+    mv "$state.tmp" "$state"
+    ;;
+  *) echo "unexpected fake TUIOS command: $cmd" >&2; exit 4 ;;
+esac
+FAKE_TUIOS
+  chmod +x "$fakebin/tuios"
+  if PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" \
+    SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:commander \
+    SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start >"$output" 2>&1; then
+    fail "TUIOS rollback: a launch whose 'new --detach' reported failure must not report success"
+  fi
+  sessions=$(jq -c . "$statefile")
+  if [ "$sessions" = '[]' ] \
+    && [ ! -e "$lab/state/.afk" ] && [ ! -e "$lab/state/.afk-daemon-terminal" ]; then
+    pass "TUIOS rollback: a failed 'new --detach' rolls back the session it created"
+  else
+    fail "TUIOS rollback: created session or lifecycle state survived a failed 'new --detach' (sessions=$sessions)"
+  fi
+  rm -rf "$lab"
+}
+
+# ---------------------------------------------------------------------------
 # UNIT status: health is read-only and reports active, exact terminal, daemon
 # lock, and marker ages.
 # ---------------------------------------------------------------------------
@@ -1052,12 +1268,16 @@ unit_tmux_planned_record_and_collision
 unit_stop_validates_before_signal
 unit_lock_requires_complete_metadata
 unit_stop_surfaces_afk_removal_failure
+unit_stop_waits_for_a_full_sentry_poll
 unit_stop_confirms_daemon_exit
 unit_refresh_validates_record
 unit_clear_failure_aborts_entry
 unit_confirmed_absence_succeeds
 unit_incomplete_restore_retains_backup
 unit_flag_write_failure_aborts
+unit_tuios_launch_and_attached_protection
+unit_tuios_launch_rolls_back_a_created_session
+unit_tuios_launch_rolls_back_when_new_reports_failure
 unit_status_health
 e2e_herdr
 e2e_tmux

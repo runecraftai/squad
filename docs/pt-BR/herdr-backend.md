@@ -276,9 +276,10 @@ Ainda existe um processo de sentinela; o event reader é um filho limitado daque
 
 ## Suporte do supervisor do modo ausente
 
-O daemon away suporta apenas panes supervisor de tmux e Herdr.
-Ele recusa Zellij, Orca, cmux e TUIOS como backends de supervisor em vez de aplicar o transporte errado.
+O daemon away suporta panes supervisor de tmux, Herdr e TUIOS.
+Ele recusa Zellij, Orca e cmux como backends de supervisor em vez de aplicar o transporte errado.
 Para Herdr, existência do alvo, estado nativo, captura, estado do composer e submit verificado todos roteiam pelo dispatcher compartilhado do backend e o dono explícito de CLI da sessão nomeada.
+Um painel de supervisor TUIOS nunca recebe digitação; ele usa o handoff nativo do Pi dono de [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
 O alerta pane-independente de max-defer é configurado em [`wedge-alarm.md`](wedge-alarm.md).
 
 Harnesses com execução rastreada nativa de segundo plano podem rodar o daemon em seu terminal.
@@ -313,7 +314,7 @@ Testes usam wrappers finos de compatibilidade em `tests/herdr-test-safety.sh` e 
 - Vitalidade de XO no meio da sessão não é implementada.
 - OpenCode 1.18.4 pode aceitar Enter enquanto ocupado sem limpar o composer.
   O backend tmux tem fallback de busy-queue, mas o Herdr ainda reporta este caso como submit pending e precisa de fix separado no adaptador.
-- Apenas tmux e Herdr podem hospedar o terminal do supervisor do modo ausente.
+- Apenas tmux, Herdr e TUIOS podem hospedar o terminal do supervisor do modo ausente.
 
 ## Pontos de entrada de regressão
 

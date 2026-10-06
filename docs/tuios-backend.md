@@ -91,12 +91,45 @@ The structural signal is the pane's own foreground process, so a build that stop
 
 Cleanup verifies both the exact opaque window id and the recorded task label before closing anything, so only the recorded task window can ever be closed. The close is TUIOS's own window-close path (`close-window`, which the CLI surfaces as `tuios run-command CloseWindow <id>`) addressed by the exact session and window id - never the tmux compatibility shim, which would resolve a shim pane id instead. `run-command` exits 0 even when the close failed, so its result envelope is the only success signal and a refusal is surfaced with the daemon's own message. After the exact task window is confirmed gone, cleanup clears only that task's recorded workspace name and only when the workspace is otherwise empty. A mismatch, remaining window, or unreadable inventory preserves the name rather than risking another owner's layout. Cleanup never deletes a session and never touches the daemon.
 
+## Away-mode supervision
+
+A TUIOS-hosted Squad primary can be supervised in away mode without any terminal typing.
+The daemon never sends keys or text into a TUIOS supervisor pane; delivery uses Pi's own message queue through `.pi/extensions/sq-primary-away-handoff.ts` and `bin/sq-afk-pi-handoff.sh`.
+
+- The extension binds to the exact `TUIOS_SESSION` and `TUIOS_PANE_ID`, publishes `state/.pi-away-handoff/ready.json` with its process identity and a one-second heartbeat, and accepts a request only when it names that exact target.
+- `bin/sq-afk-pi-handoff.sh` publishes one durable `request.json` and observes `result.json`; it never retypes an unresolved escalation and reports success only on a consumption acknowledgement.
+- The extension queues the digest with `sendUserMessage(..., { deliverAs: "followUp" })`, which never touches the composer or an open dialog, and acknowledges consumption when Pi's own `before_agent_start` prompt carries the handoff marker.
+
+Delivery is gated by three positive conditions: Pi must be idle, the editor must hold no draft, and no Pi prompt may be open.
+The last one is a native signal: Pi emits `ui_prompt_start` and `ui_prompt_end` around every built-in dialog (`select`, `confirm`, `input`, `editor`, `custom`), and the extension defers while that count is non-zero.
+A queued escalation stays durable while it waits, so a busy Pi, a typed draft, or an open approval prompt delays delivery instead of losing or duplicating it.
+
+The recorded `ready.json` is a version-3 delivery-state record carrying `idle`, `draft`, `prompts`, and `sending`; the daemon refuses an older record and falls back to the fail-safe composer path rather than trusting a handoff that cannot describe its state.
+
+Delivery is idempotent across batches.
+A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
+A request is republished only when replacing it cannot duplicate delivery: Pi consumed it, or the extension's send never reached Pi (`uncertain`), or a `submitting` record has aged past the bound while the live, identity-verified extension reports no in-flight send, since a still-active send keeps the ready heartbeat current.
+An in-flight or merely queued request is never replaced, and the wedge alarm still covers a request that stays undelivered.
+
+`bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session.
+It refuses cleanup unless the recorded session id, its one owned window, and its unattached state still match, and every failure after the session is created closes that exact session again, so a failed launch cannot leak an unrecorded detached session.
+
+`bin/sq-afk-tuios-lab.sh` (guarded by `SQUAD_TUIOS_AFK_LIVE=1`) is the only supported live verification path.
+It uses a private daemon with fresh `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, and `XDG_CONFIG_HOME`, a temporary Squad base, and a loopback-only mock provider, and it destroys only sessions it created.
+See [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) for the live evidence.
+
 ## Limits and verification
 
+- Away-mode delivery to a TUIOS supervisor pane requires the shipped Pi extension on the primary.
+  Without it the daemon keeps its pre-existing TUIOS behavior: composer state stays `unknown`, so injection defers instead of typing into the pane.
+- The open-prompt guard depends on Pi's `ui_prompt_start`/`ui_prompt_end` events, which were verified live on Pi 0.99.0 by opening a real dialog while the primary was idle and confirming the escalation was held until it closed.
+  A future Pi release that stopped emitting those events would silently reduce the guard to idle plus draft, so that event contract must be re-verified on a Pi upgrade.
 - Supervision stays poll-based. No event subscription (`subscribe` / `after_seq`) is used, so a stream gap cannot be replayed and a state change is observed on the next poll rather than immediately.
 - The daemon's queue, mail, activity, and agent state live in daemon memory and die with it; a restart is reconciled from the inventory and the durable Squad task record, never from a replayed event.
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.
+- The away-mode extension, the sender, and the launcher each have portable regression coverage, but the live TUIOS/Pi path is exercised only by the guarded lab above; there is no CI coverage of a real TUIOS daemon or a real Pi TUI.
+- An accepted-but-never-consumed request (`queued` while Pi never starts the turn) is preserved rather than republished, because republishing could duplicate a delivery Pi still holds; the wedge alarm surfaces it instead.
 - The fake-CLI suite covers preferred-workspace selection, occupied/named/leased exclusions, exact-ID placement verification, abort cleanup, and guarded workspace release. A focused check on the existing isolated nine-workspace private TUIOS session created two tasks in distinct non-current workspaces, confirmed the original focused window and current workspace were unchanged, then closed both probe windows and restored both names to empty. The shared daemon and every non-lab session were untouched.
 
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns the commands and output behind each claim above, and the honest list of what is not yet established. The portable contract is covered by `tests/sq-backend-tuios.test.sh` and `tests/sq-spawn-tuios-worktree.test.sh` using fake CLIs; those tests never contact or change a live TUIOS session.

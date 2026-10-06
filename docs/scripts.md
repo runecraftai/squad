@@ -77,6 +77,9 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
+| `sq-afk-tuios-launch.sh` | Exact, unattached TUIOS daemon-session lifecycle owned by the away-mode launcher        |
+| `sq-afk-pi-handoff.sh`   | Publish a durable Pi-native away-mode handoff request and observe its consumption acknowledgement |
+| `sq-afk-tuios-lab.sh`    | Guarded opt-in disposable TUIOS/Pi live verification for away-mode delivery             |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
