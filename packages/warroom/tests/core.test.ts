@@ -23,7 +23,7 @@ describe("Warroom canonical core", () => {
 		const db = new Database(":memory:");
 		migrate(db);
 		migrate(db);
-		expect(db.query("SELECT version FROM schema_migrations").all()).toEqual([{ version: 1 }]);
+		expect(db.query("SELECT version FROM schema_migrations").all()).toEqual([{ version: 1 }, { version: 2 }]);
 		db.close();
 	});
 

@@ -2,12 +2,13 @@
   "name": "@runecraft/warroom",
   "version": "0.1.0",
   "private": true,
-  "description": "Product-neutral canonical event and revision core for Runecraft Warroom.",
+  "description": "Product-neutral canonical event and revision core and planning surface for Runecraft Warroom.",
   "license": "MIT",
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "serve": "bun run src/server.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
