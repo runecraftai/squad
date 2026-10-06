@@ -440,6 +440,15 @@ describe("renderQuotaTui structure", () => {
         kind: "model",
       }),
     ).toBe("spark");
+    expect(
+      [
+        "OpenCode Go rolling",
+        "OpenCode Go weekly",
+        "OpenCode Go monthly",
+      ].map((label) =>
+        shortWindowLabel({ id: label, label, kind: "session" }),
+      ),
+    ).toEqual(["rolling", "weekly", "monthly"]);
   });
 
   it("omits the marker when a window's pace is unknown", () => {

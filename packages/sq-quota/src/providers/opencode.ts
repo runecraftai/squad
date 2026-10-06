@@ -8,17 +8,28 @@ import type {
   ProviderAdapter,
   ProviderOptions,
   ProviderQuota,
+  QuotaWindow,
   SourceAttempt,
 } from "../types.js";
-import { failedProvider, sourceNames, statusFromError } from "./common.js";
+import {
+  failedProvider,
+  sourceNames,
+  statusFromError,
+  withRemaining,
+} from "./common.js";
 
 const MODELS_URL = "https://opencode.ai/zen/v1/models";
+const GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const API_TIMEOUT_MS = 15_000;
 const OPENCODE_AUTH_SOURCE = "auth-json";
 const OPENCODE_ENV_SOURCE = "api-key-env";
+const GO_AUTH_ENTRY_KEY = "opencode-go";
+const GO_NOTE =
+  "OpenCode Go usage is account-level (all models on this key), not per-model.";
 
 type OpenCodeCredentials = {
   key: string;
+  isGo: boolean;
 };
 
 type CredentialState =
@@ -28,6 +39,17 @@ type CredentialState =
       source: AuthSourceReport;
     }
   | { status: "missing" | "invalid"; source: AuthSourceReport };
+
+type GoWindowReading = {
+  percent: number;
+  resetsAt: string;
+};
+
+type GoUsageData = {
+  rolling: GoWindowReading;
+  weekly: GoWindowReading;
+  monthly: GoWindowReading;
+};
 
 export const opencodeAdapter: ProviderAdapter = {
   id: "opencode",
@@ -44,38 +66,58 @@ export async function fetchQuota(
 
   const credentialState = readCredentialState();
   if (credentialState.status === "available") {
-    attempts.push({ source: "api", status: "failed" });
-    try {
-      const modelCount = await validateApiKey(credentialState.credentials);
-      attempts[attempts.length - 1] = { source: "api", status: "success" };
-      return {
-        provider: "opencode",
-        label: "OpenCode",
-        source: "api",
-        windows: [],
-        quotaSemantics: {
-          status: "unknown",
-          description:
-            "OpenCode/Zen has no public quota, balance, or usage API. Authenticated successfully with model access only.",
-          effectiveAvailability: [],
-        },
-        notes: modelCount > 0 ? [`${modelCount} models available`] : [],
-        state: {
-          status: "fresh",
-          stale: false,
-          refreshedAt: nowIso(),
-          authStatus: "usable",
-          sourcesTried: sourceNames(attempts),
-        },
-        attempts,
-      };
-    } catch (error) {
-      finalError = errorMessage(error);
-      attempts[attempts.length - 1] = {
-        source: "api",
-        status: "failed",
-        error: finalError,
-      };
+    const { credentials } = credentialState;
+    if (credentials.isGo) {
+      attempts.push({ source: "go-usage", status: "failed" });
+      try {
+        const usage = await fetchGoUsage(credentials);
+        attempts[attempts.length - 1] = {
+          source: "go-usage",
+          status: "success",
+        };
+        return buildGoQuota(usage, attempts);
+      } catch (error) {
+        finalError = errorMessage(error);
+        attempts[attempts.length - 1] = {
+          source: "go-usage",
+          status: "failed",
+          error: finalError,
+        };
+      }
+    } else {
+      attempts.push({ source: "api", status: "failed" });
+      try {
+        const modelCount = await validateApiKey(credentials);
+        attempts[attempts.length - 1] = { source: "api", status: "success" };
+        return {
+          provider: "opencode",
+          label: "OpenCode",
+          source: "api",
+          windows: [],
+          quotaSemantics: {
+            status: "unknown",
+            description:
+              "OpenCode/Zen has no public quota, balance, or usage API. Authenticated successfully with model access only.",
+            effectiveAvailability: [],
+          },
+          notes: modelCount > 0 ? [`${modelCount} models available`] : [],
+          state: {
+            status: "fresh",
+            stale: false,
+            refreshedAt: nowIso(),
+            authStatus: "usable",
+            sourcesTried: sourceNames(attempts),
+          },
+          attempts,
+        };
+      } catch (error) {
+        finalError = errorMessage(error);
+        attempts[attempts.length - 1] = {
+          source: "api",
+          status: "failed",
+          error: finalError,
+        };
+      }
     }
   } else {
     attempts.push({
@@ -105,7 +147,9 @@ export async function inspectAuth(
   };
 }
 
-async function validateApiKey(credentials: OpenCodeCredentials): Promise<number> {
+async function validateApiKey(
+  credentials: OpenCodeCredentials,
+): Promise<number> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
@@ -137,12 +181,151 @@ async function validateApiKey(credentials: OpenCodeCredentials): Promise<number>
   }
 }
 
+async function fetchGoUsage(
+  credentials: OpenCodeCredentials,
+): Promise<GoUsageData> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(GO_USAGE_URL, {
+      headers: {
+        Authorization: `Bearer ${credentials.key}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (response.status === 403) {
+      if (await isEntitlementError(response)) {
+        throw new Error("OpenCode Go: not subscribed to Go");
+      }
+      throw new Error("OpenCode sign-in required");
+    }
+    if (response.status === 401) {
+      throw new Error("OpenCode sign-in required");
+    }
+    if (response.status === 429) {
+      throw new Error("OpenCode rate limited");
+    }
+    if (!response.ok) {
+      throw new Error("OpenCode Go API unavailable");
+    }
+    const data = (await response.json()) as unknown;
+    return parseGoUsage(data);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function isEntitlementError(response: Response): Promise<boolean> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return false;
+  }
+  const root = objectValue(body);
+  if (!root) return false;
+  const error = objectValue(root.error);
+  return stringValue(error?.type) === "EntitlementError";
+}
+
+function parseGoUsage(data: unknown): GoUsageData {
+  const root = objectValue(data);
+  const usage = root ? objectValue(root.usage) : undefined;
+  if (!usage) throw new Error("OpenCode Go usage response malformed");
+  return {
+    rolling: parseGoWindow(usage.rolling),
+    weekly: parseGoWindow(usage.weekly),
+    monthly: parseGoWindow(usage.monthly),
+  };
+}
+
+function parseGoWindow(value: unknown): GoWindowReading {
+  const entry = objectValue(value);
+  if (!entry) throw new Error("OpenCode Go usage response malformed");
+  const percent = entry.percent;
+  if (
+    typeof percent !== "number" ||
+    !Number.isFinite(percent) ||
+    percent < 0 ||
+    percent > 100
+  ) {
+    throw new Error("OpenCode Go usage response malformed");
+  }
+  const resetsAt = stringValue(entry.resetsAt);
+  if (!resetsAt || Number.isNaN(new Date(resetsAt).getTime())) {
+    throw new Error("OpenCode Go usage response malformed");
+  }
+  return { percent, resetsAt };
+}
+
+function buildGoQuota(
+  usage: GoUsageData,
+  attempts: SourceAttempt[],
+): ProviderQuota {
+  const windows: QuotaWindow[] = [
+    goWindow(
+      "go-rolling",
+      "OpenCode Go rolling",
+      "session",
+      usage.rolling,
+    ),
+    goWindow(
+      "go-weekly",
+      "OpenCode Go weekly",
+      "weekly",
+      usage.weekly,
+    ),
+    goWindow(
+      "go-monthly",
+      "OpenCode Go monthly",
+      "monthly",
+      usage.monthly,
+    ),
+  ];
+  return {
+    provider: "opencode",
+    label: "OpenCode",
+    source: "api",
+    windows,
+    quotaSemantics: {
+      status: "partial",
+      description: GO_NOTE,
+      effectiveAvailability: [],
+    },
+    notes: [GO_NOTE],
+    state: {
+      status: "fresh",
+      stale: false,
+      refreshedAt: nowIso(),
+      authStatus: "usable",
+      sourcesTried: sourceNames(attempts),
+    },
+    attempts,
+  };
+}
+
+function goWindow(
+  id: string,
+  label: string,
+  kind: QuotaWindow["kind"],
+  reading: GoWindowReading,
+): QuotaWindow {
+  return withRemaining({
+    id,
+    label,
+    kind,
+    percentUsed: reading.percent,
+    resetsAt: reading.resetsAt,
+  });
+}
+
 function readCredentialState(): CredentialState {
   const envKey = process.env.OPENCODE_API_KEY ?? process.env.ZEN_API_KEY;
   if (envKey) {
     return {
       status: "available",
-      credentials: { key: envKey },
+      credentials: { key: envKey, isGo: false },
       source: { source: OPENCODE_ENV_SOURCE, status: "available" },
     };
   }
@@ -175,29 +358,47 @@ function extractCredentialState(
       status: "invalid",
       source: { source: OPENCODE_AUTH_SOURCE, path, status: "invalid" },
     };
-  const key = findApiKey(data);
-  if (!key)
+  const credentials = findCredentials(data);
+  if (!credentials)
     return {
       status: "invalid",
       source: { source: OPENCODE_AUTH_SOURCE, path, status: "invalid" },
     };
   return {
     status: "available",
-    credentials: { key },
+    credentials,
     source: { source: OPENCODE_AUTH_SOURCE, path, status: "available" },
   };
+}
+
+function findCredentials(
+  data: Record<string, unknown>,
+): OpenCodeCredentials | undefined {
+  const goEntry = objectValue(data[GO_AUTH_ENTRY_KEY]);
+  if (goEntry) {
+    const key = extractKey(goEntry);
+    if (key) return { key, isGo: true };
+  }
+  const key = findApiKey(data);
+  if (key) return { key, isGo: false };
+  return undefined;
 }
 
 function findApiKey(data: Record<string, unknown>): string | undefined {
   for (const value of Object.values(data)) {
     const entry = objectValue(value);
     if (!entry) continue;
-    const type = stringValue(entry.type);
-    if (type !== "api_key" && type !== "api-key") continue;
-    const key = stringValue(entry.key);
+    const key = extractKey(entry);
     if (key) return key;
   }
   return undefined;
+}
+
+function extractKey(entry: Record<string, unknown>): string | undefined {
+  const type = stringValue(entry.type);
+  if (type !== "api_key" && type !== "api-key" && type !== "api")
+    return undefined;
+  return stringValue(entry.key);
 }
 
 function opencodeAuthFile(): string {

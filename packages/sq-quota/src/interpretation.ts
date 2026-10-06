@@ -89,6 +89,9 @@ function semanticsFor(
         generatedAt,
       );
     case "opencode":
+      if (provider.quotaSemantics?.status === "partial") {
+        return provider.quotaSemantics;
+      }
       return {
         status: "unknown",
         description:
