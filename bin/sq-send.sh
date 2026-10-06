@@ -7,6 +7,7 @@
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
 # Special keys instead of text: sq-send.sh <target> --key Enter
+# A call with no arguments, or a resolvable target with --key and no key value, prints this usage to stderr and exits 2.
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 #
