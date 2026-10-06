@@ -244,7 +244,30 @@ test_legacy_squad_home_only_still_resolves() {
   pass "sq-send strict: legacy SQUAD_HOME-only environment still resolves and sends"
 }
 
+test_zero_args_prints_usage_and_exits_2() {
+  local dir err rc fb home log
+  dir="$TMP_ROOT/zero-args"; mkdir -p "$dir"; err="$dir/send.err"
+
+  "$SEND" >/dev/null 2>"$err"; rc=$?
+  expect_code 2 "$rc" "zero-argument invocation should exit 2"
+  assert_contains "$(cat "$err")" "Usage: sq-send.sh" "zero-argument invocation should print usage"
+  assert_no_grep "unbound variable" "$err" "zero-argument invocation should never leak a bash unbound-variable error"
+
+  # Sibling arity case: a resolvable target followed by a valueless --key must
+  # hit the same usage/exit-2 contract instead of dereferencing $2 unbound.
+  fb=$(make_stubs "$dir"); home=$(setup_home zerokey); log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-nokey.meta" "window=sess:sq-lane-nokey" "kind=strike"
+  PATH="$fb:$PATH" SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$home" SQUAD_TMUX_LOG="$log" SQUAD_SEND_SETTLE=0 \
+    "$SEND" lane-nokey --key >/dev/null 2>"$err"; rc=$?
+  expect_code 2 "$rc" "a --key send with no key value should exit 2"
+  assert_contains "$(cat "$err")" "Usage: sq-send.sh" "a --key send with no key value should print usage"
+  assert_no_grep "unbound variable" "$err" "a --key send with no key value should never leak a bash unbound-variable error"
+  [ ! -s "$log" ] || fail "a --key send with no key value still attempted a backend send"$'\n'"$(cat "$log")"
+  pass "sq-send strict: zero arguments and a valueless --key print usage and exit 2"
+}
+
 test_exact_lane_id_send_still_works
+test_zero_args_prints_usage_and_exits_2
 test_key_send_exit_status_follows_delivery
 test_legacy_squad_home_only_still_resolves
 test_unset_fm_home_fails

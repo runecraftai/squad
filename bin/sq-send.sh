@@ -7,6 +7,7 @@
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
 # Special keys instead of text: sq-send.sh <target> --key Enter
+# A call with no arguments, or a resolvable target with --key and no key value, prints this usage to stderr and exits 2.
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 #
@@ -77,6 +78,16 @@
 # parked composer cannot swallow the steer. A missing or unavailable extension
 # falls back to the recorded backend's normal submit path.
 set -eu
+
+fm_send_usage() {
+  echo "Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>" >&2
+  echo "       sq-send.sh <target> --key Enter" >&2
+}
+
+if [ "$#" -eq 0 ]; then
+  fm_send_usage
+  exit 2
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -501,6 +512,10 @@ if [ "${1:-}" = "--key" ]; then
       exit 1
       ;;
   esac
+  if [ "$#" -lt 2 ]; then
+    fm_send_usage
+    exit 2
+  fi
   key=$2
   semantic_key=$(fm_send_normalize_key "$key")
   if [ "$TARGET_BACKEND" = remote ]; then
