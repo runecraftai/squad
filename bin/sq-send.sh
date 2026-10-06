@@ -78,9 +78,13 @@
 # falls back to the recorded backend's normal submit path.
 set -eu
 
-if [ "$#" -eq 0 ]; then
+fm_send_usage() {
   echo "Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>" >&2
   echo "       sq-send.sh <target> --key Enter" >&2
+}
+
+if [ "$#" -eq 0 ]; then
+  fm_send_usage
   exit 2
 fi
 
@@ -507,6 +511,10 @@ if [ "${1:-}" = "--key" ]; then
       exit 1
       ;;
   esac
+  if [ "$#" -lt 2 ]; then
+    fm_send_usage
+    exit 2
+  fi
   key=$2
   semantic_key=$(fm_send_normalize_key "$key")
   if [ "$TARGET_BACKEND" = remote ]; then
