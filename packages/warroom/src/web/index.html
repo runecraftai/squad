@@ -170,7 +170,7 @@
 	async function loadInitiatives() {
 		state.initiatives = await api("/api/initiatives");
 		const select = document.getElementById("initiative-select");
-		select.innerHTML = state.initiatives.map((i) => `<option value="${i.id}">${escapeHtml(i.title)}</option>`).join("");
+		select.innerHTML = state.initiatives.map((i) => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.title)}</option>`).join("");
 		if (!state.initiatives.find((i) => i.id === state.current) && state.initiatives[0]) state.current = state.initiatives[0].id;
 		select.value = state.current || "";
 		if (state.current) await loadInitiative(state.current);
@@ -178,7 +178,7 @@
 
 	async function loadInitiative(id) {
 		state.current = id;
-		const detail = await api(`/api/initiative/${id}`);
+		const detail = await api(`/api/initiative/${encodeURIComponent(id)}`);
 		renderInitiative(detail);
 	}
 
@@ -216,9 +216,9 @@
 		scopeGrid.innerHTML = scopes.map(([kind, label, revision]) => {
 			const scope = scopeFor(detail, kind, revision);
 			return `<div class="scope-cell">
-				<div class="label">${label}</div>
-				<div class="state ${scope.glyph}">${scope.state}</div>
-				<button data-approve="${kind}" data-revision="${revision ? revision.id : ""}" ${revision ? "" : "disabled"} style="margin-top: var(--s2); width: 100%">Record approved</button>
+				<div class="label">${escapeHtml(label)}</div>
+				<div class="state ${scope.glyph}">${escapeHtml(scope.state)}</div>
+				<button data-approve="${escapeHtml(kind)}" data-revision="${revision ? escapeHtml(revision.id) : ""}" ${revision ? "" : "disabled"} style="margin-top: var(--s2); width: 100%">Record approved</button>
 			</div>`;
 		}).join("");
 		scopeGrid.querySelectorAll("[data-approve]").forEach((button) => button.addEventListener("click", () => recordApproval(button.dataset.approve, button.dataset.revision)));
@@ -235,12 +235,12 @@
 			const flags = ["stale", "superseded", "outdated"].filter((flag) => entry[flag]).map((flag) => `<span class="state-tag ${flag}">${flag}</span>`).join(" ");
 			return `<tr>
 				<td class="mono">${entry.sequence}</td>
-				<td class="mono">${entry.type}</td>
+				<td class="mono">${escapeHtml(entry.type)}</td>
 				<td>${escapeHtml(entry.summary)}</td>
-				<td class="mono digest">${entry.revisionId || ""}</td>
+				<td class="mono digest">${escapeHtml(entry.revisionId || "")}</td>
 				<td>${flags}</td>
 				<td class="mono">${escapeHtml(entry.actor)}</td>
-				<td class="mono">${entry.occurredAt}</td>
+				<td class="mono">${escapeHtml(entry.occurredAt)}</td>
 			</tr>`;
 		}).join("");
 	}
@@ -248,9 +248,9 @@
 	function renderRevisions(revisions) {
 		const body = document.getElementById("revisions-body");
 		body.innerHTML = revisions.map((r) => `<tr>
-			<td class="mono">${r.kind}</td>
-			<td class="mono">${r.id}</td>
-			<td class="mono digest">${r.digest.slice(0, 16)}…</td>
+			<td class="mono">${escapeHtml(r.kind)}</td>
+			<td class="mono">${escapeHtml(r.id)}</td>
+			<td class="mono digest">${escapeHtml(r.digest.slice(0, 16))}…</td>
 			<td>${r.stale ? '<span class="state-tag stale">stale</span>' : '<span class="state-tag ok">current</span>'}</td>
 		</tr>`).join("");
 	}
@@ -265,30 +265,43 @@
 			if (q.status === "open") {
 				actionCell = answeringQuestionId === q.id
 					? `<div class="row" style="gap: var(--s2); min-width: 0">
-						<input data-answer-input="${q.id}" placeholder="Answer" style="min-width: 8rem" />
-						<button data-answer-submit="${q.id}" class="primary" style="flex: 0 0 auto">Submit</button>
+						<input data-answer-input placeholder="Answer" style="min-width: 8rem" />
+						<button data-answer-submit class="primary" style="flex: 0 0 auto">Submit</button>
 					</div>`
-					: `<button data-answer-start="${q.id}">Answer</button>`;
+					: `<button data-answer-start>Answer</button>`;
 			}
 			return `<tr>
-				<td><span class="state-tag ${q.status}">${q.status}</span></td>
-				<td class="mono digest">${q.revisionId}</td>
+				<td><span class="state-tag ${escapeHtml(q.status)}">${escapeHtml(q.status)}</span></td>
+				<td class="mono digest">${escapeHtml(q.revisionId)}</td>
 				<td>${escapeHtml(q.prompt)}</td>
 				<td>${escapeHtml(q.answer || "")}</td>
 				<td>${actionCell}</td>
 			</tr>`;
 		}).join("");
-		body.querySelectorAll("[data-answer-start]").forEach((button) => button.addEventListener("click", () => {
-			answeringQuestionId = button.dataset.answerStart;
-			renderQuestions(state.questions);
-			const input = document.querySelector(`[data-answer-input="${answeringQuestionId}"]`);
-			if (input) input.focus();
-		}));
-		body.querySelectorAll("[data-answer-submit]").forEach((button) => button.addEventListener("click", () => submitAnswer(button.dataset.answerSubmit)));
+		body.querySelectorAll("tr").forEach((row, index) => {
+			const question = questions[index];
+			if (!question) return;
+			const start = row.querySelector("[data-answer-start]");
+			if (start) start.addEventListener("click", () => {
+				answeringQuestionId = question.id;
+				renderQuestions(state.questions);
+				const input = answerInputFor(question.id);
+				if (input) input.focus();
+			});
+			const submit = row.querySelector("[data-answer-submit]");
+			if (submit) submit.addEventListener("click", () => submitAnswer(question.id));
+		});
+	}
+
+	function answerInputFor(questionId) {
+		const index = state.questions.findIndex((item) => item.id === questionId);
+		if (index < 0) return null;
+		const row = document.getElementById("questions-body").querySelectorAll("tr")[index];
+		return row ? row.querySelector("[data-answer-input]") : null;
 	}
 
 	async function submitAnswer(questionId) {
-		const input = document.querySelector(`[data-answer-input="${questionId}"]`);
+		const input = answerInputFor(questionId);
 		const answer = input ? input.value.trim() : "";
 		if (!answer) return;
 		try {
@@ -299,10 +312,10 @@
 	}
 
 	function fillRevisionSelects(revisions) {
-		const options = revisions.map((r) => `<option value="${r.id}">${r.kind} · ${r.id}${r.stale ? " (stale)" : ""}</option>`).join("");
+		const options = revisions.map((r) => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.kind)} · ${escapeHtml(r.id)}${r.stale ? " (stale)" : ""}</option>`).join("");
 		document.getElementById("compare-a").innerHTML = options;
 		document.getElementById("compare-b").innerHTML = options;
-		document.getElementById("question-revision").innerHTML = revisions.filter((r) => !r.stale).map((r) => `<option value="${r.id}">${r.kind} · ${r.id}</option>`).join("");
+		document.getElementById("question-revision").innerHTML = revisions.filter((r) => !r.stale).map((r) => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.kind)} · ${escapeHtml(r.id)}</option>`).join("");
 	}
 
 	async function recordApproval(kind, revisionId) {
@@ -349,7 +362,7 @@
 		const b = document.getElementById("compare-b").value;
 		const result = document.getElementById("compare-result");
 		try {
-			const comparison = await api(`/api/compare/${state.current}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+			const comparison = await api(`/api/compare/${encodeURIComponent(state.current)}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
 			const summary = comparison.identicalContent
 				? `<div class="chip digest">identical content — same digest (${comparison.revisionA.digest.slice(0, 16)}…), ${comparison.sameIdentity ? "same revision" : "different revision identity"}</div>`
 				: `<div class="chip">different content — digests differ</div>`;

@@ -9,6 +9,14 @@ function json(data: unknown, status = 200): Response {
 	return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
 }
 
+function decodePathSegment(pathname: string, prefix: string): string | null {
+	try {
+		return decodeURIComponent(pathname.slice(prefix.length));
+	} catch {
+		return null;
+	}
+}
+
 export interface ServerOptions {
 	dbPath?: string;
 	port?: number;
@@ -37,14 +45,16 @@ export function createApp(options: ServerOptions = {}): { warroom: Warroom; fetc
 		}
 
 		if (request.method === "GET" && url.pathname.startsWith("/api/initiative/")) {
-			const id = url.pathname.slice("/api/initiative/".length);
+			const id = decodePathSegment(url.pathname, "/api/initiative/");
+			if (id === null) return json({ error: "invalid initiative id" }, 400);
 			const state = warroom.state(id);
 			if (!state.initiative) return json({ error: "initiative does not exist" }, 404);
 			return json({ ...state, timeline: warroom.timeline(id) });
 		}
 
 		if (request.method === "GET" && url.pathname.startsWith("/api/compare/")) {
-			const initiativeId = url.pathname.slice("/api/compare/".length);
+			const initiativeId = decodePathSegment(url.pathname, "/api/compare/");
+			if (initiativeId === null) return json({ error: "invalid initiative id" }, 400);
 			const a = url.searchParams.get("a");
 			const b = url.searchParams.get("b");
 			if (!a || !b) return json({ error: "query params 'a' and 'b' are required" }, 400);
