@@ -1,5 +1,4 @@
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -9,10 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli.js";
-import {
-  fetchQuota,
-  inspectAuth,
-} from "../../src/providers/opencode.js";
+import { fetchQuota, inspectAuth } from "../../src/providers/opencode.js";
 import type { SqQuotaResponse } from "../../src/types.js";
 
 const originalOpenCodeApiKey = process.env.OPENCODE_API_KEY;
@@ -31,8 +27,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  if (originalOpenCodeApiKey === undefined)
-    delete process.env.OPENCODE_API_KEY;
+  if (originalOpenCodeApiKey === undefined) delete process.env.OPENCODE_API_KEY;
   else process.env.OPENCODE_API_KEY = originalOpenCodeApiKey;
   if (originalZenApiKey === undefined) delete process.env.ZEN_API_KEY;
   else process.env.ZEN_API_KEY = originalZenApiKey;
@@ -380,6 +375,333 @@ describe("OpenCode inspectAuth", () => {
         },
       ],
     });
+  });
+});
+
+describe("OpenCode Go credential discovery", () => {
+  function writeGoAuth(
+    key = "sk-go-key",
+    extra: Record<string, unknown> = {},
+  ): void {
+    writeAuthJson({
+      opencode: { type: "api_key", key: "sk-zen-key" },
+      "opencode-go": { type: "api", key },
+      ...extra,
+    });
+  }
+
+  function stubGoUsageFetch(
+    status = 200,
+    body: unknown = {
+      usage: {
+        rolling: {
+          status: "ok",
+          percent: 9,
+          resetsAt: "2026-10-06T03:36:51.000Z",
+        },
+        weekly: {
+          status: "ok",
+          percent: 6,
+          resetsAt: "2026-10-12T00:00:00.000Z",
+        },
+        monthly: {
+          status: "ok",
+          percent: 3,
+          resetsAt: "2026-11-05T13:35:10.000Z",
+        },
+      },
+    },
+  ): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("prefers the opencode-go entry over the generic opencode entry", async () => {
+    writeGoAuth("sk-go-preferred");
+    const fetchMock = stubGoUsageFetch();
+
+    await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://opencode.ai/zen/go/v1/usage");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer sk-go-preferred",
+    );
+  });
+
+  it("falls back to the generic opencode entry when no opencode-go entry exists", async () => {
+    writeAuthJson({ opencode: { type: "api", key: "sk-generic-api-type" } });
+    const fetchMock = stubModelsFetch();
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.status).toBe("fresh");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://opencode.ai/zen/v1/models");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer sk-generic-api-type",
+    );
+  });
+
+  it('accepts type: "api" for the generic opencode entry (pre-existing bug fix)', async () => {
+    writeAuthJson({ opencode: { type: "api", key: "sk-api-type" } });
+    const fetchMock = stubModelsFetch();
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.status).toBe("fresh");
+    expect(result.state.authStatus).toBe("usable");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer sk-api-type",
+    );
+  });
+
+  it("falls back to the generic entry when the opencode-go entry has no usable key", async () => {
+    writeAuthJson({
+      opencode: { type: "api_key", key: "sk-fallback" },
+      "opencode-go": { type: "oauth", token: "not-an-api-key" },
+    });
+    const fetchMock = stubModelsFetch();
+
+    await fetchQuota({ allowKeychainPrompt: false });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer sk-fallback",
+    );
+  });
+});
+
+describe("OpenCode Go window mapping", () => {
+  function writeGoAuth(key = "sk-go-key"): void {
+    writeAuthJson({ "opencode-go": { type: "api", key } });
+  }
+
+  it("maps rolling/weekly/monthly to session/weekly/monthly windows", async () => {
+    writeGoAuth();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            usage: {
+              rolling: {
+                status: "ok",
+                percent: 9,
+                resetsAt: "2026-10-06T03:36:51.000Z",
+              },
+              weekly: {
+                status: "ok",
+                percent: 6,
+                resetsAt: "2026-10-12T00:00:00.000Z",
+              },
+              monthly: {
+                status: "ok",
+                percent: 3,
+                resetsAt: "2026-11-05T13:35:10.000Z",
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.status).toBe("fresh");
+    expect(result.windows).toHaveLength(3);
+    expect(result.windows).toEqual([
+      expect.objectContaining({
+        kind: "session",
+        percentUsed: 9,
+        percentRemaining: 91,
+        resetsAt: "2026-10-06T03:36:51.000Z",
+      }),
+      expect.objectContaining({
+        kind: "weekly",
+        percentUsed: 6,
+        percentRemaining: 94,
+        resetsAt: "2026-10-12T00:00:00.000Z",
+      }),
+      expect.objectContaining({
+        kind: "monthly",
+        percentUsed: 3,
+        percentRemaining: 97,
+        resetsAt: "2026-11-05T13:35:10.000Z",
+      }),
+    ]);
+    expect(result.quotaSemantics).toMatchObject({ status: "partial" });
+    expect(result.windows.every((window) => window.pace === undefined)).toBe(
+      true,
+    );
+    expect(result.quotaSemantics?.effectiveAvailability).toEqual([]);
+    for (const window of result.windows) {
+      expect(window.label.toLowerCase()).toContain("account-level");
+    }
+    expect(result.notes?.join(" ")).toContain("account-level");
+  });
+});
+
+describe("OpenCode Go not-subscribed handling", () => {
+  function writeGoAuth(key = "sk-go-key"): void {
+    writeAuthJson({ "opencode-go": { type: "api", key } });
+  }
+
+  it("reports a distinct not-subscribed error on a 403 EntitlementError body", async () => {
+    writeGoAuth();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: "error",
+              error: { type: "EntitlementError" },
+            }),
+            { status: 403, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.windows).toEqual([]);
+    expect(result.state.error).toContain("not subscribed");
+    expect(result.state.error).not.toBe("OpenCode API unavailable");
+    expect(result.attempts).toEqual([
+      {
+        source: "go-usage",
+        status: "failed",
+        error: expect.stringContaining("not subscribed"),
+      },
+    ]);
+  });
+
+  it("treats a plain 403 without an EntitlementError body as sign-in required", async () => {
+    writeGoAuth();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("forbidden", { status: 403 })),
+    );
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.error).toBe("OpenCode sign-in required");
+  });
+});
+
+describe("OpenCode Go malformed or missing readings", () => {
+  function writeGoAuth(key = "sk-go-key"): void {
+    writeAuthJson({ "opencode-go": { type: "api", key } });
+  }
+
+  it("reports a malformed error when a window is missing entirely", async () => {
+    writeGoAuth();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              usage: {
+                rolling: {
+                  status: "ok",
+                  percent: 9,
+                  resetsAt: "2026-10-06T03:36:51.000Z",
+                },
+                weekly: {
+                  status: "ok",
+                  percent: 6,
+                  resetsAt: "2026-10-12T00:00:00.000Z",
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.windows).toEqual([]);
+    expect(result.state.error).toContain("malformed");
+  });
+
+  it("reports a malformed error when percent is out of range", async () => {
+    writeGoAuth();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              usage: {
+                rolling: {
+                  status: "ok",
+                  percent: 150,
+                  resetsAt: "2026-10-06T03:36:51.000Z",
+                },
+                weekly: {
+                  status: "ok",
+                  percent: 6,
+                  resetsAt: "2026-10-12T00:00:00.000Z",
+                },
+                monthly: {
+                  status: "ok",
+                  percent: 3,
+                  resetsAt: "2026-11-05T13:35:10.000Z",
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.error).toContain("malformed");
+  });
+
+  it("reports a malformed error when resetsAt is missing", async () => {
+    writeGoAuth();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              usage: {
+                rolling: { status: "ok", percent: 9 },
+                weekly: {
+                  status: "ok",
+                  percent: 6,
+                  resetsAt: "2026-10-12T00:00:00.000Z",
+                },
+                monthly: {
+                  status: "ok",
+                  percent: 3,
+                  resetsAt: "2026-11-05T13:35:10.000Z",
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const result = await fetchQuota({ allowKeychainPrompt: false });
+
+    expect(result.state.error).toContain("malformed");
   });
 });
 
