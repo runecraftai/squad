@@ -208,17 +208,21 @@
 
 		const scopeGrid = document.getElementById("scope-grid");
 		const scopes = [
-			["plan-approval", "Plan approval", planRevision],
-			["execution-authorization", "Execution authorization", planRevision],
-			["code-review-acceptance", "Code-review acceptance", codeRevision],
-			["merge-permission", "Merge permission", codeRevision],
+			["plan-approval", "Plan approval", planRevision, null],
+			["execution-authorization", "Execution authorization", planRevision, null],
+			["code-review-acceptance", "Code-review acceptance", codeRevision, "Requires validation evidence, which this slice does not collect. Goes live in slice 3 with the real review flow."],
+			["merge-permission", "Merge permission", codeRevision, null],
 		];
-		scopeGrid.innerHTML = scopes.map(([kind, label, revision]) => {
+		scopeGrid.innerHTML = scopes.map(([kind, label, revision, disabledNote]) => {
 			const scope = scopeFor(detail, kind, revision);
+			const target = revision ? `<div class="hint mono">${escapeHtml(revision.id)} · ${escapeHtml(revision.digest.slice(0, 16))}…</div>` : "";
+			const disabled = disabledNote || !revision;
 			return `<div class="scope-cell">
 				<div class="label">${escapeHtml(label)}</div>
+				${target}
 				<div class="state ${scope.glyph}">${escapeHtml(scope.state)}</div>
-				<button data-approve="${escapeHtml(kind)}" data-revision="${revision ? escapeHtml(revision.id) : ""}" ${revision ? "" : "disabled"} style="margin-top: var(--s2); width: 100%">Record approved</button>
+				<button data-approve="${escapeHtml(kind)}" data-revision="${revision ? escapeHtml(revision.id) : ""}" ${disabled ? "disabled" : ""} ${disabledNote ? `title="${escapeHtml(disabledNote)}"` : ""} style="margin-top: var(--s2); width: 100%">Record approved</button>
+				${disabledNote ? `<div class="hint">${escapeHtml(disabledNote)}</div>` : ""}
 			</div>`;
 		}).join("");
 		scopeGrid.querySelectorAll("[data-approve]").forEach((button) => button.addEventListener("click", () => recordApproval(button.dataset.approve, button.dataset.revision)));
@@ -367,7 +371,8 @@
 				? `<div class="chip digest">identical content — same digest (${comparison.revisionA.digest.slice(0, 16)}…), ${comparison.sameIdentity ? "same revision" : "different revision identity"}</div>`
 				: `<div class="chip">different content — digests differ</div>`;
 			const diff = comparison.diff.map((line) => `<div class="diff-line diff-${line.type}">${line.type === "added" ? "+" : line.type === "removed" ? "-" : " "} ${escapeHtml(line.text)}</div>`).join("");
-			result.innerHTML = summary + `<div class="mono" style="margin-top: var(--s2); border: 1px solid var(--line); border-radius: var(--r1)">${diff || '<div class="hint" style="padding: var(--s2)">No structural difference.</div>'}</div>`;
+			const qualifier = '<div class="hint" style="margin-top: var(--s1)">Structural line diff over revision content only — not a Git ancestry or patch-parsing result.</div>';
+			result.innerHTML = summary + qualifier + `<div class="mono" style="margin-top: var(--s2); border: 1px solid var(--line); border-radius: var(--r1)">${diff || '<div class="hint" style="padding: var(--s2)">No structural difference.</div>'}</div>`;
 		} catch (error) { result.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`; }
 	});
 
