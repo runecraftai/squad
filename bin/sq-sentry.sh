@@ -152,12 +152,15 @@ STALE_ESCALATE_SECS=${SQUAD_STALE_ESCALATE_SECS:-240}  # idle secs before a prov
 # same STALE_ESCALATE_SECS-paced wedge_timer_check used for a provably-working
 # non-busy stale, so it escalates via the existing stale reason, escalation
 # counter, and demand-deep-inspection marker for human inspection only - never
-# an automatic interrupt, signal, or restart. A completed turn touches
+# an automatic interrupt, signal, or restart. A declared paused:/commander-held
+# last status line outranks that busy verdict, so the caller keeps the bounded
+# pause cadence instead of starting the wedge timer. A completed turn touches
 # turn-ended and resets the age. Set generously above any legitimate interval
 # between completed turns, including long tool calls, builds, or test runs.
 BUSY_TURN_MAX_SECS=${SQUAD_BUSY_TURN_MAX_SECS:-3600}
 # A crew that declared a pause is idling on a known external wait, so its stale
-# pane is absorbed rather than wedge-escalated.
+# pane is absorbed rather than wedge-escalated, and that declared pause outranks
+# a merely busy pane so a foreground long poll cannot force a working verdict.
 # A commander-held or paused crew whose agent has confidently exited uses the same
 # bounded cadence, while a live or ambiguously read agent still surfaces once.
 # These cases re-surface once for a recheck every PAUSE_RESURFACE_SECS - far
@@ -310,7 +313,8 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
 # signal every verified harness's turn-end hook touches; before any turn has
 # completed, ages the task's spawn record instead so a fresh task still gets a
 # bound. The caller checks that the pane is busy and routes a crossed bound
-# through the existing wedge_timer_check, never anything that touches the
+# through the existing wedge_timer_check, or through the bounded pause cadence
+# when the last status line declares a pause, never anything that touches the
 # worker itself.
 busy_turn_over_age() {  # <task>
   local task=$1 f
