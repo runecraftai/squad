@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Runecraft Warroom — Planning</title>
+<style>
+	:root {
+		--bg:#0d0f10; --surface:#141719; --surface-2:#1a1e20; --surface-3:#202528;
+		--line:#333a3d; --line-bright:#626b6f;
+		--text:#f2eee7; --muted:#a9b0b1;
+		--copper:#d68a52; --copper-soft:#33231a; --copper-line:#70482e;
+		--blue:#7eb7d4; --blue-soft:#15252e;
+		--ok:#79bd91; --warn:#e1bd62; --risk:#e17c68;
+		--s1:.25rem; --s2:.5rem; --s3:.75rem; --s4:1rem; --s5:1.5rem; --s6:2rem;
+		--r1:4px; --r2:10px; --ease:cubic-bezier(.16,1,.3,1);
+	}
+	* { box-sizing: border-box; }
+	html, body { margin: 0; background: var(--bg); color: var(--text); }
+	body { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.45; }
+	code, .mono, .digest, .id { font-family: ui-monospace, "Cascadia Code", "SF Mono", monospace; }
+	h1, h2, h3 { font-family: ui-serif, Georgia, serif; font-weight: 600; margin: 0 0 var(--s3); }
+	a { color: var(--blue); }
+	button { font: inherit; cursor: pointer; border-radius: var(--r1); border: 1px solid var(--line-bright); background: var(--surface-2); color: var(--text); padding: var(--s2) var(--s3); transition: background .15s var(--ease), border-color .15s var(--ease); }
+	button:hover:not(:disabled) { border-color: var(--copper); }
+	button:disabled { opacity: .45; cursor: not-allowed; }
+	button.primary { background: var(--copper-soft); border-color: var(--copper-line); color: var(--copper); }
+	input, textarea, select { font: inherit; background: var(--surface); border: 1px solid var(--line); color: var(--text); border-radius: var(--r1); padding: var(--s2); width: 100%; }
+	label { display: block; font-size: 12px; color: var(--muted); margin-bottom: var(--s1); }
+	.layout { display: grid; grid-template-columns: 17rem 1fr; min-height: 100vh; }
+	.rail { background: var(--surface); border-right: 1px solid var(--line); padding: var(--s4); position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+	.rail h1 { font-size: 18px; }
+	.rail .sub { color: var(--muted); font-size: 12px; margin-bottom: var(--s5); }
+	.content { padding: var(--s5); max-width: 78rem; }
+	.topbar { display: flex; gap: var(--s3); align-items: center; margin-bottom: var(--s5); flex-wrap: wrap; }
+	.chip { font-size: 12px; padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r1); color: var(--muted); }
+	.chip.digest { color: var(--blue); border-color: var(--blue-soft); }
+	.scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin: var(--s4) 0; }
+	.scope-cell { border: 1px solid var(--line); border-radius: var(--r2); padding: var(--s3); background: var(--surface-2); }
+	.scope-cell .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+	.scope-cell .state { font-size: 13px; margin-top: var(--s1); }
+	.glyph-open { color: var(--muted); }
+	.glyph-bound { color: var(--copper); }
+	.glyph-stale { color: var(--risk); }
+	.tabs { display: flex; gap: var(--s2); border-bottom: 1px solid var(--line); margin-bottom: var(--s4); }
+	.tab { padding: var(--s2) var(--s3); border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; }
+	.tab.active { color: var(--text); border-bottom-color: var(--copper); }
+	.panel { display: none; }
+	.panel.active { display: block; }
+	table { width: 100%; border-collapse: collapse; }
+	th, td { text-align: left; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+	th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+	.state-tag { font-size: 11px; padding: 1px var(--s1); border-radius: var(--r1); border: 1px solid var(--line); }
+	.state-tag.outdated, .state-tag.stale, .state-tag.superseded { color: var(--risk); border-color: var(--risk); }
+	.state-tag.ok, .state-tag.answered, .state-tag.passed { color: var(--ok); border-color: var(--ok); }
+	.diff-line { white-space: pre; padding: 0 var(--s2); }
+	.diff-unchanged { color: var(--muted); }
+	.diff-added { color: var(--ok); background: #122017; }
+	.diff-removed { color: var(--risk); background: #241514; }
+	.card { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface-2); padding: var(--s4); margin-bottom: var(--s4); }
+	.row { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: flex-end; }
+	.row > * { flex: 1; min-width: 10rem; }
+	.error { color: var(--risk); font-size: 13px; margin-top: var(--s2); }
+	.hint { color: var(--muted); font-size: 12px; margin-top: var(--s2); }
+	@media (max-width: 860px) {
+		.layout { grid-template-columns: 1fr; }
+		.rail { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
+		.scope-grid { grid-template-columns: 1fr 1fr; }
+	}
+</style>
+</head>
+<body>
+<div class="layout">
+	<nav class="rail">
+		<h1>Runecraft Warroom</h1>
+		<div class="sub">Planning surface — local, self-contained prototype of the slice 2 model.</div>
+
+		<label for="initiative-select">Initiative</label>
+		<select id="initiative-select"></select>
+
+		<div class="card" style="margin-top: var(--s4)">
+			<label for="new-initiative-title">New initiative</label>
+			<input id="new-initiative-title" placeholder="Title" />
+			<button id="create-initiative" style="margin-top: var(--s2); width: 100%">Create</button>
+		</div>
+
+		<h3 style="margin-top: var(--s5)">Approval scopes</h3>
+		<div class="hint">Each action binds to the exact revision and digest shown. No scope implies another.</div>
+		<div id="scope-grid" class="scope-grid"></div>
+	</nav>
+
+	<main class="content">
+		<div class="topbar">
+			<span class="chip" id="plan-chip">plan: —</span>
+			<span class="chip" id="code-chip">code: —</span>
+		</div>
+
+		<div class="tabs">
+			<button class="tab active" data-tab="timeline">Timeline</button>
+			<button class="tab" data-tab="revisions">Revisions &amp; compare</button>
+			<button class="tab" data-tab="questions">Questions</button>
+		</div>
+
+		<section class="panel active" data-panel="timeline">
+			<div class="card">
+				<h3>Append new revision</h3>
+				<div class="row">
+					<div>
+						<label for="revision-kind">Kind</label>
+						<select id="revision-kind"><option value="plan">plan</option><option value="code">code</option></select>
+					</div>
+					<div style="flex: 3">
+						<label for="revision-content">Content</label>
+						<textarea id="revision-content" rows="3" placeholder="Exact content — its SHA-256 digest becomes this revision's identity"></textarea>
+					</div>
+					<div style="flex: 0 0 auto">
+						<button id="create-revision" class="primary">Create revision</button>
+					</div>
+				</div>
+			</div>
+			<table>
+				<thead><tr><th>#</th><th>Type</th><th>Summary</th><th>Revision</th><th>Flags</th><th>Actor</th><th>When</th></tr></thead>
+				<tbody id="timeline-body"></tbody>
+			</table>
+		</section>
+
+		<section class="panel" data-panel="revisions">
+			<div class="card">
+				<h3>Compare two revisions</h3>
+				<div class="row">
+					<div><label for="compare-a">Revision A</label><select id="compare-a"></select></div>
+					<div><label for="compare-b">Revision B</label><select id="compare-b"></select></div>
+					<div style="flex: 0 0 auto"><button id="run-compare" class="primary">Compare</button></div>
+				</div>
+				<div id="compare-result" style="margin-top: var(--s3)"></div>
+			</div>
+			<table>
+				<thead><tr><th>Kind</th><th>Id</th><th>Digest</th><th>Flags</th></tr></thead>
+				<tbody id="revisions-body"></tbody>
+			</table>
+		</section>
+
+		<section class="panel" data-panel="questions">
+			<div class="card">
+				<h3>Ask a question</h3>
+				<div class="row">
+					<div><label for="question-revision">Against revision</label><select id="question-revision"></select></div>
+					<div style="flex: 2"><label for="question-prompt">Prompt</label><input id="question-prompt" placeholder="What has to be true for this to be safe?" /></div>
+					<div style="flex: 0 0 auto"><button id="ask-question" class="primary">Ask</button></div>
+				</div>
+			</div>
+			<table>
+				<thead><tr><th>Status</th><th>Revision</th><th>Prompt</th><th>Answer</th><th>Action</th></tr></thead>
+				<tbody id="questions-body"></tbody>
+			</table>
+		</section>
+	</main>
+</div>
+
+<script>
+	const state = { initiatives: [], current: null };
+
+	async function api(path, opts) {
+		const response = await fetch(path, opts);
+		const body = await response.json();
+		if (!response.ok) throw new Error(body.error || "request failed");
+		return body;
+	}
+
+	async function loadInitiatives() {
+		state.initiatives = await api("/api/initiatives");
+		const select = document.getElementById("initiative-select");
+		select.innerHTML = state.initiatives.map((i) => `<option value="${i.id}">${escapeHtml(i.title)}</option>`).join("");
+		if (!state.initiatives.find((i) => i.id === state.current) && state.initiatives[0]) state.current = state.initiatives[0].id;
+		select.value = state.current || "";
+		if (state.current) await loadInitiative(state.current);
+	}
+
+	async function loadInitiative(id) {
+		state.current = id;
+		const detail = await api(`/api/initiative/${id}`);
+		renderInitiative(detail);
+	}
+
+	function escapeHtml(value) {
+		return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+	}
+
+	function currentRevision(detail, kind) {
+		const candidates = detail.revisions.filter((r) => r.kind === kind && !r.stale);
+		return candidates[candidates.length - 1] || null;
+	}
+
+	function scopeFor(detail, kind, revision) {
+		if (!revision) return { state: "—", glyph: "glyph-open" };
+		const bound = detail.approvals.find((a) => a.kind === kind && a.revisionId === revision.id && !a.superseded && a.decision === "approved");
+		if (bound) return { state: `bound · ${bound.id}`, glyph: "glyph-bound" };
+		const any = detail.approvals.find((a) => a.kind === kind && a.revisionId === revision.id);
+		if (any) return { state: `${any.decision}`, glyph: "glyph-open" };
+		return { state: "open", glyph: "glyph-open" };
+	}
+
+	function renderInitiative(detail) {
+		document.getElementById("plan-chip").textContent = `plan: ${detail.initiative.currentPlanRevisionId || "—"}`;
+		const planRevision = currentRevision(detail, "plan");
+		const codeRevision = currentRevision(detail, "code");
+		document.getElementById("code-chip").textContent = `code: ${codeRevision ? codeRevision.id : "—"}`;
+
+		const scopeGrid = document.getElementById("scope-grid");
+		const scopes = [
+			["plan-approval", "Plan approval", planRevision],
+			["execution-authorization", "Execution authorization", planRevision],
+			["code-review-acceptance", "Code-review acceptance", codeRevision],
+			["merge-permission", "Merge permission", codeRevision],
+		];
+		scopeGrid.innerHTML = scopes.map(([kind, label, revision]) => {
+			const scope = scopeFor(detail, kind, revision);
+			return `<div class="scope-cell">
+				<div class="label">${label}</div>
+				<div class="state ${scope.glyph}">${scope.state}</div>
+				<button data-approve="${kind}" data-revision="${revision ? revision.id : ""}" ${revision ? "" : "disabled"} style="margin-top: var(--s2); width: 100%">Record approved</button>
+			</div>`;
+		}).join("");
+		scopeGrid.querySelectorAll("[data-approve]").forEach((button) => button.addEventListener("click", () => recordApproval(button.dataset.approve, button.dataset.revision)));
+
+		renderTimeline(detail.timeline);
+		renderRevisions(detail.revisions);
+		renderQuestions(detail.questions);
+		fillRevisionSelects(detail.revisions);
+	}
+
+	function renderTimeline(timeline) {
+		const body = document.getElementById("timeline-body");
+		body.innerHTML = timeline.map((entry) => {
+			const flags = ["stale", "superseded", "outdated"].filter((flag) => entry[flag]).map((flag) => `<span class="state-tag ${flag}">${flag}</span>`).join(" ");
+			return `<tr>
+				<td class="mono">${entry.sequence}</td>
+				<td class="mono">${entry.type}</td>
+				<td>${escapeHtml(entry.summary)}</td>
+				<td class="mono digest">${entry.revisionId || ""}</td>
+				<td>${flags}</td>
+				<td class="mono">${escapeHtml(entry.actor)}</td>
+				<td class="mono">${entry.occurredAt}</td>
+			</tr>`;
+		}).join("");
+	}
+
+	function renderRevisions(revisions) {
+		const body = document.getElementById("revisions-body");
+		body.innerHTML = revisions.map((r) => `<tr>
+			<td class="mono">${r.kind}</td>
+			<td class="mono">${r.id}</td>
+			<td class="mono digest">${r.digest.slice(0, 16)}…</td>
+			<td>${r.stale ? '<span class="state-tag stale">stale</span>' : '<span class="state-tag ok">current</span>'}</td>
+		</tr>`).join("");
+	}
+
+	let answeringQuestionId = null;
+
+	function renderQuestions(questions) {
+		state.questions = questions;
+		const body = document.getElementById("questions-body");
+		body.innerHTML = questions.map((q) => {
+			let actionCell = "";
+			if (q.status === "open") {
+				actionCell = answeringQuestionId === q.id
+					? `<div class="row" style="gap: var(--s2); min-width: 0">
+						<input data-answer-input="${q.id}" placeholder="Answer" style="min-width: 8rem" />
+						<button data-answer-submit="${q.id}" class="primary" style="flex: 0 0 auto">Submit</button>
+					</div>`
+					: `<button data-answer-start="${q.id}">Answer</button>`;
+			}
+			return `<tr>
+				<td><span class="state-tag ${q.status}">${q.status}</span></td>
+				<td class="mono digest">${q.revisionId}</td>
+				<td>${escapeHtml(q.prompt)}</td>
+				<td>${escapeHtml(q.answer || "")}</td>
+				<td>${actionCell}</td>
+			</tr>`;
+		}).join("");
+		body.querySelectorAll("[data-answer-start]").forEach((button) => button.addEventListener("click", () => {
+			answeringQuestionId = button.dataset.answerStart;
+			renderQuestions(state.questions);
+			const input = document.querySelector(`[data-answer-input="${answeringQuestionId}"]`);
+			if (input) input.focus();
+		}));
+		body.querySelectorAll("[data-answer-submit]").forEach((button) => button.addEventListener("click", () => submitAnswer(button.dataset.answerSubmit)));
+	}
+
+	async function submitAnswer(questionId) {
+		const input = document.querySelector(`[data-answer-input="${questionId}"]`);
+		const answer = input ? input.value.trim() : "";
+		if (!answer) return;
+		try {
+			await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "question.answer", initiativeId: state.current, questionId, answer }) });
+			answeringQuestionId = null;
+			await loadInitiative(state.current);
+		} catch (error) { alert(error.message); }
+	}
+
+	function fillRevisionSelects(revisions) {
+		const options = revisions.map((r) => `<option value="${r.id}">${r.kind} · ${r.id}${r.stale ? " (stale)" : ""}</option>`).join("");
+		document.getElementById("compare-a").innerHTML = options;
+		document.getElementById("compare-b").innerHTML = options;
+		document.getElementById("question-revision").innerHTML = revisions.filter((r) => !r.stale).map((r) => `<option value="${r.id}">${r.kind} · ${r.id}</option>`).join("");
+	}
+
+	async function recordApproval(kind, revisionId) {
+		try {
+			await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "approval.record", initiativeId: state.current, kind, revisionId, decision: "approved" }) });
+			await loadInitiative(state.current);
+		} catch (error) { alert(error.message); }
+	}
+
+	document.getElementById("initiative-select").addEventListener("change", (event) => loadInitiative(event.target.value));
+
+	document.getElementById("create-initiative").addEventListener("click", async () => {
+		const title = document.getElementById("new-initiative-title").value.trim();
+		if (!title) return;
+		await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "initiative.create", title }) });
+		document.getElementById("new-initiative-title").value = "";
+		await loadInitiatives();
+	});
+
+	document.getElementById("create-revision").addEventListener("click", async () => {
+		const kind = document.getElementById("revision-kind").value;
+		const content = document.getElementById("revision-content").value;
+		if (!content || !state.current) return;
+		try {
+			await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "revision.create", initiativeId: state.current, kind, content }) });
+			document.getElementById("revision-content").value = "";
+			await loadInitiative(state.current);
+		} catch (error) { alert(error.message); }
+	});
+
+	document.getElementById("ask-question").addEventListener("click", async () => {
+		const revisionId = document.getElementById("question-revision").value;
+		const prompt_ = document.getElementById("question-prompt").value.trim();
+		if (!revisionId || !prompt_) return;
+		try {
+			await api("/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "question.ask", initiativeId: state.current, revisionId, prompt: prompt_ }) });
+			document.getElementById("question-prompt").value = "";
+			await loadInitiative(state.current);
+		} catch (error) { alert(error.message); }
+	});
+
+	document.getElementById("run-compare").addEventListener("click", async () => {
+		const a = document.getElementById("compare-a").value;
+		const b = document.getElementById("compare-b").value;
+		const result = document.getElementById("compare-result");
+		try {
+			const comparison = await api(`/api/compare/${state.current}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+			const summary = comparison.identicalContent
+				? `<div class="chip digest">identical content — same digest (${comparison.revisionA.digest.slice(0, 16)}…), ${comparison.sameIdentity ? "same revision" : "different revision identity"}</div>`
+				: `<div class="chip">different content — digests differ</div>`;
+			const diff = comparison.diff.map((line) => `<div class="diff-line diff-${line.type}">${line.type === "added" ? "+" : line.type === "removed" ? "-" : " "} ${escapeHtml(line.text)}</div>`).join("");
+			result.innerHTML = summary + `<div class="mono" style="margin-top: var(--s2); border: 1px solid var(--line); border-radius: var(--r1)">${diff || '<div class="hint" style="padding: var(--s2)">No structural difference.</div>'}</div>`;
+		} catch (error) { result.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`; }
+	});
+
+	document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
+		document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+		document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+		tab.classList.add("active");
+		document.querySelector(`.panel[data-panel="${tab.dataset.tab}"]`).classList.add("active");
+	}));
+
+	loadInitiatives();
+</script>
+</body>
+</html>

@@ -48,6 +48,18 @@ CREATE INDEX IF NOT EXISTS events_initiative_sequence ON events(initiative_id, s
 CREATE INDEX IF NOT EXISTS approvals_subject ON approvals(subject_revision_id, kind);
 `,
 	},
+	{
+		version: 2,
+		sql: `
+CREATE TABLE IF NOT EXISTS questions (
+  id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id), revision_id TEXT NOT NULL REFERENCES revisions(id),
+  prompt TEXT NOT NULL, context TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK(status IN ('open','answered','outdated')),
+  answer TEXT, answered_by TEXT, answered_at TEXT,
+  created_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS questions_revision ON questions(revision_id);
+`,
+	},
 ] as const;
 
 export function migrate(db: Database): void {
