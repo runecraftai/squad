@@ -722,6 +722,29 @@ operator_absorb_class() {  # <id>
   printf 'none'
 }
 
+# Same single sq-crew-state.sh read as operator_absorb_class, but also prints
+# the busy SOURCE behind a working verdict ("<class> <src>"). pause_state_class
+# is the only caller: it must tell a genuine active run-step (a real drill
+# step) apart from a merely busy pane (e.g. a foreground long poll) before
+# letting a working verdict override a declared pause - only a run-step may,
+# a busy pane alone must not. <src> is empty when <class> is not working.
+operator_absorb_verdict() {  # <id> -> "<class> <src>"
+  local id=$1 line state src open
+  [ -n "$id" ] || { printf 'none '; return; }
+  line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  case "$line" in state:*) ;; *) printf 'none '; return ;; esac
+  state=${line#state: }; state=${state%% *}
+  if [ "$state" = paused ]; then printf 'paused '; return; fi
+  src=${line#*source: }; src=${src%% *}
+  if [ "$state" = working ]; then
+    case "$src" in run-step|pane) printf 'working %s' "$src"; return ;; esac
+  elif [ "$state" = parked ] && [ "$src" = run-step ]; then
+    open=$(status_open_decisions "${STATE:-${SQUAD_STATE_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/state}}/$id.status")
+    [ -n "$open" ] && { printf 'paused '; return; }
+  fi
+  printf 'none '
+}
+
 # 0 if crew <id> is already in a terminal state. This is a current-state check,
 # not a status-log tail check: a finished task's idle pane must not be mistaken for
 # a stopped worker, while an unknown or merely parked task keeps existing handling.

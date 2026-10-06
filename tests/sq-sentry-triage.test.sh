@@ -879,6 +879,112 @@ test_live_paused_churning_pane_is_throttled() {
   pass "a live declared pause with a churning pane is surfaced once per cadence, not once per poll"
 }
 
+# Regression (2026-10-05 field report, "Spinner vence pausa" in data/learnings.md):
+# a merely busy PANE (a foreground long poll's spinner, source: pane) must not
+# win over a declared pause the way a genuinely active drill run-step
+# (source: run-step) legitimately does. Before the fix, pause_state_class
+# trusted operator_absorb_class's merged working verdict and returned
+# "working" for a busy pane exactly as it would for a real run-step, so the
+# wedge timer started and kept re-escalating "possible wedge" every poll
+# instead of ever reaching the long pause cadence.
+test_paused_busy_pane_without_run_step_does_not_override_pause() {
+  local dir state fakebin out capture_file statusf window key sig pid round wakes
+  dir=$(make_case paused-busy-pane-no-run-step); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/held.status"
+  window="test:sq-held"
+  printf 'window=%s\nkind=strike\nharness=grok\nbackend=tmux\n' "$window" > "$state/held.meta"
+  printf 'paused: waiting at an active external-decision gate\n' > "$statusf"
+  sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  # The agent is alive (a verified harness process, not a bare shell) and its
+  # authoritative state is "working" from a busy PANE only - no active
+  # run-step - which is exactly the foreground-long-poll shape from the field
+  # report.
+  export SQUAD_FAKE_CREW_STATE='state: working · source: pane · still rendering output'
+
+  printf 'idle external-decision gate token-0 elapsed-0\n' > "$capture_file"
+  printf 'old-pane-state' > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_TMUX_CURRENT_COMMAND=grok SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_PAUSE_RESURFACE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+    "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "a declared pause with only a busy pane did not surface its first bounded recheck"
+  grep -F "possible wedge" "$out" >/dev/null && fail "a busy pane alone (no run-step) was mislabeled a possible wedge"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a busy pane alone (no run-step) started the wedge timer"
+
+  # Five more polls with a churning pane (changing footer text, same shape as
+  # the real spinner) must stay on the long pause cadence: no wedge timer ever
+  # appears, and the stale queue never grows past the single first-sight entry.
+  round=1
+  while [ "$round" -le 5 ]; do
+    printf 'idle external-decision gate token-%s elapsed-%s\n' "$round" "$round" > "$capture_file"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+      SQUAD_FAKE_TMUX_CURRENT_COMMAND=grok SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_PAUSE_RESURFACE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+      "$WATCH" >> "$out" &
+    pid=$!
+    if wait_live "$pid" 20; then reap "$pid"; else wait "$pid" || true; fi
+    [ ! -e "$state/.stale-since-$key" ] || fail "round $round: a busy pane alone (no run-step) started the wedge timer"
+    round=$((round + 1))
+  done
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf '0')
+  [ "$wakes" -eq 1 ] || fail "a declared pause with only a busy pane emitted $wakes stale wakes instead of one bounded recheck"
+  grep -F "possible wedge" "$out" >/dev/null && fail "a busy pane alone (no run-step) eventually escalated a possible wedge"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "a declared pause outranks a merely busy pane with no genuine run-step: the long pause cadence applies, never a wedge"
+}
+
+# Companion to the regression above: with NO declared pause at all, a busy
+# pane (source: pane, same as a foreground long poll) must still escalate
+# exactly as it does today once it crosses the wedge threshold - the fix must
+# never silence a genuine wedge on an operator that never declared a pause.
+test_busy_pane_without_declared_pause_still_escalates() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case busy-pane-no-pause-escalates); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:sq-busy-pane"
+  printf 'idle rendering output' > "$capture_file"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/busy.meta"
+  printf 'working: still going\n' > "$state/busy.status"
+  sig=$(seen_sig "$state/busy.status"); printf '%s' "$sig" > "$state/.seen-busy_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle rendering output")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export SQUAD_FAKE_CREW_STATE='state: working · source: pane · still rendering output'
+
+  # Phase A: a high escalation threshold means the first sighting is absorbed.
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry exited for a fresh busy-pane non-terminal stale with no declared pause (should absorb): $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "fresh busy-pane stale printed a wake reason during absorb"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on absorb"
+  [ -s "$state/.stale-since-$key" ] || fail "stale-since escalation timer was not recorded on absorb"
+  reap "$pid"
+
+  # Phase B: backdate the idle timer past the threshold; the next run escalates.
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "sentry did not escalate a busy-pane non-terminal stale past the threshold with no declared pause"
+  grep -F "stale: $window" "$out" >/dev/null || fail "escalation did not print a stale wake"
+  grep -F "possible wedge" "$out" >/dev/null || fail "escalation did not flag a possible wedge"
+  [ ! -e "$state/.stale-since-$key" ] || fail "stale-since timer was not cleared after escalation"
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the wedge escalation failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "wedge escalation was not queued"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "with no declared pause, a busy pane still escalates past the wedge threshold exactly as before"
+}
+
 # Regression: surface_nonterminal_stale must refresh the resurfaced throttle
 # marker in its absorb path so a changing pane footer cannot age it past
 # PAUSE_RESURFACE_SECS between polls. Exercises the decision directly by
@@ -2101,6 +2207,8 @@ test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_decision_parked_stale_is_throttled
 test_live_paused_churning_pane_is_throttled
+test_paused_busy_pane_without_run_step_does_not_override_pause
+test_busy_pane_without_declared_pause_still_escalates
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_XO_paused_resurfaces_in_normal_mode
 test_XO_nonpaused_stale_remains_suppressed

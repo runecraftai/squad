@@ -368,7 +368,7 @@ clear_pause_tracking() {  # <window>
 # Only a confidently dead ordinary crew may recover paused classification after
 # sq-crew-state has fallen back to stopped or unknown.
 pause_state_class() {  # <window> <task>
-  local win=$1 task=$2 key last recheck_file class agent_alive
+  local win=$1 task=$2 key last recheck_file class agent_alive verdict src
   key=${win//:/_}
   key=${key//\//_}
   key=${key//./_}
@@ -396,11 +396,19 @@ pause_state_class() {  # <window> <task>
     printf 'paused'
     return
   fi
-  class=$(operator_absorb_class "$task")
-  if [ "$class" = working ]; then
+  verdict=$(operator_absorb_verdict "$task")
+  class=${verdict%% *}
+  src=${verdict#* }
+  if [ "$class" = working ] && [ "$src" = run-step ]; then
     rm -f "$recheck_file"
     printf 'working'
     return
+  fi
+  if [ "$class" = working ]; then
+    # A busy pane alone, with no genuine active run-step, must not override a
+    # declared pause - treat it as inconclusive and fall through to the
+    # dead-agent recovery check below, same as no absorb-class match at all.
+    class=none
   fi
   if [ "$(window_kind "$win")" != xo ]; then
     agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
