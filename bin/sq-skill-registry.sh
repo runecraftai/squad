@@ -3,10 +3,22 @@
 # Scans skills/ directories and produces a machine-readable catalog that can
 # be served from a CDN (jsDelivr, unpkg, GitHub Pages, or any static host).
 #
+# --grimoire-output additionally emits a second, schema-compliant registry
+# (docs/skill-distribution.md "Grimoire registry") that validates against
+# @runecraft/skills' packages/core/src/index.ts `validateRegistry` - the
+# schema the skills MCP server (`@runecraft/grimoire-mcp`) requires. It is a
+# separate file: the legacy registry above keeps its own shape unchanged for
+# existing consumers. --grimoire-payload-dir copies every published skill's
+# files into the flat skills/<id>/<path> layout the MCP fetches content from.
+#
 # Usage:
-#   sq-skill-registry.sh                # generate registry.json to stdout
-#   sq-skill-registry.sh --output <f>   # write to file
-#   sq-skill-registry.sh --query <name> # look up a skill by name
+#   sq-skill-registry.sh                       # generate registry.json to stdout
+#   sq-skill-registry.sh --output <f>          # write the legacy registry to file
+#   sq-skill-registry.sh --query <name>        # look up a skill by name (legacy registry)
+#   sq-skill-registry.sh --grimoire-output <f> # also write the schema-compliant registry
+#   sq-skill-registry.sh --grimoire-output <f> --grimoire-payload-dir <d>
+#                                              # also copy published skill files
+#                                              # into <d>/skills/<id>/<path>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +27,8 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-$ROOT}}"
 
 OUTPUT=""
 QUERY=""
+GRIMOIRE_OUTPUT=""
+GRIMOIRE_PAYLOAD_DIR=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -28,9 +42,21 @@ while [ $# -gt 0 ]; do
       QUERY="$2"
       shift 2
       ;;
+    --grimoire-output)
+      [ $# -ge 2 ] || { echo "error: --grimoire-output requires a path" >&2; exit 2; }
+      GRIMOIRE_OUTPUT="$2"
+      shift 2
+      ;;
+    --grimoire-payload-dir)
+      [ $# -ge 2 ] || { echo "error: --grimoire-payload-dir requires a path" >&2; exit 2; }
+      GRIMOIRE_PAYLOAD_DIR="$2"
+      shift 2
+      ;;
     -h|--help)
-      printf 'Usage: sq-skill-registry.sh [--output <file>] [--query <name>]\n'
+      printf 'Usage: sq-skill-registry.sh [--output <file>] [--query <name>] [--grimoire-output <file>] [--grimoire-payload-dir <dir>]\n'
       printf 'Generate or query a skills registry for CDN distribution.\n'
+      printf -- '--grimoire-output additionally writes the schema-compliant registry the skills MCP needs.\n'
+      printf -- '--grimoire-payload-dir copies published skill files into <dir>/skills/<id>/<path> (requires --grimoire-output).\n'
       exit 0
       ;;
     *)
@@ -39,6 +65,11 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ -n "$GRIMOIRE_PAYLOAD_DIR" ] && [ -z "$GRIMOIRE_OUTPUT" ]; then
+  echo "error: --grimoire-payload-dir requires --grimoire-output" >&2
+  exit 2
+fi
 
 # Extract YAML frontmatter field value.
 # Handles both single-line values and YAML block scalars (>- and |).
@@ -156,6 +187,208 @@ generate_registry() {
   fi
 }
 
+# --- Grimoire (schema-compliant) registry -----------------------------------
+#
+# Emits a second registry matching the Registry/Skill types validated by
+# @runecraft/skills' packages/core/src/index.ts (`validateRegistry`, lines
+# 5-7 and 21-31 as read from the runecraftai/skills clone on 2026-10-06):
+# exact key sets, schemaVersion=1, per-skill contentSha256 over the skill's
+# own files, and non-empty attribution carrying an https: URL. That package
+# is not a dependency of this repo and is not consumed directly here; this
+# generator targets its documented schema instead.
+#
+# Only skills physically under the public skills/ directory are included - a
+# .agents/skills/-only skill stays internal even when its frontmatter sets
+# user-invocable: true, and is counted and reported on stderr but never
+# written to this file, per docs/skill-distribution.md "Grimoire registry"
+# distribution policy. A name present under both skills/ and .agents/skills/
+# (an internal counterpart of a public skill) is published once, from its
+# public skills/ directory.
+
+# Sanitize an arbitrary skill name into the lowercase hyphenated id the
+# schema requires (^[a-z0-9]+(?:-[a-z0-9]+)*$).
+grimoire_sanitize_id() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+# JSON-escape a string for embedding in a double-quoted JSON value, covering
+# every C0 control character (and DEL) so a skill's text can never emit JSON
+# that a strict parser rejects.
+grimoire_json_escape() {
+  local s="$1" out="" ch i hex backslash
+  backslash=$'\\'
+  local len=${#s}
+  for ((i = 0; i < len; i++)); do
+    ch="${s:i:1}"
+    case "$ch" in
+      "$backslash") out+="$backslash$backslash" ;;
+      '"') out+='\"' ;;
+      $'\b') out+='\b' ;;
+      $'\t') out+='\t' ;;
+      $'\n') out+='\n' ;;
+      $'\f') out+='\f' ;;
+      $'\r') out+='\r' ;;
+      *)
+        if [[ "$ch" == [[:cntrl:]] ]]; then
+          printf -v hex '\\u%04x' "$(printf '%d' "'$ch")"
+          out+="$hex"
+        else
+          out+="$ch"
+        fi
+        ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Hash a file, or stdin when given no argument, with whichever SHA-256 tool
+# the platform provides (macOS ships shasum, not sha256sum). Prints the hex
+# digest only.
+grimoire_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$@" | awk '{print $1}'
+  else
+    echo "error: sha256sum or shasum is required" >&2
+    return 1
+  fi
+}
+
+# Compute the per-file records and the aggregate contentSha256 for one skill
+# directory, matching @runecraft/skills' digestFiles exactly: sort files by
+# raw byte path order, then hash path bytes + a single NUL byte + file bytes,
+# for each file in that order (packages/core/src/index.ts:13-17). Prints
+# "<contentSha256>\x1e<files-json-array>" to stdout. When GRIMOIRE_PAYLOAD_DIR
+# is set, copies that same, already-hashed file set unchanged into
+# "$GRIMOIRE_PAYLOAD_DIR/skills/$2" - the flat per-skill layout the MCP's
+# fetchFile resolves against GRIMOIRE_CATALOG_BASE.
+grimoire_skill_files() {
+  local skill_dir="$1" id="$2" rel_list content_sha256
+  rel_list=$(mktemp)
+  (cd "$skill_dir" && find . -type f | sed 's|^\./||') | LC_ALL=C sort > "$rel_list"
+
+  if [ -n "$GRIMOIRE_PAYLOAD_DIR" ]; then
+    local payload_root="$GRIMOIRE_PAYLOAD_DIR/skills/$id" rel dest
+    while IFS= read -r rel; do
+      dest="$payload_root/$rel"
+      mkdir -p "$(dirname "$dest")"
+      cp "$skill_dir/$rel" "$dest"
+    done < "$rel_list"
+  fi
+
+  content_sha256=$(
+    {
+      while IFS= read -r rel; do
+        printf '%s' "$rel"
+        printf '\0'
+        cat "$skill_dir/$rel"
+      done < "$rel_list"
+    } | grimoire_sha256
+  )
+
+  local files_json="" first=true rel size sha
+  while IFS= read -r rel; do
+    size=$(LC_ALL=C wc -c < "$skill_dir/$rel" | tr -d ' ')
+    sha=$(grimoire_sha256 "$skill_dir/$rel")
+    if [ "$first" = true ]; then first=false; else files_json="$files_json,"; fi
+    files_json="$files_json{\"path\":\"$(grimoire_json_escape "$rel")\",\"sha256\":\"$sha\",\"size\":$size}"
+  done < "$rel_list"
+
+  rm -f "$rel_list"
+  printf '%s\x1e[%s]' "$content_sha256" "$files_json"
+}
+
+generate_grimoire_registry() {
+  local tmp seen
+  tmp=$(mktemp)
+  seen=$(mktemp)
+  trap 'rm -f "$tmp" "$seen"' RETURN
+
+  local catalog_version="squad-skills" revision generated_at
+  revision=$(git -C "$SQUAD_BASE" rev-parse --short=12 HEAD 2>/dev/null) || revision="unversioned-$(date -u +%s)"
+  generated_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  printf '{\n  "schemaVersion": 1,\n  "catalogVersion": "%s",\n  "revision": "%s",\n  "generatedAt": "%s",\n  "skills": [\n' \
+    "$catalog_version" "$revision" "$generated_at" > "$tmp"
+
+  local first=true published=0 excluded=0 base skill_dir name
+
+  for base in "$SQUAD_BASE/skills" "$SQUAD_BASE/.agents/skills"; do
+    [ -d "$base" ] || continue
+    for skill_dir in "$base"/*/; do
+      [ -f "$skill_dir/SKILL.md" ] || continue
+      name=$(frontmatter_field "$skill_dir/SKILL.md" "name")
+      [ -n "$name" ] || name=$(basename "$skill_dir")
+      if grep -Fxq "$name" "$seen" 2>/dev/null; then
+        continue
+      fi
+      printf '%s\n' "$name" >> "$seen"
+
+      local user_invocable is_public category
+      user_invocable=$(frontmatter_field "$skill_dir/SKILL.md" "user-invocable")
+      if [ "$base" = "$SQUAD_BASE/skills" ]; then
+        is_public=true
+      else
+        is_public=false
+      fi
+      if [ "$user_invocable" = "true" ]; then
+        category="user-invocable"
+      else
+        category="public"
+      fi
+
+      if [ "$is_public" != true ]; then
+        excluded=$((excluded + 1))
+        continue
+      fi
+
+      local id version description license source attrib_text
+      id=$(grimoire_sanitize_id "$name")
+      version=$(frontmatter_field "$skill_dir/SKILL.md" "version")
+      [ -n "$version" ] || version="1.0.0"
+      description=$(frontmatter_field "$skill_dir/SKILL.md" "description")
+      [ -n "$description" ] || description="$name"
+      license=$(frontmatter_field "$skill_dir/SKILL.md" "license")
+      [ -n "$license" ] || license="MIT"
+      source=$(frontmatter_field "$skill_dir/SKILL.md" "source")
+      attrib_text=$(frontmatter_field "$skill_dir/SKILL.md" "attribution")
+      [ -n "$attrib_text" ] || attrib_text="Distributed via Runecraft Squad"
+
+      local attrib_name attrib_url
+      case "$source" in
+        */*)
+          attrib_name="$source"
+          attrib_url="https://github.com/$source"
+          ;;
+        *)
+          attrib_name="Runecraft Squad"
+          attrib_url="https://github.com/runecraftai/squad"
+          ;;
+      esac
+
+      local hashed content_sha256 files_json
+      hashed=$(grimoire_skill_files "$skill_dir" "$id")
+      content_sha256="${hashed%%$'\x1e'*}"
+      files_json="${hashed#*$'\x1e'}"
+
+      if [ "$first" = true ]; then first=false; else printf ',\n' >> "$tmp"; fi
+      printf '    {"id":"%s","name":"%s","version":"%s","category":"%s","description":"%s","license":"%s","attribution":[{"name":"%s","url":"%s","text":"%s"}],"entrypoint":"SKILL.md","files":%s,"contentSha256":"%s"}' \
+        "$id" "$(grimoire_json_escape "$name")" "$(grimoire_json_escape "$version")" "$category" \
+        "$(grimoire_json_escape "$description")" "$(grimoire_json_escape "$license")" \
+        "$(grimoire_json_escape "$attrib_name")" "$(grimoire_json_escape "$attrib_url")" "$(grimoire_json_escape "$attrib_text")" \
+        "$files_json" "$content_sha256" >> "$tmp"
+
+      published=$((published + 1))
+    done
+  done
+
+  printf '\n  ]\n}\n' >> "$tmp"
+  mv "$tmp" "$GRIMOIRE_OUTPUT"
+  printf 'grimoire registry generated: %s (%d published, %d excluded as internal)\n' \
+    "$GRIMOIRE_OUTPUT" "$published" "$excluded" >&2
+}
+
 # Query the registry for a specific skill.
 query_registry() {
   local registry="${OUTPUT:-$SQUAD_BASE/skills-registry.json}"
@@ -174,4 +407,8 @@ if [ -n "$QUERY" ]; then
   query_registry
 else
   generate_registry
+fi
+
+if [ -n "$GRIMOIRE_OUTPUT" ]; then
+  generate_grimoire_registry
 fi

@@ -5,6 +5,7 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
+- Add a `--grimoire-output` mode to the skills registry generator that emits a schema-compliant registry for the Grimoire skills MCP from public `skills/` only, plus an optional `--grimoire-payload-dir` payload and a manual GitHub Pages workflow, leaving the legacy `skills-registry.json` unchanged.
 - Fix the skills registry publishing an empty description for most entries whose `SKILL.md` declares it as a YAML block scalar; folded and literal block scalars are now read in full while a genuinely absent description still publishes empty.
 - Fix the always-on sentry re-escalating a declared `paused:` (or commander-held) operator as a possible wedge whenever its pane stayed busy; the declared pause now keeps the bounded long-pause recheck cadence.
 - Add away-mode supervision for a TUIOS-hosted Pi primary, using a guarded detached daemon session and a durable Pi-native follow-up handoff that never types into the terminal.
