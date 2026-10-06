@@ -136,17 +136,19 @@ test_legacy_output_still_fails_real_schema_validation() {
 }
 
 test_grimoire_output_excludes_internal_only_skill() {
-  local base out
+  if [ -z "$NODE_BIN" ]; then
+    pass "grimoire internal-only exclusion (skipped, no node on PATH)"
+    return 0
+  fi
+  local base out ids
   base="$TMP_ROOT/grimoire-excludes-internal"
   write_public_skill "$base" visible-public
   write_internal_skill "$base" hidden-internal
   out=$(SQUAD_BASE="$base" "$SCRIPT" --grimoire-output "$base/grimoire.json" 2>&1)
   assert_contains "$out" "1 published, 1 excluded as internal" \
     "generator reports the published/excluded split on stderr"
-  assert_contains "$(cat "$base/grimoire.json")" '"id":"visible-public"' \
-    "the public skill is published"
-  assert_not_contains "$(cat "$base/grimoire.json")" "hidden-internal" \
-    "an internal-only skill is never written to the grimoire registry"
+  ids=$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).skills.map(s=>s.id).join(","))' "$base/grimoire.json")
+  [ "$ids" = "visible-public" ] || fail "expected only visible-public in the registry, got: $ids"
   pass "--grimoire-output excludes internal-only skills from the published catalog"
 }
 

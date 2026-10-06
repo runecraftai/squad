@@ -194,9 +194,47 @@ grimoire_sanitize_id() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
 
-# JSON-escape a string for embedding in a double-quoted JSON value.
+# JSON-escape a string for embedding in a double-quoted JSON value, covering
+# every C0 control character (and DEL) so a skill's text can never emit JSON
+# that a strict parser rejects.
 grimoire_json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '
+  local s="$1" out="" ch i hex
+  local len=${#s}
+  for ((i = 0; i < len; i++)); do
+    ch="${s:i:1}"
+    case "$ch" in
+      '\') out+='\\' ;;
+      '"') out+='\"' ;;
+      $'\b') out+='\b' ;;
+      $'\t') out+='\t' ;;
+      $'\n') out+='\n' ;;
+      $'\f') out+='\f' ;;
+      $'\r') out+='\r' ;;
+      *)
+        if [[ "$ch" == [[:cntrl:]] ]]; then
+          printf -v hex '\\u%04x' "$(printf '%d' "'$ch")"
+          out+="$hex"
+        else
+          out+="$ch"
+        fi
+        ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Hash a file, or stdin when given no argument, with whichever SHA-256 tool
+# the platform provides (macOS ships shasum, not sha256sum). Prints the hex
+# digest only.
+grimoire_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$@" | awk '{print $1}'
+  else
+    echo "error: sha256sum or shasum is required" >&2
+    return 1
+  fi
 }
 
 # Compute the per-file records and the aggregate contentSha256 for one skill
@@ -216,13 +254,13 @@ grimoire_skill_files() {
         printf '\0'
         cat "$skill_dir/$rel"
       done < "$rel_list"
-    } | sha256sum | awk '{print $1}'
+    } | grimoire_sha256
   )
 
   local files_json="" first=true rel size sha
   while IFS= read -r rel; do
     size=$(LC_ALL=C wc -c < "$skill_dir/$rel" | tr -d ' ')
-    sha=$(sha256sum "$skill_dir/$rel" | awk '{print $1}')
+    sha=$(grimoire_sha256 "$skill_dir/$rel")
     if [ "$first" = true ]; then first=false; else files_json="$files_json,"; fi
     files_json="$files_json{\"path\":\"$(grimoire_json_escape "$rel")\",\"sha256\":\"$sha\",\"size\":$size}"
   done < "$rel_list"
