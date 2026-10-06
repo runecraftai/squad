@@ -16,7 +16,23 @@ describe("planning surface HTTP API", () => {
 		expect(response.status).toBe(200);
 		const html = await response.text();
 		expect(html).toContain("Runecraft Warroom");
-		expect(html).not.toMatch(/https?:\/\//);
+
+		const refs: string[] = [];
+		const rewriter = new HTMLRewriter()
+			.on("script[src]", { element(element) { const src = element.getAttribute("src"); if (src) refs.push(src); } })
+			.on("link[rel=stylesheet]", { element(element) { const href = element.getAttribute("href"); if (href) refs.push(href); } });
+		await rewriter.transform(new Response(html)).text();
+
+		const pageOrigin = "http://127.0.0.1:4600";
+		const external = refs.filter((ref) => {
+			try {
+				const resolved = new URL(ref, pageOrigin);
+				return (resolved.protocol === "http:" || resolved.protocol === "https:") && resolved.origin !== pageOrigin;
+			} catch {
+				return true;
+			}
+		});
+		expect(external).toEqual([]);
 	});
 
 	test("the command endpoint drives the same invariants as the core directly", async () => {
