@@ -482,7 +482,7 @@ function scopeLabel(scope: string | undefined): string {
 /**
  * Compress a window label into the 7-char row column: drop a trailing
  * period/unit token ("Fable week" -> "fable", "730h window" -> "730h"),
- * then fall back to the last hyphen segment and an ellipsis.
+ * then fall back to the last hyphen segment, the last word, and an ellipsis.
  */
 export function shortWindowLabel(window: QuotaWindow): string {
   const tokens = window.label.split(/[\s_]+/).filter(Boolean);
@@ -495,8 +495,15 @@ export function shortWindowLabel(window: QuotaWindow): string {
     tokens.pop();
   }
   let label = tokens.join(" ").toLowerCase();
-  if (displayWidth(label) > 7 && label.includes("-")) {
-    label = label.slice(label.lastIndexOf("-") + 1);
+  if (displayWidth(label) > 7) {
+    if (label.includes("-")) {
+      label = label.slice(label.lastIndexOf("-") + 1);
+    } else if (tokens.length > 1) {
+      const lastToken = tokens[tokens.length - 1].toLowerCase();
+      if (lastToken.length >= 3 && /[a-z]/.test(lastToken)) {
+        label = lastToken;
+      }
+    }
   }
   if (displayWidth(label) > 7) label = truncate(label, 7);
   return label || truncate(window.id, 7);

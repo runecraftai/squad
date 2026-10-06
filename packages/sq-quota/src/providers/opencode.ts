@@ -266,19 +266,19 @@ function buildGoQuota(
   const windows: QuotaWindow[] = [
     goWindow(
       "go-rolling",
-      "OpenCode Go rolling (account-level)",
+      "OpenCode Go rolling",
       "session",
       usage.rolling,
     ),
     goWindow(
       "go-weekly",
-      "OpenCode Go weekly (account-level)",
+      "OpenCode Go weekly",
       "weekly",
       usage.weekly,
     ),
     goWindow(
       "go-monthly",
-      "OpenCode Go monthly (account-level)",
+      "OpenCode Go monthly",
       "monthly",
       usage.monthly,
     ),

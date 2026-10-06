@@ -539,9 +539,12 @@ describe("OpenCode Go window mapping", () => {
       true,
     );
     expect(result.quotaSemantics?.effectiveAvailability).toEqual([]);
-    for (const window of result.windows) {
-      expect(window.label.toLowerCase()).toContain("account-level");
-    }
+    expect(result.windows.map((window) => window.label)).toEqual([
+      "OpenCode Go rolling",
+      "OpenCode Go weekly",
+      "OpenCode Go monthly",
+    ]);
+    expect(result.quotaSemantics?.description).toContain("account-level");
     expect(result.notes?.join(" ")).toContain("account-level");
   });
 });
