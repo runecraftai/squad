@@ -1,9 +1,11 @@
 name: Publish Grimoire skill registry
 
 # Builds the schema-compliant skill registry (bin/sq-skill-registry.sh
-# --grimoire-output, docs/skill-distribution.md "Grimoire registry") and
-# publishes it to GitHub Pages, so a GRIMOIRE_CATALOG_BASE pointed at this
-# repo's Pages URL can fetch it over HTTPS.
+# --grimoire-output, docs/skill-distribution.md "Grimoire registry") together
+# with every published skill's files (--grimoire-payload-dir) and publishes
+# them to GitHub Pages, so a GRIMOIRE_CATALOG_BASE pointed at this repo's
+# Pages URL can serve both the catalog and the skill content the MCP fetches
+# over HTTPS.
 #
 # Manual only (workflow_dispatch): landing the generator change on main does
 # not publish anything by itself. Running this workflow - and GitHub Pages
@@ -35,7 +37,7 @@ jobs:
         run: |
           set -eu
           mkdir -p dist/grimoire
-          bin/sq-skill-registry.sh --grimoire-output dist/grimoire/registry.json
+          bin/sq-skill-registry.sh --grimoire-output dist/grimoire/registry.json --grimoire-payload-dir dist/grimoire
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

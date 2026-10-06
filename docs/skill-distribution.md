@@ -42,11 +42,16 @@ That schema is not the legacy `skills-registry.json` shape above: it requires `s
 Generate it with `bin/sq-skill-registry.sh --grimoire-output grimoire-registry.json` (combine with `--output skills-registry.json` to write both in one call).
 This is a separate file, written alongside the legacy registry: existing consumers of `skills-registry.json` keep reading its unchanged shape.
 
-Only public and explicitly user-invocable skills are included.
-An internal-only skill (`category: internal`) is counted and reported on stderr but never written to this file.
+Only skills that physically live under the public `skills/` directory are published.
+A skill that exists only under `.agents/skills/` is internal and is excluded even when its frontmatter sets `user-invocable: true`.
+An excluded skill is counted and reported on stderr but never written to the registry.
 A skill name present under both `skills/` (public) and `.agents/skills/` (an internal counterpart) is published once, from its public `skills/` copy.
 
-`.github/workflows/publish-grimoire-registry.yml` builds this file and publishes it to GitHub Pages so `GRIMOIRE_CATALOG_BASE` can fetch it over HTTPS, following the CDN distribution route above.
+The server fetches each skill's content from `${GRIMOIRE_CATALOG_BASE}/skills/<id>/<path>`, so hosting the registry alone only supports search/list.
+Pass `--grimoire-payload-dir <dir>` to also copy every published skill's own files - the same file set hashed into its `contentSha256`/`files` - into `<dir>/skills/<id>/<path>`, making `read_skill`, `fetch_skill_files`, and `prepare_skill_files` work end to end.
+An excluded skill never gets a payload directory.
+
+`.github/workflows/publish-grimoire-registry.yml` builds the registry and payload directory (`--grimoire-output dist/grimoire/registry.json --grimoire-payload-dir dist/grimoire`) and publishes them to GitHub Pages so `GRIMOIRE_CATALOG_BASE` can fetch both over HTTPS, following the CDN distribution route above.
 It runs only on manual `workflow_dispatch`: landing the generator change does not publish anything by itself, and running the workflow - plus GitHub Pages being enabled for this repo - is a separate, explicit step.
 
 Conformance with the server's schema is covered by `tests/sq-skill-registry.test.sh` against a reimplementation of `validateRegistry` in `tests/fixtures/grimoire-registry-validate.mjs` (the real package is not a dependency of this repo and cannot be imported from CI).

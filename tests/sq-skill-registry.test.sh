@@ -87,8 +87,9 @@ write_public_skill() {
 }
 
 # write_internal_skill <base> <name> <extra-frontmatter>: creates
-# <base>/.agents/skills/<name>/SKILL.md (internal-only unless the extra
-# frontmatter sets user-invocable: true).
+# <base>/.agents/skills/<name>/SKILL.md. This location is internal-only: the
+# grimoire registry never publishes it, even when the extra frontmatter sets
+# user-invocable: true.
 write_internal_skill() {
   local base="$1" name="$2" body="${3:-}" dir
   dir="$base/.agents/skills/$name"
@@ -184,6 +185,61 @@ test_grimoire_content_sha256_matches_the_real_digestFiles_algorithm() {
   pass "contentSha256 matches an independent reimplementation of digestFiles, not just itself"
 }
 
+test_grimoire_excludes_user_invocable_skill_outside_public_dir() {
+  if [ -z "$NODE_BIN" ]; then
+    pass "user-invocable .agents-only exclusion (skipped, no node on PATH)"
+    return 0
+  fi
+  local base out ids
+  base="$TMP_ROOT/grimoire-ui-only"
+  write_public_skill "$base" real-public
+  write_internal_skill "$base" ui-only 'user-invocable: true'
+  out=$(SQUAD_BASE="$base" "$SCRIPT" --grimoire-output "$base/grimoire.json" 2>&1)
+  assert_contains "$out" "1 published, 1 excluded as internal" \
+    "a .agents/skills/-only skill marked user-invocable: true is still excluded as internal"
+  ids=$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).skills.map(s=>s.id).join(","))' "$base/grimoire.json")
+  [ "$ids" = "real-public" ] || fail "expected only real-public in the registry, got: $ids"
+  pass "public skills/ location is required even for user-invocable skills"
+}
+
+test_grimoire_payload_dir_mirrors_published_skills_only() {
+  if [ -z "$NODE_BIN" ]; then
+    pass "grimoire payload dir (skipped, no node on PATH)"
+    return 0
+  fi
+  local base payload registry expected actual
+  base="$TMP_ROOT/grimoire-payload"
+  payload="$base/payload"
+  registry="$base/grimoire.json"
+  write_public_skill "$base" payload-skill
+  mkdir -p "$base/skills/payload-skill/scripts"
+  printf '#!/bin/sh\necho hi\n' > "$base/skills/payload-skill/scripts/run.sh"
+  write_internal_skill "$base" hidden-internal
+  write_internal_skill "$base" ui-only 'user-invocable: true'
+
+  SQUAD_BASE="$base" "$SCRIPT" --grimoire-output "$registry" --grimoire-payload-dir "$payload" >/dev/null 2>&1
+
+  assert_present "$payload/skills/payload-skill/SKILL.md" "payload dir carries the published skill's SKILL.md"
+  assert_present "$payload/skills/payload-skill/scripts/run.sh" "payload dir carries the published skill's nested files"
+  assert_absent "$payload/skills/hidden-internal" "an internal-only skill must not get a payload directory"
+  assert_absent "$payload/skills/ui-only" "a user-invocable .agents-only skill must not get a payload directory"
+
+  expected=$("$NODE_BIN" "$DIGEST" "$payload/skills/payload-skill" SKILL.md scripts/run.sh)
+  actual=$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).skills.find(s=>s.id==="payload-skill").contentSha256)' "$registry")
+  [ "$actual" = "$expected" ] || fail "payload files do not match the registry contentSha256: registry=$actual payload=$expected"
+  pass "--grimoire-payload-dir mirrors exactly the published skills' hashed files"
+}
+
+test_grimoire_payload_dir_requires_grimoire_output() {
+  local base rc
+  base="$TMP_ROOT/grimoire-payload-requires"
+  mkdir -p "$base"
+  SQUAD_BASE="$base" "$SCRIPT" --grimoire-payload-dir "$base/payload" >/dev/null 2>&1
+  rc=$?
+  expect_code 2 "$rc" "--grimoire-payload-dir without --grimoire-output is a usage error"
+  pass "--grimoire-payload-dir requires --grimoire-output"
+}
+
 test_folded_block_scalar_folds_multiline_to_single_line
 test_literal_block_scalar_captures_content
 test_quoted_single_line_value
@@ -193,3 +249,6 @@ test_legacy_output_still_fails_real_schema_validation
 test_grimoire_output_excludes_internal_only_skill
 test_grimoire_output_dedupes_internal_counterpart_of_a_public_skill
 test_grimoire_content_sha256_matches_the_real_digestFiles_algorithm
+test_grimoire_excludes_user_invocable_skill_outside_public_dir
+test_grimoire_payload_dir_mirrors_published_skills_only
+test_grimoire_payload_dir_requires_grimoire_output
