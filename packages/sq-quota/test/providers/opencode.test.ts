@@ -1,9 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -752,6 +747,51 @@ describe("OpenCode CLI rendering", () => {
         effectiveAvailability: [],
       },
     });
+  });
+
+  it('reports quotaSemantics.status "partial" for Go windows in the shipped JSON output', async () => {
+    writeAuthJson({ "opencode-go": { type: "api", key: "sk-go-key" } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              usage: {
+                rolling: {
+                  status: "ok",
+                  percent: 9,
+                  resetsAt: "2026-10-06T03:36:51.000Z",
+                },
+                weekly: {
+                  status: "ok",
+                  percent: 6,
+                  resetsAt: "2026-10-12T00:00:00.000Z",
+                },
+                monthly: {
+                  status: "ok",
+                  percent: 3,
+                  resetsAt: "2026-11-05T13:35:10.000Z",
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+
+    const json = JSON.parse(
+      await capture(["--provider", "opencode", "--json"]),
+    ) as SqQuotaResponse;
+
+    const opencode = json.providers.find(
+      (provider) => provider.provider === "opencode",
+    );
+    expect(opencode?.quotaSemantics).toMatchObject({
+      status: "partial",
+      effectiveAvailability: [],
+    });
+    expect(opencode?.windows).toHaveLength(3);
   });
 });
 
