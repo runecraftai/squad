@@ -40,6 +40,9 @@
 #                          count, and demand-deep-inspection marker, for human
 #                          inspection only - never an automatic interrupt,
 #                          signal, or restart of the worker or its tool process.
+#                          A declared paused:/commander-held last status line
+#                          still outranks that busy verdict and keeps the bounded
+#                          pause cadence instead of starting the wedge timer.
 #   check: <script>: <out> authenticated check output, always actionable
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
@@ -1098,11 +1101,15 @@ EOF
         # unless a genuinely busy pane has gone too long with no completed turn -
         # then route it through the same wedge timer instead of erasing it.
         if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
-          wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+          if status_is_paused_or_commander_held "$last"; then
+            handle_paused_stale "$w" "$task" "$h"
+          else
+            wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+          fi
         else
           rm -f "$ssf" "$ewf"
         fi
-        if [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_commander_held "$(last_status_state_line "$STATE/$(window_to_task "$w" "$STATE").status")"; }; then
+        if [ -e "$pf" ] && ! status_is_paused_or_commander_held "$last"; then
           clear_pause_tracking "$w"
         fi
       fi
@@ -1110,18 +1117,26 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
-        wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+        if status_is_paused_or_commander_held "$last"; then
+          rm -f "$ssf" "$ewf"
+        else
+          wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+        fi
       else
         rm -f "$ssf" "$ewf"
       fi
       task=$(window_to_task "$w" "$STATE")
-      if ! afk_present && status_is_paused_or_commander_held "$(last_status_state_line "$STATE/$task.status")" && [ "$busy_now" -ne 0 ]; then
-        case "$(pause_state_class "$w" "$task")" in
-          paused) handle_paused_stale "$w" "$task" "$h" ;;
-          *)      clear_pause_tracking "$w" ;;
-        esac
-      else
-        [ -e "$pf" ] && clear_pause_tracking "$w"
+      if ! afk_present && status_is_paused_or_commander_held "$(last_status_state_line "$STATE/$task.status")"; then
+        if [ "$busy_now" -ne 0 ]; then
+          case "$(pause_state_class "$w" "$task")" in
+            paused) handle_paused_stale "$w" "$task" "$h" ;;
+            *)      clear_pause_tracking "$w" ;;
+          esac
+        else
+          handle_paused_stale "$w" "$task" "$h"
+        fi
+      elif [ -e "$pf" ]; then
+        clear_pause_tracking "$w"
       fi
     fi
   done < <(recorded_windows)
