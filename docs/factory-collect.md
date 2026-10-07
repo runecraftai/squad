@@ -48,8 +48,8 @@ run_limit = 20
 min_failures = 2
 ```
 
-- `source.github_issues.repro_patterns` — a list of regexes (Python `re` syntax); an issue qualifies when its body matches at least one. Each pattern must itself name a real reproduction signal (an explicit heading or phrase); a bare fenced code block is deliberately not one of the shipped patterns, since a stack trace or log dump in a fence names no reproduction path on its own.
-- `source.ci_failures.min_failures` — how many times the same job (or, if no single job carries `conclusion: failure`, the same workflow+branch) must recur across the last `run_limit` fetched failed runs before it is a stable enough identity to queue. Below this, it goes to the human digest instead.
+- `source.github_issues.repro_patterns` - a list of regexes (Python `re` syntax); an issue qualifies when its body matches at least one. Each pattern must itself name a real reproduction signal (an explicit heading or phrase); a bare fenced code block is deliberately not one of the shipped patterns, since a stack trace or log dump in a fence names no reproduction path on its own.
+- `source.ci_failures.min_failures` - how many times the same job (or, if no single job carries `conclusion: failure`, the same workflow+branch) must recur across the last `run_limit` fetched failed runs before it is a stable enough identity to queue. Below this, it goes to the human digest instead.
 
 ## Capability matrix
 
@@ -62,8 +62,8 @@ min_failures = 2
 | Dependabot / security advisories | not implemented | a plausible phase-2 source via `sq-gh api`; left out of phase 1 to keep the pilot to two sources, per the "keep it small" scope boundary |
 
 "Recurring test failures, where a stable identity exists" (one of the pilot's requested inputs) is folded into the `ci_failures` source above rather than built as a third source: the stable identity available without log-scraping is the CI **job** name, not an individual test-case name inside that job's log.
-Extracting per-test-case identity would need a log parser per CI framework — exactly the per-source abstraction layer the task scope says to cut back to avoid.
-Job-level recurrence is honest about that granularity and is still a materially useful, concrete signal (see the real run below).
+Extracting per-test-case identity would need a log parser per CI framework - exactly the per-source abstraction layer the task scope says to cut back to avoid.
+Job-level recurrence is honest about that granularity and is still a materially useful, concrete signal.
 
 ## How sq-gh output is parsed
 
@@ -81,7 +81,7 @@ Everything that does not clear this bar goes to the human digest instead of bein
 ## Candidate record
 
 Each queued candidate carries: `id`, `source`, `fingerprint`, `link`, `title`, `evidence`, `verifiable_reason`, `repro`.
-It lands in `data/backlog.md` via `sq-tasks add <id> ... --kind candidate --queue`, so it is always `## Queued`, never `## In flight` — this tool has no authority to start work, only to propose it.
+It lands in `data/backlog.md` via `sq-tasks add <id> ... --kind candidate --queue`, so it is always `## Queued`, never `## In flight` - this tool has no authority to start work, only to propose it.
 Right after a fresh add, `sq-tasks hold <id> --reason "unvetted factory-collect candidate: awaiting commander review" --kind commander` keeps it out of `sq-tasks ready` until a human clears the hold; an already-in-backlog hit (see "Dedupe" below) never re-applies the hold, so this never clobbers a commander's own decision to clear it.
 The same evidence fields are written into the backlog item's body for durable, inspectable evidence.
 
@@ -89,8 +89,8 @@ The same evidence fields are written into the backlog item's body for durable, i
 
 Two independent mechanisms, because they cover different failure modes:
 
-1. A durable local ledger (`data/factory-collect/seen.json`, keyed by a stable `fingerprint` per source identity) — checked first, before anything else, so a candidate already queued in a prior run is never even re-sent to `sq-tasks`. Each entry also records `held: true|false` for the commander hold, so a later run can distinguish "held already" from "queued but the hold call failed" and retry only the latter. This is what "never re-propose the same input across runs" means even if the backlog item was later closed, archived, or removed.
-2. `sq-tasks add`'s own idempotent-by-id behavior — each candidate's `id` is deterministic (derived from the same fingerprint), so even if the local ledger were lost or reset, adding an id that is already in the backlog returns `already: true` instead of creating a duplicate. This covers "never propose something already present in the backlog" as a backstop independent of the ledger.
+1. A durable local ledger (`data/factory-collect/seen.json`, keyed by a stable `fingerprint` per source identity) - checked first, before anything else, so a candidate already queued in a prior run is never even re-sent to `sq-tasks`. Each entry also records `held: true|false` for the commander hold, so a later run can distinguish "held already" from "queued but the hold call failed" and retry only the latter. This is what "never re-propose the same input across runs" means even if the backlog item was later closed, archived, or removed.
+2. `sq-tasks add`'s own idempotent-by-id behavior - each candidate's `id` is deterministic (derived from the same fingerprint), so even if the local ledger were lost or reset, adding an id that is already in the backlog returns `already: true` instead of creating a duplicate. This covers "never propose something already present in the backlog" as a backstop independent of the ledger.
 
 ## Human digest
 
@@ -103,21 +103,9 @@ Each source is collected independently; one failing (a `sq-gh` error, a timeout,
 Within `ci_failures`, a single failed `sq-gh run view` is reported per-run in the human digest and skipped, so one unpaginated bad run cannot discard findings from every other fetched run; if every fetched failed run is unviewable, the whole source is reported as failed instead of as a healthy empty fetch.
 A failure to queue a candidate is reported under `sources.<name>.queue_error` on the candidate's owning source and does not abort the remaining candidates.
 The run's own exit code is non-zero only when every enabled source failed, and an all-failed run leaves the previously persisted `data/factory-collect/digest.md` untouched instead of blanking it with an empty digest.
-A `sq-tasks add` that succeeds and is then followed by a `sq-tasks hold` that fails is a narrow edge case: the candidate is in the backlog but not yet held. It is never silent — `queue_error` names it and the ledger records that candidate with `held: false` — and the very next run retries the hold for every `held: false` ledger entry (even one whose source no longer produces that candidate), setting `held: true` only once `sq-tasks hold` actually succeeds. A ledger entry recorded `held: true` is never re-held, so a commander's deliberate decision to clear the hold and dispatch the work is preserved even if the backlog no longer shows it as held.
+A `sq-tasks add` that succeeds and is then followed by a `sq-tasks hold` that fails is a narrow edge case: the candidate is in the backlog but not yet held. It is never silent - `queue_error` names it and the ledger records that candidate with `held: false` - and the very next run retries the hold for every `held: false` ledger entry (even one whose source no longer produces that candidate), setting `held: true` only once `sq-tasks hold` actually succeeds. A ledger entry recorded `held: true` is never re-held, so a commander's deliberate decision to clear the hold and dispatch the work is preserved even if the backlog no longer shows it as held.
 
-## A real run
+## Verification
 
-Run against `runecraftai/squad` itself on 2026-10-06 (`bin/sq-factory-collect.sh run --dry-run --json`, sensitive content redacted — there were no open issues on the repo at the time):
-
-- `github_issues`: 0 fetched (no open issues).
-- `ci_failures`: 7 distinct failing-job identities fetched across the last 20 failed `ci.yml` runs on `main`.
-- 5 candidates qualified: CI jobs named `Behavior portable serial 1`, `Behavior tests (Herdr)`, `Behavior portable serial 2`, `Behavior portable serial 3`, and `Behavior portable serial 4`, each recurring 11-14 times in the 20 most recently fetched failed runs — a genuine, previously uncollected flaky-CI signal.
-- 2 went to the human digest: two run-level failures that had not yet recurred a second time.
-
-Re-run it yourself with:
-
-```sh
-bin/sq-factory-collect.sh run --dry-run --json
-```
-
-(drop `--dry-run` to actually queue the 5 candidates into `data/backlog.md`).
+`bin/sq-test-run.sh tests/sq-factory-collect.test.sh` covers the verifiability test, both dedupe layers, the candidate record shape, the human-digest grouping, the commander hold, and source-failure degradation.
+The pilot's first real run against this repository, with its candidate and digest counts and the command to reproduce it, is recorded in the pull request that introduced this tool.
