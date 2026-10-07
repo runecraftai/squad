@@ -163,11 +163,12 @@ case "${1:-}" in
     if [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ]; then
       printf '{"blocked":false,"found":false,"reason":"the pane is not on needs_input","success":true}\n'
     else
-      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":[],"prompt_id":"p1","answerable":false,"reason":"%s","success":true}\n' \
+      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1","answerable":false,"reason":"%s","success":true}\n' \
         "${SQUAD_TUIOS_FAKE_PROMPT_FOUND:-true}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
+        "${SQUAD_TUIOS_FAKE_PROMPT_OPTIONS:-[]}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_REASON:-}"
     fi
     ;;
@@ -385,6 +386,32 @@ export SQUAD_TUIOS_FAKE_PROMPT_STATE
 [ -z "$(fm_backend_prompt_summary tuios owned:w-opaque_7)" ] || fail 'a pane that is not blocked has no prompt summary'
 unset SQUAD_TUIOS_FAKE_PROMPT_STATE
 [ -z "$(fm_backend_prompt_summary tmux owned:w-opaque_7 2>/dev/null)" ] || fail 'backends without a prompt verb must report no prompt summary'
+
+# Numbered options: the daemon's peek-prompt carries an options array (plain
+# strings, or objects with a label/text/name) alongside the message, and the
+# summary renders them as "1) ... 2) ..." so a wake naming this prompt also
+# names what a person can answer with.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '["Yes","No"]')
+export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+summary=$(fm_backend_prompt_summary tuios owned:w-opaque_7)
+assert_contains "$summary" 'approval: approve Bash: make' 'the message must still be readable with options present'
+assert_contains "$summary" '1) Yes 2) No' 'plain-string options must render as numbered options'
+unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"label":"Allow once"},{"text":"Always allow"}]')
+export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+assert_contains "$(fm_backend_prompt_summary tuios owned:w-opaque_7)" '1) Allow once 2) Always allow' \
+  'object-shaped options must render their label/text as numbered options'
+unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='[]'
+export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+summary=$(fm_backend_prompt_summary tuios owned:w-opaque_7)
+[ "$summary" = 'approval: approve Bash: make' ] \
+  || fail "an empty options array must change nothing: $summary"
+unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS SQUAD_TUIOS_FAKE_AGENTS
 
 # --- delivery: the queue path and its distinct verdicts ----------------
 # Blocked: nothing is typed, and the distinct verdict names the block.
@@ -975,5 +1002,81 @@ tuios_boot_id=boot-a
 EOF
 fm_backend_validate_task_endpoint "$meta" task-1 || fail 'valid bound endpoint metadata should pass'
 if fm_backend_validate_task_endpoint "$meta" other-task >/dev/null 2>&1; then fail 'mismatched task binding must refuse'; fi
+
+# --- backend-neutral transition producer: level-reconcile / poll path --------
+# fm_backend_tuios_poll_transition is the level-reconcile counterpart to
+# herdr's event-wait producer (bin/sq-transition-lib.sh, bin/backends/herdr.sh):
+# TUIOS has no event stream (no subscribe/after_seq verb), so it produces the
+# SAME normalized record on the sentry's ordinary poll instead. These
+# assertions exercise it directly, through the same fake daemon used above.
+TRANSITION_STATE="$TMP_ROOT/transition-state"
+mkdir -p "$TRANSITION_STATE"
+TWINDOW=owned:w-opaque_7
+ESC_MARKER=$(fm_backend_tuios_escalation_marker "$TRANSITION_STATE" "$TWINDOW")
+HASH_MARKER=$(fm_backend_tuios_prompt_hash_marker "$TRANSITION_STATE" "$TWINDOW")
+
+# Not blocked (working): defers to the existing poll machinery (rc=2), prints
+# no record, and clears any stale dedupe markers left behind.
+: > "$ESC_MARKER"; : > "$HASH_MARKER"
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"working","harness_id":"pi","confidence":"certain"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 2 ] || fail "a working pane must defer (rc=2), got rc=$RC out=$OUT"
+[ -z "$OUT" ] || fail "a working pane must print no record: $OUT"
+[ ! -e "$ESC_MARKER" ] || fail 'a working read must clear the escalation marker'
+[ ! -e "$HASH_MARKER" ] || fail 'a working read must clear the prompt-hash marker'
+unset SQUAD_TUIOS_FAKE_AGENTS
+
+# Blocked, first sighting: a fresh actionable record (rc=0). The dedupe marker
+# is NOT set until the caller commits it, mirroring herdr's own contract
+# (apply decides, the caller commits only after it has handled the wake).
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?'
+export SQUAD_TUIOS_FAKE_PROMPT_MESSAGE
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 0 ] || fail "first sighting of a blocked prompt must be actionable (rc=0), got rc=$RC"
+[ "$(fm_transition_pane_id "$OUT")" = w-opaque_7 ] || fail "the record must name the pane: $OUT"
+[ "$(fm_transition_to_status "$OUT")" = blocked ] || fail "the record's to_status must be blocked: $OUT"
+[ ! -e "$ESC_MARKER" ] || fail 'the escalation marker must not be set before the caller commits'
+fm_backend_tuios_commit_transition "$TRANSITION_STATE" owned "$OUT"
+[ -e "$ESC_MARKER" ] || fail 'commit_transition did not record the escalation marker'
+
+# The same standing prompt: no fresh edge (rc=1), no record - exactly once per
+# distinct pending prompt, no repetition while it stands.
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 1 ] || fail "an unchanged standing prompt must not re-escalate (rc=1), got rc=$RC out=$OUT"
+[ -z "$OUT" ] || fail "an unchanged standing prompt must print no record: $OUT"
+
+# A changed prompt while STILL blocked (no intervening non-blocked read): a
+# fresh edge again (rc=0) - the prompt content, not just the status, drives
+# the dedupe key.
+SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='allow network access?'
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 0 ] || fail "a changed prompt while still blocked must re-escalate (rc=0), got rc=$RC"
+fm_backend_tuios_commit_transition "$TRANSITION_STATE" owned "$OUT"
+
+# Unblocked, then re-blocked with the ORIGINAL (byte-identical) prompt text:
+# unblocking must clear both markers, so the identical prompt re-escalates.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"working","harness_id":"pi","confidence":"certain"}]}')
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 2 ] || fail "an unblocked pane must defer (rc=2), got rc=$RC"
+[ ! -e "$ESC_MARKER" ] || fail 'unblocking did not clear the escalation marker'
+[ ! -e "$HASH_MARKER" ] || fail 'unblocking did not clear the prompt-hash marker'
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
+SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?'
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 0 ] || fail "a byte-identical prompt must re-escalate after an intervening unblock (rc=0), got rc=$RC"
+fm_backend_tuios_commit_transition "$TRANSITION_STATE" owned "$OUT"
+unset SQUAD_TUIOS_FAKE_AGENTS SQUAD_TUIOS_FAKE_PROMPT_MESSAGE
+
+# clear_transition (the teardown path) removes both markers unconditionally.
+[ -e "$ESC_MARKER" ] || fail 'setup: escalation marker should exist before the teardown cleanup check'
+fm_backend_tuios_clear_transition "$TRANSITION_STATE" "$TWINDOW"
+if [ -e "$ESC_MARKER" ] || [ -e "$HASH_MARKER" ]; then
+  fail 'fm_backend_tuios_clear_transition did not remove both dedupe markers'
+fi
+
+pass 'TUIOS backend: the level-reconcile transition producer detects a blocked prompt, dedupes per distinct prompt, rearms after unblocking, and clear_transition removes both markers'
 
 pass 'TUIOS backend: fake CLI covers protocol discovery, real state/prompt mapping, the agent-aware queue verdicts, restart and finished-agent recovery, and the native close'

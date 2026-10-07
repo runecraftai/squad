@@ -121,9 +121,10 @@ mark_surfaced() {  # <status-file>
   printf '%s' "$last" > "$(_hb_surfaced_path "$task")"
 }
 
-# Act on a fresh actionable transition from a push-capable backend.
+# Act on a fresh actionable transition from a push- or poll-capable backend
+# (bin/sq-backend.sh's fm_backend_has_push / fm_backend_can_poll_transition).
 handle_push_transition() {  # <backend> <session> <record>
-  local backend=$1 session=$2 record=$3 pane_id to window task reason
+  local backend=$1 session=$2 record=$3 pane_id to window task reason prompt
   pane_id=$(fm_transition_pane_id "$record")
   to=$(fm_transition_to_status "$record")
   [ -n "$pane_id" ] || { sleep 1; return; }
@@ -134,7 +135,17 @@ handle_push_transition() {  # <backend> <session> <record>
     fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
     return
   fi
-  reason="stale: $window (herdr: agent $to - waiting on human, escalated immediately, not via wedge timer)"
+  # The normalized record carries no prompt text (bin/sq-transition-lib.sh's
+  # shape is backend-neutral and most producers have none to offer); a backend
+  # that CAN read the blocking prompt (TUIOS) is asked for it here, at wake
+  # time, rather than widening the shared record for one producer. Empty for
+  # every other backend, so this changes nothing for herdr.
+  prompt=$(fm_backend_prompt_summary "$backend" "$window" 2>/dev/null || true)
+  if [ -n "$prompt" ]; then
+    reason="stale: $window ($backend: agent $to - $prompt - waiting on human, escalated immediately, not via wedge timer)"
+  else
+    reason="stale: $window ($backend: agent $to - waiting on human, escalated immediately, not via wedge timer)"
+  fi
   fm_wake_append stale "$window" "$reason" || exit 1
   fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
   mark_surfaced "$STATE/$task.status"

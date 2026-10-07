@@ -23,6 +23,17 @@
 # `none` pane or a finished `done` pane whose foreground program exited - and
 # that is the recovery-grade signal; a classified blocking prompt is `blocked`,
 # never ordinary work.
+#
+# Shared, backend-neutral normalized-transition shape and the single-owner
+# status->action policy table (bin/sq-transition-lib.sh). TUIOS exposes no
+# subscribe/after_seq verb (docs/tuios-backend.md "Limits and verification"),
+# so unlike herdr's event subscriber this adapter produces the same normalized
+# record on the sentry's ordinary poll loop instead (fm_backend_tuios_poll_transition,
+# the "state, prompts, and provenance" section below) - it never re-encodes the
+# policy mapping either.
+SQUAD_BACKEND_TUIOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=bin/sq-transition-lib.sh
+. "$SQUAD_BACKEND_TUIOS_ROOT/bin/sq-transition-lib.sh"
 
 fm_backend_tuios_bin() {
   printf '%s' "${SQUAD_TUIOS_BIN:-tuios}"
@@ -560,11 +571,22 @@ fm_backend_tuios_prompt_json() {  # <target>
 }
 
 fm_backend_tuios_prompt_summary() {  # <target>
-  local target=$1 prompt line kind reason
+  local target=$1 prompt line kind reason options
   prompt=$(fm_backend_tuios_prompt_json "$target") || return 0
   kind=$(printf '%s' "$prompt" | jq -r '.kind // "needs_input"')
+  options=''
   if [ "$(printf '%s' "$prompt" | jq -r '.found')" = true ]; then
     line=$(printf '%s' "$prompt" | jq -r '(.message // "") | if . != "" then . else (.lines // [] | .[-1] // "") end')
+    # Numbered options, when the daemon's prompt read carries any: each entry
+    # is either a plain string or an object (label/text/name), rendered as
+    # "1) <opt> 2) <opt> ...". Absent or empty stays "" so an older daemon
+    # with no options field changes nothing below.
+    options=$(printf '%s' "$prompt" | jq -r '
+      (.options // []) as $o
+      | if ($o | length) > 0 then
+          [$o | to_entries[] | "\(.key + 1)) " + (.value | if type == "string" then . else (.label // .text // .name // tostring) end)]
+          | join(" ")
+        else "" end' 2>/dev/null)
   else
     reason=$(printf '%s' "$prompt" | jq -r '.reason // empty')
     line=$reason
@@ -573,11 +595,161 @@ fm_backend_tuios_prompt_summary() {  # <target>
   # break the caller's one-line state contract.
   line=$(printf '%s' "$line" | tr '\n\r\t' '   ' | sed -E 's/  +/ /g; s/^ +//; s/ +$//')
   line=$(printf '%s' "$line" | cut -c1-160)
+  if [ -n "$options" ]; then
+    options=$(printf '%s' "$options" | tr '\n\r\t' '   ' | sed -E 's/  +/ /g; s/^ +//; s/ +$//')
+    options=$(printf '%s' "$options" | cut -c1-160)
+  fi
   if [ -n "$line" ]; then
-    printf '%s: %s' "$kind" "$line"
+    if [ -n "$options" ]; then
+      printf '%s: %s [%s]' "$kind" "$line" "$options"
+    else
+      printf '%s: %s' "$kind" "$line"
+    fi
   else
     printf '%s (prompt not readable)' "$kind"
   fi
+}
+
+# --- backend-neutral transition producer (level-reconcile / poll path) ------
+# TUIOS exposes no event subscription, so it never satisfies fm_backend_has_push
+# and is never offered to the sentry's event-wait splice (bin/sq-sentry.sh
+# event_wait_or_sleep). It still produces the SAME normalized transition record
+# (bin/sq-transition-lib.sh) on the sentry's ordinary per-window poll instead:
+# fm_backend_tuios_poll_transition reads the daemon's current level
+# (fm_backend_tuios_busy_state), translates it into the shared
+# idle|working|blocked|done|unknown vocabulary, and routes it through the same
+# policy table and per-pane dedupe shape herdr's event stream uses
+# (fm_backend_tuios_apply_transition mirrors fm_backend_herdr_apply_transition
+# in bin/backends/herdr.sh - same contract, same marker-file convention keyed
+# like the sentry's own .stale-<key>).
+#
+# A blocked verdict alone is not a complete dedupe key: a pane can report
+# needs_input for one prompt, have it dismissed, and immediately need_input
+# again for a DIFFERENT prompt, with no intervening non-blocked read to clear
+# the marker. The prompt's own content, hashed, is the rest of the key:
+# fm_backend_tuios_poll_transition clears the escalation marker itself whenever
+# that hash changes while still blocked, so a changed prompt is always treated
+# as a fresh edge even with no `working`/`idle` edge in between.
+SQUAD_BACKEND_TUIOS_ESCALATED_PREFIX=".tuios-escalated-"
+SQUAD_BACKEND_TUIOS_PROMPT_HASH_PREFIX=".tuios-prompt-"
+
+fm_backend_tuios_text_hash() {
+  if command -v md5 >/dev/null 2>&1; then
+    md5 -q
+  else
+    md5sum | cut -d' ' -f1
+  fi
+}
+
+# fm_backend_tuios_escalation_marker: the per-pane dedupe marker path for a
+# <window> ("<session>:<opaque-window-id>"), keyed identically to the sentry's
+# .stale-<key> (tr ':/.' '___'), under <state_dir>.
+fm_backend_tuios_escalation_marker() {  # <state_dir> <window>
+  local state=$1 window=$2 key
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s/%s%s' "$state" "$SQUAD_BACKEND_TUIOS_ESCALATED_PREFIX" "$key"
+}
+
+fm_backend_tuios_prompt_hash_marker() {  # <state_dir> <window>
+  local state=$1 window=$2 key
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s/%s%s' "$state" "$SQUAD_BACKEND_TUIOS_PROMPT_HASH_PREFIX" "$key"
+}
+
+# fm_backend_tuios_normalize_status: translate the adapter's own busy
+# vocabulary (busy|blocked|idle|unknown, fm_backend_tuios_busy_state) into the
+# shared transition vocabulary (bin/sq-transition-lib.sh). "done" has no
+# distinct busy_state verdict - it already folds into "idle" there - so it
+# needs no separate case here.
+fm_backend_tuios_normalize_status() {  # <busy-verdict>
+  case "$1" in
+    busy) printf 'working' ;;
+    blocked) printf 'blocked' ;;
+    idle) printf 'idle' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# fm_backend_tuios_apply_transition: route one normalized record through the
+# shared policy table, maintaining the per-pane dedupe marker under
+# <state_dir>. On a fresh `actionable` (blocked) edge - policy actionable AND
+# no marker yet - prints the record on stdout and returns 0 (the caller stops
+# and hands the record up). Any other policy action, or an already-marked
+# actionable edge, returns 1 with no output. Mirrors
+# fm_backend_herdr_apply_transition's actionable branch exactly; TUIOS's own
+# poll_transition below clears the marker directly on every non-blocked read
+# (see its header), so the absorb branch herdr's version carries is not needed
+# here.
+fm_backend_tuios_apply_transition() {  # <state_dir> <session> <record>
+  local state=$1 session=$2 record=$3 pane_id to action window marker
+  pane_id=$(fm_transition_pane_id "$record")
+  [ -n "$pane_id" ] || return 1
+  to=$(fm_transition_to_status "$record")
+  action=$(fm_transition_policy "$to")
+  window="$session:$pane_id"
+  marker=$(fm_backend_tuios_escalation_marker "$state" "$window")
+  if [ "$action" = actionable ] && [ ! -e "$marker" ]; then
+    printf '%s' "$record"
+    return 0
+  fi
+  return 1
+}
+
+fm_backend_tuios_commit_transition() {  # <state_dir> <session> <record>
+  local state=$1 session=$2 record=$3 pane_id window
+  pane_id=$(fm_transition_pane_id "$record")
+  [ -n "$pane_id" ] || return 1
+  window="$session:$pane_id"
+  : > "$(fm_backend_tuios_escalation_marker "$state" "$window")"
+}
+
+fm_backend_tuios_clear_escalation_marker() {  # <state_dir> <window>
+  rm -f "$(fm_backend_tuios_escalation_marker "$1" "$2")" 2>/dev/null || true
+}
+
+# fm_backend_tuios_clear_transition: the full teardown-time cleanup (dispatched
+# as fm_backend_clear_transition tuios ...) - clears both the escalation marker
+# and the prompt-hash marker, so a retired task leaves no dedupe state behind.
+fm_backend_tuios_clear_transition() {  # <state_dir> <window>
+  local state=$1 window=$2
+  [ -n "$window" ] || return 0
+  fm_backend_tuios_clear_escalation_marker "$state" "$window"
+  rm -f "$(fm_backend_tuios_prompt_hash_marker "$state" "$window")" 2>/dev/null || true
+}
+
+# fm_backend_tuios_poll_transition: the level-reconcile producer called on the
+# sentry's ordinary per-window poll cycle (TUIOS has no event stream to wait
+# on). Prints the normalized record and returns 0 on a fresh actionable edge
+# for the caller to hand to handle_push_transition; returns 1 when the pane is
+# STILL blocked but already escalated for its current prompt (the caller must
+# still skip the ordinary stale/wedge machinery, just without a fresh wake);
+# returns 2 when the pane is not currently blocked (the caller falls through to
+# the existing poll machinery unchanged, exactly as before this producer
+# existed).
+#
+# Any non-blocked read clears both markers outright, rather than only on the
+# policy's "working" absorb edge the way herdr's stream does: TUIOS can read
+# idle/unknown too, and treating any of them as "no longer waiting" is the
+# safe direction to err in here - it can only cause one redundant wake on a
+# later identical prompt, never a missed one.
+fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
+  local state=$1 session=$2 window=$3 native status prompt_hash hash_marker stored record hit
+  native=$(fm_backend_tuios_busy_state "$window" 2>/dev/null) || native=unknown
+  status=$(fm_backend_tuios_normalize_status "$native")
+  if [ "$status" != blocked ]; then
+    fm_backend_tuios_clear_transition "$state" "$window"
+    return 2
+  fi
+  prompt_hash=$(fm_backend_tuios_prompt_summary "$window" 2>/dev/null | fm_backend_tuios_text_hash)
+  hash_marker=$(fm_backend_tuios_prompt_hash_marker "$state" "$window")
+  stored=$(cat "$hash_marker" 2>/dev/null || true)
+  if [ "$stored" != "$prompt_hash" ]; then
+    fm_backend_tuios_clear_escalation_marker "$state" "$window"
+    printf '%s' "$prompt_hash" > "$hash_marker"
+  fi
+  record=$(fm_transition_record "${window#*:}" "" "" blocked "")
+  hit=$(fm_backend_tuios_apply_transition "$state" "$session" "$record") || return 1
+  printf '%s' "$hit"
 }
 
 # --- delivery ----------------------------------------------------------

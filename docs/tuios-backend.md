@@ -66,6 +66,17 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 
 `bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read. The report verb `tuios peek-prompt` supplies the prompt text and numbered options, and it is read only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state stays `unknown`, which never authorizes a write.
 
+### Waking Squad on a blocked pane
+
+TUIOS has no event subscription to wait on (see "Limits and verification" below), so it produces Squad's backend-neutral normalized transition record (`bin/sq-transition-lib.sh`) on the sentry's ordinary per-window poll instead of through an event stream: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how this fits alongside Herdr's push path and the backends that cannot report the condition at all.
+
+On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any, instead of leaving the pane unanswered until a manual inspection.
+Latency is bounded by the supervision poll interval (`SQUAD_POLL`), since no event subscription is used.
+The wake fires exactly once per distinct pending prompt: the dedupe key is a hash of the prompt text itself, not just the `needs_input` status, because a pane can show one prompt, have it dismissed, and immediately show a different one while never leaving `needs_input` - a status-only dedupe would miss that.
+A new or changed prompt always wakes again, the identical standing prompt never repeats one, and a blocked pane is never folded into the ordinary stale/wedge detection, so it is never misread as a possible wedge.
+Nothing is ever typed over the open prompt: the wake only tells Squad a person is needed and what the prompt asks, and Squad still decides and sends the answer itself.
+A backend with no native blocked verdict (tmux) never raises this wake - it is never guessed from rendered pane text.
+
 ## Restart recovery
 
 A daemon restart destroys every running program. The restored session keeps its names and window ids but runs a fresh shell in every pane, and the daemon's own boot id changes. The adapter records `tuios_boot_id=` with the task metadata at spawn.
@@ -124,7 +135,7 @@ See [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios)
   Without it the daemon keeps its pre-existing TUIOS behavior: composer state stays `unknown`, so injection defers instead of typing into the pane.
 - The open-prompt guard depends on Pi's `ui_prompt_start`/`ui_prompt_end` events, which were verified live on Pi 0.99.0 by opening a real dialog while the primary was idle and confirming the escalation was held until it closed.
   A future Pi release that stopped emitting those events would silently reduce the guard to idle plus draft, so that event contract must be re-verified on a Pi upgrade.
-- Supervision stays poll-based. No event subscription (`subscribe` / `after_seq`) is used, so a stream gap cannot be replayed and a state change is observed on the next poll rather than immediately.
+- Supervision stays poll-based. No event subscription (`subscribe` / `after_seq`) is used, so a stream gap cannot be replayed and a state change is observed on the next poll rather than immediately. The blocked-pane wake above shares this bound exactly: it fires on the next supervision poll after the daemon reports `needs_input`/`errored`, never sub-second, and that bound is covered by `tests/sq-sentry-triage.test.sh`'s fake-CLI suite rather than a live daemon.
 - The daemon's queue, mail, activity, and agent state live in daemon memory and die with it; a restart is reconciled from the inventory and the durable Squad task record, never from a replayed event.
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.
