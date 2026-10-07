@@ -34,7 +34,8 @@ sleep() { printf 'SLEEP\n' >> "$SLEEP_LOG"; }
 reset_state() {
   rm -f "$STATE_DIR"/*.meta "$STATE_DIR"/*.status "$STATE_DIR"/.stand-to-queue \
     "$STATE_DIR"/.stand-to-queue.seq "$STATE_DIR"/.sentry-triage.log \
-    "$STATE_DIR"/.herdr-escalated-* "$TMP"/panes "$TMP"/wtcalls "$TMP"/wtcalled 2>/dev/null || true
+    "$STATE_DIR"/.herdr-escalated-* "$STATE_DIR"/.tuios-escalated-* "$STATE_DIR"/.tuios-prompt-* \
+    "$TMP"/panes "$TMP"/wtcalls "$TMP"/wtcalled 2>/dev/null || true
   : > "$WAKE_LOG"
   : > "$SLEEP_LOG"
   _event_cap_key=""
@@ -81,6 +82,36 @@ fi
 [ ! -s "$WAKE_LOG" ] || fail "a declared-pause crew must not wake the supervisor from the event fast-path"
 grep -q 'absorbed push' "$STATE_DIR/.sentry-triage.log" 2>/dev/null || fail "the paused absorb should be logged to the triage log"
 pass "handle_push_transition: a declared-pause crew is absorbed (no fast wake), left to the poll loop's long cadence"
+
+# --- handle_push_transition: backend name is generic, not a hardcoded herdr --
+# TUIOS produces the same normalized record through its own level-reconcile
+# path (bin/backends/tuios.sh's fm_backend_tuios_poll_transition) rather than
+# herdr's event stream, but lands in this SAME consumer - proving the backend
+# name and the dedupe marker it commits are generic, never a literal "herdr".
+
+reset_state
+fm_write_meta "$STATE_DIR/tk6.meta" "window=owned:w1" "backend=tuios" "kind=strike"
+handle_push_transition tuios owned "$(mkrec w1 blocked)"
+[ -e "$STATE_DIR/.stand-to-queue" ] || fail "handle_push_transition should enqueue a wake for a blocked TUIOS crew"
+grep -q 'tuios: agent blocked' "$STATE_DIR/.stand-to-queue" \
+  || fail "the stale payload must name the backend generically (tuios), not a hardcoded herdr literal: $(cat "$STATE_DIR/.stand-to-queue")"
+grep -q 'owned:w1' "$STATE_DIR/.stand-to-queue" || fail "the stale record must name the operator's window"
+[ -s "$WAKE_LOG" ] || fail "handle_push_transition must wake the supervisor for a blocked TUIOS crew"
+[ -e "$STATE_DIR/.tuios-escalated-owned_w1" ] || fail "handle_push_transition must commit TUIOS's own dedupe marker, not herdr's"
+pass "handle_push_transition: the backend name is interpolated generically (tuios), and it commits that backend's own dedupe marker"
+
+# --- handle_push_transition: the wake carries the prompt when the backend ----
+#     can read one (the record itself stays backend-neutral and prompt-free)
+
+reset_state
+fm_write_meta "$STATE_DIR/tk7.meta" "window=owned:w1" "backend=tuios" "kind=strike"
+# shellcheck disable=SC2329 # Runtime override called by the isolated production owner.
+fm_backend_prompt_summary() { printf 'approval: trust this directory? [1) Yes 2) No]'; }
+handle_push_transition tuios owned "$(mkrec w1 blocked)"
+grep -qF 'approval: trust this directory? [1) Yes 2) No]' "$STATE_DIR/.stand-to-queue" \
+  || fail "the stale payload must carry the prompt summary and numbered options when the backend can read them: $(cat "$STATE_DIR/.stand-to-queue")"
+unset -f fm_backend_prompt_summary
+pass "handle_push_transition: the actionable wake carries the prompt summary and numbered options when the backend can read them"
 
 # --- event_wait_or_sleep: XO windows are excluded from the pane list --
 

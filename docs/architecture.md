@@ -134,6 +134,21 @@ tmux, zellij, orca, and cmux expose no verified native busy primitive, so a task
 TUIOS's own agent report does participate: a native `working` is accepted as busy and a native `needs_input` or `errored` as blocked when the task has no record of its own, so a blocked TUIOS operator is never read as ordinary work.
 That poll loop is still the default event source for backends with no native push events, so this stays an extraction of the abstraction rather than a sentry rewrite.
 For capable Herdr sessions, the same sentry replaces its terminal sleep with a bounded native event wait that immediately surfaces `blocked`; [Push events and polling fallback](herdr-backend.md#push-events-and-polling-fallback) owns the current mechanism and capability gates, while [runtime backend verification](verification/runtime-backends.md#native-blocked-event) owns the active evidence.
+
+### Capability matrix: the person-needed escalation
+
+Every backend's answer to "a person is needed" sits in exactly one of three capability classes, all consuming the SAME normalized transition record and policy table (`bin/sq-transition-lib.sh`); no backend re-encodes the status->action mapping on its own.
+
+| Class | Backends today | Mechanism | Latency |
+| --- | --- | --- | --- |
+| Push-capable | Herdr | Native event subscription (`pane.agent_status_changed`); `bin/backends/herdr.sh`'s `fm_backend_herdr_wait_transition` | Sub-second |
+| Poll-only | TUIOS | No event stream; `bin/backends/tuios.sh`'s `fm_backend_tuios_poll_transition` level-reconciles the daemon's current state into the same record on the sentry's ordinary per-window poll | Bounded by `SQUAD_POLL` |
+| Cannot report | tmux, zellij, orca, cmux | No native blocked verdict of any kind | Never raised - no guess from rendered pane text |
+
+`fm_backend_has_push` and `fm_backend_can_poll_transition` (`bin/sq-backend.sh`) are the two capability predicates a consumer checks; a backend answering false to both falls through to the ordinary stale/wedge poll unchanged, which is the permanent fail-closed backstop for the whole matrix.
+A poll-only producer's dedupe is keyed on more than the status edge alone: TUIOS additionally hashes the prompt's kind and message (its last line when the message body is empty) so a pane that goes from one `needs_input` prompt straight to a different one - with no intervening non-blocked read - still re-escalates, while the identical standing prompt never repeats a wake.
+Numbered options are deliberately excluded from that identity, so a later poll that merely surfaces options for the same prompt does not re-arm; the rendered summary (`fm_backend_prompt_summary`) is produced only at wake time for the notification.
+The consumer (`handle_push_transition` in `bin/sq-push-transition-lib.sh`) asks the producing backend for that prompt at wake time rather than widening the shared record, since most producers (herdr) have none to offer; the reason this produces reads `stale: <window> (<backend>: agent blocked - <prompt> - waiting on human, escalated immediately, not via wedge timer)`, with the `- <prompt>` segment present only when the backend supplied one.
 The deeper session-start agent-process liveness probe is separate from that busy-state poll: tmux and Herdr have verified classifiers for XO recovery, Zellij remains unverified, and Orca, cmux, and TUIOS do not support XO spawns.
 Herdr is experimental and can be selected explicitly or by runtime auto-detection: FOB remains its worktree provider, [`herdr-backend.md`](herdr-backend.md) owns current setup and safety limits, and [`verification/runtime-backends.md`](verification/runtime-backends.md#herdr) owns active empirical evidence.
 Herdr uses one tab per task; [Watching and task containers](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, and recovery scope.

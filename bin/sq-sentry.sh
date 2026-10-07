@@ -43,6 +43,26 @@
 #                          A declared paused:/commander-held last status line
 #                          still outranks that busy verdict and keeps the bounded
 #                          pause cadence instead of starting the wedge timer.
+#   stale: <window> (<backend>: agent blocked - ...)
+#                          a backend's native transition record (bin/sq-transition-lib.sh)
+#                          reports the SAME window as `blocked` (a person is
+#                          needed: a dialog, approval, or question) - escalated
+#                          immediately, never via the wedge timer above, and never
+#                          counted as a possible wedge in the first place. Herdr
+#                          reaches this through its event-wait push stream; a
+#                          poll-only producer (TUIOS) reaches it through
+#                          fm_backend_poll_transition on this same per-window loop.
+#                          The reason carries the prompt bin/sq-backend.sh's
+#                          fm_backend_prompt_summary reads (including numbered
+#                          options) when the backend can supply one. Dedup is the
+#                          producer's own per-pane marker (bin/backends/herdr.sh's
+#                          escalation marker, bin/backends/tuios.sh's for TUIOS),
+#                          cleared on a non-blocked edge so a later `->blocked`
+#                          re-escalates; TUIOS additionally clears it on a changed
+#                          prompt while still blocked, so a new or changed prompt
+#                          always wakes even with no such edge in between. A
+#                          backend with no native blocked signal (tmux) never
+#                          raises this - it is never guessed from pane text.
 #   check: <script>: <out> authenticated check output, always actionable
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
@@ -987,7 +1007,26 @@ EOF
     if [ "$kind" = xo ] && ! status_is_paused "$last"; then
       continue
     fi
-    tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
+    backend=$(window_backend "$w")
+    # A poll-capable-but-not-push-capable backend (TUIOS today) has no event
+    # stream to wait on, so it produces its normalized transition record
+    # (bin/sq-transition-lib.sh) right here on the ordinary poll instead of
+    # through the event-wait splice above. A fresh actionable (blocked) record
+    # hands off to the same handle_push_transition consumer herdr's stream
+    # uses, which wakes and never returns; "still blocked, already escalated"
+    # (rc=1) and "previously escalated, current read ambiguous" (rc=3) both
+    # skip the stale/wedge machinery below for this window entirely, so a
+    # person-needed pane is never counted as a possible wedge; anything else
+    # (rc=2: not currently blocked, or the backend cannot poll-produce at all)
+    # falls through to the existing detection unchanged.
+    if fm_backend_can_poll_transition "$backend"; then
+      poll_record=$(fm_backend_poll_transition "$backend" "$STATE" "${w%%:*}" "$w" 2>/dev/null) && poll_rc=0 || poll_rc=$?
+      case "$poll_rc" in
+        0) handle_push_transition "$backend" "${w%%:*}" "$poll_record" ;;
+        1|3) continue ;;
+      esac
+    fi
+    tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
     h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')
     hf="$STATE/.hash-$key"

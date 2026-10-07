@@ -111,6 +111,52 @@ record_pi_busy() {  # <state-dir> <id>
 
 reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
 
+# Minimal fake TUIOS daemon for the blocked-pane wake tests below. It covers
+# only the verbs the per-poll loop actually calls on an already-existing
+# window (get-window, list-windows, list-agents, peek-prompt, capture-pane) -
+# no spawn/workspace surface, since these tests never go through
+# fm_backend_tuios_container_ensure. Window id defaults to w1 and is driven by
+# SQUAD_TUIOS_FAKE_WINDOW_ID so a case can target a different window; its
+# label (name) must match window_label's "sq-<task>" or fm_backend_tuios_target_ready
+# refuses the whole read, so SQUAD_TUIOS_FAKE_WINDOW_NAME must be set to match
+# the test's meta-derived task id.
+install_fake_tuios() {  # <fakebin>
+  local fakebin=$1
+  cat > "$fakebin/tuios" <<'SH'
+#!/usr/bin/env bash
+set -u
+id=${SQUAD_TUIOS_FAKE_WINDOW_ID:-w1}
+case "${1:-}" in
+  get-window)
+    printf '{"window":{"id":"%s","name":"%s","cwd":"/tmp/wt","has_foreground_process":false}}\n' \
+      "$id" "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task}"
+    ;;
+  list-windows)
+    [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ] && exit 1
+    printf '{"windows":[{"id":"%s","name":"%s"}]}\n' "$id" "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task}"
+    ;;
+  list-agents)
+    printf '{"agents":[{"id":"%s","foreground":"","state":"%s","harness_id":"claude","confidence":"certain","blocked_by":"%s"}]}\n' \
+      "$id" "${SQUAD_TUIOS_FAKE_AGENT_STATE:-working}" "${SQUAD_TUIOS_FAKE_BLOCKED_BY:-}"
+    ;;
+  peek-prompt)
+    if [ "${SQUAD_TUIOS_FAKE_PROMPT_BLOCKED:-0}" = 1 ]; then
+      printf '{"blocked":true,"found":true,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1","success":true}\n' \
+        "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-trust this directory?}" \
+        "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-trust this directory?}" "${SQUAD_TUIOS_FAKE_PROMPT_OPTIONS:-[]}"
+    else
+      printf '{"blocked":false,"found":false,"reason":"the pane is not on needs_input","success":true}\n'
+    fi
+    ;;
+  capture-pane)
+    printf '%s\n' "${SQUAD_TUIOS_FAKE_CAPTURE_TEXT:-pane text}"
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/tuios"
+}
+
 # --- pure classifier predicates (sq-classify-lib.sh) ------------------------
 
 test_signal_reason_is_actionable_classifier() {
@@ -1170,6 +1216,206 @@ test_paused_churning_pane_throttle_refreshes_marker() {
   [ "$(( now_d - mtime_d ))" -lt 10 ] || fail "re-absorb: marker mtime is $(( now_d - mtime_d ))s old (should be <10s after refresh)"
 
   pass "surface_nonterminal_stale absorb path refreshes throttle marker; stale marker surfaces; re-absorb works"
+}
+
+# --- TUIOS native blocked-pane wake, through the backend-neutral transition --
+# producer (bin/sq-transition-lib.sh) on the sentry's ordinary poll loop. A
+# pane whose backend reports a person is needed must wake Squad, naming the
+# task and the prompt the daemon read (including numbered options when
+# present), exactly once per distinct pending prompt, and must never be folded
+# into the ordinary stale/wedge machinery. docs/tuios-backend.md and
+# sq-sentry.sh's own header comment own this contract.
+
+test_tuios_blocked_pane_wakes_via_poll_transition() {
+  local dir state fakebin out drain_out window key pid
+  dir=$(make_case tuios-blocked-wake); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  install_fake_tuios "$fakebin"
+  window="tsess:w1"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/blocked.meta"
+  printf 'working: starting up\n' > "$state/blocked.status"
+  # Mark the pre-existing status as already seen so the signal scan does not
+  # fire first: this test exercises the native blocked poll, not the signal
+  # path, and must not depend on an earlier suite test having absorbed a
+  # leaked crew-state verdict.
+  printf '%s' "$(seen_sig "$state/blocked.status")" > "$state/.seen-blocked_status"
+  export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-blocked
+
+  # SQUAD_BASE is pinned to this case's own scratch dir (not just
+  # SQUAD_STATE_OVERRIDE) so nothing in the chain - fm_wake_append's queue
+  # path, sq-guard.sh's home resolution - can fall back to this operator
+  # shell's ambient SQUAD_BASE and leak a fixture wake into the real base.
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input SQUAD_TUIOS_FAKE_BLOCKED_BY=approval \
+    SQUAD_TUIOS_FAKE_PROMPT_KIND=approval SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?' \
+    SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='["Yes","No"]' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "sentry did not exit for a native TUIOS blocked prompt"
+  grep -Fx "stale: $window (tuios: agent blocked - approval: trust this directory? [1) Yes 2) No] - waiting on human, escalated immediately, not via wedge timer)" "$out" >/dev/null \
+    || fail "blocked wake did not carry the backend-generic wording, prompt summary, and numbered options: $(cat "$out")"
+
+  [ ! -e "$state/.hash-$key" ] || fail "a blocked pane must never start the ordinary stale hash tracking"
+  [ ! -e "$state/.count-$key" ] || fail "a blocked pane must never advance the ordinary stale counter"
+  [ ! -e "$state/.stale-$key" ] || fail "a blocked pane must never be recorded as a possible wedge"
+  [ -e "$state/.tuios-escalated-$key" ] || fail "the TUIOS producer's own dedupe marker was not committed"
+
+  SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the blocked wake failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" | grep -F 'trust this directory?' >/dev/null \
+    || fail "the blocked wake was not queued with its window and prompt: $(cat "$drain_out")"
+  unset SQUAD_TUIOS_FAKE_WINDOW_NAME
+  pass "a native TUIOS blocked prompt wakes once through the shared transition producer, naming its prompt and numbered options, without touching stale bookkeeping"
+}
+
+test_tuios_blocked_pane_dedupes_then_rearms_on_change_or_unblock() {
+  local dir state fakebin out window key pid wakes
+  dir=$(make_case tuios-blocked-dedupe); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  install_fake_tuios "$fakebin"
+  window="tsess:w1"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/dedupe.meta"
+  printf 'working: starting up\n' > "$state/dedupe.status"
+  # Mark the pre-existing status as already seen (see the sibling test above).
+  printf '%s' "$(seen_sig "$state/dedupe.status")" > "$state/.seen-dedupe_status"
+  export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-dedupe
+
+  # SQUAD_BASE is pinned to this case's own scratch dir on every launch below
+  # (see the sibling test above for why), never just SQUAD_STATE_OVERRIDE.
+
+  # Phase 1: first sighting of the prompt wakes and records the dedup marker.
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input \
+    SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "first sighting of a blocked prompt did not wake"
+  [ -e "$state/.tuios-escalated-$key" ] || fail "the dedup marker was not recorded after the first wake"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "expected exactly 1 queued wake after phase 1, got $wakes"
+
+  # Phase 2: the SAME standing prompt must not wake again on a fresh sentry
+  # invocation (the normal production restart-per-wake shape).
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input \
+    SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "an unchanged standing prompt re-woke Squad: $(cat "$out")"
+  fi
+  reap "$pid"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "an unchanged prompt added a duplicate queued wake (now $wakes)"
+
+  # Phase 3: a changed prompt text wakes again, with no intervening non-blocked
+  # edge - the prompt's own content, not just the status, drives the dedupe.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input \
+    SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='allow network access?' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "a changed prompt did not wake again"
+  grep -F 'allow network access?' "$out" >/dev/null || fail "the changed-prompt wake did not name the new prompt: $(cat "$out")"
+
+  # Phase 4: the pane becomes unblocked - the dedup marker must clear.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=0 SQUAD_TUIOS_FAKE_AGENT_STATE=working \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "an ordinary busy pane unexpectedly exited: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -e "$state/.tuios-escalated-$key" ] || fail "unblocking did not clear the dedup marker"
+
+  # Phase 5: the identical original prompt text re-arms and wakes again, since
+  # unblocking cleared the marker - "unrelated activity never re-arms it" cuts
+  # the other way too: only a genuine transition through unblocked does.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input \
+    SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "a byte-identical prompt did not re-wake after an intervening unblock"
+  grep -F 'trust this directory?' "$out" >/dev/null || fail "the re-armed wake did not name the prompt: $(cat "$out")"
+
+  unset SQUAD_TUIOS_FAKE_WINDOW_NAME
+  pass "a TUIOS blocked prompt wakes once per distinct prompt, rewakes on a change, and rearms after unblocking"
+}
+
+test_tuios_ambiguous_read_after_escalation_skips_stale() {
+  local dir state fakebin out window key pid wakes
+  dir=$(make_case tuios-ambiguous-skip-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  install_fake_tuios "$fakebin"
+  window="tsess:w1"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/ambiguous.meta"
+  printf 'working: starting up\n' > "$state/ambiguous.status"
+  # Mark the pre-existing status as already seen (see the sibling test above).
+  printf '%s' "$(seen_sig "$state/ambiguous.status")" > "$state/.seen-ambiguous_status"
+  export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-ambiguous
+
+  # Phase 1: a real blocked read wakes once and commits the escalation marker.
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input \
+    SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "the blocked prompt did not wake"
+  [ -e "$state/.tuios-escalated-$key" ] || fail "the escalation marker was not committed"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "expected exactly 1 wake after the blocked read, got $wakes"
+
+  # Phase 2: the native inventory read now fails for the still-escalated pane.
+  # The sentry must stay live (skip stale) and must not start stale bookkeeping.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_LIST_FAIL=1 \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "an ambiguous read over a still-escalated blocked pane produced a stale wake: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -e "$state/.hash-$key" ] || fail "an ambiguous read over a blocked pane started stale hash tracking"
+  [ ! -e "$state/.count-$key" ] || fail "an ambiguous read over a blocked pane advanced the stale counter"
+  [ ! -e "$state/.stale-$key" ] || fail "an ambiguous read over a blocked pane recorded it as a possible wedge"
+  [ -e "$state/.tuios-escalated-$key" ] || fail "an ambiguous read cleared the escalation marker"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "an ambiguous read over a blocked pane added a duplicate wake (now $wakes)"
+  unset SQUAD_TUIOS_FAKE_WINDOW_NAME
+  pass "an ambiguous native read after escalation skips the stale/wedge path instead of reclassifying a blocked pane"
+}
+
+test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake() {
+  local dir state fakebin out capture_file window pid
+  dir=$(make_case tmux-no-native-blocked); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:sq-prompty"
+  # tmux has no native blocked verdict and no poll-transition producer
+  # (fm_backend_can_poll_transition tmux is false), so pane text that merely
+  # LOOKS like a dialog must never be guessed into a blocked wake.
+  printf 'Do you want to proceed?\n1) Yes\n2) No\n' > "$capture_file"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/prompty.meta"
+  printf 'working: starting up\n' > "$state/prompty.status"
+  # Mark the pre-existing status as already seen so the only wake candidate is
+  # the prompt-like pane text, which must never be guessed into a blocked wake.
+  printf '%s' "$(seen_sig "$state/prompty.status")" > "$state/.seen-prompty_status"
+
+  # The pane's crew is genuinely working (the prompt-like text is only rendered
+  # output), so the ordinary stale machinery absorbs it; only a guessed blocked
+  # escalation would produce a wake. Pin the crew verdict explicitly so the test
+  # does not depend on a leaked SQUAD_FAKE_CREW_STATE from an earlier case.
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running)' \
+    SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "a tmux pane with prompt-like text produced a wake on no native verdict: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "tmux silently guessed a blocked wake from pane text: $(cat "$out")"
+  reap "$pid"
+  pass "a backend with no poll-transition producer (tmux) never guesses blocked from pane text"
 }
 
 # A commander-held crew can leave a stable backend endpoint after its agent exits.
@@ -2350,3 +2596,7 @@ test_beacon_stays_fresh_while_absorbing
 test_afk_present_reverts_sentry_to_one_shot
 test_afk_paused_changed_pane_hands_off_plain_stale
 test_paused_churning_pane_throttle_refreshes_marker
+test_tuios_blocked_pane_wakes_via_poll_transition
+test_tuios_blocked_pane_dedupes_then_rearms_on_change_or_unblock
+test_tuios_ambiguous_read_after_escalation_skips_stale
+test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake

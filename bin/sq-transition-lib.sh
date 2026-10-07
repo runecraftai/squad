@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Shared, backend-neutral agent-state transition shape and supervision policy.
 #
-# This library owns TWO contracts, deliberately backend-independent so any
-# push-capable session backend (herdr today, others later) reuses them instead
-# of re-deriving a private, per-status escalation hack:
+# This library owns TWO contracts, deliberately backend-independent so every
+# session backend that can report agent state - a push-capable stream (herdr)
+# or a level-reconcile poll producer (TUIOS) - reuses them instead of
+# re-deriving a private, per-status escalation hack:
 #
-#   1. The NORMALIZED TRANSITION RECORD - the ONE shape every backend's event
-#      stream is normalized into before any policy runs. A single TAB-separated
-#      line:
+#   1. The NORMALIZED TRANSITION RECORD - the ONE shape every backend's push
+#      stream or level read is normalized into before any policy runs. A single
+#      TAB-separated line:
 #          <pane_id>\t<workspace_id>\t<from_status>\t<to_status>\t<agent>
 #      Only `to_status` is authoritative for the policy below; the other fields
 #      are identity/telemetry and MAY be empty when a backend cannot supply
@@ -27,10 +28,13 @@
 #      a one-line edit here, and it changes every backend at once.
 #
 # The split is what keeps the escalation general rather than a herdr blocked
-# hack: a backend contributes only a wire->record normalizer and a stream
-# reader; the shape and the policy are shared. See bin/backends/herdr.sh
-# (fm_backend_herdr_wait_transition) for the herdr producer and bin/sq-sentry.sh
-# (the sentry's event-wait splice) for the consumer.
+# hack: a backend contributes only a normalizer plus either a push stream
+# reader (herdr) or a level-reconcile poll read (TUIOS); the shape and the
+# policy are shared. See bin/backends/herdr.sh
+# (fm_backend_herdr_wait_transition) and bin/backends/tuios.sh
+# (fm_backend_tuios_poll_transition) for the two producers, and
+# bin/sq-push-transition-lib.sh (handle_push_transition) for the shared
+# consumer.
 
 # Field separator for the normalized record. A literal TAB; every field is
 # scrubbed of TAB/newline by the producer so the record is exactly five fields.
@@ -72,7 +76,7 @@ fm_transition_agent()        { fm_transition_field "$1" 5; }
 #
 #   actionable - escalate to the supervisor IMMEDIATELY (a fresh edge here is a
 #                durable wake now). `blocked` is the only immediately-actionable
-#                status today: herdr reports it precisely when a harness is
+#                status today: a backend reports it precisely when a harness is
 #                waiting on the human (a permission/trust dialog, an interactive
 #                menu, a wedged prompt) - the cases that write no status file
 #                and otherwise sit until the stale-pane wedge timer.
@@ -89,7 +93,7 @@ fm_transition_agent()        { fm_transition_field "$1" 5; }
 #                action from an ambiguous read.
 #
 # Consumers act on `actionable`, mutate dedupe state on `absorb`, and ignore
-# `defer`/`fallback` on the fast path. Subscribing to ALL statuses (not just
+# `defer`/`fallback` on the fast path. Consuming ALL statuses (not just
 # `blocked`) is deliberate: `working`/`idle`/`done` carry the dedupe-clear and
 # reconnect/level-reconcile state; only THIS policy makes `blocked` the sole
 # immediate action.

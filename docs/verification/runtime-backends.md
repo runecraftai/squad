@@ -716,7 +716,9 @@ Not established:
 - `not_ready` and `prompt_stalled` were not observed live. They are mapped from the daemon's documented refusal codes and covered by the fake-CLI test, but the asynchronous queue path does not raise them; they belong to the synchronous ask path, which Squad does not currently call.
 - A live `queue-prompt` refusal reason other than `queue_full` and the no-attributed-agent refusal was not produced.
 - The bounded queue observation window (10s by default) proved wide enough for the observed 5s stall gate; a slower daemon configuration could close the window while an entry is still being typed, in which case the adapter reports the entry as safely queued and the daemon's Inbox question is the durable signal.
-- Supervision on this backend remains poll-based by design; no event subscription, gap replay, or push-driven wake was implemented or verified.
+- Supervision on this backend remains poll-based by design; no event subscription or gap replay is used.
+  The blocked-pane wake rides that poll rather than any push stream, and that poll-driven wake is not live-verified here.
+  `docs/tuios-backend.md` records its portable coverage and latency bound.
 - Simultaneous allocations across separate Squad bases sharing one TUIOS session have not been exercised live. The adapter uses one per-session lock under the user's shared `XDG_RUNTIME_DIR` when available, then rechecks authoritative session inventory before each creation.
 - The finished-and-foreground-less recovery rule is derived from one daemon build (TUIOS 0.8.0): every live agent observed reported a `foreground` program, and the one exited agent reported none. A build or harness that reports `state=done` without a `foreground` program while its agent is still running has not been observed; `docs/tuios-backend.md` "Finished-agent recovery" names that as the unproven case.
 - The away-mode live path was verified against one Pi version (0.99.0) and one TUIOS build (0.8.0). Its open-prompt guard reads Pi's `ui_prompt_start`/`ui_prompt_end` events, which are not a documented public API, so a Pi upgrade must re-verify that they are still emitted before the guard is trusted.
