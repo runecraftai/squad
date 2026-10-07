@@ -1014,15 +1014,16 @@ EOF
     # through the event-wait splice above. A fresh actionable (blocked) record
     # hands off to the same handle_push_transition consumer herdr's stream
     # uses, which wakes and never returns; "still blocked, already escalated"
-    # (rc=1) skips the stale/wedge machinery below for this window entirely, so
-    # a person-needed pane is never counted as a possible wedge; anything else
+    # (rc=1) and "previously escalated, current read ambiguous" (rc=3) both
+    # skip the stale/wedge machinery below for this window entirely, so a
+    # person-needed pane is never counted as a possible wedge; anything else
     # (rc=2: not currently blocked, or the backend cannot poll-produce at all)
     # falls through to the existing detection unchanged.
     if fm_backend_can_poll_transition "$backend"; then
       poll_record=$(fm_backend_poll_transition "$backend" "$STATE" "${w%%:*}" "$w" 2>/dev/null) && poll_rc=0 || poll_rc=$?
       case "$poll_rc" in
         0) handle_push_transition "$backend" "${w%%:*}" "$poll_record" ;;
-        1) continue ;;
+        1|3) continue ;;
       esac
     fi
     tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue

@@ -748,7 +748,10 @@ fm_backend_tuios_clear_transition() {  # <state_dir> <window>
 # still skip the ordinary stale/wedge machinery, just without a fresh wake);
 # returns 2 when the pane is not currently blocked (the caller falls through to
 # the existing poll machinery unchanged, exactly as before this producer
-# existed).
+# existed); returns 3 when the pane was previously escalated but the current
+# native read is an ambiguous fallback (the caller must skip the ordinary
+# stale/wedge machinery without a fresh wake, so a blocked pane whose read
+# failed is never reclassified as stale).
 #
 # The clear/keep decision comes from the shared policy table on the normalized
 # status. A positively-read non-blocked status (absorb/defer) clears both
@@ -765,7 +768,11 @@ fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
   status=$(fm_backend_tuios_normalize_status "$native")
   action=$(fm_transition_policy "$status")
   if [ "$action" != actionable ]; then
-    [ "$action" = fallback ] || fm_backend_tuios_clear_transition "$state" "$window"
+    if [ "$action" = fallback ]; then
+      [ -e "$(fm_backend_tuios_escalation_marker "$state" "$window")" ] && return 3
+      return 2
+    fi
+    fm_backend_tuios_clear_transition "$state" "$window"
     return 2
   fi
   hash_marker=$(fm_backend_tuios_prompt_hash_marker "$state" "$window")

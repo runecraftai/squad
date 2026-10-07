@@ -1027,6 +1027,17 @@ OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC
 [ ! -e "$HASH_MARKER" ] || fail 'a working read must clear the prompt-hash marker'
 unset SQUAD_TUIOS_FAKE_AGENTS
 
+# An ambiguous native read with no prior escalation is not known blocked: it
+# must fall back to the ordinary poll machinery (rc=2), never take the
+# skip-stale shortcut.
+SQUAD_TUIOS_FAKE_LIST_FAIL=1
+SQUAD_TUIOS_FAKE_AGENTS=
+export SQUAD_TUIOS_FAKE_LIST_FAIL SQUAD_TUIOS_FAKE_AGENTS
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_LIST_FAIL SQUAD_TUIOS_FAKE_AGENTS
+[ "$RC" -eq 2 ] || fail "an ambiguous read with no prior escalation must fall back (rc=2), got rc=$RC out=$OUT"
+[ -z "$OUT" ] || fail "an ambiguous read with no prior escalation must print no record: $OUT"
+
 # Blocked, first sighting: a fresh actionable record (rc=0). The dedupe marker
 # is NOT set until the caller commits it, mirroring herdr's own contract
 # (apply decides, the caller commits only after it has handled the wake).
@@ -1058,7 +1069,7 @@ SQUAD_TUIOS_FAKE_LIST_FAIL=1
 export SQUAD_TUIOS_FAKE_LIST_FAIL
 OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
 unset SQUAD_TUIOS_FAKE_LIST_FAIL
-[ "$RC" -eq 2 ] || fail "an unreadable native read must fall back (rc=2), got rc=$RC out=$OUT"
+[ "$RC" -eq 3 ] || fail "an unreadable native read over a previously escalated pane must skip stale (rc=3), got rc=$RC out=$OUT"
 [ -z "$OUT" ] || fail "an unreadable native read must print no record: $OUT"
 [ -e "$ESC_MARKER" ] || fail 'an ambiguous read must not clear the escalation marker'
 [ -e "$HASH_MARKER" ] || fail 'an ambiguous read must not clear the prompt-hash marker'

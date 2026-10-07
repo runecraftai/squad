@@ -132,6 +132,7 @@ case "${1:-}" in
       "$id" "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task}"
     ;;
   list-windows)
+    [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ] && exit 1
     printf '{"windows":[{"id":"%s","name":"%s"}]}\n' "$id" "${SQUAD_TUIOS_FAKE_WINDOW_NAME:-sq-task}"
     ;;
   list-agents)
@@ -1333,6 +1334,47 @@ test_tuios_blocked_pane_dedupes_then_rearms_on_change_or_unblock() {
 
   unset SQUAD_TUIOS_FAKE_WINDOW_NAME
   pass "a TUIOS blocked prompt wakes once per distinct prompt, rewakes on a change, and rearms after unblocking"
+}
+
+test_tuios_ambiguous_read_after_escalation_skips_stale() {
+  local dir state fakebin out window key pid wakes
+  dir=$(make_case tuios-ambiguous-skip-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  install_fake_tuios "$fakebin"
+  window="tsess:w1"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/ambiguous.meta"
+  printf 'working: starting up\n' > "$state/ambiguous.status"
+  export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-ambiguous
+
+  # Phase 1: a real blocked read wakes once and commits the escalation marker.
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_PROMPT_BLOCKED=1 SQUAD_TUIOS_FAKE_AGENT_STATE=needs_input \
+    SQUAD_TUIOS_FAKE_PROMPT_MESSAGE='trust this directory?' \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "the blocked prompt did not wake"
+  [ -e "$state/.tuios-escalated-$key" ] || fail "the escalation marker was not committed"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "expected exactly 1 wake after the blocked read, got $wakes"
+
+  # Phase 2: the native inventory read now fails for the still-escalated pane.
+  # The sentry must stay live (skip stale) and must not start stale bookkeeping.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_TUIOS_FAKE_LIST_FAIL=1 \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "an ambiguous read over a still-escalated blocked pane produced a stale wake: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -e "$state/.hash-$key" ] || fail "an ambiguous read over a blocked pane started stale hash tracking"
+  [ ! -e "$state/.count-$key" ] || fail "an ambiguous read over a blocked pane advanced the stale counter"
+  [ ! -e "$state/.stale-$key" ] || fail "an ambiguous read over a blocked pane recorded it as a possible wedge"
+  [ -e "$state/.tuios-escalated-$key" ] || fail "an ambiguous read cleared the escalation marker"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "an ambiguous read over a blocked pane added a duplicate wake (now $wakes)"
+  unset SQUAD_TUIOS_FAKE_WINDOW_NAME
+  pass "an ambiguous native read after escalation skips the stale/wedge path instead of reclassifying a blocked pane"
 }
 
 test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake() {
@@ -2539,4 +2581,5 @@ test_afk_paused_changed_pane_hands_off_plain_stale
 test_paused_churning_pane_throttle_refreshes_marker
 test_tuios_blocked_pane_wakes_via_poll_transition
 test_tuios_blocked_pane_dedupes_then_rearms_on_change_or_unblock
+test_tuios_ambiguous_read_after_escalation_skips_stale
 test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake

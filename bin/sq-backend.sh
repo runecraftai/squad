@@ -1046,7 +1046,10 @@ fm_backend_can_poll_transition() {  # <backend>
 # Prints the normalized record and returns 0 on a fresh actionable (blocked)
 # edge; returns 1 when the pane is still blocked but already escalated for its
 # current condition (the caller still skips the ordinary stale/wedge path, just
-# without a fresh wake); returns 2 when the pane is not currently blocked, or
+# without a fresh wake); returns 3 when the pane was previously escalated but
+# the current native read is an ambiguous fallback (the caller must also skip
+# the ordinary stale/wedge path, so a blocked-but-unreadable pane is never
+# reclassified as stale); returns 2 when the pane is not currently blocked, or
 # the backend cannot poll-produce at all (the caller falls through to the
 # existing poll machinery unchanged).
 fm_backend_poll_transition() {  # <backend> <state_dir> <session> <window>
