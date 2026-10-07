@@ -112,9 +112,10 @@ func (e *Executor) watchStepLiveness(ctx context.Context, cancel context.CancelF
 
 		alive, state, stateErr := stepProcessState(pid)
 		if stateErr != nil || alive {
-			if pid != deadPID {
-				deadPID, deadStreak = 0, 0
-			}
+			// Any alive/unknown observation breaks the "same pid dead on
+			// consecutive polls" contract, so the streak resets even when the
+			// pid is unchanged.
+			deadPID, deadStreak = 0, 0
 			continue
 		}
 
