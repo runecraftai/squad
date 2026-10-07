@@ -175,10 +175,20 @@ def triage_ci_failures(cfg):
     data = sq_gh_json(args)
     runs = data.get('runs') or []
     buckets = {}
+    unviewable = []
     for run in runs:
         run_id = run.get('id')
-        view = sq_gh_json(['run', 'view', str(run_id), '--repo', repo])
-        jobs = view.get('jobs') or []
+        try:
+            view = sq_gh_json(['run', 'view', str(run_id), '--repo', repo])
+            jobs = view.get('jobs') or []
+        except Exception as error:  # one bad run must not discard every other run
+            unviewable.append({
+                'id': f'ci-run-{run_id}',
+                'title': run.get('title') or f'run {run_id}',
+                'link': run.get('url') or f"https://github.com/{repo}/actions/runs/{run_id}",
+                'reason': f'could not inspect this failed run: {error}',
+            })
+            continue
         failing = [j for j in jobs if (j.get('conclusion') or '').lower() == 'failure']
         if failing:
             for job in failing:
@@ -188,6 +198,7 @@ def triage_ci_failures(cfg):
             identity = f"ci:{repo}:{workflow or run.get('workflow')}:{branch or run.get('branch')}:(run-level)"
             buckets.setdefault(identity, {'job_name': None, 'runs': []})['runs'].append(run)
     candidates, digest = [], []
+    digest.extend(unviewable)
     for identity, bucket in buckets.items():
         occurrences = bucket['runs']
         count = len(occurrences)
@@ -290,6 +301,7 @@ def run_collection(config, dry_run=False, seen=None):
     sources_status = {}
     all_candidates = []
     digest_by_source = {}
+    candidate_sources = {}
     for name, triage in SOURCES.items():
         source_cfg = (config.get('source') or {}).get(name)
         if not source_cfg or not source_cfg.get('enabled', False):
@@ -298,6 +310,8 @@ def run_collection(config, dry_run=False, seen=None):
         try:
             candidates, digest = triage(source_cfg)
             sources_status[name] = {'ok': True, 'fetched': len(candidates) + len(digest)}
+            for candidate in candidates:
+                candidate_sources[candidate['fingerprint']] = name
             all_candidates.extend(candidates)
             digest_by_source[name] = digest
         except SourceError as error:
@@ -313,10 +327,10 @@ def run_collection(config, dry_run=False, seen=None):
             try:
                 result = queue_candidate(candidate, repo_tag='squad')
             except SourceError as error:
-                sources_status[candidate['source']] = {
-                    **sources_status.get(candidate['source'], {}),
-                    'queue_error': str(error),
-                }
+                # Annotate the owning source (the plural registry key), never a
+                # phantom key derived from the candidate's singular source label.
+                source_name = candidate_sources.get(candidate['fingerprint'], candidate['source'])
+                sources_status.setdefault(source_name, {})['queue_error'] = str(error)
                 continue
             seen[candidate['fingerprint']] = {
                 'id': candidate['id'],
@@ -334,7 +348,14 @@ def run_collection(config, dry_run=False, seen=None):
         save_seen(seen)
 
     digest_text, digest_count = group_digest(digest_by_source)
-    if not dry_run:
+    # Only overwrite the persisted human digest when at least one enabled source
+    # actually produced current state; an all-failed run must not blank the last
+    # good digest with a synthesized "(nothing to report)".
+    produced_state = any(
+        not status.get('skipped') and status.get('ok', False)
+        for status in sources_status.values()
+    )
+    if not dry_run and produced_state:
         atomic_write(DIGEST_PATH, digest_text)
 
     any_enabled = any(not status.get('skipped') for status in sources_status.values())
@@ -363,6 +384,8 @@ def render_summary(result):
             lines.append(f"  {name}: ok ({status.get('fetched', 0)} fetched)")
         else:
             lines.append(f"  {name}: FAILED — {status.get('error')}")
+        if status.get('queue_error'):
+            lines.append(f"  {name}: queue failed — {status['queue_error']}")
     verb = 'would queue' if result['dry_run'] else 'queued'
     lines.append(f"Candidates {verb}: {result['candidates_queued']}")
     lines.append(f"Candidates already seen (skipped, not re-proposed): {result['candidates_already_seen']}")

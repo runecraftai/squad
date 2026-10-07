@@ -66,7 +66,7 @@ Job-level recurrence is honest about that granularity and is still a materially 
 
 ## How sq-gh output is parsed
 
-`sq-gh` always renders through the TOON format (there is no raw-JSON mode); `bin/sq-factory-collect-toon.mjs` strips the non-data `count:`/`total_count:` scalar line and the trailing `help[...]:` suggestions block sq-gh always appends, then decodes the rest with the real `@toon-format/toon` package already vendored for `sq-gh` itself.
+`sq-gh` always renders through the TOON format (its `--json` flag only wraps the rendered TOON string, it does not emit structured data); `bin/sq-factory-collect-toon.mjs` strips the non-data `count:`/`total_count:` scalar line and the trailing `help[...]:` suggestions block sq-gh always appends, then decodes the rest with a vendored, byte-identical copy of `@toon-format/toon@2.3.1` at `bin/vendor/toon/` (MIT; license alongside). Vendoring keeps this step independent of an npm/pnpm/bun install at the repo root.
 A source whose `sq-gh` call exits non-zero, times out, or produces output that does not decode is reported as a failed source (see "Failure handling") rather than crashing the run.
 
 ## Verifiability test
@@ -98,7 +98,9 @@ It is recomputed fresh on every run from whatever is currently open/failing, so 
 ## Failure handling
 
 Each source is collected independently; one failing (a `sq-gh` error, a timeout, a missing binary, a TOON decode failure) is reported under `sources.<name>.error` in the JSON result and the run continues with the other source.
-The run's own exit code is non-zero only when every enabled source failed.
+Within `ci_failures`, a single failed `sq-gh run view` is reported per-run in the human digest and skipped, so one unpaginated bad run cannot discard findings from every other fetched run.
+A failure to queue a candidate is reported under `sources.<name>.queue_error` on the candidate's owning source and does not abort the remaining candidates.
+The run's own exit code is non-zero only when every enabled source failed, and an all-failed run leaves the previously persisted `data/factory-collect/digest.md` untouched instead of blanking it with an empty digest.
 
 ## A real run
 

@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // Decode sq-gh's TOON-formatted stdout into JSON on stdout.
 //
-// sq-gh always renders through @toon-format/toon (there is no raw-JSON output
-// mode), wrapping the real data with a leading `count:`/`total_count:` scalar
-// line and a trailing `help[...]:` block of plain-string suggestions. Neither
-// is part of the payload and the plain-string array form trips the decoder,
-// so this strips both by top-level key before handing the rest to `decode`.
-import { decode } from "@toon-format/toon";
+// sq-gh always renders through the TOON format (its `--json` mode only wraps
+// the rendered TOON string, it does not emit structured data), wrapping the
+// real data with a leading `count:`/`total_count:` scalar line and a trailing
+// `help[...]:` block of plain-string suggestions. Neither is part of the
+// payload and the plain-string array form trips the decoder, so this strips
+// both by top-level key before handing the rest to `decode`.
+//
+// The decoder is a vendored, byte-identical copy of @toon-format/toon@2.3.1
+// (MIT), at ./vendor/toon/index.mjs, so this step never depends on an
+// npm/pnpm/bun install being present at the repo root.
+import { decode } from "./vendor/toon/index.mjs";
 
 const DROP_KEYS = new Set(["count", "total_count", "help"]);
 

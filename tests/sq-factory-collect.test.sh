@@ -6,8 +6,8 @@
 # sq-gh and sq-tasks are stubbed in a per-test fakebin directory prepended to
 # PATH (the repo's established pattern, e.g. tests/sq-pr-check-security.test.sh)
 # so these tests never touch the network or a real backlog. The TOON decode
-# step (bin/sq-factory-collect-toon.mjs) runs for real against the real
-# @toon-format/toon package, so stub sq-gh output must be real TOON text.
+# step (bin/sq-factory-collect-toon.mjs) runs for real against the vendored
+# @toon-format/toon copy, so stub sq-gh output must be real TOON text.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -17,7 +17,6 @@ COLLECT="$ROOT/bin/sq-factory-collect.sh"
 TMP_ROOT=$(fm_test_tmproot sq-factory-collect)
 
 command -v node >/dev/null 2>&1 || { echo "skip: node not found (required by the TOON decode step)"; exit 0; }
-node -e "require('@toon-format/toon')" >/dev/null 2>&1 || { echo "skip: @toon-format/toon not installed (run pnpm install)"; exit 0; }
 command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found"; exit 0; }
 
 # --- fixture builders --------------------------------------------------------
@@ -77,6 +76,10 @@ runs[3]{id,title,status,conclusion,workflow,branch,event,created,url}:
 EOF
     ;;
   "run view")
+    if [ "${STUB_RUN_VIEW_FAIL:-}" = "$3" ]; then
+      echo "simulated run view outage for $3" >&2
+      exit 1
+    fi
     case "$3" in
       1001|1002)
         cat <<'EOF'
@@ -132,6 +135,10 @@ write_sq_tasks_stub() {
 #!/usr/bin/env bash
 SEEN_FILE="$seen_file"
 if [ "\$1" = "add" ]; then
+  if [ "\${STUB_TASKS_QUEUE_FAIL:-0}" = 1 ]; then
+    echo "simulated backlog write failure" >&2
+    exit 1
+  fi
   id=\$2
   if grep -qxF "\$id" "\$SEEN_FILE" 2>/dev/null; then
     already=true
@@ -349,9 +356,83 @@ test_source_unavailable_when_sq_gh_missing() {
   pass "sq-factory-collect: reports every source unavailable (and a non-zero exit) when sq-gh cannot be found at all"
 }
 
+test_queue_failure_marks_the_owning_source_not_a_phantom() {
+  local dir="$TMP_ROOT/queue-failure" fakebin config data tasks_seen out rc queue_error phantom
+  mkdir -p "$dir"
+  fakebin="$dir/fakebin"; mkdir -p "$fakebin"
+  write_sq_gh_stub "$fakebin"
+  tasks_seen="$dir/.sq-tasks-seen"
+  write_sq_tasks_stub "$fakebin" "$tasks_seen"
+  config="$dir/config.toml"; write_config "$config" true false
+  data="$dir/data"
+
+  out=$(STUB_TASKS_QUEUE_FAIL=1 run_collect "$fakebin" "$data" run --config "$config" --json)
+  rc=$?
+  phantom=$(json_get "$out" "'github_issue' in d['sources']")
+  [ "$phantom" = "False" ] || fail "a queue failure invented the singular phantom source key 'github_issue'"
+  queue_error=$(json_get "$out" "d['sources']['github_issues'].get('queue_error','')")
+  assert_contains "$queue_error" "simulated backlog write failure" \
+    "the owning source did not carry the queue failure"
+  [ "$(json_get "$out" "d['candidates_queued']")" = 0 ] \
+    || fail "a candidate whose queue write failed was still counted as queued"
+  # A single queue failure degrades; the run itself does not abort.
+  [ "$rc" -eq 0 ] || fail "a queue failure should degrade instead of aborting the run (exit $rc)"
+
+  pass "sq-factory-collect: a queue failure is reported on the owning source, not a phantom key"
+}
+
+test_one_unviewable_run_is_skipped_not_fatal() {
+  local dir="$TMP_ROOT/run-view-failure" fakebin config data out rc digest
+  mkdir -p "$dir"
+  fakebin="$dir/fakebin"; mkdir -p "$fakebin"
+  write_sq_gh_stub "$fakebin"
+  config="$dir/config.toml"; write_config "$config" false true
+  data="$dir/data"
+
+  out=$(STUB_RUN_VIEW_FAIL=1001 run_collect "$fakebin" "$data" run --config "$config" --dry-run --json)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "one unviewable run should not fail the run (exit $rc)"
+  [ "$(json_get "$out" "d['sources']['ci_failures']['ok']")" = True ] \
+    || fail "one unviewable run marked the whole ci_failures source failed"
+  digest=$(json_get "$out" "d['digest']")
+  assert_contains "$digest" "could not inspect this failed run" \
+    "the unviewable run was not reported in the human digest"
+  assert_contains "$digest" "1001" "the digest does not name the run that could not be inspected"
+
+  pass "sq-factory-collect: one unviewable run is skipped and reported instead of aborting ci_failures"
+}
+
+test_all_failed_run_does_not_blank_the_last_digest() {
+  local dir="$TMP_ROOT/digest-preserved" fakebin config data tasks_seen digest_before digest_after
+  mkdir -p "$dir"
+  fakebin="$dir/fakebin"; mkdir -p "$fakebin"
+  write_sq_gh_stub "$fakebin"
+  tasks_seen="$dir/.sq-tasks-seen"
+  write_sq_tasks_stub "$fakebin" "$tasks_seen"
+  config="$dir/config.toml"; write_config "$config" true false
+  data="$dir/data"
+
+  run_collect "$fakebin" "$data" run --config "$config" --json >/dev/null \
+    || fail "the healthy first run failed"
+  digest_before=$(cat "$data/factory-collect/digest.md")
+  assert_contains "$digest_before" "issue-102" "the first run did not persist its human digest"
+
+  # Second run: the only enabled source fails, so the run produces no current
+  # state and must leave the last good digest on disk untouched.
+  STUB_ISSUE_FAIL=1 run_collect "$fakebin" "$data" run --config "$config" --json >/dev/null
+  digest_after=$(cat "$data/factory-collect/digest.md")
+  [ "$digest_after" = "$digest_before" ] \
+    || fail "an all-failed run blanked the previously persisted human digest"
+
+  pass "sq-factory-collect: an all-failed run preserves the last good human digest"
+}
+
 test_github_issue_verifiability_and_candidate_shape
 test_ci_recurring_failure_is_verifiable_single_occurrence_is_not
 test_human_digest_groups_by_source
 test_dedupe_across_runs_and_against_backlog
 test_one_source_failing_degrades_instead_of_aborting
 test_source_unavailable_when_sq_gh_missing
+test_queue_failure_marks_the_owning_source_not_a_phantom
+test_one_unviewable_run_is_skipped_not_fatal
+test_all_failed_run_does_not_blank_the_last_digest
