@@ -982,6 +982,16 @@ families_for_changed_path() {
     docs/configuration.md|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
+    .factory-collect.toml)
+      printf '%s\n' "__script__:sq-factory-collect.test.sh"
+      ;;
+    bin/vendor/toon/*)
+      # Vendored, not referenced by basename from any test (the collector
+      # imports it by relative path, not by name), so the generic bin/*
+      # reference scan below would die with __unmapped__ on every one of
+      # these files. The collector is this vendored copy's sole consumer.
+      printf '%s\n' "__script__:sq-factory-collect.test.sh"
+      ;;
     tests/lib.sh|tests/*-helpers.sh)
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"

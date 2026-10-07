@@ -1,0 +1,37 @@
+# Declarative sources and triage rules for bin/sq-factory-collect.py.
+#
+# Collection and triage only: this file configures WHAT gets read and WHAT
+# counts as a verifiable candidate. It grants no execution, dispatch, or
+# merge authority. See docs/factory-collect.md for the full contract.
+schema_version = 1
+
+[source.github_issues]
+enabled = true
+repo = "runecraftai/squad"
+state = "open"
+limit = 50
+# A candidate qualifies only when the issue body matches at least one of
+# these regexes (searched case-sensitively as written; use (?i) to opt a
+# pattern into case-insensitive matching). Each pattern must itself be a
+# named reproduction signal (an explicit repro heading or phrase) - a bare
+# fenced code block is deliberately NOT a pattern here, since a stack
+# trace, log dump, or config sample in a fence names no reproduction path
+# on its own ("looks fixable" does not qualify).
+repro_patterns = [
+  "(?i)steps to reproduce",
+  "(?im)^#+\\s*repro",
+]
+
+[source.ci_failures]
+enabled = true
+repo = "runecraftai/squad"
+# Workflow filename (not display name), passed to `sq-gh run list --workflow`.
+workflow = "ci.yml"
+branch = "main"
+# How many recent failed runs of that workflow/branch to fetch and inspect.
+run_limit = 20
+# A job name (or, if no job carries conclusion=failure, the run/branch itself)
+# must recur at least this many times across the fetched runs before it is a
+# stable enough identity to queue as a candidate. Below this, it goes to the
+# human digest instead.
+min_failures = 2

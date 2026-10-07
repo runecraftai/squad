@@ -1,0 +1,10 @@
+{
+  "package": "@toon-format/toon",
+  "version": "2.3.1",
+  "source": "https://registry.npmjs.org/@toon-format/toon/-/toon-2.3.1.tgz",
+  "extraction_date": "2026-10-07",
+  "method": "byte-identical copy of the published dist/index.mjs and LICENSE; no modification",
+  "sha256_index_mjs": "3cc9a2bf7c7c66d9f8cb8e2d41a6c8fa7b333071f0bd5a456b6919b57d995653",
+  "license": "MIT",
+  "notes": "Decoder used by bin/sq-factory-collect-toon.mjs so the collector's TOON step does not depend on an npm/pnpm/bun install being present at the repo root."
+}

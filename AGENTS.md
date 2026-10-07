@@ -540,6 +540,7 @@ If they appear inside a longer quoted string or code block, they are not aliases
 It tracks work items only, never agents; persistent XOs never appear as backlog items.
 Work routed to an XO is recorded in that XO base's own backlog, not the main backlog.
 When a main-side thread such as a pending commander decision or relay reminder is worth durable tracking, file it as its own work item; use `sq-tasks hold <id> --reason "<reason>" --kind commander` for a commander-gated thread.
+A queued item with `kind: candidate` is an unvetted proposal from `bin/sq-factory-collect.sh`, held under `kind: commander` so it stays out of `sq-tasks ready` until a human clears it (see [`docs/factory-collect.md`](docs/factory-collect.md)); treat it like a recon finding, evidence toward a decision, never standing authorization to dispatch it.
 Unresolved decisions discovered by investigations or visual reviews follow `decision-hold-lifecycle`, which owns their mandatory backlog lifecycle.
 Update the backlog on every dispatch, completion, and decision for a work item.
 Re-evaluate queued work after every teardown and heartbeat, dispatching items only when dependencies and time gates have cleared.

@@ -461,6 +461,10 @@
    "audience": "operator-example"
   },
   {
+   "path": "docs/factory-collect.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/gitlab-merge-sentry.md",
    "audience": "maintainer-verification"
   },

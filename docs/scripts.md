@@ -91,6 +91,9 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-evidence-receipt.sh` | Create, verify, and render private deterministic evidence receipts for local source citations |
 | `sq-observation-pack.sh` | Store, compactly display, and page private task output artifacts; see `sq-observation-pack.py` for the implementation |
 | `sq-observation-pack.py` | Python implementation of observation packs: create --task ID --source PATH, card PACK, and read PACK --offset N --limit M [--receipt] |
+| `sq-factory-collect.sh` | On-demand collection and triage of inputs into verifiable backlog candidates, with no execution authority (`docs/factory-collect.md`) |
+| `sq-factory-collect.py` | Python implementation of factory collection: read the configured sources, apply the verifiability test, queue candidates, and write the human digest |
+| `sq-factory-collect-toon.mjs` | Decode `sq-gh`'s TOON output into JSON for the factory collector, using the vendored `@toon-format/toon` decoder |
 | `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata including evidence receipt summaries and observation pack aggregates; sq-cost, .meta, .exec, and status remain owners of truth |
 | `sq-dispatch-tune.sh`  | Analyze operator performance per dispatch profile and recommend harness/model/effort adjustments |
 | `sq-policy-lab.sh`     | Private non-promoting comparison laboratory for validating, running, and reporting policy candidate experiments |
