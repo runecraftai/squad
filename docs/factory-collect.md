@@ -98,7 +98,7 @@ It is recomputed fresh on every run from whatever is currently open/failing, so 
 ## Failure handling
 
 Each source is collected independently; one failing (a `sq-gh` error, a timeout, a missing binary, a TOON decode failure) is reported under `sources.<name>.error` in the JSON result and the run continues with the other source.
-Within `ci_failures`, a single failed `sq-gh run view` is reported per-run in the human digest and skipped, so one unpaginated bad run cannot discard findings from every other fetched run.
+Within `ci_failures`, a single failed `sq-gh run view` is reported per-run in the human digest and skipped, so one unpaginated bad run cannot discard findings from every other fetched run; if every fetched failed run is unviewable, the whole source is reported as failed instead of as a healthy empty fetch.
 A failure to queue a candidate is reported under `sources.<name>.queue_error` on the candidate's owning source and does not abort the remaining candidates.
 The run's own exit code is non-zero only when every enabled source failed, and an all-failed run leaves the previously persisted `data/factory-collect/digest.md` untouched instead of blanking it with an empty digest.
 

@@ -176,12 +176,14 @@ def triage_ci_failures(cfg):
     runs = data.get('runs') or []
     buckets = {}
     unviewable = []
+    view_errors = []
     for run in runs:
         run_id = run.get('id')
         try:
             view = sq_gh_json(['run', 'view', str(run_id), '--repo', repo])
             jobs = view.get('jobs') or []
         except Exception as error:  # one bad run must not discard every other run
+            view_errors.append(str(error))
             unviewable.append({
                 'id': f'ci-run-{run_id}',
                 'title': run.get('title') or f'run {run_id}',
@@ -197,6 +199,10 @@ def triage_ci_failures(cfg):
         else:
             identity = f"ci:{repo}:{workflow or run.get('workflow')}:{branch or run.get('branch')}:(run-level)"
             buckets.setdefault(identity, {'job_name': None, 'runs': []})['runs'].append(run)
+    if runs and len(unviewable) == len(runs):
+        raise SourceError(
+            f'could not inspect any of the {len(runs)} fetched failed runs: {view_errors[0]}'
+        )
     candidates, digest = [], []
     digest.extend(unviewable)
     for identity, bucket in buckets.items():
@@ -358,8 +364,8 @@ def run_collection(config, dry_run=False, seen=None):
     if not dry_run and produced_state:
         atomic_write(DIGEST_PATH, digest_text)
 
-    any_enabled = any(not status.get('skipped') for status in sources_status.values())
-    all_failed = any_enabled and all(not status.get('ok', False) for status in sources_status.values())
+    enabled_statuses = [status for status in sources_status.values() if not status.get('skipped')]
+    all_failed = bool(enabled_statuses) and all(not status.get('ok', False) for status in enabled_statuses)
 
     return {
         'sources': sources_status,

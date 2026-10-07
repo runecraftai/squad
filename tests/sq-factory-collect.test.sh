@@ -76,7 +76,7 @@ runs[3]{id,title,status,conclusion,workflow,branch,event,created,url}:
 EOF
     ;;
   "run view")
-    if [ "${STUB_RUN_VIEW_FAIL:-}" = "$3" ]; then
+    if [ "${STUB_RUN_VIEW_FAIL:-}" = "all" ] || [ "${STUB_RUN_VIEW_FAIL:-}" = "$3" ]; then
       echo "simulated run view outage for $3" >&2
       exit 1
     fi
@@ -402,6 +402,40 @@ test_one_unviewable_run_is_skipped_not_fatal() {
   pass "sq-factory-collect: one unviewable run is skipped and reported instead of aborting ci_failures"
 }
 
+test_all_unviewable_runs_fail_the_source_and_preserve_the_digest() {
+  local dir="$TMP_ROOT/run-view-outage" fakebin config data tasks_seen out rc digest_before digest_after
+  mkdir -p "$dir"
+  fakebin="$dir/fakebin"; mkdir -p "$fakebin"
+  write_sq_gh_stub "$fakebin"
+  tasks_seen="$dir/.sq-tasks-seen"
+  write_sq_tasks_stub "$fakebin" "$tasks_seen"
+  config="$dir/config.toml"; write_config "$config" false true
+  data="$dir/data"
+
+  run_collect "$fakebin" "$data" run --config "$config" --json >/dev/null \
+    || fail "the healthy first run failed"
+  digest_before=$(cat "$data/factory-collect/digest.md")
+  assert_contains "$digest_before" "chore: bump deps" "the first run did not persist its human digest"
+
+  # A whole-endpoint run-view outage: every fetched run is unviewable, so the
+  # source must fail and report, not masquerade as a healthy empty fetch that
+  # overwrites the last good digest with outage entries.
+  out=$(STUB_RUN_VIEW_FAIL=all run_collect "$fakebin" "$data" run --config "$config" --json)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "an all-unviewable ci_failures fetch should fail the run (exit $rc)"
+  [ "$(json_get "$out" "d['sources']['ci_failures']['ok']")" = False ] \
+    || fail "an all-unviewable ci_failures fetch was reported as a healthy source"
+  local error_text
+  error_text=$(json_get "$out" "d['sources']['ci_failures'].get('error','')")
+  assert_contains "$error_text" "could not inspect any" \
+    "the source failure did not explain that no run could be inspected"
+  digest_after=$(cat "$data/factory-collect/digest.md")
+  [ "$digest_after" = "$digest_before" ] \
+    || fail "an all-unviewable fetch overwrote the last good human digest"
+
+  pass "sq-factory-collect: an all-unviewable run-view outage fails the source and preserves the digest"
+}
+
 test_all_failed_run_does_not_blank_the_last_digest() {
   local dir="$TMP_ROOT/digest-preserved" fakebin config data tasks_seen digest_before digest_after
   mkdir -p "$dir"
@@ -435,4 +469,5 @@ test_one_source_failing_degrades_instead_of_aborting
 test_source_unavailable_when_sq_gh_missing
 test_queue_failure_marks_the_owning_source_not_a_phantom
 test_one_unviewable_run_is_skipped_not_fatal
+test_all_unviewable_runs_fail_the_source_and_preserve_the_digest
 test_all_failed_run_does_not_blank_the_last_digest
