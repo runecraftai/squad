@@ -727,17 +727,18 @@ fm_backend_tuios_clear_transition() {  # <state_dir> <window>
 # the existing poll machinery unchanged, exactly as before this producer
 # existed).
 #
-# Any non-blocked read clears both markers outright, rather than only on the
-# policy's "working" absorb edge the way herdr's stream does: TUIOS can read
-# idle/unknown too, and treating any of them as "no longer waiting" is the
-# safe direction to err in here - it can only cause one redundant wake on a
-# later identical prompt, never a missed one.
+# The clear/keep decision comes from the shared policy table on the normalized
+# status. A positively-read non-blocked status (absorb/defer) clears both
+# markers, since the pane is demonstrably no longer waiting; a fallback read
+# (unknown - an unreadable or contradictory inventory) keeps them, so a single
+# transient read failure cannot re-arm a prompt that is still standing.
 fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
-  local state=$1 session=$2 window=$3 native status prompt_hash hash_marker stored record hit
+  local state=$1 session=$2 window=$3 native status action prompt_hash hash_marker stored record hit
   native=$(fm_backend_tuios_busy_state "$window" 2>/dev/null) || native=unknown
   status=$(fm_backend_tuios_normalize_status "$native")
-  if [ "$status" != blocked ]; then
-    fm_backend_tuios_clear_transition "$state" "$window"
+  action=$(fm_transition_policy "$status")
+  if [ "$action" != actionable ]; then
+    [ "$action" = fallback ] || fm_backend_tuios_clear_transition "$state" "$window"
     return 2
   fi
   prompt_hash=$(fm_backend_tuios_prompt_summary "$window" 2>/dev/null | fm_backend_tuios_text_hash)

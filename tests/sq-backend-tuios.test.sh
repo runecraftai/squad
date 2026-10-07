@@ -1048,6 +1048,23 @@ OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC
 [ "$RC" -eq 1 ] || fail "an unchanged standing prompt must not re-escalate (rc=1), got rc=$RC out=$OUT"
 [ -z "$OUT" ] || fail "an unchanged standing prompt must print no record: $OUT"
 
+# A transient unreadable native read (list-windows fails -> the adapter's
+# ambiguous `unknown` verdict) must NOT clear the dedupe markers: the same
+# prompt is still standing, so treating `unknown` as "no longer waiting" would
+# re-wake on the identical prompt. The next readable poll still dedupes.
+[ -e "$ESC_MARKER" ] || fail 'setup: escalation marker should exist before the ambiguous-read check'
+[ -e "$HASH_MARKER" ] || fail 'setup: prompt-hash marker should exist before the ambiguous-read check'
+SQUAD_TUIOS_FAKE_LIST_FAIL=1
+export SQUAD_TUIOS_FAKE_LIST_FAIL
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_LIST_FAIL
+[ "$RC" -eq 2 ] || fail "an unreadable native read must fall back (rc=2), got rc=$RC out=$OUT"
+[ -z "$OUT" ] || fail "an unreadable native read must print no record: $OUT"
+[ -e "$ESC_MARKER" ] || fail 'an ambiguous read must not clear the escalation marker'
+[ -e "$HASH_MARKER" ] || fail 'an ambiguous read must not clear the prompt-hash marker'
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+[ "$RC" -eq 1 ] || fail "the same prompt must still dedupe after an ambiguous read (rc=1), got rc=$RC out=$OUT"
+
 # A changed prompt while STILL blocked (no intervening non-blocked read): a
 # fresh edge again (rc=0) - the prompt content, not just the status, drives
 # the dedupe key.
