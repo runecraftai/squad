@@ -293,13 +293,19 @@ test_dedupe_across_runs_and_against_backlog() {
   [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] || fail "the freshly queued candidate was not held exactly once"
   assert_grep "fc-issue-101" "$tasks_seen.holds" "the hold call did not target the freshly queued candidate"
   assert_grep "commander" "$tasks_seen.holds" "the hold was not applied with hold-kind commander"
+  local held
+  held=$(python3 -c "import json; d=json.load(open('$data/factory-collect/seen.json')); print([v['held'] for v in d.values() if v['id']=='fc-issue-101'])")
+  [ "$held" = "[True]" ] || fail "the ledger did not record the successful hold as held: true (got '$held')"
 
   # Run 2: same ledger still present -> must not re-propose across runs, and
-  # must not even need to ask sq-tasks about it again.
+  # must not even need to ask sq-tasks about it again. A held:true entry is
+  # never re-held even if a commander has since cleared the backlog hold.
   out=$(run_collect "$fakebin" "$data" run --config "$config" --json) \
     || fail "second real run failed"
   [ "$(json_get "$out" "d['candidates_queued']")" = 0 ] || fail "second run re-proposed a candidate already in the ledger"
   [ "$(json_get "$out" "d['candidates_already_seen']")" = 1 ] || fail "second run did not report the ledger dedupe hit"
+  [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] \
+    || fail "a later run re-applied the hold for a candidate already recorded as held, clobbering a commander's decision to clear it"
 
   # Run 3: simulate ledger loss (e.g. state reset) while the backlog itself
   # still holds the item (the stub's own seen-ids file still has it) -> the
@@ -401,7 +407,7 @@ test_queue_failure_marks_the_owning_source_not_a_phantom() {
 }
 
 test_hold_failure_degrades_instead_of_silently_leaving_it_ready() {
-  local dir="$TMP_ROOT/hold-failure" fakebin config data tasks_seen out rc queue_error
+  local dir="$TMP_ROOT/hold-failure" fakebin config data tasks_seen out rc queue_error held
   mkdir -p "$dir"
   fakebin="$dir/fakebin"; mkdir -p "$fakebin"
   write_sq_gh_stub "$fakebin"
@@ -418,8 +424,66 @@ test_hold_failure_degrades_instead_of_silently_leaving_it_ready() {
     "a failed hold call was not reported as a queue_error so the gap is visible, not silent"
   [ "$(json_get "$out" "d['candidates_queued']")" = 0 ] \
     || fail "a candidate whose hold call failed was still counted as cleanly queued"
+  # The failed hold must be durable in the ledger, not only in this run's log.
+  held=$(python3 -c "import json; d=json.load(open('$data/factory-collect/seen.json')); print([v['held'] for v in d.values() if v['id']=='fc-issue-101'])")
+  [ "$held" = "[False]" ] || fail "the ledger did not record the failed hold as held: false (got '$held')"
+  [ ! -s "$tasks_seen.holds" ] || fail "the failed hold call was recorded as an applied hold"
 
-  pass "sq-factory-collect: a hold failure degrades (reported) rather than silently leaving a candidate unheld"
+  pass "sq-factory-collect: a hold failure degrades (reported and recorded held:false) rather than silently leaving a candidate unheld"
+}
+
+test_hold_failure_is_retried_and_cleared_on_the_next_run() {
+  local dir="$TMP_ROOT/hold-retry" fakebin config data tasks_seen out rc queue_error held
+  mkdir -p "$dir"
+  fakebin="$dir/fakebin"; mkdir -p "$fakebin"
+  write_sq_gh_stub "$fakebin"
+  tasks_seen="$dir/.sq-tasks-seen"
+  write_sq_tasks_stub "$fakebin" "$tasks_seen"
+  config="$dir/config.toml"; write_config "$config" true false
+  data="$dir/data"
+
+  # Run A: the add lands the candidate but the hold call fails; the ledger
+  # records held:false.
+  out=$(STUB_TASKS_HOLD_FAIL=1 run_collect "$fakebin" "$data" run --config "$config" --json)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "a hold failure should degrade instead of aborting the run (exit $rc)"
+  queue_error=$(json_get "$out" "d['sources']['github_issues'].get('queue_error','')")
+  assert_contains "$queue_error" "simulated hold write failure" \
+    "a failed hold call was not reported as a queue_error so the gap is visible, not silent"
+  held=$(python3 -c "import json; d=json.load(open('$data/factory-collect/seen.json')); print([v['held'] for v in d.values() if v['id']=='fc-issue-101'])")
+  [ "$held" = "[False]" ] || fail "the first run did not record held: false in the ledger (got '$held')"
+
+  # Run B: the very next run must retry the hold for the held:false entry and
+  # flip the ledger to held:true only once the hold call actually succeeds. The
+  # candidate is already in the backlog, so it must not be re-queued.
+  out=$(run_collect "$fakebin" "$data" run --config "$config" --json) \
+    || fail "the retry run failed"
+  [ "$(json_get "$out" "d['candidates_queued']")" = 0 ] \
+    || fail "the retry run re-queued a candidate that was already in the backlog"
+  held=$(python3 -c "import json; d=json.load(open('$data/factory-collect/seen.json')); print([v['held'] for v in d.values() if v['id']=='fc-issue-101'])")
+  [ "$held" = "[True]" ] || fail "the retry run did not flip the ledger entry to held: true (got '$held')"
+  [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] \
+    || fail "the retry run did not call sq-tasks hold exactly once for the unheld candidate"
+  assert_grep "fc-issue-101" "$tasks_seen.holds" "the retried hold did not target the unheld candidate"
+
+  # Run C: once held:true is recorded, a later run never calls hold again, so a
+  # commander's deliberate decision to clear the backlog hold is preserved.
+  out=$(run_collect "$fakebin" "$data" run --config "$config" --json) \
+    || fail "the post-retry run failed"
+  [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] \
+    || fail "a run after held:true re-applied the hold, clobbering a commander's decision to clear it"
+
+  # Run D: even if the local ledger is lost while the backlog still holds the
+  # id, the already-in-backlog path must not re-apply the hold either.
+  rm -rf "$data/factory-collect"
+  out=$(run_collect "$fakebin" "$data" run --config "$config" --json) \
+    || fail "the ledger-reset run failed"
+  [ "$(json_get "$out" "d['candidates_already_in_backlog']")" = 1 ] \
+    || fail "the ledger-reset run did not detect the candidate already present in the backlog"
+  [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] \
+    || fail "an already-in-backlog hit re-applied the hold, clobbering a commander's decision to clear it"
+
+  pass "sq-factory-collect: a failed hold is retried next run, and held:true is never re-held"
 }
 
 test_one_unviewable_run_is_skipped_not_fatal() {
@@ -510,6 +574,7 @@ test_one_source_failing_degrades_instead_of_aborting
 test_source_unavailable_when_sq_gh_missing
 test_queue_failure_marks_the_owning_source_not_a_phantom
 test_hold_failure_degrades_instead_of_silently_leaving_it_ready
+test_hold_failure_is_retried_and_cleared_on_the_next_run
 test_one_unviewable_run_is_skipped_not_fatal
 test_all_unviewable_runs_fail_the_source_and_preserve_the_digest
 test_all_failed_run_does_not_blank_the_last_digest

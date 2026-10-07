@@ -89,7 +89,7 @@ The same evidence fields are written into the backlog item's body for durable, i
 
 Two independent mechanisms, because they cover different failure modes:
 
-1. A durable local ledger (`data/factory-collect/seen.json`, keyed by a stable `fingerprint` per source identity) — checked first, before anything else, so a candidate already queued in a prior run is never even re-sent to `sq-tasks`. This is what "never re-propose the same input across runs" means even if the backlog item was later closed, archived, or removed.
+1. A durable local ledger (`data/factory-collect/seen.json`, keyed by a stable `fingerprint` per source identity) — checked first, before anything else, so a candidate already queued in a prior run is never even re-sent to `sq-tasks`. Each entry also records `held: true|false` for the commander hold, so a later run can distinguish "held already" from "queued but the hold call failed" and retry only the latter. This is what "never re-propose the same input across runs" means even if the backlog item was later closed, archived, or removed.
 2. `sq-tasks add`'s own idempotent-by-id behavior — each candidate's `id` is deterministic (derived from the same fingerprint), so even if the local ledger were lost or reset, adding an id that is already in the backlog returns `already: true` instead of creating a duplicate. This covers "never propose something already present in the backlog" as a backstop independent of the ledger.
 
 ## Human digest
@@ -103,7 +103,7 @@ Each source is collected independently; one failing (a `sq-gh` error, a timeout,
 Within `ci_failures`, a single failed `sq-gh run view` is reported per-run in the human digest and skipped, so one unpaginated bad run cannot discard findings from every other fetched run; if every fetched failed run is unviewable, the whole source is reported as failed instead of as a healthy empty fetch.
 A failure to queue a candidate is reported under `sources.<name>.queue_error` on the candidate's owning source and does not abort the remaining candidates.
 The run's own exit code is non-zero only when every enabled source failed, and an all-failed run leaves the previously persisted `data/factory-collect/digest.md` untouched instead of blanking it with an empty digest.
-A `sq-tasks add` that succeeds immediately followed by a `sq-tasks hold` that fails is a narrow, loudly-reported edge case: the candidate is in the backlog but not yet held, `queue_error` names it so the failure is never silent, and because the id now already exists the next run's `add` reports `already: true` and does not retry the hold - clear the gap by hand (`sq-tasks hold <id> --reason "..." --kind commander`) if it ever actually happens.
+A `sq-tasks add` that succeeds and is then followed by a `sq-tasks hold` that fails is a narrow edge case: the candidate is in the backlog but not yet held. It is never silent — `queue_error` names it and the ledger records that candidate with `held: false` — and the very next run retries the hold for every `held: false` ledger entry (even one whose source no longer produces that candidate), setting `held: true` only once `sq-tasks hold` actually succeeds. A ledger entry recorded `held: true` is never re-held, so a commander's deliberate decision to clear the hold and dispatch the work is preserved even if the backlog no longer shows it as held.
 
 ## A real run
 

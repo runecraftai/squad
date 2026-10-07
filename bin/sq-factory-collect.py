@@ -239,6 +239,16 @@ SOURCES = {
 }
 
 
+def source_registry_name(source):
+    """Map a candidate's singular source label to its plural SOURCES key."""
+    if source in SOURCES:
+        return source
+    for name in SOURCES:
+        if name.startswith(source):
+            return name
+    return source
+
+
 def dedupe_candidates(candidates, seen):
     """Split candidates into (new, already_seen) using the durable ledger."""
     fresh, dupes = [], []
@@ -277,6 +287,10 @@ def queue_candidate(candidate, repo_tag):
     (and the session-start digest built on it), not by prose alone: a held
     task is excluded from `sq-tasks ready` and from session-start's "ready
     queued (dispatchable now)" listing until a human clears the hold.
+
+    Returns ``(result, hold_error)``: the sq-tasks add payload plus the hold
+    failure message (or ``None`` when the hold was applied). An add failure
+    still raises ``SourceError``.
     """
     body = (
         f"source: {candidate['source']}\n"
@@ -287,9 +301,19 @@ def queue_candidate(candidate, repo_tag):
         f"to reproduce: {candidate['repro']}\n"
     )
     result = sq_tasks_add(candidate['id'], candidate['title'], repo_tag, body)
-    if not result.get('already'):
+    if result.get('already'):
+        # Already in the backlog (e.g. the local ledger was lost or reset):
+        # leave its existing hold state alone so a commander's deliberate
+        # decision to clear a hold is never silently reversed.
+        return result, None
+    try:
         sq_tasks_hold(candidate['id'])
-    return result
+    except SourceError as error:
+        # The add succeeded but the hold did not, so the candidate is in the
+        # backlog and currently unheld. Report it and return the error so the
+        # caller records held=false and a later run retries the hold.
+        return result, str(error)
+    return result, None
 
 
 def sq_tasks_add(cand_id, title, repo_tag, body):
@@ -351,23 +375,32 @@ def run_collection(config, dry_run=False, seen=None):
             sources_status[name] = {'ok': False, 'error': f'unexpected failure: {error}'}
 
     fresh, dupes = dedupe_candidates(all_candidates, seen)
+    ledger_at_start = dict(seen)
     queued = []
     already_in_backlog = []
     if not dry_run:
         for candidate in fresh:
+            fingerprint = candidate['fingerprint']
+            # Annotate the owning source (the plural registry key), never a
+            # phantom key derived from the candidate's singular source label.
+            source_name = candidate_sources.get(fingerprint, source_registry_name(candidate['source']))
             try:
-                result = queue_candidate(candidate, repo_tag='squad')
+                result, hold_error = queue_candidate(candidate, repo_tag='squad')
             except SourceError as error:
-                # Annotate the owning source (the plural registry key), never a
-                # phantom key derived from the candidate's singular source label.
-                source_name = candidate_sources.get(candidate['fingerprint'], candidate['source'])
                 sources_status.setdefault(source_name, {})['queue_error'] = str(error)
                 continue
-            seen[candidate['fingerprint']] = {
+            seen[fingerprint] = {
                 'id': candidate['id'],
                 'source': candidate['source'],
                 'queued_at': result.get('task', {}).get('created'),
+                'held': not hold_error,
             }
+            if hold_error:
+                # The candidate landed in the backlog but its commander hold did
+                # not. Surface it (never silent) and leave held=false so the
+                # next run retries the hold rather than leaving it dispatchable.
+                sources_status.setdefault(source_name, {})['queue_error'] = hold_error
+                continue
             # sq-tasks add is itself idempotent by id: an `already: true` reply
             # means this exact candidate was already sitting in the backlog
             # (e.g. the local ledger above was lost or reset), so it is a
@@ -376,6 +409,21 @@ def run_collection(config, dry_run=False, seen=None):
                 already_in_backlog.append(candidate)
             else:
                 queued.append(candidate)
+        # Retry the commander hold for any candidate the ledger recorded as
+        # unheld (a transient sq-tasks hold failure on the run that queued it),
+        # including entries whose source no longer produces the candidate this
+        # run. A held=true entry is never retried, which preserves a commander's
+        # deliberate decision to clear the hold and dispatch the work.
+        for fingerprint, entry in ledger_at_start.items():
+            if entry.get('held') or fingerprint not in seen:
+                continue
+            source_name = source_registry_name(entry.get('source', ''))
+            try:
+                sq_tasks_hold(entry['id'])
+            except SourceError as error:
+                sources_status.setdefault(source_name, {})['queue_error'] = str(error)
+                continue
+            seen[fingerprint]['held'] = True
         save_seen(seen)
 
     digest_text, digest_count = group_digest(digest_by_source)
