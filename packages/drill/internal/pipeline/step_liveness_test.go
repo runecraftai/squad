@@ -4,6 +4,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -232,4 +233,31 @@ func killHolder(pidFile string) {
 		return
 	}
 	_ = syscall.Kill(pid, syscall.SIGKILL)
+}
+
+// TestStepProcessState_UnreadableStateIsNotProofOfLife pins the fail-safe
+// probe contract: once kill(pid, 0) confirms the pid exists, a state read
+// that fails through every source must not be reported as life, because that
+// would silently disable the watchdog that exists to break the hang.
+func TestStepProcessState_UnreadableStateIsNotProofOfLife(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start process: %v", err)
+	}
+	defer cmd.Wait()
+
+	prev := stepProcessStat
+	stepProcessStat = func(int) (string, error) { return "", errors.New("state source unavailable") }
+	defer func() { stepProcessStat = prev }()
+
+	alive, state, err := stepProcessState(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf("stepProcessState returned error: %v", err)
+	}
+	if alive {
+		t.Fatalf("unreadable process state must not be reported alive (pid %d, state %q)", cmd.Process.Pid, state)
+	}
+	if state != "unreadable" {
+		t.Fatalf("state = %q, want %q", state, "unreadable")
+	}
 }
