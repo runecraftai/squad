@@ -9,6 +9,7 @@ This tool never dispatches a mission, never opens a pull request, never merges a
 Its only side effects are: reading GitHub through `sq-gh`, and writing a queued (never in-flight) `kind: candidate` item to `data/backlog.md` through `sq-tasks add`, plus its own local dedupe ledger and digest file under `data/factory-collect/`.
 Turning a candidate into real work still goes through Squad's ordinary intake in `AGENTS.md` section 7: a human decides, nothing here decides for them.
 Policy-based auto-dispatch is explicitly out of scope for this phase.
+The boundary is not prose-only: every freshly queued candidate is also put under a structured `sq-tasks hold --kind commander`, so `sq-tasks ready` and the session-start digest's "ready queued (dispatchable now)" listing both exclude it until a human clears the hold - the same mechanism Squad already uses for any other commander-gated backlog thread.
 
 ## Running it
 
@@ -81,7 +82,8 @@ Everything that does not clear this bar goes to the human digest instead of bein
 
 Each queued candidate carries: `id`, `source`, `fingerprint`, `link`, `title`, `evidence`, `verifiable_reason`, `repro`.
 It lands in `data/backlog.md` via `sq-tasks add <id> ... --kind candidate --queue`, so it is always `## Queued`, never `## In flight` — this tool has no authority to start work, only to propose it.
-The same fields are written into the backlog item's body for durable, inspectable evidence.
+Right after a fresh add, `sq-tasks hold <id> --reason "unvetted factory-collect candidate: awaiting commander review" --kind commander` keeps it out of `sq-tasks ready` until a human clears the hold; an already-in-backlog hit (see "Dedupe" below) never re-applies the hold, so this never clobbers a commander's own decision to clear it.
+The same evidence fields are written into the backlog item's body for durable, inspectable evidence.
 
 ## Dedupe
 
@@ -101,6 +103,7 @@ Each source is collected independently; one failing (a `sq-gh` error, a timeout,
 Within `ci_failures`, a single failed `sq-gh run view` is reported per-run in the human digest and skipped, so one unpaginated bad run cannot discard findings from every other fetched run; if every fetched failed run is unviewable, the whole source is reported as failed instead of as a healthy empty fetch.
 A failure to queue a candidate is reported under `sources.<name>.queue_error` on the candidate's owning source and does not abort the remaining candidates.
 The run's own exit code is non-zero only when every enabled source failed, and an all-failed run leaves the previously persisted `data/factory-collect/digest.md` untouched instead of blanking it with an empty digest.
+A `sq-tasks add` that succeeds immediately followed by a `sq-tasks hold` that fails is a narrow, loudly-reported edge case: the candidate is in the backlog but not yet held, `queue_error` names it so the failure is never silent, and because the id now already exists the next run's `add` reports `already: true` and does not retry the hold - clear the gap by hand (`sq-tasks hold <id> --reason "..." --kind commander`) if it ever actually happens.
 
 ## A real run
 

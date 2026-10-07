@@ -124,16 +124,20 @@ STUB
   chmod +x "$dir/sq-gh"
 }
 
-# Stub sq-tasks that mimics the real binary's idempotent `add`: the first add
-# for a given id returns already=false, every subsequent add for that same id
-# (even from a fresh process) returns already=true, matching how a real
-# backlog already holding that id would respond.
+# Stub sq-tasks that mimics the real binary's idempotent `add` and `hold`:
+# the first add for a given id returns already=false, every subsequent add
+# for that same id (even from a fresh process) returns already=true,
+# matching how a real backlog already holding that id would respond. Every
+# `hold` call is appended to "$seen_file.holds" (one "id reason kind" line
+# per call) so tests can assert exactly which ids were held and how many
+# times, without needing a real backlog read-back.
 write_sq_tasks_stub() {
   local dir=$1 seen_file=$2
   touch "$seen_file"
   cat > "$dir/sq-tasks" <<STUB
 #!/usr/bin/env bash
 SEEN_FILE="$seen_file"
+HOLDS_FILE="$seen_file.holds"
 if [ "\$1" = "add" ]; then
   if [ "\${STUB_TASKS_QUEUE_FAIL:-0}" = 1 ]; then
     echo "simulated backlog write failure" >&2
@@ -147,6 +151,16 @@ if [ "\$1" = "add" ]; then
     echo "\$id" >> "\$SEEN_FILE"
   fi
   printf '{"ok": true, "already": %s, "task": {"id": "%s", "created": "2026-01-01"}}\n' "\$already" "\$id"
+  exit 0
+fi
+if [ "\$1" = "hold" ]; then
+  if [ "\${STUB_TASKS_HOLD_FAIL:-0}" = 1 ]; then
+    echo "simulated hold write failure" >&2
+    exit 1
+  fi
+  id=\$2
+  printf '%s\n' "\$*" >> "\$HOLDS_FILE"
+  printf '{"ok": true, "task": {"id": "%s", "hold": {"kind": "commander"}}}\n' "\$id"
   exit 0
 fi
 echo "unexpected sq-tasks args: \$*" >&2
@@ -276,6 +290,9 @@ test_dedupe_across_runs_and_against_backlog() {
   [ "$(json_get "$out" "d['candidates_already_seen']")" = 0 ] || fail "first run should have no ledger dupes"
   [ -f "$data/factory-collect/seen.json" ] || fail "the durable dedupe ledger was not written"
   grep -q "fc-issue-101" "$data/factory-collect/seen.json" || fail "the ledger does not record the queued candidate's id"
+  [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] || fail "the freshly queued candidate was not held exactly once"
+  assert_grep "fc-issue-101" "$tasks_seen.holds" "the hold call did not target the freshly queued candidate"
+  assert_grep "commander" "$tasks_seen.holds" "the hold was not applied with hold-kind commander"
 
   # Run 2: same ledger still present -> must not re-propose across runs, and
   # must not even need to ask sq-tasks about it again.
@@ -296,6 +313,8 @@ test_dedupe_across_runs_and_against_backlog() {
     || fail "third run did not detect the candidate already present in the backlog"
   [ "$(json_get "$out" "d['candidates_already_seen']")" = 0 ] \
     || fail "third run should not have an in-memory ledger hit (it was just reset)"
+  [ "$(wc -l < "$tasks_seen.holds")" -eq 1 ] \
+    || fail "an already-in-backlog hit re-applied the hold, which would clobber a commander's own decision to clear it"
 
   pass "sq-factory-collect: dedupes a candidate already in the ledger and, separately, one already in the backlog"
 }
@@ -379,6 +398,28 @@ test_queue_failure_marks_the_owning_source_not_a_phantom() {
   [ "$rc" -eq 0 ] || fail "a queue failure should degrade instead of aborting the run (exit $rc)"
 
   pass "sq-factory-collect: a queue failure is reported on the owning source, not a phantom key"
+}
+
+test_hold_failure_degrades_instead_of_silently_leaving_it_ready() {
+  local dir="$TMP_ROOT/hold-failure" fakebin config data tasks_seen out rc queue_error
+  mkdir -p "$dir"
+  fakebin="$dir/fakebin"; mkdir -p "$fakebin"
+  write_sq_gh_stub "$fakebin"
+  tasks_seen="$dir/.sq-tasks-seen"
+  write_sq_tasks_stub "$fakebin" "$tasks_seen"
+  config="$dir/config.toml"; write_config "$config" true false
+  data="$dir/data"
+
+  out=$(STUB_TASKS_HOLD_FAIL=1 run_collect "$fakebin" "$data" run --config "$config" --json)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "a hold failure should degrade instead of aborting the run (exit $rc)"
+  queue_error=$(json_get "$out" "d['sources']['github_issues'].get('queue_error','')")
+  assert_contains "$queue_error" "simulated hold write failure" \
+    "a failed hold call was not reported as a queue_error so the gap is visible, not silent"
+  [ "$(json_get "$out" "d['candidates_queued']")" = 0 ] \
+    || fail "a candidate whose hold call failed was still counted as cleanly queued"
+
+  pass "sq-factory-collect: a hold failure degrades (reported) rather than silently leaving a candidate unheld"
 }
 
 test_one_unviewable_run_is_skipped_not_fatal() {
@@ -468,6 +509,7 @@ test_dedupe_across_runs_and_against_backlog
 test_one_source_failing_degrades_instead_of_aborting
 test_source_unavailable_when_sq_gh_missing
 test_queue_failure_marks_the_owning_source_not_a_phantom
+test_hold_failure_degrades_instead_of_silently_leaving_it_ready
 test_one_unviewable_run_is_skipped_not_fatal
 test_all_unviewable_runs_fail_the_source_and_preserve_the_digest
 test_all_failed_run_does_not_blank_the_last_digest

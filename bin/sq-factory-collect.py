@@ -266,8 +266,18 @@ def group_digest(digest_by_source):
     return '\n'.join(lines) + '\n', total
 
 
+HOLD_REASON = 'unvetted factory-collect candidate: awaiting commander review'
+
+
 def queue_candidate(candidate, repo_tag):
-    """Land one fresh candidate in the backlog as a queued (never in-flight) item."""
+    """Land one fresh candidate in the backlog as a queued (never in-flight) item.
+
+    A structured commander hold is applied on first creation so the no-
+    execution boundary is enforced by sq-tasks' own `ready` projection
+    (and the session-start digest built on it), not by prose alone: a held
+    task is excluded from `sq-tasks ready` and from session-start's "ready
+    queued (dispatchable now)" listing until a human clears the hold.
+    """
     body = (
         f"source: {candidate['source']}\n"
         f"link: {candidate['link']}\n"
@@ -276,7 +286,10 @@ def queue_candidate(candidate, repo_tag):
         f"evidence: {candidate['evidence']}\n"
         f"to reproduce: {candidate['repro']}\n"
     )
-    return sq_tasks_add(candidate['id'], candidate['title'], repo_tag, body)
+    result = sq_tasks_add(candidate['id'], candidate['title'], repo_tag, body)
+    if not result.get('already'):
+        sq_tasks_hold(candidate['id'])
+    return result
 
 
 def sq_tasks_add(cand_id, title, repo_tag, body):
@@ -300,6 +313,18 @@ def sq_tasks_add(cand_id, title, repo_tag, body):
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise SourceError(f'sq-tasks add {cand_id} returned invalid JSON: {error}') from error
+
+
+def sq_tasks_hold(cand_id):
+    try:
+        result = subprocess.run(
+            [SQ_TASKS, 'hold', cand_id, '--reason', HOLD_REASON, '--kind', 'commander', '--json'],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SourceError(f'sq-tasks hold {cand_id} unavailable: {error}') from error
+    if result.returncode != 0:
+        raise SourceError(f'sq-tasks hold {cand_id} failed: {(result.stderr or result.stdout).strip()}')
 
 
 def run_collection(config, dry_run=False, seen=None):
