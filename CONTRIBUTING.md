@@ -36,10 +36,11 @@ See the [drill quick start](https://github.com/runecraftai/squad/tree/main/packa
 - This repo is a template for running a Squad orchestrator agent.
   `AGENTS.md` is the agent's main job description and names when to load bundled Squad skills; `CLAUDE.md` is a symlink to it, and `.claude/skills` is a symlink to `.agents/skills`.
 - Feature branches use the `sq/` prefix (for example `sq/feature-name`), never the retired `fm/` prefix.
-- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `.tasks.toml`, `.github/workflows/`, `.github/pull_request_template.md`, `bin/`, `.agents/skills/`, and `skills/`.
+- Only shared material is tracked: `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `.tasks.toml`, `.factory-collect.toml`, `.github/workflows/`, `.github/pull_request_template.md`, `bin/`, `.agents/skills/`, and `skills/`.
   `.agents/skills/` holds agent-loaded skills that assume a live Squad base and carry `metadata.internal: true` so installers such as [skills.sh](https://skills.sh) hide them from discovery; `skills/` holds standalone, installer-facing public skills with no Squad dependency (see the README's "Two-tier skill layout").
   Everything personal to one commander's unit (`.env`, `data/`, `state/`, `config/`, `projects/`, `.drill/`) is gitignored; never commit it.
   The root `.tasks.toml` is tracked `sq-tasks` config for `data/backlog.md`; compatible `sq-tasks` is the default backend for routine backlog mutations, with the compatibility definition owned by [`docs/configuration.md`](docs/configuration.md) ("Backlog backend").
+  The root `.factory-collect.toml` is tracked source/triage config for `bin/sq-factory-collect.sh`, the read-only input-collection pilot described in [`docs/factory-collect.md`](docs/factory-collect.md); it is tracked rather than gitignored because it configures this repo's own pilot run, not a per-commander choice.
   A local `config/backlog-backend=manual` opt-out forces Squad's routine backlog updates to hand-editing and stays gitignored; validated XO handoffs still delegate through `sq-tasks mv`.
   A local `config/backend` file explicitly overrides runtime auto-detection for new task endpoints and stays gitignored; [`docs/configuration.md`](docs/configuration.md#runtime-backend-configbackend--squad_backend) owns the spawn-supported values, while `codex-app` is documented only in `docs/codex-app-backend.md`.
   It does not make `data/` tracked.
@@ -66,7 +67,7 @@ Maintain the curated root [CHANGELOG.md](CHANGELOG.md) for user-impacting distro
 
 ## Development
 
-Tracked changes to Squad itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `drill` pipeline on a feature branch and require an explicit merge approval.
+Tracked changes to Squad itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `.tasks.toml`, `.factory-collect.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `drill` pipeline on a feature branch and require an explicit merge approval.
 Before making any such change, load the agent-only `squad-coding-guidelines` skill (`.agents/skills/squad-coding-guidelines/SKILL.md`).
 It has the knowledge-placement rules that keep `AGENTS.md` from regrowing after each diet pass.
 There is no reliable way for `bin/sq-brief.sh`'s scaffold to detect that a task's repo is Squad itself, so Squad adds this skill's load line to Squad-repo briefs by hand.
