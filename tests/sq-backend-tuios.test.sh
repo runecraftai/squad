@@ -1099,7 +1099,7 @@ unset SQUAD_TUIOS_FAKE_PROMPT_FOUND
 
 # A later poll that merely surfaces the numbered options for the SAME prompt is
 # not a changed prompt: the identity hash excludes the options rendering.
-SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='["Allow once","Always allow"]'
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '["Allow once","Always allow"]')
 export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
 unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
