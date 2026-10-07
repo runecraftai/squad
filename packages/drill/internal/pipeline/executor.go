@@ -64,6 +64,12 @@ type Executor struct {
 
 	gateReconcileInterval time.Duration
 	gateReconcileTimeout  time.Duration
+
+	// stepLivenessPollInterval and stepLivenessConfirmations override the
+	// step liveness watchdog's defaults (see step_liveness.go); zero means
+	// use the package constants. Tests shrink these to avoid slow sleeps.
+	stepLivenessPollInterval  time.Duration
+	stepLivenessConfirmations int
 }
 
 // SetSkippedSteps configures steps that should be marked skipped without running.
@@ -584,6 +590,23 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 	}
 	e.emitStepEvent(ipc.EventStepStarted, run, repo, stepName, string(types.StepStatusRunning))
 
+	// Watch this step's recorded agent process for the lifetime of this call.
+	// If it is ever observed dead or zombie on repeated polls - and nothing
+	// clears it, which the normal exit path does synchronously - cancel
+	// stepCtx so the blocked agent invocation is torn down instead of
+	// wedging the run forever. See step_liveness.go.
+	stepCtx, cancelStep := context.WithCancel(ctx)
+	livenessEvidence := make(chan *stepLivenessEvidence, 1)
+	livenessDone := make(chan struct{})
+	go func() {
+		defer close(livenessDone)
+		e.watchStepLiveness(stepCtx, cancelStep, sr.ID, livenessEvidence)
+	}()
+	defer func() {
+		cancelStep()
+		<-livenessDone
+	}()
+
 	// Track execution-only time, excluding approval wait periods.
 	phaseStart := time.Now()
 	executionMS := state.executionMS
@@ -700,7 +723,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 		e.emitCIReadinessEvent(run, repo, ready, declaredNoCI)
 	}
 	sctx := &StepContext{
-		Ctx:              ctx,
+		Ctx:              stepCtx,
 		Run:              run,
 		Repo:             repo,
 		WorkDir:          workDir,
@@ -739,6 +762,14 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 		roundDuration := time.Since(phaseStart).Milliseconds()
 		if err != nil {
 			durationMS := executionMS + roundDuration
+			// If the liveness watchdog cancelled stepCtx, the error above is
+			// ordinarily just a context-cancellation error from the agent's
+			// exec invocation - replace it with the evidence that caused the
+			// cancellation so the run's failure names the dead pid and state
+			// instead of a bare "context canceled".
+			if evidence := pollLivenessEvidence(livenessEvidence); evidence != nil {
+				err = evidence.wrap(err)
+			}
 			// Persist the failure reason to the step's own log file. The error
 			// often carries the only detail of why the step failed (e.g. git
 			// stderr from a rejected push); without this the step log shows the
