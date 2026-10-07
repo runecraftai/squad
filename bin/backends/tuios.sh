@@ -610,6 +610,27 @@ fm_backend_tuios_prompt_summary() {  # <target>
   fi
 }
 
+# fm_backend_tuios_prompt_hash: the dedupe identity of the pane's blocking
+# prompt - a hash of the kind and message/line only, so a later poll that
+# merely surfaces numbered options for the SAME prompt is not read as a changed
+# prompt. Prints the hash and returns 0 only when the daemon positively read
+# the prompt (`.found`); an unreadable, absent, or unparsable read returns 1 so
+# the caller keeps its dedupe markers instead of treating missing content as a
+# new prompt.
+fm_backend_tuios_prompt_hash() {  # <target>
+  local prompt identity
+  prompt=$(fm_backend_tuios_prompt_json "$1") || return 1
+  [ "$(printf '%s' "$prompt" | jq -r '.found')" = true ] || return 1
+  identity=$(printf '%s' "$prompt" | jq -r '
+    ((.kind // "needs_input") + "\n"
+     + ((.message // "") as $m
+        | if ($m | tostring) != "" then ($m | tostring)
+          else ((.lines? // []) | if type == "array" then ((.[-1] // "") | tostring) else "" end)
+          end))
+  ') || return 1
+  printf '%s' "$identity" | fm_backend_tuios_text_hash
+}
+
 # --- backend-neutral transition producer (level-reconcile / poll path) ------
 # TUIOS exposes no event subscription, so it never satisfies fm_backend_has_push
 # and is never offered to the sentry's event-wait splice (bin/sq-sentry.sh
@@ -629,7 +650,9 @@ fm_backend_tuios_prompt_summary() {  # <target>
 # the marker. The prompt's own content, hashed, is the rest of the key:
 # fm_backend_tuios_poll_transition clears the escalation marker itself whenever
 # that hash changes while still blocked, so a changed prompt is always treated
-# as a fresh edge even with no `working`/`idle` edge in between.
+# as a fresh edge even with no `working`/`idle` edge in between. A read that
+# fails to produce the prompt at all is not a change: the markers stand until a
+# later readable read establishes a genuinely different prompt.
 SQUAD_BACKEND_TUIOS_ESCALATED_PREFIX=".tuios-escalated-"
 SQUAD_BACKEND_TUIOS_PROMPT_HASH_PREFIX=".tuios-prompt-"
 
@@ -677,9 +700,9 @@ fm_backend_tuios_normalize_status() {  # <busy-verdict>
 # and hands the record up). Any other policy action, or an already-marked
 # actionable edge, returns 1 with no output. Mirrors
 # fm_backend_herdr_apply_transition's actionable branch exactly; TUIOS's own
-# poll_transition below clears the marker directly on every non-blocked read
-# (see its header), so the absorb branch herdr's version carries is not needed
-# here.
+# poll_transition below owns clearing the marker on a positively-read
+# non-blocked status (absorb/defer) and on a changed prompt, so the absorb
+# branch herdr's version carries is not needed here.
 fm_backend_tuios_apply_transition() {  # <state_dir> <session> <record>
   local state=$1 session=$2 record=$3 pane_id to action window marker
   pane_id=$(fm_transition_pane_id "$record")
@@ -731,7 +754,11 @@ fm_backend_tuios_clear_transition() {  # <state_dir> <window>
 # status. A positively-read non-blocked status (absorb/defer) clears both
 # markers, since the pane is demonstrably no longer waiting; a fallback read
 # (unknown - an unreadable or contradictory inventory) keeps them, so a single
-# transient read failure cannot re-arm a prompt that is still standing.
+# transient read failure cannot re-arm a prompt that is still standing. The
+# prompt identity is treated the same way: only a positively-read prompt whose
+# hash differs from the last readable one re-arms, while an unreadable prompt
+# read keeps the markers so a transient peek-prompt failure cannot duplicate a
+# wake.
 fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
   local state=$1 session=$2 window=$3 native status action prompt_hash hash_marker stored record hit
   native=$(fm_backend_tuios_busy_state "$window" 2>/dev/null) || native=unknown
@@ -741,11 +768,12 @@ fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
     [ "$action" = fallback ] || fm_backend_tuios_clear_transition "$state" "$window"
     return 2
   fi
-  prompt_hash=$(fm_backend_tuios_prompt_summary "$window" 2>/dev/null | fm_backend_tuios_text_hash)
   hash_marker=$(fm_backend_tuios_prompt_hash_marker "$state" "$window")
   stored=$(cat "$hash_marker" 2>/dev/null || true)
-  if [ "$stored" != "$prompt_hash" ]; then
-    fm_backend_tuios_clear_escalation_marker "$state" "$window"
+  if prompt_hash=$(fm_backend_tuios_prompt_hash "$window" 2>/dev/null); then
+    if [ -n "$stored" ] && [ "$stored" != "$prompt_hash" ]; then
+      fm_backend_tuios_clear_escalation_marker "$state" "$window"
+    fi
     printf '%s' "$prompt_hash" > "$hash_marker"
   fi
   record=$(fm_transition_record "${window#*:}" "" "" blocked "")

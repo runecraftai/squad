@@ -1065,6 +1065,36 @@ unset SQUAD_TUIOS_FAKE_LIST_FAIL
 OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
 [ "$RC" -eq 1 ] || fail "the same prompt must still dedupe after an ambiguous read (rc=1), got rc=$RC out=$OUT"
 
+# The prompt READ itself can also come back unreadable while the status is
+# still positively blocked. That is an ambiguous read for the dedupe key too:
+# the markers stand and the same standing prompt does not re-fire. First the
+# prompt verb read fails outright, then the daemon answers as blocked but with
+# `.found:false`.
+SQUAD_TUIOS_FAKE_PROMPT_STATE=unblocked
+export SQUAD_TUIOS_FAKE_PROMPT_STATE
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_PROMPT_STATE
+[ "$RC" -eq 1 ] || fail "a failed prompt read must dedupe (rc=1), got rc=$RC out=$OUT"
+[ -z "$OUT" ] || fail "a failed prompt read must print no record: $OUT"
+[ -e "$ESC_MARKER" ] || fail 'a failed prompt read must not clear the escalation marker'
+[ -e "$HASH_MARKER" ] || fail 'a failed prompt read must not clear the prompt-hash marker'
+SQUAD_TUIOS_FAKE_PROMPT_FOUND=0
+export SQUAD_TUIOS_FAKE_PROMPT_FOUND
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_PROMPT_FOUND
+[ "$RC" -eq 1 ] || fail "an unreadable (found=false) prompt must dedupe (rc=1), got rc=$RC out=$OUT"
+[ -e "$ESC_MARKER" ] || fail 'a found=false prompt read must not clear the escalation marker'
+[ -e "$HASH_MARKER" ] || fail 'a found=false prompt read must not clear the prompt-hash marker'
+
+# A later poll that merely surfaces the numbered options for the SAME prompt is
+# not a changed prompt: the identity hash excludes the options rendering.
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='["Allow once","Always allow"]'
+export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+OUT=$(fm_backend_tuios_poll_transition "$TRANSITION_STATE" owned "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+[ "$RC" -eq 1 ] || fail "the same prompt with newly-read options must not re-escalate (rc=1), got rc=$RC out=$OUT"
+[ -z "$OUT" ] || fail "the same prompt with newly-read options must print no record: $OUT"
+
 # A changed prompt while STILL blocked (no intervening non-blocked read): a
 # fresh edge again (rc=0) - the prompt content, not just the status, drives
 # the dedupe key.

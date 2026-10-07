@@ -74,7 +74,7 @@ On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the
 Latency is bounded by the supervision poll interval (`SQUAD_POLL`), since no event subscription is used.
 The wake fires exactly once per distinct pending prompt: the dedupe key is a hash of the prompt text itself, not just the `needs_input` status, because a pane can show one prompt, have it dismissed, and immediately show a different one while never leaving `needs_input` - a status-only dedupe would miss that.
 A new or changed prompt always wakes again, the identical standing prompt never repeats one, and a blocked pane is never folded into the ordinary stale/wedge detection, so it is never misread as a possible wedge.
-A transiently unreadable native read is an ambiguous `unknown` fallback, not a cleared state: the dedupe markers stand, so a prompt that is still pending never re-wakes just because one poll could not read the daemon.
+A transiently unreadable native status or prompt read is an ambiguous fallback, not a cleared state: the dedupe markers stand until a later readable read establishes a genuinely different prompt, so one unreadable poll never duplicates the wake.
 Nothing is ever typed over the open prompt: the wake only tells Squad a person is needed and what the prompt asks, and Squad still decides and sends the answer itself.
 A backend with no native blocked verdict (tmux) never raises this wake - it is never guessed from rendered pane text.
 
