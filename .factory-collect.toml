@@ -12,13 +12,14 @@ state = "open"
 limit = 50
 # A candidate qualifies only when the issue body matches at least one of
 # these regexes (searched case-sensitively as written; use (?i) to opt a
-# pattern into case-insensitive matching). Each is a named reproduction
-# signal: an explicit repro heading/phrase, or a fenced code block a human
-# or operator could actually run.
+# pattern into case-insensitive matching). Each pattern must itself be a
+# named reproduction signal (an explicit repro heading or phrase) - a bare
+# fenced code block is deliberately NOT a pattern here, since a stack
+# trace, log dump, or config sample in a fence names no reproduction path
+# on its own ("looks fixable" does not qualify).
 repro_patterns = [
   "(?i)steps to reproduce",
   "(?im)^#+\\s*repro",
-  "```",
 ]
 
 [source.ci_failures]

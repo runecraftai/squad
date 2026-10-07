@@ -36,7 +36,7 @@ enabled = true
 repo = "runecraftai/squad"
 state = "open"
 limit = 50
-repro_patterns = ["(?i)steps to reproduce", "(?im)^#+\\s*repro", "```"]
+repro_patterns = ["(?i)steps to reproduce", "(?im)^#+\\s*repro"]
 
 [source.ci_failures]
 enabled = true
@@ -47,7 +47,7 @@ run_limit = 20
 min_failures = 2
 ```
 
-- `source.github_issues.repro_patterns` — a list of regexes (Python `re` syntax); an issue qualifies when its body matches at least one. Each pattern should name a real reproduction signal (an explicit heading/phrase, or a fenced code block), not just "looks like a bug".
+- `source.github_issues.repro_patterns` — a list of regexes (Python `re` syntax); an issue qualifies when its body matches at least one. Each pattern must itself name a real reproduction signal (an explicit heading or phrase); a bare fenced code block is deliberately not one of the shipped patterns, since a stack trace or log dump in a fence names no reproduction path on its own.
 - `source.ci_failures.min_failures` — how many times the same job (or, if no single job carries `conclusion: failure`, the same workflow+branch) must recur across the last `run_limit` fetched failed runs before it is a stable enough identity to queue. Below this, it goes to the human digest instead.
 
 ## Capability matrix
