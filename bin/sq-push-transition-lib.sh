@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared owner of the sentry's native push-transition escalation.
+# Shared owner of the sentry's native transition escalation (push or poll).
 #
 # The sentry and event-wait smoke tests source this library instead of loading
 # the whole sentry to obtain handle_push_transition. Its source list is limited

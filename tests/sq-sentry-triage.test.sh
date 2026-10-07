@@ -1235,6 +1235,11 @@ test_tuios_blocked_pane_wakes_via_poll_transition() {
   key=$(printf '%s' "$window" | tr ':/.' '___')
   printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/blocked.meta"
   printf 'working: starting up\n' > "$state/blocked.status"
+  # Mark the pre-existing status as already seen so the signal scan does not
+  # fire first: this test exercises the native blocked poll, not the signal
+  # path, and must not depend on an earlier suite test having absorbed a
+  # leaked crew-state verdict.
+  printf '%s' "$(seen_sig "$state/blocked.status")" > "$state/.seen-blocked_status"
   export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-blocked
 
   # SQUAD_BASE is pinned to this case's own scratch dir (not just
@@ -1271,6 +1276,8 @@ test_tuios_blocked_pane_dedupes_then_rearms_on_change_or_unblock() {
   key=$(printf '%s' "$window" | tr ':/.' '___')
   printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/dedupe.meta"
   printf 'working: starting up\n' > "$state/dedupe.status"
+  # Mark the pre-existing status as already seen (see the sibling test above).
+  printf '%s' "$(seen_sig "$state/dedupe.status")" > "$state/.seen-dedupe_status"
   export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-dedupe
 
   # SQUAD_BASE is pinned to this case's own scratch dir on every launch below
@@ -1345,6 +1352,8 @@ test_tuios_ambiguous_read_after_escalation_skips_stale() {
   key=$(printf '%s' "$window" | tr ':/.' '___')
   printf 'window=%s\nkind=strike\nbackend=tuios\n' "$window" > "$state/ambiguous.meta"
   printf 'working: starting up\n' > "$state/ambiguous.status"
+  # Mark the pre-existing status as already seen (see the sibling test above).
+  printf '%s' "$(seen_sig "$state/ambiguous.status")" > "$state/.seen-ambiguous_status"
   export SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-ambiguous
 
   # Phase 1: a real blocked read wakes once and commits the escalation marker.
@@ -1388,8 +1397,16 @@ test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake() {
   printf 'Do you want to proceed?\n1) Yes\n2) No\n' > "$capture_file"
   printf 'window=%s\nkind=strike\n' "$window" > "$state/prompty.meta"
   printf 'working: starting up\n' > "$state/prompty.status"
+  # Mark the pre-existing status as already seen so the only wake candidate is
+  # the prompt-like pane text, which must never be guessed into a blocked wake.
+  printf '%s' "$(seen_sig "$state/prompty.status")" > "$state/.seen-prompty_status"
 
+  # The pane's crew is genuinely working (the prompt-like text is only rendered
+  # output), so the ordinary stale machinery absorbs it; only a guessed blocked
+  # escalation would produce a wake. Pin the crew verdict explicitly so the test
+  # does not depend on a leaked SQUAD_FAKE_CREW_STATE from an earlier case.
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running)' \
     SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
     SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!

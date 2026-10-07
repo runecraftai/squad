@@ -137,6 +137,21 @@ tmux, zellij, orca e cmux não expõem nenhuma primitiva nativa de busy verifica
 O próprio relatório de agente do TUIOS participa: um `working` nativo é aceito como busy e um `needs_input` ou `errored` nativo como blocked quando a tarefa não tem registro próprio, então um operador TUIOS bloqueado nunca é lido como trabalho comum.
 Aquele loop de polling ainda é a fonte de eventos padrão para backends sem push events nativos, então isso permanece uma extração da abstração em vez de uma reescrita da sentinela.
 Para sessões Herdr capazes, a mesma sentinela substitui seu terminal sleep por uma espera limitada de evento nativo que imediatamente superficia `blocked`; [Push events e fallback de polling](herdr-backend.md#push-events-e-fallback-de-polling) é dona do mecanismo e gates de capacidade atuais, enquanto [verificação de backend de runtime](../verification/runtime-backends.md#native-blocked-event) é dona da evidência ativa.
+
+### Matriz de capacidade: a escalada quando uma pessoa é necessária
+
+A resposta de cada backend para "uma pessoa é necessária" fica em exatamente uma de três classes de capacidade, todas consumindo o MESMO registro de transição normalizado e a mesma tabela de política (`bin/sq-transition-lib.sh`); nenhum backend re-codifica o mapeamento status->ação por conta própria.
+
+| Classe | Backends hoje | Mecanismo | Latência |
+| --- | --- | --- | --- |
+| Push-capable | Herdr | Subscrição de evento nativo (`pane.agent_status_changed`); `fm_backend_herdr_wait_transition` de `bin/backends/herdr.sh` | Sub-segundo |
+| Apenas polling | TUIOS | Sem stream de eventos; `fm_backend_tuios_poll_transition` de `bin/backends/tuios.sh` reconcilia o nível do estado atual do daemon no mesmo registro, no poll ordinário por-janela da sentinela | Limitada por `SQUAD_POLL` |
+| Não consegue reportar | tmux, zellij, orca, cmux | Nenhum veredito nativo de blocked de qualquer tipo | Nunca dispara - nenhum palpite a partir de texto renderizado do pane |
+
+`fm_backend_has_push` e `fm_backend_can_poll_transition` (`bin/sq-backend.sh`) são os dois predicados de capacidade que um consumidor checa; um backend que responde falso aos dois cai no poll ordinário de stale/wedge inalterado, que é o backstop fail-closed permanente para toda a matriz.
+O dedupe de um produtor apenas-poll é chaveado em mais que só a borda de status: TUIOS adicionalmente hasheia o kind e a message do prompt (sua última linha quando o corpo da message é vazio) para que um pane que vai de um prompt `needs_input` direto para um diferente - sem leitura não-bloqueada intermediária - ainda re-escale, enquanto o prompt idêntico que permanece nunca repete um wake.
+Opções numeradas são deliberadamente excluídas daquela identidade, então um poll posterior que meramente superficie opções para o mesmo prompt não re-arma; o resumo renderizado (`fm_backend_prompt_summary`) é produzido apenas no momento do wake para a notificação.
+O consumidor (`handle_push_transition` em `bin/sq-push-transition-lib.sh`) pede ao backend produtor aquele prompt no momento do wake em vez de alargar o registro compartilhado, já que a maioria dos produtores (herdr) não tem nenhum a oferecer; a razão que isso produz lê `stale: <window> (<backend>: agent blocked - <prompt> - waiting on human, escalated immediately, not via wedge timer)`, com o segmento `- <prompt>` presente apenas quando o backend forneceu um.
 A sonda mais profunda de vitalidade de processo-agente no início da sessão é separada daquele poll de busy-state: tmux e Herdr têm classificadores verificados para recovery de XO, Zellij permanece não verificado, e Orca, cmux e TUIOS não suportam spawns de XO.
 Herdr é experimental e pode ser selecionado explicitamente ou por auto-detecção de runtime: FOB continua sendo seu provedor de worktree, [`herdr-backend.md`](herdr-backend.md) é dona do setup e limites de segurança atuais, e [`verification/runtime-backends.md`](../verification/runtime-backends.md#herdr) é dona da evidência empírica ativa.
 Herdr usa uma aba por tarefa; [Monitoramento e task containers](herdr-backend.md#monitoramento-e-task-containers) é dona do posicionamento de workspace vinculado ao launcher, o fallback apenas-de-rótulo e o escopo de recovery.
