@@ -250,8 +250,8 @@ Use `drill axi abort` only when you mean to cancel the whole active run.
 Symptom: `drill axi status` shows an active step with `last_activity` prefixed by `quiet`, or a review/test/lint step appears to run for longer than expected.
 
 `quiet` means the step has not recorded a step-log line or native-agent lifecycle event for longer than [`step_quiet_warning`](/drill/reference/global-config/#step_quiet_warning).
-It is only a liveness signal.
-It does not cancel the step, fail the run, or mean the pipeline is safe to bypass.
+That marker is only a liveness signal: it does not cancel the step, fail the run, or mean the pipeline is safe to bypass.
+Separately, the executor fails a step automatically once its recorded agent PID is observed dead or zombie on consecutive polls, so a run whose agent died while a descendant kept the step's output pipe open reaches a normal terminal failed state with the dead PID and process state as evidence instead of hanging.
 
 Start by reading the active run and the step log:
 
