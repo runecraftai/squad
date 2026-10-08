@@ -106,10 +106,11 @@ test_classify_routine_signal_self() {
 # per-file loop above would find nothing commander-relevant and self-handle
 # it as routine - the away-mode variant of the gap bin/sq-sentry.sh's own
 # compaction-without-status override closes for the always-on path. This
-# proves classify_signal now escalates it too, through the same shared
-# classifier rule, and does not escalate it again once marked notified.
+# proves classify_signal stays a pure read that escalates it too, through the
+# same shared classifier rule, while handle_wake owns the notify mark and
+# bounds the durable escalation to exactly one per distinct compaction.
 test_classify_signal_compaction_without_status_escalates() {
-  local dir state id gen out
+  local dir state id gen out n
   dir=$(make_supercase classify-compaction-silent)
   state="$dir/state"
   id="task-compaction"
@@ -127,9 +128,17 @@ test_classify_signal_compaction_without_status_escalates() {
   out=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_COMPACTION_SILENT_MIN_AGE_SECS=0 \
     classify_signal "$state/$id.turn-ended" "$state")
   case "$out" in
-    escalate\|compaction:*) fail "the same compaction re-escalated after being marked notified: $out" ;;
+    escalate\|compaction:*) ;;
+    *) fail "classify_signal stopped being a pure read: repeated direct call stopped escalating: $out" ;;
   esac
-  pass "classify_signal escalates a compacted, status-silent task through the shared compaction override, bounded to one escalation per compaction"
+
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_COMPACTION_SILENT_MIN_AGE_SECS=0 \
+    handle_wake "signal:$state/$id.turn-ended" "$state" >/dev/null 2>&1
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_COMPACTION_SILENT_MIN_AGE_SECS=0 \
+    handle_wake "signal:$state/$id.turn-ended" "$state" >/dev/null 2>&1
+  n=$(awk 'END{print NR}' "$state/.subsuper-escalations" 2>/dev/null)
+  [ "$n" = "1" ] || fail "handle_wake did not bound the compacted task to exactly one durable escalation (got ${n:-0})"
+  pass "classify_signal stays a pure read that escalates a compacted, status-silent task through the shared compaction override, and handle_wake marks it notified only after the escalation is durably recorded"
 }
 
 test_classify_terminal_signal_escalates() {

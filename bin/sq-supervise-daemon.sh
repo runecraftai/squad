@@ -352,13 +352,12 @@ classify_signal() {  # <reason-after-colon> <state>
   # line to read for the silent task it exists to catch, so the per-file loop
   # below would otherwise find nothing commander-relevant and self-handle it
   # as routine - exactly the away-mode variant of the gap this override
-  # closes. Check it first and escalate immediately when it matches,
-  # mirroring bin/sq-sentry.sh's own mark-only-after-the-decision ordering.
+  # closes. Check it first and escalate immediately when it matches. This is
+  # a pure read; handle_wake marks the compaction notified only after the
+  # escalation is durably recorded.
   # shellcheck disable=SC2086  # reason is a space-separated path list (ids carry no spaces)
   compaction_reason=$(signal_compaction_needs_attention $reason) || compaction_reason=""
   if [ -n "$compaction_reason" ]; then
-    # shellcheck disable=SC2086
-    signal_compaction_mark_notified $reason
     printf 'escalate|%s' "$compaction_reason"
     return
   fi
@@ -1333,6 +1332,13 @@ handle_wake() {  # <reason> <state>
     escalate)
       log "escalate: $reason -> $distilled"
       escalate_add "$state" "$distilled"
+      # Mark the compaction notified only AFTER the escalation is durably
+      # recorded, mirroring bin/sq-sentry.sh's mark-after-fm_wake_append
+      # ordering. No-op for files that did not match the compaction override.
+      if [ "$kind" = signal ]; then
+        # shellcheck disable=SC2086  # arg is a space-separated path list (ids carry no spaces)
+        signal_compaction_mark_notified $arg
+      fi
       # A terminal-stale escalate must not leave a persistence marker behind, or
       # housekeeping re-escalates the same pane as a false wedge later.
       [ "$kind" = "stale" ] && stale_marker_remove "$arg" "$state"
