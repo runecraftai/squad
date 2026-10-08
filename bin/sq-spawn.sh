@@ -2345,12 +2345,15 @@ EOF
 // tool calls) and stays a wake NOTIFICATION touch for the sentry, never
 // current-state truth.
 // "session_before_compact" -> busy event=compaction, once per compaction
-// (never per inner turn boundary), so a context compaction is visible on the
-// same busy-state record instead of looking like ordinary busy churn. The
-// overflow/length recovery's fresh agent_start is suppressed until the run
-// settles, so the compaction event survives the retry rather than being
-// overwritten the instant recovery starts; see bin/sq-classify-lib.sh's
-// compaction-without-status absorb override.
+// (never per inner turn boundary) and only for an automatic (threshold or
+// overflow) compaction - a manual /compact is skipped because it never runs
+// while a turn is in flight, so writing busy for it would misreport an idle
+// pane. An overflow/length compaction that WILL retry (event.willRetry) also
+// suppresses the retry's immediate agent_start write until the run settles,
+// so the compaction event survives the retry rather than being overwritten
+// the instant recovery starts; "session_compact_failed" clears that
+// suppression if the expected retry never arrives. See
+// bin/sq-classify-lib.sh's compaction-without-status absorb override.
 // The private delivery dropbox lets sq-send reach a parked Pi session through
 // sendUserMessage instead of typing into a composer that may swallow Enter.
 import { execFile, execFileSync } from "node:child_process";
@@ -2626,14 +2629,23 @@ export default function (pi: any) {
   // exactly the churn a healthy busy run also produces. Recording the event
   // on the SAME busy-state record (never a parallel store) one time per
   // compaction, not per inner turn boundary, lets bin/sq-classify-lib.sh's
-  // compaction-without-status override see it without a new poller. The event
-  // is held until the run settles: a fresh agent_start from the overflow/
-  // length recovery is suppressed while compactedSinceLastSettle is set, so a
-  // retry that later stalls is still visible as a compaction.
-  pi.on("session_before_compact", () => {
+  // compaction-without-status override see it without a new poller.
+  // A manual /compact never runs while a turn is in flight (there is no
+  // streaming response to interrupt), so it is skipped here rather than
+  // falsely marking an idle pane busy with nothing left to ever clear it.
+  // Only the overflow/length path that WILL retry (event.willRetry) needs
+  // the event held past its own instant: that retry's agent_start fires
+  // immediately after, so compactedSinceLastSettle suppresses that one write
+  // until the run truly settles. session_compact_failed resets the flag if
+  // the compaction that set it never actually got its expected retry.
+  pi.on("session_before_compact", (event: any) => {
+    if (event?.reason === "manual") return;
     const written = busyEvent("busy", "compaction");
-    compactedSinceLastSettle = true;
+    compactedSinceLastSettle = event?.willRetry === true;
     return written;
+  });
+  pi.on("session_compact_failed", () => {
+    compactedSinceLastSettle = false;
   });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
 }

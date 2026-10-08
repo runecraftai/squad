@@ -117,15 +117,25 @@ switch (process.env.MODE) {
     await handlers["agent_start"]({}, ctx);
     break;
   case "turn-end": await handlers["turn_end"]({}, ctx); break;
-  case "compaction": await handlers["session_before_compact"]({}, ctx); break;
+  // willRetry: true matches the overflow/length recovery path - the one
+  // case whose immediately-following agent_start must not overwrite the
+  // compaction event (see compaction-then-start below).
+  case "compaction": await handlers["session_before_compact"]({ willRetry: true }, ctx); break;
+  case "compaction-manual": await handlers["session_before_compact"]({ reason: "manual" }, ctx); break;
+  case "compaction-failed": await handlers["session_compact_failed"]({}, ctx); break;
   case "compaction-then-start":
-    await handlers["session_before_compact"]({}, ctx);
+    await handlers["session_before_compact"]({ willRetry: true }, ctx);
     await handlers["agent_start"]({}, ctx);
     break;
   case "compaction-start-settle-start":
-    await handlers["session_before_compact"]({}, ctx);
+    await handlers["session_before_compact"]({ willRetry: true }, ctx);
     await handlers["agent_start"]({}, ctx);
     await handlers["agent_settled"]({}, ctx);
+    await handlers["agent_start"]({}, ctx);
+    break;
+  case "compaction-failed-then-start":
+    await handlers["session_before_compact"]({ willRetry: true }, ctx);
+    await handlers["session_compact_failed"]({}, ctx);
     await handlers["agent_start"]({}, ctx);
     break;
   default: throw new Error("unknown mode " + process.env.MODE);
@@ -229,7 +239,27 @@ test_pi_extension_compaction_event() {
     "busy pi-ext agent-start "*) ;;
     *) fail "a settle must clear the held compaction so the next agent_start writes again, got '$rec_out'" ;;
   esac
-  pass "session_before_compact writes one busy source=pi-ext event=compaction record that survives the recovery's agent_start until settle, and ordinary turn_end never touches it"
+
+  # A manual /compact never runs while a turn is in flight, so it must not
+  # write busy over an idle pane: confirm it leaves the current record alone.
+  out=$(drive_pi_ext "$ext" settle-idle) || fail "pre-manual-compact settle drive failed: $out"
+  out=$(drive_pi_ext "$ext" compaction-manual) || fail "compaction-manual drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a manual compact: $rec_out"
+  case "$rec_out" in
+    "idle pi-ext agent-settled "*) ;;
+    *) fail "a manual /compact must not write busy over an idle pane, got '$rec_out'" ;;
+  esac
+
+  # If the compaction that set the suppression flag never gets its expected
+  # retry (session_compact_failed fires instead), the next agent_start must
+  # not be suppressed forever.
+  out=$(drive_pi_ext "$ext" compaction-failed-then-start) || fail "compaction-failed-then-start drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a failed compaction's retry: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext agent-start "*) ;;
+    *) fail "session_compact_failed must clear the suppression so the next agent_start writes again, got '$rec_out'" ;;
+  esac
+  pass "session_before_compact writes one busy source=pi-ext event=compaction record that survives a retrying recovery's agent_start until settle, never fires for a manual /compact, clears on session_compact_failed, and lets ordinary turn_end alone"
 }
 
 test_pi_extension_serializes_settle_before_next_start() {

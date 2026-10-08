@@ -989,6 +989,12 @@ EOF
       done <<EOF
 $pending
 EOF
+      # Mark the compaction notified only now that every append above
+      # actually succeeded (see sq-classify-lib.sh's
+      # operator_compaction_mark_notified for why marking first would be
+      # unsafe), mirroring the .seen-*/mark_surfaced advance right below.
+      # shellcheck disable=SC2086
+      [ -n "$compaction_reason" ] && signal_compaction_mark_notified $files
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         printf '%s' "$sig" > "$sf"

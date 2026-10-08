@@ -27,11 +27,13 @@
 # log every time. The write side of that same stream is status_line_append (see
 # "status stream appends" below): the one shared append path callers use instead
 # of appending directly, so a line always starts its own physical record.
-# operator_compaction_silent_reason (see "compaction-without-status absorb
-# override" below) also writes: it persists the last-notified busy-state seq in
-# a per-task marker so the same compaction never re-fires on every later
-# turn-end touch. bin/sq-teardown.sh retires that marker with the other
-# task-keyed sentry markers.
+# operator_compaction_mark_notified (see "compaction-without-status absorb
+# override" below) also writes: it persists the last-notified busy-state
+# gen+seq in a per-task marker so the same compaction never re-fires on every
+# later turn-end touch. The caller writes it only after durably queuing the
+# wake, mirroring this file's own .seen-*/mark_surfaced convention.
+# bin/sq-teardown.sh retires that marker with the other task-keyed sentry
+# markers.
 
 # Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
@@ -908,16 +910,43 @@ operator_compaction_silent_reason() {  # <id>
   notified="$gen $r_seq"
   last=$(cat "$marker" 2>/dev/null || true)
   [ "$last" = "$notified" ] && return 1
-  printf '%s' "$notified" > "$marker" 2>/dev/null || true
   printf 'compaction: context compaction with no status line (age %ss, min %ss, busy-state seq %s)' \
     "$age" "$min_age" "$r_seq"
+  return 0
+}
+
+# Idempotent write: records this task's CURRENT busy-state gen+seq as
+# notified. The caller (bin/sq-sentry.sh) calls this ONLY after it has
+# durably queued the wake (fm_wake_append succeeded), never speculatively -
+# mirroring the surrounding file's own .seen-*/mark_surfaced convention of
+# advancing a suppressor only after a wake is surfaced or absorbed. Marking
+# first and queuing second would let a failed append or a sentry killed
+# mid-cycle leave this compaction marked handled with no wake ever queued, so
+# the next poll's dedup check in operator_compaction_silent_reason would
+# silently re-absorb it. A harmless no-op when the record is missing or its
+# event is no longer "compaction".
+operator_compaction_mark_notified() {  # <id>
+  local id=$1 state rec r_state r_source r_event r_seq gen key marker
+  [ -n "$id" ] || return 0
+  state=${STATE:-${SQUAD_STATE_OVERRIDE:-}}
+  [ -n "$state" ] || return 0
+  rec=$(fm_busy_record_read "$state" "$id") || return 0
+  r_state=${rec%% *}; rec=${rec#* }
+  r_source=${rec%% *}; rec=${rec#* }
+  r_event=${rec%% *}; r_seq=${rec#* }
+  [ "$r_event" = compaction ] || return 0
+  gen=$(fm_busy_current_gen "$state" "$id") || return 0
+  key=$(printf '%s' "$id" | tr ':/.' '___')
+  marker="$state/.compaction-notified-$key"
+  printf '%s %s' "$gen" "$r_seq" > "$marker" 2>/dev/null || true
   return 0
 }
 
 # 0 (actionable) if ANY task referenced by a "signal:" wake is a
 # compaction-without-status absorb override match (see above); 1 otherwise.
 # Pass the same space-separated file list as signal_reason_is_actionable.
-# Prints the first matching reason string.
+# Prints the first matching reason string. A pure read: does not mark
+# anything notified (see signal_compaction_mark_notified for the write half).
 signal_compaction_needs_attention() {  # <file> ...
   local f base task seen="" r
   for f in "$@"; do
@@ -935,6 +964,28 @@ signal_compaction_needs_attention() {  # <file> ...
     return 0
   done
   return 1
+}
+
+# Marks every task referenced by a "signal:" wake that currently matches the
+# compaction-without-status override as notified. Call ONLY after the wake
+# those files produced has been durably queued (see
+# operator_compaction_mark_notified for why). Pass the same space-separated
+# file list as signal_compaction_needs_attention.
+signal_compaction_mark_notified() {  # <file> ...
+  local f base task seen=""
+  for f in "$@"; do
+    base=${f##*/}
+    case "$base" in
+      *.status)     task=${base%.status} ;;
+      *.turn-ended) task=${base%.turn-ended} ;;
+      *)            continue ;;
+    esac
+    [ -n "$task" ] || continue
+    case " $seen " in *" $task "*) continue ;; esac
+    seen="$seen $task"
+    operator_compaction_mark_notified "$task"
+  done
+  return 0
 }
 
 # 0 (terminal/actionable) if a stale window's last status line is

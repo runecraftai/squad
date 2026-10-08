@@ -160,6 +160,10 @@ The Pi `pi-ext`'s one additional `session_before_compact` write (`busy source=pi
 The session JSONL's appended `compaction_resilience_state` custom entry confirmed `currentTask` and `checklistItems` populated after the fix (both `null`/empty before it) and `filesModified` correct in both.
 The same run also confirmed `agent_before_settle`'s re-engagement: a plain `sendUserMessage()` at that point throws `Agent is already processing`, and the previous `deliverAs: "followUp"` queued a message nothing ever drained because the run had already stopped streaming by the time of settling; `deliverAs: "steer"` delivered it immediately and produced one further real model turn in the same process invocation with no external input, where the earlier code produced none.
 
+A follow-up source read of the installed Pi 0.99.0 binary (its bundled `runAgentLoopContinue`) confirmed that the overflow/length recovery's retry re-emits `agent_start`, which would otherwise overwrite the `event=compaction` write within the same busy-state record before any wake could observe it.
+The pi-ext now gates the busy-state write and a `compactedSinceLastSettle` suppression flag on `event.willRetry` and `event.reason`: a retrying overflow/length compaction suppresses the retry's own `agent_start` write until the run truly settles (`agent_settled` or `session_compact_failed` both clear the flag), while a manual `/compact` - which never runs with a turn in flight - skips the write entirely rather than falsely marking an idle pane busy.
+The compaction-without-status override's dedup marker keys on gen+seq rather than seq alone, since a same-id relaunch re-arms the busy contract and restarts seq from 1, and bin/sq-sentry.sh writes that marker only after it durably queues the wake, mirroring the file's own `.seen-*`/`mark_surfaced` advance-after-surface convention.
+
 Deterministic entry points for the compaction-resilience payload and re-engagement fix:
 
 ```sh

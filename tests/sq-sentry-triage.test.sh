@@ -463,8 +463,15 @@ test_compaction_silent_reason_classifier() {
     compaction:*) ;;
     *) fail "unexpected reason string: $r" ;;
   esac
+  # Pure read: checking again before anything marks it notified must keep
+  # firing (operator_compaction_silent_reason never writes the marker
+  # itself - see operator_compaction_mark_notified for the write half, which
+  # bin/sq-sentry.sh calls only after it durably queues the wake).
+  operator_compaction_silent_reason old >/dev/null \
+    || fail "a pure re-check before marking notified stopped firing"
+  operator_compaction_mark_notified old
   ! r2=$(operator_compaction_silent_reason old) \
-    || fail "the same compaction seq re-fired on a second check (bound violated): $r2"
+    || fail "the same compaction seq re-fired after being marked notified (bound violated): $r2"
 
   # A later, genuinely new compaction (seq advances) is allowed to fire again.
   "$ROOT/bin/sq-busy-event.sh" apply "$state" old busy --gen "$gen" --source pi-ext --event compaction >/dev/null
@@ -498,6 +505,7 @@ test_compaction_silent_reason_classifier() {
   set_mtime "$((now - 400))" "$state/relaunch.busy-gen"
   operator_compaction_silent_reason relaunch >/dev/null \
     || fail "the first incarnation's compaction did not fire"
+  operator_compaction_mark_notified relaunch
   sleep 1
   record_pi_compaction "$state" relaunch >/dev/null
   set_mtime "$((now - 400))" "$state/relaunch.busy-gen"
