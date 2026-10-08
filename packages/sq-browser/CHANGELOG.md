@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/runecraftai/squad/compare/sq-browser-v0.1.1...sq-browser-v0.1.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **sq-browser:** adapt to current chrome-devtools-mcp schema and pin version ([#205](https://github.com/runecraftai/squad/issues/205)) ([1f13ad3](https://github.com/runecraftai/squad/commit/1f13ad3a464997103aabfa1bd4a5640eaf524585))
+* **sq-browser:** support Chromium launches and reject stale local builds ([#234](https://github.com/runecraftai/squad/issues/234)) ([a751335](https://github.com/runecraftai/squad/commit/a75133595517b5b28f901361e480197fd283a1e5))
+
 ## [0.1.1](https://github.com/runecraftai/squad/compare/sq-browser-v0.1.0...sq-browser-v0.1.1) (2026-08-14)
 
 
