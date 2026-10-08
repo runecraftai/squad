@@ -190,10 +190,11 @@ tests/sq-busy-adapter-wiring.test.sh
 tests/sq-crew-state.test.sh
 ```
 
-The compaction-without-status absorb override (`bin/sq-classify-lib.sh`'s `operator_compaction_silent_reason` / `signal_compaction_needs_attention`, consumed by `bin/sq-sentry.sh`'s signal-wake triage) is covered by:
+The compaction-without-status absorb override (`bin/sq-classify-lib.sh`'s `operator_compaction_silent_reason` / `signal_compaction_needs_attention`, consumed by `bin/sq-sentry.sh`'s signal-wake triage and by the away-mode daemon's `classify_signal`) is covered by:
 
 ```sh
 tests/sq-sentry-triage.test.sh
+tests/sq-daemon.test.sh
 ```
 
 ## Turn-end guard
