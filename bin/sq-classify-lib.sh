@@ -925,20 +925,26 @@ operator_compaction_silent_reason() {  # <id>
 }
 
 # Idempotent write: records this task's CURRENT busy-state gen+seq as
-# notified. The caller (bin/sq-sentry.sh) calls this ONLY after it has
+# notified, but ONLY when the task is a genuine compaction-without-status
+# match (the same full gate operator_compaction_silent_reason computes). A
+# task that merely carries event=compaction but is too young, already has a
+# status line, or was already notified is a no-op, so a caller may invoke
+# this unconditionally over a co-batched wake file list without advancing a
+# suppressor for a compaction that never actually fired. The caller
+# (bin/sq-sentry.sh) calls this ONLY after it has
 # durably queued the wake (fm_wake_append succeeded), never speculatively -
 # mirroring the surrounding file's own .seen-*/mark_surfaced convention of
 # advancing a suppressor only after a wake is surfaced or absorbed. Marking
 # first and queuing second would let a failed append or a sentry killed
 # mid-cycle leave this compaction marked handled with no wake ever queued, so
 # the next poll's dedup check in operator_compaction_silent_reason would
-# silently re-absorb it. A harmless no-op when the record is missing or its
-# event is no longer "compaction".
+# silently re-absorb it.
 operator_compaction_mark_notified() {  # <id>
   local id=$1 state rec r_state r_source r_event r_seq gen key marker
   [ -n "$id" ] || return 0
   state=${STATE:-${SQUAD_STATE_OVERRIDE:-}}
   [ -n "$state" ] || return 0
+  operator_compaction_silent_reason "$id" >/dev/null 2>&1 || return 0
   rec=$(fm_busy_record_read "$state" "$id") || return 0
   r_state=${rec%% *}; rec=${rec#* }
   r_source=${rec%% *}; rec=${rec#* }

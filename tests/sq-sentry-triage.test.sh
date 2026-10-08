@@ -519,6 +519,44 @@ test_compaction_silent_reason_classifier() {
   pass "compaction-without-status override: event+no-status+min-age gates and the per-compaction bound all hold"
 }
 
+# Co-batched over-mark regression: signal_compaction_mark_notified must
+# advance only the task that currently matches the full override. A task that
+# merely carries event=compaction but is still too young (or already reported
+# a status line) shares the wake file list with a genuinely matching task and
+# must NOT have its suppressor set - otherwise its later, genuine compaction
+# wake is silently suppressed.
+test_compaction_mark_notified_does_not_advance_non_matching_tasks() {
+  local dir state now
+  dir=$(make_case compaction-mark-notified-scope); state="$dir/state"
+  export SQUAD_STATE_OVERRIDE="$state"
+  now=$(date +%s)
+
+  printf 'id=co-old\n' > "$state/co-old.meta"
+  record_pi_compaction "$state" co-old >/dev/null
+  set_mtime "$((now - 400))" "$state/co-old.busy-gen"
+
+  printf 'id=co-young\n' > "$state/co-young.meta"
+  record_pi_compaction "$state" co-young >/dev/null
+  set_mtime "$((now - 10))" "$state/co-young.busy-gen"
+
+  signal_compaction_mark_notified \
+    "$state/co-old.turn-ended" "$state/co-young.turn-ended"
+
+  [ -f "$state/.compaction-notified-co-old" ] \
+    || fail "signal_compaction_mark_notified did not advance the genuinely matching compaction"
+  [ ! -f "$state/.compaction-notified-co-young" ] \
+    || fail "signal_compaction_mark_notified advanced a too-young task that never matched the override"
+
+  # Once it genuinely ages past the floor, the co-batched young task's own
+  # compaction must still fire (its marker was never written).
+  set_mtime "$((now - 400))" "$state/co-young.busy-gen"
+  operator_compaction_silent_reason co-young >/dev/null \
+    || fail "the co-batched, previously-too-young task's later genuine compaction was suppressed"
+
+  unset SQUAD_STATE_OVERRIDE
+  pass "signal_compaction_mark_notified advances only the compaction task that currently matches the override"
+}
+
 # --- a no-verb signal for a paused operator is absorbed (defect regression) ------
 # The signal path previously surfaced .turn-ended signals for paused operators
 # because signal_operator_provably_working returned false for "paused" (only
@@ -2708,6 +2746,7 @@ test_operator_absorb_class_classifier
 test_signal_operator_provably_working_classifier
 test_signal_operator_is_paused_classifier
 test_compaction_silent_reason_classifier
+test_compaction_mark_notified_does_not_advance_non_matching_tasks
 test_paused_signal_absorbed
 test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
