@@ -32,9 +32,11 @@
 #                    session_before_compact, the last writing state=busy with
 #                    event=compaction once per compaction - never per inner
 #                    turn boundary - so a compaction is visible on this same
-#                    record instead of looking like ordinary busy churn; see
-#                    bin/sq-classify-lib.sh's compaction-without-status absorb
-#                    override)
+#                    record instead of looking like ordinary busy churn; the
+#                    event is held across the recovery's fresh agent_start
+#                    until the run settles, so a retry that stalls stays
+#                    visible; see bin/sq-classify-lib.sh's
+#                    compaction-without-status absorb override)
 #   opencode-plugin  OpenCode per-task plugin (session.status)
 #   claude-hook      Claude lifecycle hooks (UserPromptSubmit/Stop/StopFailure/SessionEnd)
 #   codex-hook, codex-appserver  reserved: Codex, gated by

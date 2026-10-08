@@ -118,6 +118,16 @@ switch (process.env.MODE) {
     break;
   case "turn-end": await handlers["turn_end"]({}, ctx); break;
   case "compaction": await handlers["session_before_compact"]({}, ctx); break;
+  case "compaction-then-start":
+    await handlers["session_before_compact"]({}, ctx);
+    await handlers["agent_start"]({}, ctx);
+    break;
+  case "compaction-start-settle-start":
+    await handlers["session_before_compact"]({}, ctx);
+    await handlers["agent_start"]({}, ctx);
+    await handlers["agent_settled"]({}, ctx);
+    await handlers["agent_start"]({}, ctx);
+    break;
   default: throw new Error("unknown mode " + process.env.MODE);
 }
 if (process.env.MODE === "turn-end") {
@@ -199,7 +209,27 @@ test_pi_extension_compaction_event() {
     "busy pi-ext compaction "*) ;;
     *) fail "an ordinary turn_end after a compaction must not touch the busy-state record, got '$rec_out'" ;;
   esac
-  pass "session_before_compact writes one busy source=pi-ext event=compaction record on the existing busy-state contract, and ordinary turn_end never touches it"
+
+  # The overflow/length recovery starts its retry as a fresh run, firing
+  # agent_start on the same pane. That must not overwrite the compaction event:
+  # the extension holds it until the run settles, so the burst of turn-ends a
+  # stalled retry keeps producing still classifies as a compaction.
+  out=$(drive_pi_ext "$ext" compaction-then-start) || fail "compaction-then-start drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a recovery agent_start: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext compaction "*) ;;
+    *) fail "a recovery agent_start must not overwrite the compaction event, got '$rec_out'" ;;
+  esac
+
+  # Once the run actually settles the held event clears, so the next ordinary
+  # agent_start writes agent-start again exactly as before.
+  out=$(drive_pi_ext "$ext" compaction-start-settle-start) || fail "compaction-start-settle-start drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after settle and restart: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext agent-start "*) ;;
+    *) fail "a settle must clear the held compaction so the next agent_start writes again, got '$rec_out'" ;;
+  esac
+  pass "session_before_compact writes one busy source=pi-ext event=compaction record that survives the recovery's agent_start until settle, and ordinary turn_end never touches it"
 }
 
 test_pi_extension_serializes_settle_before_next_start() {

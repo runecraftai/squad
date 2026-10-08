@@ -455,8 +455,8 @@ test_compaction_silent_reason_classifier() {
   now=$(date +%s)
 
   printf 'id=old\n' > "$state/old.meta"
-  set_mtime "$((now - 400))" "$state/old.meta"
   gen=$(record_pi_compaction "$state" old)
+  set_mtime "$((now - 400))" "$state/old.busy-gen"
   r=$(operator_compaction_silent_reason old) \
     || fail "an old, status-silent task with event=compaction did not fire"
   case "$r" in
@@ -472,20 +472,20 @@ test_compaction_silent_reason_classifier() {
     || fail "a new compaction occurrence (advanced seq) did not re-fire after the bound"
 
   printf 'id=young\n' > "$state/young.meta"
-  set_mtime "$((now - 10))" "$state/young.meta"
   record_pi_compaction "$state" young >/dev/null
+  set_mtime "$((now - 10))" "$state/young.busy-gen"
   ! operator_compaction_silent_reason young >/dev/null \
     || fail "a task younger than the minimum age fired (false positive on startup noise)"
 
   printf 'id=busy\n' > "$state/busy.meta"
-  set_mtime "$((now - 400))" "$state/busy.meta"
   record_pi_busy "$state" busy >/dev/null
+  set_mtime "$((now - 400))" "$state/busy.busy-gen"
   ! operator_compaction_silent_reason busy >/dev/null \
     || fail "an ordinary busy event (not compaction) fired"
 
   printf 'id=reported\n' > "$state/reported.meta"
-  set_mtime "$((now - 400))" "$state/reported.meta"
   record_pi_compaction "$state" reported >/dev/null
+  set_mtime "$((now - 400))" "$state/reported.busy-gen"
   printf 'working: setup complete\n' > "$state/reported.status"
   ! operator_compaction_silent_reason reported >/dev/null \
     || fail "a task that already reported a status line fired"
@@ -605,8 +605,8 @@ test_turn_ended_compaction_without_status_surfaced() {
   : > "$state/task.turn-ended"
   printf 'id=task\n' > "$state/task.meta"
   now=$(date +%s)
-  set_mtime "$((now - 400))" "$state/task.meta"
   record_pi_compaction "$state" task >/dev/null
+  set_mtime "$((now - 400))" "$state/task.busy-gen"
   # Otherwise provably working (busy pane): without the override this is
   # exactly test_turn_ended_provably_working_absorbed's absorbed case.
   export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
@@ -631,8 +631,8 @@ test_turn_ended_compaction_too_young_absorbed() {
   : > "$state/task.turn-ended"
   printf 'id=task\n' > "$state/task.meta"
   now=$(date +%s)
-  set_mtime "$((now - 10))" "$state/task.meta"
   record_pi_compaction "$state" task >/dev/null
+  set_mtime "$((now - 10))" "$state/task.busy-gen"
   export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
@@ -651,8 +651,8 @@ test_turn_ended_compaction_event_mismatch_absorbed() {
   : > "$state/task.turn-ended"
   printf 'id=task\n' > "$state/task.meta"
   now=$(date +%s)
-  set_mtime "$((now - 400))" "$state/task.meta"
   record_pi_busy "$state" task >/dev/null  # event=agent-start, not compaction
+  set_mtime "$((now - 400))" "$state/task.busy-gen"
   export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!

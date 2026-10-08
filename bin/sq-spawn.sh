@@ -2346,8 +2346,11 @@ EOF
 // current-state truth.
 // "session_before_compact" -> busy event=compaction, once per compaction
 // (never per inner turn boundary), so a context compaction is visible on the
-// same busy-state record instead of looking like ordinary busy churn; see
-// bin/sq-classify-lib.sh's compaction-without-status absorb override.
+// same busy-state record instead of looking like ordinary busy churn. The
+// overflow/length recovery's fresh agent_start is suppressed until the run
+// settles, so the compaction event survives the retry rather than being
+// overwritten the instant recovery starts; see bin/sq-classify-lib.sh's
+// compaction-without-status absorb override.
 // The private delivery dropbox lets sq-send reach a parked Pi session through
 // sendUserMessage instead of typing into a composer that may swallow Enter.
 import { execFile, execFileSync } from "node:child_process";
@@ -2378,6 +2381,7 @@ let deliveryScanTimer: ReturnType<typeof setInterval> | undefined;
 let deliveryWatcherRetryTimer: ReturnType<typeof setTimeout> | undefined;
 let deliveryStopped = false;
 let piAgentRunning = false;
+let compactedSinceLastSettle = false;
 const pendingSquadFollowUps = new Map<string, string>();
 
 const deliveryPollMs = 250;
@@ -2565,6 +2569,7 @@ export default function (pi: any) {
   });
   pi.on("agent_start", () => {
     piAgentRunning = true;
+    if (compactedSinceLastSettle) return;
     return busyEvent("busy", "agent-start");
   });
   pi.on("agent_end", (event: any, ctx: any) => {
@@ -2613,6 +2618,7 @@ export default function (pi: any) {
       // event still fired, so treat it as settled instead of crashing the run.
     }
     piAgentRunning = false;
+    compactedSinceLastSettle = false;
     return busyEvent("idle", "agent-settled");
   });
   // A compaction is otherwise invisible to supervision: the pane stays busy
@@ -2620,8 +2626,15 @@ export default function (pi: any) {
   // exactly the churn a healthy busy run also produces. Recording the event
   // on the SAME busy-state record (never a parallel store) one time per
   // compaction, not per inner turn boundary, lets bin/sq-classify-lib.sh's
-  // compaction-without-status override see it without a new poller.
-  pi.on("session_before_compact", () => busyEvent("busy", "compaction"));
+  // compaction-without-status override see it without a new poller. The event
+  // is held until the run settles: a fresh agent_start from the overflow/
+  // length recovery is suppressed while compactedSinceLastSettle is set, so a
+  // retry that later stalls is still visible as a compaction.
+  pi.on("session_before_compact", () => {
+    const written = busyEvent("busy", "compaction");
+    compactedSinceLastSettle = true;
+    return written;
+  });
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
 }
 EOF

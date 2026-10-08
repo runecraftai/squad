@@ -842,7 +842,9 @@ signal_operator_is_paused() {  # <file> ...
 # visible without a new poller because the per-task pi-ext (bin/sq-spawn.sh)
 # now writes a busy-state event=compaction record through the one busy-state
 # contract (bin/sq-busy-lib.sh) when session_before_compact fires - one write
-# per compaction, never per inner turn boundary.
+# per compaction, never per inner turn boundary - and holds it across the
+# overflow/length recovery's fresh agent_start until the run settles, so the
+# event is not a momentary one a retry overwrites.
 #
 # This override fires ONLY when ALL of these hold:
 #   - the task's current busy-state record's event is exactly "compaction";
@@ -850,9 +852,11 @@ signal_operator_is_paused() {  # <file> ...
 #     "working: setup complete") - a task that already reported something is
 #     not the swallowed-silent-finish case this guards against;
 #   - the task is at least SQUAD_COMPACTION_SILENT_MIN_AGE_SECS old (default
-#     300s / 5 minutes), floored against its spawn record (the .meta mtime)
-#     so a brand-new task still doing ordinary startup work - which
-#     legitimately has no status line yet - never false-fires;
+#     300s / 5 minutes), floored against its armed busy incarnation (the
+#     .busy-gen mtime, minted once at spawn or a documented recovery re-arm
+#     and never rewritten by sq-mcp-link.sh, sq-x-link.sh, or sq-promote.sh
+#     the way .meta is) so a brand-new task still doing ordinary startup work
+#     - which legitimately has no status line yet - never false-fires;
 #   - this exact busy-state seq has not already been surfaced for this task
 #     (the bound: at most one wake per distinct compaction, no matter how
 #     many further turn-ended touches land while the event field still reads
@@ -871,7 +875,7 @@ SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT=300
 # this seq was already notified).
 operator_compaction_silent_reason() {  # <id>
   local id=$1 state rec r_state r_source r_event r_seq
-  local min_age age status_file meta_file mtime key marker last_seq
+  local min_age age status_file gen_file mtime key marker last_seq
   [ -n "$id" ] || return 1
   state=${STATE:-${SQUAD_STATE_OVERRIDE:-}}
   [ -n "$state" ] || return 1
@@ -882,14 +886,13 @@ operator_compaction_silent_reason() {  # <id>
   [ "$r_event" = compaction ] || return 1
   status_file="$state/$id.status"
   [ -s "$status_file" ] && return 1
-  meta_file="$state/$id.meta"
-  [ -f "$meta_file" ] || return 1
+  gen_file=$(fm_busy_gen_path "$state" "$id")
   if command -v stat_mtime >/dev/null 2>&1; then
-    mtime=$(stat_mtime "$meta_file") || return 1
-  elif mtime=$(stat -c %Y "$meta_file" 2>/dev/null); then
+    mtime=$(stat_mtime "$gen_file") || return 1
+  elif mtime=$(stat -c %Y "$gen_file" 2>/dev/null); then
     :
   else
-    mtime=$(stat -f %m "$meta_file" 2>/dev/null) || return 1
+    mtime=$(stat -f %m "$gen_file" 2>/dev/null) || return 1
   fi
   case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
   age=$(( $(date +%s) - mtime ))
