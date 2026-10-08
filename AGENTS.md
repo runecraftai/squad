@@ -358,6 +358,7 @@ Once ownership is settled, validate exactly once against that final head so no o
 
 An ask-user finding returns as `needs-decision`; Squad decides only when the configured authority permits, otherwise escalates to the commander.
 For a strike brief with an explicit execution playbook, run its structural validator before sending the implementation to drill or the selected delivery path; the playbook validator never replaces drill.
+When the resolved worker lane is an execution-class model that must not design, select `plan-execute@1` with the plan materialized from the planning artifact and run `bin/sq-plan-validate.sh <id>` before dispatch; `bin/sq-spawn.sh` refuses an incomplete plan.
 Versioned planning and evaluation playbooks are methods only, while delivery remains owned by mode and drill and merge remains commander-authorized.
 `orchestrate` is rejected because Commander, XO, backlog, and supervision already own programme coordination; `autopilot-full`, `autopilot-stack`, and `autonomous-run` remain deferred until their documented measurable triggers are proven, and none adds merge, discard, or destructive authority.
 `arena` means competing approaches to one problem with one selected base, `swarm` means parallel coverage of distinct slices, and `interrogate` means independent attacks on one artifact with deduplication and judgment; these are auxiliary topologies, not playbook identities, dispatch owners, or inferences from free-form `sq-tasks` `kind`.
