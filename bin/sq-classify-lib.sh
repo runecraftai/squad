@@ -872,12 +872,14 @@ signal_operator_is_paused() {  # <file> ...
 # unrelated "busy pane with no completed turn" case.
 SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT=300
 
-# NOT a pure read: on a firing match it persists the notified incarnation and
-# seq to state/.compaction-notified-<task> so the same compaction cannot
-# re-fire. Prints the exact wake reason and returns 0 when the override
+# A pure read: it checks state/.compaction-notified-<task> but never writes it,
+# so a caller that has not yet durably queued the wake keeps re-firing on every
+# subsequent check. Prints the exact wake reason and returns 0 when the override
 # applies; prints nothing and returns 1 otherwise (no busy-state record, no
 # event=compaction, a status line already exists, the task is too young, or
-# this incarnation+seq was already notified).
+# this incarnation+seq was already notified). See
+# operator_compaction_mark_notified for the write half, called only after the
+# wake is durably queued.
 operator_compaction_silent_reason() {  # <id>
   local id=$1 state rec r_state r_source r_event r_seq gen
   local min_age age status_file gen_file mtime key marker notified last
