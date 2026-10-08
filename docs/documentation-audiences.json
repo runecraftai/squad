@@ -893,6 +893,18 @@
    "audience": "public-product"
   },
   {
+   "path": "packages/squad-tui/AGENTS.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/squad-tui/CLAUDE.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "packages/squad-tui/README.md",
+   "audience": "public-product"
+  },
+  {
    "path": "packages/drill/AGENTS.md",
    "audience": "maintainer-architecture"
   },
