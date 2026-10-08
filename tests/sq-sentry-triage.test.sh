@@ -109,6 +109,18 @@ record_pi_busy() {  # <state-dir> <id>
     --source pi-ext --event agent-start
 }
 
+# Arms a fresh incarnation and immediately applies event=compaction (seq 2),
+# matching what the generated pi-ext now writes from session_before_compact.
+# Prints the gen so a caller can apply a further event under the same
+# incarnation (e.g. a second, genuinely later compaction).
+record_pi_compaction() {  # <state-dir> <id>
+  local state=$1 id=$2 gen
+  gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" "$id" --source pi-ext --event agent-start)
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" "$id" busy --gen "$gen" \
+    --source pi-ext --event compaction >/dev/null
+  printf '%s' "$gen"
+}
+
 reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
 
 # Minimal fake TUIOS daemon for the blocked-pane wake tests below. It covers
@@ -432,6 +444,119 @@ test_signal_operator_is_paused_classifier() {
   pass "signal_operator_is_paused: true only when every referenced crew is paused"
 }
 
+# operator_compaction_silent_reason / signal_compaction_needs_attention: the
+# compaction-without-status absorb override (bin/sq-classify-lib.sh). Exercises
+# every gate directly: event=compaction required, no status line required, the
+# minimum-age floor, and the one-wake-per-distinct-compaction bound (seq dedup).
+test_compaction_silent_reason_classifier() {
+  local dir state gen now r r2
+  dir=$(make_case compaction-silent-reason); state="$dir/state"
+  export SQUAD_STATE_OVERRIDE="$state"
+  now=$(date +%s)
+
+  printf 'id=old\n' > "$state/old.meta"
+  gen=$(record_pi_compaction "$state" old)
+  set_mtime "$((now - 400))" "$state/old.busy-gen"
+  r=$(operator_compaction_silent_reason old) \
+    || fail "an old, status-silent task with event=compaction did not fire"
+  case "$r" in
+    compaction:*) ;;
+    *) fail "unexpected reason string: $r" ;;
+  esac
+  # Pure read: checking again before anything marks it notified must keep
+  # firing (operator_compaction_silent_reason never writes the marker
+  # itself - see operator_compaction_mark_notified for the write half, which
+  # bin/sq-sentry.sh calls only after it durably queues the wake).
+  operator_compaction_silent_reason old >/dev/null \
+    || fail "a pure re-check before marking notified stopped firing"
+  operator_compaction_mark_notified old
+  ! r2=$(operator_compaction_silent_reason old) \
+    || fail "the same compaction seq re-fired after being marked notified (bound violated): $r2"
+
+  # A later, genuinely new compaction (seq advances) is allowed to fire again.
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" old busy --gen "$gen" --source pi-ext --event compaction >/dev/null
+  operator_compaction_silent_reason old >/dev/null \
+    || fail "a new compaction occurrence (advanced seq) did not re-fire after the bound"
+
+  printf 'id=young\n' > "$state/young.meta"
+  record_pi_compaction "$state" young >/dev/null
+  set_mtime "$((now - 10))" "$state/young.busy-gen"
+  ! operator_compaction_silent_reason young >/dev/null \
+    || fail "a task younger than the minimum age fired (false positive on startup noise)"
+
+  printf 'id=busy\n' > "$state/busy.meta"
+  record_pi_busy "$state" busy >/dev/null
+  set_mtime "$((now - 400))" "$state/busy.busy-gen"
+  ! operator_compaction_silent_reason busy >/dev/null \
+    || fail "an ordinary busy event (not compaction) fired"
+
+  printf 'id=reported\n' > "$state/reported.meta"
+  record_pi_compaction "$state" reported >/dev/null
+  set_mtime "$((now - 400))" "$state/reported.busy-gen"
+  printf 'working: setup complete\n' > "$state/reported.status"
+  ! operator_compaction_silent_reason reported >/dev/null \
+    || fail "a task that already reported a status line fired"
+
+  # A same-id relaunch re-arms the busy contract: the gen changes and seq
+  # restarts. The prior incarnation's notified marker must not suppress the new
+  # incarnation's compaction merely because it reuses the same seq number.
+  printf 'id=relaunch\n' > "$state/relaunch.meta"
+  record_pi_compaction "$state" relaunch >/dev/null
+  set_mtime "$((now - 400))" "$state/relaunch.busy-gen"
+  operator_compaction_silent_reason relaunch >/dev/null \
+    || fail "the first incarnation's compaction did not fire"
+  operator_compaction_mark_notified relaunch
+  sleep 1
+  record_pi_compaction "$state" relaunch >/dev/null
+  set_mtime "$((now - 400))" "$state/relaunch.busy-gen"
+  operator_compaction_silent_reason relaunch >/dev/null \
+    || fail "a re-armed incarnation's compaction on the same seq was suppressed"
+
+  ! operator_compaction_silent_reason nonexistent >/dev/null \
+    || fail "a task with no busy-state record at all fired"
+
+  unset SQUAD_STATE_OVERRIDE
+  pass "compaction-without-status override: event+no-status+min-age gates and the per-compaction bound all hold"
+}
+
+# Co-batched over-mark regression: signal_compaction_mark_notified must
+# advance only the task that currently matches the full override. A task that
+# merely carries event=compaction but is still too young (or already reported
+# a status line) shares the wake file list with a genuinely matching task and
+# must NOT have its suppressor set - otherwise its later, genuine compaction
+# wake is silently suppressed.
+test_compaction_mark_notified_does_not_advance_non_matching_tasks() {
+  local dir state now
+  dir=$(make_case compaction-mark-notified-scope); state="$dir/state"
+  export SQUAD_STATE_OVERRIDE="$state"
+  now=$(date +%s)
+
+  printf 'id=co-old\n' > "$state/co-old.meta"
+  record_pi_compaction "$state" co-old >/dev/null
+  set_mtime "$((now - 400))" "$state/co-old.busy-gen"
+
+  printf 'id=co-young\n' > "$state/co-young.meta"
+  record_pi_compaction "$state" co-young >/dev/null
+  set_mtime "$((now - 10))" "$state/co-young.busy-gen"
+
+  signal_compaction_mark_notified \
+    "$state/co-old.turn-ended" "$state/co-young.turn-ended"
+
+  [ -f "$state/.compaction-notified-co-old" ] \
+    || fail "signal_compaction_mark_notified did not advance the genuinely matching compaction"
+  [ ! -f "$state/.compaction-notified-co-young" ] \
+    || fail "signal_compaction_mark_notified advanced a too-young task that never matched the override"
+
+  # Once it genuinely ages past the floor, the co-batched young task's own
+  # compaction must still fire (its marker was never written).
+  set_mtime "$((now - 400))" "$state/co-young.busy-gen"
+  operator_compaction_silent_reason co-young >/dev/null \
+    || fail "the co-batched, previously-too-young task's later genuine compaction was suppressed"
+
+  unset SQUAD_STATE_OVERRIDE
+  pass "signal_compaction_mark_notified advances only the compaction task that currently matches the override"
+}
+
 # --- a no-verb signal for a paused operator is absorbed (defect regression) ------
 # The signal path previously surfaced .turn-ended signals for paused operators
 # because signal_operator_provably_working returned false for "paused" (only
@@ -526,6 +651,77 @@ test_turn_ended_not_working_surfaced() {
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the surfaced turn-end failed"
   grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$state/task.turn-ended" >/dev/null || fail "surfaced turn-end was not queued"
   pass "a bare turn-end whose crew is not provably working is surfaced (the swallowed-finish fix)"
+}
+
+# --- compaction-without-status override: integration through sq-sentry.sh -------
+# The gap this guards against: a compaction's burst of turn-end touches looks
+# exactly like ordinary busy churn, so the provably-working absorb path above
+# (test_turn_ended_provably_working_absorbed) would otherwise swallow it too.
+
+test_turn_ended_compaction_without_status_surfaced() {
+  local dir state fakebin out drain_out pid now
+  dir=$(make_case compaction-silent-surfaced); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  : > "$state/task.turn-ended"
+  printf 'id=task\n' > "$state/task.meta"
+  now=$(date +%s)
+  record_pi_compaction "$state" task >/dev/null
+  set_mtime "$((now - 400))" "$state/task.busy-gen"
+  # Otherwise provably working (busy pane): without the override this is
+  # exactly test_turn_ended_provably_working_absorbed's absorbed case.
+  export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "sentry did not surface a compaction-without-status turn-end: $(cat "$out")"
+  grep -F "signal: $state/task.turn-ended" "$out" >/dev/null \
+    || fail "sentry did not print the surfaced turn-end signal: $(cat "$out")"
+  grep -F "compaction: context compaction with no status line" "$out" >/dev/null \
+    || fail "surfaced wake did not carry the compaction reason: $(cat "$out")"
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null \
+    || fail "drain after the surfaced compaction turn-end failed"
+  grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$state/task.turn-ended" >/dev/null \
+    || fail "surfaced compaction turn-end was not queued"
+  pass "a busy-looking turn-end with event=compaction and no status line surfaces instead of absorbing"
+}
+
+test_turn_ended_compaction_too_young_absorbed() {
+  local dir state fakebin out pid now
+  dir=$(make_case compaction-silent-young); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  : > "$state/task.turn-ended"
+  printf 'id=task\n' > "$state/task.meta"
+  now=$(date +%s)
+  record_pi_compaction "$state" task >/dev/null
+  set_mtime "$((now - 10))" "$state/task.busy-gen"
+  export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry surfaced a too-young compaction-without-status turn-end (should absorb): $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "too-young compaction turn-end printed a wake reason: $(cat "$out")"
+  reap "$pid"
+  pass "a compaction-without-status turn-end younger than the minimum age is absorbed, not surfaced"
+}
+
+test_turn_ended_compaction_event_mismatch_absorbed() {
+  local dir state fakebin out pid now
+  dir=$(make_case compaction-event-mismatch); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  : > "$state/task.turn-ended"
+  printf 'id=task\n' > "$state/task.meta"
+  now=$(date +%s)
+  record_pi_busy "$state" task >/dev/null  # event=agent-start, not compaction
+  set_mtime "$((now - 400))" "$state/task.busy-gen"
+  export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry surfaced an ordinary busy turn-end mistaken for a compaction (should absorb): $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "ordinary busy (non-compaction) turn-end printed a wake reason: $(cat "$out")"
+  reap "$pid"
+  pass "an old, status-silent, ordinary-busy (non-compaction) turn-end is absorbed, not surfaced"
 }
 
 test_working_note_not_working_surfaced() {
@@ -2549,10 +2745,15 @@ test_status_is_paused_classifier
 test_operator_absorb_class_classifier
 test_signal_operator_provably_working_classifier
 test_signal_operator_is_paused_classifier
+test_compaction_silent_reason_classifier
+test_compaction_mark_notified_does_not_advance_non_matching_tasks
 test_paused_signal_absorbed
 test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
+test_turn_ended_compaction_without_status_surfaced
+test_turn_ended_compaction_too_young_absorbed
+test_turn_ended_compaction_event_mismatch_absorbed
 test_working_note_not_working_surfaced
 test_actionable_signal_surfaced
 test_terminal_stale_surfaced

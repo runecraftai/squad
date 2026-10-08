@@ -946,6 +946,19 @@ while :; do
 $pending
 EOF
     reason="signal:$files"
+    # A provably-busy pane around a context compaction looks identical to a
+    # provably-busy pane doing ordinary work, so without this check the
+    # compaction-without-status override below would never run (the
+    # provably-working clause absorbs it first). Compute it unconditionally
+    # whenever the cheap, no-drill-call clauses have not already decided the
+    # wake is actionable - cheaper than the provably-working check, so it does
+    # not change which clause pays for the bounded drill call.
+    compaction_reason=""
+    # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
+    if ! afk_present && ! signal_reason_is_actionable $files; then
+      # shellcheck disable=SC2086
+      compaction_reason=$(signal_compaction_needs_attention $files) || true
+    fi
     # Triage: a signal is ACTIONABLE when any of these holds (cheapest first):
     #   - the away-mode daemon owns triage (afk) and wants every wake;
     #   - any status file carries a commander-relevant verb;
@@ -957,6 +970,10 @@ EOF
     #     change guards against. A paused operator is expected to idle (declared
     #     external wait), so its turn-end is absorbed like the stale path's
     #     handle_paused_stale.
+    #   - or the compaction-without-status override matched (bin/sq-classify-lib.sh):
+    #     a young, status-silent task whose busy-state event is "compaction" is
+    #     surfaced even though its pane otherwise looks provably busy, bounded to
+    #     one wake per distinct compaction (see sq-classify-lib.sh for the full bound).
     # Actionable -> enqueue, advance .seen-* markers, exit. Benign (a no-verb wake
     # whose crew IS provably working, or a paused operator) in always-on mode ->
     # advance the markers so it will not re-fire, log, and keep blocking without
@@ -964,13 +981,20 @@ EOF
     # bounded drill call), so the || ordering evaluates it ONLY for a non-afk,
     # no-commander-verb signal.
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || { ! signal_operator_provably_working $files && ! signal_operator_is_paused $files; }; then
+    if afk_present || signal_reason_is_actionable $files || { ! signal_operator_provably_working $files && ! signal_operator_is_paused $files; } || [ -n "$compaction_reason" ]; then
+      [ -n "$compaction_reason" ] && reason="signal:$files $compaction_reason"
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
       done <<EOF
 $pending
 EOF
+      # Mark the compaction notified only now that every append above
+      # actually succeeded (see sq-classify-lib.sh's
+      # operator_compaction_mark_notified for why marking first would be
+      # unsafe), mirroring the .seen-*/mark_surfaced advance right below.
+      # shellcheck disable=SC2086
+      [ -n "$compaction_reason" ] && signal_compaction_mark_notified $files
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         printf '%s' "$sig" > "$sf"

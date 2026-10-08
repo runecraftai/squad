@@ -240,7 +240,9 @@ remote_teardown_locks_release() {
 # target (window=, terminal= for Orca); the .seen-* signatures are keyed by
 # the task status/turn-ended basenames. The daemon's task-keyed markers
 # (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*) are retired
-# by task id so the daemon never re-resolves a torn-down window. All markers
+# by task id so the daemon never re-resolves a torn-down window, as is the
+# sentry's own task-keyed .compaction-notified-* dedup marker (bin/sq-classify-lib.sh's
+# compaction-without-status absorb override). All markers
 # are inert once the task's meta and status files are gone, but until the meta
 # is removed the watcher can still poll the released window and re-fire stale
 # for it, so the markers are retired together with the volatile state.
@@ -250,7 +252,7 @@ retire_watcher_markers() {  # <state-dir> <task-id> <window>
   local state=$1 id=$2 win=$3 key sfx task_key
   task_key=$(printf '%s' "$id" | tr ':/.' '___')
   rm -f "$state/.subsuper-stale-$task_key" "$state/.subsuper-paused-$task_key" \
-    "$state/.subsuper-seen-status-$task_key"
+    "$state/.subsuper-seen-status-$task_key" "$state/.compaction-notified-$task_key"
   [ -n "$win" ] || return 0
   key=$(printf '%s' "$win" | tr ':/.' '___')
   sfx=$(printf '%s' "$id" | tr '.' '_')

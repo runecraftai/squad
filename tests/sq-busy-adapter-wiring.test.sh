@@ -117,6 +117,27 @@ switch (process.env.MODE) {
     await handlers["agent_start"]({}, ctx);
     break;
   case "turn-end": await handlers["turn_end"]({}, ctx); break;
+  // willRetry: true matches the overflow/length recovery path - the one
+  // case whose immediately-following agent_start must not overwrite the
+  // compaction event (see compaction-then-start below).
+  case "compaction": await handlers["session_before_compact"]({ willRetry: true }, ctx); break;
+  case "compaction-manual": await handlers["session_before_compact"]({ reason: "manual" }, ctx); break;
+  case "compaction-failed": await handlers["session_compact_failed"]({}, ctx); break;
+  case "compaction-then-start":
+    await handlers["session_before_compact"]({ willRetry: true }, ctx);
+    await handlers["agent_start"]({}, ctx);
+    break;
+  case "compaction-start-settle-start":
+    await handlers["session_before_compact"]({ willRetry: true }, ctx);
+    await handlers["agent_start"]({}, ctx);
+    await handlers["agent_settled"]({}, ctx);
+    await handlers["agent_start"]({}, ctx);
+    break;
+  case "compaction-failed-then-start":
+    await handlers["session_before_compact"]({ willRetry: true }, ctx);
+    await handlers["session_compact_failed"]({}, ctx);
+    await handlers["agent_start"]({}, ctx);
+    break;
   default: throw new Error("unknown mode " + process.env.MODE);
 }
 if (process.env.MODE === "turn-end") {
@@ -165,6 +186,80 @@ test_pi_extension_semantic_lifecycle() {
   out=$(classify pi "$id" "$state")
   [ "$out" = "idle pi-ext" ] || fail "the final settle must classify idle, got '$out'"
   pass "pi extension reports agent_start busy, settles idle only via ctx.isIdle(), and keeps turn_end a notification"
+}
+
+test_pi_extension_compaction_event() {
+  local rec id=busy-pi-compaction out state ext rec_out
+  rec=$(make_spawn_case pi-compaction pi "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "pi spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  ext="$state/$id.pi-ext.ts"
+
+  out=$(drive_pi_ext "$ext" agent-start) || fail "agent_start drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "busy pi-ext" ] || fail "agent_start must classify 'busy pi-ext' before compaction, got '$out'"
+
+  out=$(drive_pi_ext "$ext" compaction) || fail "session_before_compact drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "busy pi-ext" ] || fail "a compaction must stay busy pi-ext (never idle, never a parallel store), got '$out'"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after compaction: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext compaction "*) ;;
+    *) fail "compaction must write event=compaction on the same busy-state record, got '$rec_out'" ;;
+  esac
+
+  # An ordinary later turn-end stays a wake NOTIFICATION touch, never a
+  # second busy-state write - the compaction event is visible to supervision
+  # without waking on every inner turn boundary.
+  out=$(drive_pi_ext "$ext" turn-end) || fail "turn_end after compaction drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a later turn-end: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext compaction "*) ;;
+    *) fail "an ordinary turn_end after a compaction must not touch the busy-state record, got '$rec_out'" ;;
+  esac
+
+  # The overflow/length recovery starts its retry as a fresh run, firing
+  # agent_start on the same pane. That must not overwrite the compaction event:
+  # the extension holds it until the run settles, so the burst of turn-ends a
+  # stalled retry keeps producing still classifies as a compaction.
+  out=$(drive_pi_ext "$ext" compaction-then-start) || fail "compaction-then-start drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a recovery agent_start: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext compaction "*) ;;
+    *) fail "a recovery agent_start must not overwrite the compaction event, got '$rec_out'" ;;
+  esac
+
+  # Once the run actually settles the held event clears, so the next ordinary
+  # agent_start writes agent-start again exactly as before.
+  out=$(drive_pi_ext "$ext" compaction-start-settle-start) || fail "compaction-start-settle-start drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after settle and restart: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext agent-start "*) ;;
+    *) fail "a settle must clear the held compaction so the next agent_start writes again, got '$rec_out'" ;;
+  esac
+
+  # A manual /compact never runs while a turn is in flight, so it must not
+  # write busy over an idle pane: confirm it leaves the current record alone.
+  out=$(drive_pi_ext "$ext" settle-idle) || fail "pre-manual-compact settle drive failed: $out"
+  out=$(drive_pi_ext "$ext" compaction-manual) || fail "compaction-manual drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a manual compact: $rec_out"
+  case "$rec_out" in
+    "idle pi-ext agent-settled "*) ;;
+    *) fail "a manual /compact must not write busy over an idle pane, got '$rec_out'" ;;
+  esac
+
+  # If the compaction that set the suppression flag never gets its expected
+  # retry (session_compact_failed fires instead), the next agent_start must
+  # not be suppressed forever.
+  out=$(drive_pi_ext "$ext" compaction-failed-then-start) || fail "compaction-failed-then-start drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a failed compaction's retry: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext agent-start "*) ;;
+    *) fail "session_compact_failed must clear the suppression so the next agent_start writes again, got '$rec_out'" ;;
+  esac
+  pass "session_before_compact writes one busy source=pi-ext event=compaction record that survives a retrying recovery's agent_start until settle, never fires for a manual /compact, clears on session_compact_failed, and lets ordinary turn_end alone"
 }
 
 test_pi_extension_serializes_settle_before_next_start() {
@@ -381,6 +476,7 @@ test_kimi_and_grok_install_no_unverified_wiring() {
 }
 
 test_pi_extension_semantic_lifecycle
+test_pi_extension_compaction_event
 test_pi_extension_serializes_settle_before_next_start
 test_pi_extension_stale_incarnation_rejected
 test_pi_extension_stale_ctx_settles_idle

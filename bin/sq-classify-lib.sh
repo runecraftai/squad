@@ -13,7 +13,7 @@
 # daemon keeps its escalation-digest seen-markers; the sentry keeps its .seen-*
 # signatures).
 #
-# There are two documented exceptions among the status-file readers. The absorb
+# There are three documented exceptions among the status-file readers. The absorb
 # classification (operator_absorb_class and its working/paused wrappers) is NOT a
 # pure status-file read: it reuses bin/sq-crew-state.sh, which may make a bounded
 # drill call, to decide whether an operator that just stopped its turn or went
@@ -27,11 +27,24 @@
 # log every time. The write side of that same stream is status_line_append (see
 # "status stream appends" below): the one shared append path callers use instead
 # of appending directly, so a line always starts its own physical record.
+# operator_compaction_mark_notified (see "compaction-without-status absorb
+# override" below) also writes: it persists the last-notified busy-state
+# gen+seq in a per-task marker so the same compaction never re-fires on every
+# later turn-end touch. The caller writes it only after durably queuing the
+# wake, mirroring this file's own .seen-*/mark_surfaced convention.
+# bin/sq-teardown.sh retires that marker with the other task-keyed sentry
+# markers.
 
 # Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
 # bin/ script (which sets its own SCRIPT_DIR) or directly by a test.
 _SQUAD_CLASSIFY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _SQUAD_CLASSIFY_LIB_DIR="."
+
+# The semantic busy-state reader (fm_busy_record_read), for the one classifier
+# below that needs to see a compaction event Pi's extension recorded through
+# the busy-state contract rather than a parallel store.
+# shellcheck source=bin/sq-busy-lib.sh
+[ -f "$_SQUAD_CLASSIFY_LIB_DIR/sq-busy-lib.sh" ] && . "$_SQUAD_CLASSIFY_LIB_DIR/sq-busy-lib.sh"
 
 # The crew current-state reader used for the "provably working" decision.
 # Overridable so tests can stub the run-step/pane verdict without a real worktree
@@ -816,6 +829,177 @@ signal_operator_is_paused() {  # <file> ...
     operator_is_paused "$task" || return 1
   done
   [ -n "$seen" ] || return 1
+  return 0
+}
+
+# --- compaction-without-status absorb override -----------------------------
+#
+# The gap: Pi's turn_end fires on every inner turn boundary, including the
+# handful of extra boundaries a context compaction and its automatic retry
+# produce. A busy pane around a compaction looks identical to a busy pane
+# doing ordinary work, so the ordinary no-verb/signal absorb path
+# (signal_operator_provably_working above) absorbs the whole burst as benign
+# - which is exactly how a real compacted task went quiet for several minutes
+# with Squad absorbing every turn-ended touch as routine. A compaction is
+# visible without a new poller because the per-task pi-ext (bin/sq-spawn.sh)
+# now writes a busy-state event=compaction record through the one busy-state
+# contract (bin/sq-busy-lib.sh) when session_before_compact fires - one write
+# per compaction, never per inner turn boundary - and holds it across the
+# overflow/length recovery's fresh agent_start until the run settles, so the
+# event is not a momentary one a retry overwrites.
+#
+# This override fires ONLY when ALL of these hold:
+#   - the task's current busy-state record's event is exactly "compaction";
+#   - the task has never appended a single status line (not even an initial
+#     "working: setup complete") - a task that already reported something is
+#     not the swallowed-silent-finish case this guards against;
+#   - the task is at least SQUAD_COMPACTION_SILENT_MIN_AGE_SECS old (default
+#     300s / 5 minutes), floored against its armed busy incarnation (the
+#     .busy-gen mtime, minted once at spawn or a documented recovery re-arm
+#     and never rewritten by sq-mcp-link.sh, sq-x-link.sh, or sq-promote.sh
+#     the way .meta is) so a brand-new task still doing ordinary startup work
+#     - which legitimately has no status line yet - never false-fires;
+#   - this exact busy-state incarnation and seq have not already been
+#     surfaced for this task (the bound: at most one wake per distinct
+#     compaction within an incarnation, no matter how many further
+#     turn-ended touches land while the event field still reads
+#     "compaction"). The incarnation is part of the key because seq restarts
+#     at 1 when a same-id relaunch re-arms the contract, and a stale marker
+#     from the prior incarnation must not suppress the new one's compaction.
+# Ordinary short pauses and ordinary long tool calls never set event=compaction
+# at all, so they never reach this check; busy_turn_over_age's generous
+# SQUAD_BUSY_TURN_MAX_SECS wedge timer is unaffected and keeps owning the
+# unrelated "busy pane with no completed turn" case.
+# Residual false positive this still allows: the age floor is measured from
+# the task's own age (the busy-gen arm time), not from how long the
+# compaction itself has been unresolved, so a willRetry compaction on a task
+# already past the floor can surface its one bounded wake while the
+# automatic retry is still genuinely working, not stalled - the
+# one-wake-per-distinct-compaction bound keeps that to exactly one wake, it
+# does not prevent it from firing at all.
+SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT=300
+
+# A pure read: it checks state/.compaction-notified-<task> but never writes it,
+# so a caller that has not yet durably queued the wake keeps re-firing on every
+# subsequent check. Prints the exact wake reason and returns 0 when the override
+# applies; prints nothing and returns 1 otherwise (no busy-state record, no
+# event=compaction, a status line already exists, the task is too young, or
+# this incarnation+seq was already notified). See
+# operator_compaction_mark_notified for the write half, called only after the
+# wake is durably queued.
+operator_compaction_silent_reason() {  # <id>
+  local id=$1 state rec r_state r_source r_event r_seq gen
+  local min_age age status_file gen_file mtime key marker notified last
+  [ -n "$id" ] || return 1
+  state=${STATE:-${SQUAD_STATE_OVERRIDE:-}}
+  [ -n "$state" ] || return 1
+  rec=$(fm_busy_record_read "$state" "$id") || return 1
+  r_state=${rec%% *}; rec=${rec#* }
+  r_source=${rec%% *}; rec=${rec#* }
+  r_event=${rec%% *}; r_seq=${rec#* }
+  [ "$r_event" = compaction ] || return 1
+  status_file="$state/$id.status"
+  [ -s "$status_file" ] && return 1
+  gen_file=$(fm_busy_gen_path "$state" "$id")
+  if command -v stat_mtime >/dev/null 2>&1; then
+    mtime=$(stat_mtime "$gen_file") || return 1
+  elif mtime=$(stat -c %Y "$gen_file" 2>/dev/null); then
+    :
+  else
+    mtime=$(stat -f %m "$gen_file" 2>/dev/null) || return 1
+  fi
+  case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
+  age=$(( $(date +%s) - mtime ))
+  min_age=${SQUAD_COMPACTION_SILENT_MIN_AGE_SECS:-$SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT}
+  case "$min_age" in ''|*[!0-9]*) min_age=$SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT ;; esac
+  [ "$age" -ge "$min_age" ] || return 1
+  gen=$(fm_busy_current_gen "$state" "$id") || return 1
+  key=$(printf '%s' "$id" | tr ':/.' '___')
+  marker="$state/.compaction-notified-$key"
+  notified="$gen $r_seq"
+  last=$(cat "$marker" 2>/dev/null || true)
+  [ "$last" = "$notified" ] && return 1
+  printf 'compaction: context compaction with no status line (age %ss, min %ss, busy-state seq %s)' \
+    "$age" "$min_age" "$r_seq"
+  return 0
+}
+
+# Idempotent write: records this task's CURRENT busy-state gen+seq as
+# notified, but ONLY when the task is a genuine compaction-without-status
+# match (the same full gate operator_compaction_silent_reason computes). A
+# task that merely carries event=compaction but is too young, already has a
+# status line, or was already notified is a no-op, so a caller may invoke
+# this unconditionally over a co-batched wake file list without advancing a
+# suppressor for a compaction that never actually fired. The caller
+# (bin/sq-sentry.sh) calls this ONLY after it has
+# durably queued the wake (fm_wake_append succeeded), never speculatively -
+# mirroring the surrounding file's own .seen-*/mark_surfaced convention of
+# advancing a suppressor only after a wake is surfaced or absorbed. Marking
+# first and queuing second would let a failed append or a sentry killed
+# mid-cycle leave this compaction marked handled with no wake ever queued, so
+# the next poll's dedup check in operator_compaction_silent_reason would
+# silently re-absorb it.
+operator_compaction_mark_notified() {  # <id>
+  local id=$1 state rec r_state r_source r_event r_seq gen key marker
+  [ -n "$id" ] || return 0
+  state=${STATE:-${SQUAD_STATE_OVERRIDE:-}}
+  [ -n "$state" ] || return 0
+  operator_compaction_silent_reason "$id" >/dev/null 2>&1 || return 0
+  rec=$(fm_busy_record_read "$state" "$id") || return 0
+  r_state=${rec%% *}; rec=${rec#* }
+  r_source=${rec%% *}; rec=${rec#* }
+  r_event=${rec%% *}; r_seq=${rec#* }
+  [ "$r_event" = compaction ] || return 0
+  gen=$(fm_busy_current_gen "$state" "$id") || return 0
+  key=$(printf '%s' "$id" | tr ':/.' '___')
+  marker="$state/.compaction-notified-$key"
+  printf '%s %s' "$gen" "$r_seq" > "$marker" 2>/dev/null || true
+  return 0
+}
+
+# 0 (actionable) if ANY task referenced by a "signal:" wake is a
+# compaction-without-status absorb override match (see above); 1 otherwise.
+# Pass the same space-separated file list as signal_reason_is_actionable.
+# Prints the first matching reason string. A pure read: does not mark
+# anything notified (see signal_compaction_mark_notified for the write half).
+signal_compaction_needs_attention() {  # <file> ...
+  local f base task seen="" r
+  for f in "$@"; do
+    base=${f##*/}
+    case "$base" in
+      *.status)     task=${base%.status} ;;
+      *.turn-ended) task=${base%.turn-ended} ;;
+      *)            continue ;;
+    esac
+    [ -n "$task" ] || continue
+    case " $seen " in *" $task "*) continue ;; esac
+    seen="$seen $task"
+    r=$(operator_compaction_silent_reason "$task") || continue
+    printf '%s' "$r"
+    return 0
+  done
+  return 1
+}
+
+# Marks every task referenced by a "signal:" wake that currently matches the
+# compaction-without-status override as notified. Call ONLY after the wake
+# those files produced has been durably queued (see
+# operator_compaction_mark_notified for why). Pass the same space-separated
+# file list as signal_compaction_needs_attention.
+signal_compaction_mark_notified() {  # <file> ...
+  local f base task seen=""
+  for f in "$@"; do
+    base=${f##*/}
+    case "$base" in
+      *.status)     task=${base%.status} ;;
+      *.turn-ended) task=${base%.turn-ended} ;;
+      *)            continue ;;
+    esac
+    [ -n "$task" ] || continue
+    case " $seen " in *" $task "*) continue ;; esac
+    seen="$seen $task"
+    operator_compaction_mark_notified "$task"
+  done
   return 0
 }
 

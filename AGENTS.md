@@ -130,6 +130,7 @@ state/               volatile runtime signals; gitignored
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
   .hash-* .count-*   sentry internals; never touch
   .stale-* .stale-since-* .wedge-escalations-* .seen-*   sentry internals; never touch manually - teardown retires them for the released window, and housekeeping also retires .seen-* when the window is gone
+  .compaction-notified-*   per-task compaction dedup marker shared by the sentry and the away-mode daemon; never touch - teardown retires it for the released task
   .paused-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
