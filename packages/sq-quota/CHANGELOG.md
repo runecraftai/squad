@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/runecraftai/squad/compare/sq-quota-v0.1.2...sq-quota-v0.1.3) (2026-10-08)
+
+
+### Features
+
+* **sq-quota:** surface OpenCode Go usage and accept api auth type ([#245](https://github.com/runecraftai/squad/issues/245)) ([4295185](https://github.com/runecraftai/squad/commit/4295185279a66661f295c147fb97e942cee88aae))
+
 ## [0.1.2](https://github.com/runecraftai/squad/compare/sq-quota-v0.1.1...sq-quota-v0.1.2) (2026-08-18)
 
 
