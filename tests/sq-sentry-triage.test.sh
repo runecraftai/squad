@@ -490,6 +490,20 @@ test_compaction_silent_reason_classifier() {
   ! operator_compaction_silent_reason reported >/dev/null \
     || fail "a task that already reported a status line fired"
 
+  # A same-id relaunch re-arms the busy contract: the gen changes and seq
+  # restarts. The prior incarnation's notified marker must not suppress the new
+  # incarnation's compaction merely because it reuses the same seq number.
+  printf 'id=relaunch\n' > "$state/relaunch.meta"
+  record_pi_compaction "$state" relaunch >/dev/null
+  set_mtime "$((now - 400))" "$state/relaunch.busy-gen"
+  operator_compaction_silent_reason relaunch >/dev/null \
+    || fail "the first incarnation's compaction did not fire"
+  sleep 1
+  record_pi_compaction "$state" relaunch >/dev/null
+  set_mtime "$((now - 400))" "$state/relaunch.busy-gen"
+  operator_compaction_silent_reason relaunch >/dev/null \
+    || fail "a re-armed incarnation's compaction on the same seq was suppressed"
+
   ! operator_compaction_silent_reason nonexistent >/dev/null \
     || fail "a task with no busy-state record at all fired"
 

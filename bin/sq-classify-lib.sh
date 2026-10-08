@@ -857,25 +857,28 @@ signal_operator_is_paused() {  # <file> ...
 #     and never rewritten by sq-mcp-link.sh, sq-x-link.sh, or sq-promote.sh
 #     the way .meta is) so a brand-new task still doing ordinary startup work
 #     - which legitimately has no status line yet - never false-fires;
-#   - this exact busy-state seq has not already been surfaced for this task
-#     (the bound: at most one wake per distinct compaction, no matter how
-#     many further turn-ended touches land while the event field still reads
-#     "compaction").
+#   - this exact busy-state incarnation and seq have not already been
+#     surfaced for this task (the bound: at most one wake per distinct
+#     compaction within an incarnation, no matter how many further
+#     turn-ended touches land while the event field still reads
+#     "compaction"). The incarnation is part of the key because seq restarts
+#     at 1 when a same-id relaunch re-arms the contract, and a stale marker
+#     from the prior incarnation must not suppress the new one's compaction.
 # Ordinary short pauses and ordinary long tool calls never set event=compaction
 # at all, so they never reach this check; busy_turn_over_age's generous
 # SQUAD_BUSY_TURN_MAX_SECS wedge timer is unaffected and keeps owning the
 # unrelated "busy pane with no completed turn" case.
 SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT=300
 
-# NOT a pure read: on a firing match it persists the notified seq to
-# state/.compaction-notified-<task> so the same compaction cannot re-fire.
-# Prints the exact wake reason and returns 0 when the override applies;
-# prints nothing and returns 1 otherwise (no busy-state record, no
+# NOT a pure read: on a firing match it persists the notified incarnation and
+# seq to state/.compaction-notified-<task> so the same compaction cannot
+# re-fire. Prints the exact wake reason and returns 0 when the override
+# applies; prints nothing and returns 1 otherwise (no busy-state record, no
 # event=compaction, a status line already exists, the task is too young, or
-# this seq was already notified).
+# this incarnation+seq was already notified).
 operator_compaction_silent_reason() {  # <id>
-  local id=$1 state rec r_state r_source r_event r_seq
-  local min_age age status_file gen_file mtime key marker last_seq
+  local id=$1 state rec r_state r_source r_event r_seq gen
+  local min_age age status_file gen_file mtime key marker notified last
   [ -n "$id" ] || return 1
   state=${STATE:-${SQUAD_STATE_OVERRIDE:-}}
   [ -n "$state" ] || return 1
@@ -899,11 +902,13 @@ operator_compaction_silent_reason() {  # <id>
   min_age=${SQUAD_COMPACTION_SILENT_MIN_AGE_SECS:-$SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT}
   case "$min_age" in ''|*[!0-9]*) min_age=$SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT ;; esac
   [ "$age" -ge "$min_age" ] || return 1
+  gen=$(fm_busy_current_gen "$state" "$id") || return 1
   key=$(printf '%s' "$id" | tr ':/.' '___')
   marker="$state/.compaction-notified-$key"
-  last_seq=$(cat "$marker" 2>/dev/null || true)
-  [ "$last_seq" = "$r_seq" ] && return 1
-  printf '%s' "$r_seq" > "$marker" 2>/dev/null || true
+  notified="$gen $r_seq"
+  last=$(cat "$marker" 2>/dev/null || true)
+  [ "$last" = "$notified" ] && return 1
+  printf '%s' "$notified" > "$marker" 2>/dev/null || true
   printf 'compaction: context compaction with no status line (age %ss, min %ss, busy-state seq %s)' \
     "$age" "$min_age" "$r_seq"
   return 0
