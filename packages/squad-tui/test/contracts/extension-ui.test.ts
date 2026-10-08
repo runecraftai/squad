@@ -49,6 +49,18 @@ describe("parseExtensionUIRequest", () => {
       parseExtensionUIRequest({ method: "select", options: ["Allow"] }),
     ).toThrow(ContractValidationError);
   });
+
+  it("fails with a typed error when a recognized method has a malformed payload instead of downgrading to unknown", () => {
+    expect(() =>
+      parseExtensionUIRequest({ id: "req-6", method: "select" }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      parseExtensionUIRequest({ id: "req-7", method: "select", options: [] }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      parseExtensionUIRequest({ id: "req-8", method: "confirm", prompt: "" }),
+    ).toThrow(ContractValidationError);
+  });
 });
 
 describe("extension UI response correlation and values", () => {

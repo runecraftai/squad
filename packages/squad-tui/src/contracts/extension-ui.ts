@@ -25,12 +25,20 @@ export const EditorExtensionUIRequest = ExtensionUIRequestBase.extend({
   initialValue: z.string().optional(),
 });
 
-const KnownExtensionUIRequest = z.discriminatedUnion("method", [
-  SelectExtensionUIRequest,
-  ConfirmExtensionUIRequest,
-  InputExtensionUIRequest,
-  EditorExtensionUIRequest,
-]);
+const ExtensionUIRequestByMethod = {
+  select: SelectExtensionUIRequest,
+  confirm: ConfirmExtensionUIRequest,
+  input: InputExtensionUIRequest,
+  editor: EditorExtensionUIRequest,
+} as const;
+
+type KnownExtensionUIMethod = keyof typeof ExtensionUIRequestByMethod;
+
+function isKnownExtensionUIMethod(
+  method: string,
+): method is KnownExtensionUIMethod {
+  return method in ExtensionUIRequestByMethod;
+}
 
 const RawExtensionUIRequest = z
   .object({
@@ -39,7 +47,9 @@ const RawExtensionUIRequest = z
   })
   .loose();
 
-export type KnownExtensionUIRequest = z.infer<typeof KnownExtensionUIRequest>;
+export type KnownExtensionUIRequest = z.infer<
+  (typeof ExtensionUIRequestByMethod)[KnownExtensionUIMethod]
+>;
 
 export type UnknownExtensionUIRequest = {
   method: "unknown";
@@ -51,10 +61,21 @@ export type UnknownExtensionUIRequest = {
 export type ExtensionUIRequest =
   KnownExtensionUIRequest | UnknownExtensionUIRequest;
 
+function readExtensionUIMethod(input: unknown): unknown {
+  if (typeof input !== "object" || input === null) {
+    return undefined;
+  }
+  return (input as { method?: unknown }).method;
+}
+
 export function parseExtensionUIRequest(input: unknown): ExtensionUIRequest {
-  const known = KnownExtensionUIRequest.safeParse(input);
-  if (known.success) {
-    return known.data;
+  const method = readExtensionUIMethod(input);
+  if (typeof method === "string" && isKnownExtensionUIMethod(method)) {
+    return parseContract(
+      "ExtensionUIRequest",
+      ExtensionUIRequestByMethod[method],
+      input,
+    );
   }
   const raw = parseContract("ExtensionUIRequest", RawExtensionUIRequest, input);
   return { method: "unknown", rawMethod: raw.method, id: raw.id, raw };

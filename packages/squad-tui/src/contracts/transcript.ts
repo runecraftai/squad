@@ -67,23 +67,30 @@ const ExtensionUIRequestEvent = z.object({
   requestPayload: z.unknown(),
 });
 
-const KnownTranscriptEventPayload = z.discriminatedUnion("type", [
-  MessageDeltaEvent,
-  MessageCompleteEvent,
-  ToolExecutionStartEvent,
-  ToolExecutionEndEvent,
-  AgentStartEvent,
-  AgentEndEvent,
-  AgentSettledEvent,
-  QueueUpdateEvent,
-  CompactionStartEvent,
-  CompactionEndEvent,
-  AutoRetryStartEvent,
-  AutoRetryEndEvent,
-  ExtensionUIRequestEvent,
-]);
+const TranscriptEventByType = {
+  message_delta: MessageDeltaEvent,
+  message_complete: MessageCompleteEvent,
+  tool_execution_start: ToolExecutionStartEvent,
+  tool_execution_end: ToolExecutionEndEvent,
+  agent_start: AgentStartEvent,
+  agent_end: AgentEndEvent,
+  agent_settled: AgentSettledEvent,
+  queue_update: QueueUpdateEvent,
+  compaction_start: CompactionStartEvent,
+  compaction_end: CompactionEndEvent,
+  auto_retry_start: AutoRetryStartEvent,
+  auto_retry_end: AutoRetryEndEvent,
+  extension_ui_request: ExtensionUIRequestEvent,
+} as const;
+
+type KnownTranscriptType = keyof typeof TranscriptEventByType;
+
+function isKnownTranscriptType(type: string): type is KnownTranscriptType {
+  return type in TranscriptEventByType;
+}
+
 export type KnownTranscriptEventPayload = z.infer<
-  typeof KnownTranscriptEventPayload
+  (typeof TranscriptEventByType)[KnownTranscriptType]
 >;
 
 const RawTranscriptEventPayload = z
@@ -101,12 +108,23 @@ export type UnknownTranscriptEventPayload = {
 export type TranscriptEventPayload =
   KnownTranscriptEventPayload | UnknownTranscriptEventPayload;
 
+function readTranscriptType(input: unknown): unknown {
+  if (typeof input !== "object" || input === null) {
+    return undefined;
+  }
+  return (input as { type?: unknown }).type;
+}
+
 export function parseTranscriptEventPayload(
   input: unknown,
 ): TranscriptEventPayload {
-  const known = KnownTranscriptEventPayload.safeParse(input);
-  if (known.success) {
-    return known.data;
+  const type = readTranscriptType(input);
+  if (typeof type === "string" && isKnownTranscriptType(type)) {
+    return parseContract(
+      "TranscriptEventPayload",
+      TranscriptEventByType[type],
+      input,
+    );
   }
   const raw = parseContract(
     "TranscriptEventPayload",

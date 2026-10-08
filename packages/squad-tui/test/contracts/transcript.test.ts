@@ -61,6 +61,21 @@ describe("parseTranscriptEvent", () => {
     ).toThrow(ContractValidationError);
   });
 
+  it("fails with a typed error when a recognized event type has a malformed payload instead of downgrading to unknown", () => {
+    expect(() =>
+      parseTranscriptEvent({
+        ...envelopeBase,
+        payload: { type: "message_delta" },
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      parseTranscriptEvent({
+        ...envelopeBase,
+        payload: { type: "queue_update" },
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
   it("wraps the extension UI request payload opaquely for extension-ui.ts to interpret", () => {
     const event = parseTranscriptEvent({
       ...envelopeBase,

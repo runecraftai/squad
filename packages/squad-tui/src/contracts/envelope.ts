@@ -3,7 +3,9 @@ import * as z from "zod";
 export const ENTITY_KINDS = [
   "session",
   "mission",
+  "task",
   "stage",
+  "run",
   "decision",
   "artifact",
 ] as const;

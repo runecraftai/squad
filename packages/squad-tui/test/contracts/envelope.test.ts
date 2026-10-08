@@ -44,4 +44,25 @@ describe("EventEnvelope", () => {
     };
     expect(EventEnvelope.safeParse(invalid).success).toBe(false);
   });
+
+  it("accepts the task and run entities that task.updated and run.usage name", () => {
+    const taskEvent = {
+      schemaVersion: 1,
+      eventId: "evt-2",
+      sequence: 43,
+      timestamp: "2026-10-08T15:00:00.000Z",
+      entity: { kind: "task", id: "T05" },
+      type: "task.updated",
+      payload: { state: "running" },
+    };
+    expect(EventEnvelope.parse(taskEvent)).toEqual(taskEvent);
+
+    const runEvent = {
+      ...taskEvent,
+      eventId: "evt-3",
+      entity: { kind: "run", id: "run-1" },
+      type: "run.usage",
+    };
+    expect(EventEnvelope.parse(runEvent)).toEqual(runEvent);
+  });
 });
