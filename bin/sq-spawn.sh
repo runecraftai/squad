@@ -2344,6 +2344,10 @@ EOF
 // "turn_end" fires at every inner turn boundary (one LLM response plus its
 // tool calls) and stays a wake NOTIFICATION touch for the sentry, never
 // current-state truth.
+// "session_before_compact" -> busy event=compaction, once per compaction
+// (never per inner turn boundary), so a context compaction is visible on the
+// same busy-state record instead of looking like ordinary busy churn; see
+// bin/sq-classify-lib.sh's compaction-without-status absorb override.
 // The private delivery dropbox lets sq-send reach a parked Pi session through
 // sendUserMessage instead of typing into a composer that may swallow Enter.
 import { execFile, execFileSync } from "node:child_process";
@@ -2611,6 +2615,13 @@ export default function (pi: any) {
     piAgentRunning = false;
     return busyEvent("idle", "agent-settled");
   });
+  // A compaction is otherwise invisible to supervision: the pane stays busy
+  // (state unchanged) through the turn_end touches it produces, which is
+  // exactly the churn a healthy busy run also produces. Recording the event
+  // on the SAME busy-state record (never a parallel store) one time per
+  // compaction, not per inner turn boundary, lets bin/sq-classify-lib.sh's
+  // compaction-without-status override see it without a new poller.
+  pi.on("session_before_compact", () => busyEvent("busy", "compaction"));
   pi.on("turn_end", () => execFile("touch", ["$TURNEND"]));
 }
 EOF

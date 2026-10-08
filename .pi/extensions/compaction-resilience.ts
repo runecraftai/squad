@@ -87,27 +87,29 @@ function extractTaskContext(messages: any[]): { task: string | null; checklist: 
   return { task, checklist: checklist.slice(0, 20) }; // Cap at 20 items
 }
 
-// Extract modified files from tool calls
+// Extract modified files from tool calls. Pi's real AssistantMessage carries
+// tool calls as content-array items ({ type: "toolCall", name, arguments }),
+// never as an OpenAI-style msg.tool_calls[].function.{name,arguments} field -
+// the shape this function originally assumed never matches a real session,
+// which is why it always returned empty before this fix (confirmed against a
+// real compacted session; see the state/squad-pi-compaction-supervision-gap
+// task report).
 function extractModifiedFiles(messages: any[]): string[] {
   const files = new Set<string>();
 
   for (const msg of messages) {
-    if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
-      for (const toolCall of msg.tool_calls) {
-        if (toolCall.type === "function") {
-          const name = toolCall.function?.name;
-          const args = toolCall.function?.arguments;
-          
-          // Only track file-modifying tools
-          if (name === "edit" || name === "write") {
-            try {
-              const parsed = typeof args === "string" ? JSON.parse(args) : args;
-              if (parsed.path) files.add(parsed.path);
-            } catch {
-              // Ignore parse errors
-            }
-          }
-        }
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const block of msg.content) {
+      if (!block || block.type !== "toolCall") continue;
+      const name = block.name;
+      const args = block.arguments;
+      // Only track file-modifying tools
+      if (name !== "edit" && name !== "write") continue;
+      try {
+        const parsed = typeof args === "string" ? JSON.parse(args) : args;
+        if (parsed?.path) files.add(parsed.path);
+      } catch {
+        // Ignore parse errors
       }
     }
   }
@@ -223,10 +225,16 @@ export default function (pi: ExtensionAPI) {
     
     // Check if we just had a compaction - set flag for agent_before_settle to handle
     if (lastCompactionDetected && !reengagementSent) {
-      // Extract current task context from recent messages
+      // Extract current task context from recent messages. getBranch()
+      // returns session-tree entries ({ type: "message", message: {...} }),
+      // not flat AgentMessages, so the chat message must be unwrapped first
+      // or every entry silently fails the role check below.
       const branch = ctx.sessionManager.getBranch();
       if (branch) {
-        const recentMessages = branch.slice(-10);
+        const recentMessages = branch
+          .slice(-10)
+          .filter((entry: any) => entry?.type === "message")
+          .map((entry: any) => entry.message);
         const { task, checklist } = extractTaskContext(recentMessages);
         
         if (task) operatorState.currentTask = task;
@@ -241,12 +249,22 @@ export default function (pi: ExtensionAPI) {
   // Preserve state before compaction
   pi.on("session_before_compact", async (event, ctx) => {
     const { preparation, signal } = event;
-    
+
+    // On a split-turn compaction (Pi cuts mid-tool-call, e.g. an overflow or
+    // length abort) preparation.messagesToSummarize is empty by design - the
+    // whole oversized user-message span, including the task and any
+    // in-flight tool calls, sits in preparation.turnPrefixMessages instead
+    // (see docs/compaction.md "Split user-message spans" in the installed
+    // pi version). That is exactly the mid-task compaction case this
+    // extension exists to cover, so both arrays must be scanned or the
+    // preserved state comes back empty precisely when it matters most.
+    const sourceMessages = [...(preparation.turnPrefixMessages || []), ...(preparation.messagesToSummarize || [])];
+
     // Extract task context from messages being summarized
-    const { task, checklist } = extractTaskContext(preparation.messagesToSummarize);
-    
+    const { task, checklist } = extractTaskContext(sourceMessages);
+
     // Extract modified files
-    const modifiedFiles = extractModifiedFiles(preparation.messagesToSummarize);
+    const modifiedFiles = extractModifiedFiles(sourceMessages);
     
     // Update operator state
     if (task) operatorState.currentTask = task;
@@ -335,19 +353,29 @@ export default function (pi: ExtensionAPI) {
       }
     }
     
-    // Check for idle state after compaction (potential stall)
-    const timeSinceLastActivity = Date.now() - operatorState.lastActivity;
-    const idleThreshold = 5000; // 5 seconds
-    
-    if (lastCompactionDetected && timeSinceLastActivity > idleThreshold && !reengagementSent) {
-      // Operator seems idle after compaction - send re-engagement
+    // agent_before_settle fires exactly once, synchronously, at the instant
+    // the run is about to go idle - there is no later poll that could ever
+    // observe elapsed idle time, so a "has it been idle N seconds" check
+    // here can never be true and this branch was dead code (confirmed
+    // against a real compacted session: the operator's own activity clock
+    // was updated moments earlier by the very turn that is now settling,
+    // so Date.now() - lastActivity is always ~0 at this call). Re-engage
+    // unconditionally the first time settling happens after a compaction
+    // instead of waiting for idle time that can never accumulate.
+    if (lastCompactionDetected && !reengagementSent) {
+      // Operator is about to go idle right after a compaction - re-engage.
       const reengagementMsg = generateReengagementMessage(operatorState);
-      
-      // Use pi.sendUserMessage (on ExtensionAPI) instead of ctx.sendUserMessage
-      // agent_before_settle can request one continuation via return { continue: true }
-      // but we need to send a message to re-engage the operator
-      pi.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
-      
+
+      // deliverAs: "followUp" queues a message to run after the CURRENT
+      // turn finishes streaming; at agent_before_settle the run considers
+      // itself still processing (confirmed live: a plain sendUserMessage()
+      // here throws "Agent is already processing"), and settling never
+      // generates a later event that could drain a followUp queue, so the
+      // operator sits idle until a human sends something. "steer" delivers
+      // immediately instead of queuing, which is what turns this re-engage
+      // into an actual next turn.
+      pi.sendUserMessage(reengagementMsg, { deliverAs: "steer" });
+
       reengagementSent = true;
       lastCompactionDetected = false;
       
@@ -408,7 +436,10 @@ export default function (pi: ExtensionAPI) {
     description: "Manually trigger post-compaction re-engagement",
     handler: async (args, ctx) => {
       const reengagementMsg = generateReengagementMessage(operatorState);
-      pi.sendUserMessage(reengagementMsg, { deliverAs: "followUp" });
+      // Same reasoning as agent_before_settle above: "steer" delivers
+      // immediately whether the agent is idle or mid-turn, unlike
+      // "followUp" which only runs after a turn that may not exist.
+      pi.sendUserMessage(reengagementMsg, { deliverAs: "steer" });
       ctx.ui.notify("Re-engagement message sent", "info");
     },
   });

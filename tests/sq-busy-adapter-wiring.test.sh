@@ -117,6 +117,7 @@ switch (process.env.MODE) {
     await handlers["agent_start"]({}, ctx);
     break;
   case "turn-end": await handlers["turn_end"]({}, ctx); break;
+  case "compaction": await handlers["session_before_compact"]({}, ctx); break;
   default: throw new Error("unknown mode " + process.env.MODE);
 }
 if (process.env.MODE === "turn-end") {
@@ -165,6 +166,40 @@ test_pi_extension_semantic_lifecycle() {
   out=$(classify pi "$id" "$state")
   [ "$out" = "idle pi-ext" ] || fail "the final settle must classify idle, got '$out'"
   pass "pi extension reports agent_start busy, settles idle only via ctx.isIdle(), and keeps turn_end a notification"
+}
+
+test_pi_extension_compaction_event() {
+  local rec id=busy-pi-compaction out state ext rec_out
+  rec=$(make_spawn_case pi-compaction pi "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "pi spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  ext="$state/$id.pi-ext.ts"
+
+  out=$(drive_pi_ext "$ext" agent-start) || fail "agent_start drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "busy pi-ext" ] || fail "agent_start must classify 'busy pi-ext' before compaction, got '$out'"
+
+  out=$(drive_pi_ext "$ext" compaction) || fail "session_before_compact drive failed: $out"
+  out=$(classify pi "$id" "$state")
+  [ "$out" = "busy pi-ext" ] || fail "a compaction must stay busy pi-ext (never idle, never a parallel store), got '$out'"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after compaction: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext compaction "*) ;;
+    *) fail "compaction must write event=compaction on the same busy-state record, got '$rec_out'" ;;
+  esac
+
+  # An ordinary later turn-end stays a wake NOTIFICATION touch, never a
+  # second busy-state write - the compaction event is visible to supervision
+  # without waking on every inner turn boundary.
+  out=$(drive_pi_ext "$ext" turn-end) || fail "turn_end after compaction drive failed: $out"
+  rec_out=$(fm_busy_record_read "$state" "$id") || fail "busy-state record unreadable after a later turn-end: $rec_out"
+  case "$rec_out" in
+    "busy pi-ext compaction "*) ;;
+    *) fail "an ordinary turn_end after a compaction must not touch the busy-state record, got '$rec_out'" ;;
+  esac
+  pass "session_before_compact writes one busy source=pi-ext event=compaction record on the existing busy-state contract, and ordinary turn_end never touches it"
 }
 
 test_pi_extension_serializes_settle_before_next_start() {
@@ -381,6 +416,7 @@ test_kimi_and_grok_install_no_unverified_wiring() {
 }
 
 test_pi_extension_semantic_lifecycle
+test_pi_extension_compaction_event
 test_pi_extension_serializes_settle_before_next_start
 test_pi_extension_stale_incarnation_rejected
 test_pi_extension_stale_ctx_settles_idle

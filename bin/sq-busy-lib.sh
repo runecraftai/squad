@@ -28,7 +28,13 @@
 # per-harness trust table; a record whose source is not trusted for the
 # task's recorded harness classifies unknown, so one adapter's writer can
 # never classify another adapter):
-#   pi-ext           Pi/pi-signed per-task extension (agent_start/agent_settled)
+#   pi-ext           Pi/pi-signed per-task extension (agent_start/agent_settled/
+#                    session_before_compact, the last writing state=busy with
+#                    event=compaction once per compaction - never per inner
+#                    turn boundary - so a compaction is visible on this same
+#                    record instead of looking like ordinary busy churn; see
+#                    bin/sq-classify-lib.sh's compaction-without-status absorb
+#                    override)
 #   opencode-plugin  OpenCode per-task plugin (session.status)
 #   claude-hook      Claude lifecycle hooks (UserPromptSubmit/Stop/StopFailure/SessionEnd)
 #   codex-hook, codex-appserver  reserved: Codex, gated by

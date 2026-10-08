@@ -156,6 +156,16 @@ Each pass polled `state/<id>.busy-state` while a real turn ran.
 | Kimi (standalone) | not installed | None usable | No binary on `PATH`, so the gate stays closed and it classifies `unknown kimi-unverified`. |
 | Grok | 0.2.112 | Isolated rendered-tail fallback | Retained unconverted; the approved audit could not credit a live structured-lifecycle run. |
 
+The Pi `pi-ext`'s one additional `session_before_compact` write (`busy source=pi-ext event=compaction`, added so a context compaction is visible on the same busy-state record rather than looking like ordinary busy churn behind the already-trusted `pi-ext` source) was live-verified on 2026-10-08 with Pi 0.99.0, through a real `pi --print` session: a custom in-process `streamSimple` provider (no network, no real model spend) scripted an assistant turn whose tool call was left open with `stopReason: "length"`, which Pi's documented overflow/length recovery turned into a real `session_before_compact` call with `reason: "threshold"`, `isSplitTurn: true`, `messagesToSummarize` empty, and the task/checklist/tool-call content sitting in `preparation.turnPrefixMessages` instead - the real split-turn shape behind the originally reported empty-payload defect (`.pi/extensions/compaction-resilience.ts` previously read only `messagesToSummarize`, and its tool-call extraction assumed an OpenAI-style `msg.tool_calls[].function` shape that Pi's real `AssistantMessage.content[]` never has).
+The session JSONL's appended `compaction_resilience_state` custom entry confirmed `currentTask` and `checklistItems` populated after the fix (both `null`/empty before it) and `filesModified` correct in both.
+The same run also confirmed `agent_before_settle`'s re-engagement: a plain `sendUserMessage()` at that point throws `Agent is already processing`, and the previous `deliverAs: "followUp"` queued a message nothing ever drained because the run had already stopped streaming by the time of settling; `deliverAs: "steer"` delivered it immediately and produced one further real model turn in the same process invocation with no external input, where the earlier code produced none.
+
+Deterministic entry points for the compaction-resilience payload and re-engagement fix:
+
+```sh
+tests/test-compaction-resilience.sh
+```
+
 Codex was probed two ways, both refused:
 
 ```sh
@@ -174,6 +184,12 @@ Deterministic entry points:
 tests/sq-busy-state.test.sh
 tests/sq-busy-adapter-wiring.test.sh
 tests/sq-crew-state.test.sh
+```
+
+The compaction-without-status absorb override (`bin/sq-classify-lib.sh`'s `operator_compaction_silent_reason` / `signal_compaction_needs_attention`, consumed by `bin/sq-sentry.sh`'s signal-wake triage) is covered by:
+
+```sh
+tests/sq-sentry-triage.test.sh
 ```
 
 ## Turn-end guard
