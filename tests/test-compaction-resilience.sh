@@ -136,19 +136,6 @@ test_state_management() {
   fi
 }
 
-# Test 5: Extension has summary generation
-test_summary_generation() {
-  log_test "Extension has summary generation"
-  TESTS_RUN=$((TESTS_RUN + 1))
-  
-  if grep -q "generateCompactionSummary" "$EXTENSION_PATH" && \
-     grep -q "generateReengagementMessage" "$EXTENSION_PATH"; then
-    log_pass "Summary generation functions present"
-  else
-    log_fail "Summary generation functions missing"
-  fi
-}
-
 # Test 6: Config script exists and is executable
 test_config_script() {
   log_test "Config script exists and is executable"
@@ -263,8 +250,15 @@ test_compaction_handler_persists_via_api() {
     if (!state.currentTask || state.filesModified.indexOf("a.ts") === -1) {
       throw new Error("operator state not captured: " + JSON.stringify(state));
     }
-    if (!result || !result.compaction || !result.compaction.summary) {
-      throw new Error("compaction result was not returned");
+    // The handler must not return a custom compaction object: Pi uses an
+    // extension-provided compaction.summary verbatim in place of its own
+    // generated summary, so returning one here would replace the real
+    // goal/progress/decisions/next-steps narrative Pi generates with just
+    // these bullets on every compaction. Returning nothing lets Pi run its
+    // own default compaction; the operator-state payload above is already
+    // durable.
+    if (result !== undefined) {
+      throw new Error("handler must not return a custom compaction object: " + JSON.stringify(result));
     }
 
     // Round-trip: a fresh extension reconstructs state from a branch entry
@@ -516,7 +510,6 @@ main() {
   test_event_handlers
   test_commands
   test_state_management
-  test_summary_generation
   test_config_script
   test_config_commands
   test_tool_call_handling

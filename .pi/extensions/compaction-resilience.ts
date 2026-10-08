@@ -117,40 +117,6 @@ function extractModifiedFiles(messages: any[]): string[] {
   return Array.from(files);
 }
 
-// Generate compaction summary enhancement
-function generateCompactionSummary(state: OperatorState): string {
-  const lines: string[] = [];
-  
-  lines.push("\n\n## Operator State (Preserved by compaction-resilience extension)\n");
-  
-  if (state.currentTask) {
-    lines.push(`### Current Task\n${state.currentTask}\n`);
-  }
-  
-  if (state.checklistItems.length > 0) {
-    lines.push("### Checklist Progress");
-    for (const item of state.checklistItems) {
-      lines.push(`- ${item}`);
-    }
-    lines.push("");
-  }
-  
-  if (state.filesModified.length > 0) {
-    lines.push("### Files Being Modified");
-    for (const file of state.filesModified) {
-      lines.push(`- ${file}`);
-    }
-    lines.push("");
-  }
-  
-  lines.push(`### Activity Stats`);
-  lines.push(`- Tool calls this session: ${state.toolCallCount}`);
-  lines.push(`- Turns completed: ${state.turnCount}`);
-  lines.push(`- Last activity: ${new Date(state.lastActivity).toISOString()}`);
-  
-  return lines.join("\n");
-}
-
 // Generate post-compaction re-engagement message
 function generateReengagementMessage(state: OperatorState): string {
   const lines: string[] = [];
@@ -302,32 +268,23 @@ export default function (pi: ExtensionAPI) {
     };
     
     await pi.appendEntry("compaction_resilience_state", stateEntry);
-    
+
     if (ctx.hasUI) {
       ctx.ui.notify(
         `Preserving operator state before compaction (#${operatorState.compactionCount})`,
         "info"
       );
     }
-    
-    // Enhance the compaction summary with preserved state
-    const stateSummary = generateCompactionSummary(operatorState);
-    
-    // Return enhanced compaction with our state injected
-    return {
-      compaction: {
-        summary: preparation.previousSummary 
-          ? preparation.previousSummary + stateSummary
-          : stateSummary,
-        firstKeptEntryId: preparation.firstKeptEntryId,
-        tokensBefore: preparation.tokensBefore,
-        details: {
-          readFiles: preparation.fileOps?.readFiles || [],
-          modifiedFiles: preparation.fileOps?.modifiedFiles || [],
-          compactionResilienceState: operatorState,
-        },
-      },
-    };
+
+    // Deliberately no return value here: an earlier version returned a
+    // custom compaction.summary built only from the operator-state bullets
+    // above, which Pi uses verbatim in place of its own generated summary -
+    // so every compaction, always, replaced Pi's real goal/progress/
+    // decisions/next-steps narrative with just those bullets. Letting this
+    // handler return nothing lets Pi's own default compaction run and
+    // generate that real summary; the operator-state payload above is
+    // already durable (pi.appendEntry) and is what the re-engagement
+    // message and session_start's reconstruction actually read.
   });
 
   // Handle compaction detection and re-engagement via agent_before_settle

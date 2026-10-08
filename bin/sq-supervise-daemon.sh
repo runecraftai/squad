@@ -334,10 +334,12 @@ _collapse_newlines() {  # <text>
 # pass the commander pane in as SQUAD_SUPERVISOR_TARGET.
 
 # --- classification helpers (PURE: no side effects, testable) ---------------
-# last_status_line, status_is_commander_relevant, window_to_task, and
-# scan_commander_relevant_statuses come from bin/sq-classify-lib.sh (sourced above),
-# the single classifier shared with bin/sq-sentry.sh. The decision-string wrappers
-# and dedup state below layer the daemon's escalation-digest concerns on top.
+# last_status_line, status_is_commander_relevant, window_to_task,
+# scan_commander_relevant_statuses, signal_compaction_needs_attention, and
+# signal_compaction_mark_notified come from bin/sq-classify-lib.sh (sourced
+# above), the single classifier shared with bin/sq-sentry.sh. The
+# decision-string wrappers and dedup state below layer the daemon's
+# escalation-digest concerns on top.
 #
 # Decision protocol: every classifier prints exactly one line on stdout of the
 # form "<action>|<distilled>" where action is "self" or "escalate". The distilled
@@ -345,7 +347,21 @@ _collapse_newlines() {  # <text>
 # summary Squad would otherwise have to re-read.
 
 classify_signal() {  # <reason-after-colon> <state>
-  local reason=$1 state=$2 f last distilled="" rel="" all_seen=1 task seen
+  local reason=$1 state=$2 f last distilled="" rel="" all_seen=1 task seen compaction_reason
+  # The always-on sentry's compaction-without-status override has no status
+  # line to read for the silent task it exists to catch, so the per-file loop
+  # below would otherwise find nothing commander-relevant and self-handle it
+  # as routine - exactly the away-mode variant of the gap this override
+  # closes. Check it first and escalate immediately when it matches,
+  # mirroring bin/sq-sentry.sh's own mark-only-after-the-decision ordering.
+  # shellcheck disable=SC2086  # reason is a space-separated path list (ids carry no spaces)
+  compaction_reason=$(signal_compaction_needs_attention $reason) || compaction_reason=""
+  if [ -n "$compaction_reason" ]; then
+    # shellcheck disable=SC2086
+    signal_compaction_mark_notified $reason
+    printf 'escalate|%s' "$compaction_reason"
+    return
+  fi
   for f in $reason; do
     [ -e "$f" ] || continue
     last=$(last_status_line "$f")

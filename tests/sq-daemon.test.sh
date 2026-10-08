@@ -102,6 +102,36 @@ test_classify_routine_signal_self() {
   case "$out" in self\|*) pass "routine signal self-handles" ;; *) fail "routine signal did not self-handle: $out" ;; esac
 }
 
+# A compacted, status-silent task has no status line at all, so the ordinary
+# per-file loop above would find nothing commander-relevant and self-handle
+# it as routine - the away-mode variant of the gap bin/sq-sentry.sh's own
+# compaction-without-status override closes for the always-on path. This
+# proves classify_signal now escalates it too, through the same shared
+# classifier rule, and does not escalate it again once marked notified.
+test_classify_signal_compaction_without_status_escalates() {
+  local dir state id gen out
+  dir=$(make_supercase classify-compaction-silent)
+  state="$dir/state"
+  id="task-compaction"
+  printf 'id=%s\n' "$id" > "$state/$id.meta"
+  gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" "$id" --source pi-ext --event agent-start)
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" "$id" busy --gen "$gen" --source pi-ext --event compaction >/dev/null
+
+  out=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_COMPACTION_SILENT_MIN_AGE_SECS=0 \
+    classify_signal "$state/$id.turn-ended" "$state")
+  case "$out" in
+    escalate\|compaction:*) ;;
+    *) fail "a compacted, status-silent task's signal did not escalate: $out" ;;
+  esac
+
+  out=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_COMPACTION_SILENT_MIN_AGE_SECS=0 \
+    classify_signal "$state/$id.turn-ended" "$state")
+  case "$out" in
+    escalate\|compaction:*) fail "the same compaction re-escalated after being marked notified: $out" ;;
+  esac
+  pass "classify_signal escalates a compacted, status-silent task through the shared compaction override, bounded to one escalation per compaction"
+}
+
 test_classify_terminal_signal_escalates() {
   local dir state kw out
   dir=$(make_supercase classify-terminal)
@@ -2278,6 +2308,7 @@ test_afk_start_ignores_stale_pidfile_without_lock
 test_afk_start_reclaims_stale_daemon_lock_reused_pid
 test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
+test_classify_signal_compaction_without_status_escalates
 test_classify_terminal_signal_escalates
 test_classify_check_and_unknown_escalate
 test_stale_transient_self_records_marker

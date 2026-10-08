@@ -870,6 +870,13 @@ signal_operator_is_paused() {  # <file> ...
 # at all, so they never reach this check; busy_turn_over_age's generous
 # SQUAD_BUSY_TURN_MAX_SECS wedge timer is unaffected and keeps owning the
 # unrelated "busy pane with no completed turn" case.
+# Residual false positive this still allows: the age floor is measured from
+# the task's own age (the busy-gen arm time), not from how long the
+# compaction itself has been unresolved, so a willRetry compaction on a task
+# already past the floor can surface its one bounded wake while the
+# automatic retry is still genuinely working, not stalled - the
+# one-wake-per-distinct-compaction bound keeps that to exactly one wake, it
+# does not prevent it from firing at all.
 SQUAD_COMPACTION_SILENT_MIN_AGE_SECS_DEFAULT=300
 
 # A pure read: it checks state/.compaction-notified-<task> but never writes it,
