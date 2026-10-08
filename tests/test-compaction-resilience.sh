@@ -448,6 +448,64 @@ test_agent_before_settle_reengages_immediately() {
   fi
 }
 
+# Test 12: agent_before_settle still finds a compaction that a long recovery
+# retry has pushed far from the branch tail.
+#
+# Regression: the handler searched only branch.slice(-5). Per pi's
+# overflow/length recovery ordering, the compaction entry is appended and then
+# the retry runs as a fresh run, so by agent_before_settle the branch can hold
+# many retry message/tool-result entries ahead of the compaction. Once five of
+# them exist the fixed window no longer contains the compaction, no
+# re-engagement is sent, and the operator stalls after compaction - the exact
+# failure this extension exists to prevent.
+test_agent_before_settle_finds_compaction_behind_long_retry() {
+  log_test "agent_before_settle finds a compaction behind a long recovery retry"
+  TESTS_RUN=$((TESTS_RUN + 1))
+
+  if EXTENSION_PATH="$(realpath "$EXTENSION_PATH")" bun -e '
+    const { default: extension } = await import(process.env.EXTENSION_PATH);
+
+    const sent = [];
+    const handlers = new Map();
+    const pi = {
+      on: (n, h) => handlers.set(n, h),
+      registerCommand: () => {},
+      sendUserMessage: (msg, opts) => sent.push({ msg, opts }),
+      sendMessage: () => {},
+      appendEntry: () => {},
+    };
+    extension(pi);
+
+    // A compaction entry followed by six retry-run entries: more than the
+    // five-entry trailing window, and the compaction is the oldest of them.
+    const retryEntries = Array.from({ length: 6 }, (_, i) => ({
+      type: "message",
+      id: "retry-" + i,
+      parentId: i === 0 ? "cmp-1" : "retry-" + (i - 1),
+      timestamp: "2026-01-01T00:00:0" + i + ".000Z",
+      message: { role: i % 2 === 0 ? "assistant" : "toolResult", content: "retry " + i },
+    }));
+    const branch = [
+      { type: "compaction", id: "cmp-1", parentId: null, timestamp: "2026-01-01T00:00:00.000Z", summary: "s", firstKeptEntryId: "e1", tokensBefore: 10 },
+      ...retryEntries,
+    ];
+    const ctx = { hasUI: false, ui: { notify: () => {} }, sessionManager: { getBranch: () => branch } };
+
+    await handlers.get("agent_before_settle")({ type: "agent_before_settle" }, ctx);
+
+    if (sent.length !== 1) {
+      throw new Error("a compaction hidden behind a long retry did not re-engage (sent=" + sent.length + ")");
+    }
+    if (!sent[0].opts || sent[0].opts.deliverAs !== "steer") {
+      throw new Error("expected deliverAs: steer (immediate delivery), got " + JSON.stringify(sent[0].opts));
+    }
+  '; then
+    log_pass "agent_before_settle re-engages even when a long retry pushes the compaction out of a trailing window"
+  else
+    log_fail "agent_before_settle missed a compaction behind a long recovery retry"
+  fi
+}
+
 # Run all tests
 main() {
   echo ""
@@ -465,6 +523,7 @@ main() {
   test_compaction_handler_persists_via_api
   test_split_turn_compaction_payload
   test_agent_before_settle_reengages_immediately
+  test_agent_before_settle_finds_compaction_behind_long_retry
 
   echo ""
   echo "=== Test Results ==="

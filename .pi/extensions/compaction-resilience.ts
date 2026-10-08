@@ -337,10 +337,16 @@ export default function (pi: ExtensionAPI) {
     const branch = ctx.sessionManager.getBranch();
     if (!branch) return;
     
-    // Look for recent compaction entry
-    const recentCompaction = branch
-      .slice(-5)
-      .find(entry => entry.type === "compaction");
+    // Find the most recent compaction entry anywhere on the branch: pi's
+    // overflow/length recovery appends the compaction entry and then runs the
+    // retry as a fresh run, so retry message/tool-result entries land after it.
+    let recentCompaction: (typeof branch)[number] | undefined;
+    for (let i = branch.length - 1; i >= 0; i--) {
+      if (branch[i]?.type === "compaction") {
+        recentCompaction = branch[i];
+        break;
+      }
+    }
     
     if (recentCompaction && recentCompaction.id !== operatorState.lastCompactionId) {
       // New compaction detected
