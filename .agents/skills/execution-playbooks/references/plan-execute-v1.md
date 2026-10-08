@@ -8,7 +8,7 @@ The planner owns the design; the executing worker receives the plan, not the sou
 
 ## Required sequence
 
-1. Accept a brief whose `## Execution plan` section is complete: exact file paths, ordered steps, acceptance criteria, a verification command, and an out-of-scope statement, each field written as a label line followed by its list entries and steps numbered.
+1. Accept a brief whose `## Execution plan` section is complete. The section must carry these five labels, each written as a label line followed by its list entries: `Files to touch` (at least one path-like entry, i.e. real file paths), `Ordered steps` (steps numbered, e.g. `1.`), `Acceptance criteria`, `Verification commands` (a command to run), and `Out of scope` (an explicit out-of-scope statement).
 2. Execute the plan as written; do not redesign, re-scope, or re-plan the change.
 3. Follow `tlc-implement` for the implementation method and write the checklist under `data/<id>/artifacts/`.
 4. Stop with `blocked:` when the plan is incomplete, internally contradictory, or contradicted by the code, naming the exact gap rather than filling it by inference.
