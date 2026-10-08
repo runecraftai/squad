@@ -37,7 +37,7 @@ type KnownExtensionUIMethod = keyof typeof ExtensionUIRequestByMethod;
 function isKnownExtensionUIMethod(
   method: string,
 ): method is KnownExtensionUIMethod {
-  return method in ExtensionUIRequestByMethod;
+  return Object.hasOwn(ExtensionUIRequestByMethod, method);
 }
 
 const RawExtensionUIRequest = z

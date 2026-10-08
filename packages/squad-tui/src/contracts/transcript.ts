@@ -86,7 +86,7 @@ const TranscriptEventByType = {
 type KnownTranscriptType = keyof typeof TranscriptEventByType;
 
 function isKnownTranscriptType(type: string): type is KnownTranscriptType {
-  return type in TranscriptEventByType;
+  return Object.hasOwn(TranscriptEventByType, type);
 }
 
 export type KnownTranscriptEventPayload = z.infer<

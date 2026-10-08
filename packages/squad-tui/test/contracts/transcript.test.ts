@@ -76,6 +76,20 @@ describe("parseTranscriptEvent", () => {
     ).toThrow(ContractValidationError);
   });
 
+  it("degrades inherited Object.prototype keys used as event types to unknown instead of crashing", () => {
+    for (const type of ["toString", "constructor", "valueOf", "__proto__"]) {
+      const event = parseTranscriptEvent({
+        ...envelopeBase,
+        payload: { type },
+      });
+      expect(event.payload.type).toBe("unknown");
+      if (event.payload.type !== "unknown") {
+        throw new Error("expected unknown");
+      }
+      expect(event.payload.rawType).toBe(type);
+    }
+  });
+
   it("wraps the extension UI request payload opaquely for extension-ui.ts to interpret", () => {
     const event = parseTranscriptEvent({
       ...envelopeBase,

@@ -61,6 +61,17 @@ describe("parseExtensionUIRequest", () => {
       parseExtensionUIRequest({ id: "req-8", method: "confirm", prompt: "" }),
     ).toThrow(ContractValidationError);
   });
+
+  it("degrades inherited Object.prototype keys used as methods to unknown instead of crashing", () => {
+    for (const method of ["toString", "constructor", "valueOf", "__proto__"]) {
+      const request = parseExtensionUIRequest({ id: "req-9", method });
+      expect(request.method).toBe("unknown");
+      if (request.method !== "unknown") {
+        throw new Error("expected unknown");
+      }
+      expect(request.rawMethod).toBe(method);
+    }
+  });
 });
 
 describe("extension UI response correlation and values", () => {
