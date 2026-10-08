@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.8](https://github.com/runecraftai/squad/compare/drill-v0.1.7...drill-v0.1.8) (2026-10-08)
+
+
+### Bug Fixes
+
+* **drill:** gate release jobs on manifest output ([977eb20](https://github.com/runecraftai/squad/commit/977eb20a0a5f83bfa4a4ced07209d43508639837))
+* **pipeline:** fail wedged steps when the agent process dies ([#251](https://github.com/runecraftai/squad/issues/251)) ([60e053b](https://github.com/runecraftai/squad/commit/60e053bb3a44fc32fea2a151270862903bde2af1))
+* **release:** use manifest-mode releases_created output from release-please ([4c7ac94](https://github.com/runecraftai/squad/commit/4c7ac94c14f9faec6c88dd63e0fb2c336a3c9bf3))
+* serialize TUIOS workspace allocation and track Pi follow-up consumption ([#236](https://github.com/runecraftai/squad/issues/236)) ([e7f0601](https://github.com/runecraftai/squad/commit/e7f0601cafeaaf4350b42d5a1a6bdab94531a75d))
+
 ## [0.1.7](https://github.com/runecraftai/squad/compare/drill-v0.1.6...drill-v0.1.7) (2026-09-25)
 
 
