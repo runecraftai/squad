@@ -501,6 +501,35 @@ SQL
 
 test_drill_pipeline_report
 
+# ── (h2a.1) Drill read failures are observable ─────────────────────────────
+
+test_drill_read_failure_is_observable() {
+  local state="$TMP_ROOT/drill-fail-state" pi_root="$TMP_ROOT/drill-fail-pi" worktree="$TMP_ROOT/drill-fail-worktree"
+  local bad_db="$TMP_ROOT/drill-corrupt.sqlite" stdout stderr
+  mkdir -p "$state" "$pi_root/fixture" "$worktree"
+  printf 'window=sq:drill-fail\nharness=pi\nworktree=%s\nmodel=default\n' "$worktree" > "$state/drill-fail.meta"
+  cat > "$pi_root/fixture/operator.jsonl" <<EOF
+{"type":"session","version":3,"id":"drill-fail-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$worktree"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"drill-fail"}}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"totalTokens":150}}}
+EOF
+  printf 'this is not a drill database' > "$bad_db"
+  stdout=$(sq_cost_drill_task_json drill-fail "$bad_db" 2>"$TMP_ROOT/drill-fail-read.stderr")
+  stderr=$(cat "$TMP_ROOT/drill-fail-read.stderr")
+  [ "$(jq 'length' <<<"$stdout")" = "0" ] || fail "unreadable Drill database should yield an empty invocation list"
+  assert_contains "$stderr" "could not read Drill invocations" "unreadable Drill database emits a diagnostic on stderr"
+  local output report_stderr
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$bad_db" \
+    "$COST_CLI" report drill-fail --json 2>"$TMP_ROOT/drill-fail-report.stderr")
+  report_stderr=$(cat "$TMP_ROOT/drill-fail-report.stderr")
+  assert_contains "$report_stderr" "could not read Drill invocations" "report surfaces the Drill read failure instead of dropping pipeline cost silently"
+  assert_contains "$output" '"found": true' "Pi usage is still reported when the Drill database is unreadable"
+  pass "Drill read failures are observable instead of silently dropping pipeline cost"
+}
+
+test_drill_read_failure_is_observable
+
 # ── (h2b) Pi execution-window requirement ─────────────────────────────────
 
 test_pi_requires_execution_window() {

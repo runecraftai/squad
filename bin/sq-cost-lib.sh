@@ -236,8 +236,9 @@ sq_cost_drill_task_json() {
   local branch="sq/$task_id" escaped_branch
   escaped_branch=${branch//\'/\'\'}
   [ -f "$database" ] || { printf '[]\n'; return 0; }
-  local rows
-  rows=$(sqlite3 -json "$database" \
+  local rows status err detail
+  err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
+  if rows=$(sqlite3 -json "$database" \
     "SELECT ai.agent, COALESCE(NULLIF(ai.model, ''), 'unknown') AS model,
             COALESCE(NULLIF(ai.model_provider, ''), 'unknown') AS model_provider,
             ai.step_name, ai.started_at,
@@ -248,7 +249,16 @@ sq_cost_drill_task_json() {
        FROM agent_invocations AS ai
        JOIN runs AS r ON r.id = ai.run_id
       WHERE r.branch = '$escaped_branch'
-      ORDER BY ai.started_at, ai.id;" 2>/dev/null)
+      ORDER BY ai.started_at, ai.id;" 2>"$err"); then
+    :
+  else
+    status=$?
+    detail=$(tr '\n' ' ' < "$err" | sed 's/[[:space:]]*$//')
+    printf 'sq-cost: warning: could not read Drill invocations from %s: %s\n' \
+      "$database" "${detail:-sqlite3 exited with status $status}" >&2
+    rows=""
+  fi
+  rm -f "$err"
   printf '%s\n' "${rows:-[]}"
 }
 
