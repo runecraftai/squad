@@ -78,6 +78,19 @@ if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/d
   fi
 fi
 
+# Warn before arming if the task's own Squad artifacts appear in its project PR.
+# Failure to fetch the file list is non-fatal and leaves the existing flow intact.
+PR_FILES=
+if [ "$PROVIDER" = github ] && command -v gh >/dev/null 2>&1; then
+  PR_FILES=$(gh api "repos/$PROJECT_PATH/pulls/$NUMBER/files" --paginate --jq '.[].filename' 2>/dev/null || true)
+elif [ "$PROVIDER" = gitlab ] && command -v glab >/dev/null 2>&1; then
+  ENCODED_PROJECT=${PROJECT_PATH//\//%2F}
+  PR_FILES=$(glab api "projects/$ENCODED_PROJECT/merge_requests/$NUMBER/changes" --jq '.changes[] | .new_path, .old_path' 2>/dev/null || true)
+fi
+if [ -n "$PR_FILES" ]; then
+  printf '%s\n' "$PR_FILES" | "$SCRIPT_DIR/sq-pr-artifact-guard.sh" "$ID" || true
+fi
+
 META_TMP=
 pr_check_cleanup() {
   fm_pr_poll_cleanup

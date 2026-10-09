@@ -10,14 +10,16 @@ The planner owns the design; the executing worker receives the plan, not the sou
 
 1. Accept a brief whose `## Execution plan` section is complete. The section must carry these five labels, each written as a label line followed by its list entries: `Files to touch` (at least one path-like entry, i.e. real file paths), `Ordered steps` (steps numbered, e.g. `1.`), `Acceptance criteria`, `Verification commands` (a command to run), and `Out of scope` (an explicit out-of-scope statement).
 2. Execute the plan as written; do not redesign, re-scope, or re-plan the change.
-3. Follow `tlc-implement` for the implementation method and write the checklist under `data/<id>/artifacts/`.
+3. Follow `tlc-implement` for the implementation method and write the checklist only under the Squad base's `data/<id>/artifacts/`, never in the project repository.
+   A project commit must never carry a Squad internal artifact.
 4. Stop with `blocked:` when the plan is incomplete, internally contradictory, or contradicted by the code, naming the exact gap rather than filling it by inference.
 5. Report acceptance evidence and the verification command result; leave review, fixes, delivery, and merge to the existing owners.
 
 ## Required evidence
 
 - The brief's materialized `## Execution plan` section, with every required field present and non-empty.
-- A checklist under `data/<id>/artifacts/` recording the plan fields as realized: files touched as planned, steps executed, acceptance met, and the verification command run.
+- A checklist under the Squad base's `data/<id>/artifacts/` recording the plan fields as realized: files touched as planned, steps executed, acceptance met, and the verification command run.
+- No project commit contains this Squad internal artifact.
 - A `blocked:` report naming the missing or contradictory plan element when execution cannot proceed safely.
 
 ## Exit predicate
