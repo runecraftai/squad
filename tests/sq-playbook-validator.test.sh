@@ -165,7 +165,7 @@ for playbook in perf hillclimb runtime-forensics trace-forensics visual-parity; 
   [ "$rc" -ne 0 ] || fail "$playbook non-comparable or incomplete evidence should fail"
   assert_contains "$out" "quality" "$playbook refusal should identify an evidence quality failure"
 done
-for playbook in multi-phase-plan eval; do
+for playbook in multi-phase-plan eval plan-execute; do
   id="lifecycle-$playbook"
   mkdir -p "$HOME/data/$id/artifacts"
   printf 'playbook=%s\nplaybook_version=1\n' "$playbook" > "$HOME/state/$id.meta"
@@ -176,6 +176,8 @@ for playbook in multi-phase-plan eval; do
         printf '%s\n' '## Criterion 1' 'Proof: outcome and real dependencies command path' '## Criterion 2' 'Proof: unit verification command path' '## Criterion 3' 'Proof: not a layer task decomposition command path' '## Criterion 4' 'Proof: existing backlog handoff queue command path' '## Criterion 5' 'Proof: next action unresolved question command path' ;;
       eval)
         printf '%s\n' '## Criterion 1' 'Proof: baseline variant metric rubric command path' '## Criterion 2' 'Proof: sanitized candidate-visible path directory cue command path' '## Criterion 3' 'Proof: blinded cases judge command path' '## Criterion 4' 'Proof: chain elicitation prevention stop command path' '## Criterion 5' 'Proof: recommendation promote or reject production promotion command path' ;;
+      plan-execute)
+        printf '%s\n' '## Criterion 1' 'Proof: files touched as planned path: bin/x.sh command: git status' '## Criterion 2' 'Proof: steps executed in order command: run the plan' '## Criterion 3' 'Proof: acceptance criteria met command: verify behavior' '## Criterion 4' 'Proof: verification command run result path: out.log' ;;
     esac
   } > "$HOME/data/$id/artifacts/checks.md"
   out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?

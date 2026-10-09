@@ -20,7 +20,7 @@ On 2026-09-19, the focused `sq-brief` test exercised `--playbook <name>@1` for e
 sq-brief.sh: absorbed playbook names are refused and leave no selectable brief
 ```
 
-The test is [`test_absorbed_playbook_names_are_not_selectable`](../../tests/sq-brief.test.sh), and the registry contains wave-1 contracts `bug-fix@1`, `feature@1`, `investigation@1`, `prototype@1`, `refactoring@1` plus wave-2 contracts `perf@1`, `hillclimb@1`, `runtime-forensics@1`, `trace-forensics@1`, and `visual-parity@1` plus planning/evaluation methods `multi-phase-plan@1` and `eval@1` under `.agents/skills/execution-playbooks/references/`.
+The test is [`test_absorbed_playbook_names_are_not_selectable`](../../tests/sq-brief.test.sh), and the registry contains wave-1 contracts `bug-fix@1`, `feature@1`, `investigation@1`, `prototype@1`, `refactoring@1` plus wave-2 contracts `perf@1`, `hillclimb@1`, `runtime-forensics@1`, `trace-forensics@1`, and `visual-parity@1` plus planning/evaluation methods `multi-phase-plan@1` and `eval@1` plus the materialized-plan execution contract `plan-execute@1` under `.agents/skills/execution-playbooks/references/`.
 
 The focused test command is:
 
@@ -34,7 +34,7 @@ The registry inventory command is:
 find .agents/skills/execution-playbooks -maxdepth 2 -type f -print | sort
 ```
 
-Its expected output contains `SKILL.md` and the reference files for all twelve selectable execution playbook contracts.
+Its expected output contains `SKILL.md` and the reference files for all thirteen selectable execution playbook contracts.
 
 ## Deferred and auxiliary policy
 
@@ -49,4 +49,4 @@ The three auxiliary topologies are not execution playbook identities or dispatch
 `arena` competes on one problem and selects one base, `swarm` covers distinct slices, and `interrogate` independently attacks one artifact with deduplication and judgment.
 For PR or diff surfaces, `interrogate` points to the read-only Drill surface documented in [`docs/pr-review.md`](../pr-review.md), and separate reviews are limited to requested or knowledge-only review deliverables.
 
-The catalog remains 22 playbooks because these topology names and the four refused or deferred names are not selectable identities.
+The catalog now counts 23 playbook identities: 13 selectable contracts, 5 absorbed upstream names, and 5 refused or deferred names.

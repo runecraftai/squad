@@ -15,7 +15,7 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1|plan-execute@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
@@ -170,6 +170,16 @@ case "$PLAYBOOK@$VERSION" in
       "blind|blinded;case|judge"
       "chain;elicitation;prevent|stop"
       "recommendation;promote|reject;production|promotion"
+    )
+    ;;
+  plan-execute@1)
+    CRITERIA_LABELS=("files touched as planned" "steps executed" "acceptance met" "verification run")
+    CRITERIA_PATTERNS=("files" "steps" "acceptance" "verification")
+    CRITERIA_CHECKS=(
+      "files|paths;planned|materialized"
+      "steps;executed|followed"
+      "acceptance;met|verified|criteria"
+      "verification;run|executed|result"
     )
     ;;
 esac

@@ -405,6 +405,19 @@ test_remaining_lifecycle_playbooks() {
   assert_grep "not a layer-by-layer" "$brief" "multi-phase-plan contract missing layer boundary"
   assert_grep "existing backlog" "$brief" "multi-phase-plan contract missing backlog handoff"
 
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-plan-execute repo --mode drill --playbook plan-execute@1 >/dev/null 2>&1 || fail "plan-execute@1 should materialize as strike"
+  brief="$home/data/lifecycle-plan-execute/brief.md"
+  assert_grep "Execution playbook: id=plan-execute version=1" "$brief" "plan-execute identity missing"
+  assert_grep "execution-class" "$brief" "plan-execute contract missing execution-class scope"
+  assert_grep "materialized from the planning artifact" "$brief" "plan-execute contract missing the plan materialization rule"
+  assert_grep "tlc-implement" "$brief" "plan-execute contract missing tlc-implement"
+  assert_grep "data/<id>/artifacts/" "$brief" "plan-execute contract missing the checklist location"
+  assert_grep "blocked:" "$brief" "plan-execute contract missing the stop-with-blocked rule"
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-plan-execute-recon repo --recon --playbook plan-execute@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "plan-execute@1 must refuse recon"
+  assert_contains "$out" "accepts only kind: strike" "plan-execute refusal should name strike compatibility"
+  assert_absent "$home/data/lifecycle-plan-execute-recon/brief.md" "plan-execute recon refusal must not leave a partial brief"
+
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-eval repo --recon --playbook eval@1 >/dev/null 2>&1 || fail "eval@1 should materialize"
   brief="$home/data/lifecycle-eval/brief.md"
   assert_grep "Execution playbook: id=eval version=1" "$brief" "eval identity missing"
@@ -412,7 +425,7 @@ test_remaining_lifecycle_playbooks() {
   assert_grep "chain-elicitation" "$brief" "eval contract missing chain-elicitation prevention"
   assert_grep "does not enter production" "$brief" "eval contract missing promotion boundary"
 
-  for playbook in shipping@2 multi-phase-plan@2 eval@2; do
+  for playbook in shipping@2 multi-phase-plan@2 eval@2 plan-execute@2; do
     out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "lifecycle-invalid-$RANDOM" repo --mode drill --playbook "$playbook" 2>&1); status=$?
     [ "$status" -ne 0 ] || fail "$playbook should be refused"
     assert_contains "$out" "unknown execution playbook" "$playbook should identify invalid identity"

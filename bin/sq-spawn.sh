@@ -1452,11 +1452,21 @@ if [ "$PLAYBOOK_LINES" -eq 1 ]; then
     'Execution playbook: id=feature version=1') PLAYBOOK_META=feature; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=refactoring version=1') PLAYBOOK_META=refactoring; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=prototype version=1') PLAYBOOK_META=prototype; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
+    'Execution playbook: id=plan-execute version=1') PLAYBOOK_META=plan-execute; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     *) echo "error: malformed or unsupported execution playbook identity in $BRIEF" >&2; exit 1 ;;
   esac
   [ "$KIND" = "$EXPECTED_KIND" ] || { echo "error: $PLAYBOOK_META@1 is compatible only with kind: $EXPECTED_KIND" >&2; exit 1; }
   # shellcheck disable=SC2016 # Backticks are literal brief syntax.
   grep -q "^# Execution playbook: \`$PLAYBOOK_META@$PLAYBOOK_VERSION_META\`$" "$BRIEF" || { echo "error: $PLAYBOOK_META@$PLAYBOOK_VERSION_META identity has no materialized contract" >&2; exit 1; }
+  # A plan-execute brief carries the design as a materialized plan: the structural
+  # gate refuses dispatch before any endpoint exists when that plan is incomplete.
+  if [ "$PLAYBOOK_META" = plan-execute ]; then
+    if ! plan_validate_out=$(SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-plan-validate.sh" "$ID" 2>&1); then
+      printf '%s\n' "$plan_validate_out" >&2
+      echo "error: $ID brief execution plan failed structural validation; materialize a complete plan before dispatch" >&2
+      exit 1
+    fi
+  fi
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
