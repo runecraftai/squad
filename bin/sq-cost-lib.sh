@@ -333,7 +333,7 @@ sq_cost_pi_task_json() {
            .current_model = ($event.modelId // .current_model) |
            .current_provider = ($event.provider // "")
          elif $event.type == "message" and $event.message.role == "assistant" and $event.message.usage != null then
-           .rows += [{model:($event.message.model // .current_model),provider:.current_provider,
+           .rows += [{model:($event.message.model // .current_model),provider:($event.message.provider // .current_provider),
              session:($session[0].id // "unknown"),started:($session[0].timestamp // ""),
              input:($event.message.usage.input // 0),output:($event.message.usage.output // 0),
              cache_read:($event.message.usage.cacheRead // 0),cache_write:($event.message.usage.cacheWrite // 0),

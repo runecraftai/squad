@@ -430,6 +430,32 @@ EOF
 
 test_pi_empty_provider
 
+# ── (h2d) message-level provider wins over the preceding model_change ──────
+
+test_pi_message_provider_wins() {
+  local state="$TMP_ROOT/provider-mismatch-state" pi_root="$TMP_ROOT/provider-mismatch-pi" wt="$TMP_ROOT/provider-mismatch-worktree"
+  mkdir -p "$state" "$pi_root/fixture" "$wt"
+  printf 'window=sq:provider-mismatch\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/provider-mismatch.meta"
+  cat > "$pi_root/fixture/session.jsonl" <<EOF
+{"type":"session","version":3,"id":"provider-mismatch-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"provider-mismatch"}}
+{"type":"model_change","provider":"openai","modelId":"mimo-v2.5"}
+{"type":"message","message":{"role":"assistant","model":"mimo-v2.5","provider":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15,"cost":{"total":0.02}}}}
+{"type":"model_change","provider":"opencode-go","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","provider":"anthropic","usage":{"input":1000,"output":500,"totalTokens":1500,"cost":{"total":0.05}}}}
+EOF
+  local output
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report provider-mismatch --json)
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .cost' <<<"$output")" = "null" ] || fail "subscription usage behind a mismatched model_change must not be presented as spend"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .cost_basis' <<<"$output")" = "flat-rate subscription" ] || fail "subscription usage must be labelled flat-rate"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .total' <<<"$output")" = "15" ] || fail "subscription tokens must remain counted"
+  [ "$(jq -r '.models[] | select(.provider=="anthropic" and .model=="claude-sonnet-4") | .reported_cost' <<<"$output")" = "\$0.05" ] || fail "paid message-level provider must retain its recorded cost"
+  [ "$(jq -r '[.models[] | select(.provider=="openai")] | length' <<<"$output")" = "0" ] || fail "stale model_change provider must not appear in the report"
+  pass "message-level provider wins over the preceding model_change"
+}
+
+test_pi_message_provider_wins
+
 # ── (h2a) Drill pipeline attribution and combined report ───────────────────
 
 test_drill_pipeline_report() {
