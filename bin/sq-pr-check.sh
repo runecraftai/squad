@@ -5,6 +5,8 @@
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
+# It also warns, without failing, when the PR changed-file list names this
+# task's own data/<id>/ artifact paths.
 # Usage: sq-pr-check.sh <task-id> <pr-url>
 set -eu
 
