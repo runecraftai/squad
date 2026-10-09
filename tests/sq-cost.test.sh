@@ -447,11 +447,12 @@ CREATE TABLE agent_invocations (
 INSERT INTO runs VALUES ('run-1', 'sq/pipeline-task'), ('run-other', 'sq/another-task');
 INSERT INTO agent_invocations VALUES ('inv-1','run-1','pi','gpt-6-luna','openai-codex','review',10,100000,10000,0,0);
 INSERT INTO agent_invocations VALUES ('inv-2','run-1','claude','gpt-6-luna','openai-codex','fix',20,50000,5000,0,0);
+INSERT INTO agent_invocations VALUES ('inv-sub','run-1','pi','opencode-go','opencode-go','gate',40,1000,500,0,0);
 INSERT INTO agent_invocations VALUES ('inv-other','run-other','pi','gpt-6-astra','openai-codex','review',30,900000,900000,0,0);
 SQL
   local invocations
   invocations=$(sq_cost_drill_task_json pipeline-task "$database")
-  [ "$(jq 'length' <<<"$invocations")" = "2" ] || fail "Drill reader should include only two matching invocation rows"
+  [ "$(jq 'length' <<<"$invocations")" = "3" ] || fail "Drill reader should include only three matching invocation rows"
   assert_contains "$invocations" '"agent":"claude"' "Drill reader includes the invocation agent"
   assert_contains "$invocations" '"started_at":20' "Drill reader includes invocation timestamps"
   assert_contains "$invocations" '"input":50000' "Drill reader includes invocation token counts"
@@ -475,7 +476,14 @@ SQL
   assert_not_contains "$report" '0.1257902' "report does not expose raw provider float"
   assert_contains "$report" "estimate: \$0.68" "pipeline estimate is included in combined cost"
   assert_contains "$report" "provider-recorded + estimate total: \$0.80" "summary total combines operator and pipeline cost"
-  assert_contains "$report" '165.2 thousand' "summary total tokens include operator and pipeline usage"
+  assert_contains "$report" '166.7 thousand' "summary total tokens include operator and pipeline usage"
+  assert_contains "$output" '"model": "opencode-go"' "subscription pipeline model is present"
+  assert_contains "$output" '"flat_rate_subscription": "not spend"' "flat-rate subscription is never presented as spend in JSON"
+  local subscription_cost
+  subscription_cost=$(jq -r '.models[] | select(.model=="opencode-go") | .cost' <<<"$output")
+  [ "$subscription_cost" = "null" ] || fail "subscription model cost should be null, got: $subscription_cost"
+  assert_contains "$report" "flat-rate subscription: not spend" "Markdown labels subscription usage as not spend"
+  assert_contains "$report" '1.5 thousand' "subscription tokens still count toward totals"
   assert_not_contains "$report" 'flat-rate subscription: $' "subscription models never present a spend amount"
   pass "Drill pipeline records are attributed and included with operator usage"
 }
