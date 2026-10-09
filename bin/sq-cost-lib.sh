@@ -316,27 +316,36 @@ sq_cost_pi_task_json() {
       any(.[]; .type == "custom" and .customType == "squad-task-attribution" and .data.taskId? == $task);
     def has_any_task_identity:
       any(.[]; .type == "custom" and .customType == "squad-task-attribution");
+    def session_rows($session):
+      reduce $session[] as $event
+        ({current_model:$configured_model,current_provider:"",rows:[]};
+         if $event.type == "model_change" then
+           .current_model = ($event.modelId // .current_model) |
+           .current_provider = ($event.provider // "")
+         elif $event.type == "message" and $event.message.role == "assistant" and $event.message.usage != null then
+           .rows += [{model:($event.message.model // .current_model),provider:.current_provider,
+             session:($session[0].id // "unknown"),started:($session[0].timestamp // ""),
+             input:($event.message.usage.input // 0),output:($event.message.usage.output // 0),
+             cache_read:($event.message.usage.cacheRead // 0),cache_write:($event.message.usage.cacheWrite // 0),
+             total:($event.message.usage.totalTokens // (($event.message.usage.input // 0)+($event.message.usage.output // 0)+($event.message.usage.cacheRead // 0)+($event.message.usage.cacheWrite // 0))),
+             reported_cost:($event.message.usage.cost.total // null)}]
+         else . end) | .rows;
     def report($matched):
-      [ $matched[] as $s | $s[] | select(.type == "message" and .message.role == "assistant" and .message.usage != null) |
-        {model:(.message.model // (($s | map(select(.type == "model_change") | .modelId) | last) // $configured_model)),
-         provider:(($s | map(select(.type == "model_change") | .provider) | last) // ""), session:($s[0].id // "unknown"),
-         started:($s[0].timestamp // ""), input:(.message.usage.input // 0), output:(.message.usage.output // 0),
-         cache_read:(.message.usage.cacheRead // 0), cache_write:(.message.usage.cacheWrite // 0),
-         total:(.message.usage.totalTokens // ((.message.usage.input // 0)+(.message.usage.output // 0)+(.message.usage.cacheRead // 0)+(.message.usage.cacheWrite // 0))),
-         reported_cost:(.message.usage.cost.total // null)} ] as $rows |
+      ([$matched[] | session_rows(.)] | add // []) as $rows |
       {found:($matched|length > 0), task:$task, agent:$agent, worktree:($workspaces | last), sessions:($matched|length),
        started:($matched|map(.[0].timestamp // "")|min // ""),
-       models:([ $rows[].model ] | unique | map(. as $m | {model:$m,
-         sessions:([$rows[] | select(.model == $m) | .session] | unique | length),
-         input:([$rows[] | select(.model == $m) | .input] | add // 0), output:([$rows[] | select(.model == $m) | .output] | add // 0),
-         cache_read:([$rows[] | select(.model == $m) | .cache_read] | add // 0), cache_write:([$rows[] | select(.model == $m) | .cache_write] | add // 0),
-         total:([$rows[] | select(.model == $m) | .total] | add // 0),
-         estimate_input:([$rows[] | select(.model == $m and .reported_cost == null) | .input] | add // 0),
-         estimate_output:([$rows[] | select(.model == $m and .reported_cost == null) | .output] | add // 0),
-         estimate_cache_read:([$rows[] | select(.model == $m and .reported_cost == null) | .cache_read] | add // 0),
-         estimate_cache_write:([$rows[] | select(.model == $m and .reported_cost == null) | .cache_write] | add // 0),
-         reported_cost:([$rows[] | select(.model == $m) | .reported_cost] | map(select(. != null)) | add // null),
-         provider:([$rows[] | select(.model == $m) | .provider] | map(select(. != "")) | first // "")}))};
+       models:([ $rows[] | [.model,.provider] ] | unique | map(. as $key | {model:$key[0],provider:$key[1],
+         sessions:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .session] | unique | length),
+         input:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .input] | add // 0),
+         output:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .output] | add // 0),
+         cache_read:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .cache_read] | add // 0),
+         cache_write:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .cache_write] | add // 0),
+         total:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .total] | add // 0),
+         estimate_input:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .input] | add // 0),
+         estimate_output:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .output] | add // 0),
+         estimate_cache_read:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .cache_read] | add // 0),
+         estimate_cache_write:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .cache_write] | add // 0),
+         reported_cost:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .reported_cost] | map(select(. != null)) | add // null)}))};
     ($sessions | map(select(.[0].type == "session" and
       (.[0].cwd as $session_cwd | $workspaces | index($session_cwd) != null)))) as $workspace_sessions |
     ($workspace_sessions | map(select(has_task_identity))) as $identity_matched |

@@ -24,6 +24,7 @@ When the execution window is missing or invalid (non-numeric timestamps, or end 
 This rule excludes the primary session, other tasks, and sessions from another base without widening a pooled workspace's time range.
 When no attributable session exists, the report says why instead of fabricating zero usage.
 
+Each Pi assistant usage row is attributed to the provider in the preceding model-change record, so a session that switches providers can report each model accurately.
 Provider-recorded costs are preferred when a record supplies them.
 List-price calculations are labeled estimates.
 OpenCode Go usage is labeled flat-rate subscription usage and is not presented as token spend.

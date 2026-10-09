@@ -388,9 +388,16 @@ EOF
   cat > "$pi_dir/subscription.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-2","timestamp":"2026-01-02T00:00:00Z","cwd":"$wt"}
 {"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pi-task"}}
-{"type":"model_change","provider":"opencode-go","modelId":"opencode-go"}
-{"type":"message","message":{"role":"assistant","model":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15}}}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.05}}}}
+{"type":"model_change","provider":"opencode-go","modelId":"mimo-v2.5"}
+{"type":"message","message":{"role":"assistant","model":"mimo-v2.5","usage":{"input":10,"output":5,"totalTokens":15}}}
 EOF
+  local mixed_json
+  mixed_json=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
+  [ "$(jq -r '.models[] | select(.provider=="anthropic" and .model=="claude-sonnet-4") | .reported_cost' <<<"$mixed_json")" = "\$0.10" ] || fail "paid model's provider-recorded cost was misattributed after provider switch"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .cost' <<<"$mixed_json")" = "null" ] || fail "flat-rate model should have null cost after provider switch"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .total' <<<"$mixed_json")" = "15" ] || fail "flat-rate model tokens should remain included after provider switch"
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task)
   assert_contains "$output" "2.6 billion" "large token counts are humanized"
   assert_contains "$output" "Pi" "Pi harness is rendered as a product label"
@@ -417,7 +424,7 @@ EOF
   [ "$rc" -eq 0 ] || fail "provider-less Pi session report should exit 0, got: $rc"
   assert_contains "$output" '"found": true' "provider-less Pi session is still reported"
   assert_contains "$output" '"model": "claude-sonnet-4"' "provider-less Pi model is preserved"
-  assert_contains "$output" '"combined": "$0.01"' "provider-less Pi session is costed in cents"
+  assert_contains "$output" "\"combined\": \"\$0.01\"" "provider-less Pi session is costed in cents"
   pass "Pi sessions without a provider record do not break the report"
 }
 
@@ -427,7 +434,7 @@ test_pi_empty_provider
 
 test_drill_pipeline_report() {
   local state="$TMP_ROOT/pipeline-state" pi_root="$TMP_ROOT/pipeline-pi" worktree="$TMP_ROOT/pipeline-worktree"
-  local database="$TMP_ROOT/drill-state.sqlite" output report
+  local database="$TMP_ROOT/drill-state.sqlite" output report estimate_report
   mkdir -p "$state" "$pi_root/fixture" "$worktree"
   printf 'window=sq:pipeline-test\nharness=pi\nworktree=%s\nmodel=default\n' "$worktree" > "$state/pipeline-task.meta"
   cat > "$pi_root/fixture/operator.jsonl" <<EOF
@@ -447,7 +454,7 @@ CREATE TABLE agent_invocations (
 INSERT INTO runs VALUES ('run-1', 'sq/pipeline-task'), ('run-other', 'sq/another-task');
 INSERT INTO agent_invocations VALUES ('inv-1','run-1','pi','gpt-6-luna','openai-codex','review',10,100000,10000,0,0);
 INSERT INTO agent_invocations VALUES ('inv-2','run-1','claude','gpt-6-luna','openai-codex','fix',20,50000,5000,0,0);
-INSERT INTO agent_invocations VALUES ('inv-sub','run-1','pi','opencode-go','opencode-go','gate',40,1000,500,0,0);
+INSERT INTO agent_invocations VALUES ('inv-sub','run-1','pi','mimo-v2.5','opencode-go','gate',40,1000,500,0,0);
 INSERT INTO agent_invocations VALUES ('inv-other','run-other','pi','gpt-6-astra','openai-codex','review',30,900000,900000,0,0);
 SQL
   local invocations
@@ -477,14 +484,18 @@ SQL
   assert_contains "$report" "estimate: \$0.68" "pipeline estimate is included in combined cost"
   assert_contains "$report" "provider-recorded + estimate total: \$0.80" "summary total combines operator and pipeline cost"
   assert_contains "$report" '166.7 thousand' "summary total tokens include operator and pipeline usage"
-  assert_contains "$output" '"model": "opencode-go"' "subscription pipeline model is present"
-  assert_contains "$output" '"flat_rate_subscription": "not spend"' "flat-rate subscription is never presented as spend in JSON"
-  local subscription_cost
-  subscription_cost=$(jq -r '.models[] | select(.model=="opencode-go") | .cost' <<<"$output")
-  [ "$subscription_cost" = "null" ] || fail "subscription model cost should be null, got: $subscription_cost"
   assert_contains "$report" "flat-rate subscription: not spend" "Markdown labels subscription usage as not spend"
   assert_contains "$report" '1.5 thousand' "subscription tokens still count toward totals"
   assert_not_contains "$report" 'flat-rate subscription: $' "subscription models never present a spend amount"
+  estimate_report=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" report another-task)
+  assert_contains "$estimate_report" "total: \$" "estimate-only report uses an unqualified total label"
+  assert_not_contains "$estimate_report" "provider-recorded + estimate total" "combined basis label requires both cost bases"
+  assert_contains "$output" '"model": "mimo-v2.5"' "unprefixed subscription pipeline model is present"
+  assert_contains "$output" '"flat_rate_subscription": "not spend"' "flat-rate subscription is never presented as spend in JSON"
+  local subscription_cost
+  subscription_cost=$(jq -r '.models[] | select(.model=="mimo-v2.5" and .provider=="opencode-go") | .cost' <<<"$output")
+  [ "$subscription_cost" = "null" ] || fail "subscription model cost should be null, got: $subscription_cost"
   pass "Drill pipeline records are attributed and included with operator usage"
 }
 

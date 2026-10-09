@@ -225,7 +225,10 @@ cmd_report() {
     ([.models[] | .reported_cost // 0] | add // 0) as $recorded |
     ([.models[] | .estimate_cost // 0] | add // 0) as $estimated |
     ([.models[] | select(.cost_basis == "flat-rate subscription")] | length > 0) as $subscription |
-    ([if [.models[] | select(.reported_cost != null or .estimate_cost != null)] | length > 0 then "provider-recorded + estimate total: \(($recorded + $estimated) | money)" else empty end,
+    any(.models[]; .reported_cost != null) as $has_recorded |
+    any(.models[]; .estimate_cost != null) as $has_estimated |
+    ([if $has_recorded and $has_estimated then "provider-recorded + estimate total: \(($recorded + $estimated) | money)"
+      elif $has_recorded or $has_estimated then "total: \(($recorded + $estimated) | money)" else empty end,
       if [.models[] | select(.reported_cost != null)] | length > 0 then "provider-recorded: \($recorded | money)" else empty end,
       if [.models[] | select(.estimate_cost != null)] | length > 0 then "estimate: \($estimated | money)" else empty end,
       if $subscription then "flat-rate subscription: not spend" else empty end] | join("; ")) as $cost_summary |
