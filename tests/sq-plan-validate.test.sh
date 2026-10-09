@@ -148,7 +148,8 @@ assert_contains "$out" 'missing: execution plan field "verification command"' "l
 # ---------------------------------------------------------------------------
 # sq-spawn.sh refuses a plan-execute@1 brief whose plan is incomplete before any
 # endpoint or metadata exists. Only the playbook gate is under test here; the
-# refusal lands before backend selection.
+# refusal lands before backend selection. An explicit --harness pins resolution
+# so the refusal never depends on ambient harness detection (CI has none).
 # ---------------------------------------------------------------------------
 SPAWN_ID=plan-execute-spawn
 mkdir -p "$HOME/data/$SPAWN_ID" "$HOME/projects/alpha"
@@ -166,7 +167,7 @@ EOF
 out=$(SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$HOME" SQUAD_STATE_OVERRIDE="$HOME/state" \
   SQUAD_DATA_OVERRIDE="$HOME/data" SQUAD_PROJECTS_OVERRIDE="$HOME/projects" \
   SQUAD_CONFIG_OVERRIDE="$HOME/config" SQUAD_BACKEND=tmux SQUAD_SPAWN_NO_GUARD=1 TMUX='' \
-  "$ROOT/bin/sq-spawn.sh" "$SPAWN_ID" projects/alpha --mode drill --yolo off 2>&1); rc=$?
+  "$ROOT/bin/sq-spawn.sh" "$SPAWN_ID" projects/alpha --mode drill --yolo off --harness pi 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "spawn should refuse a plan-execute@1 brief with an incomplete plan"
 assert_contains "$out" 'missing: execution plan field "acceptance criteria"' "spawn refusal omitted the validator's named failure"
 assert_contains "$out" "failed structural validation" "spawn refusal did not name the plan gate"
