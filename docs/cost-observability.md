@@ -3,9 +3,9 @@
 `bin/sq-cost.sh report <task-id>` renders a pull-request-ready usage report combining attributable operator sessions with every Drill agent invocation on branch `sq/<task-id>`.
 
 Pass `--json` to `report`, or to `task <task-id> --json`, for machine consumption.
-The JSON contains agent, session, model, token, timestamp, provider-cost, estimate-basis, and subscription fields only.
+The JSON contains agent, session, invocation, model, token, timestamp, provider-cost, estimate-basis, and subscription fields only.
 Markdown output renders token counts as humanized strings (e.g. `2.6 billion`) and money to cents with each amount labeled provider-recorded or estimate.
-JSON money fields and the combined total are cents-formatted strings, with `cost_basis` identifying provider-recorded, estimate, mixed provider-recorded and estimated, or flat-rate subscription usage.
+JSON money fields and the combined total are cents-formatted strings, with `cost_basis` set to `provider-recorded`, `estimate`, `provider-recorded + estimate`, or `flat-rate subscription`.
 Raw integer values are preserved only in the JSON output.
 Drill records are read from `~/.drill/state.sqlite`; `SQUAD_DRILL_STATE` overrides this path for tests.
 
