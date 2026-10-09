@@ -2912,7 +2912,7 @@ test_gitlab_artifact_guard() {
   files="$dir/diffs.json"
   cat > "$files" <<'JSON'
 [{"old_path":"src/main.sh","new_path":"src/main.sh"},{"old_path":"data/task-a/artifacts/checklist.md","new_path":"data/task-a/artifacts/checklist.md"}]
-[{"old_path":"data/other-task/report.md","new_path":"data/other-task/report.md"}]
+[{"old_path":"data/task-a/artifacts/page-2.md","new_path":"data/task-a/artifacts/page-2.md"},{"old_path":"data/other-task/report.md","new_path":"data/other-task/report.md"}]
 JSON
 
   set +e
@@ -2928,6 +2928,10 @@ JSON
   case "$out" in
     *"data/task-a/artifacts/checklist.md"*) ;;
     *) fail "GitLab artifact guard did not name the task-owned artifact path: $out" ;;
+  esac
+  case "$out" in
+    *"data/task-a/artifacts/page-2.md"*) ;;
+    *) fail "GitLab artifact guard did not name a task-owned artifact from a later page: $out" ;;
   esac
   case "$out" in
     *"data/other-task/report.md"*) fail "GitLab artifact guard named another task's artifact: $out" ;;
@@ -2975,7 +2979,25 @@ JSON
   fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
     || fail "GitLab arming with a failed file-list fetch left no valid poll"
 
-  pass "GitLab artifact guard parses paginated default JSON and reports fetch failures"
+  printf '%s\n' '[{"old_path":"src/main.sh","new_path":' > "$files"
+  set +e
+  out=$(SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
+    SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
+    SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEST_GLAB_JSON="$files" \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$PR_CHECK" task-a "$url" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "GitLab arming was fatal when the file list could not be parsed: $out"
+  case "$out" in
+    *"could not be parsed"*) ;;
+    *) fail "GitLab artifact guard did not loudly report an unparseable file list: $out" ;;
+  esac
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "GitLab arming with an unparseable file-list response left no valid poll"
+
+  pass "GitLab artifact guard parses paginated default JSON and reports fetch and parse failures"
 }
 
 test_github_artifact_guard() {
