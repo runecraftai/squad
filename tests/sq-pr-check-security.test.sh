@@ -85,7 +85,15 @@ SH
 printf '%s\n' "$*" >> "$SQUAD_TEST_GLAB_LOG"
 [ "${SQUAD_TEST_GLAB_FAIL:-0}" = 0 ] || exit 1
 [ "${SQUAD_TEST_GLAB_SLEEP:-0}" = 0 ] || sleep "$SQUAD_TEST_GLAB_SLEEP"
-printf 'title:\tfixture merge request\nstate:\t%s\nauthor:\tsomeone\n' "${SQUAD_TEST_GLAB_STATE:-opened}"
+case " $* " in
+  *" api "*)
+    [ -n "${SQUAD_TEST_GLAB_NDJSON:-}" ] || exit 0
+    cat "$SQUAD_TEST_GLAB_NDJSON"
+    ;;
+  *)
+    printf 'title:\tfixture merge request\nstate:\t%s\nauthor:\tsomeone\n' "${SQUAD_TEST_GLAB_STATE:-opened}"
+    ;;
+esac
 SH
   chmod +x "$fakebin/gh" "$fakebin/sq-gh" "$fakebin/glab"
   : > "$dir/gh.log"
@@ -2885,6 +2893,77 @@ EOF
   pass "GitLab merge requests are followed on any instance and never wake falsely"
 }
 
+test_gitlab_artifact_guard() {
+  local dir state url files out rc
+  dir=$(make_case gitlab-artifact-guard)
+  state="$dir/home/state"
+  url=https://gitlab.example/group/subgroup/project/-/merge_requests/7
+  write_task_meta "$dir"
+  files="$dir/diffs.ndjson"
+  cat > "$files" <<'NDJSON'
+{"old_path":"src/main.sh","new_path":"src/main.sh"}
+{"old_path":"data/task-a/artifacts/checklist.md","new_path":"data/task-a/artifacts/checklist.md"}
+{"old_path":"data/other-task/report.md","new_path":"data/other-task/report.md"}
+NDJSON
+
+  set +e
+  out=$(SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
+    SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
+    SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEST_GLAB_NDJSON="$files" \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$PR_CHECK" task-a "$url" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "GitLab arming with a stubbed file list failed: $out"
+  case "$out" in
+    *"data/task-a/artifacts/checklist.md"*) ;;
+    *) fail "GitLab artifact guard did not name the task-owned artifact path: $out" ;;
+  esac
+  case "$out" in
+    *"data/other-task/report.md"*) fail "GitLab artifact guard named another task's artifact: $out" ;;
+  esac
+  grep -qF -- "merge_requests/7/diffs" "$dir/glab.log" \
+    || fail "GitLab artifact guard did not request the merge request diffs"
+  grep -qF -- "--output ndjson" "$dir/glab.log" \
+    || fail "GitLab artifact guard did not request ndjson output"
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "GitLab artifact guard run left no valid poll"
+
+  : > "$files"
+  set +e
+  out=$(SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
+    SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
+    SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEST_GLAB_NDJSON="$files" \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$PR_CHECK" task-a "$url" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "GitLab arming with a clean file list failed: $out"
+  case "$out" in
+    *"Squad internal artifact"*) fail "GitLab artifact guard warned for a clean file list: $out" ;;
+  esac
+
+  set +e
+  out=$(SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
+    SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
+    SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEST_GLAB_FAIL=1 \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$PR_CHECK" task-a "$url" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "GitLab arming was fatal when the file list could not be fetched: $out"
+  case "$out" in
+    *"Squad internal artifact"*) fail "GitLab artifact guard warned when the file list could not be fetched: $out" ;;
+  esac
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "GitLab arming with a failed file-list fetch left no valid poll"
+
+  pass "GitLab artifact guard names task-owned paths from the merge request diffs"
+}
+
 seed_canonical_poll() {
   local dir=$1 id=$2 url=$3 template=${4:-$POLL} state provider host path number
   state="$dir/home/state"
@@ -3327,6 +3406,7 @@ test_gitlab_merged_poll_retires() {
 
 test_parser_matrix
 test_gitlab_merge_watch
+test_gitlab_artifact_guard
 test_merged_poll_retires_once
 test_persistent_XO_retirement_is_poll_only
 test_retirement_crash_recovery
