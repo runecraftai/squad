@@ -400,6 +400,29 @@ EOF
 
 test_pi_task_report
 
+# ── (h2c) Pi sessions without a provider record ────────────────────────────
+
+test_pi_empty_provider() {
+  local state="$TMP_ROOT/empty-provider-state" pi_root="$TMP_ROOT/empty-provider-pi" wt="$TMP_ROOT/empty-provider-worktree"
+  mkdir -p "$state" "$pi_root/fixture" "$wt"
+  printf 'window=sq:empty-provider\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/empty-provider.meta"
+  cat > "$pi_root/fixture/session.jsonl" <<EOF
+{"type":"session","version":3,"id":"empty-provider-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"empty-provider"}}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":1000,"output":500,"totalTokens":1500}}}
+EOF
+  local output rc
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
+    "$COST_CLI" report empty-provider --json 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "provider-less Pi session report should exit 0, got: $rc"
+  assert_contains "$output" '"found": true' "provider-less Pi session is still reported"
+  assert_contains "$output" '"model": "claude-sonnet-4"' "provider-less Pi model is preserved"
+  assert_contains "$output" '"combined": "$0.01"' "provider-less Pi session is costed in cents"
+  pass "Pi sessions without a provider record do not break the report"
+}
+
+test_pi_empty_provider
+
 # ── (h2a) Drill pipeline attribution and combined report ───────────────────
 
 test_drill_pipeline_report() {

@@ -144,10 +144,13 @@ cmd_report() {
     printf '## Coding agent usage on this pull request\n\nUsage unavailable: %s.\n' "${reason:-no attributable sessions}"
     return 0
   fi
-  local enriched model provider reported cost estimate_cost mode in_tokens out_tokens cache_read cache_write
+  local enriched entry model provider reported cost estimate_cost mode in_tokens out_tokens cache_read cache_write
   enriched=$(mktemp "${TMPDIR:-/tmp}/sq-cost-report.XXXXXX")
   trap 'rm -f "$enriched"' RETURN
-  while IFS=$'\t' read -r model provider reported; do
+  while IFS= read -r entry; do
+    model=$(jq -r '.model // ""' <<<"$entry")
+    provider=$(jq -r '.provider // ""' <<<"$entry")
+    reported=$(jq -r '.reported_cost | tojson' <<<"$entry")
     if [ "$provider" = "opencode-go" ] || [[ "$model" == opencode-go* ]]; then
       cost="null"; reported="null"; estimate_cost="null"; mode="flat-rate subscription"
     else
@@ -179,7 +182,7 @@ cmd_report() {
       '.models |= map(if .model == $m and .provider == $p then . + {cost:$cost,cost_basis:$mode,reported_cost:$recorded,estimate_cost:$estimated} else . end)' \
       <<<"$raw" > "$enriched"
     raw=$(<"$enriched")
-  done < <(jq -r '.models[] | [.model,.provider,(.reported_cost|tojson)] | @tsv' <<<"$raw")
+  done < <(jq -c '.models[]' <<<"$raw")
   if [ "${2:-}" = "--json" ]; then
     jq '
       def money:
