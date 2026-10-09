@@ -124,6 +124,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
+| `sq-pr-artifact-guard.sh` | Warn when a PR changed-file list names this task's own Squad-base artifact paths      |
 | `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |

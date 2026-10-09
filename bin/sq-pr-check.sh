@@ -5,6 +5,8 @@
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
+# It also warns, without failing, when the PR changed-file list names this
+# task's own data/<id>/ artifact paths.
 # Usage: sq-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -76,6 +78,43 @@ if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/d
     && fm_pr_head_valid "$REMOTE_HEAD"; then
     PR_HEAD=$REMOTE_HEAD
   fi
+fi
+
+# Warn before arming if the task's own Squad artifacts appear in its project PR.
+# Failure to fetch the file list is non-fatal and leaves the existing flow intact.
+PR_FILES=
+if [ "$PROVIDER" = github ] && command -v gh >/dev/null 2>&1; then
+  PR_FILES=$(gh api "repos/$PROJECT_PATH/pulls/$NUMBER/files" --paginate --jq '.[].filename' 2>/dev/null || true)
+elif [ "$PROVIDER" = gitlab ] && command -v glab >/dev/null 2>&1; then
+  ENCODED_PROJECT=${PROJECT_PATH//\//%2F}
+  if PR_DIFFS=$(glab api "projects/$ENCODED_PROJECT/merge_requests/$NUMBER/diffs" --paginate --hostname "$HOST" 2>/dev/null); then
+    if ! PR_FILES=$(printf '%s' "$PR_DIFFS" | python3 -c 'import json, sys
+text = sys.stdin.read()
+decoder = json.JSONDecoder()
+offset = 0
+while offset < len(text):
+    while offset < len(text) and text[offset].isspace():
+        offset += 1
+    if offset == len(text):
+        break
+    page, offset = decoder.raw_decode(text, offset)
+    if not isinstance(page, list):
+        raise ValueError("expected a JSON array from a paginated GitLab API response")
+    for diff in page:
+        if not isinstance(diff, dict):
+            raise ValueError("expected GitLab diff records to be JSON objects")
+        for field in ("new_path", "old_path"):
+            path = diff.get(field)
+            if path:
+                print(path)'); then
+      printf 'warning: GitLab merge request %s was not inspected for Squad internal artifacts because its changed-file response could not be parsed.\n' "$URL" >&2
+    fi
+  else
+    printf 'warning: GitLab merge request %s was not inspected for Squad internal artifacts because its changed-file list could not be fetched.\n' "$URL" >&2
+  fi
+fi
+if [ -n "$PR_FILES" ]; then
+  printf '%s\n' "$PR_FILES" | "$SCRIPT_DIR/sq-pr-artifact-guard.sh" "$ID" || true
 fi
 
 META_TMP=

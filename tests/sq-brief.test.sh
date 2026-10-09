@@ -411,7 +411,10 @@ test_remaining_lifecycle_playbooks() {
   assert_grep "execution-class" "$brief" "plan-execute contract missing execution-class scope"
   assert_grep "materialized from the planning artifact" "$brief" "plan-execute contract missing the plan materialization rule"
   assert_grep "tlc-implement" "$brief" "plan-execute contract missing tlc-implement"
-  assert_grep "data/<id>/artifacts/" "$brief" "plan-execute contract missing the checklist location"
+  assert_grep 'Squad base' "$brief" "plan-execute contract missing the Squad-base checklist location"
+  assert_grep 'data/<id>/artifacts/' "$brief" "plan-execute contract missing the checklist path"
+  assert_grep "never in the project repository" "$brief" "plan-execute contract must forbid storing the checklist in the project"
+  assert_grep "A project commit must never carry a Squad internal artifact" "$brief" "plan-execute contract must forbid committing Squad artifacts"
   assert_grep "blocked:" "$brief" "plan-execute contract missing the stop-with-blocked rule"
   out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" lifecycle-plan-execute-recon repo --recon --playbook plan-execute@1 2>&1); status=$?
   [ "$status" -ne 0 ] || fail "plan-execute@1 must refuse recon"

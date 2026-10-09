@@ -202,7 +202,7 @@ family_for_basename() {
     sq-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;
-    sq-pr-check-security.test.sh|sq-pr-merge.test.sh|sq-review-diff.test.sh|\
+    sq-pr-artifact-guard.test.sh|sq-pr-check-security.test.sh|sq-pr-merge.test.sh|sq-review-diff.test.sh|\
     sq-teardown.test.sh|sq-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
