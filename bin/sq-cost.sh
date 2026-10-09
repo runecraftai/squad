@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # sq-cost.sh — Transcript-derived cost estimation for Squad tasks.
 #
-# Reads real operator transcripts and prices them per model to get
-# per-operation cost. Degrades gracefully when no transcript exists.
+# Reads attributable Pi sessions and Drill agent invocations, then prices usage
+# per provider/model. Degrades gracefully when neither source has task usage.
 #
 # Ported from munder-difflin's src/main/transcript.ts + src/main/pricing.ts
 # (MIT, Chaitanya Giri). Adapted for Squad.
@@ -21,7 +21,9 @@
 #
 # `task <task-id>` preserves that legacy line unless `--json` is supplied.
 # `report <task-id>` (or `task <task-id> --json`) emits the complete privacy-safe
-# report and never includes prompt or response content. Pi sessions are counted
+# report and never includes prompt or response content. Drill invocations are
+# selected from ~/.drill/state.sqlite by exact branch `sq/<task-id>`; override
+# that path with SQUAD_DRILL_STATE. Pi sessions are counted
 # only when their session header cwd exactly matches a recorded execution
 # workspace and the session carries an exact task-attribution metadata entry;
 # legacy sessions without any task identity use the recorded execution window.
@@ -105,35 +107,97 @@ cmd_report() {
   local task_id="${1:?task-id required}" state_dir="${SQUAD_STATE_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/state}"
   local session_root="${SQUAD_PI_SESSION_DIR:-$HOME/.pi/agent/sessions}" raw
   raw=$(sq_cost_pi_task_json "$task_id" "$state_dir" "$session_root")
-  if [ "${2:-}" = "--json" ]; then
-    printf '%s\n' "$raw"
-    return 0
-  fi
+  local pipeline
+  pipeline=$(sq_cost_drill_task_json "$task_id" "${SQUAD_DRILL_STATE:-$HOME/.drill/state.sqlite}")
+  raw=$(jq --argjson pipeline "$pipeline" --arg task "$task_id" '
+    ($pipeline | map(select(.model != null and .model != "")) |
+      group_by([.model_provider // "", .model]) | map(.[0] as $first | {
+        model:$first.model, provider:($first.model_provider // ""), sessions:0,
+        invocations:length, input:(map(.input)|add // 0), output:(map(.output)|add // 0),
+        cache_read:(map(.cache_read)|add // 0), cache_write:(map(.cache_write)|add // 0),
+        estimate_input:(map(.input)|add // 0), estimate_output:(map(.output)|add // 0),
+        estimate_cache_read:(map(.cache_read)|add // 0), estimate_cache_write:(map(.cache_write)|add // 0),
+        total:(map(.input + .output + .cache_read + .cache_write)|add // 0), reported_cost:null
+      })) as $drill_models |
+    (if .found == true then . else
+      {found:($drill_models|length > 0),task:$task,agent:"drill",sessions:0,
+       started:($pipeline|map(.started_at|tostring)|min // ""),models:[],reason:.reason}
+     end) |
+    .models = (.models + $drill_models) |
+    .models = ([.models | group_by([.provider // "", .model])[] |
+      .[0] as $first | {model:$first.model,provider:($first.provider // ""),
+        sessions:(map(.sessions // 0)|add // 0),invocations:(map(.invocations // 0)|add // 0),
+        input:(map(.input)|add // 0),output:(map(.output)|add // 0),
+        cache_read:(map(.cache_read)|add // 0),cache_write:(map(.cache_write)|add // 0),
+        estimate_input:(map(.estimate_input // 0)|add // 0),estimate_output:(map(.estimate_output // 0)|add // 0),
+        estimate_cache_read:(map(.estimate_cache_read // 0)|add // 0),estimate_cache_write:(map(.estimate_cache_write // 0)|add // 0),
+        total:(map(.total)|add // 0),
+        reported_cost:(map(.reported_cost)|map(select(. != null))|add // null)}])
+  ' <<<"$raw")
   if ! jq -e '.found == true' >/dev/null 2>&1 <<<"$raw"; then
+    if [ "${2:-}" = "--json" ]; then
+      printf '%s\n' "$raw"
+      return 0
+    fi
     local reason
     reason=$(jq -r '.reason // empty' <<<"$raw")
     printf '## Coding agent usage on this pull request\n\nUsage unavailable: %s.\n' "${reason:-no attributable sessions}"
     return 0
   fi
-  local enriched model cost mode provider in_tokens out_tokens cache_read cache_write
+  local enriched model provider reported cost estimate_cost mode in_tokens out_tokens cache_read cache_write
   enriched=$(mktemp "${TMPDIR:-/tmp}/sq-cost-report.XXXXXX")
   trap 'rm -f "$enriched"' RETURN
   while IFS=$'\t' read -r model provider reported; do
-    if [ "$provider" = "opencode-go" ] || [[ "$model" == *opencode-go* ]]; then
-      cost="null"; mode="flat-rate subscription"
-    elif [ "$reported" != "null" ]; then
-      cost="$reported"; mode="provider-recorded"
+    if [ "$provider" = "opencode-go" ] || [[ "$model" == opencode-go* ]]; then
+      cost="null"; reported="null"; estimate_cost="null"; mode="flat-rate subscription"
     else
-      in_tokens=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.input' <<<"$raw")
-      out_tokens=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.output' <<<"$raw")
-      cache_read=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.cache_read' <<<"$raw")
-      cache_write=$(jq -r --arg m "$model" '.models[]|select(.model==$m)|.cache_write' <<<"$raw")
-      cost=$(sq_cost_estimate "$model" "$in_tokens" "$out_tokens" "$cache_read" "$cache_write")
-      mode="estimate"
+      in_tokens=$(jq -r --arg m "$model" --arg p "$provider" '.models[]|select(.model==$m and .provider==$p)|.estimate_input' <<<"$raw")
+      out_tokens=$(jq -r --arg m "$model" --arg p "$provider" '.models[]|select(.model==$m and .provider==$p)|.estimate_output' <<<"$raw")
+      cache_read=$(jq -r --arg m "$model" --arg p "$provider" '.models[]|select(.model==$m and .provider==$p)|.estimate_cache_read' <<<"$raw")
+      cache_write=$(jq -r --arg m "$model" --arg p "$provider" '.models[]|select(.model==$m and .provider==$p)|.estimate_cache_write' <<<"$raw")
+      estimate_cost="null"
+      if [ "$((in_tokens + out_tokens + cache_read + cache_write))" -gt 0 ]; then
+        estimate_cost=$(sq_cost_estimate "$model" "$in_tokens" "$out_tokens" "$cache_read" "$cache_write")
+      fi
+      if [ "$estimate_cost" = "null" ]; then
+        cost="$reported"
+      elif [ "$reported" = "null" ]; then
+        cost="$estimate_cost"
+      else
+        cost=$(awk -v recorded="$reported" -v estimated="$estimate_cost" 'BEGIN { printf "%.6f", recorded + estimated }')
+      fi
+      if [ "$reported" != "null" ] && [ "$estimate_cost" != "null" ]; then
+        mode="provider-recorded + estimate"
+      elif [ "$reported" != "null" ]; then
+        mode="provider-recorded"
+      else
+        mode="estimate"
+      fi
     fi
-    jq --arg m "$model" --arg mode "$mode" --argjson cost "$cost" '.models |= map(if .model == $m then . + {cost:$cost,cost_basis:$mode} else . end)' <<<"$raw" > "$enriched"
-    raw=$(cat "$enriched")
+    jq --arg m "$model" --arg p "$provider" --arg mode "$mode" --argjson cost "$cost" \
+      --argjson recorded "$reported" --argjson estimated "$estimate_cost" \
+      '.models |= map(if .model == $m and .provider == $p then . + {cost:$cost,cost_basis:$mode,reported_cost:$recorded,estimate_cost:$estimated} else . end)' \
+      <<<"$raw" > "$enriched"
+    raw=$(<"$enriched")
   done < <(jq -r '.models[] | [.model,.provider,(.reported_cost|tojson)] | @tsv' <<<"$raw")
+  if [ "${2:-}" = "--json" ]; then
+    jq '
+      def money:
+        if . == null then null
+        else ((. * 100 | round) as $c | "$\(($c / 100 | floor)).\(if ($c % 100) < 10 then "0" else "" end)\(($c % 100))") end;
+      ([.models[] | .reported_cost // 0] | add // 0) as $recorded |
+      ([.models[] | .estimate_cost // 0] | add // 0) as $estimated |
+      ([.models[] | select(.cost_basis == "flat-rate subscription")] | length > 0) as $subscription |
+      .total_cost = {
+        combined:((if ($recorded + $estimated) == 0 then null else $recorded + $estimated end) | money),
+        provider_recorded:(if [.models[] | select(.reported_cost != null)] | length > 0 then ($recorded | money) else null end),
+        estimate:(if [.models[] | select(.estimate_cost != null)] | length > 0 then ($estimated | money) else null end),
+        flat_rate_subscription:(if $subscription then "not spend" else null end)
+      } |
+      .models |= map(.cost = (.cost | money) | .reported_cost = (.reported_cost | money) | .estimate_cost = (.estimate_cost | money))
+    ' <<<"$raw"
+    return 0
+  fi
   local jq_program
   jq_program=$(cat <<'JQ'
     def humanize:
@@ -146,14 +210,28 @@ cmd_report() {
       {pi:"Pi", "pi-signed":"Pi", claude:"Claude Code", codex:"Codex", opencode:"OpenCode", grok:"Grok", kimi:"Kimi", muse:"Muse"} as $labels |
       if $labels[.] then $labels[.]
       else (split("[-_]") | map((.[0:1] | ascii_upcase) + .[1:]) | join(" ")) end;
-    def money: if . == null then "not applicable" else ("$" + (.|tostring)) end;
+    def money:
+      if . == null then "not applicable"
+      else ((. * 100 | round) as $c | "$\(($c / 100 | floor)).\(if ($c % 100) < 10 then "0" else "" end)\(($c % 100))") end;
+    def qualified_model: if (.provider // "") == "" or .provider == "unknown" then .model else (.provider + "/" + .model) end;
+    def cost_label:
+      if .cost_basis == "flat-rate subscription" then "flat-rate subscription: not spend"
+      else ([if .reported_cost != null then "provider-recorded: \(.reported_cost | money)" else empty end,
+             if .estimate_cost != null then "estimate: \(.estimate_cost | money)" else empty end] | join("; ")) end;
     (.models | map(.total) | add // 0) as $total |
+    ([.models[] | .reported_cost // 0] | add // 0) as $recorded |
+    ([.models[] | .estimate_cost // 0] | add // 0) as $estimated |
+    ([.models[] | select(.cost_basis == "flat-rate subscription")] | length > 0) as $subscription |
+    ([if [.models[] | select(.reported_cost != null or .estimate_cost != null)] | length > 0 then "provider-recorded + estimate total: \(($recorded + $estimated) | money)" else empty end,
+      if [.models[] | select(.reported_cost != null)] | length > 0 then "provider-recorded: \($recorded | money)" else empty end,
+      if [.models[] | select(.estimate_cost != null)] | length > 0 then "estimate: \($estimated | money)" else empty end,
+      if $subscription then "flat-rate subscription: not spend" else empty end] | join("; ")) as $cost_summary |
     "## Coding agent usage on this pull request\n\n" +
-    "| Contributor | Agent | Sessions | Total tokens | Estimated cost |\n|---|---|---:|---:|---:|\n" +
-    ("| Squad task \(.task) | \(.agent | agent_label) | \(.sessions) | \($total | humanize) | " + (([.models[].cost] | map(select(. != null)) | add) | money) + " |\n\n") +
-    "### Token and model breakdown\n\n| Model | Input | Output | Cache read | Cache write | Total tokens | Estimated cost |\n|---|---:|---:|---:|---:|---:|---:|\n" +
-    ([.models[] | "| \(.model) | \(.input | humanize) | \(.output | humanize) | \(.cache_read | humanize) | \(.cache_write | humanize) | \(.total | humanize) | \(.cost_basis): \(.cost // $na) |\n"] | join("")) +
-    "\n_Source: Pi session JSONL usage records, covering the task lifetime from \(.started) through report generation. Costs are provider-recorded where available, otherwise list-price estimates; subscription usage is not represented as spend._"
+    "| Contributor | Agent | Models | Sessions | Total tokens | Cost |\n|---|---|---|---:|---:|---|\n" +
+    ("| Squad task \(.task) | \(.agent | agent_label) | " + ([.models[] | qualified_model] | unique | join(", ")) + " | \(.sessions) | \($total | humanize) | \($cost_summary) |\n\n") +
+    "### Token and model breakdown\n\n| Model | Input | Output | Cache read | Cache write | Total tokens | Cost |\n|---|---:|---:|---:|---:|---:|---|\n" +
+    ([.models[] | "| \(qualified_model) | \(.input | humanize) | \(.output | humanize) | \(.cache_read | humanize) | \(.cache_write | humanize) | \(.total | humanize) | \(cost_label) |\n"] | join("")) +
+    "\n_Source: Pi session JSONL usage records and Drill agent-invocation records, covering the task lifetime through report generation. Provider-recorded costs and list-price estimates are labeled separately; subscription usage is not represented as spend._"
 JQ
   )
   jq -r --arg na "not applicable" "$jq_program" <<<"$raw"

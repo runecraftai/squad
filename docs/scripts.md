@@ -86,8 +86,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
-| `sq-cost.sh`           | Price real operator transcripts per model, render task usage reports, and publish an idempotent PR comment |
-| `sq-cost-lib.sh`       | Shared Claude transcript and Pi session parsing, attribution, model normalization, and per-model pricing used by `sq-cost.sh` |
+| `sq-cost.sh`           | Price operator sessions and Drill pipeline invocations per provider/model, render task usage reports, and publish an idempotent PR comment |
+| `sq-cost-lib.sh`       | Shared Claude transcript, Pi session, and Drill invocation parsing and attribution, model normalization, and per-model pricing used by `sq-cost.sh` |
 | `sq-evidence-receipt.sh` | Create, verify, and render private deterministic evidence receipts for local source citations |
 | `sq-observation-pack.sh` | Store, compactly display, and page private task output artifacts; see `sq-observation-pack.py` for the implementation |
 | `sq-observation-pack.py` | Python implementation of observation packs: create --task ID --source PATH, card PACK, and read PACK --offset N --limit M [--receipt] |

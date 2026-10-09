@@ -5,8 +5,9 @@
 # (MIT, Chaitanya Giri). Reads real operator transcripts (JSONL) and prices
 # them per model to get per-operation cost.
 #
-# Supports Claude Code JSONL transcripts and Pi session JSONL files. Other harnesses
-# (opencode, codex, grok, kimi) are estimated from token counts when available.
+# Supports Claude Code JSONL transcripts, Pi session JSONL files, and Drill
+# agent-invocation records. Other harnesses (opencode, codex, grok, kimi) are
+# estimated from token counts when available.
 # Pi attribution is exact: a session is eligible when its session header cwd
 # equals any recorded task execution workspace and its record carries an exact
 # task-attribution entry. The recorded execution-attempt window remains the
@@ -14,7 +15,8 @@
 # recorded harness must be pi or pi-signed.
 # The session directory is scoped by SQUAD_PI_SESSION_DIR (or ~/.pi/agent/sessions),
 # so another base and the primary session cannot be counted accidentally. No
-# prompt or response content is read.
+# prompt or response content is read. Drill invocations are selected by the exact
+# `sq/<task-id>` branch from `~/.drill/state.sqlite` or SQUAD_DRILL_STATE.
 #
 # Usage:
 #   . bin/sq-cost-lib.sh
@@ -224,6 +226,32 @@ sq_cost_from_transcript() {
   echo "${in}|${out}|${cr}|${cw}|${model}|${cost}"
 }
 
+# ── Drill invocation reporting ────────────────────────────────────────────
+
+# sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Each row includes invocation identity, provider/model, step, timestamp, and tokens.
+sq_cost_drill_task_json() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
+  local branch="sq/$task_id" escaped_branch
+  escaped_branch=${branch//\'/\'\'}
+  [ -f "$database" ] || { printf '[]\n'; return 0; }
+  local rows
+  rows=$(sqlite3 -json "$database" \
+    "SELECT ai.agent, COALESCE(NULLIF(ai.model, ''), 'unknown') AS model,
+            COALESCE(NULLIF(ai.model_provider, ''), 'unknown') AS model_provider,
+            ai.step_name, ai.started_at,
+            COALESCE(ai.input_tokens, 0) AS input,
+            COALESCE(ai.output_tokens, 0) AS output,
+            COALESCE(ai.cache_read_tokens, 0) AS cache_read,
+            COALESCE(ai.cache_creation_tokens, 0) AS cache_write
+       FROM agent_invocations AS ai
+       JOIN runs AS r ON r.id = ai.run_id
+      WHERE r.branch = '$escaped_branch'
+      ORDER BY ai.started_at, ai.id;" 2>/dev/null)
+  printf '%s\n' "${rows:-[]}"
+}
+
 # ── Pi task reporting ─────────────────────────────────────────────────────
 
 # sq_cost_pi_task_json — return privacy-safe aggregated usage for a Pi task.
@@ -303,6 +331,10 @@ sq_cost_pi_task_json() {
          input:([$rows[] | select(.model == $m) | .input] | add // 0), output:([$rows[] | select(.model == $m) | .output] | add // 0),
          cache_read:([$rows[] | select(.model == $m) | .cache_read] | add // 0), cache_write:([$rows[] | select(.model == $m) | .cache_write] | add // 0),
          total:([$rows[] | select(.model == $m) | .total] | add // 0),
+         estimate_input:([$rows[] | select(.model == $m and .reported_cost == null) | .input] | add // 0),
+         estimate_output:([$rows[] | select(.model == $m and .reported_cost == null) | .output] | add // 0),
+         estimate_cache_read:([$rows[] | select(.model == $m and .reported_cost == null) | .cache_read] | add // 0),
+         estimate_cache_write:([$rows[] | select(.model == $m and .reported_cost == null) | .cache_write] | add // 0),
          reported_cost:([$rows[] | select(.model == $m) | .reported_cost] | map(select(. != null)) | add // null),
          provider:([$rows[] | select(.model == $m) | .provider] | map(select(. != "")) | first // "")}))};
     ($sessions | map(select(.[0].type == "session" and

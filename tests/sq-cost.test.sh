@@ -375,7 +375,7 @@ EOF
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
   assert_contains "$output" '"input": 2600000400' "Pi report finds matching sessions across attempts"
   assert_contains "$output" '"sessions": 2' "Pi report counts both attempts for the mission"
-  assert_contains "$output" '"reported_cost": 0.05' "Pi report preserves provider cost across attempts"
+  assert_contains "$output" "\"reported_cost\": \"\$0.05\"" "Pi report preserves provider cost across attempts in cents"
   if printf '%s' "$output" | grep -q '9999'; then fail "Pi report counted another worktree"; fi
   if printf '%s' "$output" | grep -q 'gpt-6-astra\|8888\|12.59'; then
     fail "Pi report counted a prior mission from the reused worktree slot"
@@ -400,6 +400,65 @@ EOF
 
 test_pi_task_report
 
+# ── (h2a) Drill pipeline attribution and combined report ───────────────────
+
+test_drill_pipeline_report() {
+  local state="$TMP_ROOT/pipeline-state" pi_root="$TMP_ROOT/pipeline-pi" worktree="$TMP_ROOT/pipeline-worktree"
+  local database="$TMP_ROOT/drill-state.sqlite" output report
+  mkdir -p "$state" "$pi_root/fixture" "$worktree"
+  printf 'window=sq:pipeline-test\nharness=pi\nworktree=%s\nmodel=default\n' "$worktree" > "$state/pipeline-task.meta"
+  cat > "$pi_root/fixture/operator.jsonl" <<EOF
+{"type":"session","version":3,"id":"operator-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$worktree"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pipeline-task"}}
+{"type":"model_change","provider":"openai-codex","modelId":"gpt-6-luna"}
+{"type":"message","message":{"role":"assistant","model":"gpt-6-luna","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.1257902}}}}
+EOF
+  sqlite3 "$database" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER
+);
+INSERT INTO runs VALUES ('run-1', 'sq/pipeline-task'), ('run-other', 'sq/another-task');
+INSERT INTO agent_invocations VALUES ('inv-1','run-1','pi','gpt-6-luna','openai-codex','review',10,100000,10000,0,0);
+INSERT INTO agent_invocations VALUES ('inv-2','run-1','claude','gpt-6-luna','openai-codex','fix',20,50000,5000,0,0);
+INSERT INTO agent_invocations VALUES ('inv-other','run-other','pi','gpt-6-astra','openai-codex','review',30,900000,900000,0,0);
+SQL
+  local invocations
+  invocations=$(sq_cost_drill_task_json pipeline-task "$database")
+  [ "$(jq 'length' <<<"$invocations")" = "2" ] || fail "Drill reader should include only two matching invocation rows"
+  assert_contains "$invocations" '"agent":"claude"' "Drill reader includes the invocation agent"
+  assert_contains "$invocations" '"started_at":20' "Drill reader includes invocation timestamps"
+  assert_contains "$invocations" '"input":50000' "Drill reader includes invocation token counts"
+  assert_contains "$invocations" '"step_name":"review"' "Drill reader includes invocation step names"
+  assert_contains "$invocations" '"model_provider":"openai-codex"' "Drill reader includes provider-qualified model identity"
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" report pipeline-task --json)
+  assert_contains "$output" '"input": 150100' "operator and pipeline input tokens aggregate together"
+  assert_contains "$output" '"output": 15050' "operator and pipeline output tokens aggregate together"
+  assert_contains "$output" '"provider": "openai-codex"' "pipeline model provider is retained"
+  assert_contains "$output" '"model": "gpt-6-luna"' "pipeline model name is retained"
+  assert_contains "$output" "\"cost\": \"\$0.80\"" "combined JSON cost is cents-formatted"
+  assert_contains "$output" "\"estimate_cost\": \"\$0.68\"" "pipeline estimate remains distinct from provider-recorded cost"
+  assert_contains "$output" "\"combined\": \"\$0.80\"" "JSON overall total includes provider-recorded and estimate costs"
+  assert_not_contains "$output" '0.1257902' "JSON report does not expose raw provider float"
+  assert_contains "$output" '"invocations": 2' "pipeline model aggregates both invocation rows"
+  report=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" report pipeline-task)
+  assert_contains "$report" 'openai-codex/gpt-6-luna' "report shows provider-qualified pipeline model"
+  assert_contains "$report" "provider-recorded: \$0.13" "money uses cents and identifies provider-recorded cost"
+  assert_not_contains "$report" '0.1257902' "report does not expose raw provider float"
+  assert_contains "$report" "estimate: \$0.68" "pipeline estimate is included in combined cost"
+  assert_contains "$report" "provider-recorded + estimate total: \$0.80" "summary total combines operator and pipeline cost"
+  assert_contains "$report" '165.2 thousand' "summary total tokens include operator and pipeline usage"
+  assert_not_contains "$report" 'flat-rate subscription: $' "subscription models never present a spend amount"
+  pass "Drill pipeline records are attributed and included with operator usage"
+}
+
+test_drill_pipeline_report
+
 # ── (h2b) Pi execution-window requirement ─────────────────────────────────
 
 test_pi_requires_execution_window() {
@@ -414,7 +473,7 @@ EOF
   local output
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
     "$COST_CLI" report no-exec --json)
-  assert_contains "$output" '"found":false' "Pi report refuses path-only attribution without an execution window"
+  assert_contains "$output" '"found": false' "Pi report refuses path-only attribution without an execution window"
   assert_contains "$output" 'execution window is unavailable' "missing execution window explains unavailable attribution"
   cat >> "$pi_root/fixture/session.jsonl" <<'EOF'
 {"type":"custom","customType":"squad-task-attribution","data":{"taskId":"no-exec"}}
