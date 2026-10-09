@@ -403,6 +403,10 @@ EOF
   assert_contains "$output" "2.6 billion" "large token counts are humanized"
   assert_contains "$output" "Pi" "Pi harness is rendered as a product label"
   assert_contains "$output" "flat-rate subscription" "flat-rate providers are labelled without fabricated spend"
+  local task_json task_rc
+  task_json=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" task pi-task --json) && task_rc=$? || task_rc=$?
+  [ "$task_rc" -eq 0 ] || fail "task <id> --json should exit 0 for a found report, got: $task_rc"
+  [ "$(jq -r '.found' <<<"$task_json")" = "true" ] || fail "task <id> --json should emit the found report"
   pass "Pi task report attributes sessions exactly and avoids zero-result regression"
 }
 

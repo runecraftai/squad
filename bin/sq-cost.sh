@@ -146,7 +146,7 @@ cmd_report() {
   fi
   local enriched entry model provider reported cost estimate_cost mode in_tokens out_tokens cache_read cache_write
   enriched=$(mktemp "${TMPDIR:-/tmp}/sq-cost-report.XXXXXX")
-  trap 'rm -f "$enriched"' RETURN
+  trap 'rm -f "${enriched:-}"; trap - RETURN' RETURN
   while IFS= read -r entry; do
     model=$(jq -r '.model // ""' <<<"$entry")
     provider=$(jq -r '.provider // ""' <<<"$entry")

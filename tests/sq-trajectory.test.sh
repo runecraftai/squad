@@ -7,6 +7,7 @@ trap 'rm -rf "$TMP"' EXIT
 BASE="$TMP/base"
 mkdir -p "$BASE/state" "$BASE/data"
 export SQUAD_BASE="$BASE" SQUAD_STATE_OVERRIDE="$BASE/state" SQUAD_DATA_OVERRIDE="$BASE/data"
+export SQUAD_DRILL_STATE="$TMP/drill-state.sqlite" SQUAD_PI_SESSION_DIR="$TMP/pi-sessions"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$*"; }
 fixture() {
