@@ -15,7 +15,7 @@ matches=$(printf '%s\n' \
   | "$GUARD" task-a 2>&1)
 assert_contains "$matches" 'data/task-a/artifacts/checklist.md' 'guard omitted the task checklist path'
 assert_contains "$matches" 'data/task-a/report.md' 'guard omitted another task-owned artifact path'
-assert_absent "$matches" 'data/other-task/' 'guard reported artifacts belonging to another task'
+assert_not_contains "$matches" 'data/other-task/' 'guard reported artifacts belonging to another task'
 
 clean=$(printf '%s\n' 'src/main.sh' 'data/task-ab/readme.md' | "$GUARD" task-a 2>&1)
 [ -z "$clean" ] || fail "guard should be silent for a clean PR list, got: $clean"
