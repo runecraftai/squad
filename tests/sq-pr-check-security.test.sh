@@ -89,7 +89,7 @@ SH
 printf '%s\n' "$*" >> "$SQUAD_TEST_GLAB_LOG"
 for arg in "$@"; do
   case "$arg" in
-    --paginate|-R) ;;
+    --paginate|-R|--hostname) ;;
     -*) exit 2 ;;
   esac
 done
@@ -2940,6 +2940,8 @@ JSON
     || fail "GitLab artifact guard did not request the merge request diffs"
   grep -qF -- "--paginate" "$dir/glab.log" \
     || fail "GitLab artifact guard did not request all diff pages"
+  grep -qF -- "--hostname gitlab.example" "$dir/glab.log" \
+    || fail "GitLab artifact guard did not pin the merge request's host"
   assert_no_grep '--output' "$dir/glab.log" \
     "GitLab artifact guard requested an unsupported output selector"
   assert_no_grep '--jq' "$dir/glab.log" \
