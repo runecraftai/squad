@@ -1,11 +1,13 @@
 # Task cost observability
 
-`bin/sq-cost.sh report <task-id>` renders a pull-request-ready usage report.
+`bin/sq-cost.sh report <task-id>` renders a pull-request-ready usage report combining attributable operator sessions with every Drill agent invocation on branch `sq/<task-id>`.
 
 Pass `--json` to `report`, or to `task <task-id> --json`, for machine consumption.
-The JSON contains agent, session, model, token, timestamp, provider-cost, estimate-basis, and subscription fields only.
-Markdown output renders token counts as humanized strings (e.g. `2.6 billion`).
+The JSON contains agent, session, invocation, model, token, timestamp, provider-cost, estimate-basis, and subscription fields only.
+Markdown output renders token counts as humanized strings (e.g. `2.6 billion`) and money to cents with each amount labeled provider-recorded or estimate.
+JSON money fields and the combined total are cents-formatted strings, with `cost_basis` set to `provider-recorded`, `estimate`, `provider-recorded + estimate`, or `flat-rate subscription`.
 Raw integer values are preserved only in the JSON output.
+Drill records are read from `~/.drill/state.sqlite`; `SQUAD_DRILL_STATE` overrides this path for tests.
 
 Recorded harness identifiers (`pi`, `pi-signed`, `claude`, `codex`, `opencode`, `grok`, `kimi`, `muse`) are mapped to product labels in the Markdown report.
 Unrecognized identifiers fall back to a title-cased form.
@@ -22,9 +24,11 @@ When the execution window is missing or invalid (non-numeric timestamps, or end 
 This rule excludes the primary session, other tasks, and sessions from another base without widening a pooled workspace's time range.
 When no attributable session exists, the report says why instead of fabricating zero usage.
 
-Provider-recorded costs are preferred.
+Each Pi assistant usage row uses its message-level provider when present, falling back to the preceding model-change record.
+Provider-recorded costs are preferred when a record supplies them.
 List-price calculations are labeled estimates.
 OpenCode Go usage is labeled flat-rate subscription usage and is not presented as token spend.
+The summary lists provider-qualified models and includes both operator and pipeline token totals and costs.
 
 `sq-cost.sh publish <task-id> <pr-url>` publishes one marked comment through `sq-gh`.
 The command updates that comment on later runs rather than creating duplicates.

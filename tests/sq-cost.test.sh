@@ -19,6 +19,7 @@ set -u
 COST_LIB="$ROOT/bin/sq-cost-lib.sh"
 COST_CLI="$ROOT/bin/sq-cost.sh"
 TMP_ROOT=$(fm_test_tmproot sq-cost)
+export SQUAD_DRILL_STATE="$TMP_ROOT/drill-state.sqlite"
 
 # Source the library for direct function tests
 # shellcheck disable=SC1090 # test source
@@ -375,7 +376,7 @@ EOF
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
   assert_contains "$output" '"input": 2600000400' "Pi report finds matching sessions across attempts"
   assert_contains "$output" '"sessions": 2' "Pi report counts both attempts for the mission"
-  assert_contains "$output" '"reported_cost": 0.05' "Pi report preserves provider cost across attempts"
+  assert_contains "$output" "\"reported_cost\": \"\$0.05\"" "Pi report preserves provider cost across attempts in cents"
   if printf '%s' "$output" | grep -q '9999'; then fail "Pi report counted another worktree"; fi
   if printf '%s' "$output" | grep -q 'gpt-6-astra\|8888\|12.59'; then
     fail "Pi report counted a prior mission from the reused worktree slot"
@@ -388,17 +389,177 @@ EOF
   cat > "$pi_dir/subscription.jsonl" <<EOF
 {"type":"session","version":3,"id":"pi-session-2","timestamp":"2026-01-02T00:00:00Z","cwd":"$wt"}
 {"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pi-task"}}
-{"type":"model_change","provider":"opencode-go","modelId":"opencode-go"}
-{"type":"message","message":{"role":"assistant","model":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15}}}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.05}}}}
+{"type":"model_change","provider":"opencode-go","modelId":"mimo-v2.5"}
+{"type":"message","message":{"role":"assistant","model":"mimo-v2.5","usage":{"input":10,"output":5,"totalTokens":15}}}
 EOF
+  local mixed_json
+  mixed_json=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task --json)
+  [ "$(jq -r '.models[] | select(.provider=="anthropic" and .model=="claude-sonnet-4") | .reported_cost' <<<"$mixed_json")" = "\$0.10" ] || fail "paid model's provider-recorded cost was misattributed after provider switch"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .cost' <<<"$mixed_json")" = "null" ] || fail "flat-rate model should have null cost after provider switch"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .total' <<<"$mixed_json")" = "15" ] || fail "flat-rate model tokens should remain included after provider switch"
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report pi-task)
   assert_contains "$output" "2.6 billion" "large token counts are humanized"
   assert_contains "$output" "Pi" "Pi harness is rendered as a product label"
   assert_contains "$output" "flat-rate subscription" "flat-rate providers are labelled without fabricated spend"
+  local task_json task_rc
+  task_json=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" task pi-task --json) && task_rc=$? || task_rc=$?
+  [ "$task_rc" -eq 0 ] || fail "task <id> --json should exit 0 for a found report, got: $task_rc"
+  [ "$(jq -r '.found' <<<"$task_json")" = "true" ] || fail "task <id> --json should emit the found report"
   pass "Pi task report attributes sessions exactly and avoids zero-result regression"
 }
 
 test_pi_task_report
+
+# ── (h2c) Pi sessions without a provider record ────────────────────────────
+
+test_pi_empty_provider() {
+  local state="$TMP_ROOT/empty-provider-state" pi_root="$TMP_ROOT/empty-provider-pi" wt="$TMP_ROOT/empty-provider-worktree"
+  mkdir -p "$state" "$pi_root/fixture" "$wt"
+  printf 'window=sq:empty-provider\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/empty-provider.meta"
+  cat > "$pi_root/fixture/session.jsonl" <<EOF
+{"type":"session","version":3,"id":"empty-provider-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"empty-provider"}}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":1000,"output":500,"totalTokens":1500}}}
+EOF
+  local output rc
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
+    "$COST_CLI" report empty-provider --json 2>&1) && rc=$? || rc=$?
+  [ "$rc" -eq 0 ] || fail "provider-less Pi session report should exit 0, got: $rc"
+  assert_contains "$output" '"found": true' "provider-less Pi session is still reported"
+  assert_contains "$output" '"model": "claude-sonnet-4"' "provider-less Pi model is preserved"
+  assert_contains "$output" "\"combined\": \"\$0.01\"" "provider-less Pi session is costed in cents"
+  pass "Pi sessions without a provider record do not break the report"
+}
+
+test_pi_empty_provider
+
+# ── (h2d) message-level provider wins over the preceding model_change ──────
+
+test_pi_message_provider_wins() {
+  local state="$TMP_ROOT/provider-mismatch-state" pi_root="$TMP_ROOT/provider-mismatch-pi" wt="$TMP_ROOT/provider-mismatch-worktree"
+  mkdir -p "$state" "$pi_root/fixture" "$wt"
+  printf 'window=sq:provider-mismatch\nharness=pi\nworktree=%s\nmodel=default\n' "$wt" > "$state/provider-mismatch.meta"
+  cat > "$pi_root/fixture/session.jsonl" <<EOF
+{"type":"session","version":3,"id":"provider-mismatch-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$wt"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"provider-mismatch"}}
+{"type":"model_change","provider":"openai","modelId":"mimo-v2.5"}
+{"type":"message","message":{"role":"assistant","model":"mimo-v2.5","provider":"opencode-go","usage":{"input":10,"output":5,"totalTokens":15,"cost":{"total":0.02}}}}
+{"type":"model_change","provider":"opencode-go","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","provider":"anthropic","usage":{"input":1000,"output":500,"totalTokens":1500,"cost":{"total":0.05}}}}
+EOF
+  local output
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" "$COST_CLI" report provider-mismatch --json)
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .cost' <<<"$output")" = "null" ] || fail "subscription usage behind a mismatched model_change must not be presented as spend"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .cost_basis' <<<"$output")" = "flat-rate subscription" ] || fail "subscription usage must be labelled flat-rate"
+  [ "$(jq -r '.models[] | select(.provider=="opencode-go" and .model=="mimo-v2.5") | .total' <<<"$output")" = "15" ] || fail "subscription tokens must remain counted"
+  [ "$(jq -r '.models[] | select(.provider=="anthropic" and .model=="claude-sonnet-4") | .reported_cost' <<<"$output")" = "\$0.05" ] || fail "paid message-level provider must retain its recorded cost"
+  [ "$(jq -r '[.models[] | select(.provider=="openai")] | length' <<<"$output")" = "0" ] || fail "stale model_change provider must not appear in the report"
+  pass "message-level provider wins over the preceding model_change"
+}
+
+test_pi_message_provider_wins
+
+# ── (h2a) Drill pipeline attribution and combined report ───────────────────
+
+test_drill_pipeline_report() {
+  local state="$TMP_ROOT/pipeline-state" pi_root="$TMP_ROOT/pipeline-pi" worktree="$TMP_ROOT/pipeline-worktree"
+  local database="$TMP_ROOT/drill-state.sqlite" output report estimate_report
+  mkdir -p "$state" "$pi_root/fixture" "$worktree"
+  printf 'window=sq:pipeline-test\nharness=pi\nworktree=%s\nmodel=default\n' "$worktree" > "$state/pipeline-task.meta"
+  cat > "$pi_root/fixture/operator.jsonl" <<EOF
+{"type":"session","version":3,"id":"operator-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$worktree"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"pipeline-task"}}
+{"type":"model_change","provider":"openai-codex","modelId":"gpt-6-luna"}
+{"type":"message","message":{"role":"assistant","model":"gpt-6-luna","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.1257902}}}}
+EOF
+  sqlite3 "$database" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER
+);
+INSERT INTO runs VALUES ('run-1', 'sq/pipeline-task'), ('run-other', 'sq/another-task');
+INSERT INTO agent_invocations VALUES ('inv-1','run-1','pi','gpt-6-luna','openai-codex','review',10,100000,10000,0,0);
+INSERT INTO agent_invocations VALUES ('inv-2','run-1','claude','gpt-6-luna','openai-codex','fix',20,50000,5000,0,0);
+INSERT INTO agent_invocations VALUES ('inv-sub','run-1','pi','mimo-v2.5','opencode-go','gate',40,1000,500,0,0);
+INSERT INTO agent_invocations VALUES ('inv-other','run-other','pi','gpt-6-astra','openai-codex','review',30,900000,900000,0,0);
+SQL
+  local invocations
+  invocations=$(sq_cost_drill_task_json pipeline-task "$database")
+  [ "$(jq 'length' <<<"$invocations")" = "3" ] || fail "Drill reader should include only three matching invocation rows"
+  assert_contains "$invocations" '"agent":"claude"' "Drill reader includes the invocation agent"
+  assert_contains "$invocations" '"started_at":20' "Drill reader includes invocation timestamps"
+  assert_contains "$invocations" '"input":50000' "Drill reader includes invocation token counts"
+  assert_contains "$invocations" '"step_name":"review"' "Drill reader includes invocation step names"
+  assert_contains "$invocations" '"model_provider":"openai-codex"' "Drill reader includes provider-qualified model identity"
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" report pipeline-task --json)
+  assert_contains "$output" '"input": 150100' "operator and pipeline input tokens aggregate together"
+  assert_contains "$output" '"output": 15050' "operator and pipeline output tokens aggregate together"
+  assert_contains "$output" '"provider": "openai-codex"' "pipeline model provider is retained"
+  assert_contains "$output" '"model": "gpt-6-luna"' "pipeline model name is retained"
+  assert_contains "$output" "\"cost\": \"\$0.80\"" "combined JSON cost is cents-formatted"
+  assert_contains "$output" "\"estimate_cost\": \"\$0.68\"" "pipeline estimate remains distinct from provider-recorded cost"
+  assert_contains "$output" "\"combined\": \"\$0.80\"" "JSON overall total includes provider-recorded and estimate costs"
+  assert_not_contains "$output" '0.1257902' "JSON report does not expose raw provider float"
+  assert_contains "$output" '"invocations": 2' "pipeline model aggregates both invocation rows"
+  report=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" report pipeline-task)
+  assert_contains "$report" 'openai-codex/gpt-6-luna' "report shows provider-qualified pipeline model"
+  assert_contains "$report" "provider-recorded: \$0.13" "money uses cents and identifies provider-recorded cost"
+  assert_not_contains "$report" '0.1257902' "report does not expose raw provider float"
+  assert_contains "$report" "estimate: \$0.68" "pipeline estimate is included in combined cost"
+  assert_contains "$report" "provider-recorded + estimate total: \$0.80" "summary total combines operator and pipeline cost"
+  assert_contains "$report" '166.7 thousand' "summary total tokens include operator and pipeline usage"
+  assert_contains "$report" "flat-rate subscription: not spend" "Markdown labels subscription usage as not spend"
+  assert_contains "$report" '1.5 thousand' "subscription tokens still count toward totals"
+  assert_not_contains "$report" 'flat-rate subscription: $' "subscription models never present a spend amount"
+  estimate_report=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" report another-task)
+  assert_contains "$estimate_report" "total: \$" "estimate-only report uses an unqualified total label"
+  assert_not_contains "$estimate_report" "provider-recorded + estimate total" "combined basis label requires both cost bases"
+  assert_contains "$output" '"model": "mimo-v2.5"' "unprefixed subscription pipeline model is present"
+  assert_contains "$output" '"flat_rate_subscription": "not spend"' "flat-rate subscription is never presented as spend in JSON"
+  local subscription_cost
+  subscription_cost=$(jq -r '.models[] | select(.model=="mimo-v2.5" and .provider=="opencode-go") | .cost' <<<"$output")
+  [ "$subscription_cost" = "null" ] || fail "subscription model cost should be null, got: $subscription_cost"
+  pass "Drill pipeline records are attributed and included with operator usage"
+}
+
+test_drill_pipeline_report
+
+# ── (h2a.1) Drill read failures are observable ─────────────────────────────
+
+test_drill_read_failure_is_observable() {
+  local state="$TMP_ROOT/drill-fail-state" pi_root="$TMP_ROOT/drill-fail-pi" worktree="$TMP_ROOT/drill-fail-worktree"
+  local bad_db="$TMP_ROOT/drill-corrupt.sqlite" stdout stderr
+  mkdir -p "$state" "$pi_root/fixture" "$worktree"
+  printf 'window=sq:drill-fail\nharness=pi\nworktree=%s\nmodel=default\n' "$worktree" > "$state/drill-fail.meta"
+  cat > "$pi_root/fixture/operator.jsonl" <<EOF
+{"type":"session","version":3,"id":"drill-fail-session","timestamp":"2026-01-01T00:00:00Z","cwd":"$worktree"}
+{"type":"custom","customType":"squad-task-attribution","data":{"taskId":"drill-fail"}}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-4"}
+{"type":"message","message":{"role":"assistant","model":"claude-sonnet-4","usage":{"input":100,"output":50,"totalTokens":150}}}
+EOF
+  printf 'this is not a drill database' > "$bad_db"
+  stdout=$(sq_cost_drill_task_json drill-fail "$bad_db" 2>"$TMP_ROOT/drill-fail-read.stderr")
+  stderr=$(cat "$TMP_ROOT/drill-fail-read.stderr")
+  [ "$(jq 'length' <<<"$stdout")" = "0" ] || fail "unreadable Drill database should yield an empty invocation list"
+  assert_contains "$stderr" "could not read Drill invocations" "unreadable Drill database emits a diagnostic on stderr"
+  local output report_stderr
+  output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" SQUAD_DRILL_STATE="$bad_db" \
+    "$COST_CLI" report drill-fail --json 2>"$TMP_ROOT/drill-fail-report.stderr")
+  report_stderr=$(cat "$TMP_ROOT/drill-fail-report.stderr")
+  assert_contains "$report_stderr" "could not read Drill invocations" "report surfaces the Drill read failure instead of dropping pipeline cost silently"
+  assert_contains "$output" '"found": true' "Pi usage is still reported when the Drill database is unreadable"
+  pass "Drill read failures are observable instead of silently dropping pipeline cost"
+}
+
+test_drill_read_failure_is_observable
 
 # ── (h2b) Pi execution-window requirement ─────────────────────────────────
 
@@ -414,7 +575,7 @@ EOF
   local output
   output=$(SQUAD_STATE_OVERRIDE="$state" SQUAD_PI_SESSION_DIR="$pi_root" \
     "$COST_CLI" report no-exec --json)
-  assert_contains "$output" '"found":false' "Pi report refuses path-only attribution without an execution window"
+  assert_contains "$output" '"found": false' "Pi report refuses path-only attribution without an execution window"
   assert_contains "$output" 'execution window is unavailable' "missing execution window explains unavailable attribution"
   cat >> "$pi_root/fixture/session.jsonl" <<'EOF'
 {"type":"custom","customType":"squad-task-attribution","data":{"taskId":"no-exec"}}

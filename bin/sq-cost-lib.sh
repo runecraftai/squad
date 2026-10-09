@@ -5,8 +5,9 @@
 # (MIT, Chaitanya Giri). Reads real operator transcripts (JSONL) and prices
 # them per model to get per-operation cost.
 #
-# Supports Claude Code JSONL transcripts and Pi session JSONL files. Other harnesses
-# (opencode, codex, grok, kimi) are estimated from token counts when available.
+# Supports Claude Code JSONL transcripts, Pi session JSONL files, and Drill
+# agent-invocation records. Other harnesses (opencode, codex, grok, kimi) are
+# estimated from token counts when available.
 # Pi attribution is exact: a session is eligible when its session header cwd
 # equals any recorded task execution workspace and its record carries an exact
 # task-attribution entry. The recorded execution-attempt window remains the
@@ -14,7 +15,8 @@
 # recorded harness must be pi or pi-signed.
 # The session directory is scoped by SQUAD_PI_SESSION_DIR (or ~/.pi/agent/sessions),
 # so another base and the primary session cannot be counted accidentally. No
-# prompt or response content is read.
+# prompt or response content is read. Drill invocations are selected by the exact
+# `sq/<task-id>` branch from `~/.drill/state.sqlite` or SQUAD_DRILL_STATE.
 #
 # Usage:
 #   . bin/sq-cost-lib.sh
@@ -224,6 +226,42 @@ sq_cost_from_transcript() {
   echo "${in}|${out}|${cr}|${cw}|${model}|${cost}"
 }
 
+# ── Drill invocation reporting ────────────────────────────────────────────
+
+# sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Each row includes invocation identity, provider/model, step, timestamp, and tokens.
+sq_cost_drill_task_json() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
+  local branch="sq/$task_id" escaped_branch
+  escaped_branch=${branch//\'/\'\'}
+  [ -f "$database" ] || { printf '[]\n'; return 0; }
+  local rows status err detail
+  err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
+  if rows=$(sqlite3 -json "$database" \
+    "SELECT ai.agent, COALESCE(NULLIF(ai.model, ''), 'unknown') AS model,
+            COALESCE(NULLIF(ai.model_provider, ''), 'unknown') AS model_provider,
+            ai.step_name, ai.started_at,
+            COALESCE(ai.input_tokens, 0) AS input,
+            COALESCE(ai.output_tokens, 0) AS output,
+            COALESCE(ai.cache_read_tokens, 0) AS cache_read,
+            COALESCE(ai.cache_creation_tokens, 0) AS cache_write
+       FROM agent_invocations AS ai
+       JOIN runs AS r ON r.id = ai.run_id
+      WHERE r.branch = '$escaped_branch'
+      ORDER BY ai.started_at, ai.id;" 2>"$err"); then
+    :
+  else
+    status=$?
+    detail=$(tr '\n' ' ' < "$err" | sed 's/[[:space:]]*$//')
+    printf 'sq-cost: warning: could not read Drill invocations from %s: %s\n' \
+      "$database" "${detail:-sqlite3 exited with status $status}" >&2
+    rows=""
+  fi
+  rm -f "$err"
+  printf '%s\n' "${rows:-[]}"
+}
+
 # ── Pi task reporting ─────────────────────────────────────────────────────
 
 # sq_cost_pi_task_json — return privacy-safe aggregated usage for a Pi task.
@@ -288,23 +326,36 @@ sq_cost_pi_task_json() {
       any(.[]; .type == "custom" and .customType == "squad-task-attribution" and .data.taskId? == $task);
     def has_any_task_identity:
       any(.[]; .type == "custom" and .customType == "squad-task-attribution");
+    def session_rows($session):
+      reduce $session[] as $event
+        ({current_model:$configured_model,current_provider:"",rows:[]};
+         if $event.type == "model_change" then
+           .current_model = ($event.modelId // .current_model) |
+           .current_provider = ($event.provider // "")
+         elif $event.type == "message" and $event.message.role == "assistant" and $event.message.usage != null then
+           .rows += [{model:($event.message.model // .current_model),provider:($event.message.provider // .current_provider),
+             session:($session[0].id // "unknown"),started:($session[0].timestamp // ""),
+             input:($event.message.usage.input // 0),output:($event.message.usage.output // 0),
+             cache_read:($event.message.usage.cacheRead // 0),cache_write:($event.message.usage.cacheWrite // 0),
+             total:($event.message.usage.totalTokens // (($event.message.usage.input // 0)+($event.message.usage.output // 0)+($event.message.usage.cacheRead // 0)+($event.message.usage.cacheWrite // 0))),
+             reported_cost:($event.message.usage.cost.total // null)}]
+         else . end) | .rows;
     def report($matched):
-      [ $matched[] as $s | $s[] | select(.type == "message" and .message.role == "assistant" and .message.usage != null) |
-        {model:(.message.model // (($s | map(select(.type == "model_change") | .modelId) | last) // $configured_model)),
-         provider:(($s | map(select(.type == "model_change") | .provider) | last) // ""), session:($s[0].id // "unknown"),
-         started:($s[0].timestamp // ""), input:(.message.usage.input // 0), output:(.message.usage.output // 0),
-         cache_read:(.message.usage.cacheRead // 0), cache_write:(.message.usage.cacheWrite // 0),
-         total:(.message.usage.totalTokens // ((.message.usage.input // 0)+(.message.usage.output // 0)+(.message.usage.cacheRead // 0)+(.message.usage.cacheWrite // 0))),
-         reported_cost:(.message.usage.cost.total // null)} ] as $rows |
+      ([$matched[] | session_rows(.)] | add // []) as $rows |
       {found:($matched|length > 0), task:$task, agent:$agent, worktree:($workspaces | last), sessions:($matched|length),
        started:($matched|map(.[0].timestamp // "")|min // ""),
-       models:([ $rows[].model ] | unique | map(. as $m | {model:$m,
-         sessions:([$rows[] | select(.model == $m) | .session] | unique | length),
-         input:([$rows[] | select(.model == $m) | .input] | add // 0), output:([$rows[] | select(.model == $m) | .output] | add // 0),
-         cache_read:([$rows[] | select(.model == $m) | .cache_read] | add // 0), cache_write:([$rows[] | select(.model == $m) | .cache_write] | add // 0),
-         total:([$rows[] | select(.model == $m) | .total] | add // 0),
-         reported_cost:([$rows[] | select(.model == $m) | .reported_cost] | map(select(. != null)) | add // null),
-         provider:([$rows[] | select(.model == $m) | .provider] | map(select(. != "")) | first // "")}))};
+       models:([ $rows[] | [.model,.provider] ] | unique | map(. as $key | {model:$key[0],provider:$key[1],
+         sessions:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .session] | unique | length),
+         input:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .input] | add // 0),
+         output:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .output] | add // 0),
+         cache_read:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .cache_read] | add // 0),
+         cache_write:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .cache_write] | add // 0),
+         total:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .total] | add // 0),
+         estimate_input:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .input] | add // 0),
+         estimate_output:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .output] | add // 0),
+         estimate_cache_read:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .cache_read] | add // 0),
+         estimate_cache_write:([$rows[] | select(.model == $key[0] and .provider == $key[1] and .reported_cost == null) | .cache_write] | add // 0),
+         reported_cost:([$rows[] | select(.model == $key[0] and .provider == $key[1]) | .reported_cost] | map(select(. != null)) | add // null)}))};
     ($sessions | map(select(.[0].type == "session" and
       (.[0].cwd as $session_cwd | $workspaces | index($session_cwd) != null)))) as $workspace_sessions |
     ($workspace_sessions | map(select(has_task_identity))) as $identity_matched |
