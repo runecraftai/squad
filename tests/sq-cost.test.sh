@@ -19,6 +19,7 @@ set -u
 COST_LIB="$ROOT/bin/sq-cost-lib.sh"
 COST_CLI="$ROOT/bin/sq-cost.sh"
 TMP_ROOT=$(fm_test_tmproot sq-cost)
+export SQUAD_DRILL_STATE="$TMP_ROOT/drill-state.sqlite"
 
 # Source the library for direct function tests
 # shellcheck disable=SC1090 # test source
