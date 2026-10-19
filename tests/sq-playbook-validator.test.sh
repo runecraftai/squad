@@ -280,6 +280,20 @@ write_react_evidence 3 > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'React must reject a criterion 3 with no routing or queries record'
 assert_contains "$out" 'criterion 3' 'React refusal must identify the empty routing/queries criterion'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+awk '/^## Criterion 3$/ {skip=1; next} /^## Criterion / {skip=0} !skip {print}' \
+  "$HOME/data/$id/artifacts/checks.md" > "$HOME/without-criterion-3.md"
+mv "$HOME/without-criterion-3.md" "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject a missing criterion 3 section'
+assert_contains "$out" 'missing: criterion 3' 'React must distinguish an absent criterion section from malformed records'
+expect_react_refusal '  - Routing: unchanged - no route edits
+Queries: changed - read-only query added' \
+  'React must explain a list-prefixed record is not a plain record line' 'plain Routing:'
+assert_not_contains "$out" 'missing: criterion 3' 'A malformed record must not be diagnosed as an absent criterion section'
+expect_react_refusal '**Routing:** unchanged - no route edits
+Queries: unchanged - no query edits' \
+  'React must explain an emphasized label is not a plain record line' 'plain Routing:'
 expect_react_refusal 'Queries: unchanged - path: entities/audit/model.ts' \
   'React must reject criterion 3 without a routing record' 'missing Routing record'
 expect_react_refusal 'Routing: unchanged - path: src/app/routes.tsx' \

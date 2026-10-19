@@ -84,7 +84,7 @@ react_dimension_problem() {
       texts[count] = text
     }
     END {
-      if (count == 0) { printf "missing %s record\n", label; exit }
+      if (count == 0) { printf "missing %s record (or malformed label); expected a plain %s: <state> - <free text> line\n", label, label; exit }
       if (count > 1) { printf "duplicate %s record (%d found)\n", label, count; exit }
       if (states[1] == "") { printf "%s record must declare changed or unchanged\n", label; exit }
       if (!dashes[1]) { printf "%s record must follow %s: <state> - <free text>\n", label, label; exit }
@@ -277,6 +277,11 @@ for (( i=0; i<COUNT; i++ )); do
   CHECKS="${CRITERIA_CHECKS[$i]}"
   PROOF="${PROOFS[$i]}"
   if [ "$NUM" -eq "$REACT_RECORD_CRITERION" ]; then
+    if ! grep -Eq "^##[[:space:]]+Criterion[[:space:]]+$NUM([^0-9]|$)" "$CHECKLIST"; then
+      echo "missing: criterion $NUM $LABEL section"
+      FAIL=1
+      continue
+    fi
     SECTION=$(criterion_section "$NUM")
     for dimension in Routing Queries; do
       PROBLEM=$(react_dimension_problem "$SECTION" "$dimension")

@@ -140,6 +140,7 @@ The labels below name the evidence expected by `bin/sq-playbook-validate.sh`; it
    Queries: <changed|unchanged> - <free text>
    ```
 
+   Write each record as a plain line beginning, after optional whitespace, with `Routing:` or `Queries:`; do not prefix Markdown list markers or emphasize the labels.
    `bin/sq-playbook-validate.sh` checks only that shape: one record per label, a `changed` or `unchanged` state, a `-` separator, and nonblank free text. It does not read the free text for code-based routing, guards, invalidation, wording, case, or word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording. Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
 4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
