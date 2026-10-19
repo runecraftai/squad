@@ -685,9 +685,12 @@ fm_escalation_digest() {  # <state> <lines>
 # daemon keeps running either way; this only names what to fix (for example a
 # primary that started before the extension existed and must be restarted).
 FM_PI_HANDOFF_FALLBACK_WHY=
-fm_pi_handoff_note_fallback() {  # <state> <target>
-  local verdict why
-  verdict=$(fm_afk_pi_handoff_evaluate "$1" "$2") && return 0
+fm_pi_handoff_note_fallback() {  # <state> <target> [verdict]
+  local verdict=${3:-} why
+  if [ -z "$verdict" ]; then
+    verdict=$(fm_afk_pi_handoff_evaluate "$1" "$2") || :
+  fi
+  case "$verdict" in refused\ *) ;; *) return 0 ;; esac
   why=${verdict#refused }
   [ "$why" != "$FM_PI_HANDOFF_FALLBACK_WHY" ] || return 0
   FM_PI_HANDOFF_FALLBACK_WHY=$why
@@ -1246,12 +1249,15 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   # it preserves pending human input and queues without terminal typing. Its
   # extension binds the handoff to the exact target and acknowledges consumption.
   if [ "$backend" = tuios ]; then
-    if fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
+    verdict=$(fm_afk_pi_handoff_evaluate "$state" "$target") || {
+      fm_pi_handoff_note_fallback "$state" "$target" "$verdict"
+      verdict=
+    }
+    if [ -n "$verdict" ]; then
       FM_PI_HANDOFF_FALLBACK_WHY=
-      fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered"
+      fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered" "${verdict#ready }"
       return $?
     fi
-    fm_pi_handoff_note_fallback "$state" "$target"
   fi
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then

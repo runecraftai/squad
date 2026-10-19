@@ -104,9 +104,9 @@ fm_afk_pi_handoff_age() {  # <path> -> seconds
   if [ "$now" -ge "$m" ]; then printf '%s' "$((now - m))"; else printf '0'; fi
 }
 
-fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-lines]
-  local state=$1 target=$2 message=$3 lines=${4:-} dir ready id request status tmp prior prior_status nonce same replaceable
-  ready=$(fm_afk_pi_handoff_ready "$state" "$target") || return 2
+fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-lines] [ready-json]
+  local state=$1 target=$2 message=$3 lines=${4:-} ready=${5:-} dir id request status tmp prior prior_status nonce same replaceable
+  [ -n "$ready" ] || ready=$(fm_afk_pi_handoff_ready "$state" "$target") || return 2
   dir=$(fm_afk_pi_handoff_dir "$state")
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 2
   case "$lines" in ''|*[!0-9]*) lines= ;; *) [ "$lines" -gt 0 ] || lines= ;; esac

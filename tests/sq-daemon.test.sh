@@ -2344,7 +2344,7 @@ const run = async (lock) => {
   (await import(`${pathToFileURL(extensionPath).href}?lock=${lock}`)).default(pi);
   await listeners.get("session_start")({}, ctx);
   await wait(1200);
-  const files = readdirSync(handoff).filter((name) => name.startsWith("ready."));
+  const files = readdirSync(handoff).filter((name) => /^ready\..*\.json$/.test(name));
   listeners.get("session_shutdown")?.();
   return { sent, files };
 };
@@ -2371,7 +2371,10 @@ test_inject_msg_tuios_pi_handoff_defers_until_native_ack() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { [ "$1" = tuios ] && [ "$2" = "primary:window-1" ]; }
-    fm_afk_pi_handoff_ready() { [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ]; }
+    fm_afk_pi_handoff_evaluate() {
+      [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ] || return 1
+      printf 'ready {"version":3,"sending":false}'
+    }
     fm_afk_pi_handoff_submit() {
       [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ] || fail "unexpected Pi handoff target"
       [[ "$3" == *'SQUAD_OP: v1 away-supervisor:'* ]] || fail "handoff lost the canonical operational envelope"
