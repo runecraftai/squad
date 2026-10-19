@@ -29,6 +29,21 @@ if [ -d "$ARTIFACTS" ]; then
 fi
 [ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS"; exit 1; }
 FAIL=0
+# matches_any <text> <pipe-separated keywords>: true when any keyword occurs in text.
+matches_any() {
+  local text=$1 rest=$2 kwd
+  while [ -n "$rest" ]; do
+    if case "$rest" in *"|"*) true ;; *) false ;; esac; then
+      kwd="${rest%%|*}"
+      rest="${rest#*|}"
+    else
+      kwd="$rest"
+      rest=""
+    fi
+    case "$text" in *"$kwd"*) return 0 ;; esac
+  done
+  return 1
+}
 proof_for() {
   local number=$1 proof
   proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
@@ -68,12 +83,12 @@ case "$PLAYBOOK@$VERSION" in
     ;;
   react@1)
     CRITERIA_LABELS=("FSD architecture and boundaries" "component responsibility and naming" "code-based router and query behavior" "lint proposal rationale and approval disposition" "real surface and focused behavior tests")
-    CRITERIA_PATTERNS=("architecture" "components" "router" "lint" "behavior")
+    CRITERIA_PATTERNS=("architecture" "component" "router|routing|route" "lint" "behavior")
     CRITERIA_CHECKS=(
-      "layers;boundaries"
-      "named functions;kebab-case"
-      "code-based;guards|unchanged;query;invalidation|unchanged"
-      "proposal;rationale;approval"
+      "layer;boundaries"
+      "named function;kebab-case"
+      "code-based|unchanged;router|routing|route;guards|unchanged;query|queries|unchanged;invalidation|unchanged"
+      "proposal|proposed;rationale;approval|approved"
       "surface;test;command"
     )
     ;;
@@ -214,7 +229,7 @@ for (( i=0; i<COUNT; i++ )); do
     FAIL=1
     continue
   fi
-  case "$PROOF" in *"$PATTERN"*) ;; *) echo "incompatible: criterion $NUM $LABEL proof"; FAIL=1 ;; esac
+  matches_any "$PROOF" "$PATTERN" || { echo "incompatible: criterion $NUM $LABEL proof"; FAIL=1; }
   case "$PROOF" in *command*|*path:*) ;; *) echo "incompatible: criterion $NUM proof lacks a bound command or path"; FAIL=1 ;; esac
   # Apply criterion-specific quality checks (all groups must match).
   REST="$CHECKS"
@@ -226,22 +241,10 @@ for (( i=0; i<COUNT; i++ )); do
       group="$REST"
       REST=""
     fi
-    FOUND=0
-    KREST="$group"
-    while [ -n "$KREST" ]; do
-      if case "$KREST" in *"|"*) true ;; *) false ;; esac; then
-        kwd="${KREST%%|*}"
-        KREST="${KREST#*|}"
-      else
-        kwd="$KREST"
-        KREST=""
-      fi
-      case "$PROOF" in *"$kwd"*) FOUND=1; break ;; esac
-    done
-    if [ "$FOUND" -eq 0 ]; then
+    matches_any "$PROOF" "$group" || {
       echo "incompatible: criterion $NUM $LABEL proof quality: expected one of $group"
       FAIL=1
-    fi
+    }
   done
 done
 # Duplicate-proof detection: no two criteria may share identical proof text.

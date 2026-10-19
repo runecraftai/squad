@@ -217,6 +217,19 @@ write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'React must reject lint evidence without rationale and approval disposition'
 assert_contains "$out" 'criterion 4' 'React refusal must identify incomplete lint evidence'
+react_proofs[3]='lint proposal with rationale and approval pending path: artifacts/lint-decision.md'
+react_proofs[2]='routing unchanged with no route or guard edits; queries unchanged; command: bun run check passed'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" 'React evidence justifying unchanged routing and queries should validate'
+assert_contains "$out" 'playbook evidence valid: react@1' 'React unchanged-surface evidence identity missing'
+react_proofs[2]='routing guards and invalidation path: src/app/routes.tsx command: integration test passed'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject changed routing evidence without code-based justification'
+assert_contains "$out" 'criterion 3' 'React refusal must identify incomplete router evidence'
+react_proofs[2]='router code-based guards and query invalidation path: src/app/routes.tsx command: integration test passed'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 printf 'playbook=react\nplaybook_version=2\n' > "$HOME/state/$id.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'React must reject unsupported evidence versions'
