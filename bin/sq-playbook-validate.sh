@@ -87,7 +87,7 @@ case "$PLAYBOOK@$VERSION" in
     CRITERIA_CHECKS=(
       "layer;boundaries"
       "named function;kebab-case"
-      "code-based|unchanged;router|routing|route;guards|unchanged;query|queries|unchanged;invalidation|unchanged"
+      "code-based|unchanged;router|routing|route;guards|unchanged;query|queries;invalidation|unchanged"
       "proposal|proposed;rationale;approval|approved"
       "surface;test;command"
     )

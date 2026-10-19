@@ -223,6 +223,11 @@ write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 expect_code 0 "$rc" 'React evidence justifying unchanged routing and queries should validate'
 assert_contains "$out" 'playbook evidence valid: react@1' 'React unchanged-surface evidence identity missing'
+react_proofs[2]='router routing unchanged path: src/app/routes.tsx command: bun run check passed'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject router evidence that never addresses queries'
+assert_contains "$out" 'criterion 3' 'React refusal must identify missing query evidence'
 react_proofs[2]='routing guards and invalidation path: src/app/routes.tsx command: integration test passed'
 write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
