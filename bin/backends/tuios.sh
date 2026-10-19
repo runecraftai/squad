@@ -570,9 +570,14 @@ fm_backend_tuios_composer_from_capture() {  # stdin: plain pane capture -> empty
 }
 
 fm_backend_tuios_composer_state() {  # <target> -> empty|pending|unknown
-  local target=$1 cap
+  local target=$1 cap verdict
   cap=$(fm_backend_tuios_capture "$target" "$SQUAD_BACKEND_TUIOS_COMPOSER_LINES") || { printf 'unknown'; return 0; }
-  printf '%s\n' "$cap" | fm_backend_tuios_composer_from_capture
+  verdict=$(printf '%s\n' "$cap" | fm_backend_tuios_composer_from_capture)
+  if [ "$verdict" = empty ] && [ "$(fm_backend_tuios_agent_state "$target")" != alive ]; then
+    printf 'unknown'
+    return 0
+  fi
+  printf '%s' "$verdict"
 }
 
 fm_backend_tuios_busy_state() {  # <target>

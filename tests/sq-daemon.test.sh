@@ -2244,6 +2244,38 @@ test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers() {
   pass "Pi handoff: readiness is per target, workers cannot evict the primary, and every refusal names its reason"
 }
 
+test_pi_handoff_record_must_match_lock_owner() {
+  local dir state
+  dir=$(make_supercase pi-handoff-lock-owner)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  (
+    fm_backend_source() { return 0; }
+    fm_backend_tuios_target_ready() { return 0; }
+    fm_pid_identity() { printf 'identity'; }
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    local now target=sq:primary f
+    now=$(date '+%s%3N' 2>/dev/null)
+    case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
+    f=$(fm_afk_pi_handoff_ready_file "$state" "$target")
+    jq -n --arg s sq --arg w primary --argjson hb "$now" --argjson pid "$$" \
+      '{version:3,pid:$pid,identity:"identity",session:$s,window:$w,idle:true,draft:false,prompts:0,sending:false,heartbeat:$hb}' > "$f"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null || fail "an absent lock must still permit the record"
+    printf '%s\n' "$$" > "$state/.lock"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null || fail "a record owned by the current lock holder must be accepted"
+    printf '%s\n' "$(( $$ + 1 ))" > "$state/.lock"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$target")" = "refused other-session" ] || fail "a record from another lock holder must be refused"
+    printf 'not-a-pid\n' > "$state/.lock"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$target")" = "refused other-session" ] || fail "a malformed lock must refuse the record"
+    rm -f "$state/.lock"
+    mkdir "$state/.lock"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$target")" = "refused other-session" ] || fail "an unreadable lock must refuse the record"
+    rmdir "$state/.lock"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null || fail "removing the lock must permit the record again"
+  ) || fail "Pi handoff lock-owner subshell failed"
+  pass "Pi handoff: a readiness record must belong to the base's current lock holder"
+}
+
 # The daemon must say why it left the native path, once per distinct reason, and
 # stop saying it when it is engaged again.
 # shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
@@ -2292,6 +2324,7 @@ test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer() {
     fm_backend_tuios_capture() {
       printf '%s\n' ' ⠏ Working' '' '╭──────────╮' '│          │' '╰──────────╯' ' footer' ' footer 2'
     }
+    fm_backend_tuios_agent_state() { printf 'alive'; }
     fm_backend_send_text_submit() { printf '%s\n' "$3" >> "$SENDS"; printf 'empty'; }
     export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
     inject_msg "digest" "$state" || fail "an empty Pi composer must accept the injection"
@@ -2327,21 +2360,26 @@ test_primary_pi_handoff_is_primary_only_and_names_its_ready_file_per_target() {
     LOCK_SHELL_PID=$$ LOCK_OTHER_PID=$worker_pid EXPECTED_READY="$expected" \
     node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module - "$ROOT/.pi/extensions/sq-primary-away-handoff.ts" "$state" <<'NODE'
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 const [extensionPath, state] = process.argv.slice(2);
 const handoff = `${state}/.pi-away-handoff`;
 mkdirSync(handoff, { recursive: true, mode: 0o700 });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const request = { id: "a".repeat(64), session: "lab", window: "win/1 é", message: "digest" };
-const run = async (lock) => {
-  writeFileSync(`${state}/.lock`, `${lock}\n`);
-  writeFileSync(`${handoff}/request.json`, JSON.stringify(request));
+const run = async (lock, id) => {
+  try { unlinkSync(`${handoff}/result.json`); } catch {}
+  if (lock === null) {
+    try { unlinkSync(`${state}/.lock`); } catch {}
+  } else {
+    writeFileSync(`${state}/.lock`, `${lock}\n`);
+  }
+  writeFileSync(`${handoff}/request.json`, JSON.stringify({ ...request, id }));
   const listeners = new Map();
   const sent = [];
   const pi = { on: (name, handler) => listeners.set(name, handler), sendUserMessage: async (...args) => sent.push(args) };
   const ctx = { isIdle: () => true, ui: { getEditorText: () => "" } };
-  (await import(`${pathToFileURL(extensionPath).href}?lock=${lock}`)).default(pi);
+  (await import(`${pathToFileURL(extensionPath).href}?lock=${lock ?? "missing"}&id=${id}`)).default(pi);
   await listeners.get("session_start")({}, ctx);
   await wait(1200);
   const files = readdirSync(handoff).filter((name) => /^ready\..*\.json$/.test(name));
@@ -2349,11 +2387,19 @@ const run = async (lock) => {
   return { sent, files };
 };
 // A live session that is neither this process nor an ancestor holds the lock: this is a worker.
-const worker = await run(process.env.LOCK_OTHER_PID);
+const worker = await run(process.env.LOCK_OTHER_PID, "a".repeat(64));
 assert.deepEqual(worker.files, [], "a worker must not publish a readiness record");
 assert.equal(worker.sent.length, 0, "a worker must not accept an away-mode request");
+// A present but malformed lock cannot prove this process owns the base.
+const malformed = await run("not-a-pid", "b".repeat(64));
+assert.deepEqual(malformed.files, [], "a malformed lock must not publish a readiness record");
+assert.equal(malformed.sent.length, 0, "a malformed lock must not accept an away-mode request");
+// An absent lock is the normal acquisition window, so publishing is permitted.
+const missing = await run(null, "c".repeat(64));
+assert.deepEqual(missing.files, [process.env.EXPECTED_READY], "a missing lock must leave this session permitted to publish");
+assert.equal(missing.sent.length, 1, "a missing lock must leave this session permitted to accept");
 // The lock holder is an ancestor of this process (the primary's shell/wrapper): it is the primary.
-const primary = await run(process.env.LOCK_SHELL_PID);
+const primary = await run(process.env.LOCK_SHELL_PID, "d".repeat(64));
 assert.deepEqual(primary.files, [process.env.EXPECTED_READY], "the primary must publish exactly the per-target file the daemon derives");
 assert.equal(primary.sent.length, 1, "the primary must accept the request");
 assert.equal(existsSync(`${handoff}/ready.json`), false, "the shared ready.json must no longer be written");
@@ -2602,6 +2648,7 @@ test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present
 test_primary_pi_handoff_resets_prompt_state_and_survives_stale_context
 test_primary_pi_handoff_is_primary_only_and_names_its_ready_file_per_target
 test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers
+test_pi_handoff_record_must_match_lock_owner
 test_inject_msg_tuios_logs_why_native_handoff_was_not_used
 test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack

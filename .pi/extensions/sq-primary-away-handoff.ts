@@ -68,16 +68,21 @@ function pidAlive(pid: number): boolean {
 // this Pi is a worker (or a read-only session), not the supervised primary.
 // Workers inherit SQUAD_BASE and the TUIOS pane variables, and their worktrees
 // carry this same project extension, so without this check every worker would
-// publish a readiness record and accept requests. A missing or dead lock does
-// not exclude this process: the daemon only ever targets the lock holder's pane.
+// publish a readiness record and accept requests. An absent lock is permitted
+// (the normal acquisition window); a present lock that cannot be read, or whose
+// content is empty, non-numeric, or pid 1, is another session. That deliberately
+// tightens pi-watch, which treats a present-but-unreadable lock as missing: a
+// readiness record must fail closed while a competing session may own it.
 function heldByAnotherSession(lockFile: string): boolean {
-  let holder = 0;
+  let contents = "";
   try {
-    holder = Number(readFileSync(lockFile, "utf8").trim());
-  } catch {
-    return false;
+    contents = readFileSync(lockFile, "utf8").trim();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code !== "ENOENT";
   }
-  if (!Number.isInteger(holder) || holder <= 1) return false;
+  if (!/^[0-9]+$/.test(contents)) return true;
+  const holder = Number(contents);
+  if (holder <= 1) return true;
   let pid = process.pid;
   for (let i = 0; i < 8 && pid > 1; i += 1) {
     if (pid === holder) return false;

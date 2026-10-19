@@ -24,7 +24,7 @@ fm_afk_pi_handoff_ready_file() {  # <state> <target>
 # One record, one verdict: prints the validated record (rc 0) or a single
 # refusal-reason token (rc 1) so a fallback can always say why it was taken.
 fm_afk_pi_handoff_check_record() {  # <state> <target> <file>
-  local state=$1 target=$2 file=$3 rec ready pid identity expected heartbeat now age
+  local state=$1 target=$2 file=$3 rec ready pid identity expected heartbeat now age lock lock_pid
   [ -f "$file" ] && [ ! -L "$file" ] || { printf 'no-record'; return 1; }
   rec=$(jq -ce 'select(type == "object")' "$file" 2>/dev/null) && [ -n "$rec" ] \
     || { printf 'unreadable-record'; return 1; }
@@ -46,6 +46,13 @@ fm_afk_pi_handoff_check_record() {  # <state> <target> <file>
   identity=$(printf '%s' "$ready" | jq -r '.identity')
   heartbeat=$(printf '%s' "$ready" | jq -r '.heartbeat')
   case "$pid:$heartbeat" in *[!0-9:]*) printf 'schema'; return 1 ;; esac
+  lock="$state/.lock"
+  if [ -e "$lock" ] || [ -L "$lock" ]; then
+    lock_pid=$(cat -- "$lock" 2>/dev/null) || { printf 'other-session'; return 1; }
+    lock_pid=${lock_pid//[[:space:]]/}
+    case "$lock_pid" in ''|*[!0-9]*) printf 'other-session'; return 1 ;; esac
+    [ "$lock_pid" -eq "$pid" ] || { printf 'other-session'; return 1; }
+  fi
   if [ "$pid" -le 0 ] || ! kill -0 "$pid" 2>/dev/null; then printf 'dead-process'; return 1; fi
   if ! declare -F fm_pid_identity >/dev/null; then
     # shellcheck source=bin/sq-stand-to-lib.sh

@@ -1155,6 +1155,22 @@ pi_frame() {  # <row>... -> a Pi frame around the given composer rows, plus foot
   printf '%s\n' "╰${PI_RULE}╯" ' /home/user · main · 67% left' ' model · thinking: high'
 }
 [ "$(composer_of "$(pi_frame '')")" = empty ] || fail 'an empty Pi composer box must read empty'
+# An empty frame alone is not proof the pane is writable: the daemon must also
+# attribute a live agent to it. A crashed Pi can leave its last composer frame
+# on screen with a shell prompt underneath, and that pane must never authorize
+# the raw typing fallback.
+SQUAD_TUIOS_FAKE_AGENTS='{"agents":[{"id":"w-opaque_7","foreground":"","state":"done","harness_id":"pi","source":"report","confidence":"certain"}]}'
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(composer_of "$(pi_frame '')")" = unknown ] || fail 'an empty frame on a dead agent must read unknown, never empty'
+unset SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_MISSING=1
+export SQUAD_TUIOS_FAKE_MISSING
+[ "$(composer_of "$(pi_frame '')")" = unknown ] || fail 'an empty frame with no attributed agent must read unknown, never empty'
+unset SQUAD_TUIOS_FAKE_MISSING
+SQUAD_TUIOS_FAKE_AGENTS='{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"working","harness_id":"pi","source":"report","confidence":"certain"}]}'
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(composer_of "$(pi_frame '')")" = empty ] || fail 'an empty frame with a live attributed agent must read empty'
+unset SQUAD_TUIOS_FAKE_AGENTS
 [ "$(composer_of "$(pi_frame 'half typed')")" = pending ] || fail 'a typed draft must read pending'
 [ "$(composer_of "$(pi_frame '' 'second line only' '')")" = pending ] \
   || fail 'a multi-line draft whose last line is blank must still read pending'
