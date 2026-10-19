@@ -133,6 +133,7 @@ Squad ships these user-invocable built-in skills. Claude and grok use the slash 
 | `/sitrep`      | Generate a concise four-section chat digest from bounded local unit and registered-XO state; use `/sitrep file` to also replace today's dated report in `data/`, and add `include PRs` when live PR enrichment is wanted                                                    |
 | `/updatesquad` | Self-update the running Squad and its XOs to the latest from origin with fast-forward-only pulls, then re-read instructions and nudge XOs                                                                                                                                   |
 | `/debrief`     | Sweep the session for uncaptured durable knowledge, route each finding to its durable owner per AGENTS.md, file undone next steps to the backlog, cascade the same sweep to every registered XO against that base's own memory budget, and report what is now safe to reset |
+| `/knowledge-pass` | Turn a delivery into a code-grounded five-section pass - problem, rules, flow, decisions, verification - then check your understanding one question at a time |
 
 Sitrep invocation examples:
 

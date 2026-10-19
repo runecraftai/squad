@@ -133,6 +133,7 @@ O Squad acompanha estas skills embutidas invocáveis pelo usuário. Claude e gro
 | `/sitrep`      | Gera um digest conciso de quatro seções no chat a partir do estado local limitado da unidade e dos XOs registrados; use `/sitrep file` para também substituir o relatório datado de hoje em `data/`, e adicione `include PRs` quando quiser enriquecimento ao vivo de PRs                    |
 | `/updatesquad` | Atualiza o Squad em execução e seus XOs para o mais recente da origem com pulls somente fast-forward, depois relê as instruções e cutuca os XOs                                                                                                                                                                                              |
 | `/debrief`     | Varre a sessão em busca de conhecimento durável não capturado, encaminha cada achado ao seu dono durável conforme o AGENTS.md, arquiva próximos passos pendentes no backlog, propaga a mesma varredura para cada XO registrado contra o próprio orçamento de memória daquela base, e reporta o que agora é seguro resetar |
+| `/knowledge-pass` | Transforma uma entrega em um passe de cinco seções ancorado no código - problema, regras, fluxo, decisões, verificação - e depois verifica seu entendimento com uma pergunta por vez |
 
 Exemplos de invocação do Sitrep:
 
@@ -148,7 +149,7 @@ Skills de referência exclusivas de agentes vivem em `.agents/skills/` e são ca
 As skills do Squad vivem em dois lugares separados, com públicos diferentes:
 
 - `.agents/skills/` - skills carregadas pelo agente (a tabela acima, mais as skills de referência exclusivas de agentes). Cada uma pressupõe uma base Squad ativa e é inútil - ou ativamente enganosa - instalada em qualquer outro lugar, então cada uma carrega `metadata.internal: true` no frontmatter. Essa flag as esconde da descoberta de instaladores (ferramentas como o instalador `npx skills add` do [skills.sh](https://skills.sh)) sem afetar como o próprio Squad as carrega.
-- `skills/` - skills públicas voltadas a instaladores, feitas para serem instaladas standalone em qualquer projeto, independentemente do Squad. Hoje é a `skills/debrief`, uma skill genérica de varredura de conhecimento de sessão que encaminha achados primeiro por instrução explícita, depois por convenções locais existentes, depois por um fallback privado em `.debrief-notes.md` no diretório atual. Ela deliberadamente não compartilha código com a `.agents/skills/debrief` interna do Squad que a inspirou no nome, para que as duas evoluam de forma independente.
+- `skills/` - skills públicas voltadas a instaladores, feitas para serem instaladas standalone em qualquer projeto, independentemente do Squad. A coleção inclui `debrief` mais skills de planejamento, design, arquitetura, segurança, performance e interface. Skills públicas são standalone e intencionalmente não compartilham código com skills internas do Squad de nome semelhante.
 
 ## Pacotes
 
