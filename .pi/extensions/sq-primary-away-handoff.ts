@@ -45,16 +45,6 @@ function keyOf(value: string): string {
   }).join("");
 }
 
-function parentPid(pid: number): number {
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[1]) || 0;
-  } catch {
-    const ps = spawnSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" });
-    return ps.status === 0 ? Number(ps.stdout.trim()) || 0 : 0;
-  }
-}
-
 function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -66,13 +56,20 @@ function pidAlive(pid: number): boolean {
 
 // True when a different, live Squad session holds the base's session lock, so
 // this Pi is a worker (or a read-only session), not the supervised primary.
-// Workers inherit SQUAD_BASE and the TUIOS pane variables, and their worktrees
-// carry this same project extension, so without this check every worker would
-// publish a readiness record and accept requests. An absent lock is permitted
-// (the normal acquisition window); a present lock that cannot be read, or whose
-// content is empty, non-numeric, or pid 1, is another session. That deliberately
-// tightens pi-watch, which treats a present-but-unreadable lock as missing: a
-// readiness record must fail closed while a competing session may own it.
+// Only the exact lock owner publishes readiness or accepts a request:
+// bin/sq-lock.sh records the innermost harness pid (fm_harness_ancestry_pid),
+// which for Pi is the process running this extension. Matching an ancestor was
+// wrong in the shape that matters: a Pi started from the primary's own Bash
+// tool inherits SQUAD_BASE and the same TUIOS pane variables, so it would
+// overwrite the primary's per-target record every tick and could acknowledge a
+// request the commander never saw. An absent lock is permitted (the normal
+// acquisition window), and a lock naming a dead process counts as absent too so
+// a crash-relaunched primary engages again - the pi-watch convention
+// (`pidAlive(lockPid) ? "other" : "missing"`). A present lock that cannot be
+// read, or whose content is empty, non-numeric, or pid 1, is another session;
+// that deliberately tightens pi-watch, which treats a present-but-unreadable
+// lock as missing, because a readiness record must fail closed while a
+// competing session may own it.
 function heldByAnotherSession(lockFile: string): boolean {
   let contents = "";
   try {
@@ -83,11 +80,7 @@ function heldByAnotherSession(lockFile: string): boolean {
   if (!/^[0-9]+$/.test(contents)) return true;
   const holder = Number(contents);
   if (holder <= 1) return true;
-  let pid = process.pid;
-  for (let i = 0; i < 8 && pid > 1; i += 1) {
-    if (pid === holder) return false;
-    pid = parentPid(pid);
-  }
+  if (holder === process.pid) return false;
   return pidAlive(holder);
 }
 
@@ -154,7 +147,7 @@ export default function (pi: ExtensionAPI): void {
   pi.on?.("ui_prompt_end", () => { promptsOpen = promptsOpen > 0 ? promptsOpen - 1 : 0; });
 
   // Re-evaluated at most every few seconds: the lock holder is stable for the
-  // life of a session, and the check may spawn `ps` where /proc is unavailable.
+  // life of a session, so a cached verdict never masks a takeover for long.
   const isWorker = (): boolean => {
     if (!dir) return true;
     const now = Date.now();

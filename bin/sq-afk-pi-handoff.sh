@@ -51,7 +51,15 @@ fm_afk_pi_handoff_check_record() {  # <state> <target> <file>
     lock_pid=$(cat -- "$lock" 2>/dev/null) || { printf 'other-session'; return 1; }
     lock_pid=${lock_pid//[[:space:]]/}
     case "$lock_pid" in ''|*[!0-9]*) printf 'other-session'; return 1 ;; esac
-    [ "$lock_pid" -eq "$pid" ] || { printf 'other-session'; return 1; }
+    # A lock whose holder is already dead is treated exactly like an absent one,
+    # so a crash-relaunched primary engages again instead of being refused for the
+    # life of a stale lock; only a live competing holder refuses this record.
+    # Plain process liveness is the rule the Pi extension also applies, so the two
+    # readings of state/.lock cannot drift into different verdicts.
+    if [ "$lock_pid" -ne "$pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+      printf 'other-session'
+      return 1
+    fi
   fi
   if [ "$pid" -le 0 ] || ! kill -0 "$pid" 2>/dev/null; then printf 'dead-process'; return 1; fi
   if ! declare -F fm_pid_identity >/dev/null; then
@@ -112,7 +120,7 @@ fm_afk_pi_handoff_age() {  # <path> -> seconds
 }
 
 fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-lines] [ready-json]
-  local state=$1 target=$2 message=$3 lines=${4:-} ready=${5:-} dir id request status tmp prior prior_status nonce same replaceable
+  local state=$1 target=$2 message=$3 lines=${4:-} ready=${5:-} dir id request status tmp prior prior_status nonce same replaceable queued_pid
   [ -n "$ready" ] || ready=$(fm_afk_pi_handoff_ready "$state" "$target") || return 2
   dir=$(fm_afk_pi_handoff_dir "$state")
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 2
@@ -133,7 +141,11 @@ fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-line
     # A `submitting` record is abandoned only when the live, identity-verified
     # extension reports no in-flight send AND the record has aged past the bound:
     # a send that had been in flight that long would have stopped refreshing the
-    # ready heartbeat, so this is never a blind resend.
+    # ready heartbeat, so this is never a blind resend. A `queued` record is Pi's
+    # followUp queue accepted but not started yet; that queue lives inside the
+    # extension process, so a result written by a different, no-longer-live
+    # process describes a queue that died with it. Republishing under a new id is
+    # then safe, and leaving it alone would block every later digest forever.
     replaceable=0
     case "$prior_status" in
       handled) replaceable=1 ;;
@@ -142,6 +154,16 @@ fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-line
         if printf '%s' "$ready" | jq -e '.sending == false' >/dev/null 2>&1 \
           && [ "$(fm_afk_pi_handoff_age "$dir/result.json")" -ge "${SQUAD_PI_HANDOFF_STALE_SECS:-30}" ]; then
           replaceable=1
+        fi
+        ;;
+      queued)
+        if printf '%s' "$ready" | jq -e '.sending == false' >/dev/null 2>&1 \
+          && [ "$(fm_afk_pi_handoff_age "$dir/result.json")" -ge "${SQUAD_PI_HANDOFF_STALE_SECS:-30}" ]; then
+          queued_pid=$(jq -r '.pid // empty' "$dir/result.json" 2>/dev/null) || queued_pid=
+          case "$queued_pid" in
+            ''|*[!0-9]*) ;;
+            *) [ "$queued_pid" = "$(printf '%s' "$ready" | jq -r '.pid')" ] || replaceable=1 ;;
+          esac
         fi
         ;;
     esac

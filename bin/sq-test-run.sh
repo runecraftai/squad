@@ -182,7 +182,7 @@ family_for_basename() {
     sq-tangle-guard.test.sh|sq-update.test.sh)
       printf '%s\n' session-bootstrap
       ;;
-    sq-afk-pi-herdr-return-e2e.test.sh|\
+    sq-afk-pi-herdr-return-e2e.test.sh|sq-afk-tuios-live-optin.test.sh|\
     sq-claude-account-live-e2e.test.sh|\
     sq-codex-continuity-live-e2e.test.sh|sq-grok-continuity-live-e2e.test.sh|\
     sq-grok-stop-live-e2e.test.sh|sq-harness-liveness-drift-live-e2e.test.sh|\
@@ -877,7 +877,14 @@ families_for_changed_path() {
       printf '%s\n' orca
       ;;
     bin/backends/tuios*)
+      # The composer read is a rendered-surface signal, so its live guard in the
+      # live-harness-optin lane belongs to every TUIOS adapter change.
       printf '%s\n' backend-dispatch
+      printf '%s\n' live-harness-optin
+      ;;
+    bin/sq-afk-tuios-lab.sh)
+      printf '%s\n' afk
+      printf '%s\n' live-harness-optin
       ;;
     bin/sq-backend.sh|bin/sq-backend-hometag-lib.sh)
       printf '%s\n' backend-dispatch
