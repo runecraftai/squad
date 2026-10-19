@@ -15,7 +15,7 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1|plan-execute@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1|plan-execute@1|react@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
@@ -64,6 +64,17 @@ case "$PLAYBOOK@$VERSION" in
       "source|citation|artifact"
       "uncertainty|gap"
       "implication|decision"
+    )
+    ;;
+  react@1)
+    CRITERIA_LABELS=("FSD architecture and boundaries" "component responsibility and naming" "code-based router and query behavior" "lint proposal rationale and approval disposition" "real surface and focused behavior tests")
+    CRITERIA_PATTERNS=("architecture" "components" "router" "lint" "behavior")
+    CRITERIA_CHECKS=(
+      "layers;boundaries"
+      "named functions;kebab-case"
+      "code-based;guards|unchanged;query;invalidation|unchanged"
+      "proposal;rationale;approval"
+      "surface;test;command"
     )
     ;;
   feature@1)

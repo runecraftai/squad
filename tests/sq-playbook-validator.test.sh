@@ -184,6 +184,45 @@ for playbook in multi-phase-plan eval plan-execute; do
   expect_code 0 "$rc" "$playbook evidence should validate"
   assert_contains "$out" "playbook evidence valid: $playbook@1" "$playbook validator identity missing"
 done
+react_proofs=(
+  'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
+  'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'
+  'router code-based guards and query invalidation path: src/app/routes.tsx command: integration test passed'
+  'lint proposal with rationale and approval pending path: artifacts/lint-decision.md'
+  'behavior surface test command: web test passed'
+)
+write_react_evidence() {
+  local omitted=${1:-0} i
+  printf '# react@1 checklist\n'
+  for ((i=0; i<${#react_proofs[@]}; i++)); do
+    printf '## Criterion %s\n' "$((i+1))"
+    [ "$((i+1))" -eq "$omitted" ] || printf 'Proof: %s\n' "${react_proofs[$i]}"
+  done
+}
+id=react-evidence
+mkdir -p "$HOME/data/$id/artifacts"
+printf 'playbook=react\nplaybook_version=1\n' > "$HOME/state/$id.meta"
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" "complete React evidence should validate"
+assert_contains "$out" 'playbook evidence valid: react@1' 'React evidence identity missing'
+for criterion in 1 2 3 4 5; do
+  write_react_evidence "$criterion" > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "React must reject missing criterion $criterion"
+  assert_contains "$out" "missing: criterion $criterion" 'React refusal must identify missing evidence'
+done
+react_proofs[3]='lint proposal path: artifacts/lint-decision.md'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject lint evidence without rationale and approval disposition'
+assert_contains "$out" 'criterion 4' 'React refusal must identify incomplete lint evidence'
+printf 'playbook=react\nplaybook_version=2\n' > "$HOME/state/$id.meta"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject unsupported evidence versions'
+assert_contains "$out" 'unsupported execution playbook identity' 'React version refusal missing'
+pass 'sq-playbook validator: React requires all five criteria and a deliberated lint proposal'
+
 printf 'playbook=shipping\nplaybook_version=1\n' > "$HOME/state/rejected.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" rejected 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "rejected shipping identity should be refused"
