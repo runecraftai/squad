@@ -1189,6 +1189,11 @@ pi_ruled() {  # <row>... -> stock Pi frame around the given editor rows, plus fo
   printf '%s\n' "$rule" '/home/user/project (main)' '6.3%/8.2k (auto)                       model'
 }
 [ "$(composer_of "$(pi_ruled '')")" = empty ] || fail 'an empty stock Pi composer (rules only) must read empty'
+[ "$(composer_of "$(pi_ruled '❯')")" = empty ] || fail 'a lone agent glyph in the stock Pi editor row is an empty composer'
+[ "$(composer_of "$(pi_ruled '>')")" = unknown ] \
+  || fail 'a lone shell glyph typed into the stock Pi editor row is a draft, not an empty composer'
+[ "$(composer_of "$(pi_ruled '> unsent draft')")" = pending ] \
+  || fail 'text after a shell glyph in the stock Pi editor row must read pending'
 [ "$(composer_of "$(pi_ruled 'unsent live draft')")" = pending ] || fail 'a draft in the stock Pi composer must read pending'
 [ "$(composer_of "$(pi_ruled '' 'second line')")" = pending ] || fail 'a multi-line stock Pi draft must read pending'
 [ "$(composer_of "$(pi_ruled 'draft' '')")" = pending ] || fail 'a stock Pi draft above a blank row must read pending'

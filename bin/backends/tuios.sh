@@ -516,6 +516,8 @@ fm_backend_tuios_agent_running() {  # <report-json>
 # whose last line is blank is still `pending`. The frame must be the last thing
 # on the pane apart from a short footer, so an earlier tool-output box or a
 # markdown rule in the scrollback is never mistaken for the composer.
+# Only the `boxed` shape is a bordered composer container; the `ruled` editor row
+# is bare, so a lone shell glyph typed there is not an empty agent composer.
 # Classification is delegated to the one shared owner.
 SQUAD_BACKEND_TUIOS_COMPOSER_LINES=${SQUAD_BACKEND_TUIOS_COMPOSER_LINES:-30}
 SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX=${SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX:-4}
@@ -566,7 +568,9 @@ fm_backend_tuios_composer_from_capture() {  # stdin: plain pane capture -> empty
     i=$((i - 1))
   done
   { [ "$top" -ge 0 ] && [ "$content_rows" -gt 0 ]; } || { printf 'unknown'; return 0; }
-  fm_composer_classify_content 1 "$content" "$SQUAD_BACKEND_TUIOS_IDLE_RE"
+  local bordered=0
+  [ "$kind" = boxed ] && bordered=1
+  fm_composer_classify_content "$bordered" "$content" "$SQUAD_BACKEND_TUIOS_IDLE_RE"
 }
 
 fm_backend_tuios_composer_state() {  # <target> -> empty|pending|unknown

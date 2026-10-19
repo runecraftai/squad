@@ -12,6 +12,8 @@ fm_backend_tuios_cli_check || exit 2
 BIN=$(fm_backend_tuios_bin)
 VERSION=$("$BIN" --version 2>/dev/null | head -1) || exit 2
 ROOT=$(cd "$LAB_DIR/.." && pwd)
+PI_VERSION=
+harness_versions() { printf 'tuios=%s pi=%s' "$VERSION" "${PI_VERSION:-not-checked}"; }
 
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tuios-lab.XXXXXX") || exit 2
 chmod 700 "$TEMP" || exit 2
@@ -69,7 +71,7 @@ cleanup() {
   [ "$KEEP_TEMP" = 1 ] && return
   case "$TEMP" in "${TMPDIR:-/tmp}"/sq-afk-tuios-lab.*) rm -rf -- "$TEMP" ;; *) echo "refusing unexpected lab path: $TEMP" >&2 ;; esac
 }
-trap cleanup EXIT
+trap 'rc=$?; [ "$rc" -eq 0 ] || echo "guard harness: $(harness_versions)" >&2; cleanup' EXIT
 
 # All TUIOS commands use fresh XDG paths; never connect to or adopt an existing daemon.
 "$BIN" daemon --no-restore >"$TEMP/daemon.log" 2>&1 &
@@ -109,6 +111,7 @@ PROBE
     ;;
   lifecycle)
     PI_BIN=$(command -v pi) || { echo 'error: installed pi is required for the live lifecycle check' >&2; exit 2; }
+    PI_VERSION=$("$PI_BIN" --version 2>&1 | head -1)
     command -v node >/dev/null 2>&1 || { echo 'error: node is required for the loopback-only Pi model stub' >&2; exit 2; }
     mkdir -m 700 "$TEMP/home" "$TEMP/pi-config"
     cat > "$TEMP/mock-openai.mjs" <<'MOCK_PROVIDER'
