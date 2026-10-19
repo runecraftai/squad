@@ -886,6 +886,12 @@ families_for_changed_path() {
       printf '%s\n' afk
       printf '%s\n' live-harness-optin
       ;;
+    bin/sq-afk-pi-handoff.sh)
+      # Sourced by the daemon (its regressions live in the sentry/daemon suite)
+      # and by the TUIOS lab, so both coverage lanes apply.
+      printf '%s\n' sentry-wake-lock
+      printf '%s\n' live-harness-optin
+      ;;
     bin/sq-backend.sh|bin/sq-backend-hometag-lib.sh)
       printf '%s\n' backend-dispatch
       printf '%s\n' real-herdr-gated
