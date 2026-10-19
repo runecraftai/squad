@@ -231,11 +231,14 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on?.("before_agent_start", (event) => {
     if (!dir) return;
+    if (isWorker()) return;
     const content = typeof event.prompt === "string" ? event.prompt : messageText(event.prompt);
     const match = content.match(/\[SQUAD_PI_AFK_HANDOFF:([a-f0-9]{64})\]/);
     if (!match) return;
     const request = readJson<HandoffRequest>(`${dir}/request.json`);
-    if (request?.id === match[1]) writeStatus(dir, request.id, "handled");
+    if (request?.id !== match[1]) return;
+    if (request.session !== targetSession || request.window !== targetWindow) return;
+    writeStatus(dir, request.id, "handled");
   });
 
   pi.on?.("session_shutdown", () => {

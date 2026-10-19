@@ -114,6 +114,7 @@ The daemon never sends keys or text into a TUIOS supervisor pane; delivery uses 
   A worker's Pi inherits `SQUAD_BASE` and the TUIOS pane variables, and its Squad worktree carries this same project extension, so a single shared record used to be overwritten by whichever worker wrote last and the daemon fell back to terminal typing; readiness is therefore keyed by target and a record naming another window never satisfies the supervised pane.
 - `bin/sq-afk-pi-handoff.sh` publishes one durable `request.json` and observes `result.json`; it never retypes an unresolved escalation and reports success only on a consumption acknowledgement.
 - The extension queues the digest with `sendUserMessage(..., { deliverAs: "followUp" })`, which never touches the composer or an open dialog, and acknowledges consumption when Pi's own `before_agent_start` prompt carries the handoff marker.
+  The acknowledgement is written only by the lock-owning Pi and only for a request naming its own exact target, so a worker or nested Pi can never retire a buffer prefix for a digest the primary never received.
 
 Delivery is gated by three positive conditions: Pi must be idle, the editor must hold no draft, and no Pi prompt may be open.
 The last one is a native signal: Pi emits `ui_prompt_start` and `ui_prompt_end` around every built-in dialog (`select`, `confirm`, `input`, `editor`, `custom`), and the extension defers while that count is non-zero.
@@ -132,6 +133,8 @@ Delivery is idempotent across batches.
 A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
 A request is republished only when replacing it cannot duplicate delivery: Pi consumed it, or the extension's send never reached Pi (`uncertain`), or a `submitting` record has aged past the bound while the live, identity-verified extension reports no in-flight send, or a `queued` record was written by a process that is no longer the live extension - that followUp queue died with its writer, so republishing it under a new id is the only way the digest is ever delivered.
 A `submitting` or `queued` record owned by the live extension is never replaced, because that send or queue can still deliver, and the wedge alarm still covers a request that stays undelivered.
+When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, the daemon defers instead of retyping the digest through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
+The deferral is bounded: a request whose result entry is older than `SQUAD_PI_HANDOFF_STALE_SECS`, names another target, or was written by a dead or foreign process does not block the composer path, so a stuck request can never wedge delivery.
 
 `bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session.
 It refuses cleanup unless the recorded session id, its one owned window, and its unattached state still match, and every failure after the session is created closes that exact session again, so a failed launch cannot leak an unrecorded detached session.

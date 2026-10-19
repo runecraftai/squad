@@ -23,8 +23,11 @@ fm_afk_pi_handoff_ready_file() {  # <state> <target>
 
 # One record, one verdict: prints the validated record (rc 0) or a single
 # refusal-reason token (rc 1) so a fallback can always say why it was taken.
-fm_afk_pi_handoff_check_record() {  # <state> <target> <file>
-  local state=$1 target=$2 file=$3 rec ready pid identity expected heartbeat now age lock lock_pid
+# <heartbeat-max-age> defaults to 5000ms; passing tolerate-stale skips the
+# freshness bound while still requiring a live, identity-verified holder, for
+# callers that must recognise a live extension whose event loop is blocked.
+fm_afk_pi_handoff_check_record() {  # <state> <target> <file> [heartbeat-max-age]
+  local state=$1 target=$2 file=$3 max_age=${4:-5000} rec ready pid identity expected heartbeat now age lock lock_pid
   [ -f "$file" ] && [ ! -L "$file" ] || { printf 'no-record'; return 1; }
   rec=$(jq -ce 'select(type == "object")' "$file" 2>/dev/null) && [ -n "$rec" ] \
     || { printf 'unreadable-record'; return 1; }
@@ -71,7 +74,12 @@ fm_afk_pi_handoff_check_record() {  # <state> <target> <file>
   now=$(date '+%s%3N' 2>/dev/null)
   case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
   age=$((now - heartbeat))
-  [ "$age" -ge 0 ] && [ "$age" -le 5000 ] || { printf 'stale-heartbeat'; return 1; }
+  if [ "$max_age" = tolerate-stale ]; then
+    [ "$age" -ge 0 ] || { printf 'future-heartbeat'; return 1; }
+  else
+    case "$max_age" in ''|*[!0-9]*) printf 'schema'; return 1 ;; esac
+    [ "$age" -ge 0 ] && [ "$age" -le "$max_age" ] || { printf 'stale-heartbeat'; return 1; }
+  fi
   printf '%s' "$ready"
 }
 
@@ -117,6 +125,53 @@ fm_afk_pi_handoff_age() {  # <path> -> seconds
   now=$(date '+%s' 2>/dev/null)
   case "$now" in ''|*[!0-9]*) now=0 ;; esac
   if [ "$now" -ge "$m" ]; then printf '%s' "$((now - m))"; else printf '0'; fi
+}
+
+# Whether a durable handoff request for this exact target is still unresolved
+# AND owned by the live, identity-verified extension: prints its id (rc 0) when
+# the typed fallback must not retype the digest, silent (rc 1) otherwise. The
+# native request is unresolved while its result entry is new/submitting/queued
+# (a result that names an older request counts as new, because Pi will still
+# submit this one),
+# the writer is the extension the ready record names, and the entry is younger
+# than SQUAD_PI_HANDOFF_STALE_SECS - so a stuck, foreign, or dead-writer request
+# ages out and never wedges delivery. The ready record's heartbeat is allowed to
+# be stale here: a blocked event loop is exactly when the Pi may still deliver
+# the request it already holds.
+fm_afk_pi_handoff_unresolved_request() {  # <state> <target>
+  local state=$1 target=$2 dir request result id status ready ready_pid pid age
+  [ "${SQUAD_SUPERVISOR_BACKEND:-}" = tuios ] || return 1
+  dir=$(fm_afk_pi_handoff_dir "$state")
+  request="$dir/request.json"
+  result="$dir/result.json"
+  [ -f "$request" ] && [ ! -L "$request" ] || return 1
+  id=$(jq -er --arg session "${target%%:*}" --arg window "${target#*:}" \
+    'select(.session == $session and .window == $window) | .id' "$request" 2>/dev/null) || return 1
+  case "$id" in *[!a-f0-9]*|'') return 1 ;; esac
+  pid=
+  status=new
+  if [ -e "$result" ] || [ -L "$result" ]; then
+    [ -f "$result" ] && [ ! -L "$result" ] || return 1
+    status=$(jq -er --arg id "$id" 'select(.id == $id) | .status' "$result" 2>/dev/null) || status=new
+    case "$status" in new|submitting|queued) ;; *) return 1 ;; esac
+    if [ "$status" != new ]; then
+      pid=$(jq -r '.pid // empty' "$result" 2>/dev/null)
+      case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    fi
+  fi
+  if [ "$status" = new ]; then
+    age=$(fm_afk_pi_handoff_age "$request")
+  else
+    age=$(fm_afk_pi_handoff_age "$result")
+  fi
+  [ "$age" -lt "${SQUAD_PI_HANDOFF_STALE_SECS:-30}" ] || return 1
+  if ! ready=$(fm_afk_pi_handoff_check_record "$state" "$target" "$(fm_afk_pi_handoff_ready_file "$state" "$target")" tolerate-stale); then
+    ready=$(fm_afk_pi_handoff_check_record "$state" "$target" "$dir/ready.json" tolerate-stale) || return 1
+  fi
+  ready_pid=$(printf '%s' "$ready" | jq -r '.pid // empty') || return 1
+  case "$ready_pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -z "$pid" ] || [ "$pid" = "$ready_pid" ] || return 1
+  printf '%s' "$id"
 }
 
 fm_afk_pi_handoff_submit() {  # <state> <target> <encoded-message> [covered-lines] [ready-json]

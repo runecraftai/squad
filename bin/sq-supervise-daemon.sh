@@ -685,6 +685,7 @@ fm_escalation_digest() {  # <state> <lines>
 # daemon keeps running either way; this only names what to fix (for example a
 # primary that started before the extension existed and must be restarted).
 FM_PI_HANDOFF_FALLBACK_WHY=
+FM_PI_HANDOFF_UNRESOLVED_ID=
 fm_pi_handoff_note_fallback() {  # <state> <target> [verdict]
   local verdict=${3:-} why
   if [ -z "$verdict" ]; then
@@ -1224,7 +1225,7 @@ window_for_task() {  # <task-key> [state]
 #     line, or a previous injection's unsent text), defer entirely - injecting
 #     would merge with the human's text.
 inject_msg() {  # <message> [state] [handoff-covered-lines]
-  local msg=$1 state target backend retries sleep_s verdict composer encoded covered=${3:-}
+  local msg=$1 state target backend retries sleep_s verdict composer encoded covered=${3:-} pending_id
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
   # daemon self-handles and stays quiet; Squad drives the normal always-on
@@ -1251,6 +1252,15 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   if [ "$backend" = tuios ]; then
     verdict=$(fm_afk_pi_handoff_evaluate "$state" "$target") || {
       fm_pi_handoff_note_fallback "$state" "$target" "$verdict"
+      # A request the live extension still holds must never be retyped through
+      # the composer path, or the digest arrives twice once Pi's queue drains.
+      if pending_id=$(fm_afk_pi_handoff_unresolved_request "$state" "$target"); then
+        [ "$pending_id" = "$FM_PI_HANDOFF_UNRESOLVED_ID" ] || {
+          FM_PI_HANDOFF_UNRESOLVED_ID=$pending_id
+          log "inject deferred: live Pi handoff request $pending_id is still unresolved for $target; not typing a duplicate"
+        }
+        return 1
+      fi
       verdict=
     }
     if [ -n "$verdict" ]; then

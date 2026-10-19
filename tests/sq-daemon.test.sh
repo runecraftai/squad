@@ -2398,6 +2398,103 @@ test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer() {
   pass "TUIOS fallback: an empty Pi composer receives the digest exactly once and a draft is never typed over"
 }
 
+# Exactly-once between the native followUp queue and the typed fallback. When the
+# live, identity-verified extension still holds an unresolved request for the
+# exact target, a transiently refused native verdict must defer rather than
+# retype the digest; once that request is stale, names another target, or was
+# written by a dead/foreign process, the composer path delivers again so a stuck
+# request can never wedge escalation delivery.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_inject_msg_tuios_defers_while_a_live_request_is_unresolved() {
+  local dir state id
+  dir=$(make_supercase inject-tuios-unresolved-request)
+  state="$dir/state"
+  afk_enter "$state"
+  id=$(printf 'a%.0s' $(seq 1 64))
+  mkdir -p "$state/.pi-away-handoff"
+  (
+    LOG="$dir/daemon.log"; : > "$LOG"
+    SENDS="$dir/sends"; : > "$SENDS"
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'empty'; }
+    fm_backend_send_text_submit() { printf '%s\n' "$3" >> "$SENDS"; printf 'empty'; }
+    # The handoff owner validates the real records below; only the local process
+    # identity probe is fixed because this shell, not Pi, is the writer under test.
+    fm_pid_identity() { printf 'identity'; }
+    # Transient refusal of the native verdict: the extension is alive but its
+    # event loop is blocked, so the ready heartbeat is stale.
+    fm_afk_pi_handoff_evaluate() { printf 'refused stale-heartbeat'; return 1; }
+    local other_pid=
+    write_ready() {
+      jq -n --argjson pid "$$" --argjson hb "$1" \
+        '{version:3,pid:$pid,identity:"identity",session:"primary",window:"window-1",idle:true,draft:false,prompts:0,sending:false,heartbeat:$hb}' \
+        > "$(fm_afk_pi_handoff_ready_file "$state" primary:window-1)"
+    }
+    write_request() {
+      jq -n --arg id "$id" --arg w "$1" '{id:$id,session:"primary",window:$w,message:"digest"}' \
+        > "$state/.pi-away-handoff/request.json"
+    }
+    write_result() {
+      jq -n --arg id "$id" --arg status "$1" --argjson pid "$2" '{id:$id,status:$status,pid:$pid}' \
+        > "$state/.pi-away-handoff/result.json"
+    }
+    export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
+    write_ready 1
+    write_request window-1
+    write_result queued "$$"
+    printf 'escalation one\n' > "$state/.subsuper-escalations"
+    if inject_msg "digest" "$state"; then
+      fail "a live unresolved queued request must defer the typed fallback"
+    fi
+    [ ! -s "$SENDS" ] || fail "nothing may be typed while the live Pi still holds the request"
+    [ "$(wc -l < "$state/.subsuper-escalations")" -eq 1 ] || fail "the escalation buffer must be preserved while the request is unresolved"
+    grep -q 'is still unresolved' "$LOG" || fail "the deferral must name the unresolved request"
+    inject_msg "digest" "$state" || true
+    [ "$(grep -c 'is still unresolved' "$LOG")" -eq 1 ] || fail "the unresolved deferral must be logged once per request"
+    # A result left over from the previous request names another id, so this
+    # request is still new to Pi and must defer the same way.
+    jq -n --arg id "$(printf 'b%.0s' $(seq 1 64))" --argjson pid "$$" \
+      '{id:$id,status:"handled",pid:$pid}' \
+      > "$state/.pi-away-handoff/result.json"
+    : > "$SENDS"
+    if inject_msg "digest" "$state"; then
+      fail "a result naming an older request must not let the typed path duplicate this one"
+    fi
+    [ ! -s "$SENDS" ] || fail "nothing may be typed while the live Pi still owes this request"
+    # A queued entry whose writer is dead describes a queue that died with it.
+    write_result queued 999999
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a dead queued writer must not block delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the queued writer is dead"
+    # So does a queued entry written by a different, live process.
+    sleep 120 &
+    other_pid=$!
+    write_result queued "$other_pid"
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a foreign queued writer must not block delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the queued writer is foreign"
+    kill "$other_pid" 2>/dev/null || true
+    wait "$other_pid" 2>/dev/null || true
+    other_pid=
+    # A request for another target is not this target's unresolved request.
+    write_request other-window
+    write_result queued "$$"
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a request naming another target must not block delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the request names another target"
+    # Finally, an entry older than the staleness bound ages out so a stuck
+    # request can never wedge delivery forever.
+    write_request window-1
+    write_result queued "$$"
+    fm_afk_pi_handoff_age() { printf '60'; }
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a stale unresolved request must not wedge delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the queued entry is stale"
+  ) || fail "TUIOS unresolved-request deferral subshell failed"
+  pass "TUIOS fallback: a live unresolved handoff request defers the typed path; stale, foreign, or dead-writer requests do not wedge delivery"
+}
+
 # Workers run in Squad worktrees that carry this same project extension and
 # inherit SQUAD_BASE plus the TUIOS pane variables. Only the session that holds
 # the base's lock may publish readiness or accept a request; the readiness file
@@ -2417,21 +2514,21 @@ test_primary_pi_handoff_is_primary_only_and_names_its_ready_file_per_target() {
     LOCK_SHELL_PID=$$ LOCK_OTHER_PID=$worker_pid EXPECTED_READY="$expected" \
     node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module - "$ROOT/.pi/extensions/sq-primary-away-handoff.ts" "$state" <<'NODE'
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 const [extensionPath, state] = process.argv.slice(2);
 const handoff = `${state}/.pi-away-handoff`;
 mkdirSync(handoff, { recursive: true, mode: 0o700 });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const request = { id: "a".repeat(64), session: "lab", window: "win/1 é", message: "digest" };
-const run = async (lock, id) => {
+const run = async (lock, id, overrides = {}) => {
   try { unlinkSync(`${handoff}/result.json`); } catch {}
   if (lock === null) {
     try { unlinkSync(`${state}/.lock`); } catch {}
   } else {
     writeFileSync(`${state}/.lock`, `${lock === "self" ? process.pid : lock}\n`);
   }
-  writeFileSync(`${handoff}/request.json`, JSON.stringify({ ...request, id }));
+  writeFileSync(`${handoff}/request.json`, JSON.stringify({ ...request, ...overrides, id }));
   const listeners = new Map();
   const sent = [];
   const pi = { on: (name, handler) => listeners.set(name, handler), sendUserMessage: async (...args) => sent.push(args) };
@@ -2440,37 +2537,51 @@ const run = async (lock, id) => {
   await listeners.get("session_start")({}, ctx);
   await wait(1200);
   const files = readdirSync(handoff).filter((name) => /^ready\..*\.json$/.test(name));
+  listeners.get("before_agent_start")({ prompt: `[SQUAD_PI_AFK_HANDOFF:${id}]` }, ctx);
+  let handled = null;
+  try { handled = JSON.parse(readFileSync(`${handoff}/result.json`, "utf8")).status; } catch {}
   listeners.get("session_shutdown")?.();
-  return { sent, files };
+  return { sent, files, handled };
 };
 // A live session that is neither this process nor an ancestor holds the lock: this is a worker.
 const worker = await run(process.env.LOCK_OTHER_PID, "a".repeat(64));
 assert.deepEqual(worker.files, [], "a worker must not publish a readiness record");
 assert.equal(worker.sent.length, 0, "a worker must not accept an away-mode request");
+assert.equal(worker.handled, null, "a worker must never acknowledge the primary's request");
 // The lock holder is an ancestor (a Pi started from the primary's own shell
 // inherits SQUAD_BASE and the same TUIOS pane variables): still a worker, because
 // bin/sq-lock.sh records the innermost harness pid, not an ancestor.
 const nested = await run(process.env.LOCK_SHELL_PID, "e".repeat(64));
 assert.deepEqual(nested.files, [], "an ancestor lock holder must not make a nested Pi the primary");
 assert.equal(nested.sent.length, 0, "a nested Pi must not consume the primary's request");
+assert.equal(nested.handled, null, "a nested Pi must never acknowledge the primary's request");
 // A present but malformed lock cannot prove this process owns the base.
 const malformed = await run("not-a-pid", "b".repeat(64));
 assert.deepEqual(malformed.files, [], "a malformed lock must not publish a readiness record");
 assert.equal(malformed.sent.length, 0, "a malformed lock must not accept an away-mode request");
+assert.equal(malformed.handled, null, "a malformed lock must never acknowledge the request");
 // A stale numeric lock naming a dead process is the crash-relaunch shape: it
 // counts as absent, so the relaunched primary engages again.
 const stale = await run("999999", "f".repeat(64));
 assert.deepEqual(stale.files, [process.env.EXPECTED_READY], "a dead lock holder must leave the primary permitted to publish");
 assert.equal(stale.sent.length, 1, "a dead lock holder must leave the primary permitted to accept");
+assert.equal(stale.handled, "handled", "a permitted primary must acknowledge consuming its own request");
 // An absent lock is the normal acquisition window, so publishing is permitted.
 const missing = await run(null, "c".repeat(64));
 assert.deepEqual(missing.files, [process.env.EXPECTED_READY], "a missing lock must leave this session permitted to publish");
 assert.equal(missing.sent.length, 1, "a missing lock must leave this session permitted to accept");
+assert.equal(missing.handled, "handled", "a permitted primary must acknowledge consuming its own request");
 // Exact ownership, which is what the daemon requires, publishes and accepts.
 const primary = await run("self", "d".repeat(64));
 assert.deepEqual(primary.files, [process.env.EXPECTED_READY], "the primary must publish exactly the per-target file the daemon derives");
 assert.equal(primary.sent.length, 1, "the primary must accept the request");
+assert.equal(primary.handled, "handled", "the primary must acknowledge consuming its own request");
 assert.equal(existsSync(`${handoff}/ready.json`), false, "the shared ready.json must no longer be written");
+// A request naming another target is never this Pi's to acknowledge, even when
+// this process owns the lock and a prompt carries the request's marker.
+const foreign = await run("self", "9".repeat(64), { window: "other-window" });
+assert.equal(foreign.sent.length, 0, "a request naming another target must not be sent");
+assert.equal(foreign.handled, null, "a request naming another target must never be acknowledged");
 NODE
   status=$?
   kill "$worker_pid" 2>/dev/null; wait "$worker_pid" 2>/dev/null
@@ -2720,6 +2831,7 @@ test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers
 test_pi_handoff_record_must_match_lock_owner
 test_inject_msg_tuios_logs_why_native_handoff_was_not_used
 test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer
+test_inject_msg_tuios_defers_while_a_live_request_is_unresolved
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped
