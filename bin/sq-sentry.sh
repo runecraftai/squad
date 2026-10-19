@@ -1197,6 +1197,10 @@ EOF
         if [ "$busy_now" -ne 0 ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;
+            # A live declared pause needs its first recheck even when a long
+            # poll keeps changing the pane. Preserve the existing throttle
+            # instead of clearing it and waiting for a stable hash.
+            none)   surface_nonterminal_stale "$w" "$h" ;;
             *)      clear_pause_tracking "$w" ;;
           esac
         else
