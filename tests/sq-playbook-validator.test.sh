@@ -233,6 +233,15 @@ write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'React must reject changed routing evidence without code-based justification'
 assert_contains "$out" 'criterion 3' 'React refusal must identify incomplete router evidence'
+for proof in \
+  'file-based routes now generated from the filesystem; guards unchanged; queries unchanged; command: bun run check passed' \
+  'routing unchanged; queries now keyed by user id in a new module; command: bun run check passed'; do
+  react_proofs[2]=$proof
+  write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "React must reject unchanged evidence borrowed from another dimension: $proof"
+  assert_contains "$out" 'criterion 3' 'React refusal must identify incomplete routing/query evidence'
+done
 react_proofs[2]='router code-based guards and query invalidation path: src/app/routes.tsx command: integration test passed'
 write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 printf 'playbook=react\nplaybook_version=2\n' > "$HOME/state/$id.meta"

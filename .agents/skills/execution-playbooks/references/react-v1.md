@@ -133,7 +133,7 @@ The labels below name the evidence expected by `bin/sq-playbook-validate.sh`; it
 
 1. **architecture**: changed modules mapped to layers, import directions, and boundaries check command/result, including unchanged architecture where relevant.
 2. **components**: changed named functions and kebab-case paths, hooks owning flows, and pure functions with zero React imports, with concrete inspection evidence.
-3. **router**: code-based route/guard behavior and query invalidation evidence; explicitly justify unchanged routing or queries when the task does not touch them.
+3. **router**: code-based route/guard behavior and query invalidation evidence; explicitly justify unchanged routing and queries when the task does not touch them.
 4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 
