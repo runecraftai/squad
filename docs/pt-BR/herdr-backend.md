@@ -279,7 +279,7 @@ Ainda existe um processo de sentinela; o event reader é um filho limitado daque
 O daemon away suporta panes supervisor de tmux, Herdr e TUIOS.
 Ele recusa Zellij, Orca e cmux como backends de supervisor em vez de aplicar o transporte errado.
 Para Herdr, existência do alvo, estado nativo, captura, estado do composer e submit verificado todos roteiam pelo dispatcher compartilhado do backend e o dono explícito de CLI da sessão nomeada.
-Um painel de supervisor TUIOS nunca recebe digitação; ele usa o handoff nativo do Pi dono de [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
+Um painel de supervisor TUIOS prefere o handoff nativo do Pi e só digita num composer lido como vazio; [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision) é dono desse contrato.
 O alerta pane-independente de max-defer é configurado em [`wedge-alarm.md`](wedge-alarm.md).
 
 Harnesses com execução rastreada nativa de segundo plano podem rodar o daemon em seu terminal.

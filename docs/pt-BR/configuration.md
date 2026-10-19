@@ -109,7 +109,8 @@ Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios` e `SQUAD_SUPERVISOR_TARGET=<a
 Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois `TUIOS_ENV=1` com `TUIOS_SESSION` e `TUIOS_PANE_ID`, depois recua para `tmux`.
 Isso mantém um painel tmux aninhado dentro de herdr ou TUIOS no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
 A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois `"$TUIOS_SESSION:$TUIOS_PANE_ID"` sob TUIOS, depois o fallback legado `Squad:0` do tmux com um aviso.
-Um painel de supervisor TUIOS nunca recebe digitação no terminal: os resumos de escalação passam pelo handoff nativo do Pi dono de `.pi/extensions/sq-primary-away-handoff.ts`, que enfileira um follow-up pelo próprio `sendUserMessage` do Pi e reconhece o consumo. Veja [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
+Um painel de supervisor TUIOS só recebe digitação no terminal pelo fallback guardado: os resumos de escalação preferem o handoff nativo do Pi dono de `.pi/extensions/sq-primary-away-handoff.ts`, que enfileira um follow-up pelo próprio `sendUserMessage` do Pi e reconhece o consumo, e o caminho digitado só roda depois que esse handoff recusa e o composer do painel é lido como vazio.
+Veja [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
 Selecionar qualquer outro backend de supervisor, incluindo `zellij`, `orca` ou `cmux`, recusa na inicialização do daemon em vez de tentar primitivas de injeção tmux contra um painel não-tmux.
 
 ## Canais de alarme wedge de away-mode (config/wedge-alarm)
