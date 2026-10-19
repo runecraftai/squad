@@ -1571,6 +1571,22 @@
   {
    "path": "skills/interview-me/SKILL.md",
    "audience": "public-product"
+  },
+  {
+   "path": ".agents/skills/knowledge-pass/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/knowledge-pass/assets/knowledge-pass-template.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": "skills/knowledge-pass/SKILL.md",
+   "audience": "public-product"
+  },
+  {
+   "path": "skills/knowledge-pass/assets/knowledge-pass-template.md",
+   "audience": "public-product"
   }
  ]
 }

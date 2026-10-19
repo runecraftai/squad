@@ -92,6 +92,7 @@ data/                personal unit records; LOCAL, gitignored as a whole
   XOs.md             local and remote XO routing table; Squad-private, maintained by the XO seed helpers (section 6)
   <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
   <id>/report.md     recon task deliverable, written by the operator; survives teardown
+  <id>/knowledge-pass.md  strike delivery record written by the knowledge-pass skill on request; survives teardown
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete commander-approved project operation exception
 state/               volatile runtime signals; gitignored
   <id>.status        appended by operators: "<state>: <note>" wake-event lines, not current-state truth; the last nonblank line is terminal completion evidence for bin/sq-exec-state.sh when its verb is done: or failed:
@@ -377,6 +378,7 @@ The worker reports the PR when CI first becomes green rather than waiting for me
 For PR-based strike tasks, the ready signal depends on mode: `drill` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
 Run `bin/sq-pr-check.sh <id> <PR url>` - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the sentry's merge poll.
 Tell the commander the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the drill risk level when applicable.
+Load `knowledge-pass` yourself for that handoff - you, not the worker - and deliver the five-section pass with code references in reviewer mode, then run its one-question-at-a-time understanding check. It never re-opens, delays, or edits the delivery.
 A commander instruction to merge is explicit authority; `yolo` is the only standing routine authority.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when Squad should wake, print nothing otherwise, finish before `SQUAD_CHECK_TIMEOUT`, then bind its current bytes with `bin/sq-check-register.sh <id>` before the sentry may execute it.
 
