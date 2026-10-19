@@ -11,7 +11,36 @@ TMP_ROOT=$(fm_test_tmproot sq-on)
 # and physicalize macOS's /var -> /private/var alias before transport validation.
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
-trap 'if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true; fi; rm -f -- "$HOME/tool-probe.log"; rm -rf -- "$TMP_ROOT"' EXIT
+# Tear down deterministically. The recorded worker pid is the serving child;
+# killing it only signals, so the worker could still be finishing its state
+# writes (including entries under worker.lock) when rm -rf ran, which surfaced
+# as a real CI flake:
+#   rm: cannot remove '/tmp/sq-on.XXXXXX/remote-jobs/worker.lock': Directory not empty
+# Wait for the worker to actually exit, then retry rm -rf until the now-quiesced
+# tree is gone.
+cleanup_sq_on_fixture() {
+  local worker_pid i
+  if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
+    worker_pid=$(cat "$TMP_ROOT/remote-jobs/worker.pid" 2>/dev/null || true)
+    if [ -n "$worker_pid" ]; then
+      kill "$worker_pid" 2>/dev/null || true
+      i=0
+      while [ "$i" -lt 500 ] && kill -0 "$worker_pid" 2>/dev/null; do
+        sleep 0.01
+        i=$((i + 1))
+      done
+    fi
+  fi
+  rm -f -- "$HOME/tool-probe.log"
+  i=0
+  while [ "$i" -lt 50 ]; do
+    rm -rf -- "$TMP_ROOT" 2>/dev/null && return 0
+    sleep 0.02
+    i=$((i + 1))
+  done
+  rm -rf -- "$TMP_ROOT" 2>/dev/null || true
+}
+trap cleanup_sq_on_fixture EXIT
 LOCAL_HOME="$TMP_ROOT/local-home"
 REMOTE_ROOT="$TMP_ROOT/remote-root"
 REMOTE_HOME="$TMP_ROOT/remote-home"
