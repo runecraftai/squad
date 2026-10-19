@@ -680,6 +680,23 @@ fm_escalation_digest() {  # <state> <lines>
   printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$lines" "$items"
 }
 
+# Say once per distinct reason why the native Pi handoff was not used for this
+# target, so a silent fall back to the composer path is never invisible. The
+# daemon keeps running either way; this only names what to fix (for example a
+# primary that started before the extension existed and must be restarted).
+fm_pi_handoff_fallback_why=
+fm_pi_handoff_unresolved_id=
+fm_pi_handoff_note_fallback() {  # <state> <target> [verdict]
+  local verdict=${3:-} why
+  if [ -z "$verdict" ]; then
+    verdict=$(fm_afk_pi_handoff_evaluate "$1" "$2") || :
+  fi
+  case "$verdict" in refused\ *) ;; *) return 0 ;; esac
+  why=${verdict#refused }
+  [ "$why" != "$fm_pi_handoff_fallback_why" ] || return 0
+  fm_pi_handoff_fallback_why=$why
+  log "Pi native handoff not engaged for $2 (reason: $why); falling back to the guarded composer path"
+}
 # Retire exactly the buffer prefix a consumed native Pi handoff covered, so a
 # later digest never re-sends an escalation the primary already handled. Refuses
 # on any mismatch (unknown coverage, fewer remaining lines, or a buffer prefix
@@ -1207,7 +1224,7 @@ window_for_task() {  # <task-key> [state]
 #     line, or a previous injection's unsent text), defer entirely - injecting
 #     would merge with the human's text.
 inject_msg() {  # <message> [state] [handoff-covered-lines]
-  local msg=$1 state target backend retries sleep_s verdict composer encoded covered=${3:-}
+  local msg=$1 state target backend retries sleep_s verdict composer encoded covered=${3:-} pending_id
   state="${2:-$(_state_root)}"
   # (1) Presence-gate: inject ONLY when afk is active. When afk is off, the
   # daemon self-handles and stays quiet; Squad drives the normal always-on
@@ -1231,9 +1248,28 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   # Pi's native follow-up queue is the only safe route for its TUIOS composer:
   # it preserves pending human input and queues without terminal typing. Its
   # extension binds the handoff to the exact target and acknowledges consumption.
-  if [ "$backend" = tuios ] && fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
-    fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered"
-    return $?
+  if [ "$backend" = tuios ]; then
+    verdict=$(fm_afk_pi_handoff_evaluate "$state" "$target") || {
+      # A request the live extension still holds must never be retyped through
+      # the composer path, or the digest arrives twice once Pi's queue drains.
+      if pending_id=$(fm_afk_pi_handoff_unresolved_request "$state" "$target"); then
+        [ "$pending_id" = "$fm_pi_handoff_unresolved_id" ] || {
+          fm_pi_handoff_unresolved_id=$pending_id
+          log "inject deferred: live Pi handoff request $pending_id is still unresolved for $target; not typing a duplicate"
+        }
+        return 1
+      fi
+      # Only now is the composer fallback really taken, so the reason is noted
+      # here: claiming it earlier would name a fallback that never happened and
+      # would spend the once-per-reason dedupe on a deferral.
+      fm_pi_handoff_note_fallback "$state" "$target" "$verdict"
+      verdict=
+    }
+    if [ -n "$verdict" ]; then
+      fm_pi_handoff_fallback_why=
+      fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered" "${verdict#ready }"
+      return $?
+    fi
   fi
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # bin/sq-composer-lib.sh - the ONE unit-wide owner of composer-content
 # classification, shared by every session-provider adapter: the tmux path
-# through bin/sq-tmux-lib.sh, and bin/backends/{herdr,orca,cmux}.sh directly.
+# through bin/sq-tmux-lib.sh, and bin/backends/{herdr,orca,cmux,tuios}.sh
+# directly.
 #
 # WHY THIS EXISTS (task sq-composer-shellglyph-safety): the four adapters each
 # carried their own copy of the "is this composer row empty / pending / not an

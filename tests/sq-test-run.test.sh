@@ -159,6 +159,12 @@ test_changed_dependency_selection_and_unmapped_failure() {
   git -C "$repo" add bin/sq-supervisor-target-lib.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm supervisor-change
 
+  printf '\n' >>"$repo/bin/sq-afk-pi-handoff.sh"
+  listed=$(cd "$repo" && bin/sq-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/sq-daemon.test.sh" "Pi handoff library selects daemon coverage"
+  git -C "$repo" add bin/sq-afk-pi-handoff.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm handoff-lib-change
+
   printf '\n' >>"$repo/.agents/skills/example/SKILL.md"
   printf '\n' >>"$repo/.claude/settings.json"
   printf '\n' >>"$repo/.pi/extensions/sq-primary-pi-watch.ts"

@@ -109,7 +109,8 @@ Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios` e `SQUAD_SUPERVISOR_TARGET=<a
 Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois `TUIOS_ENV=1` com `TUIOS_SESSION` e `TUIOS_PANE_ID`, depois recua para `tmux`.
 Isso mantém um painel tmux aninhado dentro de herdr ou TUIOS no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
 A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois `"$TUIOS_SESSION:$TUIOS_PANE_ID"` sob TUIOS, depois o fallback legado `Squad:0` do tmux com um aviso.
-Um painel de supervisor TUIOS nunca recebe digitação no terminal: os resumos de escalação passam pelo handoff nativo do Pi dono de `.pi/extensions/sq-primary-away-handoff.ts`, que enfileira um follow-up pelo próprio `sendUserMessage` do Pi e reconhece o consumo. Veja [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
+Um painel de supervisor TUIOS só recebe digitação no terminal pelo fallback guardado: os resumos de escalação preferem o handoff nativo do Pi dono de `.pi/extensions/sq-primary-away-handoff.ts`, que enfileira um follow-up pelo próprio `sendUserMessage` do Pi e reconhece o consumo, e o caminho digitado só roda depois que esse handoff recusa e o composer do painel é lido como vazio.
+Veja [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
 Selecionar qualquer outro backend de supervisor, incluindo `zellij`, `orca` ou `cmux`, recusa na inicialização do daemon em vez de tentar primitivas de injeção tmux contra um painel não-tmux.
 
 ## Canais de alarme wedge de away-mode (config/wedge-alarm)
@@ -566,6 +567,10 @@ SQUAD_BACKEND_ORCA_COMPOSER_LINES=200  # apenas orca: linhas de leitura de termi
 SQUAD_BACKEND_ORCA_IDLE_RE='^Type a message\.\.\.$'  # apenas orca: regex de placeholder de composer vazio após remoção de borda/prompt
 SQUAD_ZELLIJ_SESSION=Squad  # apenas zellij: sessão nomeada para operações normais de backend e isolamento de teste (docs/zellij-backend.md)
 SQUAD_TUIOS_SESSION=       # apenas tuios: sessão existente explícita para operações de backend (docs/tuios-backend.md)
+SQUAD_BACKEND_TUIOS_COMPOSER_LINES=30  # apenas tuios: linhas de cauda da pane capturadas para localizar o frame do composer
+SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX=4  # apenas tuios: linhas de rodapé toleradas abaixo do frame do composer antes da leitura degradar para desconhecida
+SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX=12  # apenas tuios: máximo de linhas de editor admitidas entre as duas bordas do frame
+SQUAD_BACKEND_TUIOS_IDLE_RE=''  # apenas tuios: regex opcional de placeholder de composer vazio, aplicada pelo classificador compartilhado após remoção de borda e glyph de prompt
 # config/tuios-workspace   # apenas tuios, arquivo local opcional: número de workspace preferido; ausente = workspace vazio e sem nome elegível de menor número
 SQUAD_BACKEND_CMUX_COMPOSER_LINES=20  # apenas cmux: linhas de cauda escaneadas para localizar a linha de composer para verificação de submissão
 SQUAD_BACKEND_CMUX_IDLE_RE='^Type a message\.\.\.$'  # apenas cmux: regex de placeholder de composer vazio após remoção de borda/prompt
@@ -652,7 +657,7 @@ SQUAD_SEND_RETRIES=3       # tentativas de retry de Enter do sq-send no submit d
 SQUAD_SEND_SLEEP=0.4       # segundos entre checks de submit do backend pelo sq-send
 SQUAD_SEND_SETTLE=1        # segundos que sq-send espera após uma submissão de texto bem-sucedida; 0 desativa
 SQUAD_PI_DELIVERY_TIMEOUT=5 # segundos que sq-send espera pela confirmação de entrega nativa do Pi antes de falhar
-SQUAD_PI_HANDOFF_STALE_SECS=30 # segundos que um registro de handoff do Pi em TUIOS pode permanecer em submitting antes que um envio abandonado possa ser republicado; apenas quando a extensão viva relata nenhum envio em andamento
+SQUAD_PI_HANDOFF_STALE_SECS=30 # segundos que um registro de handoff do Pi em TUIOS pode permanecer em submitting ou queued antes de contar como abandonado: limita a republicação de um envio abandonado (apenas quando a extensão viva relata nenhum envio em andamento), a republicação de um registro queued cujo processo escritor sumiu, e por quanto tempo o daemon adia o caminho digitado enquanto a extensão viva ainda tem uma solicitação não resolvida
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # segundos após entrega de solicitação marcada antes que um turno concluído sem um relatório pai correlacionado seja elegível para sua única retentativa de repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; apenas tmux/herdr/tuios, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID depois TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID antes de fallback tmux

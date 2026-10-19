@@ -35,6 +35,55 @@ function identity(): string | null {
   }
 }
 
+// Filename-safe token for a TUIOS session or window id. It must match
+// fm_afk_pi_handoff_key in bin/sq-afk-pi-handoff.sh byte for byte, because the
+// daemon locates this process's readiness record by name.
+function keyOf(value: string): string {
+  return Array.from(Buffer.from(value, "utf8"), (byte) => {
+    const ch = String.fromCharCode(byte);
+    return /[A-Za-z0-9_-]/.test(ch) ? ch : "_";
+  }).join("");
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// True when a different, live Squad session holds the base's session lock, so
+// this Pi is a worker (or a read-only session), not the supervised primary.
+// Only the exact lock owner publishes readiness or accepts a request:
+// bin/sq-lock.sh records the innermost harness pid (fm_harness_ancestry_pid),
+// which for Pi is the process running this extension. Matching an ancestor was
+// wrong in the shape that matters: a Pi started from the primary's own Bash
+// tool inherits SQUAD_BASE and the same TUIOS pane variables, so it would
+// overwrite the primary's per-target record every tick and could acknowledge a
+// request the commander never saw. An absent lock is permitted (the normal
+// acquisition window), and a lock naming a dead process counts as absent too so
+// a crash-relaunched primary engages again - the pi-watch convention
+// (`pidAlive(lockPid) ? "other" : "missing"`). A present lock that cannot be
+// read, or whose content is empty, non-numeric, or pid 1, is another session;
+// that deliberately tightens pi-watch, which treats a present-but-unreadable
+// lock as missing, because a readiness record must fail closed while a
+// competing session may own it.
+function heldByAnotherSession(lockFile: string): boolean {
+  let contents = "";
+  try {
+    contents = readFileSync(lockFile, "utf8").trim();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code !== "ENOENT";
+  }
+  if (!/^[0-9]+$/.test(contents)) return true;
+  const holder = Number(contents);
+  if (holder <= 1) return true;
+  if (holder === process.pid) return false;
+  return pidAlive(holder);
+}
+
 function ensureDir(dir: string): boolean {
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -79,6 +128,8 @@ function messageText(message: unknown): string {
 
 export default function (pi: ExtensionAPI): void {
   let dir: string | null = null;
+  let readyFile: string | null = null;
+  let workerUntil = 0;
   let targetSession = "";
   let targetWindow = "";
   let processIdentity: string | null = null;
@@ -95,9 +146,20 @@ export default function (pi: ExtensionAPI): void {
   pi.on?.("ui_prompt_start", () => { promptsOpen += 1; });
   pi.on?.("ui_prompt_end", () => { promptsOpen = promptsOpen > 0 ? promptsOpen - 1 : 0; });
 
+  // Re-evaluated at most every few seconds: the lock holder is stable for the
+  // life of a session, so a cached verdict never masks a takeover for long.
+  const isWorker = (): boolean => {
+    if (!dir) return true;
+    const now = Date.now();
+    if (now < workerUntil) return true;
+    if (!heldByAnotherSession(resolve(dir, "..", ".lock"))) return false;
+    workerUntil = now + 5000;
+    return true;
+  };
+
   const publishReady = (): void => {
-    if (!dir || !processIdentity || !context) return;
-    atomicJson(`${dir}/ready.json`, {
+    if (!dir || !readyFile || !processIdentity || !context) return;
+    atomicJson(readyFile, {
       version: 3,
       pid: process.pid,
       identity: processIdentity,
@@ -117,6 +179,7 @@ export default function (pi: ExtensionAPI): void {
   const pump = async (): Promise<void> => {
     try {
       if (!dir || !context || !ensureDir(dir)) return;
+      if (isWorker()) return;
       // Liveness, exact-target binding, and the delivery state are published on
       // every tick - including while a send is in flight - so a queued escalation
       // can wait durably and the sender can tell a live send apart from a stale
@@ -152,10 +215,13 @@ export default function (pi: ExtensionAPI): void {
     dir = stateDir();
     targetSession = process.env.TUIOS_SESSION || "";
     targetWindow = process.env.TUIOS_PANE_ID || "";
+    readyFile = dir ? `${dir}/ready.${keyOf(targetSession)}.${keyOf(targetWindow)}.json` : null;
+    workerUntil = 0;
     processIdentity = identity();
     promptsOpen = 0;
     if (!dir || !processIdentity || !ensureDir(dir)) {
       dir = null;
+      readyFile = null;
       return;
     }
     void pump();
@@ -165,11 +231,14 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on?.("before_agent_start", (event) => {
     if (!dir) return;
+    if (isWorker()) return;
     const content = typeof event.prompt === "string" ? event.prompt : messageText(event.prompt);
     const match = content.match(/\[SQUAD_PI_AFK_HANDOFF:([a-f0-9]{64})\]/);
     if (!match) return;
     const request = readJson<HandoffRequest>(`${dir}/request.json`);
-    if (request?.id === match[1]) writeStatus(dir, request.id, "handled");
+    if (request?.id !== match[1]) return;
+    if (request.session !== targetSession || request.window !== targetWindow) return;
+    writeStatus(dir, request.id, "handled");
   });
 
   pi.on?.("session_shutdown", () => {
@@ -177,14 +246,15 @@ export default function (pi: ExtensionAPI): void {
     timer = null;
     context = null;
     promptsOpen = 0;
-    if (dir) {
+    if (dir && readyFile) {
       try {
-        const ready = readJson<{ pid?: number; identity?: string }>(`${dir}/ready.json`);
-        if (ready?.pid === process.pid && ready.identity === processIdentity) unlinkSync(`${dir}/ready.json`);
+        const ready = readJson<{ pid?: number; identity?: string }>(readyFile);
+        if (ready?.pid === process.pid && ready.identity === processIdentity) unlinkSync(readyFile);
       } catch {
         // Keep durable request/result records; a stale ready marker expires by age.
       }
     }
     dir = null;
+    readyFile = null;
   });
 }

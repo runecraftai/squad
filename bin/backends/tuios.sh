@@ -496,12 +496,92 @@ fm_backend_tuios_agent_running() {  # <report-json>
   return 0
 }
 
-fm_backend_tuios_composer_state() {  # <target>
-  # The daemon exposes no generic "ordinary composer is empty" bit, and raw UI
-  # text is not proof of delivery, so this stays unknown. A classified blocking
-  # prompt is never reported as an empty composer either, so no caller types
-  # into a pane that is waiting on a prompt.
-  printf 'unknown'
+# --- composer state ----------------------------------------------------
+# The daemon exposes no "composer is empty" bit, so the composer is read from
+# the pane the same way the other adapters read theirs: a positively identified
+# composer frame whose rows are all blank is `empty`; any content in it is
+# `pending`; anything that cannot be identified as a composer frame (no frame, a
+# frame that is not at the bottom of the pane, a dead shell prompt, an unreadable
+# capture) is `unknown`. `unknown` never authorizes a write, and a classified
+# blocking prompt is refused earlier by the busy state, so this only widens the
+# proof of "empty" - it never turns an ambiguous pane into an empty one.
+#
+# Two frame shapes are recognized, both observed live:
+#   boxed  `╭──╮` / `│ … │` / `╰──╯`   a customized Pi editor, and claude, whose
+#                                       bordered row carries a `>` prompt glyph;
+#   ruled  `────` / editor rows / `────`  stock Pi (1.1.0), which draws only a
+#                                       full-width rule above and below its
+#                                       editor and no side borders.
+# Every row between the two borders is judged together, so a multi-line draft
+# whose last line is blank is still `pending`. The frame must be the last thing
+# on the pane apart from a short footer, so an earlier tool-output box or a
+# markdown rule in the scrollback is never mistaken for the composer.
+# Only the `boxed` shape is a bordered composer container; the `ruled` editor row
+# is bare, so a lone shell glyph typed there is not an empty agent composer.
+# Classification is delegated to the one shared owner.
+SQUAD_BACKEND_TUIOS_COMPOSER_LINES=${SQUAD_BACKEND_TUIOS_COMPOSER_LINES:-30}
+SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX=${SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX:-4}
+SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX=${SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX:-12}
+SQUAD_BACKEND_TUIOS_IDLE_RE=${SQUAD_BACKEND_TUIOS_IDLE_RE:-}
+# shellcheck source=bin/sq-composer-lib.sh
+. "$SQUAD_BACKEND_TUIOS_ROOT/bin/sq-composer-lib.sh"
+
+fm_backend_tuios_composer_from_capture() {  # stdin: plain pane capture -> empty|pending|unknown
+  local -a rows=()
+  local line t i n bottom=-1 top=-1 trailing=0 content_rows=0 content="" kind=
+  local rule_re='^(─|━|═){8,}$'
+  while IFS= read -r line || [ -n "$line" ]; do rows+=("$line"); done
+  n=${#rows[@]}
+  i=$((n - 1))
+  while [ "$i" -ge 0 ]; do
+    t="${rows[$i]#"${rows[$i]%%[![:space:]]*}"}"
+    t="${t%"${t##*[![:space:]]}"}"
+    if [ -n "$t" ]; then
+      case "$t" in
+        '╰'*'╯'|'└'*'┘'|'┗'*'┛') bottom=$i; kind=boxed; break ;;
+      esac
+      if [[ $t =~ $rule_re ]]; then bottom=$i; kind=ruled; break; fi
+      trailing=$((trailing + 1))
+      [ "$trailing" -le "$SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX" ] || break
+    fi
+    i=$((i - 1))
+  done
+  [ "$bottom" -ge 0 ] || { printf 'unknown'; return 0; }
+  i=$((bottom - 1))
+  while [ "$i" -ge 0 ] && [ "$content_rows" -le "$SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX" ]; do
+    t="${rows[$i]#"${rows[$i]%%[![:space:]]*}"}"
+    t="${t%"${t##*[![:space:]]}"}"
+    if [ "$kind" = boxed ]; then
+      case "$t" in
+        '╭'*'╮'|'┌'*'┐'|'┏'*'┓') top=$i; break ;;
+        '│'*'│') t=${t#│}; t=${t%│} ;;
+        '┃'*'┃') t=${t#┃}; t=${t%┃} ;;
+        *) break ;;
+      esac
+    elif [[ $t =~ $rule_re ]]; then
+      top=$i; break
+    fi
+    t="${t#"${t%%[![:space:]]*}"}"
+    t="${t%"${t##*[![:space:]]}"}"
+    content_rows=$((content_rows + 1))
+    if [ -n "$t" ]; then content="$t${content:+ $content}"; fi
+    i=$((i - 1))
+  done
+  { [ "$top" -ge 0 ] && [ "$content_rows" -gt 0 ]; } || { printf 'unknown'; return 0; }
+  local bordered=0
+  [ "$kind" = boxed ] && bordered=1
+  fm_composer_classify_content "$bordered" "$content" "$SQUAD_BACKEND_TUIOS_IDLE_RE"
+}
+
+fm_backend_tuios_composer_state() {  # <target> -> empty|pending|unknown
+  local target=$1 cap verdict
+  cap=$(fm_backend_tuios_capture "$target" "$SQUAD_BACKEND_TUIOS_COMPOSER_LINES") || { printf 'unknown'; return 0; }
+  verdict=$(printf '%s\n' "$cap" | fm_backend_tuios_composer_from_capture)
+  if [ "$verdict" = empty ] && [ "$(fm_backend_tuios_agent_state "$target")" != alive ]; then
+    printf 'unknown'
+    return 0
+  fi
+  printf '%s' "$verdict"
 }
 
 fm_backend_tuios_busy_state() {  # <target>

@@ -12,6 +12,8 @@ fm_backend_tuios_cli_check || exit 2
 BIN=$(fm_backend_tuios_bin)
 VERSION=$("$BIN" --version 2>/dev/null | head -1) || exit 2
 ROOT=$(cd "$LAB_DIR/.." && pwd)
+PI_VERSION=
+harness_versions() { printf 'tuios=%s pi=%s' "$VERSION" "${PI_VERSION:-not-checked}"; }
 
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tuios-lab.XXXXXX") || exit 2
 chmod 700 "$TEMP" || exit 2
@@ -69,7 +71,7 @@ cleanup() {
   [ "$KEEP_TEMP" = 1 ] && return
   case "$TEMP" in "${TMPDIR:-/tmp}"/sq-afk-tuios-lab.*) rm -rf -- "$TEMP" ;; *) echo "refusing unexpected lab path: $TEMP" >&2 ;; esac
 }
-trap cleanup EXIT
+trap 'rc=$?; [ "$rc" -eq 0 ] || echo "guard harness: $(harness_versions)" >&2; cleanup' EXIT
 
 # All TUIOS commands use fresh XDG paths; never connect to or adopt an existing daemon.
 "$BIN" daemon --no-restore >"$TEMP/daemon.log" 2>&1 &
@@ -109,6 +111,7 @@ PROBE
     ;;
   lifecycle)
     PI_BIN=$(command -v pi) || { echo 'error: installed pi is required for the live lifecycle check' >&2; exit 2; }
+    PI_VERSION=$("$PI_BIN" --version 2>&1 | head -1)
     command -v node >/dev/null 2>&1 || { echo 'error: node is required for the loopback-only Pi model stub' >&2; exit 2; }
     mkdir -m 700 "$TEMP/home" "$TEMP/pi-config"
     cat > "$TEMP/mock-openai.mjs" <<'MOCK_PROVIDER'
@@ -229,6 +232,13 @@ PI_LAUNCH
       KEEP_TEMP=1
       exit 1
     fi
+    # The record must be the per-target file the daemon derives, not the retired
+    # shared ready.json: that name is what lets a worker Pi coexist with the primary.
+    [ -f "$(fm_afk_pi_handoff_ready_file "$TEMP/base/state" "$target")" ] && [ ! -e "$TEMP/base/state/.pi-away-handoff/ready.json" ] || {
+      echo "error: the Pi extension did not publish the per-target readiness record; state=$TEMP/base/state" >&2
+      KEEP_TEMP=1
+      exit 1
+    }
     export SQUAD_SUPERVISOR_TARGET="$target"
     # shellcheck source=bin/sq-supervise-daemon.sh
     . "$ROOT/bin/sq-supervise-daemon.sh"
@@ -269,7 +279,7 @@ PI_LAUNCH
     : > "$TEMP/modal/open"
     modal_seen=
     for _ in $(seq 1 150); do
-      prompts=$(jq -r '.prompts // 0' "$handoff_dir/ready.json" 2>/dev/null)
+      prompts=$(jq -r '.prompts // 0' "$(fm_afk_pi_handoff_ready_file "$TEMP/base/state" "$target")" 2>/dev/null)
       case "$prompts" in ''|*[!0-9]*) prompts=0 ;; esac
       if [ -s "$TEMP/modal/showing" ] && [ "$prompts" -ge 1 ]; then modal_seen=1; break; fi
       sleep 0.1
@@ -323,13 +333,43 @@ PI_LAUNCH
       exit 1
     fi
     rm -f "$TEMP/modal/showing" "$TEMP/modal/closed" "$TEMP/modal/idle-at-open"
+    # --- live composer read -------------------------------------------------
+    # The fallback path types only into a composer it has read as empty, so the
+    # real Pi frame must read empty when idle and pending once a draft exists.
+    # The draft is left unsent and this runs after every delivery check, so it
+    # cannot disturb them; the lab session is destroyed on exit.
+    composer=
+    for _ in $(seq 1 50); do
+      composer=$(fm_backend_tuios_composer_state "$target")
+      [ "$composer" = empty ] && break
+      sleep 0.2
+    done
+    if [ "$composer" != empty ]; then
+      fm_backend_tuios_capture "$target" 100 > "$TEMP/pi-pane.txt" 2>/dev/null || true
+      echo "error: an idle real Pi composer read '$composer', not empty; pi=$("$PI_BIN" --version 2>&1 | head -1) pane=$TEMP/pi-pane.txt" >&2
+      KEEP_TEMP=1
+      exit 1
+    fi
+    fm_backend_tuios_send_literal "$target" 'unsent live draft' >/dev/null 2>&1 || { echo 'error: could not type the probe draft into the lab Pi' >&2; KEEP_TEMP=1; exit 1; }
+    composer=
+    for _ in $(seq 1 50); do
+      composer=$(fm_backend_tuios_composer_state "$target")
+      [ "$composer" = pending ] && break
+      sleep 0.2
+    done
+    if [ "$composer" != pending ]; then
+      fm_backend_tuios_capture "$target" 100 > "$TEMP/pi-pane.txt" 2>/dev/null || true
+      echo "error: a real Pi composer holding a draft read '$composer', not pending; pi=$("$PI_BIN" --version 2>&1 | head -1) pane=$TEMP/pi-pane.txt" >&2
+      KEEP_TEMP=1
+      exit 1
+    fi
     start=$(SQUAD_BASE="$TEMP/base" SQUAD_STATE_OVERRIDE="$TEMP/base/state" SQUAD_TUIOS_BIN="$BIN" SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET="$target" "$LAB_DIR/sq-afk-launch.sh" start 2>&1) || { echo "error: guarded start failed: $start; evidence=$TEMP/base" >&2; KEEP_TEMP=1; exit 1; }
     status=$(SQUAD_BASE="$TEMP/base" SQUAD_STATE_OVERRIDE="$TEMP/base/state" SQUAD_TUIOS_BIN="$BIN" "$LAB_DIR/sq-afk-launch.sh" status 2>&1) || { echo "error: guarded status failed: $status; evidence=$TEMP/base" >&2; KEEP_TEMP=1; exit 1; }
     stop=$(SQUAD_BASE="$TEMP/base" SQUAD_STATE_OVERRIDE="$TEMP/base/state" SQUAD_TUIOS_BIN="$BIN" "$LAB_DIR/sq-afk-launch.sh" stop 2>&1) || { echo "error: guarded stop refused: $stop; evidence=$TEMP/base" >&2; KEEP_TEMP=1; exit 1; }
     [ ! -e "$TEMP/base/state/.afk" ] && [ ! -e "$TEMP/base/state/.afk-daemon-terminal" ] || { echo "error: guarded stop left lifecycle state behind; evidence=$TEMP/base" >&2; KEEP_TEMP=1; exit 1; }
     inventory=$(sessions) || exit 1
     printf '%s' "$inventory" | jq -e --arg n "$SESSION" --arg id "$SESSION_ID" --argjson ids "$(printf '%s\n' "${WINDOWS[@]}" | jq -Rsc 'split("\n")[:-1]')" '[.[]|select(.name==$n and .id==$id and .attached==false)] as $s|($s|length)==1 and ([$s[0].windows[].id]|sort)==($ids|sort)' >/dev/null 2>&1 || { echo 'error: guarded lifecycle changed the exact test-owned target session' >&2; exit 1; }
-    printf '{"tuios_version":"%s","lab_session":"%s","target":"%s","start":"%s","status":"%s","modal":"held-until-closed","stop":"clean"}\n' "$VERSION" "$SESSION" "$target" "${start//\"/\\\"}" "${status//\"/\\\"}"
+    printf '{"tuios_version":"%s","lab_session":"%s","target":"%s","start":"%s","status":"%s","modal":"held-until-closed","composer":"empty-then-pending","readiness":"per-target","stop":"clean"}\n' "$VERSION" "$SESSION" "$target" "${start//\"/\\\"}" "${status//\"/\\\"}"
     ;;
   *) echo 'usage: SQUAD_TUIOS_AFK_LIVE=1 bin/sq-afk-tuios-lab.sh probe-env|lifecycle' >&2; exit 2 ;;
 esac

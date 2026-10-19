@@ -1922,10 +1922,59 @@ test_pi_handoff_is_durable_idempotent_and_ack_gated() {
   pass "Pi handoff: private durable request, no duplicate submission, exact consumption acknowledgement, and changed-batch preservation"
 }
 
+# A `queued` result means the extension accepted the request into Pi's followUp
+# queue but has not started the turn yet. That queue lives inside the writer
+# process, so a queued result left by a Pi that exited must not block every later
+# digest forever, while one owned by the live, identity-verified extension must be
+# preserved so it is never delivered twice.
+test_pi_handoff_replaces_a_queue_that_died_with_its_process() {
+  local dir state
+  dir=$(make_supercase pi-handoff-queued-recovery)
+  state="$dir/state"
+  mkdir -p "$state"
+  chmod 700 "$state"
+  mkdir -m 700 "$state/.pi-away-handoff"
+  (
+    local SQUAD_PI_HANDOFF_STALE_SECS=0
+    local live_pid=$$ dead_pid=999999 id ready
+    ready=$(jq -n --argjson pid "$live_pid" '{version:3,pid:$pid,identity:"identity",idle:true,draft:false,prompts:0,sending:false,heartbeat:1}')
+    fm_afk_pi_handoff_submit "$state" primary:window-1 'first digest' 0 "$ready" \
+      || :
+    id=$(jq -r '.id' "$state/.pi-away-handoff/request.json") || exit 1
+    # The writer died with the queue: the escaped digest is republished under a new id.
+    jq -n --arg id "$id" --argjson pid "$dead_pid" '{id:$id,status:"queued",pid:$pid}' \
+      > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'first digest' 0 "$ready"; then
+      fail "a republished request must still await its own acknowledgement"
+    fi
+    local replaced
+    replaced=$(jq -r '.id' "$state/.pi-away-handoff/request.json")
+    [ "$replaced" != "$id" ] || fail "a queued result from a dead writer must not block the digest forever"
+    jq -n --arg id "$replaced" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    fm_afk_pi_handoff_submit "$state" primary:window-1 'first digest' 0 "$ready" \
+      || fail "the republished digest must be confirmed once Pi consumes it"
+    # A queue owned by the live extension may still deliver: preserve it.
+    fm_afk_pi_handoff_submit "$state" primary:window-1 'second digest' 0 "$ready" || :
+    local live_id
+    live_id=$(jq -r '.id' "$state/.pi-away-handoff/request.json") || exit 1
+    jq -n --arg id "$live_id" --argjson pid "$live_pid" '{id:$id,status:"queued",pid:$pid}' \
+      > "$state/.pi-away-handoff/result.json"
+    if fm_afk_pi_handoff_submit "$state" primary:window-1 'second digest' 0 "$ready"; then
+      fail "a queued request owned by the live extension must not be reported delivered"
+    fi
+    [ "$(jq -r '.id' "$state/.pi-away-handoff/request.json")" = "$live_id" ] \
+      || fail "a queued request owned by the live extension must never be replaced"
+    [ "$(jq -r '.message' "$state/.pi-away-handoff/request.json")" = 'second digest' ] \
+      || fail "the preserved queued request must keep its exact message"
+  ) || fail "Pi handoff queued-recovery subshell failed"
+  pass "Pi handoff: a queue that died with its writer is republished while a live queue is preserved"
+}
+
 # The daemon must not trust a handoff record that cannot describe the delivery
 # state. Version 3 added the in-flight-send flag on top of idle/draft/prompts,
 # so an older (or field-less) record is refused and the caller falls back to the
 # fail-safe composer path.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
 test_pi_handoff_ready_requires_v3_delivery_state() {
   local dir state
   dir=$(make_supercase pi-handoff-ready-schema)
@@ -1943,7 +1992,7 @@ test_pi_handoff_ready_requires_v3_delivery_state() {
       jq -n --argjson version "$1" --argjson pid "$$" --argjson heartbeat "$now" \
         --argjson idle "${2:-true}" --argjson draft "${3:-false}" --argjson prompts "${4:-0}" --argjson sending "${5:-false}" \
         '{version:$version,pid:$pid,identity:"identity",session:"s",window:"w",idle:$idle,draft:$draft,prompts:$prompts,sending:$sending,heartbeat:$heartbeat}' \
-        > "$state/.pi-away-handoff/ready.json"
+        > "$(fm_afk_pi_handoff_ready_file "$state" s:w)"
     }
     write_ready 2
     if fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null; then
@@ -2076,7 +2125,7 @@ import { pathToFileURL } from "node:url";
 const [extensionPath, state] = process.argv.slice(2);
 const handoff = `${state}/.pi-away-handoff`;
 mkdirSync(handoff, { recursive: true, mode: 0o700 });
-const ready = () => JSON.parse(readFileSync(`${handoff}/ready.json`, "utf8"));
+const ready = () => JSON.parse(readFileSync(`${handoff}/ready.lab.window.json`, "utf8"));
 const requests = (id, message) => writeFileSync(`${handoff}/request.json`, JSON.stringify({ id, session: "lab", window: "window", message }));
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 requests("a".repeat(64), "digest");
@@ -2179,6 +2228,367 @@ NODE
   [ "$status" -ne 0 ] || pass "primary Pi handoff: resets open-prompt state per session and survives a stale/ throwing context"
 }
 
+# Regression for the 2026-10 wedge: every Pi that loads the project extension
+# (workers in a Squad worktree inherit SQUAD_BASE and the TUIOS variables) used
+# to publish the one shared ready.json, so a worker evicted the primary and the
+# daemon fell back to terminal typing. Readiness is per target now, and a record
+# that names a different window must never stand in for the supervised pane.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers() {
+  local dir state
+  dir=$(make_supercase pi-handoff-ready-per-target)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  (
+    fm_backend_source() { return 0; }
+    fm_backend_tuios_target_ready() { return 0; }
+    fm_pid_identity() { printf 'identity'; }
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    local now primary=sq:primary worker=sq:worker verdict
+    now=$(date '+%s%3N' 2>/dev/null)
+    case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
+    write_record() {  # <file> <session> <window> [heartbeat] [pid] [version]
+      jq -n --arg s "$2" --arg w "$3" --argjson hb "${4:-$now}" --argjson pid "${5:-$$}" --argjson v "${6:-3}" \
+        '{version:$v,pid:$pid,identity:"identity",session:$s,window:$w,idle:true,draft:false,prompts:0,sending:false,heartbeat:$hb}' > "$1"
+    }
+    # Name derivation is part of the contract with the extension.
+    [ "$(fm_afk_pi_handoff_ready_file "$state" "sq:a/b c")" = "$state/.pi-away-handoff/ready.sq.a_b_c.json" ] \
+      || fail "ready record name must carry the sanitized session and window"
+    # The worker publishes last and also clobbers the legacy shared file; the
+    # primary's own record must still be what the daemon finds.
+    write_record "$(fm_afk_pi_handoff_ready_file "$state" "$primary")" sq primary
+    write_record "$(fm_afk_pi_handoff_ready_file "$state" "$worker")" sq worker
+    write_record "$state/.pi-away-handoff/ready.json" sq worker
+    fm_afk_pi_handoff_ready "$state" "$primary" >/dev/null \
+      || fail "a worker's records must not evict the primary's readiness"
+    [ "$(fm_afk_pi_handoff_ready "$state" "$primary" | jq -r '.window')" = primary ] \
+      || fail "readiness must return the primary's own record"
+    # Only another window's record is on file: not ready, and the reason says so.
+    rm -f "$(fm_afk_pi_handoff_ready_file "$state" "$primary")"
+    if fm_afk_pi_handoff_ready "$state" "$primary" >/dev/null; then
+      fail "another window's record must never satisfy the primary's readiness"
+    fi
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$primary")" = "refused no-record" ] \
+      || fail "a missing primary record must report no-record, got: $(fm_afk_pi_handoff_evaluate "$state" "$primary")"
+    # A legacy shared record naming the exact target is still honoured.
+    write_record "$state/.pi-away-handoff/ready.json" sq primary
+    fm_afk_pi_handoff_ready "$state" "$primary" >/dev/null \
+      || fail "a legacy ready.json naming the exact target must keep working"
+    rm -f "$state/.pi-away-handoff/ready.json"
+    # Every refusal names its reason, so a fallback is never silent.
+    local f
+    f=$(fm_afk_pi_handoff_ready_file "$state" "$primary")
+    write_record "$f" sq primary $((now - 60000))
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$primary")" = "refused stale-heartbeat" ] || fail "stale heartbeat reason"
+    write_record "$f" sq primary "$now" 999999
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$primary")" = "refused dead-process" ] || fail "dead process reason"
+    write_record "$f" sq primary "$now" "$$" 2
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$primary")" = "refused schema" ] || fail "old schema reason"
+    printf 'not json' > "$f"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$primary")" = "refused unreadable-record" ] || fail "unreadable record reason"
+    write_record "$f" sq primary
+    verdict=$(fm_afk_pi_handoff_evaluate "$state" "$primary") || fail "a fresh record for the exact target must be ready"
+    [ "${verdict%% *}" = ready ] || fail "ready verdict shape"
+  ) || fail "Pi handoff per-target readiness subshell failed"
+  pass "Pi handoff: readiness is per target, workers cannot evict the primary, and every refusal names its reason"
+}
+
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_pi_handoff_record_must_match_lock_owner() {
+  local dir state
+  dir=$(make_supercase pi-handoff-lock-owner)
+  state="$dir/state"
+  mkdir -p "$state/.pi-away-handoff"
+  (
+    fm_backend_source() { return 0; }
+    fm_backend_tuios_target_ready() { return 0; }
+    fm_pid_identity() { printf 'identity'; }
+    SQUAD_SUPERVISOR_BACKEND=tuios
+    local now target=sq:primary f live_holder
+    now=$(date '+%s%3N' 2>/dev/null)
+    case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
+    f=$(fm_afk_pi_handoff_ready_file "$state" "$target")
+    jq -n --arg s sq --arg w primary --argjson hb "$now" --argjson pid "$$" \
+      '{version:3,pid:$pid,identity:"identity",session:$s,window:$w,idle:true,draft:false,prompts:0,sending:false,heartbeat:$hb}' > "$f"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null || fail "an absent lock must still permit the record"
+    printf '%s\n' "$$" > "$state/.lock"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null || fail "a record owned by the current lock holder must be accepted"
+    sleep 120 &
+    live_holder=$!
+    printf '%s\n' "$live_holder" > "$state/.lock"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$target")" = "refused other-session" ] || fail "a record from another live lock holder must be refused"
+    printf '%s\n' 999999 > "$state/.lock"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null \
+      || fail "a stale lock naming a dead holder must count as absent so a crash-relaunched primary engages"
+    kill "$live_holder" 2>/dev/null || true
+    wait "$live_holder" 2>/dev/null || true
+    printf 'not-a-pid\n' > "$state/.lock"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$target")" = "refused other-session" ] || fail "a malformed lock must refuse the record"
+    rm -f "$state/.lock"
+    mkdir "$state/.lock"
+    [ "$(fm_afk_pi_handoff_evaluate "$state" "$target")" = "refused other-session" ] || fail "an unreadable lock must refuse the record"
+    rmdir "$state/.lock"
+    fm_afk_pi_handoff_ready "$state" "$target" >/dev/null || fail "removing the lock must permit the record again"
+  ) || fail "Pi handoff lock-owner subshell failed"
+  pass "Pi handoff: only the live lock holder publishes readiness, and a dead holder counts as absent"
+}
+
+# The daemon must say why it left the native path, once per distinct reason, and
+# stop saying it when it is engaged again.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_inject_msg_tuios_logs_why_native_handoff_was_not_used() {
+  local dir state
+  dir=$(make_supercase inject-tuios-fallback-reason)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    LOG="$dir/daemon.log"; : > "$LOG"
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'pending'; }
+    fm_afk_pi_handoff_ready() { return 1; }
+    fm_afk_pi_handoff_evaluate() { printf 'refused no-record'; return 1; }
+    export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
+    inject_msg "hello" "$state" || true
+    inject_msg "hello" "$state" || true
+    [ "$(grep -c 'Pi native handoff not engaged' "$LOG")" -eq 1 ] || fail "the fallback reason must be logged once, got: $(cat "$LOG")"
+    grep -q 'reason: no-record' "$LOG" || fail "the fallback log must name the reason"
+    fm_afk_pi_handoff_evaluate() { printf 'refused stale-heartbeat'; return 1; }
+    inject_msg "hello" "$state" || true
+    [ "$(grep -c 'Pi native handoff not engaged' "$LOG")" -eq 2 ] || fail "a changed reason must be logged again"
+  ) || fail "Pi handoff fallback-reason subshell failed"
+  pass "Pi handoff: the daemon logs once per distinct reason why the native path was not engaged"
+}
+
+# End to end through the real daemon injection path in the TUIOS shape: the
+# native record is absent so the fallback runs, the composer is an empty Pi box,
+# and the digest must be typed exactly once with no composer-unknown deferral.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer() {
+  local dir state
+  dir=$(make_supercase inject-tuios-empty-composer)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    LOG="$dir/daemon.log"; : > "$LOG"
+    SENDS="$dir/sends"; : > "$SENDS"
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_afk_pi_handoff_ready() { return 1; }
+    fm_afk_pi_handoff_evaluate() { printf 'refused no-record'; return 1; }
+    # Real adapter classifier over a real-shaped Pi frame; only the capture is faked.
+    fm_backend_source tuios || exit 1
+    fm_backend_tuios_capture() {
+      printf '%s\n' ' ⠏ Working' '' '╭──────────╮' '│          │' '╰──────────╯' ' footer' ' footer 2'
+    }
+    fm_backend_tuios_agent_state() { printf 'alive'; }
+    fm_backend_send_text_submit() { printf '%s\n' "$3" >> "$SENDS"; printf 'empty'; }
+    export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
+    inject_msg "digest" "$state" || fail "an empty Pi composer must accept the injection"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the digest must be sent exactly once"
+    grep -q 'composer not confirmed-empty' "$LOG" && fail "the empty Pi composer must not defer as unknown"
+    # A draft in the same frame must still defer and send nothing.
+    : > "$SENDS"
+    fm_backend_tuios_capture() {
+      printf '%s\n' ' ⠏ Working' '' '╭──────────╮' '│ half typed │' '╰──────────╯' ' footer' ' footer 2'
+    }
+    if inject_msg "digest" "$state"; then fail "a Pi draft must defer the injection"; fi
+    [ ! -s "$SENDS" ] || fail "nothing may be typed over a draft"
+  ) || fail "TUIOS empty-composer injection subshell failed"
+  pass "TUIOS fallback: an empty Pi composer receives the digest exactly once and a draft is never typed over"
+}
+
+# Exactly-once between the native followUp queue and the typed fallback. When the
+# live, identity-verified extension still holds an unresolved request for the
+# exact target, a transiently refused native verdict must defer rather than
+# retype the digest; once that request is stale, names another target, or was
+# written by a dead/foreign process, the composer path delivers again so a stuck
+# request can never wedge escalation delivery.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_inject_msg_tuios_defers_while_a_live_request_is_unresolved() {
+  local dir state id
+  dir=$(make_supercase inject-tuios-unresolved-request)
+  state="$dir/state"
+  afk_enter "$state"
+  id=$(printf 'a%.0s' $(seq 1 64))
+  mkdir -p "$state/.pi-away-handoff"
+  (
+    LOG="$dir/daemon.log"; : > "$LOG"
+    SENDS="$dir/sends"; : > "$SENDS"
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'empty'; }
+    fm_backend_send_text_submit() { printf '%s\n' "$3" >> "$SENDS"; printf 'empty'; }
+    # The handoff owner validates the real records below; only the local process
+    # identity probe is fixed because this shell, not Pi, is the writer under test.
+    fm_pid_identity() { printf 'identity'; }
+    # Transient refusal of the native verdict: the extension is alive but its
+    # event loop is blocked, so the ready heartbeat is stale.
+    fm_afk_pi_handoff_evaluate() { printf 'refused stale-heartbeat'; return 1; }
+    local other_pid=
+    write_ready() {
+      jq -n --argjson pid "$$" --argjson hb "$1" \
+        '{version:3,pid:$pid,identity:"identity",session:"primary",window:"window-1",idle:true,draft:false,prompts:0,sending:false,heartbeat:$hb}' \
+        > "$(fm_afk_pi_handoff_ready_file "$state" primary:window-1)"
+    }
+    write_request() {
+      jq -n --arg id "$id" --arg w "$1" '{id:$id,session:"primary",window:$w,message:"digest"}' \
+        > "$state/.pi-away-handoff/request.json"
+    }
+    write_result() {
+      jq -n --arg id "$id" --arg status "$1" --argjson pid "$2" '{id:$id,status:$status,pid:$pid}' \
+        > "$state/.pi-away-handoff/result.json"
+    }
+    export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
+    write_ready 1
+    write_request window-1
+    write_result queued "$$"
+    printf 'escalation one\n' > "$state/.subsuper-escalations"
+    if inject_msg "digest" "$state"; then
+      fail "a live unresolved queued request must defer the typed fallback"
+    fi
+    [ ! -s "$SENDS" ] || fail "nothing may be typed while the live Pi still holds the request"
+    [ "$(wc -l < "$state/.subsuper-escalations")" -eq 1 ] || fail "the escalation buffer must be preserved while the request is unresolved"
+    grep -q 'is still unresolved' "$LOG" || fail "the deferral must name the unresolved request"
+    inject_msg "digest" "$state" || true
+    [ "$(grep -c 'is still unresolved' "$LOG")" -eq 1 ] || fail "the unresolved deferral must be logged once per request"
+    # A result left over from the previous request names another id, so this
+    # request is still new to Pi and must defer the same way.
+    jq -n --arg id "$(printf 'b%.0s' $(seq 1 64))" --argjson pid "$$" \
+      '{id:$id,status:"handled",pid:$pid}' \
+      > "$state/.pi-away-handoff/result.json"
+    : > "$SENDS"
+    if inject_msg "digest" "$state"; then
+      fail "a result naming an older request must not let the typed path duplicate this one"
+    fi
+    [ ! -s "$SENDS" ] || fail "nothing may be typed while the live Pi still owes this request"
+    # A queued entry whose writer is dead describes a queue that died with it.
+    write_result queued 999999
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a dead queued writer must not block delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the queued writer is dead"
+    # So does a queued entry written by a different, live process.
+    sleep 120 &
+    other_pid=$!
+    write_result queued "$other_pid"
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a foreign queued writer must not block delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the queued writer is foreign"
+    kill "$other_pid" 2>/dev/null || true
+    wait "$other_pid" 2>/dev/null || true
+    other_pid=
+    # A request for another target is not this target's unresolved request.
+    write_request other-window
+    write_result queued "$$"
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a request naming another target must not block delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the request names another target"
+    # Finally, an entry older than the staleness bound ages out so a stuck
+    # request can never wedge delivery forever.
+    write_request window-1
+    write_result queued "$$"
+    fm_afk_pi_handoff_age() { printf '60'; }
+    : > "$SENDS"
+    inject_msg "digest" "$state" || fail "a stale unresolved request must not wedge delivery"
+    [ "$(wc -l < "$SENDS")" -eq 1 ] || fail "the composer path must deliver once when the queued entry is stale"
+  ) || fail "TUIOS unresolved-request deferral subshell failed"
+  pass "TUIOS fallback: a live unresolved handoff request defers the typed path; stale, foreign, or dead-writer requests do not wedge delivery"
+}
+
+# Workers run in Squad worktrees that carry this same project extension and
+# inherit SQUAD_BASE plus the TUIOS pane variables. Only the session that holds
+# the base's lock may publish readiness or accept a request; the readiness file
+# name must match what the daemon derives for the same target.
+test_primary_pi_handoff_is_primary_only_and_names_its_ready_file_per_target() {
+  command -v node >/dev/null 2>&1 || { echo "skip: node not found (primary Pi handoff gate test)"; return 0; }
+  local dir state worker_pid expected status
+  dir=$(make_supercase pi-handoff-primary-only)
+  state="$dir/state"
+  mkdir -p "$state"
+  chmod 700 "$state"
+  mkdir -m 700 "$state/.pi-away-handoff"
+  expected=$(basename "$(fm_afk_pi_handoff_ready_file "$state" 'lab:win/1 é')")
+  sleep 120 &
+  worker_pid=$!
+  SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE=state TUIOS_ENV=1 TUIOS_SESSION=lab TUIOS_PANE_ID='win/1 é' \
+    LOCK_SHELL_PID=$$ LOCK_OTHER_PID=$worker_pid EXPECTED_READY="$expected" \
+    node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module - "$ROOT/.pi/extensions/sq-primary-away-handoff.ts" "$state" <<'NODE'
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+const [extensionPath, state] = process.argv.slice(2);
+const handoff = `${state}/.pi-away-handoff`;
+mkdirSync(handoff, { recursive: true, mode: 0o700 });
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const request = { id: "a".repeat(64), session: "lab", window: "win/1 é", message: "digest" };
+const run = async (lock, id, overrides = {}) => {
+  try { unlinkSync(`${handoff}/result.json`); } catch {}
+  if (lock === null) {
+    try { unlinkSync(`${state}/.lock`); } catch {}
+  } else {
+    writeFileSync(`${state}/.lock`, `${lock === "self" ? process.pid : lock}\n`);
+  }
+  writeFileSync(`${handoff}/request.json`, JSON.stringify({ ...request, ...overrides, id }));
+  const listeners = new Map();
+  const sent = [];
+  const pi = { on: (name, handler) => listeners.set(name, handler), sendUserMessage: async (...args) => sent.push(args) };
+  const ctx = { isIdle: () => true, ui: { getEditorText: () => "" } };
+  (await import(`${pathToFileURL(extensionPath).href}?lock=${lock ?? "missing"}&id=${id}`)).default(pi);
+  await listeners.get("session_start")({}, ctx);
+  await wait(1200);
+  const files = readdirSync(handoff).filter((name) => /^ready\..*\.json$/.test(name));
+  listeners.get("before_agent_start")({ prompt: `[SQUAD_PI_AFK_HANDOFF:${id}]` }, ctx);
+  let handled = null;
+  try { handled = JSON.parse(readFileSync(`${handoff}/result.json`, "utf8")).status; } catch {}
+  listeners.get("session_shutdown")?.();
+  return { sent, files, handled };
+};
+// A live session that is neither this process nor an ancestor holds the lock: this is a worker.
+const worker = await run(process.env.LOCK_OTHER_PID, "a".repeat(64));
+assert.deepEqual(worker.files, [], "a worker must not publish a readiness record");
+assert.equal(worker.sent.length, 0, "a worker must not accept an away-mode request");
+assert.equal(worker.handled, null, "a worker must never acknowledge the primary's request");
+// The lock holder is an ancestor (a Pi started from the primary's own shell
+// inherits SQUAD_BASE and the same TUIOS pane variables): still a worker, because
+// bin/sq-lock.sh records the innermost harness pid, not an ancestor.
+const nested = await run(process.env.LOCK_SHELL_PID, "e".repeat(64));
+assert.deepEqual(nested.files, [], "an ancestor lock holder must not make a nested Pi the primary");
+assert.equal(nested.sent.length, 0, "a nested Pi must not consume the primary's request");
+assert.equal(nested.handled, null, "a nested Pi must never acknowledge the primary's request");
+// A present but malformed lock cannot prove this process owns the base.
+const malformed = await run("not-a-pid", "b".repeat(64));
+assert.deepEqual(malformed.files, [], "a malformed lock must not publish a readiness record");
+assert.equal(malformed.sent.length, 0, "a malformed lock must not accept an away-mode request");
+assert.equal(malformed.handled, null, "a malformed lock must never acknowledge the request");
+// A stale numeric lock naming a dead process is the crash-relaunch shape: it
+// counts as absent, so the relaunched primary engages again.
+const stale = await run("999999", "f".repeat(64));
+assert.deepEqual(stale.files, [process.env.EXPECTED_READY], "a dead lock holder must leave the primary permitted to publish");
+assert.equal(stale.sent.length, 1, "a dead lock holder must leave the primary permitted to accept");
+assert.equal(stale.handled, "handled", "a permitted primary must acknowledge consuming its own request");
+// An absent lock is the normal acquisition window, so publishing is permitted.
+const missing = await run(null, "c".repeat(64));
+assert.deepEqual(missing.files, [process.env.EXPECTED_READY], "a missing lock must leave this session permitted to publish");
+assert.equal(missing.sent.length, 1, "a missing lock must leave this session permitted to accept");
+assert.equal(missing.handled, "handled", "a permitted primary must acknowledge consuming its own request");
+// Exact ownership, which is what the daemon requires, publishes and accepts.
+const primary = await run("self", "d".repeat(64));
+assert.deepEqual(primary.files, [process.env.EXPECTED_READY], "the primary must publish exactly the per-target file the daemon derives");
+assert.equal(primary.sent.length, 1, "the primary must accept the request");
+assert.equal(primary.handled, "handled", "the primary must acknowledge consuming its own request");
+assert.equal(existsSync(`${handoff}/ready.json`), false, "the shared ready.json must no longer be written");
+// A request naming another target is never this Pi's to acknowledge, even when
+// this process owns the lock and a prompt carries the request's marker.
+const foreign = await run("self", "9".repeat(64), { window: "other-window" });
+assert.equal(foreign.sent.length, 0, "a request naming another target must not be sent");
+assert.equal(foreign.handled, null, "a request naming another target must never be acknowledged");
+NODE
+  status=$?
+  kill "$worker_pid" 2>/dev/null; wait "$worker_pid" 2>/dev/null
+  [ "$status" -eq 0 ] || fail "primary Pi handoff: workers and nested PIs must stay silent and only the exact lock owner must publish its per-target record"
+  [ "$status" -ne 0 ] || pass "primary Pi handoff: only the exact lock-holding primary publishes readiness, under the per-target name the daemon derives"
+}
+
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack() {
   local dir state
   dir=$(make_supercase inject-tuios-pi-handoff)
@@ -2186,7 +2596,10 @@ test_inject_msg_tuios_pi_handoff_defers_until_native_ack() {
   afk_enter "$state"
   (
     fm_backend_target_exists() { [ "$1" = tuios ] && [ "$2" = "primary:window-1" ]; }
-    fm_afk_pi_handoff_ready() { [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ]; }
+    fm_afk_pi_handoff_evaluate() {
+      [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ] || return 1
+      printf 'ready {"version":3,"sending":false}'
+    }
     fm_afk_pi_handoff_submit() {
       [ "$1" = "$state" ] && [ "$2" = "primary:window-1" ] || fail "unexpected Pi handoff target"
       [[ "$3" == *'SQUAD_OP: v1 away-supervisor:'* ]] || fail "handoff lost the canonical operational envelope"
@@ -2406,12 +2819,19 @@ test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
 test_pi_handoff_is_durable_idempotent_and_ack_gated
+test_pi_handoff_replaces_a_queue_that_died_with_its_process
 test_pi_handoff_ready_requires_v3_delivery_state
 test_pi_handoff_retires_only_the_acknowledged_prefix
 test_escalate_flush_skips_the_retired_prefix
 test_pi_handoff_replaces_abandoned_requests
 test_primary_pi_handoff_defers_while_busy_draft_or_prompt_is_present
 test_primary_pi_handoff_resets_prompt_state_and_survives_stale_context
+test_primary_pi_handoff_is_primary_only_and_names_its_ready_file_per_target
+test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers
+test_pi_handoff_record_must_match_lock_owner
+test_inject_msg_tuios_logs_why_native_handoff_was_not_used
+test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer
+test_inject_msg_tuios_defers_while_a_live_request_is_unresolved
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped

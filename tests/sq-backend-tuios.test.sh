@@ -1137,4 +1137,88 @@ fi
 
 pass 'TUIOS backend: the level-reconcile transition producer detects a blocked prompt, dedupes per distinct prompt, rearms after unblocking, and clear_transition removes both markers'
 
+# --- composer state ---------------------------------------------------------
+# The composer is read from the pane: a bordered box whose rows are all blank is
+# empty, any content is pending, and anything not provably a composer box at the
+# bottom of the pane is unknown. The real Pi frame (rounded box, no prompt glyph,
+# a two-row footer) is the shape that previously read `unknown` and wedged
+# away-mode delivery for hours.
+composer_of() {  # <capture-text> -> verdict
+  SQUAD_TUIOS_FAKE_CAPTURE=$1 fm_backend_tuios_composer_state owned:w-opaque_7
+}
+PI_RULE='────────────────────────────────────────────────'
+PI_BLANK='                                                '
+pi_frame() {  # <row>... -> a Pi frame around the given composer rows, plus footer
+  local row
+  printf '%s\n' ' ⠏ Working' '' "╭${PI_RULE}╮"
+  for row in "$@"; do printf '│ %-46s │\n' "$row"; done
+  printf '%s\n' "╰${PI_RULE}╯" ' /home/user · main · 67% left' ' model · thinking: high'
+}
+[ "$(composer_of "$(pi_frame '')")" = empty ] || fail 'an empty Pi composer box must read empty'
+# An empty frame alone is not proof the pane is writable: the daemon must also
+# attribute a live agent to it. A crashed Pi can leave its last composer frame
+# on screen with a shell prompt underneath, and that pane must never authorize
+# the raw typing fallback.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"done","harness_id":"pi","source":"report","confidence":"certain"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(composer_of "$(pi_frame '')")" = unknown ] || fail 'an empty frame on a dead agent must read unknown, never empty'
+unset SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_MISSING=1
+export SQUAD_TUIOS_FAKE_MISSING
+[ "$(composer_of "$(pi_frame '')")" = unknown ] || fail 'an empty frame with no attributed agent must read unknown, never empty'
+unset SQUAD_TUIOS_FAKE_MISSING
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"working","harness_id":"pi","source":"report","confidence":"certain"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+[ "$(composer_of "$(pi_frame '')")" = empty ] || fail 'an empty frame with a live attributed agent must read empty'
+unset SQUAD_TUIOS_FAKE_AGENTS
+[ "$(composer_of "$(pi_frame 'half typed')")" = pending ] || fail 'a typed draft must read pending'
+[ "$(composer_of "$(pi_frame '' 'second line only' '')")" = pending ] \
+  || fail 'a multi-line draft whose last line is blank must still read pending'
+[ "$(composer_of "$(pi_frame 'first line only' '')")" = pending ] \
+  || fail 'a draft above a blank last row must read pending, not empty'
+[ "$(composer_of "$(pi_frame '' '')")" = empty ] || fail 'a box of only blank rows must read empty'
+[ "$(composer_of "$(pi_frame '>')")" = empty ] || fail 'the bordered prompt glyph alone is an empty composer'
+[ "$(composer_of "$(pi_frame '> typed')")" = pending ] || fail 'text after a bordered prompt glyph must read pending'
+# Stock Pi 1.1.0 frame (captured live in the lab): a full-width rule above and
+# below the editor, no side borders, blank editor row when empty.
+pi_ruled() {  # <row>... -> stock Pi frame around the given editor rows, plus footer
+  local row rule
+  rule=$(printf '─%.0s' $(seq 1 78))
+  printf '%s\n' ' ACK' '' "$rule"
+  for row in "$@"; do printf '%s\n' "$row"; done
+  printf '%s\n' "$rule" '/home/user/project (main)' '6.3%/8.2k (auto)                       model'
+}
+[ "$(composer_of "$(pi_ruled '')")" = empty ] || fail 'an empty stock Pi composer (rules only) must read empty'
+[ "$(composer_of "$(pi_ruled '❯')")" = empty ] || fail 'a lone agent glyph in the stock Pi editor row is an empty composer'
+[ "$(composer_of "$(pi_ruled '>')")" = unknown ] \
+  || fail 'a lone shell glyph typed into the stock Pi editor row is a draft, not an empty composer'
+[ "$(composer_of "$(pi_ruled '> unsent draft')")" = pending ] \
+  || fail 'text after a shell glyph in the stock Pi editor row must read pending'
+[ "$(composer_of "$(pi_ruled 'unsent live draft')")" = pending ] || fail 'a draft in the stock Pi composer must read pending'
+[ "$(composer_of "$(pi_ruled '' 'second line')")" = pending ] || fail 'a multi-line stock Pi draft must read pending'
+[ "$(composer_of "$(pi_ruled 'draft' '')")" = pending ] || fail 'a stock Pi draft above a blank row must read pending'
+[ "$(composer_of "$(printf '%s\n' '────────────────' '────────────────')")" = unknown ] \
+  || fail 'two adjacent rules with no editor row must read unknown'
+[ "$(composer_of "$(printf '%s\n' 'a markdown rule follows' '────────────────' 'and text' 'after' 'it' 'all' 'the' 'way' 'down')")" = unknown ] \
+  || fail 'a lone rule far above the bottom must read unknown'
+# Claude-style square frame with the same contract.
+[ "$(composer_of "$(printf '%s\n' '┌──────┐' '│ >    │' '└──────┘' '  ? for shortcuts')")" = empty ] \
+  || fail 'a square-framed empty composer must read empty'
+
+# Anything that is not provably the composer is unknown, never empty.
+[ "$(composer_of 'captured output')" = unknown ] || fail 'a pane with no box must read unknown'
+[ "$(composer_of "$(printf '%s\n' 'user@host ~ $ ')")" = unknown ] || fail 'a bare shell prompt must read unknown'
+[ "$(composer_of "$(printf '%s\n' "╰${PI_RULE}╯" '│ x │')")" = unknown ] || fail 'rows without a top border must read unknown'
+[ "$(composer_of "$(printf '%s\n' "╭${PI_RULE}╮" "╰${PI_RULE}╯")")" = unknown ] || fail 'a box with no content rows must read unknown'
+# An earlier empty box in the scrollback (for example tool output) must not be
+# taken for the composer once other output follows it.
+[ "$(composer_of "$(printf '%s\n' "╭${PI_RULE}╮" "│ ${PI_BLANK:2}│" "╰${PI_RULE}╯" 'a' 'b' 'c' 'd' 'e' 'f')")" = unknown ] \
+  || fail 'an old box far above the bottom of the pane must read unknown'
+if [ "$(SQUAD_TUIOS_FAKE_SESSION_DEAD=1 fm_backend_tuios_composer_state owned:gone)" != unknown ]; then
+  fail 'an unreadable capture must read unknown'
+fi
+unset SQUAD_TUIOS_FAKE_CAPTURE
+
+pass 'TUIOS backend: the composer is read from its frame (boxed or ruled) - empty only when every row is blank, pending on any draft, unknown when no composer frame is proven'
+
 pass 'TUIOS backend: fake CLI covers protocol discovery, real state/prompt mapping, the agent-aware queue verdicts, restart and finished-agent recovery, and the native close'

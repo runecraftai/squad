@@ -107,7 +107,8 @@ Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios` and `SQUAD_SUPERVISOR_TARGET=<ta
 Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TUIOS_ENV=1` with `TUIOS_SESSION` and `TUIOS_PANE_ID`, then falls back to `tmux`.
 That keeps a tmux pane nested inside herdr or TUIOS on the tmux transport, matching the runtime backend's innermost-first rule.
 Target detection uses `SQUAD_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then `"$TUIOS_SESSION:$TUIOS_PANE_ID"` under TUIOS, then the legacy `Squad:0` tmux fallback with a warning.
-A TUIOS supervisor pane never receives terminal typing: escalation digests go through the Pi-native handoff owned by `.pi/extensions/sq-primary-away-handoff.ts`, which queues a follow-up through Pi's own `sendUserMessage` and acknowledges consumption. See [`tuios-backend.md`](tuios-backend.md#away-mode-supervision).
+A TUIOS supervisor pane receives terminal typing only through the guarded fallback: escalation digests prefer the Pi-native handoff owned by `.pi/extensions/sq-primary-away-handoff.ts`, which queues a follow-up through Pi's own `sendUserMessage` and acknowledges consumption, and the typing path runs only after that handoff refuses and the pane's composer is read as empty.
+See [`tuios-backend.md`](tuios-backend.md#away-mode-supervision).
 Selecting any other supervisor backend, including `zellij`, `orca`, and `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
@@ -600,6 +601,10 @@ SQUAD_BACKEND_ORCA_COMPOSER_LINES=200  # orca-only: terminal-read lines scanned 
 SQUAD_BACKEND_ORCA_IDLE_RE='^Type a message\.\.\.$'  # orca-only: empty-composer placeholder regex after border/prompt stripping
 SQUAD_ZELLIJ_SESSION=Squad  # zellij-only: named session for normal backend ops and test isolation (docs/zellij-backend.md)
 SQUAD_TUIOS_SESSION=       # tuios-only: explicit existing session for backend operations (docs/tuios-backend.md)
+SQUAD_BACKEND_TUIOS_COMPOSER_LINES=30  # tuios-only: pane tail lines captured to locate the composer frame
+SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX=4  # tuios-only: footer rows tolerated below the composer frame before the read degrades to unknown
+SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX=12  # tuios-only: maximum editor rows admitted between the frame's two borders
+SQUAD_BACKEND_TUIOS_IDLE_RE=''  # tuios-only: optional empty-composer placeholder regex, applied by the shared classifier after border and prompt-glyph stripping
 # config/tuios-workspace   # tuios-only, optional local file: preferred workspace number; absent = lowest eligible empty, unnamed workspace
 SQUAD_BACKEND_CMUX_COMPOSER_LINES=20  # cmux-only: tail lines scanned to locate the composer row for submit verification
 SQUAD_BACKEND_CMUX_IDLE_RE='^Type a message\.\.\.$'  # cmux-only: empty-composer placeholder regex after border/prompt stripping
@@ -690,7 +695,7 @@ SQUAD_SEND_RETRIES=3       # sq-send backend-submit Enter-retry attempts after t
 SQUAD_SEND_SLEEP=0.4       # seconds between sq-send backend-submit checks
 SQUAD_SEND_SETTLE=1        # seconds sq-send waits after a successful text submit; 0 disables
 SQUAD_PI_DELIVERY_TIMEOUT=5 # seconds sq-send waits for native Pi delivery confirmation before failing
-SQUAD_PI_HANDOFF_STALE_SECS=30 # seconds a TUIOS Pi-handoff record may stay submitting before an abandoned send may be republished; only when the live extension reports no in-flight send
+SQUAD_PI_HANDOFF_STALE_SECS=30 # seconds a TUIOS Pi-handoff record may stay submitting or queued before it counts as abandoned: bounds republishing an abandoned send (only when the live extension reports no in-flight send), republishing a queued record whose writer process is gone, and how long the daemon defers the typed fallback while the live extension still holds an unresolved request
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before a completed turn without a correlated parent report is eligible for its one recovery repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr/tuios only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID then TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID before tmux fallback
