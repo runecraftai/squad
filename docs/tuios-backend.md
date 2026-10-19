@@ -64,7 +64,7 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 | `unknown`, or a state with no attribution | `unknown` | `ambiguous` |
 | unreadable inventory | `unknown` | `unreadable` |
 
-`bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read. The report verb `tuios peek-prompt` supplies the prompt text and numbered options, and it is read only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state stays `unknown`, which never authorizes a write.
+`bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read. The report verb `tuios peek-prompt` supplies the prompt text and numbered options, and it is read only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state is read from the pane (see "Composer state" below); anything that is not provably a composer frame stays `unknown`, which never authorizes a write.
 
 ### Waking Squad on a blocked pane
 
@@ -109,7 +109,9 @@ Cleanup verifies both the exact opaque window id and the recorded task label bef
 A TUIOS-hosted Squad primary can be supervised in away mode without any terminal typing.
 The daemon never sends keys or text into a TUIOS supervisor pane; delivery uses Pi's own message queue through `.pi/extensions/sq-primary-away-handoff.ts` and `bin/sq-afk-pi-handoff.sh`.
 
-- The extension binds to the exact `TUIOS_SESSION` and `TUIOS_PANE_ID`, publishes `state/.pi-away-handoff/ready.json` with its process identity and a one-second heartbeat, and accepts a request only when it names that exact target.
+- The extension binds to the exact `TUIOS_SESSION` and `TUIOS_PANE_ID`, publishes its own `state/.pi-away-handoff/ready.<session>.<window>.json` with its process identity and a one-second heartbeat, and accepts a request only when it names that exact target.
+- Only the Pi that holds the base's session lock publishes or accepts anything.
+  A worker's Pi inherits `SQUAD_BASE` and the TUIOS pane variables, and its Squad worktree carries this same project extension, so a single shared record used to be overwritten by whichever worker wrote last and the daemon fell back to terminal typing; readiness is therefore keyed by target and a record naming another window never satisfies the supervised pane.
 - `bin/sq-afk-pi-handoff.sh` publishes one durable `request.json` and observes `result.json`; it never retypes an unresolved escalation and reports success only on a consumption acknowledgement.
 - The extension queues the digest with `sendUserMessage(..., { deliverAs: "followUp" })`, which never touches the composer or an open dialog, and acknowledges consumption when Pi's own `before_agent_start` prompt carries the handoff marker.
 
@@ -117,7 +119,9 @@ Delivery is gated by three positive conditions: Pi must be idle, the editor must
 The last one is a native signal: Pi emits `ui_prompt_start` and `ui_prompt_end` around every built-in dialog (`select`, `confirm`, `input`, `editor`, `custom`), and the extension defers while that count is non-zero.
 A queued escalation stays durable while it waits, so a busy Pi, a typed draft, or an open approval prompt delays delivery instead of losing or duplicating it.
 
-The recorded `ready.json` is a version-3 delivery-state record carrying `idle`, `draft`, `prompts`, and `sending`; the daemon refuses an older record and falls back to the fail-safe composer path rather than trusting a handoff that cannot describe its state.
+Each readiness record is a version-3 delivery-state record carrying `idle`, `draft`, `prompts`, and `sending`; the daemon refuses an older record and falls back to the composer path rather than trusting a handoff that cannot describe its state.
+A legacy shared `ready.json` is still honoured when it names the exact target, so a primary that started before the per-target layout keeps working until it restarts.
+When the daemon uses the composer path it logs why once per distinct reason (`no-record`, `other-target`, `stale-heartbeat`, `dead-process`, `identity-mismatch`, `schema`, `unreadable-record`, `target-gone`), so a silent fallback is never invisible: `no-record` after a restart-free upgrade means the primary Pi has not loaded the extension yet and must be restarted.
 
 Delivery is idempotent across batches.
 A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
@@ -131,10 +135,20 @@ It refuses cleanup unless the recorded session id, its one owned window, and its
 It uses a private daemon with fresh `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, and `XDG_CONFIG_HOME`, a temporary Squad base, and a loopback-only mock provider, and it destroys only sessions it created.
 See [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) for the live evidence.
 
+## Composer state
+
+`fm_backend_tuios_composer_state` reads the pane tail and classifies the composer frame through the shared owner in `bin/sq-composer-lib.sh`.
+Two frames are recognized: a box (`╭──╮`, `│ … │`, `╰──╯`, drawn by claude and by a Pi setup that customizes its editor, as on the commander's primary) and a pair of full-width rules with no side borders (stock Pi 1.1.0).
+Every row between the borders is judged together, so a multi-line draft is `pending` even when its last line is blank.
+The frame must sit at the bottom of the pane above a short footer, so tool-output boxes and markdown rules in the scrollback are never mistaken for the composer.
+A frame whose rows are all blank is `empty`, any content is `pending`, and everything else is `unknown`, which still never authorizes a write.
+This is a rendered-surface signal, so it is a harness-dependent check: `tests/sq-backend-tuios.test.sh` pins the portable logic against the captured frame shapes, and the guarded live lab (`bin/sq-afk-tuios-lab.sh lifecycle`) proves it against a real Pi, reading `empty` when idle and `pending` once a draft is typed.
+Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redraws the frame would otherwise degrade quietly to `unknown` and defer every escalation.
+
 ## Limits and verification
 
-- Away-mode delivery to a TUIOS supervisor pane requires the shipped Pi extension on the primary.
-  Without it the daemon keeps its pre-existing TUIOS behavior: composer state stays `unknown`, so injection defers instead of typing into the pane.
+- Native away-mode delivery to a TUIOS supervisor pane requires the shipped Pi extension on the primary, loaded at Pi startup; a primary started before the extension existed keeps using the composer path until restarted.
+  The composer path types only into a composer positively read as empty, and defers on a draft, a busy or blocked pane, or any frame it cannot identify.
 - The open-prompt guard depends on Pi's `ui_prompt_start`/`ui_prompt_end` events, which were verified live on Pi 0.99.0 by opening a real dialog while the primary was idle and confirming the escalation was held until it closed.
   A future Pi release that stopped emitting those events would silently reduce the guard to idle plus draft, so that event contract must be re-verified on a Pi upgrade.
 - Supervision stays poll-based. No event subscription (`subscribe` / `after_seq`) is used, so a stream gap cannot be replayed and a state change is observed on the next poll rather than immediately. The blocked-pane wake above shares this bound exactly: it fires on the next supervision poll after the daemon reports `needs_input`/`errored`, never sub-second, and that bound is covered by `tests/sq-sentry-triage.test.sh`'s fake-CLI suite rather than a live daemon.

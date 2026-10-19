@@ -680,6 +680,20 @@ fm_escalation_digest() {  # <state> <lines>
   printf 'Supervisor escalate (%s event(s)): %s (pre-read; re-arm not needed — sentry daemon-managed)' "$lines" "$items"
 }
 
+# Say once per distinct reason why the native Pi handoff was not used for this
+# target, so a silent fall back to the composer path is never invisible. The
+# daemon keeps running either way; this only names what to fix (for example a
+# primary that started before the extension existed and must be restarted).
+FM_PI_HANDOFF_FALLBACK_WHY=
+fm_pi_handoff_note_fallback() {  # <state> <target>
+  local verdict why
+  verdict=$(fm_afk_pi_handoff_evaluate "$1" "$2") && return 0
+  why=${verdict#refused }
+  [ "$why" != "$FM_PI_HANDOFF_FALLBACK_WHY" ] || return 0
+  FM_PI_HANDOFF_FALLBACK_WHY=$why
+  log "Pi native handoff not engaged for $2 (reason: $why); using the guarded composer fallback"
+}
+
 # Retire exactly the buffer prefix a consumed native Pi handoff covered, so a
 # later digest never re-sends an escalation the primary already handled. Refuses
 # on any mismatch (unknown coverage, fewer remaining lines, or a buffer prefix
@@ -1231,9 +1245,13 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   # Pi's native follow-up queue is the only safe route for its TUIOS composer:
   # it preserves pending human input and queues without terminal typing. Its
   # extension binds the handoff to the exact target and acknowledges consumption.
-  if [ "$backend" = tuios ] && fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
-    fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered"
-    return $?
+  if [ "$backend" = tuios ]; then
+    if fm_afk_pi_handoff_ready "$state" "$target" >/dev/null; then
+      FM_PI_HANDOFF_FALLBACK_WHY=
+      fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered"
+      return $?
+    fi
+    fm_pi_handoff_note_fallback "$state" "$target"
   fi
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
