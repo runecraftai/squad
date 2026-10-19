@@ -187,16 +187,23 @@ done
 react_proofs=(
   'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
   'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'
-  'router code-based guards and query invalidation path: src/app/routes.tsx command: integration test passed'
+  ''
   'lint proposal with rationale and approval pending path: artifacts/lint-decision.md'
   'behavior surface test command: web test passed'
 )
+react_records='Routing: unchanged - no route or guard edits; path: src/app/routes.tsx
+Queries: changed - added the read-only use-audits key in entities/audit/model.ts; command: bun run check passed'
 write_react_evidence() {
   local omitted=${1:-0} i
   printf '# react@1 checklist\n'
   for ((i=0; i<${#react_proofs[@]}; i++)); do
     printf '## Criterion %s\n' "$((i+1))"
-    [ "$((i+1))" -eq "$omitted" ] || printf 'Proof: %s\n' "${react_proofs[$i]}"
+    [ "$((i+1))" -eq "$omitted" ] && continue
+    if [ "$((i+1))" -eq 3 ]; then
+      printf '%s\n' "$react_records"
+    else
+      printf 'Proof: %s\n' "${react_proofs[$i]}"
+    fi
   done
 }
 id=react-evidence
@@ -206,43 +213,67 @@ write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 expect_code 0 "$rc" "complete React evidence should validate"
 assert_contains "$out" 'playbook evidence valid: react@1' 'React evidence identity missing'
-for criterion in 1 2 3 4 5; do
+# Both dimensions are required, but any changed/unchanged combination and free-text phrasing is valid.
+while IFS='|' read -r routing queries; do
+  react_records="$routing
+$queries"
+  write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  expect_code 0 "$rc" "React records should validate: $routing / $queries"
+  assert_contains "$out" 'playbook evidence valid: react@1' 'React record evidence identity missing'
+done <<'EOF'
+Routing: changed - code-based route added in src/app/routes.tsx; command: bun run check passed|Queries: changed - new use-audits key in entities/audit/model.ts; no mutation; command: bun test
+routing: CHANGED - Route tree built in code, see src/app/routes.tsx|QUERIES: UNCHANGED - no query module touched
+Routing: unchanged - no route or guard edits; path: src/app/routes.tsx|Queries: unchanged - existing invalidation retained; path: entities/session/model.ts
+Routing: changed - beforeLoad guard redirect in src/app/routes.tsx|Queries: unchanged - path: entities/audit/model.ts
+EOF
+react_records='Routing: unchanged - no route or guard edits; path: src/app/routes.tsx
+Queries: changed - added the read-only use-audits key in entities/audit/model.ts; command: bun run check passed'
+expect_react_refusal() {
+  local records=$1 message=$2 expected=$3
+  react_records=$records
+  write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "$message"
+  assert_contains "$out" "$expected" "$message"
+}
+for criterion in 1 2 4 5; do
   write_react_evidence "$criterion" > "$HOME/data/$id/artifacts/checks.md"
   out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
   [ "$rc" -ne 0 ] || fail "React must reject missing criterion $criterion"
   assert_contains "$out" "missing: criterion $criterion" 'React refusal must identify missing evidence'
 done
+write_react_evidence 3 > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject a criterion 3 with no routing or queries record'
+assert_contains "$out" 'criterion 3' 'React refusal must identify the empty routing/queries criterion'
+expect_react_refusal 'Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject criterion 3 without a routing record' 'missing Routing record'
+expect_react_refusal 'Routing: unchanged - path: src/app/routes.tsx' \
+  'React must reject criterion 3 without a queries record' 'missing Queries record'
+expect_react_refusal 'Routing: changed - path: src/app/routes.tsx
+Routing: unchanged - duplicate; path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject a duplicated routing record' 'duplicate Routing record'
+expect_react_refusal 'Routing: modified - path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject a routing record with an unknown state' 'must declare changed or unchanged'
+expect_react_refusal 'Routing: changed path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject a routing record without the separator' 'must follow Routing: <state> - <free text>'
+expect_react_refusal 'Routing: changed - path: src/app/routes.tsx
+Queries: unchanged -' \
+  'React must reject an unchanged queries record without explanatory text' 'Queries record needs nonblank free-text evidence'
+expect_react_refusal "$(printf 'Routing: changed -   \nQueries: changed - path: entities/audit/model.ts')" \
+  'React must reject a changed routing record with whitespace-only evidence' 'Routing record needs nonblank free-text evidence'
 react_proofs[3]='lint proposal path: artifacts/lint-decision.md'
+react_records='Routing: unchanged - path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts'
 write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'React must reject lint evidence without rationale and approval disposition'
 assert_contains "$out" 'criterion 4' 'React refusal must identify incomplete lint evidence'
 react_proofs[3]='lint proposal with rationale and approval pending path: artifacts/lint-decision.md'
-react_proofs[2]='routing unchanged with no route or guard edits; queries unchanged; command: bun run check passed'
-write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
-out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
-expect_code 0 "$rc" 'React evidence justifying unchanged routing and queries should validate'
-assert_contains "$out" 'playbook evidence valid: react@1' 'React unchanged-surface evidence identity missing'
-react_proofs[2]='router routing unchanged path: src/app/routes.tsx command: bun run check passed'
-write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
-out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
-[ "$rc" -ne 0 ] || fail 'React must reject router evidence that never addresses queries'
-assert_contains "$out" 'criterion 3' 'React refusal must identify missing query evidence'
-react_proofs[2]='routing guards and invalidation path: src/app/routes.tsx command: integration test passed'
-write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
-out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
-[ "$rc" -ne 0 ] || fail 'React must reject changed routing evidence without code-based justification'
-assert_contains "$out" 'criterion 3' 'React refusal must identify incomplete router evidence'
-for proof in \
-  'file-based routes now generated from the filesystem; guards unchanged; queries unchanged; command: bun run check passed' \
-  'routing unchanged; queries now keyed by user id in a new module; command: bun run check passed'; do
-  react_proofs[2]=$proof
-  write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
-  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
-  [ "$rc" -ne 0 ] || fail "React must reject unchanged evidence borrowed from another dimension: $proof"
-  assert_contains "$out" 'criterion 3' 'React refusal must identify incomplete routing/query evidence'
-done
-react_proofs[2]='router code-based guards and query invalidation path: src/app/routes.tsx command: integration test passed'
 write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
 printf 'playbook=react\nplaybook_version=2\n' > "$HOME/state/$id.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?

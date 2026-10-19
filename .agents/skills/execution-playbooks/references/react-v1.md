@@ -128,12 +128,19 @@ It does not authorize a framework migration, broad legacy renaming, a store rewr
 ## Required evidence
 
 Write a `# react@1 checklist` under the Squad base's `data/<id>/artifacts/`, never in the project repository.
-Use five numbered `## Criterion N` sections with a distinct `Proof:` line per criterion, each bound to an actual `path:` or command with its result.
+Use five numbered `## Criterion N` sections with a distinct `Proof:` line per criterion, each bound to an actual `path:` or command with its result, except criterion 3, which carries the routing and queries records below instead of a `Proof:` line.
 The labels below name the evidence expected by `bin/sq-playbook-validate.sh`; its structural success does not prove architectural or runtime correctness.
 
 1. **architecture**: changed modules mapped to layers, import directions, and boundaries check command/result, including unchanged architecture where relevant.
 2. **components**: changed named functions and kebab-case paths, hooks owning flows, and pure functions with zero React imports, with concrete inspection evidence.
-3. **router**: code-based route/guard behavior and query invalidation evidence; explicitly justify unchanged routing and queries when the task does not touch them.
+3. **router and queries**: exactly one routing record and exactly one queries record in this grammar, where the label and the state token are case-insensitive:
+
+   ```
+   Routing: <changed|unchanged> - <free text>
+   Queries: <changed|unchanged> - <free text>
+   ```
+
+   `bin/sq-playbook-validate.sh` checks only that shape: one record per label, a `changed` or `unchanged` state, a `-` separator, and nonblank free text. It does not read the free text for code-based routing, guards, invalidation, wording, case, or word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording. Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
 4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 

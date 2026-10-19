@@ -46,8 +46,51 @@ matches_any() {
 }
 proof_for() {
   local number=$1 proof
-  proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
+  proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([[:space:]]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
   printf '%s' "$proof"
+}
+criterion_section() {
+  local number=$1
+  awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([[:space:]]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found {print}' "$CHECKLIST"
+}
+# react_record_lines <section>: the routing/queries records, used only for duplicate detection.
+react_record_lines() {
+  printf '%s\n' "$1" | awk '{
+    low = tolower($0)
+    if (low ~ /^[[:space:]]*routing:/ || low ~ /^[[:space:]]*queries:/) print
+  }'
+}
+# react_dimension_problem <section> <Routing|Queries>: describes a malformed record, or nothing when valid.
+react_dimension_problem() {
+  printf '%s\n' "$1" | awk -v label="$2" '
+    BEGIN { lo = tolower(label) }
+    {
+      low = tolower($0)
+      if (match(low, "^[[:space:]]*" lo ":") != 1) next
+      count++
+      text = substr($0, RLENGTH + 1)
+      sub(/^[[:space:]]+/, "", text)
+      lowtext = tolower(text)
+      state = ""
+      if (lowtext ~ /^changed([[:space:]]|$)/) { state = "changed"; text = substr(text, 8) }
+      else if (lowtext ~ /^unchanged([[:space:]]|$)/) { state = "unchanged"; text = substr(text, 10) }
+      has_dash = 0
+      sub(/^[[:space:]]+/, "", text)
+      if (substr(text, 1, 1) == "-") { has_dash = 1; text = substr(text, 2) }
+      sub(/^[[:space:]]+/, "", text)
+      sub(/[[:space:]]+$/, "", text)
+      states[count] = state
+      dashes[count] = has_dash
+      texts[count] = text
+    }
+    END {
+      if (count == 0) { printf "missing %s record\n", label; exit }
+      if (count > 1) { printf "duplicate %s record (%d found)\n", label, count; exit }
+      if (states[1] == "") { printf "%s record must declare changed or unchanged\n", label; exit }
+      if (!dashes[1]) { printf "%s record must follow %s: <state> - <free text>\n", label, label; exit }
+      if (texts[1] == "") { printf "%s record needs nonblank free-text evidence\n", label; exit }
+    }
+  '
 }
 # Catalogue-driven criteria definitions.
 # Format: CRITERIA_LABELS, CRITERIA_PATTERNS, CRITERIA_CHECKS are indexed arrays.
@@ -87,7 +130,7 @@ case "$PLAYBOOK@$VERSION" in
     CRITERIA_CHECKS=(
       "layer;boundaries"
       "named function;kebab-case"
-      "code-based|routing unchanged|routes unchanged|route tree unchanged;router|routing|route;guards|unchanged;query|queries;invalidation|queries unchanged|query unchanged"
+      ""
       "proposal|proposed;rationale;approval|approved"
       "surface;test;command"
     )
@@ -210,11 +253,20 @@ case "$PLAYBOOK@$VERSION" in
     ;;
 esac
 COUNT=${#CRITERIA_LABELS[@]}
+# React criterion 3 binds routing and queries as two structured records, not a keyword-bearing proof line.
+REACT_RECORD_CRITERION=0
+if [ "$PLAYBOOK@$VERSION" = "react@1" ]; then
+  REACT_RECORD_CRITERION=3
+fi
 # Collect all proofs first for duplicate detection.
 declare -a PROOFS=()
 for (( i=0; i<COUNT; i++ )); do
   NUM=$((i+1))
-  PROOF=$(proof_for "$NUM")
+  if [ "$NUM" -eq "$REACT_RECORD_CRITERION" ]; then
+    PROOF=$(react_record_lines "$(criterion_section "$NUM")")
+  else
+    PROOF=$(proof_for "$NUM")
+  fi
   PROOFS+=("$PROOF")
 done
 # Validate each criterion: presence, pattern, bound command/path, and quality checks.
@@ -224,6 +276,14 @@ for (( i=0; i<COUNT; i++ )); do
   PATTERN="${CRITERIA_PATTERNS[$i]}"
   CHECKS="${CRITERIA_CHECKS[$i]}"
   PROOF="${PROOFS[$i]}"
+  if [ "$NUM" -eq "$REACT_RECORD_CRITERION" ]; then
+    SECTION=$(criterion_section "$NUM")
+    for dimension in Routing Queries; do
+      PROBLEM=$(react_dimension_problem "$SECTION" "$dimension")
+      [ -z "$PROBLEM" ] || { echo "incompatible: criterion $NUM $LABEL: $PROBLEM"; FAIL=1; }
+    done
+    continue
+  fi
   if [ -z "$PROOF" ]; then
     echo "missing: criterion $NUM $LABEL proof"
     FAIL=1
