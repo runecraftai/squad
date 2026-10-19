@@ -684,8 +684,8 @@ fm_escalation_digest() {  # <state> <lines>
 # target, so a silent fall back to the composer path is never invisible. The
 # daemon keeps running either way; this only names what to fix (for example a
 # primary that started before the extension existed and must be restarted).
-FM_PI_HANDOFF_FALLBACK_WHY=
-FM_PI_HANDOFF_UNRESOLVED_ID=
+fm_pi_handoff_fallback_why=
+fm_pi_handoff_unresolved_id=
 fm_pi_handoff_note_fallback() {  # <state> <target> [verdict]
   local verdict=${3:-} why
   if [ -z "$verdict" ]; then
@@ -693,8 +693,8 @@ fm_pi_handoff_note_fallback() {  # <state> <target> [verdict]
   fi
   case "$verdict" in refused\ *) ;; *) return 0 ;; esac
   why=${verdict#refused }
-  [ "$why" != "$FM_PI_HANDOFF_FALLBACK_WHY" ] || return 0
-  FM_PI_HANDOFF_FALLBACK_WHY=$why
+  [ "$why" != "$fm_pi_handoff_fallback_why" ] || return 0
+  fm_pi_handoff_fallback_why=$why
   log "Pi native handoff not engaged for $2 (reason: $why); falling back to the guarded composer path"
 }
 # Retire exactly the buffer prefix a consumed native Pi handoff covered, so a
@@ -1253,8 +1253,8 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
       # A request the live extension still holds must never be retyped through
       # the composer path, or the digest arrives twice once Pi's queue drains.
       if pending_id=$(fm_afk_pi_handoff_unresolved_request "$state" "$target"); then
-        [ "$pending_id" = "$FM_PI_HANDOFF_UNRESOLVED_ID" ] || {
-          FM_PI_HANDOFF_UNRESOLVED_ID=$pending_id
+        [ "$pending_id" = "$fm_pi_handoff_unresolved_id" ] || {
+          fm_pi_handoff_unresolved_id=$pending_id
           log "inject deferred: live Pi handoff request $pending_id is still unresolved for $target; not typing a duplicate"
         }
         return 1
@@ -1266,7 +1266,7 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
       verdict=
     }
     if [ -n "$verdict" ]; then
-      FM_PI_HANDOFF_FALLBACK_WHY=
+      fm_pi_handoff_fallback_why=
       fm_afk_pi_handoff_submit "$state" "$target" "$msg" "$covered" "${verdict#ready }"
       return $?
     fi
