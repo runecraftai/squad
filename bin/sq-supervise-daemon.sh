@@ -695,9 +695,8 @@ fm_pi_handoff_note_fallback() {  # <state> <target> [verdict]
   why=${verdict#refused }
   [ "$why" != "$FM_PI_HANDOFF_FALLBACK_WHY" ] || return 0
   FM_PI_HANDOFF_FALLBACK_WHY=$why
-  log "Pi native handoff not engaged for $2 (reason: $why); using the guarded composer fallback"
+  log "Pi native handoff not engaged for $2 (reason: $why); falling back to the guarded composer path"
 }
-
 # Retire exactly the buffer prefix a consumed native Pi handoff covered, so a
 # later digest never re-sends an escalation the primary already handled. Refuses
 # on any mismatch (unknown coverage, fewer remaining lines, or a buffer prefix
@@ -1251,7 +1250,6 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   # extension binds the handoff to the exact target and acknowledges consumption.
   if [ "$backend" = tuios ]; then
     verdict=$(fm_afk_pi_handoff_evaluate "$state" "$target") || {
-      fm_pi_handoff_note_fallback "$state" "$target" "$verdict"
       # A request the live extension still holds must never be retyped through
       # the composer path, or the digest arrives twice once Pi's queue drains.
       if pending_id=$(fm_afk_pi_handoff_unresolved_request "$state" "$target"); then
@@ -1261,6 +1259,10 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
         }
         return 1
       fi
+      # Only now is the composer fallback really taken, so the reason is noted
+      # here: claiming it earlier would name a fallback that never happened and
+      # would spend the once-per-reason dedupe on a deferral.
+      fm_pi_handoff_note_fallback "$state" "$target" "$verdict"
       verdict=
     }
     if [ -n "$verdict" ]; then
