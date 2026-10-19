@@ -1197,10 +1197,17 @@ EOF
         if [ "$busy_now" -ne 0 ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;
-            # A live declared pause needs its first recheck even when a long
-            # poll keeps changing the pane. Preserve the existing throttle
-            # instead of clearing it and waiting for a stable hash.
-            none)   surface_nonterminal_stale "$w" "$h" ;;
+            none)
+              # A live declared pause needs its first recheck even when a long
+              # poll keeps changing the pane. Surface that first recheck once,
+              # then let the existing pause cadence own later changing polls so
+              # the recheck still recurs instead of being absorbed forever.
+              if [ -e "$STATE/.paused-resurfaced-$key" ]; then
+                handle_paused_stale "$w" "$task" "$h"
+              else
+                surface_nonterminal_stale "$w" "$h"
+              fi
+              ;;
             *)      clear_pause_tracking "$w" ;;
           esac
         else

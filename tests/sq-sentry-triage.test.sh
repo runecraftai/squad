@@ -1237,6 +1237,81 @@ SH
   pass "live declared pauses and commander holds on changing busy panes surface once, then retain the long cadence"
 }
 
+# A continuously changing busy pane must not absorb every later poll forever: once
+# the first recheck has surfaced, later changing polls belong to the bounded pause
+# cadence, so a second recheck still lands when PAUSE_RESURFACE_SECS elapses.
+# Before the fix the new route re-entered the nonterminal absorb path on every
+# poll, refreshed its throttle marker each time, and never reached the long
+# cadence again.
+test_paused_busy_churning_pane_rearms_long_cadence() {
+  local record dir state fakebin out window key statusf sig pid wakes before after case_id=0
+  for record in 'paused: waiting on an external decision' 'commander-held [key=route]: waiting on an external decision'; do
+    case_id=$((case_id + 1))
+    dir=$(make_case "paused-busy-rearm-$case_id"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; window="test:sq-held"; statusf="$state/held.status"
+    printf 'window=%s\nkind=strike\nharness=grok\nbackend=tmux\n' "$window" > "$state/held.meta"
+    printf '%s\n' "$record" > "$statusf"
+    # Backdate the declaration so only the pause cadence window, not the status
+    # age, decides when the second recheck is due.
+    set_mtime $(( $(date +%s) - 500 )) "$statusf"
+    sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    mv "$fakebin/tmux" "$fakebin/tmux-original"
+    cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ]; then
+  counter="$(dirname "$0")/captures"
+  n=$(cat "$counter" 2>/dev/null || printf '0')
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$counter"
+  printf 'external-decision gate elapsed-%s\n' "$n"
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+    chmod +x "$fakebin/tmux"
+
+    # Phase A: the first bounded recheck surfaces for the changed pane.
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CURRENT_COMMAND=grok \
+      SQUAD_FAKE_CREW_STATE='state: working · source: pane · foreground long poll' \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_PAUSE_RESURFACE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+      SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+    pid=$!
+    if ! wait_for_exit "$pid" 100; then
+      reap "$pid"; fail "$record: the first changed-pane pause recheck never surfaced"
+    fi
+    grep -F "stale: $window" "$out" >/dev/null || fail "$record: first pause recheck did not name its window"
+    grep -F 'possible wedge' "$out" >/dev/null && fail "$record: first pause recheck was mislabeled a wedge"
+    wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue")
+    [ "$wakes" -eq 1 ] || fail "$record: expected exactly one first recheck, got $wakes"
+    before=$(cat "$fakebin/captures")
+
+    # Phase B: keep the pane changing every poll and confirm the bounded cadence
+    # re-arms rather than absorbing the churn indefinitely.
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CURRENT_COMMAND=grok \
+      SQUAD_FAKE_CREW_STATE='state: working · source: pane · foreground long poll' \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_PAUSE_RESURFACE_SECS=2 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+      SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+    pid=$!
+    if ! wait_for_exit "$pid" 150; then
+      reap "$pid"; fail "$record: a continually changing busy pane never re-armed the pause cadence after the first recheck"
+    fi
+    after=$(cat "$fakebin/captures")
+    [ "$after" -gt "$before" ] || fail "$record: fixture did not keep changing the pane during the cadence window"
+    grep -F 'awaiting external' "$out" >/dev/null || fail "$record: the second recheck was not a paused/awaiting-external recheck"
+    grep -F 'rechecked on a long cadence' "$out" >/dev/null || fail "$record: the second recheck did not use the long pause cadence: $(cat "$out")"
+    grep -F 'possible wedge' "$out" >/dev/null && fail "$record: the second pause recheck was mislabeled a wedge"
+    wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue")
+    [ "$wakes" -eq 2 ] || fail "$record: changing busy pane emitted $wakes rechecks across the cadence window instead of two"
+    [ ! -e "$state/.stale-since-$key" ] || fail "$record: the pause cadence recheck started a wedge timer"
+    [ ! -e "$state/.wedge-escalations-$key" ] || fail "$record: the pause cadence recheck escalated a wedge"
+  done
+  pass "a continually changing busy pane under a live declared pause re-arms the long pause cadence after its first recheck"
+}
+
 # Companion to the regression above: with NO declared pause at all, a busy
 # pane (source: pane, same as a foreground long poll) must still escalate
 # exactly as it does today once it crosses the wedge threshold - the fix must
@@ -2833,6 +2908,7 @@ test_decision_parked_stale_is_throttled
 test_live_paused_churning_pane_is_throttled
 test_paused_busy_pane_without_run_step_does_not_override_pause
 test_paused_busy_churning_pane_surfaces_first_recheck
+test_paused_busy_churning_pane_rearms_long_cadence
 test_busy_pane_without_declared_pause_still_escalates
 test_paused_busy_pane_past_turn_age_does_not_wedge
 test_busy_pane_past_turn_age_without_pause_still_wedges
