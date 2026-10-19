@@ -46,12 +46,12 @@ matches_any() {
 }
 proof_for() {
   local number=$1 proof
-  proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([[:space:]]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
+  proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([^0-9]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
   printf '%s' "$proof"
 }
 criterion_section() {
   local number=$1
-  awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([[:space:]]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found {print}' "$CHECKLIST"
+  awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([^0-9]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found {print}' "$CHECKLIST"
 }
 # react_record_lines <section>: the routing/queries records, used only for duplicate detection.
 react_record_lines() {

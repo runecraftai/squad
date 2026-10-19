@@ -28,6 +28,39 @@ write_valid
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
 expect_code 0 "$rc" "complete bug-fix evidence should validate"
 assert_contains "$out" "playbook evidence valid" "validator should report a successful validation"
+# Labeled criterion headings stay valid, and a criterion number must not match a longer number.
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 1: Reproduction before fix
+Proof: reproduction before fix command: reproduce failure
+## Criterion 2: Causal explanation
+Proof: causal explanation with refutable observation command
+## Criterion 3: Regression test
+Proof: regression test pre-fix and post-fix command
+## Criterion 4: Relevant suite
+Proof: relevant suite command green pass
+## Criterion 5: Original surface
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+expect_code 0 "$rc" "colon-labeled criterion headings should validate"
+assert_contains "$out" "playbook evidence valid" "validator should accept labeled criterion headings"
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 10: absorb half only
+Proof: reproduction before fix command: reproduce failure
+## Criterion 2
+Proof: causal explanation with refutable observation command
+## Criterion 3
+Proof: regression test pre-fix and post-fix command
+## Criterion 4
+Proof: relevant suite command green pass
+## Criterion 5
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "a two-digit criterion heading must not satisfy criterion 1"
+assert_contains "$out" "missing: criterion 1" "validator should report the absent criterion 1 heading"
 # A missing section and an empty proof are reported together.
 cat > "$CHECK" <<'EOF'
 # bug-fix@1 checklist
