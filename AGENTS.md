@@ -92,6 +92,7 @@ data/                personal unit records; LOCAL, gitignored as a whole
   XOs.md             local and remote XO routing table; Squad-private, maintained by the XO seed helpers (section 6)
   <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
   <id>/report.md     recon task deliverable, written by the operator; survives teardown
+  <id>/knowledge-pass.md  strike delivery record written by the knowledge-pass skill on request; survives teardown
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete commander-approved project operation exception
 state/               volatile runtime signals; gitignored
   <id>.status        appended by operators: "<state>: <note>" wake-event lines, not current-state truth; the last nonblank line is terminal completion evidence for bin/sq-exec-state.sh when its verb is done: or failed:
