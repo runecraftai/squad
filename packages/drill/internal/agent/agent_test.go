@@ -1379,3 +1379,29 @@ func TestFinalizeTextResult_ObjectWithoutFindingsStillFails(t *testing.T) {
 		t.Errorf("error = %v, want the top-level required-field error", err)
 	}
 }
+
+// TestFinalizeTextResult_ArrayWrappedFindingsObjectStillRecovers keeps the
+// previously recoverable shape working: an agent that answers a findings
+// request with a one-element list around the documented object still parses,
+// because the balanced-object recovery finds the inner payload. The bare-array
+// normalization must not short-circuit that recovery.
+func TestFinalizeTextResult_ArrayWrappedFindingsObjectStillRecovers(t *testing.T) {
+	text := `[{"findings":[{"id":"F1","severity":"warning","file":"internal/agent/agent.go","line":7,"description":"possible nil deref"}],"risk_level":"medium","risk_rationale":"bounded change","risk_scope":"source-or-external"}]`
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("array-wrapped findings object must recover, got: %v", err)
+	}
+	var got reviewFindingsParseProbe
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("recovered output is not the documented object form: %v (output: %s)", err, result.Output)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].ID != "F1" {
+		t.Fatalf("recovered findings = %+v, want the inner object's single finding F1", got.Findings)
+	}
+	if got.Findings[0].Action != "no-op" || got.Findings[0].ReviewScope != "source" {
+		t.Errorf("recovered finding defaults = action %q, review_scope %q; want no-op/source", got.Findings[0].Action, got.Findings[0].ReviewScope)
+	}
+	if got.RiskLevel != "medium" {
+		t.Errorf("recovered risk_level = %q, want medium", got.RiskLevel)
+	}
+}

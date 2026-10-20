@@ -294,18 +294,14 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	if rawErr == nil {
 		return output, nil
 	}
-	// The text itself being the bare findings array makes it an unambiguous
-	// candidate: the shape is recognized, the syntax is valid, and only a
-	// per-finding field is wrong. Return that precise error instead of letting
-	// the prose/fence recovery below rescan the array's own elements and
-	// surface a misleading top-level one (the reported incident, where a bare
-	// array surfaced `missing required field "findings"` taken from a single
-	// finding object inside it).
-	if isJSONArrayValue([]byte(text)) {
-		if _, ok := findingsObjectSchema(validationSchema); ok {
-			return nil, rawErr
-		}
-	}
+	// A whole-text bare findings array is a recognized shape with valid
+	// syntax, so rawErr is the precise per-finding validation error. Recovery
+	// below still runs first: an array that wraps a valid documented object
+	// stays recoverable through the balanced-object scan, and only when
+	// nothing is recovered does rawErr win over the misleading top-level
+	// `missing required field "findings"` that rescanning the array's own
+	// elements produces (the reported incident).
+	bareFindingsPayload := isJSONArrayValue([]byte(text)) && isFindingsObjectSchema(validationSchema)
 
 	candidates := fencedJSONCandidates(text)
 	var parsed []json.RawMessage
@@ -341,6 +337,9 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	}
 
 	if candidateErr != nil {
+		if bareFindingsPayload {
+			return nil, rawErr
+		}
 		return nil, candidateErr
 	}
 	if fallback, ok := plainTextRoundSummary(text, schema, rawErr); ok {
@@ -783,6 +782,11 @@ func findingsObjectSchema(schema json.RawMessage) (map[string]any, bool) {
 		}
 	}
 	return nil, false
+}
+
+func isFindingsObjectSchema(schema json.RawMessage) bool {
+	_, ok := findingsObjectSchema(schema)
+	return ok
 }
 
 // isJSONArrayValue reports whether output is a JSON array (an empty array or a
