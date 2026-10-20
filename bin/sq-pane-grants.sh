@@ -130,7 +130,9 @@ fm_pane_grants_inventory() {  # <session> -> validated inventory on stdout
   [ "$rc" -eq 0 ] \
     || fm_pane_grants_fail "cannot read the TUIOS window inventory for session '$session': $(printf '%s' "$out" | head -n 1)"
   printf '%s' "$out" | jq -e '
-    type == "object" and (.success != false) and ((.error // "") == "") and (.windows | type == "array")
+    type == "object" and (.success != false) and ((.error // "") == "")
+    and (.windows | type == "array")
+    and ([.windows[] | type] | all(. == "object"))
   ' >/dev/null 2>&1 \
     || fm_pane_grants_fail "the TUIOS window inventory for session '$session' is unreadable: $(printf '%s' "$out" | head -c 200)"
   printf '%s' "$out"
@@ -162,16 +164,24 @@ fm_pane_grants_canonical_window() {  # <inventory> <window-ref> -> exact window 
 }
 
 # fm_pane_grants_explicit: what the inventory says a pane holds, as a record so
-# an absent grants field is never confused with an explicitly empty grant set.
-# Prints "explicit<TAB><csv>", "default<TAB>" when the pane holds the daemon
-# default, or "missing<TAB>" when the window is no longer in the inventory.
+# an absent or null grants field is never confused with an explicitly empty
+# grant set. The daemon reports `grants: null` for a pane that holds no explicit
+# set (the shape its own reset restores), so null means the daemon default, not
+# "this pane deliberately holds nothing". Prints "explicit<TAB><csv>",
+# "default<TAB>" when the pane holds the daemon default, "unreadable<TAB>" when
+# the record reports grants in a shape this wrapper cannot read, or
+# "missing<TAB>" when the window is no longer in the inventory.
 fm_pane_grants_explicit() {  # <inventory> <window-id>
-  printf '%s' "$1" | jq -r --arg w "$2" '
+  local record
+  record=$(printf '%s' "$1" | jq -r --arg w "$2" '
     def wid: (.window_id // .id // (if (.window | type) == "object" then .window.id else empty end));
-    [ .windows[] | select(wid == $w) ] | first
+    [ .windows[] | select(type == "object") | select(wid == $w) ] | first
     | if . == null then "missing\t"
-      elif has("grants") then "explicit\t\((.grants // []) | join(","))"
-      else "default\t" end'
+      elif (has("grants") | not) or (.grants == null) then "default\t"
+      elif (.grants | type) == "array" then "explicit\t\(.grants | join(","))"
+      else "unreadable\t" end' 2>/dev/null) \
+    || fm_pane_grants_fail "the TUIOS window inventory record for window '$2' is unreadable; refusing to guess the grants that pane holds"
+  printf '%s' "$record"
 }
 
 fm_pane_grants_caller() {  # -> validated pane-grants payload on stdout
@@ -201,6 +211,26 @@ fm_pane_grants_default_grants() {  # [<validated pane-grants payload>]
   printf '%s' "$out" | jq -e '(.default_grants | type) == "array"' >/dev/null 2>&1 \
     || fm_pane_grants_fail 'the daemon reported default_grants in an unreadable shape; refusing to guess the grants this pane already holds'
   printf '%s' "$out" | jq -r '(.default_grants // []) | join(",")'
+}
+
+# fm_pane_grants_caller_holds: what a validated pane-grants payload says this
+# pane holds, as the same explicit/default record fm_pane_grants_explicit uses
+# for the inventory, so show and grant cannot disagree about an explicitly
+# empty set. An explicit empty set stays explicit; only a pane the daemon
+# reports without a grants field (or with null) falls back to the daemon
+# default, and a grants value that is not a list fails closed.
+fm_pane_grants_caller_holds() {  # <validated pane-grants payload>
+  local record
+  record=$(printf '%s' "$1" | jq -r '
+    def set: if (.grants | type) == "array" then "explicit\t\(.grants | join(","))" else "unreadable\t" end;
+    if (has("default_grants") | not) or ((.default_grants | type) == "array") then
+      if .explicit == true then set
+      elif .explicit == false then "default\t"
+      elif (has("grants") | not) or (.grants == null) then "default\t"
+      else set end
+    else "unreadable\t" end' 2>/dev/null) \
+    || fm_pane_grants_fail "the TUIOS pane-grants payload reports this pane's grants in an unreadable shape; refusing to guess what it holds"
+  printf '%s' "$record"
 }
 
 fm_pane_grants_with() {  # <csv> <grant> -> csv that holds both, order preserved
@@ -235,6 +265,9 @@ fm_pane_grants_read() {  # <target>
     default$'\t'*)
       GRANT_DECLARED=default
       GRANT_CSV=$(fm_pane_grants_default_grants)
+      ;;
+    unreadable$'\t'*)
+      fm_pane_grants_fail "the window inventory reports the grants of $GRANT_SESSION:$GRANT_WINDOW in an unreadable shape (not a list); refusing to guess or replace them"
       ;;
     *) fm_pane_grants_fail "$GRANT_SESSION:$GRANT_WINDOW is no longer in the window inventory; re-read the target" ;;
   esac
@@ -275,7 +308,7 @@ fm_pane_grants_person_hint() {  # <session>:<window>
 }
 
 fm_pane_grants_show() {  # [<target>]
-  local target=${1:-} out label='' grants declared
+  local target=${1:-} out label='' grants declared record
   if [ -z "$target" ]; then
     out=$(fm_pane_grants_caller)
     if [ "$(printf '%s' "$out" | jq -r '.pane')" != true ]; then
@@ -295,9 +328,18 @@ fm_pane_grants_show() {  # [<target>]
       | select((.window | type) == "string" and (.window | length) > 0)
       | "\(.session):\(.window)"' 2>/dev/null || true)
     [ -n "$label" ] || printf 'target: unreadable (the daemon reported a pane without a session and window)\n'
-    declared=$(printf '%s' "$out" | jq -r 'if .explicit == true then "explicit" else "default" end' 2>/dev/null || true)
-    grants=$(printf '%s' "$out" | jq -r '(.grants // []) | join(",")' 2>/dev/null || true)
-    [ -n "$grants" ] || grants=$(fm_pane_grants_default_grants "$out")
+    record=$(fm_pane_grants_caller_holds "$out")
+    case "$record" in
+      explicit$'\t'*)
+        declared=explicit
+        grants=${record#*$'\t'}
+        ;;
+      default$'\t'*)
+        declared=default
+        grants=$(fm_pane_grants_default_grants "$out")
+        ;;
+      *) fm_pane_grants_fail 'the TUIOS pane-grants payload reports this pane'\''s grants in an unreadable shape; refusing to guess what it holds' ;;
+    esac
     [ -z "$label" ] || printf 'target: %s\n' "$label"
   else
     fm_pane_grants_read "$target"
@@ -341,7 +383,7 @@ fm_pane_grants_verify() {  # <target>
 }
 
 fm_pane_grants_grant() {  # <grant-name> <target>
-  local grant=$1 target=$2 current desired out rc inventory
+  local grant=$1 target=$2 current desired out rc inventory record
   [ "$grant" = respond ] \
     || fm_pane_grants_refuse "only the respond grant can be added; '$grant' is refused because this wrapper is not a TUIOS grant proxy"
   fm_pane_grants_read "$target"
@@ -367,8 +409,11 @@ fm_pane_grants_grant() {  # <grant-name> <target>
     exit 1
   fi
   inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
-  current=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
-  current=${current#*$'\t'}
+  record=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
+  case "$record" in
+    explicit$'\t'*) current=${record#*$'\t'} ;;
+    *) fm_pane_grants_fail "TUIOS reported success, but $GRANT_SESSION:$GRANT_WINDOW does not read back an explicit grant set; nothing else was changed" ;;
+  esac
   case ",$current," in
     *",respond,"*) ;;
     *) fm_pane_grants_fail "TUIOS reported success, but $GRANT_SESSION:$GRANT_WINDOW does not hold respond; nothing else was changed" ;;

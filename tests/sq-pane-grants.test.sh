@@ -243,12 +243,19 @@ result=$(run_wrapper show)
 expect_code 1 "${result%%$'\n'*}" 'show refuses a default_grants value that is not a list'
 assert_contains "$result" 'unreadable shape' 'a non-list default is refused instead of read as empty'
 
-printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":[],"grants":[],"explicit":true}' \
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":["admin"],"grants":[],"explicit":true}' \
   > "$FAKE_DIR/pane-grants.json"
 result=$(run_wrapper show)
-expect_code 0 "${result%%$'\n'*}" 'show accepts an explicitly empty grant set'
-assert_contains "$result" 'grants: none' 'an empty grant set is reported as none'
-assert_contains "$result" 'person command:' 'an empty grant set still yields the person command'
+expect_code 0 "${result%%$'\n'*}" 'show reads an explicitly empty grant set under a non-empty default'
+assert_contains "$result" 'grants: none' \
+  'an explicitly empty set is reported as none even when the daemon default is not empty'
+assert_contains "$result" 'declared: explicit' 'an explicitly empty set is never reported as the default'
+
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":["admin"],"grants":"admin","explicit":true}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 1 "${result%%$'\n'*}" 'show refuses a pane-grants grants value that is not a list'
+assert_contains "$result" 'unreadable shape' 'a non-list pane-grants value is refused instead of read as empty'
 write_caller_pane "$SESSION" "$CALLER_PANE"
 
 # An inventory record with an explicitly empty grants list is explicit, not the
@@ -271,6 +278,43 @@ result=$(run_wrapper grant respond "emptygrants:eeeeeeee-5555")
 expect_code 0 "${result%%$'\n'*}" 'grant adds respond to a pane that deliberately holds nothing'
 assert_grep 'set-pane-grants --session emptygrants --window eeeeeeee-5555 --grants respond' "$LOG" \
   'the add-only write preserves an empty grant set instead of restoring a default'
+
+# TUIOS reports `grants: null` for a pane that holds no explicit set (the shape
+# its own reset restores). That is the daemon default, not a deliberate empty
+# set, so the add-only write must keep the inherited admin instead of dropping
+# it down to respond alone.
+write_null_grant_session() {
+  jq -cn '{success:true,windows:[{window_id:"11111111-8888",display_name:"null-grants",grants:null}]}' \
+    > "$FAKE_DIR/nullgrants.json"
+}
+write_null_grant_session
+result=$(run_wrapper show "nullgrants:11111111-8888")
+expect_code 0 "${result%%$'\n'*}" 'show reads a pane whose grants field is null'
+out=${result#*$'\n'}
+assert_contains "$out" 'declared: default' 'a null grants field is the daemon default, not an explicit set'
+assert_contains "$out" 'grants: admin' 'a null grants field reports the daemon default'
+reset_log
+result=$(run_wrapper grant respond "nullgrants:11111111-8888")
+expect_code 0 "${result%%$'\n'*}" 'grant adds respond to a pane whose grants field is null'
+assert_grep 'set-pane-grants --session nullgrants --window 11111111-8888 --grants admin,respond' "$LOG" \
+  'a null grant set keeps the inherited admin and adds only respond'
+
+# A grants value that is not a list is unreadable, and the refusal must say so
+# instead of falling through to the misleading "no longer in the inventory".
+write_bad_grant_session() {
+  jq -cn '{success:true,windows:[{window_id:"22222222-9999",display_name:"bad-grants",grants:"admin"}]}' \
+    > "$FAKE_DIR/badgrants.json"
+}
+write_bad_grant_session
+result=$(run_wrapper show "badgrants:22222222-9999")
+expect_code 1 "${result%%$'\n'*}" 'show refuses an inventory grants value that is not a list'
+assert_contains "$result" 'unreadable shape' 'a non-list inventory grant set is refused instead of read as empty'
+assert_not_contains "$result" 'no longer in the window inventory' \
+  'a non-list grant set is not reported as a missing window'
+reset_log
+result=$(run_wrapper grant respond "badgrants:22222222-9999")
+expect_code 1 "${result%%$'\n'*}" 'grant refuses an inventory grants value that is not a list'
+assert_no_grep 'set-pane-grants' "$LOG" 'an unreadable grant set never reaches the daemon'
 
 # The headline path: a shell outside every pane is the only caller TUIOS accepts
 # for the first grant, so show, grant, and verify are driven from exactly that
