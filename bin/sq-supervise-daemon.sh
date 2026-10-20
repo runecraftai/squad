@@ -76,6 +76,11 @@
 #                                   tuios "<session>:<window-id>" target; which one
 #                                   it's read as is decided by
 #                                   SQUAD_SUPERVISOR_BACKEND (below), independently.
+#                                   Auto-detected markers are preferences: each is
+#                                   probed in order and the first target that
+#                                   actually exists wins, so a stale preferred
+#                                   marker falls through instead of blocking away
+#                                   mode. An explicit override is never replaced.
 #          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr|tuios;
 #                                   override; otherwise auto-discovered the same
 #                                   way bin/sq-backend.sh's fm_backend_detect
@@ -180,9 +185,10 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 . "$SQUAD_DAEMON_DIR/sq-classify-lib.sh"
 
 # Supervisor-pane discovery (SQUAD_SUPERVISOR_TARGET_DEFAULT,
-# SQUAD_SUPERVISOR_BACKEND_DEFAULT, discover_supervisor_target,
-# discover_supervisor_backend). Shared with the script-owned away launcher
-# (bin/sq-afk-launch.sh) so the commander-pane resolution has exactly one owner.
+# SQUAD_SUPERVISOR_BACKEND_DEFAULT, discover_supervisor_pane and its unvalidated
+# discover_supervisor_target/discover_supervisor_backend views). Shared with the
+# script-owned away launcher (bin/sq-afk-launch.sh) so the commander-pane
+# resolution has exactly one owner.
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_DAEMON_DIR/sq-supervisor-target-lib.sh"
 
@@ -328,9 +334,10 @@ _collapse_newlines() {  # <text>
   printf '%s' "$s"
 }
 
-# discover_supervisor_target / discover_supervisor_backend are owned by
-# bin/sq-supervisor-target-lib.sh (sourced above). fm_super_main below calls
-# them exactly as before; the away launcher reuses the identical resolution to
+# Supervisor-pane discovery is owned by bin/sq-supervisor-target-lib.sh (sourced
+# above): discover_supervisor_pane is the validated resolution used by
+# fm_super_main, discover_supervisor_target/backend are its unvalidated
+# preference views, and the away launcher reuses the identical resolution to
 # pass the commander pane in as SQUAD_SUPERVISOR_TARGET.
 
 # --- classification helpers (PURE: no side effects, testable) ---------------
@@ -1488,29 +1495,24 @@ fm_super_main() {
   echo "$$" > "$PIDFILE"
   fm_pid_identity "${BASHPID:-$$}" > "$LOCK/pid-identity" 2>/dev/null || true
 
-  # --- auto-discover the supervisor BACKEND first ---------------------------
-  # Priority: explicit override > TMUX_PANE > HERDR_ENV/HERDR_PANE_ID >
-  # TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID > tmux fallback. Resolved before target discovery,
-  # which composes backend-specific targets from the corresponding environment.
-  # Exporting the result into SQUAD_SUPERVISOR_BACKEND makes injection and state probes
-  # (which read that env var) dispatch through the right backend without an
-  # extra global thread-through.
-  local discovered_backend backend_source
-  backend_source="SQUAD_SUPERVISOR_BACKEND"
-  if [ -z "${SQUAD_SUPERVISOR_BACKEND:-}" ]; then
-    if [ -n "${TMUX_PANE:-}" ]; then
-      backend_source="TMUX_PANE"
-    elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
-      backend_source="HERDR_ENV"
-    elif [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
-      backend_source="TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)"
-    else
-      backend_source="FALLBACK($SQUAD_SUPERVISOR_BACKEND_DEFAULT)"
-    fi
+  # --- resolve the supervisor pane (backend and target together) -----------
+  # bin/sq-supervisor-target-lib.sh owns the preference order, the explicit
+  # overrides' authority, and the target validation that lets a stale preferred
+  # marker fall through to the next one instead of blocking away mode. Exporting
+  # the results into SQUAD_SUPERVISOR_BACKEND/SQUAD_SUPERVISOR_TARGET makes
+  # injection and state probes (which read those env vars) dispatch through the
+  # right backend without an extra global thread-through.
+  local pane_line pane_status=0 pane_settled backend_source target_source fallback_note
+  local BACKEND TARGET
+  pane_line=$(discover_supervisor_pane) || pane_status=$?
+  IFS=$'\t' read -r BACKEND TARGET backend_source target_source pane_settled fallback_note <<< "$pane_line"
+  SQUAD_SUPERVISOR_BACKEND="$BACKEND"
+  SQUAD_SUPERVISOR_TARGET="$TARGET"
+
+  # A preferred marker whose target was gone is never dropped silently.
+  if [ "$fallback_note" != "-" ]; then
+    log "supervisor target fallback: $fallback_note; using $TARGET (source=$target_source, backend=$BACKEND)"
   fi
-  discovered_backend=$(discover_supervisor_backend) || true
-  SQUAD_SUPERVISOR_BACKEND="$discovered_backend"
-  local BACKEND="$SQUAD_SUPERVISOR_BACKEND"
 
   # --- refuse an unsupported supervisor backend loudly before dispatch. TUIOS
   # uses its native Pi handoff when validated; otherwise unknown composer state
@@ -1523,36 +1525,22 @@ fm_super_main() {
     exit 1
   fi
 
-  # --- auto-discover the supervisor target (the pane running Squad) --------
-  # Priority and exact TUIOS marker contract live in
-  # bin/sq-supervisor-target-lib.sh. Export the result for all later probes.
-  local discovered target_source
-  target_source="SQUAD_SUPERVISOR_TARGET"
-  if [ -z "${SQUAD_SUPERVISOR_TARGET:-}" ]; then
-    if [ -n "${TMUX_PANE:-}" ]; then
-      target_source="TMUX_PANE"
-    elif [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
-      target_source="HERDR_ENV(HERDR_PANE_ID)"
-    elif [ "${TUIOS_ENV:-}" = "1" ] && [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
-      target_source="TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)"
-    else
-      target_source="FALLBACK(Squad:0)"
-    fi
+  # --- a target that resolved nowhere is a typo or a dead marker ------------
+  if [ "$pane_status" -ne 0 ]; then
+    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set SQUAD_SUPERVISOR_TARGET" >&2
+    log "startup failed: target '$TARGET' not found (backend=$BACKEND)"
+    fm_lock_release "$LOCK" 2>/dev/null || true
+    rm -f "$PIDFILE" 2>/dev/null || true
+    exit 1
   fi
-  if discovered=$(discover_supervisor_target); then
-    : # resolved cleanly
-  else
-    echo "warn: could not auto-discover supervisor pane (no SQUAD_SUPERVISOR_TARGET or complete backend target markers); falling back to '$discovered' — verify this is Squad's pane" >&2
-  fi
-  SQUAD_SUPERVISOR_TARGET="$discovered"
-  local TARGET="$SQUAD_SUPERVISOR_TARGET"
 
-  # --- validate supervisor target at startup (a missing target is a typo) ---
-  # Dispatches through bin/sq-backend.sh instead of a raw `tmux display-message`
-  # probe, so a herdr supervisor pane is checked via the herdr adapter; for
-  # backend=tmux this runs the exact same `tmux display-message -p -t "$TARGET"
-  # '#{pane_id}'` call as before.
-  if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
+  # --- validate an explicit override at startup (a missing target is a typo) --
+  # A detected candidate already arrived validated; an explicit override is the
+  # operator's word, so it is never replaced here - only checked and refused
+  # loudly when it does not resolve. Dispatches through bin/sq-backend.sh instead
+  # of a raw `tmux display-message` probe, so a herdr supervisor pane is checked
+  # via the herdr adapter.
+  if [ "$pane_settled" = "explicit" ] && ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
     echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set SQUAD_SUPERVISOR_TARGET" >&2
     log "startup failed: target '$TARGET' not found (backend=$BACKEND)"
     fm_lock_release "$LOCK" 2>/dev/null || true

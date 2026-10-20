@@ -81,7 +81,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-afk-pi-handoff.sh`   | Publish a durable Pi-native away-mode handoff request and observe its consumption acknowledgement |
 | `sq-afk-tuios-lab.sh`    | Guarded opt-in disposable TUIOS/Pi live verification for away-mode delivery             |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
-| `sq-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
+| `sq-supervisor-target-lib.sh` | Resolve and validate the shared supervisor target and backend for the daemon and launcher |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
