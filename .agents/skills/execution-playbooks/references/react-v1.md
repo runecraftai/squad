@@ -120,7 +120,7 @@ Lint cannot prove kebab-case folders, PascalCase names, absence of anonymous/wra
 Inspect those requirements explicitly and record concrete file/function evidence; do not claim automated coverage that was not exercised.
 Pending D3 deliberation does not waive D1/D2 or existing lint checks and does not block unrelated React work; stop for a decision if the authorized task depends on changing the lint policy.
 
-## What this playbook does not decide
+## What this profile does not decide
 
 The state defaults and form choices above are settled by the source standard; an alternative global-state library requires a separate decision rather than executor preference.
 This contract does not choose a styling system or test runner, neither of which the source standard settles as a general React rule.
@@ -129,10 +129,11 @@ It does not authorize a framework migration, broad legacy renaming, a store rewr
 
 ## Required evidence
 
-Write a `# react@1 checklist` under the Squad base's `data/<id>/artifacts/`, never in the project repository.
-Use five numbered `## Criterion N` sections with a distinct `Proof:` line per criterion, each bound to an actual `path:` or command with its result, except criterion 3, which carries the routing and queries records below instead of a `Proof:` line.
-The labels below name the evidence this profile requires.
-The attached playbook owns the completion gate, so a passing `bin/sq-playbook-validate.sh` run does not prove these criteria and its structural success proves neither architectural nor runtime correctness.
+Write a `# react profile evidence` section in a Markdown file under the Squad base's `data/<id>/artifacts/`, never in the project repository.
+That heading carries neither `checklist` nor a version token, so `bin/sq-playbook-validate.sh` can never mistake this profile record for the attached playbook's completion artifact.
+Record five numbered `## Evidence N` sections, each naming the concrete `path:` or command with its result that a reviewer can check; a profile requires no separately validated checklist of its own.
+The labels below name the evidence this profile records.
+The attached playbook owns the completion gate, so a passing `bin/sq-playbook-validate.sh` run does not prove these records and its structural success proves neither architectural nor runtime correctness.
 
 1. **architecture**: changed modules mapped to layers, import directions, and boundaries check command/result, including unchanged architecture where relevant.
 2. **components**: changed named functions and kebab-case paths, hooks owning flows, and pure functions with zero React imports, with concrete inspection evidence.
@@ -144,15 +145,17 @@ The attached playbook owns the completion gate, so a passing `bin/sq-playbook-va
    ```
 
    Write each record as a plain line beginning, after optional whitespace, with `Routing:` or `Queries:`; do not prefix Markdown list markers or emphasize the labels.
-   `bin/sq-playbook-validate.sh` checks only that shape: one record per label, a `changed` or `unchanged` state, a `-` separator, and nonblank free text. It does not read the free text for code-based routing, guards, invalidation, wording, case, or word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording. Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
+   No mechanical gate inspects these records for a paired brief, so the reviewing operator checks that each label appears once with a `changed` or `unchanged` state, a `-` separator, and nonblank free text, then reads the free text for code-based routing, guards, invalidation, wording, case, and word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording.
+   Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
 4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 
 ## Exit predicate
 
-The authorized React behavior works on the real surface, all five criteria have concrete evidence, and applicable type, lint, and focused behavior checks pass.
+The authorized React behavior works on the real surface, all five evidence areas have concrete evidence, and applicable type, lint, and focused behavior checks pass.
 Unchanged surfaces are justified rather than fabricated, and any pending D3 deliberation is explicit without being represented as an adopted configuration.
 The existing delivery path remains the authority for review, fixes, tests, delivery, approval, and merge.
+Read this predicate together with the stop conditions below as this profile's satisfaction and escalation conditions inside the attached playbook's exit and stop rules, never as a second terminal authority.
 
 ## Stop conditions
 
@@ -163,4 +166,4 @@ Name the conflict and request a decision instead of silently migrating, weakenin
 
 Do not put business logic back in JSX, use effects as a substitute for the query layer, mirror server state into stores, flatten the layers, or replace code-based routing with file routes.
 Do not treat the proposed oxlint block as commander approval or pretend lint alone proves the component-responsibility contract.
-Do not commit Squad checklists or create playbook-owned review, delivery, approval, or terminal authority.
+Do not commit Squad profile evidence or create playbook-owned review, delivery, approval, or terminal authority.

@@ -1172,8 +1172,58 @@ test_playbook_profile_pairing_and_refusals() {
   pass "sq-brief.sh: a profile attaches to a playbook, follows it, and unsupported pairings are refused"
 }
 
+test_paired_profile_evidence_stays_outside_the_playbook_gate() {
+  local home brief profile_artifact playbook_artifact evidence_heading out status
+  home="$TMP_ROOT/profile-gate-home"
+  mkdir -p "$home/data" "$home/state"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-gate repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+    || fail "feature@1 with the react@1 profile should materialize"
+  brief="$home/data/profile-gate/brief.md"
+  grep -qx 'Execution playbook: id=feature version=1' "$brief" || fail "paired brief lost its playbook identity"
+  grep -qx 'Execution profile: id=react version=1' "$brief" || fail "paired brief lost its profile identity"
+  evidence_heading='# react profile evidence'
+  assert_grep "$evidence_heading" "$brief" "paired brief must name the react profile evidence heading"
+  assert_no_grep '# react@1 checklist' "$brief" "the react profile must not ask for a checklist the playbook gate would select"
+
+  # The profile evidence artifact sorts before the playbook checklist, so a
+  # discovery that accepted it would score the profile as the playbook gate.
+  mkdir -p "$home/data/profile-gate/artifacts"
+  profile_artifact="$home/data/profile-gate/artifacts/react-profile-evidence.md"
+  playbook_artifact="$home/data/profile-gate/artifacts/vertical-slice-checklist.md"
+  printf '%s\n' '# react profile evidence' '' '## Evidence 1' 'architecture mapped to layers; path: src/app/routes.tsx' > "$profile_artifact"
+  printf 'playbook=feature\nplaybook_version=1\n' > "$home/state/profile-gate.meta"
+
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-playbook-validate.sh" profile-gate 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "profile evidence alone must not satisfy the feature@1 completion gate"
+  assert_contains "$out" "missing: checklist artifact" "profile evidence must not be accepted as the playbook completion artifact"
+  assert_not_contains "$out" "react-profile-evidence.md" "the react profile evidence was scored as playbook evidence"
+
+  cat > "$playbook_artifact" <<'EOF'
+# feature@1 checklist
+
+## Criterion 1
+Proof: behavior contract recorded for the rejected path; command: bun test passed
+
+## Criterion 2
+Proof: data shape and caller boundary retained; path: src/entities/audit/model.ts
+
+## Criterion 3
+Proof: vertical slice implementation complete; command: git diff passed
+
+## Criterion 4
+Proof: real surface test command: bun run test passed
+EOF
+
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-playbook-validate.sh" profile-gate 2>&1); status=$?
+  expect_code 0 "$status" "the playbook checklist must satisfy the gate while the profile evidence sits beside it"
+  assert_contains "$out" "playbook evidence valid: feature@1 ($playbook_artifact)" "the gate must select the playbook's own checklist"
+  pass "sq-brief.sh: paired profile evidence never hijacks the attached playbook's completion gate"
+}
+
 test_script_parses
 test_playbook_profile_pairing_and_refusals
+test_paired_profile_evidence_stays_outside_the_playbook_gate
 test_no_heredoc_in_command_substitution
 test_playbook_selection_and_legacy_compatibility
 test_playbook_decision_is_required
