@@ -99,7 +99,8 @@ bin/sq-pane-grants.sh verify <target>          # read-only gate: exit 0 only whe
 
 `<target>` is a task id resolved through `state/<id>.meta` (which must record `backend=tuios`) or an explicit `<session>:<window>`.
 The wrapper accepts no other grant, never addresses a whole session, and never replaces a pane's grants, so it cannot become a general TUIOS proxy.
-It also refuses a target that the inventory reports as waiting on a prompt (`needs_input` or `errored`): that is the pane whose dialog needs answering, not the pane that should be allowed to answer it, so `show` and `verify` explain the distinction instead of printing a person command that would change nothing.
+It also refuses a `grant` on a target that the inventory reports as waiting on a prompt (`needs_input` or `errored`): that is the pane whose dialog needs answering, not the pane that should be allowed to answer it.
+`show` and `verify` say so and still print exactly one `person command:`, aimed at the pane that types the answer - the caller's own pane whenever the daemon reports that placement - and omit it only when the daemon reports no such placement.
 An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
 A pane's grant set is read from `list-windows`: the daemon leaves `grants` absent or `null` for a pane that holds its default set (`tuios set-pane-grants --reset` restores `null`), so that shape is read as the default and the add-only write keeps the inherited grants, while an explicit list (including an empty `[]`) is taken literally and any other shape is refused rather than guessed.
 When `respond` is missing, `show`, `verify`, and a refused `grant` all print the same `person command:` line: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
@@ -119,6 +120,7 @@ The flow when a dialog blocks an operator:
 
 One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.
 When a send is refused for this missing grant, `bin/sq-send.sh` prints that same `person command:` line for the pane that must hold it, and keeps only the provider's refusal sentence instead of forwarding its `set-pane-grants` remediation advice, which Squad's guard refuses.
+It recognises that refusal from the daemon's own sentence or its structured error code, so any other refusal keeps its full diagnostic and gets no grant hint.
 
 ## Restart recovery
 

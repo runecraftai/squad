@@ -493,12 +493,16 @@ result=$(run_wrapper verify grantee)
 expect_code 0 "${result%%$'\n'*}" 'verify resolves a task id and agrees with the earlier grant'
 assert_contains "$result" "verified: $SESSION:$DEFAULT_PANE holds respond" 'verify reports the task pane by its exact id'
 
-# The pane that waits on a prompt is never offered the grant: TUIOS needs it on
-# the pane that types the answer, and granting this one changes nothing.
+# The pane that waits on a prompt is not the grant's home: TUIOS needs it on the
+# pane that types the answer (this caller's own pane here), and granting the
+# blocked pane itself changes nothing.
 result=$(run_wrapper show "$SESSION:99999999-7777")
 expect_code 0 "${result%%$'\n'*}" 'show still reads the pane that waits on a prompt'
 assert_contains "$result" 'is the pane waiting on a prompt' 'show explains why that pane is the wrong target'
-assert_not_contains "$result" 'person command:' 'show offers no person command for the blocked pane'
+assert_contains "$result" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
+  'show aims the person command at the pane that types the answer'
+assert_not_contains "$result" "grant respond $SESSION:99999999-7777" \
+  'show never aims the person command at the blocked pane'
 
 reset_log
 result=$(run_wrapper grant respond "$SESSION:99999999-7777")
@@ -508,7 +512,27 @@ assert_no_grep 'set-pane-grants' "$LOG" 'the refused blocked-pane grant never re
 
 result=$(run_wrapper verify "$SESSION:99999999-7777")
 expect_code 1 "${result%%$'\n'*}" 'verify stays non-zero for the blocked pane'
-assert_not_contains "$result" 'person command:' 'verify offers no person command for the blocked pane'
+assert_contains "$result" 'is the pane waiting on a prompt' 'verify explains why the blocked pane is not the grant home'
+assert_contains "$result" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
+  'verify aims the person command at the pane that types the answer'
+assert_not_contains "$result" "grant respond $SESSION:99999999-7777" \
+  'verify never aims the person command at the blocked pane'
+
+# A caller inside the blocked pane itself is not the pane that types the answer,
+# so it gets the note and no command aimed at the pane that changes nothing.
+write_caller_pane "$SESSION" "99999999-7777"
+result=$(run_wrapper show "$SESSION:99999999-7777")
+expect_code 0 "${result%%$'\n'*}" 'show still reads the blocked pane from inside it'
+assert_contains "$result" 'is the pane waiting on a prompt' 'the note still explains the blocked pane is not the grant home'
+assert_not_contains "$result" 'person command:' 'a caller inside the blocked pane is never told to grant it'
+
+# A caller the daemon places in no pane has no answering pane to name.
+write_outside_pane
+result=$(run_wrapper show "$SESSION:99999999-7777")
+expect_code 0 "${result%%$'\n'*}" 'show reads the blocked pane from outside every pane'
+assert_contains "$result" 'is the pane waiting on a prompt' 'the outside caller still gets the blocked-pane note'
+assert_not_contains "$result" 'person command:' 'the daemon reporting no placement yields no person command'
+write_caller_pane "$SESSION" "$CALLER_PANE"
 
 result=$(run_wrapper verify)
 expect_code 2 "${result%%$'\n'*}" 'verify without a target is refused'
@@ -565,9 +589,9 @@ assert_not_contains "$send_out" 'person command:' 'an unnamed caller pane never 
 rm -f "$FAKE_DIR/send-keys-refuse"
 write_caller_pane "$SESSION" "$CALLER_PANE"
 
-# The daemon's refusal wording is not the contract. A target the inventory
-# reports as waiting on a prompt keeps the sanctioned remedy even when TUIOS
-# rewords its refusal and never says "needs the respond grant".
+# A refusal that never mentions the respond grant is not this condition, even
+# for a target the inventory reports as waiting on a prompt: the daemon's full
+# diagnostic stays and no grant hint is offered.
 printf 'backend=tuios\nwindow=%s:%s\nharness=claude\n' "$SESSION" "99999999-7777" \
   > "$SQUAD_STATE_OVERRIDE/blocked-op.meta"
 printf '%s\n' \
@@ -576,11 +600,21 @@ printf '%s\n' \
   > "$FAKE_DIR/send-keys-refuse"
 send_out=$(FAKE_TUIOS_WINDOW_LABEL=sq-blocked-op "$SEND" blocked-op --key Enter 2>&1)
 send_rc=$?
-expect_code 1 "$send_rc" 'sq-send reports a reworded refusal for a prompt-blocked pane'
+expect_code 1 "$send_rc" 'sq-send reports an unrelated refusal for a prompt-blocked pane'
+assert_contains "$send_out" 'send-keys is refused for this pane' 'the daemon refusal is still reported'
+assert_contains "$send_out" 'Most likely cause: Pane dddddddd' 'an unrelated refusal keeps its full diagnostic'
+assert_not_contains "$send_out" 'person command:' 'an unrelated refusal gets no grant hint'
+rm -f "$FAKE_DIR/send-keys-refuse"
+
+# A structured grant code is the other signal: even with no matching sentence,
+# the daemon reporting the missing respond grant gets the sanctioned remedy.
+printf '%s\n' '{"success":false,"error":{"code":"respond_grant_required","message":"send-keys is refused for this pane"}}' \
+  > "$FAKE_DIR/send-keys-refuse"
+send_out=$(FAKE_TUIOS_WINDOW_LABEL=sq-blocked-op "$SEND" blocked-op --key Enter 2>&1)
+send_rc=$?
+expect_code 1 "$send_rc" 'sq-send reports a structured grant refusal'
 assert_contains "$send_out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
-  'the prompt-blocked inventory state keeps the person command without the refusal prose'
-assert_not_contains "$send_out" 'The person can give this pane more with' \
-  'a prompt-blocked refusal drops the raw-verb remediation advice regardless of wording'
+  'a structured grant code keeps the person command without the refusal prose'
 rm -f "$FAKE_DIR/send-keys-refuse"
 
 pass 'pane grants: respond-only wrapper refusals, the copy-paste person command, the verify gate, and the sq-send remedy hint'

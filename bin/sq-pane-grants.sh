@@ -291,16 +291,44 @@ fm_pane_grants_person_command() {  # <session>:<window>
 
 # fm_pane_grants_answering_note: true when the target is the pane WAITING on a
 # prompt, where respond changes nothing. TUIOS needs it on the pane that types
-# the answer, so every caller suppresses or refuses the grant for such a pane
-# rather than inviting the mistake.
+# the answer, so show and verify say why this pane is not the grant's home and
+# aim the person command there instead.
 fm_pane_grants_answering_note() {  # <session>:<window>
   case "$GRANT_AGENT_STATE" in
     needs_input|errored)
-      printf 'note: %s is the pane waiting on a prompt; respond belongs on the pane that types the answer, so no grant is offered for this pane\n' "$1"
+      printf "note: %s is the pane waiting on a prompt, not the grant's home: respond belongs on the pane that types the answer\n" "$1"
       return 0
       ;;
   esac
   return 1
+}
+
+# fm_pane_grants_answering_pane: the pane that types the answer, read as this
+# process's own placement because the daemon reports who is asking. Empty when
+# the daemon cannot report a complete placement: a person command naming a
+# partial target would be rejected by this same parser.
+fm_pane_grants_answering_pane() {
+  local out
+  out=$("$TUIOS_BIN" pane-grants --json 2>/dev/null) || { printf ''; return 0; }
+  printf '%s' "$out" | jq -r '
+    select(.success != false)
+    | select(.pane == true)
+    | select((.session | type) == "string" and (.session | length) > 0)
+    | select((.window | type) == "string" and (.window | length) > 0)
+    | "\(.session):\(.window)"' 2>/dev/null || true
+}
+
+# fm_pane_grants_answering_command: the one person command that gives the
+# answering pane the grant, for a target that is itself waiting on a prompt. A
+# caller inside that blocked pane, or one whose placement the daemon cannot
+# report, gets no command: granting the blocked pane changes nothing, and there
+# is no answering pane to name.
+fm_pane_grants_answering_command() {  # <blocked-label>
+  local label
+  label=$(fm_pane_grants_answering_pane)
+  [ -n "$label" ] && [ "$label" != "$1" ] || return 1
+  printf 'hint: %s is the pane that types the answer, so respond belongs there\n' "$label"
+  printf 'person command: %s\n' "$(fm_pane_grants_person_command "$label")"
 }
 
 fm_pane_grants_person_hint() {  # <session>:<window>
@@ -362,8 +390,11 @@ fm_pane_grants_show() {  # [<target>]
     *)
       printf 'respond: absent\n'
       if [ -n "$label" ]; then
-        fm_pane_grants_answering_note "$label" \
-          || printf 'person command: %s\n' "$(fm_pane_grants_person_command "$label")"
+        if fm_pane_grants_answering_note "$label"; then
+          fm_pane_grants_answering_command "$label" || true
+        else
+          printf 'person command: %s\n' "$(fm_pane_grants_person_command "$label")"
+        fi
       fi
       ;;
   esac
@@ -382,8 +413,11 @@ fm_pane_grants_verify() {  # <target>
   esac
   printf 'absent: %s:%s does not hold respond (holds %s)\n' \
     "$GRANT_SESSION" "$GRANT_WINDOW" "${GRANT_CSV:-none}" >&2
-  fm_pane_grants_answering_note "$GRANT_SESSION:$GRANT_WINDOW" \
-    || printf 'person command: %s\n' "$(fm_pane_grants_person_command "$GRANT_SESSION:$GRANT_WINDOW")" >&2
+  if fm_pane_grants_answering_note "$GRANT_SESSION:$GRANT_WINDOW"; then
+    fm_pane_grants_answering_command "$GRANT_SESSION:$GRANT_WINDOW" >&2 || true
+  else
+    printf 'person command: %s\n' "$(fm_pane_grants_person_command "$GRANT_SESSION:$GRANT_WINDOW")" >&2
+  fi
   return 1
 }
 

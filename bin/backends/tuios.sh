@@ -347,21 +347,34 @@ fm_backend_tuios_caller_pane() {
   return 1
 }
 
-# fm_backend_tuios_prompt_blocked: true when the daemon's own window inventory
-# reports the target as waiting on a prompt (needs_input) or errored. This is
-# the same structural signal bin/sq-pane-grants.sh reads, so the missing respond
-# grant is recognised from state rather than from the wording of a refusal.
-fm_backend_tuios_prompt_blocked() {  # <target>
-  local target=$1 windows
-  fm_backend_tuios_parse_target "$target" || return 1
-  windows=$(fm_backend_tuios_list_windows_json "$SQUAD_BACKEND_TUIOS_SESSION") || return 1
-  printf '%s' "$windows" | jq -e --arg id "$SQUAD_BACKEND_TUIOS_WINDOW" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    [ .windows[] | select((tids | index($id)) != null) | (.agent_state // "") ]
-    | any(. == "needs_input" or . == "errored")' >/dev/null 2>&1
+# fm_backend_tuios_grant_refusal: true only when the daemon refused the key
+# because the typing pane lacks the respond grant. The live refusal sentence is
+# one signal and a structured error code or message is the other, so a daemon
+# that reports the condition as JSON keeps the sanctioned remedy. Any other
+# refusal stays an ordinary send failure with its full diagnostic intact.
+fm_backend_tuios_grant_refusal() {  # <refusal-output>
+  local out=$1 text
+  case "$out" in
+    *'needs the respond grant'*) return 0 ;;
+  esac
+  text=$(printf '%s' "$out" | jq -r '
+    (.error // .)
+    | if type == "object" then (.code // .message // .detail // empty) else . end
+    | select(type == "string")' 2>/dev/null) || return 1
+  [ -n "$text" ] || return 1
+  text=$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')
+  case "$text" in
+    *respond*) ;;
+    *) return 1 ;;
+  esac
+  case "$text" in
+    *grant*|*need*|*require*|*missing*|*refus*|*denied*|*blocked*) return 0 ;;
+  esac
+  return 1
 }
 
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
-  local target=$1 key=$2 expected=${3:-} out rc grant_refusal=0
+  local target=$1 key=$2 expected=${3:-} out rc
   # Only a refusal sets this, and only to the pane whose grant is missing, so a
   # caller can name the sanctioned remedy without parsing the daemon's prose.
   # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
@@ -370,17 +383,7 @@ fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   out=$("$(fm_backend_tuios_bin)" send-keys --session "$SQUAD_BACKEND_TUIOS_SESSION" \
     --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -ne 0 ]; then
-    case "$out" in
-      *'needs the respond grant'*) grant_refusal=1 ;;
-      *)
-        # The daemon's refusal sentence is one trigger, but its wording is not
-        # the contract: a prompt-blocked target that refused a key is the same
-        # condition, so the inventory state keeps the sanctioned remedy offered
-        # across TUIOS wording changes.
-        fm_backend_tuios_prompt_blocked "$target" && grant_refusal=1
-        ;;
-    esac
-    if [ "$grant_refusal" = 1 ]; then
+    if fm_backend_tuios_grant_refusal "$out"; then
       # Squad has a sanctioned remedy for this refusal, so forward only the
       # daemon's own refusal sentence: its remaining lines are the provider's
       # remediation advice, which names the raw verb Squad's guard denies.
