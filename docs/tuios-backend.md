@@ -89,7 +89,7 @@ That is TUIOS 0.9.1's deliberate rule, measured on 2026-10-20: the same `send-ke
 So the one-line human step below is a provider boundary Squad respects on purpose, not a Squad defect to route around.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns that evidence.
 
-`bin/sq-pane-grants.sh` is the sanctioned surface for this grant, and the raw-session guard's refusal names it as the one sanctioned pane-grant path (`bin/sq-backend-pretool-check.sh`):
+`bin/sq-pane-grants.sh` is the sanctioned surface for this grant, and the raw-session guard's refusal names it as the one sanctioned pane-grant path (`bin/sq-backend-pretool-check.sh`), except for a refused `set-pane-grants --reset`, whose removal the wrapper cannot perform and which the refusal leaves with the person outside TUIOS:
 
 ```sh
 bin/sq-pane-grants.sh show <target>            # read-only: grants, and whether respond is present

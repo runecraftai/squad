@@ -57,6 +57,14 @@ assert_contains "$result" 'bin/sq-pane-grants.sh show' \
   'a denied grant read points at the read-only wrapper subcommand'
 assert_not_contains "$result" 'grant respond' \
   'a denied grant read is never told to perform the wrapper write'
+result=$(run_check 'tuios set-pane-grants -w task --reset')
+assert_contains "$result" "person's own set-pane-grants --reset from outside TUIOS" \
+  'a denied grant reset keeps removal with the person outside TUIOS'
+assert_not_contains "$result" 'grant respond' \
+  'a denied grant reset is never told to add the grant it removes'
+result=$(run_check 'tuios set-pane-grants -w task --grants respond; mytool --reset')
+assert_contains "$result" 'bin/sq-pane-grants.sh grant respond' \
+  'an unrelated reset later on the line does not hide the grant advice'
 result=$(run_check 'tmux kill-window -t Squad:task')
 assert_not_contains "$result" 'bin/sq-pane-grants.sh' \
   'a refusal for a provider without pane grants carries no pane-grant advice'
