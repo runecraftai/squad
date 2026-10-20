@@ -2221,6 +2221,7 @@ test_teardown_drops_target_and_wedge_counter() {
   printf '1\n' > "$state/.count-$live_key"
   printf '%s' "$pane_hash" > "$state/.stale-$live_key"
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$live_key"
+  printf '1\n' > "$state/.wedge-escalations-$live_key"
 
   # Phase C: the next scan drops the torn-down target's bookkeeping and still
   # escalates the live window normally in the same cycle.
@@ -2237,7 +2238,7 @@ test_teardown_drops_target_and_wedge_counter() {
   [ ! -e "$state/.stale-$key" ] || fail "a torn-down target kept its stale suppressor"
   [ ! -e "$state/.hash-$key" ] || fail "a torn-down target kept its pane hash"
   [ ! -e "$state/.count-$key" ] || fail "a torn-down target kept its pane hash count"
-  [ "$(cat "$state/.wedge-escalations-$live_key" 2>/dev/null || true)" = "1" ] || fail "the live control window's own escalation counter was disturbed"
+  [ "$(cat "$state/.wedge-escalations-$live_key" 2>/dev/null || true)" = "2" ] || fail "the live control window's own escalation counter was reset by the drop"
   [ "$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue")" = 0 ] \
     || fail "a torn-down target queued a stale wake"
 
