@@ -306,6 +306,20 @@ out=${result#*$'\n'}
 assert_contains "$out" 'declared: default' 'an unset caller is reported as the default, not an explicit set'
 assert_contains "$out" 'grants: unset' 'an unset caller with an empty default is not rendered as a denial'
 assert_not_contains "$out" 'grants: none' 'an unset caller never renders the explicit-empty grants line'
+assert_contains "$out" 'respond: absent' 'an unset caller with an empty default reports respond from the parsed set'
+
+# verify reads the same declared state: the unset pane under an empty default
+# holds nothing by default, and its failing verdict must say so instead of
+# reporting the deliberate denial an explicit empty set is.
+jq -cn '{success:true,windows:[{window_id:"44444444-aaaa",display_name:"unset-default",grants:null}]}' \
+  > "$FAKE_DIR/unsetdefault.json"
+result=$(run_wrapper verify "unsetdefault:44444444-aaaa")
+expect_code 1 "${result%%$'\n'*}" 'verify fails for an unset pane whose daemon default is empty'
+assert_contains "$result" 'does not hold respond' 'the failing verify names the missing grant'
+assert_contains "$result" 'unset (daemon default is empty)' \
+  'verify reports an unset pane as unset under an empty default'
+assert_not_contains "$result" 'holds none' \
+  'verify never reads an empty daemon default as an explicit denial'
 
 printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":[],"grants":[],"explicit":true}' \
   > "$FAKE_DIR/pane-grants.json"
