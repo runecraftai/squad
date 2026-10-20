@@ -300,7 +300,8 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	// stays recoverable through the balanced-object scan, and only when
 	// nothing is recovered does rawErr win over the misleading top-level
 	// `missing required field "findings"` that rescanning the array's own
-	// elements produces (the reported incident).
+	// elements produces, because each element is validated as if it were the
+	// whole payload.
 	bareFindingsPayload := isJSONArrayValue([]byte(text)) && isFindingsObjectSchema(validationSchema)
 
 	candidates := fencedJSONCandidates(text)
