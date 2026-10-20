@@ -316,6 +316,23 @@ result=$(run_wrapper grant respond "badgrants:22222222-9999")
 expect_code 1 "${result%%$'\n'*}" 'grant refuses an inventory grants value that is not a list'
 assert_no_grep 'set-pane-grants' "$LOG" 'an unreadable grant set never reaches the daemon'
 
+# A record the wrapper can only identify through a nested window object says
+# nothing about where its grants and agent state live, so it must fail closed
+# instead of reading the pane as default-granted and writing the default set
+# over a grant set it never read.
+write_nested_grant_session() {
+  jq -cn '{success:true,windows:[{window:{id:"33333333-aaaa",name:"nested",grants:["read"],agent_state:"working"}}]}' \
+    > "$FAKE_DIR/nestedgrants.json"
+}
+write_nested_grant_session
+result=$(run_wrapper show "nestedgrants:33333333-aaaa")
+expect_code 1 "${result%%$'\n'*}" 'show refuses a record identified only by a nested window object'
+assert_contains "$result" 'unreadable shape' 'a nested-only record is refused instead of read as default-granted'
+reset_log
+result=$(run_wrapper grant respond "nestedgrants:33333333-aaaa")
+expect_code 1 "${result%%$'\n'*}" 'grant refuses a record identified only by a nested window object'
+assert_no_grep 'set-pane-grants' "$LOG" 'a nested-only record never reaches the daemon'
+
 # The headline path: a shell outside every pane is the only caller TUIOS accepts
 # for the first grant, so show, grant, and verify are driven from exactly that
 # placement against the recorded outside-pane payload.

@@ -167,16 +167,21 @@ fm_pane_grants_canonical_window() {  # <inventory> <window-ref> -> exact window 
 # an absent or null grants field is never confused with an explicitly empty
 # grant set. The daemon reports `grants: null` for a pane that holds no explicit
 # set (the shape its own reset restores), so null means the daemon default, not
-# "this pane deliberately holds nothing". Prints "explicit<TAB><csv>",
+# "this pane deliberately holds nothing". Only the flat record the daemon
+# reports (a top-level window_id or id, with grants and agent_state at that same
+# level) is read as default when grants is absent: a record identified only
+# through a nested window object says nothing about where its grants live, so it
+# is unreadable rather than default. Prints "explicit<TAB><csv>",
 # "default<TAB>" when the pane holds the daemon default, "unreadable<TAB>" when
-# the record reports grants in a shape this wrapper cannot read, or
-# "missing<TAB>" when the window is no longer in the inventory.
+# the record is not in that shape, or "missing<TAB>" when the window is no
+# longer in the inventory.
 fm_pane_grants_explicit() {  # <inventory> <window-id>
   local record
   record=$(printf '%s' "$1" | jq -r --arg w "$2" '
     def wid: (.window_id // .id // (if (.window | type) == "object" then .window.id else empty end));
     [ .windows[] | select(type == "object") | select(wid == $w) ] | first
     | if . == null then "missing\t"
+      elif (has("window_id") | not) and (has("id") | not) then "unreadable\t"
       elif (has("grants") | not) or (.grants == null) then "default\t"
       elif (.grants | type) == "array" then "explicit\t\(.grants | join(","))"
       else "unreadable\t" end' 2>/dev/null) \
@@ -267,7 +272,7 @@ fm_pane_grants_read() {  # <target>
       GRANT_CSV=$(fm_pane_grants_default_grants)
       ;;
     unreadable$'\t'*)
-      fm_pane_grants_fail "the window inventory reports the grants of $GRANT_SESSION:$GRANT_WINDOW in an unreadable shape (not a list); refusing to guess or replace them"
+      fm_pane_grants_fail "the window inventory reports the grants of $GRANT_SESSION:$GRANT_WINDOW in an unreadable shape; refusing to guess or replace them"
       ;;
     *) fm_pane_grants_fail "$GRANT_SESSION:$GRANT_WINDOW is no longer in the window inventory; re-read the target" ;;
   esac
