@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test, setDefaultTimeout } from "bun:test";
+
+setDefaultTimeout(30_000);
+import { captureReview } from "../src/review.ts";
 import { createApp } from "../src/server.ts";
+import { createReviewFixture, disposeFixture, type ReviewFixture } from "./fixtures/review-fixtures.ts";
 
 function post(app: ReturnType<typeof createApp>, path: string, body: unknown) {
 	return app.fetch(new Request(`http://local/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
@@ -12,7 +16,7 @@ function get(app: ReturnType<typeof createApp>, path: string) {
 describe("planning surface HTTP API", () => {
 	test("GET / serves the static page with no external script or stylesheet references", async () => {
 		const app = createApp();
-		const response = await get(app, "");
+		const response = await app.fetch(new Request("http://127.0.0.1:4600/", { headers: { host: "127.0.0.1:4600" } }));
 		expect(response.status).toBe(200);
 		const html = await response.text();
 		expect(html).toContain("Runecraft Warroom");
@@ -108,5 +112,195 @@ describe("planning surface HTTP API", () => {
 		const response = await app.fetch(new Request("http://local/api/command", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.example" }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
 		expect(response.status).toBe(403);
 		expect(await (await get(app, "api/initiatives")).json()).toEqual([]);
+	});
+});
+
+describe("local review surface", () => {
+	const origin = "http://127.0.0.1:4600";
+	const host = "127.0.0.1:4600";
+	const token = "local-session-token";
+	let fixture: ReviewFixture;
+	let app: ReturnType<typeof createApp>;
+
+	beforeEach(() => {
+		fixture = createReviewFixture({ withUnreviewable: false });
+		fixture.warroom.close();
+		app = createApp({ dbPath: fixture.dbPath, dataDir: fixture.dataDir, port: 4600, actorId: "commander", sessionToken: token });
+	});
+	afterEach(() => {
+		try { app.warroom.close(); } catch { /* closed */ }
+		disposeFixture(fixture);
+	});
+
+	function request(path: string, init: RequestInit = {}): Promise<Response> {
+		return Promise.resolve(app.fetch(new Request(`${origin}${path}`, init)));
+	}
+	function command(method: "POST", path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
+		return request(path, { method, headers: { "content-type": "application/json", origin, host, "x-warroom-session": token, ...headers }, body: JSON.stringify(body) });
+	}
+
+	function seed(provenance: "drill" | "fixture" = "drill") {
+		// The fixture warroom is closed; capture through the app's own connection.
+		return captureReview(app.warroom, fixture.dataDir, {
+			repo: fixture.repo,
+			drillDb: fixture.drillDb,
+			drillLogs: fixture.drillLogs,
+			repoId: fixture.repoId,
+			runId: fixture.run1,
+			targetRef: "main",
+			headRef: "h1",
+			planRevisionId: fixture.planRevisionId,
+			provenance,
+		});
+	}
+
+	test("serves packet detail, currentness and exact file bytes without accepting browser paths", async () => {
+		const result = seed("drill");
+		const detail = await (await request(`/api/review/${result.packetId}`, { headers: { host } })).json();
+		expect(detail.packet.id).toBe(result.packetId);
+		expect(detail.packet.head_sha).toBe(fixture.h1);
+		expect(detail.files.length).toBe(8);
+		expect(detail.limitations.mergePermission).toContain("not emitted");
+		expect(detail.capture.run.id).toBe(fixture.run1);
+
+		const currentness = await (await request(`/api/review/${result.packetId}/currentness`, { headers: { host } })).json();
+		expect(currentness.status).toBe("ready");
+		expect(currentness.currentness).toBe("verified");
+		expect(currentness.evidenceEligible).toBe(true);
+
+		const file = await (await request(`/api/review/${result.packetId}/file?path=${encodeURIComponent("src/hello.ts")}&side=head`, { headers: { host } })).json();
+		expect(file.text).toContain("hello, ${name}!");
+		expect(file.lineCount).toBe(4);
+
+		const diff = await (await request(`/api/review/${result.packetId}/diff?path=${encodeURIComponent("docs/path with spaces e acentuação.txt")}`, { headers: { host } })).json();
+		expect(diff.lines.some((line: any) => line.type === "added" && line.text === "line two")).toBe(true);
+
+		for (const path of ["../../etc/passwd", "/etc/passwd", "docs/readme-link", "src/does-not-exist.ts"]) {
+			const response = await request(`/api/review/${result.packetId}/file?path=${encodeURIComponent(path)}`, { headers: { host } });
+			expect(response.status).toBe(404);
+		}
+	});
+
+	test("requires the expected host, exact local origin and the per-session token, and rejects a body-supplied actor", async () => {
+		const result = seed("drill");
+		const wrongHost = await app.fetch(new Request(`http://evil.example/api/review/${result.packetId}`));
+		expect(wrongHost.status).toBe(403);
+
+		const noToken = await request(`/api/review/${result.packetId}/accept`, {
+			method: "POST",
+			headers: { "content-type": "application/json", origin, host },
+			body: JSON.stringify({ packetDigest: result.packetDigest, scopeDigest: result.scopeDigest, declaration: "ok", actorConfirmed: true }),
+		});
+		expect(noToken.status).toBe(403);
+
+		const wrongOrigin = await command("POST", `/api/review/${result.packetId}/accept`, {
+			packetDigest: result.packetDigest, scopeDigest: result.scopeDigest, declaration: "ok", actorConfirmed: true,
+		}, { origin: "http://127.0.0.1:9999" });
+		expect(wrongOrigin.status).toBe(403);
+
+		const accepted = await command("POST", `/api/review/${result.packetId}/accept`, {
+			packetDigest: result.packetDigest,
+			scopeDigest: result.scopeDigest,
+			declaration: "I reviewed this exact head.",
+			actorConfirmed: true,
+			actor: "somebody-else",
+		});
+		expect(accepted.status).toBe(201);
+		const body = await accepted.json();
+		expect(body.actor).toBe("commander");
+		expect(body.mergePermission).toContain("not granted");
+		const approval = app.warroom.db.query("SELECT actor, declaration FROM approvals WHERE packet_id=?").get(result.packetId) as any;
+		expect(approval.actor).toBe("commander");
+		expect(approval.declaration).toBe("I reviewed this exact head.");
+	});
+
+	test("the generic command API cannot mint evidence, review acceptance or merge permission", async () => {
+		const result = seed("drill");
+		const before = app.warroom.events(fixture.initiativeId).length;
+		for (const body of [
+			{ type: "validation.record", initiativeId: "i1", revisionId: "plan-1", provider: "drill", result: "passed" },
+			{ type: "approval.record", initiativeId: "i1", kind: "merge-permission", revisionId: result.packetId, decision: "approved" },
+			{ type: "approval.record", initiativeId: "i1", kind: "code-review-acceptance", revisionId: result.packetId, decision: "approved", evidenceId: result.evidenceId },
+		]) {
+			const response = await app.fetch(new Request("http://local/api/command", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+			expect(response.status).toBe(403);
+		}
+		expect(app.warroom.events(fixture.initiativeId).length).toBe(before);
+		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals WHERE packet_id IS NOT NULL").get()).toEqual({ n: 0 });
+	});
+
+	test("a stale snapshot token from another tab is refused without recording acceptance", async () => {
+		const first = seed("drill");
+		const second = captureReview(app.warroom, fixture.dataDir, {
+			repo: fixture.repo,
+			drillDb: fixture.drillDb,
+			repoId: fixture.repoId,
+			runId: fixture.run2,
+			targetRef: "main",
+			headRef: "h2",
+			planRevisionId: fixture.planRevisionId,
+			provenance: "drill",
+		});
+		const response = await command("POST", `/api/review/${second.packetId}/accept`, {
+			packetDigest: first.packetDigest,
+			scopeDigest: first.scopeDigest,
+			declaration: "stale tab",
+			actorConfirmed: true,
+		});
+		expect(response.status).toBe(400);
+		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals WHERE packet_id=?").get(second.packetId)).toEqual({ n: 0 });
+	});
+
+	test("comments store hostile text as data, resolve without approval, and never travel to the next snapshot", async () => {
+		const result = seed("drill");
+		const files = app.warroom.db.query("SELECT capture_json FROM evidence_captures WHERE id=?").get(result.evidenceId) as any;
+		expect(files).toBeDefined();
+		const packet = app.warroom.db.query("SELECT * FROM review_packets WHERE id=?").get(result.packetId) as any;
+		const manifest = JSON.parse((app.warroom.db.query("SELECT content FROM revisions WHERE id=?").get(packet.code_revision_id) as any).content);
+		const hello = manifest.files.find((file: any) => file.path === "src/hello.ts");
+		const hostile = `<script>alert("x")</script><img src=x onerror=alert(1)>`;
+		const created = await command("POST", `/api/review/${result.packetId}/comments`, {
+			targetType: "code-range",
+			path: "src/hello.ts",
+			side: "head",
+			startLine: 1,
+			endLine: 3,
+			blobSha: hello.head.blob,
+			kind: "comment",
+			body: hostile,
+		});
+		expect(created.status).toBe(201);
+		const { commentId } = await created.json();
+		const stored = app.warroom.db.query("SELECT body, snapshot_digest FROM comments WHERE id=?").get(commentId) as any;
+		expect(stored.body).toBe(hostile);
+		expect(stored.snapshot_digest).toBe(result.packetDigest);
+
+		const resolved = await command("POST", `/api/review/${result.packetId}/comments/resolve`, { commentId });
+		expect(resolved.status).toBe(200);
+		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals WHERE packet_id=?").get(result.packetId)).toEqual({ n: 0 });
+	});
+
+	test("export is a read-only derived snapshot with no remote resource and no state change", async () => {
+		const result = seed("drill");
+		await command("POST", `/api/review/${result.packetId}/comments`, {
+			targetType: "review",
+			kind: "comment",
+			body: `<script>alert("export")</script>`,
+		});
+		const before = app.warroom.events(fixture.initiativeId).length;
+		const approvalsBefore = app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get();
+		const response = await request(`/api/review/${result.packetId}/export`, { headers: { host } });
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("text/html");
+		const html = await response.text();
+		expect(html).toContain("records no acceptance and authorizes no merge");
+		expect(html).not.toContain("<script>alert");
+		expect(html).not.toMatch(/<[^>]*(?:src|href)\s*=\s*["']?https?:/i);
+		expect(html).not.toContain("<button");
+		expect(html).toContain(result.packetDigest);
+		expect(app.warroom.events(fixture.initiativeId).length).toBe(before);
+		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get()).toEqual(approvalsBefore);
+		const exportPath = response.headers.get("x-warroom-export-path")!;
+		expect(exportPath.endsWith(`${result.packetId}.html`)).toBe(true);
 	});
 });

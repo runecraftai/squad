@@ -2,15 +2,18 @@
   "name": "@runecraft/warroom",
   "version": "0.1.0",
   "private": true,
-  "description": "Product-neutral canonical event and revision core and planning surface for Runecraft Warroom.",
+  "description": "Private local Warroom surface for human review of a Drill-validated change at one exact revision.",
   "license": "MIT",
   "scripts": {
-    "test": "bun test",
+    "test": "bun test tests",
+    "test:e2e": "playwright test --config playwright.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "serve": "bun run src/server.ts"
+    "serve": "bun run src/server.ts",
+    "review": "bun run src/review-cli.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@types/bun": "^1.2.0",
     "typescript": "^5.7.0"
   }

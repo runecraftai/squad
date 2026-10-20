@@ -60,6 +60,72 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE INDEX IF NOT EXISTS questions_revision ON questions(revision_id);
 `,
 	},
+	{
+		version: 3,
+		sql: `
+ALTER TABLE validation_evidence ADD COLUMN provenance TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE validation_evidence ADD COLUMN capture_id TEXT;
+ALTER TABLE validation_evidence ADD COLUMN capture_digest TEXT;
+ALTER TABLE validation_evidence ADD COLUMN provider_version TEXT;
+ALTER TABLE validation_evidence ADD COLUMN eligible INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE validation_evidence ADD COLUMN ineligibility TEXT;
+ALTER TABLE validation_evidence ADD COLUMN delivered_head_sha TEXT;
+ALTER TABLE validation_evidence ADD COLUMN drill_base_sha TEXT;
+ALTER TABLE validation_evidence ADD COLUMN submitted_head_sha TEXT;
+ALTER TABLE validation_evidence ADD COLUMN reviewed_head_sha TEXT;
+ALTER TABLE validation_evidence ADD COLUMN run_status TEXT;
+ALTER TABLE comments ADD COLUMN packet_id TEXT;
+ALTER TABLE comments ADD COLUMN target_type TEXT NOT NULL DEFAULT 'review';
+ALTER TABLE comments ADD COLUMN path TEXT;
+ALTER TABLE comments ADD COLUMN side TEXT;
+ALTER TABLE comments ADD COLUMN start_line INTEGER;
+ALTER TABLE comments ADD COLUMN end_line INTEGER;
+ALTER TABLE comments ADD COLUMN blob_sha TEXT;
+ALTER TABLE comments ADD COLUMN anchor_context TEXT;
+ALTER TABLE comments ADD COLUMN snapshot_digest TEXT;
+ALTER TABLE comments ADD COLUMN comment_kind TEXT NOT NULL DEFAULT 'comment';
+ALTER TABLE comments ADD COLUMN suggestion TEXT;
+ALTER TABLE comments ADD COLUMN anchor_status TEXT NOT NULL DEFAULT 'current';
+ALTER TABLE comments ADD COLUMN resolved_at TEXT;
+ALTER TABLE comments ADD COLUMN resolved_by TEXT;
+ALTER TABLE approvals ADD COLUMN packet_id TEXT;
+ALTER TABLE approvals ADD COLUMN packet_digest TEXT;
+ALTER TABLE approvals ADD COLUMN evidence_digest TEXT;
+ALTER TABLE approvals ADD COLUMN scope_json TEXT;
+ALTER TABLE approvals ADD COLUMN declaration TEXT;
+ALTER TABLE approvals ADD COLUMN actor_confirmed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE approvals ADD COLUMN stale_reason TEXT;
+CREATE TABLE IF NOT EXISTS evidence_captures (
+  id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id), revision_id TEXT NOT NULL REFERENCES revisions(id),
+  capture_version INTEGER NOT NULL, capture_json TEXT NOT NULL, capture_digest TEXT NOT NULL,
+  provenance TEXT NOT NULL CHECK(provenance IN ('drill','manual','fixture')),
+  run_id TEXT NOT NULL, repo_id TEXT NOT NULL, drill_version TEXT NOT NULL, drill_build_sha TEXT,
+  drill_base_sha TEXT NOT NULL, submitted_head_sha TEXT, reviewed_head_sha TEXT, delivered_head_sha TEXT NOT NULL,
+  run_status TEXT NOT NULL, ci_ready INTEGER NOT NULL DEFAULT 0, ci_ready_no_ci INTEGER NOT NULL DEFAULT 0,
+  eligible INTEGER NOT NULL DEFAULT 0, ineligibility TEXT, captured_at TEXT NOT NULL, created_by TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS review_packets (
+  id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id),
+  code_revision_id TEXT NOT NULL REFERENCES revisions(id), plan_revision_id TEXT NOT NULL REFERENCES revisions(id),
+  plan_digest TEXT NOT NULL, repo_id TEXT NOT NULL, repo_fingerprint TEXT NOT NULL, repo_path TEXT,
+  target_ref TEXT NOT NULL, target_observed_sha TEXT, head_ref TEXT,
+  review_base_sha TEXT NOT NULL, head_sha TEXT NOT NULL, base_tree TEXT NOT NULL, head_tree TEXT NOT NULL,
+  manifest_digest TEXT NOT NULL, patch_digest TEXT NOT NULL, scope_digest TEXT NOT NULL,
+  evidence_id TEXT NOT NULL REFERENCES validation_evidence(id), evidence_digest TEXT NOT NULL,
+  packet_digest TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'ready' CHECK(status IN ('ready','stale','accepted','changes-requested')),
+  superseded_at TEXT, superseded_by TEXT, stale_reason TEXT,
+  created_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+  digest TEXT PRIMARY KEY, byte_length INTEGER NOT NULL, media_type TEXT NOT NULL, relative_path TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS review_packets_initiative ON review_packets(initiative_id, created_at);
+CREATE INDEX IF NOT EXISTS review_packets_revision ON review_packets(code_revision_id);
+CREATE INDEX IF NOT EXISTS evidence_captures_revision ON evidence_captures(revision_id);
+CREATE INDEX IF NOT EXISTS comments_packet ON comments(packet_id);
+CREATE INDEX IF NOT EXISTS approvals_packet ON approvals(packet_id);
+`,
+	},
 ] as const;
 
 export function migrate(db: Database): void {

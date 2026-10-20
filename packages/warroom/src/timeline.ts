@@ -17,7 +17,7 @@ export interface TimelineEntry {
  * display-friendly history. Takes no input beyond what `Warroom.events()` and
  * `Warroom.state()` already expose, so nothing shown here is a second source of truth.
  */
-export function buildTimeline(events: EventRecord[], snapshot: { revisions: any[]; approvals: any[]; comments: any[]; evidence: any[]; questions: any[] }): TimelineEntry[] {
+export function buildTimeline(events: EventRecord[], snapshot: { revisions: any[]; approvals: any[]; comments: any[]; evidence: any[]; questions: any[]; packets?: any[] }): TimelineEntry[] {
 	const revisionById = new Map(snapshot.revisions.map((revision) => [revision.id, revision]));
 	const approvalById = new Map(snapshot.approvals.map((approval) => [approval.id, approval]));
 	const commentById = new Map(snapshot.comments.map((comment) => [comment.id, comment]));
@@ -42,7 +42,22 @@ export function buildTimeline(events: EventRecord[], snapshot: { revisions: any[
 		}
 		case "comment.add": {
 			const comment = commentById.get(payload.id);
-			return { ...base, summary: "comment added", revisionId: payload.revisionId, outdated: comment?.state === "outdated" };
+			const anchor = payload.path ? ` on ${payload.path}${payload.startLine ? `:${payload.startLine}-${payload.endLine ?? payload.startLine}` : ""}` : "";
+			return { ...base, summary: `${payload.kind === "suggestion" ? "suggestion" : "comment"} added${anchor}`, revisionId: payload.revisionId, outdated: comment?.state === "outdated" };
+		}
+		case "comment.resolve": {
+			const comment = commentById.get(payload.commentId);
+			return { ...base, summary: "comment resolved", revisionId: comment?.revisionId, outdated: comment?.state === "outdated" };
+		}
+		case "review.capture.record": {
+			const item = evidenceById.get(payload.captureId);
+			return { ...base, summary: `Drill capture ${payload.runId} (${payload.runStatus})${payload.eligible ? "" : ": not eligible"}`, revisionId: payload.revisionId, stale: item?.stale ?? false };
+		}
+		case "review.packet.create":
+			return { ...base, summary: `review packet created: ${payload.reviewBaseSha.slice(0, 12)}..${payload.headSha.slice(0, 12)}`, revisionId: payload.revisionId };
+		case "review.supersede": {
+			const packet = (snapshot.packets ?? []).find((item) => item.id === payload.packetId);
+			return { ...base, summary: `review packet superseded: ${payload.reason}`, revisionId: packet?.codeRevisionId, superseded: true };
 		}
 		case "validation.record": {
 			const item = evidenceById.get(payload.id);

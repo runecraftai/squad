@@ -1,4 +1,7 @@
 import { Database } from "bun:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { digestContent, Warroom } from "../src/core.ts";
 import { migrate } from "../src/schema.ts";
@@ -23,7 +26,7 @@ describe("Warroom canonical core", () => {
 		const db = new Database(":memory:");
 		migrate(db);
 		migrate(db);
-		expect(db.query("SELECT version FROM schema_migrations").all()).toEqual([{ version: 1 }, { version: 2 }]);
+		expect(db.query("SELECT version FROM schema_migrations").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
 		db.close();
 	});
 
@@ -183,6 +186,61 @@ describe("Warroom canonical core", () => {
 		expect(plan.persisted.superseded_by).toBe("p2");
 		expect(code.derived).toBe(false);
 		expect(code.persisted.superseded_at).toBeNull();
+		w.close();
+	});
+
+	test("an initiative preserves idea, alternatives, two plan revisions, approval and independent authorization across a restart", () => {
+		const root = mkdtempSync(join(tmpdir(), "warroom-restart-"));
+		const path = join(root, "warroom.db");
+		try {
+			const first = new Warroom(path, { id: "commander" });
+			first.command({ type: "initiative.create", id: "i1", title: "Review before merge", workingName: "Warroom" });
+			first.command({ type: "revision.create", id: "p1", initiativeId: "i1", kind: "plan", content: "plan v1: local review" });
+			first.command({ type: "decision.record", id: "d1", initiativeId: "i1", revisionId: "p1", statement: "Reuse the private package", rationale: "No new repository for this proof.", selectedAlternatives: ["new repository", "public distribution"] });
+			first.command({ type: "approval.record", id: "a1", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved" });
+			first.command({ type: "revision.create", id: "p2", initiativeId: "i1", kind: "plan", content: "plan v2: executable slice" });
+			first.command({ type: "approval.record", id: "a2", initiativeId: "i1", kind: "plan-approval", revisionId: "p2", decision: "approved" });
+			first.command({ type: "approval.record", id: "a3", initiativeId: "i1", kind: "execution-authorization", revisionId: "p2", decision: "approved" });
+			first.close();
+
+			const reopened = new Warroom(path, { id: "commander" });
+			const state = reopened.state("i1");
+			expect(state.initiative.title).toBe("Review before merge");
+			expect(state.initiative.currentPlanRevisionId).toBe("p2");
+			expect(state.revisions.filter((revision: any) => revision.kind === "plan").map((revision: any) => revision.id)).toEqual(["p1", "p2"]);
+			expect(state.decisions[0].selectedAlternatives).toEqual(["new repository", "public distribution"]);
+			expect(state.approvals.find((approval: any) => approval.id === "a1").superseded).toBe(true);
+			expect(state.approvals.find((approval: any) => approval.id === "a2").superseded).toBe(false);
+			// Approval of the plan never implies execution authorization, and neither implies merge permission.
+			expect(state.approvals.find((approval: any) => approval.id === "a3").kind).toBe("execution-authorization");
+			expect(state.approvals.some((approval: any) => approval.kind === "merge-permission")).toBe(false);
+			expect(reopened.timeline("i1")).toHaveLength(7);
+			reopened.close();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("a comment cannot bind to a superseded or missing revision", () => {
+		const w = seeded();
+		w.command({ type: "revision.create", id: "c2", initiativeId: "i1", kind: "code", content: "code two" });
+		expect(() => w.command({ type: "comment.add", initiativeId: "i1", revisionId: "c1", body: "too late" })).toThrow(/missing or stale/);
+		expect(() => w.command({ type: "comment.add", initiativeId: "i1", revisionId: "missing", body: "nowhere" })).toThrow(/missing or stale/);
+		w.command({ type: "comment.add", id: "ok", initiativeId: "i1", revisionId: "c2", body: "current" });
+		expect(w.state("i1").comments).toHaveLength(1);
+		w.close();
+	});
+
+	test("a free validation response is recorded as legacy and never becomes verified or eligible evidence", () => {
+		const w = seeded();
+		const evidence = w.state("i1").evidence.find((item: any) => item.id === "v1");
+		expect(evidence.provenance).toBe("legacy");
+		expect(evidence.eligible).toBe(false);
+		w.command({ type: "validation.record", id: "v2", initiativeId: "i1", revisionId: "c1", provider: "drill", result: "passed" });
+		const forged = w.db.query("SELECT provenance, eligible, capture_id FROM validation_evidence WHERE id='v2'").get() as any;
+		expect(forged.provenance).toBe("legacy");
+		expect(forged.eligible).toBe(0);
+		expect(forged.capture_id).toBeNull();
 		w.close();
 	});
 });

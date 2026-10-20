@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Warroom } from "../src/core.ts";
+import { digestContent, Warroom } from "../src/core.ts";
 
 function seeded() {
 	const warroom = new Warroom();
@@ -62,6 +62,34 @@ describe("initiative timeline", () => {
 		const first = w.timeline("i1");
 		const second = w.timeline("i1");
 		expect(first).toEqual(second);
+		w.close();
+	});
+
+	test("anchored comments, resolutions, captures and packet supersession appear as their own history entries", () => {
+		const w = seeded();
+		w.command({
+			type: "comment.add",
+			id: "m1",
+			initiativeId: "i1",
+			revisionId: "c1",
+			body: "Anchor here",
+			targetType: "review",
+			path: "src/hello.ts",
+			kind: "comment",
+		});
+		w.command({ type: "comment.resolve", id: "mr1", initiativeId: "i1", commentId: "m1" });
+		const timeline = w.timeline("i1");
+		const comment = timeline.find((entry) => entry.type === "comment.add");
+		const resolved = timeline.find((entry) => entry.type === "comment.resolve");
+		expect(comment?.summary).toBe("comment added on src/hello.ts");
+		expect(resolved?.summary).toBe("comment resolved");
+
+		// A capture and its packet are projected from events only, so replay reproduces them exactly.
+		const captureEvent = { type: "review.capture.record" as const, id: "ev-1", initiativeId: "i1", revisionId: "c1", captureId: "ev-1", captureVersion: 1, captureJson: JSON.stringify({ captureVersion: 1, provenance: "fixture" }), captureDigest: digestContent(JSON.stringify({ captureVersion: 1, provenance: "fixture" })), provenance: "fixture" as const, runId: "run-1", repoId: "repo-1", drillVersion: "1.4.2", drillBaseSha: "c".repeat(40), deliveredHeadSha: "d".repeat(40), runStatus: "running", ciReady: true, ciReadyNoCi: false, eligible: false, ineligibility: "fixture capture, not a real Drill execution", capturedAt: "2026-01-01T00:00:00.000Z" };
+		w.command(captureEvent);
+		const captureEntry = w.timeline("i1").find((entry) => entry.type === "review.capture.record");
+		expect(captureEntry?.summary).toBe("Drill capture run-1 (running): not eligible");
+		expect(w.timeline("i1")).toEqual(w.timeline("i1"));
 		w.close();
 	});
 });

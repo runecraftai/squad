@@ -99,6 +99,7 @@
 			<button class="tab active" data-tab="timeline">Timeline</button>
 			<button class="tab" data-tab="revisions">Revisions &amp; compare</button>
 			<button class="tab" data-tab="questions">Questions</button>
+			<button class="tab" data-tab="review" id="review-tab">Code review</button>
 		</div>
 
 		<section class="panel active" data-panel="timeline">
@@ -154,6 +155,69 @@
 				<tbody id="questions-body"></tbody>
 			</table>
 		</section>
+		<section class="panel" data-panel="review" id="review-panel">
+			<div id="review-empty" class="card" hidden>
+				<h3>No review packet in this initiative</h3>
+				<div class="hint">Capture a Drill-validated change with the review CLI, then reopen this surface. A packet is never synthesized from planning content.</div>
+			</div>
+			<div id="review-root" hidden>
+				<div class="card">
+					<h3 id="review-title">Review packet</h3>
+					<div id="review-identity" class="hint mono"></div>
+					<div id="review-status" class="chip" role="status" aria-live="polite" style="margin-top: var(--s3)">Currentness not checked</div>
+					<div class="hint" id="review-limits">Currentness is verified against the recorded local refs only. Acceptance is not merge authorization, and this surface never executes, publishes or merges.</div>
+				</div>
+				<div class="card">
+					<h3>Drill evidence</h3>
+					<div id="review-evidence" class="hint"></div>
+				</div>
+				<div class="card">
+					<h3>Files in scope <span id="review-file-count" class="hint"></span></h3>
+					<ul id="review-files" role="list" style="list-style: none; padding: 0; margin: 0 0 var(--s4); display: flex; flex-wrap: wrap; gap: var(--s2)"></ul>
+					<div class="row" id="review-file-modes" style="margin-bottom: var(--s2); gap: var(--s2)">
+						<button data-review-mode="diff" style="flex: 0 0 auto">Diff</button>
+						<button data-review-mode="base" style="flex: 0 0 auto">Full base file</button>
+						<button data-review-mode="head" style="flex: 0 0 auto">Full head file</button>
+					</div>
+					<div id="review-diff" class="mono" style="border: 1px solid var(--line); border-radius: var(--r1); min-height: 4rem"></div>
+					<div id="review-comment-form" class="card" hidden style="margin-top: var(--s3)">
+						<div class="row">
+							<div><label for="review-comment-side">Side</label><select id="review-comment-side"><option value="head">head</option><option value="base">base</option></select></div>
+							<div><label for="review-comment-line">Line</label><input id="review-comment-line" type="number" min="1" /></div>
+							<div><label for="review-comment-kind">Kind</label><select id="review-comment-kind"><option value="comment">comment</option><option value="suggestion">suggestion</option></select></div>
+						</div>
+						<label for="review-comment-body">Comment</label>
+						<textarea id="review-comment-body" rows="2" placeholder="What needs attention here?"></textarea>
+						<label for="review-comment-suggestion">Suggested text (stored only, never applied)</label>
+						<textarea id="review-comment-suggestion" rows="2"></textarea>
+						<div class="row" style="margin-top: var(--s2)">
+							<button id="review-comment-save" class="primary" style="flex: 0 0 auto">Add to snapshot</button>
+							<button id="review-comment-cancel" style="flex: 0 0 auto">Cancel</button>
+						</div>
+					</div>
+				</div>
+				<div class="card">
+					<h3>Comments</h3>
+					<ul id="review-comments" style="list-style: none; padding: 0; margin: 0"></ul>
+				</div>
+				<div class="card">
+					<h3>Decision</h3>
+					<label style="display: flex; gap: var(--s2); align-items: flex-start; color: var(--text); font-size: 13px">
+						<input type="checkbox" id="review-scope-confirm" style="width: auto; margin-top: 3px" />
+						<span>I reviewed every file in the complete scope shown above, including documentation, tests, configuration and objects marked not reviewable.</span>
+					</label>
+					<label for="review-declaration" style="margin-top: var(--s3)">Declaration</label>
+					<textarea id="review-declaration" rows="2" placeholder="State what you reviewed at this exact head."></textarea>
+					<div class="row" style="margin-top: var(--s2)">
+						<button id="review-request-changes" style="flex: 0 0 auto">Request corrections</button>
+						<button id="review-accept" class="primary" style="flex: 0 0 auto">Accept this code review</button>
+					</div>
+					<div class="hint">Accepting records a human review of this exact snapshot. It does not run validation, publish, resolve Drill findings or permit merge. A new head, plan, base, scope or evidence requires a new review.</div>
+					<div id="review-decision-state" class="hint"></div>
+					<div id="review-message" role="status" aria-live="polite" class="hint"></div>
+				</div>
+			</div>
+		</section>
 	</main>
 </div>
 
@@ -180,6 +244,7 @@
 		state.current = id;
 		const detail = await api(`/api/initiative/${encodeURIComponent(id)}`);
 		renderInitiative(detail);
+		await loadReview(id);
 	}
 
 	function escapeHtml(value) {
@@ -386,6 +451,254 @@
 		tab.classList.add("active");
 		document.querySelector(`.panel[data-panel="${tab.dataset.tab}"]`).classList.add("active");
 	}));
+
+	const SESSION_TOKEN = "__WARROOM_SESSION_TOKEN__";
+	const reviewState = { packet: null, detail: null, currentness: null, file: null, anchor: null, comments: [], mode: "diff" };
+
+	function reviewCommand(path, body) {
+		return api(path, { method: "POST", headers: { "content-type": "application/json", "x-warroom-session": SESSION_TOKEN }, body: JSON.stringify(body) });
+	}
+
+	async function loadReview(initiativeId) {
+		const packets = await api(`/api/review/packets?initiativeId=${encodeURIComponent(initiativeId)}`);
+		const empty = document.getElementById("review-empty");
+		const root = document.getElementById("review-root");
+		if (!packets.length) { empty.hidden = false; root.hidden = true; reviewState.packet = null; return; }
+		empty.hidden = true;
+		root.hidden = false;
+		const packetId = packets[0].id;
+		const [detail, currentness] = await Promise.all([api(`/api/review/${encodeURIComponent(packetId)}`), api(`/api/review/${encodeURIComponent(packetId)}/currentness`) ]);
+		reviewState.packet = detail.packet;
+		reviewState.detail = detail;
+		reviewState.currentness = currentness;
+		reviewState.comments = detail.comments;
+		renderReview();
+		const firstReviewable = detail.files.find((file) => file.head ? file.head.reviewable : file.base && file.base.reviewable);
+		if (firstReviewable) await openReviewFile(firstReviewable.path);
+	}
+
+	function renderReview() {
+		const { packet, detail, currentness } = reviewState;
+		if (!packet) return;
+		document.getElementById("review-title").textContent = `${detail.initiative ? detail.initiative.title : "Review"} — packet ${packet.id}`;
+		document.getElementById("review-identity").innerHTML = [
+			`repo ${escapeHtml(packet.repo_fingerprint)}`,
+			`target ${escapeHtml(packet.target_ref)}`,
+			`base ${escapeHtml(packet.review_base_sha)}`,
+			`head ${escapeHtml(packet.head_sha)}`,
+			`plan ${escapeHtml(packet.plan_revision_id)} · ${escapeHtml(packet.plan_digest)}`,
+			`packetDigest ${escapeHtml(packet.packet_digest)}`,
+			`evidenceDigest ${escapeHtml(packet.evidence_digest)}`,
+			`scopeDigest ${escapeHtml(packet.scope_digest)}`,
+		].join("<br />");
+
+		const statusParts = [];
+		statusParts.push(currentness.currentness === "verified" ? "Currentness: verified against the recorded local refs" : `Currentness: unverified — ${currentness.reasons.join(", ") || "source unavailable"}`);
+		statusParts.push(`Snapshot status: ${currentness.status}${currentness.reasons.length ? ` (${currentness.reasons.join(", ")})` : ""}`);
+		statusParts.push(currentness.evidenceEligible ? "Evidence: eligible Drill capture" : `Evidence: not eligible — ${currentness.evidenceReasons.join(", ")}`);
+		document.getElementById("review-status").textContent = statusParts.join(" | ");
+		document.getElementById("review-status").className = `chip ${currentness.status === "ready" && currentness.currentness === "verified" ? "" : "state-tag stale"}`;
+
+		const capture = detail.capture;
+		const evidence = document.getElementById("review-evidence");
+		if (!capture) {
+			evidence.textContent = "No Drill capture attached.";
+		} else {
+			const rows = capture.steps.map((step) => `<tr><td class="mono">${escapeHtml(step.name)}</td><td>${escapeHtml(step.status)}</td><td>${step.exitCode === null ? "not recorded" : escapeHtml(step.exitCode)}</td><td>${step.skipped ? "skipped, not executed" : "recorded"}</td></tr>`).join("");
+			evidence.innerHTML = `
+				<div class="mono">run ${escapeHtml(capture.run.id)} · status ${escapeHtml(capture.run.status)} · drill ${escapeHtml(capture.run.drillVersion)}</div>
+				<div class="mono">drill base ${escapeHtml(capture.run.baseSha)}</div>
+				<div class="mono">submitted head ${escapeHtml(capture.run.submittedHeadSha || "not recorded")} · review-approved head ${escapeHtml(capture.run.reviewApprovedHeadSha || "not recorded")} · delivered head ${escapeHtml(capture.run.deliveredHeadSha || "not recorded")}</div>
+				<div class="mono">coverage: ${escapeHtml(capture.coverage.ci === "no-ci" ? "no CI configured" : capture.coverage.ci === "ready" ? "CI readiness recorded; pull-request monitoring may continue" : "CI readiness not recorded")}</div>
+				<div class="mono">steps skipped: ${escapeHtml(capture.coverage.stepsSkipped.join(", ") || "none")}</div>
+				<div class="mono">eligible: ${capture.eligibility.eligible ? "yes" : escapeHtml(capture.eligibility.reasons.join("; "))}</div>
+				<table style="margin-top: var(--s2)"><thead><tr><th>Step</th><th>Status</th><th>Exit</th><th>Coverage</th></tr></thead><tbody>${rows}</tbody></table>`;
+		}
+
+		const files = detail.files;
+		document.getElementById("review-file-count").textContent = `(${files.length} paths, ${files.filter((file) => file.head ? file.head.reviewable : file.base && file.base.reviewable).length} with reviewable text)`;
+		const list = document.getElementById("review-files");
+		list.innerHTML = files.map((file, index) => {
+			const reviewable = file.head ? file.head.reviewable : file.base && file.base.reviewable;
+			const reason = file.head ? file.head.reason : file.base && file.base.reason;
+			const selected = reviewState.file && reviewState.file.path === file.path;
+			return `<li><button data-review-file="${escapeHtml(file.path)}" data-review-file-index="${index}" aria-pressed="${selected ? "true" : "false"}" style="text-align: left"><span class="mono">${escapeHtml(file.path)}</span><br /><span class="hint">${escapeHtml(file.status)}${reviewable ? " · reviewable text" : ` · not reviewable: ${escapeHtml(reason || "binary or unsupported")}`}</span></button></li>`;
+		}).join("");
+		list.querySelectorAll("[data-review-file]").forEach((button) => button.addEventListener("click", () => openReviewFile(button.dataset.reviewFile).catch((error) => alert(error.message))));
+
+		renderReviewComments();
+		renderReviewDecision();
+	}
+
+	async function openReviewFile(path, mode) {
+		const packetId = reviewState.packet.id;
+		const file = reviewState.detail.files.find((item) => item.path === path);
+		const side = file.head ? "head" : "base";
+		const reviewable = file[side] ? file[side].reviewable : false;
+		reviewState.file = { ...file, side, reviewable };
+		reviewState.mode = mode === "base" || mode === "head" ? mode : "diff";
+		const container = document.getElementById("review-diff");
+		if (!reviewable) {
+			container.innerHTML = `<div class="hint" style="padding: var(--s3)">This object is not reviewable as text (${escapeHtml(file[side] ? file[side].reason : "missing")}). It stays listed and blocks complete-scope acceptance until it is out of scope.</div>`;
+			renderReviewFileSelection();
+			return;
+		}
+		if (reviewState.mode !== "diff") {
+			const full = await api(`/api/review/${encodeURIComponent(packetId)}/file?path=${encodeURIComponent(path)}&side=${reviewState.mode}`);
+			const lines = full.text === "" ? [] : full.text.split("\n");
+			container.innerHTML = lines.length
+				? lines.map((text, index) => `<div class="diff-line" style="display: flex"><button class="lineno" data-review-anchor="${reviewState.mode}" data-line="${index + 1}" aria-label="Comment on ${reviewState.mode} line ${index + 1}" style="border: none; background: none; color: var(--muted); padding: 0 var(--s2)">${index + 1}</button><span style="width: 1rem"></span><span style="white-space: pre-wrap; word-break: break-word">${escapeHtml(text)}</span></div>`).join("")
+				: '<div class="hint" style="padding: var(--s3)">This file is empty at that revision.</div>';
+			container.querySelectorAll("[data-review-anchor]").forEach((button) => button.addEventListener("click", () => openCommentForm(button.dataset.reviewAnchor, Number(button.dataset.line))));
+			renderReviewFileSelection();
+			return;
+		}
+		const diff = await api(`/api/review/${encodeURIComponent(packetId)}/diff?path=${encodeURIComponent(path)}`);
+		const rows = diff.lines.map((line) => {
+			const baseButton = line.baseLine ? `<button class="lineno" data-review-anchor="base" data-line="${line.baseLine}" aria-label="Comment on base line ${line.baseLine}" style="border: none; background: none; color: var(--muted); padding: 0 var(--s2)">${line.baseLine}</button>` : `<span class="lineno" style="padding: 0 var(--s2)"></span>`;
+			const headButton = line.headLine ? `<button class="lineno" data-review-anchor="head" data-line="${line.headLine}" aria-label="Comment on head line ${line.headLine}" style="border: none; background: none; color: var(--muted); padding: 0 var(--s2)">${line.headLine}</button>` : `<span class="lineno" style="padding: 0 var(--s2)"></span>`;
+			const marker = line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+			return `<div class="diff-line diff-${line.type}" style="display: flex">${baseButton}${headButton}<span style="width: 1rem">${marker}</span><span style="white-space: pre-wrap; word-break: break-word">${escapeHtml(line.text)}</span></div>`;
+		}).join("");
+		container.innerHTML = rows || '<div class="hint" style="padding: var(--s3)">No structural difference in this object.</div>';
+		container.querySelectorAll("[data-review-anchor]").forEach((button) => button.addEventListener("click", () => openCommentForm(button.dataset.reviewAnchor, Number(button.dataset.line))));
+		renderReviewFileSelection();
+	}
+
+	function renderReviewFileSelection() {
+		document.querySelectorAll("[data-review-file]").forEach((button) => button.setAttribute("aria-pressed", reviewState.file && button.dataset.reviewFile === reviewState.file.path ? "true" : "false"));
+	}
+
+	function openCommentForm(side, line) {
+		if (!reviewState.file) return;
+		reviewState.anchor = { side, line };
+		const form = document.getElementById("review-comment-form");
+		form.hidden = false;
+		document.getElementById("review-comment-side").value = side;
+		document.getElementById("review-comment-line").value = String(line);
+		document.getElementById("review-comment-body").focus();
+	}
+
+	async function saveReviewComment() {
+		const packet = reviewState.packet;
+		const file = reviewState.file;
+		if (!packet || !file) return;
+		const side = document.getElementById("review-comment-side").value;
+		const line = Number(document.getElementById("review-comment-line").value);
+		const kind = document.getElementById("review-comment-kind").value;
+		const body = document.getElementById("review-comment-body").value.trim();
+		const suggestion = document.getElementById("review-comment-suggestion").value;
+		if (!body) { setReviewMessage("Write the comment before saving."); return; }
+		const object = file[side];
+		if (!object) { setReviewMessage("That side of the object does not exist."); return; }
+		try {
+			await reviewCommand(`/api/review/${encodeURIComponent(packet.id)}/comments`, {
+				targetType: "code-range", path: file.path, side, startLine: line, endLine: line, blobSha: object.blob,
+				kind, body, suggestion: kind === "suggestion" ? suggestion : undefined,
+			});
+			document.getElementById("review-comment-body").value = "";
+			document.getElementById("review-comment-suggestion").value = "";
+			document.getElementById("review-comment-form").hidden = true;
+			setReviewMessage("Comment saved on this snapshot.");
+			await refreshReview();
+		} catch (error) { setReviewMessage(error.message); }
+	}
+
+	async function resolveReviewComment(commentId) {
+		try {
+			await reviewCommand(`/api/review/${encodeURIComponent(reviewState.packet.id)}/comments/resolve`, { commentId });
+			setReviewMessage("Comment resolved; history retained.");
+			await refreshReview();
+		} catch (error) { setReviewMessage(error.message); }
+	}
+
+	function renderReviewComments() {
+		const list = document.getElementById("review-comments");
+		const comments = reviewState.comments;
+		if (!comments.length) { list.innerHTML = '<li class="hint">No comments on this snapshot.</li>'; return; }
+		list.innerHTML = comments.map((comment) => `
+			<li class="card" style="margin-bottom: var(--s2)">
+				<div class="hint mono">${escapeHtml(comment.targetType)}${comment.path ? ` · ${escapeHtml(comment.path)}${comment.startLine ? `:${escapeHtml(comment.startLine)}-${escapeHtml(comment.endLine || comment.startLine)}` : ""}` : ""} · ${escapeHtml(comment.kind)}</div>
+				<div>${escapeHtml(comment.body)}</div>
+				${comment.suggestion ? `<pre class="hint" style="white-space: pre-wrap">${escapeHtml(comment.suggestion)}</pre>` : ""}
+				<div class="hint"><span class="state-tag ${escapeHtml(comment.state)}">${escapeHtml(comment.state)}</span> ${escapeHtml(comment.createdBy)}</div>
+				${comment.state === "open" ? `<button data-resolve-comment="${escapeHtml(comment.id)}" style="margin-top: var(--s2)">Resolve</button>` : ""}
+			</li>`).join("");
+		list.querySelectorAll("[data-resolve-comment]").forEach((button) => button.addEventListener("click", () => resolveReviewComment(button.dataset.resolveComment)));
+	}
+
+	function renderReviewDecision() {
+		const { currentness, detail } = reviewState;
+		const decisions = detail.approvals.map((approval) => `${approval.kind}: ${approval.decision}${approval.superseded ? " (superseded)" : ""}`);
+		const accepted = detail.approvals.some((approval) => approval.kind === "code-review-acceptance" && approval.decision === "approved" && !approval.superseded);
+		const acceptable = currentness.status === "ready" && currentness.currentness === "verified" && currentness.evidenceEligible && !accepted;
+		const acceptButton = document.getElementById("review-accept");
+		acceptButton.disabled = !acceptable || !document.getElementById("review-scope-confirm").checked || !document.getElementById("review-declaration").value.trim();
+		const blockers = [];
+		if (accepted) blockers.push("This snapshot already records an acceptance.");
+		if (currentness.status !== "ready") blockers.push("The snapshot is stale or corrupt; capture the current head.");
+		if (currentness.currentness !== "verified") blockers.push("Currentness could not be verified against the local source.");
+		if (!currentness.evidenceEligible) blockers.push("Evidence is not an eligible real Drill capture.");
+		if (currentness.unreviewableFiles && currentness.unreviewableFiles.length) blockers.push(`${currentness.unreviewableFiles.length} objects cannot be reviewed as text (${currentness.unreviewableFiles.join(", ")}), so total acceptance is blocked.`);
+		if (!blockers.length) blockers.push("Confirm the complete scope and write a declaration to enable acceptance.");
+		document.getElementById("review-decision-state").textContent = `${decisions.length ? decisions.join(" | ") : "No acceptance recorded"}. ${blockers.join(" ")}`;
+	}
+
+	async function requestReviewCorrections() {
+		const declaration = document.getElementById("review-declaration").value.trim();
+		if (!declaration) { setReviewMessage("Write a declaration before requesting corrections."); return; }
+		try {
+			await reviewCommand(`/api/review/${encodeURIComponent(reviewState.packet.id)}/request-changes`, {
+				packetDigest: reviewState.packet.packet_digest,
+				scopeDigest: reviewState.packet.scope_digest,
+				declaration,
+				actorConfirmed: true,
+			});
+			setReviewMessage("Correction request recorded. The change owner must implement and revalidate it; Warroom does not edit code or answer Drill findings.");
+			await refreshReview();
+		} catch (error) { setReviewMessage(error.message); }
+	}
+
+	async function acceptReviewDecision() {
+		const declaration = document.getElementById("review-declaration").value.trim();
+		if (!declaration) { setReviewMessage("Write a declaration before accepting."); return; }
+		if (!document.getElementById("review-scope-confirm").checked) { setReviewMessage("Confirm the complete scope before accepting."); return; }
+		if (!confirm("Accept this exact snapshot? This records a human review and does not authorize merge.")) return;
+		try {
+			const result = await reviewCommand(`/api/review/${encodeURIComponent(reviewState.packet.id)}/accept`, {
+				packetDigest: reviewState.packet.packet_digest,
+				scopeDigest: reviewState.packet.scope_digest,
+				declaration,
+				actorConfirmed: true,
+			});
+			setReviewMessage(`Acceptance recorded for ${result.headSha.slice(0, 12)}… Merge remains a separate decision.`);
+			await refreshReview();
+		} catch (error) { setReviewMessage(error.message); }
+	}
+
+	async function refreshReview() {
+		const packetId = reviewState.packet.id;
+		const [detail, currentness] = await Promise.all([api(`/api/review/${encodeURIComponent(packetId)}`), api(`/api/review/${encodeURIComponent(packetId)}/currentness`) ]);
+		reviewState.detail = detail;
+		reviewState.currentness = currentness;
+		reviewState.packet = detail.packet;
+		reviewState.comments = detail.comments;
+		renderReview();
+		if (reviewState.file) await openReviewFile(reviewState.file.path, reviewState.mode);
+	}
+
+	function setReviewMessage(message) { document.getElementById("review-message").textContent = message; }
+
+	document.querySelectorAll("[data-review-mode]").forEach((button) => button.addEventListener("click", () => {
+		if (!reviewState.file) return;
+		openReviewFile(reviewState.file.path, button.dataset.reviewMode).catch((error) => setReviewMessage(error.message));
+	}));
+	document.getElementById("review-comment-save").addEventListener("click", () => saveReviewComment().catch((error) => setReviewMessage(error.message)));
+	document.getElementById("review-comment-cancel").addEventListener("click", () => { document.getElementById("review-comment-form").hidden = true; });
+	document.getElementById("review-scope-confirm").addEventListener("change", renderReviewDecision);
+	document.getElementById("review-declaration").addEventListener("input", renderReviewDecision);
+	document.getElementById("review-request-changes").addEventListener("click", () => requestReviewCorrections().catch((error) => setReviewMessage(error.message)));
+	document.getElementById("review-accept").addEventListener("click", () => acceptReviewDecision().catch((error) => setReviewMessage(error.message)));
 
 	loadInitiatives().catch((error) => alert(error.message));
 </script>
