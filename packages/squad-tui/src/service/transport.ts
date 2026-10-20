@@ -354,6 +354,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     };
 
     const execute = (args: Static<typeof ExecuteArgsSchema>): ExecuteResult => {
+      // Defence-in-depth only: Chord validates and bounds every declared field
+      // against ExecuteArgsSchema before this handler runs, so the bound becomes
+      // a reachable refusal (and needs a test) only if a future contract widens
+      // a declared field beyond it. Do not remove it.
       if (
         Buffer.byteLength(JSON.stringify(args), "utf8") >
         LOCAL_SERVICE_LIMITS.rpcArgumentBytes

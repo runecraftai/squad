@@ -55,6 +55,7 @@ A successful rotation prints only the non-secret credential path; clients must r
 - RPC `execute`: validates the strict command envelope and every reserved operation (`prompt`, `steer`, `cancel`, `requestMission`, `answerDecision`) returns `accepted: false` with `operation-unavailable`. No T07 method executes a project command or reads operational records.
 - Replication: one atomic snapshot at attach, then sequence-bearing operations from the same source. A reconnect takes a fresh snapshot; T07 promises no retained replay and never resubmits a command.
 - Bounds: 8 KiB upgrade headers, 5 s header receipt, 64 KiB decoded RPC arguments, 1 MiB WebSocket messages, 8 links per base, 4 concurrent calls per link, library flow control with a reset for a stalled consumer, optional compression disabled.
+- The 64 KiB decoded-argument bound is defence-in-depth: Chord validates and bounds every declared argument field before the handler runs, so it becomes a reachable refusal only if a future contract widens a declared field beyond the bound.
 
 ### Errors
 
