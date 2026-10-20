@@ -603,7 +603,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `squad-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Squad work.
 - `session-handoff` - load on a `handoff-request` operational wake or a session-start HANDOFF REQUESTS section, and before writing a handoff request at a milestone close (a merged milestone PR or a drained flight queue); the commander owns the /new decision and it must never auto-start.
 - `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing an operator for a Squad-repo task.
-- `execution-playbooks` - load when a brief explicitly selects a versioned execution playbook or profile, and run the named validator before delivery.
+- `execution-playbooks` - load when a brief explicitly selects a versioned execution playbook or attaches a profile, and run the selected playbook's named validator before delivery.
 - `hijack` - load before evaluating an existing open-source product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
 - `obsidian-axi` - load before running any `obsidian-axi` CLI command, or when a task needs to search, read, or explore the commander's personal Obsidian vault via that CLI.
