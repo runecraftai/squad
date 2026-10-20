@@ -44,14 +44,22 @@ matches_any() {
   done
   return 1
 }
+CRITERION_HEADING_PREFIX='^##[[:space:]]+Criterion[[:space:]]+'
+CRITERION_HEADING_SUFFIX='([^0-9]|$)'
+# criterion_heading_regex <number>: the one criterion-heading predicate shared by awk and grep.
+criterion_heading_regex() {
+  printf '%s%s%s' "$CRITERION_HEADING_PREFIX" "$1" "$CRITERION_HEADING_SUFFIX"
+}
 proof_for() {
-  local number=$1 proof
-  proof=$(awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([^0-9]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
+  local number=$1 proof heading
+  heading=$(criterion_heading_regex "$number")
+  proof=$(awk -v h="$heading" -v prefix="$CRITERION_HEADING_PREFIX" 'BEGIN{found=0} $0 ~ h {found=1; next} found && $0 ~ prefix {exit} found && /^Proof:/ {sub(/^Proof:[[:space:]]*/, ""); print; exit}' "$CHECKLIST")
   printf '%s' "$proof"
 }
 criterion_section() {
-  local number=$1
-  awk -v n="$number" 'BEGIN{found=0} $0 ~ "^##[[:space:]]+Criterion[[:space:]]+" n "([^0-9]|$)" {found=1; next} found && /^##[[:space:]]+Criterion[[:space:]]+/ {exit} found {print}' "$CHECKLIST"
+  local number=$1 heading
+  heading=$(criterion_heading_regex "$number")
+  awk -v h="$heading" -v prefix="$CRITERION_HEADING_PREFIX" 'BEGIN{found=0} $0 ~ h {found=1; next} found && $0 ~ prefix {exit} found {print}' "$CHECKLIST"
 }
 # react_record_lines <section>: the routing/queries records, used only for duplicate detection.
 react_record_lines() {
@@ -277,7 +285,8 @@ for (( i=0; i<COUNT; i++ )); do
   CHECKS="${CRITERIA_CHECKS[$i]}"
   PROOF="${PROOFS[$i]}"
   if [ "$NUM" -eq "$REACT_RECORD_CRITERION" ]; then
-    if ! grep -Eq "^##[[:space:]]+Criterion[[:space:]]+$NUM([^0-9]|$)" "$CHECKLIST"; then
+    HEADING=$(criterion_heading_regex "$NUM")
+    if ! grep -Eq -- "$HEADING" "$CHECKLIST"; then
       echo "missing: criterion $NUM $LABEL section"
       FAIL=1
       continue
