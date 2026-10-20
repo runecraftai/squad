@@ -1,41 +1,121 @@
-# Runecraft Warroom core
+# Runecraft Warroom — review slice
 
-This product-neutral package owns a local SQLite event log and a replay-derived canonical state model. It has no Squad runtime, network beyond localhost, Git, or delivery integration.
+This private package owns a local SQLite event log, a replay-derived state model, the planning surface built in earlier slices, and the first code-review slice: a human review of one real Drill-validated change at an exact revision, before merge.
 
-## Model
+It is a private prototype in this repository.
+It is not published, not distributed, and not a Drill replacement.
 
-Call `Warroom.command()` to make state changes. Each accepted command records one versioned event and updates queryable SQLite records in the same transaction. `Warroom.state()` reconstructs state from ordered events; the event table rejects update and delete operations. Run `migrate()` on open; migrations are versioned and safe to reapply.
+## What this slice adds
 
-Plan and code are immutable revision kinds; a revision is identified by a monotonic identity and carries a SHA-256 digest over its exact UTF-8 content. Restoring earlier identical content creates a new revision with a new identity and the same digest, so digest equality is evidence of identical content rather than revision identity, and a superseded approval never revives. Decisions bind to plan revisions. Plan approval and execution authorization bind to plan revisions; code-review acceptance and merge permission bind to code revisions. These are separate records and no scope grants another scope. Approved code-review acceptance additionally requires passing validation evidence for that exact revision, while rejected and changes-requested reviews are recordable without it. A later revision supersedes every prior approval bound to that kind's earlier revisions, marks their validation evidence stale, and retains their comments and questions as outdated.
+The existing core already records initiatives, immutable plan and code revisions, decisions, approvals, comments, questions and validation evidence, with append-only events and replay-derived projections.
+This slice extends that core additively instead of building a second store:
 
-This first slice intentionally narrowed the discovery model: it represents a reviewable code snapshot as a `code` revision and its digest, rather than a separate review-packet entity with repository/base/head and patch metadata. The Git adapter and richer review packet belong to a later slice; this core does not claim that a content digest proves Git ancestry or Drill execution.
+- **Review packet.** One packet binds an initiative, a plan revision and its digest, a local repository fingerprint, the explicit review base, the head, both Git trees, a complete file manifest, the patch, a scope digest, Drill evidence and a packet digest.
+  The code revision's content is the deterministic manifest serialization, not free text pretending to be code.
+- **Captured evidence.** A read-only adapter reads exactly one named Drill run from the SQLite database the run owner provides, records the run identity, Drill version and build, the Drill base, the submitted, review-approved and delivered heads, the native step results with exit codes, rounds, CI readiness and eligibility reasons.
+  A capture is immutable and stored by digest.
+  Digests detect alteration; they do not authenticate origin, and the adapter makes no claim that Warroom validated anything.
+- **Anchored comments and suggestions.** Comments can bind to a plan range, a flow node, a code range or the review itself.
+  A code anchor stores the packet, path, side, line range, blob id and snapshot digest, so it never silently travels to another snapshot.
+  A suggestion is stored text only; Warroom never applies it, writes Git, resolves conflicts or publishes a review.
+- **Scoped acceptance.** Human acceptance records actor, declaration, packet digest, the complete scope digest and the evidence digest.
+  It is refused when the packet is stale or corrupt, the scope is partial, the evidence is not an eligible real Drill capture for the delivered head, the currentness source is unavailable, or the actor was not confirmed by the local session.
+- **Currentness and supersession.** A packet is stale when the recorded head, observed target base, current plan revision, scope or evidence no longer matches, and stays visible as history.
+  A new head never inherits the previous evidence or acceptance.
+- **Static export.** `GET /api/review/:packetId/export` renders a derived, escaped, fully offline HTML snapshot with revision identities and digests.
+  It contains no scripts, remote resources, approval control or merge control, and it changes no review state.
+  `sq-report export` may package that HTML locally; it does not generate or validate its content.
 
-## Planning surface (slice 2)
+Approval scopes remain separate and never imply one another.
+Plan approval, execution authorization, code-review acceptance and merge permission are distinct records, and this surface never emits merge permission.
 
-Slice 2 adds the planning surface on top of the slice 1 core, with no second source of truth: everything it shows is derived from `events()` and the replayed `state()`.
+## Contract and limits
 
-- **Questions and answers.** `question.ask` asks a structured question against one exact revision (plan or code); `question.answer` binds the answer to that same question. Answering a question that a newer revision has superseded is mechanically rejected (`"question is not open"` / `"question's revision is missing or stale"`) — there is no path to answer against a different revision than the one asked.
-- **Revision compare.** `Warroom.compare(initiativeId, a, b)` compares two revisions of the same kind: `identicalContent` reports digest equality and `sameIdentity` reports whether they are the same revision row, so "restored identical content, new identity" (`identicalContent: true`, `sameIdentity: false`) is distinguishable from "genuinely different content" (`identicalContent: false`, with a line-level structural `diff` from `src/diff.ts`). The diff is a linear-space LCS line diff over revision content, so its accuracy does not degrade for large revisions — it makes no claim about Git ancestry or patch parsing (that belongs to the slice 3 Git adapter).
-- **Initiative timeline.** `Warroom.timeline(initiativeId)` (`src/timeline.ts`) reconstructs the ordered history of one initiative — revisions, decisions, approvals, comments, questions, validation evidence — from events plus the replayed state, annotated with `stale`/`superseded`/`outdated` flags. It introduces no storage of its own.
-- **Separate approval and authorization actions.** The surface records plan-approval and execution-authorization as two independent `approval.record` commands against the same plan revision; this was already a slice 1 invariant (distinct `kind`, distinct `subjectRevisionId`, no scope implies another), and slice 2 exercises it through the new surface rather than weakening it. Code-review acceptance stays disabled with an explanatory label because approving it requires validation evidence this slice does not collect (slice 3).
+- Warroom reads Git only through explicit objects and refs (`rev-parse`, `merge-base`, `ls-tree`, `cat-file`, `diff --no-ext-diff --no-textconv --full-index --no-renames --binary`).
+  It never checks out, commits, pushes, merges, runs a validation step, answers a Drill finding, or mutates the Drill database or its own source repository.
+- Browser requests never choose a filesystem path or database.
+  File content is looked up only through the stored manifest, and every displayed byte comes from an immutable artifact.
+- Review commands require the exact local `Host` and `Origin` plus a per-session token.
+  The acting identity comes from the local server session, never from a request body.
+  The generic command API refuses validation evidence, review acceptance and merge permission, so it cannot bypass these checks.
+- Currentness is verified against the recorded local refs, not the forge.
+  The display says so, and a previous acceptance never becomes standing merge authorization.
+  Squad remains responsible for checking the pull request, base, head and checks before any merge.
+- The trust scope is one person, one machine, one writer process.
+  This slice does not claim externally authenticated identity or protection from another process already running as the same user.
+- Fixture and manually supplied evidence is stored visibly and is always ineligible for human acceptance.
+  Synthetic data can exercise the flow without masquerading as a real Drill result.
+- This slice has not been exercised end to end: no real unmerged change with a real human reviewer was available, so the D2 demonstration (AC11) remains unverified, and the browser suite never records a human acceptance.
 
-## Planning surface hosting (slice 2)
+## Reuse decisions
 
-`src/server.ts` hosts the planning surface as a local HTTP server (`Bun.serve`, loopback `127.0.0.1` only) serving a single self-contained static page (`src/web/index.html`, no external scripts, fonts, or stylesheets — the forge-table visual direction from the discovery prototype) plus a small JSON API (`GET /api/initiatives`, `GET /api/initiative/:id`, `GET /api/compare/:initiativeId?a=&b=`, `POST /api/command`) that is a thin wrapper around `Warroom`: it performs no domain validation of its own beyond what the core already enforces, and it rejects `POST /api/command` requests whose content type is not `application/json` and whose `Origin`, when present, is not loopback, so a cross-site page cannot drive state changes. `createApp()` in `src/server.ts` builds the request handler without binding a socket, which is what the HTTP tests in `tests/server.test.ts` exercise directly.
+- The core, planning surface, questions and timeline are extended, not rebuilt.
+- `sq-report` is used only as an optional local packager for a derived HTML export; it is not a store and not an approval surface.
+- `visual-explainer` is a method reference only: claims link to code, before/after, scope, risk, evidence and explicit unknown rationale.
+- Nothing is copied from Plannotator or the referenced videos in this slice.
+  Reading Drill's internal SQLite schema is a private, versioned adaptation confined to `src/drill-evidence.ts`; it is not a Drill API.
 
-Run it with:
+## Commands
+
+Capture one real change from one named Drill run and one named local repository.
+Every input is explicit; there is no default run, repository, base or head.
+Base and head are derived from the named objects and must match the Drill-delivered head.
 
 ```sh
-bun run packages/warroom/src/server.ts [db-path] [port]
+bun run packages/warroom/src/review-cli.ts capture \
+  --repo "$REVIEW_REPO" \
+  --drill-db "$DRILL_DB" \
+  --drill-logs "$DRILL_LOGS" \
+  --repo-id "$DRILL_REPO_ID" \
+  --run "$RUN_ID" \
+  --target-ref "$TARGET_REF" \
+  --head-ref "$HEAD_REF" \
+  --plan "$PLAN_REVISION_ID" \
+  --provenance drill \
+  --warroom-data "$WARROOM_DATA"
 ```
 
-`db-path` defaults to `./warroom.db` (use `:memory:` for a throwaway run); `port` defaults to `4600`. This is the simplest hosting this package can do on its own: no build step, no bundler, no external service, no network dependency beyond the loopback socket it binds, and no cloud storage — the SQLite file is the only state. It does not include the real Git adapter, Drill JSON ingestion, file tree/diff, or anchored comments (slice 3), and it grants no Squad runtime, approval, or safety authority.
+`--provenance` is required and must be exactly `drill` or `fixture`; there is no silent default, because a default that fabricates provenance is the failure the field exists to prevent.
+
+The command prints the packet id, packet digest, evidence digest, manifest digest, scope digest and the derived base and head.
+Repeating the same capture is idempotent and adds no duplicate event.
+A changed observation never reuses the previous packet: a moved observed target or a changed evidence capture creates a fresh packet, reports `reuseRefused`, and supersedes the earlier packet with that reason instead of silently serving stale evidence.
+
+Check currentness without writing:
+
+```sh
+bun run packages/warroom/src/review-cli.ts check --warroom-data "$WARROOM_DATA" --packet "$PACKET_ID"
+```
+
+It exits non-zero unless the packet is ready, its currentness is verified and its evidence is eligible, and prints JSON with the full reasons and observations.
+The serving layer calls the same function before recording acceptance.
+
+Serve the local surface over private data:
+
+```sh
+WARROOM_ACTOR=commander bun run packages/warroom/src/server.ts "$WARROOM_DATA/warroom.db" 4600
+```
+
+Open `http://127.0.0.1:4600/`.
+The page embeds a per-session token; the actor is the declared local session identity, and the browser never supplies an actor.
+Use `:memory:` for a throwaway database.
+
+Export the derived snapshot and optionally package it locally:
+
+```sh
+curl -sS "http://127.0.0.1:4600/api/review/$PACKET_ID/export" -o "$SNAPSHOT_HTML"
+sq-report export "$SNAPSHOT_HTML" --out "$EXPORT_HTML"
+```
+
+Neither step records acceptance, and neither authorizes merge.
 
 ## Verify
 
-From the repository root:
-
 ```sh
 bun test packages/warroom/tests
-bunx tsc --noEmit -p packages/warroom/tsconfig.json
+bun run --cwd packages/warroom typecheck
+bunx --no-install playwright test --config packages/warroom/playwright.config.ts
 ```
+
+The browser suite runs only against a private fixture server with a disposable Git repository, a synthetic Drill-shaped database and private Warroom data.
+It blocks every non-loopback request and never records a human acceptance.

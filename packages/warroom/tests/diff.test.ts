@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lineDiff } from "../src/diff.ts";
+import { lineDiff, withinDiffBudget } from "../src/diff.ts";
 
 describe("lineDiff", () => {
 	test("identical content produces only unchanged lines", () => {
@@ -41,6 +41,13 @@ describe("lineDiff", () => {
 		expect(lineDiff("", "a")).toEqual([{ type: "added", text: "a" }]);
 		expect(lineDiff("a", "")).toEqual([{ type: "removed", text: "a" }]);
 		expect(lineDiff("", "")).toEqual([]);
+	});
+
+	test("a structural diff is refused once the compared line pairs exceed the work budget", () => {
+		const fourThousand = Array.from({ length: 4000 }, (_, i) => `line-${i}`).join("\n");
+		expect(withinDiffBudget("a\nb", "a\nc")).toBe(true);
+		expect(withinDiffBudget("", fourThousand)).toBe(true);
+		expect(withinDiffBudget(fourThousand, fourThousand)).toBe(false);
 	});
 
 	test("oversized input still finds the true longest common subsequence via linear-space Hirschberg", () => {
