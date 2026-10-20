@@ -364,6 +364,24 @@ export class Warroom {
 		if (digestContent(command.captureJson) !== command.captureDigest) throw new Error("evidence capture digest does not match its content");
 		if (parsed?.provenance !== command.provenance) throw new Error("evidence capture provenance does not match the command");
 		if (!command.capturedAt) throw new Error("evidence capture requires a capture timestamp");
+		const run = parsed?.run ?? {};
+		const fieldPairs: Array<[string, unknown, unknown]> = [
+			["run id", run.id, command.runId],
+			["run repository", run.repoId, command.repoId],
+			["drill version", run.drillVersion, command.drillVersion],
+			["drill build", run.drillBuildSha ?? null, command.drillBuildSha ?? null],
+			["drill base", run.baseSha, command.drillBaseSha],
+			["submitted head", run.submittedHeadSha ?? null, command.submittedHeadSha ?? null],
+			["review-approved head", run.reviewApprovedHeadSha ?? null, command.reviewedHeadSha ?? null],
+			["delivered head", run.deliveredHeadSha ?? null, command.deliveredHeadSha],
+			["run status", run.status, command.runStatus],
+			["capture timestamp", parsed?.capturedAt, command.capturedAt],
+			["eligibility", parsed?.eligibility?.eligible === true, command.eligible],
+			["ineligibility", (parsed?.eligibility?.reasons ?? []).join("; ") || null, command.ineligibility ?? null],
+		];
+		for (const [label, fromCapture, fromCommand] of fieldPairs) {
+			if (fromCapture !== fromCommand) throw new Error(`evidence capture ${label} does not match the command`);
+		}
 		for (const artifact of command.artifacts ?? []) {
 			assertDigest(artifact.digest, "artifact digest");
 			if (artifact.relativePath !== undefined && artifact.relativePath !== artifactPath(artifact.digest)) throw new Error("artifact path does not match its digest");
@@ -429,7 +447,7 @@ export class Warroom {
 			if (!revision || revision.stale) throw new Error("review acceptance requires the reviewed code revision to be current");
 			let manifest: any;
 			try { manifest = JSON.parse(revision.content); } catch { throw new Error("review packet manifest is unreadable"); }
-			const unreviewable = (manifest.files ?? []).filter((file: any) => !(file.head?.reviewable || file.base?.reviewable)).map((file: any) => file.path);
+			const unreviewable = (manifest.files ?? []).filter((file: any) => (file.base && !file.base.reviewable) || (file.head && !file.head.reviewable)).map((file: any) => file.path);
 			if (unreviewable.length > 0) throw new Error(`review acceptance is blocked by objects that cannot be reviewed: ${unreviewable.join(", ")}`);
 		}
 	}

@@ -119,6 +119,12 @@ describe("static review export", () => {
 		expect(html).toContain("diff-removed");
 	});
 
+	test("marks an unreviewable side explicitly instead of rendering it as empty", () => {
+		const html = renderReviewExport(input({ contents: { "src/<script>alert(1)</script>.ts": { headUnreviewable: true, headReason: "binary" } } }) as any);
+		expect(html).toContain("The head side is not reviewable as text (binary)");
+		expect(html).toContain("its bytes are not inferred");
+	});
+
 	test("marks missing stored text explicitly instead of inferring bytes", () => {
 		const html = renderReviewExport(input({ contents: {} }) as any);
 		expect(html).toContain("Stored text is unavailable; no bytes are inferred.");

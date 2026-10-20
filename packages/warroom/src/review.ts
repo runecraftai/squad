@@ -423,7 +423,7 @@ export function checkPacket(warroom: Warroom, dataDir: string, packetId: string)
 	if (row.status === "stale") reasons.push(row.stale_reason ?? "packet-superseded");
 	observations.packetStatus = row.status;
 
-	const unreviewableFiles = manifest ? manifest.files.filter((file) => !(file.head?.reviewable || file.base?.reviewable)).map((file) => file.path) : [];
+	const unreviewableFiles = manifest ? manifest.files.filter((file) => (file.base && !file.base.reviewable) || (file.head && !file.head.reviewable)).map((file) => file.path) : [];
 	const source = verifySource(row);
 	reasons.push(...source.reasons);
 	observations.source = source.observations;

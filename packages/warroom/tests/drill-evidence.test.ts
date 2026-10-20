@@ -93,6 +93,19 @@ describe("restricted Drill evidence reader", () => {
 		expect(skipped.steps.find((step) => step.name === "document")?.skipped).toBe(true);
 	});
 
+	test("a run missing a required step row is not eligible, because an absent step is never a success", () => {
+		const missingTest = variant((db) => db.query("DELETE FROM step_results WHERE run_id=? AND step_name='test'").run(fixture.run1));
+		const capture = read(missingTest);
+		expect(capture.eligibility.eligible).toBe(false);
+		expect(capture.eligibility.reasons).toContain("step test was not recorded");
+
+		const noSteps = variant((db) => db.query("DELETE FROM step_results WHERE run_id=?").run(fixture.run1));
+		const empty = read(noSteps);
+		expect(empty.eligibility.eligible).toBe(false);
+		expect(empty.eligibility.reasons.join()).toContain("step intent was not recorded");
+		expect(empty.eligibility.reasons.join()).toContain("step review was not recorded");
+	});
+
 	test("rejects an unknown Drill database format with a concrete message", () => {
 		const noRuns = join(fixture.root, "no-runs.sqlite");
 		const db = new Database(noRuns);

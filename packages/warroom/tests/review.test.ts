@@ -65,6 +65,7 @@ describe("review packet capture", () => {
 			"docs/binary.bin",
 			"docs/empty.txt",
 			"docs/guide.md",
+			"docs/mixed.txt",
 			"docs/path with spaces e acentuação.txt",
 			"docs/readme-link",
 			"legacy/new-name.ts",
@@ -739,7 +740,7 @@ describe("unreviewable objects", () => {
 		expect(check.status).toBe("ready");
 		expect(check.currentness).toBe("verified");
 		expect(check.evidenceEligible).toBe(true);
-		expect(check.unreviewableFiles).toEqual(["docs/binary.bin", "docs/readme-link"]);
+		expect(check.unreviewableFiles).toEqual(["docs/binary.bin", "docs/mixed.txt", "docs/readme-link"]);
 		expect(() => acceptReview(fixture.warroom, fixture.dataDir, {
 			packetId: result.packetId,
 			packetDigest: result.packetDigest,

@@ -49,7 +49,7 @@ export interface ExportInput {
 	timeline: Array<{ sequence: number; type: string; summary: string; actor: string; occurredAt: string }>;
 	exportedAt: string;
 	/** Text of each reviewable manifest side, keyed by path; absent text stays explicitly unavailable. */
-	contents?: Record<string, { base?: string; head?: string }>;
+	contents?: Record<string, { base?: string; head?: string; baseUnreviewable?: boolean; headUnreviewable?: boolean; baseReason?: string; headReason?: string }>;
 }
 
 export function escapeHtml(value: unknown): string {
@@ -71,8 +71,12 @@ function renderDiff(baseText: string, headText: string): string {
 }
 
 /** Renders one file's stored object text side by side; the export never reads the repository at open time. */
-export function renderFileSection(file: PacketManifest["files"][number], contents?: { base?: string; head?: string }): string {
+export function renderFileSection(file: PacketManifest["files"][number], contents?: { base?: string; head?: string; baseUnreviewable?: boolean; headUnreviewable?: boolean; baseReason?: string; headReason?: string }): string {
 	if (!contents) return `<h3 class="mono">${escapeHtml(file.path)}</h3><p class="muted">Stored text is unavailable; no bytes are inferred.</p>`;
+	const notes: string[] = [];
+	if (contents.baseUnreviewable) notes.push(`The base side is not reviewable as text (${escapeHtml(contents.baseReason ?? "unsupported")}); its bytes are not inferred.`);
+	if (contents.headUnreviewable) notes.push(`The head side is not reviewable as text (${escapeHtml(contents.headReason ?? "unsupported")}); its bytes are not inferred.`);
+	if (notes.length > 0) return `<h3 class="mono">${escapeHtml(file.path)}</h3><p class="muted">${notes.join(" ")}</p>`;
 	return `<h3 class="mono">${escapeHtml(file.path)}</h3>${renderDiff(contents.base ?? "", contents.head ?? "")}`;
 }
 

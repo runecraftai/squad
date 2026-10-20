@@ -22,7 +22,7 @@ export interface PacketFileEntry {
 
 /** A reviewable object stops here; larger content stays listed as unreviewable instead of being silently truncated. */
 export const MAX_REVIEWABLE_BYTES = 512 * 1024;
-/** Bounds how many manifest objects one packet may inspect so a huge tree cannot stall capture. */
+/** Bounds how many changed paths one packet may carry; unchanged tree entries are filtered before this check. */
 export const MAX_MANIFEST_FILES = 5000;
 
 const GIT_ENV = {
@@ -162,7 +162,6 @@ export function buildManifest(repo: string, baseSha: string, headSha: string): P
 	const baseEntries = new Map(listTree(repo, baseSha).map((entry) => [entry.path, entry]));
 	const headEntries = new Map(listTree(repo, headSha).map((entry) => [entry.path, entry]));
 	const paths = [...new Set([...baseEntries.keys(), ...headEntries.keys()])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-	if (paths.length > MAX_MANIFEST_FILES) throw new GitReadError(`manifest exceeds ${MAX_MANIFEST_FILES} paths`);
 	const files: PacketFileEntry[] = [];
 	for (const path of paths) {
 		const base = baseEntries.get(path);
@@ -171,6 +170,7 @@ export function buildManifest(repo: string, baseSha: string, headSha: string): P
 		const status = !base ? "added" : !head ? "deleted" : "modified";
 		files.push({ path, status, base: base ? classify(repo, base) : null, head: head ? classify(repo, head) : null });
 	}
+	if (files.length > MAX_MANIFEST_FILES) throw new GitReadError(`manifest exceeds ${MAX_MANIFEST_FILES} changed paths`);
 	return files;
 }
 

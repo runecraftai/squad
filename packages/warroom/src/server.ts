@@ -171,8 +171,15 @@ export function createApp(options: ServerOptions = {}): App {
 				const entry = manifest.files.find((item) => item.path === path);
 				if (!entry) return json({ error: "path is not part of the review packet manifest" }, 404);
 				const store = new ArtifactStore(dataDir);
-				const baseText = entry.base?.reviewable && entry.base.contentDigest ? store.readText(entry.base.contentDigest) : "";
-				const headText = entry.head?.reviewable && entry.head.contentDigest ? store.readText(entry.head.contentDigest) : "";
+				const sides = {
+					base: entry.base ? { present: true, reviewable: Boolean(entry.base.reviewable), reason: entry.base.reason ?? null } : { present: false, reviewable: false, reason: null },
+					head: entry.head ? { present: true, reviewable: Boolean(entry.head.reviewable), reason: entry.head.reason ?? null } : { present: false, reviewable: false, reason: null },
+				};
+				if ((sides.base.present && !sides.base.reviewable) || (sides.head.present && !sides.head.reviewable)) {
+					return json({ error: "one side of this object is not reviewable text; no bytes are inferred", path, sides }, 409);
+				}
+				const baseText = entry.base?.contentDigest ? store.readText(entry.base.contentDigest) : "";
+				const headText = entry.head?.contentDigest ? store.readText(entry.head.contentDigest) : "";
 				if (!withinDiffBudget(baseText, headText)) return json({ error: "object is too large for an inline structural diff; the stored packet patch covers it" }, 413);
 				const lines = lineDiff(baseText, headText);
 				let baseLine = 1;
@@ -273,10 +280,12 @@ export function createApp(options: ServerOptions = {}): App {
 		const store = new ArtifactStore(dataDir);
 		const contents: Record<string, { base?: string; head?: string }> = {};
 		for (const file of manifest.files) {
-			const entry: { base?: string; head?: string } = {};
+			const entry: { base?: string; head?: string; baseUnreviewable?: boolean; headUnreviewable?: boolean; baseReason?: string; headReason?: string } = {};
 			if (file.base?.reviewable && file.base.contentDigest) entry.base = store.readText(file.base.contentDigest);
+			else if (file.base) { entry.baseUnreviewable = true; entry.baseReason = file.base.reason ?? "not reviewable"; }
 			if (file.head?.reviewable && file.head.contentDigest) entry.head = store.readText(file.head.contentDigest);
-			if (entry.base !== undefined || entry.head !== undefined) contents[file.path] = entry;
+			else if (file.head) { entry.headUnreviewable = true; entry.headReason = file.head.reason ?? "not reviewable"; }
+			if (Object.keys(entry).length > 0) contents[file.path] = entry;
 		}
 		const plan = state.revisions.find((revision: any) => revision.id === packet.plan_revision_id) as any;
 		const comments = state.comments
@@ -393,7 +402,9 @@ export function createApp(options: ServerOptions = {}): App {
 					// The generic command API cannot mint validation evidence, review acceptance or merge permission.
 					// Those scopes need the capture adapter and the review endpoints, which apply currentness, scope,
 					// evidence and session-authority checks the body cannot supply.
-					if (command?.type === "validation.record") return json({ error: "validation evidence must be captured from the named Drill run; the generic command API cannot mint it" }, 403);
+					if (command?.type === "validation.record" || command?.type === "review.capture.record" || command?.type === "review.packet.create" || command?.type === "review.supersede") {
+						return json({ error: "validation evidence and review packets must come from the review capture adapter; the generic command API cannot mint or supersede them" }, 403);
+					}
 					if (command?.type === "approval.record" && (command.kind === "code-review-acceptance" || command.kind === "merge-permission")) {
 						return json({ error: "review acceptance and merge permission are not available through the generic command API" }, 403);
 					}

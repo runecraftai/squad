@@ -520,9 +520,10 @@
 		const list = document.getElementById("review-files");
 		list.innerHTML = files.map((file, index) => {
 			const reviewable = file.head ? file.head.reviewable : file.base && file.base.reviewable;
-			const reason = file.head ? file.head.reason : file.base && file.base.reason;
+			const partial = (file.base && !file.base.reviewable) || (file.head && !file.head.reviewable);
+			const reason = file.head && !file.head.reviewable ? file.head.reason : file.base && !file.base.reviewable ? file.base.reason : null;
 			const selected = reviewState.file && reviewState.file.path === file.path;
-			return `<li><button data-review-file="${escapeHtml(file.path)}" data-review-file-index="${index}" aria-pressed="${selected ? "true" : "false"}" style="text-align: left"><span class="mono">${escapeHtml(file.path)}</span><br /><span class="hint">${escapeHtml(file.status)}${reviewable ? " · reviewable text" : ` · not reviewable: ${escapeHtml(reason || "binary or unsupported")}`}</span></button></li>`;
+			return `<li><button data-review-file="${escapeHtml(file.path)}" data-review-file-index="${index}" aria-pressed="${selected ? "true" : "false"}" style="text-align: left"><span class="mono">${escapeHtml(file.path)}</span><br /><span class="hint">${escapeHtml(file.status)}${partial ? ` · one side not reviewable: ${escapeHtml(reason || "binary or unsupported")}` : " · reviewable text"}</span></button></li>`;
 		}).join("");
 		list.querySelectorAll("[data-review-file]").forEach((button) => button.addEventListener("click", () => openReviewFile(button.dataset.reviewFile).catch((error) => alert(error.message))));
 
@@ -542,6 +543,14 @@
 			container.innerHTML = `<div class="hint" style="padding: var(--s3)">This object is not reviewable as text (${escapeHtml(file[side] ? file[side].reason : "missing")}). It stays listed and blocks complete-scope acceptance until it is out of scope.</div>`;
 			renderReviewFileSelection();
 			return;
+		}
+		if (reviewState.mode === "diff") {
+			const blocked = [["base", file.base], ["head", file.head]].filter((pair) => pair[1] && !pair[1].reviewable);
+			if (blocked.length) {
+				container.innerHTML = `<div class="hint" style="padding: var(--s3)">${blocked.map(([name, object]) => `The ${name} side is not reviewable as text (${escapeHtml(object.reason || "unsupported")}).`).join(" ")} No bytes are inferred.</div>`;
+				renderReviewFileSelection();
+				return;
+			}
 		}
 		if (reviewState.mode !== "diff") {
 			const full = await api(`/api/review/${encodeURIComponent(packetId)}/file?path=${encodeURIComponent(path)}&side=${reviewState.mode}`);

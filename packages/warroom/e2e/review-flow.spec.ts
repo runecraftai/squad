@@ -59,8 +59,9 @@ test("the local surface navigates diff, anchors a comment, survives reload, requ
 	await expect(page.locator("#review-decision-state")).toContainText("cannot be reviewed");
 
 	// The complete file scope is listed, including documentation, tests, config and unreviewable objects.
-	await expect(page.locator("#review-file-count")).toContainText("10 paths");
+	await expect(page.locator("#review-file-count")).toContainText("11 paths");
 	await expect(page.locator('[data-review-file="docs/binary.bin"]')).toContainText("not reviewable: binary");
+	await expect(page.locator('[data-review-file="docs/mixed.txt"]')).toBeVisible();
 	await expect(page.locator('[data-review-file="tests/hello.test.ts"]')).toContainText("reviewable text");
 	await expect(page.locator('[data-review-file="docs/path with spaces e acentuação.txt"]')).toHaveCount(1);
 

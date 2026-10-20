@@ -87,6 +87,8 @@ const REQUIRED_RUN_COLUMNS = [
 	"awaiting_agent_since", "created_at", "updated_at",
 ];
 
+/** Every pipeline step before the pull-request/CI monitor must be recorded; a missing row is not a success. */
+const REQUIRED_PRE_CI_STEPS = ["intent", "rebase", "review", "test", "document", "lint", "push", "pr"];
 const TERMINAL_FAILURES = new Set(["failed", "cancelled", "canceled", "error", "aborted"]);
 const ELIGIBLE_RUN_STATUSES = new Set(["pending", "running", "completed"]);
 
@@ -175,6 +177,9 @@ export function readDrillRun(options: DrillCaptureOptions): DrillCapture {
 		if (!submittedHeadSha) reasons.push("submitted head was not recorded");
 		if (!run.pr_url) reasons.push("no pull request was observed");
 		if (run.pr_state === "merged" || run.pr_state === "closed") reasons.push(`pull request is ${String(run.pr_state)}`);
+		const present = new Set(steps.map((step) => step.name));
+		for (const required of REQUIRED_PRE_CI_STEPS) if (!present.has(required)) reasons.push(`step ${required} was not recorded`);
+		if (run.ci_ready_at !== null && run.ci_ready_at !== undefined && !present.has("ci")) reasons.push("CI readiness was recorded without a ci step");
 		const skipped = steps.filter((step) => step.skipped).map((step) => step.name);
 		const failed = steps.filter((step) => TERMINAL_FAILURES.has(step.status));
 		for (const step of failed) reasons.push(`step ${step.name} is ${step.status}`);

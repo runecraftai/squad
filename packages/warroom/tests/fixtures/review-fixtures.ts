@@ -56,10 +56,12 @@ function createGitRepo(root: string, withUnreviewable: boolean): { repo: string;
 	const repo = join(root, "repo");
 	mkdirSync(join(repo, "src"), { recursive: true });
 	mkdirSync(join(repo, "legacy"), { recursive: true });
+	mkdirSync(join(repo, "docs"), { recursive: true });
 	git(repo, ["init", "-q", "-b", "main"]);
 	writeFileSync(join(repo, "README.md"), "# Fixture project\n\nSynthetic repository used only by tests.\n");
 	writeFileSync(join(repo, "src", "hello.ts"), "export function hello(name: string) {\n\treturn `hello ${name}`;\n}\n");
 	writeFileSync(join(repo, "legacy", "old-name.ts"), "export const value = 1;\n");
+	if (withUnreviewable) writeFileSync(join(repo, "docs", "mixed.txt"), Buffer.from([0, 1, 2, 3]));
 	const baseSha = commit(repo, "base");
 
 	git(repo, ["checkout", "-q", "-b", "review"]);
@@ -72,7 +74,10 @@ function createGitRepo(root: string, withUnreviewable: boolean): { repo: string;
 	writeFileSync(join(repo, "tests", "hello.test.ts"), "import { expect, test } from \"bun:test\";\n\ntest(\"hello\", () => expect(true).toBe(true));\n");
 	writeFileSync(join(repo, "docs", "path with spaces e acentuação.txt"), "line one\nline two\nline three\n");
 	writeFileSync(join(repo, "docs", "empty.txt"), "");
-	if (withUnreviewable) writeFileSync(join(repo, "docs", "binary.bin"), Buffer.from([0, 1, 2, 3, 0, 255]));
+	if (withUnreviewable) {
+		writeFileSync(join(repo, "docs", "binary.bin"), Buffer.from([0, 1, 2, 3, 0, 255]));
+		writeFileSync(join(repo, "docs", "mixed.txt"), "now plain text\n");
+	}
 	rmSync(join(repo, "legacy", "old-name.ts"));
 	writeFileSync(join(repo, "legacy", "new-name.ts"), "export const value = 1;\n");
 	if (withUnreviewable) symlinkSync("../README.md", join(repo, "docs", "readme-link"));

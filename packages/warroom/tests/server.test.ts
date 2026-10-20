@@ -218,6 +218,8 @@ describe("local review surface", () => {
 		const result = seed("drill");
 		const before = app.warroom.events(fixture.initiativeId).length;
 		for (const body of [
+			{ type: "review.capture.record", initiativeId: "i1", revisionId: result.packetId, provenance: "drill", eligible: true },
+			{ type: "review.packet.create", initiativeId: "i1", revisionId: result.packetId },
 			{ type: "validation.record", initiativeId: "i1", revisionId: "plan-1", provider: "drill", result: "passed" },
 			{ type: "approval.record", initiativeId: "i1", kind: "merge-permission", revisionId: result.packetId, decision: "approved" },
 			{ type: "approval.record", initiativeId: "i1", kind: "code-review-acceptance", revisionId: result.packetId, decision: "approved", evidenceId: result.evidenceId },
@@ -341,5 +343,38 @@ describe("local review surface", () => {
 		const traversal = await request(`/api/review/..%2Fescape/export`, { headers: { host } });
 		expect(traversal.status).toBe(400);
 		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM initiatives WHERE id LIKE '%escape%'").get()).toEqual({ n: 0 });
+	});
+});
+
+describe("mixed reviewable sides", () => {
+	let mixedFixture: ReviewFixture;
+	let mixedApp: ReturnType<typeof createApp>;
+
+	beforeEach(() => {
+		mixedFixture = createReviewFixture();
+		mixedFixture.warroom.close();
+		mixedApp = createApp({ dbPath: mixedFixture.dbPath, dataDir: mixedFixture.dataDir, port: 4600, actorId: "commander", sessionToken: "mixed-token" });
+	});
+	afterEach(() => {
+		try { mixedApp.warroom.close(); } catch { /* closed */ }
+		disposeFixture(mixedFixture);
+	});
+
+	test("a diff whose base side is binary is refused instead of rendering an inferred empty side", async () => {
+		const result = captureReview(mixedApp.warroom, mixedFixture.dataDir, {
+			repo: mixedFixture.repo,
+			drillDb: mixedFixture.drillDb,
+			repoId: mixedFixture.repoId,
+			runId: mixedFixture.run1,
+			targetRef: "main",
+			headRef: "h1",
+			planRevisionId: mixedFixture.planRevisionId,
+			provenance: "fixture",
+		});
+		const response = await mixedApp.fetch(new Request(`http://127.0.0.1:4600/api/review/${result.packetId}/diff?path=${encodeURIComponent("docs/mixed.txt")}`, { headers: { host: "127.0.0.1:4600" } }));
+		expect(response.status).toBe(409);
+		const body = await response.json();
+		expect(body.sides.base).toEqual({ present: true, reviewable: false, reason: "binary" });
+		expect(body.sides.head).toEqual({ present: true, reviewable: true, reason: null });
 	});
 });
