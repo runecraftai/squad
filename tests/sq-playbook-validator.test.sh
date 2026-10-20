@@ -28,6 +28,39 @@ write_valid
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
 expect_code 0 "$rc" "complete bug-fix evidence should validate"
 assert_contains "$out" "playbook evidence valid" "validator should report a successful validation"
+# Labeled criterion headings stay valid, and a criterion number must not match a longer number.
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 1: Reproduction before fix
+Proof: reproduction before fix command: reproduce failure
+## Criterion 2: Causal explanation
+Proof: causal explanation with refutable observation command
+## Criterion 3: Regression test
+Proof: regression test pre-fix and post-fix command
+## Criterion 4: Relevant suite
+Proof: relevant suite command green pass
+## Criterion 5: Original surface
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+expect_code 0 "$rc" "colon-labeled criterion headings should validate"
+assert_contains "$out" "playbook evidence valid" "validator should accept labeled criterion headings"
+cat > "$CHECK" <<'EOF'
+# bug-fix@1 checklist
+## Criterion 10: absorb half only
+Proof: reproduction before fix command: reproduce failure
+## Criterion 2
+Proof: causal explanation with refutable observation command
+## Criterion 3
+Proof: regression test pre-fix and post-fix command
+## Criterion 4
+Proof: relevant suite command green pass
+## Criterion 5
+Proof: original surface re-exercised same command
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$ID" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "a two-digit criterion heading must not satisfy criterion 1"
+assert_contains "$out" "missing: criterion 1" "validator should report the absent criterion 1 heading"
 # A missing section and an empty proof are reported together.
 cat > "$CHECK" <<'EOF'
 # bug-fix@1 checklist
@@ -184,6 +217,117 @@ for playbook in multi-phase-plan eval plan-execute; do
   expect_code 0 "$rc" "$playbook evidence should validate"
   assert_contains "$out" "playbook evidence valid: $playbook@1" "$playbook validator identity missing"
 done
+react_proofs=(
+  'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
+  'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'
+  ''
+  'lint proposal with rationale and approval pending path: artifacts/lint-decision.md'
+  'behavior surface test command: web test passed'
+)
+react_records='Routing: unchanged - no route or guard edits; path: src/app/routes.tsx
+Queries: changed - added the read-only use-audits key in entities/audit/model.ts; command: bun run check passed'
+write_react_evidence() {
+  local omitted=${1:-0} i
+  printf '# react@1 checklist\n'
+  for ((i=0; i<${#react_proofs[@]}; i++)); do
+    printf '## Criterion %s\n' "$((i+1))"
+    [ "$((i+1))" -eq "$omitted" ] && continue
+    if [ "$((i+1))" -eq 3 ]; then
+      printf '%s\n' "$react_records"
+    else
+      printf 'Proof: %s\n' "${react_proofs[$i]}"
+    fi
+  done
+}
+id=react-evidence
+mkdir -p "$HOME/data/$id/artifacts"
+printf 'playbook=react\nplaybook_version=1\n' > "$HOME/state/$id.meta"
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" "complete React evidence should validate"
+assert_contains "$out" 'playbook evidence valid: react@1' 'React evidence identity missing'
+# Both dimensions are required, but any changed/unchanged combination and free-text phrasing is valid.
+while IFS='|' read -r routing queries; do
+  react_records="$routing
+$queries"
+  write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  expect_code 0 "$rc" "React records should validate: $routing / $queries"
+  assert_contains "$out" 'playbook evidence valid: react@1' 'React record evidence identity missing'
+done <<'EOF'
+Routing: changed - code-based route added in src/app/routes.tsx; command: bun run check passed|Queries: changed - new use-audits key in entities/audit/model.ts; no mutation; command: bun test
+routing: CHANGED - Route tree built in code, see src/app/routes.tsx|QUERIES: UNCHANGED - no query module touched
+Routing: unchanged - no route or guard edits; path: src/app/routes.tsx|Queries: unchanged - existing invalidation retained; path: entities/session/model.ts
+Routing: changed - beforeLoad guard redirect in src/app/routes.tsx|Queries: unchanged - path: entities/audit/model.ts
+EOF
+react_records='Routing: unchanged - no route or guard edits; path: src/app/routes.tsx
+Queries: changed - added the read-only use-audits key in entities/audit/model.ts; command: bun run check passed'
+expect_react_refusal() {
+  local records=$1 message=$2 expected=$3
+  react_records=$records
+  write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "$message"
+  assert_contains "$out" "$expected" "$message"
+}
+for criterion in 1 2 4 5; do
+  write_react_evidence "$criterion" > "$HOME/data/$id/artifacts/checks.md"
+  out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "React must reject missing criterion $criterion"
+  assert_contains "$out" "missing: criterion $criterion" 'React refusal must identify missing evidence'
+done
+write_react_evidence 3 > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject a criterion 3 with no routing or queries record'
+assert_contains "$out" 'criterion 3' 'React refusal must identify the empty routing/queries criterion'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+awk '/^## Criterion 3$/ {skip=1; next} /^## Criterion / {skip=0} !skip {print}' \
+  "$HOME/data/$id/artifacts/checks.md" > "$HOME/without-criterion-3.md"
+mv "$HOME/without-criterion-3.md" "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject a missing criterion 3 section'
+assert_contains "$out" 'missing: criterion 3' 'React must distinguish an absent criterion section from malformed records'
+expect_react_refusal '  - Routing: unchanged - no route edits
+Queries: changed - read-only query added' \
+  'React must explain a list-prefixed record is not a plain record line' 'plain Routing:'
+assert_not_contains "$out" 'missing: criterion 3' 'A malformed record must not be diagnosed as an absent criterion section'
+expect_react_refusal '**Routing:** unchanged - no route edits
+Queries: unchanged - no query edits' \
+  'React must explain an emphasized label is not a plain record line' 'plain Routing:'
+expect_react_refusal 'Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject criterion 3 without a routing record' 'missing Routing record'
+expect_react_refusal 'Routing: unchanged - path: src/app/routes.tsx' \
+  'React must reject criterion 3 without a queries record' 'missing Queries record'
+expect_react_refusal 'Routing: changed - path: src/app/routes.tsx
+Routing: unchanged - duplicate; path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject a duplicated routing record' 'duplicate Routing record'
+expect_react_refusal 'Routing: modified - path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject a routing record with an unknown state' 'must declare changed or unchanged'
+expect_react_refusal 'Routing: changed path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts' \
+  'React must reject a routing record without the separator' 'must follow Routing: <state> - <free text>'
+expect_react_refusal 'Routing: changed - path: src/app/routes.tsx
+Queries: unchanged -' \
+  'React must reject an unchanged queries record without explanatory text' 'Queries record needs nonblank free-text evidence'
+expect_react_refusal "$(printf 'Routing: changed -   \nQueries: changed - path: entities/audit/model.ts')" \
+  'React must reject a changed routing record with whitespace-only evidence' 'Routing record needs nonblank free-text evidence'
+react_proofs[3]='lint proposal path: artifacts/lint-decision.md'
+react_records='Routing: unchanged - path: src/app/routes.tsx
+Queries: unchanged - path: entities/audit/model.ts'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject lint evidence without rationale and approval disposition'
+assert_contains "$out" 'criterion 4' 'React refusal must identify incomplete lint evidence'
+react_proofs[3]='lint proposal with rationale and approval pending path: artifacts/lint-decision.md'
+write_react_evidence > "$HOME/data/$id/artifacts/checks.md"
+printf 'playbook=react\nplaybook_version=2\n' > "$HOME/state/$id.meta"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'React must reject unsupported evidence versions'
+assert_contains "$out" 'unsupported execution playbook identity' 'React version refusal missing'
+pass 'sq-playbook validator: React requires all five criteria and a deliberated lint proposal'
+
 printf 'playbook=shipping\nplaybook_version=1\n' > "$HOME/state/rejected.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" rejected 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "rejected shipping identity should be refused"

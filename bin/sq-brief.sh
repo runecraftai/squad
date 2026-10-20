@@ -177,6 +177,7 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
   case "$PLAYBOOK" in
     bug-fix@1) PLAYBOOK_ID=bug-fix; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md"); EXPECTED_KIND=strike ;;
     investigation@1) PLAYBOOK_ID=investigation; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/investigation-v1.md"); EXPECTED_KIND=recon ;;
+    react@1) PLAYBOOK_ID=react; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/react-v1.md"); EXPECTED_KIND=strike ;;
     feature@1) PLAYBOOK_ID=feature; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/feature-v1.md"); EXPECTED_KIND=strike ;;
     refactoring@1) PLAYBOOK_ID=refactoring; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/refactoring-v1.md"); EXPECTED_KIND=strike ;;
     prototype@1) PLAYBOOK_ID=prototype; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/prototype-v1.md"); EXPECTED_KIND=recon ;;

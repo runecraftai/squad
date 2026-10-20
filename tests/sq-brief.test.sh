@@ -1053,7 +1053,31 @@ EOF
   pass "sq-brief.sh: brief without status pattern is correctly detected as missing"
 }
 
+test_react_playbook_materializes_and_enforces_form() {
+  local home brief out status
+  home="$TMP_ROOT/react-playbook-home"
+  mkdir -p "$home/data"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" react-good repo --mode drill --playbook react@1 >/dev/null 2>&1 \
+    || fail "react@1 should materialize"
+  brief="$home/data/react-good/brief.md"
+  [ "$(grep -c '^Execution playbook: id=react version=1$' "$brief")" -eq 1 ] \
+    || fail "React identity must occur exactly once"
+  awk '/^# Execution playbook: `react@1`$/ {contract=1} contract && /^# Setup/ {exit} contract {if (buffered) print previous; previous=$0; buffered=1}' \
+    "$brief" > "$home/materialized.md"
+  cmp -s "$ROOT/.agents/skills/execution-playbooks/references/react-v1.md" "$home/materialized.md" \
+    || fail "generated brief must carry the full React contract, not a pointer"
+  for args in '--recon --playbook react@1' '--xo --no-projects --playbook react@1' '--mode drill --playbook react@2'; do
+    # shellcheck disable=SC2086 # Fixture contains separate flag/value arguments.
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" react-bad repo $args 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "React must refuse unsupported form or version: $args"
+    assert_absent "$home/data/react-bad/brief.md" "rejected React selection left a partial brief"
+    [ -n "$out" ] || fail "React selection refusal must explain the error"
+  done
+  pass "sq-brief.sh: React contract is materialized verbatim and only strike@1 is accepted"
+}
+
 test_script_parses
+test_react_playbook_materializes_and_enforces_form
 test_no_heredoc_in_command_substitution
 test_playbook_selection_and_legacy_compatibility
 test_wave_one_playbooks_materialize_and_enforce_forms
