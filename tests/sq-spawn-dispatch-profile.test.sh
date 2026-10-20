@@ -829,6 +829,25 @@ test_react_profile_identity_survives_spawn() {
   pass 'React profile scaffold launches with its paired playbook'
 }
 
+test_react_as_playbook_is_refused_at_spawn() {
+  local rec id out status brief
+  id=react-as-playbook-spawn
+  rec=$(make_spawn_case react-as-playbook pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+    || fail "React-as-playbook spawn fixture should scaffold"
+  brief="$HOME_DIR/data/$id/brief.md"
+  # A brief scaffolded before the reclassification, or one edited by hand, still
+  # names react@1 as the method; it must never launch or reach task metadata.
+  sed -i.bak 's/^Execution playbook: id=feature version=1$/Execution playbook: id=react version=1/' "$brief" && rm -f "$brief.bak"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn must refuse a brief that selects react@1 as its playbook: $out"
+  assert_contains "$out" "--profile react@1" "the react-as-playbook refusal did not name the pairing that works"
+  assert_absent "$HOME_DIR/state/$id.meta" "the react-as-playbook refusal created task metadata"
+  pass "spawn refuses react@1 as a playbook and names the profile pairing"
+}
+
 test_malformed_profile_identity_is_refused_at_spawn() {
   local mutation id rec out status brief
 
@@ -878,6 +897,7 @@ test_malformed_profile_identity_is_refused_at_spawn() {
 
 test_no_profile_keeps_claude_profile_defaults
 test_react_profile_identity_survives_spawn
+test_react_as_playbook_is_refused_at_spawn
 test_malformed_profile_identity_is_refused_at_spawn
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
 test_home_defaults_preserve_absolute_or_resolve_relative_paths

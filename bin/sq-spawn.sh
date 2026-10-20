@@ -1449,7 +1449,7 @@ if [ "$PLAYBOOK_LINES" -eq 1 ]; then
   case "$PLAYBOOK_LINE" in
     'Execution playbook: id=bug-fix version=1') PLAYBOOK_META=bug-fix; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=investigation version=1') PLAYBOOK_META=investigation; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
-    'Execution playbook: id=react version=1') PLAYBOOK_META=react; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
+    'Execution playbook: id=react version=1') echo "error: react@1 is an execution profile, not a playbook; scaffold it with --playbook <id>@<version> --profile react@1 so the method owns the sequence and the profile carries the React constraints" >&2; exit 1 ;;
     'Execution playbook: id=feature version=1') PLAYBOOK_META=feature; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=refactoring version=1') PLAYBOOK_META=refactoring; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=prototype version=1') PLAYBOOK_META=prototype; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;

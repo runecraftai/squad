@@ -4,12 +4,12 @@
 
 This profile accepts `strike` only, for React SPA work using TanStack Router with code-based routes, not Next.js.
 It attaches to the playbook that owns the task's sequence, completion evidence, stop condition, and delivery; this profile adds only the React constraints below.
-Read the sequence below as the constraint checkpoints this profile contributes to that playbook's steps, never as a second method.
+Read the checkpoints below as the constraint checkpoints this profile contributes to that playbook's steps, never as a second method.
 It materializes the commander's standard from Career Coach's `apps/web/AGENTS.md` and its repo-root `AGENTS.md`, with decisions D1-D3 below.
 The executor receives this contract in the brief and need not retrieve those source files.
 Selection is explicit; this contract does not automatically classify or dispatch React tasks.
 
-## Required sequence
+## Constraint checkpoints
 
 1. State the requested behavior, affected routes, data contracts, and authorized surface before implementation.
 2. Map changed modules to the D1 layers and identify import boundaries, hooks, pure functions, and component responsibilities before editing.
@@ -157,9 +157,9 @@ The attached playbook owns the completion gate, so a passing `bin/sq-playbook-va
 The authorized React behavior works on the real surface, all five evidence areas have concrete evidence, and applicable type, lint, and focused behavior checks pass.
 Unchanged surfaces are justified rather than fabricated, and any pending D3 deliberation is explicit without being represented as an adopted configuration.
 The existing delivery path remains the authority for review, fixes, tests, delivery, approval, and merge.
-Read this predicate together with the stop conditions below as this profile's satisfaction and escalation conditions inside the attached playbook's exit and stop rules, never as a second terminal authority.
+Read this predicate together with the escalation conditions below as this profile's satisfaction and escalation conditions inside the attached playbook's exit and stop rules, never as a second terminal authority.
 
-## Stop conditions
+## Escalation conditions
 
 Stop when the requested surface is unreachable, the project contradicts D1/D2 or requires a different router/framework, required checks cannot run, or an unapproved design or lint-policy change is necessary.
 Name the conflict and request a decision instead of silently migrating, weakening a rule, or extending scope.
