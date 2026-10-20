@@ -1227,3 +1227,155 @@ func TestOutputSnippet_TruncatesLongText(t *testing.T) {
 		t.Errorf("expected 200 runes plus ellipsis, got %d runes", len(runes))
 	}
 }
+
+// reviewFindingsBareArraySnippet is the payload shape from the reported
+// incident (2026-10-20, three runs lost across two unrelated tasks): the pi
+// review agent returned its findings list as a bare JSON array instead of the
+// documented {"findings": [...]} object, and the run died with
+// `agent review: pi output parse: JSON output missing required field "findings"`.
+// The third finding carries neither "action" nor "review_scope" so the array
+// form is also exercised against the schema defaults.
+const reviewFindingsBareArraySnippet = `[
+  {
+    "id": "guard-allowlist-dead-code",
+    "severity": "warning",
+    "file": "internal/agent/agent.go",
+    "line": 878,
+    "description": "the allowlist entry is never consulted",
+    "action": "no-op",
+    "review_scope": "source"
+  },
+  {
+    "id": "parse-error-swallowed",
+    "severity": "info",
+    "file": "internal/pipeline/steps/review.go",
+    "line": 356,
+    "description": "structured output fallback hides the parse failure",
+    "action": "auto-fix",
+    "review_scope": "source"
+  },
+  {
+    "id": "defaults-omitted",
+    "severity": "error",
+    "file": "internal/agent/pi.go",
+    "line": 12,
+    "description": "finding without action or review_scope"
+  }
+]`
+
+// reviewFindingsParseProbe is the shape both accepted payload forms must
+// normalize to: one object with a "findings" list.
+type reviewFindingsParseProbe struct {
+	Findings []struct {
+		ID          string `json:"id"`
+		Severity    string `json:"severity"`
+		File        string `json:"file"`
+		Line        int    `json:"line"`
+		Description string `json:"description"`
+		Action      string `json:"action"`
+		ReviewScope string `json:"review_scope"`
+	} `json:"findings"`
+	RiskLevel string `json:"risk_level"`
+}
+
+// TestFinalizeTextResult_BareFindingsArrayParsesAsObjectForm reproduces the
+// reported incident and pins the fix: a bare array of findings must parse at
+// the parse boundary and normalize to the documented object form, producing
+// the same findings list the equivalent object payload produces.
+func TestFinalizeTextResult_BareFindingsArrayParsesAsObjectForm(t *testing.T) {
+	result, err := finalizeTextResult("pi", reviewFindingsBareArraySnippet, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("bare findings array must parse, got: %v", err)
+	}
+	var got reviewFindingsParseProbe
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not the documented object form: %v (output: %s)", err, result.Output)
+	}
+	if len(got.Findings) != 3 {
+		t.Fatalf("expected 3 findings from the bare array, got %d (%s)", len(got.Findings), result.Output)
+	}
+	if got.Findings[0].ID != "guard-allowlist-dead-code" {
+		t.Errorf("first finding id = %q, want guard-allowlist-dead-code", got.Findings[0].ID)
+	}
+
+	objectResult, err := finalizeTextResult("pi", `{"findings":`+reviewFindingsBareArraySnippet+`,"risk_level":"low","risk_rationale":"well-bounded change","risk_scope":"source-or-external"}`, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("equivalent object payload must parse, got: %v", err)
+	}
+	var want reviewFindingsParseProbe
+	if err := json.Unmarshal(objectResult.Output, &want); err != nil {
+		t.Fatalf("object-form output not consumable: %v", err)
+	}
+	gotJSON, err := json.Marshal(got.Findings)
+	if err != nil {
+		t.Fatalf("marshal normalized findings: %v", err)
+	}
+	wantJSON, err := json.Marshal(want.Findings)
+	if err != nil {
+		t.Fatalf("marshal object-form findings: %v", err)
+	}
+	if string(gotJSON) != string(wantJSON) {
+		t.Errorf("bare array and object form disagree\n got: %s\nwant: %s", gotJSON, wantJSON)
+	}
+
+	// Per-finding defaults still apply inside the array form: the finding that
+	// omitted action and review_scope is completed from the schema.
+	if got.Findings[2].Action != "no-op" {
+		t.Errorf("finding without action = %q, want schema default no-op", got.Findings[2].Action)
+	}
+	if got.Findings[2].ReviewScope != "source" {
+		t.Errorf("finding without review_scope = %q, want schema default source", got.Findings[2].ReviewScope)
+	}
+}
+
+// TestFinalizeTextResult_BareFindingsArrayKeepsPerFindingValidation keeps the
+// array form as strict as the object form: the accepted shape is new, the
+// per-finding contract is not loosened.
+func TestFinalizeTextResult_BareFindingsArrayKeepsPerFindingValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "missing severity",
+			text: `[{"id":"missing-severity","file":"internal/agent/agent.go","line":1,"description":"x","action":"no-op","review_scope":"source"}]`,
+			want: `findings[0] missing required field "severity"`,
+		},
+		{
+			name: "severity enum violation",
+			text: `[{"id":"bad-severity","severity":"fatal","file":"internal/agent/agent.go","line":1,"description":"x","action":"no-op","review_scope":"source"}]`,
+			want: `findings[0].severity must match one of the allowed values`,
+		},
+		{
+			name: "array element is not a finding",
+			text: `[{"foo":"bar"}]`,
+			want: `findings[0] missing required field "severity"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := finalizeTextResult("pi", tt.text, reviewFindingsSchemaShape, TokenUsage{})
+			if err == nil {
+				t.Fatalf("expected malformed payload to fail: %s", tt.text)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %v, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestFinalizeTextResult_ObjectWithoutFindingsStillFails pins the unchanged
+// error path: an object payload that omits "findings" is not repaired by the
+// array normalization and keeps its top-level required-field error.
+func TestFinalizeTextResult_ObjectWithoutFindingsStillFails(t *testing.T) {
+	text := `{"risk_level":"low","risk_rationale":"well-bounded change","risk_scope":"source-or-external"}`
+	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected object payload without findings to fail")
+	}
+	if !strings.Contains(err.Error(), `missing required field "findings"`) {
+		t.Errorf("error = %v, want the top-level required-field error", err)
+	}
+}

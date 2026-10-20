@@ -753,6 +753,69 @@ func TestReviewStep_TolerantParseIncidentEndToEnd(t *testing.T) {
 	}
 }
 
+// TestReviewStep_BareFindingsArrayPayloadIsConsumed walks the 2026-10-20
+// incident end to end at the review gate. The pi review agent returned its
+// findings as a bare JSON array, and the run died with `agent review: pi
+// output parse: JSON output missing required field "findings"`. The parse
+// boundary (internal/agent/agent.go, covered by that package's tests) now
+// normalizes the bare array into the documented object form; the mock delivers
+// the output the fixed boundary produces for reviewFindingsSchema: the wrapped
+// findings list with the schema defaults injected and no wrapper fields the
+// array form cannot carry. The step must consume it - findings reach the gate
+// with the defaults applied, the decision proceeds by severity instead of
+// dying at parse, and the approved head is captured.
+func TestReviewStep_BareFindingsArrayPayloadIsConsumed(t *testing.T) {
+	t.Parallel()
+	dir, baseSHA, headSHA := setupGitRepo(t)
+
+	// incidentText is the bare-array shape the pi review agent emitted.
+	const incidentText = `[{"id":"guard-allowlist-dead-code","severity":"warning","file":"internal/pipeline/steps/review.go","line":42,"description":"possible nil dereference on error return"}]`
+	// normalizedOutput is what the parse boundary returns for incidentText:
+	// the same findings wrapped in the documented object form, with action and
+	// review_scope completed from the schema defaults.
+	const normalizedOutput = `{"findings":[{"action":"no-op","description":"possible nil dereference on error return","file":"internal/pipeline/steps/review.go","id":"guard-allowlist-dead-code","line":42,"review_scope":"source","severity":"warning"}]}`
+
+	ag := &mockAgent{
+		name: "pi",
+		runFn: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+			return &agent.Result{Output: json.RawMessage(normalizedOutput), Text: incidentText}, nil
+		},
+	}
+
+	sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatalf("review step failed on normalized bare-array output: %v", err)
+	}
+
+	var got Findings
+	if err := json.Unmarshal([]byte(outcome.Findings), &got); err != nil {
+		t.Fatalf("outcome findings not consumable JSON: %v", err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 finding consumed by the step, got %d", len(got.Items))
+	}
+	if got.Items[0].ID != "guard-allowlist-dead-code" {
+		t.Errorf("consumed finding id = %q, want guard-allowlist-dead-code", got.Items[0].ID)
+	}
+	if got.Items[0].Action != "no-op" {
+		t.Errorf("consumed finding action = %q, want default no-op", got.Items[0].Action)
+	}
+	if got.Items[0].ReviewScope != "source" {
+		t.Errorf("consumed finding review_scope = %q, want default source", got.Items[0].ReviewScope)
+	}
+	// The gate decision proceeds on severity instead of dying at parse.
+	if !outcome.NeedsApproval {
+		t.Error("expected warning-severity finding to need approval")
+	}
+	if types.HasActionableFindings(got) {
+		t.Error("expected defaulted no-op finding to be non-actionable")
+	}
+	if outcome.ReviewApprovedHeadSHA != sctx.Run.HeadSHA {
+		t.Errorf("approved head = %s, want %s", outcome.ReviewApprovedHeadSHA, sctx.Run.HeadSHA)
+	}
+}
+
 // Only the blocks whose glob matches a changed path reach the reviewer, in
 // config order, each labelled with the scope it was selected for.
 func TestReviewStep_AppendsMatchedPathInstructionsOnly(t *testing.T) {

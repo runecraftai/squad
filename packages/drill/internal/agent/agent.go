@@ -294,6 +294,18 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	if rawErr == nil {
 		return output, nil
 	}
+	// The text itself being the bare findings array makes it an unambiguous
+	// candidate: the shape is recognized, the syntax is valid, and only a
+	// per-finding field is wrong. Return that precise error instead of letting
+	// the prose/fence recovery below rescan the array's own elements and
+	// surface a misleading top-level one (the reported incident, where a bare
+	// array surfaced `missing required field "findings"` taken from a single
+	// finding object inside it).
+	if isJSONArrayValue([]byte(text)) {
+		if _, ok := findingsObjectSchema(validationSchema); ok {
+			return nil, rawErr
+		}
+	}
 
 	candidates := fencedJSONCandidates(text)
 	var parsed []json.RawMessage
@@ -712,9 +724,84 @@ func scanBalancedObject(text string, start int) (int, bool) {
 	return 0, false
 }
 
+// normalizeBareFindingsArray wraps a bare findings array into the documented
+// object form and narrows the schema's top-level required list to "findings",
+// the only wrapper field the array form can carry. Both payload shapes an
+// agent actually produces for a findings round therefore reach downstream code
+// as one shape; per-finding validation is untouched. Non-array payloads, and
+// arrays offered to a schema that is not the findings-object shape, are
+// returned unchanged.
+func normalizeBareFindingsArray(output, schema json.RawMessage) (json.RawMessage, json.RawMessage, error) {
+	if !isJSONArrayValue(output) {
+		return output, schema, nil
+	}
+	parsed, ok := findingsObjectSchema(schema)
+	if !ok {
+		return output, schema, nil
+	}
+	wrapped, err := json.Marshal(map[string]json.RawMessage{"findings": output})
+	if err != nil {
+		return nil, nil, err
+	}
+	parsed["required"] = []string{"findings"}
+	narrowed, err := json.Marshal(parsed)
+	if err != nil {
+		return nil, nil, err
+	}
+	return wrapped, narrowed, nil
+}
+
+// findingsObjectSchema reports whether schema is the documented findings-object
+// shape (an object whose required properties include an array named
+// "findings") and returns its decoded form.
+func findingsObjectSchema(schema json.RawMessage) (map[string]any, bool) {
+	if len(schema) == 0 {
+		return nil, false
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(schema, &parsed); err != nil {
+		return nil, false
+	}
+	properties, ok := parsed["properties"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	findingsProp, ok := properties["findings"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	if typ, _ := findingsProp["type"].(string); typ != "array" {
+		return nil, false
+	}
+	required, ok := parsed["required"].([]any)
+	if !ok {
+		return nil, false
+	}
+	for _, name := range required {
+		if str, ok := name.(string); ok && str == "findings" {
+			return parsed, true
+		}
+	}
+	return nil, false
+}
+
+// isJSONArrayValue reports whether output is a JSON array (an empty array or a
+// populated one, but not null).
+func isJSONArrayValue(output json.RawMessage) bool {
+	var items []json.RawMessage
+	if err := json.Unmarshal(output, &items); err != nil {
+		return false
+	}
+	return items != nil
+}
+
 func parseStructuredCandidate(candidate, schema []byte) (json.RawMessage, error) {
 	var output json.RawMessage
 	if err := json.Unmarshal(candidate, &output); err != nil {
+		return nil, err
+	}
+	output, schema, err := normalizeBareFindingsArray(output, schema)
+	if err != nil {
 		return nil, err
 	}
 	normalized, err := applySchemaDefaults(output, schema)
