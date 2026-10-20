@@ -115,35 +115,43 @@ resolve_directory_input() {
   printf '%s\n' "$resolved"
 }
 
-# Collapse a free-text decision reason onto a single line. Characters that
-# render as blank are mapped to a plain space first, so a visually empty reason
-# normalizes to an empty string: Unicode separators (NBSP, BOM, ideographic
-# space) and the zero-width or bidirectional-format controls that copy-paste
-# carries invisibly (soft hyphen, joiners, marks, isolates, fillers, variation
-# selectors).
-normalize_decision_reason() {  # <reason>
-  local reason=$1 separator
-  for separator in $'\xc2\x85' $'\xc2\xa0' $'\xc2\xad' $'\xcd\x8f' \
-      $'\xd8\x9c' $'\xe1\x85\x9f' $'\xe1\x85\xa0' $'\xe1\x9a\x80' \
-      $'\xe1\x9e\xb4' $'\xe1\x9e\xb5' $'\xe1\xa0\x8b' $'\xe1\xa0\x8c' \
-      $'\xe1\xa0\x8d' $'\xe1\xa0\x8e' $'\xe2\x80\x80' $'\xe2\x80\x81' \
-      $'\xe2\x80\x82' $'\xe2\x80\x83' $'\xe2\x80\x84' $'\xe2\x80\x85' \
-      $'\xe2\x80\x86' $'\xe2\x80\x87' $'\xe2\x80\x88' $'\xe2\x80\x89' \
-      $'\xe2\x80\x8a' $'\xe2\x80\x8b' $'\xe2\x80\x8c' $'\xe2\x80\x8d' \
-      $'\xe2\x80\x8e' $'\xe2\x80\x8f' $'\xe2\x80\xa8' $'\xe2\x80\xa9' \
-      $'\xe2\x80\xaa' $'\xe2\x80\xab' $'\xe2\x80\xac' $'\xe2\x80\xad' \
-      $'\xe2\x80\xae' $'\xe2\x80\xaf' $'\xe2\x81\x9f' $'\xe2\x81\xa0' \
-      $'\xe2\x81\xa1' $'\xe2\x81\xa2' $'\xe2\x81\xa3' $'\xe2\x81\xa4' \
-      $'\xe2\x81\xa6' $'\xe2\x81\xa7' $'\xe2\x81\xa8' $'\xe2\x81\xa9' \
-      $'\xe2\x81\xaa' $'\xe2\x81\xab' $'\xe2\x81\xac' $'\xe2\x81\xad' \
-      $'\xe2\x81\xae' $'\xe2\x81\xaf' $'\xe3\x80\x80' $'\xe3\x85\xa4' \
-      $'\xef\xb8\x80' $'\xef\xb8\x81' $'\xef\xb8\x82' $'\xef\xb8\x83' \
-      $'\xef\xb8\x84' $'\xef\xb8\x85' $'\xef\xb8\x86' $'\xef\xb8\x87' \
-      $'\xef\xb8\x88' $'\xef\xb8\x89' $'\xef\xb8\x8a' $'\xef\xb8\x8b' \
-      $'\xef\xb8\x8c' $'\xef\xb8\x8d' $'\xef\xb8\x8e' $'\xef\xb8\x8f' \
-      $'\xef\xbb\xbf' $'\xef\xbe\xa0' $'\xef\xbf\xa9' $'\xef\xbf\xaa' \
-      $'\xef\xbf\xab'; do
+# Map every code point in a blank-rendering range to a plain space, so a
+# visually empty reason normalizes to an empty string.
+blank_reason_characters() {  # <reason> <first-hex> [<last-hex>]
+  local reason=$1 first=$((16#$2)) last=$((16#${3:-$2})) cp encoded separator
+  for ((cp = first; cp <= last; cp++)); do
+    if ((cp < 0x80)); then
+      printf -v encoded '\\x%02x' "$cp"
+    elif ((cp < 0x800)); then
+      printf -v encoded '\\x%02x\\x%02x' $((0xc0 | (cp >> 6))) $((0x80 | (cp & 0x3f)))
+    elif ((cp < 0x10000)); then
+      printf -v encoded '\\x%02x\\x%02x\\x%02x' \
+        $((0xe0 | (cp >> 12))) $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
+    else
+      printf -v encoded '\\x%02x\\x%02x\\x%02x\\x%02x' \
+        $((0xf0 | (cp >> 18))) $((0x80 | ((cp >> 12) & 0x3f))) \
+        $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
+    fi
+    printf -v separator '%b' "$encoded"
     reason=${reason//"$separator"/ }
+  done
+  printf '%s' "$reason"
+}
+
+# Collapse a free-text decision reason onto a single line. Code points that
+# render blank are mapped to a plain space first, so a visually empty reason
+# normalizes to an empty string: Unicode separators, the zero-width and
+# bidirectional format controls that copy-paste carries invisibly, fillers,
+# variation selectors, and combining marks.
+normalize_decision_reason() {  # <reason>
+  local reason=$1 range ranges
+  ranges='0085 00a0 1680 2000-200a 2028-2029 202f 205f 3000
+00ad 034f 061c 115f-1160 17b4-17b5 180b-180e 200b-200f 202a-202e
+2060-2064 2066-206f 2800 3164 feff ffa0 fff9-fffb
+1bca0-1bca3 1d173-1d17a e0001 e0020-e007f
+0300-036f 0483-0489 1ab0-1aff 1dc0-1dff 20d0-20ff fe00-fe0f fe20-fe2f e0100-e01ef'
+  for range in $ranges; do
+    reason=$(blank_reason_characters "$reason" "${range%-*}" "${range#*-}")
   done
   printf '%s' "$reason" \
     | tr '\n\r\t\v\f' '     ' \

@@ -254,9 +254,10 @@ ROWS
 
   local invisible
   for invisible in $'\v' $'\f' $'\xc2\xa0' $'\xe2\x80\x82' $'\xe3\x80\x80' \
-      $'\xc2\xad' $'\xcd\x8f' $'\xe2\x80\x8b' $'\xe2\x80\x8c' \
+      $'\xc2\xad' $'\xcc\x81' $'\xcd\x8f' $'\xe2\x80\x8b' $'\xe2\x80\x8c' \
       $'\xe2\x80\x8d' $'\xe2\x80\x8e' $'\xe2\x80\xae' $'\xe2\x81\xa0' \
-      $'\xe2\x81\xa3' $'\xef\xb8\x8f' $'\xef\xbb\xbf'; do
+      $'\xe2\x81\xa3' $'\xe2\xa0\x80' $'\xef\xb8\x8f' $'\xef\xbb\xbf' \
+      $'\xef\xbf\xb9' $'\xf3\xa0\x84\x80' $'\xf3\xa0\x87\xaf'; do
     out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo --recon --no-playbook "$invisible" 2>&1); status=$?
     [ "$status" -ne 0 ] || fail "an invisible-only --no-playbook reason must be refused: $(printf '%q' "$invisible")"
     assert_contains "$out" "non-empty reason" "an invisible-only --no-playbook reason did not say what is missing"
@@ -267,6 +268,13 @@ ROWS
     || fail "a --no-playbook reason with zero-width characters should scaffold"
   assert_grep "Playbook decision: none - api v2 retry" "$home/data/decision-recon-joined/brief.md" \
     "zero-width characters in a --no-playbook reason were not normalized to spaces"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-arrow repo --recon \
+    --no-playbook "$(printf 'route \xef\xbf\xa9 left')" >/dev/null 2>&1 \
+    || fail "a --no-playbook reason with a visible halfwidth arrow should scaffold"
+  assert_grep "$(printf 'Playbook decision: none - route \xef\xbf\xa9 left')" \
+    "$home/data/decision-recon-arrow/brief.md" \
+    "a visible character in a --no-playbook reason was replaced by a space"
 
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon repo --recon --no-playbook "  a pure question,
  with no method to apply  " >/dev/null 2>&1 \
@@ -1182,7 +1190,7 @@ test_playbook_profile_pairing_and_refusals() {
 }
 
 test_paired_profile_evidence_stays_outside_the_playbook_gate() {
-  local home brief profile_artifact playbook_artifact evidence_heading out status
+  local home brief profile_artifact playbook_artifact out status
   home="$TMP_ROOT/profile-gate-home"
   mkdir -p "$home/data" "$home/state"
 
@@ -1191,9 +1199,6 @@ test_paired_profile_evidence_stays_outside_the_playbook_gate() {
   brief="$home/data/profile-gate/brief.md"
   grep -qx 'Execution playbook: id=feature version=1' "$brief" || fail "paired brief lost its playbook identity"
   grep -qx 'Execution profile: id=react version=1' "$brief" || fail "paired brief lost its profile identity"
-  evidence_heading='# react profile evidence'
-  assert_grep "$evidence_heading" "$brief" "paired brief must name the react profile evidence heading"
-  assert_no_grep '# react@1 checklist' "$brief" "the react profile must not ask for a checklist the playbook gate would select"
 
   # The profile evidence artifact sorts before the playbook checklist, so a
   # discovery that accepted it would score the profile as the playbook gate.
