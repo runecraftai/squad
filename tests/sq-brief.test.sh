@@ -253,11 +253,20 @@ ROWS
   assert_contains "$out" "non-empty reason" "a whitespace-only --no-playbook reason did not say what is missing"
 
   local invisible
-  for invisible in $'\v' $'\f' $'\xc2\xa0' $'\xe2\x80\x82' $'\xe3\x80\x80'; do
+  for invisible in $'\v' $'\f' $'\xc2\xa0' $'\xe2\x80\x82' $'\xe3\x80\x80' \
+      $'\xc2\xad' $'\xcd\x8f' $'\xe2\x80\x8b' $'\xe2\x80\x8c' \
+      $'\xe2\x80\x8d' $'\xe2\x80\x8e' $'\xe2\x80\xae' $'\xe2\x81\xa0' \
+      $'\xe2\x81\xa3' $'\xef\xb8\x8f' $'\xef\xbb\xbf'; do
     out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo --recon --no-playbook "$invisible" 2>&1); status=$?
     [ "$status" -ne 0 ] || fail "an invisible-only --no-playbook reason must be refused: $(printf '%q' "$invisible")"
     assert_contains "$out" "non-empty reason" "an invisible-only --no-playbook reason did not say what is missing"
   done
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-joined repo --recon \
+    --no-playbook "$(printf 'api\xe2\x80\x8bv2\xe2\x80\x8dretry')" >/dev/null 2>&1 \
+    || fail "a --no-playbook reason with zero-width characters should scaffold"
+  assert_grep "Playbook decision: none - api v2 retry" "$home/data/decision-recon-joined/brief.md" \
+    "zero-width characters in a --no-playbook reason were not normalized to spaces"
 
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon repo --recon --no-playbook "  a pure question,
  with no method to apply  " >/dev/null 2>&1 \

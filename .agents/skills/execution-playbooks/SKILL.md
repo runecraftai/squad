@@ -12,7 +12,7 @@ An execution method is selected from three categories, and each one owns exactly
   Choose it for how the task runs from start to its terminal evidence, and select it with `bin/sq-brief.sh --playbook <id>@<version>`.
 - A **profile** is a reusable constraint set attached to a playbook, never standalone: it adds the architecture, naming, routing, and tooling rules that the playbook's steps must respect, and it never supplies the sequence or the stop condition.
   Select it with `bin/sq-brief.sh --playbook <id>@<version> --profile <id>@<version>`; the scaffold emits the profile block after the playbook block and refuses a profile with no playbook.
-  The profile's checkpoint and escalation sections are constraint checkpoints inside the attached playbook's steps and carry no terminal authority of their own, because the playbook owns the sequence, the completion evidence and the stop condition, the profile carries constraints, and the gate enforces them.
+  The profile's checkpoint and escalation sections are constraint checkpoints inside the attached playbook's steps and carry no terminal authority of their own, because the playbook owns the sequence, the completion evidence and the stop condition while the profile carries constraints: for a paired brief the attached playbook's gate enforces only its own completion criteria, so the profile's constraints are reviewed by the operator.
 - A **gate** is a mechanical check on one property of the result, such as a lint rule or `bin/sq-playbook-validate.sh`.
   Gates are enforced by the selected playbook and are never selected on their own.
 
