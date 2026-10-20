@@ -40,8 +40,8 @@
 # rule: when the daemon refuses, it reports the refusal and the exact
 # outside-pane command, and changes nothing.
 #
-# docs/tuios-backend.md owns the operator flow; bin/sq-backend-pretool-check.sh's
-# raw-session guard admits this wrapper as its only TUIOS exception.
+# docs/tuios-backend.md owns the operator flow; the raw-session guard names this
+# wrapper as the one sanctioned pane-grant path in its refusals.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -129,18 +129,24 @@ fm_pane_grants_inventory() {  # <session> -> validated inventory on stdout
 
 fm_pane_grants_canonical_window() {  # <inventory> <window-ref> -> exact window id
   local inventory=$1 ref=$2 id available
+  # A window record is identified by window_id, id, or a nested window.id, the
+  # same three shapes the backend adapter's own inventory reader accepts.
   id=$(printf '%s' "$inventory" | jq -r --arg r "$ref" '
+    def wid: (.window_id // .id // (if (.window | type) == "object" then .window.id else empty end))
+      | select(type == "string" and length > 0);
+    def winlabel: (.display_name // .name // .title)
+      | select(type == "string" and length > 0);
     (.windows // []) as $w
-    | ([ $w[] | select(.window_id == $r) | .window_id ] | first // "") as $exact
+    | ([ $w[] | select(wid == $r) | wid ] | first // "") as $exact
     | if $exact != "" then $exact
-      else ([ $w[] | select((.window_id // "") | startswith($r)) | .window_id ] | unique) as $prefix
+      else ([ $w[] | select((wid // "") | startswith($r)) | wid ] | unique) as $prefix
       | if ($prefix | length) == 1 then $prefix[0]
-        else ([ $w[] | select(((.display_name // .name // .title // "")) == $r) | .window_id ] | unique) as $named
+        else ([ $w[] | select((winlabel // "") == $r) | wid ] | unique) as $named
         | if ($named | length) == 1 then $named[0] else "" end
         end
       end')
   if [ -z "$id" ]; then
-    available=$(printf '%s' "$inventory" | jq -r '[.windows[].window_id] | join(", ")' 2>/dev/null || true)
+    available=$(printf '%s' "$inventory" | jq -r '[(.windows // [])[] | (.window_id // .id // empty)] | join(", ")' 2>/dev/null || true)
     fm_pane_grants_fail "session '$GRANT_SESSION' has no unambiguous window '$ref' (available: ${available:-none})"
   fi
   printf '%s' "$id"
@@ -148,7 +154,8 @@ fm_pane_grants_canonical_window() {  # <inventory> <window-ref> -> exact window 
 
 fm_pane_grants_explicit() {  # <inventory> <window-id> -> csv, empty for the daemon default
   printf '%s' "$1" | jq -r --arg w "$2" '
-    [ .windows[] | select(.window_id == $w) | (.grants // []) | .[] ] | join(",")'
+    def wid: (.window_id // .id // (if (.window | type) == "object" then .window.id else empty end));
+    [ .windows[] | select(wid == $w) | (.grants // []) | .[] ] | join(",")'
 }
 
 fm_pane_grants_default_grants() {  # -> the daemon's default pane grants as csv
@@ -213,7 +220,14 @@ fm_pane_grants_show() {  # [<target>]
     out=$("$TUIOS_BIN" pane-grants --json 2>&1) \
       || fm_pane_grants_fail "cannot read this pane's grants: $(printf '%s' "$out" | head -n 1)"
     if [ "$(printf '%s' "$out" | jq -r 'if .pane == true then "yes" else "no" end' 2>/dev/null || true)" = yes ]; then
-      label=$(printf '%s' "$out" | jq -r '"\(.session // ""):\(.window // "")"' 2>/dev/null || true)
+      # A pane the daemon reports without both fields cannot be named, and a
+      # person command naming a partial target would be rejected by this same
+      # parser, so it is never printed.
+      label=$(printf '%s' "$out" | jq -r '
+        select((.session | type) == "string" and (.session | length) > 0)
+        | select((.window | type) == "string" and (.window | length) > 0)
+        | "\(.session):\(.window)"' 2>/dev/null || true)
+      [ -n "$label" ] || printf 'target: unreadable (the daemon reported a pane without a session and window)\n'
       declared=$(printf '%s' "$out" | jq -r 'if .explicit == true then "explicit" else "default" end' 2>/dev/null || true)
     else
       printf 'target: none (this command runs in no pane of the daemon)\n'

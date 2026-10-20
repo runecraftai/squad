@@ -45,6 +45,14 @@ for backend in tmux herdr zellij orca cmux tuios; do
   assert_not_contains "$result" "$backend" "backend guard message stays backend-agnostic for $backend"
 done
 
+# The refusal publishes the one sanctioned pane-grant surface, so an agent that
+# followed the provider's own set-pane-grants advice is told what to use instead.
+result=$(run_check 'tuios set-pane-grants -w task --grants respond')
+assert_contains "$result" 'bin/sq-pane-grants.sh grant respond' \
+  'the refusal names the sanctioned pane-grant surface'
+assert_contains "$result" 'never the CLI'\''s own set-pane-grants' \
+  'the refusal says the raw grant verb stays refused'
+
 for command in \
   'tmux list-windows -t Squad' \
   'zellij action write-chars x' \

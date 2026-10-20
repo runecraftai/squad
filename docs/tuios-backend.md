@@ -89,7 +89,7 @@ That is TUIOS 0.9.1's deliberate rule, measured on 2026-10-20: the same `send-ke
 So the one-line human step below is a provider boundary Squad respects on purpose, not a Squad defect to route around.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns that evidence.
 
-`bin/sq-pane-grants.sh` is the sanctioned surface for this grant, and the raw-session guard admits it as its only session-provider exception (`bin/sq-backend-pretool-check.sh`):
+`bin/sq-pane-grants.sh` is the sanctioned surface for this grant, and the raw-session guard's refusal names it as the one sanctioned pane-grant path (`bin/sq-backend-pretool-check.sh`):
 
 ```sh
 bin/sq-pane-grants.sh show <target>            # read-only: grants, and whether respond is present
@@ -113,7 +113,7 @@ The flow when a dialog blocks an operator:
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
 
 One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.
-When a send is refused for this missing grant, `bin/sq-send.sh` prints that same `person command:` line for the pane that must hold it instead of repeating the provider's raw `set-pane-grants` advice, which Squad's guard refuses.
+When a send is refused for this missing grant, `bin/sq-send.sh` prints that same `person command:` line for the pane that must hold it, and keeps only the provider's refusal sentence instead of forwarding its `set-pane-grants` remediation advice, which Squad's guard refuses.
 
 ## Restart recovery
 

@@ -126,6 +126,9 @@ export FAKE_TUIOS_LOG=$LOG
 export FAKE_TUIOS_DIR=$FAKE_DIR
 export SQUAD_BASE=$TMP_ROOT/base
 export SQUAD_STATE_OVERRIDE=$TMP_ROOT/base/state
+# The suite runs inside whatever pane invoked it; nothing here may fall back to
+# that ambient pane when the fake daemon reports no caller placement.
+unset TUIOS_ENV TUIOS_SESSION TUIOS_WINDOW_ID TUIOS_PANE_ID TUIOS_PANE_TOKEN TUIOS_PANE_GRANTS
 
 printf 'backend=tuios\nwindow=%s:%s\nharness=claude\n' "$SESSION" "$DEFAULT_PANE" \
   > "$SQUAD_STATE_OVERRIDE/grantee.meta"
@@ -160,6 +163,23 @@ assert_contains "$out" 'grants: admin,respond' 'show reports the explicit grants
 assert_contains "$out" 'declared: explicit' 'show says the grants are explicit'
 assert_contains "$out" 'respond: present' 'show reports respond as present'
 assert_not_contains "$out" 'person command:' 'a granted pane needs no person command'
+
+# show with no target reports the pane the command runs in.
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show without a target reads the calling pane'
+assert_contains "$result" "target: $SESSION:$CALLER_PANE" 'show names the calling pane from the daemon placement'
+assert_contains "$result" 'respond: absent' 'show reports the calling pane without respond'
+assert_contains "$result" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
+  'show prints the person command for the calling pane'
+
+# A pane the daemon reports without both fields never yields a partial command.
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","grants":["admin"],"default_grants":["admin"],"explicit":false}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show still reads grants when the payload has no window'
+assert_contains "$result" 'target: unreadable' 'a payload without a window is reported as unreadable'
+assert_not_contains "$result" 'person command:' 'an unreadable target never yields a person command'
+write_caller_pane "$SESSION" "$CALLER_PANE"
 
 result=$(run_wrapper show grantee)
 expect_code 0 "${result%%$'\n'*}" 'show resolves a task id through its meta record'
@@ -301,7 +321,22 @@ expect_code 1 "$send_rc" 'sq-send reports the refused key'
 assert_contains "$send_out" 'not sent to' 'sq-send keeps its own failure line'
 assert_contains "$send_out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
   'sq-send prints the same copy-paste person command show and verify print'
-assert_contains "$send_out" 'needs the respond grant' 'sq-send keeps the daemon refusal as evidence'
+assert_contains "$send_out" 'needs the respond grant' 'sq-send keeps the provider refusal sentence as evidence'
+assert_not_contains "$send_out" 'The person can give this pane more with' \
+  'sq-send drops the provider remediation advice that names the refused raw verb'
 rm -f "$FAKE_DIR/send-keys-refuse"
+
+# A caller pane the daemon reports without both fields yields no partial command.
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","grants":["admin"],"default_grants":["admin"]}' \
+  > "$FAKE_DIR/pane-grants.json"
+printf '%s\n' 'send-keys failed: send-keys is refused for this pane: window aaaaaaaa is waiting on a prompt, and what is typed now would answer it, which needs the respond grant.' \
+  > "$FAKE_DIR/send-keys-refuse"
+send_out=$(FAKE_TUIOS_WINDOW_LABEL=sq-grantee "$SEND" grantee --key Enter 2>&1)
+send_rc=$?
+expect_code 1 "$send_rc" 'sq-send still reports the refused key without a caller pane'
+assert_contains "$send_out" 'needs the respond grant' 'the provider refusal sentence is still reported'
+assert_not_contains "$send_out" 'person command:' 'an unnamed caller pane never yields a partial person command'
+rm -f "$FAKE_DIR/send-keys-refuse"
+write_caller_pane "$SESSION" "$CALLER_PANE"
 
 pass 'pane grants: respond-only wrapper refusals, the copy-paste person command, the verify gate, and the sq-send remedy hint'

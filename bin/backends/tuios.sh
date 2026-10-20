@@ -323,7 +323,11 @@ fm_backend_tuios_caller_pane() {
   local out
   out=$("$(fm_backend_tuios_bin)" pane-grants --json 2>/dev/null) || out=
   if [ -n "$out" ]; then
-    out=$(printf '%s' "$out" | jq -r 'select(.pane == true) | "\(.session):\(.window)"' 2>/dev/null || true)
+    out=$(printf '%s' "$out" | jq -r '
+      select(.pane == true)
+      | select((.session | type) == "string" and (.session | length) > 0)
+      | select((.window | type) == "string" and (.window | length) > 0)
+      | "\(.session):\(.window)"' 2>/dev/null || true)
     if [ -n "$out" ]; then
       printf '%s' "$out"
       return 0
@@ -346,14 +350,18 @@ fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   out=$("$(fm_backend_tuios_bin)" send-keys --session "$SQUAD_BACKEND_TUIOS_SESSION" \
     --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -ne 0 ]; then
-    [ -z "$out" ] || printf '%s\n' "$out" >&2
-    # TUIOS requires respond on the pane that TYPES the answer, never on the
-    # blocked pane, so name that pane rather than the target.
     case "$out" in
       *'needs the respond grant'*)
+        # Squad has a sanctioned remedy for this refusal, so forward only the
+        # daemon's own refusal sentence: its remaining lines are the provider's
+        # remediation advice, which names the raw verb Squad's guard denies.
+        [ -z "$out" ] || printf '%s\n' "$(printf '%s' "$out" | head -n 1)" >&2
+        # TUIOS requires respond on the pane that TYPES the answer, never on the
+        # blocked pane, so name that pane rather than the target.
         # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
         SQUAD_BACKEND_PANE_GRANT_TARGET=$(fm_backend_tuios_caller_pane || true)
         ;;
+      *) [ -z "$out" ] || printf '%s\n' "$out" >&2 ;;
     esac
     return 1
   fi

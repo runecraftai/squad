@@ -11,8 +11,8 @@
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 # A TUIOS key refused because the pane that types the answer lacks the respond
-# grant names bin/sq-pane-grants.sh's exact person command instead of the
-# provider's own raw set-pane-grants advice.
+# grant names bin/sq-pane-grants.sh's exact person command: the provider's own
+# remediation advice is dropped and only its refusal sentence is kept.
 #
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
 # retried (Enter only, never retyped) until the target backend confirms a
