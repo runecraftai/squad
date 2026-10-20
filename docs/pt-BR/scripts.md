@@ -127,7 +127,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
 | `sq-pr-check.sh`         | Registrar valores validados de `pr=` e `pr_head=`, então armar atomicamente um poll estático de merge |
 | `sq-pr-merge.sh`         | Registrar metadados do PR, então mesclar a URL completa canônica GitHub do PR da tarefa                    |
-| `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de profile |
+| `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de perfil |
 | `sq-promote.sh`          | Promover uma tarefa recon in-place a uma tarefa strike protegida com modo de entrega explícito |
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |
