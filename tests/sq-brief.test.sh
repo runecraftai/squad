@@ -252,6 +252,13 @@ ROWS
   [ "$status" -ne 0 ] || fail "a whitespace-only --no-playbook reason must be refused"
   assert_contains "$out" "non-empty reason" "a whitespace-only --no-playbook reason did not say what is missing"
 
+  local invisible
+  for invisible in $'\v' $'\f' $'\xc2\xa0' $'\xe2\x80\x82' $'\xe3\x80\x80'; do
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo --recon --no-playbook "$invisible" 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "an invisible-only --no-playbook reason must be refused: $(printf '%q' "$invisible")"
+    assert_contains "$out" "non-empty reason" "an invisible-only --no-playbook reason did not say what is missing"
+  done
+
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon repo --recon --no-playbook "  a pure question,
  with no method to apply  " >/dev/null 2>&1 \
     || fail "a real --no-playbook reason should scaffold"
@@ -261,6 +268,12 @@ ROWS
     "the recorded no-playbook reason was not normalized to one line"
   assert_no_grep "Execution playbook:" "$brief" \
     "a no-playbook brief must not carry the spawn-parsed identity line"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-separators repo --recon \
+    --no-playbook "$(printf 'a\xc2\xa0pure\xe3\x80\x80question')" >/dev/null 2>&1 \
+    || fail "a --no-playbook reason with unicode separators should scaffold"
+  assert_grep "Playbook decision: none - a pure question" "$home/data/decision-recon-separators/brief.md" \
+    "unicode separators in a --no-playbook reason were not normalized to spaces"
 
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-xo --xo --no-projects >/dev/null 2>&1 \
     || fail "an XO charter must stay exempt from the playbook decision"

@@ -108,6 +108,24 @@ resolve_directory_input() {
   printf '%s\n' "$resolved"
 }
 
+# Collapse a free-text decision reason onto a single line. Unicode separators
+# that render as blank (NBSP, BOM, ideographic space) are mapped to a plain
+# space first so a visually empty reason normalizes to an empty string.
+normalize_decision_reason() {  # <reason>
+  local reason=$1 separator
+  for separator in $'\xc2\x85' $'\xc2\xa0' $'\xe1\x9a\x80' \
+      $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82' $'\xe2\x80\x83' \
+      $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' $'\xe2\x80\x87' \
+      $'\xe2\x80\x88' $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe2\x80\xa8' \
+      $'\xe2\x80\xa9' $'\xe2\x80\xaf' $'\xe2\x81\x9f' $'\xe3\x80\x80' \
+      $'\xef\xbb\xbf'; do
+    reason=${reason//"$separator"/ }
+  done
+  printf '%s' "$reason" \
+    | tr '\n\r\t\v\f' '     ' \
+    | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//'
+}
+
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE=$(resolve_directory_input SQUAD_BASE "${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}") || exit 1
 if [ -n "${SQUAD_DATA_OVERRIDE:-}" ]; then
@@ -206,8 +224,8 @@ else
   if [ "$NO_PLAYBOOK_SET" -eq 1 ]; then
     # One line, always: collapse any embedded whitespace so the recorded reason
     # stays a single readable line in the brief.
-    NO_PLAYBOOK_REASON=$(printf '%s' "$NO_PLAYBOOK" | tr '\n\r\t' '   ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//')
-    [ -n "$NO_PLAYBOOK_REASON" ] || {
+    NO_PLAYBOOK_REASON=$(normalize_decision_reason "$NO_PLAYBOOK")
+    [ -n "${NO_PLAYBOOK_REASON//[[:space:]]/}" ] || {
       echo "error: --no-playbook requires a non-empty reason explaining why no execution playbook applies" >&2
       exit 1
     }
