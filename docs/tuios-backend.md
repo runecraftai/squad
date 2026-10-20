@@ -99,6 +99,7 @@ bin/sq-pane-grants.sh verify <target>          # read-only gate: exit 0 only whe
 
 `<target>` is a task id resolved through `state/<id>.meta` (which must record `backend=tuios`) or an explicit `<session>:<window>`.
 The wrapper accepts no other grant, never addresses a whole session, and never replaces a pane's grants, so it cannot become a general TUIOS proxy.
+It also refuses a target that the inventory reports as waiting on a prompt (`needs_input` or `errored`): that is the pane whose dialog needs answering, not the pane that should be allowed to answer it, so `show` and `verify` explain the distinction instead of printing a person command that would change nothing.
 An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
 When `respond` is missing, `show`, `verify`, and a refused `grant` all print the same `person command:` line: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
 The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_PANE_ID"`.

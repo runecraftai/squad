@@ -52,6 +52,13 @@ BASE="${SQUAD_BASE:-${SQUAD_HOME:-$ROOT}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 TUIOS_BIN="${SQUAD_TUIOS_BIN:-tuios}"
 
+# Set by fm_pane_grants_read for each resolved target.
+GRANT_SESSION=
+GRANT_WINDOW=
+GRANT_CSV=
+GRANT_DECLARED=
+GRANT_AGENT_STATE=
+
 fm_pane_grants_usage() {
   cat >&2 <<'USAGE'
 Usage: sq-pane-grants.sh show [<target>]
@@ -212,9 +219,13 @@ fm_pane_grants_read() {  # <target>
   local inventory record
   GRANT_CSV=
   GRANT_DECLARED=
+  GRANT_AGENT_STATE=
   fm_pane_grants_resolve_target "$1"
   inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
   GRANT_WINDOW=$(fm_pane_grants_canonical_window "$inventory" "$GRANT_WINDOW")
+  GRANT_AGENT_STATE=$(printf '%s' "$inventory" | jq -r --arg w "$GRANT_WINDOW" '
+    def wid: (.window_id // .id // (if (.window | type) == "object" then .window.id else empty end));
+    [ .windows[] | select(wid == $w) | (.agent_state // "") ] | first // ""')
   record=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
   case "$record" in
     explicit$'\t'*)
@@ -238,6 +249,20 @@ fm_pane_grants_read() {  # <target>
 # an operator.
 fm_pane_grants_person_command() {  # <session>:<window>
   printf '%s/bin/sq-pane-grants.sh grant respond %s' "$ROOT" "$1"
+}
+
+# fm_pane_grants_answering_note: true when the target is the pane WAITING on a
+# prompt, where respond changes nothing. TUIOS needs it on the pane that types
+# the answer, so every caller suppresses or refuses the grant for such a pane
+# rather than inviting the mistake.
+fm_pane_grants_answering_note() {  # <session>:<window>
+  case "$GRANT_AGENT_STATE" in
+    needs_input|errored)
+      printf 'note: %s is the pane waiting on a prompt; respond belongs on the pane that types the answer, so no grant is offered for this pane\n' "$1"
+      return 0
+      ;;
+  esac
+  return 1
 }
 
 fm_pane_grants_person_hint() {  # <session>:<window>
@@ -289,7 +314,10 @@ fm_pane_grants_show() {  # [<target>]
     *",respond,"*) printf 'respond: present\n' ;;
     *)
       printf 'respond: absent\n'
-      [ -z "$label" ] || printf 'person command: %s\n' "$(fm_pane_grants_person_command "$label")"
+      if [ -n "$label" ]; then
+        fm_pane_grants_answering_note "$label" \
+          || printf 'person command: %s\n' "$(fm_pane_grants_person_command "$label")"
+      fi
       ;;
   esac
 }
@@ -307,7 +335,8 @@ fm_pane_grants_verify() {  # <target>
   esac
   printf 'absent: %s:%s does not hold respond (holds %s)\n' \
     "$GRANT_SESSION" "$GRANT_WINDOW" "${GRANT_CSV:-none}" >&2
-  printf 'person command: %s\n' "$(fm_pane_grants_person_command "$GRANT_SESSION:$GRANT_WINDOW")" >&2
+  fm_pane_grants_answering_note "$GRANT_SESSION:$GRANT_WINDOW" \
+    || printf 'person command: %s\n' "$(fm_pane_grants_person_command "$GRANT_SESSION:$GRANT_WINDOW")" >&2
   return 1
 }
 
@@ -316,6 +345,11 @@ fm_pane_grants_grant() {  # <grant-name> <target>
   [ "$grant" = respond ] \
     || fm_pane_grants_refuse "only the respond grant can be added; '$grant' is refused because this wrapper is not a TUIOS grant proxy"
   fm_pane_grants_read "$target"
+  case "$GRANT_AGENT_STATE" in
+    needs_input|errored)
+      fm_pane_grants_fail "$GRANT_SESSION:$GRANT_WINDOW is the pane waiting on a prompt; respond must go on the pane that types the answer, so nothing was granted"
+      ;;
+  esac
   current=$GRANT_CSV
   case ",$current," in
     *",respond,"*)

@@ -30,7 +30,8 @@ write_windows() {  # <session>
   {"window_id":"aaaaaaaa-1111","display_name":"π - squad","title":"π - squad"},
   {"window_id":"bbbbbbbb-2222","display_name":"task","grants":["admin","respond"]},
   {"window_id":"cccccccc-3333","display_name":"other","grants":["read","write"]},
-  {"window_id":"aaaaaaaa-9999","display_name":"shadow"}
+  {"window_id":"aaaaaaaa-9999","display_name":"shadow"},
+  {"window_id":"99999999-7777","display_name":"blocked-op","agent_state":"needs_input"}
 ]}
 JSON
 }
@@ -422,6 +423,23 @@ assert_contains "$result" 'holds respond' 'verify reports the landed grant'
 result=$(run_wrapper verify grantee)
 expect_code 0 "${result%%$'\n'*}" 'verify resolves a task id and agrees with the earlier grant'
 assert_contains "$result" "verified: $SESSION:$DEFAULT_PANE holds respond" 'verify reports the task pane by its exact id'
+
+# The pane that waits on a prompt is never offered the grant: TUIOS needs it on
+# the pane that types the answer, and granting this one changes nothing.
+result=$(run_wrapper show "$SESSION:99999999-7777")
+expect_code 0 "${result%%$'\n'*}" 'show still reads the pane that waits on a prompt'
+assert_contains "$result" 'is the pane waiting on a prompt' 'show explains why that pane is the wrong target'
+assert_not_contains "$result" 'person command:' 'show offers no person command for the blocked pane'
+
+reset_log
+result=$(run_wrapper grant respond "$SESSION:99999999-7777")
+expect_code 1 "${result%%$'\n'*}" 'grant refuses the pane that waits on a prompt'
+assert_contains "$result" 'respond must go on the pane that types the answer' 'the refusal says where the grant belongs'
+assert_no_grep 'set-pane-grants' "$LOG" 'the refused blocked-pane grant never reaches the daemon'
+
+result=$(run_wrapper verify "$SESSION:99999999-7777")
+expect_code 1 "${result%%$'\n'*}" 'verify stays non-zero for the blocked pane'
+assert_not_contains "$result" 'person command:' 'verify offers no person command for the blocked pane'
 
 result=$(run_wrapper verify)
 expect_code 2 "${result%%$'\n'*}" 'verify without a target is refused'
