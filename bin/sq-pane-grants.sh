@@ -340,8 +340,18 @@ fm_pane_grants_person_hint() {  # <session>:<window>
   printf 'person command: %s\n' "$(fm_pane_grants_person_command "$1")" >&2
 }
 
+# fm_pane_grants_state: the presented form of a grant set: the grants
+# themselves, `none` for an explicit empty set, or `unset` for a pane with no
+# explicit set whose daemon default is empty. Only an explicit empty set is the
+# deliberate denial.
+fm_pane_grants_state() {  # <csv> <explicit|default>
+  local csv=${1:-} declared=${2:-}
+  if [ -n "$csv" ]; then printf '%s' "$csv"; return 0; fi
+  if [ "$declared" = explicit ]; then printf 'none'; else printf 'unset (daemon default is empty)'; fi
+}
+
 fm_pane_grants_show() {  # [<target>]
-  local target=${1:-} out label='' grants declared record
+  local target=${1:-} out label='' grants declared record state
   if [ -z "$target" ]; then
     out=$(fm_pane_grants_caller)
     if [ "$(printf '%s' "$out" | jq -r '.pane')" != true ]; then
@@ -382,8 +392,8 @@ fm_pane_grants_show() {  # [<target>]
     printf 'target: %s\n' "$label"
   fi
   [ -n "$declared" ] || declared=default
-  [ -n "$grants" ] || grants=none
-  printf 'grants: %s\n' "$grants"
+  state=$(fm_pane_grants_state "$grants" "$declared")
+  printf 'grants: %s\n' "$state"
   printf 'declared: %s\n' "$declared"
   case ",$grants," in
     *",respond,"*) printf 'respond: present\n' ;;
@@ -404,6 +414,7 @@ fm_pane_grants_show() {  # [<target>]
 # only when the pane really holds respond, so the supervisor retries its key
 # send instead of guessing whether the grant landed.
 fm_pane_grants_verify() {  # <target>
+  local state
   fm_pane_grants_read "$1"
   case ",$GRANT_CSV," in
     *",respond,"*)
@@ -411,8 +422,14 @@ fm_pane_grants_verify() {  # <target>
       return 0
       ;;
   esac
-  printf 'absent: %s:%s does not hold respond (holds %s)\n' \
-    "$GRANT_SESSION" "$GRANT_WINDOW" "${GRANT_CSV:-none}" >&2
+  state=$(fm_pane_grants_state "$GRANT_CSV" "$GRANT_DECLARED")
+  if [ -z "$GRANT_CSV" ] && [ "$GRANT_DECLARED" != explicit ]; then
+    printf 'absent: %s:%s does not hold respond; grants %s\n' \
+      "$GRANT_SESSION" "$GRANT_WINDOW" "$state" >&2
+  else
+    printf 'absent: %s:%s does not hold respond (holds %s)\n' \
+      "$GRANT_SESSION" "$GRANT_WINDOW" "$state" >&2
+  fi
   if fm_pane_grants_answering_note "$GRANT_SESSION:$GRANT_WINDOW"; then
     fm_pane_grants_answering_command "$GRANT_SESSION:$GRANT_WINDOW" >&2 || true
   else
