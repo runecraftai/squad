@@ -77,7 +77,39 @@ A status-only dedupe would miss a pane that shows one prompt, has it dismissed, 
 A new or changed prompt always wakes again, the identical standing prompt never repeats one, and a blocked pane is never folded into the ordinary stale/wedge detection, so it is never misread as a possible wedge.
 A transiently unreadable native status or prompt read is an ambiguous fallback, not a cleared state: the dedupe markers stand until a later readable read establishes a genuinely different prompt, so one unreadable poll never duplicates the wake.
 Nothing is ever typed over the open prompt: the wake only tells Squad a person is needed and what the prompt asks, and Squad still decides and sends the answer itself.
+Sending that answer needs the `respond` grant on the pane that types it (see "Answering a blocked prompt" below).
 A backend with no native blocked verdict (tmux) never raises this wake - it is never guessed from rendered pane text.
+
+### Answering a blocked prompt
+
+A pane waiting on a prompt refuses every keystroke that would answer it unless the pane that *types* the answer holds `respond`.
+The grant therefore belongs to the answering pane - normally the supervisor's own - and not to the blocked pane, so granting it to the operator's window changes nothing.
+`admin` includes read, write, and fan but never `respond`, and a pane can never give more than it holds, so the first `respond` on a supervised pane can only come from a caller that runs in no pane of that daemon.
+This was measured against TUIOS 0.9.1 on 2026-10-20: the same `send-keys` into a `needs_input` pane was refused from a pane holding `admin` and succeeded once that same pane held `admin,respond`, and every in-pane attempt to add `respond` was refused with "a pane cannot give more than it holds".
+[`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns that evidence.
+
+`bin/sq-pane-grants.sh` is the sanctioned surface for this grant, and the raw-session guard admits it as its only session-provider exception (`bin/sq-backend-pretool-check.sh`):
+
+```sh
+bin/sq-pane-grants.sh show <target>            # read-only: grants, and whether respond is present
+bin/sq-pane-grants.sh grant respond <target>   # add respond, keep everything the pane already held
+```
+
+`<target>` is a task id resolved through `state/<id>.meta` (which must record `backend=tuios`) or an explicit `<session>:<window>`.
+The wrapper accepts no other grant, never addresses a whole session, and never replaces a pane's grants, so it cannot become a general TUIOS proxy.
+An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
+The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_WINDOW_ID"`.
+
+The flow when a dialog blocks an operator:
+
+1. The wake reports the pane and the prompt it read.
+2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_WINDOW_ID"` says whether the answering pane can already answer it.
+   When it cannot, the first delegation is the person's: the same `grant respond` command run once from a shell outside TUIOS, because no pane can give it to itself.
+3. With `respond` on the answering pane, the supervisor answers with `bin/sq-send.sh <id> --key Enter`, or the message the prompt asks for.
+4. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
+
+One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.
+When a send is refused for this missing grant, `bin/sq-send.sh` names the wrapper and the exact command for the pane that must hold it instead of repeating the provider's raw `set-pane-grants` advice, which Squad's guard refuses.
 
 ## Restart recovery
 

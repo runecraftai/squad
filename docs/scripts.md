@@ -114,6 +114,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-handoff-surface.sh`      | Mark pending handoff requests surfaced exactly once and print the handoff card (docs/handoff-request.md) |
 | `sq-classify-lib.sh`     | Shared wake-classification vocabulary and durable keyed-decision folds and scans     |
 | `sq-send.sh`             | Send one verified literal line or supported key through the target's recorded backend |
+| `sq-pane-grants.sh`      | Show a TUIOS pane's grants, or add only the `respond` grant to one named pane         |
 | `sq-busy-lib.sh`         | Single owner of the semantic busy-state contract: verdicts, source attribution, and per-harness sources |
 | `sq-busy-event.sh`       | The only writer of a task's semantic busy-state record; arms an incarnation and applies lifecycle events |
 | `sq-tmux-lib.sh`         | Shared tmux pane primitives for composer capture, verified submit, and the submit-time busy check |

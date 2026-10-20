@@ -315,11 +315,49 @@ fm_backend_tuios_send_literal() {  # <target> <text> [expected-label]
     --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$text"
 }
 
+# fm_backend_tuios_caller_pane: the pane this process types from, which is the
+# pane TUIOS checks a typing grant against. The daemon's own placement of this
+# caller is authoritative, so it is tried first; the pane environment is the
+# fallback for a caller whose placement the kernel cannot report.
+fm_backend_tuios_caller_pane() {
+  local out
+  out=$("$(fm_backend_tuios_bin)" pane-grants --json 2>/dev/null) || out=
+  if [ -n "$out" ]; then
+    out=$(printf '%s' "$out" | jq -r 'select(.pane == true) | "\(.session):\(.window)"' 2>/dev/null || true)
+    if [ -n "$out" ]; then
+      printf '%s' "$out"
+      return 0
+    fi
+  fi
+  if [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_WINDOW_ID:-}" ]; then
+    printf '%s:%s' "$TUIOS_SESSION" "$TUIOS_WINDOW_ID"
+    return 0
+  fi
+  return 1
+}
+
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
-  local target=$1 key=$2 expected=${3:-}
+  local target=$1 key=$2 expected=${3:-} out rc
+  # Only a refusal sets this, and only to the pane whose grant is missing, so a
+  # caller can name the sanctioned remedy without parsing the daemon's prose.
+  # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
+  SQUAD_BACKEND_PANE_GRANT_TARGET=
   fm_backend_tuios_target_ready "$target" "$expected" || return 1
-  fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" send-keys \
-    --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key"
+  out=$("$(fm_backend_tuios_bin)" send-keys --session "$SQUAD_BACKEND_TUIOS_SESSION" \
+    --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key" 2>&1) && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ -z "$out" ] || printf '%s\n' "$out" >&2
+    # TUIOS requires respond on the pane that TYPES the answer, never on the
+    # blocked pane, so name that pane rather than the target.
+    case "$out" in
+      *'needs the respond grant'*)
+        # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
+        SQUAD_BACKEND_PANE_GRANT_TARGET=$(fm_backend_tuios_caller_pane || true)
+        ;;
+    esac
+    return 1
+  fi
+  [ -z "$out" ] || printf '%s\n' "$out"
 }
 
 fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]

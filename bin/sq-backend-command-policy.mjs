@@ -9,6 +9,17 @@ import {
 // Keep this literal synchronized with SQUAD_BACKEND_KNOWN in bin/sq-backend.sh.
 export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux", "tuios"]);
 
+// The complete set of wrappers this guard treats as sanctioned session-provider
+// surfaces. Squad's respond-only pane-grant wrapper is the only member: it
+// addresses one named pane and adds one grant, so it is not a route to general
+// session control. Membership is matched against the exact literal command
+// word, never a basename or path suffix, so a renamed or relocated copy of the
+// script never inherits the exemption.
+export const SANCTIONED_BACKEND_WRAPPERS = new Set([
+  "bin/sq-pane-grants.sh",
+  "./bin/sq-pane-grants.sh",
+]);
+
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish"]);
 const MAX_DEPTH = 8;
 
@@ -33,9 +44,22 @@ function shellPayload(position) {
   return "";
 }
 
+function sanctionedWrapper(position) {
+  return SANCTIONED_BACKEND_WRAPPERS.has(literalValue(position?.command));
+}
+
 function nodeHasBackend(node, depth) {
   const position = commandPosition(node);
-  if (position?.command && SQUAD_BACKEND_KNOWN.has(basename(position.command.value))) return true;
+  // A sanctioned wrapper is the one command word that never counts as backend
+  // control on its own; everything after it is still scanned below, so a
+  // wrapper invocation that also embeds a raw call stays denied.
+  if (
+    position?.command &&
+    SQUAD_BACKEND_KNOWN.has(basename(position.command.value)) &&
+    !sanctionedWrapper(position)
+  ) {
+    return true;
+  }
 
   const commandName = basename(literalValue(position?.command));
   if (SHELLS.has(commandName)) {
@@ -75,7 +99,9 @@ function deny() {
     code: "backend-raw-session-control",
     reason:
       "Direct session-provider CLI control is blocked. Use the Squad lifecycle wrappers " +
-      "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh).",
+      "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh). " +
+      `The one sanctioned pane surface is ${[...SANCTIONED_BACKEND_WRAPPERS][0]} grant respond <target>; ` +
+      "the CLI's own set-pane-grants advice stays refused.",
   };
 }
 

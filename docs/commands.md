@@ -15,6 +15,7 @@ Every other row in the table below is enforced by instruction and self-correctio
 | `bin/sq-crew-state.sh <id>` | Check one operator's current state before steering, escalating, or re-checking a decision | Reconciles the possibly-stale `state/<id>.status` event log against the authoritative drill run-step or pane busy-signature; a raw `tail -1` of the status file reports the last wake event, not the current state |
 | `bin/sq-spawn.sh` | Launch an operator, recon, or XO | Resolves the harness, runtime backend, and an isolated task worktree, and asserts that isolation before launch; a manually created process or window skips every one of those checks |
 | `bin/sq-send.sh <target> <text>` | Send a steer, decision answer, or key press to an operator | Resolves the target through recorded metadata, uses native Pi extension delivery for eligible metadata-routed local non-XO Pi or pi-signed tasks, otherwise verifies the line was actually submitted (retrying only the Enter, never the text), and marks XO-routed replies correctly; `tmux send-keys` does none of that and can silently swallow the Enter |
+| `bin/sq-pane-grants.sh show\|grant respond <target>` | Read a TUIOS pane's grants, or add the `respond` grant so a supervisor can answer a blocked prompt | Adds exactly one grant to exactly one named pane, keeps what that pane already held, and refuses every other grant name and every bare session; the raw CLI path it replaces is refused by the raw-session guard, and a hand-built call could grant `admin` or replace a pane's grants outright |
 | `bin/sq-stand-to-drain.sh` | Drain the durable wake queue at the start of a wake-handling turn | Atomically drains queued sentry wake records, folds unit-wide open decisions, and asserts supervision health in one pass; hand-inspecting status files misses queued records and never asserts liveness |
 | `bin/sq-status-notify.sh watch [BASE]` | Run desktop notifications for done/needs-decision/blocked/failed wake events | Watches the append-only status logs correctly (new lines only, focused-window suppression) instead of a hand-rolled poll loop |
 | `bin/sq-session-start.sh` | Start or resume a session | Composes the lock, bootstrap, and wake-drain steps into one ordered, safe digest; running the pieces by hand risks acting on stale or partially locked state |
@@ -35,6 +36,8 @@ Reach for the Squad tool first; refer to that script's own header when its exact
   Use `bin/sq-spawn.sh` to launch and `bin/sq-teardown.sh` to retire.
 - Never determine an operator's current status by `tail`-ing or `grep`-ing `state/<id>.status` by hand.
   Use `bin/sq-crew-state.sh <id>`; the status file is an append-only wake-event log, not current-state truth.
+- Never use the session provider's own grant command to make a blocked pane answerable.
+  Use `bin/sq-pane-grants.sh grant respond <target>`, which adds only `respond` to one named pane.
 - Never poll or hand-parse `state/` files in a shell loop to watch for wake events.
   Use `bin/sq-stand-to-drain.sh` (queue drain) or `bin/sq-status-notify.sh watch` (desktop notifications).
 - Never run raw `git push`/manual PR creation via the GitHub web UI or hand-built `curl` calls against the GitHub API.

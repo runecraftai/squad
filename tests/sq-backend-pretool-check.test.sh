@@ -59,7 +59,11 @@ for command in \
   '(tmux send-keys task x)' \
   '{ tmux send-keys task x; }' \
   'env bash -lc '\''tmux kill-window -t Squad:task'\''' \
-  'printf '\''%s'\'' "$(zellij action list-clients)"'; do
+  'printf '\''%s'\'' "$(zellij action list-clients)"' \
+  'tuios set-pane-grants -w task --grants respond' \
+  'bin/sq-pane-grants.sh show; tuios kill-session' \
+  'bin/sq-pane-grants.sh grant respond "$(tuios kill-session)"' \
+  'bash -c '\''bin/sq-pane-grants.sh show; tuios set-pane-grants -w task --grants admin'\'''; do
   result=$(run_check "$command")
   expect_code 2 "${result%%$'\n'*}" "blocks raw backend lifecycle form: $command"
 done
@@ -70,6 +74,9 @@ for command in \
   'grep herdr README.md' \
   'git -C projects/foo status' \
   'bin/sq-send.sh task "use the backend wrapper"' \
+  'bin/sq-pane-grants.sh show' \
+  'bin/sq-pane-grants.sh grant respond squad:aaaaaaaa-1111' \
+  './bin/sq-pane-grants.sh grant respond squad:aaaaaaaa-1111' \
   'tmuxy send-keys task x' \
   '' \
   'bash -lc '\''echo "cmux send-text"'\'''; do
