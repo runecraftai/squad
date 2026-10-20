@@ -2,8 +2,8 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Server } from "bun";
-import { type Command, Warroom } from "./core.ts";
-import { lineDiff } from "./diff.ts";
+import { assertIdentifier, type Command, Warroom } from "./core.ts";
+import { lineDiff, withinDiffBudget } from "./diff.ts";
 import {
 	acceptReview,
 	anchorComment,
@@ -46,6 +46,12 @@ function isLoopbackOrigin(origin: string): boolean {
 function isExpectedHost(host: string | null, port: number): boolean {
 	if (!host) return false;
 	return [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`].includes(host);
+}
+
+/** Local source paths stay server-side; every packet-shaped payload drops both the row and replay field. */
+function redactPacket<T>(packet: T): Omit<T, "repo_path" | "repoPath"> {
+	const { repo_path: _repoPath, repoPath: _repoPathCamel, ...safe } = packet as any;
+	return safe;
 }
 
 /** Review commands accept only the exact local origins this server is reachable at, never another loopback port. */
@@ -119,6 +125,9 @@ export function createApp(options: ServerOptions = {}): App {
 		if (origin !== null && !isLoopbackOrigin(origin)) return json({ error: "cross-origin requests are not allowed" }, 403);
 		const packetId = segments[2] ? decodeSegment(segments[2]) : null;
 		const rest = segments.slice(3);
+		if (packetId !== null) {
+			try { assertIdentifier(packetId, "review packet id"); } catch { return json({ error: "invalid review packet id" }, 400); }
+		}
 		const mutating = request.method !== "GET";
 		if (mutating) {
 			const supplied = request.headers.get("x-warroom-session");
@@ -131,7 +140,7 @@ export function createApp(options: ServerOptions = {}): App {
 			const packets = (initiativeId
 				? warroom.db.query("SELECT * FROM review_packets WHERE initiative_id=? ORDER BY created_at DESC").all(initiativeId)
 				: warroom.db.query("SELECT * FROM review_packets ORDER BY created_at DESC").all()) as any[];
-			return json(packets);
+			return json(packets.map(redactPacket));
 		}
 		if (!packetId) return json({ error: "review packet is required" }, 400);
 		if (request.method === "GET" && rest.length === 0) return packetDetail(packetId);
@@ -164,6 +173,7 @@ export function createApp(options: ServerOptions = {}): App {
 				const store = new ArtifactStore(dataDir);
 				const baseText = entry.base?.reviewable && entry.base.contentDigest ? store.readText(entry.base.contentDigest) : "";
 				const headText = entry.head?.reviewable && entry.head.contentDigest ? store.readText(entry.head.contentDigest) : "";
+				if (!withinDiffBudget(baseText, headText)) return json({ error: "object is too large for an inline structural diff; the stored packet patch covers it" }, 413);
 				const lines = lineDiff(baseText, headText);
 				let baseLine = 1;
 				let headLine = 1;
@@ -269,14 +279,43 @@ export function createApp(options: ServerOptions = {}): App {
 			if (entry.base !== undefined || entry.head !== undefined) contents[file.path] = entry;
 		}
 		const plan = state.revisions.find((revision: any) => revision.id === packet.plan_revision_id) as any;
+		const comments = state.comments
+			.filter((comment: any) => comment.packetId === packet.id)
+			.map((comment: any) => ({
+				id: comment.id,
+				target_type: comment.targetType,
+				path: comment.path ?? null,
+				side: comment.side ?? null,
+				start_line: comment.startLine ?? null,
+				end_line: comment.endLine ?? null,
+				body: comment.body,
+				state: comment.state,
+				comment_kind: comment.kind,
+				suggestion: comment.suggestion ?? null,
+				created_by: comment.createdBy ?? "",
+				created_at: comment.createdAt ?? "",
+			}));
+		const approvals = state.approvals
+			.filter((approval: any) => approval.packetId === packet.id)
+			.map((approval: any) => ({
+				id: approval.id,
+				kind: approval.kind,
+				decision: approval.decision,
+				actor: approval.actor ?? "",
+				created_at: approval.createdAt ?? "",
+				declaration: approval.declaration ?? null,
+				packet_digest: approval.packetDigest ?? null,
+				scope_json: approval.scopeDigest ?? null,
+				superseded_at: approval.superseded ? (approval.supersededAt ?? "superseded") : null,
+			}));
 		const html = renderReviewExport({
 			initiative: state.initiative,
 			packet,
 			plan: plan ? { id: plan.id, digest: plan.digest, content: plan.content } : null,
 			manifest,
 			capture: evidenceCapture(warroom, packet),
-			comments: state.comments.filter((comment: any) => comment.packetId === packet.id),
-			approvals: state.approvals.filter((approval: any) => approval.packetId === packet.id),
+			comments,
+			approvals,
 			timeline: warroom.timeline(packet.initiative_id),
 			exportedAt: new Date().toISOString(),
 			contents,
@@ -324,7 +363,7 @@ export function createApp(options: ServerOptions = {}): App {
 			if (id === null) return json({ error: "invalid initiative id" }, 400);
 			const state = warroom.state(id);
 			if (!state.initiative) return json({ error: "initiative does not exist" }, 404);
-			return json({ ...state, timeline: warroom.timeline(id) });
+			return json({ ...state, packets: state.packets.map(redactPacket), timeline: warroom.timeline(id) });
 		}
 
 		if (request.method === "GET" && url.pathname.startsWith("/api/compare/")) {

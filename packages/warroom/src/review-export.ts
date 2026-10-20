@@ -1,4 +1,4 @@
-import { type DiffLine, lineDiff } from "./diff.ts";
+import { type DiffLine, lineDiff, withinDiffBudget } from "./diff.ts";
 import type { DrillCapture } from "./drill-evidence.ts";
 import type { PacketManifest } from "./review.ts";
 
@@ -57,6 +57,7 @@ export function escapeHtml(value: unknown): string {
 }
 
 function renderDiff(baseText: string, headText: string): string {
+	if (!withinDiffBudget(baseText, headText)) return `<p class="muted">This object is too large for an inline line diff; its exact bytes are in the stored packet artifacts.</p>`;
 	const lines: DiffLine[] = lineDiff(baseText, headText);
 	let baseLine = 1;
 	let headLine = 1;

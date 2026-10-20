@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { renameSync } from "node:fs";
+import { renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test, setDefaultTimeout } from "bun:test";
@@ -11,6 +11,7 @@ import {
 	acceptReview,
 	anchorComment,
 	ArtifactStore,
+	captureReview,
 	checkPacket,
 	listPacketFiles,
 	readPacketFile,
@@ -92,6 +93,55 @@ describe("review packet capture", () => {
 		expect(evidence.capture_digest).toBe(result.evidenceDigest);
 		expect(evidence.run_status).toBe("running");
 		expect(evidence.delivered_head_sha).toBe(fixture.h1);
+	});
+
+	test("a plan change on the same head accepts the newly captured packet, not the first packet for that revision", () => {
+		useAcceptableFixture();
+		const first = captureFixture(fixture, "h1", "drill");
+		fixture.warroom.command({ type: "revision.create", id: "plan-2", initiativeId: "i1", kind: "plan", content: "# Plan v2\n\nChanged scope.\n" });
+		const second = captureReview(fixture.warroom, fixture.dataDir, {
+			repo: fixture.repo,
+			drillDb: fixture.drillDb,
+			drillLogs: fixture.drillLogs,
+			repoId: fixture.repoId,
+			runId: fixture.run1,
+			targetRef: "main",
+			headRef: "h1",
+			planRevisionId: "plan-2",
+			provenance: "drill",
+		});
+		expect(second.packetId).not.toBe(first.packetId);
+		expect(packetRow(first.packetId).code_revision_id).toBe(packetRow(second.packetId).code_revision_id);
+		expect(checkPacket(fixture.warroom, fixture.dataDir, second.packetId).status).toBe("ready");
+		const accepted = acceptReview(fixture.warroom, fixture.dataDir, {
+			packetId: second.packetId,
+			packetDigest: second.packetDigest,
+			scopeDigest: second.scopeDigest,
+			declaration: "I reviewed the new plan snapshot.",
+			actorConfirmed: true,
+		});
+		expect(accepted.check.packet.id).toBe(second.packetId);
+		expect(packetRow(second.packetId).status).toBe("accepted");
+	});
+
+	test("the same run and head can be captured under a second initiative", () => {
+		captureFixture(fixture, "h1", "fixture");
+		fixture.warroom.command({ type: "initiative.create", id: "i2", title: "Second initiative" });
+		fixture.warroom.command({ type: "revision.create", id: "plan-i2", initiativeId: "i2", kind: "plan", content: "# Second plan\n" });
+		const second = captureReview(fixture.warroom, fixture.dataDir, {
+			repo: fixture.repo,
+			drillDb: fixture.drillDb,
+			drillLogs: fixture.drillLogs,
+			repoId: fixture.repoId,
+			runId: fixture.run1,
+			targetRef: "main",
+			headRef: "h1",
+			planRevisionId: "plan-i2",
+			provenance: "fixture",
+		});
+		expect(second.reused).toBe(false);
+		expect(packetRow(second.packetId).initiative_id).toBe("i2");
+		expect(checkPacket(fixture.warroom, fixture.dataDir, second.packetId).status).toBe("ready");
 	});
 
 	test("records the human review base and the Drill base separately when they differ", () => {
@@ -259,6 +309,34 @@ describe("human acceptance", () => {
 		expect(approvals.some((approval) => approval.decision === "approved")).toBe(false);
 		expect(fixture.warroom.state("i1").approvals.some((item: any) => item.kind === "merge-permission")).toBe(false);
 	});
+
+	test("repeated change requests on one packet get distinct approval ids instead of a storage collision", () => {
+		const result = captureFixture(fixture, "h1", "drill");
+		const base = { packetId: result.packetId, packetDigest: result.packetDigest, scopeDigest: result.scopeDigest, declaration: "Still not right.", actorConfirmed: true };
+		const first = requestReviewChanges(fixture.warroom, fixture.dataDir, base);
+		const second = requestReviewChanges(fixture.warroom, fixture.dataDir, base);
+		expect(first.approvalId).not.toBe(second.approvalId);
+		expect((fixture.warroom.db.query("SELECT id FROM approvals WHERE packet_id=? ORDER BY rowid").all(result.packetId) as Array<{ id: string }>).map((approval) => approval.id)).toEqual([first.approvalId, second.approvalId]);
+	});
+
+	test("a deleted per-file content artifact is reported as corrupt and blocks acceptance", () => {
+		useAcceptableFixture();
+		const result = captureFixture(fixture, "h1", "drill");
+		const hello = listPacketFiles(fixture.warroom, result.packetId).find((file) => file.path === "src/hello.ts")!;
+		const store = new ArtifactStore(fixture.dataDir);
+		rmSync(store.absolutePath(hello.head!.contentDigest!));
+		const check = checkPacket(fixture.warroom, fixture.dataDir, result.packetId);
+		expect(check.status).toBe("corrupt");
+		expect(check.reasons.some((reason) => reason.startsWith("content-artifact-missing:src/hello.ts:head"))).toBe(true);
+		expect(() => acceptReview(fixture.warroom, fixture.dataDir, {
+			packetId: result.packetId,
+			packetDigest: result.packetDigest,
+			scopeDigest: result.scopeDigest,
+			declaration: "I reviewed every file.",
+			actorConfirmed: true,
+		})).toThrow(/not acceptable/);
+		expect(approvalRows(result.packetId)).toHaveLength(0);
+	});
 });
 
 describe("currentness and supersession", () => {
@@ -382,11 +460,21 @@ describe("currentness and supersession", () => {
 
 	test("an explicit supersession keeps the old packet readable and blocks its acceptance", () => {
 		const result = captureFixture(fixture, "h1", "drill");
+		requestReviewChanges(fixture.warroom, fixture.dataDir, {
+			packetId: result.packetId,
+			packetDigest: result.packetDigest,
+			scopeDigest: result.scopeDigest,
+			declaration: "Fix before acceptance.",
+			actorConfirmed: true,
+		});
 		supersedePacket(fixture.warroom, result.packetId, "replaced by a newer capture");
 		const check = checkPacket(fixture.warroom, fixture.dataDir, result.packetId);
 		expect(check.status).toBe("stale");
 		expect(check.reasons).toContain("replaced by a newer capture");
 		expect(check.packet).toBeDefined();
+		const approval = fixture.warroom.state("i1").approvals.find((item: any) => item.packetId === result.packetId);
+		expect(approval.superseded).toBe(true);
+		expect((fixture.warroom.db.query("SELECT superseded_at FROM approvals WHERE packet_id=?").get(result.packetId) as { superseded_at: string | null }).superseded_at).not.toBeNull();
 		expect(() => acceptReview(fixture.warroom, fixture.dataDir, {
 			packetId: result.packetId,
 			packetDigest: result.packetDigest,
@@ -530,6 +618,7 @@ describe("anchored comments and replay", () => {
 			kind: "comment",
 			body: "persisted",
 		});
+		const timelineBeforeRestart = fixture.warroom.timeline("i1");
 		fixture.warroom.close();
 		fixture.warroom = reopenWarroom(fixture);
 		const replayed = fixture.warroom.state("i1");
@@ -538,7 +627,7 @@ describe("anchored comments and replay", () => {
 		for (const key of ["headSha", "reviewBaseSha", "manifestDigest", "scopeDigest", "patchDigest", "packetDigest", "evidenceDigest", "evidenceId", "planRevisionId", "status"]) {
 			expect(replayedPacket[key]).toBe(projected[camelToSnake(key)]);
 		}
-		expect(fixture.warroom.timeline("i1")).toEqual(fixture.warroom.timeline("i1"));
+		expect(fixture.warroom.timeline("i1")).toEqual(timelineBeforeRestart);
 
 		const before = fixture.warroom.events("i1").length;
 		const digestBefore = packetRow(result.packetId).packet_digest;

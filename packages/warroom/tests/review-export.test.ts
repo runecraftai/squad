@@ -123,4 +123,11 @@ describe("static review export", () => {
 		const html = renderReviewExport(input({ contents: {} }) as any);
 		expect(html).toContain("Stored text is unavailable; no bytes are inferred.");
 	});
+
+	test("refuses an inline diff that exceeds the bounded work budget instead of stalling the export", () => {
+		const large = Array.from({ length: 4000 }, (_, index) => `line-${index}`).join("\n");
+		const html = renderReviewExport(input({ contents: { "src/<script>alert(1)</script>.ts": { base: large, head: `${large}\nmore` } } }) as any);
+		expect(html).toContain("too large for an inline line diff");
+		expect(html).not.toContain('class="diff"');
+	});
 });

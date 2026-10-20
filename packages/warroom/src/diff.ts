@@ -7,6 +7,18 @@ export interface DiffLine {
 /** Above this many table cells, diffLines switches from a single quadratic-memory pass to Hirschberg's linear-space divide-and-conquer, so peak memory stays bounded by this constant regardless of input size. */
 const QUADRATIC_CELL_BUDGET = 4_000_000;
 
+/** Above this many compared line pairs, a structural diff is refused so one huge object cannot stall the single-threaded surface. */
+export const MAX_DIFF_CELLS = 10_000_000;
+
+function lineCount(text: string): number {
+	return text === "" ? 0 : text.split("\n").length;
+}
+
+/** Whether a structural diff of these two texts stays inside the bounded work budget. */
+export function withinDiffBudget(a: string, b: string): boolean {
+	return lineCount(a) * lineCount(b) <= MAX_DIFF_CELLS;
+}
+
 /** Line-based LCS diff. Structural only: it never claims to parse a Git patch or prove ancestry. */
 export function lineDiff(a: string, b: string): DiffLine[] {
 	const linesA = a === "" ? [] : a.split("\n");

@@ -121,6 +121,7 @@ export class ArtifactStore {
 		try {
 			const path = this.absolutePath(digest);
 			if (!existsSync(path)) return false;
+			if (expectedBytes !== undefined && statSync(path).size !== expectedBytes) return false;
 			const bytes = readFileSync(path);
 			if (expectedBytes !== undefined && bytes.byteLength !== expectedBytes) return false;
 			return createHash("sha256").update(bytes).digest("hex") === digest;
@@ -132,7 +133,7 @@ export class ArtifactStore {
 
 function manifestJson(manifest: PacketManifest): string { return JSON.stringify(manifest); }
 
-function stableIds(input: { repoFingerprint: string; repoId: string; runId: string; baseSha: string; headSha: string }) {
+function stableIds(input: { initiativeId: string; repoFingerprint: string; repoId: string; runId: string; baseSha: string; headSha: string }) {
 	const evidenceId = `ev-${digestContent(JSON.stringify(input)).slice(0, 24)}`;
 	return { evidenceId };
 }
@@ -179,7 +180,7 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 	if (!planRevision || planRevision.kind !== "plan") throw new ReviewError("plan revision does not exist");
 	if (state.initiative?.currentPlanRevisionId !== planRevision.id) throw new ReviewError("plan revision is not current");
 	const repo = repoFingerprint(repoPath);
-	const identity = { repoFingerprint: repo.fingerprint, repoId: repo.repoId, runId: request.runId, baseSha: reviewBaseSha, headSha };
+	const identity = { initiativeId: state.initiative.id, repoFingerprint: repo.fingerprint, repoId: repo.repoId, runId: request.runId, baseSha: reviewBaseSha, headSha };
 	const { evidenceId } = stableIds(identity);
 	const existingCapture = warroom.db.query("SELECT capture_digest FROM evidence_captures WHERE id=?").get(evidenceId) as { capture_digest: string } | null;
 	const effectiveEvidenceDigest = existingCapture?.capture_digest ?? evidenceDigest;
@@ -216,7 +217,7 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 			reused: true,
 		};
 	}
-	const codeRevisionId = `rv-${digestContent(`${manifestDigest}:${headSha}:${reviewBaseSha}`).slice(0, 24)}`;
+	const codeRevisionId = `rv-${digestContent(`${state.initiative.id}:${manifestDigest}:${headSha}:${reviewBaseSha}`).slice(0, 24)}`;
 	const packetId = `pk-${packetDigest.slice(0, 24)}`;
 	const artifacts = [
 		{ digest: evidenceDigest, byteLength: Buffer.byteLength(captureText, "utf8"), mediaType: "application/json" },
@@ -368,6 +369,13 @@ export function checkPacket(warroom: Warroom, dataDir: string, packetId: string)
 		if (!store.verify(row.manifest_digest)) reasons.push("manifest-artifact-missing");
 		if (!store.verify(row.patch_digest)) reasons.push("patch-artifact-missing");
 		if (!store.verify(row.evidence_digest)) reasons.push("evidence-artifact-missing");
+		for (const file of manifest.files) {
+			for (const [label, side] of [["base", file.base], ["head", file.head]] as const) {
+				if (!side) continue;
+				if (!side.reviewable) continue;
+				if (!side.contentDigest || !store.verify(side.contentDigest, side.size)) reasons.push(`content-artifact-missing:${file.path}:${label}`);
+			}
+		}
 		const evidence = warroom.db.query("SELECT * FROM validation_evidence WHERE id=?").get(row.evidence_id) as any;
 		if (!evidence) evidenceReasons.push("evidence-missing");
 		else {
@@ -422,7 +430,7 @@ export function checkPacket(warroom: Warroom, dataDir: string, packetId: string)
 	const currentness: "verified" | "unverified" = source.state;
 	const sourceOnly = new Set(["source-unknown", "source-unavailable", "source-refs-missing"]);
 	const blocking = reasons.filter((reason) => !sourceOnly.has(reason) && !reason.startsWith("source-unreadable:"));
-	const corrupt = blocking.some((reason) => ["manifest-digest-mismatch", "scope-digest-mismatch", "manifest-artifact-missing", "patch-artifact-missing", "evidence-artifact-missing", "packet-digest-mismatch"].includes(reason) || reason.startsWith("unreadable:"));
+	const corrupt = blocking.some((reason) => ["manifest-digest-mismatch", "scope-digest-mismatch", "manifest-artifact-missing", "patch-artifact-missing", "evidence-artifact-missing", "packet-digest-mismatch"].includes(reason) || reason.startsWith("unreadable:") || reason.startsWith("content-artifact-missing:"));
 	let status: PacketCheck["status"] = "ready";
 	if (corrupt) status = "corrupt";
 	else if (blocking.length > 0) status = "stale";
@@ -470,7 +478,8 @@ export function acceptReview(warroom: Warroom, dataDir: string, request: Accepta
 	if (request.scopeDigest !== check.packet.scope_digest) throw new ReviewError("acceptance must cover the complete packet scope");
 	if (!request.declaration.trim()) throw new ReviewError("acceptance requires an explicit declaration");
 	if (!request.actorConfirmed) throw new ReviewError("acceptance requires explicit human confirmation");
-	const approvalId = `ap-${digestContent(`${check.packet.packet_digest}:${warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get()}`).slice(0, 24)}`;
+	const approvalCount = (warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get() as { n: number }).n;
+	const approvalId = `ap-${digestContent(`${check.packet.packet_digest}:${approvalCount}`).slice(0, 24)}`;
 	warroom.command({
 		type: "approval.record",
 		id: approvalId,
@@ -501,7 +510,8 @@ export function requestReviewChanges(warroom: Warroom, dataDir: string, request:
 	if (check.packet.status === "stale") throw new ReviewError("review packet is stale; request changes on the current snapshot");
 	if (request.packetDigest !== check.packet.packet_digest) throw new ReviewError("request packet digest does not match the current snapshot");
 	if (!request.declaration.trim()) throw new ReviewError("a change request requires an explicit declaration");
-	const approvalId = `ap-${digestContent(`${check.packet.packet_digest}:changes:${warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get()}`).slice(0, 24)}`;
+	const approvalCount = (warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get() as { n: number }).n;
+	const approvalId = `ap-${digestContent(`${check.packet.packet_digest}:changes:${approvalCount}`).slice(0, 24)}`;
 	warroom.command({
 		type: "approval.record",
 		id: approvalId,

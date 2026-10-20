@@ -275,7 +275,7 @@
 		const scopes = [
 			["plan-approval", "Plan approval", planRevision, null],
 			["execution-authorization", "Execution authorization", planRevision, null],
-			["code-review-acceptance", "Code-review acceptance", codeRevision, "Requires validation evidence, which this slice does not collect. Goes live in slice 3 with the real review flow."],
+			["code-review-acceptance", "Code-review acceptance", codeRevision, "Code-review acceptance is recorded in the Review tab against one exact packet; this planning scope cannot record it."],
 			["merge-permission", "Merge permission", codeRevision, null],
 		];
 		scopeGrid.innerHTML = scopes.map(([kind, label, revision, disabledNote]) => {
@@ -631,7 +631,7 @@
 		const { currentness, detail } = reviewState;
 		const decisions = detail.approvals.map((approval) => `${approval.kind}: ${approval.decision}${approval.superseded ? " (superseded)" : ""}`);
 		const accepted = detail.approvals.some((approval) => approval.kind === "code-review-acceptance" && approval.decision === "approved" && !approval.superseded);
-		const acceptable = currentness.status === "ready" && currentness.currentness === "verified" && currentness.evidenceEligible && !accepted;
+		const acceptable = currentness.status === "ready" && currentness.currentness === "verified" && currentness.evidenceEligible && !accepted && !(currentness.unreviewableFiles && currentness.unreviewableFiles.length);
 		const acceptButton = document.getElementById("review-accept");
 		acceptButton.disabled = !acceptable || !document.getElementById("review-scope-confirm").checked || !document.getElementById("review-declaration").value.trim();
 		const blockers = [];

@@ -282,10 +282,24 @@ describe("local review surface", () => {
 
 	test("export is a read-only derived snapshot with no remote resource and no state change", async () => {
 		const result = seed("drill");
+		const packet = app.warroom.db.query("SELECT * FROM review_packets WHERE id=?").get(result.packetId) as any;
+		const manifest = JSON.parse((app.warroom.db.query("SELECT content FROM revisions WHERE id=?").get(packet.code_revision_id) as any).content);
+		const hello = manifest.files.find((file: any) => file.path === "src/hello.ts");
 		await command("POST", `/api/review/${result.packetId}/comments`, {
-			targetType: "review",
+			targetType: "code-range",
+			path: "src/hello.ts",
+			side: "head",
+			startLine: 1,
+			endLine: 3,
+			blobSha: hello.head.blob,
 			kind: "comment",
 			body: `<script>alert("export")</script>`,
+		});
+		await command("POST", `/api/review/${result.packetId}/request-changes`, {
+			packetDigest: result.packetDigest,
+			scopeDigest: result.scopeDigest,
+			declaration: "Fix the validation before merge.",
+			actorConfirmed: true,
 		});
 		const before = app.warroom.events(fixture.initiativeId).length;
 		const approvalsBefore = app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get();
@@ -298,9 +312,34 @@ describe("local review surface", () => {
 		expect(html).not.toMatch(/<[^>]*(?:src|href)\s*=\s*["']?https?:/i);
 		expect(html).not.toContain("<button");
 		expect(html).toContain(result.packetDigest);
+		// Replayed comments and approvals keep their anchor, author, digest and decision.
+		expect(html).toContain("src/hello.ts:1-3");
+		expect(html).toContain("commander");
+		expect(html).toContain("Fix the validation before merge.");
+		expect(html).toContain("changes-requested");
+		expect(html).toContain(result.packetDigest.slice(0, 16));
 		expect(app.warroom.events(fixture.initiativeId).length).toBe(before);
 		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get()).toEqual(approvalsBefore);
 		const exportPath = response.headers.get("x-warroom-export-path")!;
 		expect(exportPath.endsWith(`${result.packetId}.html`)).toBe(true);
+	});
+
+	test("packet listings and initiative state keep the recorded local repository path server-side", async () => {
+		const result = seed("drill");
+		expect((app.warroom.db.query("SELECT repo_path FROM review_packets WHERE id=?").get(result.packetId) as any).repo_path).toBeTruthy();
+		const list = await (await request(`/api/review/packets?initiativeId=i1`, { headers: { host } })).json();
+		expect(list).toHaveLength(1);
+		expect(list[0]).not.toHaveProperty("repo_path");
+		const initiative = await (await request(`/api/initiative/i1`, { headers: { host } })).json();
+		expect(initiative.packets).toHaveLength(1);
+		expect(initiative.packets[0]).not.toHaveProperty("repoPath");
+	});
+
+	test("unsafe command identifiers and traversal-shaped packet ids are rejected before any export path is built", async () => {
+		const created = await command("POST", "/api/command", { type: "initiative.create", id: "../escape", title: "Escape" });
+		expect(created.status).toBe(400);
+		const traversal = await request(`/api/review/..%2Fescape/export`, { headers: { host } });
+		expect(traversal.status).toBe(400);
+		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM initiatives WHERE id LIKE '%escape%'").get()).toEqual({ n: 0 });
 	});
 });

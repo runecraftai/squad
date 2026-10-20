@@ -176,7 +176,10 @@ export class Warroom {
 			case "approval.record": {
 				const approval = {
 					...p,
+					actor: event.actor,
+					createdAt: event.occurred_at,
 					superseded: false,
+					supersededAt: null,
 					subjectDigest: revisions.get(p.revisionId)?.digest,
 					packetId: p.packetId ?? null,
 					packetDigest: p.packetDigest ?? null,
@@ -193,7 +196,7 @@ export class Warroom {
 				}
 				break;
 			}
-			case "comment.add": comments.push({ ...p, state: "open", anchorStatus: "current", targetType: p.targetType ?? "review", kind: p.kind ?? "comment" }); break;
+			case "comment.add": comments.push({ ...p, createdBy: event.actor, createdAt: event.occurred_at, state: "open", anchorStatus: "current", targetType: p.targetType ?? "review", kind: p.kind ?? "comment" }); break;
 			case "comment.resolve": {
 				const comment = comments.find((item) => item.id === p.commentId);
 				if (comment) { comment.state = "resolved"; comment.resolvedAt = event.occurred_at; comment.resolvedBy = event.actor; }
@@ -245,7 +248,12 @@ export class Warroom {
 					packet.supersededBy = p.supersededBy ?? null;
 					packet.staleReason = p.reason;
 				}
-				for (const approval of approvals) if (approval.packetId === p.packetId) approval.staleReason = p.reason;
+				for (const approval of approvals) {
+					if (approval.packetId !== p.packetId) continue;
+					approval.staleReason = p.reason;
+					approval.superseded = true;
+					approval.supersededAt = event.occurred_at;
+				}
 				break;
 			}
 			case "question.ask": questions.push({ ...p, status: "open" }); break;
@@ -289,6 +297,7 @@ export class Warroom {
 	close(): void { this.db.close(); }
 
 	private validate(command: Command): void {
+		if (command.id !== undefined) assertIdentifier(command.id, "command id");
 		if (command.type === "initiative.create") return;
 		const state = this.state(command.initiativeId);
 		if (!state.initiative) throw new Error("initiative does not exist");
@@ -323,9 +332,12 @@ export class Warroom {
 		if (command.type === "approval.record") {
 			const expectedKind = command.kind === "plan-approval" || command.kind === "execution-authorization" ? "plan" : "code";
 			if (revision.kind !== expectedKind) throw new Error("approval scope does not match revision kind");
-			const packet = state.packets.find((item) => item.codeRevisionId === revision.id);
-			if (command.kind === "code-review-acceptance" && packet) { this.validatePacketAcceptance(command, packet, state); return; }
 			if (command.kind === "code-review-acceptance") {
+				const packet = command.packetId
+					? state.packets.find((item) => item.id === command.packetId)
+					: state.packets.find((item) => item.codeRevisionId === revision.id);
+				if (command.packetId && !packet) throw new Error("review packet does not exist");
+				if (packet) { this.validatePacketAcceptance(command, packet, state); return; }
 				if (command.decision === "approved" && !command.evidenceId) throw new Error("review acceptance requires validation evidence");
 				if (command.evidenceId) {
 					const evidence = state.evidence.find((item) => item.id === command.evidenceId);
@@ -399,6 +411,7 @@ export class Warroom {
 	private validatePacketAcceptance(command: Extract<Command, { type: "approval.record" }>, packet: any, state: ReturnType<Warroom["state"]>): void {
 		if (packet.status === "stale") throw new Error("review packet is stale; a new snapshot must be captured");
 		if (command.packetId !== packet.id) throw new Error("review acceptance must name the exact review packet");
+		if (packet.codeRevisionId !== command.revisionId) throw new Error("review acceptance packet does not cover this revision");
 		if (command.packetDigest !== packet.packetDigest) throw new Error("review acceptance packet digest does not match");
 		if (command.evidenceDigest !== packet.evidenceDigest) throw new Error("review acceptance evidence digest does not match");
 		if (!command.scopeDigest || command.scopeDigest !== packet.scopeDigest) throw new Error("review acceptance must cover the complete packet scope");
@@ -513,7 +526,7 @@ export class Warroom {
 		}
 		case "review.supersede": {
 			this.db.query("UPDATE review_packets SET status='stale', superseded_at=?, superseded_by=?, stale_reason=? WHERE id=?").run(now, command.supersededBy ?? null, command.reason, command.packetId);
-			this.db.query("UPDATE approvals SET stale_reason=? WHERE packet_id=?").run(command.reason, command.packetId);
+			this.db.query("UPDATE approvals SET stale_reason=?, superseded_at=? WHERE packet_id=?").run(command.reason, now, command.packetId);
 			break;
 		}
 		}
@@ -573,6 +586,11 @@ export function assertSha(value: string, label: string): void {
 
 export function assertDigest(value: string, label: string): void {
 	if (!/^[0-9a-f]{64}$/.test(value)) throw new Error(`${label} must be a SHA-256 digest`);
+}
+
+/** Command and packet ids become filenames and URL segments, so they stay inside one safe path segment. */
+export function assertIdentifier(value: string, label: string): void {
+	if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(value)) throw new Error(`${label} must be a safe identifier`);
 }
 
 function assertLineRange(start: number | undefined, end: number | undefined): void {
