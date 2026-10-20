@@ -25,6 +25,27 @@ Wake, sentry, away-mode, and Relay-specific state mechanics remain with their na
 `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 Ordinary dead-direct-report recovery is owned by `stuck-operator-recovery`, while persistent-XO recovery is owned by `xo-provisioning`.
 
+## Local TUI service (config/squad-tui, state/squad-tui)
+
+This section is the canonical owner of the two private per-base directories, their files, their modes, and their lifecycle; `packages/squad-tui/README.md` owns usage, commands, and the first-delivery surface.
+The service serves one explicit base whose identity is `sha256` of its canonical `realpath`, and it binds only `127.0.0.1`.
+
+`config/squad-tui/` is the private credential directory: mode `0700`, owned by the effective UID, never created by following or replacing a symlink.
+`config/squad-tui/service-token` is the local service credential: mode `0600`, one hard link, 64 lowercase hex characters plus a newline, created exclusively on the first service start and reused unchanged afterwards.
+A malformed, unsafe, or unreadable token is refused rather than truncated or regenerated, and the service never prints it.
+Clients read that file directly and keep the value only in process memory.
+
+`state/squad-tui/` is the private discovery directory with the same `0700` owner-only rules.
+`state/squad-tui/endpoint.json` is the atomically published descriptor: mode `0600`, containing only `schemaVersion`, `baseId`, `serviceInstanceId`, `pid`, `port`, and `startedAt`.
+It is discovery information, never the exclusivity lock or a claim of primary authority; a clean stop removes only its own instance's descriptor, and a crash leaves a stale one that the next owner replaces without signalling its PID.
+
+The service excludes a second owner for one canonical base through Chord's kernel lock named `squad-tui-service-v1-<baseId>`, taken before credentials, descriptor publication, or storage access.
+It never acquires, writes, repairs, or removes the primary `state/.lock`, and an unavailable lock facility is a startup failure rather than a PID-file fallback.
+Rotation is offline: the same lock refuses a live owner, and a stopped service publishes a new token by synced temporary file and atomic rename.
+
+The service process runs on Node (verified on 25.2.1, minimum 22.19), because the pinned Chord node entry needs `node:module.registerHooks` and the pinned `ws` shim under Bun does not preserve Chord's text framing; the package toolchain (Vitest, `tsc`, Oxlint, Prettier) remains on Bun.
+Squad's own supervision, task metadata, and Relay state are unchanged, and no service directory is a substitute for `state/.lock`, `state/<id>.meta`, or any existing private record.
+
 ## Pi Calm preference (config/calm)
 
 The Pi Calm extension stores the commander's base-local presentation choice in gitignored `config/calm` under the effective Squad base, resolved from `SQUAD_BASE`, then legacy `SQUAD_HOME`, then `SQUAD_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `SQUAD_CONFIG_OVERRIDE` when that test and specialized-setup override is present.

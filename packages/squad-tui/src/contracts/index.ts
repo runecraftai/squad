@@ -6,6 +6,7 @@ export * from "./errors";
 export * from "./execution-state";
 export * from "./extension-ui";
 export * from "./identity";
+export * from "./local-service";
 export * from "./mission";
 export * from "./service-exclusivity";
 export * from "./session";

@@ -6,19 +6,26 @@
   "license": "MIT",
   "type": "module",
   "engines": {
-    "bun": ">=1.3.0"
+    "bun": ">=1.3.0",
+    "node": ">=22.19.0"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "service": "node src/service/main.ts serve",
+    "service:rotate": "node src/service/main.ts rotate-credential"
   },
   "dependencies": {
+    "@earendil-works/chord": "1.3.0",
+    "typebox": "1.3.27",
+    "ws": "8.18.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@types/ws": "8.18.1",
     "bun-types": "1.4.2",
     "oxlint": "1.87.0",
     "prettier": "3.9.9",
