@@ -161,7 +161,7 @@ Read this predicate together with the escalation conditions below as this profil
 
 ## Escalation conditions
 
-Stop when the requested surface is unreachable, the project contradicts D1/D2 or requires a different router/framework, required checks cannot run, or an unapproved design or lint-policy change is necessary.
+Escalate when the requested surface is unreachable, the project contradicts D1/D2 or requires a different router/framework, required checks cannot run, or an unapproved design or lint-policy change is necessary.
 Name the conflict and request a decision instead of silently migrating, weakening a rule, or extending scope.
 
 ## Anti-patterns
