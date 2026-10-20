@@ -1,13 +1,15 @@
-# Execution playbook: `react@1`
+# Execution profile: `react@1`
 
 ## Accepted brief form
 
-This contract accepts `strike` only, for React SPA work using TanStack Router with code-based routes, not Next.js.
+This profile accepts `strike` only, for React SPA work using TanStack Router with code-based routes, not Next.js.
+It attaches to the playbook that owns the task's sequence, completion evidence, stop condition, and delivery; this profile adds only the React constraints below.
+Read the checkpoints below as the constraint checkpoints this profile contributes to that playbook's steps, never as a second method.
 It materializes the commander's standard from Career Coach's `apps/web/AGENTS.md` and its repo-root `AGENTS.md`, with decisions D1-D3 below.
 The executor receives this contract in the brief and need not retrieve those source files.
 Selection is explicit; this contract does not automatically classify or dispatch React tasks.
 
-## Required sequence
+## Constraint checkpoints
 
 1. State the requested behavior, affected routes, data contracts, and authorized surface before implementation.
 2. Map changed modules to the D1 layers and identify import boundaries, hooks, pure functions, and component responsibilities before editing.
@@ -118,7 +120,7 @@ Lint cannot prove kebab-case folders, PascalCase names, absence of anonymous/wra
 Inspect those requirements explicitly and record concrete file/function evidence; do not claim automated coverage that was not exercised.
 Pending D3 deliberation does not waive D1/D2 or existing lint checks and does not block unrelated React work; stop for a decision if the authorized task depends on changing the lint policy.
 
-## What this playbook does not decide
+## What this profile does not decide
 
 The state defaults and form choices above are settled by the source standard; an alternative global-state library requires a separate decision rather than executor preference.
 This contract does not choose a styling system or test runner, neither of which the source standard settles as a general React rule.
@@ -127,9 +129,13 @@ It does not authorize a framework migration, broad legacy renaming, a store rewr
 
 ## Required evidence
 
-Write a `# react@1 checklist` under the Squad base's `data/<id>/artifacts/`, never in the project repository.
-Use five numbered `## Criterion N` sections with a distinct `Proof:` line per criterion, each bound to an actual `path:` or command with its result, except criterion 3, which carries the routing and queries records below instead of a `Proof:` line.
-The labels below name the evidence expected by `bin/sq-playbook-validate.sh`; its structural success does not prove architectural or runtime correctness.
+Write a `# react profile evidence` section in a Markdown file under the Squad base's `data/<id>/artifacts/`, never in the project repository.
+Begin that file with exactly the `# react profile evidence` heading, because `bin/sq-playbook-validate.sh` takes the first Markdown artifact under `data/<id>/artifacts/` whose heading matches `checklist` or `Checklist`, or contains `@1`, as the attached playbook's completion artifact.
+Never repeat the brief's profile identity heading, in its `# Execution profile:` plus `react@1` form or any other version-tagged form carrying `@1`, in this file: such a heading matches that predicate and can make the gate score this profile record instead of the playbook's checklist, failing an otherwise complete paired task.
+Keep every heading in this file free of `checklist`, `Checklist`, and `@` version tokens, including `@1`, so the profile record stays unreadable as a checklist however this profile is later versioned.
+Record five numbered `## Evidence N` sections, each naming the concrete `path:` or command with its result that a reviewer can check; a profile requires no separately validated checklist of its own.
+The labels below name the evidence this profile records.
+The attached playbook owns the completion gate, so a passing `bin/sq-playbook-validate.sh` run does not prove these records and its structural success proves neither architectural nor runtime correctness.
 
 1. **architecture**: changed modules mapped to layers, import directions, and boundaries check command/result, including unchanged architecture where relevant.
 2. **components**: changed named functions and kebab-case paths, hooks owning flows, and pure functions with zero React imports, with concrete inspection evidence.
@@ -141,23 +147,25 @@ The labels below name the evidence expected by `bin/sq-playbook-validate.sh`; it
    ```
 
    Write each record as a plain line beginning, after optional whitespace, with `Routing:` or `Queries:`; do not prefix Markdown list markers or emphasize the labels.
-   `bin/sq-playbook-validate.sh` checks only that shape: one record per label, a `changed` or `unchanged` state, a `-` separator, and nonblank free text. It does not read the free text for code-based routing, guards, invalidation, wording, case, or word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording. Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
+   No mechanical gate inspects these records for a paired brief, so the reviewing operator checks that each label appears once with a `changed` or `unchanged` state, a `-` separator, and nonblank free text, then reads the free text for code-based routing, guards, invalidation, wording, case, and word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording.
+   Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
 4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 
 ## Exit predicate
 
-The authorized React behavior works on the real surface, all five criteria have concrete evidence, and applicable type, lint, and focused behavior checks pass.
+The authorized React behavior works on the real surface, all five evidence areas have concrete evidence, and applicable type, lint, and focused behavior checks pass.
 Unchanged surfaces are justified rather than fabricated, and any pending D3 deliberation is explicit without being represented as an adopted configuration.
 The existing delivery path remains the authority for review, fixes, tests, delivery, approval, and merge.
+Read this predicate together with the escalation conditions below as this profile's satisfaction and escalation conditions inside the attached playbook's exit and stop rules, never as a second terminal authority.
 
-## Stop conditions
+## Escalation conditions
 
-Stop when the requested surface is unreachable, the project contradicts D1/D2 or requires a different router/framework, required checks cannot run, or an unapproved design or lint-policy change is necessary.
+Escalate when the requested surface is unreachable, the project contradicts D1/D2 or requires a different router/framework, required checks cannot run, or an unapproved design or lint-policy change is necessary.
 Name the conflict and request a decision instead of silently migrating, weakening a rule, or extending scope.
 
 ## Anti-patterns
 
 Do not put business logic back in JSX, use effects as a substitute for the query layer, mirror server state into stores, flatten the layers, or replace code-based routing with file routes.
 Do not treat the proposed oxlint block as commander approval or pretend lint alone proves the component-responsibility contract.
-Do not commit Squad checklists or create playbook-owned review, delivery, approval, or terminal authority.
+Do not commit Squad profile evidence or create playbook-owned review, delivery, approval, or terminal authority.

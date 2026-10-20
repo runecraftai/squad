@@ -1449,7 +1449,7 @@ if [ "$PLAYBOOK_LINES" -eq 1 ]; then
   case "$PLAYBOOK_LINE" in
     'Execution playbook: id=bug-fix version=1') PLAYBOOK_META=bug-fix; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=investigation version=1') PLAYBOOK_META=investigation; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
-    'Execution playbook: id=react version=1') PLAYBOOK_META=react; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
+    'Execution playbook: id=react version=1') echo "error: react@1 is an execution profile, not a playbook; scaffold it with --playbook <id>@<version> --profile react@1 so the method owns the sequence and the profile carries the React constraints" >&2; exit 1 ;;
     'Execution playbook: id=feature version=1') PLAYBOOK_META=feature; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=refactoring version=1') PLAYBOOK_META=refactoring; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     'Execution playbook: id=prototype version=1') PLAYBOOK_META=prototype; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
@@ -1468,6 +1468,30 @@ if [ "$PLAYBOOK_LINES" -eq 1 ]; then
       exit 1
     fi
   fi
+fi
+
+# An optional execution-profile identity attaches constraints to the playbook.
+# Validate it here for the same reason as the playbook identity: a brief is
+# edited after scaffolding, so a duplicated, unsupported, or truncated profile
+# must never launch with Squad believing the constraints were applied.
+PROFILE_LINES=$(grep -c '^Execution profile: ' "$BRIEF" 2>/dev/null || true)
+if [ "$PROFILE_LINES" -gt 1 ]; then
+  echo "error: brief $ID contains a duplicated execution profile identity" >&2
+  exit 1
+fi
+if [ "$PROFILE_LINES" -eq 1 ]; then
+  if [ "$PLAYBOOK_LINES" -eq 0 ]; then
+    echo "error: brief $ID carries an execution profile without an execution playbook; add the playbook that owns the sequence, or regenerate with --playbook <id>@<version> --profile <id>@<version>" >&2
+    exit 1
+  fi
+  PROFILE_LINE=$(grep '^Execution profile: ' "$BRIEF")
+  case "$PROFILE_LINE" in
+    'Execution profile: id=react version=1') PROFILE_META=react; PROFILE_VERSION_META=1; PROFILE_EXPECTED_KIND=strike ;;
+    *) echo "error: malformed or unsupported execution profile identity in $BRIEF" >&2; exit 1 ;;
+  esac
+  [ "$KIND" = "$PROFILE_EXPECTED_KIND" ] || { echo "error: $PROFILE_META@1 is compatible only with kind: $PROFILE_EXPECTED_KIND" >&2; exit 1; }
+  # shellcheck disable=SC2016 # Backticks are literal brief syntax.
+  grep -q "^# Execution profile: \`$PROFILE_META@$PROFILE_VERSION_META\`$" "$BRIEF" || { echo "error: $PROFILE_META@$PROFILE_VERSION_META identity has no materialized contract" >&2; exit 1; }
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode

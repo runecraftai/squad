@@ -360,6 +360,7 @@ Once ownership is settled, validate exactly once against that final head so no o
 An ask-user finding returns as `needs-decision`; Squad decides only when the configured authority permits, otherwise escalates to the commander.
 Every strike or recon brief records an explicit playbook decision - a selected `--playbook <id>@<version>` or a one-line `--no-playbook` reason none applies - and `bin/sq-brief.sh` refuses a missing one.
 For a strike brief with an explicit execution playbook, run its structural validator before sending the implementation to drill or the selected delivery path; the playbook validator never replaces drill.
+A selected profile adds constraints to that method and never replaces it, because the playbook owns the sequence, the completion evidence, and the stop condition.
 When the resolved worker lane is an execution-class model that must not design, select `plan-execute@1` with the plan materialized from the planning artifact and run `bin/sq-plan-validate.sh <id>` before dispatch; `bin/sq-spawn.sh` refuses an incomplete plan.
 Versioned planning and evaluation playbooks are methods only, while delivery remains owned by mode and drill and merge remains commander-authorized.
 `orchestrate` is rejected because Commander, XO, backlog, and supervision already own programme coordination; `autopilot-full`, `autopilot-stack`, and `autonomous-run` remain deferred until their documented measurable triggers are proven, and none adds merge, discard, or destructive authority.
@@ -602,7 +603,7 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `squad-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Squad work.
 - `session-handoff` - load on a `handoff-request` operational wake or a session-start HANDOFF REQUESTS section, and before writing a handoff request at a milestone close (a merged milestone PR or a drained flight queue); the commander owns the /new decision and it must never auto-start.
 - `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing an operator for a Squad-repo task.
-- `execution-playbooks` - load when a brief explicitly selects a versioned execution playbook, and run the named validator before delivery.
+- `execution-playbooks` - load when a brief explicitly selects a versioned execution playbook or attaches a profile, and run the selected playbook's named validator before delivery.
 - `hijack` - load before evaluating an existing open-source product for acquisition into the Runecraft brand, before taking its code into this repo, before rebranding or relicensing an acquired product, and before deciding go or no-go on that acquisition.
 - `review-comments` - load before writing or replying to any code-review thread, before choosing a Conventional Comments label or tone for a reply, and before building the visual review-thread board for the commander.
 - `obsidian-axi` - load before running any `obsidian-axi` CLI command, or when a task needs to search, read, or explore the commander's personal Obsidian vault via that CLI.

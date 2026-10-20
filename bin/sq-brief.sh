@@ -7,9 +7,9 @@
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
 # Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> \
-#                      {--playbook <id>@<version>|--no-playbook <reason>} [--herdr-lab]
+#                      {--playbook <id>@<version> [--profile <id>@<version>]|--no-playbook <reason>} [--herdr-lab]
 #        sq-brief.sh <task-id> <repo-name> --recon \
-#                      {--playbook <id>@<version>|--no-playbook <reason>} [--herdr-lab]
+#                      {--playbook <id>@<version> [--profile <id>@<version>]|--no-playbook <reason>} [--herdr-lab]
 #        sq-brief.sh <task-id> --xo {<project>...|--no-projects}
 #   --recon writes the recon contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -29,6 +29,23 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
+# A strike or recon brief must also record an explicit playbook decision:
+# either --playbook <id>@<version> selects a versioned execution playbook, or
+# --no-playbook "<reason>" states in one non-empty line why none applies.
+# A missing decision, an empty or whitespace-only reason, and both flags together
+# are refused, so "no playbook" is never an unexamined default. The decision is
+# recorded in the brief as the selectable "Execution playbook: id=<id> version=<version>"
+# line or a "Playbook decision: none - <reason>" line; the latter deliberately
+# does not start with "Execution playbook:" because bin/sq-spawn.sh parses only
+# that prefixed identity line. XO charters are not delivery contracts and stay
+# exempt: they neither require nor accept --no-playbook.
+# An execution method has three distinct categories, and each owns one thing.
+# A playbook is a complete method with its own sequence, reply contract, and stop
+# condition. A profile is a reusable constraint set attached to a playbook: it
+# carries constraints only and never a sequence or stop condition, so --profile
+# requires --playbook and cannot accompany --no-playbook. Its block follows the
+# playbook block. A gate is a mechanical check such as a lint rule or a
+# validator, never a selectable method.
 # The <task-id> must match the backlog item id exactly - the generated status
 # path uses this id, so a mismatch means the operator writes done: to a file
 # no task owns and the real state goes unknown.
@@ -43,16 +60,6 @@
 # When a project has an upstream, the brief must name the exact PR target, such
 # as `sq-gh pr create -R <owner>/<repo>`; forbidding the upstream alone is not
 # enough to tell the operator which repository to target.
-# A strike or recon brief must also record an explicit playbook decision:
-# either --playbook <id>@<version> selects a versioned execution playbook, or
-# --no-playbook "<reason>" states in one non-empty line why none applies.
-# A missing decision, an empty or whitespace-only reason, and both flags together
-# are refused, so "no playbook" is never an unexamined default. The decision is
-# recorded in the brief as the selectable "Execution playbook: id=<id> version=<version>"
-# line or a "Playbook decision: none - <reason>" line; the latter deliberately
-# does not start with "Execution playbook:" because bin/sq-spawn.sh parses only
-# that prefixed identity line. XO charters are not delivery contracts and stay
-# exempt: they neither require nor accept --no-playbook.
 # drill-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable
@@ -108,22 +115,66 @@ resolve_directory_input() {
   printf '%s\n' "$resolved"
 }
 
-# Collapse a free-text decision reason onto a single line. Unicode separators
-# that render as blank (NBSP, BOM, ideographic space) are mapped to a plain
-# space first so a visually empty reason normalizes to an empty string.
-normalize_decision_reason() {  # <reason>
-  local reason=$1 separator
-  for separator in $'\xc2\x85' $'\xc2\xa0' $'\xe1\x9a\x80' \
-      $'\xe2\x80\x80' $'\xe2\x80\x81' $'\xe2\x80\x82' $'\xe2\x80\x83' \
-      $'\xe2\x80\x84' $'\xe2\x80\x85' $'\xe2\x80\x86' $'\xe2\x80\x87' \
-      $'\xe2\x80\x88' $'\xe2\x80\x89' $'\xe2\x80\x8a' $'\xe2\x80\xa8' \
-      $'\xe2\x80\xa9' $'\xe2\x80\xaf' $'\xe2\x81\x9f' $'\xe3\x80\x80' \
-      $'\xef\xbb\xbf'; do
-    reason=${reason//"$separator"/ }
+# Apply one replacement to every code point in the given space-separated ranges
+# (each "first" or "first-last", hex), so invisible characters can be turned into
+# plain spaces for storage or removed for a visibility check.
+map_reason_ranges() {  # <reason> <replacement> <ranges>
+  local reason=$1 replacement=$2 ranges=$3 range cp encoded separator first last
+  for range in $ranges; do
+    first=$((16#${range%-*}))
+    if [ "$range" = "${range#*-}" ]; then last=$first; else last=$((16#${range#*-})); fi
+    for ((cp = first; cp <= last; cp++)); do
+      if ((cp < 0x80)); then
+        printf -v encoded '\\x%02x' "$cp"
+      elif ((cp < 0x800)); then
+        printf -v encoded '\\x%02x\\x%02x' $((0xc0 | (cp >> 6))) $((0x80 | (cp & 0x3f)))
+      elif ((cp < 0x10000)); then
+        printf -v encoded '\\x%02x\\x%02x\\x%02x' \
+          $((0xe0 | (cp >> 12))) $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
+      else
+        printf -v encoded '\\x%02x\\x%02x\\x%02x\\x%02x' \
+          $((0xf0 | (cp >> 18))) $((0x80 | ((cp >> 12) & 0x3f))) \
+          $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
+      fi
+      printf -v separator '%b' "$encoded"
+      reason=${reason//"$separator"/"$replacement"}
+    done
   done
+  printf '%s' "$reason"
+}
+
+# Code points that render as blank or as nothing: control characters, separators,
+# zero-width and bidirectional format controls that copy-paste carries invisibly,
+# fillers, and braille blank.
+BLANK_REASON_RANGES='0001-001f 007f-009f
+0085 00a0 1680 2000-200a 2028-2029 202f 205f 3000
+00ad 034f 061c 115f-1160 17b4-17b5 180b-180e 200b-200f 202a-202e
+2060-2064 2066-206f 2800 3164 feff ffa0 fff9-fffb
+1bca0-1bca3 1d173-1d17a e0001 e0020-e007f'
+# Code points that attach to a visible character instead of standing alone:
+# combining marks and variation selectors. They are removed only for the
+# visibility check, never from the stored reason, so decomposed text such as
+# "acao" written with combining accents keeps its accents.
+COMBINING_REASON_RANGES='0300-036f 0483-0489 1ab0-1aff 1dc0-1dff 20d0-20ff
+fe00-fe0f fe20-fe2f e0100-e01ef'
+
+# Collapse a free-text decision reason onto a single line, mapping blank-rendering
+# code points to plain spaces so a visually empty reason normalizes to an empty
+# string.
+normalize_decision_reason() {  # <reason>
+  local reason
+  reason=$(map_reason_ranges "$1" ' ' "$BLANK_REASON_RANGES")
   printf '%s' "$reason" \
     | tr '\n\r\t\v\f' '     ' \
     | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//'
+}
+
+# True when the reason still carries something a reader can see: every blank and
+# combining code point removed, and no whitespace left over.
+reason_has_visible_content() {  # <reason>
+  local stripped
+  stripped=$(map_reason_ranges "$1" '' "$BLANK_REASON_RANGES $COMBINING_REASON_RANGES")
+  [ -n "${stripped//[[:space:]]/}" ]
 }
 
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -147,6 +198,8 @@ PLAYBOOK=
 PLAYBOOK_SET=0
 NO_PLAYBOOK=
 NO_PLAYBOOK_SET=0
+PROFILE=
+PROFILE_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -158,6 +211,7 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       playbook) PLAYBOOK=$a; PLAYBOOK_SET=1 ;;
       no-playbook) NO_PLAYBOOK=$a; NO_PLAYBOOK_SET=1 ;;
+      profile) PROFILE=$a; PROFILE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -174,6 +228,8 @@ for a in "$@"; do
     --playbook=*) PLAYBOOK=${a#--playbook=}; PLAYBOOK_SET=1 ;;
     --no-playbook) want_value=no-playbook ;;
     --no-playbook=*) NO_PLAYBOOK=${a#--no-playbook=}; NO_PLAYBOOK_SET=1 ;;
+    --profile) want_value=profile ;;
+    --profile=*) PROFILE=${a#--profile=}; PROFILE_SET=1 ;;
     # yolo never reaches the worker: it is Squad's approval authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -213,6 +269,12 @@ if [ "$KIND" = xo ]; then
     exit 1
   }
 else
+  # A profile never stands alone and never replaces the method, so it is refused
+  # here instead of surfacing later as a generic missing-decision error.
+  if [ "$PROFILE_SET" -eq 1 ] && [ "$PLAYBOOK_SET" -eq 0 ]; then
+    echo "error: --profile requires --playbook; a profile constrains a playbook's sequence instead of replacing it, so pass the method that owns this task, for example --playbook feature@1 --profile react@1" >&2
+    exit 1
+  fi
   if [ "$PLAYBOOK_SET" -eq 1 ] && [ "$NO_PLAYBOOK_SET" -eq 1 ]; then
     echo "error: --playbook and --no-playbook are mutually exclusive; record exactly one playbook decision" >&2
     exit 1
@@ -225,13 +287,79 @@ else
     # One line, always: collapse any embedded whitespace so the recorded reason
     # stays a single readable line in the brief.
     NO_PLAYBOOK_REASON=$(normalize_decision_reason "$NO_PLAYBOOK")
-    [ -n "${NO_PLAYBOOK_REASON//[[:space:]]/}" ] || {
+    reason_has_visible_content "$NO_PLAYBOOK_REASON" || {
       echo "error: --no-playbook requires a non-empty reason explaining why no execution playbook applies" >&2
       exit 1
     }
   fi
 fi
 ID=${POS[0]}
+
+# Selectable methods are one registry of "<id>@<version> <kind> <reference>": the
+# materialization below and the category check read the same entries, so a
+# newly registered method cannot be resolved by one and misclassified by the other.
+# The plan-execute reference carries the generated checklist location and commit boundary.
+PLAYBOOK_REGISTRY='bug-fix@1 strike bug-fix-v1.md
+investigation@1 recon investigation-v1.md
+feature@1 strike feature-v1.md
+refactoring@1 strike refactoring-v1.md
+prototype@1 recon prototype-v1.md
+perf@1 strike perf-v1.md
+hillclimb@1 strike hillclimb-v1.md
+runtime-forensics@1 recon runtime-forensics-v1.md
+trace-forensics@1 recon trace-forensics-v1.md
+visual-parity@1 recon|strike visual-parity-v1.md
+multi-phase-plan@1 recon multi-phase-plan-v1.md
+eval@1 recon eval-v1.md
+plan-execute@1 strike plan-execute-v1.md'
+PROFILE_REGISTRY='react@1 strike react-v1.md'
+
+# The "<kind> <reference>" tail of a registered value, and nothing for an
+# unregistered one.
+registry_lookup() {  # <registry> <value>
+  local registry=$1 value=$2 entry
+  while IFS= read -r entry; do
+    case "$entry" in
+      "$value "*) printf '%s' "${entry#"$value "}"; return 0 ;;
+    esac
+  done <<< "$registry"
+  return 1
+}
+
+# True when a registry registers the id in any version, so an unsupported version
+# still names the category the id belongs to.
+registry_has_id() {  # <registry> <id>
+  local registry=$1 id=$2 entry
+  while IFS= read -r entry; do
+    if [ "${entry%%@*}" = "$id" ]; then return 0; fi
+  done <<< "$registry"
+  return 1
+}
+
+execution_category() {  # <value>
+  local id="${1%@*}"
+  if registry_has_id "$PROFILE_REGISTRY" "$id"; then
+    printf 'profile'
+  elif registry_has_id "$PLAYBOOK_REGISTRY" "$id"; then
+    printf 'playbook'
+  else
+    printf 'unknown'
+  fi
+}
+
+# A value spelled with the other category's id is refused by naming that category
+# and the flag that carries it, so a correctly spelled id never surfaces as an
+# unsupported version of the flag it was wrongly passed to.
+refuse_category_mixup() {  # <flag> <value>
+  local flag=$1 value=$2 other
+  if [ "$flag" = profile ]; then other=playbook; else other=profile; fi
+  [ "$(execution_category "$value")" = "$other" ] || return 1
+  if [ "$other" = playbook ]; then
+    echo "error: $value is an execution playbook, not a profile; a profile is selected with --profile <id>@<version> next to the playbook it constrains" >&2
+  else
+    echo "error: $value is an execution profile, not a playbook; a profile is selected with --profile <id>@<version> next to the --playbook that owns the sequence" >&2
+  fi
+}
 
 # Playbooks are explicit method contracts, separate from kind and delivery mode.
 # Validate before creating the task directory so rejected selections leave no partial brief.
@@ -240,30 +368,29 @@ PLAYBOOK_ID=
 PLAYBOOK_VERSION=
 if [ "$PLAYBOOK_SET" -eq 1 ]; then
   case "$PLAYBOOK" in
-    bug-fix@1) PLAYBOOK_ID=bug-fix; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md"); EXPECTED_KIND=strike ;;
-    investigation@1) PLAYBOOK_ID=investigation; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/investigation-v1.md"); EXPECTED_KIND=recon ;;
-    react@1) PLAYBOOK_ID=react; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/react-v1.md"); EXPECTED_KIND=strike ;;
-    feature@1) PLAYBOOK_ID=feature; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/feature-v1.md"); EXPECTED_KIND=strike ;;
-    refactoring@1) PLAYBOOK_ID=refactoring; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/refactoring-v1.md"); EXPECTED_KIND=strike ;;
-    prototype@1) PLAYBOOK_ID=prototype; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/prototype-v1.md"); EXPECTED_KIND=recon ;;
-    perf@1) PLAYBOOK_ID=perf; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/perf-v1.md"); EXPECTED_KIND=strike ;;
-    hillclimb@1) PLAYBOOK_ID=hillclimb; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/hillclimb-v1.md"); EXPECTED_KIND=strike ;;
-    runtime-forensics@1) PLAYBOOK_ID=runtime-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/runtime-forensics-v1.md"); EXPECTED_KIND=recon ;;
-    trace-forensics@1) PLAYBOOK_ID=trace-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/trace-forensics-v1.md"); EXPECTED_KIND=recon ;;
-    visual-parity@1) PLAYBOOK_ID=visual-parity; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/visual-parity-v1.md"); EXPECTED_KIND='recon|strike' ;;
-    multi-phase-plan@1) PLAYBOOK_ID=multi-phase-plan; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/multi-phase-plan-v1.md"); EXPECTED_KIND=recon ;;
-    "eval@1") PLAYBOOK_ID='eval'; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/eval-v1.md"); EXPECTED_KIND=recon ;;
-    # The generated checklist location and commit boundary live in the playbook reference.
-    plan-execute@1) PLAYBOOK_ID=plan-execute; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/plan-execute-v1.md"); EXPECTED_KIND=strike ;;
-    orchestrate@1) echo "error: orchestrate@1 disposition=reject; Commander, XO, backlog, and supervision already own programme coordination" >&2; exit 1 ;;
-    autopilot-full@1|autopilot-stack@1) echo "error: $PLAYBOOK disposition=defer; re-evaluate only for a real multi-PR programme where commander merge approval is the measured bottleneck and yolo cannot cover it; no auto-merge or drill bypass" >&2; exit 1 ;;
-    autonomous-run@1) echo "error: autonomous-run disposition=defer; re-evaluate only with a real task whose cycle the current supervision cannot conduct, plus a verifiable terminal predicate, budget, stop conditions, and duplicate prevention" >&2; exit 1 ;;
-    shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
-    *@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
-    *) echo "error: unknown execution playbook '$PLAYBOOK'" >&2; exit 1 ;;
   esac
+  if entry=$(registry_lookup "$PLAYBOOK_REGISTRY" "$PLAYBOOK"); then
+    PLAYBOOK_ID=${PLAYBOOK%@*}
+    PLAYBOOK_VERSION=${PLAYBOOK#*@}
+    PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/${entry##* }")
+    EXPECTED_KIND=${entry%% *}
+  else
+    case "$PLAYBOOK" in
+      react@1) echo "error: react@1 is an execution profile, not a playbook; pair it with the method that owns the sequence, for example --playbook feature@1 --profile react@1" >&2; exit 1 ;;
+      orchestrate@1) echo "error: orchestrate@1 disposition=reject; Commander, XO, backlog, and supervision already own programme coordination" >&2; exit 1 ;;
+      autopilot-full@1|autopilot-stack@1) echo "error: $PLAYBOOK disposition=defer; re-evaluate only for a real multi-PR programme where commander merge approval is the measured bottleneck and yolo cannot cover it; no auto-merge or drill bypass" >&2; exit 1 ;;
+      autonomous-run@1) echo "error: autonomous-run disposition=defer; re-evaluate only with a real task whose cycle the current supervision cannot conduct, plus a verifiable terminal predicate, budget, stop conditions, and duplicate prevention" >&2; exit 1 ;;
+      shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
+      *@*)
+        refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook version '$PLAYBOOK'" >&2
+        exit 1 ;;
+      *)
+        refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook '$PLAYBOOK'" >&2
+        exit 1 ;;
+    esac
+  fi
   if [ "$PLAYBOOK_ID" = visual-parity ]; then
     case "$KIND" in
       recon|strike) ;;
@@ -278,6 +405,41 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
   fi
 fi
 
+# Profiles are reusable constraint sets that attach to a playbook and never
+# stand alone, so they add no sequence and own no completion. The intake gate
+# above already refused a profile with no playbook; this validates the identity
+# before creating the task directory, so a rejected selection leaves no partial
+# brief.
+PROFILE_SECTION=
+PROFILE_ID=
+PROFILE_VERSION=
+PROFILE_EXPECTED_KIND=
+if [ "$PROFILE_SET" -eq 1 ]; then
+  case "$PROFILE" in
+    '') echo "error: --profile requires a value" >&2; exit 1 ;;
+    *'@') echo "error: execution profile version is missing in '$PROFILE'" >&2; exit 1 ;;
+  esac
+  if entry=$(registry_lookup "$PROFILE_REGISTRY" "$PROFILE"); then
+    PROFILE_ID=${PROFILE%@*}
+    PROFILE_VERSION=${PROFILE#*@}
+    PROFILE_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/${entry##* }")
+    PROFILE_EXPECTED_KIND=${entry%% *}
+  else
+    case "$PROFILE" in
+      *@*)
+        refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile version '$PROFILE'" >&2
+        exit 1 ;;
+      *)
+        refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile '$PROFILE'" >&2
+        exit 1 ;;
+    esac
+  fi
+  if [ "$KIND" != "$PROFILE_EXPECTED_KIND" ]; then
+    echo "error: $PROFILE accepts only kind: $PROFILE_EXPECTED_KIND (not $KIND)" >&2
+    exit 1
+  fi
+fi
+
 # The recorded playbook decision, rendered into both strike and recon briefs.
 # The selected form keeps the exact "Execution playbook: id=<id> version=<version>"
 # line bin/sq-spawn.sh parses; the none form uses a distinct label so it can never
@@ -287,6 +449,16 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
   if [ "$KIND" = recon ]; then PLAYBOOK_BLOCK+=$'\n'; else PLAYBOOK_BLOCK+=$'\n\n'; fi
 else
   PLAYBOOK_BLOCK="Playbook decision: none - $NO_PLAYBOOK_REASON"$'\n\n'
+fi
+# A profile renders after the playbook block, never instead of it. The extra
+# leading newline only serves the recon form, whose playbook block ends with one.
+# The block is gated on the recorded decision, not on its content, so an empty
+# reference still writes the identity line and bin/sq-spawn.sh refuses the brief
+# as having no materialized contract instead of launching without the profile.
+PROFILE_BLOCK=
+if [ "$PROFILE_SET" -eq 1 ]; then
+  if [ "$KIND" = recon ]; then PROFILE_BLOCK=$'\n'; fi
+  PROFILE_BLOCK+="Execution profile: id=$PROFILE_ID version=$PROFILE_VERSION"$'\n\n'"$PROFILE_SECTION"$'\n\n'
 fi
 
 if [ "$KIND" = xo ] && [ "$HERDR_LAB" -eq 1 ]; then
@@ -446,7 +618,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 # Task
 {TASK}
 
-${PLAYBOOK_BLOCK}$HERDR_SECTION
+${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -578,7 +750,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 
 $HERDR_SECTION
 
-${PLAYBOOK_BLOCK}# Setup
+${PLAYBOOK_BLOCK}${PROFILE_BLOCK}# Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a fob pool path or an Orca-managed worktree, not the primary checkout Squad operates from.

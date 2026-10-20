@@ -812,24 +812,93 @@ test_active_dispatch_profile_does_not_block_XO_launch() {
   pass "active crew-dispatch profile does not block XO launches"
 }
 
-test_react_playbook_identity_survives_spawn() {
+test_react_profile_identity_survives_spawn() {
   local rec id out status
-  id=react-playbook-spawn
-  rec=$(make_spawn_case react-playbook pi)
+  id=react-profile-spawn
+  rec=$(make_spawn_case react-profile pi)
   read_case_record "$rec"
-  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook react@1 >/dev/null 2>&1 \
-    || fail "React spawn fixture should scaffold"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+    || fail "React profile spawn fixture should scaffold"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
   status=$?
-  expect_code 0 "$status" "React scaffold must be accepted by spawn: $out"
-  assert_grep 'playbook=react' "$HOME_DIR/state/$id.meta" 'spawn lost the React playbook identity'
-  assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the React playbook version'
-  assert_grep 'brief.md' "$LAUNCH_LOG" 'React spawn must deliver its materialized brief'
-  pass 'React playbook scaffold launches and records its evidence-validator identity'
+  expect_code 0 "$status" "React profile scaffold must be accepted by spawn: $out"
+  assert_grep 'playbook=feature' "$HOME_DIR/state/$id.meta" 'spawn lost the paired playbook identity'
+  assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the playbook version'
+  assert_grep 'Execution profile: id=react version=1' "$HOME_DIR/data/$id/brief.md" 'React profile block missing from the delivered brief'
+  assert_grep 'brief.md' "$LAUNCH_LOG" 'React profile spawn must deliver its materialized brief'
+  pass 'React profile scaffold launches with its paired playbook'
+}
+
+test_react_as_playbook_is_refused_at_spawn() {
+  local rec id out status brief
+  id=react-as-playbook-spawn
+  rec=$(make_spawn_case react-as-playbook pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+    || fail "React-as-playbook spawn fixture should scaffold"
+  brief="$HOME_DIR/data/$id/brief.md"
+  # A brief scaffolded before the reclassification, or one edited by hand, still
+  # names react@1 as the method; it must never launch or reach task metadata.
+  sed -i.bak 's/^Execution playbook: id=feature version=1$/Execution playbook: id=react version=1/' "$brief" && rm -f "$brief.bak"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn must refuse a brief that selects react@1 as its playbook: $out"
+  assert_contains "$out" "--profile react@1" "the react-as-playbook refusal did not name the pairing that works"
+  assert_absent "$HOME_DIR/state/$id.meta" "the react-as-playbook refusal created task metadata"
+  pass "spawn refuses react@1 as a playbook and names the profile pairing"
+}
+
+test_malformed_profile_identity_is_refused_at_spawn() {
+  local mutation id rec out status brief
+
+  run_invalid_profile_case() {
+    mutation=$1
+    id="react-profile-invalid-$mutation"
+    rec=$(make_spawn_case "react-profile-invalid-$mutation" pi)
+    read_case_record "$rec"
+    SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+      || fail "React profile spawn fixture should scaffold: $mutation"
+    brief="$HOME_DIR/data/$id/brief.md"
+    case "$mutation" in
+      duplicate)
+        printf 'Execution profile: id=react version=1\n' >> "$brief"
+        ;;
+      unknown)
+        sed -i.bak 's/^Execution profile: id=react version=1$/Execution profile: id=svelte version=1/' "$brief" && rm -f "$brief.bak"
+        ;;
+      version)
+        sed -i.bak 's/^Execution profile: id=react version=1$/Execution profile: id=react version=2/' "$brief" && rm -f "$brief.bak"
+        ;;
+      truncated)
+        grep -v "^# Execution profile: \`react@1\`$" "$brief" > "$brief.tmp" && mv "$brief.tmp" "$brief"
+        ;;
+      unpaired)
+        grep -v -e '^Execution playbook: ' -e '^# Execution playbook: ' "$brief" > "$brief.tmp" && mv "$brief.tmp" "$brief"
+        ;;
+    esac
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    status=$?
+    [ "$status" -ne 0 ] || fail "spawn must refuse a $mutation execution profile: $out"
+    assert_absent "$HOME_DIR/state/$id.meta" "a $mutation profile refusal created task metadata"
+  }
+
+  run_invalid_profile_case duplicate
+  assert_contains "$out" 'duplicated execution profile identity' 'duplicate-profile refusal did not identify the duplication'
+  run_invalid_profile_case unknown
+  assert_contains "$out" 'unsupported execution profile identity' 'unknown-profile refusal did not identify the identity'
+  run_invalid_profile_case version
+  assert_contains "$out" 'unsupported execution profile identity' 'unsupported-profile refusal did not identify the identity'
+  run_invalid_profile_case truncated
+  assert_contains "$out" 'has no materialized contract' 'truncated-profile refusal did not identify the missing contract'
+  run_invalid_profile_case unpaired
+  assert_contains "$out" 'without an execution playbook' 'unpaired-profile refusal did not name the missing playbook'
+  pass 'spawn refuses duplicated, unsupported, truncated, and unpaired execution profiles'
 }
 
 test_no_profile_keeps_claude_profile_defaults
-test_react_playbook_identity_survives_spawn
+test_react_profile_identity_survives_spawn
+test_react_as_playbook_is_refused_at_spawn
+test_malformed_profile_identity_is_refused_at_spawn
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
 test_home_defaults_preserve_absolute_or_resolve_relative_paths
 test_absolute_override_spelling_is_preserved_in_launch_paths
