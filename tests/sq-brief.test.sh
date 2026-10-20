@@ -257,7 +257,8 @@ ROWS
       $'\xc2\xad' $'\xcc\x81' $'\xcd\x8f' $'\xe2\x80\x8b' $'\xe2\x80\x8c' \
       $'\xe2\x80\x8d' $'\xe2\x80\x8e' $'\xe2\x80\xae' $'\xe2\x81\xa0' \
       $'\xe2\x81\xa3' $'\xe2\xa0\x80' $'\xef\xb8\x8f' $'\xef\xbb\xbf' \
-      $'\xef\xbf\xb9' $'\xf3\xa0\x84\x80' $'\xf3\xa0\x87\xaf'; do
+      $'\xef\xbf\xb9' $'\xf3\xa0\x84\x80' $'\xf3\xa0\x87\xaf' \
+      $'\x01' $'\x1b' $'\x7f' $'\xc2\x80' $'\xc2\x9b'; do
     out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo --recon --no-playbook "$invisible" 2>&1); status=$?
     [ "$status" -ne 0 ] || fail "an invisible-only --no-playbook reason must be refused: $(printf '%q' "$invisible")"
     assert_contains "$out" "non-empty reason" "an invisible-only --no-playbook reason did not say what is missing"
@@ -268,6 +269,19 @@ ROWS
     || fail "a --no-playbook reason with zero-width characters should scaffold"
   assert_grep "Playbook decision: none - api v2 retry" "$home/data/decision-recon-joined/brief.md" \
     "zero-width characters in a --no-playbook reason were not normalized to spaces"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-controls repo --recon \
+    --no-playbook "$(printf 'api\x01v2\x1bretry')" >/dev/null 2>&1 \
+    || fail "a --no-playbook reason with control characters should scaffold once they are normalized"
+  assert_grep "Playbook decision: none - api v2 retry" "$home/data/decision-recon-controls/brief.md" \
+    "control characters in a --no-playbook reason were not normalized to spaces"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-escapes repo --recon \
+    --no-playbook "$(printf 'clear\x1b[2J\x1b[Hscreen')" >/dev/null 2>&1 \
+    || fail "a --no-playbook reason carrying terminal escapes should scaffold once the escapes are neutralized"
+  if grep -q "$(printf '\x1b')" "$home/data/decision-recon-escapes/brief.md"; then
+    fail "a --no-playbook reason must not carry raw terminal escapes into the brief"
+  fi
 
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-arrow repo --recon \
     --no-playbook "$(printf 'route \xef\xbf\xa9 left')" >/dev/null 2>&1 \
@@ -1193,11 +1207,13 @@ test_playbook_profile_pairing_and_refusals() {
   assert_contains "$out" "is an execution profile, not a playbook" "profile-as-playbook refusal must name the category the id belongs to"
   assert_absent "$home/data/profile-as-playbook-version/brief.md" "profile-as-playbook-version refusal left a partial brief"
 
-  # A playbook id passed to --profile names the flag that carries it.
+  # A playbook id passed to --profile names the flag that carries it, without
+  # restating the value in a command that cannot work (a playbook already selected
+  # cannot also be the profile, and an unsupported version stays unsupported).
   out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-playbook-as-profile repo --mode drill --playbook feature@1 --profile feature@1 2>&1); status=$?
   [ "$status" -ne 0 ] || fail "a playbook id must not be accepted as a profile"
   assert_contains "$out" "is an execution playbook, not a profile" "playbook-as-profile refusal must name the category the id belongs to"
-  assert_contains "$out" "--playbook feature@1" "playbook-as-profile refusal must show the flag that carries it"
+  assert_contains "$out" "--profile" "playbook-as-profile refusal must name the flag that carries a profile"
   assert_absent "$home/data/profile-playbook-as-profile/brief.md" "playbook-as-profile refusal left a partial brief"
 
   # An empty profile reference must not silently drop the selection: the identity

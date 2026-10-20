@@ -143,9 +143,11 @@ map_reason_ranges() {  # <reason> <replacement> <ranges>
   printf '%s' "$reason"
 }
 
-# Code points that render as blank: separators, zero-width and bidirectional
-# format controls that copy-paste carries invisibly, fillers, and braille blank.
-BLANK_REASON_RANGES='0085 00a0 1680 2000-200a 2028-2029 202f 205f 3000
+# Code points that render as blank or as nothing: control characters, separators,
+# zero-width and bidirectional format controls that copy-paste carries invisibly,
+# fillers, and braille blank.
+BLANK_REASON_RANGES='0001-001f 007f-009f
+0085 00a0 1680 2000-200a 2028-2029 202f 205f 3000
 00ad 034f 061c 115f-1160 17b4-17b5 180b-180e 200b-200f 202a-202e
 2060-2064 2066-206f 2800 3164 feff ffa0 fff9-fffb
 1bca0-1bca3 1d173-1d17a e0001 e0020-e007f'
@@ -293,33 +295,69 @@ else
 fi
 ID=${POS[0]}
 
-# Categories are columns of one table: a value passed to the wrong flag names the
-# category it belongs to and the flag that carries it, instead of reporting only
-# an unsupported version for a correctly spelled id from the other table.
-execution_category() {
-  case "${1%@*}" in
-    react) printf 'profile' ;;
-    bug-fix|investigation|feature|refactoring|prototype|perf|hillclimb|runtime-forensics|trace-forensics|visual-parity|multi-phase-plan|eval|plan-execute) printf 'playbook' ;;
-    *) printf 'unknown' ;;
-  esac
+# Selectable methods are one registry of "<id>@<version> <kind> <reference>": the
+# materialization below and the category check read the same entries, so a
+# newly registered method cannot be resolved by one and misclassified by the other.
+# The plan-execute reference carries the generated checklist location and commit boundary.
+PLAYBOOK_REGISTRY='bug-fix@1 strike bug-fix-v1.md
+investigation@1 recon investigation-v1.md
+feature@1 strike feature-v1.md
+refactoring@1 strike refactoring-v1.md
+prototype@1 recon prototype-v1.md
+perf@1 strike perf-v1.md
+hillclimb@1 strike hillclimb-v1.md
+runtime-forensics@1 recon runtime-forensics-v1.md
+trace-forensics@1 recon trace-forensics-v1.md
+visual-parity@1 recon|strike visual-parity-v1.md
+multi-phase-plan@1 recon multi-phase-plan-v1.md
+eval@1 recon eval-v1.md
+plan-execute@1 strike plan-execute-v1.md'
+PROFILE_REGISTRY='react@1 strike react-v1.md'
+
+# The "<kind> <reference>" tail of a registered value, and nothing for an
+# unregistered one.
+registry_lookup() {  # <registry> <value>
+  local registry=$1 value=$2 entry
+  while IFS= read -r entry; do
+    case "$entry" in
+      "$value "*) printf '%s' "${entry#"$value "}"; return 0 ;;
+    esac
+  done <<< "$registry"
+  return 1
+}
+
+# True when a registry registers the id in any version, so an unsupported version
+# still names the category the id belongs to.
+registry_has_id() {  # <registry> <id>
+  local registry=$1 id=$2 entry
+  while IFS= read -r entry; do
+    if [ "${entry%%@*}" = "$id" ]; then return 0; fi
+  done <<< "$registry"
+  return 1
+}
+
+execution_category() {  # <value>
+  local id="${1%@*}"
+  if registry_has_id "$PROFILE_REGISTRY" "$id"; then
+    printf 'profile'
+  elif registry_has_id "$PLAYBOOK_REGISTRY" "$id"; then
+    printf 'playbook'
+  else
+    printf 'unknown'
+  fi
 }
 
 # A value spelled with the other category's id is refused by naming that category
 # and the flag that carries it, so a correctly spelled id never surfaces as an
 # unsupported version of the flag it was wrongly passed to.
-refuse_category_mixup() {
-  local flag="$1" value="$2" other id ref
+refuse_category_mixup() {  # <flag> <value>
+  local flag=$1 value=$2 other
   if [ "$flag" = profile ]; then other=playbook; else other=profile; fi
-  id="${value%@*}"
   [ "$(execution_category "$value")" = "$other" ] || return 1
-  case "$value" in
-    *@*) ref="$value" ;;
-    *) ref="$id@<version>" ;;
-  esac
   if [ "$other" = playbook ]; then
-    echo "error: $value is an execution playbook, not a profile; pass it with --playbook $ref" >&2
+    echo "error: $value is an execution playbook, not a profile; a profile is selected with --profile <id>@<version> next to the playbook it constrains" >&2
   else
-    echo "error: $value is an execution profile, not a playbook; pair it with the method that owns the sequence, for example --playbook feature@1 --profile $ref" >&2
+    echo "error: $value is an execution profile, not a playbook; a profile is selected with --profile <id>@<version> next to the --playbook that owns the sequence" >&2
   fi
 }
 
@@ -330,34 +368,29 @@ PLAYBOOK_ID=
 PLAYBOOK_VERSION=
 if [ "$PLAYBOOK_SET" -eq 1 ]; then
   case "$PLAYBOOK" in
-    bug-fix@1) PLAYBOOK_ID=bug-fix; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md"); EXPECTED_KIND=strike ;;
-    investigation@1) PLAYBOOK_ID=investigation; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/investigation-v1.md"); EXPECTED_KIND=recon ;;
-    feature@1) PLAYBOOK_ID=feature; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/feature-v1.md"); EXPECTED_KIND=strike ;;
-    refactoring@1) PLAYBOOK_ID=refactoring; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/refactoring-v1.md"); EXPECTED_KIND=strike ;;
-    prototype@1) PLAYBOOK_ID=prototype; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/prototype-v1.md"); EXPECTED_KIND=recon ;;
-    perf@1) PLAYBOOK_ID=perf; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/perf-v1.md"); EXPECTED_KIND=strike ;;
-    hillclimb@1) PLAYBOOK_ID=hillclimb; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/hillclimb-v1.md"); EXPECTED_KIND=strike ;;
-    runtime-forensics@1) PLAYBOOK_ID=runtime-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/runtime-forensics-v1.md"); EXPECTED_KIND=recon ;;
-    trace-forensics@1) PLAYBOOK_ID=trace-forensics; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/trace-forensics-v1.md"); EXPECTED_KIND=recon ;;
-    visual-parity@1) PLAYBOOK_ID=visual-parity; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/visual-parity-v1.md"); EXPECTED_KIND='recon|strike' ;;
-    multi-phase-plan@1) PLAYBOOK_ID=multi-phase-plan; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/multi-phase-plan-v1.md"); EXPECTED_KIND=recon ;;
-    "eval@1") PLAYBOOK_ID='eval'; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/eval-v1.md"); EXPECTED_KIND=recon ;;
-    # The generated checklist location and commit boundary live in the playbook reference.
-    plan-execute@1) PLAYBOOK_ID=plan-execute; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/plan-execute-v1.md"); EXPECTED_KIND=strike ;;
-    react@1) echo "error: react@1 is an execution profile, not a playbook; pair it with the method that owns the sequence, for example --playbook feature@1 --profile react@1" >&2; exit 1 ;;
-    orchestrate@1) echo "error: orchestrate@1 disposition=reject; Commander, XO, backlog, and supervision already own programme coordination" >&2; exit 1 ;;
-    autopilot-full@1|autopilot-stack@1) echo "error: $PLAYBOOK disposition=defer; re-evaluate only for a real multi-PR programme where commander merge approval is the measured bottleneck and yolo cannot cover it; no auto-merge or drill bypass" >&2; exit 1 ;;
-    autonomous-run@1) echo "error: autonomous-run disposition=defer; re-evaluate only with a real task whose cycle the current supervision cannot conduct, plus a verifiable terminal predicate, budget, stop conditions, and duplicate prevention" >&2; exit 1 ;;
-    shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
-    *@*)
-      refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook version '$PLAYBOOK'" >&2
-      exit 1 ;;
-    *)
-      refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook '$PLAYBOOK'" >&2
-      exit 1 ;;
   esac
+  if entry=$(registry_lookup "$PLAYBOOK_REGISTRY" "$PLAYBOOK"); then
+    PLAYBOOK_ID=${PLAYBOOK%@*}
+    PLAYBOOK_VERSION=${PLAYBOOK#*@}
+    PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/${entry##* }")
+    EXPECTED_KIND=${entry%% *}
+  else
+    case "$PLAYBOOK" in
+      react@1) echo "error: react@1 is an execution profile, not a playbook; pair it with the method that owns the sequence, for example --playbook feature@1 --profile react@1" >&2; exit 1 ;;
+      orchestrate@1) echo "error: orchestrate@1 disposition=reject; Commander, XO, backlog, and supervision already own programme coordination" >&2; exit 1 ;;
+      autopilot-full@1|autopilot-stack@1) echo "error: $PLAYBOOK disposition=defer; re-evaluate only for a real multi-PR programme where commander merge approval is the measured bottleneck and yolo cannot cover it; no auto-merge or drill bypass" >&2; exit 1 ;;
+      autonomous-run@1) echo "error: autonomous-run disposition=defer; re-evaluate only with a real task whose cycle the current supervision cannot conduct, plus a verifiable terminal predicate, budget, stop conditions, and duplicate prevention" >&2; exit 1 ;;
+      shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
+      *@*)
+        refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook version '$PLAYBOOK'" >&2
+        exit 1 ;;
+      *)
+        refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook '$PLAYBOOK'" >&2
+        exit 1 ;;
+    esac
+  fi
   if [ "$PLAYBOOK_ID" = visual-parity ]; then
     case "$KIND" in
       recon|strike) ;;
@@ -383,16 +416,24 @@ PROFILE_VERSION=
 PROFILE_EXPECTED_KIND=
 if [ "$PROFILE_SET" -eq 1 ]; then
   case "$PROFILE" in
-    react@1) PROFILE_ID=react; PROFILE_VERSION=1; PROFILE_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/react-v1.md"); PROFILE_EXPECTED_KIND=strike ;;
     '') echo "error: --profile requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution profile version is missing in '$PROFILE'" >&2; exit 1 ;;
-    *@*)
-      refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile version '$PROFILE'" >&2
-      exit 1 ;;
-    *)
-      refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile '$PROFILE'" >&2
-      exit 1 ;;
   esac
+  if entry=$(registry_lookup "$PROFILE_REGISTRY" "$PROFILE"); then
+    PROFILE_ID=${PROFILE%@*}
+    PROFILE_VERSION=${PROFILE#*@}
+    PROFILE_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/${entry##* }")
+    PROFILE_EXPECTED_KIND=${entry%% *}
+  else
+    case "$PROFILE" in
+      *@*)
+        refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile version '$PROFILE'" >&2
+        exit 1 ;;
+      *)
+        refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile '$PROFILE'" >&2
+        exit 1 ;;
+    esac
+  fi
   if [ "$KIND" != "$PROFILE_EXPECTED_KIND" ]; then
     echo "error: $PROFILE accepts only kind: $PROFILE_EXPECTED_KIND (not $KIND)" >&2
     exit 1
