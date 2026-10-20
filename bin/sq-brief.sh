@@ -115,47 +115,64 @@ resolve_directory_input() {
   printf '%s\n' "$resolved"
 }
 
-# Map every code point in a blank-rendering range to a plain space, so a
-# visually empty reason normalizes to an empty string.
-blank_reason_characters() {  # <reason> <first-hex> [<last-hex>]
-  local reason=$1 first=$((16#$2)) last=$((16#${3:-$2})) cp encoded separator
-  for ((cp = first; cp <= last; cp++)); do
-    if ((cp < 0x80)); then
-      printf -v encoded '\\x%02x' "$cp"
-    elif ((cp < 0x800)); then
-      printf -v encoded '\\x%02x\\x%02x' $((0xc0 | (cp >> 6))) $((0x80 | (cp & 0x3f)))
-    elif ((cp < 0x10000)); then
-      printf -v encoded '\\x%02x\\x%02x\\x%02x' \
-        $((0xe0 | (cp >> 12))) $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
-    else
-      printf -v encoded '\\x%02x\\x%02x\\x%02x\\x%02x' \
-        $((0xf0 | (cp >> 18))) $((0x80 | ((cp >> 12) & 0x3f))) \
-        $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
-    fi
-    printf -v separator '%b' "$encoded"
-    reason=${reason//"$separator"/ }
+# Apply one replacement to every code point in the given space-separated ranges
+# (each "first" or "first-last", hex), so invisible characters can be turned into
+# plain spaces for storage or removed for a visibility check.
+map_reason_ranges() {  # <reason> <replacement> <ranges>
+  local reason=$1 replacement=$2 ranges=$3 range cp encoded separator first last
+  for range in $ranges; do
+    first=$((16#${range%-*}))
+    if [ "$range" = "${range#*-}" ]; then last=$first; else last=$((16#${range#*-})); fi
+    for ((cp = first; cp <= last; cp++)); do
+      if ((cp < 0x80)); then
+        printf -v encoded '\\x%02x' "$cp"
+      elif ((cp < 0x800)); then
+        printf -v encoded '\\x%02x\\x%02x' $((0xc0 | (cp >> 6))) $((0x80 | (cp & 0x3f)))
+      elif ((cp < 0x10000)); then
+        printf -v encoded '\\x%02x\\x%02x\\x%02x' \
+          $((0xe0 | (cp >> 12))) $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
+      else
+        printf -v encoded '\\x%02x\\x%02x\\x%02x\\x%02x' \
+          $((0xf0 | (cp >> 18))) $((0x80 | ((cp >> 12) & 0x3f))) \
+          $((0x80 | ((cp >> 6) & 0x3f))) $((0x80 | (cp & 0x3f)))
+      fi
+      printf -v separator '%b' "$encoded"
+      reason=${reason//"$separator"/"$replacement"}
+    done
   done
   printf '%s' "$reason"
 }
 
-# Collapse a free-text decision reason onto a single line. Code points that
-# render blank are mapped to a plain space first, so a visually empty reason
-# normalizes to an empty string: Unicode separators, the zero-width and
-# bidirectional format controls that copy-paste carries invisibly, fillers,
-# variation selectors, and combining marks.
-normalize_decision_reason() {  # <reason>
-  local reason=$1 range ranges
-  ranges='0085 00a0 1680 2000-200a 2028-2029 202f 205f 3000
+# Code points that render as blank: separators, zero-width and bidirectional
+# format controls that copy-paste carries invisibly, fillers, and braille blank.
+BLANK_REASON_RANGES='0085 00a0 1680 2000-200a 2028-2029 202f 205f 3000
 00ad 034f 061c 115f-1160 17b4-17b5 180b-180e 200b-200f 202a-202e
 2060-2064 2066-206f 2800 3164 feff ffa0 fff9-fffb
-1bca0-1bca3 1d173-1d17a e0001 e0020-e007f
-0300-036f 0483-0489 1ab0-1aff 1dc0-1dff 20d0-20ff fe00-fe0f fe20-fe2f e0100-e01ef'
-  for range in $ranges; do
-    reason=$(blank_reason_characters "$reason" "${range%-*}" "${range#*-}")
-  done
+1bca0-1bca3 1d173-1d17a e0001 e0020-e007f'
+# Code points that attach to a visible character instead of standing alone:
+# combining marks and variation selectors. They are removed only for the
+# visibility check, never from the stored reason, so decomposed text such as
+# "acao" written with combining accents keeps its accents.
+COMBINING_REASON_RANGES='0300-036f 0483-0489 1ab0-1aff 1dc0-1dff 20d0-20ff
+fe00-fe0f fe20-fe2f e0100-e01ef'
+
+# Collapse a free-text decision reason onto a single line, mapping blank-rendering
+# code points to plain spaces so a visually empty reason normalizes to an empty
+# string.
+normalize_decision_reason() {  # <reason>
+  local reason
+  reason=$(map_reason_ranges "$1" ' ' "$BLANK_REASON_RANGES")
   printf '%s' "$reason" \
     | tr '\n\r\t\v\f' '     ' \
     | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//'
+}
+
+# True when the reason still carries something a reader can see: every blank and
+# combining code point removed, and no whitespace left over.
+reason_has_visible_content() {  # <reason>
+  local stripped
+  stripped=$(map_reason_ranges "$1" '' "$BLANK_REASON_RANGES $COMBINING_REASON_RANGES")
+  [ -n "${stripped//[[:space:]]/}" ]
 }
 
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -268,7 +285,7 @@ else
     # One line, always: collapse any embedded whitespace so the recorded reason
     # stays a single readable line in the brief.
     NO_PLAYBOOK_REASON=$(normalize_decision_reason "$NO_PLAYBOOK")
-    [ -n "${NO_PLAYBOOK_REASON//[[:space:]]/}" ] || {
+    reason_has_visible_content "$NO_PLAYBOOK_REASON" || {
       echo "error: --no-playbook requires a non-empty reason explaining why no execution playbook applies" >&2
       exit 1
     }
