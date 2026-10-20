@@ -242,10 +242,11 @@ remote_teardown_locks_release() {
 # (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*) are retired
 # by task id so the daemon never re-resolves a torn-down window, as is the
 # sentry's own task-keyed .compaction-notified-* dedup marker (bin/sq-classify-lib.sh's
-# compaction-without-status absorb override). All markers
-# are inert once the task's meta and status files are gone, but until the meta
-# is removed the watcher can still poll the released window and re-fire stale
-# for it, so the markers are retired together with the volatile state.
+# compaction-without-status absorb override). A marker can outlive its task
+# record: until the meta is removed the watcher can still poll the released
+# window and re-fire stale for it, so the markers are retired together with the
+# volatile state, and bin/sq-sentry.sh's drop_orphan_window_markers drops any
+# survivor once the record is gone.
 # Defined before the remote-XO main-flow call below (bash resolves functions
 # at call time, and that call site runs before the later helper block).
 retire_watcher_markers() {  # <state-dir> <task-id> <window>

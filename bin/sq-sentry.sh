@@ -283,6 +283,67 @@ recorded_windows() {
   done
 }
 
+# The per-window files this sentry owns, each named "<family><key>" where <key>
+# is a backend target mangled by tr ':/.' '___' - the same transform
+# sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
+# is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
+SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .stale-since- .stale- .paused- .count- .hash-"
+
+# drop_window_markers: reset every piece of per-window bookkeeping this sentry
+# keeps for <window> - the pane hash/count, the stale suppressor and its wedge
+# timer, the consecutive-escalation counter, and the pause cadence markers.
+# This is the reset the wedge-timer contract requires wherever a target's
+# pane/hash state must restart from a genuinely fresh classification, applied
+# here to the one case that has no pane to re-classify: the task record itself
+# is gone.
+drop_window_markers() {  # <window>
+  local win=$1 key
+  [ -n "$win" ] || return 0
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  rm -f "$STATE/.hash-$key" "$STATE/.count-$key" "$STATE/.stale-$key" \
+    "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
+    "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
+}
+
+# drop_orphan_window_markers: re-derive which keys still belong to a live task
+# record and drop the bookkeeping of every key that does not. A key outlives its
+# task record on any release that could not resolve the window it released
+# (sq-teardown.sh retires these markers from the window it resolved), and a
+# survivor is not inert: a stale suppressor whose wedge timer is gone re-enters
+# wedge_timer_check's timer-reset branch on every poll, so the pane whose task was
+# already torn down keeps generating wedge escalations, and the surviving
+# escalation counter makes the next episode on that key continue the old count
+# instead of starting fresh. Dropping the whole set for a dead key is the counter
+# reset that ends the episode, so a torn-down task cannot age into a repeating
+# wedge alarm and a recycled window id starts its own count. Live keys are read
+# from the same recorded metadata the poll loop uses, so a target under live
+# supervision is never touched.
+drop_orphan_window_markers() {
+  local w key base family f live=" " dropped=0
+  while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    live="$live$(printf '%s' "$w" | tr ':/.' '___') "
+  done < <(recorded_windows)
+  for f in "$STATE"/.wedge-escalations-* "$STATE"/.paused-resurfaced-* \
+           "$STATE"/.paused-rechecked-* "$STATE"/.stale-* \
+           "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
+    [ -e "$f" ] || continue
+    base=${f##*/}
+    key=
+    for family in $SENTRY_WINDOW_MARKER_FAMILIES; do
+      case "$base" in
+        "$family"*) key=${base#"$family"}; break ;;
+      esac
+    done
+    [ -n "$key" ] || continue
+    case "$live" in
+      *" $key "*) continue ;;
+    esac
+    rm -f "$f" && dropped=$((dropped + 1))
+  done
+  [ "$dropped" -eq 0 ] || triage_log "dropped $dropped window marker(s) whose task record is gone"
+}
+
 # Consecutive wedge-escalation count for a window past SQUAD_WEDGE_DEMAND_INSPECT_COUNT
 # (default 3): a pane that keeps re-wedging on the SAME stale hash - each
 # escalation gets absorbed again as "still validating" one poll later, since the
@@ -1017,13 +1078,26 @@ EOF
   # Layer 1 backbone: pane staleness. Two consecutive identical hashes with no busy
   # signature means the operator finished, is waiting, or is wedged. Each distinct
   # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
-  # remembers the hash already classified).
+  # remembers the hash already classified). Before any of that, re-derive which
+  # keys still belong to a live task record: bookkeeping whose task record is gone
+  # is dropped, so a released window ends supervision instead of resuming an
+  # episode it no longer owns.
+  drop_orphan_window_markers
   while IFS= read -r w; do
-    kind=$(window_kind "$w")
-    task=$(window_to_task "$w" "$STATE")
     key=${w//:/_}
     key=${key//\//_}
     key=${key//./_}
+    # A target re-derives its task from live metadata on every poll. With no
+    # state/<id>.meta left (a completed teardown, or a task record removed for any
+    # other reason) there is no task to supervise here: drop the target's
+    # bookkeeping and skip it rather than classify a pane that belongs to nobody.
+    if [ -z "$(fm_backend_meta_for_window "$w" "$STATE" 2>/dev/null || true)" ]; then
+      drop_window_markers "$w"
+      triage_log "dropped unsupervised target (task record gone): $w"
+      continue
+    fi
+    kind=$(window_kind "$w")
+    task=$(window_to_task "$w" "$STATE")
     last=$(last_status_state_line "$STATE/$task.status")
     if ! status_is_paused_or_commander_held "$last" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$w"

@@ -2159,6 +2159,109 @@ test_wedge_escalation_resets_when_pane_becomes_active() {
   pass "a pane becoming active again resets the consecutive wedge-escalation counter"
 }
 
+# Regression for the 2026-10-20 phantom-wedge incident: after a completed
+# bin/sq-teardown.sh released its window, the sentry kept emitting
+# "stale: <window> (idle Ns, possible wedge, escalation N)" every poll - reaching
+# escalation 8 with demand-deep-inspection - for a task whose state/<id>.meta and
+# status were already gone. A target whose task record is gone must be dropped
+# from supervision with its wedge bookkeeping reset, so a teardown ends
+# supervision instead of ageing into a repeating wedge alarm and a window id that
+# later carries that key starts its own count. A live task's window must keep
+# escalating exactly as before.
+test_teardown_drops_target_and_wedge_counter() {
+  local dir state fakebin out capture_file window key pane_hash sig pid live_window live_key i
+  dir=$(make_case teardown-drops-target); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:sq-torn"
+  printf 'idle building output' > "$capture_file"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/torn.meta"
+  printf 'working: still monitoring ci\n' > "$state/torn.status"
+  sig=$(seen_sig "$state/torn.status"); printf '%s' "$sig" > "$state/.seen-torn_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle building output")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+
+  # Phase A: the first sighting of this stale hash absorbs it and starts the wedge timer.
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry exited on the absorb round for a fresh stale (should absorb): $(cat "$out")"
+  fi
+  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on absorb"
+  [ -s "$state/.stale-since-$key" ] || fail "stale-since escalation timer was not recorded on absorb"
+  reap "$pid"
+
+  # Phase B: past the threshold the idle pane escalates on a LIVE task record (escalation 1).
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "sentry did not escalate a live task's stale window past the threshold: $(cat "$out")"
+  grep -F "escalation 1" "$out" >/dev/null || fail "live task's escalation did not report count 1: $(cat "$out")"
+  [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || true)" = "1" ] || fail "live task's escalation counter was not recorded"
+  rm -f "$state/.stand-to-queue"
+
+  # Teardown shape: the task metadata and status are gone while the window-keyed
+  # bookkeeping survives (the release could not resolve the window it released).
+  rm -f "$state/torn.meta" "$state/torn.status" "$state/.seen-torn_status"
+  # Control: an unrelated LIVE task's window, mid-episode and past its threshold,
+  # whose escalation round must be untouched by the drop.
+  live_window="test:sq-live"
+  printf 'window=%s\nkind=strike\n' "$live_window" > "$state/live.meta"
+  printf 'working: still monitoring ci\n' > "$state/live.status"
+  sig=$(seen_sig "$state/live.status"); printf '%s' "$sig" > "$state/.seen-live_status"
+  live_key=$(printf '%s' "$live_window" | tr ':/.' '___')
+  printf '%s' "$pane_hash" > "$state/.hash-$live_key"
+  printf '1\n' > "$state/.count-$live_key"
+  printf '%s' "$pane_hash" > "$state/.stale-$live_key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$live_key"
+  printf '1\n' > "$state/.wedge-escalations-$live_key"
+
+  # Phase C: the next scan drops the torn-down target's bookkeeping and still
+  # escalates the live window normally in the same cycle.
+  : > "$out"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "sentry did not escalate the live control window after the teardown: $(cat "$out")"
+  grep -F "stale: $live_window" "$out" >/dev/null || fail "the live control window stopped escalating after another task was torn down"
+  grep -F "stale: $window" "$out" >/dev/null && fail "a torn-down target still escalated a wedge: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "a torn-down target kept its wedge-escalation counter"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a torn-down target kept its wedge timer"
+  [ ! -e "$state/.stale-$key" ] || fail "a torn-down target kept its stale suppressor"
+  [ ! -e "$state/.hash-$key" ] || fail "a torn-down target kept its pane hash"
+  [ ! -e "$state/.count-$key" ] || fail "a torn-down target kept its pane hash count"
+  [ "$(cat "$state/.wedge-escalations-$live_key" 2>/dev/null || true)" = "2" ] || fail "the live control window's own escalation counter was reset by the drop"
+  [ "$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue")" = 0 ] \
+    || fail "a torn-down target queued a stale wake"
+
+  # Phase D: repeated later scans stay quiet for the released window.
+  rm -f "$state/live.meta" "$state/live.status" "$state/.seen-live_status"
+  i=0
+  while [ "$i" -lt 3 ]; do
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+      SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+    pid=$!
+    if ! wait_live "$pid" 30; then
+      reap "$pid"; fail "scan $i re-escalated a torn-down target: $(cat "$out")"
+    fi
+    reap "$pid"
+    [ ! -s "$out" ] || fail "scan $i printed a wake for a torn-down target: $(cat "$out")"
+    i=$((i + 1))
+  done
+  unset SQUAD_FAKE_CREW_STATE
+  pass "a torn-down target is dropped with its wedge counter reset, and a live window keeps escalating"
+}
+
 # --- busy pane duration bound: a completed-turn age gate on top of busy -----
 # 2026-07 hibit-agent-focus-nonsteal-r1 incident: a busy pane (herdr "working"
 # and/or the harness's rendered busy footer) is unconditional, unbounded proof
@@ -2896,6 +2999,7 @@ test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
 test_wedge_escalation_resets_when_pane_becomes_active
+test_teardown_drops_target_and_wedge_counter
 test_busy_pane_below_turn_age_bound_is_absorbed
 test_busy_pane_stable_hash_escalates_past_turn_age_bound
 test_busy_pane_changing_hash_escalates_past_turn_age_bound
