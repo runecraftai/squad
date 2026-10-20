@@ -77,14 +77,24 @@ function containsRawBackend(command, depth = 0) {
   return false;
 }
 
+// Both provider grant verbs match on the whole word, and the leading class keeps
+// the read verb from matching inside the write verb's name.
+const RAW_GRANT_WRITE = /(?:^|[^-A-Za-z0-9_])set-pane-grants(?![A-Za-z0-9_-])/;
+const RAW_GRANT_READ = /(?:^|[^-A-Za-z0-9_])pane-grants(?![A-Za-z0-9_-])/;
+
 function deny(command) {
   let reason =
     "Direct session-provider CLI control is blocked. Use the Squad lifecycle wrappers " +
     "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh).";
   // Only the providers' grant verbs have a sanctioned replacement, so the other
-  // backends' refusals stay free of advice about a verb they do not have.
-  if (/\b(?:set-pane-grants|pane-grants)\b/.test(String(command))) {
+  // backends' refusals stay free of advice about a verb they do not have. Each
+  // verb points at its own wrapper subcommand: a caller that only wanted to read
+  // grants must not be told to perform the one write the wrapper allows.
+  const text = String(command);
+  if (RAW_GRANT_WRITE.test(text)) {
     reason += ` Pane grants go through ${SANCTIONED_PANE_GRANT_SURFACE} grant respond <target>, never the CLI's own set-pane-grants.`;
+  } else if (RAW_GRANT_READ.test(text)) {
+    reason += ` Reading pane grants goes through ${SANCTIONED_PANE_GRANT_SURFACE} show [<target>], never the CLI's own pane-grants.`;
   }
   return { decision: "deny", code: "backend-raw-session-control", reason };
 }

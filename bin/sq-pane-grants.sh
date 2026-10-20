@@ -48,7 +48,7 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BASE="${SQUAD_BASE:-${SQUAD_HOME:-$ROOT}}"
+BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 TUIOS_BIN="${SQUAD_TUIOS_BIN:-tuios}"
 

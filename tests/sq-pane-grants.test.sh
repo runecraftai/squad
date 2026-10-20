@@ -371,6 +371,14 @@ result=$(run_wrapper show grantee)
 expect_code 0 "${result%%$'\n'*}" 'show resolves a task id through its meta record'
 assert_contains "${result#*$'\n'}" "target: $SESSION:$DEFAULT_PANE" 'show reports the task meta window'
 
+# A base configured only through SQUAD_ROOT_OVERRIDE is the base task ids
+# resolve against, so a lookup never silently reads the checkout's own state.
+base_out=$(env -u SQUAD_BASE -u SQUAD_HOME -u SQUAD_STATE_OVERRIDE \
+  SQUAD_ROOT_OVERRIDE="$SQUAD_BASE" "$WRAPPER" show grantee 2>&1)
+base_rc=$?
+expect_code 0 "$base_rc" 'show resolves a task id from a SQUAD_ROOT_OVERRIDE base'
+assert_contains "$base_out" "target: $SESSION:$DEFAULT_PANE" 'the override base supplies the task meta'
+
 result=$(run_wrapper show sq-grantee)
 expect_code 0 "${result%%$'\n'*}" 'show accepts the legacy sq- task label'
 
@@ -556,5 +564,23 @@ assert_contains "$send_out" 'needs the respond grant' 'the provider refusal sent
 assert_not_contains "$send_out" 'person command:' 'an unnamed caller pane never yields a partial person command'
 rm -f "$FAKE_DIR/send-keys-refuse"
 write_caller_pane "$SESSION" "$CALLER_PANE"
+
+# The daemon's refusal wording is not the contract. A target the inventory
+# reports as waiting on a prompt keeps the sanctioned remedy even when TUIOS
+# rewords its refusal and never says "needs the respond grant".
+printf 'backend=tuios\nwindow=%s:%s\nharness=claude\n' "$SESSION" "99999999-7777" \
+  > "$SQUAD_STATE_OVERRIDE/blocked-op.meta"
+printf '%s\n' \
+  'send-keys failed: send-keys is refused for this pane.' \
+  'Most likely cause: Pane dddddddd holds admin, the default of [agents.permissions]. The person can give this pane more with tuios set-pane-grants -w dddddddd --grants <names>.' \
+  > "$FAKE_DIR/send-keys-refuse"
+send_out=$(FAKE_TUIOS_WINDOW_LABEL=sq-blocked-op "$SEND" blocked-op --key Enter 2>&1)
+send_rc=$?
+expect_code 1 "$send_rc" 'sq-send reports a reworded refusal for a prompt-blocked pane'
+assert_contains "$send_out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
+  'the prompt-blocked inventory state keeps the person command without the refusal prose'
+assert_not_contains "$send_out" 'The person can give this pane more with' \
+  'a prompt-blocked refusal drops the raw-verb remediation advice regardless of wording'
+rm -f "$FAKE_DIR/send-keys-refuse"
 
 pass 'pane grants: respond-only wrapper refusals, the copy-paste person command, the verify gate, and the sq-send remedy hint'
