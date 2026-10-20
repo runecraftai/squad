@@ -14,7 +14,7 @@
 # commander's active tab, and NEVER uses shell `&` (which herdr/codex can reap).
 #
 # Correct supervisor targeting: the daemon finds the commander pane to inject into
-# from its OWN inherited env (discover_supervisor_target). Running it in a
+# from its OWN inherited env (discover_supervisor_pane). Running it in a
 # separate terminal would make it discover its OWN pane, so this captures the
 # commander pane FIRST (from the pane this script runs in) and passes it in as
 # SQUAD_SUPERVISOR_TARGET/SQUAD_SUPERVISOR_BACKEND explicitly.
@@ -524,15 +524,26 @@ fm_afk_launch_create_tmux() {  # <commander-target> <commander-backend>
 
 fm_afk_launch_start() {
   local commander_target commander_backend backup artifact had_afk=0 result
+  local pane_line pane_status=0 fallback_note
   if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
     return 1
   fi
-  # Capture the commander pane FIRST, before creating anything.
-  commander_target=$(discover_supervisor_target) || {
-    fm_afk_launch_log "could not resolve the commander supervisor pane (set SQUAD_SUPERVISOR_TARGET)"; return 1; }
-  commander_backend=$(discover_supervisor_backend) || {
-    fm_afk_launch_log "could not resolve the commander supervisor backend (set SQUAD_SUPERVISOR_BACKEND)"; return 1; }
+  # Capture the commander pane FIRST, before creating anything. The shared
+  # resolution validates every detected marker in preference order and settles on
+  # the first target that exists, so a stale preferred marker (a herdr pane id
+  # left in the environment, say) falls through to the next one instead of
+  # sending the daemon to a terminal it could never inject into. An explicit
+  # SQUAD_SUPERVISOR_TARGET/SQUAD_SUPERVISOR_BACKEND stays authoritative.
+  pane_line=$(discover_supervisor_pane) || pane_status=$?
+  IFS=$'\t' read -r commander_backend commander_target _ _ _ fallback_note <<< "$pane_line"
+  if [ "$fallback_note" != "-" ]; then
+    fm_afk_launch_log "supervisor pane fallback: $fallback_note; using $commander_target on backend $commander_backend"
+  fi
+  if [ "$pane_status" -ne 0 ] || [ -z "$commander_target" ] || [ -z "$commander_backend" ]; then
+    fm_afk_launch_log "could not resolve the commander supervisor pane (set SQUAD_SUPERVISOR_TARGET and SQUAD_SUPERVISOR_BACKEND)"
+    return 1
+  fi
 
   mkdir -p "$SQUAD_AFK_LAUNCH_STATE"
 

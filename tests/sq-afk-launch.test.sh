@@ -941,6 +941,11 @@ cmd=$1; shift
 case "$cmd" in
   --version) printf 'tuios version 0.8.0\n' ;;
   list-sessions) jq -c . "$state" ;;
+  get-window)
+    window=""
+    for arg in "$@"; do window=$arg; done
+    printf '{"id":"%s","title":"shell"}\n' "$window"
+    ;;
   new)
     [ "$1" = --detach ]; name=$2
     jq -e --arg n "$name" 'any(.[]; .name == $n)' "$state" >/dev/null && exit 3
@@ -1014,6 +1019,34 @@ FAKE_TUIOS
   else
     fail "TUIOS stop: exact detached session or lifecycle artifacts remain"
   fi
+
+  # A detected marker is a preference, not a verdict. With BOTH a stale herdr
+  # marker and a live TUIOS marker in the environment and no explicit override,
+  # the launcher must create the daemon terminal on TUIOS and say why. This is
+  # the regression for an autonomous entry that picked herdr from an inherited
+  # HERDR_PANE_ID and then blocked away mode on a target that no longer existed.
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/herdr"
+  chmod +x "$fakebin/herdr"
+  output=$(PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" \
+    SQUAD_SUPERVISOR_BACKEND='' SQUAD_SUPERVISOR_TARGET='' TMUX_PANE='' \
+    HERDR_ENV=1 HERDR_PANE_ID=p-stale HERDR_SESSION=default \
+    TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=commander \
+    SQUAD_AFK_LAUNCH_ENTRY="$SLEEPER" "$LAUNCH" start 2>&1) || fail "TUIOS fallback launch failed: $output"
+  record=$(cat "$lab/state/.afk-daemon-terminal" 2>/dev/null || true)
+  case "$output" in
+    *"supervisor pane fallback"*HERDR_ENV*) ;;
+    *) fail "launcher did not log the marker fallback with its source: $output" ;;
+  esac
+  if [ "$(printf '%s' "$record" | cut -f1)" = tuios ] && [ -e "$lab/state/.afk" ]; then
+    pass "TUIOS fallback: a stale herdr marker falls through to the live TUIOS target"
+  else
+    fail "TUIOS fallback: launcher did not settle on the live TUIOS marker (record=$record)"
+  fi
+  SQUAD_BASE="$lab" SQUAD_STATE_OVERRIDE="$lab/state" \
+    SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:commander \
+    PATH="$fakebin:$PATH" SQUAD_TUIOS_BIN=tuios TUIOS_FAKE_STATE="$statefile" \
+    "$LAUNCH" stop >/dev/null 2>&1 || fail "TUIOS fallback: stop failed"
   rm -rf "$lab"
 }
 

@@ -90,7 +90,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-afk-pi-handoff.sh`   | Publicar uma solicitação durável de handoff nativa do Pi e observar seu reconhecimento de consumo |
 | `sq-afk-tuios-lab.sh`    | Verificação ao vivo TUIOS/Pi descartável, opt-in e protegida, para entrega em modo ausente              |
 | `sq-afk-return.sh`       | Controlar shutdown determinístico de retorno, evidência de catch-up e o gate de bloqueador acionável pelo Squad |
-| `sq-supervisor-target-lib.sh` | Resolver o alvo e backend compartilhados do supervisor para o daemon e launcher       |
+| `sq-supervisor-target-lib.sh` | Resolver e validar o alvo e backend compartilhados do supervisor para o daemon e launcher |
 | `sq-supervise-daemon.sh` | Sub-supervisor do modo ausente controlado por presença: auto-trata acordos rotineiros, protege a injeção pelo harness primário detectado, escala digests em lote, alerta sobre entrega falha |
 | `sq-crew-state.sh`       | Imprimir uma linha determinística de estado atual para um operador                                |
 | `sq-breaker.sh`        | Avaliar os sinais de circuit-breaker de uma tarefa num veredito healthy/steering/constrained/stopped com ação e motivos |

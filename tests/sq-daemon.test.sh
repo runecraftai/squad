@@ -1820,6 +1820,103 @@ test_discover_supervisor_target_herdr() {
   pass "discover_supervisor_target: override > TMUX_PANE > herdr '<session>:<pane-id>' composition > Squad:0 fallback"
 }
 
+# A detected marker is a preference, never a verdict. An environment can carry
+# markers for more than one backend - a stale inherited HERDR_PANE_ID inside a
+# live TUIOS session, say - and committing to the preferred one used to block
+# away mode outright when its target was gone. Resolution must probe each
+# candidate in order, settle on the first target that actually exists, and name
+# the skipped marker so the fallback is visible in the daemon's log.
+test_discover_supervisor_pane_validates_and_falls_back() {
+  local out status backend target target_source settled note
+
+  out=$(
+    fm_backend_target_exists() { [ "$1" = tuios ] && [ "$2" = "primary:window-1" ]; }
+    SQUAD_SUPERVISOR_TARGET='' SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' \
+      HERDR_ENV=1 HERDR_PANE_ID=p-stale HERDR_SESSION=default \
+      TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 \
+      discover_supervisor_pane
+  )
+  status=$?
+  IFS=$'\t' read -r backend target _ target_source settled note <<< "$out"
+  [ "$status" -eq 0 ] || fail "resolution with a dead preferred marker should still settle: $out"
+  [ "$backend" = tuios ] || fail "a dead herdr target should fall back to the TUIOS marker: $out"
+  [ "$target" = "primary:window-1" ] || fail "the fallback target should be the TUIOS marker target: $out"
+  [ "$target_source" = 'TUIOS_ENV(TUIOS_SESSION+TUIOS_PANE_ID)' ] \
+    || fail "the fallback target source should name the TUIOS markers: $out"
+  [ "$settled" = validated ] || fail "a resolved pair should be reported as validated: $out"
+  case "$note" in
+    *HERDR_ENV*'did not resolve'*) ;;
+    *) fail "the fallback note should name the skipped herdr marker: $out" ;;
+  esac
+
+  # A genuinely healthy preferred target still wins, with nothing to report.
+  out=$(
+    fm_backend_target_exists() { [ "$1" = herdr ] && [ "$2" = "default:p-live" ]; }
+    SQUAD_SUPERVISOR_TARGET='' SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' \
+      HERDR_ENV=1 HERDR_PANE_ID=p-live HERDR_SESSION=default \
+      TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 \
+      discover_supervisor_pane
+  )
+  status=$?
+  IFS=$'\t' read -r backend target _ _ settled note <<< "$out"
+  [ "$status" -eq 0 ] || fail "a healthy preferred target should settle cleanly: $out"
+  [ "$backend:$target" = "herdr:default:p-live" ] || fail "a healthy herdr target should win over TUIOS: $out"
+  [ "$settled" = validated ] || fail "a healthy preferred pair should be reported as validated: $out"
+  [ "$note" = - ] || fail "a healthy preferred pair should report no fallback: $out"
+
+  # An explicit override is the caller's word: never replaced by a detected
+  # marker, and never probed here (the daemon refuses it loudly at startup).
+  out=$(
+    fm_backend_target_exists() { return 1; }
+    SQUAD_SUPERVISOR_TARGET=explicit:target SQUAD_SUPERVISOR_BACKEND=herdr \
+      TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=p-live HERDR_SESSION=default \
+      TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 \
+      discover_supervisor_pane
+  )
+  status=$?
+  IFS=$'\t' read -r backend target _ _ settled note <<< "$out"
+  [ "$status" -eq 0 ] || fail "an explicit override should settle without a probe: $out"
+  [ "$backend:$target" = "herdr:explicit:target" ] || fail "the explicit override was not honored verbatim: $out"
+  [ "$settled" = explicit ] || fail "an explicit override should be reported as authoritative: $out"
+  [ "$note" = - ] || fail "an explicit override should report no fallback: $out"
+
+  # An explicit BACKEND alone constrains the search to that backend's markers.
+  out=$(
+    fm_backend_target_exists() { return 0; }
+    SQUAD_SUPERVISOR_TARGET='' SQUAD_SUPERVISOR_BACKEND=tuios TMUX_PANE='%9' \
+      HERDR_ENV=1 HERDR_PANE_ID=p-live HERDR_SESSION=default \
+      TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 \
+      discover_supervisor_pane
+  )
+  status=$?
+  IFS=$'\t' read -r backend target _ _ _ _ <<< "$out"
+  [ "$status" -eq 0 ] || fail "an explicit backend should resolve from its own marker: $out"
+  [ "$backend:$target" = "tuios:primary:window-1" ] \
+    || fail "an explicit backend was overridden by an earlier marker: $out"
+
+  # Nothing resolves: the failure pair names the closest preference so the
+  # caller's loud error points at the real stale marker.
+  out=$(
+    fm_backend_target_exists() { return 1; }
+    SQUAD_SUPERVISOR_TARGET='' SQUAD_SUPERVISOR_BACKEND='' TMUX_PANE='' \
+      HERDR_ENV=1 HERDR_PANE_ID=p-stale HERDR_SESSION=default \
+      TUIOS_ENV=1 TUIOS_SESSION=primary TUIOS_PANE_ID=window-1 \
+      discover_supervisor_pane
+  )
+  status=$?
+  IFS=$'\t' read -r backend target _ _ settled note <<< "$out"
+  [ "$status" -eq 1 ] || fail "a fully unresolvable environment should report failure: $out"
+  [ "$backend:$target" = "herdr:default:p-stale" ] \
+    || fail "the failure pair should name the preferred marker's target: $out"
+  [ "$settled" = - ] || fail "an unresolved pair must not be reported as settled: $out"
+  case "$note" in
+    *HERDR_ENV*'did not resolve'*TUIOS_ENV*'did not resolve'*) ;;
+    *) fail "the failure note should name every skipped marker: $out" ;;
+  esac
+
+  pass "discover_supervisor_pane: preferred target validated, stale marker falls through, explicit override authoritative"
+}
+
 test_pane_is_busy_herdr_native_busy_state() {
   local dir
   dir=$(make_supercase primary-herdr-busy)
@@ -2818,6 +2915,7 @@ test_fm_send_exits_nonzero_on_initial_send_failure
 test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
+test_discover_supervisor_pane_validates_and_falls_back
 test_pi_handoff_is_durable_idempotent_and_ack_gated
 test_pi_handoff_replaces_a_queue_that_died_with_its_process
 test_pi_handoff_ready_requires_v3_delivery_state
