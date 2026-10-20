@@ -59,12 +59,12 @@ test_fm_home_parameterization() {
   out=$(SQUAD_BASE="$home_two" "$ROOT/bin/sq-project-mode.sh" app 2>/dev/null)
   [ "$out" = "drill off" ] || fail "sq-project-mode did not isolate missing registry by home"
 
-  SQUAD_BASE="$home_one" "$ROOT/bin/sq-brief.sh" task-a app --mode drill >/dev/null || fail "brief scaffold failed under SQUAD_BASE"
+  SQUAD_BASE="$home_one" "$ROOT/bin/sq-brief.sh" task-a app --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null || fail "brief scaffold failed under SQUAD_BASE"
   brief="$home_one/data/task-a/brief.md"
   [ -f "$brief" ] || fail "brief was not written under SQUAD_BASE/data"
   grep -F ">> '$home_one/state/task-a.status'" "$brief" >/dev/null || fail "brief did not shell-quote SQUAD_BASE state path"
 
-  SQUAD_BASE="$home_one" "$ROOT/bin/sq-brief.sh" task-b app --recon >/dev/null || fail "recon brief scaffold failed under SQUAD_BASE"
+  SQUAD_BASE="$home_one" "$ROOT/bin/sq-brief.sh" task-b app --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null || fail "recon brief scaffold failed under SQUAD_BASE"
   brief="$home_one/data/task-b/brief.md"
   grep -F ">> '$home_one/state/task-b.status'" "$brief" >/dev/null || fail "recon brief did not shell-quote SQUAD_BASE state path"
 

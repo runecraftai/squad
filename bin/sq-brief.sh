@@ -6,8 +6,10 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> [--playbook <id>@<version>] [--herdr-lab]
-#        sq-brief.sh <task-id> <repo-name> --recon [--herdr-lab]
+# Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> \
+#                      {--playbook <id>@<version>|--no-playbook <reason>} [--herdr-lab]
+#        sq-brief.sh <task-id> <repo-name> --recon \
+#                      {--playbook <id>@<version>|--no-playbook <reason>} [--herdr-lab]
 #        sq-brief.sh <task-id> --xo {<project>...|--no-projects}
 #   --recon writes the recon contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -41,6 +43,16 @@
 # When a project has an upstream, the brief must name the exact PR target, such
 # as `sq-gh pr create -R <owner>/<repo>`; forbidding the upstream alone is not
 # enough to tell the operator which repository to target.
+# A strike or recon brief must also record an explicit playbook decision:
+# either --playbook <id>@<version> selects a versioned execution playbook, or
+# --no-playbook "<reason>" states in one non-empty line why none applies.
+# A missing decision, an empty or whitespace-only reason, and both flags together
+# are refused, so "no playbook" is never an unexamined default. The decision is
+# recorded in the brief as the selectable "Execution playbook: id=<id> version=<version>"
+# line or a "Playbook decision: none - <reason>" line; the latter deliberately
+# does not start with "Execution playbook:" because bin/sq-spawn.sh parses only
+# that prefixed identity line. XO charters are not delivery contracts and stay
+# exempt: they neither require nor accept --no-playbook.
 # drill-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable
@@ -115,6 +127,8 @@ MODE=
 MODE_SET=0
 PLAYBOOK=
 PLAYBOOK_SET=0
+NO_PLAYBOOK=
+NO_PLAYBOOK_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -125,6 +139,7 @@ for a in "$@"; do
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
       playbook) PLAYBOOK=$a; PLAYBOOK_SET=1 ;;
+      no-playbook) NO_PLAYBOOK=$a; NO_PLAYBOOK_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -139,6 +154,8 @@ for a in "$@"; do
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --playbook) want_value=playbook ;;
     --playbook=*) PLAYBOOK=${a#--playbook=}; PLAYBOOK_SET=1 ;;
+    --no-playbook) want_value=no-playbook ;;
+    --no-playbook=*) NO_PLAYBOOK=${a#--no-playbook=}; NO_PLAYBOOK_SET=1 ;;
     # yolo never reaches the worker: it is Squad's approval authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -165,6 +182,36 @@ if [ "$KIND" = strike ]; then
 elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to strike briefs; a recon delivers a report and an XO charter is not a delivery contract" >&2
   exit 1
+fi
+
+# Playbook selection is an explicit intake decision, not an optional extra: a
+# strike or recon scaffold must record either a selected playbook or a one-line
+# reason none applies. Validate before creating the task directory so a refused
+# decision leaves no partial brief. XO charters are exempt.
+NO_PLAYBOOK_REASON=
+if [ "$KIND" = xo ]; then
+  [ "$NO_PLAYBOOK_SET" -eq 0 ] || {
+    echo "error: --no-playbook applies only to strike or recon briefs; an XO charter is not a delivery contract" >&2
+    exit 1
+  }
+else
+  if [ "$PLAYBOOK_SET" -eq 1 ] && [ "$NO_PLAYBOOK_SET" -eq 1 ]; then
+    echo "error: --playbook and --no-playbook are mutually exclusive; record exactly one playbook decision" >&2
+    exit 1
+  fi
+  if [ "$PLAYBOOK_SET" -eq 0 ] && [ "$NO_PLAYBOOK_SET" -eq 0 ]; then
+    echo "error: missing playbook decision: pass --playbook <id>@<version> to select an execution playbook, or --no-playbook \"<reason why none applies>\" to record why none does" >&2
+    exit 1
+  fi
+  if [ "$NO_PLAYBOOK_SET" -eq 1 ]; then
+    # One line, always: collapse any embedded whitespace so the recorded reason
+    # stays a single readable line in the brief.
+    NO_PLAYBOOK_REASON=$(printf '%s' "$NO_PLAYBOOK" | tr '\n\r\t' '   ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//')
+    [ -n "$NO_PLAYBOOK_REASON" ] || {
+      echo "error: --no-playbook requires a non-empty reason explaining why no execution playbook applies" >&2
+      exit 1
+    }
+  fi
 fi
 ID=${POS[0]}
 
@@ -211,6 +258,17 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
     echo "error: $PLAYBOOK accepts only kind: $EXPECTED_KIND (not $KIND)" >&2
     exit 1
   fi
+fi
+
+# The recorded playbook decision, rendered into both strike and recon briefs.
+# The selected form keeps the exact "Execution playbook: id=<id> version=<version>"
+# line bin/sq-spawn.sh parses; the none form uses a distinct label so it can never
+# be mistaken for a selectable identity.
+if [ "$PLAYBOOK_SET" -eq 1 ]; then
+  PLAYBOOK_BLOCK="Execution playbook: id=$PLAYBOOK_ID version=$PLAYBOOK_VERSION"$'\n\n'"$PLAYBOOK_SECTION"
+  if [ "$KIND" = recon ]; then PLAYBOOK_BLOCK+=$'\n'; else PLAYBOOK_BLOCK+=$'\n\n'; fi
+else
+  PLAYBOOK_BLOCK="Playbook decision: none - $NO_PLAYBOOK_REASON"$'\n\n'
 fi
 
 if [ "$KIND" = xo ] && [ "$HERDR_LAB" -eq 1 ]; then
@@ -370,10 +428,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 # Task
 {TASK}
 
-${PLAYBOOK_SECTION:+Execution playbook: id=$PLAYBOOK_ID version=$PLAYBOOK_VERSION
-
-$PLAYBOOK_SECTION
-}$HERDR_SECTION
+${PLAYBOOK_BLOCK}$HERDR_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -505,11 +560,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 
 $HERDR_SECTION
 
-${PLAYBOOK_SECTION:+Execution playbook: id=$PLAYBOOK_ID version=$PLAYBOOK_VERSION
-
-$PLAYBOOK_SECTION
-}
-# Setup
+${PLAYBOOK_BLOCK}# Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a fob pool path or an Orca-managed worktree, not the primary checkout Squad operates from.

@@ -7,6 +7,7 @@ metadata:
 ---
 
 Execution playbooks are explicit method contracts selected by `sq-brief.sh` and copied into the brief.
+Every strike or recon brief records the decision: a selected playbook, or a one-line `--no-playbook` reason none applies.
 The versioned contract owner is the reference named by the brief; other surfaces only enforce its identity and completion evidence.
 
 Load the referenced contract when implementing a task that selected an execution playbook.
