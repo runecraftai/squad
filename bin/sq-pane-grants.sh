@@ -382,7 +382,11 @@ fm_pane_grants_show() {  # [<target>]
     printf 'target: %s\n' "$label"
   fi
   [ -n "$declared" ] || declared=default
-  [ -n "$grants" ] || grants=none
+  # Only an explicit empty set is a denial; an unset pane whose default is empty
+  # holds nothing by default and must not read as the same denial.
+  if [ -z "$grants" ]; then
+    if [ "$declared" = explicit ]; then grants=none; else grants='unset (daemon default is empty)'; fi
+  fi
   printf 'grants: %s\n' "$grants"
   printf 'declared: %s\n' "$declared"
   case ",$grants," in

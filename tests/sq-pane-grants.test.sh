@@ -293,6 +293,29 @@ expect_code 0 "${result%%$'\n'*}" 'show reads a pane whose grants field is null'
 out=${result#*$'\n'}
 assert_contains "$out" 'declared: default' 'a null grants field is the daemon default, not an explicit set'
 assert_contains "$out" 'grants: admin' 'a null grants field reports the daemon default'
+
+# The calling pane, read from the daemon's own explicit flag. A pane with no
+# explicit set whose default is empty holds nothing by default, and that must
+# not read as the same deliberate denial an explicitly empty set is: the unset
+# state says so in the grants line, and only the explicit empty set says none.
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":[],"grants":null,"explicit":false}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show reads a caller with no explicit set and an empty default'
+out=${result#*$'\n'}
+assert_contains "$out" 'declared: default' 'an unset caller is reported as the default, not an explicit set'
+assert_contains "$out" 'grants: unset' 'an unset caller with an empty default is not rendered as a denial'
+assert_not_contains "$out" 'grants: none' 'an unset caller never renders the explicit-empty grants line'
+
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":[],"grants":[],"explicit":true}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show reads an explicitly empty caller set under an empty default'
+out=${result#*$'\n'}
+assert_contains "$out" 'declared: explicit' 'an explicitly empty caller set is reported as explicit'
+assert_contains "$out" 'grants: none' 'an explicitly empty caller set is reported as none'
+assert_not_contains "$out" 'grants: unset' 'an explicitly empty caller set is never rendered as unset'
+write_caller_pane "$SESSION" "$CALLER_PANE"
 reset_log
 result=$(run_wrapper grant respond "nullgrants:11111111-8888")
 expect_code 0 "${result%%$'\n'*}" 'grant adds respond to a pane whose grants field is null'
