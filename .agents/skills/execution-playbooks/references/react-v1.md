@@ -130,9 +130,9 @@ It does not authorize a framework migration, broad legacy renaming, a store rewr
 ## Required evidence
 
 Write a `# react profile evidence` section in a Markdown file under the Squad base's `data/<id>/artifacts/`, never in the project repository.
-Begin that file with exactly the `# react profile evidence` heading, because `bin/sq-playbook-validate.sh` treats a heading containing `checklist` or an `@version` token as the attached playbook's completion artifact.
-Never repeat the brief's profile identity heading, in its `# Execution profile:` plus `react@1` form or any other version-tagged form, in this file: such a heading matches that pattern and can make the gate score this profile record instead of the playbook's checklist, failing an otherwise complete paired task.
-Keep every heading in this file free of `@` version tokens so the profile record cannot be read as a checklist.
+Begin that file with exactly the `# react profile evidence` heading, because `bin/sq-playbook-validate.sh` takes the first Markdown artifact under `data/<id>/artifacts/` whose heading matches `checklist` or `Checklist`, or contains `@1`, as the attached playbook's completion artifact.
+Never repeat the brief's profile identity heading, in its `# Execution profile:` plus `react@1` form or any other version-tagged form carrying `@1`, in this file: such a heading matches that predicate and can make the gate score this profile record instead of the playbook's checklist, failing an otherwise complete paired task.
+Keep every heading in this file free of `checklist`, `Checklist`, and `@` version tokens, including `@1`, so the profile record stays unreadable as a checklist however this profile is later versioned.
 Record five numbered `## Evidence N` sections, each naming the concrete `path:` or command with its result that a reviewer can check; a profile requires no separately validated checklist of its own.
 The labels below name the evidence this profile records.
 The attached playbook owns the completion gate, so a passing `bin/sq-playbook-validate.sh` run does not prove these records and its structural success proves neither architectural nor runtime correctness.
