@@ -189,6 +189,10 @@ fm_pane_grants_default_grants() {  # [<validated pane-grants payload>]
     mode=$(printf '%s' "$out" | jq -r 'if (.mode | type) == "string" then .mode else "unknown" end')
     fm_pane_grants_fail "the daemon reported no default_grants field (mode=${mode}), so the grants this pane already holds cannot be read; refusing to guess or replace them"
   fi
+  # An empty list is the daemon saying "this pane holds nothing"; anything that
+  # is not a list at all is unreadable and must not be read as empty.
+  printf '%s' "$out" | jq -e '(.default_grants | type) == "array"' >/dev/null 2>&1 \
+    || fm_pane_grants_fail 'the daemon reported default_grants in an unreadable shape; refusing to guess the grants this pane already holds'
   printf '%s' "$out" | jq -r '(.default_grants // []) | join(",")'
 }
 

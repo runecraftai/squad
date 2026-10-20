@@ -333,6 +333,13 @@ fm_backend_tuios_caller_pane() {
       return 0
     fi
   fi
+  # TUIOS_PANE_ID is the id Squad already uses as a caller's own window target
+  # everywhere else, and TUIOS_WINDOW_ID is only an alternative: the guarded lab
+  # treats that one as optional, so it cannot be the only fallback.
+  if [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+    printf '%s:%s' "$TUIOS_SESSION" "$TUIOS_PANE_ID"
+    return 0
+  fi
   if [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_WINDOW_ID:-}" ]; then
     printf '%s:%s' "$TUIOS_SESSION" "$TUIOS_WINDOW_ID"
     return 0

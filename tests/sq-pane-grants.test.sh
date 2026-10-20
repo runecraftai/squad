@@ -236,6 +236,12 @@ assert_contains "$result" 'refusing to guess or replace them' 'the refusal state
 
 # An explicitly empty default is a real answer, not a missing field: the pane
 # holds nothing, so the add-only write must produce respond alone.
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":"admin","grants":[],"explicit":true}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 1 "${result%%$'\n'*}" 'show refuses a default_grants value that is not a list'
+assert_contains "$result" 'unreadable shape' 'a non-list default is refused instead of read as empty'
+
 printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":[],"grants":[],"explicit":true}' \
   > "$FAKE_DIR/pane-grants.json"
 result=$(run_wrapper show)
@@ -443,6 +449,21 @@ assert_contains "$send_out" 'needs the respond grant' 'sq-send keeps the provide
 assert_not_contains "$send_out" 'The person can give this pane more with' \
   'sq-send drops the provider remediation advice that names the refused raw verb'
 rm -f "$FAKE_DIR/send-keys-refuse"
+
+# A caller whose placement the daemon cannot report falls back to the pane id
+# Squad uses everywhere else, so the person command survives that degradation.
+write_outside_pane
+printf 'backend=tuios\nwindow=%s:%s\nharness=claude\n' "$SESSION" "$DEFAULT_PANE" \
+  > "$SQUAD_STATE_OVERRIDE/grantee.meta"
+printf '%s\n' 'send-keys failed: send-keys is refused for this pane: window aaaaaaaa is waiting on a prompt, and what is typed now would answer it, which needs the respond grant.' \
+  > "$FAKE_DIR/send-keys-refuse"
+send_out=$(TUIOS_SESSION="$SESSION" TUIOS_PANE_ID="$CALLER_PANE" FAKE_TUIOS_WINDOW_LABEL=sq-grantee \
+  "$SEND" grantee --key Enter 2>&1)
+expect_code 1 "$?" 'sq-send still reports the refused key for an unplaced caller'
+assert_contains "$send_out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
+  'the pane-id fallback still names the pane that must hold respond'
+rm -f "$FAKE_DIR/send-keys-refuse"
+write_caller_pane "$SESSION" "$CALLER_PANE"
 
 # A caller pane the daemon reports without both fields yields no partial command.
 printf '%s\n' '{"success":true,"pane":true,"session":"squad","grants":["admin"],"default_grants":["admin"]}' \

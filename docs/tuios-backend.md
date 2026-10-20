@@ -101,13 +101,13 @@ bin/sq-pane-grants.sh verify <target>          # read-only gate: exit 0 only whe
 The wrapper accepts no other grant, never addresses a whole session, and never replaces a pane's grants, so it cannot become a general TUIOS proxy.
 An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
 When `respond` is missing, `show`, `verify`, and a refused `grant` all print the same `person command:` line: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
-The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_WINDOW_ID"`.
+The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_PANE_ID"`.
 `show` without a target reads the pane it runs in, and a caller outside every pane is told so with the target form to name instead, never the daemon default passed off as its own grants.
 
 The flow when a dialog blocks an operator:
 
 1. The wake reports the pane and the prompt it read.
-2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_WINDOW_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
+2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_PANE_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
    That delegation is the person's, once, from a shell outside TUIOS; no pane can give it to itself.
 3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
 4. With `respond` on the answering pane, the supervisor answers the prompt with keys through `bin/sq-send.sh <id> --key Enter` (or the key the prompt asks for).
