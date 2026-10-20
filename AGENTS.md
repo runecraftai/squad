@@ -358,6 +358,7 @@ Apart from that single supported abort, do not hand-edit, commit, restart, or st
 Once ownership is settled, validate exactly once against that final head so no obsolete or intermediate head is ever treated as authoritative.
 
 An ask-user finding returns as `needs-decision`; Squad decides only when the configured authority permits, otherwise escalates to the commander.
+Every strike or recon brief records an explicit playbook decision - a selected `--playbook <id>@<version>` or a one-line `--no-playbook` reason none applies - and `bin/sq-brief.sh` refuses a missing one.
 For a strike brief with an explicit execution playbook, run its structural validator before sending the implementation to drill or the selected delivery path; the playbook validator never replaces drill.
 When the resolved worker lane is an execution-class model that must not design, select `plan-execute@1` with the plan materialized from the planning artifact and run `bin/sq-plan-validate.sh <id>` before dispatch; `bin/sq-spawn.sh` refuses an incomplete plan.
 Versioned planning and evaluation playbooks are methods only, while delivery remains owned by mode and drill and merge remains commander-authorized.

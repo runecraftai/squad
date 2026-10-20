@@ -205,12 +205,15 @@ test_playbook_selection_and_legacy_compatibility() {
   assert_grep "diagnostic-reasoning" "$brief" "playbook brief missing diagnostic-reasoning"
   assert_grep "tlc-implement" "$brief" "playbook brief missing tlc-implement"
   baseline="$home/legacy.md"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" legacy repo --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" legacy repo --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   cp "$home/data/legacy/brief.md" "$baseline"
   rm -f "$home/data/legacy/brief.md"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" legacy repo --mode drill >/dev/null 2>&1
-  cmp -s "$baseline" "$home/data/legacy/brief.md" || fail "legacy brief changed across no-playbook regeneration"
-  assert_no_grep "Execution playbook:" "$baseline" "legacy brief unexpectedly contains playbook identity"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" legacy repo --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  cmp -s "$baseline" "$home/data/legacy/brief.md" || fail "no-playbook brief changed across regeneration"
+  assert_no_grep "Execution playbook:" "$baseline" "no-playbook brief unexpectedly carries a selectable playbook identity"
+  assert_grep "Playbook decision: none - test fixture: no execution playbook applies" "$baseline" \
+    "no-playbook brief did not record the reason no playbook applies"
+  assert_no_grep "Playbook decision:" "$brief" "selected-playbook brief must record the identity, not a none decision"
   for args in "--playbook nope@1" "--playbook bug-fix@2" "--playbook bug-fix@"; do
     # shellcheck disable=SC2086 # args intentionally contains the flag and value pair.
     out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "bad-${RANDOM}" repo --mode drill $args 2>&1); status=$?
@@ -220,7 +223,62 @@ test_playbook_selection_and_legacy_compatibility() {
   [ "$status" -ne 0 ] || fail "bug-fix@1 on recon should fail"
   assert_contains "$out" "kind: strike" "recon playbook refusal should name strike compatibility"
   assert_absent "$home/data/playbook-recon/brief.md" "rejected playbook must not leave a partial brief"
-  pass "sq-brief.sh: explicit bug-fix@1 materializes and legacy no-playbook briefs remain stable"
+  pass "sq-brief.sh: explicit bug-fix@1 materializes and a recorded no-playbook decision stays stable"
+}
+
+# Playbook selection is an explicit intake decision: a strike or recon scaffold
+# must name a playbook or record, in one non-empty line, why none applies. The
+# refusal is the point - an omitted decision must never scaffold silently - and
+# the recorded line must stay distinct from the spawn-parsed identity line.
+test_playbook_decision_is_required() {
+  local home out status label args expect brief
+  home="$TMP_ROOT/playbook-decision-home"
+  mkdir -p "$home/data"
+  while IFS='|' read -r label args expect; do
+    [ -n "$label" ] || continue
+    # shellcheck disable=SC2086  # args is an intentional word-split arg list
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo $args 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "$label: expected a non-zero exit"
+    assert_contains "$out" "$expect" "$label: refusal did not say what is missing"
+  done <<'ROWS'
+strike without a decision|--mode drill|missing playbook decision
+recon without a decision|--recon|missing playbook decision
+empty no-playbook reason|--mode drill --no-playbook=|non-empty reason
+playbook and no-playbook together|--mode drill --playbook bug-fix@1 --no-playbook unnecessary|mutually exclusive
+no-playbook on an XO charter|--xo --no-projects --no-playbook nothing to select|applies only to strike or recon briefs
+ROWS
+
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo --recon --no-playbook "   " 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "a whitespace-only --no-playbook reason must be refused"
+  assert_contains "$out" "non-empty reason" "a whitespace-only --no-playbook reason did not say what is missing"
+
+  local invisible
+  for invisible in $'\v' $'\f' $'\xc2\xa0' $'\xe2\x80\x82' $'\xe3\x80\x80'; do
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "decision-$RANDOM" repo --recon --no-playbook "$invisible" 2>&1); status=$?
+    [ "$status" -ne 0 ] || fail "an invisible-only --no-playbook reason must be refused: $(printf '%q' "$invisible")"
+    assert_contains "$out" "non-empty reason" "an invisible-only --no-playbook reason did not say what is missing"
+  done
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon repo --recon --no-playbook "  a pure question,
+ with no method to apply  " >/dev/null 2>&1 \
+    || fail "a real --no-playbook reason should scaffold"
+  brief="$home/data/decision-recon/brief.md"
+  assert_present "$brief" "--no-playbook scaffold did not write a brief"
+  assert_grep "Playbook decision: none - a pure question, with no method to apply" "$brief" \
+    "the recorded no-playbook reason was not normalized to one line"
+  assert_no_grep "Execution playbook:" "$brief" \
+    "a no-playbook brief must not carry the spawn-parsed identity line"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-recon-separators repo --recon \
+    --no-playbook "$(printf 'a\xc2\xa0pure\xe3\x80\x80question')" >/dev/null 2>&1 \
+    || fail "a --no-playbook reason with unicode separators should scaffold"
+  assert_grep "Playbook decision: none - a pure question" "$home/data/decision-recon-separators/brief.md" \
+    "unicode separators in a --no-playbook reason were not normalized to spaces"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" decision-xo --xo --no-projects >/dev/null 2>&1 \
+    || fail "an XO charter must stay exempt from the playbook decision"
+  assert_present "$home/data/decision-xo/brief.md" "XO charter was not scaffolded without a playbook decision"
+  pass "sq-brief.sh: strike and recon briefs require a recorded playbook decision"
 }
 
 test_ship_modes_generate_clean_briefs() {
@@ -231,7 +289,7 @@ test_ship_modes_generate_clean_briefs() {
   for id_mode in "brief-drill-a1:drill" "brief-directpr-a2:direct-PR" "brief-localonly-a3:local-only"; do
     id=${id_mode%%:*}
     mode=${id_mode##*:}
-    SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1; status=$?
+    SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode "$mode" --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1; status=$?
     expect_code 0 "$status" "sq-brief.sh $id --mode $mode should exit 0"
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
@@ -440,7 +498,7 @@ test_ship_mode_is_explicit_not_registry() {
   local home brief
   home="$TMP_ROOT/explicit-over-registry-home"
   write_registry "$home"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a5 direct-proj --mode drill >/dev/null 2>&1 \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a5 direct-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
     || fail "explicit drill brief on a direct-PR project should scaffold"
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=drill" "$brief" \
@@ -449,7 +507,7 @@ test_ship_mode_is_explicit_not_registry() {
     "explicit drill brief did not render the pipeline definition of done"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a6 never-registered --mode local-only >/dev/null 2>&1 \
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-explicit-a6 never-registered --mode local-only --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
     || fail "unregistered project should still scaffold from the explicit mode"
   grep -qx "Delivery contract: mode=local-only" "$home/data/brief-explicit-a6/brief.md" \
     || fail "unregistered project did not honour the explicit --mode"
@@ -484,14 +542,14 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   home="$TMP_ROOT/configured-authority-home"
   write_registry "$home"
   id="brief-direct-authority-a4"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority decides whether to merge the PR; Squad relays the outcome." "$brief" \
     "direct-PR brief lost configured merge authority"
   assert_no_grep "The commander reviews and merges the PR" "$brief" \
     "direct-PR brief hard-coded commander-only authority"
   id="brief-local-authority-a4"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" local-proj --mode local-only >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" local-proj --mode local-only --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority approves the ready branch, then Squad merges it into local \`main\` through the guarded fast-forward path." "$brief" \
     "local-only brief lost configured merge authority and guarded landing"
@@ -502,7 +560,7 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "local-only brief must not include the drill --intent contract"
   id="brief-direct-intent-a4"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" direct-proj --mode direct-PR --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "direct-PR brief must not include the drill --intent contract"
   pass "sq-brief.sh: faster paths use configured authority without stacked review"
@@ -515,7 +573,7 @@ test_drill_dod_wording() {
   home="$TMP_ROOT/wording-home"
   mkdir -p "$home/data"
   id="brief-wording-b1"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "drill itself provides for the mechanics" "$brief" \
@@ -551,7 +609,7 @@ test_drill_dod_requires_pipeline_before_done() {
   home="$TMP_ROOT/pipeline-before-done-home"
   mkdir -p "$home/data"
   id="brief-pipeline-c1"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   # Commit must be explicitly marked as NOT completion.
@@ -589,7 +647,7 @@ test_ship_project_memory_wording() {
   home="$TMP_ROOT/project-memory-home"
   mkdir -p "$home/data"
   id="brief-memory-c1"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "Record only project knowledge useful to almost every future session." "$brief" \
@@ -606,7 +664,7 @@ test_herdr_lab_contract_is_explicit_and_complete() {
   home="$TMP_ROOT/herdr-lab-home"
   mkdir -p "$home/data"
   id="brief-herdr-lab-d1"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill --herdr-lab >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill --no-playbook "test fixture: no execution playbook applies" --herdr-lab >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "Herdr lab brief was not scaffolded"
   assert_grep "# Herdr isolation - HARD SAFETY CONTRACT" "$brief" \
@@ -640,7 +698,7 @@ test_herdr_lab_contract_quotes_foreign_Squad_path() {
   id="brief-herdr-lab-foreign-d2"
   helper=$(printf '%s' "$foreign_root/bin/sq-herdr-lab.sh" | sed "s/'/'\\\\''/g")
   helper="'$helper'"
-  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/sq-brief.sh" "$id" foreign --recon --herdr-lab >/dev/null 2>&1
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/sq-brief.sh" "$id" foreign --recon --no-playbook "test fixture: no execution playbook applies" --herdr-lab >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "HERDR_LAB_HELPER=$helper" "$brief" \
     "Herdr lab brief must shell-quote an absolute Squad helper path"
@@ -656,9 +714,9 @@ test_herdr_lab_omission_is_loud_for_ship_and_scout() {
   for kind in ship recon; do
     id="brief-herdr-gate-$kind"
     if [ "$kind" = recon ]; then
-      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --recon >/dev/null 2>&1
+      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
     else
-      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill >/dev/null 2>&1
+      SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
     fi
     brief="$home/data/$id/brief.md"
     assert_grep "# Herdr lifecycle declaration - NOT ENABLED" "$brief" \
@@ -851,7 +909,7 @@ test_herdr_lab_contract_applies_to_scouts_but_not_XOs() {
   local home brief status=0
   home="$TMP_ROOT/herdr-kind-home"
   mkdir -p "$home/data"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" herdr-recon Squad --recon --herdr-lab >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" herdr-recon Squad --recon --no-playbook "test fixture: no execution playbook applies" --herdr-lab >/dev/null 2>&1
   brief="$home/data/herdr-recon/brief.md"
   assert_grep "# Herdr isolation - HARD SAFETY CONTRACT" "$brief" \
     "recon --herdr-lab brief missing the contract"
@@ -873,11 +931,11 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
     case "$kind" in
       ship)
         SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
-          "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill >/dev/null 2>&1
+          "$ROOT/bin/sq-brief.sh" "$id" Squad --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
         ;;
       recon)
         SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
-          "$ROOT/bin/sq-brief.sh" "$id" Squad --recon >/dev/null 2>&1
+          "$ROOT/bin/sq-brief.sh" "$id" Squad --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
         ;;
       XO)
         SQUAD_BASE="$home" SQUAD_CLASSIFY_PAUSED_VERB=awaiting \
@@ -906,7 +964,7 @@ test_scout_and_XO_load_decision_hold_policy() {
   home="$TMP_ROOT/decision-policy-home"
   mkdir -p "$home/data"
   SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/sq-brief.sh" sample-investigation sample --recon >/dev/null 2>&1
+    "$ROOT/bin/sq-brief.sh" sample-investigation sample --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   recon="$home/data/sample-investigation/brief.md"
   assert_grep "$ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md" "$recon" \
     "recon brief did not load the unresolved-decision policy before done"
@@ -923,7 +981,7 @@ test_scout_and_XO_load_decision_hold_policy() {
 # Recon and XO paths still scaffold well-formed briefs.
 test_scout_and_XO_scaffold() {
   local brief
-  SQUAD_BASE="$BRIEF_HOME" "$ROOT/bin/sq-brief.sh" brief-recon-q6 alpha --recon >/dev/null 2>&1 \
+  SQUAD_BASE="$BRIEF_HOME" "$ROOT/bin/sq-brief.sh" brief-recon-q6 alpha --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
     || fail "sq-brief.sh recon scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-recon-q6/brief.md"
   assert_present "$brief" "recon brief was not scaffolded"
@@ -951,7 +1009,7 @@ test_status_instruction_is_present_in_all_scaffolds() {
 
   # Ship (drill)
   id="brief-status-drill"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "drill brief was not scaffolded"
   grep -qE '>>.*\.status' "$brief" || fail "drill brief missing status instruction pattern"
@@ -959,19 +1017,19 @@ test_status_instruction_is_present_in_all_scaffolds() {
 
   # Ship (direct-PR)
   id="brief-status-direct"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode direct-PR --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   grep -qE '>>.*\.status' "$brief" || fail "direct-PR brief missing status instruction pattern"
 
   # Ship (local-only)
   id="brief-status-local"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode local-only >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --mode local-only --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   grep -qE '>>.*\.status' "$brief" || fail "local-only brief missing status instruction pattern"
 
   # Recon
   id="brief-status-recon"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --recon >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" some-proj --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   grep -qE '>>.*\.status' "$brief" || fail "recon brief missing status instruction pattern"
 
@@ -1080,6 +1138,7 @@ test_script_parses
 test_react_playbook_materializes_and_enforces_form
 test_no_heredoc_in_command_substitution
 test_playbook_selection_and_legacy_compatibility
+test_playbook_decision_is_required
 test_wave_one_playbooks_materialize_and_enforce_forms
 test_wave_two_playbooks_materialize_and_enforce_forms
 test_absorbed_playbook_names_are_not_selectable

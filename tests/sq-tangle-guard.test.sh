@@ -127,7 +127,7 @@ test_brief_assertion_precedes_branch() {
   local home brief iso br
   home="$TMP_ROOT/brief-home"
   mkdir -p "$home/data"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" tangle-brief-cc3 alpha --mode drill >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" tangle-brief-cc3 alpha --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
   brief="$home/data/tangle-brief-cc3/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \

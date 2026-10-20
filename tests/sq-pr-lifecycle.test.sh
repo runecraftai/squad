@@ -375,7 +375,7 @@ test_direct_pr_brief_instruction() {
   # Generate a direct-PR brief via sq-brief.sh
   SQUAD_DATA_OVERRIDE="$d/data" SQUAD_STATE_OVERRIDE="$d/state" \
     SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-brief.sh" "test-brief" "test-repo" \
-    --mode direct-PR >/dev/null 2>&1 || true
+    --mode direct-PR --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 || true
 
   local brief_file="$d/data/test-brief/brief.md"
   [ -f "$brief_file" ] || fail "brief: file not created"
