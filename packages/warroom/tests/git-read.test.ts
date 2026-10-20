@@ -31,6 +31,8 @@ let fixture: ReviewFixture;
 beforeEach(() => { fixture = createReviewFixture(); });
 afterEach(() => { disposeFixture(fixture); });
 
+const sink = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+
 function state(repo: string): string {
 	const status = spawnSync("git", ["--no-pager", "status", "--porcelain=v1", "-uno"], { cwd: repo, encoding: "utf8" }).stdout.trim();
 	const head = spawnSync("git", ["--no-pager", "rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
@@ -57,7 +59,7 @@ describe("read-only Git adapter", () => {
 	});
 
 	test("builds the complete manifest: spaces, unicode, deletion/addition rename, tests, docs and config", () => {
-		const files = buildManifest(fixture.repo, fixture.baseSha, fixture.h1);
+		const files = buildManifest(fixture.repo, fixture.baseSha, fixture.h1, sink);
 		const byPath = new Map(files.map((file) => [file.path, file]));
 
 		expect(byPath.get("src/hello.ts")?.status).toBe("modified");
@@ -78,6 +80,8 @@ describe("read-only Git adapter", () => {
 		const empty = byPath.get("docs/empty.txt");
 		expect(empty?.head?.reviewable).toBe(true);
 		expect(empty?.head?.size).toBe(0);
+		expect(empty?.head?.contentDigest).toBe(sink(Buffer.from("")));
+		expect(byPath.get("src/hello.ts")?.head?.contentDigest).toBeTruthy();
 		expect(byPath.get("docs/binary.bin")?.head?.reviewable).toBe(false);
 		expect(byPath.get("docs/binary.bin")?.head?.reason).toBe("binary");
 		expect(byPath.get("docs/readme-link")?.head?.reviewable).toBe(false);
@@ -87,7 +91,7 @@ describe("read-only Git adapter", () => {
 	});
 
 	test("exposes exact bytes for each side and the full patch, including both rename paths", () => {
-		const files = buildManifest(fixture.repo, fixture.baseSha, fixture.h1);
+		const files = buildManifest(fixture.repo, fixture.baseSha, fixture.h1, sink);
 		const hello = files.find((file) => file.path === "src/hello.ts")!;
 		expect(readTextAt(fixture.repo, hello.base!.blob)).toContain("hello ${name}");
 		expect(readTextAt(fixture.repo, hello.head!.blob)).toContain("hello, ${name}!");
@@ -109,7 +113,7 @@ describe("read-only Git adapter", () => {
 
 		const entries = listTree(fixture.repo, fixture.h1);
 		expect(entries.some((entry) => entry.path === "docs/path with spaces e acentuação.txt")).toBe(true);
-		buildManifest(fixture.repo, fixture.baseSha, fixture.h2);
+		buildManifest(fixture.repo, fixture.baseSha, fixture.h2, sink);
 		diffPatch(fixture.repo, fixture.baseSha, fixture.h2);
 		repoFingerprint(fixture.repo);
 		readBlob(fixture.repo, entries[0].sha);
@@ -129,7 +133,7 @@ describe("read-only Git adapter", () => {
 	});
 
 	test("verifies anchors against the exact object and line range", () => {
-		const files = buildManifest(fixture.repo, fixture.baseSha, fixture.h1);
+		const files = buildManifest(fixture.repo, fixture.baseSha, fixture.h1, sink);
 		const hello = files.find((file) => file.path === "src/hello.ts")!;
 		expect(verifyAnchor(fixture.repo, hello, "head", 1, 3, hello.head!.blob)).toEqual({ ok: true, lineCount: 4 });
 		expect(verifyAnchor(fixture.repo, hello, "head", 1, 9, hello.head!.blob).ok).toBe(false);
@@ -145,7 +149,7 @@ describe("read-only Git adapter", () => {
 		spawnSync("git", ["-C", repo, "add", "-A"]);
 		spawnSync("git", ["-c", "user.name=F", "-c", "user.email=f@example.test", "-C", repo, "commit", "-q", "-m", "big"]);
 		const head = spawnSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
-		const files = buildManifest(repo, base, head);
+		const files = buildManifest(repo, base, head, sink);
 		expect(files).toHaveLength(1);
 		expect(files[0].head?.reviewable).toBe(false);
 		expect(files[0].head?.reason).toBe("too-large");

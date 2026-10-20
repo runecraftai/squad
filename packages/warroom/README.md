@@ -45,6 +45,7 @@ Plan approval, execution authorization, code-review acceptance and merge permiss
   This slice does not claim externally authenticated identity or protection from another process already running as the same user.
 - Fixture and manually supplied evidence is stored visibly and is always ineligible for human acceptance.
   Synthetic data can exercise the flow without masquerading as a real Drill result.
+- This slice has not been exercised end to end: no real unmerged change with a real human reviewer was available, so the D2 demonstration (AC11) remains unverified, and the browser suite never records a human acceptance.
 
 ## Reuse decisions
 
@@ -70,11 +71,15 @@ bun run packages/warroom/src/review-cli.ts capture \
   --target-ref "$TARGET_REF" \
   --head-ref "$HEAD_REF" \
   --plan "$PLAN_REVISION_ID" \
+  --provenance drill \
   --warroom-data "$WARROOM_DATA"
 ```
 
+`--provenance` is required and must be exactly `drill` or `fixture`; there is no silent default, because a default that fabricates provenance is the failure the field exists to prevent.
+
 The command prints the packet id, packet digest, evidence digest, manifest digest, scope digest and the derived base and head.
 Repeating the same capture is idempotent and adds no duplicate event.
+A changed observation never reuses the previous packet: a moved observed target or a changed evidence capture creates a fresh packet, reports `reuseRefused`, and supersedes the earlier packet with that reason instead of silently serving stale evidence.
 
 Check currentness without writing:
 

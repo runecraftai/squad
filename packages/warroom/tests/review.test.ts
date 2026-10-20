@@ -166,6 +166,38 @@ describe("review packet capture", () => {
 		expect(fixture.warroom.events(fixture.initiativeId).length).toBe(before);
 	});
 
+	test("a changed observed target refuses reuse and supersedes the earlier packet instead of serving it", () => {
+		const first = captureFixture(fixture, "h1");
+		const tree = git(["rev-parse", "main^{tree}"]);
+		const advanced = git(["-c", "user.name=F", "-c", "user.email=f@example.test", "commit-tree", tree, "-p", fixture.baseSha, "-m", "main advances without touching the head"]);
+		git(["update-ref", "refs/heads/main", advanced]);
+		const second = captureFixture(fixture, "h1");
+		expect(second.reused).toBe(false);
+		expect(second.reuseRefused).toBe("observed-target-changed");
+		expect(second.packetId).not.toBe(first.packetId);
+		expect(second.reviewBaseSha).toBe(first.reviewBaseSha);
+		expect(second.targetObservedSha).not.toBe(first.targetObservedSha);
+		const prior = packetRow(first.packetId);
+		expect(prior.status).toBe("stale");
+		expect(prior.stale_reason).toBe("observed-target-changed");
+		expect(prior.superseded_by).toBe(second.packetId);
+		expect(checkPacket(fixture.warroom, fixture.dataDir, first.packetId).reasons).toContain("observed-target-changed");
+	});
+
+	test("a changed evidence capture refuses reuse even when the target and head are unchanged", () => {
+		const first = captureFixture(fixture, "h1");
+		const drill = new Database(fixture.drillDb);
+		drill.query("UPDATE runs SET drill_version='1.4.3' WHERE id=?").run(fixture.run1);
+		drill.close();
+		const second = captureFixture(fixture, "h1");
+		expect(second.reused).toBe(false);
+		expect(second.reuseRefused).toBe("observed-evidence-changed");
+		expect(second.packetId).not.toBe(first.packetId);
+		expect(second.evidenceDigest).not.toBe(first.evidenceDigest);
+		expect(packetRow(first.packetId).stale_reason).toBe("observed-evidence-changed");
+		expect(checkPacket(fixture.warroom, fixture.dataDir, second.packetId).status).toBe("ready");
+	});
+
 	test("refuses a free or legacy validation response as packet evidence", () => {
 		fixture.warroom.command({ type: "revision.create", id: "legacy-code", initiativeId: "i1", kind: "code", content: "free text pretending to be code" });
 		fixture.warroom.command({ type: "validation.record", id: "free-evidence", initiativeId: "i1", revisionId: "legacy-code", provider: "trust-me", result: "passed" });
@@ -724,12 +756,12 @@ function camelToSnake(value: string): string {
 }
 
 describe("review CLI", () => {
-	test("captures a packet and exits non-zero once the source head moves", () => {
+	test("requires an explicit provenance and reports fixture evidence as ineligible", () => {
 		useAcceptableFixture();
 		fixture.warroom.close();
 		const cli = join(import.meta.dir, "..", "src", "review-cli.ts");
 		const cliCwd = join(import.meta.dir, "..");
-		const capture = spawnSync("bun", ["run", cli, "capture",
+		const baseArgs = ["run", cli, "capture",
 			"--repo", fixture.repo,
 			"--drill-db", fixture.drillDb,
 			"--drill-logs", fixture.drillLogs,
@@ -739,7 +771,14 @@ describe("review CLI", () => {
 			"--head-ref", "h1",
 			"--plan", "plan-1",
 			"--warroom-data", fixture.dataDir,
-		], { encoding: "utf8", cwd: cliCwd });
+		];
+
+		// No silent default: a capture without an explicit provenance is refused before any write.
+		const missing = spawnSync("bun", baseArgs, { encoding: "utf8", cwd: cliCwd });
+		expect(missing.status).not.toBe(0);
+		expect(missing.stderr).toContain("--provenance");
+
+		const capture = spawnSync("bun", [...baseArgs, "--provenance", "fixture"], { encoding: "utf8", cwd: cliCwd });
 		expect(capture.stderr).toBe("");
 		expect(capture.status).toBe(0);
 		const result = JSON.parse(capture.stdout);
@@ -747,21 +786,27 @@ describe("review CLI", () => {
 		expect(result.headSha).toBe(fixture.h1);
 		expect(result.reused).toBe(false);
 
+		// Synthetic evidence is recorded as fixture and can never pass the eligible check.
+		const evidence = fixtureWarroomEvidence(fixture.dataDir, result.evidenceId);
+		expect(evidence.provenance).toBe("fixture");
+		expect(evidence.eligible).toBe(0);
+
 		const check = spawnSync("bun", ["run", cli, "check", "--warroom-data", fixture.dataDir, "--packet", result.packetId], { encoding: "utf8", cwd: cliCwd });
-		expect(check.status).toBe(0);
+		expect(check.status).toBe(1);
 		const report = JSON.parse(check.stdout);
 		expect(report.status).toBe("ready");
 		expect(report.currentness).toBe("verified");
-		expect(report.evidenceEligible).toBe(true);
+		expect(report.evidenceEligible).toBe(false);
+		expect(report.evidenceReasons.join()).toContain("evidence-provenance-not-drill");
 
 		git(["tag", "-f", "h1", fixture.h2]);
 		const stale = spawnSync("bun", ["run", cli, "check", "--warroom-data", fixture.dataDir, "--packet", result.packetId], { encoding: "utf8", cwd: cliCwd });
 		expect(stale.status).toBe(1);
 		expect(JSON.parse(stale.stdout).reasons).toContain("head-moved");
 
-		const missing = spawnSync("bun", ["run", cli, "check", "--warroom-data", fixture.dataDir, "--packet", "pk-missing"], { encoding: "utf8", cwd: cliCwd });
-		expect(missing.status).toBe(1);
-		expect(JSON.parse(missing.stdout).status).toBe("unknown");
+		const unknown = spawnSync("bun", ["run", cli, "check", "--warroom-data", fixture.dataDir, "--packet", "pk-missing"], { encoding: "utf8", cwd: cliCwd });
+		expect(unknown.status).toBe(1);
+		expect(JSON.parse(unknown.stdout).status).toBe("unknown");
 	});
 });
 
@@ -785,3 +830,12 @@ describe("unreviewable objects", () => {
 		expect(approvalRows(result.packetId)).toHaveLength(0);
 	});
 });
+
+function fixtureWarroomEvidence(dataDir: string, evidenceId: string): { provenance: string; eligible: number } {
+	const db = new Database(join(dataDir, "warroom.db"));
+	try {
+		return db.query("SELECT provenance, eligible FROM validation_evidence WHERE id=?").get(evidenceId) as { provenance: string; eligible: number };
+	} finally {
+		db.close();
+	}
+}

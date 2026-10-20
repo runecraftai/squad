@@ -5,6 +5,7 @@ import {
 	type Actor,
 	artifactPath,
 	assertDigest,
+	digestCanonical,
 	digestContent,
 	packetDigestOf,
 	scopeDigestOf,
@@ -47,7 +48,7 @@ export interface CaptureRequest {
 	 * visibly as a fixture and is always ineligible for human acceptance, so synthetic data can
 	 * exercise the flow without ever masquerading as a real Drill result.
 	 */
-	provenance?: "drill" | "fixture";
+	provenance: "drill" | "fixture";
 }
 
 export interface CaptureResult {
@@ -63,6 +64,8 @@ export interface CaptureResult {
 	headSha: string;
 	targetObservedSha: string;
 	reused: boolean;
+	/** Present when a previous packet for this head/base could not be reused because the observation changed. */
+	reuseRefused?: "observed-target-changed" | "observed-evidence-changed";
 }
 
 export interface PacketFileSide { mode: string; blob: string; size: number; reviewable: boolean; reason?: string; contentDigest?: string | null }
@@ -132,9 +135,15 @@ export class ArtifactStore {
 
 function manifestJson(manifest: PacketManifest): string { return JSON.stringify(manifest); }
 
-function stableIds(input: { initiativeId: string; repoFingerprint: string; repoId: string; runId: string; baseSha: string; headSha: string }) {
+function stableIds(input: { initiativeId: string; repoFingerprint: string; repoId: string; runId: string; baseSha: string; headSha: string; targetObservedSha: string; observationDigest: string }) {
 	const evidenceId = `ev-${digestContent(JSON.stringify(input)).slice(0, 24)}`;
 	return { evidenceId };
+}
+
+/** Stable observation identity: every recorded run fact, excluding the capture timestamp, log paths and source path. */
+function observationDigestOf(capture: DrillCapture): string {
+	const { capturedAt: _capturedAt, logs: _logs, source: _source, ...observed } = capture as any;
+	return digestCanonical(observed);
 }
 
 /**
@@ -154,7 +163,7 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 		logsRoot: request.drillLogs,
 		onLogs: (logs) => { collectedLogs = logs; },
 	});
-	const provenance = request.provenance ?? "drill";
+	const provenance = request.provenance;
 	if (provenance !== capture.provenance) {
 		capture.provenance = provenance;
 		if (provenance === "fixture") {
@@ -185,14 +194,17 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 	if (!planRevision || planRevision.kind !== "plan") throw new ReviewError("plan revision does not exist");
 	if (state.initiative?.currentPlanRevisionId !== planRevision.id) throw new ReviewError("plan revision is not current");
 	const repo = repoFingerprint(repoPath);
-	const identity = { initiativeId: state.initiative.id, repoFingerprint: repo.fingerprint, repoId: repo.repoId, runId: request.runId, baseSha: reviewBaseSha, headSha };
+	const observationDigest = observationDigestOf(capture);
+	const identity = { initiativeId: state.initiative.id, repoFingerprint: repo.fingerprint, repoId: repo.repoId, runId: request.runId, baseSha: reviewBaseSha, headSha, targetObservedSha, observationDigest };
 	const { evidenceId } = stableIds(identity);
 	const existingCapture = warroom.db.query("SELECT capture_digest FROM evidence_captures WHERE id=?").get(evidenceId) as { capture_digest: string } | null;
+	// Reusing the stored digest is safe only because the id itself now includes the full observation digest.
 	const effectiveEvidenceDigest = existingCapture?.capture_digest ?? evidenceDigest;
 	const packetDigest = packetDigestOf({
 		repoId: repo.repoId,
 		repoFingerprint: repo.fingerprint,
 		targetRef: request.targetRef,
+		targetObservedSha,
 		reviewBaseSha,
 		headSha,
 		baseTree,
@@ -205,8 +217,17 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 		evidenceId,
 		evidenceDigest: effectiveEvidenceDigest,
 	});
-	const existing = warroom.state(state.initiative.id).packets.find((packet) => packet.packetDigest === packetDigest);
-	if (existing) {
+	const previousPackets = warroom.db.query("SELECT * FROM review_packets WHERE initiative_id=? AND head_sha=? AND review_base_sha=? AND target_ref=? AND plan_revision_id=? ORDER BY created_at DESC, rowid DESC").all(state.initiative.id, headSha, reviewBaseSha, request.targetRef, planRevision.id) as any[];
+	const existingRow = warroom.db.query("SELECT * FROM review_packets WHERE initiative_id=? AND packet_digest=?").get(state.initiative.id, packetDigest) as any;
+	const reuseRefused = existingRow
+		? undefined
+		: previousPackets.length > 0
+			? previousPackets.some((packet) => packet.target_observed_sha !== targetObservedSha)
+				? "observed-target-changed"
+				: "observed-evidence-changed"
+			: undefined;
+	if (existingRow) {
+		const existing = warroom.state(state.initiative.id).packets.find((packet) => packet.id === existingRow.id) ?? existingRow;
 		return {
 			packetId: existing.id,
 			packetDigest,
@@ -293,6 +314,20 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 		scopeDigest,
 		packetDigest,
 	});
+	if (reuseRefused) {
+		for (const prior of previousPackets) {
+			if (prior.id === packetId) continue;
+			warroom.command({
+				type: "review.supersede",
+				initiativeId: state.initiative.id,
+				packetId: prior.id,
+				supersededBy: packetId,
+				reason: reuseRefused,
+				observedHeadSha: headSha,
+				observedBaseSha: targetObservedSha,
+			});
+		}
+	}
 	return {
 		packetId,
 		packetDigest,
@@ -306,6 +341,7 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 		headSha,
 		targetObservedSha,
 		reused: false,
+		reuseRefused,
 	};
 }
 
@@ -408,6 +444,7 @@ export function checkPacket(warroom: Warroom, dataDir: string, packetId: string)
 			repoId: row.repo_id,
 			repoFingerprint: row.repo_fingerprint,
 			targetRef: row.target_ref,
+			targetObservedSha: row.target_observed_sha ?? undefined,
 			reviewBaseSha: row.review_base_sha,
 			headSha: row.head_sha,
 			baseTree: row.base_tree,

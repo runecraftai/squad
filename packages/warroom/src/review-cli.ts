@@ -17,7 +17,7 @@ import { captureReview, checkPacket } from "./review.ts";
 
 interface Parsed { command: string; flags: Record<string, string> }
 
-const CAPTURE_FLAGS = ["repo", "drill-db", "drill-logs", "repo-id", "run", "target-ref", "head-ref", "plan", "warroom-data"];
+const CAPTURE_FLAGS = ["repo", "drill-db", "drill-logs", "repo-id", "run", "target-ref", "head-ref", "plan", "warroom-data", "provenance"];
 const CHECK_FLAGS = ["warroom-data", "packet"];
 
 function parse(argv: string[]): Parsed {
@@ -50,6 +50,7 @@ export function main(argv: string[]): number {
 		const { command, flags } = parse(argv);
 		if (command === "capture") {
 			requireFlags(flags, CAPTURE_FLAGS);
+			if (flags.provenance !== "drill" && flags.provenance !== "fixture") throw new Error("--provenance must be explicitly drill or fixture");
 			const warroom = openWarroom(flags["warroom-data"]);
 			try {
 				const result = captureReview(warroom, flags["warroom-data"], {
@@ -61,6 +62,7 @@ export function main(argv: string[]): number {
 					targetRef: flags["target-ref"],
 					headRef: flags["head-ref"],
 					planRevisionId: flags.plan,
+					provenance: flags.provenance,
 				});
 				console.log(JSON.stringify(result, null, 2));
 				return 0;

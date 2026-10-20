@@ -6,11 +6,15 @@ import { createApp } from "../src/server.ts";
 import { createReviewFixture, disposeFixture, type ReviewFixture } from "./fixtures/review-fixtures.ts";
 
 function post(app: ReturnType<typeof createApp>, path: string, body: unknown) {
-	return app.fetch(new Request(`http://local/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+	return app.fetch(new Request(`http://127.0.0.1:4600/${path}`, {
+		method: "POST",
+		headers: { "content-type": "application/json", host: "127.0.0.1:4600", origin: "http://127.0.0.1:4600", "x-warroom-session": app.session.token },
+		body: JSON.stringify(body),
+	}));
 }
 
 function get(app: ReturnType<typeof createApp>, path: string) {
-	return app.fetch(new Request(`http://local/${path}`));
+	return app.fetch(new Request(`http://127.0.0.1:4600/${path}`, { headers: { host: "127.0.0.1:4600" } }));
 }
 
 describe("planning surface HTTP API", () => {
@@ -94,6 +98,27 @@ describe("planning surface HTTP API", () => {
 		expect(detail.questions[0].status).toBe("answered");
 	});
 
+	test("the command endpoint requires the expected host, exact local origin and the session token", async () => {
+		const app = createApp();
+		const base = { "content-type": "application/json" };
+		const body = JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" });
+
+		const noToken = await app.fetch(new Request("http://127.0.0.1:4600/api/command", { method: "POST", headers: { ...base, host: "127.0.0.1:4600", origin: "http://127.0.0.1:4600" }, body }));
+		expect(noToken.status).toBe(403);
+
+		const wrongHost = await app.fetch(new Request("http://evil.example/api/command", { method: "POST", headers: { ...base, origin: "http://127.0.0.1:4600", "x-warroom-session": app.session.token }, body }));
+		expect(wrongHost.status).toBe(403);
+
+		const otherPort = await app.fetch(new Request("http://127.0.0.1:4600/api/command", { method: "POST", headers: { ...base, host: "127.0.0.1:4600", origin: "http://127.0.0.1:9999", "x-warroom-session": app.session.token }, body }));
+		expect(otherPort.status).toBe(403);
+
+		const forgedToken = await app.fetch(new Request("http://127.0.0.1:4600/api/command", { method: "POST", headers: { ...base, host: "127.0.0.1:4600", origin: "http://127.0.0.1:4600", "x-warroom-session": "forged" }, body }));
+		expect(forgedToken.status).toBe(403);
+
+		expect(await (await get(app, "api/initiatives")).json()).toEqual([]);
+		expect((await post(app, "api/command", { type: "initiative.create", id: "i1", title: "Proof" })).status).toBe(201);
+	});
+
 	test("GET /api/initiative/:id for an unknown initiative returns 404", async () => {
 		const app = createApp();
 		const response = await get(app, "api/initiative/missing");
@@ -102,14 +127,14 @@ describe("planning surface HTTP API", () => {
 
 	test("the command endpoint rejects non-JSON content types so cross-site simple requests cannot mutate state", async () => {
 		const app = createApp();
-		const response = await app.fetch(new Request("http://local/api/command", { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
+		const response = await app.fetch(new Request("http://127.0.0.1:4600/api/command", { method: "POST", headers: { "content-type": "text/plain", host: "127.0.0.1:4600", origin: "http://127.0.0.1:4600", "x-warroom-session": app.session.token }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
 		expect(response.status).toBe(415);
 		expect(await (await get(app, "api/initiatives")).json()).toEqual([]);
 	});
 
 	test("the command endpoint rejects cross-origin requests", async () => {
 		const app = createApp();
-		const response = await app.fetch(new Request("http://local/api/command", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.example" }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
+		const response = await app.fetch(new Request("http://127.0.0.1:4600/api/command", { method: "POST", headers: { "content-type": "application/json", host: "127.0.0.1:4600", origin: "http://evil.example", "x-warroom-session": app.session.token }, body: JSON.stringify({ type: "initiative.create", id: "i1", title: "Proof" }) }));
 		expect(response.status).toBe(403);
 		expect(await (await get(app, "api/initiatives")).json()).toEqual([]);
 	});

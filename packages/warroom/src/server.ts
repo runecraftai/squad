@@ -412,10 +412,13 @@ export function createApp(options: ServerOptions = {}): App {
 			if (!/^application\/json\b/i.test(contentType)) {
 				return json({ error: "content-type must be application/json" }, 415);
 			}
+			// Every state-changing command carries the local session authority, not only the review routes.
+			const commandHost = request.headers.get("host");
+			if (!isExpectedHost(commandHost, port)) return json({ error: "unexpected host" }, 403);
 			const origin = request.headers.get("origin");
-			if (origin !== null && !isLoopbackOrigin(origin)) {
-				return json({ error: "cross-origin requests are not allowed" }, 403);
-			}
+			if (origin === null || !isExactOrigin(origin, port)) return json({ error: "exact local origin is required for commands" }, 403);
+			const suppliedToken = request.headers.get("x-warroom-session");
+			if (!suppliedToken || suppliedToken !== token) return json({ error: "a valid local review session token is required" }, 403);
 			return request.json().then(
 				(command: Command) => {
 					// The generic command API cannot mint validation evidence, review acceptance or merge permission.

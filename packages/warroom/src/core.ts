@@ -401,6 +401,8 @@ export class Warroom {
 		if (!plan || plan.kind !== "plan") throw new Error("review packet requires a plan revision");
 		if (state.initiative?.currentPlanRevisionId !== plan.id) throw new Error("review packet requires the current plan revision");
 		for (const [label, value] of [["review base", command.reviewBaseSha], ["head", command.headSha], ["base tree", command.baseTree], ["head tree", command.headTree]] as const) assertSha(value, label);
+		if (!command.targetObservedSha) throw new Error("review packet requires the observed target id");
+		assertSha(command.targetObservedSha, "observed target");
 		for (const [label, value] of [["manifest", command.manifestDigest], ["patch", command.patchDigest], ["scope", command.scopeDigest], ["packet", command.packetDigest]] as const) assertDigest(value, label);
 		if (digestContent(revision.content) !== command.manifestDigest) throw new Error("review packet manifest digest does not match the code revision content");
 		let manifest: any;
@@ -411,6 +413,7 @@ export class Warroom {
 			repoId: command.repoId,
 			repoFingerprint: command.repoFingerprint,
 			targetRef: command.targetRef,
+			targetObservedSha: command.targetObservedSha,
 			reviewBaseSha: command.reviewBaseSha,
 			headSha: command.headSha,
 			baseTree: command.baseTree,
@@ -579,6 +582,8 @@ export interface PacketDigestInput {
 	repoId: string;
 	repoFingerprint: string;
 	targetRef: string;
+	/** Observed target commit; omitted only when verifying a packet captured before this field existed. */
+	targetObservedSha?: string;
 	reviewBaseSha: string;
 	headSha: string;
 	baseTree: string;
@@ -593,7 +598,8 @@ export interface PacketDigestInput {
 }
 
 export function packetDigestOf(input: PacketDigestInput): string {
-	return digestCanonical({ version: 1, ...input });
+	const { targetObservedSha, ...rest } = input;
+	return digestCanonical({ version: 1, ...rest, ...(targetObservedSha ? { targetObservedSha } : {}) });
 }
 
 export function artifactPath(digest: string): string { return `artifacts/sha256/${digest}`; }

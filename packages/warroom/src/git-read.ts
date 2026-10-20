@@ -159,14 +159,15 @@ function classify(repo: string, entry: GitTreeEntry): { side: FileObjectSide; co
 
 export type ContentSink = (content: Buffer) => string;
 
-function manifestSide(repo: string, entry: GitTreeEntry, storeContent?: ContentSink): FileObjectSide {
+function manifestSide(repo: string, entry: GitTreeEntry, storeContent: ContentSink): FileObjectSide {
 	const { side, content } = classify(repo, entry);
-	if (content && storeContent) side.contentDigest = storeContent(content);
+	if (content) side.contentDigest = storeContent(content);
+	else if (side.reviewable) throw new GitReadError(`reviewable object ${side.blob} produced no content`);
 	return side;
 }
 
 /** Complete manifest of every path changed between base and head, with both object identities. */
-export function buildManifest(repo: string, baseSha: string, headSha: string, storeContent?: ContentSink): PacketFileEntry[] {
+export function buildManifest(repo: string, baseSha: string, headSha: string, storeContent: ContentSink): PacketFileEntry[] {
 	const baseEntries = new Map(listTree(repo, baseSha).map((entry) => [entry.path, entry]));
 	const headEntries = new Map(listTree(repo, headSha).map((entry) => [entry.path, entry]));
 	const paths = [...new Set([...baseEntries.keys(), ...headEntries.keys()])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
