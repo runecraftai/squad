@@ -49,4 +49,4 @@ The three auxiliary topologies are not execution playbook identities or dispatch
 `arena` competes on one problem and selects one base, `swarm` covers distinct slices, and `interrogate` independently attacks one artifact with deduplication and judgment.
 For PR or diff surfaces, `interrogate` points to the read-only Drill surface documented in [`docs/pr-review.md`](../pr-review.md), and separate reviews are limited to requested or knowledge-only review deliverables.
 
-The catalog now counts 24 playbook identities: 14 selectable contracts, 5 absorbed upstream names, and 5 refused or deferred names.
+The catalog now counts 23 playbook identities: 13 selectable contracts, 5 absorbed upstream names, and 5 refused or deferred names.
