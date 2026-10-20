@@ -16,17 +16,17 @@
 # verify is the read-only gate that follows a grant: it exits 0 when the pane
 # holds respond and non-zero otherwise, printing the person command to run, so a
 # supervisor confirms the delegation landed and retries its key send instead of
-# guessing. show, verify, and a refused grant all print that same command, with
-# the resolved window id filled in and the wrapper named by absolute path, so it
-# is copy-paste ready for the person's own shell outside TUIOS.
+# guessing. show, verify, and a grant the daemon refuses print that same command
+# form, with the resolved window id filled in and the wrapper named by absolute
+# path, so it is copy-paste ready for the person's own shell outside TUIOS.
 #
 # Least privilege is the point, so this wrapper is not a TUIOS proxy:
 #   - grant accepts exactly one grant name, `respond`, and ADDS it to what the
 #     pane already holds. It never replaces a pane's grants, never grants
 #     admin, read, write, fan, or none, and never addresses a whole session.
 #   - A target is resolved and verified against the live window inventory
-#     before the daemon is asked for anything, so an unknown, ambiguous, or
-#     unreadable target fails closed with an actionable message.
+#     before any grant write, so an unknown, ambiguous, or unreadable target
+#     fails closed with an actionable message.
 #   - show is read-only.
 #   - The grant is verified by re-reading the inventory instead of trusting the
 #     daemon's success line.

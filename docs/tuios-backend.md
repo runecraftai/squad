@@ -100,10 +100,10 @@ bin/sq-pane-grants.sh verify <target>          # read-only gate: exit 0 only whe
 `<target>` is a task id resolved through `state/<id>.meta` (which must record `backend=tuios`) or an explicit `<session>:<window>`.
 The wrapper accepts no other grant, never addresses a whole session, and never replaces a pane's grants, so it cannot become a general TUIOS proxy.
 It also refuses a `grant` on a target that the inventory reports as waiting on a prompt (`needs_input` or `errored`): that is the pane whose dialog needs answering, not the pane that should be allowed to answer it.
-`show` and `verify` say so and still print exactly one `person command:`, aimed at the pane that types the answer - the caller's own pane whenever the daemon reports that placement - and omit it only when the daemon reports no such placement.
-An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
+When `respond` is missing on such a target, `show` and `verify` say so and print one `person command:` aimed at the pane that types the answer - the caller's own pane whenever the daemon reports that placement - and print no command at all when that pane cannot be named, which is when the daemon reports no placement or reports the caller itself inside the blocked pane.
+An unknown, ambiguous, or unreadable target is refused before any grant write, and a daemon refusal is reported verbatim with the exact command that fixes it.
 A pane's grant set is read from `list-windows`: the daemon leaves `grants` absent or `null` for a pane that holds its default set (`tuios set-pane-grants --reset` restores `null`), so that shape is read as the default and the add-only write keeps the inherited grants, while an explicit list (including an empty `[]`) is taken literally and any other shape is refused rather than guessed.
-When `respond` is missing, `show`, `verify`, and a refused `grant` all print the same `person command:` line: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
+When `respond` is missing, `show`, `verify`, and a `grant` the daemon refuses all print a `person command:` line in the same form: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
 The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_PANE_ID"`.
 `show` without a target reads the pane it runs in, and a caller outside every pane is told so with the target form to name instead, never the daemon default passed off as its own grants.
 

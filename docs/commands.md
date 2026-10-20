@@ -36,8 +36,8 @@ Reach for the Squad tool first; refer to that script's own header when its exact
   Use `bin/sq-spawn.sh` to launch and `bin/sq-teardown.sh` to retire.
 - Never determine an operator's current status by `tail`-ing or `grep`-ing `state/<id>.status` by hand.
   Use `bin/sq-crew-state.sh <id>`; the status file is an append-only wake-event log, not current-state truth.
-- Never use the session provider's own grant command to make a blocked pane answerable.
-  Use `bin/sq-pane-grants.sh grant respond <target>`, which adds only `respond` to one named pane, and `bin/sq-pane-grants.sh verify <target>` to confirm it landed.
+- Never use the session provider's own grant command to unblock a pane waiting on a prompt.
+  Use `bin/sq-pane-grants.sh grant respond <target>` on the pane that types the answer, which adds only `respond` to that one named pane, and `bin/sq-pane-grants.sh verify <target>` to confirm it landed.
 - Never poll or hand-parse `state/` files in a shell loop to watch for wake events.
   Use `bin/sq-stand-to-drain.sh` (queue drain) or `bin/sq-status-notify.sh watch` (desktop notifications).
 - Never run raw `git push`/manual PR creation via the GitHub web UI or hand-built `curl` calls against the GitHub API.
