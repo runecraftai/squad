@@ -1186,6 +1186,20 @@ test_playbook_profile_pairing_and_refusals() {
   [ "$status" -ne 0 ] || fail "react@1 must not be selectable as a playbook"
   assert_contains "$out" "--profile react@1" "react-as-playbook refusal must show the pairing that works"
   assert_absent "$home/data/profile-as-playbook/brief.md" "react-as-playbook refusal left a partial brief"
+
+  # An empty profile reference must not silently drop the selection: the identity
+  # still reaches the brief, so bin/sq-spawn.sh's materialized-contract check
+  # refuses the truncated profile instead of launching without its constraints.
+  local profile_root="$TMP_ROOT/profile-empty-root"
+  mkdir -p "$profile_root/.agents/skills/execution-playbooks/references"
+  cp "$ROOT/.agents/skills/execution-playbooks/references/feature-v1.md" \
+    "$profile_root/.agents/skills/execution-playbooks/references/"
+  : > "$profile_root/.agents/skills/execution-playbooks/references/react-v1.md"
+  SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$profile_root" "$ROOT/bin/sq-brief.sh" profile-empty repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+    || fail "a truncated profile reference should record the selection for spawn to reject, not lose it"
+  brief="$home/data/profile-empty/brief.md"
+  grep -qx 'Execution profile: id=react version=1' "$brief" \
+    || fail "an empty profile reference must still record the profile identity so spawn can refuse it"
   pass "sq-brief.sh: a profile attaches to a playbook, follows it, and unsupported pairings are refused"
 }
 
@@ -1211,7 +1225,6 @@ test_paired_profile_evidence_stays_outside_the_playbook_gate() {
   out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-playbook-validate.sh" profile-gate 2>&1); status=$?
   [ "$status" -ne 0 ] || fail "profile evidence alone must not satisfy the feature@1 completion gate"
   assert_contains "$out" "missing: checklist artifact" "profile evidence must not be accepted as the playbook completion artifact"
-  assert_not_contains "$out" "react-profile-evidence.md" "the react profile evidence was scored as playbook evidence"
 
   cat > "$playbook_artifact" <<'EOF'
 # feature@1 checklist

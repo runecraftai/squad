@@ -373,8 +373,11 @@ else
 fi
 # A profile renders after the playbook block, never instead of it. The extra
 # leading newline only serves the recon form, whose playbook block ends with one.
+# The block is gated on the recorded decision, not on its content, so an empty
+# reference still writes the identity line and bin/sq-spawn.sh refuses the brief
+# as having no materialized contract instead of launching without the profile.
 PROFILE_BLOCK=
-if [ -n "$PROFILE_SECTION" ]; then
+if [ "$PROFILE_SET" -eq 1 ]; then
   if [ "$KIND" = recon ]; then PROFILE_BLOCK=$'\n'; fi
   PROFILE_BLOCK+="Execution profile: id=$PROFILE_ID version=$PROFILE_VERSION"$'\n\n'"$PROFILE_SECTION"$'\n\n'
 fi
