@@ -102,6 +102,7 @@ The wrapper accepts no other grant, never addresses a whole session, and never r
 An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
 When `respond` is missing, `show`, `verify`, and a refused `grant` all print the same `person command:` line: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
 The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_WINDOW_ID"`.
+`show` without a target reads the pane it runs in, and a caller outside every pane is told so with the target form to name instead, never the daemon default passed off as its own grants.
 
 The flow when a dialog blocks an operator:
 

@@ -9,7 +9,9 @@
 # <target> is a task id (resolved through state/<id>.meta, which must record
 # backend=tuios) or an explicit <session>:<window> target. show without a
 # target reports the grants of the pane this command runs in, which is the
-# fast way to answer "does the pane that answers prompts hold respond?".
+# fast way to answer "does the pane that answers prompts hold respond?"; a
+# caller that runs in no pane of the daemon is told so and given the target
+# form to name instead.
 #
 # verify is the read-only gate that follows a grant: it exits 0 when the pane
 # holds respond and non-zero otherwise, printing the person command to run, so a
@@ -215,24 +217,28 @@ fm_pane_grants_person_hint() {  # <session>:<window>
 }
 
 fm_pane_grants_show() {  # [<target>]
-  local target=${1:-} out label grants declared
+  local target=${1:-} out label= grants declared
   if [ -z "$target" ]; then
     out=$("$TUIOS_BIN" pane-grants --json 2>&1) \
       || fm_pane_grants_fail "cannot read this pane's grants: $(printf '%s' "$out" | head -n 1)"
-    if [ "$(printf '%s' "$out" | jq -r 'if .pane == true then "yes" else "no" end' 2>/dev/null || true)" = yes ]; then
-      # A pane the daemon reports without both fields cannot be named, and a
-      # person command naming a partial target would be rejected by this same
-      # parser, so it is never printed.
-      label=$(printf '%s' "$out" | jq -r '
-        select((.session | type) == "string" and (.session | length) > 0)
-        | select((.window | type) == "string" and (.window | length) > 0)
-        | "\(.session):\(.window)"' 2>/dev/null || true)
-      [ -n "$label" ] || printf 'target: unreadable (the daemon reported a pane without a session and window)\n'
-      declared=$(printf '%s' "$out" | jq -r 'if .explicit == true then "explicit" else "default" end' 2>/dev/null || true)
-    else
+    if [ "$(printf '%s' "$out" | jq -r 'if .pane == true then "yes" else "no" end' 2>/dev/null || true)" != yes ]; then
+      # A caller outside every pane has no pane to read, so the daemon default
+      # is never reported as if this caller's pane held it. Naming a target is
+      # the only way to read grants from there.
       printf 'target: none (this command runs in no pane of the daemon)\n'
-      declared=default
+      printf 'note: there is no pane here to read; name one:\n'
+      printf '  %s/bin/sq-pane-grants.sh show <session>:<window>\n' "$ROOT"
+      return 0
     fi
+    # A pane the daemon reports without both fields cannot be named, and a
+    # person command naming a partial target would be rejected by this same
+    # parser, so it is never printed.
+    label=$(printf '%s' "$out" | jq -r '
+      select((.session | type) == "string" and (.session | length) > 0)
+      | select((.window | type) == "string" and (.window | length) > 0)
+      | "\(.session):\(.window)"' 2>/dev/null || true)
+    [ -n "$label" ] || printf 'target: unreadable (the daemon reported a pane without a session and window)\n'
+    declared=$(printf '%s' "$out" | jq -r 'if .explicit == true then "explicit" else "default" end' 2>/dev/null || true)
     grants=$(printf '%s' "$out" | jq -r '(.grants // []) | join(",")' 2>/dev/null || true)
     [ -n "$grants" ] || grants=$(fm_pane_grants_default_grants)
     [ -z "$label" ] || printf 'target: %s\n' "$label"

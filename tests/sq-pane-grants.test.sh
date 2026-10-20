@@ -181,6 +181,29 @@ assert_contains "$result" 'target: unreadable' 'a payload without a window is re
 assert_not_contains "$result" 'person command:' 'an unreadable target never yields a person command'
 write_caller_pane "$SESSION" "$CALLER_PANE"
 
+# show outside every pane: the daemon reports pane:false (with the default grants
+# in this shape), so there is no pane to read and the command must still finish.
+printf '%s\n' '{"success":true,"pane":false,"note":"The caller runs in no pane of this daemon","default_grants":["admin"]}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show reports a caller in no pane instead of aborting'
+out=${result#*$'\n'}
+assert_contains "$out" 'target: none' 'show says the caller runs in no pane of the daemon'
+assert_not_contains "$out" 'grants:' 'the daemon default is never reported as a pane this caller runs in'
+assert_contains "$out" "$ROOT/bin/sq-pane-grants.sh show <session>:<window>" \
+  'an outside-pane caller is told how to name a pane instead'
+assert_not_contains "$out" 'person command:' 'a caller in no pane has no window to name in a person command'
+
+# The captured outside-pane payload carries no default_grants at all, which must
+# not turn the same read into an unrelated error.
+printf '%s\n' '{"success":true,"pane":false,"note":"The caller runs in no pane of this daemon"}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show outside every pane works without a default-grants field either'
+assert_not_contains "$result" 'error:' 'an outside-pane read reports no error'
+assert_contains "$result" 'target: none' 'show still names the missing pane without a default-grants field'
+write_caller_pane "$SESSION" "$CALLER_PANE"
+
 result=$(run_wrapper show grantee)
 expect_code 0 "${result%%$'\n'*}" 'show resolves a task id through its meta record'
 assert_contains "${result#*$'\n'}" "target: $SESSION:$DEFAULT_PANE" 'show reports the task meta window'
