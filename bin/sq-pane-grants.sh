@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# sq-pane-grants.sh - show, and add exactly one, TUIOS pane grant.
+# sq-pane-grants.sh - show, grant, and verify exactly one TUIOS pane grant.
 #
 # Usage:
 #   sq-pane-grants.sh show [<target>]
 #   sq-pane-grants.sh grant respond <target>
+#   sq-pane-grants.sh verify <target>
 #
 # <target> is a task id (resolved through state/<id>.meta, which must record
 # backend=tuios) or an explicit <session>:<window> target. show without a
 # target reports the grants of the pane this command runs in, which is the
 # fast way to answer "does the pane that answers prompts hold respond?".
+#
+# verify is the read-only gate that follows a grant: it exits 0 when the pane
+# holds respond and non-zero otherwise, printing the person command to run, so a
+# supervisor confirms the delegation landed and retries its key send instead of
+# guessing. show, verify, and a refused grant all print that same command, with
+# the resolved window id filled in and the wrapper named by absolute path, so it
+# is copy-paste ready for the person's own shell outside TUIOS.
 #
 # Least privilege is the point, so this wrapper is not a TUIOS proxy:
 #   - grant accepts exactly one grant name, `respond`, and ADDS it to what the
@@ -46,9 +54,11 @@ fm_pane_grants_usage() {
   cat >&2 <<'USAGE'
 Usage: sq-pane-grants.sh show [<target>]
        sq-pane-grants.sh grant respond <target>
+       sq-pane-grants.sh verify <target>
 
 <target> is a task id (resolved through state/<id>.meta) or <session>:<window>.
 Only the respond grant can be added, and only to that one pane.
+verify exits non-zero when that pane does not hold respond.
 USAGE
 }
 
@@ -159,86 +169,122 @@ fm_pane_grants_with() {  # <csv> <grant> -> csv that holds both, order preserved
   printf '%s' "${csv:+$csv,}$grant"
 }
 
-fm_pane_grants_authority_hint() {  # <target>
-  local target=$1
-  if [ -n "${TUIOS_ENV:-}${TUIOS_PANE_ID:-}" ]; then
-    printf "hint: this command runs inside a TUIOS pane, and a pane can never give more than it holds (admin never includes respond).\n" >&2
-    printf "hint: grant it once from the person's own shell outside TUIOS, or from a pane that already holds respond:\n" >&2
+# fm_pane_grants_read: resolve <target>, canonicalize its window, and set
+# GRANT_SESSION, GRANT_WINDOW, GRANT_CSV (what the pane holds: its explicit
+# grants, or the daemon default when it holds no explicit set), and
+# GRANT_DECLARED. Read-only, and the one path show, verify, and grant share.
+fm_pane_grants_read() {  # <target>
+  local inventory csv
+  GRANT_CSV=
+  GRANT_DECLARED=
+  fm_pane_grants_resolve_target "$1"
+  inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
+  GRANT_WINDOW=$(fm_pane_grants_canonical_window "$inventory" "$GRANT_WINDOW")
+  csv=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
+  if [ -n "$csv" ]; then
+    GRANT_DECLARED=explicit
   else
-    printf 'hint: TUIOS grants respond only from a caller that runs in no pane of that daemon.\n' >&2
+    GRANT_DECLARED=default
+    csv=$(fm_pane_grants_default_grants)
   fi
-  printf '  %s/bin/sq-pane-grants.sh grant respond %s\n' "$ROOT" "$target" >&2
+  GRANT_CSV=$csv
+}
+
+# fm_pane_grants_person_command: the exact copy-paste command that gives a pane
+# the grant it needs. TUIOS accepts it only from a caller outside every pane, so
+# the wrapper is named by absolute path and the resolved window id is filled in.
+# bin/sq-send.sh prints the same command from the same facts.
+fm_pane_grants_person_command() {  # <session>:<window>
+  printf '%s/bin/sq-pane-grants.sh grant respond %s' "$ROOT" "$1"
+}
+
+fm_pane_grants_person_hint() {  # <session>:<window>
+  if [ -n "${TUIOS_ENV:-}${TUIOS_PANE_ID:-}" ]; then
+    printf 'hint: a pane can never give more than it holds, and admin never includes respond, so this delegation is the person'\''s once:\n' >&2
+  else
+    printf 'hint: TUIOS accepts this grant only from a caller that runs in no pane of the daemon:\n' >&2
+  fi
+  printf 'person command: %s\n' "$(fm_pane_grants_person_command "$1")" >&2
 }
 
 fm_pane_grants_show() {  # [<target>]
-  local target=${1:-} out inventory window grants declared
+  local target=${1:-} out label grants declared
   if [ -z "$target" ]; then
     out=$("$TUIOS_BIN" pane-grants --json 2>&1) \
       || fm_pane_grants_fail "cannot read this pane's grants: $(printf '%s' "$out" | head -n 1)"
     if [ "$(printf '%s' "$out" | jq -r 'if .pane == true then "yes" else "no" end' 2>/dev/null || true)" = yes ]; then
-      printf 'target: %s:%s\n' \
-        "$(printf '%s' "$out" | jq -r '.session // ""' 2>/dev/null || true)" \
-        "$(printf '%s' "$out" | jq -r '.window // ""' 2>/dev/null || true)"
+      label=$(printf '%s' "$out" | jq -r '"\(.session // ""):\(.window // "")"' 2>/dev/null || true)
       declared=$(printf '%s' "$out" | jq -r 'if .explicit == true then "explicit" else "default" end' 2>/dev/null || true)
-      [ -n "$declared" ] || declared=default
     else
       printf 'target: none (this command runs in no pane of the daemon)\n'
       declared=default
     fi
     grants=$(printf '%s' "$out" | jq -r '(.grants // []) | join(",")' 2>/dev/null || true)
     [ -n "$grants" ] || grants=$(fm_pane_grants_default_grants)
+    [ -z "$label" ] || printf 'target: %s\n' "$label"
   else
-    fm_pane_grants_resolve_target "$target"
-    inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
-    window=$(fm_pane_grants_canonical_window "$inventory" "$GRANT_WINDOW")
-    grants=$(fm_pane_grants_explicit "$inventory" "$window")
-    if [ -n "$grants" ]; then
-      declared=explicit
-    else
-      declared=default
-      grants=$(fm_pane_grants_default_grants)
-    fi
-    printf 'target: %s:%s\n' "$GRANT_SESSION" "$window"
+    fm_pane_grants_read "$target"
+    label=$GRANT_SESSION:$GRANT_WINDOW
+    grants=$GRANT_CSV
+    declared=$GRANT_DECLARED
+    printf 'target: %s\n' "$label"
   fi
+  [ -n "$declared" ] || declared=default
   printf 'grants: %s\n' "$grants"
   printf 'declared: %s\n' "$declared"
   case ",$grants," in
     *",respond,"*) printf 'respond: present\n' ;;
-    *) printf 'respond: absent\n' ;;
+    *)
+      printf 'respond: absent\n'
+      [ -z "$label" ] || printf 'person command: %s\n' "$(fm_pane_grants_person_command "$label")"
+      ;;
   esac
 }
 
+# fm_pane_grants_verify: the read-only gate that follows a delegation. Exit 0
+# only when the pane really holds respond, so the supervisor retries its key
+# send instead of guessing whether the grant landed.
+fm_pane_grants_verify() {  # <target>
+  fm_pane_grants_read "$1"
+  case ",$GRANT_CSV," in
+    *",respond,"*)
+      printf 'verified: %s:%s holds respond\n' "$GRANT_SESSION" "$GRANT_WINDOW"
+      return 0
+      ;;
+  esac
+  printf 'absent: %s:%s does not hold respond (holds %s)\n' "$GRANT_SESSION" "$GRANT_WINDOW" "$GRANT_CSV" >&2
+  printf 'person command: %s\n' "$(fm_pane_grants_person_command "$GRANT_SESSION:$GRANT_WINDOW")" >&2
+  return 1
+}
+
 fm_pane_grants_grant() {  # <grant-name> <target>
-  local grant=$1 target=$2 inventory window current desired out rc
+  local grant=$1 target=$2 current desired out rc inventory
   [ "$grant" = respond ] \
     || fm_pane_grants_refuse "only the respond grant can be added; '$grant' is refused because this wrapper is not a TUIOS grant proxy"
-  fm_pane_grants_resolve_target "$target"
-  inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
-  window=$(fm_pane_grants_canonical_window "$inventory" "$GRANT_WINDOW")
-  current=$(fm_pane_grants_explicit "$inventory" "$window")
-  [ -n "$current" ] || current=$(fm_pane_grants_default_grants)
+  fm_pane_grants_read "$target"
+  current=$GRANT_CSV
   case ",$current," in
     *",respond,"*)
-      printf 'already granted: respond on %s:%s (holds %s)\n' "$GRANT_SESSION" "$window" "$current"
+      printf 'already granted: respond on %s:%s (holds %s)\n' "$GRANT_SESSION" "$GRANT_WINDOW" "$current"
       return 0
       ;;
   esac
   desired=$(fm_pane_grants_with "$current" respond)
-  out=$("$TUIOS_BIN" set-pane-grants --session "$GRANT_SESSION" --window "$window" \
+  out=$("$TUIOS_BIN" set-pane-grants --session "$GRANT_SESSION" --window "$GRANT_WINDOW" \
     --grants "$desired" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf 'error: TUIOS refused to add the respond grant on %s:%s: %s\n' \
-      "$GRANT_SESSION" "$window" "$(printf '%s' "$out" | head -n 1)" >&2
-    fm_pane_grants_authority_hint "$GRANT_SESSION:$window"
+      "$GRANT_SESSION" "$GRANT_WINDOW" "$(printf '%s' "$out" | head -n 1)" >&2
+    fm_pane_grants_person_hint "$GRANT_SESSION:$GRANT_WINDOW"
     exit 1
   fi
   inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
-  current=$(fm_pane_grants_explicit "$inventory" "$window")
+  current=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
   case ",$current," in
     *",respond,"*) ;;
-    *) fm_pane_grants_fail "TUIOS reported success, but $GRANT_SESSION:$window does not hold respond; nothing else was changed" ;;
+    *) fm_pane_grants_fail "TUIOS reported success, but $GRANT_SESSION:$GRANT_WINDOW does not hold respond; nothing else was changed" ;;
   esac
-  printf 'granted: respond on %s:%s (holds %s)\n' "$GRANT_SESSION" "$window" "$current"
+  printf 'granted: respond on %s:%s (holds %s)\n' "$GRANT_SESSION" "$GRANT_WINDOW" "$current"
 }
 
 command -v jq >/dev/null 2>&1 || fm_pane_grants_fail 'jq is required to read the TUIOS window inventory'
@@ -255,6 +301,10 @@ case "$subcommand" in
   grant)
     [ "$#" -eq 2 ] || fm_pane_grants_refuse 'grant takes exactly one grant name and one target'
     fm_pane_grants_grant "$1" "$2"
+    ;;
+  verify)
+    [ "$#" -eq 1 ] || fm_pane_grants_refuse 'verify takes exactly one target'
+    fm_pane_grants_verify "$1"
     ;;
   -h|--help|help) fm_pane_grants_usage ;;
   *) fm_pane_grants_refuse "unknown subcommand '$subcommand'" ;;

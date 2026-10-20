@@ -11,7 +11,7 @@
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 # A TUIOS key refused because the pane that types the answer lacks the respond
-# grant names the sanctioned grant wrapper (bin/sq-pane-grants.sh) instead of the
+# grant names bin/sq-pane-grants.sh's exact person command instead of the
 # provider's own raw set-pane-grants advice.
 #
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
@@ -234,12 +234,14 @@ fm_send_clear_after_interrupt() {  # <key>
 # fm_send_pane_grant_hint: name the sanctioned remedy when a backend refused a
 # key because the pane that types the answer does not hold the grant it needs.
 # bin/backends/tuios.sh sets the target, because only it sees the refusal, and
-# bin/sq-pane-grants.sh owns the wrapper and its authority limits.
+# bin/sq-pane-grants.sh owns the wrapper and its authority limits. The printed
+# command is the exact copy-paste form that wrapper's own show, verify, and
+# refusal paths print, so a supervisor never has to compose it.
 fm_send_pane_grant_hint() {
   local target=${SQUAD_BACKEND_PANE_GRANT_TARGET:-}
   [ -n "$target" ] || return 0
-  echo "hint: answering a pane that waits on a prompt needs the respond grant on the pane that types the answer ($target)." >&2
-  echo "hint: grant it with: bin/sq-pane-grants.sh grant respond $target" >&2
+  echo "hint: answering needs the respond grant on the pane that types the answer ($target); retry this send after it lands." >&2
+  echo "person command: $SQUAD_ROOT/bin/sq-pane-grants.sh grant respond $target" >&2
 }
 
 fm_send_normalize_key() {  # <key>

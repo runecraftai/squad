@@ -85,7 +85,8 @@ A backend with no native blocked verdict (tmux) never raises this wake - it is n
 A pane waiting on a prompt refuses every keystroke that would answer it unless the pane that *types* the answer holds `respond`.
 The grant therefore belongs to the answering pane - normally the supervisor's own - and not to the blocked pane, so granting it to the operator's window changes nothing.
 `admin` includes read, write, and fan but never `respond`, and a pane can never give more than it holds, so the first `respond` on a supervised pane can only come from a caller that runs in no pane of that daemon.
-This was measured against TUIOS 0.9.1 on 2026-10-20: the same `send-keys` into a `needs_input` pane was refused from a pane holding `admin` and succeeded once that same pane held `admin,respond`, and every in-pane attempt to add `respond` was refused with "a pane cannot give more than it holds".
+That is TUIOS 0.9.1's deliberate rule, measured on 2026-10-20: the same `send-keys` into a `needs_input` pane was refused from a pane holding `admin` and succeeded once that same pane held `admin,respond`, and every in-pane attempt to add `respond` was refused with "a pane cannot give more than it holds".
+So the one-line human step below is a provider boundary Squad respects on purpose, not a Squad defect to route around.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns that evidence.
 
 `bin/sq-pane-grants.sh` is the sanctioned surface for this grant, and the raw-session guard admits it as its only session-provider exception (`bin/sq-backend-pretool-check.sh`):
@@ -93,23 +94,26 @@ This was measured against TUIOS 0.9.1 on 2026-10-20: the same `send-keys` into a
 ```sh
 bin/sq-pane-grants.sh show <target>            # read-only: grants, and whether respond is present
 bin/sq-pane-grants.sh grant respond <target>   # add respond, keep everything the pane already held
+bin/sq-pane-grants.sh verify <target>          # read-only gate: exit 0 only when respond is present
 ```
 
 `<target>` is a task id resolved through `state/<id>.meta` (which must record `backend=tuios`) or an explicit `<session>:<window>`.
 The wrapper accepts no other grant, never addresses a whole session, and never replaces a pane's grants, so it cannot become a general TUIOS proxy.
 An unknown, ambiguous, or unreadable target is refused before the daemon is asked for anything, and a daemon refusal is reported verbatim with the exact command that fixes it.
+When `respond` is missing, `show`, `verify`, and a refused `grant` all print the same `person command:` line: the wrapper by absolute path with the resolved window id, ready to paste into the person's own shell outside TUIOS.
 The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SESSION:$TUIOS_WINDOW_ID"`.
 
 The flow when a dialog blocks an operator:
 
 1. The wake reports the pane and the prompt it read.
-2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_WINDOW_ID"` says whether the answering pane can already answer it.
-   When it cannot, the first delegation is the person's: the same `grant respond` command run once from a shell outside TUIOS, because no pane can give it to itself.
-3. With `respond` on the answering pane, the supervisor answers with `bin/sq-send.sh <id> --key Enter`, or the message the prompt asks for.
-4. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
+2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_WINDOW_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
+   That delegation is the person's, once, from a shell outside TUIOS; no pane can give it to itself.
+3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
+4. With `respond` on the answering pane, the supervisor answers with `bin/sq-send.sh <id> --key Enter`, or the message the prompt asks for.
+5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
 
 One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.
-When a send is refused for this missing grant, `bin/sq-send.sh` names the wrapper and the exact command for the pane that must hold it instead of repeating the provider's raw `set-pane-grants` advice, which Squad's guard refuses.
+When a send is refused for this missing grant, `bin/sq-send.sh` prints that same `person command:` line for the pane that must hold it instead of repeating the provider's raw `set-pane-grants` advice, which Squad's guard refuses.
 
 ## Restart recovery
 

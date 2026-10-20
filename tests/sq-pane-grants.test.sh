@@ -150,6 +150,8 @@ assert_contains "$out" "target: $SESSION:$DEFAULT_PANE" 'show names the resolved
 assert_contains "$out" "grants: admin" 'show reports the daemon default grants'
 assert_contains "$out" 'declared: default' 'show says the grants came from the default'
 assert_contains "$out" 'respond: absent' 'show reports the missing respond grant'
+assert_contains "$out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$DEFAULT_PANE" \
+  'show prints the copy-paste person command with the resolved window id'
 
 result=$(run_wrapper show "$SESSION:$RESPOND_PANE")
 expect_code 0 "${result%%$'\n'*}" 'show reads an explicit grant set'
@@ -157,6 +159,7 @@ out=${result#*$'\n'}
 assert_contains "$out" 'grants: admin,respond' 'show reports the explicit grants'
 assert_contains "$out" 'declared: explicit' 'show says the grants are explicit'
 assert_contains "$out" 'respond: present' 'show reports respond as present'
+assert_not_contains "$out" 'person command:' 'a granted pane needs no person command'
 
 result=$(run_wrapper show grantee)
 expect_code 0 "${result%%$'\n'*}" 'show resolves a task id through its meta record'
@@ -245,9 +248,43 @@ printf 'set-pane-grants failed: set-pane-grants is refused for this pane: a pane
 result=$(run_wrapper grant respond "$SESSION:cccccccc-3333")
 expect_code 1 "${result%%$'\n'*}" 'a daemon refusal fails the grant'
 assert_contains "$result" 'a pane cannot give more than it holds' 'the daemon refusal is reported verbatim'
-assert_contains "$result" "bin/sq-pane-grants.sh grant respond $SESSION:cccccccc-3333" \
-  'the daemon refusal names the exact outside-pane command'
+assert_contains "$result" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:cccccccc-3333" \
+  'the daemon refusal prints the same copy-paste person command'
 rm -f "$FAKE_DIR/set-refuse"
+
+# --- verify ----------------------------------------------------------------
+
+result=$(run_wrapper verify "$SESSION:$RESPOND_PANE")
+expect_code 0 "${result%%$'\n'*}" 'verify passes for a pane that holds respond'
+assert_contains "$result" "verified: $SESSION:$RESPOND_PANE holds respond" 'verify names the confirmed pane'
+
+result=$(run_wrapper verify "$SESSION:cccccccc-3333")
+expect_code 1 "${result%%$'\n'*}" 'verify fails while respond is still absent'
+assert_contains "$result" "absent: $SESSION:cccccccc-3333 does not hold respond" 'verify names the pane that still needs the grant'
+assert_contains "$result" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:cccccccc-3333" \
+  'verify prints the copy-paste person command instead of guessing'
+
+reset_log
+result=$(run_wrapper verify "$SESSION:cccccccc-3333")
+assert_no_grep 'set-pane-grants' "$LOG" 'verify never changes anything'
+
+# The delegation lands: verify then agrees, and the supervisor's retry is safe.
+result=$(run_wrapper grant respond "$SESSION:cccccccc-3333")
+expect_code 0 "${result%%$'\n'*}" 'grant succeeds for the pane verify reported absent'
+result=$(run_wrapper verify "$SESSION:cccccccc-3333")
+expect_code 0 "${result%%$'\n'*}" 'verify confirms the grant landed'
+assert_contains "$result" 'holds respond' 'verify reports the landed grant'
+
+result=$(run_wrapper verify grantee)
+expect_code 0 "${result%%$'\n'*}" 'verify resolves a task id and agrees with the earlier grant'
+assert_contains "$result" "verified: $SESSION:$DEFAULT_PANE holds respond" 'verify reports the task pane by its exact id'
+
+result=$(run_wrapper verify)
+expect_code 2 "${result%%$'\n'*}" 'verify without a target is refused'
+result=$(run_wrapper verify "$SESSION:$DEFAULT_PANE" "$SESSION:$RESPOND_PANE")
+expect_code 2 "${result%%$'\n'*}" 'verify refuses more than one target'
+result=$(run_wrapper verify "$SESSION:nosuchwindow")
+expect_code 1 "${result%%$'\n'*}" 'verify refuses an unknown window'
 
 # --- sq-send names the wrapper instead of the raw CLI advice ---------------
 
@@ -262,9 +299,9 @@ send_out=$(FAKE_TUIOS_WINDOW_LABEL=sq-grantee "$SEND" grantee --key Enter 2>&1)
 send_rc=$?
 expect_code 1 "$send_rc" 'sq-send reports the refused key'
 assert_contains "$send_out" 'not sent to' 'sq-send keeps its own failure line'
-assert_contains "$send_out" "bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
-  'sq-send names the wrapper and the pane whose grant is missing'
+assert_contains "$send_out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $SESSION:$CALLER_PANE" \
+  'sq-send prints the same copy-paste person command show and verify print'
 assert_contains "$send_out" 'needs the respond grant' 'sq-send keeps the daemon refusal as evidence'
 rm -f "$FAKE_DIR/send-keys-refuse"
 
-pass 'pane grants: respond-only wrapper refusals, grant verification, and the sq-send remedy hint'
+pass 'pane grants: respond-only wrapper refusals, the copy-paste person command, the verify gate, and the sq-send remedy hint'
