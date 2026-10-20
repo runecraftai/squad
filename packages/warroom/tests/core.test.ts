@@ -142,6 +142,20 @@ describe("Warroom canonical core", () => {
 		w.close();
 	});
 
+	test("a later revision does not overwrite the first recorded supersession replacement", () => {
+		const w = seeded();
+		w.command({ type: "approval.record", id: "pa", initiativeId: "i1", kind: "plan-approval", revisionId: "p1", decision: "approved" });
+		w.command({ type: "revision.create", id: "p2", initiativeId: "i1", kind: "plan", content: "plan two" });
+		w.command({ type: "revision.create", id: "p3", initiativeId: "i1", kind: "plan", content: "plan three" });
+		const replayed = w.state("i1").approvals.find((approval: any) => approval.id === "pa");
+		const projected = w.db.query("SELECT superseded_at, superseded_by FROM approvals WHERE id='pa'").get() as { superseded_at: string | null; superseded_by: string | null };
+		expect(replayed.superseded).toBe(true);
+		expect(replayed.supersededBy).toBe("p2");
+		expect(replayed.supersededBy).toBe(projected.superseded_by);
+		expect(replayed.supersededAt).toBe(projected.superseded_at);
+		w.close();
+	});
+
 	test("execution-authorization is superseded when a newer plan revision is created", () => {
 		const w = seeded();
 		w.command({ type: "approval.record", id: "ea", initiativeId: "i1", kind: "execution-authorization", revisionId: "p1", decision: "approved" });

@@ -76,8 +76,18 @@ export function renderFileSection(file: PacketManifest["files"][number], content
 	const notes: string[] = [];
 	if (contents.baseUnreviewable) notes.push(`The base side is not reviewable as text (${escapeHtml(contents.baseReason ?? "unsupported")}); its bytes are not inferred.`);
 	if (contents.headUnreviewable) notes.push(`The head side is not reviewable as text (${escapeHtml(contents.headReason ?? "unsupported")}); its bytes are not inferred.`);
-	if (notes.length > 0) return `<h3 class="mono">${escapeHtml(file.path)}</h3><p class="muted">${notes.join(" ")}</p>`;
-	return `<h3 class="mono">${escapeHtml(file.path)}</h3>${renderDiff(contents.base ?? "", contents.head ?? "")}`;
+	const header = `<h3 class="mono">${escapeHtml(file.path)}</h3>`;
+	if (notes.length === 0) return `${header}${renderDiff(contents.base ?? "", contents.head ?? "")}`;
+	const available: Array<{ label: string; text: string }> = [];
+	if (!contents.baseUnreviewable) available.push({ label: "base", text: contents.base ?? "" });
+	if (!contents.headUnreviewable) available.push({ label: "head", text: contents.head ?? "" });
+	return `${header}<p class="muted">${notes.join(" ")}</p>${available.map((side) => renderFullFile(side.label, side.text)).join("")}`;
+}
+
+function renderFullFile(label: string, text: string): string {
+	const lines = text === "" ? [] : text.split("\n");
+	const rows = lines.map((line, index) => `<tr><td class="lineno">${index + 1}</td><td class="code">${escapeHtml(line)}</td></tr>`).join("");
+	return `<p class="muted">Full ${escapeHtml(label)} file</p>${rows ? `<table class="diff"><tbody>${rows}</tbody></table>` : ""}`;
 }
 
 export function renderReviewExport(input: ExportInput): string {

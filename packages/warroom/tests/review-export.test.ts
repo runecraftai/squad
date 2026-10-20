@@ -125,6 +125,18 @@ describe("static review export", () => {
 		expect(html).toContain("its bytes are not inferred");
 	});
 
+	test("renders the reviewable side of a mixed object instead of only the unavailable-side note", () => {
+		const path = "src/<script>alert(1)</script>.ts";
+		const baseOnly = renderReviewExport(input({ contents: { [path]: { base: "base-only bytes", headUnreviewable: true, headReason: "binary" } } }) as any);
+		expect(baseOnly).toContain("The head side is not reviewable as text (binary)");
+		expect(baseOnly).toContain("Full base file");
+		expect(baseOnly).toContain("base-only bytes");
+		const headOnly = renderReviewExport(input({ contents: { [path]: { baseUnreviewable: true, baseReason: "binary", head: "head-only bytes" } } }) as any);
+		expect(headOnly).toContain("The base side is not reviewable as text (binary)");
+		expect(headOnly).toContain("Full head file");
+		expect(headOnly).toContain("head-only bytes");
+	});
+
 	test("marks missing stored text explicitly instead of inferring bytes", () => {
 		const html = renderReviewExport(input({ contents: {} }) as any);
 		expect(html).toContain("Stored text is unavailable; no bytes are inferred.");

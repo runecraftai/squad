@@ -12,7 +12,7 @@ import { digestCanonical } from "./core.ts";
 export class GitReadError extends Error {}
 
 export interface GitTreeEntry { mode: string; type: string; sha: string; path: string }
-export interface FileObjectSide { mode: string; blob: string; size: number; reviewable: boolean; reason?: string; content?: Buffer }
+export interface FileObjectSide { mode: string; blob: string; size: number; reviewable: boolean; reason?: string; contentDigest?: string }
 export interface PacketFileEntry {
 	path: string;
 	status: "added" | "modified" | "deleted";
@@ -143,22 +143,30 @@ export function redactUrl(value: string): string {
 	return value.replace(/\/\/[^/@]+@/, "//");
 }
 
-function classify(repo: string, entry: GitTreeEntry): FileObjectSide {
-	if (entry.type === "commit" || entry.mode === "160000") return { mode: entry.mode, blob: entry.sha, size: 0, reviewable: false, reason: "submodule" };
-	if (entry.mode === "120000" || entry.type !== "blob") return { mode: entry.mode, blob: entry.sha, size: 0, reviewable: false, reason: entry.type === "tree" ? "directory" : "symlink" };
+function classify(repo: string, entry: GitTreeEntry): { side: FileObjectSide; content?: Buffer } {
+	if (entry.type === "commit" || entry.mode === "160000") return { side: { mode: entry.mode, blob: entry.sha, size: 0, reviewable: false, reason: "submodule" } };
+	if (entry.mode === "120000" || entry.type !== "blob") return { side: { mode: entry.mode, blob: entry.sha, size: 0, reviewable: false, reason: entry.type === "tree" ? "directory" : "symlink" } };
 	const size = blobSize(repo, entry.sha);
-	if (size > MAX_REVIEWABLE_BYTES) return { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "too-large" };
+	if (size > MAX_REVIEWABLE_BYTES) return { side: { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "too-large" } };
 	const bytes = readBlob(repo, entry.sha);
-	if (bytes.includes(0)) return { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "binary" };
+	if (bytes.includes(0)) return { side: { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "binary" } };
 	let text: string;
-	try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "not-utf8" }; }
+	try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return { side: { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "not-utf8" } }; }
 	// Exact bytes remain the source of truth; this only reports whether the object is text for human review.
 	void text;
-	return { mode: entry.mode, blob: entry.sha, size, reviewable: true, content: bytes };
+	return { side: { mode: entry.mode, blob: entry.sha, size, reviewable: true }, content: bytes };
+}
+
+export type ContentSink = (content: Buffer) => string;
+
+function manifestSide(repo: string, entry: GitTreeEntry, storeContent?: ContentSink): FileObjectSide {
+	const { side, content } = classify(repo, entry);
+	if (content && storeContent) side.contentDigest = storeContent(content);
+	return side;
 }
 
 /** Complete manifest of every path changed between base and head, with both object identities. */
-export function buildManifest(repo: string, baseSha: string, headSha: string): PacketFileEntry[] {
+export function buildManifest(repo: string, baseSha: string, headSha: string, storeContent?: ContentSink): PacketFileEntry[] {
 	const baseEntries = new Map(listTree(repo, baseSha).map((entry) => [entry.path, entry]));
 	const headEntries = new Map(listTree(repo, headSha).map((entry) => [entry.path, entry]));
 	const paths = [...new Set([...baseEntries.keys(), ...headEntries.keys()])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -169,7 +177,12 @@ export function buildManifest(repo: string, baseSha: string, headSha: string): P
 		if (base && head && base.sha === head.sha && base.mode === head.mode) continue;
 		if (files.length >= MAX_MANIFEST_FILES) throw new GitReadError(`manifest exceeds ${MAX_MANIFEST_FILES} changed paths`);
 		const status = !base ? "added" : !head ? "deleted" : "modified";
-		files.push({ path, status, base: base ? classify(repo, base) : null, head: head ? classify(repo, head) : null });
+		files.push({
+			path,
+			status,
+			base: base ? manifestSide(repo, base, storeContent) : null,
+			head: head ? manifestSide(repo, head, storeContent) : null,
+		});
 	}
 	return files;
 }

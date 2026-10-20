@@ -158,7 +158,7 @@ export class Warroom {
 				for (const prior of revisions.values()) if (prior.initiativeId === p.initiativeId && prior.kind === p.kind) prior.stale = true;
 				revisions.set(p.id, revision);
 				if (p.kind === "plan") initiatives.get(p.initiativeId).currentPlanRevisionId = p.id;
-				for (const a of approvals) if (a.revisionId !== p.id && revisions.get(a.revisionId)?.stale) { a.superseded = true; a.supersededAt = event.occurred_at; a.supersededBy = p.id; }
+				for (const a of approvals) if (!a.superseded && a.revisionId !== p.id && revisions.get(a.revisionId)?.stale) { a.superseded = true; a.supersededAt = event.occurred_at; a.supersededBy = p.id; }
 				for (const c of comments) if (c.revisionId !== p.id && revisions.get(c.revisionId)?.stale) { c.state = "outdated"; c.anchorStatus = "outdated"; }
 				for (const e of evidence) if (e.revisionId !== p.id && revisions.get(e.revisionId)?.stale && e.provenance === "legacy") e.stale = true;
 				for (const q of questions) if (q.revisionId !== p.id && revisions.get(q.revisionId)?.stale) q.status = "outdated";

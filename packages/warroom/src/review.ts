@@ -316,24 +316,19 @@ function uniqueByDigest<T extends { digest: string }>(items: T[]): T[] {
 }
 
 function materializeManifest(repoPath: string, store: ArtifactStore, baseSha: string, headSha: string): PacketManifest {
-	const raw: PacketFileEntry[] = buildManifest(repoPath, baseSha, headSha);
+	const raw: PacketFileEntry[] = buildManifest(repoPath, baseSha, headSha, (bytes) => store.write(bytes, "text/plain").digest);
 	const files: PacketFile[] = raw.map((file) => ({
 		path: file.path,
 		status: file.status,
-		base: withContent(file.base, store),
-		head: withContent(file.head, store),
+		base: packetSide(file.base),
+		head: packetSide(file.head),
 	}));
 	return { version: 1, baseSha, headSha, files };
 }
 
-function withContent(side: PacketFileEntry["base"], store: ArtifactStore): PacketFileSide | null {
+function packetSide(side: PacketFileEntry["base"]): PacketFileSide | null {
 	if (!side) return null;
-	let contentDigest: string | null = null;
-	if (side.reviewable) {
-		if (!side.content) throw new ReviewError("reviewable object bytes are unavailable");
-		contentDigest = store.write(side.content, "text/plain").digest;
-	}
-	return { mode: side.mode, blob: side.blob, size: side.size, reviewable: side.reviewable, reason: side.reason, contentDigest };
+	return { mode: side.mode, blob: side.blob, size: side.size, reviewable: side.reviewable, reason: side.reason, contentDigest: side.contentDigest ?? null };
 }
 
 export function initiativeOfPlan(warroom: Warroom, planRevisionId: string): string {
