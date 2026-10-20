@@ -60,16 +60,6 @@
 # When a project has an upstream, the brief must name the exact PR target, such
 # as `sq-gh pr create -R <owner>/<repo>`; forbidding the upstream alone is not
 # enough to tell the operator which repository to target.
-# A strike or recon brief must also record an explicit playbook decision:
-# either --playbook <id>@<version> selects a versioned execution playbook, or
-# --no-playbook "<reason>" states in one non-empty line why none applies.
-# A missing decision, an empty or whitespace-only reason, and both flags together
-# are refused, so "no playbook" is never an unexamined default. The decision is
-# recorded in the brief as the selectable "Execution playbook: id=<id> version=<version>"
-# line or a "Playbook decision: none - <reason>" line; the latter deliberately
-# does not start with "Execution playbook:" because bin/sq-spawn.sh parses only
-# that prefixed identity line. XO charters are not delivery contracts and stay
-# exempt: they neither require nor accept --no-playbook.
 # drill-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
 # The generated ship brief records the chosen mode as a fixed machine-readable
