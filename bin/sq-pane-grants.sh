@@ -154,10 +154,17 @@ fm_pane_grants_canonical_window() {  # <inventory> <window-ref> -> exact window 
   printf '%s' "$id"
 }
 
-fm_pane_grants_explicit() {  # <inventory> <window-id> -> csv, empty for the daemon default
+# fm_pane_grants_explicit: what the inventory says a pane holds, as a record so
+# an absent grants field is never confused with an explicitly empty grant set.
+# Prints "explicit<TAB><csv>", "default<TAB>" when the pane holds the daemon
+# default, or "missing<TAB>" when the window is no longer in the inventory.
+fm_pane_grants_explicit() {  # <inventory> <window-id>
   printf '%s' "$1" | jq -r --arg w "$2" '
     def wid: (.window_id // .id // (if (.window | type) == "object" then .window.id else empty end));
-    [ .windows[] | select(wid == $w) | (.grants // []) | .[] ] | join(",")'
+    [ .windows[] | select(wid == $w) ] | first
+    | if . == null then "missing\t"
+      elif has("grants") then "explicit\t\((.grants // []) | join(","))"
+      else "default\t" end'
 }
 
 fm_pane_grants_caller() {  # -> validated pane-grants payload on stdout
@@ -171,15 +178,18 @@ fm_pane_grants_caller() {  # -> validated pane-grants payload on stdout
   printf '%s' "$out"
 }
 
-fm_pane_grants_default_grants() {  # [<validated pane-grants payload>] -> default grants as csv
-  local out=${1:-} csv mode
+# fm_pane_grants_default_grants: the grants a pane without an explicit set
+# inherits, as csv. An explicitly empty default is a real answer (the pane holds
+# nothing), so only a payload with no default_grants field at all fails closed.
+fm_pane_grants_default_grants() {  # [<validated pane-grants payload>]
+  local out=${1:-} present mode
   [ -n "$out" ] || out=$(fm_pane_grants_caller)
-  csv=$(printf '%s' "$out" | jq -r '(.default_grants // [])[]' 2>/dev/null | paste -sd, -)
-  if [ -z "$csv" ]; then
+  present=$(printf '%s' "$out" | jq -r 'if has("default_grants") then "yes" else "no" end' 2>/dev/null || true)
+  if [ "$present" != yes ]; then
     mode=$(printf '%s' "$out" | jq -r 'if (.mode | type) == "string" then .mode else "unknown" end')
-    fm_pane_grants_fail "the daemon reported no default pane grants (mode=${mode}), so the grants this pane already holds cannot be read; refusing to guess or replace them"
+    fm_pane_grants_fail "the daemon reported no default_grants field (mode=${mode}), so the grants this pane already holds cannot be read; refusing to guess or replace them"
   fi
-  printf '%s' "$csv"
+  printf '%s' "$out" | jq -r '(.default_grants // []) | join(",")'
 }
 
 fm_pane_grants_with() {  # <csv> <grant> -> csv that holds both, order preserved
@@ -195,26 +205,33 @@ fm_pane_grants_with() {  # <csv> <grant> -> csv that holds both, order preserved
 # grants, or the daemon default when it holds no explicit set), and
 # GRANT_DECLARED. Read-only, and the one path show, verify, and grant share.
 fm_pane_grants_read() {  # <target>
-  local inventory csv
+  local inventory record
   GRANT_CSV=
   GRANT_DECLARED=
   fm_pane_grants_resolve_target "$1"
   inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
   GRANT_WINDOW=$(fm_pane_grants_canonical_window "$inventory" "$GRANT_WINDOW")
-  csv=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
-  if [ -n "$csv" ]; then
-    GRANT_DECLARED=explicit
-  else
-    GRANT_DECLARED=default
-    csv=$(fm_pane_grants_default_grants)
-  fi
-  GRANT_CSV=$csv
+  record=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
+  case "$record" in
+    explicit$'\t'*)
+      GRANT_DECLARED=explicit
+      GRANT_CSV=${record#*$'\t'}
+      ;;
+    default$'\t'*)
+      GRANT_DECLARED=default
+      GRANT_CSV=$(fm_pane_grants_default_grants)
+      ;;
+    *) fm_pane_grants_fail "$GRANT_SESSION:$GRANT_WINDOW is no longer in the window inventory; re-read the target" ;;
+  esac
 }
 
 # fm_pane_grants_person_command: the exact copy-paste command that gives a pane
 # the grant it needs. TUIOS accepts it only from a caller outside every pane, so
 # the wrapper is named by absolute path and the resolved window id is filled in.
-# bin/sq-send.sh prints the same command from the same facts.
+# This function is the command's owner. bin/sq-send.sh composes the same string
+# without sourcing this script, and tests/sq-pane-grants.test.sh asserts the two
+# outputs are identical, so a drift between them fails a test instead of reaching
+# an operator.
 fm_pane_grants_person_command() {  # <session>:<window>
   printf '%s/bin/sq-pane-grants.sh grant respond %s' "$ROOT" "$1"
 }
@@ -229,7 +246,7 @@ fm_pane_grants_person_hint() {  # <session>:<window>
 }
 
 fm_pane_grants_show() {  # [<target>]
-  local target=${1:-} out label= grants declared
+  local target=${1:-} out label='' grants declared
   if [ -z "$target" ]; then
     out=$(fm_pane_grants_caller)
     if [ "$(printf '%s' "$out" | jq -r '.pane')" != true ]; then
@@ -261,6 +278,7 @@ fm_pane_grants_show() {  # [<target>]
     printf 'target: %s\n' "$label"
   fi
   [ -n "$declared" ] || declared=default
+  [ -n "$grants" ] || grants=none
   printf 'grants: %s\n' "$grants"
   printf 'declared: %s\n' "$declared"
   case ",$grants," in
@@ -283,7 +301,8 @@ fm_pane_grants_verify() {  # <target>
       return 0
       ;;
   esac
-  printf 'absent: %s:%s does not hold respond (holds %s)\n' "$GRANT_SESSION" "$GRANT_WINDOW" "$GRANT_CSV" >&2
+  printf 'absent: %s:%s does not hold respond (holds %s)\n' \
+    "$GRANT_SESSION" "$GRANT_WINDOW" "${GRANT_CSV:-none}" >&2
   printf 'person command: %s\n' "$(fm_pane_grants_person_command "$GRANT_SESSION:$GRANT_WINDOW")" >&2
   return 1
 }
@@ -311,6 +330,7 @@ fm_pane_grants_grant() {  # <grant-name> <target>
   fi
   inventory=$(fm_pane_grants_inventory "$GRANT_SESSION")
   current=$(fm_pane_grants_explicit "$inventory" "$GRANT_WINDOW")
+  current=${current#*$'\t'}
   case ",$current," in
     *",respond,"*) ;;
     *) fm_pane_grants_fail "TUIOS reported success, but $GRANT_SESSION:$GRANT_WINDOW does not hold respond; nothing else was changed" ;;

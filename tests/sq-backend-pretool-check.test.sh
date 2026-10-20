@@ -52,6 +52,9 @@ assert_contains "$result" 'bin/sq-pane-grants.sh grant respond' \
   'the refusal names the sanctioned pane-grant surface'
 assert_contains "$result" 'never the CLI'\''s own set-pane-grants' \
   'the refusal says the raw grant verb stays refused'
+result=$(run_check 'tmux kill-window -t Squad:task')
+assert_not_contains "$result" 'bin/sq-pane-grants.sh' \
+  'a refusal for a provider without pane grants carries no pane-grant advice'
 
 for command in \
   'tmux list-windows -t Squad' \

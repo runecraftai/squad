@@ -110,7 +110,9 @@ The flow when a dialog blocks an operator:
 2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_WINDOW_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
    That delegation is the person's, once, from a shell outside TUIOS; no pane can give it to itself.
 3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
-4. With `respond` on the answering pane, the supervisor answers with `bin/sq-send.sh <id> --key Enter`, or the message the prompt asks for.
+4. With `respond` on the answering pane, the supervisor answers the prompt with keys through `bin/sq-send.sh <id> --key Enter` (or the key the prompt asks for).
+   Only key sends become possible: `bin/sq-send.sh` still refuses free text into a pane whose agent is blocked, because text typed there would answer the prompt without the grant check Squad does not own.
+   A dialog that demands a typed answer is therefore out of scope here and needs its own decision, not a wider grant.
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
 
 One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.

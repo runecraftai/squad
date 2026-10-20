@@ -352,6 +352,10 @@ fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   if [ "$rc" -ne 0 ]; then
     case "$out" in
       *'needs the respond grant'*)
+        # The match is on the daemon's own sentence, so a TUIOS release that
+        # rewords this refusal turns the branch off rather than misfiring; the
+        # refusal then falls back to the provider's verbatim text (the shape
+        # covered by the adapter's existing fake-CLI tests).
         # Squad has a sanctioned remedy for this refusal, so forward only the
         # daemon's own refusal sentence: its remaining lines are the provider's
         # remediation advice, which names the raw verb Squad's guard denies.

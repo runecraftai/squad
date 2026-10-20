@@ -77,20 +77,21 @@ function containsRawBackend(command, depth = 0) {
   return false;
 }
 
-function deny() {
-  return {
-    decision: "deny",
-    code: "backend-raw-session-control",
-    reason:
-      "Direct session-provider CLI control is blocked. Use the Squad lifecycle wrappers " +
-      "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh). " +
-      `Pane grants go through ${SANCTIONED_PANE_GRANT_SURFACE} grant respond <target>, never the CLI's own set-pane-grants.`,
-  };
+function deny(command) {
+  let reason =
+    "Direct session-provider CLI control is blocked. Use the Squad lifecycle wrappers " +
+    "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh).";
+  // Only the providers' grant verbs have a sanctioned replacement, so the other
+  // backends' refusals stay free of advice about a verb they do not have.
+  if (/\b(?:set-pane-grants|pane-grants)\b/.test(String(command))) {
+    reason += ` Pane grants go through ${SANCTIONED_PANE_GRANT_SURFACE} grant respond <target>, never the CLI's own set-pane-grants.`;
+  }
+  return { decision: "deny", code: "backend-raw-session-control", reason };
 }
 
 export function decision(command) {
   if (!String(command ?? "").trim() || !containsRawBackend(command)) return { decision: "allow" };
-  return deny();
+  return deny(command);
 }
 
 function invokedDirectly() {

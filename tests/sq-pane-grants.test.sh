@@ -230,9 +230,40 @@ printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-
   > "$FAKE_DIR/pane-grants.json"
 result=$(run_wrapper show)
 expect_code 1 "${result%%$'\n'*}" 'show refuses a pane whose default grants the daemon does not report'
-assert_contains "$result" 'reported no default pane grants (mode=open)' \
+assert_contains "$result" 'no default_grants field (mode=open)' \
   'the refusal names the missing defaults and the daemon mode'
 assert_contains "$result" 'refusing to guess or replace them' 'the refusal states that nothing was written'
+
+# An explicitly empty default is a real answer, not a missing field: the pane
+# holds nothing, so the add-only write must produce respond alone.
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"strict","default_grants":[],"grants":[],"explicit":true}' \
+  > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 0 "${result%%$'\n'*}" 'show accepts an explicitly empty grant set'
+assert_contains "$result" 'grants: none' 'an empty grant set is reported as none'
+assert_contains "$result" 'person command:' 'an empty grant set still yields the person command'
+write_caller_pane "$SESSION" "$CALLER_PANE"
+
+# An inventory record with an explicitly empty grants list is explicit, not the
+# daemon default, so the add-only write never turns a deliberate grant removal
+# into admin,respond.
+write_empty_grant_session() {
+  jq -cn '{success:true,windows:[{window_id:"eeeeeeee-5555",display_name:"empty",grants:[]}]}' \
+    > "$FAKE_DIR/emptygrants.json"
+}
+write_empty_grant_session
+result=$(run_wrapper show "emptygrants:eeeeeeee-5555")
+expect_code 0 "${result%%$'\n'*}" 'show reads a pane with an explicitly empty grant list'
+assert_contains "$result" 'declared: explicit' 'an empty grant list counts as explicit'
+assert_contains "$result" 'grants: none' 'an empty grant list is reported as none'
+result=$(run_wrapper verify "emptygrants:eeeeeeee-5555")
+expect_code 1 "${result%%$'\n'*}" 'verify fails for a pane that deliberately holds nothing'
+assert_contains "$result" '(holds none)' 'verify says a pane with no grants holds none'
+reset_log
+result=$(run_wrapper grant respond "emptygrants:eeeeeeee-5555")
+expect_code 0 "${result%%$'\n'*}" 'grant adds respond to a pane that deliberately holds nothing'
+assert_grep 'set-pane-grants --session emptygrants --window eeeeeeee-5555 --grants respond' "$LOG" \
+  'the add-only write preserves an empty grant set instead of restoring a default'
 
 # The headline path: a shell outside every pane is the only caller TUIOS accepts
 # for the first grant, so show, grant, and verify are driven from exactly that
