@@ -5,6 +5,7 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
+- Make the execution-playbook choice an explicit intake decision: `bin/sq-brief.sh` now refuses a strike or recon scaffold that passes neither `--playbook <id>@<version>` nor a one-line `--no-playbook` reason, records that decision in the brief, and still refuses both flags together, an empty reason, or an XO charter carrying `--no-playbook`.
 - Add a versioned `react@1` execution playbook so a selected React brief carries the commander's FSD layering, kebab-case and named-function component convention, component-responsibility boundary, and TanStack Router/Query standard, plus a proposed oxlint rule set for deliberation, with structural completion evidence enforced by `bin/sq-playbook-validate.sh`.
 - Add a `knowledge-pass` skill so a PR handoff becomes a code-grounded five-section pass (problem, rules, flow, decisions, verification) plus a one-question-at-a-time understanding check, shipped as an internal skill with a standalone public copy.
 - Fix the per-task PR cost report to include every Drill pipeline invocation, attribute usage by provider-qualified model, render money to cents labeled provider-recorded versus estimate, and never present OpenCode Go flat-rate subscription usage as spend.
