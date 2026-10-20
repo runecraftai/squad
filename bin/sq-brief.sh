@@ -293,6 +293,36 @@ else
 fi
 ID=${POS[0]}
 
+# Categories are columns of one table: a value passed to the wrong flag names the
+# category it belongs to and the flag that carries it, instead of reporting only
+# an unsupported version for a correctly spelled id from the other table.
+execution_category() {
+  case "${1%@*}" in
+    react) printf 'profile' ;;
+    bug-fix|investigation|feature|refactoring|prototype|perf|hillclimb|runtime-forensics|trace-forensics|visual-parity|multi-phase-plan|eval|plan-execute) printf 'playbook' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# A value spelled with the other category's id is refused by naming that category
+# and the flag that carries it, so a correctly spelled id never surfaces as an
+# unsupported version of the flag it was wrongly passed to.
+refuse_category_mixup() {
+  local flag="$1" value="$2" other id ref
+  if [ "$flag" = profile ]; then other=playbook; else other=profile; fi
+  id="${value%@*}"
+  [ "$(execution_category "$value")" = "$other" ] || return 1
+  case "$value" in
+    *@*) ref="$value" ;;
+    *) ref="$id@<version>" ;;
+  esac
+  if [ "$other" = playbook ]; then
+    echo "error: $value is an execution playbook, not a profile; pass it with --playbook $ref" >&2
+  else
+    echo "error: $value is an execution profile, not a playbook; pair it with the method that owns the sequence, for example --playbook feature@1 --profile $ref" >&2
+  fi
+}
+
 # Playbooks are explicit method contracts, separate from kind and delivery mode.
 # Validate before creating the task directory so rejected selections leave no partial brief.
 PLAYBOOK_SECTION=
@@ -321,8 +351,12 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
     shipping@1) echo "error: shipping@1 is not an execution playbook; delivery mode is owned by --mode and drill, and merge authority remains with the commander" >&2; exit 1 ;;
     '') echo "error: --playbook requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution playbook version is missing in '$PLAYBOOK'" >&2; exit 1 ;;
-    *@*) echo "error: unknown execution playbook version '$PLAYBOOK'" >&2; exit 1 ;;
-    *) echo "error: unknown execution playbook '$PLAYBOOK'" >&2; exit 1 ;;
+    *@*)
+      refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook version '$PLAYBOOK'" >&2
+      exit 1 ;;
+    *)
+      refuse_category_mixup playbook "$PLAYBOOK" || echo "error: unknown execution playbook '$PLAYBOOK'" >&2
+      exit 1 ;;
   esac
   if [ "$PLAYBOOK_ID" = visual-parity ]; then
     case "$KIND" in
@@ -352,8 +386,12 @@ if [ "$PROFILE_SET" -eq 1 ]; then
     react@1) PROFILE_ID=react; PROFILE_VERSION=1; PROFILE_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/react-v1.md"); PROFILE_EXPECTED_KIND=strike ;;
     '') echo "error: --profile requires a value" >&2; exit 1 ;;
     *'@') echo "error: execution profile version is missing in '$PROFILE'" >&2; exit 1 ;;
-    *@*) echo "error: unknown execution profile version '$PROFILE'" >&2; exit 1 ;;
-    *) echo "error: unknown execution profile '$PROFILE'" >&2; exit 1 ;;
+    *@*)
+      refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile version '$PROFILE'" >&2
+      exit 1 ;;
+    *)
+      refuse_category_mixup profile "$PROFILE" || echo "error: unknown execution profile '$PROFILE'" >&2
+      exit 1 ;;
   esac
   if [ "$KIND" != "$PROFILE_EXPECTED_KIND" ]; then
     echo "error: $PROFILE accepts only kind: $PROFILE_EXPECTED_KIND (not $KIND)" >&2

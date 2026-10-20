@@ -1187,6 +1187,19 @@ test_playbook_profile_pairing_and_refusals() {
   assert_contains "$out" "--profile react@1" "react-as-playbook refusal must show the pairing that works"
   assert_absent "$home/data/profile-as-playbook/brief.md" "react-as-playbook refusal left a partial brief"
 
+  # A version of the profile id passed to --playbook names the category it belongs to.
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-as-playbook-version repo --mode drill --playbook react@2 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "react@2 must not be selectable as a playbook"
+  assert_contains "$out" "is an execution profile, not a playbook" "profile-as-playbook refusal must name the category the id belongs to"
+  assert_absent "$home/data/profile-as-playbook-version/brief.md" "profile-as-playbook-version refusal left a partial brief"
+
+  # A playbook id passed to --profile names the flag that carries it.
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-playbook-as-profile repo --mode drill --playbook feature@1 --profile feature@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "a playbook id must not be accepted as a profile"
+  assert_contains "$out" "is an execution playbook, not a profile" "playbook-as-profile refusal must name the category the id belongs to"
+  assert_contains "$out" "--playbook feature@1" "playbook-as-profile refusal must show the flag that carries it"
+  assert_absent "$home/data/profile-playbook-as-profile/brief.md" "playbook-as-profile refusal left a partial brief"
+
   # An empty profile reference must not silently drop the selection: the identity
   # still reaches the brief, so bin/sq-spawn.sh's materialized-contract check
   # refuses the truncated profile instead of launching without its constraints.
