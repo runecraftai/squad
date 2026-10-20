@@ -9,6 +9,14 @@ import {
 // Keep this literal synchronized with SQUAD_BACKEND_KNOWN in bin/sq-backend.sh.
 export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux", "tuios"]);
 
+// The guard's registry of the one Squad surface that reaches session-provider
+// grant state on purpose. It is named here so every refusal tells the operator
+// the sanctioned pane-grant path instead of leaving the provider's own raw
+// advice as the only answer. It is deliberately NOT a backend CLI name, so the
+// raw-control rule never matches its command word: this registry publishes a
+// replacement, it opens no CLI access of its own.
+export const SANCTIONED_PANE_GRANT_SURFACE = "bin/sq-pane-grants.sh";
+
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish"]);
 const MAX_DEPTH = 8;
 
@@ -69,19 +77,41 @@ function containsRawBackend(command, depth = 0) {
   return false;
 }
 
-function deny() {
-  return {
-    decision: "deny",
-    code: "backend-raw-session-control",
-    reason:
-      "Direct session-provider CLI control is blocked. Use the Squad lifecycle wrappers " +
-      "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh).",
-  };
+// Both provider grant verbs match on the whole word, and the leading class keeps
+// the read verb from matching inside the write verb's name.
+const RAW_GRANT_WRITE = /(?:^|[^-A-Za-z0-9_])set-pane-grants(?![A-Za-z0-9_-])/;
+const RAW_GRANT_READ = /(?:^|[^-A-Za-z0-9_])pane-grants(?![A-Za-z0-9_-])/;
+// A reset removes the whole grant set, so it is the person's own undo from
+// outside TUIOS: the add-only wrapper has no revoke path, and pointing a reset
+// at its grant subcommand would advise the opposite operation. Scoping the flag
+// to the write verb's own command segment keeps an unrelated `--reset` later on
+// the same line from changing the advice.
+const RAW_GRANT_RESET = /(?:^|[^-A-Za-z0-9_])set-pane-grants(?![A-Za-z0-9_-])[^;&|\n]*\s--reset(?![A-Za-z0-9_-])/;
+
+function deny(command) {
+  let reason =
+    "Direct session-provider CLI control is blocked. Use the Squad lifecycle wrappers " +
+    "(for example bin/sq-send.sh, bin/sq-spawn.sh, bin/sq-teardown.sh, or bin/sq-window-state.sh).";
+  // Only the providers' grant verbs have a sanctioned replacement, so the other
+  // backends' refusals stay free of advice about a verb they do not have. Each
+  // verb points at its own wrapper subcommand: a caller that only wanted to read
+  // grants must not be told to perform the one write the wrapper allows.
+  const text = String(command);
+  if (RAW_GRANT_RESET.test(text)) {
+    reason +=
+      " Removing pane grants is the person's own set-pane-grants --reset from outside TUIOS; " +
+      `${SANCTIONED_PANE_GRANT_SURFACE} only adds respond and has no revoke path.`;
+  } else if (RAW_GRANT_WRITE.test(text)) {
+    reason += ` Pane grants go through ${SANCTIONED_PANE_GRANT_SURFACE} grant respond <target>, never the CLI's own set-pane-grants.`;
+  } else if (RAW_GRANT_READ.test(text)) {
+    reason += ` Reading pane grants goes through ${SANCTIONED_PANE_GRANT_SURFACE} show [<target>], never the CLI's own pane-grants.`;
+  }
+  return { decision: "deny", code: "backend-raw-session-control", reason };
 }
 
 export function decision(command) {
   if (!String(command ?? "").trim() || !containsRawBackend(command)) return { decision: "allow" };
-  return deny();
+  return deny(command);
 }
 
 function invokedDirectly() {

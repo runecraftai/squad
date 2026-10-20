@@ -315,11 +315,89 @@ fm_backend_tuios_send_literal() {  # <target> <text> [expected-label]
     --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$text"
 }
 
+# fm_backend_tuios_caller_pane: the pane this process types from, which is the
+# pane TUIOS checks a typing grant against. The daemon's own placement of this
+# caller is authoritative, so it is tried first; the pane environment is the
+# fallback for a caller whose placement the kernel cannot report.
+fm_backend_tuios_caller_pane() {
+  local out
+  out=$("$(fm_backend_tuios_bin)" pane-grants --json 2>/dev/null) || out=
+  if [ -n "$out" ]; then
+    out=$(printf '%s' "$out" | jq -r '
+      select(.pane == true)
+      | select((.session | type) == "string" and (.session | length) > 0)
+      | select((.window | type) == "string" and (.window | length) > 0)
+      | "\(.session):\(.window)"' 2>/dev/null || true)
+    if [ -n "$out" ]; then
+      printf '%s' "$out"
+      return 0
+    fi
+  fi
+  # TUIOS_PANE_ID is the id Squad already uses as a caller's own window target
+  # everywhere else, and TUIOS_WINDOW_ID is only an alternative: the guarded lab
+  # treats that one as optional, so it cannot be the only fallback.
+  if [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_PANE_ID:-}" ]; then
+    printf '%s:%s' "$TUIOS_SESSION" "$TUIOS_PANE_ID"
+    return 0
+  fi
+  if [ -n "${TUIOS_SESSION:-}" ] && [ -n "${TUIOS_WINDOW_ID:-}" ]; then
+    printf '%s:%s' "$TUIOS_SESSION" "$TUIOS_WINDOW_ID"
+    return 0
+  fi
+  return 1
+}
+
+# fm_backend_tuios_grant_refusal: true only when the daemon refused the key
+# because the typing pane lacks the respond grant. The live refusal sentence is
+# one signal and a structured error code or message is the other, so a daemon
+# that reports the condition as JSON keeps the sanctioned remedy. Any other
+# refusal stays an ordinary send failure with its full diagnostic intact.
+fm_backend_tuios_grant_refusal() {  # <refusal-output>
+  local out=$1 text
+  case "$out" in
+    *'needs the respond grant'*) return 0 ;;
+  esac
+  text=$(printf '%s' "$out" | jq -r '
+    (.error // .)
+    | if type == "object" then (.code // .message // .detail // empty) else . end
+    | select(type == "string")' 2>/dev/null) || return 1
+  [ -n "$text" ] || return 1
+  text=$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')
+  case "$text" in
+    *respond*) ;;
+    *) return 1 ;;
+  esac
+  case "$text" in
+    *grant*|*need*|*require*|*missing*|*refus*|*denied*|*blocked*) return 0 ;;
+  esac
+  return 1
+}
+
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
-  local target=$1 key=$2 expected=${3:-}
+  local target=$1 key=$2 expected=${3:-} out rc
+  # Only a refusal sets this, and only to the pane whose grant is missing, so a
+  # caller can name the sanctioned remedy without parsing the daemon's prose.
+  # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
+  SQUAD_BACKEND_PANE_GRANT_TARGET=
   fm_backend_tuios_target_ready "$target" "$expected" || return 1
-  fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" send-keys \
-    --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key"
+  out=$("$(fm_backend_tuios_bin)" send-keys --session "$SQUAD_BACKEND_TUIOS_SESSION" \
+    --window "$SQUAD_BACKEND_TUIOS_WINDOW" -- "$key" 2>&1) && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if fm_backend_tuios_grant_refusal "$out"; then
+      # Squad has a sanctioned remedy for this refusal, so forward only the
+      # daemon's own refusal sentence: its remaining lines are the provider's
+      # remediation advice, which names the raw verb Squad's guard denies.
+      [ -z "$out" ] || printf '%s\n' "$(printf '%s' "$out" | head -n 1)" >&2
+      # TUIOS requires respond on the pane that TYPES the answer, never on the
+      # blocked pane, so name that pane rather than the target.
+      # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
+      SQUAD_BACKEND_PANE_GRANT_TARGET=$(fm_backend_tuios_caller_pane || true)
+    else
+      [ -z "$out" ] || printf '%s\n' "$out" >&2
+    fi
+    return 1
+  fi
+  [ -z "$out" ] || printf '%s\n' "$out"
 }
 
 fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]

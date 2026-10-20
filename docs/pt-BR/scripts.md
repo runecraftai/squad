@@ -114,6 +114,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-handoff-surface.sh`      | Marcar requests de handoff pendentes como expostos exatamente uma vez e imprimir o cartão de handoff (docs/handoff-request.md) |
 | `sq-classify-lib.sh`     | Vocabulário compartilhado de classificação de acordos e folds e scans duráveis de decisões chaveadas     |
 | `sq-send.sh`             | Enviar uma linha literal verificada ou tecla suportada pelo backend registrado do alvo |
+| `sq-pane-grants.sh`      | Mostrar, conceder ou verificar o único grant de painel TUIOS que a supervisão precisa, com o comando de pessoa pronto para colar |
 | `sq-busy-lib.sh`         | Único dono do contrato semântico de busy-state: vereditos, atribuição de fonte e fontes por harness |
 | `sq-busy-event.sh`       | O único escritor do registro semântico de busy-state de uma tarefa; arma uma encarnação e aplica eventos de ciclo de vida |
 | `sq-tmux-lib.sh`         | Primitivas compartilhadas de pane tmux para captura de composer, submit verificado e checagem de ocupação no submit |

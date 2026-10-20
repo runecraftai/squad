@@ -10,6 +10,9 @@
 # A call with no arguments, or a resolvable target with --key and no key value, prints this usage to stderr and exits 2.
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
+# A TUIOS key refused because the pane that types the answer lacks the respond
+# grant names bin/sq-pane-grants.sh's exact person command: the provider's own
+# remediation advice is dropped and only its refusal sentence is kept.
 #
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
 # retried (Enter only, never retyped) until the target backend confirms a
@@ -226,6 +229,19 @@ fm_send_clear_after_interrupt() {  # <key>
     echo "error: Escape reached $T, but the muse composer could not be cleared; it still holds the restored prompt. Clear it before sending the next message." >&2
     return 1
   fi
+}
+
+# fm_send_pane_grant_hint: name the sanctioned remedy when a backend refused a
+# key because the pane that types the answer does not hold the grant it needs.
+# bin/backends/tuios.sh sets the target, because only it sees the refusal, and
+# bin/sq-pane-grants.sh owns the wrapper and its authority limits. The printed
+# command is the exact copy-paste form that wrapper's own show, verify, and
+# refusal paths print, so a supervisor never has to compose it.
+fm_send_pane_grant_hint() {
+  local target=${SQUAD_BACKEND_PANE_GRANT_TARGET:-}
+  [ -n "$target" ] || return 0
+  echo "hint: answering needs the respond grant on the pane that types the answer ($target); retry this send after it lands." >&2
+  echo "person command: $SQUAD_ROOT/bin/sq-pane-grants.sh grant respond $target" >&2
 }
 
 fm_send_normalize_key() {  # <key>
@@ -525,6 +541,7 @@ if [ "${1:-}" = "--key" ]; then
     fi
   elif ! fm_backend_send_key "$TARGET_BACKEND" "$T" "$key" "$EXPECTED_LABEL"; then
     echo "error: key '$key' not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
+    fm_send_pane_grant_hint
     exit 1
   fi
   fm_send_clear_after_interrupt "$semantic_key" || exit 1

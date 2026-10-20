@@ -45,6 +45,30 @@ for backend in tmux herdr zellij orca cmux tuios; do
   assert_not_contains "$result" "$backend" "backend guard message stays backend-agnostic for $backend"
 done
 
+# The refusal publishes the one sanctioned pane-grant surface, so an agent that
+# followed the provider's own set-pane-grants advice is told what to use instead.
+result=$(run_check 'tuios set-pane-grants -w task --grants respond')
+assert_contains "$result" 'bin/sq-pane-grants.sh grant respond' \
+  'the refusal names the sanctioned pane-grant surface'
+assert_contains "$result" 'never the CLI'\''s own set-pane-grants' \
+  'the refusal says the raw grant verb stays refused'
+result=$(run_check 'tuios pane-grants --json')
+assert_contains "$result" 'bin/sq-pane-grants.sh show' \
+  'a denied grant read points at the read-only wrapper subcommand'
+assert_not_contains "$result" 'grant respond' \
+  'a denied grant read is never told to perform the wrapper write'
+result=$(run_check 'tuios set-pane-grants -w task --reset')
+assert_contains "$result" "person's own set-pane-grants --reset from outside TUIOS" \
+  'a denied grant reset keeps removal with the person outside TUIOS'
+assert_not_contains "$result" 'grant respond' \
+  'a denied grant reset is never told to add the grant it removes'
+result=$(run_check 'tuios set-pane-grants -w task --grants respond; mytool --reset')
+assert_contains "$result" 'bin/sq-pane-grants.sh grant respond' \
+  'an unrelated reset later on the line does not hide the grant advice'
+result=$(run_check 'tmux kill-window -t Squad:task')
+assert_not_contains "$result" 'bin/sq-pane-grants.sh' \
+  'a refusal for a provider without pane grants carries no pane-grant advice'
+
 for command in \
   'tmux list-windows -t Squad' \
   'zellij action write-chars x' \
@@ -59,7 +83,11 @@ for command in \
   '(tmux send-keys task x)' \
   '{ tmux send-keys task x; }' \
   'env bash -lc '\''tmux kill-window -t Squad:task'\''' \
-  'printf '\''%s'\'' "$(zellij action list-clients)"'; do
+  'printf '\''%s'\'' "$(zellij action list-clients)"' \
+  'tuios set-pane-grants -w task --grants respond' \
+  'bin/sq-pane-grants.sh show; tuios kill-session' \
+  'bin/sq-pane-grants.sh grant respond "$(tuios kill-session)"' \
+  'bash -c '\''bin/sq-pane-grants.sh show; tuios set-pane-grants -w task --grants admin'\'''; do
   result=$(run_check "$command")
   expect_code 2 "${result%%$'\n'*}" "blocks raw backend lifecycle form: $command"
 done
@@ -70,6 +98,9 @@ for command in \
   'grep herdr README.md' \
   'git -C projects/foo status' \
   'bin/sq-send.sh task "use the backend wrapper"' \
+  'bin/sq-pane-grants.sh show' \
+  'bin/sq-pane-grants.sh grant respond squad:aaaaaaaa-1111' \
+  './bin/sq-pane-grants.sh grant respond squad:aaaaaaaa-1111' \
   'tmuxy send-keys task x' \
   '' \
   'bash -lc '\''echo "cmux send-text"'\'''; do
