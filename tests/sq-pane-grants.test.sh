@@ -20,6 +20,9 @@ SESSION=squad
 DEFAULT_PANE=aaaaaaaa-1111
 RESPOND_PANE=bbbbbbbb-2222
 CALLER_PANE=dddddddd-4444
+OUTSIDE_SESSION=sq-outside
+OUTSIDE_PANE=eeeeeeee-5555
+OUTSIDE_PLAIN_PANE=ffffffff-6666
 
 write_windows() {  # <session>
   cat > "$FAKE_DIR/$1.json" <<'JSON'
@@ -36,6 +39,19 @@ write_caller_pane() {  # <pane-window>
   jq -cn --arg w "$2" --arg s "$1" \
     '{success:true,pane:true,session:$s,window:$w,grants:["admin"],default_grants:["admin"],explicit:false}' \
     > "$FAKE_DIR/pane-grants.json"
+}
+
+# The exact payload TUIOS 0.9.1 returns from a shell outside every pane:
+# pane:false with the note, and still the daemon's default grants and mode.
+write_outside_pane() {
+  jq -cn '{success:true,pane:false,mode:"open",default_grants:["admin"],message:"command executed",note:"The caller runs in no pane of this daemon, so no pane grants apply to it."}' \
+    > "$FAKE_DIR/pane-grants.json"
+}
+
+write_outside_session() {  # <session> <default-pane> <explicitly-granted-pane>
+  jq -cn --arg w "$2" --arg e "$3" \
+    '{success:true,windows:[{window_id:$w,display_name:"task"},{window_id:$e,display_name:"other",grants:["read"]}]}' \
+    > "$FAKE_DIR/$1.json"
 }
 
 write_windows "$SESSION"
@@ -181,10 +197,9 @@ assert_contains "$result" 'target: unreadable' 'a payload without a window is re
 assert_not_contains "$result" 'person command:' 'an unreadable target never yields a person command'
 write_caller_pane "$SESSION" "$CALLER_PANE"
 
-# show outside every pane: the daemon reports pane:false (with the default grants
-# in this shape), so there is no pane to read and the command must still finish.
-printf '%s\n' '{"success":true,"pane":false,"note":"The caller runs in no pane of this daemon","default_grants":["admin"]}' \
-  > "$FAKE_DIR/pane-grants.json"
+# show outside every pane: the recorded pane:false payload has no pane to read,
+# so the command must finish instead of aborting on a placement it cannot name.
+write_outside_pane
 result=$(run_wrapper show)
 expect_code 0 "${result%%$'\n'*}" 'show reports a caller in no pane instead of aborting'
 out=${result#*$'\n'}
@@ -194,14 +209,63 @@ assert_contains "$out" "$ROOT/bin/sq-pane-grants.sh show <session>:<window>" \
   'an outside-pane caller is told how to name a pane instead'
 assert_not_contains "$out" 'person command:' 'a caller in no pane has no window to name in a person command'
 
-# The captured outside-pane payload carries no default_grants at all, which must
-# not turn the same read into an unrelated error.
-printf '%s\n' '{"success":true,"pane":false,"note":"The caller runs in no pane of this daemon"}' \
+# A pane-grants payload that reported failure or is not JSON is never reported
+# as "this command runs in no pane": the read fails closed like every other read.
+printf '{"success":false,"error":"daemon is busy"}\n' > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 1 "${result%%$'\n'*}" 'show refuses a pane-grants payload that reports failure'
+out=${result#*$'\n'}
+assert_contains "$out" 'pane-grants payload is unreadable' 'a failed payload is reported as unreadable'
+assert_not_contains "$out" 'target: none' 'a failed payload is never reported as a caller in no pane'
+
+printf 'not json at all\n' > "$FAKE_DIR/pane-grants.json"
+result=$(run_wrapper show)
+expect_code 1 "${result%%$'\n'*}" 'show refuses a pane-grants payload that is not JSON'
+assert_contains "$result" 'unreadable' 'a malformed payload is reported as unreadable'
+assert_not_contains "$result" 'target: none' 'a malformed payload is never reported as a caller in no pane'
+
+# A pane whose grants are the daemon default cannot be read without that
+# default, and the refusal says so instead of writing a guessed grant list.
+printf '%s\n' '{"success":true,"pane":true,"session":"squad","window":"dddddddd-4444","mode":"open"}' \
   > "$FAKE_DIR/pane-grants.json"
 result=$(run_wrapper show)
-expect_code 0 "${result%%$'\n'*}" 'show outside every pane works without a default-grants field either'
-assert_not_contains "$result" 'error:' 'an outside-pane read reports no error'
-assert_contains "$result" 'target: none' 'show still names the missing pane without a default-grants field'
+expect_code 1 "${result%%$'\n'*}" 'show refuses a pane whose default grants the daemon does not report'
+assert_contains "$result" 'reported no default pane grants (mode=open)' \
+  'the refusal names the missing defaults and the daemon mode'
+assert_contains "$result" 'refusing to guess or replace them' 'the refusal states that nothing was written'
+
+# The headline path: a shell outside every pane is the only caller TUIOS accepts
+# for the first grant, so show, grant, and verify are driven from exactly that
+# placement against the recorded outside-pane payload.
+write_outside_session "$OUTSIDE_SESSION" "$OUTSIDE_PANE" "$OUTSIDE_PLAIN_PANE"
+write_outside_pane
+result=$(run_wrapper show "$OUTSIDE_SESSION:$OUTSIDE_PANE")
+expect_code 0 "${result%%$'\n'*}" 'show reads a default-granted pane from outside every pane'
+out=${result#*$'\n'}
+assert_contains "$out" "target: $OUTSIDE_SESSION:$OUTSIDE_PANE" 'show names the resolved pane from outside'
+assert_contains "$out" 'grants: admin' 'show reads the inherited daemon default from outside every pane'
+assert_contains "$out" 'respond: absent' 'show reports the missing respond grant from outside'
+assert_contains "$out" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $OUTSIDE_SESSION:$OUTSIDE_PANE" \
+  'the person command printed from outside names the resolved pane'
+
+reset_log
+result=$(run_wrapper grant respond "$OUTSIDE_SESSION:$OUTSIDE_PANE")
+expect_code 0 "${result%%$'\n'*}" 'the printed person command works from outside every pane'
+assert_contains "${result#*$'\n'}" 'granted: respond' 'the outside-pane grant reports the added grant'
+assert_grep "set-pane-grants --session $OUTSIDE_SESSION --window $OUTSIDE_PANE --grants admin,respond" "$LOG" \
+  'the grant keeps the inherited default and adds only respond'
+
+result=$(run_wrapper verify "$OUTSIDE_SESSION:$OUTSIDE_PANE")
+expect_code 0 "${result%%$'\n'*}" 'verify confirms the grant from outside every pane'
+assert_contains "$result" 'verified' 'verify reports the grant landed'
+
+result=$(run_wrapper verify "$OUTSIDE_SESSION:$OUTSIDE_PLAIN_PANE")
+expect_code 1 "${result%%$'\n'*}" 'verify fails for a pane without respond from outside'
+assert_contains "$result" 'does not hold respond' 'the failing verify names the missing grant'
+assert_contains "$result" "person command: $ROOT/bin/sq-pane-grants.sh grant respond $OUTSIDE_SESSION:$OUTSIDE_PLAIN_PANE" \
+  'the failing verify prints the person command for that pane'
+
+reset_log
 write_caller_pane "$SESSION" "$CALLER_PANE"
 
 result=$(run_wrapper show grantee)

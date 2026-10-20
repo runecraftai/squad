@@ -160,13 +160,25 @@ fm_pane_grants_explicit() {  # <inventory> <window-id> -> csv, empty for the dae
     [ .windows[] | select(wid == $w) | (.grants // []) | .[] ] | join(",")'
 }
 
-fm_pane_grants_default_grants() {  # -> the daemon's default pane grants as csv
-  local out csv
+fm_pane_grants_caller() {  # -> validated pane-grants payload on stdout
+  local out
   out=$("$TUIOS_BIN" pane-grants --json 2>&1) \
-    || fm_pane_grants_fail "cannot read the daemon's default pane grants: $(printf '%s' "$out" | head -n 1)"
+    || fm_pane_grants_fail "cannot read this pane's grants: $(printf '%s' "$out" | head -n 1)"
+  printf '%s' "$out" | jq -e '
+    type == "object" and (.success != false) and ((.error // "") == "") and (.pane | type == "boolean")
+  ' >/dev/null 2>&1 \
+    || fm_pane_grants_fail "the TUIOS pane-grants payload is unreadable: $(printf '%s' "$out" | head -c 200)"
+  printf '%s' "$out"
+}
+
+fm_pane_grants_default_grants() {  # [<validated pane-grants payload>] -> default grants as csv
+  local out=${1:-} csv mode
+  [ -n "$out" ] || out=$(fm_pane_grants_caller)
   csv=$(printf '%s' "$out" | jq -r '(.default_grants // [])[]' 2>/dev/null | paste -sd, -)
-  [ -n "$csv" ] \
-    || fm_pane_grants_fail 'the daemon reported no default pane grants, so the grants a pane already holds cannot be read'
+  if [ -z "$csv" ]; then
+    mode=$(printf '%s' "$out" | jq -r 'if (.mode | type) == "string" then .mode else "unknown" end')
+    fm_pane_grants_fail "the daemon reported no default pane grants (mode=${mode}), so the grants this pane already holds cannot be read; refusing to guess or replace them"
+  fi
   printf '%s' "$csv"
 }
 
@@ -219,9 +231,8 @@ fm_pane_grants_person_hint() {  # <session>:<window>
 fm_pane_grants_show() {  # [<target>]
   local target=${1:-} out label= grants declared
   if [ -z "$target" ]; then
-    out=$("$TUIOS_BIN" pane-grants --json 2>&1) \
-      || fm_pane_grants_fail "cannot read this pane's grants: $(printf '%s' "$out" | head -n 1)"
-    if [ "$(printf '%s' "$out" | jq -r 'if .pane == true then "yes" else "no" end' 2>/dev/null || true)" != yes ]; then
+    out=$(fm_pane_grants_caller)
+    if [ "$(printf '%s' "$out" | jq -r '.pane')" != true ]; then
       # A caller outside every pane has no pane to read, so the daemon default
       # is never reported as if this caller's pane held it. Naming a target is
       # the only way to read grants from there.
@@ -240,7 +251,7 @@ fm_pane_grants_show() {  # [<target>]
     [ -n "$label" ] || printf 'target: unreadable (the daemon reported a pane without a session and window)\n'
     declared=$(printf '%s' "$out" | jq -r 'if .explicit == true then "explicit" else "default" end' 2>/dev/null || true)
     grants=$(printf '%s' "$out" | jq -r '(.grants // []) | join(",")' 2>/dev/null || true)
-    [ -n "$grants" ] || grants=$(fm_pane_grants_default_grants)
+    [ -n "$grants" ] || grants=$(fm_pane_grants_default_grants "$out")
     [ -z "$label" ] || printf 'target: %s\n' "$label"
   else
     fm_pane_grants_read "$target"
