@@ -1111,31 +1111,69 @@ EOF
   pass "sq-brief.sh: brief without status pattern is correctly detected as missing"
 }
 
-test_react_playbook_materializes_and_enforces_form() {
-  local home brief out status
-  home="$TMP_ROOT/react-playbook-home"
+test_playbook_profile_pairing_and_refusals() {
+  local home brief out status playbook_line profile_line
+  home="$TMP_ROOT/profile-home"
   mkdir -p "$home/data"
-  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" react-good repo --mode drill --playbook react@1 >/dev/null 2>&1 \
-    || fail "react@1 should materialize"
-  brief="$home/data/react-good/brief.md"
-  [ "$(grep -c '^Execution playbook: id=react version=1$' "$brief")" -eq 1 ] \
-    || fail "React identity must occur exactly once"
-  awk '/^# Execution playbook: `react@1`$/ {contract=1} contract && /^# Setup/ {exit} contract {if (buffered) print previous; previous=$0; buffered=1}' \
-    "$brief" > "$home/materialized.md"
-  cmp -s "$ROOT/.agents/skills/execution-playbooks/references/react-v1.md" "$home/materialized.md" \
-    || fail "generated brief must carry the full React contract, not a pointer"
-  for args in '--recon --playbook react@1' '--xo --no-projects --playbook react@1' '--mode drill --playbook react@2'; do
-    # shellcheck disable=SC2086 # Fixture contains separate flag/value arguments.
-    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" react-bad repo $args 2>&1); status=$?
-    [ "$status" -ne 0 ] || fail "React must refuse unsupported form or version: $args"
-    assert_absent "$home/data/react-bad/brief.md" "rejected React selection left a partial brief"
-    [ -n "$out" ] || fail "React selection refusal must explain the error"
-  done
-  pass "sq-brief.sh: React contract is materialized verbatim and only strike@1 is accepted"
+
+  # A playbook alone is unchanged: exactly one playbook identity and no profile.
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-playbook-only repo --mode drill --playbook feature@1 >/dev/null 2>&1 \
+    || fail "feature@1 should still materialize as a playbook alone"
+  brief="$home/data/profile-playbook-only/brief.md"
+  [ "$(grep -c '^Execution playbook: ' "$brief")" -eq 1 ] \
+    || fail "playbook-only brief must carry exactly one playbook identity"
+  assert_no_grep 'Execution profile: ' "$brief" "playbook-only brief must carry no profile identity"
+
+  # A profile carries its constraints into the same brief, after the playbook block.
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-pair repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
+    || fail "feature@1 with the react@1 profile should materialize"
+  brief="$home/data/profile-pair/brief.md"
+  grep -qx 'Execution playbook: id=feature version=1' "$brief" || fail "paired brief lost its playbook identity"
+  grep -qx 'Execution profile: id=react version=1' "$brief" || fail "paired brief lost its profile identity"
+  playbook_line=$(grep -n '^Execution playbook: ' "$brief" | cut -d: -f1)
+  profile_line=$(grep -n '^Execution profile: ' "$brief" | cut -d: -f1)
+  [ "$profile_line" -gt "$playbook_line" ] || fail "profile block must follow the playbook block"
+  awk '/^# Execution profile: `react@1`$/ {contract=1} contract && /^# Setup/ {exit} contract {if (buffered) print previous; previous=$0; buffered=1}' \
+    "$brief" > "$home/materialized-profile.md"
+  cmp -s "$ROOT/.agents/skills/execution-playbooks/references/react-v1.md" "$home/materialized-profile.md" \
+    || fail "paired brief must carry the full React profile contract, not a pointer"
+
+  # A profile never stands alone, and unsupported pairings leave no partial brief.
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-alone repo --mode drill --profile react@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "a profile without a playbook must be refused"
+  assert_contains "$out" "--playbook" "profile-only refusal must point at the playbook it needs"
+  assert_absent "$home/data/profile-alone/brief.md" "profile-only refusal left a partial brief"
+
+  # The no-playbook decision cannot carry a profile: a profile needs the method it constrains.
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-none repo --mode drill --no-playbook "no method applies here" --profile react@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "a profile paired with --no-playbook must be refused"
+  assert_contains "$out" "--profile requires --playbook" "profile with --no-playbook must name the missing playbook"
+  assert_absent "$home/data/profile-none/brief.md" "profile with --no-playbook left a partial brief"
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-unknown repo --mode drill --playbook feature@1 --profile svelte@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "an unknown profile must be refused"
+  assert_contains "$out" "unknown execution profile" "unknown-profile refusal must identify the profile"
+  assert_absent "$home/data/profile-unknown/brief.md" "unknown-profile refusal left a partial brief"
+
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-version repo --mode drill --playbook feature@1 --profile react@2 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "an unsupported profile version must be refused"
+  assert_contains "$out" "unknown execution profile version" "profile-version refusal must identify the unsupported version"
+  assert_absent "$home/data/profile-version/brief.md" "profile-version refusal left a partial brief"
+
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-kind repo --recon --playbook investigation@1 --profile react@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "a profile whose task kind is incompatible must be refused"
+  assert_contains "$out" "accepts only kind: strike" "kind-mismatch refusal must name the profile's compatible kind"
+  assert_absent "$home/data/profile-kind/brief.md" "kind-mismatch refusal left a partial brief"
+
+  # react@1 is a profile, so selecting it as the playbook is refused with the pairing it needs.
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" profile-as-playbook repo --mode drill --playbook react@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "react@1 must not be selectable as a playbook"
+  assert_contains "$out" "--profile react@1" "react-as-playbook refusal must show the pairing that works"
+  assert_absent "$home/data/profile-as-playbook/brief.md" "react-as-playbook refusal left a partial brief"
+  pass "sq-brief.sh: a profile attaches to a playbook, follows it, and unsupported pairings are refused"
 }
 
 test_script_parses
-test_react_playbook_materializes_and_enforces_form
+test_playbook_profile_pairing_and_refusals
 test_no_heredoc_in_command_substitution
 test_playbook_selection_and_legacy_compatibility
 test_playbook_decision_is_required

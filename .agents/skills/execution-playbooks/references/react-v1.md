@@ -1,8 +1,10 @@
-# Execution playbook: `react@1`
+# Execution profile: `react@1`
 
 ## Accepted brief form
 
-This contract accepts `strike` only, for React SPA work using TanStack Router with code-based routes, not Next.js.
+This profile accepts `strike` only, for React SPA work using TanStack Router with code-based routes, not Next.js.
+It attaches to the playbook that owns the task's sequence, completion evidence, stop condition, and delivery; this profile adds only the React constraints below.
+Read the sequence below as the constraint checkpoints this profile contributes to that playbook's steps, never as a second method.
 It materializes the commander's standard from Career Coach's `apps/web/AGENTS.md` and its repo-root `AGENTS.md`, with decisions D1-D3 below.
 The executor receives this contract in the brief and need not retrieve those source files.
 Selection is explicit; this contract does not automatically classify or dispatch React tasks.
@@ -129,7 +131,8 @@ It does not authorize a framework migration, broad legacy renaming, a store rewr
 
 Write a `# react@1 checklist` under the Squad base's `data/<id>/artifacts/`, never in the project repository.
 Use five numbered `## Criterion N` sections with a distinct `Proof:` line per criterion, each bound to an actual `path:` or command with its result, except criterion 3, which carries the routing and queries records below instead of a `Proof:` line.
-The labels below name the evidence expected by `bin/sq-playbook-validate.sh`; its structural success does not prove architectural or runtime correctness.
+The labels below name the evidence this profile requires.
+The attached playbook owns the completion gate, so a passing `bin/sq-playbook-validate.sh` run does not prove these criteria and its structural success proves neither architectural nor runtime correctness.
 
 1. **architecture**: changed modules mapped to layers, import directions, and boundaries check command/result, including unchanged architecture where relevant.
 2. **components**: changed named functions and kebab-case paths, hooks owning flows, and pure functions with zero React imports, with concrete inspection evidence.

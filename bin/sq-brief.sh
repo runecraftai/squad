@@ -7,9 +7,9 @@
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
 # Usage: sq-brief.sh <task-id> <repo-name> --mode <drill|direct-PR|local-only> \
-#                      {--playbook <id>@<version>|--no-playbook <reason>} [--herdr-lab]
+#                      {--playbook <id>@<version> [--profile <id>@<version>]|--no-playbook <reason>} [--herdr-lab]
 #        sq-brief.sh <task-id> <repo-name> --recon \
-#                      {--playbook <id>@<version>|--no-playbook <reason>} [--herdr-lab]
+#                      {--playbook <id>@<version> [--profile <id>@<version>]|--no-playbook <reason>} [--herdr-lab]
 #        sq-brief.sh <task-id> --xo {<project>...|--no-projects}
 #   --recon writes the recon contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -29,6 +29,23 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
+# A strike or recon brief must also record an explicit playbook decision:
+# either --playbook <id>@<version> selects a versioned execution playbook, or
+# --no-playbook "<reason>" states in one non-empty line why none applies.
+# A missing decision, an empty or whitespace-only reason, and both flags together
+# are refused, so "no playbook" is never an unexamined default. The decision is
+# recorded in the brief as the selectable "Execution playbook: id=<id> version=<version>"
+# line or a "Playbook decision: none - <reason>" line; the latter deliberately
+# does not start with "Execution playbook:" because bin/sq-spawn.sh parses only
+# that prefixed identity line. XO charters are not delivery contracts and stay
+# exempt: they neither require nor accept --no-playbook.
+# An execution method has three distinct categories, and each owns one thing.
+# A playbook is a complete method with its own sequence, reply contract, and stop
+# condition. A profile is a reusable constraint set attached to a playbook: it
+# carries constraints only and never a sequence or stop condition, so --profile
+# requires --playbook and cannot accompany --no-playbook. Its block follows the
+# playbook block. A gate is a mechanical check such as a lint rule or a
+# validator, never a selectable method.
 # The <task-id> must match the backlog item id exactly - the generated status
 # path uses this id, so a mismatch means the operator writes done: to a file
 # no task owns and the real state goes unknown.
@@ -147,6 +164,8 @@ PLAYBOOK=
 PLAYBOOK_SET=0
 NO_PLAYBOOK=
 NO_PLAYBOOK_SET=0
+PROFILE=
+PROFILE_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -158,6 +177,7 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       playbook) PLAYBOOK=$a; PLAYBOOK_SET=1 ;;
       no-playbook) NO_PLAYBOOK=$a; NO_PLAYBOOK_SET=1 ;;
+      profile) PROFILE=$a; PROFILE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -174,6 +194,8 @@ for a in "$@"; do
     --playbook=*) PLAYBOOK=${a#--playbook=}; PLAYBOOK_SET=1 ;;
     --no-playbook) want_value=no-playbook ;;
     --no-playbook=*) NO_PLAYBOOK=${a#--no-playbook=}; NO_PLAYBOOK_SET=1 ;;
+    --profile) want_value=profile ;;
+    --profile=*) PROFILE=${a#--profile=}; PROFILE_SET=1 ;;
     # yolo never reaches the worker: it is Squad's approval authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -213,6 +235,12 @@ if [ "$KIND" = xo ]; then
     exit 1
   }
 else
+  # A profile never stands alone and never replaces the method, so it is refused
+  # here instead of surfacing later as a generic missing-decision error.
+  if [ "$PROFILE_SET" -eq 1 ] && [ "$PLAYBOOK_SET" -eq 0 ]; then
+    echo "error: --profile requires --playbook; a profile constrains a playbook's sequence instead of replacing it, so pass the method that owns this task, for example --playbook feature@1 --profile react@1" >&2
+    exit 1
+  fi
   if [ "$PLAYBOOK_SET" -eq 1 ] && [ "$NO_PLAYBOOK_SET" -eq 1 ]; then
     echo "error: --playbook and --no-playbook are mutually exclusive; record exactly one playbook decision" >&2
     exit 1
@@ -242,7 +270,6 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
   case "$PLAYBOOK" in
     bug-fix@1) PLAYBOOK_ID=bug-fix; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/bug-fix-v1.md"); EXPECTED_KIND=strike ;;
     investigation@1) PLAYBOOK_ID=investigation; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/investigation-v1.md"); EXPECTED_KIND=recon ;;
-    react@1) PLAYBOOK_ID=react; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/react-v1.md"); EXPECTED_KIND=strike ;;
     feature@1) PLAYBOOK_ID=feature; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/feature-v1.md"); EXPECTED_KIND=strike ;;
     refactoring@1) PLAYBOOK_ID=refactoring; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/refactoring-v1.md"); EXPECTED_KIND=strike ;;
     prototype@1) PLAYBOOK_ID=prototype; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/prototype-v1.md"); EXPECTED_KIND=recon ;;
@@ -255,6 +282,7 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
     "eval@1") PLAYBOOK_ID='eval'; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/eval-v1.md"); EXPECTED_KIND=recon ;;
     # The generated checklist location and commit boundary live in the playbook reference.
     plan-execute@1) PLAYBOOK_ID=plan-execute; PLAYBOOK_VERSION=1; PLAYBOOK_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/plan-execute-v1.md"); EXPECTED_KIND=strike ;;
+    react@1) echo "error: react@1 is an execution profile, not a playbook; pair it with the method that owns the sequence, for example --playbook feature@1 --profile react@1" >&2; exit 1 ;;
     orchestrate@1) echo "error: orchestrate@1 disposition=reject; Commander, XO, backlog, and supervision already own programme coordination" >&2; exit 1 ;;
     autopilot-full@1|autopilot-stack@1) echo "error: $PLAYBOOK disposition=defer; re-evaluate only for a real multi-PR programme where commander merge approval is the measured bottleneck and yolo cannot cover it; no auto-merge or drill bypass" >&2; exit 1 ;;
     autonomous-run@1) echo "error: autonomous-run disposition=defer; re-evaluate only with a real task whose cycle the current supervision cannot conduct, plus a verifiable terminal predicate, budget, stop conditions, and duplicate prevention" >&2; exit 1 ;;
@@ -278,6 +306,29 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
   fi
 fi
 
+# Profiles are reusable constraint sets that attach to a playbook and never
+# stand alone, so they add no sequence and own no completion. The intake gate
+# above already refused a profile with no playbook; this validates the identity
+# before creating the task directory, so a rejected selection leaves no partial
+# brief.
+PROFILE_SECTION=
+PROFILE_ID=
+PROFILE_VERSION=
+PROFILE_EXPECTED_KIND=
+if [ "$PROFILE_SET" -eq 1 ]; then
+  case "$PROFILE" in
+    react@1) PROFILE_ID=react; PROFILE_VERSION=1; PROFILE_SECTION=$(cat "$SQUAD_ROOT/.agents/skills/execution-playbooks/references/react-v1.md"); PROFILE_EXPECTED_KIND=strike ;;
+    '') echo "error: --profile requires a value" >&2; exit 1 ;;
+    *'@') echo "error: execution profile version is missing in '$PROFILE'" >&2; exit 1 ;;
+    *@*) echo "error: unknown execution profile version '$PROFILE'" >&2; exit 1 ;;
+    *) echo "error: unknown execution profile '$PROFILE'" >&2; exit 1 ;;
+  esac
+  if [ "$KIND" != "$PROFILE_EXPECTED_KIND" ]; then
+    echo "error: $PROFILE accepts only kind: $PROFILE_EXPECTED_KIND (not $KIND)" >&2
+    exit 1
+  fi
+fi
+
 # The recorded playbook decision, rendered into both strike and recon briefs.
 # The selected form keeps the exact "Execution playbook: id=<id> version=<version>"
 # line bin/sq-spawn.sh parses; the none form uses a distinct label so it can never
@@ -287,6 +338,13 @@ if [ "$PLAYBOOK_SET" -eq 1 ]; then
   if [ "$KIND" = recon ]; then PLAYBOOK_BLOCK+=$'\n'; else PLAYBOOK_BLOCK+=$'\n\n'; fi
 else
   PLAYBOOK_BLOCK="Playbook decision: none - $NO_PLAYBOOK_REASON"$'\n\n'
+fi
+# A profile renders after the playbook block, never instead of it. The extra
+# leading newline only serves the recon form, whose playbook block ends with one.
+PROFILE_BLOCK=
+if [ -n "$PROFILE_SECTION" ]; then
+  if [ "$KIND" = recon ]; then PROFILE_BLOCK=$'\n'; fi
+  PROFILE_BLOCK+="Execution profile: id=$PROFILE_ID version=$PROFILE_VERSION"$'\n\n'"$PROFILE_SECTION"$'\n\n'
 fi
 
 if [ "$KIND" = xo ] && [ "$HERDR_LAB" -eq 1 ]; then
@@ -446,7 +504,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 # Task
 {TASK}
 
-${PLAYBOOK_BLOCK}$HERDR_SECTION
+${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -578,7 +636,7 @@ You are an operator: an autonomous worker agent managed by Squad. Work on your o
 
 $HERDR_SECTION
 
-${PLAYBOOK_BLOCK}# Setup
+${PLAYBOOK_BLOCK}${PROFILE_BLOCK}# Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a fob pool path or an Orca-managed worktree, not the primary checkout Squad operates from.

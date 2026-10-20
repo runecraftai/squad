@@ -32,7 +32,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-board-github.sh`     | Monitor opt-in de issues GitHub: listar issues elegíveis, pollar mudanças, reportar status agregado, aprovar sugestões de dispatch (requer tracker.kind: github no WORKFLOW.md) |
 | `sq-decision-hold.sh`    | Criar, verificar, completar e resolver decisões duráveis retidas pelo comandante                 |
 | `sq-learn.sh`            | Capturar uma lição operacional durável em `data/learnings.md`                         |
-| `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab; briefs strike e recon exigem decisão explícita de playbook (`--playbook <id>@<version>`, ou `--no-playbook` com o motivo em uma linha)   |
+| `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab; briefs strike e recon exigem decisão explícita de playbook (`--playbook <id>@<version>`, ou `--no-playbook` com o motivo em uma linha), e `--profile` anexa um conjunto de restrições ao playbook selecionado   |
 | `sq-herdr-lab.sh`        | Provisionar e operar protegidamente uma sessão de lab Herdr isolada, nunca padrão         |
 | `sq-install-herdr.sh`    | Instalar o pin exato de versão do Herdr usado pelo CI com URL oficial de asset, SHA-256 e checagens de protocolo |
 | `sq-learn.sh`            | Capturar um aprendizado operacional limitado e filtrado por quase-duplicatas em `data/learnings.md` |
@@ -127,7 +127,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
 | `sq-pr-check.sh`         | Registrar valores validados de `pr=` e `pr_head=`, então armar atomicamente um poll estático de merge |
 | `sq-pr-merge.sh`         | Registrar metadados do PR, então mesclar a URL completa canônica GitHub do PR da tarefa                    |
-| `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh --playbook` é dono das identidades selecionáveis |
+| `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de profile |
 | `sq-promote.sh`          | Promover uma tarefa recon in-place a uma tarefa strike protegida com modo de entrega explícito |
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |
