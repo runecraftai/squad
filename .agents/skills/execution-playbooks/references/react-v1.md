@@ -130,7 +130,9 @@ It does not authorize a framework migration, broad legacy renaming, a store rewr
 ## Required evidence
 
 Write a `# react profile evidence` section in a Markdown file under the Squad base's `data/<id>/artifacts/`, never in the project repository.
-That heading carries neither `checklist` nor a version token, so `bin/sq-playbook-validate.sh` can never mistake this profile record for the attached playbook's completion artifact.
+Begin that file with exactly the `# react profile evidence` heading, because `bin/sq-playbook-validate.sh` adopts the first artifact it finds whose headings include `checklist` or an `@version` token.
+Never repeat the brief's profile identity heading, in its `# Execution profile:` plus `react@1` form or any other version-tagged form, in this file: such a heading can make the gate adopt this profile record as the playbook's completion artifact and fail an otherwise complete paired task.
+Keep every heading in this file free of `@` version tokens so the profile record cannot be selected as a checklist.
 Record five numbered `## Evidence N` sections, each naming the concrete `path:` or command with its result that a reviewer can check; a profile requires no separately validated checklist of its own.
 The labels below name the evidence this profile records.
 The attached playbook owns the completion gate, so a passing `bin/sq-playbook-validate.sh` run does not prove these records and its structural success proves neither architectural nor runtime correctness.
