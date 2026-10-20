@@ -12,7 +12,7 @@ import { digestCanonical } from "./core.ts";
 export class GitReadError extends Error {}
 
 export interface GitTreeEntry { mode: string; type: string; sha: string; path: string }
-export interface FileObjectSide { mode: string; blob: string; size: number; reviewable: boolean; reason?: string }
+export interface FileObjectSide { mode: string; blob: string; size: number; reviewable: boolean; reason?: string; content?: Buffer }
 export interface PacketFileEntry {
 	path: string;
 	status: "added" | "modified" | "deleted";
@@ -154,7 +154,7 @@ function classify(repo: string, entry: GitTreeEntry): FileObjectSide {
 	try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return { mode: entry.mode, blob: entry.sha, size, reviewable: false, reason: "not-utf8" }; }
 	// Exact bytes remain the source of truth; this only reports whether the object is text for human review.
 	void text;
-	return { mode: entry.mode, blob: entry.sha, size, reviewable: true };
+	return { mode: entry.mode, blob: entry.sha, size, reviewable: true, content: bytes };
 }
 
 /** Complete manifest of every path changed between base and head, with both object identities. */
@@ -167,10 +167,10 @@ export function buildManifest(repo: string, baseSha: string, headSha: string): P
 		const base = baseEntries.get(path);
 		const head = headEntries.get(path);
 		if (base && head && base.sha === head.sha && base.mode === head.mode) continue;
+		if (files.length >= MAX_MANIFEST_FILES) throw new GitReadError(`manifest exceeds ${MAX_MANIFEST_FILES} changed paths`);
 		const status = !base ? "added" : !head ? "deleted" : "modified";
 		files.push({ path, status, base: base ? classify(repo, base) : null, head: head ? classify(repo, head) : null });
 	}
-	if (files.length > MAX_MANIFEST_FILES) throw new GitReadError(`manifest exceeds ${MAX_MANIFEST_FILES} changed paths`);
 	return files;
 }
 

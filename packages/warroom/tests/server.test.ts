@@ -324,6 +324,7 @@ describe("local review surface", () => {
 		expect(app.warroom.db.query("SELECT COUNT(*) AS n FROM approvals").get()).toEqual(approvalsBefore);
 		const exportPath = response.headers.get("x-warroom-export-path")!;
 		expect(exportPath.endsWith(`${result.packetId}.html`)).toBe(true);
+		expect(exportPath.startsWith("/")).toBe(false);
 	});
 
 	test("packet listings and initiative state keep the recorded local repository path server-side", async () => {
@@ -332,9 +333,15 @@ describe("local review surface", () => {
 		const list = await (await request(`/api/review/packets?initiativeId=i1`, { headers: { host } })).json();
 		expect(list).toHaveLength(1);
 		expect(list[0]).not.toHaveProperty("repo_path");
+		const detail = await (await request(`/api/review/${result.packetId}`, { headers: { host } })).json();
+		expect(detail.capture.repo.workingPath).toBeUndefined();
+		expect(detail.capture.logs.every((log: any) => !("logPath" in log))).toBe(true);
+		expect(JSON.stringify(detail)).not.toContain(fixture.repo);
 		const initiative = await (await request(`/api/initiative/i1`, { headers: { host } })).json();
 		expect(initiative.packets).toHaveLength(1);
 		expect(initiative.packets[0]).not.toHaveProperty("repoPath");
+		expect(initiative.captures).toHaveLength(1);
+		expect(JSON.stringify(initiative.captures)).not.toContain(fixture.repo);
 	});
 
 	test("unsafe command identifiers and traversal-shaped packet ids are rejected before any export path is built", async () => {

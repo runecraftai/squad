@@ -211,6 +211,11 @@ describe("Warroom canonical core", () => {
 			expect(state.decisions[0].selectedAlternatives).toEqual(["new repository", "public distribution"]);
 			expect(state.approvals.find((approval: any) => approval.id === "a1").superseded).toBe(true);
 			expect(state.approvals.find((approval: any) => approval.id === "a2").superseded).toBe(false);
+			const supersededProjection = reopened.db.query("SELECT superseded_at, superseded_by FROM approvals WHERE id='a1'").get() as { superseded_at: string | null; superseded_by: string | null };
+			const supersededReplay = state.approvals.find((approval: any) => approval.id === "a1");
+			expect(supersededReplay.supersededAt).toBe(supersededProjection.superseded_at);
+			expect(supersededReplay.supersededBy).toBe(supersededProjection.superseded_by);
+			expect(supersededReplay.supersededBy).toBe("p2");
 			// Approval of the plan never implies execution authorization, and neither implies merge permission.
 			expect(state.approvals.find((approval: any) => approval.id === "a3").kind).toBe("execution-authorization");
 			expect(state.approvals.some((approval: any) => approval.kind === "merge-permission")).toBe(false);

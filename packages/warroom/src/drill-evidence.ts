@@ -78,7 +78,11 @@ export interface DrillCaptureOptions {
 	logsRoot?: string;
 	now?: Date;
 	maxLogBytes?: number;
+	/** Receives the exact log bytes whose digests the capture records, so callers store those same bytes. */
+	onLogs?: (logs: CollectedLog[]) => void;
 }
+
+export interface CollectedLog { stepName: string; digest: string; byteLength: number; logPath: string; content: Buffer }
 
 const REQUIRED_TABLES = ["repos", "runs", "step_results", "step_rounds"];
 const REQUIRED_RUN_COLUMNS = [
@@ -189,6 +193,7 @@ export function readDrillRun(options: DrillCaptureOptions): DrillCapture {
 		for (const step of unfinished) reasons.push(`step ${step.name} is ${step.status}, not completed`);
 
 		const logs = collectLogs(options.logsRoot, stepRows, options.maxLogBytes ?? 1024 * 1024);
+		options.onLogs?.(logs);
 		const capture: DrillCapture = {
 			captureVersion: CAPTURE_VERSION,
 			capturedAt: now.toISOString(),
@@ -242,11 +247,11 @@ export function readDrillRun(options: DrillCaptureOptions): DrillCapture {
  * escape it, and bounds every file. Log content is returned for artifact storage; the capture
  * itself keeps only the digest, size and original path.
  */
-export function collectLogs(logsRoot: string | undefined, stepRows: any[], maxBytes: number): Array<{ stepName: string; digest: string; byteLength: number; logPath: string; content: Buffer }> {
+export function collectLogs(logsRoot: string | undefined, stepRows: any[], maxBytes: number): CollectedLog[] {
 	if (!logsRoot) return [];
 	let root: string;
 	try { root = realpathSync(logsRoot); } catch { return []; }
-	const collected: Array<{ stepName: string; digest: string; byteLength: number; logPath: string; content: Buffer }> = [];
+	const collected: CollectedLog[] = [];
 	for (const row of stepRows) {
 		if (typeof row.log_path !== "string" || !row.log_path) continue;
 		let resolved: string;

@@ -10,14 +10,13 @@ import {
 	scopeDigestOf,
 	type Warroom,
 } from "./core.ts";
-import { captureDigest, captureJson, collectLogs, readDrillRun, type DrillCapture } from "./drill-evidence.ts";
+import { captureDigest, captureJson, type CollectedLog, readDrillRun, type DrillCapture } from "./drill-evidence.ts";
 import {
 	assertRepoPath,
 	buildManifest,
 	diffPatch,
 	GitReadError,
 	mergeBase,
-	readBlob,
 	repoFingerprint,
 	revParseCommit,
 	revParseTree,
@@ -147,7 +146,14 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 	const repoPath = assertRepoPath(request.repo);
 	const headSha = revParseCommit(repoPath, request.headRef);
 	const targetObservedSha = revParseCommit(repoPath, request.targetRef);
-	const capture = readDrillRun({ dbPath: request.drillDb, runId: request.runId, repoId: request.repoId, logsRoot: request.drillLogs });
+	let collectedLogs: CollectedLog[] = [];
+	const capture = readDrillRun({
+		dbPath: request.drillDb,
+		runId: request.runId,
+		repoId: request.repoId,
+		logsRoot: request.drillLogs,
+		onLogs: (logs) => { collectedLogs = logs; },
+	});
 	const provenance = request.provenance ?? "drill";
 	if (provenance !== capture.provenance) {
 		capture.provenance = provenance;
@@ -172,8 +178,7 @@ export function captureReview(warroom: Warroom, dataDir: string, request: Captur
 	const captureText = captureJson(capture);
 	const evidenceDigest = captureDigest(capture);
 	store.write(captureText, "application/json");
-	const logArtifacts = collectLogs(request.drillLogs, capture.logs.map((log) => ({ step_name: log.stepName, log_path: log.logPath })), 1024 * 1024)
-		.map((log) => ({ ...store.write(log.content, "text/plain"), stepName: log.stepName }));
+	const logArtifacts = collectedLogs.map((log) => ({ ...store.write(log.content, "text/plain"), stepName: log.stepName }));
 
 	const state = warroom.state(initiativeOfPlan(warroom, request.planRevisionId));
 	const planRevision = state.revisions.find((revision) => revision.id === request.planRevisionId);
@@ -315,18 +320,18 @@ function materializeManifest(repoPath: string, store: ArtifactStore, baseSha: st
 	const files: PacketFile[] = raw.map((file) => ({
 		path: file.path,
 		status: file.status,
-		base: withContent(file.base, store, repoPath),
-		head: withContent(file.head, store, repoPath),
+		base: withContent(file.base, store),
+		head: withContent(file.head, store),
 	}));
 	return { version: 1, baseSha, headSha, files };
 }
 
-function withContent(side: PacketFileEntry["base"], store: ArtifactStore, repoPath: string): PacketFileSide | null {
+function withContent(side: PacketFileEntry["base"], store: ArtifactStore): PacketFileSide | null {
 	if (!side) return null;
 	let contentDigest: string | null = null;
 	if (side.reviewable) {
-		const bytes = readBlob(repoPath, side.blob);
-		contentDigest = store.write(bytes, "text/plain").digest;
+		if (!side.content) throw new ReviewError("reviewable object bytes are unavailable");
+		contentDigest = store.write(side.content, "text/plain").digest;
 	}
 	return { mode: side.mode, blob: side.blob, size: side.size, reviewable: side.reviewable, reason: side.reason, contentDigest };
 }
@@ -393,6 +398,10 @@ export function checkPacket(warroom: Warroom, dataDir: string, packetId: string)
 				submittedHeadSha: evidence.submitted_head_sha,
 				reviewedHeadSha: evidence.reviewed_head_sha,
 			};
+			for (const log of Array.isArray(capture?.logs) ? capture.logs : []) {
+				const byteLength = typeof log?.byteLength === "number" ? log.byteLength : undefined;
+				if (!log || typeof log.digest !== "string" || !store.verify(log.digest, byteLength)) reasons.push(`log-artifact-missing:${String(log?.stepName ?? "unknown")}`);
+			}
 		}
 		const planDigest = (warroom.db.query("SELECT digest FROM revisions WHERE id=?").get(row.plan_revision_id) as { digest: string } | null)?.digest;
 		if (!planDigest) reasons.push("plan-revision-missing");
@@ -430,7 +439,7 @@ export function checkPacket(warroom: Warroom, dataDir: string, packetId: string)
 	const currentness: "verified" | "unverified" = source.state;
 	const sourceOnly = new Set(["source-unknown", "source-unavailable", "source-refs-missing"]);
 	const blocking = reasons.filter((reason) => !sourceOnly.has(reason) && !reason.startsWith("source-unreadable:"));
-	const corrupt = blocking.some((reason) => ["manifest-digest-mismatch", "scope-digest-mismatch", "manifest-artifact-missing", "patch-artifact-missing", "evidence-artifact-missing", "packet-digest-mismatch"].includes(reason) || reason.startsWith("unreadable:") || reason.startsWith("content-artifact-missing:"));
+	const corrupt = blocking.some((reason) => ["manifest-digest-mismatch", "scope-digest-mismatch", "manifest-artifact-missing", "patch-artifact-missing", "evidence-artifact-missing", "packet-digest-mismatch"].includes(reason) || reason.startsWith("unreadable:") || reason.startsWith("content-artifact-missing:") || reason.startsWith("log-artifact-missing:"));
 	let status: PacketCheck["status"] = "ready";
 	if (corrupt) status = "corrupt";
 	else if (blocking.length > 0) status = "stale";
@@ -452,6 +461,7 @@ function verifySource(row: any): { state: "verified" | "unverified"; reasons: st
 		const observations = { observedHeadSha: headNow, observedTargetSha: targetNow, observedBaseSha: baseNow, checkedAt: new Date().toISOString() };
 		if (headNow !== row.head_sha) reasons.push("head-moved");
 		if (baseNow !== row.review_base_sha) reasons.push("base-moved");
+		if (!row.target_observed_sha || targetNow !== row.target_observed_sha) reasons.push("target-moved");
 		return { state: reasons.length === 0 ? "verified" : "unverified", reasons, observations };
 	} catch (error) {
 		if (error instanceof GitReadError) { reasons.push(`source-unreadable:${error.message}`); return { state: "unverified", reasons, observations: {} }; }

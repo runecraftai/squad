@@ -54,6 +54,20 @@ function redactPacket<T>(packet: T): Omit<T, "repo_path" | "repoPath"> {
 	return safe;
 }
 
+/** A capture keeps its digests and step facts but never the local repository or log paths. */
+function redactCapture<T>(capture: T): T {
+	if (!capture || typeof capture !== "object") return capture;
+	const safe = JSON.parse(JSON.stringify(capture));
+	if (safe.repo && typeof safe.repo === "object") delete safe.repo.workingPath;
+	if (Array.isArray(safe.logs)) for (const log of safe.logs) if (log && typeof log === "object") delete log.logPath;
+	return safe as T;
+}
+
+function redactCaptureJson(captureJson: unknown): string | null {
+	if (typeof captureJson !== "string") return null;
+	try { return JSON.stringify(redactCapture(JSON.parse(captureJson))); } catch { return null; }
+}
+
 /** Review commands accept only the exact local origins this server is reachable at, never another loopback port. */
 function isExactOrigin(origin: string, port: number): boolean {
 	return [`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://[::1]:${port}`].includes(origin);
@@ -106,7 +120,7 @@ export function createApp(options: ServerOptions = {}): App {
 			plan: state.revisions.find((revision: any) => revision.id === packet.plan_revision_id) ?? null,
 			files: manifest.files,
 			filesDigest: packet.manifest_digest,
-			capture,
+			capture: capture ? redactCapture(capture) : null,
 			comments: state.comments.filter((comment: any) => comment.packetId === packet.id),
 			approvals: state.approvals.filter((approval: any) => approval.packetId === packet.id),
 			timeline: warroom.timeline(packet.initiative_id),
@@ -335,7 +349,7 @@ export function createApp(options: ServerOptions = {}): App {
 		const target = join(exportsDir, `${packetId}.html`);
 		writeFileSync(target, html, { mode: 0o600 });
 		if (warroom.events(packet.initiative_id).length !== before) return json({ error: "export unexpectedly changed review state" }, 500);
-		return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-warroom-export-path": target } });
+		return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-warroom-export-path": join("exports", `${packetId}.html`) } });
 	}
 
 	function readBody(request: Request): Promise<Record<string, any>> {
@@ -372,7 +386,12 @@ export function createApp(options: ServerOptions = {}): App {
 			if (id === null) return json({ error: "invalid initiative id" }, 400);
 			const state = warroom.state(id);
 			if (!state.initiative) return json({ error: "initiative does not exist" }, 404);
-			return json({ ...state, packets: state.packets.map(redactPacket), timeline: warroom.timeline(id) });
+			return json({
+				...state,
+				packets: state.packets.map(redactPacket),
+				captures: state.captures.map(({ captureJson, ...capture }: any) => ({ ...capture, captureJson: redactCaptureJson(captureJson) })),
+				timeline: warroom.timeline(id),
+			});
 		}
 
 		if (request.method === "GET" && url.pathname.startsWith("/api/compare/")) {

@@ -437,6 +437,38 @@ describe("currentness and supersession", () => {
 		expect((check.observations.source as any).observedBaseSha).toBe(fixture.h1);
 	});
 
+	test("advancing the target branch without changing the merge base still blocks acceptance", () => {
+		const result = captureFixture(fixture, "h1", "drill");
+		git(["checkout", "-q", "main"]);
+		git(["-c", "user.name=F", "-c", "user.email=f@example.test", "commit", "-q", "--allow-empty", "-m", "advance main"]);
+		const advanced = git(["rev-parse", "main"]);
+		expect(advanced).not.toBe(fixture.baseSha);
+		const check = checkPacket(fixture.warroom, fixture.dataDir, result.packetId);
+		expect(check.status).toBe("stale");
+		expect(check.reasons).toContain("target-moved");
+		expect(check.reasons).not.toContain("base-moved");
+		expect((check.observations.source as any).observedTargetSha).toBe(advanced);
+		expect(() => acceptReview(fixture.warroom, fixture.dataDir, {
+			packetId: result.packetId,
+			packetDigest: result.packetDigest,
+			scopeDigest: result.scopeDigest,
+			declaration: "target advanced",
+			actorConfirmed: true,
+		})).toThrow(/not acceptable|stale/);
+	});
+
+	test("a missing stored log artifact makes the packet corrupt instead of trusting the capture digest", () => {
+		const result = captureFixture(fixture, "h1", "drill");
+		const capture = JSON.parse((fixture.warroom.db.query("SELECT capture_json FROM evidence_captures WHERE id=?").get(result.evidenceId) as any).capture_json);
+		expect(capture.logs.length).toBeGreaterThan(0);
+		const store = new ArtifactStore(fixture.dataDir);
+		for (const log of capture.logs) expect(store.verify(log.digest, log.byteLength)).toBe(true);
+		rmSync(store.absolutePath(capture.logs[0].digest), { force: true });
+		const check = checkPacket(fixture.warroom, fixture.dataDir, result.packetId);
+		expect(check.status).toBe("corrupt");
+		expect(check.reasons).toContain(`log-artifact-missing:${capture.logs[0].stepName}`);
+	});
+
 	test("a missing local source leaves history readable but currentness unverified and blocks acceptance", () => {
 		const result = captureFixture(fixture, "h1", "drill");
 		const moved = join(fixture.root, "repo-moved");

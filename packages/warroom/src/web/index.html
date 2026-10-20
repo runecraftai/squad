@@ -276,7 +276,7 @@
 			["plan-approval", "Plan approval", planRevision, null],
 			["execution-authorization", "Execution authorization", planRevision, null],
 			["code-review-acceptance", "Code-review acceptance", codeRevision, "Code-review acceptance is recorded in the Review tab against one exact packet; this planning scope cannot record it."],
-			["merge-permission", "Merge permission", codeRevision, null],
+			["merge-permission", "Merge permission", codeRevision, "Merge permission is a separate human decision outside this surface; Warroom never authorizes or executes a merge."],
 		];
 		scopeGrid.innerHTML = scopes.map(([kind, label, revision, disabledNote]) => {
 			const scope = scopeFor(detail, kind, revision);
@@ -534,23 +534,24 @@
 	async function openReviewFile(path, mode) {
 		const packetId = reviewState.packet.id;
 		const file = reviewState.detail.files.find((item) => item.path === path);
-		const side = file.head ? "head" : "base";
+		const viewMode = mode === "base" || mode === "head" ? mode : "diff";
+		const side = viewMode === "diff" ? (file.head ? "head" : "base") : viewMode;
 		const reviewable = file[side] ? file[side].reviewable : false;
 		reviewState.file = { ...file, side, reviewable };
-		reviewState.mode = mode === "base" || mode === "head" ? mode : "diff";
+		reviewState.mode = viewMode;
 		const container = document.getElementById("review-diff");
-		if (!reviewable) {
-			container.innerHTML = `<div class="hint" style="padding: var(--s3)">This object is not reviewable as text (${escapeHtml(file[side] ? file[side].reason : "missing")}). It stays listed and blocks complete-scope acceptance until it is out of scope.</div>`;
-			renderReviewFileSelection();
-			return;
-		}
 		if (reviewState.mode === "diff") {
 			const blocked = [["base", file.base], ["head", file.head]].filter((pair) => pair[1] && !pair[1].reviewable);
 			if (blocked.length) {
-				container.innerHTML = `<div class="hint" style="padding: var(--s3)">${blocked.map(([name, object]) => `The ${name} side is not reviewable as text (${escapeHtml(object.reason || "unsupported")}).`).join(" ")} No bytes are inferred.</div>`;
+				container.innerHTML = `<div class="hint" style="padding: var(--s3)">${blocked.map(([name, object]) => `The ${name} side is not reviewable as text (${escapeHtml(object.reason || "unsupported")}).`).join(" ")} No bytes are inferred. The reviewable side can be opened as a full file.</div>`;
 				renderReviewFileSelection();
 				return;
 			}
+		}
+		if (!reviewable) {
+			container.innerHTML = `<div class="hint" style="padding: var(--s3)">This object is not reviewable as text on the ${escapeHtml(side)} side (${escapeHtml(file[side] ? file[side].reason : "missing")}). It stays listed and blocks complete-scope acceptance until it is out of scope.</div>`;
+			renderReviewFileSelection();
+			return;
 		}
 		if (reviewState.mode !== "diff") {
 			const full = await api(`/api/review/${encodeURIComponent(packetId)}/file?path=${encodeURIComponent(path)}&side=${reviewState.mode}`);
