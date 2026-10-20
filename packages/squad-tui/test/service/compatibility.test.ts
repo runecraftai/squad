@@ -1,15 +1,22 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FIXTURES_PATH, nodeBinary, PACKAGE_ROOT, runNode } from "./fixtures";
+import {
+  FIXTURES_PATH,
+  nodeBinary,
+  PACKAGE_ROOT,
+  removeBase,
+  runNode,
+  runUnderBun,
+  SERVICE_ENTRY,
+  temporaryBase,
+} from "./fixtures";
 
 const packageJson = JSON.parse(
   readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"),
 ) as {
-  engines: Record<string, string>;
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
-  scripts: Record<string, string>;
 };
 
 function records(text: string): Array<Record<string, unknown>> {
@@ -28,13 +35,17 @@ describe("T07 service runtime compatibility", () => {
     expect(packageJson.dependencies.zod).toBe("4.6.5");
   });
 
-  it("starts the service process with Node, not Bun", () => {
-    expect(packageJson.scripts.service).toBe("node src/service/main.ts serve");
-    expect(packageJson.scripts["service:rotate"]).toBe(
-      "node src/service/main.ts rotate-credential",
-    );
-    expect(packageJson.engines.node).toBe(">=22.19.0");
-  });
+  it("refuses to serve on Bun, the package toolchain runtime", async () => {
+    const base = await temporaryBase();
+    try {
+      const child = await runUnderBun([SERVICE_ENTRY, "serve", "--base", base]);
+      expect(child.code).not.toBe(0);
+      expect(child.stderr).toContain("error: unsupported-runtime:");
+      expect(child.stdout).not.toContain("ready: loopback ");
+    } finally {
+      await removeBase(base);
+    }
+  }, 60_000);
 
   it("loads Chord, serves it over node:http + ws, and refuses a second kernel-lock owner", async () => {
     const version = await runNode([

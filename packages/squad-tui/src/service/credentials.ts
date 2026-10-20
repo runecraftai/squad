@@ -16,6 +16,13 @@ import {
 
 const OWNER_ONLY_DIRECTORY = 0o700;
 const OWNER_ONLY_FILE = 0o600;
+/**
+ * Read without following a link and without blocking on a FIFO: type, owner and
+ * mode are checked only after the open returns, so the open itself must never
+ * wait for another process to write to an adversarial path.
+ */
+const PRIVATE_READ_FLAGS =
+  fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK;
 
 function ownerUid(): number {
   const uid = process.getuid?.();
@@ -37,7 +44,10 @@ function newToken(): ServiceToken {
 }
 
 async function syncDirectory(directory: string): Promise<void> {
-  const handle = await open(directory, fsConstants.O_RDONLY);
+  const handle = await open(
+    directory,
+    fsConstants.O_RDONLY | fsConstants.O_NONBLOCK,
+  );
   try {
     await handle.sync();
   } finally {
@@ -124,7 +134,7 @@ async function readPrivateFile(options: PrivateFileOptions): Promise<string> {
   const path = join(options.base, options.relative);
   let handle;
   try {
-    handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    handle = await open(path, PRIVATE_READ_FLAGS);
   } catch (error) {
     if (error instanceof LocalServiceFailure) throw error;
     const code = (error as NodeJS.ErrnoException).code;
@@ -216,11 +226,17 @@ async function writeNewFile(
     throw new LocalServiceFailure(failure);
   }
   try {
-    await handle.write(contents, 0, "utf8");
+    const { bytesWritten } = await handle.write(contents, 0, "utf8");
+    if (bytesWritten !== Buffer.byteLength(contents, "utf8")) {
+      throw new Error("short write");
+    }
     await handle.sync();
-  } finally {
-    await handle.close();
+  } catch {
+    await handle.close().catch(() => undefined);
+    await unlink(path).catch(() => undefined);
+    throw new LocalServiceFailure(failure);
   }
+  await handle.close();
 }
 
 /**
@@ -236,10 +252,7 @@ export async function ensureToken(base: string): Promise<ServiceToken> {
   try {
     await writeNewFile(path, `${token}\n`, "unsafe-credential");
   } catch (error) {
-    if (
-      (error as NodeJS.ErrnoException).code === "EEXIST" ||
-      (await lstat(path).catch(() => undefined)) !== undefined
-    ) {
+    if ((await lstat(path).catch(() => undefined)) !== undefined) {
       return readToken(base);
     }
     throw error;

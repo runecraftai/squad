@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   descriptorText,
+  FIXTURES_PATH,
   httpStatus,
   listBase,
+  openRawLink,
   probeRawUpgrade,
+  probeStalledHeaders,
   removeBase,
   runClientProcess,
+  runNode,
   startServiceProcess,
   temporaryBase,
   type ClientRun,
+  type HeldLink,
   type RunningServiceHandle,
 } from "./fixtures";
 
@@ -100,6 +105,74 @@ describe("local service request surface", () => {
       }
     });
   }, 60_000);
+
+  it("refuses a ninth authenticated link and frees a slot when one leaves", async () => {
+    await withService(async (service) => {
+      const auth = [
+        `Authorization: Bearer ${TOKEN(service)}`,
+        `X-Squad-Base-Id: ${BASE_ID(service)}`,
+      ];
+      const held: HeldLink[] = [];
+      for (let index = 0; index < 8; index += 1) {
+        const link = await openRawLink(service.port, { headers: auth });
+        expect(link.status).toBe(101);
+        held.push(link);
+      }
+
+      const ninth = await probeRawUpgrade(service.port, { headers: auth });
+      expect(ninth.status).toBe(503);
+      expect(ninth.text).not.toContain(service.token);
+      expect(ninth.text).not.toContain(service.baseId);
+
+      held[0].close();
+      const deadline = Date.now() + 8_000;
+      let reopened = await probeRawUpgrade(service.port, { headers: auth });
+      while (reopened.status !== 101 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        reopened = await probeRawUpgrade(service.port, { headers: auth });
+      }
+      expect(reopened.status).toBe(101);
+      for (const link of held) link.close();
+    });
+  }, 60_000);
+
+  it("closes a connection that never finishes its upgrade headers", async () => {
+    await withService(async (service) => {
+      const stalled = await probeStalledHeaders(service.port);
+      expect(stalled.status).toBe(408);
+      expect(stalled.elapsedMs).toBeGreaterThan(3_000);
+      expect(stalled.elapsedMs).toBeLessThan(10_000);
+      const after = await probeRawUpgrade(service.port, {
+        headers: [
+          `Authorization: Bearer ${TOKEN(service)}`,
+          `X-Squad-Base-Id: ${BASE_ID(service)}`,
+        ],
+      });
+      expect(after.status).toBe(101);
+    });
+  }, 60_000);
+
+  it("refuses a fifth concurrent call on one link and keeps the link alive", async () => {
+    const probe = await runNode([FIXTURES_PATH, "calls-per-link"], {
+      timeoutMs: 60_000,
+    });
+    expect(probe.stderr).toBe("");
+    expect(probe.code).toBe(0);
+    const record = JSON.parse(probe.stdout.trim()) as {
+      kind: string;
+      fifth: { code: string; reason: string | null };
+      settled: Array<{ id: string }>;
+      after: { id: string };
+      open: boolean;
+    };
+    expect(record).toMatchObject({
+      kind: "calls",
+      fifth: { code: "unavailable", reason: "too_many_calls" },
+      settled: [{ id: "c0" }, { id: "c1" }, { id: "c2" }, { id: "c3" }],
+      after: { id: "c5" },
+      open: true,
+    });
+  }, 90_000);
 
   it("refuses unspecified methods on the upgrade route", async () => {
     await withService(async (service) => {

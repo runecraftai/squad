@@ -354,7 +354,10 @@ export function createServiceHost(options: ServiceHostOptions): ServiceHost {
     };
 
     const execute = (args: Static<typeof ExecuteArgsSchema>): ExecuteResult => {
-      if (JSON.stringify(args).length > LOCAL_SERVICE_LIMITS.rpcArgumentBytes) {
+      if (
+        Buffer.byteLength(JSON.stringify(args), "utf8") >
+        LOCAL_SERVICE_LIMITS.rpcArgumentBytes
+      ) {
         return { ok: false, refusal: { code: "limit-exceeded" } };
       }
       const parsed = ExecuteRequest.safeParse(args);
@@ -410,6 +413,13 @@ export function createServiceHttpServer(): Server {
   server.headersTimeout = LOCAL_SERVICE_LIMITS.upgradeHeaderTimeoutMs;
   server.requestTimeout = LOCAL_SERVICE_LIMITS.upgradeHeaderTimeoutMs;
   server.keepAliveTimeout = LOCAL_SERVICE_LIMITS.upgradeHeaderTimeoutMs;
+  const checking = server as Server & {
+    connectionsCheckingInterval?: number;
+  };
+  checking.connectionsCheckingInterval = Math.min(
+    1_000,
+    LOCAL_SERVICE_LIMITS.upgradeHeaderTimeoutMs,
+  );
   return server;
 }
 

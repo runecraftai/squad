@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { connect } from "node:net";
 import { fileURLToPath } from "node:url";
 import { createHost, webSocketLink } from "@earendil-works/chord";
+import { Type } from "typebox";
+import { hostNamed, method, remote } from "@earendil-works/chord";
 import { track, type Tracker } from "@earendil-works/chord/delta";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type {
@@ -26,12 +28,14 @@ import {
   readToken,
 } from "../../src/service/credentials.ts";
 import { canonicalBase } from "../../src/service/exclusivity.ts";
-import { startService, READY_PREFIX } from "../../src/service/main.ts";
 import {
+  attachServiceListener,
+  createServiceHttpServer,
   LocalServiceFacet,
   type ServicePrincipal,
   type ServiceViewState,
 } from "../../src/service/transport.ts";
+import { startService, READY_PREFIX, runCli } from "../../src/service/main.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 export const FIXTURES_PATH = join(HERE, "fixtures.ts");
@@ -74,6 +78,41 @@ export function nodeBinary(): string {
     }
   }
   throw new Error("no Node runtime found for the T07 service tests");
+}
+
+/**
+ * Resolve a real Bun binary, for the one assertion that Bun is refused as a
+ * service runtime. The reverse shim selection of `nodeBinary` applies.
+ */
+let cachedBunBinary: string | undefined;
+
+export function bunBinary(): string {
+  if (cachedBunBinary !== undefined) return cachedBunBinary;
+  const override = process.env.SQUAD_TUI_BUN_BINARY;
+  const candidates = [
+    ...(override === undefined ? [] : [override]),
+    ...(process.versions.bun === undefined ? [] : [process.execPath]),
+    ...(process.env.PATH ?? "")
+      .split(":")
+      .filter((entry) => entry !== "")
+      .map((entry) => join(entry, "bun")),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const runtime = execFileSync(
+        candidate,
+        ["-e", "process.stdout.write(process.versions.bun ?? '')"],
+        { encoding: "utf8", timeout: 10_000 },
+      );
+      if (runtime !== "") {
+        cachedBunBinary = candidate;
+        return candidate;
+      }
+    } catch {
+      // Not a runnable Bun binary; try the next candidate.
+    }
+  }
+  throw new Error("no Bun runtime found for the T07 service tests");
 }
 
 const STRIPPED_ENV = [
@@ -156,7 +195,23 @@ export async function runNode(
   args: readonly string[],
   options: { env?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<CommandResult> {
-  const child = spawn(nodeBinary(), [...args], {
+  return runExecutable(nodeBinary(), args, options);
+}
+
+/** Run the same arguments under Bun, the runtime this package must not serve on. */
+export async function runUnderBun(
+  args: readonly string[],
+  options: { env?: Record<string, string>; timeoutMs?: number } = {},
+): Promise<CommandResult> {
+  return runExecutable(bunBinary(), args, options);
+}
+
+async function runExecutable(
+  binary: string,
+  args: readonly string[],
+  options: { env?: Record<string, string>; timeoutMs?: number } = {},
+): Promise<CommandResult> {
+  const child = spawn(binary, [...args], {
     cwd: PACKAGE_ROOT,
     env: cleanEnv(options.env),
     stdio: ["ignore", "pipe", "pipe"],
@@ -437,6 +492,101 @@ export function probeRawUpgrade(
   });
 }
 
+/** One authenticated upgrade held open, for link-count limits. */
+export type HeldLink = {
+  readonly status: number;
+  readonly text: string;
+  close(): void;
+};
+
+/**
+ * Open one authenticated upgrade and keep the socket open: the service counts
+ * a link by the WebSocket that is still connected, so a probe that closes at
+ * once cannot fill the link table.
+ */
+export function openRawLink(
+  port: number,
+  options: {
+    readonly path?: string;
+    readonly headers?: readonly string[];
+  } = {},
+): Promise<HeldLink> {
+  const path = options.path ?? LOCAL_SERVICE_LINK_PATH;
+  return new Promise((resolve) => {
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.write(
+        [
+          `GET ${path} HTTP/1.1`,
+          `Host: 127.0.0.1:${port}`,
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13",
+          ...(options.headers ?? []),
+          "",
+          "",
+        ].join("\r\n"),
+      );
+    });
+    let text = "";
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        status: Number(/^HTTP\/1\.1 (\d{3})/.exec(text)?.[1] ?? 0),
+        text,
+        close: () => socket.destroy(),
+      });
+    };
+    socket.on("data", (chunk) => {
+      text += chunk.toString("utf8");
+      if (text.includes("\r\n\r\n")) finish();
+    });
+    socket.on("close", finish);
+    socket.on("error", finish);
+    socket.setTimeout(10_000, finish);
+  });
+}
+
+/**
+ * Send an incomplete upgrade request and report how long the service takes to
+ * refuse it: the header-receipt bound must end it, not a client.
+ */
+export function probeStalledHeaders(
+  port: number,
+  timeoutMs = 20_000,
+): Promise<{ readonly elapsedMs: number; readonly status: number }> {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.write(
+        `GET ${LOCAL_SERVICE_LINK_PATH} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n`,
+      );
+    });
+    let text = "";
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve({
+        elapsedMs: Date.now() - started,
+        // A paused socket never reads its FIN; keep reading the refusal.
+        status: Number(/^HTTP\/1\.1 (\d{3})/.exec(text)?.[1] ?? 0),
+      });
+    };
+    socket.on("data", (chunk) => {
+      text += chunk.toString("utf8");
+      if (text.includes("\r\n\r\n")) finish();
+    });
+    socket.on("close", finish);
+    socket.on("end", finish);
+    socket.on("error", finish);
+    socket.setTimeout(timeoutMs, finish);
+  });
+}
+
 /** Recursive listing of one base, for no-side-effect assertions. */
 export async function listBase(base: string, prefix = ""): Promise<string[]> {
   const entries = await readdir(join(base, prefix), { withFileTypes: true });
@@ -654,6 +804,147 @@ async function runCompatibilityProbe(): Promise<void> {
   await host.host.close();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await removeBase(base);
+}
+
+/**
+ * A method-only facet used to hold calls open, so the transport's per-link
+ * concurrency cap can be exercised without a production fixture route.
+ */
+const LimitsFacet = remote("squad-tui-test.limits", {
+  version: 1,
+  input: Type.Object({ name: Type.String() }),
+  host: hostNamed("limits"),
+  variants: {
+    caller: {
+      methods: {
+        hold: method(
+          Type.Object({ id: Type.String() }),
+          Type.Object({ id: Type.String() }),
+        ),
+      },
+    },
+  },
+});
+
+/**
+ * One Node process serves the gated facet over a real loopback WebSocket and
+ * calls it as a client: four holds stay in flight, a fifth is refused by the
+ * link's `maxCalls`, and the link still serves a call afterwards.
+ */
+async function runCallsPerLinkProbe(): Promise<void> {
+  const base = await temporaryBase();
+  const canonical = await canonicalBase(base);
+  const token = "b".repeat(64);
+  let started = 0;
+  let announce = (): void => {};
+  const fourStarted = new Promise<void>((resolve) => {
+    announce = resolve;
+  });
+  let gates: Array<() => void> = [];
+
+  const host = createHost<ServicePrincipal>({
+    name: "limits",
+    self: { kind: "service", baseId: canonical.baseId },
+    principalKey: (principal) => `${principal.kind}:${principal.baseId}`,
+  });
+  host.serve(LimitsFacet, () => ({
+    variant: "caller" as const,
+    hold: async ({ id }) => {
+      started += 1;
+      if (started === 4) announce();
+      await new Promise<void>((resolve) => gates.push(resolve));
+      return { id };
+    },
+  }));
+
+  const server = createServiceHttpServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("no port");
+  }
+  const listener = await attachServiceListener({
+    server,
+    host,
+    baseId: canonical.baseId,
+    expectedToken: token,
+    port: address.port,
+  });
+
+  const client = createHost<ServicePrincipal>({
+    name: "limits-client",
+    kind: "client",
+    self: { kind: "local-client", baseId: canonical.baseId },
+    principalKey: (principal) => `${principal.kind}:${principal.baseId}`,
+  });
+  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/v1/link`, {
+    headers: {
+      host: `127.0.0.1:${address.port}`,
+      authorization: `Bearer ${token}`,
+      "x-squad-base-id": canonical.baseId,
+    },
+  });
+  client.connect(
+    webSocketLink(socket as never, { compress: false, acceptPacked: false }),
+    { principal: { kind: "local-client", baseId: canonical.baseId } },
+  );
+  const view = await client.get(LimitsFacet, { name: "limits" });
+  const hold = view.hold as unknown as (args: {
+    id: string;
+  }) => Promise<{ id: string }>;
+
+  const concurrent = ["c0", "c1", "c2", "c3"].map((id) => hold({ id }));
+  await fourStarted;
+  const fifth = await hold({ id: "c4" }).then(
+    () => ({ code: "resolved", reason: null as string | null }),
+    (error: unknown) => ({
+      code: String((error as { code?: unknown }).code ?? "unknown"),
+      reason:
+        (error as { reason?: unknown }).reason === undefined
+          ? null
+          : String((error as { reason?: unknown }).reason),
+    }),
+  );
+  const releases = gates;
+  gates = [];
+  for (const release of releases) release();
+  const settled = await Promise.all(concurrent);
+
+  const afterRelease = hold({ id: "c5" });
+  while (gates.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  gates[0]();
+  const after = await afterRelease;
+
+  console.log(
+    JSON.stringify({
+      kind: "calls",
+      fifth,
+      settled,
+      after,
+      open: socket.readyState === WebSocket.OPEN,
+    }),
+  );
+
+  view.release();
+  socket.close();
+  await client.close();
+  await listener.close();
+  await host.close();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await removeBase(base);
+}
+
+/** Run the untouched CLI with a Node version below the supported minimum. */
+async function runRuntimeGuard(base: string): Promise<void> {
+  Object.defineProperty(process.versions, "node", {
+    value: "22.18.0",
+    configurable: true,
+    writable: true,
+  });
+  const code = await runCli(["serve", "--base", base]);
+  console.log(JSON.stringify({ kind: "runtime-guard", code: code ?? null }));
 }
 
 async function runLockAttempt(baseId: string): Promise<void> {
@@ -936,6 +1227,14 @@ async function main(): Promise<void> {
   }
   if (mode === "lock") {
     await runLockAttempt(rest[0]);
+    return;
+  }
+  if (mode === "runtime-guard") {
+    await runRuntimeGuard(rest[0]);
+    return;
+  }
+  if (mode === "calls-per-link") {
+    await runCallsPerLinkProbe();
     return;
   }
   if (mode === "service") {

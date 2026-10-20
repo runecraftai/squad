@@ -1,4 +1,12 @@
-import { link, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import {
+  lstat,
+  link,
+  mkdir,
+  readFile,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalServiceFailure } from "../../src/contracts/local-service";
@@ -9,6 +17,7 @@ import {
   ensureToken,
   readDescriptor,
   readToken,
+  removeOwnDescriptor,
   rotateToken,
   verifyToken,
 } from "../../src/service/credentials";
@@ -148,6 +157,25 @@ describe("local service credentials", () => {
       }
     }
   });
+
+  it("refuses a FIFO credential or descriptor without blocking", async () => {
+    const base = await temporaryBase();
+    try {
+      await ensurePrivateDirectory(base, "config/squad-tui");
+      execFileSync("mkfifo", ["-m", "600", credentialPath(base)]);
+      expect(await failureCode(readToken(base))).toBe("unsafe-credential");
+      expect((await lstat(credentialPath(base))).isFIFO()).toBe(true);
+      expect(await failureCode(ensureToken(base))).toBe("unsafe-credential");
+
+      await ensurePrivateDirectory(base, "state/squad-tui");
+      execFileSync("mkfifo", ["-m", "600", descriptorPath(base)]);
+      expect(await failureCode(readDescriptor(base))).toBe("descriptor-failed");
+      expect(await removeOwnDescriptor(base, "instance")).toBe(false);
+      expect((await lstat(descriptorPath(base))).isFIFO()).toBe(true);
+    } finally {
+      await removeBase(base);
+    }
+  }, 30_000);
 
   it("rotates offline to a fresh token that invalidates the old one", async () => {
     const base = await temporaryBase();

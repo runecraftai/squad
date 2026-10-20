@@ -3,11 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  FIXTURES_PATH,
   readDescriptor,
   readTokenFile,
   removeBase,
   runClientProcess,
   runCliService,
+  runNode,
   startServiceProcess,
   temporaryBase,
 } from "./fixtures";
@@ -60,6 +62,17 @@ describe("local service lifecycle", () => {
       expect(invalidPort.code).toBe(1);
       expect(invalidPort.stderr).toContain("error: invalid-port:");
       await expectNoReadiness(invalidPort.stdout);
+
+      const oldRuntime = await runNode([FIXTURES_PATH, "runtime-guard", base], {
+        timeoutMs: 30_000,
+      });
+      expect(oldRuntime.code).toBe(0);
+      expect(JSON.parse(oldRuntime.stdout.trim())).toEqual({
+        kind: "runtime-guard",
+        code: 1,
+      });
+      expect(oldRuntime.stderr).toContain("error: unsupported-runtime:");
+      await expectNoReadiness(oldRuntime.stdout);
 
       const occupied = createServer();
       await new Promise<void>((resolve) =>
