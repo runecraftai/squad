@@ -9,7 +9,8 @@
 # guarded custody recovery. Cancellation, errors, dirty trees and unreturned custody
 # stop with the exact AXI evidence and one blocked event in this base's task status.
 # Never retry this helper after it reports blocked without resolving the cause.
-# --yes and --skip are forbidden; no gate, fix-round limit or approval is bypassed.
+# --specialized-review is accepted on the run form; --yes and --skip are forbidden;
+# no gate, fix-round limit or approval is bypassed.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sq-drill-run-lib.sh
@@ -35,6 +36,14 @@ while [ "$#" -gt 0 ]; do
     --action|--findings|--instructions|--step|--add-finding)
       [ "$ACTION" = respond ] && [ "$#" -ge 2 ] || { usage >&2; exit 2; }
       ARGS+=("$1" "$2"); shift 2 ;;
+    --specialized-review)
+      [ "$ACTION" = run ] || { usage >&2; exit 2; }
+      shift
+      case "${1:-}" in
+        true)  ARGS+=("--specialized-review"); shift ;;
+        false) shift ;;
+        *)     ARGS+=("--specialized-review") ;;
+      esac ;;
     *) usage >&2; exit 2 ;;
   esac
 done
@@ -66,7 +75,7 @@ RERUNS=0
 while :; do
   RC=0
   if [ "$ACTION" = run ]; then
-    OUTPUT=$("$DRILL_BIN" axi run --intent "$INTENT" 2>&1) || RC=$?
+    OUTPUT=$("$DRILL_BIN" axi run --intent "$INTENT" "${ARGS[@]}" 2>&1) || RC=$?
   else
     OUTPUT=$("$DRILL_BIN" axi respond "${ARGS[@]}" 2>&1) || RC=$?
   fi

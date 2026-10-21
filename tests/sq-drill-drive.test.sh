@@ -176,3 +176,35 @@ PATH=$OLD_PATH
 expect_code 0 "$RC" 'legacy binary name is resolved'
 assert_grep 'no-mistakes axi run --intent intent' "$TMP/calls" 'fallback binary receives the call'
 pass 'drill binary is resolved through the shared legacy fallback'
+
+reset_case gate
+drive run --intent intent --specialized-review
+expect_code 0 "$RC" 'specialized-review run flag is accepted'
+assert_grep 'axi run --intent intent --specialized-review' "$TMP/calls" 'observe-only flag reaches Drill'
+pass 'run-only specialized-review opt-in is forwarded'
+
+reset_case gate
+drive run --intent intent --specialized-review=true
+expect_code 0 "$RC" 'explicit true form is accepted'
+assert_grep 'axi run --intent intent --specialized-review' "$TMP/calls" 'explicit true opt-in reaches Drill'
+pass 'explicit true specialized-review is forwarded'
+
+reset_case gate
+drive run --intent intent --specialized-review=false
+expect_code 0 "$RC" 'explicit false form is accepted'
+if grep -q 'specialized-review' "$TMP/calls"; then fail 'false opt-in forwarded the flag'; fi
+pass 'explicit false specialized-review is not forwarded'
+
+reset_case retry-gate
+export CUSTODY=pipeline_owned
+drive run --intent intent --specialized-review
+expect_code 0 "$RC" 'specialized-review survives a recovery rerun'
+expect_code 2 "$(wc -l < "$TMP/count" | tr -d ' ')" 'one automatic rerun was submitted'
+assert_grep 'axi run --intent intent --specialized-review' "$TMP/calls" 'rerun keeps the observe-only opt-in'
+pass 'specialized-review opt-in is retained across recovery reruns'
+
+reset_case gate
+drive respond --intent intent --specialized-review
+expect_code 2 "$RC" 'specialized-review is refused on respond'
+[ ! -s "$TMP/calls" ] || fail 'run-only flag reached Drill on respond'
+pass 'specialized-review is run-only'
