@@ -718,11 +718,15 @@ The pipeline owns review, fixes, tests, docs, push, PR, and CI; you respond to i
 Follow the guidance drill itself provides for the mechanics: it loads when you invoke /drill, and \`drill axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting drill, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Squad requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+Drive each blocking run/respond call through \`$SQUAD_ROOT/bin/sq-drill-drive.sh $ID run --intent "<accepted task intent>"\` or \`$SQUAD_ROOT/bin/sq-drill-drive.sh $ID respond --intent "<same intent>" <response flags>\` instead of calling those two AXI commands directly.
+Read that helper's \`--help\` before the first call: it owns bounded failed-run recovery, preserves every gate, and reports an actionable blocker if it cannot continue.
+A nonzero pipeline return or successful custody recovery is not permission to end the turn: continue through the helper without waiting for a steer; after the helper reports \`blocked:\`, stop and do not reset its retry budget by invoking it again.
+Use raw AXI status/logs and the installed guidance for inspection; continue reading every synchronous gate return and responding until CI is green or a genuine escalation is required.
 
 Two Squad-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to Squad (rule 6) and stop.
   Squad applies the authority contract in its \`AGENTS.md\` and obtains any required commander decision.
-  When the decision comes back, feed it to the gate with \`drill axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+  When the decision comes back, feed it to the gate through the helper's \`respond\` call and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass Squad's authority check and any required commander escalation.
 
 ## Phase 3: self-check before done
