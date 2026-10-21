@@ -196,6 +196,7 @@ stop_daemon() {
 reset_state() {
   # Clear daemon and sentry state for a fresh scenario.
   rm -f "$STATE_DIR"/*.status \
+         "$STATE_DIR"/*.meta \
          "$STATE_DIR"/.subsuper-* \
          "$STATE_DIR"/.stand-to-queue* \
          "$STATE_DIR"/.sentry.lock* \
@@ -207,6 +208,10 @@ reset_state() {
          "$STATE_DIR"/.heartbeat-streak \
          "$STATE_DIR"/.swallow-enter \
          2>/dev/null || true
+  # The scenarios model a live operator task: its status signals only reach the
+  # sentry when the task record exists. A meta without window= adds no stale
+  # supervision, so this only marks the task as live.
+  printf 'id=fake-c1\n' > "$STATE_DIR/fake-c1.meta"
   : > "$LOG_FILE"
 }
 

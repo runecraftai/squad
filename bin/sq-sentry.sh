@@ -560,25 +560,60 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
   echo $(( $(date +%s) - m ))
 }
 
+# signal_task_has_record: 0 iff the task a signal file belongs to still has its
+# state/<id>.meta. The id is the file's basename without its .status or
+# .turn-ended suffix; a live task always has one.
+signal_task_has_record() {  # <signal-file>
+  local task=${1##*/}
+  task=${task%.status}
+  task=${task%.turn-ended}
+  [ -e "$STATE/$task.meta" ]
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
 # are caught by the next one, and same-second writes cannot slip through a
-# strict -nt comparison. Pure read: prints one "<seen-file>\t<sig>\t<file>"
-# line per changed file. .seen-* is updated only after the wake is either
-# surfaced or intentionally absorbed, so a sentry killed mid-cycle never
-# swallows a signal.
+# strict -nt comparison. Prints one "<seen-file>\t<sig>\t<file>" line per
+# changed file; its only other write is the orphan drop below. .seen-* is
+# updated only after the wake is either surfaced or intentionally absorbed, so
+# a sentry killed mid-cycle never swallows a signal. A signal whose task record
+# is gone belongs to a torn-down task that nothing supervises: it is dropped
+# with its .seen-* marker here, so a late turn-end touch cannot keep waking
+# Squad for a task that no longer exists.
 scan_signals() {
   local f sig sf
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
     [ -e "$f" ] || continue
-    sig=$(stat_sig "$f") || continue
     sf="$STATE/.seen-$(basename "$f" | tr '.' '_')"
+    if ! signal_task_has_record "$f"; then
+      rm -f "$sf"
+      continue
+    fi
+    sig=$(stat_sig "$f") || continue
     if [ "$sig" != "$(cat "$sf" 2>/dev/null)" ]; then
       printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
     fi
   done
   return 0
+}
+
+# drop_orphan_signal_entries: filter pending "<seen-file>\t<sig>\t<file>"
+# entries down to the ones whose task record still exists, dropping the
+# .seen-* marker of an entry whose task record disappeared while the grace
+# sleep was in flight. This is the wake-boundary half of the orphan rule: a
+# teardown that lands inside SIGNAL_GRACE must not wake Squad for a task that
+# nothing supervises any more.
+drop_orphan_signal_entries() {  # <pending>...
+  local sf sig f
+  printf '%s\n' "$@" | while IFS=$(printf '\t') read -r sf sig f; do
+    [ -n "$sf" ] || continue
+    if signal_task_has_record "$f"; then
+      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
+    else
+      rm -f "$sf"
+    fi
+  done
 }
 
 # Deliver a durably queued process-event result to Squad. Publication is
@@ -994,11 +1029,15 @@ while :; do
   # classifying: an operator's final status write and the same turn's turn-end
   # hook land seconds apart, and reporting them as separate actionable wakes
   # costs a full Squad turn each. The re-scan also picks up a newer
-  # signature for an already-pending file (last write wins below).
+  # signature for an already-pending file (last wins below), and re-validates
+  # the union so a teardown that completes during the grace sleep cannot wake
+  # Squad for a task whose record is gone.
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
     sleep "$SIGNAL_GRACE"
-    pending=$(printf '%s\n%s' "$pending" "$(scan_signals)")
+    pending=$(drop_orphan_signal_entries "$pending" "$(scan_signals)")
+  fi
+  if [ -n "$pending" ]; then
     files=""
     while IFS=$(printf '\t') read -r sf sig f; do
       [ -n "$sf" ] || continue

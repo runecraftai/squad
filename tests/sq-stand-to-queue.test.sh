@@ -60,6 +60,7 @@ test_signal_catchup_without_running_sentry() {
   # Use a commander-relevant verb so the wake is surfaced and the catch-up path is
   # tested.
   printf 'blocked: first\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   wait_for_exit "$!" 40 || fail "sentry did not exit for first signal"
   grep -F "signal: $status_file" "$out" >/dev/null || fail "sentry did not print first signal"

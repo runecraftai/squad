@@ -570,6 +570,7 @@ test_paused_signal_absorbed() {
   out="$dir/watch.out"; drain_out="$dir/drain.out"
   status_file="$state/task.status"
   printf 'paused: awaiting external review\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   : > "$state/task.turn-ended"
   # The crew is in a declared external-wait pause: the signal path must absorb.
   export SQUAD_FAKE_CREW_STATE='state: paused · source: status-log · awaiting external'
@@ -596,6 +597,7 @@ test_provably_working_signal_absorbed() {
   dir=$(make_case provably-working-signal); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   status_file="$state/task.status"
   printf 'working: compiling step 2\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   # The crew's pipeline is in an actively-running step: positive evidence it is
   # still working, so a no-verb working: signal is absorbed (the original low-churn
   # case during a long validation).
@@ -617,6 +619,7 @@ test_turn_ended_provably_working_absorbed() {
   local dir state fakebin out pid
   dir=$(make_case turn-ended-working); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   : > "$state/task.turn-ended"
+  printf 'id=task\n' > "$state/task.meta"
   # A busy pane is the second form of positive evidence (covers a queued
   # continuation right after the turn-end).
   export SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy'
@@ -641,6 +644,9 @@ test_turn_ended_not_working_surfaced() {
   dir=$(make_case turn-ended-stopped); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; drain_out="$dir/drain.out"
   : > "$state/task.turn-ended"
+  # A live task record: the marker below belongs to a task that still exists, so
+  # its stopped verdict must keep waking supervision (control for the orphan drop).
+  printf 'id=task\n' > "$state/task.meta"
   # No running pipeline, no busy pane: the operator has stopped (e.g. it finished via
   # an interactive menu and wrote no done: status). Default unknown verdict.
   export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
@@ -651,6 +657,83 @@ test_turn_ended_not_working_surfaced() {
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the surfaced turn-end failed"
   grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$state/task.turn-ended" >/dev/null || fail "surfaced turn-end was not queued"
   pass "a bare turn-end whose crew is not provably working is surfaced (the swallowed-finish fix)"
+}
+
+# --- a turn-end whose task record is gone is dropped, not surfaced -------------
+# A completed teardown removes the task's meta, status, and turn-end marker, but a
+# late turn-end hook touch can recreate the marker after the record is gone. With
+# no state/<id>.meta nothing is left to supervise, so the signal scan must drop the
+# marker: surfacing it would repeat a stopped-operator wake on every poll for a
+# task that no longer exists.
+test_orphan_turn_ended_dropped() {
+  local dir state fakebin out pid
+  dir=$(make_case orphan-turn-ended); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  printf 'id=task\n' > "$state/task.meta"
+  : > "$state/task.turn-ended"
+  # Bookkeeping left over from an earlier sighting: the orphan drop must retire it
+  # the same way the stale path resets a vanished target's markers.
+  printf '0:0' > "$state/.seen-task_turn-ended"
+  # Teardown shape: the task record is removed while its turn-end marker survives.
+  # The crew verdict is the same not-working verdict that surfaces a live stopped
+  # operator, so only the missing record keeps this wake from surfacing.
+  rm -f "$state/task.meta"
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "sentry surfaced a turn-end whose task record is gone: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -s "$out" ] || fail "orphan turn-end printed a wake reason: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "orphan turn-end enqueued a durable wake record"
+  [ ! -e "$state/.seen-task_turn-ended" ] || fail "orphan turn-end left its .seen-* marker behind"
+  pass "a turn-end whose task record is gone is dropped instead of waking supervision"
+}
+
+# --- a task torn down during SIGNAL_GRACE does not wake on the pre-grace entry --
+# The scan that first sees a live turn-end returns it, and the sentry then sleeps a
+# grace period before classifying. A teardown completing inside that window leaves
+# the already-collected entry in flight, so the wake boundary must re-check the task
+# record just like the scan does.
+test_orphan_signal_dropped_inside_grace() {
+  local dir state fakebin out pid real_sleep ticks grace
+  dir=$(make_case orphan-signal-grace); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  grace=5
+  printf 'id=task\n' > "$state/task.meta"
+  : > "$state/task.turn-ended"
+  printf '0:0' > "$state/.seen-task_turn-ended"
+  # The grace sleep starts only after the first scan collected the live marker, so
+  # a shim on that exact value makes the teardown deterministic instead of racing
+  # the sentry's unbounded startup: the test acts once the sleep is entered.
+  real_sleep=$(command -v sleep)
+  cat > "$fakebin/sleep" <<EOF
+#!/usr/bin/env bash
+[ "\${1:-}" = "$grace" ] && : > "$state/.grace-entered"
+exec "$real_sleep" "\$@"
+EOF
+  chmod +x "$fakebin/sleep"
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE="$grace" SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+    "$WATCH" > "$out" &
+  pid=$!
+  ticks=0
+  while [ ! -e "$state/.grace-entered" ] && kill -0 "$pid" 2>/dev/null && [ "$ticks" -lt 300 ]; do
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+  if [ ! -e "$state/.grace-entered" ]; then
+    reap "$pid"; fail "sentry never entered the signal grace sleep: $(cat "$out")"
+  fi
+  rm -f "$state/task.meta" "$state/task.status" "$state/task.turn-ended"
+  if ! wait_live "$pid" 80; then
+    reap "$pid"; fail "sentry woke for a task torn down inside the signal grace window: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -s "$out" ] || fail "torn-down signal printed a wake reason: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "torn-down signal enqueued a durable wake record"
+  [ ! -e "$state/.seen-task_turn-ended" ] || fail "torn-down signal left a .seen-* marker behind"
+  pass "a task torn down inside the signal grace window is dropped at the wake boundary"
 }
 
 # --- compaction-without-status override: integration through sq-sentry.sh -------
@@ -730,6 +813,7 @@ test_working_note_not_working_surfaced() {
   out="$dir/watch.out"; drain_out="$dir/drain.out"
   status_file="$state/task.status"
   printf 'working: compiling step 2\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   # A non-drill crew (no run) whose pane went idle: sq-crew-state falls back
   # to the stale working: status-log line. That is NOT positive evidence, so the
   # wake must surface - these users must never be left hanging.
@@ -752,6 +836,7 @@ test_actionable_signal_surfaced() {
   out="$dir/watch.out"; drain_out="$dir/drain.out"
   status_file="$state/task.status"
   printf 'working: setup\nneeds-decision: pick A or B\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
   wait_for_exit "$pid" 40 || fail "sentry did not exit for an actionable needs-decision signal"
@@ -2574,6 +2659,7 @@ SH
   chmod +x "$fakebin/wc"
   status_file="$state/task.status"
   printf 'working: compiling step 2\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   # Provably working so the no-verb signal is absorbed (which is what writes the
   # triage log line under test).
   export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
@@ -2871,6 +2957,7 @@ test_heartbeat_backstop_surfaces_unsurfaced_status() {
   # .hb-surfaced-* marker). This stands in for a per-wake-path miss; the heartbeat
   # unit-scan backstop must catch it and wake Squad.
   printf 'done: PR https://example.test/pr/5\n' > "$state/miss.status"
+  printf 'id=miss\n' > "$state/miss.meta"
   sig=$(seen_sig "$state/miss.status"); printf '%s' "$sig" > "$state/.seen-miss_status"
   PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=1 "$WATCH" > "$out" &
@@ -2891,6 +2978,7 @@ test_beacon_stays_fresh_while_absorbing() {
   dir=$(make_case beacon-fresh); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   status_file="$state/task.status"
   printf 'working: a\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   # Provably working so the working: notes are absorbed (the path that must keep the
   # beacon fresh).
   export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
@@ -2922,6 +3010,7 @@ test_afk_present_reverts_sentry_to_one_shot() {
   out="$dir/watch.out"; drain_out="$dir/drain.out"
   status_file="$state/task.status"
   printf 'working: routine note\n' > "$status_file"
+  printf 'id=task\n' > "$state/task.meta"
   date '+%s' > "$state/.afk"   # away mode: the supervise-daemon owns triage
   # Set a PROVABLY-WORKING verdict: if afk failed to bypass the provably-working
   # check, this no-verb signal would be absorbed (not surfaced). The test asserting
@@ -2988,6 +3077,8 @@ test_paused_signal_absorbed
 test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
+test_orphan_turn_ended_dropped
+test_orphan_signal_dropped_inside_grace
 test_turn_ended_compaction_without_status_surfaced
 test_turn_ended_compaction_too_young_absorbed
 test_turn_ended_compaction_event_mismatch_absorbed

@@ -73,6 +73,7 @@ test_attached_arm_reports_the_delivered_wake() {
 
   # A real commander-relevant status change: the sentry records it in the durable
   # queue, prints its one reason line to its own stdout, and exits.
+  printf 'id=demo\n' > "$state/demo.meta"
   printf 'done: fixture finished\n' > "$state/demo.status"
   wait_for_exit "$SEED_PID" 120
   grep -q '^signal:' "$out" || fail "seed sentry did not surface the signal wake: $(cat "$out")"
@@ -103,6 +104,7 @@ test_attached_arm_reports_the_delivered_wake_after_drain() {
   # handling turn drains, which is the ordering this case exists to cover.
   start_attached_arm "$state" "$fakebin" "$armout" 5
 
+  printf 'id=demo\n' > "$state/demo.meta"
   printf 'done: fixture finished\n' > "$state/demo.status"
   wait_for_exit "$SEED_PID" 120
   # The handling turn consumes the records before the attached arm closes: the

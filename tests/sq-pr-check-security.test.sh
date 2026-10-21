@@ -2165,6 +2165,7 @@ SH
   write_v1_x_shim "$shim" "$dir/home" "$dir/root"
   chmod 0755 "$shim"
   touch "$state/.last-check"
+  printf 'id=transition\n' > "$state/transition.meta"
   printf 'done: synthetic transition wake\n' > "$state/transition.status"
   set +e
   SQUAD_TEST_CHECK_INTERVAL=999999 SQUAD_TEST_WATCH_ROOT="$dir/root" \
