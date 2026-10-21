@@ -696,19 +696,35 @@ test_orphan_turn_ended_dropped() {
 # the already-collected entry in flight, so the wake boundary must re-check the task
 # record just like the scan does.
 test_orphan_signal_dropped_inside_grace() {
-  local dir state fakebin out pid
+  local dir state fakebin out pid real_sleep ticks grace
   dir=$(make_case orphan-signal-grace); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  grace=5
   printf 'id=task\n' > "$state/task.meta"
   : > "$state/task.turn-ended"
   printf '0:0' > "$state/.seen-task_turn-ended"
+  # The grace sleep starts only after the first scan collected the live marker, so
+  # a shim on that exact value makes the teardown deterministic instead of racing
+  # the sentry's unbounded startup: the test acts once the sleep is entered.
+  real_sleep=$(command -v sleep)
+  cat > "$fakebin/sleep" <<EOF
+#!/usr/bin/env bash
+[ "\${1:-}" = "$grace" ] && : > "$state/.grace-entered"
+exec "$real_sleep" "\$@"
+EOF
+  chmod +x "$fakebin/sleep"
   export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
   PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
-    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=5 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE="$grace" SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
     "$WATCH" > "$out" &
   pid=$!
-  # Let the first scan collect the live marker, then run the teardown while the
-  # sentry is still inside its grace sleep.
-  sleep 2
+  ticks=0
+  while [ ! -e "$state/.grace-entered" ] && kill -0 "$pid" 2>/dev/null && [ "$ticks" -lt 300 ]; do
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+  if [ ! -e "$state/.grace-entered" ]; then
+    reap "$pid"; fail "sentry never entered the signal grace sleep: $(cat "$out")"
+  fi
   rm -f "$state/task.meta" "$state/task.status" "$state/task.turn-ended"
   if ! wait_live "$pid" 80; then
     reap "$pid"; fail "sentry woke for a task torn down inside the signal grace window: $(cat "$out")"
