@@ -653,6 +653,12 @@ test_drill_dod_requires_pipeline_before_done() {
     "drill DOD must have Phase 2 for running the pipeline"
   assert_grep "Phase 3: self-check before done" "$brief" \
     "drill DOD must have Phase 3 for self-check before done"
+  # The generated brief is the public instruction interface: pin its actual
+  # task-specific helper commands; helper behavior is tested separately.
+  assert_grep "$ROOT/bin/sq-drill-drive.sh $id run --intent" "$brief" \
+    "drill brief must route blocking runs through bounded recovery"
+  assert_grep "$ROOT/bin/sq-drill-drive.sh $id respond --intent" "$brief" \
+    "drill brief must route blocking responses through bounded recovery"
   # The self-check must require a PR to exist and CI to be green.
   assert_grep "A PR exists for your branch" "$brief" \
     "drill DOD self-check must require a PR to exist"
