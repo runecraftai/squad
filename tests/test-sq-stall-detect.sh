@@ -233,6 +233,48 @@ sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=9999999999/' "$STATE/retry-p
 retry_run_claim
 assert_eq "$("$EXEC" get retry-pending)" retry_queued
 
+# A claim refused because a bound run is already active is not a failure: the
+# attempt is progressing under that run, so no blocked event is appended.
+rm -f "$STATE"/*.exec "$STATE"/*.meta "$STATE"/*.status
+active_wt="$TMP/active-wt"
+mkdir -p "$active_wt"
+git -C "$active_wt" init -q
+git -C "$active_wt" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m init
+git -C "$active_wt" checkout -q -b sq/active-retry
+active_head=$(git -C "$active_wt" rev-parse HEAD)
+mkdir -p "$TMP/activebin"
+cat > "$TMP/activebin/drill" <<EOF
+#!/usr/bin/env bash
+case "\${1:-}" in
+  axi)
+    [ "\${2:-}" = status ] && printf 'run:\n  branch: sq/active-retry\n  status: running\n  head: "%s"\n' "$active_head"
+    ;;
+  runs)
+    printf 'running sq/active-retry %.7s 2026-10-21\n' "$active_head"
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$TMP/activebin/drill"
+printf 'worktree=%s\nkind=strike\n' "$active_wt" >"$STATE/retry-active-run.meta"
+"$EXEC" claim retry-active-run >/dev/null
+"$EXEC" running retry-active-run >/dev/null
+"$EXEC" retry retry-active-run >/dev/null
+sed -i 's/^exec_next_retry_at=.*/exec_next_retry_at=1/' "$STATE/retry-active-run.exec"
+printf 'exec_retry_count=0\n' >>"$STATE/retry-active-run.exec"
+set +e
+PATH="$TMP/activebin:$PATH" "$EXEC" claim retry-active-run >/dev/null 2>&1
+claim_rc=$?
+set -e
+assert_eq "$claim_rc" 3
+PATH="$TMP/activebin:$PATH" retry_run_claim
+assert_eq "$(field exec_state retry-active-run)" retry_queued
+if grep -q 'retry claim failed' "$STATE/retry-active-run.status" 2>/dev/null; then
+  printf 'active-run retry claim recorded a false blocked event\n' >&2
+  exit 1
+fi
+rm -f "$STATE"/retry-active-run.*
+
 # A failed claim surfaces a blocked status instead of being silently swallowed.
 "$EXEC" claim retry-claim-fail >/dev/null
 "$EXEC" running retry-claim-fail >/dev/null

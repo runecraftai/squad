@@ -353,10 +353,7 @@ fi
 if [ "$HAVE_RUN" = 1 ]; then
   # Project the run before any early CI-ready return. A released dispatch id
   # remains immutable, even when a run for its branch is still active.
-  case "$(fm_drill_current_run_state)" in
-    active) EXEC_STATE=running ;;
-    terminal) EXEC_STATE=released ;;
-  esac
+  EXEC_STATE=$(fm_drill_reported_exec_state "$(fm_drill_current_run_state)" "$EXEC_STATE")
   RUN_STATE=working
   RUN_DETAIL=""
   CI_STEP_STATUS=""

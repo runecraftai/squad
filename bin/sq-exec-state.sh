@@ -4,6 +4,8 @@
 # Usage: sq-exec-state.sh get|get-recorded|claim|running|retry|release|after_run|heartbeat|recover <id>
 # get projects a current attributed Drill run over the dispatch record;
 # get-recorded reads only that record. A released id remains undispatchable.
+# claim exits 3 when an active run already owns the id, so a supervisor can
+# skip that attempt without recording a failure.
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
@@ -57,11 +59,7 @@ task_run_state() {  # <id> -> active|terminal|unknown
 }
 
 reported_state() {
-  case "$(task_run_state "$1")" in
-    active) printf 'running\n' ;;
-    terminal) printf 'released\n' ;;
-    *) get_state "$1" ;;
-  esac
+  fm_drill_reported_exec_state "$(task_run_state "$1")" "$(get_state "$1")"
 }
 
 terminal_status() {  # <id> [run_state]: last terminal event, unless a bound run resumed
@@ -164,7 +162,7 @@ claim_locked() {  # <id> [run_state]: run evidence is resolved before the lock
   case "$run_state" in
     active)
       printf 'error: task %s already has an active run\n' "$id" >&2
-      return 1 ;;
+      return 3 ;;
     terminal)
       transition_locked "$id" released "$run_state" >/dev/null
       printf 'error: task %s has a terminal run\n' "$id" >&2

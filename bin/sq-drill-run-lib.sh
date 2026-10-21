@@ -178,3 +178,14 @@ fm_drill_current_run_state() {
     *) printf 'unknown' ;;
   esac
 }
+
+# Reported execution state for a captured run lifecycle: an active run means
+# the attempt is executing, a terminal run means it is over, and unattributed
+# evidence leaves the recorded dispatch state unchanged.
+fm_drill_reported_exec_state() {  # <run_state> [recorded-state]
+  case "$1" in
+    active) printf 'running\n' ;;
+    terminal) printf 'released\n' ;;
+    *) [ -z "${2:-}" ] || printf '%s\n' "$2" ;;
+  esac
+}
