@@ -64,8 +64,8 @@ reported_state() {
   esac
 }
 
-terminal_status() {  # <id>: last terminal event, unless a bound run resumed
-  local line verb pr
+terminal_status() {  # <id> [run_state]: last terminal event, unless a bound run resumed
+  local line verb pr run_state=${2-}
   line=$(grep -v '^[[:space:]]*$' "$STATE/$1.status" 2>/dev/null | tail -1 || true)
   pr=$(meta_field pr "$1")
   [ -n "$line" ] || return 1
@@ -74,7 +74,9 @@ terminal_status() {  # <id>: last terminal event, unless a bound run resumed
   verb=${verb#"${verb%%[![:space:]]*}"}
   # PR metadata is corroborating only; local and recon deliveries need none.
   case "$verb:$pr" in
-    done:*|failed:*) [ "$(task_run_state "$1")" != active ] ;;
+    done:*|failed:*)
+      [ -n "$run_state" ] || run_state=$(task_run_state "$1")
+      [ "$run_state" != active ] ;;
     *) return 1 ;;
   esac
 }
@@ -155,19 +157,20 @@ write_record() {
   mv -f -- "$tmp" "$(path_for "$id")"
 }
 
-claim_locked() {
-  local id=$1 state
+claim_locked() {  # <id> [run_state]: run evidence is resolved before the lock
+  local id=$1 run_state=${2-} state
   state=$(get_state "$id")
-  case "$(task_run_state "$id")" in
+  [ -n "$run_state" ] || run_state=$(task_run_state "$id")
+  case "$run_state" in
     active)
       printf 'error: task %s already has an active run\n' "$id" >&2
       return 1 ;;
     terminal)
-      transition_locked "$id" released >/dev/null
+      transition_locked "$id" released "$run_state" >/dev/null
       printf 'error: task %s has a terminal run\n' "$id" >&2
       return 1 ;;
   esac
-  if terminal_status "$id"; then
+  if terminal_status "$id" "$run_state"; then
     transition_locked "$id" released >/dev/null
     printf 'error: task %s has terminal status\n' "$id" >&2
     return 1
@@ -183,11 +186,11 @@ claim_locked() {
   printf '%s\n' claimed
 }
 
-transition_locked() {
-  local id=$1 next=$2 current
+transition_locked() {  # <id> <next> [run_state]
+  local id=$1 next=$2 run_state=${3-} current
   current=$(get_state "$id")
   valid_state "$next" || { printf 'error: invalid execution state %s\n' "$next" >&2; return 2; }
-  if [ "$next" = running ] && terminal_status "$id"; then
+  if [ "$next" = running ] && terminal_status "$id" "$run_state"; then
     case "$current" in claimed|retry_queued) write_record "$id" released "$current" ;; esac
     printf '%s\n' released
     return 1
@@ -210,29 +213,30 @@ _heartbeat() {
   mv -f -- "$tmp" "$(path_for "$id")"
 }
 
-recover_locked() {
-  local id=$1 current age now last
+recover_locked() {  # <id> [run_state]: run evidence is resolved before the lock
+  local id=$1 run_state=${2-} current age now last
   current=$(get_state "$id")
-  case "$(task_run_state "$id")" in
+  [ -n "$run_state" ] || run_state=$(task_run_state "$id")
+  case "$run_state" in
     active)
       # Repair only through existing transitions. Released is immutable for
       # dispatch, even though its live run still projects as running in get.
       case "$current" in
         retry_queued)
-          transition_locked "$id" claimed >/dev/null
-          transition_locked "$id" running >/dev/null ;;
-        claimed) transition_locked "$id" running >/dev/null ;;
+          transition_locked "$id" claimed "$run_state" >/dev/null
+          transition_locked "$id" running "$run_state" >/dev/null ;;
+        claimed) transition_locked "$id" running "$run_state" >/dev/null ;;
         running) write_record "$id" running "$current" ;;
       esac
       printf 'running\n'
       return ;;
     terminal)
-      transition_locked "$id" released
+      transition_locked "$id" released "$run_state"
       return ;;
   esac
   case "$current" in
     running|claimed|retry_queued)
-      if terminal_status "$id"; then
+      if terminal_status "$id" "$run_state"; then
         transition_locked "$id" released
         return
       fi
@@ -271,13 +275,16 @@ case "$cmd" in
       id=${file##*/}; id=${id%.exec}
       valid_id "$id" || continue
       [ -f "$STATE/$id.meta" ] || { rm -f "$file"; continue; }
-      with_lock "$id" recover_locked "$id" >/dev/null || true
+      # Only queued or live attempts are repairable, so released and fresh
+      # records cost no run attribution on every heartbeat.
+      case "$(get_state "$id")" in running|claimed|retry_queued) ;; *) continue ;; esac
+      with_lock "$id" recover_locked "$id" "$(task_run_state "$id")" >/dev/null || true
     done
     ;;
   get) valid_id "$id" || { usage >&2; exit 2; }; reported_state "$id" ;;
   get-recorded) valid_id "$id" || { usage >&2; exit 2; }; get_state "$id" ;;
-  claim) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" claim_locked "$id" ;;
-  running) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" running ;;
+  claim) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" claim_locked "$id" "$(task_run_state "$id")" ;;
+  running) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" running "$(task_run_state "$id")" ;;
   retry|retry_queued) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" retry_queued ;;
   release|released) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" released ;;
   after_run)
@@ -294,7 +301,11 @@ case "$cmd" in
     fi
     ;;
   heartbeat) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" _heartbeat "$id" ;;
-  recover) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" recover_locked "$id" ;;
-  transition) valid_id "$id" && [ -n "${3:-}" ] || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" "$3" ;;
+  recover) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" recover_locked "$id" "$(task_run_state "$id")" ;;
+  transition)
+    valid_id "$id" && [ -n "${3:-}" ] || { usage >&2; exit 2; }
+    run_state=
+    case "${3:-}" in running) run_state=$(task_run_state "$id") ;; esac
+    with_lock "$id" transition_locked "$id" "$3" "$run_state" ;;
   *) usage >&2; exit 2 ;;
 esac

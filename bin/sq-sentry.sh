@@ -1360,7 +1360,7 @@ EOF
     for _hb_exec in "$STATE"/*.exec; do
       [ -f "$_hb_exec" ] || continue
       _hb_id=${_hb_exec##*/}; _hb_id=${_hb_id%.exec}
-      _hb_state=$("$SCRIPT_DIR/sq-exec-state.sh" get "$_hb_id" 2>/dev/null) || continue
+      _hb_state=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$_hb_id" 2>/dev/null) || continue
       case "$_hb_state" in
         claimed|running) "$SCRIPT_DIR/sq-exec-state.sh" heartbeat "$_hb_id" >/dev/null 2>&1 || true ;;
       esac

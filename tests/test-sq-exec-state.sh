@@ -21,6 +21,10 @@ assert_eq "$("$EXEC" claim task)" claimed
 assert_eq "$("$EXEC" get task)" claimed
 assert_eq "$("$EXEC" running task)" running
 assert_eq "$("$EXEC" retry task)" retry_queued
+[ -n "$(sed -n 's/^exec_next_retry_at=//p' "$STATE/task.exec")" ] || {
+  echo 'retry did not schedule a deadline' >&2
+  exit 1
+}
 assert_eq "$("$EXEC" claim task)" claimed
 assert_eq "$(grep '^exec_next_retry_at=' "$STATE/task.exec")" 'exec_next_retry_at='
 assert_eq "$("$EXEC" running task)" running

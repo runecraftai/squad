@@ -81,9 +81,9 @@ EXEC_STATE=unclaimed
 DRILL_TIMEOUT=${SQUAD_CREW_STATE_DRILL_TIMEOUT:-10}
 case "$DRILL_TIMEOUT" in ''|*[!0-9]*) DRILL_TIMEOUT=10 ;; esac
 # How many of the most recent `drill runs` rows the cross-branch fallback
-# (drill_runs_status_for_branch, below) scans. Generous enough to still find a
-# branch's own run on a busy multi-crew unit without listing the entire
-# history every call.
+# (fm_drill_runs_status_for_branch in bin/sq-drill-run-lib.sh) scans. Generous
+# enough to still find a branch's own run on a busy multi-crew unit without
+# listing the entire history every call.
 SQUAD_CREW_STATE_RUNS_LIMIT=${SQUAD_CREW_STATE_RUNS_LIMIT:-200}
 case "$SQUAD_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) SQUAD_CREW_STATE_RUNS_LIMIT=200 ;; esac
 SEP=' · '

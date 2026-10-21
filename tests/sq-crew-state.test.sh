@@ -55,13 +55,24 @@ make_repo_on_branch() {  # <dir> <branch>
 # `axi` surface - no runs-listing subcommand exists under it, verified against
 # the real CLI), and the actual top-level run-listing command, `drill
 # runs --limit N`, which is plain text - no run id, no quoting - serving
-# SQUAD_FAKE_RUNS_LIST verbatim.
+# SQUAD_FAKE_RUNS_LIST verbatim. SQUAD_FAKE_DRILL_CALL_LOG records each
+# invocation and SQUAD_FAKE_DRILL_LOCK_PROBE/SQUAD_FAKE_DRILL_LOCK_SEEN report
+# an exec lock directory that is still held when the CLI runs.
 make_fakebin() {  # <dir> -> echoes fakebin path
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
   cat > "$fb/drill" <<'SH'
 #!/usr/bin/env bash
 set -u
+if [ -n "${SQUAD_FAKE_DRILL_CALL_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$SQUAD_FAKE_DRILL_CALL_LOG"
+fi
+if [ -n "${SQUAD_FAKE_DRILL_LOCK_PROBE:-}" ]; then
+  for lock in "$SQUAD_FAKE_DRILL_LOCK_PROBE"/.*.lock; do
+    [ -d "$lock" ] || continue
+    printf '%s\n' "$lock" >> "${SQUAD_FAKE_DRILL_LOCK_SEEN:-/dev/null}"
+  done
+fi
 case "${1:-}" in
   axi)
     shift
@@ -1420,8 +1431,49 @@ test_newest_running_run_overrides_older_terminal_snapshot() {
   pass 'latest running execution replaces stale terminal snapshot, not vice versa'
 }
 
+# Run attribution is an external CLI call, so it must never happen under the
+# per-task exec lock: a concurrent claim/retry/release for the same id would
+# otherwise fail with "execution state is locked" for the whole drill query.
+test_exec_lock_is_not_held_across_run_attribution() {
+  reset_fakes
+  local d out state
+  d=$(new_case exec-lock-scope)
+  make_repo_on_branch "$d/wt" sq/lock-scope
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/locky.meta" "window=fm:sq-locky" "worktree=$d/wt" "kind=strike"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/lock-scope)"
+  for cmd in claim recover; do
+    printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=0\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$d/state/locky.exec"
+    : > "$d/lock-seen"
+    out=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" \
+      SQUAD_FAKE_DRILL_LOCK_PROBE="$d/state" SQUAD_FAKE_DRILL_LOCK_SEEN="$d/lock-seen" \
+      "$ROOT/bin/sq-exec-state.sh" "$cmd" locky 2>/dev/null || true)
+    [ ! -s "$d/lock-seen" ] || fail "$cmd held the exec lock across run attribution: $(cat "$d/lock-seen")"
+    if [ "$cmd" = recover ]; then
+      [ "$out" = running ] || fail "recover did not adopt the active run: $out"
+    fi
+  done
+  assert_contains "$(<"$d/state/locky.exec")" 'exec_state=running' 'active run was adopted through the locked transition'
+  # recover-all only repairs queued/claimed/running attempts, so a released
+  # record must not pay for run attribution on every sentry heartbeat.
+  d=$(new_case exec-lock-scope-released)
+  make_repo_on_branch "$d/wt" sq/lock-scope-released
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/retired.meta" "window=fm:sq-retired" "worktree=$d/wt" "kind=strike"
+  printf 'exec_state=released\nexec_attempt=2\nexec_retry_count=1\nexec_last_activity=1\n' > "$d/state/retired.exec"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/lock-scope-released)"
+  : > "$d/drill-calls"
+  PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" \
+    SQUAD_FAKE_DRILL_CALL_LOG="$d/drill-calls" "$ROOT/bin/sq-exec-state.sh" recover-all >/dev/null
+  [ ! -s "$d/drill-calls" ] || fail "recover-all attributed a released record: $(cat "$d/drill-calls")"
+  state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get-recorded retired)
+  [ "$state" = released ] || fail "released record changed: $state"
+  pass 'run attribution never runs under the exec lock and released records skip recovery attribution'
+}
+
 test_newest_running_run_overrides_older_terminal_snapshot
 test_active_run_overrides_execution_record
+test_exec_lock_is_not_held_across_run_attribution
 test_active_run_is_authoritative
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded
