@@ -33,6 +33,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-decision-hold.sh`    | Criar, verificar, completar e resolver decisões duráveis retidas pelo comandante                 |
 | `sq-learn.sh`            | Capturar uma lição operacional durável em `data/learnings.md`                         |
 | `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab; briefs strike e recon exigem decisão explícita de playbook (`--playbook <id>@<version>`, ou `--no-playbook` com o motivo em uma linha), e `--profile` anexa um conjunto de restrições ao playbook selecionado   |
+| `sq-drill-drive.sh`      | Conduzir chamadas AXI com recuperação limitada de custódia de runs falhos; o cabeçalho do script é dono do contrato de retry e parada |
 | `sq-herdr-lab.sh`        | Provisionar e operar protegidamente uma sessão de lab Herdr isolada, nunca padrão         |
 | `sq-install-herdr.sh`    | Instalar o pin exato de versão do Herdr usado pelo CI com URL oficial de asset, SHA-256 e checagens de protocolo |
 | `sq-learn.sh`            | Capturar um aprendizado operacional limitado e filtrado por quase-duplicatas em `data/learnings.md` |

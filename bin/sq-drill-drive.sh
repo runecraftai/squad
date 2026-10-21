@@ -14,6 +14,8 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
 
 usage() { awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; }
 case "${1:-}" in -h|--help) usage; exit 0 ;; esac
@@ -24,6 +26,8 @@ shift 2
 INTENT=
 ARGS=()
 while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}"; continue ;; esac
   case "$1" in
     --intent)
       [ "$#" -ge 2 ] && [ -z "$INTENT" ] || { usage >&2; exit 2; }
@@ -53,17 +57,18 @@ block() {
   [ -z "$state" ] || SYNC_STATE=$state
   note="blocked: $1; drill_state=$SYNC_STATE; runs=${ATTEMPTS:-none}"
   printf '%s\n' "$note"
-  printf '%s\n' "$note" >> "$STATUS"
+  status_line_append "$STATUS" "$note" || printf 'error: could not append the blocked event to %s\n' "$STATUS" >&2
   exit 1
 }
 BRANCH=$(git symbolic-ref --quiet --short HEAD) || block 'not on a feature branch'
+DRILL_BIN=$(fm_drill_bin) || block 'drill CLI is not installed'
 RERUNS=0
 while :; do
   RC=0
   if [ "$ACTION" = run ]; then
-    OUTPUT=$(drill axi run --intent "$INTENT") || RC=$?
+    OUTPUT=$("$DRILL_BIN" axi run --intent "$INTENT" 2>&1) || RC=$?
   else
-    OUTPUT=$(drill axi respond "${ARGS[@]}") || RC=$?
+    OUTPUT=$("$DRILL_BIN" axi respond "${ARGS[@]}" 2>&1) || RC=$?
   fi
   printf '%s\n' "$OUTPUT"
   EVIDENCE=$OUTPUT
@@ -74,14 +79,14 @@ while :; do
   ATTEMPTS="${ATTEMPTS:+$ATTEMPTS,}$RUN"
   [ "$(scalar "$OUTPUT" outcome)" = failed ] || block 'AXI call did not return a terminal failed outcome'
 
-  EVIDENCE=$(drill axi status --run "$RUN") || block 'cannot inspect the failed run'
+  EVIDENCE=$("$DRILL_BIN" axi status --run "$RUN" 2>&1) || block 'cannot inspect the failed run'
   SYNC=$(sync_object "$EVIDENCE")
   SYNC_STATE=$(scalar "$SYNC" state)
   [ "$(scalar "$EVIDENCE" status)" = failed ] || block 'run is no longer failed'
   [ "$(scalar "$EVIDENCE" branch)" = "$BRANCH" ] || block 'run branch does not match this task'
   [ "$RERUNS" -lt 2 ] || block 'automatic rerun budget exhausted (2)'
   if [ "$(scalar "$SYNC" code)" = recover_custody ]; then
-    EVIDENCE=$(drill axi sync --recover) || block 'guarded custody recovery refused'
+    EVIDENCE=$("$DRILL_BIN" axi sync --recover 2>&1) || block 'guarded custody recovery refused'
     SYNC=$(sync_object "$EVIDENCE")
     SYNC_STATE=$(scalar "$SYNC" state)
   fi

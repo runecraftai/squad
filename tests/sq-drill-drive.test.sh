@@ -3,6 +3,8 @@
 set -eu
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$ROOT/bin/sq-classify-lib.sh"
 TMP=$(fm_test_tmproot sq-drill-drive)
 mkdir -p "$TMP/bin" "$TMP/base/state" "$TMP/repo"
 export SQUAD_BASE="$TMP/base" RECOVERY_TEST="$TMP"
@@ -16,7 +18,11 @@ RECOVERY_HEAD=$(authoritative_head)
 cat > "$TMP/bin/drill" <<'SH'
 #!/usr/bin/env bash
 set -eu
-printf '%s\n' "$*" >> "$RECOVERY_TEST/calls"
+printf '%s %s\n' "${0##*/}" "$*" >> "$RECOVERY_TEST/calls"
+if [ "$MODE" = missing ]; then
+  printf 'drill: executable not found\n' >&2
+  exit 127
+fi
 case "$2" in
   run|respond)
     count=$(wc -l < "$RECOVERY_TEST/count" | tr -d ' ')
@@ -54,6 +60,16 @@ reset_case() {
 drive() {
   RC=0
   "$ROOT/bin/sq-drill-drive.sh" probe "$@" > "$TMP/output" 2>&1 || RC=$?
+}
+without_drill() {
+  local d out=''
+  local IFS=:
+  for d in $PATH; do
+    [ -n "$d" ] || continue
+    [ -x "$d/drill" ] && continue
+    out="${out:+$out:}$d"
+  done
+  printf '%s' "$out"
 }
 reset_case persistent
 drive run --intent 'preserve the entire accepted intent'
@@ -126,3 +142,37 @@ drive run --intent intent --skip review
 expect_code 2 "$RC" 'skipping validation steps is rejected'
 [ ! -s "$TMP/calls" ] || fail 'forbidden flags reached Drill'
 pass 'no automatic approval or skipped steps'
+
+reset_case persistent
+printf 'working: prior' > "$SQUAD_BASE/state/probe.status"
+drive run --intent intent
+expect_code 1 "$RC" 'persistent failure blocks'
+[ "$(sed -n '1p' "$SQUAD_BASE/state/probe.status")" = 'working: prior' ] || fail 'unterminated prior record was not separated'
+printf '%s' "$(status_open_decisions "$SQUAD_BASE/state/probe.status")" | grep -q $'\tblocked\t' || fail 'blocked transition did not open a durable decision'
+pass 'blocked event is its own record after an unterminated status stream'
+
+reset_case retry-gate
+export CUSTODY=pipeline_owned
+drive respond --intent 'same accepted intent' --action=fix --findings=r1
+expect_code 0 "$RC" 'equals-form respond flags are accepted'
+expect_code 2 "$(wc -l < "$TMP/count" | tr -d ' ')" 'equals-form recovery still reruns once'
+assert_grep 'axi respond --action fix --findings r1' "$TMP/calls" 'equals-form flags reach Drill'
+pass 'equals-form respond flags are normalized, not rejected'
+
+reset_case missing
+RC=0
+"$ROOT/bin/sq-drill-drive.sh" probe run --intent intent > "$TMP/missing.out" 2> "$TMP/missing.err" || RC=$?
+expect_code 1 "$RC" 'missing CLI blocks without a run identity'
+assert_grep 'drill: executable not found' "$TMP/missing.out" 'stderr failure evidence is captured into the helper output'
+pass 'CLI failure keeps its stderr evidence on the helper output stream'
+
+reset_case gate
+mkdir -p "$TMP/legacy"
+cp "$TMP/bin/drill" "$TMP/legacy/no-mistakes"
+OLD_PATH=$PATH
+PATH="$TMP/legacy:$(without_drill)"
+drive run --intent intent
+PATH=$OLD_PATH
+expect_code 0 "$RC" 'legacy binary name is resolved'
+assert_grep 'no-mistakes axi run --intent intent' "$TMP/calls" 'fallback binary receives the call'
+pass 'drill binary is resolved through the shared legacy fallback'
