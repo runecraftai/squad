@@ -9,6 +9,12 @@
 # guarded custody recovery. Cancellation, errors, dirty trees and unreturned custody
 # stop with the exact AXI evidence and one blocked event in this base's task status.
 # Never retry this helper after it reports blocked without resolving the cause.
+# Resume is limited to Drill's unpublished custody recovery (custody_returned,
+# user_owned). A terminal run that stopped after the pipeline pushed
+# (behind/synchronized) or that still holds pipeline custody reports blocked with
+# the exact Drill state instead of running an automatic `axi sync`: published
+# branch sync and divergence are a separate risk class, tracked as backlog item
+# squad-drill-post-push-recovery and left to explicit operator authorization.
 # --specialized-review is accepted on the run form; --yes and --skip are forbidden;
 # no gate, fix-round limit or approval is bypassed.
 set -eu
@@ -100,9 +106,14 @@ while :; do
     SYNC=$(sync_object "$EVIDENCE")
     SYNC_STATE=$(scalar "$SYNC" state)
   fi
+  # Accepted scope limit, not a missing recovery step: only unpublished custody
+  # is resumed. Post-push terminal failures (behind/synchronized) and held
+  # pipeline custody block here because syncing or re-running an already
+  # published branch is a separate risk class authorized per backlog item
+  # squad-drill-post-push-recovery.
   case "$SYNC_STATE" in
     custody_returned|user_owned) ;;
-    *) block 'custody was not returned' ;;
+    *) block 'automatic resume covers unpublished custody recovery only; post-push sync, divergence and held custody stay manual' ;;
   esac
   CURRENT_BRANCH=$(git symbolic-ref --quiet --short HEAD) || block 'branch detached during recovery'
   [ "$CURRENT_BRANCH" = "$BRANCH" ] || block 'branch changed during recovery'

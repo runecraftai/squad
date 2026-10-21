@@ -121,7 +121,16 @@ drive run --intent intent
 expect_code 1 "$RC" 'active custody blocks'
 expect_code 1 "$(wc -l < "$TMP/count" | tr -d ' ')" 'active run never restarts'
 assert_grep 'drill_state=pipeline_owned' "$SQUAD_BASE/state/probe.status" 'exact custody state is actionable'
+assert_grep 'post-push sync, divergence and held custody stay manual' "$SQUAD_BASE/state/probe.status" 'blocked reason names the accepted auto-resume limit'
 pass 'active custody never triggers recovery'
+
+reset_case postpush
+export CUSTODY=behind
+drive run --intent intent
+expect_code 1 "$RC" 'post-push terminal failure blocks instead of syncing'
+expect_code 1 "$(wc -l < "$TMP/count" | tr -d ' ')" 'published head is never resubmitted'
+assert_grep 'drill_state=behind' "$SQUAD_BASE/state/probe.status" 'published state is reported exactly'
+pass 'post-push failures report the accepted scope limit with their real state'
 
 reset_case dirty
 printf 'uncommitted\n' > dirty.txt
