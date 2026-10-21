@@ -25,7 +25,8 @@ case "$ID" in ''|*[!a-zA-Z0-9_-]*) usage >&2; exit 2 ;; esac
 case "$ACTION" in run|respond) ;; *) usage >&2; exit 2 ;; esac
 shift 2
 INTENT=
-ARGS=()
+RUN_ARGS=()
+RESPOND_ARGS=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}"; continue ;; esac
@@ -35,14 +36,14 @@ while [ "$#" -gt 0 ]; do
       INTENT=$2; shift 2 ;;
     --action|--findings|--instructions|--step|--add-finding)
       [ "$ACTION" = respond ] && [ "$#" -ge 2 ] || { usage >&2; exit 2; }
-      ARGS+=("$1" "$2"); shift 2 ;;
+      RESPOND_ARGS+=("$1" "$2"); shift 2 ;;
     --specialized-review)
       [ "$ACTION" = run ] || { usage >&2; exit 2; }
       shift
       case "${1:-}" in
-        true)  ARGS+=("--specialized-review"); shift ;;
+        true)  RUN_ARGS+=("--specialized-review"); shift ;;
         false) shift ;;
-        *)     ARGS+=("--specialized-review") ;;
+        *)     RUN_ARGS+=("--specialized-review") ;;
       esac ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -75,9 +76,9 @@ RERUNS=0
 while :; do
   RC=0
   if [ "$ACTION" = run ]; then
-    OUTPUT=$("$DRILL_BIN" axi run --intent "$INTENT" "${ARGS[@]}" 2>&1) || RC=$?
+    OUTPUT=$("$DRILL_BIN" axi run --intent "$INTENT" ${RUN_ARGS[@]+"${RUN_ARGS[@]}"} 2>&1) || RC=$?
   else
-    OUTPUT=$("$DRILL_BIN" axi respond "${ARGS[@]}" 2>&1) || RC=$?
+    OUTPUT=$("$DRILL_BIN" axi respond ${RESPOND_ARGS[@]+"${RESPOND_ARGS[@]}"} 2>&1) || RC=$?
   fi
   printf '%s\n' "$OUTPUT"
   EVIDENCE=$OUTPUT

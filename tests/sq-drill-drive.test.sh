@@ -25,6 +25,15 @@ if [ "$MODE" = missing ]; then
 fi
 case "$2" in
   run|respond)
+    for arg in "$@"; do
+      case "$arg" in
+        --*) case "$2:$arg" in
+               run:--intent|run:--yes|run:--skip|run:--specialized-review) ;;
+               respond:--action|respond:--findings|respond:--instructions|respond:--step|respond:--add-finding) ;;
+               *) printf 'drill: unknown flag for %s: %s\n' "$2" "$arg" >&2; exit 2 ;;
+             esac ;;
+      esac
+    done
     count=$(wc -l < "$RECOVERY_TEST/count" | tr -d ' ')
     count=$((count + 1))
     echo x >> "$RECOVERY_TEST/count"
@@ -86,6 +95,7 @@ expect_code 0 "$RC" 'rerun gate must return to the worker'
 expect_code 2 "$(wc -l < "$TMP/count" | tr -d ' ')" 'legitimate recovery starts one new run'
 assert_grep 'axi sync --recover' "$TMP/calls" 'guarded recovery is used'
 assert_grep 'axi respond --action fix --findings r1' "$TMP/calls" 'only the explicit gate response is sent'
+assert_grep 'axi run --intent same accepted intent' "$TMP/calls" 'the automatic rerun uses the run form without respond flags'
 assert_grep 'action: ask-user' "$TMP/output" 'ask-user gate remains visible'
 [ ! -e "$SQUAD_BASE/state/probe.status" ] || fail 'normal gate emitted a blocker'
 pass 'failed respond recovers and reruns, then stops at the next gate'
