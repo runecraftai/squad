@@ -122,9 +122,10 @@ done
 [ "$PANE_READY" = true ] || fail "the supervisor pane's shell did not become ready"
 
 # A second, independent live task tab in the same workspace, mirroring the tmux
-# e2e's fake sq-fake-c1 operator window - not required by scan_signals (which
-# only watches state/*.status mtimes, no window/pane dependency), but kept for
-# parity so this test's shape matches the tmux e2e's.
+# e2e's fake sq-fake-c1 operator window - not required by scan_signals (whose
+# live-task gate only needs the fake-c1.meta that reset_state writes - no
+# window/pane dependency), but kept for parity so this test's shape matches the
+# tmux e2e's.
 FAKE_CREW_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "sq-fake-c1" /tmp) \
   || fail "could not create the fake operator scratch tab"
 read -r _FAKE_TAB_ID FAKE_CREW_PANE_ID <<EOF
@@ -302,6 +303,7 @@ stop_daemon() {
 
 reset_state() {
   rm -f "$STATE_DIR"/*.status \
+         "$STATE_DIR"/*.meta \
          "$STATE_DIR"/.subsuper-* \
          "$STATE_DIR"/.stand-to-queue* \
          "$STATE_DIR"/.sentry.lock* \
@@ -313,6 +315,10 @@ reset_state() {
          "$STATE_DIR"/.heartbeat-streak \
          "$STATE_DIR"/.swallow-enter \
          2>/dev/null || true
+  # The scenarios model a live operator task: the sentry only surfaces a status
+  # signal while its task record exists. A meta without window= adds no stale
+  # supervision, so this only marks the task as live.
+  printf 'id=fake-c1\n' > "$STATE_DIR/fake-c1.meta"
   : > "$LOG_FILE"
 }
 

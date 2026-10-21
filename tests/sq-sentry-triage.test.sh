@@ -670,6 +670,9 @@ test_orphan_turn_ended_dropped() {
   dir=$(make_case orphan-turn-ended); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   printf 'id=task\n' > "$state/task.meta"
   : > "$state/task.turn-ended"
+  # Bookkeeping left over from an earlier sighting: the orphan drop must retire it
+  # the same way the stale path resets a vanished target's markers.
+  printf '0:0' > "$state/.seen-task_turn-ended"
   # Teardown shape: the task record is removed while its turn-end marker survives.
   # The crew verdict is the same not-working verdict that surfaces a live stopped
   # operator, so only the missing record keeps this wake from surfacing.
@@ -683,7 +686,38 @@ test_orphan_turn_ended_dropped() {
   reap "$pid"
   [ ! -s "$out" ] || fail "orphan turn-end printed a wake reason: $(cat "$out")"
   [ ! -s "$state/.stand-to-queue" ] || fail "orphan turn-end enqueued a durable wake record"
+  [ ! -e "$state/.seen-task_turn-ended" ] || fail "orphan turn-end left its .seen-* marker behind"
   pass "a turn-end whose task record is gone is dropped instead of waking supervision"
+}
+
+# --- a task torn down during SIGNAL_GRACE does not wake on the pre-grace entry --
+# The scan that first sees a live turn-end returns it, and the sentry then sleeps a
+# grace period before classifying. A teardown completing inside that window leaves
+# the already-collected entry in flight, so the wake boundary must re-check the task
+# record just like the scan does.
+test_orphan_signal_dropped_inside_grace() {
+  local dir state fakebin out pid
+  dir=$(make_case orphan-signal-grace); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  printf 'id=task\n' > "$state/task.meta"
+  : > "$state/task.turn-ended"
+  printf '0:0' > "$state/.seen-task_turn-ended"
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=5 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+    "$WATCH" > "$out" &
+  pid=$!
+  # Let the first scan collect the live marker, then run the teardown while the
+  # sentry is still inside its grace sleep.
+  sleep 2
+  rm -f "$state/task.meta" "$state/task.status" "$state/task.turn-ended"
+  if ! wait_live "$pid" 80; then
+    reap "$pid"; fail "sentry woke for a task torn down inside the signal grace window: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -s "$out" ] || fail "torn-down signal printed a wake reason: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "torn-down signal enqueued a durable wake record"
+  [ ! -e "$state/.seen-task_turn-ended" ] || fail "torn-down signal left a .seen-* marker behind"
+  pass "a task torn down inside the signal grace window is dropped at the wake boundary"
 }
 
 # --- compaction-without-status override: integration through sq-sentry.sh -------
@@ -3028,6 +3062,7 @@ test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_orphan_turn_ended_dropped
+test_orphan_signal_dropped_inside_grace
 test_turn_ended_compaction_without_status_surfaced
 test_turn_ended_compaction_too_young_absorbed
 test_turn_ended_compaction_event_mismatch_absorbed
