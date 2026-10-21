@@ -1539,9 +1539,13 @@ test_teardown_retires_watcher_markers() {
   : > "$case_dir/state/.subsuper-stale-task-x1"
   : > "$case_dir/state/.subsuper-paused-task-x1"
   : > "$case_dir/state/.subsuper-seen-status-task-x1"
+  : > "$case_dir/state/task-x1.status"
+  : > "$case_dir/state/task-x1.turn-ended"
 
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "watcher-markers: forced teardown failed: $(cat "$case_dir/stderr")"
+  [ ! -e "$case_dir/state/task-x1.turn-ended" ] \
+    || fail "watcher-markers: teardown left the turn-end marker behind (the sentry would keep waking on it)"
   [ ! -e "$case_dir/state/.hash-$key" ] \
     || fail "watcher-markers: teardown left .hash-* behind"
   [ ! -e "$case_dir/state/.count-$key" ] \

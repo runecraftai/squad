@@ -560,6 +560,16 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
   echo $(( $(date +%s) - m ))
 }
 
+# signal_task_has_record: 0 iff the task a signal file belongs to still has its
+# state/<id>.meta. The id is the file's basename without its .status or
+# .turn-ended suffix; a live task always has one.
+signal_task_has_record() {  # <signal-file>
+  local task=${1##*/}
+  task=${task%.status}
+  task=${task%.turn-ended}
+  [ -e "$STATE/$task.meta" ]
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
@@ -567,13 +577,19 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
 # strict -nt comparison. Pure read: prints one "<seen-file>\t<sig>\t<file>"
 # line per changed file. .seen-* is updated only after the wake is either
 # surfaced or intentionally absorbed, so a sentry killed mid-cycle never
-# swallows a signal.
+# swallows a signal. A signal whose task record is gone belongs to a torn-down
+# task that nothing supervises: it is dropped with its .seen-* marker here, so
+# a late turn-end touch cannot keep waking Squad for a task that no longer exists.
 scan_signals() {
   local f sig sf
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
     [ -e "$f" ] || continue
-    sig=$(stat_sig "$f") || continue
     sf="$STATE/.seen-$(basename "$f" | tr '.' '_')"
+    if ! signal_task_has_record "$f"; then
+      rm -f "$sf"
+      continue
+    fi
+    sig=$(stat_sig "$f") || continue
     if [ "$sig" != "$(cat "$sf" 2>/dev/null)" ]; then
       printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
     fi

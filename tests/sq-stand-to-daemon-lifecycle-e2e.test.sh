@@ -60,6 +60,7 @@ test_routine_then_terminal_after_restart() {
 
   # A routine status fires a signal; the sentry queues it and exits.
   printf 'working: building\n' > "$status_file"
+  printf 'id=task-w1\n' > "$state/task-w1.meta"
   run_sentry_once "$state" "$fakebin" "$out" || fail "sentry did not exit for the routine signal"
   grep -F "routine: signal: $status_file" "$out" >/dev/null \
     || fail "away sentry did not mark the routine signal for daemon-only delivery: $(cat "$out")"
