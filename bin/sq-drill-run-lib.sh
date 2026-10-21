@@ -89,3 +89,92 @@ fm_drill_head_matches_worktree() {  # <worktree> <run_head>
   [ "$run_full" = "$local_full" ] && return 0
   git -C "$wt" merge-base --is-ancestor "$local_full" "$run_full" 2>/dev/null
 }
+
+# Newest same-branch listing row, bound to current code before trusting it.
+fm_drill_runs_status_for_branch() {  # <worktree> <timeout> <limit> <branch>
+  local wt=$1 timeout_secs=$2 limit=$3 branch=$4 out row st rest br sha
+  out=$(fm_drill_run "$wt" "$timeout_secs" runs --limit "$limit")
+  [ -n "$out" ] || return 0
+  while IFS= read -r row; do
+    row=$(fm_drill_trim "$row")
+    [ -n "$row" ] || continue
+    st=${row%% *}
+    rest=${row#* }
+    rest=$(fm_drill_trim "$rest")
+    br=${rest%% *}
+    rest=${rest#* }
+    rest=$(fm_drill_trim "$rest")
+    sha=${rest%% *}
+    if [ "$br" = "$branch" ]; then
+      # Only the newest same-branch run is eligible; an unbindable head makes
+      # attribution unknown rather than exposing an older terminal execution.
+      if [ -z "$sha" ] || ! fm_drill_head_matches_worktree "$wt" "$sha"; then
+        printf 'unknown'
+        return 0
+      fi
+      printf '%s' "$st"
+      return 0
+    fi
+  done <<< "$out"
+  return 0
+}
+
+
+# Capture the current branch/code-bound run for reporting and execution recovery.
+# Results: FM_DRILL_RUN_OUT, FM_DRILL_RUN_SOURCE (full/coarse/none/unverified),
+# FM_DRILL_COARSE_STATUS. A terminal snapshot must not hide a newer active run.
+fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
+  local wt=$1 timeout_secs=$2 limit=$3 branch run_branch status outcome head
+  FM_DRILL_RUN_OUT=
+  FM_DRILL_RUN_SOURCE=none
+  FM_DRILL_COARSE_STATUS=
+  [ -d "$wt" ] || return 0
+  branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null) || return 0
+  [ -n "$branch" ] || return 0
+  FM_DRILL_RUN_OUT=$(fm_drill_run "$wt" "$timeout_secs" axi status)
+  [ -n "$FM_DRILL_RUN_OUT" ] || return 0
+  run_branch=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" branch)")
+  head=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" head)")
+  if [ "$run_branch" = "$branch" ] && fm_drill_head_matches_worktree "$wt" "$head"; then
+    FM_DRILL_RUN_SOURCE=full
+    status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
+    outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")
+    case "$status:$outcome" in
+      failed:*|cancelled:*|completed:*|*:failed|*:passed|*:cancelled)
+        FM_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
+        case "$FM_DRILL_COARSE_STATUS" in
+          unknown|'') FM_DRILL_RUN_SOURCE=unverified ;;
+          running) FM_DRILL_RUN_SOURCE=coarse ;;
+        esac
+        ;;
+    esac
+  else
+    FM_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
+    case "$FM_DRILL_COARSE_STATUS" in
+      unknown|'') : ;;
+      *) FM_DRILL_RUN_SOURCE=coarse ;;
+    esac
+  fi
+}
+
+# Lifecycle of the captured run, not the dispatch record or CI-ready task view.
+fm_drill_current_run_state() {
+  local status outcome
+  case "$FM_DRILL_RUN_SOURCE" in
+    coarse)
+      case "$FM_DRILL_COARSE_STATUS" in
+        running) printf 'active' ;;
+        completed|failed|cancelled) printf 'terminal' ;;
+        *) printf 'unknown' ;;
+      esac ;;
+    full)
+      status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
+      outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")
+      case "$status:$outcome" in
+        *:passed|*:checks-passed|*:failed|*:cancelled|completed:|failed:|cancelled:) printf 'terminal' ;;
+        *:) printf 'active' ;;
+        *) printf 'unknown' ;;
+      esac ;;
+    *) printf 'unknown' ;;
+  esac
+}

@@ -22,7 +22,9 @@ assert_eq "$("$EXEC" get task)" claimed
 assert_eq "$("$EXEC" running task)" running
 assert_eq "$("$EXEC" retry task)" retry_queued
 assert_eq "$("$EXEC" claim task)" claimed
+assert_eq "$(grep '^exec_next_retry_at=' "$STATE/task.exec")" 'exec_next_retry_at='
 assert_eq "$("$EXEC" running task)" running
+assert_eq "$(grep '^exec_next_retry_at=' "$STATE/task.exec")" 'exec_next_retry_at='
 assert_eq "$("$EXEC" release task)" released
 assert_eq "$("$EXEC" release task)" released
 

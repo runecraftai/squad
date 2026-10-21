@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Manage the per-attempt execution state sidecar at state/<id>.exec.
 #
-# Usage: sq-exec-state.sh get|claim|running|retry|release|after_run|heartbeat|recover <id>
+# Usage: sq-exec-state.sh get|get-recorded|claim|running|retry|release|after_run|heartbeat|recover <id>
+# get projects a current attributed Drill run over the dispatch record;
+# get-recorded reads only that record. A released id remains undispatchable.
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
@@ -21,11 +23,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+# shellcheck source=bin/sq-drill-run-lib.sh
+. "$SCRIPT_DIR/sq-drill-run-lib.sh"
 STALE_AFTER="${SQUAD_EXEC_STALE_AFTER:-300}"
 case "$STALE_AFTER" in ''|*[!0-9]*) STALE_AFTER=300 ;; esac
 
 usage() {
-  printf '%s\n' "usage: sq-exec-state.sh {get|claim|running|retry|release|after_run|heartbeat|recover|transition|recover-all} <id> [state]"
+  printf '%s\n' "usage: sq-exec-state.sh {get|get-recorded|claim|running|retry|release|after_run|heartbeat|recover|transition|recover-all} <id> [state]"
 }
 valid_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac; }
 valid_state() { case "$1" in unclaimed|claimed|running|retry_queued|released) return 0 ;; *) return 1 ;; esac; }
@@ -36,7 +40,31 @@ get_field() { grep "^$1=" "$(path_for "$2")" 2>/dev/null | tail -1 | cut -d= -f2
 meta_field() { grep "^$1=" "$STATE/$2.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
 get_state() { local value; value=$(get_field exec_state "$1"); printf '%s\n' "${value:-unclaimed}"; }
 
-terminal_status() {  # <id>: 0 only for a last nonblank done: or failed: line
+# Active run evidence is independent of endpoint liveness and stale events.
+# Unknown/unattributed queries leave the existing dispatch semantics unchanged.
+task_run_state() {  # <id> -> active|terminal|unknown
+  local wt kind timeout_secs limit
+  wt=$(meta_field worktree "$1")
+  kind=$(meta_field kind "$1")
+  case "$kind" in ''|strike) ;; *) printf 'unknown'; return ;; esac
+  [ -n "$wt" ] && [ -d "$wt" ] || { printf 'unknown'; return; }
+  timeout_secs=${SQUAD_CREW_STATE_DRILL_TIMEOUT:-10}
+  limit=${SQUAD_CREW_STATE_RUNS_LIMIT:-200}
+  case "$timeout_secs" in ''|*[!0-9]*) timeout_secs=10 ;; esac
+  case "$limit" in ''|*[!0-9]*) limit=200 ;; esac
+  fm_drill_current_run "$wt" "$timeout_secs" "$limit"
+  fm_drill_current_run_state
+}
+
+reported_state() {
+  case "$(task_run_state "$1")" in
+    active) printf 'running\n' ;;
+    terminal) printf 'released\n' ;;
+    *) get_state "$1" ;;
+  esac
+}
+
+terminal_status() {  # <id>: last terminal event, unless a bound run resumed
   local line verb pr
   line=$(grep -v '^[[:space:]]*$' "$STATE/$1.status" 2>/dev/null | tail -1 || true)
   pr=$(meta_field pr "$1")
@@ -45,7 +73,10 @@ terminal_status() {  # <id>: 0 only for a last nonblank done: or failed: line
   verb=${verb%%[key=*}
   verb=${verb#"${verb%%[![:space:]]*}"}
   # PR metadata is corroborating only; local and recon deliveries need none.
-  case "$verb:$pr" in done:*|failed:*) return 0 ;; *) return 1 ;; esac
+  case "$verb:$pr" in
+    done:*|failed:*) [ "$(task_run_state "$1")" != active ] ;;
+    *) return 1 ;;
+  esac
 }
 
 with_lock() {
@@ -88,7 +119,8 @@ write_record() {
   fi
   max_retries=$(get_field exec_max_retries "$id"); [ -n "$max_retries" ] || max_retries=3
   error=${SQUAD_EXEC_ERROR:-$(get_field exec_error "$id")}
-  next_retry=$(get_field exec_next_retry_at "$id")
+  # A retry deadline only describes a queued attempt, never one that started.
+  next_retry=
   [ "$state" = claimed ] && attempt=$((attempt + 1))
   if [ "$state" = retry_queued ]; then
     local backoff=${SQUAD_RETRY_BACKOFF_BASE:-10} cap=${SQUAD_RETRY_BACKOFF_MAX:-300} n
@@ -126,6 +158,15 @@ write_record() {
 claim_locked() {
   local id=$1 state
   state=$(get_state "$id")
+  case "$(task_run_state "$id")" in
+    active)
+      printf 'error: task %s already has an active run\n' "$id" >&2
+      return 1 ;;
+    terminal)
+      transition_locked "$id" released >/dev/null
+      printf 'error: task %s has a terminal run\n' "$id" >&2
+      return 1 ;;
+  esac
   if terminal_status "$id"; then
     transition_locked "$id" released >/dev/null
     printf 'error: task %s has terminal status\n' "$id" >&2
@@ -172,6 +213,23 @@ _heartbeat() {
 recover_locked() {
   local id=$1 current age now last
   current=$(get_state "$id")
+  case "$(task_run_state "$id")" in
+    active)
+      # Repair only through existing transitions. Released is immutable for
+      # dispatch, even though its live run still projects as running in get.
+      case "$current" in
+        retry_queued)
+          transition_locked "$id" claimed >/dev/null
+          transition_locked "$id" running >/dev/null ;;
+        claimed) transition_locked "$id" running >/dev/null ;;
+        running) write_record "$id" running "$current" ;;
+      esac
+      printf 'running\n'
+      return ;;
+    terminal)
+      transition_locked "$id" released
+      return ;;
+  esac
   case "$current" in
     running|claimed|retry_queued)
       if terminal_status "$id"; then
@@ -216,7 +274,8 @@ case "$cmd" in
       with_lock "$id" recover_locked "$id" >/dev/null || true
     done
     ;;
-  get) valid_id "$id" || { usage >&2; exit 2; }; get_state "$id" ;;
+  get) valid_id "$id" || { usage >&2; exit 2; }; reported_state "$id" ;;
+  get-recorded) valid_id "$id" || { usage >&2; exit 2; }; get_state "$id" ;;
   claim) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" claim_locked "$id" ;;
   running) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" running ;;
   retry|retry_queued) valid_id "$id" || { usage >&2; exit 2; }; with_lock "$id" transition_locked "$id" retry_queued ;;

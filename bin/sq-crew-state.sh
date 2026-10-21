@@ -28,10 +28,8 @@
 #      is an ancestor of the run head (pipeline fix commits advanced the run on
 #      the same line of history). Local work that advanced past the run head, or
 #      diverged from it, invalidates attribution.
-#      After a pipeline rebase, the matcher can still bind an earlier failed
-#      execution if the operator's commit is no longer an ancestor of the new
-#      head; before treating `failed` as current, inspect
-#      `~/.drill/logs/<run-id>/review.log` and whether the review's pi process is alive.
+#      Terminal snapshots are checked against the newest same-branch listing;
+#      a newer bound running execution supersedes an earlier terminal result.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
@@ -102,7 +100,7 @@ emit() {  # <state> <source> [detail]
 # --- meta resolution --------------------------------------------------------
 
 [ -f "$META" ] || emit unknown none "no metadata for $ID"
-EXEC_STATE=$("$EXEC_STATE_BIN" get "$ID" 2>/dev/null || printf 'unclaimed')
+EXEC_STATE=$("$EXEC_STATE_BIN" get-recorded "$ID" 2>/dev/null || printf 'unclaimed')
 
 meta_value() {  # <key>
   grep "^$1=" "$META" 2>/dev/null | tail -1 | cut -d= -f2- || true
@@ -318,64 +316,6 @@ drill_ci_checks_state() {
     *) printf 'unknown' ;;
   esac
 }
-# Coarse fallback for cross-branch attribution. `drill axi status` (bare)
-# reports the active-or-most-recent run for the CURRENT branch when one
-# exists, else falls back to some other branch's run purely as informational
-# display (verified empirically: querying a worktree with its own active run
-# reliably returns that run, even under concurrent load from several other
-# validating operators on the same underlying repo). A crew whose branch genuinely
-# has no run yet therefore sees another branch's answer here.
-#
-# This fallback used to shell out to `drill axi` (bare, no subcommand)
-# expecting a `runs[N]{id,branch,status,...}:` TOON table and re-query the
-# matched id via `axi status --run <id>`. Verified against the real installed
-# CLI (v1.32.2): the `axi` surface exposes only abort/logs/respond/run/status -
-# there is no runs-listing subcommand under `axi` at all, so that table never
-# appears and the lookup was silently dead code; whenever the bare `axi
-# status` answer was not this crew's own branch, attribution always failed and
-# the caller fell straight through to the pane/log fallback below. (The
-# PRIMARY cause of the 2026-07 herdr false-surface incidents turned out to be
-# a separate bug in bin/sq-sentry.sh's stale_is_terminal precedence - see that
-# file's history - but this cross-branch path was independently confirmed
-# dead code and is worth having actually work.)
-#
-# The real run-listing command is the top-level `drill runs` (verified:
-# `drill --help` lists it separately from `axi`). It is plain, human-
-# oriented text - no run id, no JSON/TOON, newest-first, columns
-# "<status> <branch> <short-sha> <date> [<pr-url>]" separated by runs of
-# spaces (verified: no quoting, so splitting on the first two whitespace runs
-# is exact) - but branch + coarse status is exactly what this predicate needs:
-# is a run for THIS branch active right now. Echoes the first (most recent)
-# matching row's status word (running/completed/cancelled/failed), or empty
-# when the branch has no run within SQUAD_CREW_STATE_RUNS_LIMIT rows.
-drill_runs_status_for_branch() {  # <branch>
-  local branch=$1 out row st rest br sha
-  out=$(drill_run runs --limit "$SQUAD_CREW_STATE_RUNS_LIMIT")
-  [ -n "$out" ] || return 0
-  while IFS= read -r row; do
-    row=$(trim "$row")
-    [ -n "$row" ] || continue
-    st=${row%% *}
-    rest=${row#* }
-    rest=$(trim "$rest")
-    br=${rest%% *}
-    rest=${rest#* }
-    rest=$(trim "$rest")
-    sha=${rest%% *}
-    if [ "$br" = "$branch" ]; then
-      # Only the newest same-branch run is eligible; an unbindable head makes
-      # attribution unknown rather than exposing an older terminal execution.
-      if [ -z "$sha" ] || ! drill_coarse_head_matches_worktree "$sha"; then
-        printf 'unknown'
-        return 0
-      fi
-      printf '%s' "$st"
-      return 0
-    fi
-  done <<< "$out"
-  return 0
-}
-
 # Sidecar file for the drill run's structured pr field. The snapshot reads
 # this rather than parsing drill output directly, keeping the crew-state
 # output contract stable and the drill trust boundary clean.
@@ -395,71 +335,28 @@ drill_pr_sidecar_clear() { # <state-dir> <task-id>
   rm -f -- "$(drill_pr_sidecar "$1" "$2")"
 }
 
-# CREW_BRANCH is empty at detached HEAD (a just-spawned crew, or a recon's
-# scratch worktree); with no branch there is no run to attribute to this crew.
-CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-
-# 0 if the active axi-status run's head field matches this worktree's code
-# identity. Branch match is a precondition (caller). Rule owned by
-# fm_drill_head_matches_worktree in bin/sq-drill-run-lib.sh.
-drill_run_head_matches_worktree() {
-  local run_head
-  run_head=$(strip_quotes "$(drill_field head)")
-  fm_drill_head_matches_worktree "$WT" "$run_head"
-}
-
-# Coarse runs-list rows are "<status> <branch> <short-sha> ...". 0 if the short
-# sha for this branch row matches the worktree head under the same rules as
-# drill_run_head_matches_worktree (equal, or local is ancestor of run tip).
-drill_coarse_head_matches_worktree() {  # <short-sha>
-  fm_drill_head_matches_worktree "$WT" "$1"
-}
-
 HAVE_RUN=0
-# RUN_SOURCE distinguishes the two ways HAVE_RUN=1 can happen: "full" means
-# $RUN_OUT is real `axi status` TOON with step/gate detail; "coarse" means only
-# a bare status word came back from the runs-list fallback above, so the
-# run-step block below skips the TOON field parsing entirely for this crew.
 RUN_SOURCE=full
-COARSE_STATUS=""
-# Scouts and XOs never drive a drill validation of their own
-# worktree, so skip the lookup for them and read state from pane/log directly.
-if [ "$KIND" = strike ] && [ -n "$CREW_BRANCH" ] && command -v drill >/dev/null 2>&1; then
-  RUN_OUT=$(drill_run axi status)
-  if [ -n "$RUN_OUT" ]; then
-    run_branch=$(strip_quotes "$(drill_field branch)")
-    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] && drill_run_head_matches_worktree; then
-      run_status=$(strip_quotes "$(drill_field status)")
-      run_outcome=$(strip_quotes "$(drill_field outcome)")
-      if [ "$run_status" = failed ] || [ "$run_status" = cancelled ] || [ "$run_status" = completed ] || [ "$run_outcome" = failed ] || [ "$run_outcome" = passed ]; then
-        COARSE_STATUS=$(drill_runs_status_for_branch "$CREW_BRANCH")
-        case "$COARSE_STATUS" in
-          unknown|'') emit unknown none "latest same-branch execution could not be verified" ;;
-          *) HAVE_RUN=1 ;;
-        esac
-      else
-        HAVE_RUN=1
-      fi
-    else
-      # The active-or-most-recent run is for another branch, or same branch with
-      # a rewritten/diverged head (the CLI is alive and answered; only the
-      # attribution missed) - try the coarse fallback.
-      # Deliberately nested inside `[ -n "$RUN_OUT" ]`: an empty/timed-out
-      # primary call means the CLI itself did not respond, so retrying it
-      # immediately with a second bounded call would just double the wait
-      # for no better answer.
-      COARSE_STATUS=$(drill_runs_status_for_branch "$CREW_BRANCH")
-      if [ -n "$COARSE_STATUS" ] && [ "$COARSE_STATUS" != unknown ]; then
-        HAVE_RUN=1
-        RUN_SOURCE=coarse
-      fi
-    fi
-  fi
+COARSE_STATUS=
+if [ "$KIND" = strike ] && command -v drill >/dev/null 2>&1; then
+  fm_drill_current_run "$WT" "$DRILL_TIMEOUT" "$SQUAD_CREW_STATE_RUNS_LIMIT"
+  RUN_OUT=$FM_DRILL_RUN_OUT
+  COARSE_STATUS=$FM_DRILL_COARSE_STATUS
+  case "$FM_DRILL_RUN_SOURCE" in
+    full|coarse) HAVE_RUN=1; RUN_SOURCE=$FM_DRILL_RUN_SOURCE ;;
+    unverified) emit unknown none "latest same-branch execution could not be verified" ;;
+  esac
 fi
 
 # --- run-step authoritative path -------------------------------------------
 
 if [ "$HAVE_RUN" = 1 ]; then
+  # Project the run before any early CI-ready return. A released dispatch id
+  # remains immutable, even when a run for its branch is still active.
+  case "$(fm_drill_current_run_state)" in
+    active) EXEC_STATE=running ;;
+    terminal) EXEC_STATE=released ;;
+  esac
   RUN_STATE=working
   RUN_DETAIL=""
   CI_STEP_STATUS=""
