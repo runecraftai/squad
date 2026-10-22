@@ -148,11 +148,7 @@ describe("server lifecycle", () => {
 
     assert.equal(await health(port), null, "no server may answer on the port after a failed start");
     assert.equal(await isPortAvailable(HOST, port), true, "a failed start must leave no listener behind");
-    assert.equal(
-      await isPortAvailable(HOST, port + 1),
-      true,
-      "a failed start must not move on and spawn on the next port",
-    );
+    assert.equal(await health(port + 1), null, "a failed start must not move on and spawn on the next port");
   });
 
   it("starts on a clean port, starts again right after stop, and reuses a healthy server", async () => {

@@ -1158,11 +1158,18 @@ export async function ensureServer({ forceRestart = false, version = VERSION } =
     if (health) return baseUrl;
     // The child is detached so a healthy server outlives this CLI. One that never became
     // healthy must not: reap it so a failed open leaves nothing holding the port.
-    const exitedEarly = childExited(child);
+    const spawnError = childSpawnError(child);
+    const exitedEarly = !spawnError && childExited(child);
     await stopSpawnedServer(child);
-    // An early exit is usually a lost bind race on this port, so the next port may work.
-    // A child that stayed up but never answered as this CLI's version will not do better
-    // on another port, so stop here instead of leaving a trail of attempts.
+    // A failed spawn never produced a process to retry, and a child that stayed up but
+    // never answered as this CLI's version will not do better on another port, so both stop
+    // here instead of leaving a trail of attempts. Only an early exit (usually a lost bind
+    // race on this port) moves on to the next port.
+    if (spawnError) {
+      throw new AxiError(`sq-report server did not start: ${spawnError.message}`, "SERVER_ERROR", [
+        `Verify sq-report can be executed, then retry: \`sq-report server --port ${port}\``,
+      ]);
+    }
     if (!exitedEarly) {
       throw new AxiError("sq-report server did not start", "SERVER_ERROR", [
         `Inspect ${serverLogFile()} or run \`sq-report server --port ${port}\` to see server startup`,
@@ -1186,8 +1193,16 @@ async function waitForServerHealth(baseUrl, version, timeoutMs, child = null) {
   return null;
 }
 
+// A spawn failure arrives as an `error` event, never as an exit, so record it separately:
+// without a listener Node would throw it as an uncaught exception.
+const spawnFailures = new WeakMap();
+
+function childSpawnError(child) {
+  return spawnFailures.get(child) ?? null;
+}
+
 function childExited(child) {
-  return child.exitCode !== null || child.signalCode !== null;
+  return spawnFailures.has(child) || child.exitCode !== null || child.signalCode !== null;
 }
 
 // Terminates a server child this CLI spawned, including its detached process group, and
@@ -1353,6 +1368,7 @@ async function startServer(port) {
   }
   try {
     const child = spawn(process.execPath, [entry, "server", "--port", String(port)], createServerSpawnOptions(logFd));
+    child.once("error", (error) => spawnFailures.set(child, error));
     child.unref();
     return child;
   } finally {
