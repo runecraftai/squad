@@ -140,7 +140,7 @@ fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
     status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
     outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")
     case "$status:$outcome" in
-      failed:*|cancelled:*|completed:*|*:failed|*:passed|*:cancelled)
+      failed:*|cancelled:*|completed:*|*:failed|*:passed|*:checks-passed|*:cancelled)
         FM_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
         case "$FM_DRILL_COARSE_STATUS" in
           unknown|'') FM_DRILL_RUN_SOURCE=unverified ;;

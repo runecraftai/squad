@@ -5,6 +5,7 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
+- Fix Squad reporting execution state that contradicted the task's current Drill run: `bin/sq-crew-state.sh` now prefers the branch/head-bound run-step over a stale terminal status line, names `source: run-step` for the run it used, `bin/sq-exec-state.sh get` projects that run's lifecycle while `get-recorded` keeps the raw dispatch record, a retry deadline is cleared once the retry actually starts, and recovery repairs only queued/claimed/running attempts through existing transitions so a released id is never resurrected. A newer bound running run on the same branch replaces an older terminal snapshot, while unrelated or divergent runs stay untrusted; busy/paused precedence and escalation thresholds are unchanged.
 - Fix drill operators stopping after failed-run custody recovery: generated instructions now use [`sq-drill-drive.sh`](bin/sq-drill-drive.sh) for bounded continuation without bypassing approval gates.
   Automatic resume is deliberately limited to unpublished custody recovery; a run that stopped after the pipeline pushed (behind/synchronized) reports blocked instead of auto-syncing because published-branch sync and divergence require separate authorization.
   The reported state is the value exposed by `axi status` when available; synchronized post-push state may be omitted there.

@@ -327,6 +327,24 @@ run:
 EOF
 }
 
+run_ci_checks_passed() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: running
+  head: "${SQUAD_FAKE_RUN_HEAD:-abc1234}"
+  pr: "https://github.com/o/r/pull/2"
+  findings: none
+  steps[4]{step,status,findings,duration_ms}:
+    intent,completed,0,0
+    review,completed,0,0
+    push,completed,0,0
+    ci,running,0,0
+outcome: checks-passed
+EOF
+}
+
 run_fixing_ci_running() {  # <branch>
   cat <<EOF
 run:
@@ -1423,6 +1441,15 @@ test_newest_running_run_overrides_older_terminal_snapshot() {
   [ "$state" = released ] || fail "exec get ignores terminal run with busy pane: $state"
   state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" recover newer)
   [ "$state" = released ] || fail "terminal run did not retire queued record: $state"
+  SQUAD_FAKE_RUNS_LIST="completed sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_checks_passed sq/newer-active)"
+  out=$(run_crew_state "$d" newer)
+  assert_contains "$out" 'state: done' 'checks-passed completion report stays done'
+  SQUAD_FAKE_RUNS_LIST="running sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  out=$(run_crew_state "$d" newer)
+  assert_contains "$out" 'state: working' 'newer active run supersedes older checks-passed snapshot'
+  assert_contains "$out" 'source: run-step' 'superseding checks-passed verdict is attributed'
+  assert_contains "$out" 'exec_state=running' 'newer active execution overrides checks-passed record'
   SQUAD_FAKE_AXI_STATUS="$(run_running sq/another-branch)"
   SQUAD_FAKE_RUNS_LIST="running sq/another-branch ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
   printf 'exec_state=retry_queued\nexec_next_retry_at=1\n' > "$d/state/newer.exec"
