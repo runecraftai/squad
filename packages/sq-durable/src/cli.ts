@@ -26,8 +26,8 @@ Terminal surface (every command talks to the service socket):
   sq-durable ledger --store DIR                laboratory executor ledger, read from its own file
 
 Every command accepts --json. Exit codes: 0 ok; 1 usage or internal error; 2 definitive refusal (conflict, stale
-revision, not found, invalid); 3 service stopped, starting or failed (for answer: the decision was NOT recorded);
-4 protocol major version mismatch.
+revision, not found, invalid); 3 service stopped, starting or failed (for answer: whether the decision was recorded is
+unconfirmed, so resend the same --response-id or read 'sq-durable receipt'); 4 protocol major version mismatch.
 
 Laboratory stores only (init --lab): SQ_DURABLE_LAB_FAULT=<point>[@n],... makes the service SIGKILL itself at named
 points; SQ_DURABLE_LAB_HOLD=resume keeps it alive without resume().`;
@@ -53,6 +53,14 @@ function print(flags: Flags, value: unknown, human?: string): void {
 function required(flags: Flags, name: string): string {
 	const value = flags[name];
 	if (typeof value !== "string" || value === "") throw new UsageError(`--${name} is required`);
+	return value;
+}
+
+function numberFlag(flags: Flags, name: string, fallback: number, minimum: number): number {
+	const raw = flags[name];
+	if (raw === undefined) return fallback;
+	const value = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
+	if (!Number.isFinite(value) || value < minimum) throw new UsageError(`--${name} must be a number of at least ${minimum}`);
 	return value;
 }
 
@@ -85,7 +93,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ready(flags: Flags): Promise<number> {
 	const socket = socketOf(flags);
-	const waitMs = typeof flags.wait === "string" ? Number(flags.wait) * 1000 : 0;
+	const waitMs = numberFlag(flags, "wait", 0, 0) * 1000;
 	const deadline = Date.now() + waitMs;
 	let last: unknown = { state: "stopped", reasons: ["no service answers on the socket"] };
 	for (;;) {
@@ -113,8 +121,9 @@ async function ready(flags: Flags): Promise<number> {
 
 /**
  * Resend the same answer, with the same responseId, until the service returns a receipt or a definitive refusal. A
- * service that is stopped or not ready means "not recorded"; the resend is harmless because the first recorded decision
- * wins and a repeat returns its receipt.
+ * service that is stopped or not ready only means the recording is unconfirmed: the decision may have been committed
+ * just before the service died. The resend is harmless because the first recorded decision wins and a repeat returns its
+ * receipt.
  */
 async function answer(flags: Flags): Promise<number> {
 	const socket = socketOf(flags);
@@ -126,7 +135,7 @@ async function answer(flags: Flags): Promise<number> {
 		origin: terminalOrigin(safeUser()),
 		...(typeof flags["action-digest"] === "string" ? { actionDigest: flags["action-digest"] } : {}),
 	};
-	const deadline = Date.now() + (typeof flags.timeout === "string" ? Number(flags.timeout) : 15) * 1000;
+	const deadline = Date.now() + numberFlag(flags, "timeout", 15, 0) * 1000;
 	let reason = "";
 	for (;;) {
 		try {
@@ -145,11 +154,11 @@ async function answer(flags: Flags): Promise<number> {
 			reason = error.message;
 		}
 		if (Date.now() >= deadline) break;
-		process.stderr.write(`not recorded yet (${reason}); resending responseId ${args.responseId}\n`);
+		process.stderr.write(`answer not confirmed yet (${reason}); resending responseId ${args.responseId}\n`);
 		await sleep(250);
 	}
-	print(flags, { recorded: false, responseId: args.responseId, reason });
-	process.stderr.write(`not recorded: ${reason}\n`);
+	print(flags, { confirmed: false, responseId: args.responseId, reason });
+	process.stderr.write(`answer not confirmed: ${reason}; the decision may still be recorded, resend responseId ${args.responseId} or read \`sq-durable receipt\`\n`);
 	return 3;
 }
 
@@ -201,8 +210,8 @@ async function main(argv: string[]): Promise<number> {
 		}
 		case "serve": {
 			const { runService, StartRefused } = await import("./service/main.js");
-			const pollMs = typeof flags["poll-ms"] === "string" ? Number(flags["poll-ms"]) : 1_000;
-			if (!Number.isInteger(pollMs) || pollMs < 50) throw new UsageError("--poll-ms must be an integer of at least 50");
+			const pollMs = numberFlag(flags, "poll-ms", 1_000, 50);
+			if (!Number.isInteger(pollMs)) throw new UsageError("--poll-ms must be an integer of at least 50");
 			try {
 				await runService({ storeDir: required(flags, "store"), pollMs, env: process.env });
 			} catch (error) {
