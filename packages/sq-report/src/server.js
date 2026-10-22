@@ -67,8 +67,8 @@ const designAssetUrls = {
 };
 
 // Single source of truth for the server-reported version.
-// Read from package.json at startup so the server always agrees with the
-// installed package version regardless of build-time injection staleness.
+// The build inlines package.json's version; only source runs fall back to reading
+// package.json, so a stale bundle and the source tree can legitimately disagree.
 const SERVER_VERSION =
   process.env.SQ_REPORT_BUILD_VERSION ||
   JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
