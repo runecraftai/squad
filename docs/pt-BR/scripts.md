@@ -98,7 +98,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-breaker-lib.sh`    | Política compartilhada de escada de circuit-breaker sem efeitos colaterais usada por `sq-breaker.sh` |
 | `sq-cost.sh`           | Precificar sessões de operadores e invocações do pipeline Drill por provedor/modelo, renderizar relatórios de uso por tarefa e publicar um comentário idempotente no PR |
 | `sq-cost-lib.sh`       | Parsing compartilhado de transcrições Claude, sessões Pi e invocações Drill, atribuição, normalização de modelo e preços por modelo usada por `sq-cost.sh` |
-| `sq-drill-run-lib.sh`       | Atribuição compartilhada de identidade de branch-e-código para execuções drill                    |
+| `sq-drill-run-lib.sh`       | Atribuição compartilhada de execuções drill e ciclo de vida da execução atual                    |
 | `sq-tangle-lib.sh`       | Resolução compartilhada de branch default e classificação de tangle de checkout primário          |
 | `sq-timeout-lib.sh`      | Único dono da execução de comandos com limite rígido e seu watchdog fallback |
 | `sq-timing-lib.sh`       | Único dono dos registros de tempo decorrido por passo do estágio de rede diferido, inerte a menos que uma execução os peça |

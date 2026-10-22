@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Shared drill axi run attribution primitives.
+# Shared drill axi run attribution and current-run lifecycle primitives.
 #
 # ONE owner for the branch+code-identity matching rule that decides whether a
-# drill run belongs to a given worktree, used by sq-crew-state.sh
-# (read-only current-state reporting) and sq-teardown.sh (pre-teardown run
-# abort, see its "Fix 1" header comment). Getting this wrong in either
-# direction is unsafe: a false negative hides a genuinely parked run, and a
-# false positive lets teardown act on a run it does not own.
+# drill run belongs to a given worktree, and for the current-run capture built
+# on it (source, lifecycle, gate-parked detail, and the reported exec state
+# projected from it). Used by sq-crew-state.sh (read-only current-state
+# reporting), sq-exec-state.sh (dispatch claim, recovery, and that projection),
+# and sq-teardown.sh (pre-teardown run abort, see its "Fix 1" header comment).
+# Getting this wrong in either direction is unsafe: a false negative hides a
+# genuinely parked run, and a false positive lets teardown act on a run it does
+# not own.
 #
 # Bounded call to `drill "$@"` in dir $1, timeout $2 seconds. The bounded
 # form preserves stdout, stderr, and exit status; the checked form discards
