@@ -25,6 +25,8 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sq-pending-reply-lib.sh
 . "$SCRIPT_DIR/sq-pending-reply-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 usage() {
   cat <<'EOF' >&2
@@ -46,6 +48,8 @@ STATUS_FILE=$1
 VERB=$2
 CORR=$3
 shift 3
+custody_id=${STATUS_FILE##*/}
+durable_custody_check "${custody_id%.status}" xo-routing || exit 3
 
 case "$CORR" in
   corr=*) CORR=${CORR#corr=} ;;

@@ -86,6 +86,14 @@ _SQUAD_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/de
 . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-tmux-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
 . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-durable-custody.sh"
+
+# An XO's parent status belongs to an XO task, and a durable mission is never an XO.
+fm_pending_reply_parent_custody() {  # <parent-status-file>
+  local id=${1##*/}
+  durable_custody_check "${id%.status}" xo-routing
+}
 
 SQUAD_PENDING_REPLY_SCHEMA='sq-pending-reply.v1'
 SQUAD_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
@@ -927,6 +935,7 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
       open_note=${open_note#*$'\t'}
       [ "$open_note" = "$note" ] || continue
       line="resolved [key=$key]: pending-reply-resolved: task=$(fm_pending_reply_get "$rec" task_id) pending-reply-id=$corr via=$(fm_pending_reply_get "$rec" resolved_via)"
+      fm_pending_reply_parent_custody "$parent_status" || return 1
       status_line_append "$parent_status" "$line" 2>/dev/null || return 1
       break
     done <<EOF
@@ -990,6 +999,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   esac
   payload=$(fm_pending_reply_escalation_payload "$rec" "$kind") || return 1
   [ -n "$parent_status" ] || return 1
+  fm_pending_reply_parent_custody "$parent_status" || return 1
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
   line="blocked [key=$(fm_pending_reply_escalation_key "$corr")]: $payload"
   if ! grep -Fqx "$line" "$parent_status" 2>/dev/null; then

@@ -19,6 +19,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 MODE=
 YOLO=
@@ -68,8 +70,10 @@ case "$YOLO" in
   *) echo "error: --yolo must be on or off (got '$YOLO')" >&2; exit 1 ;;
 esac
 
-"$SQUAD_ROOT/bin/sq-guard.sh" || true
 ID=${POS[0]}
+# Promotion redefines the task, which for a durable mission needs its admission.
+durable_custody_check "$ID" admission || exit 3
+"$SQUAD_ROOT/bin/sq-guard.sh" || true
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 grep -qx 'kind=recon' "$META" || { echo "error: task $ID is not a recon task (kind=recon not in meta)" >&2; exit 1; }

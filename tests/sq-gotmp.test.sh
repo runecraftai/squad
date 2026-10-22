@@ -65,6 +65,8 @@ make_fake_root() {
   ln -s "$ROOT/bin/sq-gate-refuse-lib.sh" "$fake/bin/sq-gate-refuse-lib.sh"
   # sq-pr-lib.sh: teardown uses its canonical task-ID validator for poll cleanup.
   ln -s "$ROOT/bin/sq-pr-lib.sh" "$fake/bin/sq-pr-lib.sh"
+  # sq-durable-custody.sh: teardown and sq-pr-lib.sh consult durable custody first.
+  ln -s "$ROOT/bin/sq-durable-custody.sh" "$fake/bin/sq-durable-custody.sh"
   # sq-public-followup-lib.sh (and the sq-x-lib.sh it sources): teardown sources
   # it for the relay-activation gate on the promised-public-reply check. Neither
   # does anything in this fixture, which has no .env, but both are real siblings
@@ -142,6 +144,8 @@ test_teardown_skips_gracefully_without_tasktmp() {
   ln -s "$ROOT/bin/sq-gate-refuse-lib.sh" "$fake/bin/sq-gate-refuse-lib.sh"
   # sq-pr-lib.sh: teardown uses its canonical task-ID validator for poll cleanup.
   ln -s "$ROOT/bin/sq-pr-lib.sh" "$fake/bin/sq-pr-lib.sh"
+  # sq-durable-custody.sh: teardown and sq-pr-lib.sh consult durable custody first.
+  ln -s "$ROOT/bin/sq-durable-custody.sh" "$fake/bin/sq-durable-custody.sh"
   # sq-public-followup-lib.sh (and the sq-x-lib.sh it sources): teardown sources
   # it for the relay-activation gate on the promised-public-reply check. Neither
   # does anything in this fixture, which has no .env, but both are real siblings

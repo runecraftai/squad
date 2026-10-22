@@ -53,6 +53,8 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 # shellcheck source=bin/sq-tasks-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/sq-tasks-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 usage() {
   awk '
@@ -502,6 +504,11 @@ command_reconcile() {
   verify_hold_resolved "$id" || fail "commander hold $id did not retain its reconciliation record"
   printf 'reconciled: %s\n' "$id"
 }
+
+# A durable mission's decisions and their holds belong to the durable core.
+case "${1:-}" in
+  hold|complete|resolve|reconcile) durable_custody_check "${2:-}" approval || exit 3 ;;
+esac
 
 case "${1:-}" in
   id) shift; command_id "$@" ;;

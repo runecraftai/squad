@@ -17,6 +17,8 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-$SQUAD_ROOT}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 ID=${1-}
 RID=${2-}
@@ -30,6 +32,7 @@ fm_pr_task_id_valid "$ID" || {
   printf 'sq-mcp-link: unsafe task id: %s\n' "$ID" >&2
   exit 2
 }
+durable_custody_check "$ID" metadata || exit 3
 case "$RID" in
   ''|.*|*[!A-Za-z0-9._-]*)
     printf 'sq-mcp-link: unsafe request-id: %s\n' "$RID" >&2

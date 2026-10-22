@@ -16,8 +16,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
-"$SQUAD_ROOT/bin/sq-guard.sh" || true
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 ID=${1:?usage: sq-merge-local.sh <task-id>}
+# Landing a durable mission belongs to the durable core; a direct call is refused
+# before anything else runs.
+durable_custody_check "$ID" landing || exit 3
+"$SQUAD_ROOT/bin/sq-guard.sh" || true
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 

@@ -70,6 +70,8 @@ DOCUMENT_LOCAL_FAILURE=2
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
 # shellcheck source=bin/sq-pending-reply-lib.sh
 . "$SCRIPT_DIR/sq-pending-reply-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -284,6 +286,8 @@ normalize_payload() { # <source> <destination>
 # raises itself - is at most once on exact bytes.
 # Returns 0 appended, 1 already present, 2 the write itself failed.
 append_status_once() { # <status-file> <line>
+  local custody_id=${1##*/}
+  durable_custody_check "${custody_id%.status}" xo-routing || return 2
   grep -Fqx -- "$2" "$1" 2>/dev/null && return 1
   status_line_append "$1" "$2" || return 2
   return 0

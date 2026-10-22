@@ -62,6 +62,8 @@ MAIN_BACKLOG="$DATA/backlog.md"
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 ACTIVE_HANDOFF_LOCK=
 ACTIVE_REGISTRY_LOCK=
@@ -92,6 +94,10 @@ else
   [ "$#" -ge 2 ] || { echo "usage: sq-backlog-handoff.sh <XO-id> <item-key>..." >&2; exit 1; }
   ID=$1
   shift
+  # Durable missions never go to an XO: refuse before any backlog moves.
+  for custody_key in "$ID" "$@"; do
+    durable_custody_check "$custody_key" xo-routing || exit 3
+  done
 fi
 
 XO_home() {
@@ -351,6 +357,9 @@ remote_handoff() { # <XO-id> <keys...>
   local -a requested to_move already missing in_flight done_items not_queued
   shift
   requested=("$@")
+  for key in "${requested[@]}"; do
+    durable_custody_check "$key" xo-routing || return 3
+  done
   outbox="$DATA/handoff/$id.outbox.md"
   validate_backlog_file "main backlog" "$MAIN_BACKLOG" || return 1
   validate_backlog_file "remote handoff outbox" "$outbox" || return 1

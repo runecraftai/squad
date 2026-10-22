@@ -127,6 +127,8 @@ fi
 . "$SCRIPT_DIR/sq-classify-lib.sh"
 # shellcheck source=bin/sq-line-cap-lib.sh
 . "$SCRIPT_DIR/sq-line-cap-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 SQUAD_GUARD_CONTINUE_LINE='This is a supervision warning only; the requested message WILL still be sent.' "$SCRIPT_DIR/sq-guard.sh" || true
 
@@ -392,6 +394,14 @@ fm_send_resolve_target() {  # <raw-target>
 }
 
 RAW_TARGET=$1
+# Answering a durable mission's decision belongs to the durable core. Check the
+# named mission before resolving the target, so a missing .meta never turns the
+# answer into a legacy one; the resolved task is checked again below.
+for custody_arg in "$@"; do
+  case "$custody_arg" in
+    --resolve-key|--resolve-key=*) durable_custody_check "${RAW_TARGET#sq-}" approval || exit 3; break ;;
+  esac
+done
 fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
 shift
@@ -470,6 +480,7 @@ if [ -n "$RESOLVE_KEYS" ]; then
     exit 1
   fi
   RESOLVE_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
+  durable_custody_check "$RESOLVE_TASK_ID" approval || exit 3
   RESOLVE_STATUS_FILE="$STATE/$RESOLVE_TASK_ID.status"
   resolve_open_set=$(status_open_decisions "$RESOLVE_STATUS_FILE")
   for k in $RESOLVE_KEYS; do

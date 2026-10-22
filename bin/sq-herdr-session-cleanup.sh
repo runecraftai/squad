@@ -35,6 +35,8 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 fm_backend_source herdr
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 fm_herdr_cleanup_warn() {
   printf 'warning: herdr session-start projection cleanup: %s\n' "$*" >&2
@@ -258,6 +260,13 @@ fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
     "$session" "$workspace" "$tab" "$pane" "$title" "$token" "$home_real" \
     "$journal" "$id" "$version" "$bound_workspace" "$bound_tab" "$bound_pane"; then
     fm_herdr_cleanup_warn "$id preserved because immediate revalidation changed or was unreadable"
+    fm_lock_release "$presentation_lock" || true
+    fm_lock_release "$task_lock" || true
+    return 0
+  fi
+  # Absent task metadata never licenses cleanup of a durable mission's pane or journal.
+  if ! durable_custody_check "$id" cleanup; then
+    fm_herdr_cleanup_warn "$id preserved because its cleanup belongs to the durable core"
     fm_lock_release "$presentation_lock" || true
     fm_lock_release "$task_lock" || true
     return 0

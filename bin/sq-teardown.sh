@@ -195,12 +195,19 @@ SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
 fi
 ID=$1
 FORCE=${2:-}
+# Conditioned cleanup: a durable mission's records, endpoint and copy go only
+# once the durable core confirms it is terminal with every effect reconciled.
+# --force never bypasses this; discarding a durable mission's work first needs
+# its cancellation through the durable core.
+durable_custody_check "$ID" cleanup || exit 3
 # Fail closed before any unit mutation: a drill gate agent must never tear
 # down a worktree (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent

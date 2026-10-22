@@ -24,11 +24,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
 . "$SCRIPT_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 usage() { awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; }
 case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 ID=${1:-}; ACTION=${2:-}
 case "$ID" in ''|*[!a-zA-Z0-9_-]*) usage >&2; exit 2 ;; esac
+durable_custody_check "$ID" status || exit 3
 case "$ACTION" in run|respond) ;; *) usage >&2; exit 2 ;; esac
 shift 2
 INTENT=

@@ -27,6 +27,10 @@ case "$STALL_TIMEOUT" in ''|*[!0-9]*) STALL_TIMEOUT=300 ;; esac
 
 # shellcheck source=bin/sq-classify-lib.sh
 . "$SCRIPT_DIR/sq-classify-lib.sh"
+# Sourced by the long-running sentry: the custody generation it loads here is the
+# one its in-memory copy of this file was written for (bin/sq-durable-custody.sh).
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 field() { grep "^$1=" "$STATE/$2.exec" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
 meta_field() { grep "^$1=" "$STATE/$2.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
@@ -108,6 +112,7 @@ handle_task() {
   last=$(field exec_last_activity "$id"); [ -n "$last" ] || last=0
   age=$((now - last))
   [ "$age" -ge "$STALL_TIMEOUT" ] || return 0
+  durable_custody_check "$id" wait || return 0
   # An open needs-decision or blocked record means the operator is
   # legitimately stopped waiting for a commander decision or Squad reply.
   # Do not interrupt - the operator is not stuck, it is stopped on purpose.
@@ -151,6 +156,7 @@ retry_run_claim() {
     id=${file##*/}; id=${id%.exec}
     state=$(field exec_state "$id")
     [ "$state" = retry_queued ] || continue
+    durable_custody_check "$id" retry || continue
     # A terminal event may arrive after the stall scan queued this retry.
     # Retire it without appending progress or retry-limit failure events.
     if stall_status_is_nonworking "$id"; then

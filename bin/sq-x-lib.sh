@@ -919,6 +919,18 @@ fmx_meta_get() {
   printf '%s' "${line#*=}"
 }
 
+# Relay link fields annotate a task's meta; for a durable mission that is the
+# metadata responsibility its custody generation decides (bin/sq-durable-custody.sh).
+_SQUAD_X_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_SQUAD_X_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _SQUAD_X_LIB_DIR=.
+# shellcheck source=bin/sq-durable-custody.sh
+. "$_SQUAD_X_LIB_DIR/sq-durable-custody.sh"
+
+fmx_meta_custody() {  # <meta>
+  local id=${1##*/}
+  durable_custody_check "${id%.meta}" metadata
+}
+
 fmx_meta_tmp() {
   local meta=$1 dir base
   dir=${meta%/*}
@@ -938,6 +950,7 @@ fmx_meta_tmp() {
 fmx_meta_link_set() {
   local meta=$1 rid=$2 ts=$3 followups=${4:-0} platform=${5:-} reply_max=${6:-} tmp
   [ -f "$meta" ] || return 1
+  fmx_meta_custody "$meta" || return 1
   tmp=$(fmx_meta_tmp "$meta") || return 1
   if ! { grep -vE '^x_request=|^x_request_ts=|^x_followups=|^x_platform=|^x_reply_max_chars=' "$meta" || true; } > "$tmp"; then
     rm -f "$tmp"; return 1
@@ -961,6 +974,7 @@ fmx_meta_link_set() {
 fmx_meta_followups_set() {
   local meta=$1 n=$2 tmp
   [ -f "$meta" ] || return 1
+  fmx_meta_custody "$meta" || return 1
   tmp=$(fmx_meta_tmp "$meta") || return 1
   if ! { grep -vE '^x_followups=' "$meta" || true; } > "$tmp"; then
     rm -f "$tmp"; return 1
@@ -976,6 +990,7 @@ fmx_meta_followups_set() {
 fmx_meta_link_clear() {
   local meta=$1 tmp
   [ -f "$meta" ] || return 0
+  fmx_meta_custody "$meta" || return 1
   tmp=$(fmx_meta_tmp "$meta") || return 1
   if ! { grep -vE '^x_request=|^x_request_ts=|^x_followups=|^x_platform=|^x_reply_max_chars=' "$meta" || true; } > "$tmp"; then
     rm -f "$tmp"; return 1

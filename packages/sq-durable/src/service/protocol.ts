@@ -7,7 +7,7 @@ import type { DomainErrorCode } from "../core/index.js";
 export const PROTOCOL_VERSION = "1.0";
 export const PROTOCOL_MAJOR = 1;
 
-export const COMMANDS = ["ready", "admit", "pending", "answer", "receipt", "mission", "stats"] as const;
+export const COMMANDS = ["ready", "custody", "admit", "pending", "answer", "receipt", "mission", "stats"] as const;
 export type Command = (typeof COMMANDS)[number];
 
 /** Commands that write; refused unless the service is ready or degraded. */
