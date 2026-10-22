@@ -168,9 +168,11 @@ else
   esac
 fi
 
-if ! fmx_meta_link_set "$META" "$RID" "$LINK_TS" "$FOLLOWUPS" "$REQ_PLATFORM" "$REQ_REPLY_MAX"; then
+LINK_RC=0
+fmx_meta_link_set "$META" "$RID" "$LINK_TS" "$FOLLOWUPS" "$REQ_PLATFORM" "$REQ_REPLY_MAX" || LINK_RC=$?
+if [ "$LINK_RC" -ne 0 ]; then
   echo "sq-x-link: failed to record the link in state/$ID.meta" >&2
-  exit 1
+  exit "$LINK_RC"
 fi
 
 printf 'linked %s to X request %s\n' "$ID" "$RID"

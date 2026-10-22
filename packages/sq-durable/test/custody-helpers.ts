@@ -22,7 +22,7 @@ export function scriptEnv(base: string, extra: NodeJS.ProcessEnv = {}): NodeJS.P
 		if (/^(?:HERDR|TMUX|ZELLIJ|CMUX|ORCA|TUIOS|SQUAD_|SQ_DURABLE|CLAUDE|CODEX)/.test(key)) continue;
 		env[key] = value;
 	}
-	return { ...env, SQUAD_BASE: base, SQUAD_SPAWN_NO_GUARD: "1", ...extra };
+	return { ...env, SQUAD_BASE: base, SQUAD_SPAWN_NO_GUARD: "1", SQUAD_GATE_REFUSE_BYPASS: "1", ...extra };
 }
 
 export type RunResult = { code: number; stdout: string; stderr: string };

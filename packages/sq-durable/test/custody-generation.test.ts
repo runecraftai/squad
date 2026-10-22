@@ -2,7 +2,9 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CUSTODY_LIB, sandboxBase, scriptEnv } from "./custody-helpers.js";
+import { DURABLE_MISSION_PREFIX } from "../src/adapter/squad.js";
+import { reservedGeneration } from "../src/core/index.js";
+import { CUSTODY_LIB, runBash, sandboxBase, scriptEnv } from "./custody-helpers.js";
 import { cleanup, cli, PACKAGE_DIR, tempDir, until } from "./helpers.js";
 
 /**
@@ -82,6 +84,33 @@ function installGeneration(lib: string, generation: number): void {
 afterEach(cleanup);
 
 describe("generation signal of long-running writers", () => {
+	it("pins the shell library's loaded generation and reserved prefix to the installed core", async () => {
+		const tables = await cli(["custody", "tables", "--json"]);
+		expect({ code: tables.code, stderr: tables.stderr }).toEqual({ code: 0, stderr: "" });
+		const ids = ["dm0-a", "dm1-a", "dm2-pilot", "dm10-x", "dm-x", "dmz-x", "xdm2-x", "dm2", "DM2-x", "task-1"];
+		const probe = await runBash(
+			[
+				"-c",
+				[
+					'. "$1"; shift',
+					'printf "generation=%s\\n" "$_SQ_DURABLE_CUSTODY_LOADED"',
+					'for id in "$@"; do',
+					'  if durable_custody_reserved "$id"; then printf "reserved=%s\\n" "$id"; else printf "legacy=%s\\n" "$id"; fi',
+					"done",
+				].join("\n"),
+				"probe",
+				CUSTODY_LIB,
+				...ids,
+			],
+			process.env,
+		);
+		expect({ code: probe.code, stderr: probe.stderr }).toEqual({ code: 0, stderr: "" });
+		const [generation, ...classified] = probe.stdout.trim().split("\n");
+		expect(generation).toBe(`generation=${tables.json.installed}`);
+		expect(classified).toEqual(
+			ids.map((id) => `${reservedGeneration(id, DURABLE_MISSION_PREFIX) === undefined ? "legacy" : "reserved"}=${id}`),
+		);
+	});
 	it("refuses a writer that started before a generation change, while a legacy ID and a fresh writer are unaffected", async () => {
 		const { lib } = scratchInstall();
 		const base = sandboxBase();

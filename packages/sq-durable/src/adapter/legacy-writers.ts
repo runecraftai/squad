@@ -440,6 +440,16 @@ export function scanLegacyWriters(repoRoot: string): ScannedWriter[] {
 	return writers;
 }
 
+/**
+ * The file's executable lines: a comment, a heredoc body, a Python docstring or a message is text the file documents or
+ * prints, so a consultation that only survives there is not a consultation the file runs.
+ */
+function executableText(text: string, python: boolean): string {
+	return codeLines(text, python)
+		.map((line) => (line === undefined || isComment(line) || isMessage(line) ? "" : line))
+		.join("\n");
+}
+
 /** A `durable_custody_check` call naming the responsibility, or a `custody_responsibility=<r>` it is called with. */
 const CONSULT = (responsibility: string) => {
 	const name = responsibility.replace(/-/g, "\\-");
@@ -476,13 +486,14 @@ export function inventoryViolations(repoRoot: string, inventory: readonly Legacy
 		if (writer === undefined && entry.consults.length === 0) {
 			violations.push(`${entry.path} is inventoried but neither writes task records nor consults custody; remove the entry`);
 		}
+		const code = executableText(text, entry.path.endsWith(".py"));
 		for (const responsibility of entry.consults) {
 			if (!(responsibility in SQUAD_RESPONSIBILITIES)) violations.push(`${entry.path} names unknown responsibility ${responsibility}`);
-			if (!CONSULT(responsibility).test(text)) {
+			if (!CONSULT(responsibility).test(code)) {
 				violations.push(`${entry.path} is inventoried as consulting ${responsibility} but has no durable_custody_check call naming it`);
 			}
 		}
-		if (entry.consults.length > 0 && !text.includes("sq-durable-custody.sh")) {
+		if (entry.consults.length > 0 && !code.includes("sq-durable-custody.sh")) {
 			violations.push(`${entry.path} consults custody but never sources ${CUSTODY_SHELL_LIBRARY}`);
 		}
 		if (entry.consults.length === 0 && writer !== undefined) {

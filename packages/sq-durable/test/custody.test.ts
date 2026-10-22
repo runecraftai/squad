@@ -72,6 +72,7 @@ function engineOwnedWriters(base: string): { name: string; script: string; args:
 		{ name: "XO handoff", script: "sq-backlog-handoff.sh", args: ["xo-a", "dm2-pilot"], message: owned("xo-routing") },
 		{ name: "XO launch", script: "sq-spawn.sh", args: ["dm2-pilot", "--xo"], message: owned("xo-routing") },
 		{ name: "XO seed", script: "sq-home-seed.sh", args: ["dm2-pilot", join(base, "xo-home"), "p"], message: owned("xo-routing") },
+		{ name: "remote XO seed", script: "sq-remote-home-seed.sh", args: ["dm2-pilot", "xo-host", "/srv/squad", "/home/xo", "--no-projects"], message: owned("xo-routing") },
 		{ name: "XO report", script: "sq-xo-report.sh", args: [join(base, "state", "dm2-pilot.status"), "done", "c1", "note"], message: owned("xo-routing") },
 		{ name: "launch without admission", script: "sq-spawn.sh", args: ["dm2-pilot", base, "--mode", "local-only", "--yolo", "off"], message: conditioned("admission") },
 		{ name: "brief without admission", script: "sq-brief.sh", args: ["dm2-pilot", base, "--mode", "local-only", "--no-playbook", "custody test"], message: conditioned("admission") },
@@ -139,6 +140,41 @@ describe.each(MODES)("legacy writers against dm2-* with $name", (mode) => {
 			expect((await custodyCheck("dm2-pilot", [responsibility], env)).code, responsibility).toBe(0);
 		}
 		expect(refusalLog(base).some((line) => /\t(claim|retry|heartbeat|recovery)\t/.test(line))).toBe(false);
+	});
+});
+
+describe("legacy metadata writers against dm1-*: the laboratory table gives the engine every responsibility", () => {
+	let base: string;
+	let env: NodeJS.ProcessEnv;
+
+	beforeAll(async () => {
+		base = sandboxBase();
+		seedTask(base, "dm1-lab");
+		env = scriptEnv(base);
+	});
+	afterAll(cleanup);
+
+	it("refuses each covered metadata entry point with exit 3, the explicit message, a refusal record and no state change", async () => {
+		const owned = (responsibility: string) =>
+			new RegExp(`^refused: ${responsibility} of mission dm1-lab belongs to the durable core \\(generation 1\\)$`, "m");
+		const writers = [
+			{ name: "check registration", script: "sq-check-register.sh", args: ["dm1-lab"], message: owned("metadata") },
+			{ name: "MCP link", script: "sq-mcp-link.sh", args: ["dm1-lab", "req-1"], message: owned("metadata") },
+			{ name: "PR check", script: "sq-pr-check.sh", args: ["dm1-lab", "https://github.com/o/r/pull/1"], message: owned("metadata") },
+			{ name: "X link", script: "sq-x-link.sh", args: ["dm1-lab", "req-1"], message: owned("metadata") },
+		];
+		for (const writer of writers) {
+			const before = stateDigest(base);
+			const logged = refusalLog(base).length;
+			const result = await runScript(writer.script, writer.args, env);
+			expect({ writer: writer.name, code: result.code }).toEqual({ writer: writer.name, code: 3 });
+			expect(result.stderr, writer.name).toMatch(writer.message);
+			expect(stateDigest(base), writer.name).toBe(before);
+			const record = refusalLog(base).slice(logged);
+			expect(record, writer.name).toHaveLength(1);
+			expect(record[0], writer.name).toContain("\tdm1-lab\t");
+			expect(record[0], writer.name).toContain(`\t${writer.script}\t`);
+		}
 	});
 });
 

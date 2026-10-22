@@ -65,6 +65,25 @@ describe("legacy writer inventory, derived from the code", () => {
 		expect(violations).toContain("bin/sq-merge-local.sh is inventoried as consulting landing but has no durable_custody_check call naming it");
 	});
 
+	it("does not accept a consultation or a source that survives only as comment or heredoc text", () => {
+		const repo = scratchRepo();
+		const replace = (file: string, pattern: RegExp, replacement: string) => {
+			const path = join(repo, "bin", file);
+			writeFileSync(path, readFileSync(path, "utf8").replace(pattern, replacement));
+		};
+		replace("sq-check-register.sh", /^durable_custody_check "\$ID" metadata/m, '# durable_custody_check "$ID" metadata');
+		replace(
+			"sq-x-lib.sh",
+			/^  durable_custody_check "\$\{id%\.meta\}" metadata$/m,
+			'  cat <<EOF\n  durable_custody_check "${id%.meta}" metadata\nEOF',
+		);
+		replace("sq-mcp-link.sh", /^\. "\$SCRIPT_DIR\/sq-durable-custody\.sh"$/m, "");
+		const violations = inventoryViolations(repo).join("\n");
+		expect(violations).toContain("bin/sq-check-register.sh is inventoried as consulting metadata but has no durable_custody_check call naming it");
+		expect(violations).toContain("bin/sq-x-lib.sh is inventoried as consulting metadata but has no durable_custody_check call naming it");
+		expect(violations).toContain("bin/sq-mcp-link.sh consults custody but never sources bin/sq-durable-custody.sh");
+	});
+
 	it("fails when a delegate stops consulting, or an entry outlives its writer", () => {
 		const inventory: LegacyWriter[] = LEGACY_WRITERS.map((entry) =>
 			entry.path === "bin/sq-x-lib.sh" ? { ...entry, consults: [] } : entry,
