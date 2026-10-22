@@ -847,8 +847,17 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 		// but an exhausted budget must not hide an ask-user finding either.
 		if outcome.AutoFixable && autoFixLimit > 0 && autoFixAttempts < autoFixLimit {
 			fixableFindings := autoFixableFindingsJSON(outcome.Findings)
-			if (needsDecision && infoOnlyFindingsJSON(fixableFindings)) ||
-				(hasAskUserFindingsJSON(outcome.Findings) && autoFixAttempts+userFixAttempts >= e.maxFixRounds()) {
+			infoOnlyDeferred := needsDecision && infoOnlyFindingsJSON(fixableFindings)
+			budgetExhausted := hasAskUserFindingsJSON(outcome.Findings) && autoFixAttempts+userFixAttempts >= e.maxFixRounds()
+			if infoOnlyDeferred || budgetExhausted {
+				if fixableFindings != "" {
+					if budgetExhausted {
+						writeLog(fmt.Sprintf("auto-fix refused: fix budget used %d/%d; complete findings presented without another execution", autoFixAttempts+userFixAttempts, e.maxFixRounds()))
+					} else {
+						fixCount := findingsCount(fixableFindings)
+						writeLog(fmt.Sprintf("info-only auto-fix deferred: complete findings presented while a decision is pending (%d %s held)", fixCount, pluralize(fixCount, "finding", "findings")))
+					}
+				}
 				fixableFindings = ""
 			}
 			if fixableFindings != "" {
@@ -870,7 +879,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 				slog.Info("auto-fixing step", "step", stepName, "attempt", autoFixAttempts, "max", autoFixLimit, "total_rounds", totalRounds, "max_fix_rounds", maxRounds)
 				executionMS += time.Since(phaseStart).Milliseconds()
 				fixCount := findingsCount(fixableFindings)
-				writeLog(fmt.Sprintf("auto-fix round %d/%d starting after round %d (%d %s)", autoFixAttempts, autoFixLimit, roundNum, fixCount, pluralize(fixCount, "finding", "findings")))
+				writeLog(fmt.Sprintf("auto-fix execution %d/%d starting after round %d (%d %s)", totalRounds, maxRounds, roundNum, fixCount, pluralize(fixCount, "finding", "findings")))
 				if dbErr := e.db.UpdateStepStatus(sr.ID, types.StepStatusFixing); dbErr != nil {
 					slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 				}
@@ -1028,7 +1037,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			// Fix - mark step as fixing, resume execution timer, re-execute.
 			phaseStart = time.Now()
 			selectedCount := selectedFindingCount(outcome.Findings, response.findingIDs)
-			writeLog(fmt.Sprintf("user-fix round %d/%d starting after round %d (%d %s selected)", userFixAttempts, maxRounds, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
+			writeLog(fmt.Sprintf("user-fix execution %d/%d starting after round %d (%d %s selected)", totalRounds, maxRounds, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
 			if dbErr := e.db.UpdateStepStatus(sr.ID, types.StepStatusFixing); dbErr != nil {
 				slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 			}

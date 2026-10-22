@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -213,6 +215,13 @@ func TestExecutor_DecisionBeforeInfoOnlyFix(t *testing.T) {
 			if gate.Findings == nil || len(mustParseFindingItems(t, *gate.Findings)) != 3 {
 				t.Fatalf("gate lost known findings: %+v", gate)
 			}
+			logData, err := os.ReadFile(filepath.Join(p.RunLogDir(run.ID), "review.log"))
+			if err != nil {
+				t.Fatalf("read step log: %v", err)
+			}
+			if !strings.Contains(string(logData), "info-only auto-fix deferred") {
+				t.Errorf("durable log did not record why the info-only fix was not applied:\n%s", logData)
+			}
 			if err := exec.Respond(types.StepReview, types.ActionFix, []string{"requirement", "timeout-doc", "header"}); err != nil {
 				t.Fatal(err)
 			}
@@ -228,5 +237,50 @@ func TestExecutor_DecisionBeforeInfoOnlyFix(t *testing.T) {
 				t.Errorf("fixes after authorization = %d, want one batch", got)
 			}
 		})
+	}
+}
+
+// The durable log names the shared execution budget: after one automatic fix,
+// the next user-triggered fix is execution 2 of 3, not a user-only 1 of 3.
+func TestExecutor_UserFixLogReportsSharedExecutionBudget(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	cfg := &config.Config{AutoFix: config.AutoFix{Review: 3}}
+	calls := 0
+	step := &adaptiveCallStep{name: types.StepReview, fn: func(sctx *StepContext) (*StepOutcome, error) {
+		calls++
+		if calls == 1 {
+			return &StepOutcome{AutoFixable: true, Findings: `{"findings":[{"id":"docs","severity":"info","action":"auto-fix","description":"timeout documentation"}]}`}, nil
+		}
+		return &StepOutcome{NeedsApproval: true, Findings: `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"central requirement"}]}`}, nil
+	}}
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	workDir := t.TempDir()
+	go func() { done <- exec.Execute(ctx, run, repo, workDir) }()
+
+	waitForFixReviewRound(t, database, run.ID, 2)
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"requirement"}); err != nil {
+		t.Fatal(err)
+	}
+	waitForFixReviewRound(t, database, run.ID, 3)
+	logData, err := os.ReadFile(filepath.Join(p.RunLogDir(run.ID), "review.log"))
+	if err != nil {
+		t.Fatalf("read step log: %v", err)
+	}
+	if !strings.Contains(string(logData), "user-fix execution 2/3 starting after round 2") {
+		t.Errorf("user fix did not report the shared execution budget:\n%s", logData)
+	}
+	if err := exec.Respond(types.StepReview, types.ActionApprove, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not finish")
 	}
 }
