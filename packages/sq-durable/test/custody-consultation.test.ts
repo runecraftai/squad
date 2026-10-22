@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { refusalLog, REPO_ROOT, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
@@ -300,6 +300,37 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(existsSync(join(state, "dm1-lab.pr-poll-registration"))).toBe(true);
 		expect(stateDigest(base)).toBe(before);
 		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(1);
+	});
+
+	it("refuses a pending PR-watch retirement of a durable mission before the migration touches its records", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm1-lab");
+		const state = join(base, "state");
+		writeFileSync(join(state, "dm1-lab.pr-poll-retirement"), "retirement receipt\n");
+		const before = stateDigest(base);
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect(result.code).not.toBe(0);
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(join(state, "dm1-lab.pr-poll-retirement"))).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses a pending outcome obligation of a durable mission during recovery, with exit 3 and no state change", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm1-lab");
+		const quarantine = join(base, "state", ".pr-check-quarantine");
+		mkdirSync(quarantine, { mode: 0o700 });
+		chmodSync(quarantine, 0o700);
+		writeFileSync(join(quarantine, "dm1-lab.diagnostic.pending-canonical"), "task dm1-lab: migration outcome tracking started before legacy poll handling\n", {
+			mode: 0o600,
+		});
+		const before = stateDigest(base);
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect(result.code).toBe(3);
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(join(quarantine, "dm1-lab.diagnostic.pending-canonical"))).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t")).length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("refuses every PR-watch mutator of a durable mission before it stages an artifact", async () => {
