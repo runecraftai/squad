@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { ApprovalDocument } from "../src/core/approval.js";
+import type { ApprovalDocument, ApprovalStatus } from "../src/core/approval.js";
 import { defineGate } from "../src/core/gate.js";
-import type { MissionDocument } from "../src/core/mission.js";
+import type { MissionDocument, MissionStatus } from "../src/core/mission.js";
 import { absentApproval, absentMission, defineDocuments } from "../src/core/model.js";
 
 const DECISION = { receiptId: "dec-1", seq: 2, recordedAt: 1 };
 
 /** Runs the gate's abort handler over in-memory documents, the way Pi runs it in a fresh invocation after an abort mark. */
-async function abortAfterDecision(decision: "approved" | "rejected") {
+async function abortGate(approvalStatus: ApprovalStatus, missionStatus: MissionStatus) {
 	const documents = defineDocuments("test");
-	const approval: ApprovalDocument = { ...absentApproval(), status: decision, approvalId: "ap-1", missionId: "m-1", decision: { ...DECISION } as never };
+	const decision = approvalStatus === "approved" || approvalStatus === "rejected" ? ({ ...DECISION } as never) : null;
+	const approval: ApprovalDocument = { ...absentApproval(), status: approvalStatus, approvalId: "ap-1", missionId: "m-1", decision };
 	const mission: MissionDocument = {
 		...absentMission(),
-		status: decision,
+		status: missionStatus,
 		missionId: "m-1",
 		approvalId: "ap-1",
 		effect: { effectId: "e-1", effectKey: null, state: "waiting", attempts: 0, lastAttemptAt: null, receipt: null, reconcileReason: null } as never,
@@ -38,9 +39,20 @@ async function abortAfterDecision(decision: "approved" | "rejected") {
 	return { approval, mission, outcome };
 }
 
-describe("gate abort after a recorded decision and before continuation", () => {
+describe("gate abort before continuation", () => {
+	it("cancels a pending approval and its mission with no effect", async () => {
+		const { approval, mission, outcome } = await abortGate("pending", "awaiting_approval");
+		expect(approval.status).toBe("cancelled");
+		expect(approval.decision).toBeNull();
+		expect(approval.continuation).toBeNull();
+		expect(mission.status).toBe("cancelled");
+		expect(mission.effect?.state).toBe("skipped");
+		expect(mission.effect?.receipt).toBeNull();
+		expect(outcome).toMatchObject({ status: "aborted" });
+	});
+
 	it("keeps a recorded reject: no effect, mission and approval both rejected, decision receipt preserved", async () => {
-		const { approval, mission, outcome } = await abortAfterDecision("rejected");
+		const { approval, mission, outcome } = await abortGate("rejected", "rejected");
 		expect(approval.status).toBe("rejected");
 		expect(approval.decision).toEqual(DECISION);
 		expect(approval.continuation).toBeNull();
@@ -51,7 +63,7 @@ describe("gate abort after a recorded decision and before continuation", () => {
 	});
 
 	it("keeps a recorded approve: the cancel wins with no effect, the decision is never overwritten", async () => {
-		const { approval, mission, outcome } = await abortAfterDecision("approved");
+		const { approval, mission, outcome } = await abortGate("approved", "approved");
 		expect(approval.status).toBe("approved");
 		expect(approval.decision).toEqual(DECISION);
 		expect(approval.continuation).toBeNull();
