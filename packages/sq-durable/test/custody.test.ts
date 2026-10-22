@@ -28,6 +28,15 @@ describe("custody contract (neutral core over the Squad tables)", () => {
 		expect(decideCustody({ id: "dm2-pilot", responsibilities: ["claim", "spawn", "wait"] }, scheme, stopped)).toMatchObject({ allowed: true, reserved: true });
 	});
 
+	it("refuses a responsibility named like an inherited Object member instead of allowing it", () => {
+		for (const responsibility of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+			expect(decideCustody({ id: "dm2-pilot", responsibilities: [responsibility] }, scheme, stopped)).toMatchObject({
+				allowed: false,
+				code: "unknown_responsibility",
+			});
+		}
+	});
+
 	it("refuses every responsibility, legacy ones included, of a generation the tables do not know", () => {
 		for (const responsibility of Object.keys(SQUAD_RESPONSIBILITIES)) {
 			expect(decideCustody({ id: "dm3-next", responsibilities: [responsibility] }, scheme, stopped)).toMatchObject({ allowed: false, code: "unknown_generation" });

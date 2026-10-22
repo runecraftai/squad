@@ -192,7 +192,7 @@ export function decideCustody(query: CustodyQuery, scheme: CustodyScheme, servic
 		);
 	}
 	for (const responsibility of query.responsibilities) {
-		const owner = table.owners[responsibility];
+		const owner = Object.hasOwn(table.owners, responsibility) ? table.owners[responsibility] : undefined;
 		if (owner === undefined) {
 			return refusal(
 				query.id,
@@ -230,7 +230,7 @@ export function needsService(query: CustodyQuery, scheme: CustodyScheme): boolea
 	if (generation === undefined) return false;
 	const table = tableFor(scheme, generation);
 	return query.responsibilities.some((r) => {
-		const owner = table?.owners[r];
+		const owner = table !== undefined && Object.hasOwn(table.owners, r) ? table.owners[r] : undefined;
 		return owner !== undefined && owner.kind === "legacy" && owner.requires !== undefined;
 	});
 }
