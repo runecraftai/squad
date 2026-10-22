@@ -19,6 +19,9 @@
 # dispatcher cannot observe a partial record.
 #
 # State machine: unclaimed -> claimed -> running -> retry_queued -> released.
+# A retry_queued record whose bound run is still executing is adopted back to
+# running: that is a continuation of the same attempt, so it spends no retry and
+# keeps its attempt number and pinned workflow version.
 # 'released' is terminal for this id - there is no released -> unclaimed or
 # released -> claimed transition. recover repairs only claimed, running, and
 # retry_queued records through the existing transitions, and never resurrects
@@ -249,7 +252,7 @@ transition_locked() {  # <id> <next> [run_state]
     return 1
   fi
   case "$current:$next" in
-    unclaimed:claimed|unclaimed:released|claimed:running|claimed:retry_queued|claimed:released|running:retry_queued|running:released|retry_queued:claimed|retry_queued:released|released:released) : ;;
+    unclaimed:claimed|unclaimed:released|claimed:running|claimed:retry_queued|claimed:released|running:retry_queued|running:released|retry_queued:claimed|retry_queued:running|retry_queued:released|released:released) : ;;
     "$next:$next") printf '%s\n' "$current"; return 0 ;;
     *) printf 'error: invalid transition %s -> %s\n' "$current" "$next" >&2; return 1 ;;
   esac
@@ -274,10 +277,7 @@ recover_locked() {  # <id> [run_state]: run evidence is resolved before the lock
     # Repair only through existing transitions. Released is immutable for
     # dispatch, even though its live run still projects as running in get.
     case "$current" in
-      retry_queued)
-        transition_locked "$id" claimed "$run_state" >/dev/null
-        transition_locked "$id" running "$run_state" >/dev/null ;;
-      claimed) transition_locked "$id" running "$run_state" >/dev/null ;;
+      retry_queued|claimed) transition_locked "$id" running "$run_state" >/dev/null ;;
       running) write_record "$id" running "$current" ;;
     esac
     printf 'running\n'

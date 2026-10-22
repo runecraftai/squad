@@ -200,6 +200,39 @@ claim_rc=$?
 set -e
 assert_eq "$claim_rc" 3
 
+# Adopting a live bound run is a continuation, not a new attempt: the stall's
+# queued retry keeps its counter, attempt number, and pinned workflow version,
+# so one stall cycle spends exactly one retry.
+after_wf="$TMP/after-run-WORKFLOW.md"
+mkdir -p "$TMP/project"
+cat > "$after_wf" <<'EOF'
+---
+schema_version: "1.0.0"
+hooks:
+  after_run:
+    command: ["bash", "-c", "printf '%s\\n' \"$EXEC_ATTEMPT\" >> attempt.log"]
+    timeout_ms: 5000
+---
+EOF
+printf 'window=sq-parked:win\nworktree=%s\nkind=strike\nworkflow=%s\nproject=%s\n' \
+  "$parked_wt" "$after_wf" "$TMP/project" > "$STATE/parked.meta"
+printf 'exec_state=retry_queued\nexec_attempt=2\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\nexec_workflow_version=wf-pinned\n' > "$STATE/parked.exec"
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=alive "$EXEC" recover parked)" running
+assert_eq "$(sed -n 's/^exec_attempt=//p' "$STATE/parked.exec")" 2
+assert_eq "$(sed -n 's/^exec_retry_count=//p' "$STATE/parked.exec")" 1
+assert_eq "$(sed -n 's/^exec_workflow_version=//p' "$STATE/parked.exec")" wf-pinned
+assert_eq "$(sed -n 's/^exec_next_retry_at=//p' "$STATE/parked.exec")" ''
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" "$EXEC" get-recorded parked)" running
+PATH="$TMP/parked-bin:$PATH" "$EXEC" after_run parked >/dev/null
+assert_eq "$(cat "$parked_wt/attempt.log")" 2
+
+# Only a genuine fresh claim spends retry budget: the next claim moves the
+# counters forward exactly once from where the adoption left them.
+printf 'exec_state=retry_queued\nexec_attempt=2\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=dead "$EXEC" claim parked)" claimed
+assert_eq "$(sed -n 's/^exec_attempt=//p' "$STATE/parked.exec")" 3
+assert_eq "$(sed -n 's/^exec_retry_count=//p' "$STATE/parked.exec")" 2
+
 # The production endpoint read (no SQUAD_EXEC_OWNER_STATE override) resolves the
 # recorded window through the backend adapter: an authoritatively absent window
 # lets the queued retry resume, and a live harness in that window still blocks
