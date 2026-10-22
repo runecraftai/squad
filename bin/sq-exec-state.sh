@@ -80,25 +80,24 @@ reported_state() {
 # gone endpoint (dead|missing) licenses resumption; every ambiguous, unreadable,
 # or unverified read keeps the recorded owner authoritative.
 task_owner_endpoint_state() {  # <id> -> alive|dead|unknown
-  local meta state_out
+  local meta
   if [ -n "${SQUAD_EXEC_OWNER_STATE:-}" ]; then
-    state_out=$SQUAD_EXEC_OWNER_STATE
-  else
-    meta="$STATE/$1.meta"
-    [ -f "$meta" ] || { printf 'unknown'; return; }
-    if [ -z "${_SQUAD_EXEC_BACKEND_SOURCED:-}" ]; then
-      [ -f "$SCRIPT_DIR/sq-backend.sh" ] || { printf 'unknown'; return; }
-      # shellcheck source=bin/sq-backend.sh disable=SC1091
-      . "$SCRIPT_DIR/sq-backend.sh"
-      _SQUAD_EXEC_BACKEND_SOURCED=1
-    fi
-    state_out=$(fm_backend_agent_state "$(fm_backend_of_meta "$meta")" "$(fm_backend_target_of_meta "$meta")" 2>/dev/null || printf 'unreadable')
+    case "$SQUAD_EXEC_OWNER_STATE" in
+      alive) printf 'alive' ;;
+      dead|missing) printf 'dead' ;;
+      *) printf 'unknown' ;;
+    esac
+    return
   fi
-  case "$state_out" in
-    alive) printf 'alive' ;;
-    dead|missing) printf 'dead' ;;
-    *) printf 'unknown' ;;
-  esac
+  meta="$STATE/$1.meta"
+  [ -f "$meta" ] || { printf 'unknown'; return; }
+  if [ -z "${_SQUAD_EXEC_BACKEND_SOURCED:-}" ]; then
+    [ -f "$SCRIPT_DIR/sq-backend.sh" ] || { printf 'unknown'; return; }
+    # shellcheck source=bin/sq-backend.sh disable=SC1091
+    . "$SCRIPT_DIR/sq-backend.sh"
+    _SQUAD_EXEC_BACKEND_SOURCED=1
+  fi
+  { fm_backend_agent_alive "$(fm_backend_of_meta "$meta")" "$(fm_backend_target_of_meta "$meta")" 2>/dev/null; } || printf 'unknown'
 }
 
 # An executing run always blocks a second attempt. A gate-parked run blocks
@@ -112,22 +111,32 @@ task_run_blocks_dispatch() {  # <id> <run_state>
   esac
 }
 
-terminal_status() {  # <id> [run_state]: last terminal event, unless a bound run resumed
-  local line verb pr run_state=${2-}
+# Last nonblank .status event verb, the completion signal claim and recover read.
+last_status_verb() {  # <id>
+  local line verb
   line=$(grep -v '^[[:space:]]*$' "$STATE/$1.status" 2>/dev/null | tail -1 || true)
-  pr=$(meta_field pr "$1")
   [ -n "$line" ] || return 1
   verb=${line%%:*}
   verb=${verb%%[key=*}
   verb=${verb#"${verb%%[![:space:]]*}"}
+  printf '%s' "$verb"
+}
+
+terminal_status() {  # <id> <run_state>: last terminal event, unless a bound run resumed
+  local verb run_state=${2-}
+  verb=$(last_status_verb "$1") || return 1
   # PR metadata is corroborating only; local and recon deliveries need none.
-  case "$verb:$pr" in
-    done:*|failed:*)
-      [ -n "$run_state" ] || run_state=$(task_run_state "$1")
-      case "$run_state" in active|parked) return 1 ;; esac
-      return 0 ;;
+  case "$verb" in
+    done|failed) ;;
     *) return 1 ;;
   esac
+  # Every caller resolves run evidence before taking the lock; a missing
+  # argument is a call-site bug, never a reason to query drill under the lock.
+  case "$run_state" in
+    active|parked) return 1 ;;
+    '') printf 'error: terminal status checked without run evidence\n' >&2; return 2 ;;
+  esac
+  return 0
 }
 
 with_lock() {
@@ -209,7 +218,7 @@ write_record() {
 claim_locked() {  # <id> [run_state]: run evidence is resolved before the lock
   local id=$1 run_state=${2-} state
   state=$(get_state "$id")
-  [ -n "$run_state" ] || run_state=$(task_run_state "$id")
+  [ -n "$run_state" ] || { printf 'error: claim requires run evidence for %s\n' "$id" >&2; return 2; }
   if task_run_blocks_dispatch "$id" "$run_state"; then
     printf 'error: task %s already has an active run\n' "$id" >&2
     return 3
@@ -260,7 +269,7 @@ _heartbeat() {
 recover_locked() {  # <id> [run_state]: run evidence is resolved before the lock
   local id=$1 run_state=${2-} current age now last
   current=$(get_state "$id")
-  [ -n "$run_state" ] || run_state=$(task_run_state "$id")
+  [ -n "$run_state" ] || { printf 'error: recover requires run evidence for %s\n' "$id" >&2; return 2; }
   if task_run_blocks_dispatch "$id" "$run_state"; then
     # Repair only through existing transitions. Released is immutable for
     # dispatch, even though its live run still projects as running in get.
@@ -310,14 +319,24 @@ mkdir -p "$STATE"
 cmd=${1:-}; id=${2:-}
 case "$cmd" in
   recover-all)
+    recover_now=$(date +%s)
     for file in "$STATE"/*.exec; do
       [ -f "$file" ] || continue
       id=${file##*/}; id=${id%.exec}
       valid_id "$id" || continue
       [ -f "$STATE/$id.meta" ] || { rm -f "$file"; continue; }
+      current=$(get_state "$id")
       # Only queued or live attempts are repairable, so released and fresh
       # records cost no run attribution on every heartbeat.
-      case "$(get_state "$id")" in running|claimed|retry_queued) ;; *) continue ;; esac
+      case "$current" in running|claimed|retry_queued) ;; *) continue ;; esac
+      # A running record that is neither stale nor carrying a terminal event
+      # recovers to itself, so it skips the bounded drill probe too.
+      if [ "$current" = running ]; then
+        last=$(get_field exec_last_activity "$id"); [ -n "$last" ] || last=0
+        if [ $((recover_now - last)) -lt "$STALE_AFTER" ]; then
+          case "$(last_status_verb "$id" || true)" in done|failed) ;; *) continue ;; esac
+        fi
+      fi
       with_lock "$id" recover_locked "$id" "$(task_run_state "$id")" >/dev/null || true
     done
     ;;

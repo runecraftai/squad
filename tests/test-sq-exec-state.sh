@@ -171,7 +171,7 @@ esac
 exit 0
 EOF
 chmod +x "$TMP/parked-bin/drill"
-printf 'window=sq-parked\nworktree=%s\nkind=strike\n' "$parked_wt" > "$STATE/parked.meta"
+printf 'window=sq-parked:win\nworktree=%s\nkind=strike\n' "$parked_wt" > "$STATE/parked.meta"
 printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
 printf 'working: stall interrupted; retry scheduled for 1\n' > "$STATE/parked.status"
 assert_eq "$(PATH="$TMP/parked-bin:$PATH" "$EXEC" get parked)" running
@@ -199,7 +199,77 @@ PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=ambiguous "$EXEC" claim park
 claim_rc=$?
 set -e
 assert_eq "$claim_rc" 3
+
+# The production endpoint read (no SQUAD_EXEC_OWNER_STATE override) resolves the
+# recorded window through the backend adapter: an authoritatively absent window
+# lets the queued retry resume, and a live harness in that window still blocks
+# the claim.
+mkdir -p "$TMP/tmux-bin"
+cat > "$TMP/tmux-bin/tmux" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows)
+    if [ -f "${SQUAD_TEST_LIVE_WINDOW:-/nonexistent}" ]; then
+      printf 'win\n'
+      exit 0
+    fi
+    printf "can't find session: %s\n" "${3:-sq-stub}" >&2
+    exit 1
+    ;;
+  display-message)
+    case "${5:-}" in
+      '#{pane_current_command}')
+        if [ -f "${SQUAD_TEST_LIVE_WINDOW:-/nonexistent}" ]; then printf 'claude\n'; fi
+        ;;
+    esac
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$TMP/tmux-bin/tmux"
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
+assert_eq "$(PATH="$TMP/parked-bin:$TMP/tmux-bin:$PATH" "$EXEC" claim parked)" claimed
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
+touch "$TMP/live-window"
+set +e
+PATH="$TMP/parked-bin:$TMP/tmux-bin:$PATH" SQUAD_TEST_LIVE_WINDOW="$TMP/live-window" "$EXEC" claim parked >/dev/null 2>&1
+claim_rc=$?
+set -e
+assert_eq "$claim_rc" 3
+assert_eq "$(PATH="$TMP/parked-bin:$TMP/tmux-bin:$PATH" SQUAD_TEST_LIVE_WINDOW="$TMP/live-window" "$EXEC" get-recorded parked)" retry_queued
 rm -f "$STATE"/parked.*
+
+# recover-all skips run attribution for a fresh running record with no terminal
+# event, and still attributes one that carries a terminal event.
+rm -f "$STATE"/*.exec "$STATE"/*.meta "$TMP/drill-calls.log"
+mkdir -p "$TMP/probe-bin"
+cat > "$TMP/probe-bin/drill" <<EOF
+#!/usr/bin/env bash
+printf '%s %s\n' "\$(basename "\$PWD")" "\$*" >> "$TMP/drill-calls.log"
+exit 0
+EOF
+chmod +x "$TMP/probe-bin/drill"
+probe_now=$(date +%s)
+for task in probe-fresh probe-done; do
+  probe_wt="$TMP/$task-wt"
+  mkdir -p "$probe_wt"
+  git -C "$probe_wt" init -q
+  git -C "$probe_wt" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m init
+  git -C "$probe_wt" checkout -q -b "sq/$task"
+  printf 'window=Squad\nworktree=%s\nkind=strike\n' "$probe_wt" > "$STATE/$task.meta"
+  printf 'exec_state=running\nexec_attempt=1\nexec_last_activity=%s\n' "$probe_now" > "$STATE/$task.exec"
+done
+printf 'working: still validating\n' > "$STATE/probe-fresh.status"
+printf 'done: delivered\n' > "$STATE/probe-done.status"
+PATH="$TMP/probe-bin:$PATH" "$EXEC" recover-all >/dev/null
+assert_eq "$(PATH="$TMP/probe-bin:$PATH" "$EXEC" get-recorded probe-fresh)" running
+assert_eq "$(PATH="$TMP/probe-bin:$PATH" "$EXEC" get-recorded probe-done)" released
+probe_calls=$(wc -l < "$TMP/drill-calls.log" | tr -d ' ')
+assert_eq "$probe_calls" 1
+grep -q '^probe-done-wt ' "$TMP/drill-calls.log" || {
+  echo 'recover-all attributed the wrong record' >&2
+  exit 1
+}
 
 # recover-all removes orphaned exec files (meta absent) but preserves live ones.
 printf 'exec_state=running\nexec_attempt=1\n' > "$STATE/orphan.exec"

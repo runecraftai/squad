@@ -34,9 +34,10 @@
 # unresolved-decision completion gate verifies its commander-held inventory.
 # After release, the exec state sidecar reads 'released' and sq-spawn refuses
 # to relaunch the same id (released has no unclaimed or claimed transition;
-# sq-exec-state recover only treats running/claimed). To redespatch the same
-# work you need a new id (the status path and branch name are stamped in the
-# brief). Do not discard a task id before confirming the operator won't need it.
+# sq-exec-state recover only repairs claimed, running, and retry_queued
+# records). To redespatch the same work you need a new id (the status path and
+# branch name are stamped in the brief). Do not discard a task id before
+# confirming the operator won't need it.
 #
 # Slot pool hazard: closing an old task returns its fob slot to the pool.
 # If a new task was already dispatched into that same slot, the return resets
