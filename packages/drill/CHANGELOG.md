@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.9](https://github.com/runecraftai/squad/compare/drill-v0.1.8...drill-v0.1.9) (2026-10-22)
+
+
+### Bug Fixes
+
+* **agent:** accept bare findings array at structured output parse boundary ([#268](https://github.com/runecraftai/squad/issues/268)) ([0f4de43](https://github.com/runecraftai/squad/commit/0f4de437a53a5ca28217dab571cfcb127cce8848))
+* **drill:** resume operators after failed-run custody recovery ([#273](https://github.com/runecraftai/squad/issues/273)) ([54ac0e9](https://github.com/runecraftai/squad/commit/54ac0e9ed4a49604288660c1703364bef40a6cce))
+
 ## [0.1.8](https://github.com/runecraftai/squad/compare/drill-v0.1.7...drill-v0.1.8) (2026-10-08)
 
 
