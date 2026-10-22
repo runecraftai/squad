@@ -149,6 +149,58 @@ assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" recover resume)" retry_queued
 PATH="$TMP/resume-bin:$PATH" "$EXEC" recover-all >/dev/null
 assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" get-recorded resume)" retry_queued
 
+# A gate-parked run keeps the attempt while its recorded owner endpoint is
+# alive, and only an authoritatively gone owner lets the retry path resume.
+parked_wt="$TMP/parked-wt"
+mkdir -p "$parked_wt"
+git -C "$parked_wt" init -q
+git -C "$parked_wt" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m init
+git -C "$parked_wt" checkout -q -b sq/parked
+parked_head=$(git -C "$parked_wt" rev-parse HEAD)
+mkdir -p "$TMP/parked-bin"
+cat > "$TMP/parked-bin/drill" <<EOF
+#!/usr/bin/env bash
+case "\${1:-}" in
+  axi)
+    [ "\${2:-}" = status ] && printf 'run:\n  id: "01PARK"\n  branch: sq/parked\n  status: awaiting_approval\n  awaiting_agent: parked 2m10s\n  head: "%s"\n  findings: none\ngate: review\n' "$parked_head"
+    ;;
+  runs)
+    printf 'running sq/parked %.7s 2026-10-21\n' "$parked_head"
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$TMP/parked-bin/drill"
+printf 'window=sq-parked\nworktree=%s\nkind=strike\n' "$parked_wt" > "$STATE/parked.meta"
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
+printf 'working: stall interrupted; retry scheduled for 1\n' > "$STATE/parked.status"
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" "$EXEC" get parked)" running
+set +e
+PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=alive "$EXEC" claim parked >/dev/null 2>&1
+claim_rc=$?
+set -e
+assert_eq "$claim_rc" 3
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" "$EXEC" get-recorded parked)" retry_queued
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=alive "$EXEC" recover parked)" running
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" "$EXEC" get-recorded parked)" running
+
+# An authoritatively gone owner: the queued retry keeps its deadline instead of
+# being adopted, and the claim that resumes it succeeds.
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=dead "$EXEC" recover parked)" retry_queued
+assert_eq "$(grep '^exec_next_retry_at=' "$STATE/parked.exec")" 'exec_next_retry_at=1'
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=dead "$EXEC" claim parked)" claimed
+assert_eq "$(PATH="$TMP/parked-bin:$PATH" "$EXEC" get-recorded parked)" claimed
+
+# An unverifiable owner read stays fail-closed so no duplicate is launched.
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/parked.exec"
+set +e
+PATH="$TMP/parked-bin:$PATH" SQUAD_EXEC_OWNER_STATE=ambiguous "$EXEC" claim parked >/dev/null 2>&1
+claim_rc=$?
+set -e
+assert_eq "$claim_rc" 3
+rm -f "$STATE"/parked.*
+
 # recover-all removes orphaned exec files (meta absent) but preserves live ones.
 printf 'exec_state=running\nexec_attempt=1\n' > "$STATE/orphan.exec"
 printf 'window=Squad\n' > "$STATE/live-task.meta"

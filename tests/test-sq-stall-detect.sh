@@ -247,7 +247,13 @@ cat > "$TMP/activebin/drill" <<'EOF'
 #!/usr/bin/env bash
 case "${1:-}" in
   axi)
-    [ "${2:-}" = status ] && printf 'run:\n  branch: sq/active-retry\n  status: %s\n  head: "%s"\n' "${FAKE_RUN_STATUS:-running}" "$FAKE_RUN_HEAD"
+    if [ "${2:-}" = status ]; then
+      if [ -n "${FAKE_RUN_PARKED:-}" ]; then
+        printf 'run:\n  branch: sq/active-retry\n  status: awaiting_approval\n  awaiting_agent: parked 2m10s\n  head: "%s"\n  findings: none\ngate: review\n' "$FAKE_RUN_HEAD"
+      else
+        printf 'run:\n  branch: sq/active-retry\n  status: %s\n  head: "%s"\n' "${FAKE_RUN_STATUS:-running}" "$FAKE_RUN_HEAD"
+      fi
+    fi
     ;;
   runs)
     printf '%s sq/active-retry %.7s 2026-10-21\n' "${FAKE_RUN_STATUS:-running}" "$FAKE_RUN_HEAD"
@@ -287,6 +293,25 @@ assert_eq "$(field exec_state retry-ended-run)" running
 assert_eq "$(tail -1 "$STATE/retry-ended-run.status")" 'working: retry resumed'
 assert_eq "$(PATH="$TMP/activebin:$PATH" "$EXEC" get-recorded retry-ended-run)" running
 rm -f "$STATE"/retry-ended-run.*
+
+# A gate-parked run whose recorded owner endpoint is gone no longer blocks the
+# queued retry, so supervision resumes the attempt instead of leaving it parked.
+printf 'worktree=%s\nkind=strike\nwindow=sq-parked\n' "$active_wt" >"$STATE/retry-parked-dead.meta"
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=0\nexec_last_activity=1\nexec_next_retry_at=1\n' >"$STATE/retry-parked-dead.exec"
+printf 'working: stall interrupted; retry scheduled for 1\n' >"$STATE/retry-parked-dead.status"
+FAKE_RUN_PARKED=1 SQUAD_EXEC_OWNER_STATE=dead PATH="$TMP/activebin:$PATH" retry_run_claim
+assert_eq "$(field exec_state retry-parked-dead)" running
+assert_eq "$(tail -1 "$STATE/retry-parked-dead.status")" 'working: retry resumed'
+
+# While that run's owner endpoint is alive the retry waits without recording a
+# failure, keeping the live operator the single owner of the attempt.
+printf 'worktree=%s\nkind=strike\nwindow=sq-parked-live\n' "$active_wt" >"$STATE/retry-parked-live.meta"
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=0\nexec_last_activity=1\nexec_next_retry_at=1\n' >"$STATE/retry-parked-live.exec"
+printf 'working: gate waiting on the live operator\n' >"$STATE/retry-parked-live.status"
+FAKE_RUN_PARKED=1 SQUAD_EXEC_OWNER_STATE=alive PATH="$TMP/activebin:$PATH" retry_run_claim
+assert_eq "$(field exec_state retry-parked-live)" retry_queued
+assert_eq "$(tail -1 "$STATE/retry-parked-live.status")" 'working: gate waiting on the live operator'
+rm -f "$STATE"/retry-parked-*
 
 # A failed claim surfaces a blocked status instead of being silently swallowed.
 "$EXEC" claim retry-claim-fail >/dev/null

@@ -158,6 +158,8 @@ fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
 }
 
 # Lifecycle of the captured run, not the dispatch record or CI-ready task view.
+# Non-terminal runs are `active`; fm_drill_current_run_parked refines that into
+# parked-at-a-gate when the captured evidence shows one.
 fm_drill_current_run_state() {
   local status outcome
   case "$FM_DRILL_RUN_SOURCE" in
@@ -179,12 +181,27 @@ fm_drill_current_run_state() {
   esac
 }
 
-# Reported execution state for a captured run lifecycle: an active run means
-# the attempt is executing, a terminal run means it is over, and unattributed
-# evidence leaves the recorded dispatch state unchanged.
+# 0 if the captured run is parked at a gate instead of executing. Only a full
+# `axi status` capture can show a gate, so coarse runs-list evidence never
+# reports a parked run and callers keep their fail-closed default. The rule
+# mirrors bin/sq-crew-state.sh's run-step precedence: an empty outcome plus an
+# approval/fix status, an awaiting_agent field, or a gate block is parked.
+fm_drill_current_run_parked() {
+  local status
+  [ "$FM_DRILL_RUN_SOURCE" = full ] || return 1
+  [ -z "$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")" ] || return 1
+  status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
+  case "$status" in awaiting_approval|fix_review) return 0 ;; esac
+  printf '%s\n' "$FM_DRILL_RUN_OUT" | grep -Eq '^[[:space:]]*(awaiting_agent|gate):[[:space:]]*'
+}
+
+# Reported execution state for a captured run lifecycle: an active or
+# gate-parked run means the attempt is still executing, a terminal run means it
+# is over, and unattributed evidence leaves the recorded dispatch state
+# unchanged.
 fm_drill_reported_exec_state() {  # <run_state> [recorded-state]
   case "$1" in
-    active) printf 'running\n' ;;
+    active|parked) printf 'running\n' ;;
     terminal) printf 'released\n' ;;
     *) [ -z "${2:-}" ] || printf '%s\n' "$2" ;;
   esac

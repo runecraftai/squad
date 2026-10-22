@@ -5,9 +5,11 @@
 # get projects a current attributed Drill run over the dispatch record;
 # get-recorded reads only that record. A released id remains undispatchable.
 # claim exits 3 when an active run already owns the id, so a supervisor can
-# skip that attempt without recording a failure. An ended run never blocks a
-# claim or retires a record on its own: a retry_queued record exists precisely
-# because the previous attempt's run already ended.
+# skip that attempt without recording a failure. A gate-parked run keeps the id
+# while its recorded owner endpoint is alive; once that endpoint is
+# authoritatively gone the attempt is resumable so a relaunch is not blocked. An
+# ended run never blocks a claim or retires a record on its own: a retry_queued
+# record exists precisely because the previous attempt's run already ended.
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
@@ -51,8 +53,8 @@ get_state() { local value; value=$(get_field exec_state "$1"); printf '%s\n' "${
 # projection: retiring a dispatch record stays tied to terminal .status
 # evidence or an explicit release. Unknown/unattributed queries leave the
 # existing dispatch semantics unchanged.
-task_run_state() {  # <id> -> active|terminal|unknown
-  local wt kind timeout_secs limit
+task_run_state() {  # <id> -> active|parked|terminal|unknown
+  local wt kind timeout_secs limit state
   wt=$(meta_field worktree "$1")
   kind=$(meta_field kind "$1")
   case "$kind" in ''|strike) ;; *) printf 'unknown'; return ;; esac
@@ -62,11 +64,52 @@ task_run_state() {  # <id> -> active|terminal|unknown
   case "$timeout_secs" in ''|*[!0-9]*) timeout_secs=10 ;; esac
   case "$limit" in ''|*[!0-9]*) limit=200 ;; esac
   fm_drill_current_run "$wt" "$timeout_secs" "$limit"
-  fm_drill_current_run_state
+  state=$(fm_drill_current_run_state)
+  if [ "$state" = active ] && fm_drill_current_run_parked; then
+    printf 'parked'
+    return
+  fi
+  printf '%s' "$state"
 }
 
 reported_state() {
   fm_drill_reported_exec_state "$(task_run_state "$1")" "$(get_state "$1")"
+}
+
+# Liveness of the endpoint recorded for this task. Only an authoritatively
+# gone endpoint (dead|missing) licenses resumption; every ambiguous, unreadable,
+# or unverified read keeps the recorded owner authoritative.
+task_owner_endpoint_state() {  # <id> -> alive|dead|unknown
+  local meta state_out
+  if [ -n "${SQUAD_EXEC_OWNER_STATE:-}" ]; then
+    state_out=$SQUAD_EXEC_OWNER_STATE
+  else
+    meta="$STATE/$1.meta"
+    [ -f "$meta" ] || { printf 'unknown'; return; }
+    if [ -z "${_SQUAD_EXEC_BACKEND_SOURCED:-}" ]; then
+      [ -f "$SCRIPT_DIR/sq-backend.sh" ] || { printf 'unknown'; return; }
+      # shellcheck source=bin/sq-backend.sh disable=SC1091
+      . "$SCRIPT_DIR/sq-backend.sh"
+      _SQUAD_EXEC_BACKEND_SOURCED=1
+    fi
+    state_out=$(fm_backend_agent_state "$(fm_backend_of_meta "$meta")" "$(fm_backend_target_of_meta "$meta")" 2>/dev/null || printf 'unreadable')
+  fi
+  case "$state_out" in
+    alive) printf 'alive' ;;
+    dead|missing) printf 'dead' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# An executing run always blocks a second attempt. A gate-parked run blocks
+# only while its recorded owner endpoint is still alive, so a dead owner cannot
+# leave the task parked behind a run nobody can answer.
+task_run_blocks_dispatch() {  # <id> <run_state>
+  case "$2" in
+    active) return 0 ;;
+    parked) [ "$(task_owner_endpoint_state "$1")" != dead ] ;;
+    *) return 1 ;;
+  esac
 }
 
 terminal_status() {  # <id> [run_state]: last terminal event, unless a bound run resumed
@@ -81,7 +124,8 @@ terminal_status() {  # <id> [run_state]: last terminal event, unless a bound run
   case "$verb:$pr" in
     done:*|failed:*)
       [ -n "$run_state" ] || run_state=$(task_run_state "$1")
-      [ "$run_state" != active ] ;;
+      case "$run_state" in active|parked) return 1 ;; esac
+      return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -166,11 +210,10 @@ claim_locked() {  # <id> [run_state]: run evidence is resolved before the lock
   local id=$1 run_state=${2-} state
   state=$(get_state "$id")
   [ -n "$run_state" ] || run_state=$(task_run_state "$id")
-  case "$run_state" in
-    active)
-      printf 'error: task %s already has an active run\n' "$id" >&2
-      return 3 ;;
-  esac
+  if task_run_blocks_dispatch "$id" "$run_state"; then
+    printf 'error: task %s already has an active run\n' "$id" >&2
+    return 3
+  fi
   if terminal_status "$id" "$run_state"; then
     transition_locked "$id" released >/dev/null
     printf 'error: task %s has terminal status\n' "$id" >&2
@@ -218,20 +261,19 @@ recover_locked() {  # <id> [run_state]: run evidence is resolved before the lock
   local id=$1 run_state=${2-} current age now last
   current=$(get_state "$id")
   [ -n "$run_state" ] || run_state=$(task_run_state "$id")
-  case "$run_state" in
-    active)
-      # Repair only through existing transitions. Released is immutable for
-      # dispatch, even though its live run still projects as running in get.
-      case "$current" in
-        retry_queued)
-          transition_locked "$id" claimed "$run_state" >/dev/null
-          transition_locked "$id" running "$run_state" >/dev/null ;;
-        claimed) transition_locked "$id" running "$run_state" >/dev/null ;;
-        running) write_record "$id" running "$current" ;;
-      esac
-      printf 'running\n'
-      return ;;
-  esac
+  if task_run_blocks_dispatch "$id" "$run_state"; then
+    # Repair only through existing transitions. Released is immutable for
+    # dispatch, even though its live run still projects as running in get.
+    case "$current" in
+      retry_queued)
+        transition_locked "$id" claimed "$run_state" >/dev/null
+        transition_locked "$id" running "$run_state" >/dev/null ;;
+      claimed) transition_locked "$id" running "$run_state" >/dev/null ;;
+      running) write_record "$id" running "$current" ;;
+    esac
+    printf 'running\n'
+    return
+  fi
   case "$current" in
     running|claimed|retry_queued)
       if terminal_status "$id" "$run_state"; then
