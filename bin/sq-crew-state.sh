@@ -340,10 +340,10 @@ RUN_SOURCE=full
 COARSE_STATUS=
 if [ "$KIND" = strike ] && command -v drill >/dev/null 2>&1; then
   fm_drill_current_run "$WT" "$DRILL_TIMEOUT" "$SQUAD_CREW_STATE_RUNS_LIMIT"
-  RUN_OUT=$FM_DRILL_RUN_OUT
-  COARSE_STATUS=$FM_DRILL_COARSE_STATUS
-  case "$FM_DRILL_RUN_SOURCE" in
-    full|coarse) HAVE_RUN=1; RUN_SOURCE=$FM_DRILL_RUN_SOURCE ;;
+  RUN_OUT=$SQ_DRILL_RUN_OUT
+  COARSE_STATUS=$SQ_DRILL_COARSE_STATUS
+  case "$SQ_DRILL_RUN_SOURCE" in
+    full|coarse) HAVE_RUN=1; RUN_SOURCE=$SQ_DRILL_RUN_SOURCE ;;
     unverified) emit unknown none "latest same-branch execution could not be verified" ;;
   esac
 fi

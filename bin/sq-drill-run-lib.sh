@@ -124,38 +124,38 @@ fm_drill_runs_status_for_branch() {  # <worktree> <timeout> <limit> <branch>
 
 
 # Capture the current branch/code-bound run for reporting and execution recovery.
-# Results: FM_DRILL_RUN_OUT, FM_DRILL_RUN_SOURCE (full/coarse/none/unverified),
-# FM_DRILL_COARSE_STATUS. A terminal snapshot must not hide a newer active run.
+# Results: SQ_DRILL_RUN_OUT, SQ_DRILL_RUN_SOURCE (full/coarse/none/unverified),
+# SQ_DRILL_COARSE_STATUS. A terminal snapshot must not hide a newer active run.
 fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
   local wt=$1 timeout_secs=$2 limit=$3 branch run_branch status outcome head
-  FM_DRILL_RUN_OUT=
-  FM_DRILL_RUN_SOURCE=none
-  FM_DRILL_COARSE_STATUS=
+  SQ_DRILL_RUN_OUT=
+  SQ_DRILL_RUN_SOURCE=none
+  SQ_DRILL_COARSE_STATUS=
   [ -d "$wt" ] || return 0
   branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null) || return 0
   [ -n "$branch" ] || return 0
-  FM_DRILL_RUN_OUT=$(fm_drill_run "$wt" "$timeout_secs" axi status)
-  [ -n "$FM_DRILL_RUN_OUT" ] || return 0
-  run_branch=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" branch)")
-  head=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" head)")
+  SQ_DRILL_RUN_OUT=$(fm_drill_run "$wt" "$timeout_secs" axi status)
+  [ -n "$SQ_DRILL_RUN_OUT" ] || return 0
+  run_branch=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" branch)")
+  head=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" head)")
   if [ "$run_branch" = "$branch" ] && fm_drill_head_matches_worktree "$wt" "$head"; then
-    FM_DRILL_RUN_SOURCE=full
-    status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
-    outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")
+    SQ_DRILL_RUN_SOURCE=full
+    status=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" status)")
+    outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" outcome)")
     case "$status:$outcome" in
       failed:*|cancelled:*|completed:*|*:failed|*:passed|*:checks-passed|*:cancelled)
-        FM_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
-        case "$FM_DRILL_COARSE_STATUS" in
-          unknown|'') FM_DRILL_RUN_SOURCE=unverified ;;
-          running) FM_DRILL_RUN_SOURCE=coarse ;;
+        SQ_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
+        case "$SQ_DRILL_COARSE_STATUS" in
+          unknown|'') SQ_DRILL_RUN_SOURCE=unverified ;;
+          running) SQ_DRILL_RUN_SOURCE=coarse ;;
         esac
         ;;
     esac
   else
-    FM_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
-    case "$FM_DRILL_COARSE_STATUS" in
+    SQ_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
+    case "$SQ_DRILL_COARSE_STATUS" in
       unknown|'') : ;;
-      *) FM_DRILL_RUN_SOURCE=coarse ;;
+      *) SQ_DRILL_RUN_SOURCE=coarse ;;
     esac
   fi
 }
@@ -165,16 +165,16 @@ fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
 # parked-at-a-gate when the captured evidence shows one.
 fm_drill_current_run_state() {
   local status outcome
-  case "$FM_DRILL_RUN_SOURCE" in
+  case "$SQ_DRILL_RUN_SOURCE" in
     coarse)
-      case "$FM_DRILL_COARSE_STATUS" in
+      case "$SQ_DRILL_COARSE_STATUS" in
         running) printf 'active' ;;
         completed|failed|cancelled) printf 'terminal' ;;
         *) printf 'unknown' ;;
       esac ;;
     full)
-      status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
-      outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")
+      status=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" status)")
+      outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" outcome)")
       case "$status:$outcome" in
         *:passed|*:checks-passed|*:failed|*:cancelled|completed:|failed:|cancelled:) printf 'terminal' ;;
         *:) printf 'active' ;;
@@ -191,11 +191,11 @@ fm_drill_current_run_state() {
 # approval/fix status, an awaiting_agent field, or a gate block is parked.
 fm_drill_current_run_parked() {
   local status
-  [ "$FM_DRILL_RUN_SOURCE" = full ] || return 1
-  [ -z "$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" outcome)")" ] || return 1
-  status=$(fm_drill_strip_quotes "$(fm_drill_field "$FM_DRILL_RUN_OUT" status)")
+  [ "$SQ_DRILL_RUN_SOURCE" = full ] || return 1
+  [ -z "$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" outcome)")" ] || return 1
+  status=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" status)")
   case "$status" in awaiting_approval|fix_review) return 0 ;; esac
-  printf '%s\n' "$FM_DRILL_RUN_OUT" | grep -Eq '^[[:space:]]*(awaiting_agent|gate):[[:space:]]*'
+  printf '%s\n' "$SQ_DRILL_RUN_OUT" | grep -Eq '^[[:space:]]*(awaiting_agent|gate):[[:space:]]*'
 }
 
 # Reported execution state for a captured run lifecycle: an active or
