@@ -438,6 +438,43 @@ jobs:
           npm pack --dry-run 2>&1 | grep -E 'sq-tasks|dist/bin'
 
 
+  sq-durable:
+    name: sq-durable lab core build + test + Q4 proof
+    runs-on: ubuntu-latest
+    # Spawns and SIGKILLs real lab service processes; this cap is a hang tripwire.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install and build
+        run: |
+          set -eu
+          cd packages/sq-durable
+          npm ci
+          npm run build
+      - name: Test suites, including the dependency-direction negative fixture
+        run: |
+          set -eu
+          cd packages/sq-durable
+          npm test
+          npm run test:dependency
+      - name: Q4 lab proof (approval survives SIGKILL)
+        env:
+          SQ_DURABLE_EVIDENCE_DIR: ${{ runner.temp }}/sq-durable-proof
+        run: bash packages/sq-durable/scripts/lab-proof.sh
+      - name: Upload Q4 proof evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sq-durable-q4-proof
+          path: |
+            ${{ runner.temp }}/sq-durable-proof/*.json
+            ${{ runner.temp }}/sq-durable-proof/*.jsonl
+            ${{ runner.temp }}/sq-durable-proof/*.log
+          if-no-files-found: warn
+
   axi-tools:
     name: Vendored axi tools (${{ matrix.pkg }})
     strategy:

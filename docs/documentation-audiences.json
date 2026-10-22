@@ -905,6 +905,10 @@
    "audience": "public-product"
   },
   {
+   "path": "packages/sq-durable/README.md",
+   "audience": "maintainer-architecture"
+  },
+  {
    "path": "packages/drill/AGENTS.md",
    "audience": "maintainer-architecture"
   },

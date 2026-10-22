@@ -19,6 +19,8 @@ packages/*/node_modules/
 packages/*/dist/
 packages/*/.turbo/
 packages/*/package-lock.json
+# sq-durable sits outside the root workspace and installs with `npm ci`, which needs its own lockfile.
+!packages/sq-durable/package-lock.json
 node_modules/
 .turbo/
 .lavish/
