@@ -5,7 +5,9 @@
 # get projects a current attributed Drill run over the dispatch record;
 # get-recorded reads only that record. A released id remains undispatchable.
 # claim exits 3 when an active run already owns the id, so a supervisor can
-# skip that attempt without recording a failure.
+# skip that attempt without recording a failure. An ended run never blocks a
+# claim or retires a record on its own: a retry_queued record exists precisely
+# because the previous attempt's run already ended.
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
@@ -45,7 +47,10 @@ meta_field() { grep "^$1=" "$STATE/$2.meta" 2>/dev/null | tail -1 | cut -d= -f2-
 get_state() { local value; value=$(get_field exec_state "$1"); printf '%s\n' "${value:-unclaimed}"; }
 
 # Active run evidence is independent of endpoint liveness and stale events.
-# Unknown/unattributed queries leave the existing dispatch semantics unchanged.
+# Active evidence gates dispatch, while terminal evidence only drives the get
+# projection: retiring a dispatch record stays tied to terminal .status
+# evidence or an explicit release. Unknown/unattributed queries leave the
+# existing dispatch semantics unchanged.
 task_run_state() {  # <id> -> active|terminal|unknown
   local wt kind timeout_secs limit
   wt=$(meta_field worktree "$1")
@@ -165,10 +170,6 @@ claim_locked() {  # <id> [run_state]: run evidence is resolved before the lock
     active)
       printf 'error: task %s already has an active run\n' "$id" >&2
       return 3 ;;
-    terminal)
-      transition_locked "$id" released "$run_state" >/dev/null
-      printf 'error: task %s has a terminal run\n' "$id" >&2
-      return 1 ;;
   esac
   if terminal_status "$id" "$run_state"; then
     transition_locked "$id" released >/dev/null
@@ -229,9 +230,6 @@ recover_locked() {  # <id> [run_state]: run evidence is resolved before the lock
         running) write_record "$id" running "$current" ;;
       esac
       printf 'running\n'
-      return ;;
-    terminal)
-      transition_locked "$id" released "$run_state"
       return ;;
   esac
   case "$current" in

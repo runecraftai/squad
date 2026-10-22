@@ -243,19 +243,20 @@ git -C "$active_wt" -c user.email=t@example.invalid -c user.name=t commit -q --a
 git -C "$active_wt" checkout -q -b sq/active-retry
 active_head=$(git -C "$active_wt" rev-parse HEAD)
 mkdir -p "$TMP/activebin"
-cat > "$TMP/activebin/drill" <<EOF
+cat > "$TMP/activebin/drill" <<'EOF'
 #!/usr/bin/env bash
-case "\${1:-}" in
+case "${1:-}" in
   axi)
-    [ "\${2:-}" = status ] && printf 'run:\n  branch: sq/active-retry\n  status: running\n  head: "%s"\n' "$active_head"
+    [ "${2:-}" = status ] && printf 'run:\n  branch: sq/active-retry\n  status: %s\n  head: "%s"\n' "${FAKE_RUN_STATUS:-running}" "$FAKE_RUN_HEAD"
     ;;
   runs)
-    printf 'running sq/active-retry %.7s 2026-10-21\n' "$active_head"
+    printf '%s sq/active-retry %.7s 2026-10-21\n' "${FAKE_RUN_STATUS:-running}" "$FAKE_RUN_HEAD"
     ;;
 esac
 exit 0
 EOF
 chmod +x "$TMP/activebin/drill"
+export FAKE_RUN_HEAD=$active_head
 printf 'worktree=%s\nkind=strike\n' "$active_wt" >"$STATE/retry-active-run.meta"
 "$EXEC" claim retry-active-run >/dev/null
 "$EXEC" running retry-active-run >/dev/null
@@ -274,6 +275,18 @@ if grep -q 'retry claim failed' "$STATE/retry-active-run.status" 2>/dev/null; th
   exit 1
 fi
 rm -f "$STATE"/retry-active-run.*
+
+# A queued retry whose previous run already ended still resumes: the ended run
+# is reporting evidence, so the supervisor claims the attempt instead of
+# retiring it and leaving the operator parked.
+printf 'worktree=%s\nkind=strike\n' "$active_wt" >"$STATE/retry-ended-run.meta"
+printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=0\nexec_last_activity=1\nexec_next_retry_at=1\n' >"$STATE/retry-ended-run.exec"
+printf 'working: stall interrupted; retry scheduled for 1\n' >"$STATE/retry-ended-run.status"
+FAKE_RUN_STATUS=failed PATH="$TMP/activebin:$PATH" retry_run_claim
+assert_eq "$(field exec_state retry-ended-run)" running
+assert_eq "$(tail -1 "$STATE/retry-ended-run.status")" 'working: retry resumed'
+assert_eq "$(PATH="$TMP/activebin:$PATH" "$EXEC" get-recorded retry-ended-run)" running
+rm -f "$STATE"/retry-ended-run.*
 
 # A failed claim surfaces a blocked status instead of being silently swallowed.
 "$EXEC" claim retry-claim-fail >/dev/null

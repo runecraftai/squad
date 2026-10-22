@@ -1440,7 +1440,7 @@ test_newest_running_run_overrides_older_terminal_snapshot() {
   state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get newer)
   [ "$state" = released ] || fail "exec get ignores terminal run with busy pane: $state"
   state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" recover newer)
-  [ "$state" = released ] || fail "terminal run did not retire queued record: $state"
+  [ "$state" = released ] || fail "recovery did not retire the queued record on its terminal status: $state"
   SQUAD_FAKE_RUNS_LIST="completed sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
   SQUAD_FAKE_AXI_STATUS="$(run_ci_checks_passed sq/newer-active)"
   out=$(run_crew_state "$d" newer)

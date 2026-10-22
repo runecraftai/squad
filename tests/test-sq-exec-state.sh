@@ -115,6 +115,40 @@ if "$EXEC" claim queued-direct >/dev/null 2>&1; then
 fi
 assert_eq "$("$EXEC" get queued-direct)" released
 
+# A queued retry outlives the previous attempt's ended run: the terminal run
+# drives the `get` reporting projection, not the dispatch decision, so claim,
+# recover, and recover-all resume the attempt instead of parking it.
+resume_wt="$TMP/resume-wt"
+mkdir -p "$resume_wt"
+git -C "$resume_wt" init -q
+git -C "$resume_wt" -c user.email=t@example.invalid -c user.name=t commit -q --allow-empty -m init
+git -C "$resume_wt" checkout -q -b sq/resume
+resume_head=$(git -C "$resume_wt" rev-parse HEAD)
+mkdir -p "$TMP/resume-bin"
+cat > "$TMP/resume-bin/drill" <<EOF
+#!/usr/bin/env bash
+case "\${1:-}" in
+  axi)
+    [ "\${2:-}" = status ] && printf 'run:\n  branch: sq/resume\n  status: failed\n  outcome: failed\n  head: "%s"\n' "$resume_head"
+    ;;
+  runs)
+    printf 'failed sq/resume %.7s 2026-10-21\n' "$resume_head"
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$TMP/resume-bin/drill"
+printf 'window=Squad\nworktree=%s\nkind=strike\n' "$resume_wt" > "$STATE/resume.meta"
+printf 'exec_state=retry_queued\nexec_attempt=2\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/resume.exec"
+printf 'working: stall interrupted; retry scheduled for 1\n' > "$STATE/resume.status"
+assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" get resume)" released
+assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" claim resume)" claimed
+assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" get-recorded resume)" claimed
+printf 'exec_state=retry_queued\nexec_attempt=2\nexec_retry_count=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$STATE/resume.exec"
+assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" recover resume)" retry_queued
+PATH="$TMP/resume-bin:$PATH" "$EXEC" recover-all >/dev/null
+assert_eq "$(PATH="$TMP/resume-bin:$PATH" "$EXEC" get-recorded resume)" retry_queued
+
 # recover-all removes orphaned exec files (meta absent) but preserves live ones.
 printf 'exec_state=running\nexec_attempt=1\n' > "$STATE/orphan.exec"
 printf 'window=Squad\n' > "$STATE/live-task.meta"
