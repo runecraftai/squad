@@ -7,7 +7,8 @@ import { DatabaseSync } from "node:sqlite";
  * Store layout and exclusive ownership.
  *
  * <store>/owner.sqlite      ownership file: storeId, laboratory mark, and the kernel lock of the one live owner
- * <store>/pi.sqlite         Pi Durable storage, opened and written only by the owning service
+ * <store>/pi.sqlite         Pi Durable storage, opened and written only by the owning service, plus `init` once while it
+ *                           holds the ownership lock of the store it just created
  * <store>/sq-durable.sock   local command socket of the owning service
  * <store>/executor-ledger.json   laboratory executor ledger (the controlled "outside world")
  *

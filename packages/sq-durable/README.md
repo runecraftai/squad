@@ -16,7 +16,7 @@ It touches no Squad production state, script, backlog, or supervision path.
 
 ## Invariants
 
-- Only the service opens and writes the Pi storage; every other surface sends commands over the store's socket.
+- Only the service opens and writes the Pi storage, except `init`, which writes it once while it holds the ownership lock of the store it just created; every other surface sends commands over the store's socket.
 - One live owner per store, enforced by a kernel lock that a killed process releases.
 - A missing store or database is a failure and is never recreated.
 - Ready means `resume()` has run and the engine answers on its mutation line, never just a live process.
