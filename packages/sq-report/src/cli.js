@@ -1187,7 +1187,7 @@ async function waitForServerHealth(baseUrl, version, timeoutMs, child = null) {
   while (Date.now() < deadline) {
     const health = await fetchHealth(baseUrl);
     if (health && !shouldRestartServer(version, health)) return health;
-    if (child && childExited(child)) return null;
+    if (child && (childNeverStarted(child) || childExited(child))) return null;
     await delay(100);
   }
   return null;
@@ -1201,14 +1201,21 @@ function childSpawnError(child) {
   return spawnFailures.get(child) ?? null;
 }
 
+// Only real exit state counts as gone. A recorded error can also mean a signal failed to
+// reach a live child, which must still escalate instead of being treated as an exit.
 function childExited(child) {
-  return spawnFailures.has(child) || child.exitCode !== null || child.signalCode !== null;
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+// A failed spawn never produced a process, so there is no pid to signal or wait for.
+function childNeverStarted(child) {
+  return child.pid === undefined && childSpawnError(child) !== null;
 }
 
 // Terminates a server child this CLI spawned, including its detached process group, and
 // waits for it to exit so its listener is gone before the caller moves on.
 async function stopSpawnedServer(child, timeoutMs = 3000) {
-  if (childExited(child)) return;
+  if (childNeverStarted(child) || childExited(child)) return;
   const signalGroup = (signal) => {
     try {
       process.kill(-child.pid, signal);
