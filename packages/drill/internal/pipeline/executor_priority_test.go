@@ -162,6 +162,78 @@ func TestExecutor_ResumeHonorsFixExecutionBudget(t *testing.T) {
 	}
 }
 
+// A user-triggered fix can be authorized without selected finding ids, so a
+// recovered gate must count executed fix rounds, not recorded selections.
+func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	if err := database.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
+		t.Fatal(err)
+	}
+	result, err := database.InsertStepResult(run.ID, types.StepReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.StartStep(result.ID); err != nil {
+		t.Fatal(err)
+	}
+	findings := `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"still unresolved"}]}`
+	prior := []struct {
+		trigger string
+		source  string
+	}{
+		{"initial", db.RoundSelectionSourceAutoFix},
+		{"auto_fix", db.RoundSelectionSourceUser},
+		{"auto_fix", ""},
+		{"auto_fix", ""},
+	}
+	for i, round := range prior {
+		inserted, err := database.InsertStepRound(result.ID, i+1, round.trigger, &findings, nil, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if round.source != "" {
+			source := round.source
+			ids := `["requirement"]`
+			if err := database.SetStepRoundSelection(inserted.ID, &ids, source); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := database.ParkStepForApproval(run.ID, result.ID, types.StepStatusFixReview, 1, &findings); err != nil {
+		t.Fatal(err)
+	}
+	run, err = database.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := &adaptiveCallStep{name: types.StepReview, fn: func(sctx *StepContext) (*StepOutcome, error) {
+		t.Error("recovery executed a fix beyond the shared budget")
+		return &StepOutcome{NeedsApproval: true, Findings: findings}, nil
+	}}
+	exec := NewExecutor(database, p, &config.Config{AutoFix: config.AutoFix{MaxFixRounds: 3}}, nil, []Step{step}, nil)
+	events := collectEvents(exec)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- exec.Resume(ctx, run, repo, t.TempDir()) }()
+	waitForEvent(t, events, ipc.EventStepCompleted, string(types.StepStatusFixReview))
+	if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "used 3/3 fix executions (1 auto + 2 user)") {
+			t.Fatalf("recovery undercounted executed fixes: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("recovery exceeded the budget instead of refusing")
+	}
+	stats, err := database.StepRoundStats(result.ID)
+	if err != nil || stats.FixRounds != 3 {
+		t.Fatalf("recorded fixes = %d, want 3: %v", stats.FixRounds, err)
+	}
+}
+
 // S7: a requirement is already known, but timeout documentation and a script
 // header must not consume the fix budget before that requirement is presented.
 func TestExecutor_DecisionBeforeInfoOnlyFix(t *testing.T) {

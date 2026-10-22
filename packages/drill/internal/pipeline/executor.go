@@ -472,17 +472,19 @@ func (e *Executor) recoveredGate(runID string) (*recoveredGate, error) {
 				return nil, fmt.Errorf("recovered approval gate findings are incomplete")
 			}
 			autoFixes := 0
-			userFixes := 0
+			executedFixes := 0
 			for _, round := range rounds {
-				if round.SelectionSource != nil {
-					switch *round.SelectionSource {
-					case db.RoundSelectionSourceAutoFix:
-						autoFixes++
-					case db.RoundSelectionSourceUser:
-						userFixes++
-					}
+				if round.IsFixRound() {
+					executedFixes++
+				}
+				if round.SelectionSource != nil && *round.SelectionSource == db.RoundSelectionSourceAutoFix {
+					autoFixes++
 				}
 			}
+			if autoFixes > executedFixes {
+				autoFixes = executedFixes
+			}
+			userFixes := executedFixes - autoFixes
 			gate = &recoveredGate{
 				index:       index,
 				step:        e.steps[index],
