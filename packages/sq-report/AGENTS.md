@@ -49,6 +49,8 @@ sq-report is a CLI + local HTTP server that opens agent-generated HTML artifacts
 
 The CLI (`bin/sq-report.js` -> `src/cli.js`) spawns `sq-report server` as a **detached** background process (`src/cli.js:startServer`) and waits for `/health`, which returns `{ ok, app, version }`.
 Later CLI invocations reuse the running server only when its health version matches the current CLI version; stale servers are asked to `POST /shutdown`, and pre-handshake servers may be SIGTERM'd by port PID before the upgraded server is spawned.
+The spawned child must be the same program as the CLI (`resolveServerEntry`): a `dist/cli.mjs` built inside a source checkout spawns itself, never the sibling `bin/sq-report.js`, because the bundle's baked version and the source `package.json` version can differ and the CLI would then reject its own child.
+A child that never becomes healthy is killed with its process group before `ensureServer` gives up, and "port free" means nothing accepts connections, not merely that `/health` stopped answering; `test/server-lifecycle.test.js` guards both.
 Host, port, and link-host resolution lives in `src/paths.js` (`bindHost`/`clientHost`/`linkHost`); the CLI's own control-channel requests dial the bind host, falling back to loopback when it is a wildcard.
 A Host-header allowlist middleware (`buildAllowedHostnames`/`isAllowedRequestHost`) rejects any request whose `Host` is missing or not one this server answers to - the DNS-rebinding defense, since `isSameOriginRequest` alone does not stop rebinding (a rebound page sends its hostile domain in _both_ `Origin` and `Host`, so they still match). The allowlist is loopback names + the resolved bind/link host + explicit `SQ_REPORT_ALLOWED_HOSTS` extras (`src/paths.js:extraAllowedHosts`), minus wildcard binds; a lone `*` (`allowsAllHosts`) disables the guard for operators fronting it with their own auth. When a reverse proxy sits in front, `X-Forwarded-Host`'s outermost value is validated against the same allowlist (an AND check, so a spoofed forwarded host only narrows access, never bypasses `Host`). README's Allowed hosts bullet owns the user-facing contract. So a specific-interface bind stays rebinding-protected while its own hostname works, rather than the guard switching off outside loopback.
 README's Network binding bullet owns the user-facing env vars and the non-loopback security warning.
@@ -160,7 +162,7 @@ No `mcp.json` ships: the CLI itself is the agent interface, and adding one would
 
 `src/telemetry.js` posts anonymous events to an Umami endpoint.
 The website ID and host can be baked into the bundle at build time via `SQ_REPORT_UMAMI_HOST`/`SQ_REPORT_UMAMI_WEBSITE_ID` env vars (consumed by `scripts/build.js` and inlined as `process.env.SQ_REPORT_BUILD_UMAMI_*` defines).
-The build optionally inlines `package.json`'s version as `process.env.SQ_REPORT_BUILD_VERSION`, but both the CLI and server independently fall back to reading `package.json` at runtime, making the version handshake robust against stale builds.
+The build inlines `package.json`'s version as `process.env.SQ_REPORT_BUILD_VERSION` for both the CLI and the server; only source runs fall back to reading `package.json`, so a stale bundle and the source tree can disagree (see Process model).
 Users opt out with `SQ_REPORT_TELEMETRY=0`.
 The client is best-effort and must never affect CLI behavior - all errors are swallowed.
 No need to explicitly document the telemetry behaviors.
