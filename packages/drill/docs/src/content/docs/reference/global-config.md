@@ -312,7 +312,11 @@ For empty `commands.lint`, the document step's combined housekeeping pass also a
 | `auto_fix.document` | `int` | `3`     | Not used by the automatic document pass                                                     |
 | `auto_fix.lint`     | `int` | `3`     | Lint issue auto-fix attempts                                                                |
 | `auto_fix.ci`       | `int` | `3`     | CI auto-fix attempts for CI failures, plus GitHub, GitLab, and Azure DevOps merge conflicts |
-| `auto_fix.max_fix_rounds` | `int` | `3` | Global cap on total fix rounds (auto-fix + user-fix) per step before non-convergence failure |
+| `auto_fix.max_fix_rounds` | `int` | `3` | Global cap on actual fix executions (auto-fix + user-fix) per step; the next fix request fails with non-convergence |
+
+`max_fix_rounds: 3` permits three fix executions per step, each followed by verification, in addition to the initial evaluation.
+Automatic and user-triggered fixes share this budget, including after recovery of a parked run.
+A refused request does not consume an execution or approve unresolved findings.
 
 Legacy alias: `auto_fix.babysit`.
 

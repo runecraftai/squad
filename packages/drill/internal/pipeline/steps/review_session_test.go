@@ -108,6 +108,40 @@ func fixCalls(calls []agent.RunOpts) []agent.RunOpts {
 	return out
 }
 
+// The default budget is three fixer executions, not three review evaluations.
+func TestReviewLoop_DefaultBudgetAllowsThreeFixerCalls(t *testing.T) {
+	reviews := 0
+	mock := &sessionMockAgent{}
+	mock.respond = func(opts agent.RunOpts) *agent.Result {
+		if opts.Purpose == "review-fix" {
+			return &agent.Result{Output: []byte(`{"summary":"fix the bug"}`)}
+		}
+		reviews++
+		if reviews <= 3 {
+			return &agent.Result{Output: []byte(`{"findings":[{"severity":"error","description":"still broken","action":"auto-fix"}],"summary":"issues","risk_level":"medium","risk_rationale":"bug"}`)}
+		}
+		return &agent.Result{Output: []byte(`{"findings":[],"summary":"clean","risk_level":"low","risk_rationale":"clean"}`)}
+	}
+	exec, database, run, repo, workDir := reviewSessionHarness(t, mock, []pipeline.Step{&ReviewStep{}})
+	if err := exec.Execute(context.Background(), run, repo, workDir); err != nil {
+		t.Fatalf("third authorized fix was refused: %v; fixer calls = %d", err, len(fixCalls(mock.snapshot())))
+	}
+	if got := len(fixCalls(mock.snapshot())); got != 3 {
+		t.Errorf("fixer calls = %d, want 3", got)
+	}
+	if got := len(reviewCalls(mock.snapshot())); got != 4 {
+		t.Errorf("review evaluations = %d, want initial + 3 post-fix evaluations", got)
+	}
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil || len(steps) != 1 {
+		t.Fatalf("get review step: %v, %v", steps, err)
+	}
+	stats, err := database.StepRoundStats(steps[0].ID)
+	if err != nil || stats.FixRounds != 3 {
+		t.Fatalf("recorded fix executions = %d, want 3: %v", stats.FixRounds, err)
+	}
+}
+
 // TestReviewLoop_IndependentReviewTurnsOneFixerSession drives the real review
 // step through the executor's auto-fix loop for multiple rounds and proves:
 // every review turn (the initial review and every post-fix rereview) runs
