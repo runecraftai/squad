@@ -28,7 +28,7 @@ flowchart TD
 3. The agent receives the previous findings and applies fixes
 4. The step re-runs to verify the fixes
 5. If issues remain and attempts are left, the loop continues
-6. Once the limit is reached or all issues are resolved:
+6. Once its per-step limit is reached or all issues are resolved:
    - If issues remain, the step pauses for user approval
    - If everything passes, the step completes and the pipeline moves on
 
@@ -65,9 +65,8 @@ Per-step attempt limits come from the `auto_fix` config object; the [`auto_fix` 
 Setting a step to `0` disables the follow-up auto-fix loop, so the pipeline pauses for human input when that step finds issues; `auto_fix.review` defaults to `0`, so review findings require manual approval unless you opt in.
 Repo config overlays global config field by field - you can set `auto_fix.lint: 5` in a repo's `.drill.yaml` to override just that step while inheriting the rest from global.
 
-The global [`max_fix_rounds` budget](/drill/reference/global-config/#auto_fix) counts actual fix executions, not review evaluations or refused requests.
-A non-convergence error reports the executions already performed and explicitly identifies the next fix as refused, not executed.
-The existing execution-round records describe performed work; the failed step's error records the refusal without adding a fictitious fix round.
+The [`max_fix_rounds` reference](/drill/reference/global-config/#auto_fix) owns what the shared budget counts and when a fix request is refused.
+A non-convergence error reports the executions already performed and identifies the next fix as refused rather than executed.
 
 ## Finding actions
 
@@ -126,6 +125,7 @@ AXI status uses the same round history and the persisted auto-fix limit to show 
 The step log records a marker with the shared execution count when each automatic or user-triggered fix execution starts.
 The generated PR surfaces this recorded evidence in deterministic Risk Assessment, Testing, and Pipeline sections. The [pipeline steps reference](/drill/reference/pipeline-steps/#pr) owns the PR body composition and size-limit contract.
 The full round history remains available in the run log.
+A fix request the shared budget refuses adds no round, so the round history keeps only executions that actually ran; a non-convergence failure names the refusal in the step error.
 
 Round trigger types:
 - `initial` - first execution
