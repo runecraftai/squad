@@ -2160,7 +2160,7 @@ cleanup_Squad_home_children() {
     fi
     remove_grok_turnend_auth "$sub_state" "$child_id"
     remove_kimi_turnend_auth "$sub_state" "$child_id"
-    remove_pr_poll_artifacts "$sub_state" "$child_id" || return 1
+    remove_pr_poll_artifacts "$sub_state" "$child_id" || return $?
     child_busy_gen=$(meta_value "$child_meta" busy_gen)
     if [ -z "$child_busy_gen" ]; then
       child_busy_gen=$(cat "$sub_state/$child_id.busy-gen" 2>/dev/null || true)
@@ -2470,7 +2470,7 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/sq-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
-remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
+remove_pr_poll_artifacts "$STATE" "$ID" || exit $?
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 retire_watcher_markers "$STATE" "$ID" "$T"
 # A remote XO teardown removes the home before reaching this common cleanup

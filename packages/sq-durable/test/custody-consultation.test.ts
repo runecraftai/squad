@@ -242,8 +242,7 @@ describe("every inventoried consultation point refuses a durable mission before 
 			scriptEnv(base),
 		);
 		const outcomes = result.stdout.trim().split("\n");
-		expect(outcomes).toHaveLength(3);
-		for (const outcome of outcomes) expect(outcome).toMatch(/=[1-9][0-9]*$/);
+		expect(outcomes).toEqual(["prepare=3", "publish=3", "recover=3"]);
 		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
 		expect(stateDigest(base)).toBe(before);
 		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(3);

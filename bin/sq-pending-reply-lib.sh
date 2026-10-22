@@ -946,7 +946,7 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
       open_note=${open_note#*$'\t'}
       [ "$open_note" = "$note" ] || continue
       line="resolved [key=$key]: pending-reply-resolved: task=$(fm_pending_reply_get "$rec" task_id) pending-reply-id=$corr via=$(fm_pending_reply_get "$rec" resolved_via)"
-      fm_pending_reply_parent_custody "$parent_status" || return 1
+      fm_pending_reply_parent_custody "$parent_status" || return $?
       status_line_append "$parent_status" "$line" 2>/dev/null || return 1
       break
     done <<EOF
@@ -1011,7 +1011,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   esac
   payload=$(fm_pending_reply_escalation_payload "$rec" "$kind") || return 1
   [ -n "$parent_status" ] || return 1
-  fm_pending_reply_parent_custody "$parent_status" || return 1
+  fm_pending_reply_parent_custody "$parent_status" || return $?
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
   line="blocked [key=$(fm_pending_reply_escalation_key "$corr")]: $payload"
   if ! grep -Fqx "$line" "$parent_status" 2>/dev/null; then

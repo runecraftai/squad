@@ -264,7 +264,7 @@ const VAR = String.raw`\$\{?[A-Za-z_][A-Za-z_0-9]*\}?`;
 const TASK_RECORD = new RegExp(String.raw`${STATE_DIR}/${VAR}\.[a-z][a-z0-9-]*|${DATA_DIR}/${VAR}/`);
 const WRITE_OP = /(?:(?<![0-9&<>])>>?\s*["']?\$|\b(?:mv|rm|cp|tee|touch|ln|install|truncate)\s)/;
 /** Variables that hold a task record path by name. */
-const RECORD_VAR_NAME = /^(?:[A-Za-z_]*_)?(?:meta|META|status|STATUS|exec|EXEC)(?:_[A-Za-z_]*)?$|^(?:[A-Za-z_]*_)?(?:status_file|STATUS_FILE)$/;
+const RECORD_VAR_NAME = /^(?:[A-Za-z_]*_)?(?:meta|META|status|STATUS|exec|EXEC)(?:_[A-Za-z_]*)?$/;
 const STATUS_APPEND = /\bstatus_line_append\b/;
 const WRITER_CALLS: readonly RegExp[] = [
 	/\bsq-exec-state(?:\.sh)?["']?\s+["']?(?:claim|running|retry|retry_queued|release|released|after_run|heartbeat|recover|recover-all|transition)\b/,
@@ -503,11 +503,9 @@ export function inventoryViolations(repoRoot: string, inventory: readonly Legacy
 		}
 		if (entry.consults.length === 0 && writer !== undefined) {
 			const pinned = new Set(entry.exempt?.lines ?? []);
-			for (const hit of writer.hits) {
+		for (const hit of writer.hits) {
 				if (hit.signature === "writer-call" || pinned.has(hit.text)) continue;
-				{
-					violations.push(`${entry.path}:${hit.line} writes a task record outside custody review: ${hit.text}`);
-				}
+				violations.push(`${entry.path}:${hit.line} writes a task record outside custody review: ${hit.text}`);
 			}
 			for (const line of pinned) {
 				if (!writer.hits.some((hit) => hit.text === line)) violations.push(`${entry.path} pins a write line that no longer exists: ${line}`);

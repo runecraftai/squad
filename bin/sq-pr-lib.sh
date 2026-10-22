@@ -459,7 +459,7 @@ fm_pr_poll_revoke_final() {
 fm_pr_poll_prepare() {
   local state=$1 id=$2 provider=$3 url=$4 host=$5 path=$6 number=$7 template=$8
   fm_pr_task_id_valid "$id" || return 1
-  durable_custody_check "$id" metadata || return 1
+  durable_custody_check "$id" metadata || return $?
   fm_pr_url_parse "$url" || return 1
   [ "$provider" = "$SQUAD_PR_PROVIDER" ] || return 1
   [ "$host" = "$SQUAD_PR_HOST" ] || return 1
@@ -861,7 +861,7 @@ fm_pr_poll_retirement_discard_obsolete() {
 fm_pr_poll_retirement_publish() {
   local state=$1 id=$2 template=$3 result=$4 receipt state_device tmp
   [ "$result" = merged ] || return 1
-  durable_custody_check "$id" metadata || return 1
+  durable_custody_check "$id" metadata || return $?
   fm_pr_poll_snapshot_matches "$state" "$id" "$template" || return 1
   state_device=$(fm_pr_file_device "$state") || return 1
   receipt="$state/$id.pr-poll-retirement"
@@ -902,7 +902,7 @@ fm_pr_poll_retirement_recover_one() {
   local state=$1 id=$2 template=$3 receipt state_device check data registration
   local receipt_hash receipt_identity
   fm_pr_task_id_valid "$id" || return 1
-  durable_custody_check "$id" metadata || return 1
+  durable_custody_check "$id" metadata || return $?
   receipt="$state/$id.pr-poll-retirement"
   if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
     return 0
