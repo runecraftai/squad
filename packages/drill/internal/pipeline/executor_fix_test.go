@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -858,7 +860,7 @@ func TestNonConvergenceExceedsMaxFixRounds(t *testing.T) {
 	initGitRepo(t, workDir)
 
 	// Step that always has blocking findings and always needs approval.
-	// With MaxFixRounds=2, two user-fix rounds should trigger non-convergence.
+	// With MaxFixRounds=2, execute two fixes and refuse only the third request.
 	cfg := &config.Config{}
 	cfg.AutoFix.MaxFixRounds = 2
 
@@ -891,9 +893,13 @@ func TestNonConvergenceExceedsMaxFixRounds(t *testing.T) {
 	// because sctx.Fixing is true.
 	waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusFixReview)
 
-	// User-fix round 2 - this should trigger non-convergence
+	// User-fix round 2 still executes; only request 3 is refused.
 	if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
 		t.Fatalf("second Respond failed: %v", err)
+	}
+	waitForFixReviewRound(t, database, run.ID, 3)
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"review-1"}); err != nil {
+		t.Fatalf("third Respond failed: %v", err)
 	}
 
 	// The run should fail with a non-convergence error
@@ -909,7 +915,10 @@ func TestNonConvergenceExceedsMaxFixRounds(t *testing.T) {
 		t.Fatal("timed out waiting for non-convergence error")
 	}
 
-	// Verify step is marked failed in DB
+	if callCount != 3 {
+		t.Errorf("step calls = %d, want initial + 2 fixes (refusal must not execute)", callCount)
+	}
+	// Verify the durable record and log distinguish performed fixes from refusal.
 	steps, err := database.GetStepsByRun(run.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -919,8 +928,19 @@ func TestNonConvergenceExceedsMaxFixRounds(t *testing.T) {
 			if s.Status != types.StepStatusFailed {
 				t.Errorf("step status = %s, want failed", s.Status)
 			}
-			if s.Error == nil || !strings.Contains(*s.Error, "non-convergence") {
-				t.Errorf("step error = %v, want non-convergence message", s.Error)
+			if s.Error == nil || !strings.Contains(*s.Error, "used 2/2 fix executions (0 auto + 2 user); next fix refused (not executed)") {
+				t.Errorf("step error = %v, want executed-versus-refused message", s.Error)
+			}
+			rounds, err := database.GetRoundsByStep(s.ID)
+			if err != nil || len(rounds) != 3 {
+				t.Fatalf("rounds = %d, want initial + 2 executed fixes: %v", len(rounds), err)
+			}
+			if rounds[2].SelectedFindingIDs == nil {
+				t.Error("refused request lost its selection")
+			}
+			log, err := os.ReadFile(filepath.Join(p.RunLogDir(run.ID), "review.log"))
+			if err != nil || !strings.Contains(string(log), "next fix refused (not executed)") {
+				t.Errorf("log missing refusal: %v", err)
 			}
 		}
 	}
@@ -988,7 +1008,7 @@ func TestSingleFixRoundCompletesNormally(t *testing.T) {
 }
 
 func TestNonConvergenceErrorMessage(t *testing.T) {
-	err := nonConvergenceError(types.StepReview, 5, 3, 2, 3)
+	err := nonConvergenceError(types.StepReview, 3, 3, 2, 1)
 	msg := err.Error()
 
 	if !strings.Contains(msg, "non-convergence") {
@@ -997,43 +1017,46 @@ func TestNonConvergenceErrorMessage(t *testing.T) {
 	if !strings.Contains(msg, "review") {
 		t.Errorf("error missing step name: %s", msg)
 	}
-	if !strings.Contains(msg, "5/3") {
-		t.Errorf("error missing round count 5/3: %s", msg)
+	if !strings.Contains(msg, "3/3 fix executions") {
+		t.Errorf("error missing execution count 3/3: %s", msg)
 	}
-	if !strings.Contains(msg, "2 auto + 3 user") {
+	if !strings.Contains(msg, "2 auto + 1 user") {
 		t.Errorf("error missing auto/user breakdown: %s", msg)
+	}
+	if !strings.Contains(msg, "next fix refused (not executed)") {
+		t.Errorf("error missing executed-versus-refused distinction: %s", msg)
 	}
 }
 
 // TestSymmetricGuardPlacement proves that both the auto-fix path and the
 // user-fix path enforce MaxFixRounds at the same effective cap. Each path
-// is driven to the limit and the total round count is asserted to be
-// identical, ensuring the documented global limit is honoured regardless
+// is driven to the limit and the evaluation count (initial + permitted fixes)
+// is asserted to be identical, ensuring the global limit is honoured regardless
 // of which path triggers the non-convergence.
 func TestSymmetricGuardPlacement(t *testing.T) {
 	const maxRounds = 3
 
 	// --- auto-fix path ---
 	autoFixRounds := driveToNonConvergenceAutoFix(t, maxRounds)
-	if autoFixRounds != maxRounds {
-		t.Errorf("auto-fix path: got %d rounds, want %d", autoFixRounds, maxRounds)
+	if autoFixRounds != maxRounds+1 {
+		t.Errorf("auto-fix path: got %d evaluations, want initial + %d fixes", autoFixRounds, maxRounds)
 	}
 
 	// --- user-fix path ---
 	userFixRounds := driveToNonConvergenceUserFix(t, maxRounds)
-	if userFixRounds != maxRounds {
-		t.Errorf("user-fix path: got %d rounds, want %d", userFixRounds, maxRounds)
+	if userFixRounds != maxRounds+1 {
+		t.Errorf("user-fix path: got %d evaluations, want initial + %d fixes", userFixRounds, maxRounds)
 	}
 
 	// Both paths must hit exactly the same cap.
 	if autoFixRounds != userFixRounds {
-		t.Errorf("asymmetric cap: auto-fix hit %d rounds, user-fix hit %d rounds; both must be %d",
-			autoFixRounds, userFixRounds, maxRounds)
+		t.Errorf("asymmetric cap: auto-fix hit %d evaluations, user-fix hit %d evaluations; both must be %d",
+			autoFixRounds, userFixRounds, maxRounds+1)
 	}
 }
 
 // driveToNonConvergenceAutoFix runs a step through the auto-fix path until
-// non-convergence is declared. Returns the total number of fix rounds.
+// non-convergence is declared. Returns evaluations, including the initial pass.
 func driveToNonConvergenceAutoFix(t *testing.T, maxRounds int) int {
 	t.Helper()
 	database, p, run, repo := setupTest(t)
@@ -1042,7 +1065,7 @@ func driveToNonConvergenceAutoFix(t *testing.T, maxRounds int) int {
 
 	cfg := &config.Config{}
 	cfg.AutoFix.MaxFixRounds = maxRounds
-	cfg.AutoFix.Review = maxRounds // enable auto-fix for review step
+	cfg.AutoFix.Review = maxRounds + 1 // request one more fix than the global budget
 
 	step := &adaptiveCallStep{
 		name: types.StepReview,
@@ -1088,7 +1111,7 @@ func driveToNonConvergenceAutoFix(t *testing.T, maxRounds int) int {
 }
 
 // driveToNonConvergenceUserFix runs a step through the user-fix path until
-// non-convergence is declared. Returns the total number of fix rounds.
+// non-convergence is declared. Returns evaluations, including the initial pass.
 func driveToNonConvergenceUserFix(t *testing.T, maxRounds int) int {
 	t.Helper()
 	database, p, run, repo := setupTest(t)
@@ -1118,13 +1141,13 @@ func driveToNonConvergenceUserFix(t *testing.T, maxRounds int) int {
 	// Wait for initial awaiting-approval
 	waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusAwaitingApproval)
 
-	// Send maxRounds-1 fix responses. Each succeeds and parks the step.
-	for i := 0; i < maxRounds-1; i++ {
+	// Every authorized fix executes; only the following request is refused.
+	for i := 0; i < maxRounds; i++ {
 		if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
 			t.Fatalf("Respond failed on round %d: %v", i+1, err)
 		}
-		// Wait for the step to be parked again (fix_review after fix)
-		waitForStepStatus(t, database, run.ID, types.StepReview, types.StepStatusFixReview)
+		// Wait for a NEW review, not the preceding gate with the same status.
+		waitForFixReviewRound(t, database, run.ID, i+2)
 	}
 
 	// Wait for the step to be in a responding state before sending the final Respond.

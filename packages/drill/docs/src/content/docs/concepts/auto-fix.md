@@ -11,7 +11,9 @@ flowchart TD
   findings -- "no" --> done["Step completes"]
   findings -- "yes" --> eligible{"Auto-fix enabled and eligible findings?"}
   eligible -- "no" --> pause["Pause for user approval"]
-  eligible -- "yes" --> fix["Agent applies fixes"]
+  eligible -- "yes" --> priority{"Info-only fix with a pending decision?"}
+  priority -- "yes" --> pause
+  priority -- "no" --> fix["Agent applies fixes"]
   fix --> rerun["Re-run step"]
   rerun --> clean{"Blocking findings remain?"}
   clean -- "no" --> done
@@ -22,13 +24,18 @@ flowchart TD
 ## How it works
 
 1. A step executes and returns findings (e.g., test failures, lint warnings, review issues)
-2. If `auto_fix` is enabled for that step (limit > 0) and the attempt count is below the limit, the executor re-runs the step with `fixing=true`
+2. If `auto_fix` is enabled for that step (limit > 0), the budget permits another fix, and no pending decision takes priority over an info-only correction, the executor re-runs the step with `fixing=true`
 3. The agent receives the previous findings and applies fixes
 4. The step re-runs to verify the fixes
 5. If issues remain and attempts are left, the loop continues
-6. Once the limit is reached or all issues are resolved:
+6. Once its per-step limit is reached or all issues are resolved:
    - If issues remain, the step pauses for user approval
    - If everything passes, the step completes and the pipeline moves on
+
+When approval is required or an `ask-user` finding is present, the executor presents the complete known finding list before running a correction batch containing only `info` findings.
+You can authorize one batch covering the requirement and compatible corrections together.
+Independent objective corrections with non-info severity remain eligible for automatic fixing; an `ask-user` finding still reaches approval if the fix budget is exhausted.
+Info-only corrections remain eligible when no decision is pending.
 
 The document step applies fixes during its initial pass instead of relying on a follow-up automatic fix loop.
 When `commands.lint` is empty, that same invocation is a combined documentation-and-lint housekeeping pass: it updates documentation, detects relevant linters and formatters, applies safe fixes, verifies both duties, and categorizes any unresolved findings for the document or lint gate.
@@ -58,8 +65,8 @@ Per-step attempt limits come from the `auto_fix` config object; the [`auto_fix` 
 Setting a step to `0` disables the follow-up auto-fix loop, so the pipeline pauses for human input when that step finds issues; `auto_fix.review` defaults to `0`, so review findings require manual approval unless you opt in.
 Repo config overlays global config field by field - you can set `auto_fix.lint: 5` in a repo's `.drill.yaml` to override just that step while inheriting the rest from global.
 
-A global `max_fix_rounds` limit (default 3) caps the total number of fix rounds (auto-fix + user-fix) per step.
-When exceeded, the run fails with a non-convergence error indicating how many rounds occurred.
+The [`max_fix_rounds` reference](/drill/reference/global-config/#auto_fix) owns what the shared budget counts and when a fix request is refused.
+A non-convergence error reports the executions already performed and identifies the next fix as refused rather than executed.
 
 ## Finding actions
 
@@ -115,9 +122,10 @@ Each execution of a step (initial run or follow-up auto-fix run) is recorded as 
 A round stores its findings, duration, any selected finding IDs and whether that selection came from the user or auto-fix filtering, the merged finding payload actually sent to the fix agent for that round, and any one-line fix summary from that execution.
 That merged payload can include per-finding user notes and user-authored findings added from the TUI or AXI interface.
 AXI status uses the same round history and the persisted auto-fix limit to show the active fix attempt, for example `auto-fix 1/3` or `fix 2`.
-The step log records a marker when each automatic or user-triggered fix round starts.
+The step log records a marker with the shared execution count when each automatic or user-triggered fix execution starts.
 The generated PR surfaces this recorded evidence in deterministic Risk Assessment, Testing, and Pipeline sections. The [pipeline steps reference](/drill/reference/pipeline-steps/#pr) owns the PR body composition and size-limit contract.
 The full round history remains available in the run log.
+A fix request the shared budget refuses adds no round, so the round history keeps only executions that actually ran; a non-convergence failure names the refusal in the step error.
 
 Round trigger types:
 - `initial` - first execution

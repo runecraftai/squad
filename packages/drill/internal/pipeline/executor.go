@@ -396,7 +396,6 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 		e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), "", "aborted by user", &duration)
 		return e.failRun(run, repo, fmt.Errorf("step %s: aborted by user", gate.step.Name()), ctx)
 	case types.ActionFix:
-		telemetry.Track("fix", e.fixTelemetryFields("user", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), 0))
 		selected := filterFindingsJSON(gate.findings, response.findingIDs)
 		merged := mergeUserOverridesJSON(selected, response.instructions, response.addedFindings)
 		if gate.lastRoundID != "" {
@@ -412,6 +411,15 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 				}
 			}
 		}
+		if gate.autoFixes+gate.userFixes >= e.maxFixRounds() {
+			err := nonConvergenceError(gate.step.Name(), gate.autoFixes+gate.userFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
+			if dbErr := e.db.FailStep(gate.stepResult.ID, err.Error(), duration); dbErr != nil {
+				slog.Warn("failed to mark recovered step as non-converged", "step", gate.step.Name(), "error", dbErr)
+			}
+			e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), gate.findings, err.Error(), &duration)
+			return e.failRun(run, repo, err, ctx)
+		}
+		telemetry.Track("fix", e.fixTelemetryFields("user", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), 0))
 		if dbErr := e.db.UpdateStepStatus(gate.stepResult.ID, types.StepStatusFixing); dbErr != nil {
 			return e.failRun(run, repo, fmt.Errorf("mark recovered step %s fixing: %w", gate.step.Name(), dbErr), ctx)
 		}
@@ -421,7 +429,7 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 			previousFindings: merged,
 			roundNum:         gate.round,
 			autoFixAttempts:  gate.autoFixes,
-			userFixAttempts:  gate.userFixes,
+			userFixAttempts:  gate.userFixes + 1,
 			executionMS:      duration,
 			currentRoundID:   gate.lastRoundID,
 		})
@@ -464,17 +472,19 @@ func (e *Executor) recoveredGate(runID string) (*recoveredGate, error) {
 				return nil, fmt.Errorf("recovered approval gate findings are incomplete")
 			}
 			autoFixes := 0
-			userFixes := 0
+			executedFixes := 0
 			for _, round := range rounds {
-				if round.SelectionSource != nil {
-					switch *round.SelectionSource {
-					case db.RoundSelectionSourceAutoFix:
-						autoFixes++
-					case db.RoundSelectionSourceUser:
-						userFixes++
-					}
+				if round.IsFixRound() {
+					executedFixes++
+				}
+				if round.SelectionSource != nil && *round.SelectionSource == db.RoundSelectionSourceAutoFix {
+					autoFixes++
 				}
 			}
+			if autoFixes > executedFixes {
+				autoFixes = executedFixes
+			}
+			userFixes := executedFixes - autoFixes
 			gate = &recoveredGate{
 				index:       index,
 				step:        e.steps[index],
@@ -833,14 +843,26 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			e.emitRunEvent(ipc.EventRunUpdated, run, repo)
 		}
 
-		// Check if auto-fix should be attempted.
-		// Only auto-fix findings whose action is "auto-fix".
-		// This runs before the NeedsApproval check so that all severity
-		// levels (including "info") get a chance at automatic fixing.
+		needsDecision := outcome.NeedsApproval || hasAskUserFindingsJSON(outcome.Findings)
+		// Present the complete known list before spending a fix on info alone
+		// while a decision is pending. Independent objective fixes remain eligible,
+		// but an exhausted budget must not hide an ask-user finding either.
 		if outcome.AutoFixable && autoFixLimit > 0 && autoFixAttempts < autoFixLimit {
 			fixableFindings := autoFixableFindingsJSON(outcome.Findings)
+			infoOnlyDeferred := needsDecision && infoOnlyFindingsJSON(fixableFindings)
+			budgetExhausted := hasAskUserFindingsJSON(outcome.Findings) && autoFixAttempts+userFixAttempts >= e.maxFixRounds()
+			if infoOnlyDeferred || budgetExhausted {
+				if fixableFindings != "" {
+					if budgetExhausted {
+						writeLog(fmt.Sprintf("auto-fix refused: fix budget used %d/%d; complete findings presented without another execution", autoFixAttempts+userFixAttempts, e.maxFixRounds()))
+					} else {
+						fixCount := findingsCount(fixableFindings)
+						writeLog(fmt.Sprintf("info-only auto-fix deferred: complete findings presented while a decision is pending (%d %s held)", fixCount, pluralize(fixCount, "finding", "findings")))
+					}
+				}
+				fixableFindings = ""
+			}
 			if fixableFindings != "" {
-				autoFixAttempts++
 				totalRounds := autoFixAttempts + userFixAttempts
 				maxRounds := e.maxFixRounds()
 				if totalRounds >= maxRounds {
@@ -849,13 +871,17 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 					if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
 						slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
 					}
+					writeLog(err.Error())
+					e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, err.Error(), &executionMS)
 					return false, err
 				}
+				autoFixAttempts++
+				totalRounds++
 				telemetry.Track("fix", e.fixTelemetryFields("auto", stepName, findingsCount(fixableFindings), autoFixAttempts))
 				slog.Info("auto-fixing step", "step", stepName, "attempt", autoFixAttempts, "max", autoFixLimit, "total_rounds", totalRounds, "max_fix_rounds", maxRounds)
 				executionMS += time.Since(phaseStart).Milliseconds()
 				fixCount := findingsCount(fixableFindings)
-				writeLog(fmt.Sprintf("auto-fix round %d/%d starting after round %d (%d %s)", autoFixAttempts, autoFixLimit, roundNum, fixCount, pluralize(fixCount, "finding", "findings")))
+				writeLog(fmt.Sprintf("auto-fix execution %d/%d starting after round %d (%d %s)", totalRounds, maxRounds, roundNum, fixCount, pluralize(fixCount, "finding", "findings")))
 				if dbErr := e.db.UpdateStepStatus(sr.ID, types.StepStatusFixing); dbErr != nil {
 					slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 				}
@@ -875,7 +901,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			}
 		}
 
-		if !outcome.NeedsApproval && !hasAskUserFindingsJSON(outcome.Findings) {
+		if !needsDecision {
 			// Step completed without needing approval.
 			// Any remaining info-only or non-blocking findings
 			// are acceptable and don't block the pipeline.
@@ -994,8 +1020,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 					}
 				}
 			}
-			// Guard: same pattern as auto-fix - increment, compute total, check limit.
-			userFixAttempts++
+			// Count executions, not requests: a refused fix spends no budget.
 			totalRounds := autoFixAttempts + userFixAttempts
 			maxRounds := e.maxFixRounds()
 			if totalRounds >= maxRounds {
@@ -1004,13 +1029,17 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 				if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
 					slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
 				}
+				writeLog(err.Error())
+				e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, err.Error(), &executionMS)
 				return false, err
 			}
+			userFixAttempts++
+			totalRounds++
 			telemetry.Track("fix", e.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), 0))
 			// Fix - mark step as fixing, resume execution timer, re-execute.
 			phaseStart = time.Now()
 			selectedCount := selectedFindingCount(outcome.Findings, response.findingIDs)
-			writeLog(fmt.Sprintf("user-fix round %d/%d starting after round %d (%d %s selected)", userFixAttempts, maxRounds, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
+			writeLog(fmt.Sprintf("user-fix execution %d/%d starting after round %d (%d %s selected)", totalRounds, maxRounds, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
 			if dbErr := e.db.UpdateStepStatus(sr.ID, types.StepStatusFixing); dbErr != nil {
 				slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 			}
@@ -1057,7 +1086,21 @@ func roundInsertID(_ string, inserted *db.StepRound, err error) string {
 	return inserted.ID
 }
 
-// maxFixRounds returns the configured maximum total fix rounds per step.
+// infoOnlyFindingsJSON is deliberately strict: unknown severities are not cosmetic.
+func infoOnlyFindingsJSON(raw string) bool {
+	findings, err := types.ParseFindingsJSON(raw)
+	if err != nil || len(findings.Items) == 0 {
+		return false
+	}
+	for _, finding := range findings.Items {
+		if finding.Severity != "info" {
+			return false
+		}
+	}
+	return true
+}
+
+// maxFixRounds returns the configured maximum total fix executions per step.
 func (e *Executor) maxFixRounds() int {
 	if e.config == nil {
 		return 3
@@ -1065,11 +1108,10 @@ func (e *Executor) maxFixRounds() int {
 	return e.config.MaxFixRounds()
 }
 
-// nonConvergenceError returns a descriptive error when the fix-round limit
-// is exceeded. The error message carries the evidence a supervisor needs:
-// total rounds, auto vs user breakdown, and the configured limit.
+// nonConvergenceError distinguishes executions already performed from the next
+// request refused by the budget. Refusal never creates another execution round.
 func nonConvergenceError(stepName types.StepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts int) error {
-	return fmt.Errorf("non-convergence: %s reached %d/%d fix rounds (%d auto + %d user); last round did not clear blocking findings",
+	return fmt.Errorf("non-convergence: %s used %d/%d fix executions (%d auto + %d user); next fix refused (not executed); unresolved findings remain",
 		stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
 }
 
