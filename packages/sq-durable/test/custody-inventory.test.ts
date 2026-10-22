@@ -110,11 +110,11 @@ describe("legacy writer inventory, derived from the code", () => {
 
 	it("fails when a delegate stops consulting, or an entry outlives its writer", () => {
 		const inventory: LegacyWriter[] = LEGACY_WRITERS.map((entry) =>
-			entry.path === "bin/sq-x-lib.sh" ? { ...entry, consults: [] } : entry,
+			entry.path === "bin/sq-spawn.sh" ? { ...entry, consults: [] } : entry,
 		);
 		inventory.push({ path: "bin/sq-lint.sh", consults: [], note: "not a writer" });
 		const violations = inventoryViolations(REPO_ROOT, inventory).join("\n");
-		expect(violations).toContain("bin/sq-x-link.sh delegates to bin/sq-x-lib.sh, which consults no custody");
+		expect(violations).toContain("bin/sq-remote-xo-control.sh delegates to bin/sq-spawn.sh, which consults no custody");
 		expect(violations).toContain("bin/sq-lint.sh is inventoried but neither writes task records nor consults custody");
 	});
 

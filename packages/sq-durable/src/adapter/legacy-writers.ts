@@ -160,9 +160,9 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 	},
 	{
 		path: "bin/sq-pr-check-migrate.sh",
-		consults: [],
+		consults: ["metadata"],
 		delegatesTo: ["bin/sq-pr-lib.sh"],
-		note: "rebuilds PR polls only through the pr-lib mutators",
+		note: "rebuilds PR polls only through the pr-lib mutators; consults metadata for each mission before its first quarantine move or diagnostic write",
 	},
 	{
 		path: "bin/sq-remote-xo-control.sh",
@@ -182,13 +182,13 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 	},
 	{
 		path: "bin/sq-x-followup.sh",
-		consults: [],
+		consults: ["metadata"],
 		delegatesTo: ["bin/sq-x-lib.sh"],
-		note: "Relay follow-ups change meta only through the x-lib mutators",
+		note: "Relay follow-ups change meta only through the x-lib mutators, and consult metadata before posting",
 	},
 	{
 		path: "bin/sq-x-link.sh",
-		consults: [],
+		consults: ["metadata"],
 		delegatesTo: ["bin/sq-x-lib.sh"],
 		note: "Relay links change meta only through the x-lib mutators",
 	},

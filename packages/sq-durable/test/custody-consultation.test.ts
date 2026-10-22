@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { refusalLog, REPO_ROOT, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
-import { cleanup } from "./helpers.js";
+import { cleanup, tempDir } from "./helpers.js";
 
 afterEach(cleanup);
 
@@ -222,6 +222,84 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
 		expect(readFileSync(meta, "utf8")).toBe(before);
 		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(3);
+	});
+
+	it("refuses every Relay meta mutator of a durable mission whose meta is deleted, with exit 3 and no state change", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm1-lab");
+		const meta = join(base, "state", "dm1-lab.meta");
+		rmSync(meta);
+		const before = stateDigest(base);
+		const result = await sourced(
+			"sq-x-lib.sh",
+			[
+				'fmx_meta_link_set "$1" req-1 1700000000 0; printf "link_set=%s\\n" "$?"',
+				'fmx_meta_followups_set "$1" 3; printf "followups_set=%s\\n" "$?"',
+				'fmx_meta_link_clear "$1"; printf "link_clear=%s\\n" "$?"',
+			].join("\n"),
+			[meta],
+			scriptEnv(base),
+		);
+		expect(result.stdout.trim().split("\n")).toEqual(["link_set=3", "followups_set=3", "link_clear=3"]);
+		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses every Relay command of a durable mission whose meta is deleted, before any branch reads or posts", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm1-lab");
+		rmSync(join(base, "state", "dm1-lab.meta"));
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		for (const [script, args] of [
+			["sq-x-link.sh", ["dm1-lab", "req-1"]],
+			["sq-x-followup.sh", ["--clear", "dm1-lab"]],
+			["sq-x-followup.sh", ["dm1-lab", "--text-file", "/dev/null"]],
+		] as const) {
+			const result = await runScript(script, [...args], scriptEnv(base));
+			expect({ script, args: args.join(" "), code: result.code }).toEqual({ script, args: args.join(" "), code: 3 });
+			expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+			expect(result.stderr).not.toContain("no such task");
+			expect(stateDigest(base)).toBe(before);
+		}
+		expect(refusalLog(base).slice(logged)).toHaveLength(3);
+	});
+
+	it("posts no Relay follow-up for a refused durable mission and leaves its link in place", async () => {
+		const base = sandboxBase();
+		const root = join(tempDir(), "root");
+		mkdirSync(join(root, "bin"), { recursive: true });
+		const posted = join(tempDir(), "posted");
+		writeFileSync(join(root, "bin", "sq-x-reply.sh"), `#!/usr/bin/env bash\nprintf posted > "${posted}"\n`, { mode: 0o755 });
+		seedTask(base, "dm1-lab", { x_request: "req-1", x_request_ts: "1700000000", x_followups: "0" });
+		const before = stateDigest(base);
+		const result = await runScript(
+			"sq-x-followup.sh",
+			["dm1-lab", "--text-file", "/dev/null"],
+			scriptEnv(base, { SQUAD_ROOT_OVERRIDE: root, SQX_NOW_OVERRIDE: "1700000100" }),
+		);
+		expect(result.code).toBe(3);
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(posted)).toBe(false);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses a PR-watch migration of a durable mission before it quarantines the mission's legacy poll", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm1-lab");
+		const state = join(base, "state");
+		writeFileSync(join(state, "dm1-lab.check.sh"), "legacy check\n");
+		writeFileSync(join(state, "dm1-lab.pr-poll"), "legacy poll\n");
+		writeFileSync(join(state, "dm1-lab.pr-poll-registration"), "legacy registration\n");
+		const before = stateDigest(base);
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect(result.code).toBe(3);
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(join(state, "dm1-lab.check.sh"))).toBe(true);
+		expect(existsSync(join(state, "dm1-lab.pr-poll"))).toBe(true);
+		expect(existsSync(join(state, "dm1-lab.pr-poll-registration"))).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(1);
 	});
 
 	it("refuses every PR-watch mutator of a durable mission before it stages an artifact", async () => {

@@ -33,6 +33,8 @@ elif [ "$#" -ne 0 ]; then
   exit 2
 fi
 
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
 # shellcheck source=bin/sq-x-lib.sh
@@ -857,6 +859,11 @@ recover_pending_outcomes() {
     diagnostic_obligation_message "$basename" || return 1
     prefix=$MIGRATION_DIAGNOSTIC_PREFIX
     kind=$MIGRATION_DIAGNOSTIC_KIND
+    if ! durable_custody_check "$prefix" metadata; then
+      custody_refused=1
+      migration_failed=1
+      continue
+    fi
     case "$kind" in
       pending-canonical)
         success="$QUARANTINE/$prefix.diagnostic.canonical"
@@ -977,6 +984,10 @@ process_diagnostic_obligations() {
     [ -e "$obligation" ] || [ -L "$obligation" ] || continue
     basename=${obligation##*/}
     diagnostic_obligation_message "$basename" || return 1
+    if ! durable_custody_check "$MIGRATION_DIAGNOSTIC_PREFIX" metadata; then
+      custody_refused=1
+      continue
+    fi
     message=$MIGRATION_DIAGNOSTIC_MESSAGE
     diagnostic_file_is_one_line "$obligation" "$message" || return 1
     record_diagnostic "$message" || return 1
@@ -1005,6 +1016,7 @@ process_diagnostic_obligations() {
 
 diagnostics_failed=0
 migration_failed=0
+custody_refused=0
 if ! quarantine_tree_repair_and_validate \
   || ! diagnostic_namespace_valid \
   || ! migrate_legacy_noncanonical_namespace \
@@ -1032,6 +1044,11 @@ if migration_needed; then
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" && continue
 
     if fm_pr_task_id_valid "$id"; then
+      if ! durable_custody_check "$id" metadata; then
+        custody_refused=1
+        migration_failed=1
+        continue
+      fi
       prefix=$id
       meta="$STATE/$id.meta"
       data="$STATE/$id.pr-poll"
@@ -1121,6 +1138,9 @@ if [ "$migration_failed" -eq 0 ] && [ "$scan_safe" -eq 1 ]; then
 fi
 
 if [ "$migration_failed" -ne 0 ]; then
+  if [ "$custody_refused" -eq 1 ]; then
+    exit 3
+  fi
   if [ "$ALLOW_INCOMPLETE_REPAIRS" -eq 1 ] && [ "$scan_safe" -eq 1 ]; then
     exit 0
   fi

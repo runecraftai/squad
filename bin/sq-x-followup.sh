@@ -66,6 +66,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 # shellcheck source=bin/sq-x-lib.sh
 . "$SCRIPT_DIR/sq-x-lib.sh"
 
@@ -154,6 +156,8 @@ case "$ID" in
   ''|.*|*[!A-Za-z0-9._-]*) echo "sq-x-followup: unsafe task id: $ID" >&2; exit 2 ;;
 esac
 
+# A durable mission's relay metadata is engine-owned: refuse before any branch reads or posts.
+durable_custody_check "$ID" metadata || exit 3
 META="$STATE/$ID.meta"
 if [ "$MODE" = clear ]; then
   CLEAR_RC=0
