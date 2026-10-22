@@ -16,7 +16,9 @@
 #
 # State machine: unclaimed -> claimed -> running -> retry_queued -> released.
 # 'released' is terminal for this id - there is no released -> unclaimed or
-# released -> claimed transition. recover only treats running and claimed.
+# released -> claimed transition. recover repairs only claimed, running, and
+# retry_queued records through the existing transitions, and never resurrects
+# a released id.
 # Once released, sq-spawn refuses relaunch of the same id. To redespatch
 # the same work, create a new task id.
 set -eu
