@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { refusalLog, REPO_ROOT, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
@@ -87,19 +87,120 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(record[0]).toContain("\tsq-procevent-remote-reply.sh\t");
 	});
 
-	it("refuses to write a durable mission's parent status for a pending reply", async () => {
+	it("refuses a durable mission's remote reply before it stores a referenced document", async () => {
 		const base = sandboxBase();
-		const status = join(base, "state", "dm2-pilot.status");
-		writeFileSync(status, "working: started\n");
-		const before = readFileSync(status, "utf8");
+		seedTask(base, "dm2-pilot");
+		const payload = "see data/report.md for the detail\n";
+		const hash = createHash("sha256").update(payload).digest("hex");
+		const delivered = join(base, "remote-reply.result");
+		writeFileSync(
+			delivered,
+			[
+				"schema=sq-remote-delta.v1",
+				"status=delta",
+				"path=state/parent-replies.status",
+				"from_offset=0",
+				"to_offset=5",
+				`from_prefix_sha256=${EMPTY_SHA256}`,
+				`to_prefix_sha256=${EMPTY_SHA256}`,
+				`payload_sha256=${hash}`,
+				`payload_bytes=${Buffer.byteLength(payload)}`,
+				"reason=reply",
+				"",
+				payload,
+			].join("\n"),
+		);
+		const before = stateDigest(base);
 		const logged = refusalLog(base).length;
-		const result = await sourced("sq-pending-reply-lib.sh", 'fm_pending_reply_parent_custody "$1" || printf "rc=%s\\n" "$?"', [status], scriptEnv(base));
+		const result = await runScript("sq-procevent-remote-reply.sh", ["ingest", "dm2-pilot", delivered], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(owned("xo-routing", "dm2-pilot", 2));
+		expect(existsSync(join(base, "data", "remote-XOs"))).toBe(false);
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).slice(logged)).toHaveLength(1);
+	});
+
+	it("refuses to resolve a durable mission's pending reply before it mutates the record", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm2-pilot");
+		const corr = "0123456789abcdef";
+		const status = join(base, "state", "dm2-pilot.status");
+		writeFileSync(status, `working: started\ncorr=${corr} done: reported\n`);
+		const dir = join(base, "state", "pending-replies");
+		mkdirSync(dir, { recursive: true });
+		const rec = join(dir, corr);
+		writeFileSync(
+			rec,
+			[
+				"schema=sq-pending-reply.v1",
+				`corr_id=${corr}`,
+				"task_id=dm2-pilot",
+				`parent_home=${base}`,
+				`parent_status=${status}`,
+				"parent_status_scan_signature=",
+				"request_summary=test",
+				"created_epoch=1",
+				"delivered_epoch=1",
+				"phase=awaiting_report",
+				"resolved_epoch=",
+				"resolved_via=",
+				"",
+			].join("\n"),
+		);
+		const recordBefore = readFileSync(rec, "utf8");
+		const statusBefore = readFileSync(status, "utf8");
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		const result = await sourced(
+			"sq-pending-reply-lib.sh",
+			'fm_pending_reply_try_resolve "$1" "$2" >/dev/null || printf "rc=%s\\n" "$?"',
+			[join(base, "state"), corr],
+			scriptEnv(base),
+		);
 		expect(result.stdout.trim()).toBe("rc=3");
 		expect(result.stderr).toMatch(owned("xo-routing", "dm2-pilot", 2));
-		expect(readFileSync(status, "utf8")).toBe(before);
-		const record = refusalLog(base).slice(logged);
-		expect(record).toHaveLength(1);
-		expect(record[0]).toContain("\tdm2-pilot\txo-routing\t");
+		expect(readFileSync(rec, "utf8")).toBe(recordBefore);
+		expect(readFileSync(status, "utf8")).toBe(statusBefore);
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).slice(logged)).toHaveLength(1);
+	});
+
+	it("propagates a custody refusal from the Relay follow-up writer instead of reporting a cleared link", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm1-lab", { x_request: "req-1", x_request_ts: "1", x_followups: "0" });
+		const meta = join(base, "state", "dm1-lab.meta");
+		const before = readFileSync(meta, "utf8");
+		const logged = refusalLog(base).length;
+		for (const args of [
+			["dm1-lab", "--text-file", "/dev/null"],
+			["--clear", "dm1-lab"],
+		]) {
+			const result = await runScript("sq-x-followup.sh", args, scriptEnv(base));
+			expect({ args: args.join(" "), code: result.code }).toEqual({ args: args.join(" "), code: 3 });
+			expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+			expect(readFileSync(meta, "utf8")).toBe(before);
+		}
+		expect(refusalLog(base).slice(logged)).toHaveLength(2);
+	});
+
+	it("refuses a pending outbox holding a durable mission before any transfer or generation bump", async () => {
+		const base = sandboxBase();
+		const handoffDir = join(base, "data", "handoff");
+		mkdirSync(handoffDir, { recursive: true });
+		writeFileSync(
+			join(base, "data", "XOs.md"),
+			"- xo-a - test (host: xo-host; root: /srv/squad; home: /home/xo; scope: test; projects: p; added 2026-01-01)\n",
+		);
+		const outbox = join(handoffDir, "xo-a.outbox.md");
+		const body = "## In flight\n\n## Queued\n\n- [ ] dm2-pilot mirror it\n\n## Done\n";
+		writeFileSync(outbox, body);
+		const logged = refusalLog(base).length;
+		const result = await runScript("sq-backlog-handoff.sh", ["--resume-pending"], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(owned("xo-routing", "dm2-pilot", 2));
+		expect(readFileSync(outbox, "utf8")).toBe(body);
+		expect(existsSync(join(base, "state", ".remote-handoff-xo-a.generation"))).toBe(false);
+		expect(refusalLog(base).slice(logged)).toHaveLength(1);
 	});
 
 	it("refuses every Relay meta mutator of a durable mission before it rewrites the record", async () => {

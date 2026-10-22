@@ -84,6 +84,30 @@ describe("legacy writer inventory, derived from the code", () => {
 		expect(violations).toContain("bin/sq-mcp-link.sh consults custody but never sources bin/sq-durable-custody.sh");
 	});
 
+	it("does not accept a consultation that survives only inside a quoted assignment", () => {
+		const repo = scratchRepo();
+		const file = join(repo, "bin", "sq-pr-check.sh");
+		writeFileSync(
+			file,
+			readFileSync(file, "utf8").replace(/^durable_custody_check "\$ID" metadata/m, 'msg=\'durable_custody_check "$ID" metadata\''),
+		);
+		expect(inventoryViolations(repo).join("\n")).toContain(
+			"bin/sq-pr-check.sh is inventoried as consulting metadata but has no durable_custody_check call naming it",
+		);
+	});
+
+	it("accepts a consultation in command position after a keyword, a list separator or a case label", () => {
+		const repo = scratchRepo();
+		const rewrite = (file: string, pattern: RegExp, replacement: string) => {
+			const path = join(repo, "bin", file);
+			writeFileSync(path, readFileSync(path, "utf8").replace(pattern, replacement));
+		};
+		rewrite("sq-pr-check.sh", /^durable_custody_check "\$ID" metadata/m, 'if ! durable_custody_check "$ID" metadata; then exit 3; fi');
+		rewrite("sq-mcp-link.sh", /^durable_custody_check "\$ID" metadata \|\| exit 3$/m, 'case "$ID" in *) durable_custody_check "$ID" metadata || exit 3 ;; esac');
+		rewrite("sq-check-register.sh", /^durable_custody_check "\$ID" metadata \|\| exit 3$/m, ': && durable_custody_check "$ID" metadata || exit 3');
+		expect(inventoryViolations(repo)).toEqual([]);
+	});
+
 	it("fails when a delegate stops consulting, or an entry outlives its writer", () => {
 		const inventory: LegacyWriter[] = LEGACY_WRITERS.map((entry) =>
 			entry.path === "bin/sq-x-lib.sh" ? { ...entry, consults: [] } : entry,

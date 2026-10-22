@@ -450,10 +450,15 @@ function executableText(text: string, python: boolean): string {
 		.join("\n");
 }
 
+/** Where a shell command starts: the line after indentation, or after a list separator or a compound-command keyword. */
+const COMMAND_START = String.raw`(?:^[ \t]*|[;&|(){}][ \t]*|\b(?:if|then|do|else|elif|while|until)[ \t]+!?[ \t]*)`;
+
 /** A `durable_custody_check` call naming the responsibility, or a `custody_responsibility=<r>` it is called with. */
 const CONSULT = (responsibility: string) => {
 	const name = responsibility.replace(/-/g, "\\-");
-	return new RegExp(String.raw`\bdurable_custody_check\b[^\n#]*["'\s]${name}(?=["'\s;)|&]|$)|\bcustody_responsibility=${name}(?=[\s;]|$)`, "m");
+	const call = String.raw`durable_custody_check\b[^\n#]*["'\s]${name}(?=["'\s;)|&]|$)`;
+	const assigned = String.raw`custody_responsibility=${name}(?=[\s;]|$)`;
+	return new RegExp(String.raw`${COMMAND_START}(?:${call}|${assigned})`, "m");
 };
 
 /**

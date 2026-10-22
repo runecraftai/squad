@@ -298,6 +298,7 @@ cmd_ingest() {
   local actual_bytes actual_hash line doc local_doc rewritten appended=0 cursor_already=0 lock status_file tmp
   local fetch_rc append_rc undelivered=''
   validate_id "$id"
+  durable_custody_check "$id" xo-routing || exit 3
   [ -f "$result" ] && [ ! -L "$result" ] || die "result file is unavailable or unsafe: $result"
   class=$(classify_result "$result")
   [ "$class" != malformed ] || die "remote reply result is malformed"

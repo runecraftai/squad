@@ -276,12 +276,30 @@ outbox_item_count() { # <path>
   awk '/^- \[[ x]\] / { count++ } END { print count + 0 }' "$1"
 }
 
+backlog_file_keys() { # <file>
+  local file=$1
+  [ -f "$file" ] || return 1
+  awk '
+    /^- \[[ x]\] / {
+      rest = $0
+      sub(/^- \[[ x]\] +/, "", rest)
+      id = rest
+      sub(/[ \t].*/, "", id)
+      if (id != "" && !seen[id]++) print id
+    }
+  ' "$file"
+}
+
 remote_deliver_outbox() { # <XO-id> <outbox-path>
-  local id=$1 outbox=$2 remote_rel receive_out snapshot bytes hash generation counter counter_tmp current
+  local id=$1 outbox=$2 remote_rel receive_out snapshot bytes hash generation counter counter_tmp current key
   [ -f "$outbox" ] && [ ! -L "$outbox" ] || {
     echo "error: pending outbox is unavailable or unsafe: $outbox" >&2
     return 1
   }
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    durable_custody_check "$key" xo-routing || return 3
+  done < <(backlog_file_keys "$outbox")
   snapshot=$(umask 077; mktemp "${TMPDIR:-/tmp}/sq-handoff-payload.XXXXXX") || return 1
   if ! cp -p -- "$outbox" "$snapshot"; then
     rm -f -- "$snapshot"
@@ -416,7 +434,7 @@ remote_handoff() { # <XO-id> <keys...>
   # persist. The outbox is already authoritative in that state, so converge by
   # deleting only duplicates that sq-tasks itself confirms are dependency-safe.
   remove_interrupted_source_duplicates "$outbox" "${requested[@]}" || return 1
-  remote_deliver_outbox "$id" "$outbox" || return 1
+  remote_deliver_outbox "$id" "$outbox" || return $?
   echo "handed off ${#requested[@]} item(s) to remote XO $id: ${requested[*]}"
   [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]}"
 }
@@ -450,13 +468,17 @@ resume_remote_outbox() { # <XO-id> <outbox-path>
 }
 
 resume_pending_outboxes() {
-  local outbox id failed=0
+  local outbox id failed=0 rc
   [ -d "$DATA/handoff" ] || return 0
   for outbox in "$DATA/handoff"/*.outbox.md; do
     [ -e "$outbox" ] || [ -L "$outbox" ] || continue
     id=$(basename "$outbox" .outbox.md)
     case "$id" in ''|*[!A-Za-z0-9._-]*) echo "error: unsafe pending handoff id: $id" >&2; failed=1; continue ;; esac
-    with_remote_route_locks "$id" resume_remote_outbox "$id" "$outbox" || failed=1
+    rc=0
+    with_remote_route_locks "$id" resume_remote_outbox "$id" "$outbox" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      [ "$failed" -eq 3 ] || failed=$rc
+    fi
   done
   return "$failed"
 }
