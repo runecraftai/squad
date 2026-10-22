@@ -1118,14 +1118,16 @@ function isHtmlPath(file) {
 
 const MAX_AUTO_PORT_ATTEMPTS = 100;
 
-async function ensureServer({ forceRestart = false } = {}) {
+// `version` is the version this CLI requires the server to report; tests override it to
+// drive the never-healthy path against a real child.
+export async function ensureServer({ forceRestart = false, version = VERSION } = {}) {
   const firstPort = defaultPort();
   for (let offset = 0; offset < MAX_AUTO_PORT_ATTEMPTS; offset += 1) {
     const port = firstPort + offset;
     const baseUrl = `http://${hostForUrl(clientHost())}:${port}`;
     const existing = await fetchHealth(baseUrl);
 
-    if (existing && !shouldRestartServer(VERSION, existing, forceRestart)) {
+    if (existing && !shouldRestartServer(version, existing, forceRestart)) {
       return baseUrl;
     }
 
@@ -1135,7 +1137,7 @@ async function ensureServer({ forceRestart = false } = {}) {
       }
       await requestShutdown(baseUrl);
       let freed = await waitForPortFree(baseUrl, 2000);
-      if (!freed && shouldKillProcessOnPort(VERSION, existing)) {
+      if (!freed && shouldKillProcessOnPort(version, existing)) {
         killProcessOnPort(port);
         freed = await waitForPortFree(baseUrl, 3000);
       }
@@ -1151,9 +1153,21 @@ async function ensureServer({ forceRestart = false } = {}) {
       }
     }
 
-    await startServer(port);
-    const health = await waitForServerHealth(baseUrl, VERSION, 5000);
+    const child = await startServer(port);
+    const health = await waitForServerHealth(baseUrl, version, 5000, child);
     if (health) return baseUrl;
+    // The child is detached so a healthy server outlives this CLI. One that never became
+    // healthy must not: reap it so a failed open leaves nothing holding the port.
+    const exitedEarly = child.exitCode !== null || child.signalCode !== null;
+    await stopSpawnedServer(child);
+    // An early exit is usually a lost bind race on this port, so the next port may work.
+    // A child that stayed up but never answered as this CLI's version will not do better
+    // on another port, so stop here instead of leaving a trail of attempts.
+    if (!exitedEarly) {
+      throw new AxiError("sq-report server did not start", "SERVER_ERROR", [
+        `Inspect ${serverLogFile()} or run \`sq-report server --port ${port}\` to see server startup`,
+      ]);
+    }
   }
 
   throw new AxiError(`No available sq-report port found starting at ${firstPort}`, "SERVER_ERROR", [
@@ -1161,14 +1175,38 @@ async function ensureServer({ forceRestart = false } = {}) {
   ]);
 }
 
-async function waitForServerHealth(baseUrl, version, timeoutMs) {
+async function waitForServerHealth(baseUrl, version, timeoutMs, child = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const health = await fetchHealth(baseUrl);
     if (health && !shouldRestartServer(version, health)) return health;
+    if (child && (child.exitCode !== null || child.signalCode !== null)) return null;
     await delay(100);
   }
   return null;
+}
+
+// Terminates a server child this CLI spawned, including its detached process group, and
+// waits for it to exit so its listener is gone before the caller moves on.
+async function stopSpawnedServer(child, timeoutMs = 3000) {
+  const exited = () => child.exitCode !== null || child.signalCode !== null;
+  if (exited()) return;
+  const exit = new Promise((resolve) => child.once("exit", resolve));
+  const signalGroup = (signal) => {
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      try {
+        child.kill(signal);
+      } catch {
+        // Already gone.
+      }
+    }
+  };
+  signalGroup("SIGTERM");
+  if (await Promise.race([exit.then(() => true), delay(timeoutMs).then(() => false)])) return;
+  signalGroup("SIGKILL");
+  await Promise.race([exit, delay(timeoutMs)]);
 }
 
 export function isPortAvailable(host, port, timeoutMs = 250) {
@@ -1236,10 +1274,14 @@ async function requestShutdown(baseUrl) {
   }
 }
 
+// Free means nothing accepts connections on the port any more: a server that stopped
+// answering /health can still hold its listener while it winds down.
 async function waitForPortFree(baseUrl, timeoutMs) {
+  const { hostname, port } = new URL(baseUrl);
+  const host = hostname.replace(/^\[(.*)\]$/, "$1");
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!(await fetchHealth(baseUrl))) return true;
+    if (!(await fetchHealth(baseUrl)) && (await isPortAvailable(host, Number(port)))) return true;
     await delay(100);
   }
   return false;
@@ -1298,19 +1340,23 @@ async function startServer(port) {
   try {
     const child = spawn(process.execPath, [entry, "server", "--port", String(port)], createServerSpawnOptions(logFd));
     child.unref();
+    return child;
   } finally {
     if (logFd !== null) closeSync(logFd);
   }
 }
 
-// The detached server child must point at a node-executable entry that actually invokes
-// run(). In source layout that's `../bin/sq-report.js` (which calls run on import). In the
-// published bundle, only `dist/cli.mjs` ships and it self-invokes via the bundled bin
-// wrapper. Pick whichever exists.
-export function resolveServerEntry() {
-  const binEntry = fileURLToPath(new URL("../bin/sq-report.js", import.meta.url));
-  if (existsSync(binEntry)) return binEntry;
-  return fileURLToPath(import.meta.url);
+// The detached server child must be the same program as this CLI, so it reports the
+// version this CLI expects. In source layout this module is `src/cli.js`, a library that
+// `../bin/sq-report.js` imports and runs. The bundle (`dist/cli.mjs`) self-invokes run(),
+// so it spawns itself - even when it sits inside a source checkout that also has
+// `bin/sq-report.js`, whose package.json version can differ from the one baked in.
+export function resolveServerEntry(moduleUrl = import.meta.url) {
+  const modulePath = fileURLToPath(moduleUrl);
+  if (path.basename(path.dirname(modulePath)) === "src") {
+    return fileURLToPath(new URL("../bin/sq-report.js", moduleUrl));
+  }
+  return modulePath;
 }
 
 /**
