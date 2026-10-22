@@ -1666,7 +1666,7 @@ prepare_relaunch_execution() {
     # A missing metadata record is the recovery signal used after a process
     # died between attempts. There is no recorded endpoint to probe, so reuse
     # the execution sidecar's recovery state and let normal spawn recreate it.
-    previous=$("$SCRIPT_DIR/sq-exec-state.sh" get "$ID" 2>/dev/null || printf 'unclaimed\n')
+    previous=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$ID" 2>/dev/null || printf 'unclaimed\n')
     case "$previous" in
       claimed|running)
         "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null || {
@@ -1715,7 +1715,7 @@ prepare_relaunch_execution() {
       return 1
       ;;
   esac
-  previous=$("$SCRIPT_DIR/sq-exec-state.sh" get "$ID" 2>/dev/null || printf 'unclaimed\n')
+  previous=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$ID" 2>/dev/null || printf 'unclaimed\n')
   case "$previous" in
     claimed|running)
       "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null || {

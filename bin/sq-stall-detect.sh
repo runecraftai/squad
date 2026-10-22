@@ -144,7 +144,7 @@ handle_task() {
 }
 
 retry_run_claim() {
-  local file id state next_retry now retries max
+  local file id state next_retry now retries max claim_rc
   mkdir -p "$STATE"
   for file in "$STATE"/*.exec; do
     [ -f "$file" ] || continue
@@ -182,6 +182,11 @@ retry_run_claim() {
           append_status "$id" "retry claimed but could not transition to running" blocked
         fi
       else
+        claim_rc=$?
+        # 3: an active run already owns the attempt, so there is nothing to resume.
+        case "$claim_rc" in
+          3) continue ;;
+        esac
         if [ "$(field exec_state "$id")" = released ]; then
           continue
         fi

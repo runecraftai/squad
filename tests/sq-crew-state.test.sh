@@ -55,13 +55,24 @@ make_repo_on_branch() {  # <dir> <branch>
 # `axi` surface - no runs-listing subcommand exists under it, verified against
 # the real CLI), and the actual top-level run-listing command, `drill
 # runs --limit N`, which is plain text - no run id, no quoting - serving
-# SQUAD_FAKE_RUNS_LIST verbatim.
+# SQUAD_FAKE_RUNS_LIST verbatim. SQUAD_FAKE_DRILL_CALL_LOG records each
+# invocation and SQUAD_FAKE_DRILL_LOCK_PROBE/SQUAD_FAKE_DRILL_LOCK_SEEN report
+# an exec lock directory that is still held when the CLI runs.
 make_fakebin() {  # <dir> -> echoes fakebin path
   local dir=$1 fb="$1/fakebin"
   mkdir -p "$fb"
   cat > "$fb/drill" <<'SH'
 #!/usr/bin/env bash
 set -u
+if [ -n "${SQUAD_FAKE_DRILL_CALL_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$SQUAD_FAKE_DRILL_CALL_LOG"
+fi
+if [ -n "${SQUAD_FAKE_DRILL_LOCK_PROBE:-}" ]; then
+  for lock in "$SQUAD_FAKE_DRILL_LOCK_PROBE"/.*.lock; do
+    [ -d "$lock" ] || continue
+    printf '%s\n' "$lock" >> "${SQUAD_FAKE_DRILL_LOCK_SEEN:-/dev/null}"
+  done
+fi
 case "${1:-}" in
   axi)
     shift
@@ -316,6 +327,24 @@ run:
 EOF
 }
 
+run_ci_checks_passed() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: running
+  head: "${SQUAD_FAKE_RUN_HEAD:-abc1234}"
+  pr: "https://github.com/o/r/pull/2"
+  findings: none
+  steps[4]{step,status,findings,duration_ms}:
+    intent,completed,0,0
+    review,completed,0,0
+    push,completed,0,0
+    ci,running,0,0
+outcome: checks-passed
+EOF
+}
+
 run_fixing_ci_running() {  # <branch>
   cat <<EOF
 run:
@@ -456,12 +485,14 @@ test_ci_ready_done_log_beats_monitoring_run() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-ci.meta" "window=fm:sq-feat-ci" "worktree=$d/wt" "kind=strike"
   printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-ci.status"
+  printf 'exec_state=retry_queued\nexec_next_retry_at=1\n' > "$d/state/feat-ci.exec"
   SQUAD_FAKE_AXI_STATUS="$(run_ci_monitoring sq/feat-ci)"
   local out; out=$(run_crew_state "$d" feat-ci)
   assert_contains "$out" "state: done" "ci-ready status log -> done"
   assert_contains "$out" "source: status-log" "ci-ready state comes from the status log"
   assert_contains "$out" "checks green" "ci-ready detail preserves the report"
   assert_not_contains "$out" "state: working" "ci-ready is not hidden by monitoring run"
+  assert_contains "$out" 'exec_state=running' 'CI-ready early return still reflects active monitor'
   pass "ci-ready status log beats monitoring run"
 }
 
@@ -1348,6 +1379,128 @@ test_missing_run_head_falls_back_to_current_state() {
   pass "missing run head falls back instead of matching by branch"
 }
 
+# Reuse the actual exec and crew entry points with disagreeing run/record inputs.
+test_active_run_overrides_execution_record() {
+  reset_fakes
+  local d out state step recorded
+  d=$(new_case active-exec-record)
+  make_repo_on_branch "$d/wt" sq/active-exec
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/active.meta" "window=fm:sq-active" "worktree=$d/wt" "kind=strike"
+  printf 'failed: previous attempt stopped\n' > "$d/state/active.status"
+  for step in test document ci; do
+    SQUAD_FAKE_AXI_STATUS="$(run_running sq/active-exec | sed "s/review,running/$step,running/")"
+    for recorded in retry_queued released running claimed; do
+      printf 'exec_state=%s\nexec_attempt=1\nexec_retry_count=0\nexec_last_activity=1\nexec_next_retry_at=1\n' "$recorded" > "$d/state/active.exec"
+      out=$(run_crew_state "$d" active)
+      assert_contains "$out" 'state: working' "$step run overrides old failure event"
+      assert_contains "$out" 'source: run-step' "$step source is explicit"
+      assert_contains "$out" 'exec_state=running' "$step run overrides $recorded projection"
+      state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get active)
+      [ "$state" = running ] || fail "exec get disagrees with $step run: $state"
+      state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" recover active)
+      [ "$state" = running ] || fail "recovery disagrees with $step run: $state"
+      if [ "$recorded" = released ]; then
+        assert_contains "$(<"$d/state/active.exec")" 'exec_state=released' 'released dispatch ids are not resurrected'
+        if PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" claim active >/dev/null 2>&1; then
+          fail 'active released id became claimable'
+        fi
+      else
+        assert_contains "$(<"$d/state/active.exec")" 'exec_state=running' 'recoverable attempt agrees with active run'
+        assert_contains "$(<"$d/state/active.exec")" $'exec_next_retry_at=\n' 'active attempt has no retry deadline'
+      fi
+    done
+  done
+  pass 'active test/document/ci run overrides stale exec record and failed event'
+}
+
+test_newest_running_run_overrides_older_terminal_snapshot() {
+  reset_fakes
+  local d out state
+  d=$(new_case newer-active-same-head)
+  make_repo_on_branch "$d/wt" sq/newer-active
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/newer.meta" "window=fm:sq-newer" "worktree=$d/wt" "kind=strike"
+  printf 'failed: previous run\n' > "$d/state/newer.status"
+  printf 'exec_state=retry_queued\nexec_attempt=1\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$d/state/newer.exec"
+  SQUAD_FAKE_BUSY=1
+  SQUAD_FAKE_AXI_STATUS="$(run_failed sq/newer-active)"
+  SQUAD_FAKE_RUNS_LIST="running sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  out=$(run_crew_state "$d" newer)
+  assert_contains "$out" 'state: working' 'newest bound active run supersedes older terminal snapshot'
+  assert_contains "$out" 'source: run-step' 'newest active source stays explicit'
+  assert_contains "$out" 'exec_state=running' 'newer active execution overrides queued record'
+  state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get newer)
+  [ "$state" = running ] || fail "exec get ignores newest bound run: $state"
+  SQUAD_FAKE_RUNS_LIST="failed sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  out=$(run_crew_state "$d" newer)
+  assert_contains "$out" 'state: failed' 'terminal newest run outranks busy pane'
+  assert_contains "$out" 'source: run-step' 'terminal verdict is attributed'
+  assert_contains "$out" 'exec_state=released' 'terminal run is not projected as executing'
+  state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get newer)
+  [ "$state" = released ] || fail "exec get ignores terminal run with busy pane: $state"
+  state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" recover newer)
+  [ "$state" = released ] || fail "recovery did not retire the queued record on its terminal status: $state"
+  SQUAD_FAKE_RUNS_LIST="completed sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  SQUAD_FAKE_AXI_STATUS="$(run_ci_checks_passed sq/newer-active)"
+  out=$(run_crew_state "$d" newer)
+  assert_contains "$out" 'state: done' 'checks-passed completion report stays done'
+  SQUAD_FAKE_RUNS_LIST="running sq/newer-active ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  out=$(run_crew_state "$d" newer)
+  assert_contains "$out" 'state: working' 'newer active run supersedes older checks-passed snapshot'
+  assert_contains "$out" 'source: run-step' 'superseding checks-passed verdict is attributed'
+  assert_contains "$out" 'exec_state=running' 'newer active execution overrides checks-passed record'
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/another-branch)"
+  SQUAD_FAKE_RUNS_LIST="running sq/another-branch ${SQUAD_FAKE_RUN_HEAD:0:7} 2026-10-21"
+  printf 'exec_state=retry_queued\nexec_next_retry_at=1\n' > "$d/state/newer.exec"
+  state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get newer)
+  [ "$state" = retry_queued ] || fail "unrelated run overrides dispatch record: $state"
+  pass 'latest running execution replaces stale terminal snapshot, not vice versa'
+}
+
+# Run attribution is an external CLI call, so it must never happen under the
+# per-task exec lock: a concurrent claim/retry/release for the same id would
+# otherwise fail with "execution state is locked" for the whole drill query.
+test_exec_lock_is_not_held_across_run_attribution() {
+  reset_fakes
+  local d out state
+  d=$(new_case exec-lock-scope)
+  make_repo_on_branch "$d/wt" sq/lock-scope
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/locky.meta" "window=fm:sq-locky" "worktree=$d/wt" "kind=strike"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/lock-scope)"
+  for cmd in claim recover; do
+    printf 'exec_state=retry_queued\nexec_attempt=1\nexec_retry_count=0\nexec_last_activity=1\nexec_next_retry_at=1\n' > "$d/state/locky.exec"
+    : > "$d/lock-seen"
+    out=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" \
+      SQUAD_FAKE_DRILL_LOCK_PROBE="$d/state" SQUAD_FAKE_DRILL_LOCK_SEEN="$d/lock-seen" \
+      "$ROOT/bin/sq-exec-state.sh" "$cmd" locky 2>/dev/null || true)
+    [ ! -s "$d/lock-seen" ] || fail "$cmd held the exec lock across run attribution: $(cat "$d/lock-seen")"
+    if [ "$cmd" = recover ]; then
+      [ "$out" = running ] || fail "recover did not adopt the active run: $out"
+    fi
+  done
+  assert_contains "$(<"$d/state/locky.exec")" 'exec_state=running' 'active run was adopted through the locked transition'
+  # recover-all only repairs queued/claimed/running attempts, so a released
+  # record must not pay for run attribution on every sentry heartbeat.
+  d=$(new_case exec-lock-scope-released)
+  make_repo_on_branch "$d/wt" sq/lock-scope-released
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/retired.meta" "window=fm:sq-retired" "worktree=$d/wt" "kind=strike"
+  printf 'exec_state=released\nexec_attempt=2\nexec_retry_count=1\nexec_last_activity=1\n' > "$d/state/retired.exec"
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/lock-scope-released)"
+  : > "$d/drill-calls"
+  PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" \
+    SQUAD_FAKE_DRILL_CALL_LOG="$d/drill-calls" "$ROOT/bin/sq-exec-state.sh" recover-all >/dev/null
+  [ ! -s "$d/drill-calls" ] || fail "recover-all attributed a released record: $(cat "$d/drill-calls")"
+  state=$(PATH="$d/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$d/state" "$ROOT/bin/sq-exec-state.sh" get-recorded retired)
+  [ "$state" = released ] || fail "released record changed: $state"
+  pass 'run attribution never runs under the exec lock and released records skip recovery attribution'
+}
+
+test_newest_running_run_overrides_older_terminal_snapshot
+test_active_run_overrides_execution_record
+test_exec_lock_is_not_held_across_run_attribution
 test_active_run_is_authoritative
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded

@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Shared drill axi run attribution primitives.
+# Shared drill axi run attribution and current-run lifecycle primitives.
 #
 # ONE owner for the branch+code-identity matching rule that decides whether a
-# drill run belongs to a given worktree, used by sq-crew-state.sh
-# (read-only current-state reporting) and sq-teardown.sh (pre-teardown run
-# abort, see its "Fix 1" header comment). Getting this wrong in either
-# direction is unsafe: a false negative hides a genuinely parked run, and a
-# false positive lets teardown act on a run it does not own.
+# drill run belongs to a given worktree, and for the current-run capture built
+# on it (source, lifecycle, gate-parked detail, and the reported exec state
+# projected from it). Used by sq-crew-state.sh (read-only current-state
+# reporting), sq-exec-state.sh (dispatch claim, recovery, and that projection),
+# and sq-teardown.sh (pre-teardown run abort, see its "Fix 1" header comment).
+# Getting this wrong in either direction is unsafe: a false negative hides a
+# genuinely parked run, and a false positive lets teardown act on a run it does
+# not own.
 #
 # Bounded call to `drill "$@"` in dir $1, timeout $2 seconds. The bounded
 # form preserves stdout, stderr, and exit status; the checked form discards
@@ -88,4 +91,121 @@ fm_drill_head_matches_worktree() {  # <worktree> <run_head>
   run_full=$(git -C "$wt" rev-parse --verify "${run_head}^{commit}" 2>/dev/null) || return 1
   [ "$run_full" = "$local_full" ] && return 0
   git -C "$wt" merge-base --is-ancestor "$local_full" "$run_full" 2>/dev/null
+}
+
+# Newest same-branch listing row, bound to current code before trusting it.
+fm_drill_runs_status_for_branch() {  # <worktree> <timeout> <limit> <branch>
+  local wt=$1 timeout_secs=$2 limit=$3 branch=$4 out row st rest br sha
+  out=$(fm_drill_run "$wt" "$timeout_secs" runs --limit "$limit")
+  [ -n "$out" ] || return 0
+  while IFS= read -r row; do
+    row=$(fm_drill_trim "$row")
+    [ -n "$row" ] || continue
+    st=${row%% *}
+    rest=${row#* }
+    rest=$(fm_drill_trim "$rest")
+    br=${rest%% *}
+    rest=${rest#* }
+    rest=$(fm_drill_trim "$rest")
+    sha=${rest%% *}
+    if [ "$br" = "$branch" ]; then
+      # Only the newest same-branch run is eligible; an unbindable head makes
+      # attribution unknown rather than exposing an older terminal execution.
+      if [ -z "$sha" ] || ! fm_drill_head_matches_worktree "$wt" "$sha"; then
+        printf 'unknown'
+        return 0
+      fi
+      printf '%s' "$st"
+      return 0
+    fi
+  done <<< "$out"
+  return 0
+}
+
+
+# Capture the current branch/code-bound run for reporting and execution recovery.
+# Results: SQ_DRILL_RUN_OUT, SQ_DRILL_RUN_SOURCE (full/coarse/none/unverified),
+# SQ_DRILL_COARSE_STATUS. A terminal snapshot must not hide a newer active run.
+fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
+  local wt=$1 timeout_secs=$2 limit=$3 branch run_branch status outcome head
+  SQ_DRILL_RUN_OUT=
+  SQ_DRILL_RUN_SOURCE=none
+  SQ_DRILL_COARSE_STATUS=
+  [ -d "$wt" ] || return 0
+  branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null) || return 0
+  [ -n "$branch" ] || return 0
+  SQ_DRILL_RUN_OUT=$(fm_drill_run "$wt" "$timeout_secs" axi status)
+  [ -n "$SQ_DRILL_RUN_OUT" ] || return 0
+  run_branch=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" branch)")
+  head=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" head)")
+  if [ "$run_branch" = "$branch" ] && fm_drill_head_matches_worktree "$wt" "$head"; then
+    SQ_DRILL_RUN_SOURCE=full
+    status=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" status)")
+    outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" outcome)")
+    case "$status:$outcome" in
+      failed:*|cancelled:*|completed:*|*:failed|*:passed|*:checks-passed|*:cancelled)
+        SQ_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
+        case "$SQ_DRILL_COARSE_STATUS" in
+          unknown|'') SQ_DRILL_RUN_SOURCE=unverified ;;
+          running) SQ_DRILL_RUN_SOURCE=coarse ;;
+        esac
+        ;;
+    esac
+  else
+    SQ_DRILL_COARSE_STATUS=$(fm_drill_runs_status_for_branch "$wt" "$timeout_secs" "$limit" "$branch")
+    case "$SQ_DRILL_COARSE_STATUS" in
+      unknown|'') : ;;
+      *) SQ_DRILL_RUN_SOURCE=coarse ;;
+    esac
+  fi
+}
+
+# Lifecycle of the captured run, not the dispatch record or CI-ready task view.
+# Non-terminal runs are `active`; fm_drill_current_run_parked refines that into
+# parked-at-a-gate when the captured evidence shows one.
+fm_drill_current_run_state() {
+  local status outcome
+  case "$SQ_DRILL_RUN_SOURCE" in
+    coarse)
+      case "$SQ_DRILL_COARSE_STATUS" in
+        running) printf 'active' ;;
+        completed|failed|cancelled) printf 'terminal' ;;
+        *) printf 'unknown' ;;
+      esac ;;
+    full)
+      status=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" status)")
+      outcome=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" outcome)")
+      case "$status:$outcome" in
+        *:passed|*:checks-passed|*:failed|*:cancelled|completed:|failed:|cancelled:) printf 'terminal' ;;
+        *:) printf 'active' ;;
+        *) printf 'unknown' ;;
+      esac ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# 0 if the captured run is parked at a gate instead of executing. Only a full
+# `axi status` capture can show a gate, so coarse runs-list evidence never
+# reports a parked run and callers keep their fail-closed default. The rule
+# mirrors bin/sq-crew-state.sh's run-step precedence: an empty outcome plus an
+# approval/fix status, an awaiting_agent field, or a gate block is parked.
+fm_drill_current_run_parked() {
+  local status
+  [ "$SQ_DRILL_RUN_SOURCE" = full ] || return 1
+  [ -z "$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" outcome)")" ] || return 1
+  status=$(fm_drill_strip_quotes "$(fm_drill_field "$SQ_DRILL_RUN_OUT" status)")
+  case "$status" in awaiting_approval|fix_review) return 0 ;; esac
+  printf '%s\n' "$SQ_DRILL_RUN_OUT" | grep -Eq '^[[:space:]]*(awaiting_agent|gate):[[:space:]]*'
+}
+
+# Reported execution state for a captured run lifecycle: an active or
+# gate-parked run means the attempt is still executing, a terminal run means it
+# is over, and unattributed evidence leaves the recorded dispatch state
+# unchanged.
+fm_drill_reported_exec_state() {  # <run_state> [recorded-state]
+  case "$1" in
+    active|parked) printf 'running\n' ;;
+    terminal) printf 'released\n' ;;
+    *) [ -z "${2:-}" ] || printf '%s\n' "$2" ;;
+  esac
 }
