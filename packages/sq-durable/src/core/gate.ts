@@ -225,9 +225,11 @@ export function defineGate(namespace: string, env: GateEnvironment): Task<GateIn
 				const mission = await tx.doc(Mission, task.input.missionId, null);
 				let reason = "aborted before any decision took effect";
 				if (approval.continuation === null) {
-					if (approval.status === "pending" || approval.status === "approved") approval.status = "cancelled";
+					// The cancel wins with no effect, and a recorded decision is never overwritten: a reject keeps the mission
+					// rejected, and an approve keeps its status and receipt while the mission ends cancelled.
+					if (approval.status === "pending") approval.status = "cancelled";
 					if (mission.effect !== null) mission.effect.state = "skipped";
-					if (mission.status !== "absent") mission.status = "cancelled";
+					if (mission.status !== "absent" && mission.status !== "rejected") mission.status = "cancelled";
 				} else if (mission.effect !== null && mission.effect.receipt === null) {
 					reason = "effect possibly started; reconcile";
 					mission.effect.state = "reconcile";
