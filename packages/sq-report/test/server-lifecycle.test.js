@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -55,6 +55,37 @@ describe("server entry", () => {
   it("the source module spawns the bin wrapper that runs it", () => {
     const sourceModule = path.join(PACKAGE_ROOT, "src", "cli.js");
     assert.equal(resolveServerEntry(pathToFileURL(sourceModule).href), path.join(PACKAGE_ROOT, "bin", "sq-report.js"));
+  });
+
+  it("a bundle in a src directory without a sibling bin still spawns itself", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "sq-report-entry-"));
+    try {
+      const bundle = path.join(root, "src", "cli.mjs");
+      await mkdir(path.dirname(bundle), { recursive: true });
+      await writeFile(bundle, "", "utf8");
+      assert.equal(resolveServerEntry(pathToFileURL(bundle).href), bundle);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("a source module with no bin wrapper fails loudly instead of spawning a non-program", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "sq-report-entry-"));
+    try {
+      const sourceModule = path.join(root, "src", "cli.js");
+      await mkdir(path.dirname(sourceModule), { recursive: true });
+      await writeFile(sourceModule, "", "utf8");
+      assert.throws(
+        () => resolveServerEntry(pathToFileURL(sourceModule).href),
+        (/** @type {any} */ error) => {
+          assert.equal(error.code, "SERVER_ERROR");
+          assert.match(error.message, /server entry is missing/);
+          return true;
+        },
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -117,7 +148,11 @@ describe("server lifecycle", () => {
 
     assert.equal(await health(port), null, "no server may answer on the port after a failed start");
     assert.equal(await isPortAvailable(HOST, port), true, "a failed start must leave no listener behind");
-    assert.equal(await health(port + 1), null, "a failed start must not move on and spawn on the next port");
+    assert.equal(
+      await isPortAvailable(HOST, port + 1),
+      true,
+      "a failed start must not move on and spawn on the next port",
+    );
   });
 
   it("starts on a clean port, starts again right after stop, and reuses a healthy server", async () => {

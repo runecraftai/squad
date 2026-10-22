@@ -1158,7 +1158,7 @@ export async function ensureServer({ forceRestart = false, version = VERSION } =
     if (health) return baseUrl;
     // The child is detached so a healthy server outlives this CLI. One that never became
     // healthy must not: reap it so a failed open leaves nothing holding the port.
-    const exitedEarly = child.exitCode !== null || child.signalCode !== null;
+    const exitedEarly = childExited(child);
     await stopSpawnedServer(child);
     // An early exit is usually a lost bind race on this port, so the next port may work.
     // A child that stayed up but never answered as this CLI's version will not do better
@@ -1180,18 +1180,20 @@ async function waitForServerHealth(baseUrl, version, timeoutMs, child = null) {
   while (Date.now() < deadline) {
     const health = await fetchHealth(baseUrl);
     if (health && !shouldRestartServer(version, health)) return health;
-    if (child && (child.exitCode !== null || child.signalCode !== null)) return null;
+    if (child && childExited(child)) return null;
     await delay(100);
   }
   return null;
 }
 
+function childExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 // Terminates a server child this CLI spawned, including its detached process group, and
 // waits for it to exit so its listener is gone before the caller moves on.
 async function stopSpawnedServer(child, timeoutMs = 3000) {
-  const exited = () => child.exitCode !== null || child.signalCode !== null;
-  if (exited()) return;
-  const exit = new Promise((resolve) => child.once("exit", resolve));
+  if (childExited(child)) return;
   const signalGroup = (signal) => {
     try {
       process.kill(-child.pid, signal);
@@ -1204,9 +1206,21 @@ async function stopSpawnedServer(child, timeoutMs = 3000) {
     }
   };
   signalGroup("SIGTERM");
-  if (await Promise.race([exit.then(() => true), delay(timeoutMs).then(() => false)])) return;
+  if (await waitForChildExit(child, timeoutMs)) return;
   signalGroup("SIGKILL");
-  await Promise.race([exit, delay(timeoutMs)]);
+  await waitForChildExit(child, timeoutMs);
+}
+
+// Polls the child's exit state instead of awaiting an `exit` listener, so a child that dies
+// between the state check and the listener registration still resolves. Short sleeps keep
+// the caller's event loop free once the child is gone.
+async function waitForChildExit(child, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (childExited(child)) return true;
+    await delay(50);
+  }
+  return childExited(child);
 }
 
 export function isPortAvailable(host, port, timeoutMs = 250) {
@@ -1353,10 +1367,16 @@ async function startServer(port) {
 // `bin/sq-report.js`, whose package.json version can differ from the one baked in.
 export function resolveServerEntry(moduleUrl = import.meta.url) {
   const modulePath = fileURLToPath(moduleUrl);
-  if (path.basename(path.dirname(modulePath)) === "src") {
-    return fileURLToPath(new URL("../bin/sq-report.js", moduleUrl));
-  }
-  return modulePath;
+  if (path.basename(path.dirname(modulePath)) !== "src") return modulePath;
+  const binEntry = fileURLToPath(new URL("../bin/sq-report.js", moduleUrl));
+  if (existsSync(binEntry)) return binEntry;
+  // A bundle that happens to sit in a `src` directory still spawns itself. The source
+  // module cannot: `../bin/sq-report.js` is what invokes run(), so without it there is no
+  // program to spawn and spawning something else would just fail as a busy port range.
+  if (path.extname(modulePath) !== ".js") return modulePath;
+  throw new AxiError("sq-report server entry is missing", "SERVER_ERROR", [
+    `Reinstall sq-report: ${binEntry} does not exist`,
+  ]);
 }
 
 /**
