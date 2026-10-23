@@ -45,7 +45,7 @@ import sys
 import time
 
 SECRET_SHAPE = re.compile(
-    r"(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
+    r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
     r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
     r"|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]"
     r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"

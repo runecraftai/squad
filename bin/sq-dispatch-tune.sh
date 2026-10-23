@@ -46,7 +46,7 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 # Provider or quota failure wording on a status line that stopped or paused work.
 FALLBACK_RE='^(blocked|paused|failed): .*(quota|usage limit|session limit|rate[ -]?limit|overloaded|provider (error|outage|unavailable)|insufficient (credit|quota))'
 # Credential or token shapes; matching values are never printed.
-SECRET_SHAPE_RE='(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]|(token|secret|passwd|password|api[_-]?key|credential)[=:]|[A-Za-z0-9_+/]{32,}'
+SECRET_SHAPE_RE='(^|[^A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]|(token|secret|passwd|password|api[_-]?key|credential)[=:]|[A-Za-z0-9_+/]{32,}'
 
 # ── defaults ──────────────────────────────────────────────────────────────
 

@@ -292,6 +292,18 @@ PY
 assert_no_grep PRIVATE_REASON_SENTINEL "$dir/intake.err" 'warning leaked credential-shaped reason'
 pass 'a credential-shaped decision reason is refused and never stored'
 
+dir=$(make_case intake-benign-reason)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'task-dispatch-tune scope' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'benign reason blocked spawn'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]).read().splitlines()]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'task-dispatch-tune scope', rows[0]
+PY
+pass 'a benign reason containing a hyphenated task name is stored'
+
 # Every operator spawn records its intake decision without a caller reason: the
 # reason comes from the harness source, and the quota snapshot passes through.
 dir=$(make_case intake-derived)
