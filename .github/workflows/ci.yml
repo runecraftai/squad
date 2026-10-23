@@ -400,7 +400,7 @@ jobs:
           go-version-file: packages/fob/go.mod
       - uses: oven-sh/setup-bun@v2
       - name: Install workspace deps (root packageManager is bun)
-        run: bun install
+        run: bun install --frozen-lockfile
       - name: Build fob + drill
         run: bun x turbo run build --filter=@runecraft/fob --filter=@runecraft/drill
       - name: Go test per package
@@ -517,7 +517,7 @@ jobs:
       - name: Install Pi
         run: npm install -g @earendil-works/pi-coding-agent
       - name: Install workspace deps
-        run: bun install
+        run: bun install --frozen-lockfile
       - name: Headless session loads extensions
         run: |
           set -eu
