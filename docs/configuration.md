@@ -9,7 +9,7 @@ The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it 
 ## Operational base layout and state
 
 This section is the single owner of the top-level operational-base layout; producer script headers and their help own exact child-file fields and mutation contracts.
-The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `SQUAD_BASE` contains private operational directories.
+Tracked files hold shared instructions and tooling: the tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `SQUAD_BASE` contains private operational directories.
 `data/` holds durable private unit records such as the project and XO registries, commander preferences, optional shared commander preferences, learnings, backlog, briefs, and recon reports.
 `data/<id>/dispatch.jsonl` is the private, append-only dispatch log (0600), retained after teardown; `bin/sq-dispatch-log.sh` owns its decision, spawn, and outcome events.
 A normal operational base may store this private log under the repository-root fallback, while test fixtures must isolate it with `SQUAD_DATA_OVERRIDE` so no log leaks into the checkout.
