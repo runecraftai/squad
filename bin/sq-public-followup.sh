@@ -172,6 +172,20 @@ pf_custody() {  # <obligation-id>
   durable_custody_check "$1" metadata || exit 3
 }
 
+# Each unconsumed event names the obligation it settles. A durable one is refused
+# before the relay gate, so a relay-inactive base still reports the refusal.
+pf_custody_pending_events() {
+  local file payload obligation refused=0
+  for file in "$(fm_pf_events_dir "$STATE")"/*.json; do
+    [ -f "$file" ] && [ ! -L "$file" ] || continue
+    payload=$(cat -- "$file" 2>/dev/null) || continue
+    obligation=$(pf_field "$payload" '.obligation_id')
+    [ -n "$obligation" ] || continue
+    durable_custody_check "$obligation" metadata || refused=1
+  done
+  [ "$refused" -eq 0 ] || exit 3
+}
+
 # --- gates ------------------------------------------------------------------
 
 # gate_or_exit: the shared silent gate for every read-side subcommand. Exits 0
@@ -196,6 +210,7 @@ cmd_register() {
   local id=${1:-}
   local relation='' work_home='' work_id='' generation='' platform='' request=''
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -223,7 +238,6 @@ cmd_register() {
     ''|*[!0-9]*) die "generation must be a positive integer, got '$generation'" ;;
   esac
   [ "$generation" -ge 1 ] || die "generation must be >= 1"
-  pf_custody "$id"
 
   local payload
   payload=$(obligation_json "$id") \
@@ -325,6 +339,7 @@ reject_event() {
 }
 
 cmd_consume() {
+  pf_custody_pending_events
   gate_or_exit
   fm_pf_has_events "$STATE" || exit 0
   require_tools
@@ -647,6 +662,7 @@ record_posted() {
 cmd_deliver() {
   local id=${1:-} text_file=
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -660,7 +676,6 @@ cmd_deliver() {
   fm_pf_relay_active "$SQUAD_BASE" \
     || die "this home has not opted into the mySquad relay, so it cannot post a public reply" 1
   require_tools
-  pf_custody "$id"
 
   local payload delivery attempt request platform text tmp_text hash chunks rc receipt receipt_fields receipt_dry_run link_status
   payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
@@ -797,6 +812,7 @@ EOF
 cmd_record_posted() {
   local id=${1:-} attempt='' chunks=''
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -814,7 +830,6 @@ cmd_record_posted() {
   public_followup_registration_valid "$id" \
     || die "public-followup registration for '$id' is missing or invalid; reconcile it before recording a receipt so any legacy X link can be cleared" 1
   require_tools
-  pf_custody "$id"
 
   local payload request platform
   payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
@@ -879,6 +894,7 @@ EOF
 cmd_retire() {
   local id=${1:-} force=0 payload delivery task_state
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -888,7 +904,6 @@ cmd_retire() {
     shift || true
   done
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
-  pf_custody "$id"
   fm_pf_relay_active "$SQUAD_BASE" || exit 0
   require_tools
 

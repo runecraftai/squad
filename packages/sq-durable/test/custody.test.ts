@@ -6,7 +6,8 @@ import {
 	SQUAD_RESPONSIBILITIES,
 	squadCustodyScheme,
 } from "../src/adapter/legacy-writers.js";
-import { decideCustody, engineOwnedMessage, tableDigest } from "../src/core/index.js";
+import { decideCustody, engineOwnedMessage, type MissionDocument, tableDigest } from "../src/core/index.js";
+import { type CustodyAffected, custodyDecision } from "../src/service/custody-endpoint.js";
 import { custodyCheck, refusalLog, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
 import { cleanup, cli, initStore, type Service, startReady } from "./helpers.js";
 
@@ -57,6 +58,38 @@ describe("custody contract (neutral core over the Squad tables)", () => {
 		expect(decideCustody(cleanupQuery, scheme, { state: "ready", mission: { status: "reconcile", effectReconciled: false } })).toMatchObject({ allowed: false });
 		expect(decideCustody(cleanupQuery, scheme, { state: "degraded", mission: { status: "completed", effectReconciled: false } })).toMatchObject({ allowed: false });
 		expect(decideCustody(cleanupQuery, scheme, { state: "degraded", mission: { status: "completed", effectReconciled: true } })).toMatchObject({ allowed: true });
+	});
+
+	it("confirms a condition on a degraded service only for a mission the degradation does not affect", () => {
+		const cleanupQuery = { id: "dm2-pilot", responsibilities: ["cleanup"] };
+		const degradedCompleted = { state: "degraded", mission: { status: "completed", effectReconciled: true, affected: true } } as const;
+		const refused = decideCustody(cleanupQuery, scheme, degradedCompleted);
+		expect(refused).toMatchObject({ allowed: false, code: "condition_unmet" });
+		expect(refused.allowed ? "" : refused.message).toContain("the durable service is degraded and mission dm2-pilot is affected");
+		expect(decideCustody(cleanupQuery, scheme, { state: "degraded", mission: { status: "completed", effectReconciled: true, affected: false } })).toMatchObject({ allowed: true });
+	});
+
+	it("derives a degraded service's affected missions from the blocked tasks, reconcile and overdue approvals it reports", async () => {
+		const mission = { missionId: "dm2-pilot", status: "awaiting_approval", approvalId: "dm2-pilot/lab/r1", gateTaskId: 7, effect: null } as unknown as MissionDocument;
+		const degraded = (affected: CustodyAffected) => ({
+			state: async () => ({ state: "degraded" as const, reasons: ["task blocked"], affected }),
+			mission: async () => mission,
+		});
+		const admission = { id: "dm2-pilot", responsibilities: ["admission"] };
+		expect(await custodyDecision(admission, degraded({ missions: [], approvals: [], tasks: [7] }))).toMatchObject({ allowed: false, code: "condition_unmet" });
+		expect(await custodyDecision(admission, degraded({ missions: ["dm2-pilot"], approvals: [], tasks: [] }))).toMatchObject({ allowed: false });
+		expect(await custodyDecision(admission, degraded({ missions: [], approvals: ["dm2-pilot/lab/r1"], tasks: [] }))).toMatchObject({ allowed: false });
+		expect(await custodyDecision(admission, degraded({ missions: [], approvals: [], tasks: [8] }))).toMatchObject({ allowed: true });
+	});
+
+	it("confirms admission only for a live mission, never for one that already finished", () => {
+		const admission = { id: "dm2-pilot", responsibilities: ["admission"] };
+		for (const status of ["completed", "rejected", "cancelled"] as const) {
+			expect(decideCustody(admission, scheme, { state: "ready", mission: { status, effectReconciled: true } })).toMatchObject({ allowed: false, code: "condition_unmet" });
+		}
+		for (const status of ["approved", "effect", "reconcile"] as const) {
+			expect(decideCustody(admission, scheme, { state: "ready", mission: { status, effectReconciled: true } })).toMatchObject({ allowed: true });
+		}
 	});
 
 	it("keeps every published table frozen and equal to its pinned digest", () => {

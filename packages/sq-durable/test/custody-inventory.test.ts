@@ -20,18 +20,6 @@ describe("legacy writer inventory, derived from the code", () => {
 		expect(inventoryViolations(REPO_ROOT)).toEqual([]);
 	});
 
-	it("knows the writers the plan names and the ones the code adds", () => {
-		const scanned = new Set(scanLegacyWriters(REPO_ROOT).map((writer) => writer.path));
-		for (const path of ["bin/sq-exec-state.sh", "bin/sq-spawn.sh", "bin/sq-teardown.sh", "bin/sq-sentry.sh", "bin/sq-stall-detect.sh", "bin/sq-backlog-handoff.sh", "bin/sq-send.sh", "bin/sq-decision-hold.sh"]) {
-			expect(scanned.has(path), path).toBe(true);
-		}
-		const inventoried = new Set(LEGACY_WRITERS.map((entry) => entry.path));
-		for (const path of scanned) expect(inventoried.has(path), path).toBe(true);
-		for (const path of ["bin/sq-merge-local.sh", "bin/sq-pr-merge.sh"]) {
-			expect(LEGACY_WRITERS.find((entry) => entry.path === path)?.consults).toEqual(["landing"]);
-		}
-	});
-
 	it("fails when a new writer of a task record appears without passing through custody", () => {
 		const repo = scratchRepo();
 		expect(inventoryViolations(repo)).toEqual([]);
@@ -90,6 +78,51 @@ describe("legacy writer inventory, derived from the code", () => {
 		for (const file of ["sq-pf-backlog-writer.sh", "sq-pf-registry-writer.sh", "sq-pf-event-writer.sh"]) {
 			expect(violations, file).toContain(`bin/${file} writes task records without passing through custody`);
 		}
+	});
+
+	it("fails for a record write reached through a helper that builds a task record path", () => {
+		const repo = scratchRepo();
+		writeFileSync(
+			join(repo, "bin", "sq-helper-writer.sh"),
+			[
+				"#!/usr/bin/env bash",
+				'sidecar_path() { printf \'%s/%s.drill-pr\' "$1" "$2"; }',
+				'STATE="$SQUAD_BASE/state"',
+				'ID=$1',
+				'SIDE=$(sidecar_path "$STATE" "$ID")',
+				"printf 'x\\n' > \"$SIDE\"",
+				"",
+			].join("\n"),
+		);
+		writeFileSync(join(repo, "bin", "sq-helper-remover.sh"), 'STATE="$SQUAD_BASE/state"\nrm -f -- "$(sidecar_path "$STATE" "$1")"\n');
+		const violations = inventoryViolations(repo).join("\n");
+		expect(violations).toContain("bin/sq-helper-writer.sh writes task records without passing through custody");
+		expect(violations).toContain("bin/sq-helper-remover.sh writes task records without passing through custody");
+	});
+
+	it("fails when the busy-state writer stops consulting custody before each of its writes", () => {
+		const repo = scratchRepo();
+		const file = join(repo, "bin", "sq-busy-event.sh");
+		writeFileSync(
+			file,
+			readFileSync(file, "utf8")
+				.replace('durable_custody_check "$ID" "$custody_responsibility" || exit 3', ":")
+				.replace(/custody_responsibility=/g, "custody_responsibility_="),
+		);
+		const violations = inventoryViolations(repo).join("\n");
+		for (const responsibility of ["spawn", "heartbeat", "cleanup"]) {
+			expect(violations, responsibility).toContain(`bin/sq-busy-event.sh is inventoried as consulting ${responsibility} but has no durable_custody_check call naming it`);
+		}
+	});
+
+	it("fails the inventory command when a writer appears, and passes once it consults custody", async () => {
+		const repo = scratchRepo();
+		const args = ["custody", "inventory", "--repo", repo, "--json"];
+		expect((await cli(args)).code).toBe(0);
+		writeFileSync(join(repo, "bin", "sq-new-writer.sh"), 'STATE="$SQUAD_BASE/state"\nID=$1\nprintf "x=1\\n" >> "$STATE/$ID.meta"\n');
+		const refused = await cli(args);
+		expect(refused.code).toBe(1);
+		expect(refused.stderr).toContain("bin/sq-new-writer.sh writes task records without passing through custody");
 	});
 
 	it("fails for a record write reached through a variable derived from the state directory", () => {

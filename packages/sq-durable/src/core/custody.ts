@@ -82,6 +82,11 @@ export type CustodyMissionView = {
 	readonly status: MissionStatus;
 	/** No effect was attempted, or the attempted effect has a receipt. */
 	readonly effectReconciled: boolean;
+	/**
+	 * The mission itself is blocked, parked, in reconcile or waiting on an overdue continuation. A degraded service still
+	 * answers for the rest of the store, but confirms nothing about an affected mission.
+	 */
+	readonly affected?: boolean;
 };
 
 const TERMINAL: readonly MissionStatus[] = ["completed", "rejected", "cancelled"];
@@ -142,7 +147,7 @@ const CONDITION_TEXT: Record<CustodyCondition, string> = {
 };
 
 function conditionMet(condition: CustodyCondition, mission: CustodyMissionView): boolean {
-	if (condition === "admitted") return mission.status !== "absent";
+	if (condition === "admitted") return mission.status !== "absent" && !TERMINAL.includes(mission.status);
 	return TERMINAL.includes(mission.status) && mission.effectReconciled;
 }
 
@@ -206,11 +211,15 @@ export function decideCustody(query: CustodyQuery, scheme: CustodyScheme, servic
 			return refusal(query.id, generation, responsibility, "engine_owned", engineOwnedMessage(responsibility, query.id, generation));
 		}
 		if (owner.requires !== undefined) {
-			const confirmable = service.state === "ready" || service.state === "degraded";
+			const affected = service.mission?.affected === true;
+			const confirmable = service.state === "ready" || (service.state === "degraded" && !affected);
 			if (!confirmable || service.mission === undefined || !conditionMet(owner.requires, service.mission)) {
-				const why = !confirmable
-					? `the durable service is ${service.state}${service.reason ? ` (${service.reason})` : ""}`
-					: `the mission is ${service.mission?.status ?? "unknown"}${service.mission !== undefined && !service.mission.effectReconciled ? " with an unreconciled effect" : ""}`;
+				const detail = service.reason ? ` (${service.reason})` : "";
+				const why = affected
+					? `the durable service is degraded and mission ${query.id} is affected${detail}`
+					: !confirmable
+						? `the durable service is ${service.state}${detail}`
+						: `the mission is ${service.mission?.status ?? "unknown"}${service.mission !== undefined && !service.mission.effectReconciled ? " with an unreconciled effect" : ""}`;
 				return refusal(
 					query.id,
 					generation,

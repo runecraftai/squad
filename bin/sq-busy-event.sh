@@ -28,9 +28,13 @@
 #       an old task from retiring a newly armed incarnation. A missing sidecar
 #       is already retired, so any orphan record is removed idempotently.
 #
+# Custody: arm consults spawn, apply consults heartbeat and retire consults
+# cleanup before any write, so a durable mission's busy state changes only for
+# the responsibilities its generation leaves to the legacy path.
+#
 # Exit codes: 0 applied; 1 refused (stale gen, unarmed task, lock timeout,
-# invalid input); 2 usage. Adapter hook command lines append `|| true` so a
-# refusal never breaks the harness's own lifecycle.
+# invalid input); 2 usage; 3 refused by custody. Adapter hook command lines
+# append `|| true` so a refusal never breaks the harness's own lifecycle.
 set -u
 
 usage() {
@@ -47,6 +51,8 @@ EOF
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sq-busy-lib.sh
 . "$SCRIPT_DIR/sq-busy-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 CMD=${1:-}
 case "$CMD" in
@@ -60,6 +66,12 @@ ID=${2:-}
 shift 2
 case "$ID" in *[!A-Za-z0-9._-]*) echo "error: invalid task id" >&2; exit 1 ;; esac
 [ -d "$STATE" ] || { echo "error: state dir not found: $STATE" >&2; exit 1; }
+case "$CMD" in
+  arm) custody_responsibility=spawn ;;
+  apply) custody_responsibility=heartbeat ;;
+  retire) custody_responsibility=cleanup ;;
+esac
+durable_custody_check "$ID" "$custody_responsibility" || exit 3
 
 NEW_STATE=
 GEN=

@@ -257,6 +257,15 @@ remote_teardown_locks_release() {
 # survivor once the record is gone.
 # Defined before the remote-XO main-flow call below (bash resolves functions
 # at call time, and that call site runs before the later helper block).
+retire_exec_record() {
+  if ! durable_custody_reserved "$ID"; then
+    "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+    return 0
+  fi
+  [ -e "$STATE/$ID.exec" ] || [ -L "$STATE/$ID.exec" ] || return 0
+  rm -f -- "$STATE/$ID.exec"
+}
+
 retire_watcher_markers() {  # <state-dir> <task-id> <window>
   local state=$1 id=$2 win=$3 key sfx task_key
   task_key=$(printf '%s' "$id" | tr ':/.' '___')
@@ -419,7 +428,7 @@ remote_XO_teardown() {
   grep -vE "^- $ID( |$)" "$XO_REG" > "$tmp" || true
   mv -f -- "$tmp" "$XO_REG"
   retire_watcher_markers "$STATE" "$ID" "$(fm_backend_target_of_meta "$META")"
-  "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+  retire_exec_record || return 1
   rm -f -- "$STATE/$ID.status" "$STATE/$ID.meta" "$STATE/$ID.turn-ended" \
     "$STATE/.$ID.open-decisions-cursor"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
@@ -2500,7 +2509,7 @@ retire_watcher_markers "$STATE" "$ID" "$T"
 # path. Avoid invoking sq-exec-state in that case because its startup mkdir
 # would recreate the just-removed remote state directory.
 if [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
-  "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+  retire_exec_record || exit 1
 fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \

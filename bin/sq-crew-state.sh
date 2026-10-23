@@ -71,6 +71,8 @@ EXEC_STATE_BIN="$SCRIPT_DIR/sq-exec-state.sh"
 . "$SCRIPT_DIR/sq-busy-lib.sh"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: sq-crew-state.sh <id>" >&2; exit 2; }
@@ -324,6 +326,7 @@ drill_pr_sidecar() { # <state-dir> <task-id>
 }
 drill_pr_sidecar_write() { # <state-dir> <task-id> <pr-url>
   local sidecar
+  durable_custody_check "$2" metadata || return 3
   sidecar=$(drill_pr_sidecar "$1" "$2")
   if [ -n "$3" ]; then
     printf '%s\n' "$3" > "$sidecar"
@@ -332,6 +335,7 @@ drill_pr_sidecar_write() { # <state-dir> <task-id> <pr-url>
   fi
 }
 drill_pr_sidecar_clear() { # <state-dir> <task-id>
+  durable_custody_check "$2" metadata || return 3
   rm -f -- "$(drill_pr_sidecar "$1" "$2")"
 }
 

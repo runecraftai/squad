@@ -221,7 +221,7 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(result.stdout.trim().split("\n")).toEqual(["link_set=3", "followups_set=3", "link_clear=3"]);
 		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
 		expect(readFileSync(meta, "utf8")).toBe(before);
-		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(3);
+		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(1);
 	});
 
 	it("refuses every Relay meta mutator of a durable mission whose meta is deleted, with exit 3 and no state change", async () => {
@@ -375,7 +375,7 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(outcomes).toEqual(["prepare=3", "publish=3", "recover=3"]);
 		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
 		expect(stateDigest(base)).toBe(before);
-		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(3);
+		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(1);
 	});
 
 	it("resolves the durable store and refusal log from SQUAD_ROOT_OVERRIDE like the writers it guards", async () => {

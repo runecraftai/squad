@@ -283,10 +283,12 @@ export async function runService(options: ServiceOptions): Promise<void> {
 		}
 		const blocked: string[] = [];
 		const parked: string[] = [];
+		const affectedTasks: number[] = [];
 		for (const task of inspection?.tasks ?? []) {
 			if (task.state.kind !== "blocked") continue;
 			const label = `${task.record.kind}#${task.record.id} (${task.state.reason})`;
 			(task.state.reason === "restart_limit" ? parked : blocked).push(label);
+			affectedTasks.push(task.record.id);
 		}
 		const now = Date.now();
 		const views = await approvalViews();
@@ -310,7 +312,20 @@ export async function runService(options: ServiceOptions): Promise<void> {
 			overdue: decidedWithoutContinuation.filter((item) => item.overdue).map((item) => item.approvalId),
 			holds: faults.holds,
 		});
-		return { ...base, ...readiness, lastSeq: index?.seq ?? 0, blocked, parked, reconcile, decidedWithoutContinuation };
+		return {
+			...base,
+			...readiness,
+			lastSeq: index?.seq ?? 0,
+			blocked,
+			parked,
+			reconcile,
+			decidedWithoutContinuation,
+			affected: {
+				missions: reconcile,
+				approvals: decidedWithoutContinuation.filter((item) => item.overdue).map((item) => item.approvalId),
+				tasks: affectedTasks,
+			},
+		};
 	}
 
 	async function handle(request: Request): Promise<Response> {
@@ -328,7 +343,8 @@ export async function runService(options: ServiceOptions): Promise<void> {
 			const decision = await custodyDecision(parsed.query, {
 				state: async () => {
 					const report = await probe();
-					return { state: report.state, reasons: report.reasons };
+					const affected = "affected" in report ? report.affected : { missions: [], approvals: [], tasks: [] };
+					return { state: report.state, reasons: report.reasons, affected };
 				},
 				mission: async (missionId) => (harness === undefined ? undefined : harness.snapshot(documents.Mission, missionId, context)),
 			});

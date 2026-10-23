@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { custodyCheck, REPO_ROOT, refusalLog, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
+import { CUSTODY_LIB, custodyCheck, REPO_ROOT, refusalLog, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
 import { admit, answer, cleanup, initStore, receipt, startReady, tempDir, until, waitEffect } from "./helpers.js";
 
 afterEach(cleanup);
@@ -217,5 +218,86 @@ describe("custody ahead of every gate and mutation of the legacy writers", () =>
 		const result = await runScript("sq-pr-check-migrate.sh", [], env);
 		expect(result.code).toBe(3);
 		expect(statSync(artifact).mode & 0o777).toBe(0o644);
+	});
+});
+
+describe("custody refusals that hold even when the relay is inactive or the sweep repeats", () => {
+	it("refuses every public-followup write subcommand for a durable mission before the relay gate", async () => {
+		const { base, env } = await pendingMission();
+		const before = stateDigest(base);
+		const writes = [
+			["register", MISSION, "--relation", "rel-1", "--work-home", "main", "--work-id", "work-1", "--generation", "1"],
+			["deliver", MISSION],
+			["record-posted", MISSION, "--attempt", "1", "--chunks", "1"],
+			["retire", MISSION],
+			["retire", MISSION, "--force"],
+		];
+		for (const args of writes) {
+			const result = await runScript("sq-public-followup.sh", args, env);
+			expect({ args: args.join(" "), code: result.code }).toEqual({ args: args.join(" "), code: 3 });
+			expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
+		}
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses consumption of a durable mission's event before the relay gate, leaving the event unconsumed", async () => {
+		const { base, env } = await pendingMission();
+		const events = join(base, "state", "public-followup", "events");
+		mkdirSync(events, { recursive: true });
+		writeFileSync(join(events, "evt-1.json"), JSON.stringify({ obligation_id: MISSION }));
+		const before = stateDigest(base);
+		const result = await runScript("sq-public-followup.sh", ["consume"], env);
+		expect(result.code).toBe(3);
+		expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
+		expect(existsSync(join(events, "evt-1.json"))).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("fails the PR-check migration, without publishing its marker, for a non-diagnostic durable artifact", async () => {
+		const { base, env } = await pendingMission();
+		const quarantine = join(base, "state", ".pr-check-quarantine");
+		mkdirSync(quarantine, { recursive: true });
+		chmodSync(quarantine, 0o700);
+		const artifact = join(quarantine, `${MISSION}.pr-poll`);
+		writeFileSync(artifact, "pr=https://example.invalid/pull/1\n");
+		chmodSync(artifact, 0o644);
+		const result = await runScript("sq-pr-check-migrate.sh", [], env);
+		expect(result.code).toBe(3);
+		expect(statSync(artifact).mode & 0o777).toBe(0o644);
+		expect(existsSync(join(base, "state", ".pr-check-migration-v1"))).toBe(false);
+	});
+
+	it("appends a refusal to the log once per mission, responsibility and writer, while still printing and refusing every time", async () => {
+		const { base, env } = await pendingMission();
+		const script = ". \"$1\"; shift; for i in 1 2 3; do durable_custody_check \"$@\"; done; durable_custody_check \"$1\" retry";
+		const result = await runBash(["-c", script, "custody", CUSTODY_LIB, MISSION, "claim"], env);
+		expect(result.stderr.split("\n").filter((line) => line.includes(`refused: claim of mission ${MISSION}`))).toHaveLength(3);
+		expect(refusalLog(base).filter((line) => line.includes(`\t${MISSION}\tclaim\t`))).toHaveLength(1);
+		expect(refusalLog(base).filter((line) => line.includes(`\t${MISSION}\tretry\t`))).toHaveLength(1);
+	});
+
+	it("retires a terminal, reconciled durable mission's records completely under teardown's single cleanup decision", async () => {
+		const { store, base, env } = await pendingMission();
+		await complete(store);
+		const worktree = join(tempDir(), "worktree");
+		const project = join(tempDir(), "project");
+		for (const dir of [worktree, project]) {
+			mkdirSync(dir, { recursive: true });
+			execFileSync("git", ["-C", dir, "init", "-q", "-b", "main"]);
+			execFileSync("git", ["-C", dir, "-c", "user.email=test@example.invalid", "-c", "user.name=test", "commit", "-q", "--allow-empty", "-m", "init"]);
+		}
+		seedTask(base, MISSION, { window: `Squad:sq-${MISSION}`, worktree, project });
+		writeFileSync(join(base, "state", `${MISSION}.status`), "done: landed\n");
+		for (const suffix of ["turn-ended", "pi-ext.ts", "muse-session"]) writeFileSync(join(base, "state", `${MISSION}.${suffix}`), "x\n");
+		const fobBin = join(tempDir(), "fob-bin");
+		mkdirSync(fobBin, { recursive: true });
+		writeFileSync(join(fobBin, "fob"), "#!/usr/bin/env bash\nexit 0\n");
+		chmodSync(join(fobBin, "fob"), 0o755);
+		const result = await runScript("sq-teardown.sh", [MISSION], { ...env, PATH: `${fobBin}:${env.PATH}` });
+		expect(result.stderr).not.toContain("REFUSED");
+		expect(result.code).toBe(0);
+		for (const file of [".meta", ".status", ".exec", ".turn-ended", ".pi-ext.ts", ".muse-session"]) {
+			expect(existsSync(join(base, "state", `${MISSION}${file}`)), file).toBe(false);
+		}
 	});
 });

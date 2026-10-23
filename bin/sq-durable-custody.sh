@@ -48,6 +48,7 @@ esac
 _SQ_DURABLE_CUSTODY_ROOT="${_SQ_DURABLE_CUSTODY_LIB%/bin/*}"
 : "${_SQ_DURABLE_CUSTODY_LOADED:=$SQ_DURABLE_CUSTODY_GENERATION}"
 : "${_SQ_DURABLE_CUSTODY_REFUSALS:=0}"
+: "${_SQ_DURABLE_CUSTODY_SEEN:=}"
 
 durable_custody_reserved() {  # <id>
   [[ ${1-} =~ ^dm[0-9]+- ]]
@@ -65,11 +66,18 @@ _durable_custody_base() {
 }
 
 # Print the refusal and keep a durable record of it; the record is best effort,
-# the refusal itself never is.
+# the refusal itself never is. The record is appended once per mission,
+# responsibility and writer process, so a sweep that refuses the same mission on
+# every tick grows the log by one line, while every tick still prints and refuses.
 _durable_custody_refuse() {  # <id> <responsibilities> <message>
-  local log
+  local log key
   _SQ_DURABLE_CUSTODY_REFUSALS=$((_SQ_DURABLE_CUSTODY_REFUSALS + 1))
   printf '%s\n' "$3" >&2
+  key="|$1|$2|${0##*/}|$$|"
+  case "$_SQ_DURABLE_CUSTODY_SEEN" in
+    *"$key"*) return 3 ;;
+  esac
+  _SQ_DURABLE_CUSTODY_SEEN="$_SQ_DURABLE_CUSTODY_SEEN$key"
   log="$(_durable_custody_base)/data/durable/custody-refusals.log"
   {
     mkdir -p "${log%/*}" &&

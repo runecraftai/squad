@@ -126,7 +126,9 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 	guard("bin/sq-backlog-handoff.sh", ["xo-routing"], "moves backlog items to an XO; refuses the XO and every item key before any move"),
 	guard("bin/sq-backlog-receive.sh", ["xo-routing"], "XO side of a handoff; refuses every received key before the destination backlog is touched"),
 	guard("bin/sq-brief.sh", ["admission"], "writes data/<id>/brief.md; a durable mission needs its admission confirmed"),
+	guard("bin/sq-busy-event.sh", ["spawn", "heartbeat", "cleanup"], "busy-state record and gen sidecar of a task: arm (spawn), apply (heartbeat) and retire (cleanup) consult before any write"),
 	guard("bin/sq-check-register.sh", ["metadata"], "binds a task's custom check and trust record"),
+	guard("bin/sq-crew-state.sh", ["metadata"], "the drill PR sidecar state/<id>.drill-pr, written and cleared through drill_pr_sidecar_write and drill_pr_sidecar_clear, which consult metadata"),
 	guard("bin/sq-decision-hold.sh", ["approval"], "decision holds, status closures and decision_keys meta of an origin task"),
 	guard("bin/sq-drill-drive.sh", ["status"], "worker-side drill driver; appends its task's blocked event"),
 	guard(
@@ -207,8 +209,8 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 		path: "bin/sq-busy-lib.sh",
 		consults: [],
 		exempt: {
-			reason: "drops the state/<id>.muse-session-current busy-state cache it re-derives in the same call; a read-side cache, never authority",
-			lines: ['rm -f "$(fm_busy_muse_cache_path "$1" "$2")"'],
+			reason: "writes and drops the state/<id>.muse-session-current busy-state cache it re-derives in the same call; a read-side cache, never authority",
+			lines: ['mv -f -- "$tmp" "$cache"', 'rm -f "$(fm_busy_muse_cache_path "$1" "$2")"'],
 		},
 		note: "busy-state reader",
 	},
@@ -254,6 +256,10 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
  * Task-record write lines a consulting writer performs, reviewed by hand: each one runs only after the file's
  * `durable_custody_check` for its responsibility. A new record write in a consulting file, or a pinned line that moved or
  * vanished, fails `inventoryViolations` until it is reviewed and pinned here again.
+ *
+ * What the pin proves: it detects new or changed write text, not relocation. A pinned line moved above its consultation
+ * still matches. That the consultation runs before the write is proven by the behavioural refusal tests, which run the
+ * real scripts against a refused mission and assert an unchanged state digest.
  */
 export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>> = Object.freeze({
 	"bin/sq-brief.sh": [
@@ -264,9 +270,20 @@ export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>
 		"cat > \"$BRIEF\" <<EOF",
 		"rm -f \"$BRIEF\"",
 	],
+	"bin/sq-busy-event.sh": [
+		"mv -f \"$tmp\" \"$REC\"",
+		"printf '%s\\n' \"$GEN\" > \"$GEN_FILE.tmp.$$\" && mv -f \"$GEN_FILE.tmp.$$\" \"$GEN_FILE\" \\",
+		"rm -f \"$REC\" || {",
+		"rm -f \"$GEN_FILE\" \"$REC\" || {",
+	],
 	"bin/sq-check-register.sh": [
 		"mv -f -- \"$TMP\" \"$TRUST\" || exit 1",
 		"fm_custom_check_registered \"$STATE\" \"$ID\" || { rm -f -- \"$TRUST\"; exit 1; }",
+	],
+	"bin/sq-crew-state.sh": [
+		"printf '%s\\n' \"$3\" > \"$sidecar\"",
+		"rm -f -- \"$sidecar\"",
+		"rm -f -- \"$(drill_pr_sidecar \"$1\" \"$2\")\"",
 	],
 	"bin/sq-decision-hold.sh": [
 		"printf 'decisions_reviewed=1\\ndecision_keys=%s\\n' \"$keys\" >> \"$meta\"",
@@ -338,6 +355,7 @@ export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>
 		"[ -f \"$STATE/$id.status\" ] || : >\"$STATE/$id.status\"",
 	],
 	"bin/sq-teardown.sh": [
+		"rm -f -- \"$STATE/$ID.exec\"",
 		"rm -f -- \"$STATE/$ID.status\" \"$STATE/$ID.meta\" \"$STATE/$ID.turn-ended\" \\",
 		"rm -f \"$state_dir/$id.check.sh\" \"$state_dir/$id.pr-poll\" \\",
 		"rm -f \"$sub_state/$child_id.status\" \"$sub_state/$child_id.turn-ended\" \\",
@@ -363,6 +381,23 @@ export type ScannedWriter = { readonly path: string; readonly hits: readonly Sca
 const STATE_DIR = String.raw`(?:\$\{?[A-Za-z_]*(?:STATE|state)[A-Za-z_0-9]*\}?|\$\{?[A-Za-z_]*(?:BASE|HOME|ROOT|base|home|root)\}?/state|\bstate)`;
 const DATA_DIR = String.raw`(?:\$\{?[A-Za-z_]*(?:DATA|data)[A-Za-z_0-9]*\}?|\$\{?[A-Za-z_]*(?:BASE|HOME|ROOT|base|home|root)\}?/data)`;
 const VAR = String.raw`\$\{?[A-Za-z_][A-Za-z_0-9]*\}?`;
+/** A function definition, `name() {`, whose body builds one task's `<state>/<id>.<ext>` path by its printf format. */
+const FUNCTION_START = /^([A-Za-z_][A-Za-z_0-9]*)\(\)\s*\{/;
+const PATH_BUILDER = /printf\s+['"]%s\/%s\.[a-z][a-z0-9-]*['"]/;
+
+/** Names of the helpers in one file whose body builds a task record path, such as `fm_busy_record_path`. */
+export function recordPathHelpers(text: string): Set<string> {
+	const helpers = new Set<string>();
+	let name: string | undefined;
+	for (const line of text.split("\n")) {
+		const start = FUNCTION_START.exec(line);
+		if (start !== null) name = start[1];
+		if (name !== undefined && PATH_BUILDER.test(line)) helpers.add(name);
+		if (name !== undefined && (/^\}/.test(line) || (start !== null && /\}\s*$/.test(line)))) name = undefined;
+	}
+	return helpers;
+}
+
 /** The state and data directories, by name and by any variable a line assigns from them. */
 function recordDirectories(dirVars: ReadonlySet<string>): string {
 	const aliases = [...dirVars].map((name) => String.raw`\$\{?${name}\}?`);
@@ -480,16 +515,17 @@ function codeLines(text: string, python: boolean): (string | undefined)[] {
 /** A command substitution that computes a record path, such as `$(path_for "$id")`. */
 const RECORD_PATH_CALL = /\$\(\s*(?:[A-Za-z_]*path[A-Za-z_]*|[A-Za-z_]+_for|fm_pf_(?:registry|events|consumed|rejected)_dir)\s/;
 
-function writesRecordVariable(line: string, recordVars: ReadonlySet<string>): boolean {
+function writesRecordVariable(line: string, recordVars: ReadonlySet<string>, helperCall: RegExp | null): boolean {
 	const isRecord = (name: string) => recordVars.has(name) || RECORD_VAR_NAME.test(name);
+	const pathCall = (text: string) => RECORD_PATH_CALL.test(text) || (helperCall !== null && helperCall.test(text));
 	for (const match of line.matchAll(REDIRECT_TARGET)) if (isRecord(match[1] as string)) return true;
 	const redirect = /(?<![0-9&<>])>>?\s*["']?(?=\$\()/.exec(line);
-	if (redirect !== null && RECORD_PATH_CALL.test(line.slice(redirect.index))) return true;
+	if (redirect !== null && pathCall(line.slice(redirect.index))) return true;
 	const verb = WRITE_VERB.exec(line);
 	if (verb === null || insideQuotes(line, verb.index)) return false;
 	const rest = line.slice(verb.index);
 	for (const match of rest.matchAll(VARIABLE)) if (isRecord(match[1] as string)) return true;
-	return RECORD_PATH_CALL.test(rest);
+	return pathCall(rest);
 }
 
 /**
@@ -500,8 +536,12 @@ function writesRecordVariable(line: string, recordVars: ReadonlySet<string>): bo
  * The variables that name a state or data directory, and the variables that hold a task record path, found by repeating
  * the assignments until nothing new appears: `dir=$STATE; f="$dir/$id.exec"` makes `f` a record.
  */
-function locateRecords(lines: readonly (string | undefined)[]): { directories: string; recordVars: Set<string> } {
+function locateRecords(
+	lines: readonly (string | undefined)[],
+	helpers: ReadonlySet<string>,
+): { directories: string; recordVars: Set<string> } {
 	const assignment = /(?:^|[\s;(])(?:local\s+|export\s+|readonly\s+)?([A-Za-z_][A-Za-z_0-9]*)=("[^"]*"|'[^']*'|[^\s;]+)/g;
+	const helperCall = helpers.size === 0 ? null : new RegExp(String.raw`^"?\$\((?:${[...helpers].join("|")})(?![A-Za-z_0-9])`);
 	const dirVars = new Set<string>();
 	const recordVars = new Set<string>();
 	let changed = true;
@@ -521,7 +561,7 @@ function locateRecords(lines: readonly (string | undefined)[]): { directories: s
 					dirVars.add(name);
 					changed = true;
 				}
-				if (!recordVars.has(name) && record.test(value)) {
+				if (!recordVars.has(name) && (record.test(value) || (helperCall !== null && helperCall.test(value)))) {
 					recordVars.add(name);
 					changed = true;
 				}
@@ -536,16 +576,17 @@ function locateRecords(lines: readonly (string | undefined)[]): { directories: s
 	return { directories: recordDirectories(dirVars), recordVars };
 }
 
-export function scanText(text: string, self = "", python = false): ScanHit[] {
+export function scanText(text: string, self = "", python = false, helpers: ReadonlySet<string> = new Set()): ScanHit[] {
 	const lines = codeLines(text, python);
-	const { directories, recordVars } = locateRecords(lines);
+	const { directories, recordVars } = locateRecords(lines, helpers);
 	const record = recordPath(directories);
+	const helperCall = helpers.size === 0 ? null : new RegExp(String.raw`\$\(\s*(?:${[...helpers].join("|")})(?![A-Za-z_0-9])`);
 	const hits: ScanHit[] = [];
 	lines.forEach((line, index) => {
 		if (line === undefined || isComment(line)) return;
 		const at = index + 1;
 		const text = line.trim();
-		if ((WRITE_OP.test(line) && record.test(line)) || writesRecordVariable(line, recordVars)) {
+		if ((WRITE_OP.test(line) && record.test(line)) || writesRecordVariable(line, recordVars, helperCall)) {
 			hits.push({ line: at, text, signature: "record-write" });
 			return;
 		}
@@ -570,12 +611,16 @@ export function scanText(text: string, self = "", python = false): ScanHit[] {
 
 /** Every file under `<repo>/bin` that writes a task record or calls a writer that does, with the lines found. */
 export function scanLegacyWriters(repoRoot: string): ScannedWriter[] {
-	const writers: ScannedWriter[] = [];
-	for (const file of walk(join(repoRoot, "bin")).sort()) {
+	const files = walk(join(repoRoot, "bin")).sort().map((file) => {
 		const path = relative(repoRoot, file).split(sep).join("/");
+		return { path, text: readFileSync(file, "utf8") };
+	});
+	const helpers = new Set(files.flatMap(({ text }) => [...recordPathHelpers(text)]));
+	const writers: ScannedWriter[] = [];
+	for (const { path, text } of files) {
 		if (path === CUSTODY_SHELL_LIBRARY) continue;
 		const name = path.slice(path.lastIndexOf("/") + 1);
-		const hits = scanText(readFileSync(file, "utf8"), name, name.endsWith(".py"));
+		const hits = scanText(text, name, name.endsWith(".py"), helpers);
 		if (hits.length > 0) writers.push({ path, hits });
 	}
 	return writers;

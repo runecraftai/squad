@@ -132,7 +132,7 @@ describe("generation signal of long-running writers", () => {
 			expect(removed.code).toBe(3);
 			expect(removed.stderr).toContain("is missing or unreadable");
 			const log = readFileSync(join(base, "data", "durable", "custody-refusals.log"), "utf8");
-			expect(log.match(/\tdm2-pilot\tclaim\t/g)).toHaveLength(2);
+			expect(log.match(/\tdm2-pilot\tclaim\t/g)).toHaveLength(1);
 		} finally {
 			await writer.stop();
 		}
