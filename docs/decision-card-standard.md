@@ -19,6 +19,7 @@ The picker is an opt-in tool for a human at a shell.
 
 ```bash
 bin/sq-ask.sh --render < tests/fixtures/decision-prose/merge.json
+bin/sq-ask.sh --render prose < tests/fixtures/decision-prose/merge.json
 bin/sq-ask.sh --answer 'd1 o2' < tests/fixtures/decision-prose/merge.json
 bin/sq-ask.sh --parse-card < tests/fixtures/decision-prose/merge.prose
 bin/sq-ask.sh --validate < card.json

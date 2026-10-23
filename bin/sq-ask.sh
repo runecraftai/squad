@@ -11,7 +11,8 @@
 # Input is one card object or a JSON array of cards (schema version stays 1).
 #
 # Options:
-#   --render          Print the decision prose block(s) for the card(s) and exit.
+#   --render [prose]  Print the decision prose block(s) for the card(s) and exit.
+#                     "prose" is optional and means the same thing as bare --render.
 #   --parse-card      Read prose block(s) on stdin, print card JSON, exit 2 if malformed.
 #   --answer <text>   Parse the commander's answer against the card(s) and print the
 #   --answer=<text>   result. Needs no terminal. The text after --answer is always the
@@ -608,7 +609,8 @@ while [[ $# -gt 0 ]]; do
     --backend) [[ $# -ge 2 ]] || die 2 "--backend needs a value"; BACKEND="$2"; shift 2 ;;
     --no-interactive) NO_INTERACTIVE=true; shift ;;
     --validate) MODE="validate"; shift ;;
-    --render) MODE="render"; shift ;;
+    --render) MODE="render"; shift; if [[ ${1:-} == "prose" ]]; then shift; fi ;;
+    --render=prose) MODE="render"; shift ;;
     --parse-card) MODE="parse-card"; shift ;;
     --answer) [[ $# -ge 2 ]] || die 2 "--answer needs a value"; ANSWER="$2"; MODE="answer"; shift 2 ;;
     --answer=*) ANSWER="${1#--answer=}"; MODE="answer"; shift ;;

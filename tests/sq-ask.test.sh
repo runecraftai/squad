@@ -190,6 +190,16 @@ test_render() {
     fail "T1: an array renders one numbered block per card: $out"
   fi
   pass "T1: an array of cards renders D1 and D2 blocks"
+
+  local bare spaced inline positional
+  bare=$("$ASK" --render < "$FIX/merge.json")
+  spaced=$("$ASK" --render prose < "$FIX/merge.json") || fail "T1: --render prose must be accepted"
+  inline=$("$ASK" --render=prose < "$FIX/merge.json") || fail "T1: --render=prose must be accepted"
+  [[ $spaced == "$bare" && $inline == "$bare" ]] \
+    || fail "T1: --render prose and --render=prose must match bare --render"
+  positional=$("$ASK" --render "$MERGE")
+  [[ $positional == "$bare" ]] || fail "T1: bare --render with a positional card must still render"
+  pass "T1: --render prose, --render=prose, and bare --render give the same prose"
 }
 
 # --- T2 round trip ---
