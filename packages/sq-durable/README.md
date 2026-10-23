@@ -38,4 +38,5 @@ Neither slice migrates a mission, writes production state, or changes supervisio
 
 From this directory: `npm ci`, `npm run build`, `npm test`, and `npm run test:dependency`.
 `bash scripts/lab-proof.sh` runs the end-to-end Q4 proof and persists its evidence; its header lists the steps it checks.
+Durable custody decisions need node and a built core: `npm ci && npm run build` in this directory. Without them a durable mission's legacy responsibilities are refused with that build command named, never silently allowed.
 `sq-durable custody inventory --repo <squad-repo>` prints the derived writer inventory and any violation; the custody suites run real `bin/` scripts against throwaway bases.

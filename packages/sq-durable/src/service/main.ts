@@ -283,12 +283,10 @@ export async function runService(options: ServiceOptions): Promise<void> {
 		}
 		const blocked: string[] = [];
 		const parked: string[] = [];
-		const affectedTasks: number[] = [];
 		for (const task of inspection?.tasks ?? []) {
 			if (task.state.kind !== "blocked") continue;
 			const label = `${task.record.kind}#${task.record.id} (${task.state.reason})`;
 			(task.state.reason === "restart_limit" ? parked : blocked).push(label);
-			affectedTasks.push(task.record.id);
 		}
 		const now = Date.now();
 		const views = await approvalViews();
@@ -320,11 +318,6 @@ export async function runService(options: ServiceOptions): Promise<void> {
 			parked,
 			reconcile,
 			decidedWithoutContinuation,
-			affected: {
-				missions: reconcile,
-				approvals: decidedWithoutContinuation.filter((item) => item.overdue).map((item) => item.approvalId),
-				tasks: affectedTasks,
-			},
 		};
 	}
 

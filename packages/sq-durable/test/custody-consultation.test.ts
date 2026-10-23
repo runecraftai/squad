@@ -582,6 +582,23 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(stateDigest(base)).toBe(before);
 	});
 
+	it("reports each durable follow-up event of a relay-inactive batch with exit 3 and leaves every event in place", async () => {
+		const base = sandboxBase();
+		const events = join(base, "state", "public-followup", "events");
+		mkdirSync(events, { recursive: true, mode: 0o700 });
+		const durable = join(events, "dm1-lab-event.json");
+		const legacy = join(events, "legacy-event.json");
+		writeFileSync(durable, JSON.stringify({ obligation_id: "dm1-lab" }), { mode: 0o600 });
+		writeFileSync(legacy, JSON.stringify({ obligation_id: "legacy-obl" }), { mode: 0o600 });
+		const before = stateDigest(base);
+		const result = await runScript("sq-public-followup.sh", ["consume"], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(durable)).toBe(true);
+		expect(existsSync(legacy)).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+	});
+
 	it("consumes the legacy follow-up events of a batch past a durable one, which stays in place with exit 3", async () => {
 		const base = sandboxBase();
 		const fakebin = join(tempDir(), "bin");

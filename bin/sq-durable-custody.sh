@@ -18,6 +18,10 @@
 #       generation can name a live writer that never loaded its table
 #       (`sq-durable custody signals`).
 #
+# Durable custody decisions need node and a built packages/sq-durable
+# (`npm ci && npm run build` there). Without them a durable mission's legacy
+# responsibilities are refused, not decided, and the refusal names this build.
+#
 # A legacy ID returns 0 at once, with no file read and no subprocess, so legacy
 # work behaves exactly as before.
 # A durable mission ID carries its custody generation, which never changes. The
@@ -123,7 +127,7 @@ durable_custody_check() {  # <id> <responsibility>...
   fi
   cli="$_SQ_DURABLE_CUSTODY_ROOT/packages/sq-durable/dist/cli.js"
   if [ ! -f "$cli" ] || ! command -v node >/dev/null 2>&1; then
-    _durable_custody_refuse "$id" "$responsibilities" "refused: the custody core is not available (node and $cli are required for durable mission $id)"
+    _durable_custody_refuse "$id" "$responsibilities" "refused: the custody core is not available (node and $cli are required for durable mission $id; build it with: cd $_SQ_DURABLE_CUSTODY_ROOT/packages/sq-durable && npm ci && npm run build)"
     return 3
   fi
   if out=$(node --disable-warning=ExperimentalWarning "$cli" custody check --mission "$id" \

@@ -15,6 +15,9 @@ function scratchRepo(): string {
 	return repo;
 }
 
+// The inventory tests exercise the scanner by design: its input is the bin/ source, and the requested contract is the
+// derived inventory exposed as `sq-durable custody inventory`. Each writer's refusal behavior is proven separately by
+// running the real scripts in the custody consultation and cleanup suites.
 describe("legacy writer inventory, derived from the code", () => {
 	it("is complete for the repository: every writer bin/ contains passes through custody", () => {
 		expect(inventoryViolations(REPO_ROOT)).toEqual([]);
