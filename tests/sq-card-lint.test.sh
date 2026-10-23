@@ -165,6 +165,17 @@ EOF
     "warning: $path:1: PREFIXO_LEGADO legacy C prefix on decision header; write D<n> - "
 }
 
+test_operand_with_equals_is_a_file() {
+  local path
+  path=$(write_record a=b.md <<'EOF'
+D1 - Merge strategy
+  O1 - Squash: one commit
+EOF
+  )
+  expect_warnings "$path" "T10: a file name containing '=' is linted, not taken as an awk assignment" \
+    "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
+}
+
 test_fenced_examples_are_skipped() {
   local path
   path=$(write_record fenced.md <<'EOF'
@@ -205,5 +216,6 @@ test_orphan_option
 test_unindented_option_in_block
 test_non_consecutive_option
 test_legacy_c_prefix
+test_operand_with_equals_is_a_file
 test_fenced_examples_are_skipped
 test_exit_is_always_zero
