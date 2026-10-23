@@ -399,6 +399,8 @@ jobs:
         with:
           go-version-file: packages/fob/go.mod
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - name: Install workspace deps (root packageManager is bun)
         run: bun install --frozen-lockfile
       - name: Build fob + drill
@@ -514,6 +516,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
       - name: Install Pi
         run: npm install -g @earendil-works/pi-coding-agent
       - name: Install workspace deps
