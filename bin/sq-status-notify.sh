@@ -142,7 +142,7 @@ scan_once() {  # <base>: one pass over the base's state dir
         text="${BASH_REMATCH[2]}"
         case "$verb" in
           done|failed)
-            SQUAD_DATA_OVERRIDE="${SQUAD_DATA_OVERRIDE:-$base/data}" "$SCRIPT_DIR/sq-dispatch-log.sh" "$id" outcome \
+            SQUAD_STATE_OVERRIDE="$state_dir" SQUAD_DATA_OVERRIDE="${SQUAD_DATA_OVERRIDE:-$base/data}" "$SCRIPT_DIR/sq-dispatch-log.sh" "$id" outcome \
               --source status-notify --result "$verb" || true
             ;;
         esac
