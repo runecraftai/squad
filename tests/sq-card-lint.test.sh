@@ -166,14 +166,12 @@ EOF
 }
 
 test_operand_with_equals_is_a_file() {
-  local path
-  path=$(write_record a=b.md <<'EOF'
-D1 - Merge strategy
-  O1 - Squash: one commit
-EOF
-  )
-  expect_warnings "$path" "T10: a file name containing '=' is linted, not taken as an awk assignment" \
-    "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
+  printf 'D1 - Merge strategy\n  O1 - Squash: one commit\n' > "$TMP_ROOT/a=b.md"
+  L_ERR=$(cd "$TMP_ROOT" && "$LINT" 'a=b.md' 2>&1 >/dev/null < /dev/null); L_RC=$?
+  expect_code 0 "$L_RC" "T10a: a relative file name containing '=' exits 0"
+  [ "$L_ERR" = "warning: ./a=b.md:1: RECOMENDACAO_AUSENTE no option ends with (recommended)" ] \
+    || fail "T10a: a relative file name containing '=' is linted, got: $L_ERR"
+  pass "T10a: a relative file name containing '=' is linted, not taken as an awk assignment"
 }
 
 test_fenced_examples_are_skipped() {
