@@ -17,23 +17,7 @@ A extensão pi `@juicesharp/rpiv-ask-user-question` fornece diálogos nativos de
 
 ## Abordagem de integração
 
-### Opção 1: Renderização ciente-da-extensão (recomendada)
-
-O JSON do decision card pode ser transformado para o formato da extensão rpiv:
-
-```bash
-# Transformar decision card para o formato rpiv
-cat decision-card.json | bin/sq-ask-pi-bridge.sh | pi --tool ask_user_question
-```
-
-O script bridge:
-1. Lê o JSON do decision card
-2. Transforma para o formato esperado do rpiv
-3. Invoca o pi com a ferramenta da extensão
-4. Captura o resultado estruturado
-5. Produz saída no formato padrão de resultado de decision card
-
-### Opção 2: Abordagem baseada em skill
+### Opção 1: Abordagem baseada em skill (recomendada)
 
 Criar uma skill pi que envolve a apresentação do decision card:
 
@@ -49,7 +33,7 @@ When presenting a decision card to the commander:
 3. If no, show the prose block from `sq-ask.sh --render` and resolve the typed reply with `sq-ask.sh --answer`
 ```
 
-### Opção 3: Fallback transparente
+### Opção 2: Fallback transparente
 
 A abordagem mais simples: sempre usar sq-ask.sh, mas documentar que usuários pi podem instalar rpiv para UX mais rico.
 
@@ -91,8 +75,8 @@ Esta é uma melhoria opcional. O núcleo do padrão de decision card funciona se
 A receita pi é documentada aqui por completude mas não deve ser construída a menos que:
 1. O comandante explicitamente peça
 2. A extensão rpiv já esteja instalada nos ambientes alvo
-3. O bridge adicione valor claro sobre respostas textuais
+3. Um diálogo nativo adicione valor claro sobre respostas textuais
 
 ## Recomendação
 
-Comece pela abordagem agnóstica ao harness (sq-ask.sh + renderização textual). Monitore se usuários pi frequentemente querem diálogos interativos mais ricos. Se a demanda surgir, implemente o script bridge como tarefa separada.
+Comece pela abordagem agnóstica ao harness (renderização em prosa e `--answer` do sq-ask.sh). Monitore se usuários pi frequentemente querem diálogos interativos mais ricos. Se a demanda surgir, planeje uma integração de diálogo nativo como tarefa separada.

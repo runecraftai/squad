@@ -15,23 +15,7 @@ This is richer than the basic `sq-ask.sh` picker, so pi sessions may want to use
 
 ## Integration Approach
 
-### Option 1: Extension-Aware Rendering (Recommended)
-
-The decision card JSON can be transformed into rpiv extension format:
-
-```bash
-# Transform decision card to rpiv format
-cat decision-card.json | bin/sq-ask-pi-bridge.sh | pi --tool ask_user_question
-```
-
-The bridge script would:
-1. Read the decision card JSON
-2. Transform to rpiv's expected format
-3. Invoke pi with the extension tool
-4. Capture the structured result
-5. Output in the standard decision card result format
-
-### Option 2: Skill-Based Approach
+### Option 1: Skill-Based Approach (Recommended)
 
 Create a pi skill that wraps decision card presentation:
 
@@ -47,7 +31,7 @@ When presenting a decision card to the commander:
 3. If no, show the prose block from `sq-ask.sh --render` and resolve the typed reply with `sq-ask.sh --answer`
 ```
 
-### Option 3: Transparent Fallback
+### Option 2: Transparent Fallback
 
 The simplest approach: always use sq-ask.sh, but document that pi users can install rpiv for richer UX.
 
@@ -89,8 +73,8 @@ This is an optional enhancement. The core decision card standard works without i
 The pi recipe is documented here for completeness but should not be built unless:
 1. The commander explicitly requests it
 2. The rpiv extension is already installed in target environments
-3. The bridge adds clear value over text-based answers
+3. A native dialog adds clear value over text-based answers
 
 ## Recommendation
 
-Start with the harness-agnostic approach (sq-ask.sh + text rendering). Monitor whether pi users frequently want richer interactive dialogs. If demand emerges, implement the bridge script as a separate task.
+Start with the harness-agnostic approach (sq-ask.sh prose rendering and `--answer`). Monitor whether pi users frequently want richer interactive dialogs. If demand emerges, scope a native dialog integration as a separate task.
