@@ -56,7 +56,7 @@ record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 if args.event in ("decision", "spawn"):
     for field in ("harness", "model", "effort"):
         value = getattr(args, field)
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}", value):
+        if not re.fullmatch(r"[!-~]{1,128}", value):
             raise ValueError("invalid choice")
         record[field] = value
 if args.event == "decision":

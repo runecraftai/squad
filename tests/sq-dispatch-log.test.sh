@@ -121,6 +121,18 @@ expect_code 7 "$rc" 'merge failure must propagate'
 [ "$(wc -l < "$dir/data/task/dispatch.jsonl")" -eq 7 ] || fail 'failed merge logged landing'
 pass 'terminal notifications and successful landing append outcomes, not status text or failed landings'
 
+# Squad accepts model ids with printable variant punctuation (for example the
+# [1m] context suffix); they must be recorded verbatim rather than dropped.
+run_case "$dir" sq-dispatch-log.sh task decision --harness claude \
+  --model 'claude-opus-4-8[1m]' --effort high --reason 'Variant model' > "$dir/variant.out"
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert rows[-1]['model'] == 'claude-opus-4-8[1m]'
+assert rows[-1]['reason'] == 'Variant model'
+PY
+pass 'printable model variant ids are recorded verbatim'
+
 # Reject symlink/hardlink destinations without touching their targets, unsafe
 # ids and raw credentials in quota payloads. Every failure is one generic warning.
 for unsafe in symlink hardlink directory invalid-id raw-quota; do
