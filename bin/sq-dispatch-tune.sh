@@ -335,8 +335,7 @@ for name in names:
                     spawn = row
                 elif event == "outcome" and isinstance(row.get("result"), str):
                     results.add(row["result"])
-                    if row.get("failure_class") in FAILURE_CLASSES:
-                        failure = row["failure_class"]
+                    failure = row["failure_class"] if row.get("failure_class") in FAILURE_CLASSES else ""
     except OSError:
         continue
     profile = decision.get("profile") if isinstance(decision, dict) else None

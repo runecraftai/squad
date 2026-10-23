@@ -726,6 +726,23 @@ else
   fail "superseded quota line counted as fallback: $output"
 fi
 
+# A failed quota row followed by a later done row is not a fallback: the last outcome decides, as the status file does.
+STICKY_STATE="$TMP_ROOT/sticky-state"
+STICKY_DATA="$TMP_ROOT/sticky-data"
+mkdir -p "$STICKY_STATE" "$STICKY_DATA/sticky-a"
+printf 'done: retried ok\n' > "$STICKY_STATE/sticky-a.status"
+printf '%s\n' \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"sticky-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"sticky-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:10:00+00:00","id":"sticky-a","event":"outcome","source":"status-notify","result":"failed","failure_class":"quota"}' \
+  '{"timestamp":"2026-10-20T10:20:00+00:00","id":"sticky-a","event":"outcome","source":"status-notify","result":"done"}' \
+  > "$STICKY_DATA/sticky-a/dispatch.jsonl"
+output=$(SQUAD_STATE_OVERRIDE="$STICKY_STATE" SQUAD_DATA_OVERRIDE="$STICKY_DATA" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
+  pass "a quota failure superseded by a later done row is not a fallback hit"
+else
+  fail "sticky quota class counted as fallback: $output"
+fi
+
 # A status-only task with a provider-class failure line is a fallback hit, as the writer classifies it.
 echo "failed: tool unavailable" > "$REVIEW_STATE/unav-a.status"
 output=$(SQUAD_STATE_OVERRIDE="$REVIEW_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json --fallback-rate 2>&1)

@@ -17,11 +17,12 @@
 # are not accepted. No brief, environment credentials, or status text is read.
 # harness, model and effort values that look like a credential or token are
 # refused and nothing is written.
-# outcome may carry failure_class=provider|quota|guard|other. The writer derives
-# it at write time from the last done/failed/blocked/paused line of
-# state/<id>.status (done yields no class; no status line yields none) by
-# matching a few keywords on that line. Only the bucket is stored, never the
-# status text. Teardown and status-notify write outcome before removing status.
+# outcome may carry failure_class=provider|quota|guard|other. status-notify passes
+# --failure-class for the line it reports (none for done). Without the flag the
+# writer derives it from state/<id>.status: the last done or failed line decides,
+# and a blocked or paused line counts only when there is none. done yields no
+# class; no status line yields none. Only the bucket is stored, never the status
+# text. Teardown and status-notify write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
@@ -71,6 +72,7 @@ for event in ("decision", "spawn"):
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
+command.add_argument("--failure-class", choices=("provider", "quota", "guard", "other", "none"))
 args = parser.parse_args(sys.argv[3:])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")
@@ -101,8 +103,10 @@ if args.event == "decision":
     record["quota_summary"] = quota
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
-    bucket = status_failure_class(os.path.join(sys.argv[2], args.id + ".status"))
-    if bucket is not None:
+    bucket = args.failure_class
+    if bucket is None:
+        bucket = status_failure_class(os.path.join(sys.argv[2], args.id + ".status"))
+    if bucket not in (None, "none"):
         record["failure_class"] = bucket
 line = (json.dumps(record, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
 os.umask(0o077)
