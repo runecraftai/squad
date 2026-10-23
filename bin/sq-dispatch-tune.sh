@@ -17,18 +17,18 @@
 #   sq-dispatch-tune.sh --fallback-rate          # share of provider or quota failures
 #
 # Profile = harness + model + effort. The dispatched profile is the log's spawn
-# row; a log without one uses state/<id>.meta, and a task without a log uses
-# state/<id>.meta too. A log with neither reads as unknown.
+# row; a log without one uses state/<id>.meta, then the decision's recommended
+# profile. A task without a log uses state/<id>.meta.
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
 # else the last done/failed line of state/<id>.status. A log whose only outcome
 # is released (teardown) counts toward its lane and dispatch totals, not toward
-# profile success rates or fallback.
-# Fallback = a log's failure_class of provider or quota (guard and other are
-# misses). Without one, a blocked, paused, or failed status line naming a quota
-# or provider failure. Teardown removes the status file, so a torn-down task
-# without a failure_class is "unknown".
+# profile success rates.
+# Fallback = a log's failure_class of provider or quota, even on a released
+# task (guard and other are misses). Without one, a blocked, paused, or failed
+# status line naming a quota or provider failure. Teardown removes the status
+# file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
 # Credential guard: a harness, model, effort, lane, or recommendation that looks
@@ -74,8 +74,9 @@ Options:
   --verbose           Include per-task detail in output
   -h, --help          Show this help
 
-Profiles are harness+model+effort, read from data/<id>/dispatch.jsonl (spawn row first)
-or, for tasks without a log, from state/<id>.meta.
+Profiles are harness+model+effort, read from data/<id>/dispatch.jsonl (spawn row first,
+then state/<id>.meta, then the decision's recommended profile) or, for tasks without
+a log, from state/<id>.meta.
 Outcomes come from the log's outcome rows or the state/<id>.status final line (done/failed).
 
 Examples:
@@ -374,9 +375,9 @@ collect_logged_tasks() {
     esac
 
     case "$outcome:$log_class" in
-      released:*) fallback="unknown" ;;
       *:provider|*:quota) fallback="hit" ;;
       *:guard|*:other) fallback="miss" ;;
+      released:*) fallback="unknown" ;;
       *) fallback="unknown"
          if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
            fallback=$(status_fallback "$status_file")
@@ -392,6 +393,9 @@ collect_logged_tasks() {
         harness=$(meta_value "$meta_file" harness)
         model=$(meta_value "$meta_file" model)
         effort=$(meta_value "$meta_file" effort)
+      fi
+      if [ -z "$harness$model$effort" ]; then
+        harness="$rec_h"; model="$rec_m"; effort="$rec_e"
       fi
     fi
     harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
