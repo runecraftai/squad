@@ -218,7 +218,7 @@ PY
     [ "$(wc -l < "$dir/lock.err")" -eq 1 ] || fail "$name: expected exactly one warning"
     assert_grep 'sq-dispatch-log: could not append dispatch event' "$dir/lock.err" \
       "$name: missing lock warning"
-    [ "$elapsed" -lt 2000 ] || fail "$name: lock wait exceeded budget (${elapsed}ms)"
+    [ "$elapsed" -lt 1000 ] || fail "$name: lock wait exceeded budget (${elapsed}ms)"
   fi
 }
 
