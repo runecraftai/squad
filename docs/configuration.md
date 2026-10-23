@@ -27,21 +27,58 @@ Wake, sentry, away-mode, and Relay-specific state mechanics remain with their na
 `docs/sessionstart-nudge.md` owns the native session-open adapter tiers that run or nudge the digest command, and the source routing between them.
 `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 Ordinary dead-direct-report recovery is owned by `stuck-operator-recovery`, while persistent-XO recovery is owned by `xo-provisioning`.
+Each XO has a persistent isolated `SQUAD_BASE`, including its own state, backlog, projects, and session lock.
+`bin/sq-send.sh` fails closed unless `SQUAD_BASE` (or legacy `SQUAD_HOME`) is explicit, so a steer cannot silently resolve against another base.
+Treat `data/commander.md` as the domain-local record of commander preferences, optional `data/commander-shared.md` as the main-authoritative shared commander-preference file for XO inheritance, and `data/learnings.md` as curated base-local knowledge, regardless of harness memory.
 
 ### Base state file tree
 
 ```
+AGENTS.md            this file (CLAUDE.md is a symlink to it)
+CONTRIBUTING.md      contributor workflow and repo conventions
+README.md            public overview and development notes
 .github/workflows/   shared CI and PR enforcement, committed
+.tasks.toml          tracked sq-tasks markdown backend config for the default backlog backend (section 10)
+.agents/skills/      Squad-loaded internal skills, committed; each carries metadata.internal=true for installers
 .claude/skills       symlink to .agents/skills for claude compatibility
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
                       interview-me is vendored from runecraftai/skills (packages/skills/skills/interview-me/); refresh by copying that upstream directory
+bin/                 helper scripts, committed; read each script's header before first use
+.env                 optional Relay pairing token; LOCAL, gitignored; presence-gates section 14
+config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO base's own operators (section 4)
+config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (section 4). Inherited by XO bases
+config/claude-accounts  optional registry mapping short labels to absolute CLAUDE_CONFIG_DIR paths for harness=claude account selection; LOCAL, gitignored; inherited by XO bases; see docs/configuration.md "Claude account selection"
+config/xo-harness  harness the PRIMARY uses to launch XO agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; section 4); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then Squad's own. The primary's own setting; NOT inherited into XO bases (XOs do not spawn XOs)
+config/backlog-backend  backlog backend override; LOCAL, gitignored; absent (or any non-manual value) = default sq-tasks backend, "manual" = force routine backlog updates to hand-editing; inherited by XO bases (section 10)
+config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; absent = falls through to runtime auto-detection (the runtime Squad itself is executing inside), then tmux; tmux is the verified reference backend (docs/tmux-backend.md), while herdr, zellij, orca, cmux, and tuios are experimental spawn backends (docs/herdr-backend.md, docs/zellij-backend.md, docs/orca-backend.md, docs/cmux-backend.md, docs/tuios-backend.md) - herdr and cmux can also be selected by runtime auto-detection, zellij, orca, and tuios never are (always explicit), and codex-app is not accepted; see docs/codex-app-backend.md; inherited by XO bases under the primary-authoritative contract in xo-provisioning
+config/calm     Pi Calm presentation preference; LOCAL, gitignored, and not inherited; see docs/configuration.md "Pi Calm preference"
+config/startup-memory-budget     primary-authoritative per-base startup-memory budget; LOCAL, gitignored, materialized as 7,500 estimated tokens by locked primary bootstrap and inherited into XO bases; see docs/configuration.md "Startup memory budget"
+config/herdr-presentation-spaces  optional "off" opt-out from, or "on" opt-in to, Herdr's default-on disposable single-task visual projection, which is unconfigured-default-on only at or above a Herdr version floor; LOCAL, gitignored; inherited by XO bases; see docs/herdr-backend.md "Presentation spaces"
+config/trace-context  optional presence flag enabling default-off native W3C trace-context propagation to spawned agents; LOCAL, gitignored; inherited by XO bases; see docs/configuration.md "Trace context propagation" and docs/trace-context.md
+config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
+config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
+config/x-mode.env    generated Relay sentry cadence; LOCAL, gitignored; source before arming sentry when present
+data/                personal unit records; LOCAL, gitignored as a whole
+  backlog.md         task queue, dependencies, history
+  commander.md         this base's domain-local commander preferences and working style; LOCAL, gitignored, canonical even if harness memory mirrors it, and updated with inspect-then-update
+  commander-shared.md  main-authoritative shared commander preferences propagated read-only to XO bases; LOCAL, gitignored, owned by xo-provisioning
+  learnings.md       unit-local operational facts and gotchas; LOCAL, gitignored; see docs/configuration.md "Operational learnings" for capture and curation
+  projects.md        thin unit navigation registry recording each project's standing delivery posture; Squad-private, parsed for mechanical sync and seeding by sq-project-mode.sh (section 6)
+  XOs.md             local and remote XO routing table; Squad-private, maintained by the XO seed helpers (section 6)
   <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
   <id>/report.md     recon task deliverable, written by the operator; survives teardown
   <id>/knowledge-pass.md  strike delivery record written by the knowledge-pass skill on request; survives teardown
+projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete commander-approved project operation exception
+state/               volatile runtime signals; gitignored
   <id>.status        appended by operators: "<state>: <note>" wake-event lines, not current-state truth; the last nonblank line is terminal completion evidence for bin/sq-exec-state.sh when its verb is done: or failed:, except while a bound run is still active or gate-parked
+  <id>.turn-ended    touched by turn-end hooks
   <id>.grok-turnend-token   Squad-owned grok hook registry token for the task; removed by teardown
+  <id>.kimi-turnend-token   Squad-owned Kimi hook registry token for the task; removed by teardown
   <id>.muse-session  muse busy-source binding (sessions root plus task worktree) written by sq-spawn; removed by teardown
+  <id>.meta          written by sq-spawn: window=, endpoint_task_id=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; an optional traceparent= only when trace context is enabled (docs/configuration.md "Trace context propagation"); a found WORKFLOW.md records workflow= and base64-encoded workflow_config= (docs/workflow-spec.md); kind=xo also records home= and projects=, plus remote_host=/remote_root=/remote_backend=/remote_herdr_session=/remote_target= for a remote route; an MCP-originated task records mcp_request= through bin/sq-mcp-link.sh; a non-default runtime backend records further backend-specific fields (docs/configuration.md "Runtime backend"; bin/sq-backend.sh, section 8); sq-pr-check, including through sq-pr-merge, records one canonical pr= and the forge's pr_head= when available (GitHub pull requests and GitLab merge requests; docs/gitlab-merge-watch.md); sq-x-link appends x_request=, x_request_ts=, x_followups=, and optional x_platform=/x_reply_max_chars= for a Relay-originated task (section 14)
   <id>.exec          per-attempt execution state sidecar: exec_state=, exec_attempt=, exec_retry_count=, exec_started_at=, exec_last_activity=, exec_previous_state=, exec_error=, exec_next_retry_at=, exec_max_retries=, exec_workflow_version=, exec_workspace=, exec_backend=, exec_harness=; missing for legacy tasks (unclaimed); managed by bin/sq-exec-state.sh; state machine: unclaimed -> claimed -> running -> retry_queued -> released, with a still-executing bound run adopting retry_queued back to running as the same attempt (no extra retry spent, attempt number and pinned workflow version preserved), and exec_next_retry_at= is written only by a queued retry; `get` reports the current branch/head-bound drill run over the record (active or gate-parked run -> running, terminal run -> released) while `get-recorded` reads the raw dispatch record that dispatch decisions must use; claim refuses an executing run, holds a gate-parked run only while its recorded owner endpoint is alive, and lets an authoritatively gone owner or an ended run resume instead (an ended run only affects the `get` projection and never blocks a claim or retires a record); a terminal done:/failed: .status line retires the id to released, which also happens during recovery; recovery repairs only queued/claimed/running records through those transitions and never resurrects a released id
+  <id>.herdr-presentation  quarantinable attempt and restart-binding journal for Herdr's optional visual projection; never task or endpoint authority; see docs/herdr-backend.md "Presentation spaces"
+  <id>.check.sh      authenticated slow poll; the sentry dispatches validated PR data and the byte-identified Relay shim through trusted repository scripts, runs registered custom checks from hash-validated private snapshots, and rejects every other state check without execution
   <id>.check-trust   private content binding created by sq-check-register.sh for an intentional custom check
   <id>.pr-poll       private validated data sidecar for the byte-static PR merge poll
   <id>.pr-poll-registration  private transactional provenance record binding the task, canonical metadata identity, sidecar, and static poll publication
@@ -49,12 +86,22 @@ skills/              standalone public installer-facing skills, committed; not l
   .pr-check-quarantine/  private non-runnable storage for checks neutralized by the non-executing migration
   .pr-check-migration.log  private per-task outcomes distinguishing rebuilt or canonically registered replacement polls, quarantined unarmed polls, and incomplete migrations
   .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
+  x-sentry.check.sh  generated Relay poll shim; present only when opted in (section 14)
+  pending-replies/   parent-owned XO pending-reply records (correlation id, delivery vs reply, recovery, escalation); sq-pending-reply-lib.sh
+  procevent/         registered process-to-event sources, one private record per canonical source id; written only by bin/sq-procevent.sh, and their presence alone keeps supervision required (section 13)
+  procevent-inbox/   private captured results and their durable handled-acknowledgement markers; source output lives here and never in an event line
+  x-inbox/           generated Relay pending mention payloads; relay-respond drains it (section 14)
+  x-context/         generated Relay durable per-request reply context and one-wake offer markers, keyed by request_id; survives inbox cleanup and expires within seven days (section 14; bin/sq-x-lib.sh)
+  x-outbox/          generated Relay dry-run reply and dismiss previews; inspect it when SQX_DRY_RUN is set (section 14)
+  public-followup/   generated private transport for promised public replies: commitment registrations, typed terminal-result inbox, accepted/rejected ledgers (section 14; bin/sq-public-followup.sh)
   x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
+  .startup-network.*  status, report, per-step elapsed timings, inline-print claim, and lock for the deferred network stage session start runs off its blocking path; bin/sq-startup-network.sh
   .stand-to-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .handoff-queue         durable new-session handoff requests: ts<TAB>seq<TAB>kind<TAB>key<TAB>state<TAB>payload; state pending -> surfaced -> resolved (docs/handoff-request.md)
   .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
   .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  window-states      derived per-window tmux sidebar truth, one TSV line per tmux task window; contract owned by bin/sq-window-state.sh (docs/configuration.md "Operational base layout and state")
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
   .hash-* .count-*   sentry internals; never touch
@@ -63,6 +110,8 @@ skills/              standalone public installer-facing skills, committed; not l
   .paused-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
+  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - teardown retires .subsuper-stale-*, .subsuper-paused-*, and .subsuper-seen-status-* for the released task
+.drill/        local validation state and evidence; gitignored
 ```
 
 ## Local TUI service (config/squad-tui, state/squad-tui)
