@@ -63,17 +63,28 @@ function close_block(   why) {
 BEGIN {
   name = ENVIRON["LINT_NAME"]
   in_block = 0
-  fenced = 0
+  in_fence = 0
 }
 {
   sub(/\r$/, "")
 }
 /^[[:space:]]*(```|~~~)/ {
-  close_block()
-  fenced = !fenced
+  line = $0
+  sub(/^[[:space:]]*/, "", line)
+  mark = substr(line, 1, 1)
+  run = 0
+  while (substr(line, run + 1, 1) == mark) run++
+  if (!in_fence) {
+    close_block()
+    in_fence = 1
+    fence_mark = mark
+    fence_run = run
+    next
+  }
+  if (mark == fence_mark && run >= fence_run && substr(line, run + 1) ~ /^[[:space:]]*$/) in_fence = 0
   next
 }
-fenced {
+in_fence {
   next
 }
 /^#/ {

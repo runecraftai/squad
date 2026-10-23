@@ -209,6 +209,29 @@ EOF
   expect_warnings "$path" "T8: a bad card inside a fenced example is not a record"
 }
 
+test_fence_closes_only_on_matching_marker() {
+  local path
+  path=$(write_record fence-tilde-inside.md <<'EOF'
+```
+D1 - Example
+~~~
+  O1 - Broken: no marker
+```
+EOF
+  )
+  expect_warnings "$path" "T8b: a tilde line inside a backtick example does not end the example"
+
+  path=$(write_record fence-lang-inside.md <<'EOF'
+```
+D1 - Example
+```bash
+  O1 - Broken: no marker
+```
+EOF
+  )
+  expect_warnings "$path" "T8c: a language-tagged fence line inside a backtick example does not end the example"
+}
+
 test_exit_is_always_zero() {
   lint_file "$TMP_ROOT/does-not-exist.md"
   expect_code 0 "$L_RC" "T9a: a missing file exits 0"
@@ -240,4 +263,5 @@ test_legacy_c_prefix
 test_operand_with_equals_is_a_file
 test_relative_operand_is_printed_as_typed
 test_fenced_examples_are_skipped
+test_fence_closes_only_on_matching_marker
 test_exit_is_always_zero
