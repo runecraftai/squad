@@ -646,7 +646,7 @@ The report is the only thing that survives, so anything worth keeping must be in
    treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; Squad will help.
 6. If a decision belongs to a human (product choices, destructive actions),
-   append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Squad will reply with the decision.
+   append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Squad will reply with the decision. When the task is still ambiguous after reading the code, do not code: open a keyed decision with \`needs-decision [key=ambiguity-<slug>]:\` carrying at most three objective questions.
    Put the same \`[key=<slug>]\` immediately after the verb on \`resolved\` lines; without a key, both lines use \`default\`.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Squad's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a Squad reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
@@ -786,7 +786,7 @@ $RULE1
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; Squad will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
-   append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Squad will apply the configured authority and reply with the decision.
+   append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Squad will apply the configured authority and reply with the decision. When the task is still ambiguous after reading the code, do not code: open a keyed decision with \`needs-decision [key=ambiguity-<slug>]:\` carrying at most three objective questions.
    Put the same \`[key=<slug>]\` immediately after the verb on \`resolved\` lines; without a key, both lines use \`default\`.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Squad's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a Squad reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
