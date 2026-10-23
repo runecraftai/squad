@@ -140,6 +140,12 @@ scan_once() {  # <base>: one pass over the base's state dir
         [[ "$line" =~ ^([a-z-]+):[[:space:]]*(.*)$ ]] || continue
         verb="${BASH_REMATCH[1]}"
         text="${BASH_REMATCH[2]}"
+        case "$verb" in
+          done|failed)
+            SQUAD_DATA_OVERRIDE="${SQUAD_DATA_OVERRIDE:-$base/data}" "$SCRIPT_DIR/sq-dispatch-log.sh" "$id" outcome \
+              --source status-notify --result "$verb" || true
+            ;;
+        esac
         case " $NOTIFY_VERBS " in
           *" $verb "*) notify_one "$id" "$verb" "$text" "$target" ;;
         esac

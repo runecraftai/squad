@@ -85,4 +85,15 @@ if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
+auto_merge=0
+for arg in "$@"; do
+  case "$arg" in
+    --auto|--disable-auto) auto_merge=1 ;;
+  esac
+done
+
 sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
+if [ "$auto_merge" -eq 0 ]; then
+  SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+    --source pr-merge --result landed || true
+fi

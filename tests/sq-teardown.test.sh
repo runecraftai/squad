@@ -560,6 +560,7 @@ run_teardown() {
   local case_dir=$1; shift
   SQUAD_ROOT_OVERRIDE="$ROOT" \
   SQUAD_STATE_OVERRIDE="$case_dir/state" \
+  SQUAD_DATA_OVERRIDE="$case_dir/data" \
   SQUAD_CONFIG_OVERRIDE="$case_dir/config" \
   PATH="$case_dir/fakebin:${SQUAD_TEARDOWN_TEST_PATH:-$PATH}" \
     "$TEARDOWN" task-x1 "$@"

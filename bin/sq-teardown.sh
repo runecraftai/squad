@@ -258,6 +258,8 @@ remote_teardown_locks_release() {
 # Defined before the remote-XO main-flow call below (bash resolves functions
 # at call time, and that call site runs before the later helper block).
 retire_exec_record() {
+  SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+    --source teardown --result released || true
   if ! durable_custody_reserved "$ID"; then
     "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
     return 0

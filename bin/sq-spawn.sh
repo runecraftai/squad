@@ -616,6 +616,11 @@ spawn_remote_XO() {
     echo "error: remote XO $id launched, but its reply source could not be armed; endpoint metadata is preserved" >&2
     return 1
   fi
+  local logged_model=${model#-} logged_effort=${effort#-}
+  [ -n "$logged_model" ] || logged_model=default
+  [ -n "$logged_effort" ] || logged_effort=default
+  SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$id" spawn \
+    --harness "$harness" --model "$logged_model" --effort "$logged_effort" || true
   echo "spawned $id harness=$harness kind=xo mode=xo yolo=off window=remote:$id worktree=$home remote=$host backend=$remote_backend"
   return 0
 }
@@ -3033,6 +3038,9 @@ if [ "$KIND" = xo ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
     fi
   fi
 fi
+
+SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" spawn \
+  --harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}" || true
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
