@@ -86,3 +86,5 @@ if ! caller_has_merge_method "$@"; then
 fi
 
 sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
+SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+  --source pr-merge --result landed || true

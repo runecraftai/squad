@@ -3034,6 +3034,9 @@ if [ "$KIND" = xo ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
   fi
 fi
 
+SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" spawn \
+  --harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}" || true
+
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT"
