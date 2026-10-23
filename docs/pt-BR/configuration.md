@@ -28,6 +28,41 @@ O cabeçalho de `bin/sq-startup-network.sh` é dono do estágio de rede adiado q
 `AGENTS.md` retém as regras de execução única e leitura única, segurança de recusa de bloqueio, consentimento de instalação e limites de recuperação de relatório direto porque esses fatos se aplicam em cada início de sessão.
 A recuperação de relatório direto morto comum é dona de `stuck-operator-recovery`, enquanto a recuperação de XO persistente é dona de `xo-provisioning`.
 
+### Árvore de arquivos de estado da base
+
+```
+.github/workflows/   shared CI and PR enforcement, committed
+.claude/skills       symlink to .agents/skills for claude compatibility
+skills/              standalone public installer-facing skills, committed; not loaded by Squad
+                      interview-me is vendored from runecraftai/skills (packages/skills/skills/interview-me/); refresh by copying that upstream directory
+  <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
+  <id>/report.md     recon task deliverable, written by the operator; survives teardown
+  <id>/knowledge-pass.md  strike delivery record written by the knowledge-pass skill on request; survives teardown
+  <id>.grok-turnend-token   Squad-owned grok hook registry token for the task; removed by teardown
+  <id>.muse-session  muse busy-source binding (sessions root plus task worktree) written by sq-spawn; removed by teardown
+  <id>.check-trust   private content binding created by sq-check-register.sh for an intentional custom check
+  <id>.pr-poll       private validated data sidecar for the byte-static PR merge poll
+  <id>.pr-poll-registration  private transactional provenance record binding the task, canonical metadata identity, sidecar, and static poll publication
+  <id>.pr-poll-retirement  private identity-bound crash-recovery receipt for one exact validated merged result; removed after its poll artifacts retire
+  .pr-check-quarantine/  private non-runnable storage for checks neutralized by the non-executing migration
+  .pr-check-migration.log  private per-task outcomes distinguishing rebuilt or canonically registered replacement polls, quarantined unarmed polls, and incomplete migrations
+  .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
+  x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
+  .stand-to-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
+  .handoff-queue         durable new-session handoff requests: ts<TAB>seq<TAB>kind<TAB>key<TAB>state<TAB>payload; state pending -> surfaced -> resolved (docs/handoff-request.md)
+  .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
+  .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
+  .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
+  .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
+  .hash-* .count-*   sentry internals; never touch
+  .stale-* .stale-since-* .wedge-escalations-* .seen-*   sentry internals; never touch manually - teardown retires them for the released window, the sentry drops the stale and wedge markers of any window whose task record is gone, and housekeeping also retires .seen-* when the window is gone
+  .compaction-notified-*   per-task compaction dedup marker shared by the sentry and the away-mode daemon; never touch - teardown retires it for the released task
+  .paused-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
+  .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
+  .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
+```
+
 ## Preferência Pi Calm (config/calm)
 
 A extensão Pi Calm armazena a escolha de apresentação local do comandante em `config/calm` gitignored sob a base Squad efetiva, resolvida a partir de `SQUAD_BASE`, depois o legado `SQUAD_HOME`, depois `SQUAD_ROOT_OVERRIDE`, depois a raiz de código rastreada derivada do caminho da extensão, ou sob `SQUAD_CONFIG_OVERRIDE` quando esse override de teste e setup especializado está presente.
