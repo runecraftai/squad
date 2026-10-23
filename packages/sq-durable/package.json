@@ -2,7 +2,7 @@
   "name": "@runecraft/sq-durable",
   "version": "0.0.0",
   "private": true,
-  "description": "Durable mission core for Squad over Pi Durable: lab slice A1 (approval survives a hard kill)",
+  "description": "Durable mission core for Squad over Pi Durable: lab slice A1 (approval survives a hard kill) and custody slice A2.0 (legacy writers refused over engine-owned responsibilities)",
   "type": "module",
   "bin": {
     "sq-durable": "./dist/cli.js"
