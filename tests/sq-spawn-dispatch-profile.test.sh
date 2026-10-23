@@ -819,6 +819,7 @@ test_react_profile_identity_survives_spawn() {
   read_case_record "$rec"
   SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
     || fail "React profile spawn fixture should scaffold"
+    sed -i 's/^{TASK}$/Fill in the task./' "$HOME_DIR/data/$id/brief.md"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
   status=$?
   expect_code 0 "$status" "React profile scaffold must be accepted by spawn: $out"
@@ -836,6 +837,7 @@ test_react_as_playbook_is_refused_at_spawn() {
   read_case_record "$rec"
   SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
     || fail "React-as-playbook spawn fixture should scaffold"
+    sed -i 's/^{TASK}$/Fill in the task./' "$HOME_DIR/data/$id/brief.md"
   brief="$HOME_DIR/data/$id/brief.md"
   # A brief scaffolded before the reclassification, or one edited by hand, still
   # names react@1 as the method; it must never launch or reach task metadata.
@@ -858,6 +860,7 @@ test_malformed_profile_identity_is_refused_at_spawn() {
     read_case_record "$rec"
     SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook feature@1 --profile react@1 >/dev/null 2>&1 \
       || fail "React profile spawn fixture should scaffold: $mutation"
+      sed -i 's/^{TASK}$/Fill in the task./' "$HOME_DIR/data/$id/brief.md"
     brief="$HOME_DIR/data/$id/brief.md"
     case "$mutation" in
       duplicate)

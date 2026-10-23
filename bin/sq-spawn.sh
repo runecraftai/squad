@@ -1451,6 +1451,13 @@ if ! grep -q '>>.*\.status' "$BRIEF"; then
   exit 1
 fi
 
+# An unedited scaffold still carries the standalone {TASK} placeholder line;
+# refuse before any endpoint exists so the operator never receives it.
+if grep -qx '{TASK}' "$BRIEF"; then
+  echo "error: brief $BRIEF still contains the literal {TASK} placeholder; replace it with the task description, acceptance criteria, and constraints before spawning" >&2
+  exit 1
+fi
+
 # Optional execution-playbook identity is validated before endpoint creation.
 PLAYBOOK_LINES=$(grep -c '^Execution playbook: ' "$BRIEF" 2>/dev/null || true)
 if [ "$PLAYBOOK_LINES" -gt 1 ]; then
