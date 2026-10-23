@@ -938,15 +938,29 @@ fm_pr_poll_retirement_recover_one() {
 }
 
 fm_pr_poll_retirement_recover_all() {
-  local state=$1 template=$2 receipt id
+  local state=$1 template=$2 receipt id rc custody_refused=0
   SQUAD_PR_POLL_RETIREMENT_REJECTED=
   for receipt in "$state"/*.pr-poll-retirement; do
     [ -e "$receipt" ] || [ -L "$receipt" ] || continue
     id=$(basename "$receipt" .pr-poll-retirement)
-    if ! fm_pr_task_id_valid "$id" \
-      || ! fm_pr_poll_retirement_recover_one "$state" "$id" "$template"; then
-      SQUAD_PR_POLL_RETIREMENT_REJECTED="$SQUAD_PR_POLL_RETIREMENT_REJECTED $receipt"
+    rc=0
+    fm_pr_task_id_valid "$id" || rc=1
+    if [ "$rc" -eq 0 ]; then
+      fm_pr_poll_retirement_recover_one "$state" "$id" "$template" || rc=$?
     fi
+    if [ "$rc" -eq 0 ]; then
+      continue
+    fi
+    if [ "$rc" -eq 3 ]; then
+      custody_refused=1
+    fi
+    SQUAD_PR_POLL_RETIREMENT_REJECTED="$SQUAD_PR_POLL_RETIREMENT_REJECTED $receipt"
   done
-  [ -z "$SQUAD_PR_POLL_RETIREMENT_REJECTED" ]
+  if [ -z "$SQUAD_PR_POLL_RETIREMENT_REJECTED" ]; then
+    return 0
+  fi
+  if [ "$custody_refused" -ne 0 ]; then
+    return 3
+  fi
+  return 1
 }

@@ -47,19 +47,28 @@ case "$_SQ_DURABLE_CUSTODY_LIB" in
 esac
 _SQ_DURABLE_CUSTODY_ROOT="${_SQ_DURABLE_CUSTODY_LIB%/bin/*}"
 : "${_SQ_DURABLE_CUSTODY_LOADED:=$SQ_DURABLE_CUSTODY_GENERATION}"
+: "${_SQ_DURABLE_CUSTODY_REFUSALS:=0}"
 
 durable_custody_reserved() {  # <id>
   [[ ${1-} =~ ^dm[0-9]+- ]]
 }
 
+# Whether this process has refused any durable mission since it started. A batch
+# or housekeeping sweep uses it to keep processing the other items and still
+# report the refusal with exit 3 at the end.
+durable_custody_refused() {
+  [ "$_SQ_DURABLE_CUSTODY_REFUSALS" -gt 0 ]
+}
+
 _durable_custody_base() {
-  printf '%s' "${SQUAD_BASE:-${SQUAD_HOME:-$_SQ_DURABLE_CUSTODY_ROOT}}"
+  printf '%s' "${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$_SQ_DURABLE_CUSTODY_ROOT}}}"
 }
 
 # Print the refusal and keep a durable record of it; the record is best effort,
 # the refusal itself never is.
 _durable_custody_refuse() {  # <id> <responsibilities> <message>
   local log
+  _SQ_DURABLE_CUSTODY_REFUSALS=$((_SQ_DURABLE_CUSTODY_REFUSALS + 1))
   printf '%s\n' "$3" >&2
   log="$(_durable_custody_base)/data/durable/custody-refusals.log"
   {

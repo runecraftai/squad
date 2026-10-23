@@ -8,7 +8,8 @@
 # Ambiguous endpoint evidence is surfaced for stuck-operator-recovery; it is
 # never interrupted automatically. An open needs-decision or blocked record
 # means the operator is legitimately stopped and must not be interrupted.
-# Workspaces and branches are not modified.
+# Workspaces and branches are not modified. A sweep keeps processing every
+# record and exits 3 when it refused a durable mission.
 #
 # The retry_run_claim function scans retry_queued tasks and claims them when
 # their scheduled moment arrives, releases them when retries are exhausted,
@@ -221,6 +222,7 @@ stall_run_check() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   if [ "${1:-check}" = check ]; then
     stall_run_check
+    if durable_custody_refused; then exit 3; fi
   else
     printf '%s\n' 'usage: sq-stall-detect.sh [check]' >&2
     exit 2

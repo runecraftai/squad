@@ -23,6 +23,7 @@
 # Exit codes:
 #   0  clean or dry-run
 #   1  issues found (--check) or invalid usage
+#   3  a durable mission's records were refused and left in place
 set -euo pipefail
 
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
@@ -345,6 +346,10 @@ main() {
   fi
 
   # --- Summary ---
+  if durable_custody_refused; then
+    sh_log "refused cleanup of a durable mission's records; leaving them for the durable core"
+    exit 3
+  fi
   if [ "$ISSUES_FOUND" -eq 1 ]; then
     sh_log "issues found — review above output"
     if [ "$mode" = "check" ]; then

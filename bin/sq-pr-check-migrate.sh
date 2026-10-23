@@ -336,8 +336,11 @@ if [ ! -d "$STATE" ] || [ -L "$STATE" ]; then
 fi
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ -n "$STATE_DEVICE" ] || exit 1
-if ! fm_pr_poll_retirement_recover_all "$STATE" "$TEMPLATE"; then
+retirement_rc=0
+fm_pr_poll_retirement_recover_all "$STATE" "$TEMPLATE" || retirement_rc=$?
+if [ "$retirement_rc" -ne 0 ]; then
   echo "PR_CHECK_MIGRATION: pending PR poll retirement could not be validated:$SQUAD_PR_POLL_RETIREMENT_REJECTED" >&2
+  [ "$retirement_rc" -ne 3 ] || exit 3
   exit 1
 fi
 refresh_v1_x_shim() {
@@ -986,6 +989,7 @@ process_diagnostic_obligations() {
     diagnostic_obligation_message "$basename" || return 1
     if ! durable_custody_check "$MIGRATION_DIAGNOSTIC_PREFIX" metadata; then
       custody_refused=1
+      migration_failed=1
       continue
     fi
     message=$MIGRATION_DIAGNOSTIC_MESSAGE

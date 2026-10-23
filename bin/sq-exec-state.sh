@@ -13,6 +13,10 @@
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
+# recover-all repairs every record it may, then exits 3 when it refused a
+# durable mission whose custody generation keeps that responsibility with the
+# engine.
+#
 # The sidecar is deliberately separate from state/<id>.meta.  Missing sidecars
 # are the backwards-compatible unclaimed state.  Claim and writes are guarded
 # by a task-local mkdir lock and published with rename, so a competing
@@ -359,6 +363,7 @@ case "$cmd" in
       fi
       with_lock "$id" recover_locked "$id" "$(task_run_state "$id")" >/dev/null || true
     done
+    if durable_custody_refused; then exit 3; fi
     ;;
   get) valid_id "$id" || { usage >&2; exit 2; }; reported_state "$id" ;;
   get-recorded) valid_id "$id" || { usage >&2; exit 2; }; get_state "$id" ;;

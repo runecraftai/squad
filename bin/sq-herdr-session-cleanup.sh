@@ -20,7 +20,8 @@
 # focus-preserving close helper is called.
 # The script never closes a workspace. It removes only the matching journal,
 # and only after the exact pane is confirmed gone. Every error warns and returns
-# success so session startup continues conservatively.
+# success so session startup continues conservatively; a custody refusal is
+# reported with exit 3 after the remaining candidates are processed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -342,5 +343,6 @@ fm_herdr_session_cleanup() {
 
 if [ "${SQUAD_HERDR_SESSION_CLEANUP_SOURCE_ONLY:-0}" != 1 ]; then
   fm_herdr_session_cleanup
+  if durable_custody_refused; then exit 3; fi
   exit 0
 fi

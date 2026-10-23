@@ -65,6 +65,33 @@ describe("legacy writer inventory, derived from the code", () => {
 		expect(violations).toContain("bin/sq-merge-local.sh is inventoried as consulting landing but has no durable_custody_check call naming it");
 	});
 
+	it("fails when a public-followup writer stops consulting custody", () => {
+		const repo = scratchRepo();
+		const rewrite = (file: string, pattern: RegExp) => {
+			const path = join(repo, "bin", file);
+			writeFileSync(path, readFileSync(path, "utf8").replace(pattern, ":"));
+		};
+		rewrite("sq-public-followup.sh", /durable_custody_check/g);
+		rewrite("sq-public-followup-emit.sh", /durable_custody_check/g);
+		const violations = inventoryViolations(repo).join("\n");
+		expect(violations).toContain("bin/sq-public-followup.sh is inventoried as consulting metadata but has no durable_custody_check call naming it");
+		expect(violations).toContain("bin/sq-public-followup-emit.sh is inventoried as consulting metadata but has no durable_custody_check call naming it");
+	});
+
+	it("fails for the indirect write forms a public-followup writer can use", () => {
+		const repo = scratchRepo();
+		writeFileSync(join(repo, "bin", "sq-pf-backlog-writer.sh"), 'tx public-followup work-event "$1" --event-file "$2"\n');
+		writeFileSync(join(repo, "bin", "sq-pf-registry-writer.sh"), 'rm -f -- "$(fm_pf_registry_dir "$STATE")/$1"\n');
+		writeFileSync(
+			join(repo, "bin", "sq-pf-event-writer.sh"),
+			'  | fmx_private_artifact_publish_stdin_once "$(fm_pf_events_dir "$STATE")" "$1.json" 600\n',
+		);
+		const violations = inventoryViolations(repo).join("\n");
+		for (const file of ["sq-pf-backlog-writer.sh", "sq-pf-registry-writer.sh", "sq-pf-event-writer.sh"]) {
+			expect(violations, file).toContain(`bin/${file} writes task records without passing through custody`);
+		}
+	});
+
 	it("does not accept a consultation or a source that survives only as comment or heredoc text", () => {
 		const repo = scratchRepo();
 		const replace = (file: string, pattern: RegExp, replacement: string) => {

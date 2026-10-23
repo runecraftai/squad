@@ -105,6 +105,8 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 . "$SCRIPT_DIR/sq-public-followup-lib.sh"
 # shellcheck source=bin/sq-xo-registry-lib.sh
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 RETRY_BACKOFF=${SQUAD_PF_RETRY_BACKOFF_SECS:-900}
 case "$RETRY_BACKOFF" in ''|*[!0-9]*) RETRY_BACKOFF=900 ;; esac
@@ -163,6 +165,13 @@ obligation_json() {
 
 pf_field() { printf '%s' "$1" | jq -r "$2 // empty" 2>/dev/null; }
 
+# A public-followup obligation is task metadata of the base that owns it: a
+# durable mission's record and its registry artifact change only for the
+# responsibilities its custody generation leaves to this script.
+pf_custody() {  # <obligation-id>
+  durable_custody_check "$1" metadata || exit 3
+}
+
 # --- gates ------------------------------------------------------------------
 
 # gate_or_exit: the shared silent gate for every read-side subcommand. Exits 0
@@ -214,6 +223,7 @@ cmd_register() {
     ''|*[!0-9]*) die "generation must be a positive integer, got '$generation'" ;;
   esac
   [ "$generation" -ge 1 ] || die "generation must be >= 1"
+  pf_custody "$id"
 
   local payload
   payload=$(obligation_json "$id") \
@@ -381,6 +391,10 @@ cmd_consume() {
       reject_event "$file" "$event_id" "unsafe obligation id in event" || consume_rc=1
       continue
     fi
+    if ! durable_custody_check "$obligation" metadata; then
+      consume_rc=3
+      continue
+    fi
 
     # sq-tasks is the authority on source base, work id, generation, schema,
     # outcome, and deliverables. Anything it refuses is quarantined verbatim.
@@ -429,7 +443,7 @@ cmd_consume() {
 cmd_pending() {
   gate_or_exit
 
-  local listing id payload delivery task_state summary platform request printed=0
+  local listing id payload delivery task_state summary platform request printed=0 custody_refused=0
   # An unreadable backlog with registrations present is exactly the silence this
   # whole path exists to prevent, so say so rather than printing nothing.
   if ! command -v jq >/dev/null 2>&1 || ! fm_tasks_axi_cmd >/dev/null 2>&1 \
@@ -463,6 +477,10 @@ cmd_pending() {
     if [ -z "$payload" ]; then
       # The obligation is gone from the backlog (pruned after Done): the
       # registration is stale bookkeeping, not evidence, so drop it.
+      if ! durable_custody_check "$id" metadata; then
+        custody_refused=1
+        continue
+      fi
       if ! clear_public_followup_link "$id"; then
         printf 'cannot clear the legacy X link for closed public commitment %s; registration retained for reconciliation\n' "$id"
         printed=1
@@ -474,6 +492,10 @@ cmd_pending() {
     delivery=$(pf_field "$payload" '.public_followup.delivery.state')
     task_state=$(pf_field "$payload" '.state')
     if [ "$task_state" = 'done' ] || [ "$delivery" = 'posted' ] || [ "$delivery" = 'waived' ]; then
+      if ! durable_custody_check "$id" metadata; then
+        custody_refused=1
+        continue
+      fi
       if ! clear_public_followup_link "$id"; then
         printf 'cannot clear the legacy X link for closed public commitment %s; registration retained for reconciliation\n' "$id"
         printed=1
@@ -498,6 +520,7 @@ EOF
     printf 'unconsumed terminal results are waiting; run %s/bin/sq-public-followup.sh consume\n' "$SQUAD_ROOT"
     printed=1
   fi
+  if [ "$custody_refused" -eq 1 ]; then exit 3; fi
   [ "$printed" -eq 1 ] || exit 0
 }
 
@@ -635,6 +658,7 @@ cmd_deliver() {
   fm_pf_relay_active "$SQUAD_BASE" \
     || die "this home has not opted into the mySquad relay, so it cannot post a public reply" 1
   require_tools
+  pf_custody "$id"
 
   local payload delivery attempt request platform text tmp_text hash chunks rc receipt receipt_fields receipt_dry_run link_status
   payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
@@ -788,6 +812,7 @@ cmd_record_posted() {
   public_followup_registration_valid "$id" \
     || die "public-followup registration for '$id' is missing or invalid; reconcile it before recording a receipt so any legacy X link can be cleared" 1
   require_tools
+  pf_custody "$id"
 
   local payload request platform
   payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
@@ -863,6 +888,7 @@ cmd_retire() {
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
   fm_pf_relay_active "$SQUAD_BASE" || exit 0
   require_tools
+  pf_custody "$id"
 
   payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
   if [ -n "$payload" ]; then

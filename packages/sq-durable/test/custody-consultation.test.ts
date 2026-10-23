@@ -309,10 +309,31 @@ describe("every inventoried consultation point refuses a durable mission before 
 		writeFileSync(join(state, "dm1-lab.pr-poll-retirement"), "retirement receipt\n");
 		const before = stateDigest(base);
 		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
-		expect(result.code).not.toBe(0);
+		expect(result.code).toBe(3);
 		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
 		expect(existsSync(join(state, "dm1-lab.pr-poll-retirement"))).toBe(true);
 		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses to publish the migration marker when a diagnostic obligation of a durable mission is custody-refused", async () => {
+		const base = sandboxBase();
+		const state = join(base, "state");
+		const quarantine = join(state, ".pr-check-quarantine");
+		mkdirSync(quarantine, { mode: 0o700 });
+		chmodSync(quarantine, 0o700);
+		const message = "task dm1-lab: canonical legacy poll rebuilt and armed";
+		const obligation = join(quarantine, "dm1-lab.diagnostic.canonical");
+		writeFileSync(obligation, `${message}\n`, { mode: 0o600 });
+		const log = join(state, ".pr-check-migration.log");
+		writeFileSync(log, `${message}\n`, { mode: 0o600 });
+		const obligationBefore = readFileSync(obligation, "utf8");
+		const logBefore = readFileSync(log, "utf8");
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect(result.code).toBe(3);
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(join(state, ".pr-check-migration-v1"))).toBe(false);
+		expect(readFileSync(obligation, "utf8")).toBe(obligationBefore);
+		expect(readFileSync(log, "utf8")).toBe(logBefore);
 	});
 
 	it("refuses a pending outcome obligation of a durable mission during recovery, with exit 3 and no state change", async () => {
@@ -355,5 +376,131 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
 		expect(stateDigest(base)).toBe(before);
 		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(3);
+	});
+
+	it("resolves the durable store and refusal log from SQUAD_ROOT_OVERRIDE like the writers it guards", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm2-pilot");
+		const env = scriptEnv(base);
+		delete env.SQUAD_BASE;
+		delete env.SQUAD_HOME;
+		env.SQUAD_ROOT_OVERRIDE = base;
+		const before = stateDigest(base);
+		const result = await runScript("sq-teardown.sh", ["dm2-pilot", "--force"], env);
+		expect(result.code).toBe(3);
+		expect(result.stderr).toContain(`${base}/data/durable/store does not exist`);
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base)).toHaveLength(1);
+	});
+
+	it("refuses every public-followup mutation and publication of a durable obligation", async () => {
+		const base = sandboxBase();
+		const fakebin = join(tempDir(), "bin");
+		mkdirSync(fakebin, { recursive: true });
+		writeFileSync(
+			join(fakebin, "tasks-axi"),
+			[
+				"#!/usr/bin/env bash",
+				'case "$*" in',
+				'  "public-followup list --json") printf \'%s\' \'{"public_followups":[{"id":"dm1-lab","state":"done","public_followup":{"delivery":{"state":"posted"},"request":{}}}]}\' ;;',
+				"  *) exit 0 ;;",
+				"esac",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(join(base, ".env"), "SQX_PAIRING_TOKEN=test-token\n");
+		const state = join(base, "state");
+		const registry = join(state, "public-followup", "registry");
+		mkdirSync(registry, { recursive: true, mode: 0o700 });
+		chmodSync(registry, 0o700);
+		const registration = join(registry, "dm1-lab");
+		writeFileSync(
+			registration,
+			[
+				"obligation_id=dm1-lab",
+				"relation_id=rel",
+				"work_home=main",
+				"work_id=legacy-work",
+				"generation=1",
+				"platform=x",
+				"request_id=req",
+				"",
+			].join("\n"),
+			{ mode: 0o600 },
+		);
+		const events = join(state, "public-followup", "events");
+		mkdirSync(events, { recursive: true, mode: 0o700 });
+		chmodSync(events, 0o700);
+		const consumed = join(state, "public-followup", "consumed");
+		mkdirSync(consumed, { recursive: true, mode: 0o700 });
+		chmodSync(consumed, 0o700);
+		const deliverables = "{}";
+		const eventId = createHash("sha256")
+			.update(["dm1-lab", "rel", "main", "legacy-work", "1", "pr-merged", deliverables].join("\x1f"))
+			.digest("hex");
+		const event = join(events, `${eventId}.json`);
+		writeFileSync(
+			event,
+			JSON.stringify({
+				schema_version: 1,
+				event_id: eventId,
+				obligation_id: "dm1-lab",
+				relation_id: "rel",
+				work_id: "legacy-work",
+				generation: 1,
+				source_home_id: "main",
+				outcome_type: "pr-merged",
+				deliverables: {},
+				public_safe_outcome: "landed",
+				occurred_at: "2026-01-01T00:00:00Z",
+				successor: null,
+			}),
+			{ mode: 0o600 },
+		);
+		const env = scriptEnv(base, { PATH: `${fakebin}:${process.env.PATH ?? ""}` });
+		const before = stateDigest(base);
+		const registrationBefore = readFileSync(registration, "utf8");
+		const commands: [string, string[]][] = [
+			["register", ["dm1-lab", "--relation", "rel", "--work-home", "main", "--work-id", "legacy-work", "--generation", "1"]],
+			["deliver", ["dm1-lab", "--text-file", "/dev/null"]],
+			["record-posted", ["dm1-lab", "--attempt", "1", "--chunks", "1"]],
+			["retire", ["dm1-lab"]],
+			["pending", []],
+			["consume", []],
+		];
+		for (const [command, args] of commands) {
+			const result = await runScript("sq-public-followup.sh", [command, ...args], env);
+			expect({ command, code: result.code }, `${command}\n${result.stderr}`).toEqual({ command, code: 3 });
+			expect(result.stderr, command).toMatch(owned("metadata", "dm1-lab", 1));
+			expect(readFileSync(registration, "utf8"), command).toBe(registrationBefore);
+			expect(existsSync(event), command).toBe(true);
+			expect(stateDigest(base), command).toBe(before);
+		}
+		const emitted = await runScript(
+			"sq-public-followup-emit.sh",
+			[
+				"--home",
+				base,
+				"--obligation",
+				"dm1-lab",
+				"--relation",
+				"rel",
+				"--source-home",
+				"main",
+				"--work-id",
+				"legacy-work",
+				"--generation",
+				"1",
+				"--outcome",
+				"pr-merged",
+				"--outcome-text",
+				"landed",
+			],
+			env,
+		);
+		expect(emitted.code).toBe(3);
+		expect(emitted.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(stateDigest(base)).toBe(before);
 	});
 });

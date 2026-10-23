@@ -2082,6 +2082,26 @@ preflight_Squad_home_herdr_children() {  # <home>
   done
 }
 
+preflight_Squad_home_custody() {  # <home>
+  local home=$1 sub_state child_meta child_id child_kind child_home child_wt
+  sub_state="$home/state"
+  [ -d "$sub_state" ] || return 0
+  for child_meta in "$sub_state"/*.meta; do
+    [ -e "$child_meta" ] || continue
+    child_id=$(basename "$child_meta" .meta)
+    durable_custody_check "$child_id" cleanup || return 3
+    child_kind=$(meta_value "$child_meta" kind)
+    if [ "$child_kind" = xo ]; then
+      child_wt=$(meta_value "$child_meta" worktree)
+      child_home=$(meta_value "$child_meta" home)
+      [ -n "$child_home" ] || child_home=$child_wt
+      if [ -n "$child_home" ] && [ -d "$child_home" ]; then
+        preflight_Squad_home_custody "$child_home" || return 3
+      fi
+    fi
+  done
+}
+
 cleanup_Squad_home_children() {
   local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
   sub_state="$home/state"
@@ -2089,6 +2109,7 @@ cleanup_Squad_home_children() {
   for child_meta in "$sub_state"/*.meta; do
     [ -e "$child_meta" ] || continue
     child_id=$(basename "$child_meta" .meta)
+    durable_custody_check "$child_id" cleanup || return 3
     child_wt=$(meta_value "$child_meta" worktree)
     child_proj=$(meta_value "$child_meta" project)
     child_kind=$(meta_value "$child_meta" kind)
@@ -2191,6 +2212,7 @@ if [ "$KIND" = xo ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_Squad_home_for_removal "$HOME_PATH" "XO home" "$ID" >/dev/null || exit 1
   if [ "$FORCE" = "--force" ]; then
+    preflight_Squad_home_custody "$HOME_PATH" || exit 3
     validate_Squad_home_children_removal "$HOME_PATH" || exit 1
     if [ "$BACKEND" = herdr ]; then
       teardown_herdr_preflight_target "$T" "$ID" || exit 1
@@ -2204,6 +2226,7 @@ if [ "$KIND" = xo ] && [ "$FORCE" != "--force" ]; then
   if [ -d "$SUB_STATE" ]; then
     for child_meta in "$SUB_STATE"/*.meta; do
       [ -e "$child_meta" ] || continue
+      durable_custody_check "$(basename "$child_meta" .meta)" cleanup || exit 3
       echo "REFUSED: XO $ID still has in-flight work in $SUB_STATE." >&2
       echo "Found $(basename "$child_meta"). Let that home finish or explicitly discard with --force." >&2
       exit 1

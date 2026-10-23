@@ -144,6 +144,8 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 	guard("bin/sq-pr-merge.sh", ["landing"], "guarded PR merge; a direct call for a durable mission is refused"),
 	guard("bin/sq-procevent-remote-reply.sh", ["xo-routing"], "mirrors a remote XO's status lines into its parent status"),
 	guard("bin/sq-promote.sh", ["admission"], "promotes a recon to a strike by rewriting its meta"),
+	guard("bin/sq-public-followup-emit.sh", ["metadata"], "publishes a typed terminal event for an obligation into the owning base's inbox"),
+	guard("bin/sq-public-followup.sh", ["metadata"], "public-followup obligations: register, consume, pending, deliver, record-posted and retire consult metadata before any backlog, registry or post write"),
 	guard("bin/sq-remote-home-seed.sh", ["xo-routing"], "seeds a remote XO base and its charter brief"),
 	guard("bin/sq-self-heal.sh", ["cleanup"], "housekeeping that archives a status log whose meta is gone"),
 	guard("bin/sq-send.sh", ["approval"], "--resolve-key closes a task's open decision; checked on the named and on the resolved task"),
@@ -268,11 +270,12 @@ const RECORD_VAR_NAME = /^(?:[A-Za-z_]*_)?(?:meta|META|status|STATUS|exec|EXEC)(
 const STATUS_APPEND = /\bstatus_line_append\b/;
 const WRITER_CALLS: readonly RegExp[] = [
 	/\bsq-exec-state(?:\.sh)?["']?\s+["']?(?:claim|running|retry|retry_queued|release|released|after_run|heartbeat|recover|recover-all|transition)\b/,
-	/\b(?:sq-tasks|tasks-axi|tasks_axi)\s+["']?(?:add|done|hold|mv|compact|update|rm|remove|move|unblock|block|release|start|edit|set|note|archive)\b/,
+	/\b(?:tx|sq-tasks|tasks-axi|tasks_axi)\s+["']?(?:public-followup\s+)?(?:add|done|hold|mv|compact|update|rm|remove|move|unblock|block|release|start|edit|set|note|archive|bind-work|work-event|record-error|record-delivery|begin-delivery|record-posted|waive)\b/,
 	/\bSQ_TASKS\s*,\s*["'](?:add|done|hold|mv|update|rm)["']/,
 	/\bsq-(?:merge-local|pr-merge|backlog-handoff|backlog-receive|teardown|spawn|promote|pr-check|decision-hold)\.sh\b/,
 	/\bfm_pr_poll_(?:prepare|publish_prepared|cleanup|revoke_final|retirement_publish|retirement_recover_one)\b/,
 	/\bfmx_meta_(?:link_set|followups_set|link_clear)\b/,
+	/\bfmx_private_artifact_publish_stdin(?:_once)?\b[^\n]*\bfm_pf_(?:registry|events|consumed|rejected)_dir\b/,
 ];
 const SCANNED = new Set([".sh", ".py", ".mjs", ".js", ""]);
 const SKIPPED_DIRS = new Set(["__pycache__", "vendor", "node_modules"]);
@@ -367,7 +370,7 @@ function codeLines(text: string, python: boolean): (string | undefined)[] {
 }
 
 /** A command substitution that computes a record path, such as `$(path_for "$id")`. */
-const RECORD_PATH_CALL = /\$\(\s*(?:[A-Za-z_]*path[A-Za-z_]*|[A-Za-z_]+_for)\s/;
+const RECORD_PATH_CALL = /\$\(\s*(?:[A-Za-z_]*path[A-Za-z_]*|[A-Za-z_]+_for|fm_pf_(?:registry|events|consumed|rejected)_dir)\s/;
 
 function writesRecordVariable(line: string, recordVars: ReadonlySet<string>): boolean {
 	const isRecord = (name: string) => recordVars.has(name) || RECORD_VAR_NAME.test(name);
