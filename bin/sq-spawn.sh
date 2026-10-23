@@ -57,11 +57,17 @@
 #   refused for a remote --xo route (docs/configuration.md "Claude account
 #   selection"). Absent --account leaves today's ambient-forwarding behavior
 #   unchanged, and state/<id>.meta records account= only when it was passed.
-#   --decision-profile <name> or --decision-reason <text> records the intake
-#   decision (bin/sq-dispatch-log.sh decision; --quota-summary <json> is passed
-#   through to it) right before the spawn event, once the launch has succeeded.
-#   Logging is best effort and never blocks the spawn. Batch and --xo spawns
-#   refuse these flags because the decision belongs to one operator or recon.
+#   Every operator and recon spawn records one intake decision
+#   (bin/sq-dispatch-log.sh decision) once harness, model and effort resolve,
+#   before any endpoint exists, so a failed dispatch keeps the choice it made.
+#   --decision-profile <name> or --decision-reason <text> names the decision;
+#   without either, the reason is derived from the resolution source (explicit
+#   harness argument, raw launch command, or config/crew-harness default, with
+#   config/crew-dispatch.json noted when active). --quota-summary <json> is
+#   passed through to it. Logging is best effort and never blocks the spawn.
+#   Batch spawns write one decision per pair; the explicit decision flags and
+#   --quota-summary are refused there and for --xo spawns, which record no
+#   decision.
 #   A herdr operator or recon is placed in the exact workspace of the Squad
 #   or XO process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -340,12 +346,8 @@ if [ "$DECISION_PROFILE_SET" -eq 1 ] && [ "$DECISION_REASON_SET" -eq 1 ]; then
   echo "error: pass only one of --decision-profile or --decision-reason" >&2
   exit 1
 fi
-if [ "$QUOTA_SET" -eq 1 ] && [ "$DECISION_PROFILE_SET" -eq 0 ] && [ "$DECISION_REASON_SET" -eq 0 ]; then
-  echo "error: --quota-summary requires --decision-profile or --decision-reason" >&2
-  exit 1
-fi
-if { [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ]; } && [ "$KIND" = xo ]; then
-  echo "error: --decision-profile and --decision-reason apply only to operator and recon spawns" >&2
+if { [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ] || [ "$QUOTA_SET" -eq 1 ]; } && [ "$KIND" = xo ]; then
+  echo "error: --decision-profile, --decision-reason and --quota-summary apply only to operator and recon spawns" >&2
   exit 1
 fi
 # A parent-delivered carrier replaces this base's own resolution, so it is
@@ -841,8 +843,8 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
-  if [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ]; then
-    echo "error: --decision-profile and --decision-reason are per task; spawn each pair singly so its decision is recorded" >&2
+  if [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ] || [ "$QUOTA_SET" -eq 1 ]; then
+    echo "error: --decision-profile, --decision-reason and --quota-summary are per task; spawn each pair singly to set its decision" >&2
     exit 1
   fi
   rc=0
@@ -989,6 +991,7 @@ case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
     HARNESS=""
+    decision_reason_source='explicit raw launch command'
     for word in $LAUNCH; do
       case "$word" in [A-Za-z_]*=*) continue ;; *) HARNESS=$(basename "$word"); break ;; esac
     done
@@ -1012,14 +1015,19 @@ case "$ARG3" in
       fi
       HARNESS=$("$SQUAD_ROOT/bin/sq-harness.sh" crew)
       harness_src='config/crew-harness'
+      decision_reason_source='config/crew-harness default'
     fi
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
   *)
     HARNESS=$ARG3
+    decision_reason_source='explicit harness argument'
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+if [ -f "$CONFIG/crew-dispatch.json" ] && [ "$KIND" != xo ]; then
+  decision_reason_source="$decision_reason_source; config/crew-dispatch.json active"
+fi
 
 case "$HARNESS" in
   pi|pi-signed) LAUNCH="SQUAD_PI_HARNESS=$HARNESS $LAUNCH" ;;
@@ -1081,6 +1089,19 @@ if [ "$KIND" = xo ] && [ -z "$ARG3" ]; then
       esac
     fi
   fi
+fi
+
+if [ "$KIND" != xo ]; then
+  decision_args=(--harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}")
+  if [ "$DECISION_PROFILE_SET" -eq 1 ]; then
+    decision_args+=(--profile "$DECISION_PROFILE_ARG")
+  elif [ "$DECISION_REASON_SET" -eq 1 ]; then
+    decision_args+=(--reason "$DECISION_REASON_ARG")
+  else
+    decision_args+=(--reason "$decision_reason_source")
+  fi
+  [ "$QUOTA_SET" -eq 0 ] || decision_args+=(--quota-summary "$QUOTA_SUMMARY_ARG")
+  SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" decision "${decision_args[@]}" || true
 fi
 
 XO_registry_value() {
@@ -3085,16 +3106,6 @@ if [ "$KIND" = xo ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
   fi
 fi
 
-if [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ]; then
-  decision_args=(--harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}")
-  if [ "$DECISION_PROFILE_SET" -eq 1 ]; then
-    decision_args+=(--profile "$DECISION_PROFILE_ARG")
-  else
-    decision_args+=(--reason "$DECISION_REASON_ARG")
-  fi
-  [ "$QUOTA_SET" -eq 0 ] || decision_args+=(--quota-summary "$QUOTA_SUMMARY_ARG")
-  SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" decision "${decision_args[@]}" || true
-fi
 SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" spawn \
   --harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}" || true
 

@@ -8,8 +8,8 @@
 #     --result done|failed|landed|released
 # Base: SQUAD_BASE > SQUAD_HOME > SQUAD_ROOT_OVERRIDE > repository root;
 # SQUAD_DATA_OVERRIDE overrides its data directory.
-# decision is recorded by the dispatcher, directly or through sq-spawn.sh's
-# --decision-profile/--decision-reason flags; spawn records actual choices.
+# decision is written by sq-spawn.sh for every operator and recon spawn before
+# launch (or directly by a dispatcher); spawn records actual choices.
 # Only pass non-sensitive profile names or short reasons, never brief text.
 # quota-summary is a JSON object of numeric remaining_percent, reset_seconds,
 # remaining_tokens, remaining_requests and/or status (available/tight/unknown).
