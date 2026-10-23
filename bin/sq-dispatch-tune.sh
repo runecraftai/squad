@@ -279,30 +279,33 @@ for name in names:
         continue
     if os.path.islink(path) or not os.path.isfile(path):
         continue
-    if int(os.stat(path).st_mtime) < cutoff:
+    try:
+        if int(os.stat(path).st_mtime) < cutoff:
+            continue
+        decision = None
+        spawn = None
+        results = set()
+        stamps = []
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                when = moment(row.get("timestamp"))
+                if when is not None:
+                    stamps.append(when)
+                event = row.get("event")
+                if event == "decision":
+                    decision = row
+                elif event == "spawn":
+                    spawn = row
+                elif event == "outcome" and isinstance(row.get("result"), str):
+                    results.add(row["result"])
+    except OSError:
         continue
-    decision = None
-    spawn = None
-    results = set()
-    stamps = []
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            try:
-                row = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(row, dict):
-                continue
-            when = moment(row.get("timestamp"))
-            if when is not None:
-                stamps.append(when)
-            event = row.get("event")
-            if event == "decision":
-                decision = row
-            elif event == "spawn":
-                spawn = row
-            elif event == "outcome" and isinstance(row.get("result"), str):
-                results.add(row["result"])
     profile = decision.get("profile") if isinstance(decision, dict) else None
     lane = text(profile) if isinstance(profile, str) and profile else "(no-profile)"
     if results & {"done", "landed"}:
