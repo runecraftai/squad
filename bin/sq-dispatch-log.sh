@@ -32,7 +32,7 @@ BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
-if ! python3 - "$DATA" "$STATE" "$@" 2>/dev/null <<'PY'
+if ! SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" 2>/dev/null <<'PY'
 import argparse
 import datetime
 import fcntl
@@ -44,6 +44,9 @@ import stat
 import sys
 import time
 
+sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
+from sq_dispatch_failure import status_failure_class
+
 SECRET_SHAPE = re.compile(
     r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
     r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
@@ -51,33 +54,6 @@ SECRET_SHAPE = re.compile(
     r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"
     r"|[A-Za-z0-9_+/]{32,}",
     re.IGNORECASE)
-FAILURE_BUCKETS = (
-    ("quota", re.compile(r"quota|usage limit|session limit|rate[ -]?limit|insufficient credit", re.IGNORECASE)),
-    ("provider", re.compile(r"provider|overloaded|outage|unavailable|server error", re.IGNORECASE)),
-    ("guard", re.compile(r"guard|policy|refus|denied", re.IGNORECASE)),
-)
-TERMINAL_LINE = re.compile(r"^(done|failed|blocked|paused): (.*)$")
-
-
-def failure_class(state_dir, task_id):
-    path = os.path.join(state_dir, task_id + ".status")
-    if os.path.islink(path) or not os.path.isfile(path):
-        return None
-    last = None
-    try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                match = TERMINAL_LINE.match(line.rstrip("\n"))
-                if match:
-                    last = match
-    except OSError:
-        return None
-    if last is None or last.group(1) == "done":
-        return None
-    for bucket, pattern in FAILURE_BUCKETS:
-        if pattern.search(last.group(2)):
-            return bucket
-    return "other"
 
 
 parser = argparse.ArgumentParser(description="Append one private dispatch event (best effort).")
@@ -125,7 +101,7 @@ if args.event == "decision":
     record["quota_summary"] = quota
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
-    bucket = failure_class(sys.argv[2], args.id)
+    bucket = status_failure_class(os.path.join(sys.argv[2], args.id + ".status"))
     if bucket is not None:
         record["failure_class"] = bucket
 line = (json.dumps(record, separators=(",", ":"), ensure_ascii=True) + "\n").encode()

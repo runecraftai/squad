@@ -26,8 +26,8 @@
 # is released (teardown) counts toward its lane and dispatch totals, not toward
 # profile success rates.
 # Fallback = a log's failure_class of provider or quota, even on a released
-# task (guard and other are misses). Without one, a blocked, paused, or failed
-# status line naming a quota or provider failure. Teardown removes the status
+# task (guard and other are misses). Without one, the last done, failed, blocked,
+# or paused status line, classified as the writer does. Teardown removes the status
 # file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
@@ -43,8 +43,6 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
-# Provider or quota failure wording on a status line that stopped or paused work.
-FALLBACK_RE='^(blocked|paused|failed): .*(quota|usage limit|session limit|rate[ -]?limit|overloaded|provider (error|outage|unavailable)|insufficient (credit|quota))'
 # Credential or token shapes; matching values are never printed.
 SECRET_SHAPE_RE='(^|[^A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]|(token|secret|passwd|password|api[_-]?key|credential)[=:]|[A-Za-z0-9_+/]{32,}'
 
@@ -199,14 +197,22 @@ status_outcome() { # <status_file>
   grep -E '^(done|failed):' "$1" 2>/dev/null | tail -1 | cut -d: -f1 || true
 }
 
-# Classify a status file for provider or quota failure. Prints hit or miss only,
-# never the status text.
+# Classify a status file with the writer's last-terminal-line rule. Prints hit,
+# miss, or unknown only, never the status text; unknown when python3 is missing.
 status_fallback() { # <status_file>
-  if grep -E -i -q "$FALLBACK_RE" "$1" 2>/dev/null; then
-    echo hit
-  else
-    echo miss
-  fi
+  local bucket
+  bucket=$(python3 - "$SCRIPT_DIR" "$1" 2>/dev/null <<'PY' || true
+import sys
+sys.path.insert(0, sys.argv[1])
+from sq_dispatch_failure import status_failure_class
+print(status_failure_class(sys.argv[2]) or "none")
+PY
+)
+  case "$bucket" in
+    provider|quota) echo hit ;;
+    none|guard|other) echo miss ;;
+    *) echo unknown ;;
+  esac
 }
 
 # Print a value, or "redacted" when it looks like a credential or token.

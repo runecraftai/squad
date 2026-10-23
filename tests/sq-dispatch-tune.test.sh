@@ -710,6 +710,31 @@ else
   fail "redacted profile missing: $output"
 fi
 
+# A blocked line followed by a later done line is not a fallback while the status file exists.
+REVIEW_STATE="$TMP_ROOT/review-state"
+REVIEW_DATA="$TMP_ROOT/review-data"
+mkdir -p "$REVIEW_STATE" "$REVIEW_DATA/rev-a"
+printf 'blocked: quota exhausted\ndone: PR ok\n' > "$REVIEW_STATE/rev-a.status"
+printf '%s\n' \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"rev-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"rev-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:20:00+00:00","id":"rev-a","event":"outcome","source":"status-notify","result":"done"}' \
+  > "$REVIEW_DATA/rev-a/dispatch.jsonl"
+output=$(SQUAD_STATE_OVERRIDE="$REVIEW_STATE" SQUAD_DATA_OVERRIDE="$REVIEW_DATA" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
+  pass "a done task whose status file once showed quota is not a fallback hit"
+else
+  fail "superseded quota line counted as fallback: $output"
+fi
+
+# A status-only task with a provider-class failure line is a fallback hit, as the writer classifies it.
+echo "failed: tool unavailable" > "$REVIEW_STATE/unav-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$REVIEW_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":1,"observed":2,"unknown":0,"rate":50.0}'; then
+  pass "a status-only provider failure line is a fallback hit, matching the writer"
+else
+  fail "status-only provider line not a fallback hit: $output"
+fi
+
 # ── cleanup ───────────────────────────────────────────────────────────────
 
 rm -rf "$TMP_ROOT"
