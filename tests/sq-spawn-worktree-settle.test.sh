@@ -141,7 +141,32 @@ test_already_settled_pane_costs_one_confirm_sleep() {
   pass "an already-settled pane confirms via the existing inter-poll sleep, not an extra full cycle"
 }
 
+# An unedited scaffold (standalone {TASK} line) must be refused before any
+# worktree or endpoint is created; the same brief with the placeholder
+# replaced must pass that check.
+test_unedited_task_placeholder_is_refused() {
+  local rec id out status brief
+  id=settle-placeholder-z3
+  rec=$(make_settle_case settle-placeholder "$id" 0)
+  read_settle_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\n{TASK}\n\necho done >> %s.status\n' "$HOME_DIR/state/$id" > "$brief"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a brief that still contains {TASK}"
+  assert_contains "$out" "{TASK} placeholder" "refusal did not explain the unreplaced placeholder"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused spawn left a meta record behind"
+
+  printf '# Task\nDo the real work.\n\necho done >> %s.status\n' "$HOME_DIR/state/$id" > "$brief"
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should pass once the placeholder is replaced (got: $out)"
+  pass "an unedited {TASK} brief is refused before launch; a filled brief passes"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_sleep
+test_unedited_task_placeholder_is_refused
 
 echo "# all sq-spawn-worktree-settle tests passed"
