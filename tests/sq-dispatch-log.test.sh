@@ -313,7 +313,9 @@ PY
 pass 'spawn without a harness argument derives its reason from config/crew-harness'
 
 dir=$(make_case intake-config-absent)
-run_case "$dir" sq-spawn.sh task "$dir/project" --model haiku --effort low \
+# Own-harness detection must not depend on the host's process tree: a CI runner
+# has no harness ancestor, so pin the verified claude env marker for this case.
+CLAUDECODE=1 run_case "$dir" sq-spawn.sh task "$dir/project" --model haiku --effort low \
   --mode local-only --yolo off > "$dir/intake.out" 2> "$dir/intake.err" \
   || fail 'unpinned spawn failed'
 python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
