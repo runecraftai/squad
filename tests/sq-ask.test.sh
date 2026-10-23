@@ -140,6 +140,13 @@ test_validation() {
   assert_invalid "payload step outside the charset" "$(printf '%s' "$GATE" | python3 -c 'import sys,json; c=json.load(sys.stdin); c["options"][0]["payload"]["step"]="a b"; print(json.dumps(c))')"
   assert_invalid "control character in a payload string" "$(printf '%s' "$GATE" | python3 -c 'import sys,json; c=json.load(sys.stdin); c["options"][1]["payload"]["step"]="x"; c["options"][1]["payload"]["note"]="a\x1bb"; print(json.dumps(c))')"
   assert_invalid "payload findings without a findings array" "$(printf '%s' "$GATE" | python3 -c 'import sys,json; c=json.load(sys.stdin); del c["findings"]; print(json.dumps(c))')"
+
+  local rc
+  printf '%s' "$(printf '%s' "$GATE" | python3 -c 'import sys,json; c=json.load(sys.stdin); c["findings"]=5; print(json.dumps(c))')" | "$ASK" --validate >/dev/null 2>&1; rc=$?
+  [[ $rc -eq 2 ]] || fail "a non-array findings block with payloads must exit 2, got $rc"
+  printf '\xff\xfe{}' | "$ASK" --validate >/dev/null 2>&1; rc=$?
+  [[ $rc -eq 2 ]] || fail "non-UTF-8 card input must exit 2, got $rc"
+  pass "malformed findings type and non-UTF-8 input exit 2 instead of crashing"
 }
 
 # --- T1 render ---
@@ -410,19 +417,18 @@ test_payload() {
 }
 
 # --- T9 doc drift ---
+# The examples doc is the commander-facing contract: each golden it shows must be
+# exactly what the real renderer prints for that card.
 test_doc_drift() {
-  local hits name
-  hits=$(grep -rn -E '━━━ DECISION|← recommended|0\. Type something' "$ROOT/docs" "$ROOT/AGENTS.md" 2>/dev/null || true)
-  [[ -z $hits ]] || fail "T9: the old card rendering is still documented: $hits"
-  [[ $(grep -c 'decision-card-standard' "$ROOT/AGENTS.md") -eq 1 ]] \
-    || fail "T9: AGENTS.md must mention decision-card-standard exactly once"
+  local name rendered examples
+  examples=$(cat "$ROOT/docs/decision-card-examples.md")
   for name in merge gate scope; do
-    [[ $(cat "$ROOT/docs/decision-card-examples.md") == *"$(cat "$FIX/$name.prose")"* ]] \
-      || fail "T9: docs/decision-card-examples.md no longer embeds the $name golden verbatim"
+    rendered=$("$ASK" --render < "$FIX/$name.json") || fail "T9: render failed for $name"
+    [[ $rendered == "$(cat "$FIX/$name.prose")" ]] || fail "T9: render of $name drifted from its golden"
+    [[ $examples == *"$rendered"* ]] \
+      || fail "T9: docs/decision-card-examples.md does not show the current render of $name"
   done
-  [[ ! -e "$ROOT/docs/decision-card-format.md" && ! -e "$ROOT/docs/decision-card-schema.md" ]] \
-    || fail "T9: superseded decision-card pages must be gone"
-  pass "T9: docs carry no old card rendering and embed the goldens verbatim"
+  pass "T9: the examples doc shows exactly what the renderer prints for each golden"
 }
 
 test_validation

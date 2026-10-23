@@ -31,8 +31,8 @@
 #   Free text is quoted, printable ASCII only (no backslash), 1-200 characters.
 #   Everything else is rejected whole, never guessed: unknown D or O, O0 when the
 #   card has no free text, a duplicate D, a D without its O, an unclosed quote,
-#   trailing tokens, leading zeros, any non-ASCII or control character, and input
-#   over 2000 characters. A rejection prints nothing on stdout and exits 4.
+#   trailing tokens, leading zeros, any non-ASCII or control character other than
+#   the whitespace separators (tab, CR, LF), and input over 2000 characters. A rejection prints nothing on stdout and exits 4.
 #
 # Result object (JSON; an array of cards in gives an array out, one per answer):
 #   {"decision_id":..,"selected_option_id":..,"selected_label":..,
@@ -142,6 +142,18 @@ def check_card(c, where):
             raise Invalid("%smetadata.key 'default' is reserved" % where)
         if c["id"] != key:
             raise Invalid("%sid must equal metadata.key for a keyed decision" % where)
+    fl = c.get("findings")
+    if fl is not None:
+        if not isinstance(fl, list):
+            raise Invalid("%sfindings must be an array" % where)
+        fids = []
+        for f in fl:
+            if not isinstance(f, dict) or not isinstance(f.get("id"), str) or not NAME_RE.match(f["id"]):
+                raise Invalid("%seach finding needs an id matching [A-Za-z0-9._-]" % where)
+            text_ok("finding text", f.get("text", ""), LIM["finding"], True)
+            fids.append(f["id"])
+        if len(fids) != len(set(fids)):
+            raise Invalid("%sfinding ids must be unique" % where)
     opts = c.get("options")
     if not isinstance(opts, list) or len(opts) < 1:
         raise Invalid("%smust have at least 1 option" % where)
@@ -175,18 +187,6 @@ def check_card(c, where):
         raise Invalid("%soption ids must be unique" % where)
     if c["default_option_id"] not in ids:
         raise Invalid("%sdefault_option_id '%s' not found in options" % (where, c["default_option_id"]))
-    fl = c.get("findings")
-    if fl is not None:
-        if not isinstance(fl, list):
-            raise Invalid("%sfindings must be an array" % where)
-        fids = []
-        for f in fl:
-            if not isinstance(f, dict) or not isinstance(f.get("id"), str) or not NAME_RE.match(f["id"]):
-                raise Invalid("%seach finding needs an id matching [A-Za-z0-9._-]" % where)
-            text_ok("finding text", f.get("text", ""), LIM["finding"], True)
-            fids.append(f["id"])
-        if len(fids) != len(set(fids)):
-            raise Invalid("%sfinding ids must be unique" % where)
 
 
 def check_payload(p, where, card):
@@ -510,7 +510,10 @@ def pick_free(text):
 def main():
     mode = sys.argv[1]
     fmt = os.environ.get("SQ_ASK_FORMAT", "json")
-    raw = sys.stdin.read()
+    try:
+        raw = sys.stdin.buffer.read().decode("utf-8")
+    except UnicodeDecodeError:
+        raise Invalid("input is not valid UTF-8")
     if mode == "parse-card":
         cards = parse_prose(raw)
         for n, c in enumerate(cards, 1):
