@@ -26,9 +26,31 @@ set -u
 # shellcheck source=tests/lib.sh disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-BASE_PATH=${SQUAD_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+# A symlink farm of <search-path> minus the named tools, printed as one PATH dir.
+path_farm_without() {  # <out-dir> <search-path> <name...>
+  local out=$1 search=$2 entry file name dirs
+  shift 2
+  mkdir -p "$out"
+  IFS=: read -r -a dirs <<<"$search"
+  for entry in "${dirs[@]}"; do
+    for file in "$entry"/*; do
+      [ -f "$file" ] && [ -x "$file" ] || continue
+      name=${file##*/}
+      case " $* " in *" $name "*) continue ;; esac
+      [ -e "$out/$name" ] || ln -s "$file" "$out/$name"
+    done
+  done
+  printf '%s\n' "$out"
+}
+
 TMP_ROOT=$(fm_test_tmproot sq-bootstrap-tests)
 export SQUAD_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
+# Hermetic base PATH. Every "absent" case here expects bootstrap to find a tool
+# missing, but a host can ship that tool in a base dir (herdr and node install to
+# /usr/bin), so the probed tools are hidden from the base and each case supplies
+# the ones it means to be present through its own fakebin.
+BASE_PATH=$(path_farm_without "$TMP_ROOT/base-path" "${SQUAD_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
+  node gh jq tmux herdr zellij cmux tuios orca fob drill sq-gh sq-browser sq-report sq-quota sq-tasks)
 
 # Hermetic runtime-backend detection. These cases pin the backend per-home via
 # config/backend; the dev shell's ambient runtime markers ($TMUX inside tmux,
