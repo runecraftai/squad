@@ -374,6 +374,10 @@ Every operator or recon spawn, including each batch pair, records one intake `de
 For a single spawn, Squad must pass the matched profile name as `--decision-profile` (or a short `--decision-reason` when no profile fits) and the compact quota summary it read as `--quota-summary`, so the event names the profile and why it was chosen; batch spawns refuse these flags and record a reason derived by `sq-spawn.sh` from its own resolution source.
 Recording is best effort and never blocks a spawn, and no secret, token, or brief text may appear in the reason or quota summary.
 `bin/sq-dispatch-log.sh` owns the event's shape and limits, and `sq-spawn.sh --help` owns the flags.
+`bin/sq-dispatch-tune.sh` reads each `data/<id>/dispatch.jsonl` first and falls back to `state/<id>.meta` and `state/<id>.status` only for tasks without a log.
+Its `--by-lane` view groups completed tasks by the decision profile recorded at intake (the lane), taking the dispatched harness, model, and effort from the spawn row, so each lane's dispatches can be compared with what it recommended; a spawn that differs from its decision counts as off recommendation.
+Its `--fallback-rate` view counts a task as a provider or quota fallback when its live status file has a blocked, paused, or failed line naming a quota or provider failure; teardown removes that file, so a torn-down task counts as unknown rather than clean, because the log records no failure cause.
+The report never prints decision reasons, status text, or brief text, and `bin/sq-dispatch-tune.sh --help` owns the flags.
 
 ```json
 {
