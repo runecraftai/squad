@@ -26,7 +26,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-remote-job-worker.sh` | Worker remoto de longa duração para comandos rastreados `sq-*.sh` no runtime da conta |
 | `sq-remote-job-reap-orphans.sh` | Parar workers de jobs remotos deixados por uma raiz de código podada, nunca um cujo checkout ainda existe |
 | `sq-remote-doctor.sh`    | Conferir e, com `--fix`, reparar a prontidão de segundo-imediato de uma conta remota (worker de jobs remotos, Herdr, launch agents Aqua, PATH e ferramentas exigidas) |
-| `sq-ask.sh`              | Picker interativo de cartões de decisão: lê um JSON de cartão no stdin e renderiza um picker de terminal | 
+| `sq-ask.sh`              | Renderiza e interpreta prosa de decisão a partir de um payload de cartão; picker de terminal opcional | 
 | `sq-backlog-handoff.sh`  | Validar e delegar movimentos enfileirados de itens de backlog para uma base XO               |
 | `sq-backlog-receive.sh`  | Ingerir idempotentemente um outbox confinado de handoff remoto através do sq-tasks             |
 | `sq-board-github.sh`     | Monitor opt-in de issues GitHub: listar issues elegíveis, pollar mudanças, reportar status agregado, aprovar sugestões de dispatch (requer tracker.kind: github no WORKFLOW.md) |

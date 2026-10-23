@@ -1,0 +1,6 @@
+D1 - Merge Strategy (ref: merge-strategy)
+  How should we merge the authentication fix PR?
+  Context: PR #42 fixes the OAuth token refresh bug. CI is green, 2 commits, time-sensitive.
+  O1 - Squash & Merge: Combine into one clean commit on main (recommended)
+  O2 - Rebase & Merge: Preserve both commits in history
+  O3 - Create Merge Commit: Standard merge with a merge commit message

@@ -1,0 +1,9 @@
+F1 - review-1 src/a.go:10 - flags an intentional guard
+F2 - review-2 src/b.go:44 - asks for a new compatibility layer
+
+D1 - Review gate: 2 open findings (ref: review-gate-1)
+  Accepted intent does not require the compatibility layer.
+  O1 - Fix F1 and F2: apply both as proposed (recommended)
+  O2 - Accept as is: keep the code, finish this step
+  O3 - Skip the step: do not run this check
+  O0 - Your own words

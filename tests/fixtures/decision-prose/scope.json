@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "id": "dashboard-scope",
+  "title": "Dashboard Scope",
+  "question": "Should the user dashboard include analytics widgets in the initial release?",
+  "context": "The basic dashboard is done. Analytics widgets were in the original spec but could move to v2 to ship faster; adding them now costs about 2 days.",
+  "options": [
+    {"id": "minimal", "label": "Ship Without Analytics", "description": "Release with profile and activity only", "recommended": true},
+    {"id": "full", "label": "Include Analytics", "description": "Add analytics widgets before release (+2 days)"},
+    {"id": "feature-flag", "label": "Analytics Behind Flag", "description": "Include analytics but gate them behind a feature flag"}
+  ],
+  "default_option_id": "minimal",
+  "allow_free_text": true,
+  "expires_at": null,
+  "metadata": {"task_id": "user-dashboard", "key": "dashboard-scope", "source": "needs-decision"}
+}
