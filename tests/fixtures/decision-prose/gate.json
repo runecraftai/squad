@@ -4,7 +4,7 @@
   "title": "Review gate: 2 open findings",
   "question": "Accepted intent does not require the compatibility layer.",
   "options": [
-    {"id": "fix-all", "label": "Fix F1 and F2", "description": "apply both as proposed",
+    {"id": "fix-all", "label": "Fix both findings", "description": "apply both as proposed",
      "payload": {"action": "fix", "step": "review", "findings": ["review-1", "review-2"]}},
     {"id": "accept", "label": "Accept as is", "description": "keep the code, finish this step",
      "payload": {"action": "approve", "step": "review"}},

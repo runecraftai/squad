@@ -44,7 +44,7 @@ F2 - review-2 src/b.go:44 - asks for a new compatibility layer
 
 D1 - Review gate: 2 open findings (ref: review-gate-1)
   Accepted intent does not require the compatibility layer.
-  O1 - Fix F1 and F2: apply both as proposed (recommended)
+  O1 - Fix both findings: apply both as proposed (recommended)
   O2 - Accept as is: keep the code, finish this step
   O3 - Skip the step: do not run this check
   O0 - Your own words
@@ -53,7 +53,7 @@ D1 - Review gate: 2 open findings (ref: review-gate-1)
 The commander types `d1 o1`; the result carries the payload unchanged:
 
 ```json
-{"decision_id":"review-gate-1","selected_option_id":"fix-all","selected_label":"Fix F1 and F2",
+{"decision_id":"review-gate-1","selected_option_id":"fix-all","selected_label":"Fix both findings",
  "selected_payload":{"action":"fix","step":"review","findings":["review-1","review-2"]},
  "free_text":null,"method":"prose"}
 ```

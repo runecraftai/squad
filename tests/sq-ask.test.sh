@@ -147,6 +147,10 @@ test_validation() {
   printf '\xff\xfe{}' | "$ASK" --validate >/dev/null 2>&1; rc=$?
   [[ $rc -eq 2 ]] || fail "non-UTF-8 card input must exit 2, got $rc"
   pass "malformed findings type and non-UTF-8 input exit 2 instead of crashing"
+
+  printf '%s' "$GATE" | python3 -c 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read().replace(b"Accepted", b"Acc\x00epted", 1))' | "$ASK" --validate >/dev/null 2>&1; rc=$?
+  [[ $rc -eq 2 ]] || fail "a raw NUL byte in the card must exit 2, not be stripped, got $rc"
+  pass "a raw NUL byte in the card is rejected instead of stripped"
 }
 
 # --- T1 render ---

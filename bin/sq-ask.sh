@@ -635,30 +635,35 @@ esac
 export SQ_ASK_FORMAT="$FORMAT"
 
 # --- read stdin or positional argument ---
-CARD_JSON=""
+CARD_B64=""
 if [[ $# -gt 0 ]]; then
-  CARD_JSON="$1"
+  CARD_B64="$(printf '%s' "$1" | base64 | tr -d '\n')"
 elif [[ -t 0 ]]; then
   echo "error: no decision card JSON on stdin or as argument" >&2
   exit 2
 else
-  CARD_JSON="$(cat)"
+  CARD_B64="$(base64 | tr -d '\n')"
 fi
+
+card_stream() {
+  if printf '%s' "$CARD_B64" | base64 --decode 2>/dev/null; then return 0; fi
+  printf '%s' "$CARD_B64" | base64 -D
+}
 
 case "$MODE" in
   validate|render|parse-card)
-    printf '%s' "$CARD_JSON" | run_py "$MODE"
+    card_stream | run_py "$MODE"
     exit 0
     ;;
   answer)
     export SQ_ASK_ANSWER="$ANSWER"
-    printf '%s' "$CARD_JSON" | run_py answer
+    card_stream | run_py answer
     exit 0
     ;;
 esac
 
 # --- picker path: validate first so a bad card is always exit 2 ---
-printf '%s' "$CARD_JSON" | run_py validate >/dev/null
+card_stream | run_py validate >/dev/null
 
 detect_backend() {
   if [[ -n "$BACKEND" ]]; then
@@ -691,7 +696,7 @@ fi
 
 if [[ "$DETECTED_BACKEND" == "default" ]]; then
   echo "notice: no terminal, using the recommended option" >&2
-  printf '%s' "$CARD_JSON" | run_py defaults
+  card_stream | run_py defaults
   exit 0
 fi
 
@@ -701,7 +706,7 @@ case "$DETECTED_BACKEND" in
 esac
 
 # --- picker data: title, question, context, free-text flag, default, n, n option lines, n labels, prose block ---
-INFO=$(printf '%s' "$CARD_JSON" | run_py pick-info)
+INFO=$(card_stream | run_py pick-info)
 INFO_LINES=()
 while IFS= read -r line; do
   INFO_LINES+=("$line")
@@ -840,4 +845,4 @@ case "$RESULT" in
 esac
 
 export SQ_ASK_KIND="$KIND" SQ_ASK_VALUE="$VALUE"
-printf '%s' "$CARD_JSON" | run_py pick-result
+card_stream | run_py pick-result
