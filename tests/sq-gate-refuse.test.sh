@@ -361,6 +361,7 @@ run_teardown() {
   local cwd=$1 case_dir=$2; shift 2
   ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
       "SQUAD_ROOT_OVERRIDE=$ROOT" "SQUAD_STATE_OVERRIDE=$case_dir/state" \
+      "SQUAD_DATA_OVERRIDE=$case_dir/data" \
       "SQUAD_CONFIG_OVERRIDE=$case_dir/config" "PATH=$case_dir/fakebin:$PATH" "$@" \
       "$TEARDOWN" task-x1 ) 2>&1
 }

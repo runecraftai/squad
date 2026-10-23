@@ -97,7 +97,10 @@ if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.get
     raise ValueError("unsafe log")
 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 os.fchmod(fd, 0o600)
+offset = os.lseek(fd, 0, os.SEEK_END)
 if os.write(fd, line) != len(line):
+    os.ftruncate(fd, offset)
+    os.fsync(fd)
     raise OSError("short append")
 os.fsync(fd)
 os.close(fd)

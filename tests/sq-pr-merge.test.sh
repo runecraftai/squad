@@ -88,6 +88,7 @@ run_pr_merge() {
   local case_dir=$1 rc; shift
   SQUAD_ROOT_OVERRIDE="$ROOT" \
   SQUAD_STATE_OVERRIDE="$case_dir/state" \
+  SQUAD_DATA_OVERRIDE="$case_dir/data" \
   SQUAD_TEST_SQ_GH_LOG="$case_dir/sq-gh.log" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_MERGE" "$@"
