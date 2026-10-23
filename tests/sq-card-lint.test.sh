@@ -138,7 +138,13 @@ EOF
   )
   expect_warnings "$path" "T5d: an option not indented two spaces is an orphan, leaving the block without a recommendation" \
     "warning: $path:2: OPCAO_ORFA O1 must be indented two spaces inside its decision block" \
-    "warning: $path:1: RECOMENDACAO_AUSENTE decision has no options"
+    "warning: $path:1: RECOMENDACAO_AUSENTE no option is indented two spaces inside the block"
+}
+
+test_crlf_records_are_silent() {
+  local path
+  path=$(printf 'D1 - Merge strategy\r\n  O1 - Squash: one commit\r\n  O2 - Rebase: keep both (recommended)\r\n' | write_record crlf.md)
+  expect_warnings "$path" "T5e: CRLF line endings do not hide the recommended marker"
 }
 
 test_non_consecutive_option() {
@@ -212,6 +218,7 @@ test_two_recommended_options
 test_recommended_marker_must_match_owner
 test_orphan_option
 test_unindented_option_in_block
+test_crlf_records_are_silent
 test_non_consecutive_option
 test_legacy_c_prefix
 test_operand_with_equals_is_a_file

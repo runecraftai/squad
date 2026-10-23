@@ -52,7 +52,9 @@ function warn(at, code, detail) {
 function close_block(   why) {
   if (!in_block) return
   if (recommended == 0) {
-    why = (options == 0) ? "decision has no options" : "no option ends with (recommended)"
+    if (options > 0) why = "no option ends with (recommended)"
+    else if (misindented) why = "no option is indented two spaces inside the block"
+    else why = "decision has no options"
     warn(header_line, "RECOMENDACAO_AUSENTE", why)
   } else if (recommended > 1) {
     warn(header_line, "RECOMENDACAO_DUPLICADA", recommended " options end with (recommended)")
@@ -62,6 +64,9 @@ function close_block(   why) {
 BEGIN {
   in_block = 0
   fenced = 0
+}
+{
+  sub(/\r$/, "")
 }
 /^[[:space:]]*(```|~~~)/ {
   close_block()
@@ -80,6 +85,7 @@ fenced {
   in_block = 1
   header_line = FNR
   options = 0
+  misindented = 0
   recommended = 0
   expected = 1
   if (substr($0, 1, 1) == "C") {
@@ -95,6 +101,7 @@ fenced {
     next
   }
   if ($0 !~ /^  O[0-9]+ - /) {
+    misindented = 1
     warn(FNR, "OPCAO_ORFA", "O" num " must be indented two spaces inside its decision block")
     next
   }
