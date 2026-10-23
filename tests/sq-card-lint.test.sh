@@ -86,14 +86,23 @@ EOF
 
 test_orphan_option() {
   local path
-  path=$(write_record orphan-after-blank.md <<'EOF'
+  path=$(write_record blank-keeps-block.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash: one commit (recommended)
 
   O2 - Rebase: keep both commits
 EOF
   )
-  expect_warnings "$path" "T5a: an option after a blank line is an orphan" \
+  expect_warnings "$path" "T5a: an option after a blank line stays inside the block"
+
+  path=$(write_record heading-closes-block.md <<'EOF'
+D1 - Merge strategy
+  O1 - Squash: one commit (recommended)
+# Notes
+  O2 - Rebase: keep both commits
+EOF
+  )
+  expect_warnings "$path" "T5c: a heading closes the block so the following option is an orphan" \
     "warning: $path:4: OPCAO_ORFA O2 is outside any decision block"
 
   path=$(write_record orphan-no-header.md <<'EOF'
@@ -145,7 +154,9 @@ EOF
 test_exit_is_always_zero() {
   lint_file "$TMP_ROOT/does-not-exist.md"
   expect_code 0 "$L_RC" "T9a: a missing file exits 0"
-  assert_contains "$L_ERR" "cannot read file" "T9a: a missing file is reported on stderr"
+  [ "$L_ERR" = "warning: $TMP_ROOT/does-not-exist.md:0: ARQUIVO_ILEGIVEL cannot read file" ] \
+    || fail "T9a: a missing file reports ARQUIVO_ILEGIVEL at line 0, got: $L_ERR"
+  pass "T9a: a missing file reports ARQUIVO_ILEGIVEL at line 0"
 
   L_ERR=$("$LINT" 2>&1 >/dev/null); L_RC=$?
   expect_code 0 "$L_RC" "T9b: no arguments exits 0"

@@ -9,7 +9,8 @@
 #
 # Grammar checked, with awk only:
 #   D<n> - <title>         opens a decision block. The block ends at the next
-#                          blank line, heading, or header.
+#                          heading or header; blank lines do not end it, as in
+#                          bin/sq-ask.sh.
 #   O<m> - <label>: <desc> an option line inside the open block. Exactly one
 #                          option per block ends with "(recommended)".
 #   O0 - Your own words    the free-text escape. It is not sequenced and never
@@ -23,6 +24,7 @@
 #   OPCAO_ORFA                 an O<m> line outside any decision block
 #   OPCAO_FORA_DE_SEQUENCIA    an O<m> number that is not the next one (O1, O2, ...)
 #   PREFIXO_LEGADO             a C<n> header, accepted but warned as legacy
+#   ARQUIVO_ILEGIVEL           a file argument cannot be read; reported at line 0
 #
 # Lines inside fenced code blocks are examples, not records, and are skipped.
 #
@@ -65,7 +67,7 @@ BEGIN {
 fenced {
   next
 }
-/^[[:space:]]*$/ || /^#/ {
+/^#/ {
   close_block()
   next
 }
@@ -119,7 +121,7 @@ esac
 
 for file in "$@"; do
   if [ ! -f "$file" ] || [ ! -r "$file" ]; then
-    echo "warning: $file: cannot read file" >&2
+    printf 'warning: %s:0: ARQUIVO_ILEGIVEL cannot read file\n' "$file" >&2
     continue
   fi
   awk "$LINT_AWK" "$file" >&2
