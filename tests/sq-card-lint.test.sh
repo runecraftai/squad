@@ -31,10 +31,12 @@ expect_warnings() {
   pass "$label"
 }
 
-# write_record <name>: writes stdin to $TMP_ROOT/<name> and echoes its path.
+# write_record <name>: writes stdin to $TMP_ROOT/<name> and sets REC to its path.
+# Not called via $(...): stock Bash 3.2 cannot parse backticks in a heredoc
+# body inside a command substitution.
 write_record() {
   cat > "$TMP_ROOT/$1"
-  printf '%s\n' "$TMP_ROOT/$1"
+  REC="$TMP_ROOT/$1"
 }
 
 test_well_formed_records_are_silent() {
@@ -43,7 +45,7 @@ test_well_formed_records_are_silent() {
   expect_warnings "$FIX/scope.prose" "T1c: golden scope prose is silent"
 
   local path
-  path=$(write_record well-formed.md <<'EOF'
+  write_record well-formed.md <<'EOF'
 # Review
 
 F1 - review-1 src/a.go:10 - flags an intentional guard
@@ -56,117 +58,122 @@ D1 - Review gate: 2 open findings (ref: review-gate-1)
   O3 - Skip the step: do not run this check
   O0 - Your own words
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T2: a well-formed card with findings and the O0 escape is silent"
 }
 
 test_no_recommended_option() {
   local path
-  path=$(write_record no-recommended.md <<'EOF'
+  write_record no-recommended.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash: one commit
   O2 - Rebase: keep both commits
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T3: a card with no recommended option warns on its header" \
     "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
 }
 
 test_two_recommended_options() {
   local path
-  path=$(write_record two-recommended.md <<'EOF'
+  write_record two-recommended.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash: one commit (recommended)
   O2 - Rebase: keep both commits (recommended)
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T4: two recommended options warn on the header" \
     "warning: $path:1: RECOMENDACAO_DUPLICADA 2 options end with (recommended)"
 }
 
 test_orphan_option() {
   local path
-  path=$(write_record blank-keeps-block.md <<'EOF'
+  write_record blank-keeps-block.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash: one commit (recommended)
 
   O2 - Rebase: keep both commits
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T5a: an option after a blank line stays inside the block"
 
-  path=$(write_record heading-closes-block.md <<'EOF'
+  write_record heading-closes-block.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash: one commit (recommended)
 # Notes
   O2 - Rebase: keep both commits
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T5c: a heading closes the block so the following option is an orphan" \
     "warning: $path:4: OPCAO_ORFA O2 is outside any decision block"
 
-  path=$(write_record orphan-no-header.md <<'EOF'
+  write_record orphan-no-header.md <<'EOF'
 Some prose.
   O1 - Squash: one commit (recommended)
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T5b: an option with no decision header is an orphan" \
     "warning: $path:2: OPCAO_ORFA O1 is outside any decision block"
 }
 
 test_recommended_marker_must_match_owner() {
   local path
-  path=$(write_record no-space-marker.md <<'EOF'
+  write_record no-space-marker.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash:(recommended)
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T3b: a marker with no space before it does not count as recommended" \
     "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
 
-  path=$(printf 'D1 - Merge strategy\n  O1 - Squash: one (recommended) \n' | write_record trailing-space-marker.md)
+  write_record trailing-space-marker.md <<'EOF'
+D1 - Merge strategy
+  O1 - Squash: one (recommended) 
+EOF
+  path=$REC
   expect_warnings "$path" "T3c: a marker followed by trailing space does not count as recommended" \
     "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
 }
 
 test_unindented_option_in_block() {
   local path
-  path=$(write_record unindented-option.md <<'EOF'
+  write_record unindented-option.md <<'EOF'
 D1 - Merge strategy
 O1 - Squash: one (recommended)
   O2 - Rebase: keep both commits
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T5d: an unindented option is reported once, and its marker and number still count" \
     "warning: $path:2: OPCAO_ORFA O1 must be indented two spaces inside its decision block"
 }
 
 test_crlf_records_are_silent() {
   local path
-  path=$(printf 'D1 - Merge strategy\r\n  O1 - Squash: one commit\r\n  O2 - Rebase: keep both (recommended)\r\n' | write_record crlf.md)
+  path="$TMP_ROOT/crlf.md"
+  printf 'D1 - Merge strategy\r\n  O1 - Squash: one commit\r\n  O2 - Rebase: keep both (recommended)\r\n' > "$path"
   expect_warnings "$path" "T5e: CRLF line endings do not hide the recommended marker"
 }
 
 test_non_consecutive_option() {
   local path
-  path=$(write_record gap.md <<'EOF'
+  write_record gap.md <<'EOF'
 D1 - Merge strategy
   O1 - Squash: one commit (recommended)
   O3 - Rebase: keep both commits
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T6: a skipped option number warns on the line that breaks the sequence" \
     "warning: $path:3: OPCAO_FORA_DE_SEQUENCIA found O3, expected O2"
 }
 
 test_legacy_c_prefix() {
   local path
-  path=$(write_record legacy-c.md <<'EOF'
+  write_record legacy-c.md <<'EOF'
 C1 - Merge strategy
   O1 - Squash: one commit (recommended)
   O2 - Rebase: keep both commits
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T7: a C<n> header is accepted as a block but warned as legacy" \
     "warning: $path:1: PREFIXO_LEGADO legacy C prefix on decision header; write D<n> - "
 }
@@ -198,37 +205,37 @@ test_relative_operand_is_printed_as_typed() {
 
 test_fenced_examples_are_skipped() {
   local path
-  path=$(write_record fenced.md <<'EOF'
+  write_record fenced.md <<'EOF'
 ```
 D1 - Example
   O1 - Broken: no marker
   O3 - Gap: skipped number
 ```
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T8: a bad card inside a fenced example is not a record"
 }
 
 test_fence_closes_only_on_matching_marker() {
   local path
-  path=$(write_record fence-tilde-inside.md <<'EOF'
+  write_record fence-tilde-inside.md <<'EOF'
 ```
 D1 - Example
 ~~~
   O1 - Broken: no marker
 ```
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T8b: a tilde line inside a backtick example does not end the example"
 
-  path=$(write_record fence-lang-inside.md <<'EOF'
+  write_record fence-lang-inside.md <<'EOF'
 ```
 D1 - Example
 ```bash
   O1 - Broken: no marker
 ```
 EOF
-  )
+  path=$REC
   expect_warnings "$path" "T8c: a language-tagged fence line inside a backtick example does not end the example"
 }
 
