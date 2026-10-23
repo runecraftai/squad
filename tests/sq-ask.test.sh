@@ -362,6 +362,23 @@ test_answer_rejects() {
   pass "T5: an explicit empty --answer exits 4"
 }
 
+# --- T4 argument order ---
+test_answer_argument_order() {
+  local out rc
+  out=$("$ASK" "$GATE" --answer 'd1 o2' 2>"$TMP_ROOT/order.err"); rc=$?
+  [[ $rc -eq 0 ]] || fail "T4: --answer after the positional card must work, rc=$rc: $(cat "$TMP_ROOT/order.err")"
+  [[ $(printf '%s' "$out" | jget 'd["selected_option_id"]') == '"accept"' ]] || fail "T4: --answer after the card was dropped: $out"
+  pass "T4: --answer after the positional card is applied, not dropped"
+
+  "$ASK" "$GATE" --answer 'd1 o9' >"$TMP_ROOT/order.out" 2>/dev/null; rc=$?
+  [[ $rc -eq 4 && ! -s "$TMP_ROOT/order.out" ]] || fail "T4: a rejected answer after the card must exit 4 with empty stdout, rc=$rc"
+  pass "T4: a rejected answer after the positional card exits 4"
+
+  "$ASK" "$GATE" extra --answer 'd1 o2' >/dev/null 2>&1; rc=$?
+  [[ $rc -eq 2 ]] || fail "T4: a second positional argument must exit 2, got $rc"
+  pass "T4: an extra positional argument exits 2 instead of being ignored"
+}
+
 # --- T6 picker fallback ---
 test_picker_fallback() {
   local out err rc
@@ -467,6 +484,7 @@ test_round_trip
 test_identity
 test_answer_accepts
 test_answer_rejects
+test_answer_argument_order
 test_picker_fallback
 test_json_output
 test_payload

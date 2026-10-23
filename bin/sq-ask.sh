@@ -563,19 +563,11 @@ def main():
         elif kind == "free":
             if not c.get("allow_free_text", True):
                 raise Rejected("decision does not take free text")
-            if not val.strip():
-                emit([result(c, default_index(c), None, "picker")], False, fmt)
-            else:
-                emit([result(c, 0, pick_free(val), "picker")], False, fmt)
+            emit([result(c, 0, pick_free(val), "picker")], False, fmt)
         elif kind == "line":
-            try:
-                pairs = parse_answer(val, cards)
-                d, o, t = pairs[0]
-                emit([result(c, o, t, "picker")], False, fmt)
-            except Rejected:
-                if not c.get("allow_free_text", True):
-                    raise
-                emit([result(c, 0, pick_free(val), "picker")], False, fmt)
+            pairs = parse_answer(val, cards)
+            d, o, t = pairs[0]
+            emit([result(c, o, t, "picker")], False, fmt)
         else:
             raise Invalid("unknown pick kind")
     else:
@@ -606,6 +598,7 @@ BACKEND=""
 NO_INTERACTIVE=false
 MODE="pick"
 ANSWER=""
+POSITIONAL=()
 
 # --- parse args ---
 while [[ $# -gt 0 ]]; do
@@ -623,10 +616,14 @@ while [[ $# -gt 0 ]]; do
       sed -n '2,/^set -eu/p' "$0" | head -n -1 | sed 's/^# //' | sed 's/^#//'
       exit 0
       ;;
-    --) shift; break ;;
-    *) break ;;
+    --) shift; POSITIONAL+=("$@"); break ;;
+    *) POSITIONAL+=("$1"); shift ;;
   esac
 done
+
+if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
+  die 2 "unexpected argument: ${POSITIONAL[1]} (the card is the only positional argument)"
+fi
 
 case "$FORMAT" in
   json|text|id) ;;
@@ -636,8 +633,8 @@ export SQ_ASK_FORMAT="$FORMAT"
 
 # --- read stdin or positional argument ---
 CARD_B64=""
-if [[ $# -gt 0 ]]; then
-  CARD_B64="$(printf '%s' "$1" | base64 | tr -d '\n')"
+if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
+  CARD_B64="$(printf '%s' "${POSITIONAL[0]}" | base64 | tr -d '\n')"
 elif [[ -t 0 ]]; then
   echo "error: no decision card JSON on stdin or as argument" >&2
   exit 2
@@ -750,7 +747,6 @@ pick_fzf() {
     --prompt="$QUESTION > " \
     --height=40% \
     --layout=reverse \
-    --border \
     --header="$TITLE${CONTEXT:+ - $CONTEXT}" \
     --pointer=">" \
     --marker="*" \
