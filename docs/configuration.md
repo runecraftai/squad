@@ -13,7 +13,7 @@ The tracked code root contains the shared instruction, skill, documentation, wor
 `data/` holds durable private unit records such as the project and XO registries, commander preferences, optional shared commander preferences, learnings, backlog, briefs, and recon reports.
 `state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, sentry and stand-to queue coordination, away-mode state, generated Relay artifacts, private XO config-reread generations with their retry and quarantine state, and parent-owned XO pending-reply records under `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `state/window-states` is the derived per-window tmux sidebar truth published by `bin/sq-window-state.sh`; that script's header owns the file contract, and `bin/sq-crew-state.sh` remains the owner of the current-state reconciliation it publishes.
-`data/durable/` holds durable-core custody records, and `bin/sq-durable-custody.sh`'s header owns its refusal log and the `state/.custody-signal-*` generation signals it writes.
+`data/durable/` holds the durable-core store and custody refusal log, and `bin/sq-durable-custody.sh`'s header owns that refusal log and the `state/.custody-signal-*` generation signals it writes.
 `config/` holds local gitignored operating choices, and `projects/` holds the local project clones that Squad reads but changes only through the narrow guarded and concrete commander-approved exceptions in `AGENTS.md`.
 
 `bin/sq-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
@@ -615,7 +615,7 @@ SQUAD_CONFIG_OVERRIDE=      # alternate config dir, mainly for tests
 SQUAD_PROC_ROOT_OVERRIDE=   # alternate /proc root for Linux process-identity reads in sq-stand-to-lib.sh and sq-teardown.sh, mainly for tests
 SQUAD_BACKEND=             # optional runtime backend override for new spawns; tmux/herdr/zellij/orca/cmux/tuios support ship/recon spawns, codex-app is not accepted
 SQUAD_TRACE_CONTEXT=       # optional trace-context override; see "Trace context propagation"
-SQ_DURABLE_STORE=          # durable-core store a custody check asks for a conditioned responsibility; unset uses <base>/data/durable/store (bin/sq-durable-custody.sh)
+SQ_DURABLE_STORE=          # durable-core store override for conditioned custody checks (bin/sq-durable-custody.sh header)
 HERDR_SESSION=default  # herdr-only: named session for normal backend ops; not enough for destructive cleanup (docs/herdr-backend.md)
 SQUAD_BACKEND_HERDR_COMPOSER_LINES=20  # herdr-only: tail lines scanned by composer-state guard/fallback paths; idle-baseline submit confirmation uses agent-state
 SQUAD_BACKEND_HERDR_IDLE_RE='^Type a message\.\.\.$'  # herdr-only: empty-composer placeholder regex after shared ghost extraction plus border and prompt stripping

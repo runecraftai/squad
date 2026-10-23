@@ -10,7 +10,7 @@ Neither slice migrates a mission, writes production state, or changes supervisio
 
 - `src/core/` is the neutral core: mission identity and idempotent admission, the approval record and decision receipts, the effect record, the executor contract, and the approval gate task.
   It is built only from Pi Durable documents and one task, and it never imports Squad surfaces.
-- `src/adapter/squad.ts` is the only module that names Squad concepts, such as the `sq` namespace and the `dm<generation>-<slug>` mission IDs.
+- `src/adapter/squad.ts` names the Squad concepts of the durable core, such as the `sq` namespace and the `dm<generation>-<slug>` mission IDs; `src/adapter/legacy-writers.ts` names the Squad responsibilities and writers, and is the only other module that does.
 - `src/service/` is the single-writer service: exclusive store ownership, startup with an explicit `resume()`, the readiness states, and the versioned local socket protocol.
 - `src/lab/` holds the controlled ledger executor with no network effect, and the deterministic fault injection that only a store created with `init --lab` accepts.
 - `src/core/custody.ts` decides custody from a mission ID, the immutable table of its generation, and the writer's loaded generation; `src/service/custody-endpoint.ts` adds only what the engine alone can confirm.
