@@ -194,17 +194,42 @@ describe("custody ahead of every gate and mutation of the legacy writers", () =>
 		expect(stateDigest(base)).toBe(before);
 	});
 
-	it("grants the PR-watch retirement teardown performs under its cleanup consultation, and no other responsibility", async () => {
+	it("refuses to remove a non-terminal durable mission's PR-watch records under the sentry-style and migrate callers, leaving every record", async () => {
+		const { base, env } = await pendingMission();
+		const state = join(base, "state");
+		const template = join(REPO_ROOT, "bin", "sq-pr-poll.sh");
+		for (const name of [`${MISSION}.pr-poll-retirement`, `${MISSION}.pr-poll`, `${MISSION}.pr-poll-registration`, `${MISSION}.check.sh`]) {
+			writeFileSync(join(state, name), "retained\n");
+		}
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		const lib = join(REPO_ROOT, "bin", "sq-pr-lib.sh");
+		const sentry = await runBash(["-c", '. "$1"; fm_pr_poll_retirement_recover_one "$2" "$3" "$4"', "sentry", lib, state, MISSION, template], env);
+		expect(sentry.code).toBe(3);
+		expect(sentry.stderr).toMatch(new RegExp(`^refused: cleanup of mission ${MISSION} needs the durable core to confirm`, "m"));
+		const migrate = await runBash(
+			["-c", '. "$1"; fm_pr_poll_retirement_recover_all "$2" "$3"; printf "rc=%s\\n" "$?"', "migrate", lib, state, template],
+			env,
+		);
+		expect(migrate.stdout.trim()).toBe("rc=3");
+		expect(stateDigest(base)).toBe(before);
+		const records = refusalLog(base).slice(logged);
+		expect(records).toHaveLength(2);
+		expect(records[0]).toContain(`\t${MISSION}\tcleanup\tsentry\t`);
+		expect(records[1]).toContain(`\t${MISSION}\tcleanup\tmigrate\t`);
+	});
+
+	it("grants the PR-watch retirement cleanup once the durable mission is terminal and reconciled, and only then validates the records", async () => {
 		const { store, base, env } = await pendingMission();
 		await complete(store);
-		const lib = join(REPO_ROOT, "bin", "sq-pr-lib.sh");
+		const state = join(base, "state");
 		const template = join(REPO_ROOT, "bin", "sq-pr-poll.sh");
-		const retire = (responsibility: string) =>
-			runBash(["-c", '. "$1"; fm_pr_poll_retirement_recover_one "$2" "$3" "$4" "$5"', "pr", lib, join(base, "state"), MISSION, template, responsibility], env);
-		expect(await retire("cleanup")).toMatchObject({ code: 0, stderr: "" });
-		const refused = await retire("");
-		expect(refused.code).toBe(3);
-		expect(refused.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
+		writeFileSync(join(state, `${MISSION}.pr-poll-retirement`), "not a receipt\n");
+		const lib = join(REPO_ROOT, "bin", "sq-pr-lib.sh");
+		const retire = await runBash(["-c", '. "$1"; fm_pr_poll_retirement_recover_one "$2" "$3" "$4"', "sentry", lib, state, MISSION, template], env);
+		expect(retire.code).toBe(1);
+		expect(retire.stderr).toBe("");
+		expect(existsSync(join(state, `${MISSION}.pr-poll-retirement`))).toBe(true);
 	});
 
 	it("leaves a durable mission's quarantined artifact untouched by the PR-check migration", async () => {

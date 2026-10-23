@@ -1,12 +1,4 @@
-import {
-	type CustodyDecision,
-	type CustodyQuery,
-	type CustodyServiceView,
-	decideCustody,
-	type MissionDocument,
-	missionCustodyView,
-	needsService,
-} from "../core/index.js";
+import { type CustodyDecision, type CustodyQuery, decideCustody, type MissionDocument, missionCustodyView, needsService } from "../core/index.js";
 import { squadCustodyScheme } from "../adapter/legacy-writers.js";
 import type { ServiceState } from "./readiness.js";
 
@@ -14,7 +6,7 @@ import type { ServiceState } from "./readiness.js";
  * Service side of custody: the check legacy writers reach over the store's socket, so none of them ever opens the
  * storage. The static part of the decision (ID, generation table, loaded generation) is the same one `sq-durable custody
  * check` computes without a service; the service adds only what the engine alone can confirm, the state of the mission
- * a conditioned responsibility depends on, and only while it is ready or degraded.
+ * a conditioned responsibility depends on, and only while it is ready.
  */
 
 export type CustodyArgs = { readonly query: CustodyQuery } | { readonly error: string };
@@ -40,40 +32,21 @@ export function parseCustodyArgs(args: Record<string, unknown>): CustodyArgs {
 	};
 }
 
-/** What the engine's readiness report names as affected: missions in reconcile, approvals with an overdue continuation, and task records blocked or parked. */
-export type CustodyAffected = {
-	readonly missions: readonly string[];
-	readonly approvals: readonly string[];
-	readonly tasks: readonly number[];
-};
-
 export type CustodyEndpointDeps = {
-	/** Readiness of this service right now, with what it names as affected. */
-	readonly state: () => Promise<{ state: ServiceState; reasons: readonly string[]; affected: CustodyAffected }>;
+	/** Readiness of this service right now and why it is not ready. */
+	readonly state: () => Promise<{ state: ServiceState; reasons: readonly string[] }>;
 	/** Current mission document, read from the engine; undefined when none was admitted under that ID. */
 	readonly mission: (missionId: string) => Promise<MissionDocument | undefined>;
 };
-
-function missionAffected(mission: MissionDocument, affected: CustodyAffected): boolean {
-	return (
-		affected.missions.includes(mission.missionId) ||
-		affected.approvals.includes(mission.approvalId) ||
-		affected.tasks.includes(mission.gateTaskId)
-	);
-}
 
 export async function custodyDecision(query: CustodyQuery, deps: CustodyEndpointDeps): Promise<CustodyDecision> {
 	const scheme = squadCustodyScheme();
 	if (!needsService(query, scheme)) return decideCustody(query, scheme, { state: "stopped" });
 	const readiness = await deps.state();
-	let view: CustodyServiceView;
-	if (readiness.state === "ready" || readiness.state === "degraded") {
-		const document = await deps.mission(query.id);
-		const mission = missionCustodyView(document);
-		const affected = document !== undefined && missionAffected(document, readiness.affected);
-		view = { state: readiness.state, reason: readiness.reasons.join("; ") || undefined, mission: { ...mission, affected } };
-	} else {
-		view = { state: readiness.state, reason: readiness.reasons.join("; ") || readiness.state };
+	const reason = readiness.reasons.join("; ") || undefined;
+	if (readiness.state !== "ready") {
+		return decideCustody(query, scheme, { state: readiness.state, reason: reason ?? readiness.state });
 	}
-	return decideCustody(query, scheme, view);
+	const document = await deps.mission(query.id);
+	return decideCustody(query, scheme, { state: "ready", reason, mission: missionCustodyView(document) });
 }

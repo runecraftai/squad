@@ -5,8 +5,11 @@
 #   durable_custody_check <id> <responsibility>...
 #       0 when every named responsibility of <id> may be exercised by this legacy
 #       writer; 3 when custody refuses, with the refusal message on stderr and a
-#       line appended to data/durable/custody-refusals.log. Call it before any
-#       mutation, inside the lock the writer already uses, and stop on refusal.
+#       line appended to data/durable/custody-refusals.log. An ID that matches the
+#       reserved prefix only case-insensitively (DM2-x for dm2-x) is refused the
+#       same way, because it would collide with the durable record on a
+#       case-insensitive filesystem. Call it before any mutation, inside the lock
+#       the writer already uses, and stop on refusal.
 #   durable_custody_reserved <id>
 #       0 when <id> is a durable mission ID (^dm[0-9]+-), 1 for a legacy ID.
 #   durable_custody_publish_signal <name>
@@ -87,8 +90,18 @@ _durable_custody_refuse() {  # <id> <responsibilities> <message>
 }
 
 durable_custody_check() {  # <id> <responsibility>...
-  local id=${1-} responsibilities installed cli out rc
-  durable_custody_reserved "$id" || return 0
+  local id=${1-} responsibilities installed cli out rc head rest
+  if ! durable_custody_reserved "$id"; then
+    if [[ $id =~ ^[Dd][Mm][0-9]+- ]]; then
+      head=${id%%-*}
+      rest=${id#*-}
+      shift
+      responsibilities=$(IFS=,; printf '%s' "$*")
+      _durable_custody_refuse "$id" "${responsibilities:--}" "refused: ${1:-no responsibility} of mission $id collides with the reserved durable ID dm${head:2}-$rest (generation ${head:2}); letter case is significant to the durable core, so mission $id is refused"
+      return 3
+    fi
+    return 0
+  fi
   shift
   if [ "$#" -eq 0 ]; then
     _durable_custody_refuse "$id" - "refused: no responsibility named for mission $id"

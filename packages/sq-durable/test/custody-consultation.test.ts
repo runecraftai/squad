@@ -310,7 +310,7 @@ describe("every inventoried consultation point refuses a durable mission before 
 		const before = stateDigest(base);
 		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
 		expect(result.code).toBe(3);
-		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(result.stderr).toMatch(/^refused: cleanup of mission dm1-lab needs the durable core to confirm the mission is terminal/m);
 		expect(existsSync(join(state, "dm1-lab.pr-poll-retirement"))).toBe(true);
 		expect(stateDigest(base)).toBe(before);
 	});
@@ -372,8 +372,8 @@ describe("every inventoried consultation point refuses a durable mission before 
 			scriptEnv(base),
 		);
 		const outcomes = result.stdout.trim().split("\n");
-		expect(outcomes).toEqual(["prepare=3", "publish=3", "recover=3"]);
-		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
+		expect(outcomes).toEqual(["prepare=3", "publish=3", "recover=0"]);
+		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(2);
 		expect(stateDigest(base)).toBe(before);
 		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(1);
 	});
@@ -502,5 +502,24 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(emitted.code).toBe(3);
 		expect(emitted.stderr).toMatch(owned("metadata", "dm1-lab", 1));
 		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("prints the crew state but exits 3 when custody refused the drill PR sidecar of a durable mission, and 0 for a legacy task", async () => {
+		const base = sandboxBase();
+		const worktree = join(base, "wt");
+		mkdirSync(worktree);
+		seedTask(base, "dm1-lab", { worktree });
+		seedTask(base, "task-1", { worktree });
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		const durable = await runScript("sq-crew-state.sh", ["dm1-lab"], scriptEnv(base));
+		expect(durable.stdout).toMatch(/^state: /);
+		expect({ code: durable.code }).toEqual({ code: 3 });
+		expect(durable.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).slice(logged)).toHaveLength(1);
+		const legacy = await runScript("sq-crew-state.sh", ["task-1"], scriptEnv(base));
+		expect(legacy.stdout).toMatch(/^state: /);
+		expect({ code: legacy.code }).toEqual({ code: 0 });
 	});
 });

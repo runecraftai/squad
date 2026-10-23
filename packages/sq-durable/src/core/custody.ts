@@ -40,6 +40,7 @@ export type CustodyRefusalCode =
 	| "unknown_responsibility"
 	| "stale_writer"
 	| "library_regressed"
+	| "case_collision"
 	| "condition_unmet";
 
 export type CustodyDecision =
@@ -70,7 +71,10 @@ export type CustodyQuery = {
 	readonly loadedGeneration?: number;
 };
 
-/** What the engine can confirm about one mission; `stopped` and every non-mutating state confirm nothing. */
+/**
+ * What the engine can confirm about one mission. Only a `ready` service confirms a condition: `degraded`, `starting`,
+ * `stopped` and `failed` confirm nothing, because a degraded service's view of the store may be incomplete.
+ */
 export type CustodyServiceView = {
 	readonly state: "ready" | "degraded" | "starting" | "stopped" | "failed";
 	readonly mission?: CustodyMissionView;
@@ -82,17 +86,16 @@ export type CustodyMissionView = {
 	readonly status: MissionStatus;
 	/** No effect was attempted, or the attempted effect has a receipt. */
 	readonly effectReconciled: boolean;
-	/**
-	 * The mission itself is blocked, parked, in reconcile or waiting on an overdue continuation. A degraded service still
-	 * answers for the rest of the store, but confirms nothing about an affected mission.
-	 */
-	readonly affected?: boolean;
 };
 
 const TERMINAL: readonly MissionStatus[] = ["completed", "rejected", "cancelled"];
 
+function prefixPattern(prefix: string, flags: string): RegExp {
+	return new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([0-9]+)-`, flags);
+}
+
 export function reservedPattern(prefix: string): RegExp {
-	return new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([0-9]+)-`);
+	return prefixPattern(prefix, "");
 }
 
 /** Generation of a reserved ID, or undefined for a legacy ID. */
@@ -101,6 +104,21 @@ export function reservedGeneration(id: string, prefix: string): number | undefin
 	if (match === null) return undefined;
 	const generation = Number(match[1]);
 	return Number.isSafeInteger(generation) ? generation : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * The reserved ID a legacy-looking ID collides with when it matches the reserved prefix only case-insensitively (`DM2-x`
+ * for `dm2-x`). Such an ID is refused: on a case-insensitive filesystem it would land on the engine's own record.
+ */
+export function collidingReservedId(id: string, prefix: string): { readonly generation: number; readonly reserved: string } | undefined {
+	if (reservedGeneration(id, prefix) !== undefined) return undefined;
+	const match = prefixPattern(prefix, "i").exec(id);
+	if (match === null) return undefined;
+	const generation = Number(match[1]);
+	return {
+		generation: Number.isSafeInteger(generation) ? generation : Number.POSITIVE_INFINITY,
+		reserved: `${prefix}${match[1]}-${id.slice(match[0].length)}`,
+	};
 }
 
 /** Newest published generation: the custody generation a freshly started writer loads. */
@@ -154,15 +172,25 @@ function conditionMet(condition: CustodyCondition, mission: CustodyMissionView):
 /**
  * Decide whether a legacy writer may act on `query.responsibilities` of `query.id`. A legacy ID is always allowed and
  * costs nothing. For a durable ID the decision comes only from the ID, its generation's table and the writer's loaded
- * generation; the service view is consulted only for a condition, and a service that is stopped, starting or failed
- * never confirms one. Nothing here ever grants legacy authority from a missing file or projection.
+ * generation; the service view is consulted only for a condition, and only a ready service confirms one. Nothing here
+ * ever grants legacy authority from a missing file or projection.
  */
 export function decideCustody(query: CustodyQuery, scheme: CustodyScheme, service: CustodyServiceView): CustodyDecision {
+	const first = query.responsibilities[0] ?? "";
 	const generation = reservedGeneration(query.id, scheme.prefix);
 	if (generation === undefined) {
-		return { allowed: true, id: query.id, reserved: false, generation: null, responsibilities: [...query.responsibilities] };
+		const collision = collidingReservedId(query.id, scheme.prefix);
+		if (collision === undefined) {
+			return { allowed: true, id: query.id, reserved: false, generation: null, responsibilities: [...query.responsibilities] };
+		}
+		return refusal(
+			query.id,
+			collision.generation,
+			first,
+			"case_collision",
+			`refused: ${first} of mission ${query.id} collides with the reserved durable ID ${collision.reserved} (generation ${collision.generation}); letter case is significant to the durable core, so mission ${query.id} is refused`,
+		);
 	}
-	const first = query.responsibilities[0] ?? "";
 	if (query.responsibilities.length === 0) {
 		return refusal(query.id, generation, first, "unknown_responsibility", `refused: no responsibility named for mission ${query.id}`);
 	}
@@ -211,13 +239,10 @@ export function decideCustody(query: CustodyQuery, scheme: CustodyScheme, servic
 			return refusal(query.id, generation, responsibility, "engine_owned", engineOwnedMessage(responsibility, query.id, generation));
 		}
 		if (owner.requires !== undefined) {
-			const affected = service.mission?.affected === true;
-			const confirmable = service.state === "ready" || (service.state === "degraded" && !affected);
-			if (!confirmable || service.mission === undefined || !conditionMet(owner.requires, service.mission)) {
+			if (service.state !== "ready" || service.mission === undefined || !conditionMet(owner.requires, service.mission)) {
 				const detail = service.reason ? ` (${service.reason})` : "";
-				const why = affected
-					? `the durable service is degraded and mission ${query.id} is affected${detail}`
-					: !confirmable
+				const why =
+					service.state !== "ready"
 						? `the durable service is ${service.state}${detail}`
 						: `the mission is ${service.mission?.status ?? "unknown"}${service.mission !== undefined && !service.mission.effectReconciled ? " with an unreconciled effect" : ""}`;
 				return refusal(

@@ -7,7 +7,7 @@ import {
 	squadCustodyScheme,
 } from "../src/adapter/legacy-writers.js";
 import { decideCustody, engineOwnedMessage, type MissionDocument, tableDigest } from "../src/core/index.js";
-import { type CustodyAffected, custodyDecision } from "../src/service/custody-endpoint.js";
+import { custodyDecision } from "../src/service/custody-endpoint.js";
 import { custodyCheck, refusalLog, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
 import { cleanup, cli, initStore, type Service, startReady } from "./helpers.js";
 
@@ -16,9 +16,22 @@ const stopped = { state: "stopped" } as const;
 
 describe("custody contract (neutral core over the Squad tables)", () => {
 	it("leaves every legacy ID alone, including near misses of the reserved prefix", () => {
-		for (const id of ["task-1", "dm-x", "dmz-x", "xdm2-x", "dm2", "DM2-x"]) {
+		for (const id of ["task-1", "dm-x", "dmz-x", "xdm2-x", "dm2"]) {
 			expect(decideCustody({ id, responsibilities: ["landing"] }, scheme, stopped)).toMatchObject({ allowed: true, reserved: false });
 		}
+	});
+
+	it("refuses every responsibility of an ID that matches the reserved prefix only case-insensitively, naming the reserved ID", () => {
+		for (const id of ["DM2-x", "Dm2-x", "dM2-pilot"]) {
+			for (const responsibility of ["landing", "claim", "cleanup"]) {
+				const decision = decideCustody({ id, responsibilities: [responsibility] }, scheme, stopped);
+				expect(decision).toMatchObject({ allowed: false, code: "case_collision", reserved: true, responsibility });
+			}
+		}
+		const collision = decideCustody({ id: "DM2-Pilot", responsibilities: ["claim"] }, scheme, { state: "ready", mission: { status: "reconcile", effectReconciled: true } });
+		expect(collision.allowed ? "" : collision.message).toBe(
+			"refused: claim of mission DM2-Pilot collides with the reserved durable ID dm2-Pilot (generation 2); letter case is significant to the durable core, so mission DM2-Pilot is refused",
+		);
 	});
 
 	it("refuses an engine-owned responsibility with the explicit message, and allows a legacy one", () => {
@@ -56,30 +69,39 @@ describe("custody contract (neutral core over the Squad tables)", () => {
 		const cleanupQuery = { id: "dm2-pilot", responsibilities: ["cleanup"] };
 		expect(decideCustody(cleanupQuery, scheme, { state: "ready", mission: { status: "awaiting_approval", effectReconciled: true } })).toMatchObject({ allowed: false });
 		expect(decideCustody(cleanupQuery, scheme, { state: "ready", mission: { status: "reconcile", effectReconciled: false } })).toMatchObject({ allowed: false });
-		expect(decideCustody(cleanupQuery, scheme, { state: "degraded", mission: { status: "completed", effectReconciled: false } })).toMatchObject({ allowed: false });
-		expect(decideCustody(cleanupQuery, scheme, { state: "degraded", mission: { status: "completed", effectReconciled: true } })).toMatchObject({ allowed: true });
+		expect(decideCustody(cleanupQuery, scheme, { state: "ready", mission: { status: "completed", effectReconciled: false } })).toMatchObject({ allowed: false });
+		expect(decideCustody(cleanupQuery, scheme, { state: "ready", mission: { status: "completed", effectReconciled: true } })).toMatchObject({ allowed: true });
 	});
 
-	it("confirms a condition on a degraded service only for a mission the degradation does not affect", () => {
+	it("confirms nothing on a degraded service, even for a mission that is finished and reconciled", () => {
 		const cleanupQuery = { id: "dm2-pilot", responsibilities: ["cleanup"] };
-		const degradedCompleted = { state: "degraded", mission: { status: "completed", effectReconciled: true, affected: true } } as const;
-		const refused = decideCustody(cleanupQuery, scheme, degradedCompleted);
-		expect(refused).toMatchObject({ allowed: false, code: "condition_unmet" });
-		expect(refused.allowed ? "" : refused.message).toContain("the durable service is degraded and mission dm2-pilot is affected");
-		expect(decideCustody(cleanupQuery, scheme, { state: "degraded", mission: { status: "completed", effectReconciled: true, affected: false } })).toMatchObject({ allowed: true });
+		const admission = { id: "dm2-pilot", responsibilities: ["admission"] };
+		const finished = { status: "completed", effectReconciled: true } as const;
+		for (const state of ["degraded", "starting", "stopped", "failed"] as const) {
+			const refused = decideCustody(cleanupQuery, scheme, { state, mission: finished });
+			expect(refused).toMatchObject({ allowed: false, code: "condition_unmet" });
+			expect(refused.allowed ? "" : refused.message).toContain(`the durable service is ${state}`);
+			expect(decideCustody(admission, scheme, { state, mission: { status: "approved", effectReconciled: true } })).toMatchObject({
+				allowed: false,
+				code: "condition_unmet",
+			});
+		}
 	});
 
-	it("derives a degraded service's affected missions from the blocked tasks, reconcile and overdue approvals it reports", async () => {
-		const mission = { missionId: "dm2-pilot", status: "awaiting_approval", approvalId: "dm2-pilot/lab/r1", gateTaskId: 7, effect: null } as unknown as MissionDocument;
-		const degraded = (affected: CustodyAffected) => ({
-			state: async () => ({ state: "degraded" as const, reasons: ["task blocked"], affected }),
-			mission: async () => mission,
-		});
+	it("reads no mission from a degraded service, so a blocked mission is never confirmed by an unread document", async () => {
 		const admission = { id: "dm2-pilot", responsibilities: ["admission"] };
-		expect(await custodyDecision(admission, degraded({ missions: [], approvals: [], tasks: [7] }))).toMatchObject({ allowed: false, code: "condition_unmet" });
-		expect(await custodyDecision(admission, degraded({ missions: ["dm2-pilot"], approvals: [], tasks: [] }))).toMatchObject({ allowed: false });
-		expect(await custodyDecision(admission, degraded({ missions: [], approvals: ["dm2-pilot/lab/r1"], tasks: [] }))).toMatchObject({ allowed: false });
-		expect(await custodyDecision(admission, degraded({ missions: [], approvals: [], tasks: [8] }))).toMatchObject({ allowed: true });
+		const reads: string[] = [];
+		const degraded = {
+			state: async () => ({ state: "degraded" as const, reasons: ["task blocked"] }),
+			mission: async (missionId: string) => {
+				reads.push(missionId);
+				return { missionId, status: "awaiting_approval", effect: null } as unknown as MissionDocument;
+			},
+		};
+		const decision = await custodyDecision(admission, degraded);
+		expect(decision).toMatchObject({ allowed: false, code: "condition_unmet" });
+		expect(decision.allowed ? "" : decision.message).toContain("the durable service is degraded (task blocked)");
+		expect(reads).toEqual([]);
 	});
 
 	it("confirms admission only for a live mission, never for one that already finished", () => {
@@ -235,6 +257,20 @@ describe("refusal that comes from the ID, not from files", () => {
 		}
 		expect(stateDigest(base)).toBe(before);
 		expect((await runScript("sq-exec-state.sh", ["claim", "legacy-task"], env)).stdout.trim()).toBe("claimed");
+	});
+
+	it("refuses a case-variant of a durable ID before any record is touched, and still lets a legacy near miss through", async () => {
+		const base = sandboxBase();
+		const env = scriptEnv(base);
+		seedTask(base, "dm2-pilot");
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		const result = await runScript("sq-exec-state.sh", ["claim", "DM2-pilot"], env);
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toContain("refused: claim of mission DM2-pilot collides with the reserved durable ID dm2-pilot (generation 2)");
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).slice(logged)).toHaveLength(1);
+		expect((await runScript("sq-exec-state.sh", ["claim", "dm-pilot"], env)).stdout.trim()).toBe("claimed");
 	});
 
 	it("answers through the service socket while it runs, and alone from the ID when it does not", async () => {

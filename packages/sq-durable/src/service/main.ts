@@ -343,8 +343,7 @@ export async function runService(options: ServiceOptions): Promise<void> {
 			const decision = await custodyDecision(parsed.query, {
 				state: async () => {
 					const report = await probe();
-					const affected = "affected" in report ? report.affected : { missions: [], approvals: [], tasks: [] };
-					return { state: report.state, reasons: report.reasons, affected };
+					return { state: report.state, reasons: report.reasons };
 				},
 				mission: async (missionId) => (harness === undefined ? undefined : harness.snapshot(documents.Mission, missionId, context)),
 			});

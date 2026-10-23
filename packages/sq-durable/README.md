@@ -28,6 +28,7 @@ Neither slice migrates a mission, writes production state, or changes supervisio
 - An effect is applied under one idempotent key, after asking the executor whether that key was already applied.
 - The core's one-way dependency rule is enforced by `scripts/check-core-deps.mjs` and its negative fixture.
 - Authority is fixed at birth: an ID matching `^dm[0-9]+-` carries its custody generation, and only that generation's table decides each responsibility.
+- An ID that matches the prefix only case-insensitively (`DM2-x`) is refused for every responsibility, because it would collide with the durable record on a case-insensitive filesystem.
 - A published table is never edited; a new slice publishes a new generation and bumps the shell library's generation with it.
 - A stopped service, a missing projection, or a missing `.meta` never grants legacy authority; a legacy ID is never affected and costs no subprocess.
 - Every refusal exits 3 with an explicit message and a line in `data/durable/custody-refusals.log`, before any write.

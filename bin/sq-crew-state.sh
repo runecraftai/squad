@@ -90,12 +90,13 @@ SQUAD_CREW_STATE_RUNS_LIMIT=${SQUAD_CREW_STATE_RUNS_LIMIT:-200}
 case "$SQUAD_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) SQUAD_CREW_STATE_RUNS_LIMIT=200 ;; esac
 SEP=' · '
 
-# Emit the one canonical line and exit 0. Detail is optional.
+# Emit the one canonical line, then exit 3 when custody refused a legacy write during this run and 0 otherwise. Detail is optional.
 emit() {  # <state> <source> [detail]
   local line="state: $1${SEP}source: $2" detail="${3:-}"
   [ -n "${EXEC_STATE:-}" ] && detail="${detail:+$detail$SEP}exec_state=$EXEC_STATE"
   [ -n "$detail" ] && line="$line${SEP}$detail"
   printf '%s\n' "$line"
+  if durable_custody_refused; then exit 3; fi
   exit 0
 }
 

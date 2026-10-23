@@ -89,7 +89,8 @@ _SQUAD_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/de
 # shellcheck source=bin/sq-durable-custody.sh
 . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-durable-custody.sh"
 
-# An XO's parent status belongs to an XO task, and a durable mission is never an XO.
+# Parent status appends are xo-routing, not metadata: a pending reply exists only for work routed to an XO, and a durable
+# mission is never routed to an XO, so a durable parent is refused here even though generation 2 leaves its status legacy.
 fm_pending_reply_parent_custody() {  # <parent-status-file>
   local id=${1##*/}
   durable_custody_check "${id%.status}" xo-routing
