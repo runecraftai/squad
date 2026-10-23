@@ -798,7 +798,7 @@ pick_bash() {
 
   if [[ -z "$line" ]]; then
     echo "DEFAULT"
-  elif [[ "$line" =~ ^[oO]?0$ ]]; then
+  elif [[ "$line" =~ ^[oO]?0$ && "$ALLOW_FREE_TEXT" == "1" ]]; then
     echo "FREE"
   elif [[ "$line" =~ ^[oO]?([1-9][0-9]*)$ ]]; then
     echo "INDEX:${BASH_REMATCH[1]}"
