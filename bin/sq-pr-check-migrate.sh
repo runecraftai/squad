@@ -494,6 +494,7 @@ quarantine_tree_repair_and_validate() {
     artifact_id=${artifact_id%%.*}
     if ! durable_custody_check "$artifact_id" metadata; then
       custody_refused=1
+      migration_failed=1
       continue
     fi
     chmod 0600 "$artifact" || return 1
