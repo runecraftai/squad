@@ -134,11 +134,11 @@ test_unindented_option_in_block() {
   path=$(write_record unindented-option.md <<'EOF'
 D1 - Merge strategy
 O1 - Squash: one (recommended)
+  O2 - Rebase: keep both commits
 EOF
   )
-  expect_warnings "$path" "T5d: an option not indented two spaces is an orphan, leaving the block without a recommendation" \
-    "warning: $path:2: OPCAO_ORFA O1 must be indented two spaces inside its decision block" \
-    "warning: $path:1: RECOMENDACAO_AUSENTE no option is indented two spaces inside the block"
+  expect_warnings "$path" "T5d: an unindented option is reported once, and its marker and number still count" \
+    "warning: $path:2: OPCAO_ORFA O1 must be indented two spaces inside its decision block"
 }
 
 test_crlf_records_are_silent() {
@@ -187,6 +187,13 @@ test_relative_operand_is_printed_as_typed() {
   [ "$L_ERR" = "warning: plain.md:1: RECOMENDACAO_AUSENTE no option ends with (recommended)" ] \
     || fail "T10b: a relative file name is printed as typed, got: $L_ERR"
   pass "T10b: a relative file name is printed as typed, with no ./ prefix"
+
+  printf 'D1 - Merge strategy\n  O1 - Squash: one commit\n' > "$TMP_ROOT/a\\nb.md"
+  L_ERR=$(cd "$TMP_ROOT" && "$LINT" 'a\nb.md' 2>&1 >/dev/null < /dev/null); L_RC=$?
+  expect_code 0 "$L_RC" "T10c: a relative file name with a backslash exits 0"
+  [ "$L_ERR" = 'warning: a\nb.md:1: RECOMENDACAO_AUSENTE no option ends with (recommended)' ] \
+    || fail "T10c: a backslash in a file name is printed as typed, got: $L_ERR"
+  pass "T10c: a backslash in a file name is printed as typed"
 }
 
 test_fenced_examples_are_skipped() {
