@@ -719,7 +719,7 @@ fallback_json() { # [lane]
 # Lane array for JSON: one object per decision lane with its chosen profiles.
 lanes_json() {
   local row crow kind lane total success failure off hits observed chosen out="[" first=1
-  local ckind clane cprofile ccount cfirst
+  local ckind clane cprofile ccount cfirst lane_json
   for row in "${LANE_ROWS[@]}"; do
     IFS=$'\t' read -r kind lane total success failure off hits observed <<< "$row"
     [ "$kind" = "L" ] || continue
