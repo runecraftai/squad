@@ -869,7 +869,7 @@ recover_pending_outcomes() {
     diagnostic_obligation_message "$basename" || return 1
     prefix=$MIGRATION_DIAGNOSTIC_PREFIX
     kind=$MIGRATION_DIAGNOSTIC_KIND
-    if ! durable_custody_check "$prefix" metadata; then
+    if ! durable_custody_check "$prefix" metadata || ! durable_custody_check "$prefix" cleanup; then
       custody_refused=1
       migration_failed=1
       continue
@@ -1055,7 +1055,7 @@ if migration_needed; then
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" && continue
 
     if fm_pr_task_id_valid "$id"; then
-      if ! durable_custody_check "$id" metadata; then
+      if ! durable_custody_check "$id" metadata || ! durable_custody_check "$id" cleanup; then
         custody_refused=1
         migration_failed=1
         continue

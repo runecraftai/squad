@@ -315,6 +315,23 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(stateDigest(base)).toBe(before);
 	});
 
+	it("refuses the PR-check migration of a non-terminal durable mission's PR-watch records before it quarantines them", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm2-pilot");
+		const state = join(base, "state");
+		writeFileSync(join(state, "dm2-pilot.check.sh"), "#!/bin/sh\necho stale\n");
+		writeFileSync(join(state, "dm2-pilot.pr-poll"), "poll\n");
+		writeFileSync(join(state, "dm2-pilot.pr-poll-registration"), "registration\n");
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(/^refused: cleanup of mission dm2-pilot needs the durable core to confirm the mission is terminal/m);
+		expect(stateDigest(base)).toBe(before);
+		expect(existsSync(join(state, "dm2-pilot.pr-poll"))).toBe(true);
+		expect(refusalLog(base).slice(logged).filter((line) => line.includes("\tdm2-pilot\tcleanup\t"))).toHaveLength(1);
+	});
+
 	it("refuses to publish the migration marker when a diagnostic obligation of a durable mission is custody-refused", async () => {
 		const base = sandboxBase();
 		const state = join(base, "state");
