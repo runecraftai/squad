@@ -15,8 +15,9 @@
 # An omitted quota summary records {"status":"unknown"}; raw quota/auth payloads
 # are not accepted. No brief, environment credentials, or status text is read.
 # Every record includes timestamp, id and event. Appends survive task teardown.
-# Writers serialize on the file without waiting; unsafe paths, contention,
-# missing dependencies and write failures emit one generic warning, then exit 0.
+# Writers serialize on the file with a bounded lock wait of at most 500 ms;
+# unsafe paths, lock contention beyond that budget, missing dependencies and
+# write failures emit one generic warning, then exit 0.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
@@ -32,6 +33,7 @@ import os
 import re
 import stat
 import sys
+import time
 
 parser = argparse.ArgumentParser(description="Append one private dispatch event (best effort).")
 parser.add_argument("id")
@@ -95,7 +97,15 @@ fd = os.open("dispatch.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND |
 info = os.fstat(fd)
 if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.geteuid():
     raise ValueError("unsafe log")
-fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+deadline = time.monotonic() + 0.5
+while True:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+    except BlockingIOError:
+        if time.monotonic() >= deadline:
+            raise
+        time.sleep(0.01)
 os.fchmod(fd, 0o600)
 offset = os.lseek(fd, 0, os.SEEK_END)
 if os.write(fd, line) != len(line):

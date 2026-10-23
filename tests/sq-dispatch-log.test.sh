@@ -181,3 +181,47 @@ for stage in spawn merge status teardown; do
     "missing $stage warning: $(< "$dir/$stage.err")"
 done
 pass 'logging failure never blocks spawn, landing, terminal notification or teardown'
+
+# A lock held by a concurrent writer is waited out within the bounded budget.
+# A brief hold must still append; a hold past the budget must return promptly
+# with one warning and no append.
+lock_case() {
+  local name=$1 hold=$2 reason=$3 expect=$4
+  local dir="$TMP_ROOT/lock-$name" holder before after rc=0 start elapsed
+  mkdir -p "$dir/data/task"
+  run_case "$dir" sq-dispatch-log.sh task decision --harness claude --model haiku \
+    --effort low --reason seed > /dev/null 2>&1
+  python3 - "$dir/data/task/dispatch.jsonl" "$dir/lock.ready" "$hold" <<'PY' &
+import fcntl, sys, time
+with open(sys.argv[1], 'a') as log:
+    fcntl.flock(log, fcntl.LOCK_EX)
+    open(sys.argv[2], 'w').close()
+    time.sleep(float(sys.argv[3]))
+PY
+  holder=$!
+  for _ in $(seq 500); do [ -e "$dir/lock.ready" ] && break; sleep 0.01; done
+  before=$(wc -l < "$dir/data/task/dispatch.jsonl")
+  start=$(python3 -c 'import time; print(int(time.monotonic() * 1000))')
+  run_case "$dir" sq-dispatch-log.sh task decision --harness claude --model haiku \
+    --effort low --reason "$reason" > "$dir/lock.out" 2> "$dir/lock.err" || rc=$?
+  elapsed=$(( $(python3 -c 'import time; print(int(time.monotonic() * 1000))') - start ))
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  after=$(wc -l < "$dir/data/task/dispatch.jsonl")
+  expect_code 0 "$rc" "$name: logging must not fail"
+  [ ! -s "$dir/lock.out" ] || fail "$name: logging produced stdout"
+  if [ "$expect" = appended ]; then
+    [ "$after" -eq $((before + 1)) ] || fail "$name: event dropped inside lock budget"
+    [ ! -s "$dir/lock.err" ] || fail "$name: unexpected warning inside lock budget"
+  else
+    [ "$after" -eq "$before" ] || fail "$name: event appended past lock budget"
+    [ "$(wc -l < "$dir/lock.err")" -eq 1 ] || fail "$name: expected exactly one warning"
+    assert_grep 'sq-dispatch-log: could not append dispatch event' "$dir/lock.err" \
+      "$name: missing lock warning"
+    [ "$elapsed" -lt 2000 ] || fail "$name: lock wait exceeded budget (${elapsed}ms)"
+  fi
+}
+
+lock_case brief-hold 0.2 'Brief lock' appended
+lock_case over-budget 3 'Over budget lock' dropped
+pass 'briefly held lock appends after release; over-budget lock returns promptly with one warning'
