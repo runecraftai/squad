@@ -147,6 +147,7 @@ for file in "$@"; do
     printf 'warning: %s:0: ARQUIVO_ILEGIVEL cannot read file\n' "$file" >&2
     continue
   fi
+  # shellcheck disable=SC2094 # The file is only read; the name goes via ENVIRON so awk does not expand escapes.
   LINT_NAME="$file" awk "$LINT_AWK" < "$file" >&2
 done
 exit 0
