@@ -114,6 +114,8 @@ echo "=== Empty Data Handling ==="
 
 # Test 1: No state files at all.
 TMP_ROOT=$(fm_test_tmproot dispatch-tune-empty)
+# Keep the base's private data/ out of every run unless a case names its own log directory.
+export SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log"
 EMPTY_STATE="$TMP_ROOT/empty-state"
 mkdir -p "$EMPTY_STATE"
 
@@ -377,6 +379,191 @@ if echo "$output" | grep -q '"tasks":0'; then
   pass "tasks without terminal state are skipped"
 else
   fail "non-terminal task not skipped: $output"
+fi
+
+echo ""
+echo "=== Dispatch Log (log-first) ==="
+
+# A dispatch log row mirrors sq-dispatch-log.sh; ids are plain names, so no escaping is needed.
+write_log() { # <data_dir> <id> <row>...
+  local dir="$1/$2"
+  mkdir -p "$dir"
+  shift 2
+  printf '%s\n' "$@" > "$dir/dispatch.jsonl"
+}
+
+LOG_DATA="$TMP_ROOT/log-data"
+TORN_STATE="$TMP_ROOT/torn-state"
+mkdir -p "$TORN_STATE"
+
+# closed-a: recommended claude/sonnet/default, dispatched claude/opus/xhigh, done.
+write_log "$LOG_DATA" closed-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"closed-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"closed-scope","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"closed-a","event":"spawn","harness":"claude","model":"opus","effort":"xhigh"}' \
+  '{"timestamp":"2026-10-20T10:20:05+00:00","id":"closed-a","event":"outcome","source":"status-notify","result":"done"}' \
+  '{"timestamp":"2026-10-20T10:30:05+00:00","id":"closed-a","event":"outcome","source":"teardown","result":"released"}'
+
+# closed-b: recommended and dispatched claude/sonnet/default, landed on merge.
+write_log "$LOG_DATA" closed-b \
+  '{"timestamp":"2026-10-20T11:00:00+00:00","id":"closed-b","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"closed-scope","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T11:00:05+00:00","id":"closed-b","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T11:40:05+00:00","id":"closed-b","event":"outcome","source":"pr-merge","result":"landed"}'
+
+# closed-c: a reason-only decision (no lane), dispatched codex/gpt-5/high, failed.
+write_log "$LOG_DATA" closed-c \
+  '{"timestamp":"2026-10-20T12:00:00+00:00","id":"closed-c","event":"decision","harness":"codex","model":"gpt-5","effort":"high","reason":"SENTINEL_REASON_TEXT","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T12:00:05+00:00","id":"closed-c","event":"spawn","harness":"codex","model":"gpt-5","effort":"high"}' \
+  '{"timestamp":"2026-10-20T12:15:05+00:00","id":"closed-c","event":"outcome","source":"status-notify","result":"failed"}'
+
+# Three torn-down tasks: only their logs survive, so no status or meta files exist.
+output=$(SQUAD_STATE_OVERRIDE="$TORN_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json 2>&1)
+
+if echo "$output" | grep -q '"tasks":3'; then
+  pass "torn-down tasks with only a log are counted"
+else
+  fail "torn-down task count wrong: $output"
+fi
+
+if echo "$output" | grep -q '"profile":"claude/opus/xhigh"' &&
+   echo "$output" | grep -q '"profile":"claude/sonnet/default"' &&
+   echo "$output" | grep -q '"profile":"codex/gpt-5/high"'; then
+  pass "log-only tasks report their real dispatched profiles"
+else
+  fail "log-only profiles missing: $output"
+fi
+
+if echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  fail "a task with a log read as unknown/unknown/unknown: $output"
+else
+  pass "a task whose log exists never reads as unknown/unknown/unknown"
+fi
+
+if echo "$output" | grep -q 'SENTINEL_REASON_TEXT'; then
+  fail "decision reason text leaked into the report"
+else
+  pass "decision reason text is never printed"
+fi
+
+# Log-first precedence: a meta file that disagrees must not override the spawn row.
+mkdir -p "$TMP_ROOT/log-meta-state"
+cat > "$TMP_ROOT/log-meta-state/closed-a.meta" <<'METAEOF'
+harness=codex
+model=wrong
+effort=none
+METAEOF
+echo "done: PR https://example.invalid/pull/1 checks green" > "$TMP_ROOT/log-meta-state/closed-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/log-meta-state" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q '"profile":"codex/wrong/none"'; then
+  fail "meta overrode the log's spawn row: $output"
+else
+  pass "log-first: a disagreeing meta file does not override the spawn row"
+fi
+
+echo ""
+echo "=== Dispatch Log Fallback (meta) ==="
+
+# A task with no log falls back to its meta file for the profile.
+META_STATE="$TMP_ROOT/meta-state"
+mkdir -p "$META_STATE"
+cat > "$META_STATE/meta-only.meta" <<'METAEOF'
+harness=pi
+model=gpt-5
+effort=high
+METAEOF
+echo "done: finished" > "$META_STATE/meta-only.status"
+output=$(SQUAD_STATE_OVERRIDE="$META_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q '"profile":"pi/gpt-5/high"'; then
+  pass "task without a log falls back to its meta profile"
+else
+  fail "meta fallback profile missing: $output"
+fi
+
+echo ""
+echo "=== By Lane ==="
+
+output=$(SQUAD_STATE_OVERRIDE="$TORN_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json --by-lane 2>&1)
+# closed-scope: two dispatches, both successful, one off its recommended model.
+if echo "$output" | grep -q '"lane":"closed-scope","dispatches":2,"success_rate":100.0,"off_recommendation":1'; then
+  pass "--by-lane counts dispatches and off-recommendation per lane"
+else
+  fail "--by-lane lane summary wrong: $output"
+fi
+
+if echo "$output" | grep -q '"lane":"(no-profile)","dispatches":1,"success_rate":0.0,"off_recommendation":0'; then
+  pass "--by-lane groups reason-only decisions under (no-profile)"
+else
+  fail "--by-lane no-profile lane wrong: $output"
+fi
+
+if echo "$output" | grep -q '"chosen":\[{"profile":"claude/opus/xhigh","dispatches":1},{"profile":"claude/sonnet/default","dispatches":1}\]'; then
+  pass "--by-lane lists the models chosen within a lane"
+else
+  fail "--by-lane chosen models wrong: $output"
+fi
+
+output=$(SQUAD_STATE_OVERRIDE="$TORN_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --by-lane 2>&1)
+if echo "$output" | grep -q '^## Lanes' && echo "$output" | grep -q '| closed-scope | 2 | claude/opus/xhigh x1, claude/sonnet/default x1 | 1 | 100.0% |'; then
+  pass "--by-lane markdown renders the lane table"
+else
+  fail "--by-lane markdown wrong: $output"
+fi
+
+if echo "$output" | grep -q 'SENTINEL_REASON_TEXT'; then
+  fail "--by-lane leaked the decision reason"
+else
+  pass "--by-lane never prints decision reason text"
+fi
+
+echo ""
+echo "=== Fallback Rate ==="
+
+# Live state: closed-a (no quota wording), closed-c (provider outage), meta-only (plain failure),
+# closed-b has no status file (torn-down-like, so unknown). A "working:" mention of quota must not count.
+FALLBACK_STATE="$TMP_ROOT/fallback-state"
+mkdir -p "$FALLBACK_STATE"
+cp "$TMP_ROOT/log-meta-state/closed-a.status" "$FALLBACK_STATE/closed-a.status"
+cat > "$FALLBACK_STATE/closed-c.status" <<'STATUSEOF'
+paused: provider outage, waiting on upstream
+failed: provider outage
+STATUSEOF
+printf 'working: adding quota tests\ndone: PR https://example.invalid/pull/2 checks green\n' > "$FALLBACK_STATE/meta-only.status"
+cp "$META_STATE/meta-only.meta" "$FALLBACK_STATE/meta-only.meta"
+
+output=$(SQUAD_STATE_OVERRIDE="$FALLBACK_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json --fallback-rate 2>&1)
+# Overall: 3 observed (1 hit), 1 unknown, so 33.3%.
+if echo "$output" | grep -q '"fallback":{"hits":1,"observed":3,"unknown":1,"rate":33.3}'; then
+  pass "--fallback-rate counts provider or quota hits against observed tasks"
+else
+  fail "--fallback-rate overall wrong: $output"
+fi
+
+# A "working:" line that merely mentions quota is not a stopped run, so the meta-only task is a miss.
+output=$(SQUAD_STATE_OVERRIDE="$FALLBACK_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json --by-lane --fallback-rate 2>&1)
+if echo "$output" | grep -q '"lane":"(no-profile)".*"fallback":{"hits":1,"observed":2,"unknown":0,"rate":50.0}'; then
+  pass "--by-lane --fallback-rate reports fallback per lane"
+else
+  fail "--by-lane --fallback-rate lane wrong: $output"
+fi
+
+output=$(SQUAD_STATE_OVERRIDE="$FALLBACK_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --fallback-rate 2>&1)
+if echo "$output" | grep -q '^## Fallback Rate' && echo "$output" | grep -q -- '- \*\*Fallback rate:\*\* 33.3% of observed tasks'; then
+  pass "--fallback-rate markdown renders the fallback section"
+else
+  fail "--fallback-rate markdown wrong: $output"
+fi
+
+if echo "$output" | grep -q 'provider outage'; then
+  fail "--fallback-rate printed status text"
+else
+  pass "--fallback-rate never prints status text"
+fi
+
+# Empty JSON keeps the requested sections present, so machine consumers see a stable shape.
+output=$(SQUAD_STATE_OVERRIDE="$EMPTY_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json --by-lane --fallback-rate 2>&1)
+if echo "$output" | grep -q '"tasks":0,"lanes":\[\],"fallback":{"hits":0,"observed":0,"unknown":0,"rate":null}'; then
+  pass "empty --json keeps the lane and fallback sections"
+else
+  fail "empty --json with flags wrong: $output"
 fi
 
 # ── cleanup ───────────────────────────────────────────────────────────────

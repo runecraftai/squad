@@ -1,21 +1,32 @@
 #!/usr/bin/env bash
 # sq-dispatch-tune.sh — Analyze operator performance and recommend dispatch profile adjustments.
 #
-# Reads operator completion data from state/*.status logs and state/*.meta files
-# to compute per-profile (harness+model+effort) metrics and output actionable
-# recommendations in markdown or JSON format.
+# Reads completed-task evidence log-first. data/<id>/dispatch.jsonl, the private
+# dispatch log written by sq-dispatch-log.sh, supplies the lane, the recommended
+# and the dispatched profile, and the outcome. A task without a log falls back to
+# state/<id>.meta for its profile and state/<id>.status for its outcome.
 #
 # Usage:
-#   sq-dispatch-tune.sh                       # markdown output, last 30 days
-#   sq-dispatch-tune.sh --json                # machine-readable output
-#   sq-dispatch-tune.sh --period 60           # analyze last 60 days
-#   sq-dispatch-tune.sh --profile claude      # analyze a specific harness
+#   sq-dispatch-tune.sh                          # markdown output, last 30 days
+#   sq-dispatch-tune.sh --json                   # machine-readable output
+#   sq-dispatch-tune.sh --period 60              # analyze last 60 days
+#   sq-dispatch-tune.sh --profile claude         # analyze a specific harness
 #   sq-dispatch-tune.sh --profile claude/sonnet  # analyze a specific harness/model
-#   sq-dispatch-tune.sh --verbose             # include per-task detail
+#   sq-dispatch-tune.sh --verbose                # include per-task detail
+#   sq-dispatch-tune.sh --by-lane                # group by decision lane
+#   sq-dispatch-tune.sh --fallback-rate          # share of provider or quota failures
 #
-# Profile = harness + model + effort (from state/<id>.meta).
-# Outcome = done (success) or failed (failure) from state/<id>.status.
-# Duration = file birth-to-modification time on state/<id>.status (approximate).
+# Profile = harness + model + effort. The dispatched profile is the log's spawn
+# row; a log without one uses its decision row, and a task without a log uses
+# state/<id>.meta.
+# Lane = the decision profile name recorded at intake; "(no-profile)" when the
+# decision recorded only a reason, or the task has no log.
+# Outcome = done or landed (success) or failed, from the log's outcome rows,
+# else the last done/failed line of state/<id>.status.
+# Fallback = a blocked, paused, or failed status line naming a quota or provider
+# failure. Teardown removes the status file, so a torn-down task is "unknown".
+# Duration = log span from first to last event, else file birth-to-modification
+# time on state/<id>.status (approximate).
 #
 # Exit codes: 0 success, 2 usage error.
 set -euo pipefail
@@ -24,6 +35,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
+
+# Provider or quota failure wording on a status line that stopped or paused work.
+FALLBACK_RE='^(blocked|paused|failed): .*(quota|usage limit|session limit|rate[ -]?limit|overloaded|provider (error|outage|unavailable)|insufficient (credit|quota))'
 
 # ── defaults ──────────────────────────────────────────────────────────────
 
@@ -31,6 +46,8 @@ OUTPUT_FORMAT="markdown"
 PERIOD_DAYS=30
 FILTER_PROFILE=""
 VERBOSE=0
+BY_LANE=0
+FALLBACK_RATE=0
 
 # ── usage ─────────────────────────────────────────────────────────────────
 
@@ -44,16 +61,20 @@ Options:
   --json              Output in machine-readable JSON (default: markdown)
   --period <days>     Limit analysis window (default: 30)
   --profile <name>    Analyze a specific profile (harness, or harness/model)
+  --by-lane           Group by decision lane: dispatches, chosen models, off-recommendation count
+  --fallback-rate     Report the share of tasks whose status hit a provider or quota failure
   --verbose           Include per-task detail in output
   -h, --help          Show this help
 
-Profiles are harness+model+effort combinations from state/<id>.meta files.
-Outcomes are determined from state/<id>.status log final lines (done/failed).
+Profiles are harness+model+effort, read from data/<id>/dispatch.jsonl (spawn row first)
+or, for tasks without a log, from state/<id>.meta.
+Outcomes come from the log's outcome rows or the state/<id>.status final line (done/failed).
 
 Examples:
-  sq-dispatch-tune.sh                          # all profiles, last 30 days
-  sq-dispatch-tune.sh --json --period 7        # last 7 days, JSON
-  sq-dispatch-tune.sh --profile claude/sonnet  # one model only
+  sq-dispatch-tune.sh                            # all profiles, last 30 days
+  sq-dispatch-tune.sh --json --period 7          # last 7 days, JSON
+  sq-dispatch-tune.sh --profile claude/sonnet    # one model only
+  sq-dispatch-tune.sh --by-lane --fallback-rate  # lanes with fallback rates
 EOF
 }
 
@@ -77,6 +98,14 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "error: --profile requires a name" >&2; exit 2; }
       FILTER_PROFILE="$2"
       shift 2
+      ;;
+    --by-lane)
+      BY_LANE=1
+      shift
+      ;;
+    --fallback-rate)
+      FALLBACK_RATE=1
+      shift
       ;;
     --verbose)
       VERBOSE=1
@@ -134,6 +163,21 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$(printf '\t')/\\\\t/g" | tr '\n' ' '
 }
 
+# Escape pipes so a value cannot break a markdown table row.
+md_cell() {
+  printf '%s' "$1" | sed 's/|/\\|/g'
+}
+
+# Percentage with one decimal and a sign, or "n/a" when the denominator is zero.
+pct_text() { # <numerator> <denominator>
+  awk -v n="$1" -v d="$2" 'BEGIN { if (d > 0) printf "%.1f%%", n * 100 / d; else printf "n/a" }'
+}
+
+# Percentage as a JSON number, or null when the denominator is zero.
+pct_json() { # <numerator> <denominator>
+  awk -v n="$1" -v d="$2" 'BEGIN { if (d > 0) printf "%.1f", n * 100 / d; else printf "null" }'
+}
+
 # Epoch seconds for N days ago.
 days_ago() { # <days>
   local now
@@ -141,49 +185,220 @@ days_ago() { # <days>
   echo $(( now - $1 * 86400 ))
 }
 
+# Last terminal verb (done or failed) of a status file, if any.
+status_outcome() { # <status_file>
+  grep -E '^(done|failed):' "$1" 2>/dev/null | tail -1 | cut -d: -f1 || true
+}
+
+# Classify a status file for provider or quota failure. Prints hit or miss only,
+# never the status text.
+status_fallback() { # <status_file>
+  if grep -E -i -q "$FALLBACK_RE" "$1" 2>/dev/null; then
+    echo hit
+  else
+    echo miss
+  fi
+}
+
 # ── data collection ───────────────────────────────────────────────────────
 
 CUTOFF=$(days_ago "$PERIOD_DAYS")
 
-# Collect task records: id harness model effort outcome duration profile
+# Collect task records: id harness model effort outcome duration profile lane fallback recommended
 # Stored as tab-separated lines in a temp file.
 TASKS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-tune.XXXXXX")
+LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-logs.XXXXXX")
 METRICS_FILE=""
-trap 'rm -f "$TASKS_FILE" "$METRICS_FILE"' EXIT
+LANES_FILE=""
+LANE_ROWS=()
+trap 'rm -f "$TASKS_FILE" "$LOG_FILE" "$METRICS_FILE" "$LANES_FILE"' EXIT
 TASKS_COUNT=0
+LOG_READER=0
+if command -v python3 >/dev/null 2>&1; then
+  LOG_READER=1
+fi
 
-collect_tasks() {
-  local meta_file status_file
-  local task_id harness model effort outcome duration birth mtime profile
+# Append one task record after the --profile filter.
+record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended>
+  local profile="$2/$3/$4"
+  if [ -n "$FILTER_PROFILE" ]; then
+    case "$profile" in
+      *"$FILTER_PROFILE"*) ;; # match
+      *) return 0 ;;
+    esac
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" "$profile" "$7" "$8" "$9" >> "$TASKS_FILE"
+  TASKS_COUNT=$((TASKS_COUNT + 1))
+}
+
+# Read every data/<id>/dispatch.jsonl once through python3. Only the fields this
+# report uses leave the reader: never brief text, reasons, or quota payloads.
+# Rows are unit-separator delimited so empty fields survive `read`.
+collect_log_rows() {
+  [ "$LOG_READER" -eq 1 ] || return 0
+  if ! python3 - "$DATA" "$CUTOFF" > "$LOG_FILE" 2>/dev/null <<'PY'
+import datetime
+import json
+import os
+import re
+import sys
+
+data_dir, cutoff = sys.argv[1], int(sys.argv[2])
+id_pattern = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def text(value):
+    if not isinstance(value, str):
+        return ""
+    return "".join(ch if ord(ch) >= 32 else " " for ch in value)
+
+
+def moment(value):
+    try:
+        return datetime.datetime.fromisoformat(value).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def triple(row):
+    if not isinstance(row, dict):
+        return ["", "", ""]
+    return [text(row.get(key)) for key in ("harness", "model", "effort")]
+
+
+try:
+    names = sorted(os.listdir(data_dir))
+except OSError:
+    names = []
+
+for name in names:
+    folder = os.path.join(data_dir, name)
+    path = os.path.join(folder, "dispatch.jsonl")
+    if not id_pattern.fullmatch(name) or os.path.islink(folder):
+        continue
+    if os.path.islink(path) or not os.path.isfile(path):
+        continue
+    if int(os.stat(path).st_mtime) < cutoff:
+        continue
+    decision = None
+    spawn = None
+    results = set()
+    stamps = []
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            when = moment(row.get("timestamp"))
+            if when is not None:
+                stamps.append(when)
+            event = row.get("event")
+            if event == "decision":
+                decision = row
+            elif event == "spawn":
+                spawn = row
+            elif event == "outcome" and isinstance(row.get("result"), str):
+                results.add(row["result"])
+    profile = decision.get("profile") if isinstance(decision, dict) else None
+    lane = text(profile) if isinstance(profile, str) and profile else "(no-profile)"
+    if results & {"done", "landed"}:
+        outcome = "done"
+    elif "failed" in results:
+        outcome = "failed"
+    else:
+        outcome = "none"
+    span = int(max(stamps) - min(stamps)) if len(stamps) > 1 else 0
+    columns = [name, lane, *triple(decision), *triple(spawn), outcome, str(span)]
+    sys.stdout.write("\x1f".join(columns) + "\n")
+PY
+  then
+    LOG_READER=0
+    : > "$LOG_FILE"
+  fi
+}
+
+# Tasks with a dispatch log: the log decides lane, profile, and recommendation.
+collect_logged_tasks() {
+  local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome duration
+  local status_file status_result outcome harness model effort recommended meta_file fallback
+
+  while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome duration; do
+    status_file="$STATE/$task_id.status"
+    status_result=""
+    fallback="unknown"
+    if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
+      status_result=$(status_outcome "$status_file")
+      fallback=$(status_fallback "$status_file")
+    fi
+
+    outcome="$log_outcome"
+    if [ "$outcome" = "none" ]; then
+      outcome="$status_result"
+    fi
+    case "$outcome" in
+      done|failed) ;;
+      *) continue ;; # no terminal state yet
+    esac
+
+    harness=""; model=""; effort=""
+    if [ -n "$spawn_h" ]; then
+      harness="$spawn_h"; model="$spawn_m"; effort="$spawn_e"
+    elif [ -n "$rec_h" ]; then
+      harness="$rec_h"; model="$rec_m"; effort="$rec_e"
+    else
+      meta_file="$STATE/$task_id.meta"
+      if [ -f "$meta_file" ]; then
+        harness=$(meta_value "$meta_file" harness)
+        model=$(meta_value "$meta_file" model)
+        effort=$(meta_value "$meta_file" effort)
+      fi
+    fi
+    harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
+
+    recommended="-"
+    if [ -n "$rec_h" ]; then
+      recommended="$rec_h/$rec_m/$rec_e"
+    fi
+    record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "${duration:-0}" \
+      "$lane" "$fallback" "$recommended"
+  done < "$LOG_FILE"
+}
+
+# Tasks without a dispatch log: state/<id>.meta supplies the profile.
+collect_status_tasks() {
+  local status_file task_id mtime outcome meta_file harness model effort birth duration fallback
 
   for status_file in "$STATE"/*.status; do
     [ -f "$status_file" ] || continue
 
     task_id=$(basename "$status_file" .status)
 
+    # A task with a dispatch log was already collected from that log.
+    if [ "$LOG_READER" -eq 1 ] && [ -e "$DATA/$task_id/dispatch.jsonl" ]; then
+      continue
+    fi
+
     # Skip tasks outside the analysis window (use status file mtime as proxy).
     mtime=$(file_mtime "$status_file")
     [ "$mtime" -ge "$CUTOFF" ] 2>/dev/null || continue
 
     # Determine outcome from the last meaningful status line.
-    outcome=$(grep -E '^(done|failed):' "$status_file" 2>/dev/null | tail -1 | cut -d: -f1 || true)
+    outcome=$(status_outcome "$status_file")
     [ -z "$outcome" ] && continue  # skip tasks with no terminal state
 
     # Read metadata.
+    harness=""; model=""; effort=""
     meta_file="$STATE/$task_id.meta"
     if [ -f "$meta_file" ]; then
       harness=$(meta_value "$meta_file" harness)
       model=$(meta_value "$meta_file" model)
       effort=$(meta_value "$meta_file" effort)
-    else
-      harness="unknown"
-      model="unknown"
-      effort="unknown"
     fi
-
-    [ -z "$harness" ] && harness="unknown"
-    [ -z "$model" ] && model="unknown"
-    [ -z "$effort" ] && effort="unknown"
+    harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
 
     # Compute duration from file birth to last modification.
     birth=$(file_birth "$status_file")
@@ -192,29 +407,30 @@ collect_tasks() {
       duration=$(( mtime - birth ))
     fi
 
-    # Build profile key.
-    profile="${harness}/${model}/${effort}"
-
-    # Apply profile filter.
-    if [ -n "$FILTER_PROFILE" ]; then
-      case "$profile" in
-        *"$FILTER_PROFILE"*) ;; # match
-        *) continue ;;
-      esac
-    fi
-
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$task_id" "$harness" "$model" "$effort" "$outcome" "$duration" "$profile" \
-      >> "$TASKS_FILE"
-    TASKS_COUNT=$((TASKS_COUNT + 1))
+    fallback=$(status_fallback "$status_file")
+    record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "$duration" \
+      "(no-profile)" "$fallback" "-"
   done
+}
+
+collect_tasks() {
+  collect_log_rows
+  collect_logged_tasks
+  collect_status_tasks
 }
 
 collect_tasks
 
 if [ "$TASKS_COUNT" -eq 0 ]; then
   if [ "$OUTPUT_FORMAT" = "json" ]; then
-    echo '{"period_days":'"$PERIOD_DAYS"',"profiles":[],"recommendations":[],"tasks":0}'
+    extras=""
+    if [ "$BY_LANE" -eq 1 ]; then
+      extras+=',"lanes":[]'
+    fi
+    if [ "$FALLBACK_RATE" -eq 1 ]; then
+      extras+=',"fallback":{"hits":0,"observed":0,"unknown":0,"rate":null}'
+    fi
+    echo '{"period_days":'"$PERIOD_DAYS"',"profiles":[],"recommendations":[],"tasks":0'"$extras"'}'
   else
     echo "# Dispatch Profile Analysis"
     echo ""
@@ -229,7 +445,7 @@ fi
 
 # Aggregate per-profile metrics using awk.
 compute_metrics() {
-  # Input: tab-separated task records (id, harness, model, effort, outcome, duration, profile)
+  # Input: tab-separated task records (id, harness, model, effort, outcome, duration, profile, lane, fallback, recommended)
   # Output: profile|total|success|failure|success_rate|avg_duration
   awk -F'\t' '
   {
@@ -253,6 +469,40 @@ compute_metrics() {
       printf "%s\t%d\t%d\t%d\t%.1f\t%.0f\n", p, t, s, f, rate, avg
     }
   }' "$TASKS_FILE"
+}
+
+# Per-lane rows: L lane dispatches successes failures off-recommendation fallback-hits observed;
+# C lane chosen-profile dispatches. Sorted so each lane's L row precedes its C rows.
+compute_lanes() {
+  awk -F'\t' '
+  {
+    lane = $8
+    total[lane]++
+    if ($5 == "done") success[lane]++
+    else if ($5 == "failed") failure[lane]++
+    if ($10 != "-" && $10 != $7) off[lane]++
+    if ($9 == "hit") hit[lane]++
+    if ($9 == "hit" || $9 == "miss") observed[lane]++
+    chosen[lane SUBSEP $7]++
+  }
+  END {
+    for (l in total)
+      printf "L\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n", l, total[l], success[l] + 0, failure[l] + 0, off[l] + 0, hit[l] + 0, observed[l] + 0
+    for (k in chosen) {
+      split(k, parts, SUBSEP)
+      printf "C\t%s\t%s\t%d\n", parts[1], parts[2], chosen[k]
+    }
+  }' "$TASKS_FILE" | sort -t$'\t' -k2,2 -k1,1r -k3,3
+}
+
+# Fallback counts as "hits observed unknown", optionally for one lane.
+fallback_totals() { # [lane]
+  awk -F'\t' -v lane="${1:-}" '
+    lane != "" && $8 != lane { next }
+    $9 == "hit" { hits++ }
+    $9 == "hit" || $9 == "miss" { observed++ }
+    $9 == "unknown" { unknown++ }
+    END { printf "%d %d %d\n", hits + 0, observed + 0, unknown + 0 }' "$TASKS_FILE"
 }
 
 # Generate markdown output.
@@ -300,6 +550,14 @@ emit_markdown() {
   done < "$metrics_file"
 
   echo ""
+
+  if [ "$BY_LANE" -eq 1 ]; then
+    emit_lanes_markdown
+  fi
+
+  if [ "$FALLBACK_RATE" -eq 1 ]; then
+    emit_fallback_markdown
+  fi
 
   # Recommendations.
   echo "## Recommendations"
@@ -349,11 +607,102 @@ emit_markdown() {
     echo ""
     echo "| Task ID | Profile | Outcome | Duration |"
     echo "|---------|---------|---------|----------|"
-    sort -t$'\t' -k7,7 -k5,5 "$TASKS_FILE" | while IFS=$'\t' read -r tid _h _m _e outcome dur _p; do
+    sort -t$'\t' -k7,7 -k5,5 "$TASKS_FILE" | while IFS=$'\t' read -r tid _h _m _e outcome dur _p _rest; do
       printf '| %s | %s | %s | %s |\n' "$tid" "$_h/$_m/$_e" "$outcome" "$(fmt_duration "$dur")"
     done
     echo ""
   fi
+}
+
+# Per-lane table: what each decision lane recommended, what was dispatched, and how it fared.
+emit_lanes_markdown() {
+  local row crow kind lane total success failure off hits observed chosen
+  local ckind clane cprofile ccount
+  echo "## Lanes"
+  echo ""
+  echo "A lane is the decision profile recorded at intake; (no-profile) covers decisions that recorded only a reason and tasks without a log."
+  echo ""
+  if [ "$FALLBACK_RATE" -eq 1 ]; then
+    echo "| Lane | Dispatches | Chosen Models | Off Recommendation | Success Rate | Fallback Rate |"
+    echo "|------|-----------:|---------------|-------------------:|-------------:|--------------:|"
+  else
+    echo "| Lane | Dispatches | Chosen Models | Off Recommendation | Success Rate |"
+    echo "|------|-----------:|---------------|-------------------:|-------------:|"
+  fi
+
+  for row in "${LANE_ROWS[@]}"; do
+    IFS=$'\t' read -r kind lane total success failure off hits observed <<< "$row"
+    [ "$kind" = "L" ] || continue
+    chosen=""
+    for crow in "${LANE_ROWS[@]}"; do
+      IFS=$'\t' read -r ckind clane cprofile ccount <<< "$crow"
+      if [ "$ckind" = "C" ] && [ "$clane" = "$lane" ]; then
+        chosen+="${chosen:+, }${cprofile} x${ccount}"
+      fi
+    done
+    printf '| %s | %s | %s | %s | %s |' \
+      "$(md_cell "$lane")" "$total" "$(md_cell "$chosen")" "$off" "$(pct_text "$success" $((success + failure)))"
+    if [ "$FALLBACK_RATE" -eq 1 ]; then
+      printf ' %s |' "$(pct_text "$hits" "$observed")"
+    fi
+    echo ""
+  done
+  echo ""
+}
+
+# Fallback summary: how often a run hit a provider or quota failure while its status file was still present.
+emit_fallback_markdown() {
+  local hits observed unknown
+  read -r hits observed unknown < <(fallback_totals)
+  echo "## Fallback Rate"
+  echo ""
+  echo "A fallback is a blocked, paused, or failed status line naming a quota or provider failure."
+  echo "Teardown removes the status file, so a torn-down task is unknown rather than clean."
+  echo ""
+  echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (status file still present)"
+  echo "- **Provider or quota fallbacks:** ${hits}"
+  echo "- **Fallback rate:** $(pct_text "$hits" "$observed") of observed tasks"
+  echo ""
+}
+
+# Fallback object for JSON, optionally for one lane.
+fallback_json() { # [lane]
+  local hits observed unknown
+  read -r hits observed unknown < <(fallback_totals "${1:-}")
+  printf '{"hits":%s,"observed":%s,"unknown":%s,"rate":%s}' \
+    "$hits" "$observed" "$unknown" "$(pct_json "$hits" "$observed")"
+}
+
+# Lane array for JSON: one object per decision lane with its chosen profiles.
+lanes_json() {
+  local row crow kind lane total success failure off hits observed chosen out="[" first=1
+  local ckind clane cprofile ccount cfirst
+  for row in "${LANE_ROWS[@]}"; do
+    IFS=$'\t' read -r kind lane total success failure off hits observed <<< "$row"
+    [ "$kind" = "L" ] || continue
+    chosen="["
+    cfirst=1
+    for crow in "${LANE_ROWS[@]}"; do
+      IFS=$'\t' read -r ckind clane cprofile ccount <<< "$crow"
+      if [ "$ckind" = "C" ] && [ "$clane" = "$lane" ]; then
+        [ "$cfirst" -eq 1 ] || chosen+=","
+        cfirst=0
+        chosen+=$(printf '{"profile":"%s","dispatches":%s}' "$(json_escape "$cprofile")" "$ccount")
+      fi
+    done
+    chosen+="]"
+    lane_json=$(printf '{"lane":"%s","dispatches":%s,"success_rate":%s,"off_recommendation":%s,"chosen":%s' \
+      "$(json_escape "$lane")" "$total" "$(pct_json "$success" $((success + failure)))" "$off" "$chosen")
+    if [ "$FALLBACK_RATE" -eq 1 ]; then
+      lane_json+=$(printf ',"fallback":%s' "$(fallback_json "$lane")")
+    fi
+    lane_json+="}"
+    [ "$first" -eq 1 ] || out+=","
+    first=0
+    out+="$lane_json"
+  done
+  out+="]"
+  printf '%s' "$out"
 }
 
 # Generate JSON output.
@@ -401,7 +750,7 @@ emit_json() {
   wp=$(json_escape "$worst_profile")
 
   if [ -n "$best_profile" ] && [ "${best_rate%.*}" -ge 80 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+="," 
+    [ "$first_rec" -eq 0 ] && recs_json+=","
     first_rec=0
     recs_json+=$(printf '{"action":"increase","profile":"%s","reason":"%.1f%% success rate"}' \
       "$bp" "$best_rate")
@@ -409,14 +758,14 @@ emit_json() {
 
   if [ -n "$fastest_profile" ] && [ "$fastest_dur" -lt 999999 ] 2>/dev/null && \
      [ "$fastest_profile" != "$best_profile" ] && [ "${fastest_rate%.*}" -ge 50 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+="," 
+    [ "$first_rec" -eq 0 ] && recs_json+=","
     first_rec=0
     recs_json+=$(printf '{"action":"increase","profile":"%s","reason":"fastest avg completion (%.0fs)"}' \
       "$ep" "$fastest_dur")
   fi
 
   if [ -n "$worst_profile" ] && [ "${worst_rate%.*}" -lt 50 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+="," 
+    [ "$first_rec" -eq 0 ] && recs_json+=","
     first_rec=0
     recs_json+=$(printf '{"action":"reduce","profile":"%s","reason":"%.1f%% success rate"}' \
       "$wp" "$worst_rate")
@@ -427,7 +776,7 @@ emit_json() {
       local fail_pct ep2
       fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $total) * 100 }")
       ep2=$(json_escape "$profile")
-      [ "$first_rec" -eq 0 ] && recs_json+="," 
+      [ "$first_rec" -eq 0 ] && recs_json+=","
       first_rec=0
       recs_json+=$(printf '{"action":"avoid","profile":"%s","reason":"%d%% failure rate (%d/%d tasks)"}' \
         "$ep2" "$fail_pct" "$failure" "$total")
@@ -436,9 +785,18 @@ emit_json() {
 
   recs_json+="]"
 
+  # Optional sections, present only when their flag was given.
+  local extras=""
+  if [ "$BY_LANE" -eq 1 ]; then
+    extras+=",\"lanes\":$(lanes_json)"
+  fi
+  if [ "$FALLBACK_RATE" -eq 1 ]; then
+    extras+=",\"fallback\":$(fallback_json)"
+  fi
+
   # Emit complete JSON.
-  printf '{"period_days":%d,"tasks":%d,"profiles":%s,"recommendations":%s}\n' \
-    "$PERIOD_DAYS" "$TASKS_COUNT" "$profiles_json" "$recs_json"
+  printf '{"period_days":%d,"tasks":%d,"profiles":%s,"recommendations":%s%s}\n' \
+    "$PERIOD_DAYS" "$TASKS_COUNT" "$profiles_json" "$recs_json" "$extras"
 }
 
 # ── main ──────────────────────────────────────────────────────────────────
@@ -446,10 +804,16 @@ emit_json() {
 METRICS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-metrics.XXXXXX")
 compute_metrics > "$METRICS_FILE"
 
+if [ "$BY_LANE" -eq 1 ]; then
+  LANES_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-lanes.XXXXXX")
+  compute_lanes > "$LANES_FILE"
+  while IFS= read -r lane_line; do
+    LANE_ROWS+=("$lane_line")
+  done < "$LANES_FILE"
+fi
+
 if [ "$OUTPUT_FORMAT" = "json" ]; then
   emit_json "$METRICS_FILE"
 else
   emit_markdown "$METRICS_FILE"
 fi
-
-
