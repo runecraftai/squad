@@ -57,17 +57,11 @@
 #   refused for a remote --xo route (docs/configuration.md "Claude account
 #   selection"). Absent --account leaves today's ambient-forwarding behavior
 #   unchanged, and state/<id>.meta records account= only when it was passed.
-#   Every operator and recon spawn records one intake decision
-#   (bin/sq-dispatch-log.sh decision) once harness, model and effort resolve,
-#   before any endpoint exists, so a failed dispatch keeps the choice it made.
-#   --decision-profile <name> or --decision-reason <text> names the decision;
-#   without either, the reason is derived from the resolution source (explicit
-#   harness argument, raw launch command, or config/crew-harness default, with
-#   config/crew-dispatch.json noted when active). --quota-summary <json> is
-#   passed through to it. Logging is best effort and never blocks the spawn.
-#   Batch spawns write one decision per pair; the explicit decision flags and
-#   --quota-summary are refused there and for --xo spawns, which record no
-#   decision.
+#   --decision-profile <name> or --decision-reason <text> names the intake
+#   decision recorded by bin/sq-dispatch-log.sh decision; --quota-summary <json>
+#   is passed through to it. Without either, the decision reason is derived
+#   from the resolution source. Batch and --xo spawns refuse these flags. The
+#   recording rule is owned by docs/configuration.md.
 #   A herdr operator or recon is placed in the exact workspace of the Squad
 #   or XO process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -1015,7 +1009,13 @@ case "$ARG3" in
       fi
       HARNESS=$("$SQUAD_ROOT/bin/sq-harness.sh" crew)
       harness_src='config/crew-harness'
-      decision_reason_source='config/crew-harness default'
+      crew_pin=
+      [ ! -f "$CONFIG/crew-harness" ] || crew_pin=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
+      if [ -n "$crew_pin" ] && [ "$crew_pin" != default ]; then
+        decision_reason_source='config/crew-harness default'
+      else
+        decision_reason_source='detected own harness (no config/crew-harness pin)'
+      fi
     fi
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;

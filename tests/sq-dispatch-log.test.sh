@@ -312,6 +312,19 @@ assert rows[0]['reason'] == 'config/crew-harness default' and rows[0]['harness']
 PY
 pass 'spawn without a harness argument derives its reason from config/crew-harness'
 
+dir=$(make_case intake-config-absent)
+run_case "$dir" sq-spawn.sh task "$dir/project" --model haiku --effort low \
+  --mode local-only --yolo off > "$dir/intake.out" 2> "$dir/intake.err" \
+  || fail 'unpinned spawn failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'detected own harness (no config/crew-harness pin)', rows[0]
+assert rows[0]['harness'] == rows[1]['harness'] and rows[0]['harness']
+PY
+pass 'spawn with no config/crew-harness pin labels its reason as detected, not as the pin'
+
 # A failure after the intake decision still keeps the choice that was made: the
 # missing project is refused only after harness, model and effort resolve.
 dir=$(make_case intake-failed-dispatch)
