@@ -114,6 +114,33 @@ EOF
     "warning: $path:2: OPCAO_ORFA O1 is outside any decision block"
 }
 
+test_recommended_marker_must_match_owner() {
+  local path
+  path=$(write_record no-space-marker.md <<'EOF'
+D1 - Merge strategy
+  O1 - Squash:(recommended)
+EOF
+  )
+  expect_warnings "$path" "T3b: a marker with no space before it does not count as recommended" \
+    "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
+
+  path=$(printf 'D1 - Merge strategy\n  O1 - Squash: one (recommended) \n' | write_record trailing-space-marker.md)
+  expect_warnings "$path" "T3c: a marker followed by trailing space does not count as recommended" \
+    "warning: $path:1: RECOMENDACAO_AUSENTE no option ends with (recommended)"
+}
+
+test_unindented_option_in_block() {
+  local path
+  path=$(write_record unindented-option.md <<'EOF'
+D1 - Merge strategy
+O1 - Squash: one (recommended)
+EOF
+  )
+  expect_warnings "$path" "T5d: an option not indented two spaces is an orphan, leaving the block without a recommendation" \
+    "warning: $path:2: OPCAO_ORFA O1 must be indented two spaces inside its decision block" \
+    "warning: $path:1: RECOMENDACAO_AUSENTE decision has no options"
+}
+
 test_non_consecutive_option() {
   local path
   path=$(write_record gap.md <<'EOF'
@@ -173,7 +200,9 @@ test_exit_is_always_zero() {
 test_well_formed_records_are_silent
 test_no_recommended_option
 test_two_recommended_options
+test_recommended_marker_must_match_owner
 test_orphan_option
+test_unindented_option_in_block
 test_non_consecutive_option
 test_legacy_c_prefix
 test_fenced_examples_are_skipped

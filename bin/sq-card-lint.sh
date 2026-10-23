@@ -11,8 +11,9 @@
 #   D<n> - <title>         opens a decision block. The block ends at the next
 #                          heading or header; blank lines do not end it, as in
 #                          bin/sq-ask.sh.
-#   O<m> - <label>: <desc> an option line inside the open block. Exactly one
-#                          option per block ends with "(recommended)".
+#   O<m> - <label>: <desc> an option line, indented two spaces, inside the open
+#                          block. Exactly one option per block ends with
+#                          " (recommended)".
 #   O0 - Your own words    the free-text escape. It is not sequenced and never
 #                          counts as the recommended option.
 #   C<n> - <title>         legacy header prefix from old reports. It opens a
@@ -25,6 +26,9 @@
 #   OPCAO_FORA_DE_SEQUENCIA    an O<m> number that is not the next one (O1, O2, ...)
 #   PREFIXO_LEGADO             a C<n> header, accepted but warned as legacy
 #   ARQUIVO_ILEGIVEL           a file argument cannot be read; reported at line 0
+#
+# Known gap: O0 and D0 are not checked against the owner grammar. They need
+# codes outside the four required, so they are not reported.
 #
 # Lines inside fenced code blocks are examples, not records, and are skipped.
 #
@@ -90,6 +94,10 @@ fenced {
     warn(FNR, "OPCAO_ORFA", "O" num " is outside any decision block")
     next
   }
+  if ($0 !~ /^  O[0-9]+ - /) {
+    warn(FNR, "OPCAO_ORFA", "O" num " must be indented two spaces inside its decision block")
+    next
+  }
   if (num == 0) {
     next
   }
@@ -98,7 +106,7 @@ fenced {
   }
   expected = num + 1
   options++
-  if ($0 ~ /\(recommended\)[[:space:]]*$/) {
+  if ($0 ~ / \(recommended\)$/) {
     recommended++
   }
   next
