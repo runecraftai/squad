@@ -46,7 +46,7 @@ description: Present decision cards using rpiv extension when available
 When presenting a decision card to the commander:
 1. Check if rpiv extension is available
 2. If yes, transform card JSON to rpiv format and use ask_user_question
-3. If no, render using sq-ask.sh --render and accept text answer
+3. If no, show the prose block from `sq-ask.sh --render` and resolve the typed reply with `sq-ask.sh --answer`
 ```
 
 ### Opção 3: Fallback transparente
