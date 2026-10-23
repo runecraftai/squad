@@ -48,19 +48,17 @@ run_case() {
     "$ROOT/bin/$script" "$@"
 }
 
-decide() {
-  run_case "$1" sq-dispatch-log.sh task decision --harness claude --model haiku \
-    --effort low --profile closed-scope --quota-summary '{"remaining_percent":80,"reset_seconds":3600}'
-}
-
 spawn() {
-  run_case "$1" sq-spawn.sh task "$1/project" --harness claude --model haiku \
-    --effort low --mode local-only --yolo off
+  local dir=$1
+  shift
+  run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+    --effort low --mode local-only --yolo off "$@"
 }
 
 dir=$(make_case lifecycle)
-decide "$dir"
-spawn "$dir" > "$dir/spawn.out" 2> "$dir/spawn.err" || fail 'fixture spawn failed'
+spawn "$dir" --decision-profile closed-scope \
+  --quota-summary '{"remaining_percent":80,"reset_seconds":3600}' \
+  > "$dir/spawn.out" 2> "$dir/spawn.err" || fail 'fixture spawn failed'
 run_case "$dir" sq-teardown.sh task > "$dir/teardown.out" 2> "$dir/teardown.err" \
   || fail 'fixture teardown failed'
 assert_absent "$dir/state/task.meta" 'teardown did not release fixture'
@@ -225,3 +223,161 @@ PY
 lock_case brief-hold 0.2 'Brief lock' appended
 lock_case over-budget 3 'Over budget lock' dropped
 pass 'briefly held lock appends after release; over-budget lock returns promptly with one warning'
+
+# Intake: a spawn carrying the decision records it once, immediately before the
+# spawn event, with the same harness, model and effort, and never the brief text.
+dir=$(make_case intake-profile)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-profile closed-scope \
+  --quota-summary '{"remaining_percent":80,"reset_seconds":3600}' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'intake spawn with profile failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, os, stat, sys
+path = sys.argv[1]
+raw = open(path).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+decision = rows[0]
+assert decision['profile'] == 'closed-scope' and 'reason' not in decision, decision
+assert decision['harness'] == 'claude' and decision['model'] == 'haiku' and decision['effort'] == 'low'
+assert decision['quota_summary'] == {'remaining_percent': 80, 'reset_seconds': 3600}
+assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+assert 'PRIVATE_BRIEF_SENTINEL' not in raw and 'PRIVATE_SECRET_SENTINEL' not in raw
+PY
+pass 'intake spawn records one profile decision before the spawn event, privately'
+
+dir=$(make_case intake-reason)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'No profile matched' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'intake spawn with reason failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'No profile matched' and 'profile' not in rows[0]
+assert rows[0]['quota_summary'] == {'status': 'unknown'}
+PY
+pass 'intake spawn with a reason and no quota summary records an unknown quota'
+
+# A refused decision payload is a logging failure: the spawn still launches and
+# only its spawn row is kept. The warning must not echo the rejected payload.
+dir=$(make_case intake-bad-quota)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-profile closed-scope \
+  --quota-summary '{"token":"PRIVATE_SECRET_SENTINEL"}' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'rejected decision blocked spawn'
+[ -f "$dir/state/task.meta" ] || fail 'spawn did not publish task meta'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+raw = open(sys.argv[1]).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['spawn'], rows
+assert 'PRIVATE_SECRET_SENTINEL' not in raw
+PY
+assert_no_grep PRIVATE_SECRET_SENTINEL "$dir/intake.err" 'warning leaked rejected quota payload'
+pass 'a rejected decision never blocks spawn and never echoes its payload'
+
+# Every operator spawn records its intake decision without a caller reason: the
+# reason comes from the harness source, and the quota snapshot passes through.
+dir=$(make_case intake-derived)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off \
+  --quota-summary '{"remaining_percent":55}' > "$dir/intake.out" 2> "$dir/intake.err" \
+  || fail 'derived-decision spawn failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, os, stat, sys
+path = sys.argv[1]
+raw = open(path).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+decision = rows[0]
+assert decision['reason'] == 'explicit harness argument' and 'profile' not in decision, decision
+assert decision['harness'] == 'claude' and decision['model'] == 'haiku' and decision['effort'] == 'low'
+assert decision['quota_summary'] == {'remaining_percent': 55}
+assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+assert 'PRIVATE_BRIEF_SENTINEL' not in raw and 'PRIVATE_SECRET_SENTINEL' not in raw
+PY
+pass 'plain operator spawn records one derived intake decision privately'
+
+dir=$(make_case intake-config-default)
+printf 'claude\n' > "$dir/config/crew-harness"
+run_case "$dir" sq-spawn.sh task "$dir/project" --model haiku --effort low \
+  --mode local-only --yolo off > "$dir/intake.out" 2> "$dir/intake.err" \
+  || fail 'config-default spawn failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'config/crew-harness default' and rows[0]['harness'] == 'claude'
+PY
+pass 'spawn without a harness argument derives its reason from config/crew-harness'
+
+dir=$(make_case intake-config-absent)
+# Own-harness detection must not depend on the host's process tree: a CI runner
+# has no harness ancestor, so pin the verified claude env marker for this case.
+CLAUDECODE=1 run_case "$dir" sq-spawn.sh task "$dir/project" --model haiku --effort low \
+  --mode local-only --yolo off > "$dir/intake.out" 2> "$dir/intake.err" \
+  || fail 'unpinned spawn failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'detected own harness (no config/crew-harness pin)', rows[0]
+assert rows[0]['harness'] == rows[1]['harness'] and rows[0]['harness']
+PY
+pass 'spawn with no config/crew-harness pin labels its reason as detected, not as the pin'
+
+# A failure after the intake decision still keeps the choice that was made: the
+# missing project is refused only after harness, model and effort resolve.
+dir=$(make_case intake-failed-dispatch)
+rc=0
+run_case "$dir" sq-spawn.sh task "$dir/missing-project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'Failed dispatch' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || rc=$?
+[ "$rc" -ne 0 ] || fail 'spawn of a missing project succeeded'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [row['event'] for row in rows] == ['decision'], rows
+assert rows[0]['reason'] == 'Failed dispatch' and rows[0]['harness'] == 'claude'
+PY
+pass 'a dispatch that fails after resolution keeps its intake decision without a spawn row'
+
+# A batch writes one decision per pair, each carrying its own derived reason.
+dir=$(make_case intake-batch)
+for task in alpha beta; do
+  mkdir -p "$dir/data/$task"
+  cp "$dir/data/task/brief.md" "$dir/data/$task/brief.md"
+done
+run_case "$dir" sq-spawn.sh alpha="$dir/project" beta="$dir/project" --harness claude \
+  --model haiku --effort low --mode local-only --yolo off \
+  > "$dir/batch.out" 2> "$dir/batch.err" || fail 'batch intake spawn failed'
+python3 - "$dir/data" <<'PY'
+import json, sys
+for task in ('alpha', 'beta'):
+    rows = [json.loads(line) for line in open(f'{sys.argv[1]}/{task}/dispatch.jsonl')]
+    assert [row['event'] for row in rows] == ['decision', 'spawn'], (task, rows)
+    assert rows[0]['reason'] == 'explicit harness argument' and rows[0]['id'] == task
+PY
+pass 'batch spawn records one derived decision for each pair'
+
+# Usage refusals happen before any endpoint exists: batch and --xo spawns cannot
+# carry a per-task decision, decisions cannot be doubled, and a quota summary
+# cannot be attached to an XO, which records no decision.
+dir=$(make_case intake-refusals)
+refuse() {
+  local expect=$1 rc=0
+  shift
+  run_case "$dir" sq-spawn.sh "$@" > "$dir/refuse.out" 2> "$dir/refuse.err" || rc=$?
+  [ "$rc" -ne 0 ] || fail "accepted refused intake flags: $*"
+  assert_grep "$expect" "$dir/refuse.err" "wrong refusal for: $*"
+  [ ! -e "$dir/data/task/dispatch.jsonl" ] || fail "refused intake wrote a decision: $*"
+  [ ! -e "$dir/state/task.meta" ] || fail "refused intake published task meta: $*"
+}
+refuse 'per task' "task=$dir/project" --mode local-only --yolo off --decision-reason batch
+refuse 'per task' "task=$dir/project" --mode local-only --yolo off --quota-summary '{}'
+refuse 'operator and recon spawns' task "$dir/project" --xo --decision-reason xo
+refuse 'operator and recon spawns' task "$dir/project" --xo --quota-summary '{}'
+refuse 'pass only one of' task "$dir/project" --mode local-only --yolo off \
+  --decision-profile a --decision-reason b
+pass 'batch, XO, and doubled decision flags are refused before any spawn'

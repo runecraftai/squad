@@ -321,6 +321,10 @@ Batch spawns satisfy the same requirement with a shared `--harness`.
 XO spawns are exempt and still resolve through `config/xo-harness` and its optional model and effort tokens.
 This section is the single owner of the canonical schema and its per-field semantics.
 `AGENTS.md` section 4 owns the always-loaded dispatch intake boundary, and `quota-array-dispatch` owns the completion-aware profile-array selection procedure.
+Every operator or recon spawn, including each batch pair, records one intake `decision` event in `data/<id>/dispatch.jsonl` before launch; XO spawns are exempt.
+For a single spawn, Squad must pass the matched profile name as `--decision-profile` (or a short `--decision-reason` when no profile fits) and the compact quota summary it read as `--quota-summary`, so the event names the profile and why it was chosen; batch spawns refuse these flags and record a reason derived by `sq-spawn.sh` from its own resolution source.
+Recording is best effort and never blocks a spawn, and no secret, token, or brief text may appear in the reason or quota summary.
+`bin/sq-dispatch-log.sh` owns the event's shape and limits, and `sq-spawn.sh --help` owns the flags.
 
 ```json
 {

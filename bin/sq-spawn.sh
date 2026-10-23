@@ -57,6 +57,11 @@
 #   refused for a remote --xo route (docs/configuration.md "Claude account
 #   selection"). Absent --account leaves today's ambient-forwarding behavior
 #   unchanged, and state/<id>.meta records account= only when it was passed.
+#   --decision-profile <name> or --decision-reason <text> names the intake
+#   decision recorded by bin/sq-dispatch-log.sh decision; --quota-summary <json>
+#   is passed through to it. Without either, the decision reason is derived
+#   from the resolution source. Batch and --xo spawns refuse these flags. The
+#   recording rule is owned by docs/configuration.md.
 #   A herdr operator or recon is placed in the exact workspace of the Squad
 #   or XO process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -261,6 +266,12 @@ MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
 ACCOUNT_SET=0
+DECISION_PROFILE_ARG=
+DECISION_PROFILE_SET=0
+DECISION_REASON_ARG=
+DECISION_REASON_SET=0
+QUOTA_SUMMARY_ARG=
+QUOTA_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -277,6 +288,9 @@ for a in "$@"; do
       yolo) YOLO=$a; YOLO_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
       account) ACCOUNT_ARG=$a; ACCOUNT_SET=1 ;;
+      decision-profile) DECISION_PROFILE_ARG=$a; DECISION_PROFILE_SET=1 ;;
+      decision-reason) DECISION_REASON_ARG=$a; DECISION_REASON_SET=1 ;;
+      quota-summary) QUOTA_SUMMARY_ARG=$a; QUOTA_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -301,6 +315,12 @@ for a in "$@"; do
     --traceparent=*) TRACEPARENT_ARG=${a#--traceparent=}; TRACEPARENT_SET=1 ;;
     --account) want_value=account ;;
     --account=*) ACCOUNT_ARG=${a#--account=}; ACCOUNT_SET=1 ;;
+    --decision-profile) want_value=decision-profile ;;
+    --decision-profile=*) DECISION_PROFILE_ARG=${a#--decision-profile=}; DECISION_PROFILE_SET=1 ;;
+    --decision-reason) want_value=decision-reason ;;
+    --decision-reason=*) DECISION_REASON_ARG=${a#--decision-reason=}; DECISION_REASON_SET=1 ;;
+    --quota-summary) want_value=quota-summary ;;
+    --quota-summary=*) QUOTA_SUMMARY_ARG=${a#--quota-summary=}; QUOTA_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
@@ -313,6 +333,17 @@ done
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
 [ "$ACCOUNT_SET" -eq 0 ] || [ -n "$ACCOUNT_ARG" ] || { echo "error: --account requires a non-empty value" >&2; exit 1; }
+[ "$DECISION_PROFILE_SET" -eq 0 ] || [ -n "$DECISION_PROFILE_ARG" ] || { echo "error: --decision-profile requires a non-empty value" >&2; exit 1; }
+[ "$DECISION_REASON_SET" -eq 0 ] || [ -n "$DECISION_REASON_ARG" ] || { echo "error: --decision-reason requires a non-empty value" >&2; exit 1; }
+[ "$QUOTA_SET" -eq 0 ] || [ -n "$QUOTA_SUMMARY_ARG" ] || { echo "error: --quota-summary requires a non-empty value" >&2; exit 1; }
+if [ "$DECISION_PROFILE_SET" -eq 1 ] && [ "$DECISION_REASON_SET" -eq 1 ]; then
+  echo "error: pass only one of --decision-profile or --decision-reason" >&2
+  exit 1
+fi
+if { [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ] || [ "$QUOTA_SET" -eq 1 ]; } && [ "$KIND" = xo ]; then
+  echo "error: --decision-profile, --decision-reason and --quota-summary apply only to operator and recon spawns" >&2
+  exit 1
+fi
 # A parent-delivered carrier replaces this base's own resolution, so it is
 # refused unless it is an XO spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -806,6 +837,10 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
   fi
+  if [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ] || [ "$QUOTA_SET" -eq 1 ]; then
+    echo "error: --decision-profile, --decision-reason and --quota-summary are per task; spawn each pair singly to set its decision" >&2
+    exit 1
+  fi
   rc=0
   shared_args=()
   [ -z "$HARNESS_ARG" ] || shared_args+=(--harness "$HARNESS_ARG")
@@ -950,6 +985,7 @@ case "$ARG3" in
   *' '*)  # raw launch command (unverified-adapter escape hatch)
     LAUNCH=$ARG3
     HARNESS=""
+    decision_reason_source='explicit raw launch command'
     for word in $LAUNCH; do
       case "$word" in [A-Za-z_]*=*) continue ;; *) HARNESS=$(basename "$word"); break ;; esac
     done
@@ -973,14 +1009,25 @@ case "$ARG3" in
       fi
       HARNESS=$("$SQUAD_ROOT/bin/sq-harness.sh" crew)
       harness_src='config/crew-harness'
+      crew_pin=
+      [ ! -f "$CONFIG/crew-harness" ] || crew_pin=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
+      if [ -n "$crew_pin" ] && [ "$crew_pin" != default ]; then
+        decision_reason_source='config/crew-harness default'
+      else
+        decision_reason_source='detected own harness (no config/crew-harness pin)'
+      fi
     fi
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: no launch template for harness '$HARNESS' (from $harness_src or detection); pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
   *)
     HARNESS=$ARG3
+    decision_reason_source='explicit harness argument'
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+if [ -f "$CONFIG/crew-dispatch.json" ] && [ "$KIND" != xo ]; then
+  decision_reason_source="$decision_reason_source; config/crew-dispatch.json active"
+fi
 
 case "$HARNESS" in
   pi|pi-signed) LAUNCH="SQUAD_PI_HARNESS=$HARNESS $LAUNCH" ;;
@@ -1042,6 +1089,19 @@ if [ "$KIND" = xo ] && [ -z "$ARG3" ]; then
       esac
     fi
   fi
+fi
+
+if [ "$KIND" != xo ]; then
+  decision_args=(--harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}")
+  if [ "$DECISION_PROFILE_SET" -eq 1 ]; then
+    decision_args+=(--profile "$DECISION_PROFILE_ARG")
+  elif [ "$DECISION_REASON_SET" -eq 1 ]; then
+    decision_args+=(--reason "$DECISION_REASON_ARG")
+  else
+    decision_args+=(--reason "$decision_reason_source")
+  fi
+  [ "$QUOTA_SET" -eq 0 ] || decision_args+=(--quota-summary "$QUOTA_SUMMARY_ARG")
+  SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" decision "${decision_args[@]}" || true
 fi
 
 XO_registry_value() {

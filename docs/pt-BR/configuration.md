@@ -299,6 +299,10 @@ Spawns em lote satisfazem o mesmo requisito com um `--harness` compartilhado.
 Spawns de XO são isentos e ainda resolvem através de `config/xo-harness` e seus tokens opcionais de modelo e esforço.
 Esta seção é a única dona do schema canônico e suas semânticas por campo.
 A seção 4 do `AGENTS.md` é dona do limite de intake de dispatch sempre carregado, e `quota-array-dispatch` é dona do procedimento de seleção de array de perfil ciente de quota.
+Cada spawn de operador ou recon, incluindo cada par de lote, registra um evento `decision` de intake em `data/<id>/dispatch.jsonl` antes do lançamento; spawns de XO são isentos.
+Para um spawn único, Squad deve passar o nome do perfil correspondente como `--decision-profile` (ou um `--decision-reason` curto quando nenhum perfil se encaixa) e o resumo compacto de quota que leu como `--quota-summary`; spawns em lote recusam essas flags e registram um motivo derivado pelo `sq-spawn.sh`.
+A gravação é best effort e nunca bloqueia um spawn, e nenhum segredo, token ou texto de brief pode aparecer no motivo ou no resumo de quota.
+`bin/sq-dispatch-log.sh` é dono do formato e dos limites do evento, e `sq-spawn.sh --help` é dono das flags.
 
 ```json
 {
