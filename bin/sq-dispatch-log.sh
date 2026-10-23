@@ -15,6 +15,13 @@
 # remaining_tokens, remaining_requests and/or status (available/tight/unknown).
 # An omitted quota summary records {"status":"unknown"}; raw quota/auth payloads
 # are not accepted. No brief, environment credentials, or status text is read.
+# harness, model and effort values that look like a credential or token are
+# refused and nothing is written.
+# outcome may carry failure_class=provider|quota|guard|other. The writer derives
+# it at write time from the last done/failed/blocked/paused line of
+# state/<id>.status (done yields no class; no status line yields none) by
+# matching a few keywords on that line. Only the bucket is stored, never the
+# status text. Teardown and status-notify write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
@@ -23,8 +30,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
+STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
-if ! python3 - "$DATA" "$@" 2>/dev/null <<'PY'
+if ! python3 - "$DATA" "$STATE" "$@" 2>/dev/null <<'PY'
 import argparse
 import datetime
 import fcntl
@@ -35,6 +43,42 @@ import re
 import stat
 import sys
 import time
+
+SECRET_SHAPE = re.compile(
+    r"(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
+    r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
+    r"|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]"
+    r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"
+    r"|[A-Za-z0-9_+/]{32,}",
+    re.IGNORECASE)
+FAILURE_BUCKETS = (
+    ("quota", re.compile(r"quota|usage limit|session limit|rate[ -]?limit|insufficient credit", re.IGNORECASE)),
+    ("provider", re.compile(r"provider|overloaded|outage|unavailable|server error", re.IGNORECASE)),
+    ("guard", re.compile(r"guard|policy|refus|denied", re.IGNORECASE)),
+)
+TERMINAL_LINE = re.compile(r"^(done|failed|blocked|paused): (.*)$")
+
+
+def failure_class(state_dir, task_id):
+    path = os.path.join(state_dir, task_id + ".status")
+    if os.path.islink(path) or not os.path.isfile(path):
+        return None
+    last = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                match = TERMINAL_LINE.match(line.rstrip("\n"))
+                if match:
+                    last = match
+    except OSError:
+        return None
+    if last is None or last.group(1) == "done":
+        return None
+    for bucket, pattern in FAILURE_BUCKETS:
+        if pattern.search(last.group(2)):
+            return bucket
+    return "other"
+
 
 parser = argparse.ArgumentParser(description="Append one private dispatch event (best effort).")
 parser.add_argument("id")
@@ -51,7 +95,7 @@ for event in ("decision", "spawn"):
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
-args = parser.parse_args(sys.argv[2:])
+args = parser.parse_args(sys.argv[3:])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")
 record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -59,7 +103,7 @@ record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 if args.event in ("decision", "spawn"):
     for field in ("harness", "model", "effort"):
         value = getattr(args, field)
-        if not re.fullmatch(r"[!-~]{1,128}", value):
+        if not re.fullmatch(r"[!-~]{1,128}", value) or SECRET_SHAPE.search(value):
             raise ValueError("invalid choice")
         record[field] = value
 if args.event == "decision":
@@ -81,6 +125,9 @@ if args.event == "decision":
     record["quota_summary"] = quota
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
+    bucket = failure_class(sys.argv[2], args.id)
+    if bucket is not None:
+        record["failure_class"] = bucket
 line = (json.dumps(record, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
 os.umask(0o077)
 os.makedirs(sys.argv[1], mode=0o700, exist_ok=True)

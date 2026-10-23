@@ -595,6 +595,97 @@ else
   fail "empty --json with flags wrong: $output"
 fi
 
+echo ""
+echo "=== Released, Chosen Profile, Failure Class, Credential Guard ==="
+
+LOG_WRITER="$ROOT/bin/sq-dispatch-log.sh"
+WRITE_STATE="$TMP_ROOT/writer-state"
+mkdir -p "$WRITE_STATE"
+
+# A torn-down task (released only, no done or failed row) still counts toward its lane.
+write_log "$TMP_ROOT/released-data" rel-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"rel-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"rel-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"rel-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T10:30:00+00:00","id":"rel-a","event":"outcome","source":"teardown","result":"released"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/released-data" "$TUNE" --json --by-lane --fallback-rate 2>&1)
+if echo "$output" | grep -q '"tasks":1' &&
+   echo "$output" | grep -q '"lane":"rel-lane","dispatches":1,"success_rate":null,"off_recommendation":0' &&
+   echo "$output" | grep -q '"fallback":{"hits":0,"observed":0,"unknown":1,"rate":null}'; then
+  pass "a released-only task counts toward its lane but is never a fallback"
+else
+  fail "released-only task mis-counted: $output"
+fi
+
+# With no spawn row, the chosen profile comes from state/<id>.meta, not the recommendation.
+mkdir -p "$TMP_ROOT/chosen-state"
+cat > "$TMP_ROOT/chosen-state/dec-a.meta" <<'METAEOF'
+harness=pi
+model=gpt-5
+effort=high
+METAEOF
+echo "done: finished" > "$TMP_ROOT/chosen-state/dec-a.status"
+write_log "$TMP_ROOT/chosen-data" dec-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"dec-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"dec-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:20:00+00:00","id":"dec-a","event":"outcome","source":"status-notify","result":"done"}'
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/chosen-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/chosen-data" "$TUNE" --json --by-lane 2>&1)
+if echo "$output" | grep -q '"lane":"dec-lane","dispatches":1,"success_rate":100.0,"off_recommendation":1,"chosen":\[{"profile":"pi/gpt-5/high","dispatches":1}\]'; then
+  pass "a decision without a spawn row takes its chosen profile from meta"
+else
+  fail "decision-only chosen profile wrong: $output"
+fi
+
+# The writer records a failure class from the status line, so the fallback survives status removal.
+WRITE_DATA="$TMP_ROOT/writer-data"
+echo "failed: provider overloaded, retrying later" > "$WRITE_STATE/prov-a.status"
+SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$WRITE_DATA" "$LOG_WRITER" prov-a outcome --source status-notify --result failed
+rm -f "$WRITE_STATE/prov-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$WRITE_DATA" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":1,"observed":1,"unknown":0,"rate":100.0}' &&
+   ! grep -q "retrying later" "$WRITE_DATA/prov-a/dispatch.jsonl" 2>/dev/null; then
+  pass "a provider failure class recorded at write time survives status removal, without status text"
+else
+  fail "writer failure class not used: $output"
+fi
+
+# A failure line with no keyword match is recorded as other, a miss rather than unknown.
+echo "failed: unexplained crash" > "$WRITE_STATE/other-a.status"
+OTHER_DATA="$TMP_ROOT/other-data"
+SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$OTHER_DATA" "$LOG_WRITER" other-a outcome --source status-notify --result failed
+rm -f "$WRITE_STATE/other-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$OTHER_DATA" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
+  pass "a failure line without a keyword is recorded as other, not unknown"
+else
+  fail "other failure class not a miss: $output"
+fi
+
+# A credential-shaped model is refused by the writer and never stored.
+SECRET_DATA="$TMP_ROOT/secret-data"
+SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$SECRET_DATA" "$LOG_WRITER" sec-a spawn \
+  --harness claude --model sk-live-abcdefgh1234 --effort default >/dev/null 2>&1
+if [ ! -e "$SECRET_DATA/sec-a/dispatch.jsonl" ]; then
+  pass "a credential-shaped model is refused by the dispatch log writer"
+else
+  fail "credential-shaped model was stored"
+fi
+
+# A credential-shaped harness in meta prints as redacted, never verbatim.
+mkdir -p "$TMP_ROOT/redact-state"
+cat > "$TMP_ROOT/redact-state/redact-a.meta" <<'METAEOF'
+harness=ghp_abcdefghijklmnop
+model=gpt-5
+effort=high
+METAEOF
+echo "done: finished" > "$TMP_ROOT/redact-state/redact-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/redact-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q 'ghp_abcdef'; then
+  fail "credential-shaped harness printed: $output"
+elif echo "$output" | grep -q '"profile":"redacted/gpt-5/high"'; then
+  pass "a credential-shaped harness prints as redacted"
+else
+  fail "redacted profile missing: $output"
+fi
+
 # ── cleanup ───────────────────────────────────────────────────────────────
 
 rm -rf "$TMP_ROOT"
