@@ -7,8 +7,9 @@
 # a real sq-sentry.sh subprocess to assert the behavioral contract:
 # provably-working no-verb wakes absorbed (no exit, no queue entry, suppressor
 # advanced, beacon fresh), stopped-crew no-verb wakes surfaced (queue + exit),
-# provably-working stale panes absorbed-then-escalated past the threshold,
-# terminal-looking stale status lines overridden by an active run, the heartbeat
+# provably-working stale panes absorbed-then-escalated past the threshold (deferred
+# while an active drill run-step holds), terminal-looking stale status lines
+# overridden by an active run, the heartbeat
 # backstop fail-safe, and afk coherence (no double-triage while the away-mode
 # daemon owns supervision).
 #
@@ -946,8 +947,11 @@ test_stale_terminal_status_overridden_by_active_run() {
   [ ! -e "$state/.hb-surfaced-validating" ] || fail "an absorbed wake must not mark the status line as surfaced"
   reap "$pid"
 
-  # Phase B: backdate the idle timer past the threshold; the run genuinely
-  # wedges and the next poll escalates exactly like the non-terminal case.
+  # Phase B: the run-step has ended and the pane is still frozen, so no active
+  # step defers the wedge timer. Backdate the idle timer past the threshold; the
+  # next poll escalates exactly like the non-terminal case. (While the run-step is
+  # active the timer defers instead; see test_wedge_timer_deferred_while_run_step_active.)
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no active run'
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
@@ -998,8 +1002,11 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
   [ -s "$state/.stale-since-$key" ] || fail "stale-since escalation timer was not recorded on absorb"
   reap "$pid"
 
-  # Phase B: backdate the idle timer past the threshold; the next run escalates.
-  # (The subsequent-sight timer path does not re-read the operator state.)
+  # Phase B: the run-step has ended and the pane is still frozen, so no active
+  # step defers the wedge timer. Backdate the idle timer past the threshold; the
+  # next run escalates. (While the run-step is active the timer defers instead; see
+  # test_wedge_timer_deferred_while_run_step_active.)
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no active run'
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
@@ -1012,7 +1019,86 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
   [ ! -e "$state/.stale-since-$key" ] || fail "stale-since timer was not cleared after escalation"
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the wedge escalation failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "wedge escalation was not queued"
+  unset SQUAD_FAKE_CREW_STATE
   pass "provably-working non-terminal stale is absorbed on first sight, then wedge-escalated past the threshold"
+}
+
+# --- foreground gate or CI wait: an active run-step defers the wedge timer ----
+# Regression for the false wedge alarm: an operator driving `drill axi respond` or
+# a CI monitor in the foreground cannot append paused:, so its idle pane goes stale
+# while the run-step is working. The first sighting is absorbed, but the wedge timer
+# then escalated every STALE_ESCALATE_SECS on later polls without re-reading the
+# run-step, reaching demand-deep-inspection while CI progressed normally. An active
+# run-step is the authoritative declared wait, so the timer must not escalate while
+# it holds. The companion below proves the wedge limit still applies with no step.
+test_wedge_timer_deferred_while_run_step_active() {
+  local dir state fakebin out capture_file window key pane_hash since pid
+  dir=$(make_case wedge-run-step-active); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:sq-gate-wait"
+  printf 'waiting on drill gate' > "$capture_file"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/gate-wait.meta"
+  printf 'working: validating\n' > "$state/gate-wait.status"
+  sig=$(seen_sig "$state/gate-wait.status"); printf '%s' "$sig" > "$state/.seen-gate-wait_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "waiting on drill gate")
+  # A prior poll already absorbed this idle hash and started the idle timer,
+  # which has since run past the wedge threshold.
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  printf '1\n' > "$state/.count-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  # Across several polls the sentry must stay alive and silent.
+  if ! wait_live "$pid" 50; then
+    reap "$pid"; fail "active run-step did not defer the wedge timer: sentry escalated: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -s "$out" ] || fail "active run-step printed a wedge wake: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "active run-step counted a wedge escalation"
+  [ ! -s "$state/.stand-to-queue" ] || fail "active run-step queued a wedge wake"
+  # The idle timer must have been refreshed by the check itself, so a vacuous pass
+  # (the stale path never ran) cannot satisfy the assertions above.
+  since=$(cat "$state/.stale-since-$key" 2>/dev/null || true)
+  case "$since" in ''|*[!0-9]*) fail "idle timer was lost while the run-step is active" ;; esac
+  [ $(( $(date +%s) - since )) -lt 240 ] || fail "idle timer was not refreshed while the run-step is active: the stale check never ran"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "an active run-step defers the wedge timer past the threshold: no escalation, idle timer kept fresh"
+}
+
+# Companion: the same stale pane with the idle timer past the threshold and NO
+# active step is a genuinely stuck worker, so the wedge limit still escalates it.
+test_wedge_timer_escalates_without_active_step() {
+  local dir state fakebin out capture_file window key pane_hash pid
+  dir=$(make_case wedge-no-active-step); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:sq-gate-stuck"
+  printf 'frozen with no drill step' > "$capture_file"
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/gate-stuck.meta"
+  printf 'working: validating\n' > "$state/gate-stuck.status"
+  sig=$(seen_sig "$state/gate-stuck.status"); printf '%s' "$sig" > "$state/.seen-gate-stuck_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "frozen with no drill step")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  printf '1\n' > "$state/.count-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no active run'
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "a stale pane with no active step did not escalate past the wedge threshold"
+  grep -F "stale: $window" "$out" >/dev/null || fail "escalation did not print a stale wake: $(cat "$out")"
+  grep -F "possible wedge" "$out" >/dev/null || fail "escalation did not flag a possible wedge"
+  unset SQUAD_FAKE_CREW_STATE
+  pass "without an active step the wedge limit still escalates a stuck pane"
 }
 
 # --- non-terminal stale, crew NOT provably working: surfaced immediately ------
@@ -2134,17 +2220,25 @@ test_paused_authoritative_working_preserves_wedge_timer() {
     || { reap "$pid"; fail "repeat authoritative working recheck reset the wedge timer"; }
   reap "$pid"
 
+  # Phase B: the still-active run-step defers the wedge timer rather than
+  # escalating it past the threshold; the pane stays silent and the idle clock restarts.
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 40 || fail "authoritative working state did not wedge-escalate past the threshold"
-  grep -F "possible wedge" "$out" >/dev/null || fail "authoritative working wedge escalation omitted its reason"
-  [ ! -e "$state/.stale-since-$key" ] || fail "wedge timer remained after authoritative working escalation"
+  if ! wait_live "$pid" 50; then
+    reap "$pid"; fail "authoritative working state escalated past the threshold instead of deferring: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ ! -s "$out" ] || fail "authoritative working state printed a wedge wake: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "authoritative working state counted a wedge escalation"
+  since=$(cat "$state/.stale-since-$key" 2>/dev/null || true)
+  case "$since" in ''|*[!0-9]*) fail "wedge timer was lost while the run-step is active" ;; esac
+  [ $(( $(date +%s) - since )) -lt 240 ] || fail "wedge timer was not restarted while the run-step is active"
   unset SQUAD_FAKE_CREW_STATE
-  pass "a paused status overridden by authoritative working preserves its wedge timer and escalates"
+  pass "a paused status overridden by authoritative working keeps its wedge timer and defers it while the run-step is active"
 }
 
 # --- consecutive wedge escalations on the same pane demand deep inspection ----
@@ -2185,6 +2279,10 @@ test_wedge_escalation_marks_demand_deep_inspection_after_threshold() {
     reap "$pid"; fail "sentry exited on the priming round (should absorb): $(cat "$out")"
   fi
   reap "$pid"
+  # The run-step has ended and the pane stays frozen: a genuine wedge with no
+  # active step, so the escalation counter accumulates. (While a run-step is
+  # active the timer defers instead; see test_wedge_timer_deferred_while_run_step_active.)
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no active run'
 
   n=1
   while [ "$n" -le 3 ]; do
@@ -2281,6 +2379,8 @@ test_teardown_drops_target_and_wedge_counter() {
   reap "$pid"
 
   # Phase B: past the threshold the idle pane escalates on a LIVE task record (escalation 1).
+  # The run-step has ended and the pane is still frozen, so no active step defers it.
+  export SQUAD_FAKE_CREW_STATE='state: unknown · source: none · no active run'
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
@@ -3088,6 +3188,8 @@ test_terminal_stale_surfaced
 test_finished_stale_is_absorbed
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
+test_wedge_timer_deferred_while_run_step_active
+test_wedge_timer_escalates_without_active_step
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
 test_wedge_escalation_resets_when_pane_becomes_active
 test_teardown_drops_target_and_wedge_counter

@@ -737,10 +737,11 @@ operator_absorb_class() {  # <id>
 
 # Same single sq-crew-state.sh read as operator_absorb_class, but also prints
 # the busy SOURCE behind a working verdict ("<class> <src>"). pause_state_class
-# is the only caller: it must tell a genuine active run-step (a real drill
+# are the callers: they must tell a genuine active run-step (a real drill
 # step) apart from a merely busy pane (e.g. a foreground long poll) before
-# letting a working verdict override a declared pause - only a run-step may,
-# a busy pane alone must not. <src> is empty when <class> is not working.
+# letting a working verdict override a declared pause or defer the wedge timer -
+# only a run-step may, a busy pane alone must not. <src> is empty when <class>
+# is not working.
 operator_absorb_verdict() {  # <id> -> "<class> <src>"
   local id=$1 line state src open
   [ -n "$id" ] || { printf 'none '; return; }
