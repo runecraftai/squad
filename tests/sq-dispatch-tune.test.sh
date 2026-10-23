@@ -616,6 +616,30 @@ else
   fail "released-only task mis-counted: $output"
 fi
 
+# A torn-down task whose teardown row carries a quota failure class is a fallback hit, not unknown.
+write_log "$TMP_ROOT/released-quota-data" relq-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"relq-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"relq-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"relq-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T10:30:00+00:00","id":"relq-a","event":"outcome","source":"teardown","result":"released","failure_class":"quota"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/released-quota-data" "$TUNE" --json --by-lane --fallback-rate 2>&1)
+if echo "$output" | grep -q '"lane":"relq-lane","dispatches":1,"success_rate":null,"off_recommendation":0' &&
+   echo "$output" | grep -q '"fallback":{"hits":1,"observed":1,"unknown":0,"rate":100.0}'; then
+  pass "a released task with a quota failure class counts as a fallback hit"
+else
+  fail "released quota fallback mis-counted: $output"
+fi
+
+# A decision-only log (no spawn row, no meta) reports its recommended profile, never unknown.
+write_log "$TMP_ROOT/decision-only-data" deconly-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"deconly-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"deconly-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:20:00+00:00","id":"deconly-a","event":"outcome","source":"status-notify","result":"done"}'
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/chosen-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/decision-only-data" "$TUNE" --json --by-lane 2>&1)
+if echo "$output" | grep -q '"profile":"claude/sonnet/default"' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  pass "a decision-only log falls back to its decision profile instead of unknown"
+else
+  fail "decision-only log read as unknown: $output"
+fi
+
 # With no spawn row, the chosen profile comes from state/<id>.meta, not the recommendation.
 mkdir -p "$TMP_ROOT/chosen-state"
 cat > "$TMP_ROOT/chosen-state/dec-a.meta" <<'METAEOF'
