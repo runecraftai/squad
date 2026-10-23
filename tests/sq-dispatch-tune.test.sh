@@ -450,7 +450,6 @@ write_log "$UNREADABLE_DATA" closed-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"closed-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"closed-scope","quota_summary":{"status":"unknown"}}' \
   '{"timestamp":"2026-10-20T10:00:05+00:00","id":"closed-a","event":"spawn","harness":"claude","model":"opus","effort":"xhigh"}' \
   '{"timestamp":"2026-10-20T10:20:05+00:00","id":"closed-a","event":"outcome","source":"status-notify","result":"done"}'
-mkdir -p "$UNREADABLE_DATA/closed-b/dispatch.jsonl"
 UNREADABLE_STATE="$TMP_ROOT/unreadable-state"
 mkdir -p "$UNREADABLE_STATE"
 cat > "$UNREADABLE_STATE/closed-b.meta" <<'METAEOF'
@@ -459,12 +458,19 @@ model=gpt-5
 effort=high
 METAEOF
 echo "done: PR https://example.invalid/pull/2 checks green" > "$UNREADABLE_STATE/closed-b.status"
-output=$(SQUAD_STATE_OVERRIDE="$UNREADABLE_STATE" SQUAD_DATA_OVERRIDE="$UNREADABLE_DATA" "$TUNE" --json 2>&1)
-if echo "$output" | grep -q '"profile":"claude/opus/xhigh"' &&
-   echo "$output" | grep -q '"profile":"pi/gpt-5/high"'; then
-  pass "an unreadable dispatch log does not hide the other tasks or the meta fallback"
+if [ "$(id -u)" -eq 0 ]; then
+  echo "skip: unreadable-log case needs a non-root user (mode 000 is readable by root)"
 else
-  fail "unreadable log dropped a task: $output"
+  mkdir -p "$UNREADABLE_DATA/closed-b"
+  printf '%s\n' '{"timestamp":"2026-10-20T11:00:00+00:00","id":"closed-b","event":"decision","harness":"pi","model":"gpt-5","effort":"high","profile":"pi/gpt-5/high"}' > "$UNREADABLE_DATA/closed-b/dispatch.jsonl"
+  chmod 000 "$UNREADABLE_DATA/closed-b/dispatch.jsonl"
+  output=$(SQUAD_STATE_OVERRIDE="$UNREADABLE_STATE" SQUAD_DATA_OVERRIDE="$UNREADABLE_DATA" "$TUNE" --json 2>&1)
+  if echo "$output" | grep -q '"profile":"claude/opus/xhigh"' &&
+     echo "$output" | grep -q '"profile":"pi/gpt-5/high"'; then
+    pass "an unreadable dispatch log does not hide the other tasks or the meta fallback"
+  else
+    fail "unreadable log dropped a task: $output"
+  fi
 fi
 
 # Log-first precedence: a meta file that disagrees must not override the spawn row.
