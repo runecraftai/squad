@@ -20,13 +20,50 @@ A normal operational base may store this private log under the repository-root f
 
 `bin/sq-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
 The producing PR and Relay helpers own the fields they append, `bin/sq-classify-lib.sh` owns status-event vocabulary, and `bin/sq-crew-state.sh` owns current-state reconciliation.
-Wake, sentry, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections rather than being duplicated into one exhaustive state tree here.
+Wake, sentry, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections; the tree below names those files without owning their mechanics.
 
 `bin/sq-session-start.sh`'s header is the single owner of session-start ordering, composed commands, digest contents, and the digest's startup mechanism.
 `bin/sq-startup-network.sh`'s header owns the deferred network stage that keeps every external-network call off that digest's blocking path, including its state files and the safety argument for running them later.
 `docs/sessionstart-nudge.md` owns the native session-open adapter tiers that run or nudge the digest command, and the source routing between them.
 `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 Ordinary dead-direct-report recovery is owned by `stuck-operator-recovery`, while persistent-XO recovery is owned by `xo-provisioning`.
+
+### Base state file tree
+
+```
+.github/workflows/   shared CI and PR enforcement, committed
+.claude/skills       symlink to .agents/skills for claude compatibility
+skills/              standalone public installer-facing skills, committed; not loaded by Squad
+                      interview-me is vendored from runecraftai/skills (packages/skills/skills/interview-me/); refresh by copying that upstream directory
+  <id>/brief.md      per-task operator brief, or per-XO charter brief when kind=xo
+  <id>/report.md     recon task deliverable, written by the operator; survives teardown
+  <id>/knowledge-pass.md  strike delivery record written by the knowledge-pass skill on request; survives teardown
+  <id>.status        appended by operators: "<state>: <note>" wake-event lines, not current-state truth; the last nonblank line is terminal completion evidence for bin/sq-exec-state.sh when its verb is done: or failed:, except while a bound run is still active or gate-parked
+  <id>.grok-turnend-token   Squad-owned grok hook registry token for the task; removed by teardown
+  <id>.muse-session  muse busy-source binding (sessions root plus task worktree) written by sq-spawn; removed by teardown
+  <id>.exec          per-attempt execution state sidecar: exec_state=, exec_attempt=, exec_retry_count=, exec_started_at=, exec_last_activity=, exec_previous_state=, exec_error=, exec_next_retry_at=, exec_max_retries=, exec_workflow_version=, exec_workspace=, exec_backend=, exec_harness=; missing for legacy tasks (unclaimed); managed by bin/sq-exec-state.sh; state machine: unclaimed -> claimed -> running -> retry_queued -> released, with a still-executing bound run adopting retry_queued back to running as the same attempt (no extra retry spent, attempt number and pinned workflow version preserved), and exec_next_retry_at= is written only by a queued retry; `get` reports the current branch/head-bound drill run over the record (active or gate-parked run -> running, terminal run -> released) while `get-recorded` reads the raw dispatch record that dispatch decisions must use; claim refuses an executing run, holds a gate-parked run only while its recorded owner endpoint is alive, and lets an authoritatively gone owner or an ended run resume instead (an ended run only affects the `get` projection and never blocks a claim or retires a record); a terminal done:/failed: .status line retires the id to released, which also happens during recovery; recovery repairs only queued/claimed/running records through those transitions and never resurrects a released id
+  <id>.check-trust   private content binding created by sq-check-register.sh for an intentional custom check
+  <id>.pr-poll       private validated data sidecar for the byte-static PR merge poll
+  <id>.pr-poll-registration  private transactional provenance record binding the task, canonical metadata identity, sidecar, and static poll publication
+  <id>.pr-poll-retirement  private identity-bound crash-recovery receipt for one exact validated merged result; removed after its poll artifacts retire
+  .pr-check-quarantine/  private non-runnable storage for checks neutralized by the non-executing migration
+  .pr-check-migration.log  private per-task outcomes distinguishing rebuilt or canonically registered replacement polls, quarantined unarmed polls, and incomplete migrations
+  .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
+  x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
+  .stand-to-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
+  .handoff-queue         durable new-session handoff requests: ts<TAB>seq<TAB>kind<TAB>key<TAB>state<TAB>payload; state pending -> surfaced -> resolved (docs/handoff-request.md)
+  .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
+  .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
+  .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
+  .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
+  .hash-* .count-*   sentry internals; never touch
+  .stale-* .stale-since-* .wedge-escalations-* .seen-*   sentry internals; never touch manually - teardown retires them for the released window, the sentry drops the stale and wedge markers of any window whose task record is gone, and housekeeping also retires .seen-* when the window is gone
+  .compaction-notified-*   per-task compaction dedup marker shared by the sentry and the away-mode daemon; never touch - teardown retires it for the released task
+  .paused-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch
+  .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
+  .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
+```
 
 ## Local TUI service (config/squad-tui, state/squad-tui)
 
