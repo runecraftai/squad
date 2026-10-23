@@ -109,7 +109,7 @@ if args.event in ("decision", "spawn"):
 if args.event == "decision":
     field = "profile" if args.profile is not None else "reason"
     value = getattr(args, field)
-    if not value or len(value) > 256 or any(ord(c) < 32 for c in value):
+    if not value or len(value) > 256 or any(ord(c) < 32 for c in value) or SECRET_SHAPE.search(value):
         raise ValueError("invalid rationale")
     record[field] = value
     quota = json.loads(args.quota_summary)
