@@ -43,6 +43,8 @@ MAX_MANIFEST_BYTES=1048576
 . "$SCRIPT_DIR/sq-remote-readiness-lib.sh"
 # shellcheck source=bin/sq-project-origin-lib.sh
 . "$SCRIPT_DIR/sq-project-origin-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -63,6 +65,7 @@ trap cleanup EXIT
 
 [ "$#" -ge 5 ] || usage
 ID=$1
+durable_custody_check "$ID" xo-routing || exit 3
 HOST=$2
 REMOTE_ROOT=$3
 REMOTE_HOME=$4

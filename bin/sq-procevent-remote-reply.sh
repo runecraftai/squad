@@ -70,6 +70,8 @@ DOCUMENT_LOCAL_FAILURE=2
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
 # shellcheck source=bin/sq-pending-reply-lib.sh
 . "$SCRIPT_DIR/sq-pending-reply-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -282,8 +284,10 @@ normalize_payload() { # <source> <destination>
 # The one place a line enters the parent status stream. A captured generation can
 # be replayed, so every append - a mirrored line or an escalation this adapter
 # raises itself - is at most once on exact bytes.
-# Returns 0 appended, 1 already present, 2 the write itself failed.
+# Returns 0 appended, 1 already present, 2 the write itself failed, 3 custody refused.
 append_status_once() { # <status-file> <line>
+  local custody_id=${1##*/}
+  durable_custody_check "${custody_id%.status}" xo-routing || return 3
   grep -Fqx -- "$2" "$1" 2>/dev/null && return 1
   status_line_append "$1" "$2" || return 2
   return 0
@@ -294,6 +298,7 @@ cmd_ingest() {
   local actual_bytes actual_hash line doc local_doc rewritten appended=0 cursor_already=0 lock status_file tmp
   local fetch_rc append_rc undelivered=''
   validate_id "$id"
+  durable_custody_check "$id" xo-routing || exit 3
   [ -f "$result" ] && [ ! -L "$result" ] || die "result file is unavailable or unsafe: $result"
   class=$(classify_result "$result")
   [ "$class" != malformed ] || die "remote reply result is malformed"
@@ -341,6 +346,7 @@ cmd_ingest() {
     append_rc=0
     append_status_once "$status_file" "$line" || append_rc=$?
     [ "$append_rc" -ne 2 ] || { fm_lock_release "$lock"; die "cannot append continuity escalation"; }
+    [ "$append_rc" -ne 3 ] || { fm_lock_release "$lock"; exit 3; }
     fm_lock_release "$lock"
     printf 'continuity-broken: %s (%s)\n' "$id" "$reason"
     return 3
@@ -369,6 +375,7 @@ cmd_ingest() {
     append_rc=0
     append_status_once "$status_file" "$rewritten" || append_rc=$?
     [ "$append_rc" -ne 2 ] || { fm_lock_release "$lock"; die "cannot append remote reply"; }
+    [ "$append_rc" -ne 3 ] || { fm_lock_release "$lock"; exit 3; }
     [ "$append_rc" -ne 0 ] || appended=$((appended + 1))
   done < "$normalized_payload"
   if [ -n "$undelivered" ]; then
@@ -376,6 +383,7 @@ cmd_ingest() {
     append_rc=0
     append_status_once "$status_file" "$line" || append_rc=$?
     [ "$append_rc" -ne 2 ] || { fm_lock_release "$lock"; die "cannot append document escalation"; }
+    [ "$append_rc" -ne 3 ] || { fm_lock_release "$lock"; exit 3; }
     [ "$append_rc" -ne 0 ] || appended=$((appended + 1))
   fi
   while IFS= read -r corr; do

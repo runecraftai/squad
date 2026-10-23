@@ -66,6 +66,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 # shellcheck source=bin/sq-x-lib.sh
 . "$SCRIPT_DIR/sq-x-lib.sh"
 
@@ -154,10 +156,16 @@ case "$ID" in
   ''|.*|*[!A-Za-z0-9._-]*) echo "sq-x-followup: unsafe task id: $ID" >&2; exit 2 ;;
 esac
 
+# A durable mission's relay metadata is engine-owned: refuse before any branch reads or posts.
+durable_custody_check "$ID" metadata || exit 3
 META="$STATE/$ID.meta"
 if [ "$MODE" = clear ]; then
-  fmx_meta_link_clear "$META" \
-    || { echo "sq-x-followup: could not clear the link in state/$ID.meta" >&2; exit 1; }
+  CLEAR_RC=0
+  fmx_meta_link_clear "$META" || CLEAR_RC=$?
+  if [ "$CLEAR_RC" -ne 0 ]; then
+    echo "sq-x-followup: could not clear the link in state/$ID.meta" >&2
+    exit "$CLEAR_RC"
+  fi
   printf '%s\n' "$ID"
   exit 0
 fi
@@ -201,7 +209,13 @@ if [ "$COUNT" -ge "$MAX_COUNT" ]; then
 fi
 
 if [ "$EXPIRED" = 1 ]; then
-  fmx_meta_link_clear "$META" || echo "sq-x-followup: warning: could not clear the elapsed link in state/$ID.meta" >&2
+  CLEAR_RC=0
+  fmx_meta_link_clear "$META" || CLEAR_RC=$?
+  if [ "$CLEAR_RC" -eq 3 ]; then
+    echo "sq-x-followup: could not clear the link in state/$ID.meta" >&2
+    exit 3
+  fi
+  [ "$CLEAR_RC" -eq 0 ] || echo "sq-x-followup: warning: could not clear the elapsed link in state/$ID.meta" >&2
   if [ "$MODE" = check ]; then
     exit 1
   fi
@@ -237,16 +251,24 @@ case "$post_rc" in
   0)
     NEWCOUNT=$((COUNT + 1))
     if [ "$FINAL" = 1 ] || [ "$NEWCOUNT" -ge "$MAX_COUNT" ]; then
-      if ! fmx_meta_link_clear "$META"; then
+      CLEAR_RC=0
+      fmx_meta_link_clear "$META" || CLEAR_RC=$?
+      if [ "$CLEAR_RC" -ne 0 ]; then
         echo "sq-x-followup: error: posted but could not clear the link in state/$ID.meta" >&2
-        exit 1
+        exit "$CLEAR_RC"
       fi
-    elif ! fmx_meta_followups_set "$META" "$NEWCOUNT"; then
-      if ! fmx_meta_link_clear "$META"; then
-        echo "sq-x-followup: error: posted but could not record the follow-up count or clear the link in state/$ID.meta" >&2
-        exit 1
+    else
+      COUNT_RC=0
+      fmx_meta_followups_set "$META" "$NEWCOUNT" || COUNT_RC=$?
+      if [ "$COUNT_RC" -ne 0 ]; then
+        CLEAR_RC=0
+        fmx_meta_link_clear "$META" || CLEAR_RC=$?
+        if [ "$CLEAR_RC" -ne 0 ]; then
+          echo "sq-x-followup: error: posted but could not record the follow-up count or clear the link in state/$ID.meta" >&2
+          exit "$CLEAR_RC"
+        fi
+        echo "sq-x-followup: warning: posted but could not record the follow-up count in state/$ID.meta; cleared the link to avoid duplicate follow-ups" >&2
       fi
-      echo "sq-x-followup: warning: posted but could not record the follow-up count in state/$ID.meta; cleared the link to avoid duplicate follow-ups" >&2
     fi
     printf '%s\n' "$RID"
     exit 0
@@ -267,7 +289,13 @@ case "$post_rc" in
     # graceful-degradation path against an old relay that only ever supported
     # one follow-up, or a binding the relay already considers exhausted for any
     # other reason - either way, retrying would never succeed.
-    fmx_meta_link_clear "$META" || echo "sq-x-followup: warning: could not clear the rejected link in state/$ID.meta" >&2
+    CLEAR_RC=0
+    fmx_meta_link_clear "$META" || CLEAR_RC=$?
+    if [ "$CLEAR_RC" -eq 3 ]; then
+      echo "sq-x-followup: could not clear the link in state/$ID.meta" >&2
+      exit 3
+    fi
+    [ "$CLEAR_RC" -eq 0 ] || echo "sq-x-followup: warning: could not clear the rejected link in state/$ID.meta" >&2
     echo "sq-x-followup: relay rejected the follow-up for $ID (cap or window exhausted); skipped and cleared the link" >&2
     exit 0
     ;;

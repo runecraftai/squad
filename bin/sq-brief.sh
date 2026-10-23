@@ -101,6 +101,8 @@ esac
 . "$SCRIPT_DIR/sq-marker-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
 . "$SCRIPT_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 PAUSED_VERB=${SQUAD_CLASSIFY_PAUSED_VERB:-$SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT}
 
 resolve_directory_input() {
@@ -294,6 +296,8 @@ else
   fi
 fi
 ID=${POS[0]}
+# A durable mission's brief is written only once the durable core confirms its admission.
+durable_custody_check "$ID" admission || exit 3
 
 # Selectable methods are one registry of "<id>@<version> <kind> <reference>": the
 # materialization below and the category check read the same entries, so a

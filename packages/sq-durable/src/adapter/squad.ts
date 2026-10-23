@@ -1,8 +1,8 @@
 import type { MissionIdScheme } from "../core/index.js";
 
 /**
- * Squad adapter boundary: the one module that names Squad concepts. The core takes these as plain parameters; it never
- * imports this file (see test/dependency-direction.test.ts).
+ * Squad adapter boundary: the Squad names of the durable core. The core takes these as plain parameters; it never
+ * imports this file (see test/dependency-direction.test.ts). Responsibilities and writers live in legacy-writers.ts.
  *
  * In A1 the adapter only fixes names. Backlog, instructions, harness selection, isolated copies, Drill and supervision
  * stay outside this slice and connect here in later slices.

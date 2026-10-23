@@ -26,6 +26,8 @@ LOCK_STALE_SECS=30
 . "$SCRIPT_DIR/sq-tasks-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -79,6 +81,11 @@ remove_dead_stale_lock() { # <lock-path>
 }
 
 run_move() { # <keys...>
+  local key
+  # Durable missions never go to an XO; refuse the whole move before it starts.
+  for key in "$@"; do
+    durable_custody_check "$key" xo-routing || return 3
+  done
   tasks-axi mv "$@" --file "$DELIVERED" --to "$DEST"
 }
 
@@ -142,6 +149,7 @@ while IFS= read -r key; do
   [ -n "$key" ] && KEYS+=("$key")
 done < <(list_keys "$DELIVERED")
 for key in "${KEYS[@]}"; do
+  durable_custody_check "$key" xo-routing || exit 3
   section=$(backlog_key_section "$DELIVERED" "$key") || die "delivered key disappeared during classification: $key"
   [ "$section" = '## Queued' ] || die "delivered outbox contains non-Queued item $key under $section"
 done

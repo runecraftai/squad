@@ -20,7 +20,8 @@
 # focus-preserving close helper is called.
 # The script never closes a workspace. It removes only the matching journal,
 # and only after the exact pane is confirmed gone. Every error warns and returns
-# success so session startup continues conservatively.
+# success so session startup continues conservatively; a custody refusal is
+# reported with exit 3 after the remaining candidates are processed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +36,8 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 fm_backend_source herdr
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 fm_herdr_cleanup_warn() {
   printf 'warning: herdr session-start projection cleanup: %s\n' "$*" >&2
@@ -262,6 +265,13 @@ fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
     fm_lock_release "$task_lock" || true
     return 0
   fi
+  # Absent task metadata never licenses cleanup of a durable mission's pane or journal.
+  if ! durable_custody_check "$id" cleanup; then
+    fm_herdr_cleanup_warn "$id preserved because its cleanup belongs to the durable core"
+    fm_lock_release "$presentation_lock" || true
+    fm_lock_release "$task_lock" || true
+    return 0
+  fi
 
   # This unconditional retirement is the authorized containment documented
   # with the presentation floor ownership in bin/backends/herdr.sh.
@@ -333,5 +343,6 @@ fm_herdr_session_cleanup() {
 
 if [ "${SQUAD_HERDR_SESSION_CLEANUP_SOURCE_ONLY:-0}" != 1 ]; then
   fm_herdr_session_cleanup
+  if durable_custody_refused; then exit 3; fi
   exit 0
 fi

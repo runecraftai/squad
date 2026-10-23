@@ -33,6 +33,8 @@ elif [ "$#" -ne 0 ]; then
   exit 2
 fi
 
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
 # shellcheck source=bin/sq-x-lib.sh
@@ -334,8 +336,11 @@ if [ ! -d "$STATE" ] || [ -L "$STATE" ]; then
 fi
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ -n "$STATE_DEVICE" ] || exit 1
-if ! fm_pr_poll_retirement_recover_all "$STATE" "$TEMPLATE"; then
+retirement_rc=0
+fm_pr_poll_retirement_recover_all "$STATE" "$TEMPLATE" || retirement_rc=$?
+if [ "$retirement_rc" -ne 0 ]; then
   echo "PR_CHECK_MIGRATION: pending PR poll retirement could not be validated:$SQUAD_PR_POLL_RETIREMENT_REJECTED" >&2
+  [ "$retirement_rc" -ne 3 ] || exit 3
   exit 1
 fi
 refresh_v1_x_shim() {
@@ -477,7 +482,7 @@ ensure_quarantine_dir() {
 }
 
 quarantine_tree_repair_and_validate() {
-  local artifact
+  local artifact artifact_id
   [ -e "$QUARANTINE" ] || [ -L "$QUARANTINE" ] || return 0
   ensure_quarantine_dir || return 1
   for artifact in "$QUARANTINE"/* "$QUARANTINE"/.[!.]* "$QUARANTINE"/..?*; do
@@ -485,6 +490,13 @@ quarantine_tree_repair_and_validate() {
     [ -f "$artifact" ] && [ ! -L "$artifact" ] || return 1
     [ "$(fm_pr_file_device "$artifact")" = "$STATE_DEVICE" ] || return 1
     [ "$(fm_pr_file_link_count "$artifact")" = 1 ] || return 1
+    artifact_id=${artifact##*/}
+    artifact_id=${artifact_id%%.*}
+    if ! durable_custody_check "$artifact_id" metadata; then
+      custody_refused=1
+      migration_failed=1
+      continue
+    fi
     chmod 0600 "$artifact" || return 1
     [ "$(fm_pr_file_mode "$artifact")" = 600 ] || return 1
     [ "$(fm_pr_file_device "$artifact")" = "$STATE_DEVICE" ] || return 1
@@ -857,6 +869,11 @@ recover_pending_outcomes() {
     diagnostic_obligation_message "$basename" || return 1
     prefix=$MIGRATION_DIAGNOSTIC_PREFIX
     kind=$MIGRATION_DIAGNOSTIC_KIND
+    if ! durable_custody_check "$prefix" metadata || ! durable_custody_check "$prefix" cleanup; then
+      custody_refused=1
+      migration_failed=1
+      continue
+    fi
     case "$kind" in
       pending-canonical)
         success="$QUARANTINE/$prefix.diagnostic.canonical"
@@ -977,6 +994,11 @@ process_diagnostic_obligations() {
     [ -e "$obligation" ] || [ -L "$obligation" ] || continue
     basename=${obligation##*/}
     diagnostic_obligation_message "$basename" || return 1
+    if ! durable_custody_check "$MIGRATION_DIAGNOSTIC_PREFIX" metadata; then
+      custody_refused=1
+      migration_failed=1
+      continue
+    fi
     message=$MIGRATION_DIAGNOSTIC_MESSAGE
     diagnostic_file_is_one_line "$obligation" "$message" || return 1
     record_diagnostic "$message" || return 1
@@ -1005,6 +1027,7 @@ process_diagnostic_obligations() {
 
 diagnostics_failed=0
 migration_failed=0
+custody_refused=0
 if ! quarantine_tree_repair_and_validate \
   || ! diagnostic_namespace_valid \
   || ! migrate_legacy_noncanonical_namespace \
@@ -1032,6 +1055,11 @@ if migration_needed; then
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" && continue
 
     if fm_pr_task_id_valid "$id"; then
+      if ! durable_custody_check "$id" metadata || ! durable_custody_check "$id" cleanup; then
+        custody_refused=1
+        migration_failed=1
+        continue
+      fi
       prefix=$id
       meta="$STATE/$id.meta"
       data="$STATE/$id.pr-poll"
@@ -1079,6 +1107,11 @@ if migration_needed; then
         fi
       fi
     else
+      if ! durable_custody_check "$id" metadata || ! durable_custody_check "$id" cleanup; then
+        custody_refused=1
+        migration_failed=1
+        continue
+      fi
       message='noncanonical task artifact: migration outcome tracking started before legacy poll handling'
       if ! ensure_diagnostic_obligation "$NONCANONICAL_PREFIX" pending-noncanonical "$message" \
         || ! process_diagnostic_obligations; then
@@ -1121,6 +1154,9 @@ if [ "$migration_failed" -eq 0 ] && [ "$scan_safe" -eq 1 ]; then
 fi
 
 if [ "$migration_failed" -ne 0 ]; then
+  if [ "$custody_refused" -eq 1 ]; then
+    exit 3
+  fi
   if [ "$ALLOW_INCOMPLETE_REPAIRS" -eq 1 ] && [ "$scan_safe" -eq 1 ]; then
     exit 0
   fi

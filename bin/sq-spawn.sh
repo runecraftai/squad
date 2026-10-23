@@ -234,6 +234,8 @@ SUB_HOME_MARKER=".sq-xo-home"
 . "$SCRIPT_DIR/sq-remote-readiness-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
 . "$SCRIPT_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 # Fail closed before any unit mutation: a drill gate agent must never spawn
 # a direct report (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -619,6 +621,7 @@ spawn_remote_XO() {
 }
 
 if [ "$KIND" = xo ]; then
+  durable_custody_check "${POS[0]:-}" xo-routing || exit 3
   if spawn_remote_XO "${POS[0]:-}"; then
     exit 0
   else
@@ -829,6 +832,11 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
 fi
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
+# Custody before the first write: a durable mission is launched only once the
+# durable core confirms its admission, and never as an XO.
+if [ "$KIND" != xo ]; then
+  durable_custody_check "$ID" admission spawn retry || exit 3
+fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
 if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
   echo "error: another spawn is already creating task $ID" >&2

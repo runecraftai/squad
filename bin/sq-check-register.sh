@@ -12,6 +12,8 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 . "$SCRIPT_DIR/sq-pr-lib.sh"
 # shellcheck source=bin/sq-check-lib.sh
 . "$SCRIPT_DIR/sq-check-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 if [ "$#" -ne 1 ] || ! fm_pr_task_id_valid "$1"; then
   echo "error: invalid custom check registration" >&2
@@ -19,6 +21,7 @@ if [ "$#" -ne 1 ] || ! fm_pr_task_id_valid "$1"; then
 fi
 
 ID=$1
+durable_custody_check "$ID" metadata || exit 3
 CHECK="$STATE/$ID.check.sh"
 TRUST="$STATE/$ID.check-trust"
 [ -d "$STATE" ] && [ ! -L "$STATE" ] || { echo "error: state directory is unavailable" >&2; exit 1; }

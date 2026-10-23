@@ -41,6 +41,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 # shellcheck source=bin/sq-x-lib.sh
 . "$SCRIPT_DIR/sq-x-lib.sh"
 # shellcheck source=bin/sq-pr-lib.sh
@@ -119,6 +121,8 @@ case "$RID" in
   ''|.*|*[!A-Za-z0-9._-]*) echo "sq-x-link: unsafe request_id: $RID" >&2; exit 2 ;;
 esac
 
+# A durable mission's relay metadata is engine-owned: refuse even when the record is gone.
+durable_custody_check "$ID" metadata || exit 3
 META="$STATE/$ID.meta"
 if [ ! -f "$META" ]; then
   echo "sq-x-link: no such task: state/$ID.meta" >&2
@@ -168,9 +172,14 @@ else
   esac
 fi
 
-if ! fmx_meta_link_set "$META" "$RID" "$LINK_TS" "$FOLLOWUPS" "$REQ_PLATFORM" "$REQ_REPLY_MAX"; then
+LINK_RC=0
+fmx_meta_link_set "$META" "$RID" "$LINK_TS" "$FOLLOWUPS" "$REQ_PLATFORM" "$REQ_REPLY_MAX" || LINK_RC=$?
+if [ "$LINK_RC" -eq 3 ]; then
+  exit 3
+fi
+if [ "$LINK_RC" -ne 0 ]; then
   echo "sq-x-link: failed to record the link in state/$ID.meta" >&2
-  exit 1
+  exit "$LINK_RC"
 fi
 
 printf 'linked %s to X request %s\n' "$ID" "$RID"

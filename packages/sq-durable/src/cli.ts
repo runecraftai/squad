@@ -2,7 +2,19 @@
 import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
 import { parseArgs } from "node:util";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+	CUSTODY_TABLE_DIGESTS,
+	CUSTODY_TABLES,
+	INSTALLED_CUSTODY_GENERATION,
+	inventoryViolations,
+	LEGACY_WRITERS,
+	scanLegacyWriters,
+	squadCustodyScheme,
+} from "./adapter/legacy-writers.js";
 import { terminalOrigin } from "./adapter/squad.js";
+import { CUSTODY_REFUSAL_EXIT, type CustodyDecision, decideCustody, type GenerationSignal, staleWriters, tableDigest } from "./core/index.js";
 import { readLedger } from "./lab/executor.js";
 import { PROTOCOL_VERSION, type Response } from "./service/protocol.js";
 import { callSocket, ServiceUnavailable } from "./service/socket.js";
@@ -25,9 +37,19 @@ Terminal surface (every command talks to the service socket):
   sq-durable stats --store DIR
   sq-durable ledger --store DIR                laboratory executor ledger, read from its own file
 
+Custody (plan section 12; the shell side is bin/sq-durable-custody.sh):
+  sq-durable custody check --mission ID --responsibility R[,R...] [--loaded-generation N] [--store DIR]
+                    may a legacy writer exercise R on mission ID? Asks the store's service; when no service
+                    answers, decides from the ID and its generation table alone, and never confirms a condition
+  sq-durable custody tables                    published custody tables, their digests and the installed generation
+  sq-durable custody inventory --repo DIR      legacy writers derived from DIR/bin, the inventory, and violations
+  sq-durable custody signals --state DIR [--generation N]
+                    live long-running writers whose loaded custody generation is older than N (default: installed)
+
 Every command accepts --json. Exit codes: 0 ok; 1 usage or internal error; 2 definitive refusal (conflict, stale
 revision, not found, invalid); 3 service stopped, starting or failed (for answer: whether the decision was recorded is
 unconfirmed, so resend the same --response-id or read 'sq-durable receipt'); 4 protocol major version mismatch.
+custody: 0 allowed; 3 refused, with the refusal message on stderr; 1 usage or an inventory violation.
 
 Laboratory stores only (init --lab): SQ_DURABLE_LAB_FAULT=<point>[@n],... makes the service SIGKILL itself at named
 points; SQ_DURABLE_LAB_HOLD=resume keeps it alive without resume().`;
@@ -162,6 +184,116 @@ async function answer(flags: Flags): Promise<number> {
 	return 3;
 }
 
+function integerFlag(flags: Flags, name: string): number | undefined {
+	const raw = flags[name];
+	if (raw === undefined) return undefined;
+	if (typeof raw !== "string" || !/^[0-9]+$/.test(raw)) throw new UsageError(`--${name} must be a non-negative integer`);
+	return Number(raw);
+}
+
+function printDecision(flags: Flags, decision: CustodyDecision, source: string): number {
+	if (flags.json === true) process.stdout.write(`${JSON.stringify({ ...decision, source }, null, 2)}\n`);
+	if (decision.allowed) return 0;
+	process.stderr.write(`${decision.message}\n`);
+	return CUSTODY_REFUSAL_EXIT;
+}
+
+/**
+ * Ask the service of the store first, so every check of a durable mission reaches the engine's side; fall back to the
+ * decision from the ID and its table alone when no service answers. That fallback is the same decision, except that it
+ * can never confirm a condition, so a conditioned responsibility is refused.
+ */
+async function custodyCheck(flags: Flags): Promise<number> {
+	const query = {
+		id: required(flags, "mission"),
+		responsibilities: required(flags, "responsibility")
+			.split(",")
+			.map((r) => r.trim())
+			.filter((r) => r !== ""),
+		...(integerFlag(flags, "loaded-generation") === undefined ? {} : { loadedGeneration: integerFlag(flags, "loaded-generation") as number }),
+	};
+	let reason = "no store was named";
+	const store = typeof flags.store === "string" && flags.store !== "" ? flags.store : process.env.SQ_DURABLE_STORE;
+	if (store !== undefined && store !== "") {
+		let socket: string | undefined;
+		try {
+			socket = resolveStore(store).socket;
+		} catch (error) {
+			reason = error instanceof Error ? error.message : String(error);
+		}
+		if (socket !== undefined) {
+			try {
+				const response = await callSocket(socket, "custody", { missionId: query.id, responsibilities: query.responsibilities, ...(query.loadedGeneration === undefined ? {} : { loadedGeneration: query.loadedGeneration }) }, { timeoutMs: 5_000 });
+				if (response.ok) return printDecision(flags, response.result as CustodyDecision, "service");
+				process.stderr.write(`refused: the durable service did not answer the custody check of mission ${query.id} (${response.code}: ${response.message})\n`);
+				return CUSTODY_REFUSAL_EXIT;
+			} catch (error) {
+				if (!(error instanceof ServiceUnavailable)) throw error;
+				reason = error.message;
+			}
+		}
+	}
+	return printDecision(flags, decideCustody(query, squadCustodyScheme(), { state: "stopped", reason }), "local");
+}
+
+function readSignals(dir: string): GenerationSignal[] {
+	if (!existsSync(dir)) return [];
+	const signals: GenerationSignal[] = [];
+	for (const name of readdirSync(dir)) {
+		const match = /^\.custody-signal-([A-Za-z0-9._-]+)$/.exec(name);
+		if (match === null) continue;
+		const fields = new Map<string, string>();
+		for (const line of readFileSync(join(dir, name), "utf8").split("\n")) {
+			const eq = line.indexOf("=");
+			if (eq > 0) fields.set(line.slice(0, eq), line.slice(eq + 1));
+		}
+		const pid = Number(fields.get("pid"));
+		const generation = Number(fields.get("generation"));
+		if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(generation)) continue;
+		try {
+			process.kill(pid, 0);
+		} catch (error) {
+			// ESRCH: the writer is gone and its signal is history. EPERM: alive under another user, still a writer.
+			if ((error as NodeJS.ErrnoException).code === "ESRCH") continue;
+		}
+		signals.push({ name: match[1] as string, pid, generation });
+	}
+	return signals;
+}
+
+async function custody(flags: Flags, sub: string | undefined): Promise<number> {
+	switch (sub) {
+		case "check":
+			return custodyCheck(flags);
+		case "tables": {
+			const tables = CUSTODY_TABLES.map((table) => ({ ...table, digest: tableDigest(table), pinned: CUSTODY_TABLE_DIGESTS[table.generation] ?? null }));
+			print(flags, { installed: INSTALLED_CUSTODY_GENERATION, tables });
+			return 0;
+		}
+		case "inventory": {
+			const repo = required(flags, "repo");
+			const violations = inventoryViolations(repo);
+			const scanned = scanLegacyWriters(repo).map((writer) => ({ path: writer.path, lines: writer.hits.map((hit) => `${hit.line} ${hit.signature}`) }));
+			print(flags, { writers: LEGACY_WRITERS, scanned, violations });
+			for (const violation of violations) process.stderr.write(`inventory violation: ${violation}\n`);
+			return violations.length === 0 ? 0 : 1;
+		}
+		case "signals": {
+			const generation = integerFlag(flags, "generation") ?? INSTALLED_CUSTODY_GENERATION;
+			const live = readSignals(required(flags, "state"));
+			const stale = staleWriters(live, generation);
+			print(flags, { generation, live, stale });
+			if (stale.length === 0) return 0;
+			process.stderr.write(
+				`refused: admission of custody generation ${generation} must wait for ${stale.map((s) => `${s.name} (pid ${s.pid}, loaded generation ${s.generation})`).join(", ")} to restart\n`,
+			);
+			return CUSTODY_REFUSAL_EXIT;
+		}
+		default:
+			throw new UsageError("usage: sq-durable custody check|tables|inventory|signals ...");
+	}
+}
+
 function safeUser(): string | undefined {
 	try {
 		return userInfo().username;
@@ -192,6 +324,11 @@ async function main(argv: string[]): Promise<number> {
 			timeout: { type: "string" },
 			command: { type: "string" },
 			protocol: { type: "string" },
+			responsibility: { type: "string" },
+			"loaded-generation": { type: "string" },
+			repo: { type: "string" },
+			state: { type: "string" },
+			generation: { type: "string" },
 			help: { type: "boolean", short: "h" },
 		},
 	});
@@ -256,6 +393,8 @@ async function main(argv: string[]): Promise<number> {
 			print(flags, { path, ...readLedger(path) });
 			return 0;
 		}
+		case "custody":
+			return custody(flags, sub);
 		case "call": {
 			let callArgs: Record<string, unknown> = {};
 			if (typeof flags.args === "string") callArgs = JSON.parse(flags.args) as Record<string, unknown>;

@@ -49,6 +49,8 @@ SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 . "$SCRIPT_DIR/sq-xo-charter-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 usage() {
   echo "usage: sq-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
@@ -979,6 +981,7 @@ case "${1:-}" in
     ;;
   *)
     [ $# -ge 3 ] || { usage; exit 1; }
+    durable_custody_check "$1" xo-routing || exit 3
     seed_home "$@"
     ;;
 esac

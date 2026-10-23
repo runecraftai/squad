@@ -8,7 +8,8 @@
 # Ambiguous endpoint evidence is surfaced for stuck-operator-recovery; it is
 # never interrupted automatically. An open needs-decision or blocked record
 # means the operator is legitimately stopped and must not be interrupted.
-# Workspaces and branches are not modified.
+# Workspaces and branches are not modified. A sweep keeps processing every
+# record and exits 3 when it refused a durable mission.
 #
 # The retry_run_claim function scans retry_queued tasks and claims them when
 # their scheduled moment arrives, releases them when retries are exhausted,
@@ -27,6 +28,10 @@ case "$STALL_TIMEOUT" in ''|*[!0-9]*) STALL_TIMEOUT=300 ;; esac
 
 # shellcheck source=bin/sq-classify-lib.sh
 . "$SCRIPT_DIR/sq-classify-lib.sh"
+# Sourced by the long-running sentry: the custody generation it loads here is the
+# one its in-memory copy of this file was written for (bin/sq-durable-custody.sh).
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 field() { grep "^$1=" "$STATE/$2.exec" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
 meta_field() { grep "^$1=" "$STATE/$2.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
@@ -108,6 +113,7 @@ handle_task() {
   last=$(field exec_last_activity "$id"); [ -n "$last" ] || last=0
   age=$((now - last))
   [ "$age" -ge "$STALL_TIMEOUT" ] || return 0
+  durable_custody_check "$id" wait || return 0
   # An open needs-decision or blocked record means the operator is
   # legitimately stopped waiting for a commander decision or Squad reply.
   # Do not interrupt - the operator is not stuck, it is stopped on purpose.
@@ -151,6 +157,7 @@ retry_run_claim() {
     id=${file##*/}; id=${id%.exec}
     state=$(field exec_state "$id")
     [ "$state" = retry_queued ] || continue
+    durable_custody_check "$id" retry || continue
     # A terminal event may arrive after the stall scan queued this retry.
     # Retire it without appending progress or retry-limit failure events.
     if stall_status_is_nonworking "$id"; then
@@ -215,6 +222,7 @@ stall_run_check() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   if [ "${1:-check}" = check ]; then
     stall_run_check
+    if durable_custody_refused; then exit 3; fi
   else
     printf '%s\n' 'usage: sq-stall-detect.sh [check]' >&2
     exit 2

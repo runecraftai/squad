@@ -282,6 +282,17 @@ reset_fixture; : > "$FIXTURE_DIR/race"; assert_preserved "revalidation race"
 reset_fixture; printf '%s\n' "$TAB" > "$FIXTURE_DIR/active-tab"; assert_preserved "active target"
 reset_fixture; : > "$FIXTURE_DIR/focus-refuse"; assert_preserved "focus refusal"
 
+reset_fixture
+rm -f "$SQUAD_STATE_OVERRIDE/$ID.herdr-presentation"
+write_v1 dm1-cleanup
+printf '%s\n' "└ dm1-cleanup · p:$TOKEN" > "$FIXTURE_DIR/title"
+fm_herdr_session_cleanup >/dev/null 2>&1
+[ -f "$SQUAD_STATE_OVERRIDE/dm1-cleanup.herdr-presentation" ] \
+  || fail "durable mission cleanup retired the presentation journal"
+[ ! -s "$CLOSE_LOG" ] || fail "durable mission cleanup closed the pane"
+durable_custody_refused || fail "durable mission cleanup did not record its custody refusal"
+pass "cleanup preserves a durable mission's presentation journal and records the refusal for exit 3"
+
 INTEGRATION_ROOT="$TMP_ROOT/bootstrap-integration"
 mkdir -p "$INTEGRATION_ROOT/home/state" "$INTEGRATION_ROOT/home/data" "$INTEGRATION_ROOT/home/config"
 cp -R "$ROOT/bin" "$INTEGRATION_ROOT/bin"

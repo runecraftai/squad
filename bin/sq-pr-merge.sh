@@ -17,6 +17,8 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -32,6 +34,8 @@ if ! fm_pr_task_id_valid "$ID" || ! fm_pr_url_parse "$RAW_URL" \
   echo "error: invalid PR merge request" >&2
   exit 2
 fi
+# Landing a durable mission belongs to the durable core; a direct call is refused.
+durable_custody_check "$ID" landing || exit 3
 URL=$SQUAD_PR_URL
 PR_OWNER=$SQUAD_PR_OWNER
 PR_REPO=$SQUAD_PR_REPO

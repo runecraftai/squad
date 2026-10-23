@@ -71,6 +71,8 @@ EXEC_STATE_BIN="$SCRIPT_DIR/sq-exec-state.sh"
 . "$SCRIPT_DIR/sq-busy-lib.sh"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: sq-crew-state.sh <id>" >&2; exit 2; }
@@ -88,12 +90,13 @@ SQUAD_CREW_STATE_RUNS_LIMIT=${SQUAD_CREW_STATE_RUNS_LIMIT:-200}
 case "$SQUAD_CREW_STATE_RUNS_LIMIT" in ''|*[!0-9]*) SQUAD_CREW_STATE_RUNS_LIMIT=200 ;; esac
 SEP=' · '
 
-# Emit the one canonical line and exit 0. Detail is optional.
+# Emit the one canonical line, then exit 3 when custody refused a legacy write during this run and 0 otherwise. Detail is optional.
 emit() {  # <state> <source> [detail]
   local line="state: $1${SEP}source: $2" detail="${3:-}"
   [ -n "${EXEC_STATE:-}" ] && detail="${detail:+$detail$SEP}exec_state=$EXEC_STATE"
   [ -n "$detail" ] && line="$line${SEP}$detail"
   printf '%s\n' "$line"
+  if durable_custody_refused; then exit 3; fi
   exit 0
 }
 
@@ -324,6 +327,7 @@ drill_pr_sidecar() { # <state-dir> <task-id>
 }
 drill_pr_sidecar_write() { # <state-dir> <task-id> <pr-url>
   local sidecar
+  durable_custody_check "$2" metadata || return 3
   sidecar=$(drill_pr_sidecar "$1" "$2")
   if [ -n "$3" ]; then
     printf '%s\n' "$3" > "$sidecar"
@@ -332,6 +336,7 @@ drill_pr_sidecar_write() { # <state-dir> <task-id> <pr-url>
   fi
 }
 drill_pr_sidecar_clear() { # <state-dir> <task-id>
+  durable_custody_check "$2" metadata || return 3
   rm -f -- "$(drill_pr_sidecar "$1" "$2")"
 }
 

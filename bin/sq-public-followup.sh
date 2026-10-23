@@ -105,6 +105,8 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 . "$SCRIPT_DIR/sq-public-followup-lib.sh"
 # shellcheck source=bin/sq-xo-registry-lib.sh
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 RETRY_BACKOFF=${SQUAD_PF_RETRY_BACKOFF_SECS:-900}
 case "$RETRY_BACKOFF" in ''|*[!0-9]*) RETRY_BACKOFF=900 ;; esac
@@ -163,6 +165,27 @@ obligation_json() {
 
 pf_field() { printf '%s' "$1" | jq -r "$2 // empty" 2>/dev/null; }
 
+# A public-followup obligation is task metadata of the base that owns it: a
+# durable mission's record and its registry artifact change only for the
+# responsibilities its custody generation leaves to this script.
+pf_custody() {  # <obligation-id>
+  durable_custody_check "$1" metadata || exit 3
+}
+
+# Each unconsumed event names the obligation it settles. A durable one is refused
+# before the relay gate, so a relay-inactive base still reports the refusal.
+pf_custody_pending_events() {
+  local file payload obligation refused=0
+  for file in "$(fm_pf_events_dir "$STATE")"/*.json; do
+    [ -f "$file" ] && [ ! -L "$file" ] || continue
+    payload=$(cat -- "$file" 2>/dev/null) || continue
+    obligation=$(pf_field "$payload" '.obligation_id')
+    [ -n "$obligation" ] || continue
+    durable_custody_check "$obligation" metadata || refused=1
+  done
+  [ "$refused" -eq 0 ] || exit 3
+}
+
 # --- gates ------------------------------------------------------------------
 
 # gate_or_exit: the shared silent gate for every read-side subcommand. Exits 0
@@ -187,6 +210,7 @@ cmd_register() {
   local id=${1:-}
   local relation='' work_home='' work_id='' generation='' platform='' request=''
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -315,11 +339,13 @@ reject_event() {
 }
 
 cmd_consume() {
+  fm_pf_relay_active "$SQUAD_BASE" || pf_custody_pending_events
   gate_or_exit
   fm_pf_has_events "$STATE" || exit 0
   require_tools
 
   local events_dir consumed_dir stderr_file file event_id payload derived out rc reason consume_rc=0
+  local custody_refused=0
   local obligation delivery request platform
   events_dir=$(fm_pf_events_dir "$STATE")
   consumed_dir=$(fm_pf_consumed_dir "$STATE")
@@ -353,6 +379,11 @@ cmd_consume() {
 
     if ! payload=$(jq -ce . "$file" 2>/dev/null) || [ -z "$payload" ]; then
       reject_event "$file" "$event_id" "event is not valid JSON" || consume_rc=1
+      continue
+    fi
+
+    if ! durable_custody_check "$(pf_field "$payload" '.obligation_id')" metadata; then
+      custody_refused=1
       continue
     fi
 
@@ -421,6 +452,7 @@ cmd_consume() {
   # A fresh event must be able to wake Squad again, so drop the surfaced
   # signature once the inbox has been worked.
   rm -f -- "$(fm_pf_root "$STATE")/$SQUAD_PF_SURFACED_BASENAME" 2>/dev/null || true
+  [ "$custody_refused" -eq 0 ] || return 3
   return "$consume_rc"
 }
 
@@ -429,7 +461,7 @@ cmd_consume() {
 cmd_pending() {
   gate_or_exit
 
-  local listing id payload delivery task_state summary platform request printed=0
+  local listing id payload delivery task_state summary platform request printed=0 custody_refused=0
   # An unreadable backlog with registrations present is exactly the silence this
   # whole path exists to prevent, so say so rather than printing nothing.
   if ! command -v jq >/dev/null 2>&1 || ! fm_tasks_axi_cmd >/dev/null 2>&1 \
@@ -463,6 +495,10 @@ cmd_pending() {
     if [ -z "$payload" ]; then
       # The obligation is gone from the backlog (pruned after Done): the
       # registration is stale bookkeeping, not evidence, so drop it.
+      if ! durable_custody_check "$id" metadata; then
+        custody_refused=1
+        continue
+      fi
       if ! clear_public_followup_link "$id"; then
         printf 'cannot clear the legacy X link for closed public commitment %s; registration retained for reconciliation\n' "$id"
         printed=1
@@ -474,6 +510,10 @@ cmd_pending() {
     delivery=$(pf_field "$payload" '.public_followup.delivery.state')
     task_state=$(pf_field "$payload" '.state')
     if [ "$task_state" = 'done' ] || [ "$delivery" = 'posted' ] || [ "$delivery" = 'waived' ]; then
+      if ! durable_custody_check "$id" metadata; then
+        custody_refused=1
+        continue
+      fi
       if ! clear_public_followup_link "$id"; then
         printf 'cannot clear the legacy X link for closed public commitment %s; registration retained for reconciliation\n' "$id"
         printed=1
@@ -498,6 +538,7 @@ EOF
     printf 'unconsumed terminal results are waiting; run %s/bin/sq-public-followup.sh consume\n' "$SQUAD_ROOT"
     printed=1
   fi
+  if [ "$custody_refused" -eq 1 ]; then exit 3; fi
   [ "$printed" -eq 1 ] || exit 0
 }
 
@@ -622,6 +663,7 @@ record_posted() {
 cmd_deliver() {
   local id=${1:-} text_file=
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -771,6 +813,7 @@ EOF
 cmd_record_posted() {
   local id=${1:-} attempt='' chunks=''
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -852,6 +895,7 @@ EOF
 cmd_retire() {
   local id=${1:-} force=0 payload delivery task_state
   [ -n "$id" ] || { usage; exit 2; }
+  pf_custody "$id"
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in

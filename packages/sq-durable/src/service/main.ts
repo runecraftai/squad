@@ -6,6 +6,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, defineExtension, Harness, ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { CUSTODY_TABLES, INSTALLED_CUSTODY_GENERATION } from "../adapter/legacy-writers.js";
 import { LAB_CUSTODY_GENERATION, labMissionScheme, SQUAD_NAMESPACE } from "../adapter/squad.js";
 import {
 	type AdmissionRequest,
@@ -19,6 +20,7 @@ import {
 } from "../core/index.js";
 import { LabLedgerExecutor, readLedger } from "../lab/executor.js";
 import { createFaultInjector, FAULT_ENV, type FaultInjector, HOLD_ENV } from "../lab/fault.js";
+import { custodyDecision, parseCustodyArgs } from "./custody-endpoint.js";
 import { COMMANDS, type Command, MUTATING_COMMANDS, ok, PROTOCOL_VERSION, type Request, type Response, refuse } from "./protocol.js";
 import { classify, type Phase } from "./readiness.js";
 import { serveSocket } from "./socket.js";
@@ -258,6 +260,7 @@ export async function runService(options: ServiceOptions): Promise<void> {
 			protocol: PROTOCOL_VERSION,
 			pi: PI_VERSION,
 			custodyGeneration: LAB_CUSTODY_GENERATION,
+			custody: { installed: INSTALLED_CUSTODY_GENERATION, generations: CUSTODY_TABLES.map((table) => table.generation) },
 			storeId: ownership.storeId,
 			lab: ownership.lab,
 			incarnation,
@@ -307,7 +310,15 @@ export async function runService(options: ServiceOptions): Promise<void> {
 			overdue: decidedWithoutContinuation.filter((item) => item.overdue).map((item) => item.approvalId),
 			holds: faults.holds,
 		});
-		return { ...base, ...readiness, lastSeq: index?.seq ?? 0, blocked, parked, reconcile, decidedWithoutContinuation };
+		return {
+			...base,
+			...readiness,
+			lastSeq: index?.seq ?? 0,
+			blocked,
+			parked,
+			reconcile,
+			decidedWithoutContinuation,
+		};
 	}
 
 	async function handle(request: Request): Promise<Response> {
@@ -318,6 +329,20 @@ export async function runService(options: ServiceOptions): Promise<void> {
 		}
 		const command = request.command as Command;
 		if (command === "ready") return ok(id, await probe());
+		if (command === "custody") {
+			// Answered in every phase: a service that cannot confirm a condition says so, and the decision refuses.
+			const parsed = parseCustodyArgs(args);
+			if ("error" in parsed) return refuse(id, "bad_request", parsed.error);
+			const decision = await custodyDecision(parsed.query, {
+				state: async () => {
+					const report = await probe();
+					return { state: report.state, reasons: report.reasons };
+				},
+				mission: async (missionId) => (harness === undefined ? undefined : harness.snapshot(documents.Mission, missionId, context)),
+			});
+			if (!decision.allowed) log("custody_refused", { missionId: decision.id, responsibility: decision.responsibility, code: decision.code });
+			return ok(id, decision);
+		}
 		if (phase === "failed") return refuse(id, "failed", `service failed: ${failure ?? "unknown"}`);
 		if (harness === undefined || phase === "locking" || phase === "opening") {
 			return refuse(id, "not_ready", `service is starting (${phase}); the store is not open yet`);

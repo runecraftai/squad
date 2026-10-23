@@ -13,6 +13,10 @@
 #        sq-exec-state.sh transition <id> <state>
 #        sq-exec-state.sh recover-all
 #
+# recover-all repairs every record it may, then exits 3 when it refused a
+# durable mission whose custody generation keeps that responsibility with the
+# engine.
+#
 # The sidecar is deliberately separate from state/<id>.meta.  Missing sidecars
 # are the backwards-compatible unclaimed state.  Claim and writes are guarded
 # by a task-local mkdir lock and published with rename, so a competing
@@ -36,6 +40,8 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 STALE_AFTER="${SQUAD_EXEC_STALE_AFTER:-300}"
 case "$STALE_AFTER" in ''|*[!0-9]*) STALE_AFTER=300 ;; esac
 
@@ -317,6 +323,19 @@ run_after_run_hook() {
 
 mkdir -p "$STATE"
 cmd=${1:-}; id=${2:-}
+# A durable mission's dispatch record changes only for the responsibilities its
+# custody generation leaves to this script; a refusal exits 3 before any write.
+case "$cmd" in
+  claim|running|release|released) custody_responsibility=claim ;;
+  retry|retry_queued|after_run) custody_responsibility=retry ;;
+  heartbeat) custody_responsibility=heartbeat ;;
+  recover) custody_responsibility=recovery ;;
+  transition) case "${3:-}" in retry_queued) custody_responsibility=retry ;; *) custody_responsibility=claim ;; esac ;;
+  *) custody_responsibility= ;;
+esac
+if [ -n "$custody_responsibility" ] && valid_id "$id"; then
+  durable_custody_check "$id" "$custody_responsibility" || exit 3
+fi
 case "$cmd" in
   recover-all)
     recover_now=$(date +%s)
@@ -324,7 +343,12 @@ case "$cmd" in
       [ -f "$file" ] || continue
       id=${file##*/}; id=${id%.exec}
       valid_id "$id" || continue
-      [ -f "$STATE/$id.meta" ] || { rm -f "$file"; continue; }
+      # A missing .meta never licenses removing a durable mission's record.
+      if [ ! -f "$STATE/$id.meta" ]; then
+        durable_custody_check "$id" cleanup && rm -f "$file"
+        continue
+      fi
+      durable_custody_check "$id" recovery || continue
       current=$(get_state "$id")
       # Only queued or live attempts are repairable, so released and fresh
       # records cost no run attribution on every heartbeat.
@@ -339,6 +363,7 @@ case "$cmd" in
       fi
       with_lock "$id" recover_locked "$id" "$(task_run_state "$id")" >/dev/null || true
     done
+    if durable_custody_refused; then exit 3; fi
     ;;
   get) valid_id "$id" || { usage >&2; exit 2; }; reported_state "$id" ;;
   get-recorded) valid_id "$id" || { usage >&2; exit 2; }; get_state "$id" ;;

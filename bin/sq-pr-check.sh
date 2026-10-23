@@ -17,6 +17,8 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 
 if [ "$#" -ne 2 ]; then
   echo "error: invalid PR check request" >&2
@@ -28,6 +30,7 @@ if ! fm_pr_task_id_valid "$ID" || ! fm_pr_url_parse "$RAW_URL"; then
   echo "error: invalid PR check request" >&2
   exit 2
 fi
+durable_custody_check "$ID" metadata || exit 3
 URL=$SQUAD_PR_URL
 PROVIDER=$SQUAD_PR_PROVIDER
 HOST=$SQUAD_PR_HOST
@@ -44,10 +47,14 @@ fi
 # A prior exact merged result may have queued its durable wake immediately
 # before interruption.
 # Finish only its identity-bound receipt before publishing a replacement poll.
-fm_pr_poll_retirement_recover_one "$STATE" "$ID" "$SCRIPT_DIR/sq-pr-poll.sh" || {
+rc=0
+fm_pr_poll_retirement_recover_one "$STATE" "$ID" "$SCRIPT_DIR/sq-pr-poll.sh" || rc=$?
+if [ "$rc" -eq 3 ]; then
+  exit 3
+elif [ "$rc" -ne 0 ]; then
   echo "error: pending PR poll retirement could not be validated" >&2
   exit 1
-}
+fi
 
 # Refuse to arm a GitLab watch with no glab on PATH. The poll is silent on
 # every error by design, so a missing CLI would be indistinguishable from a

@@ -195,12 +195,19 @@ SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$SCRIPT_DIR/sq-durable-custody.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
 fi
 ID=$1
 FORCE=${2:-}
+# Conditioned cleanup: a durable mission's records, endpoint and copy go only
+# once the durable core confirms it is terminal with every effect reconciled.
+# --force never bypasses this; discarding a durable mission's work first needs
+# its cancellation through the durable core.
+durable_custody_check "$ID" cleanup || exit 3
 # Fail closed before any unit mutation: a drill gate agent must never tear
 # down a worktree (see bin/sq-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -250,6 +257,15 @@ remote_teardown_locks_release() {
 # survivor once the record is gone.
 # Defined before the remote-XO main-flow call below (bash resolves functions
 # at call time, and that call site runs before the later helper block).
+retire_exec_record() {
+  if ! durable_custody_reserved "$ID"; then
+    "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+    return 0
+  fi
+  [ -e "$STATE/$ID.exec" ] || [ -L "$STATE/$ID.exec" ] || return 0
+  rm -f -- "$STATE/$ID.exec"
+}
+
 retire_watcher_markers() {  # <state-dir> <task-id> <window>
   local state=$1 id=$2 win=$3 key sfx task_key
   task_key=$(printf '%s' "$id" | tr ':/.' '___')
@@ -412,7 +428,7 @@ remote_XO_teardown() {
   grep -vE "^- $ID( |$)" "$XO_REG" > "$tmp" || true
   mv -f -- "$tmp" "$XO_REG"
   retire_watcher_markers "$STATE" "$ID" "$(fm_backend_target_of_meta "$META")"
-  "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+  retire_exec_record || return 1
   rm -f -- "$STATE/$ID.status" "$STATE/$ID.meta" "$STATE/$ID.turn-ended" \
     "$STATE/.$ID.open-decisions-cursor"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
@@ -2075,6 +2091,26 @@ preflight_Squad_home_herdr_children() {  # <home>
   done
 }
 
+preflight_Squad_home_custody() {  # <home>
+  local home=$1 sub_state child_meta child_id child_kind child_home child_wt
+  sub_state="$home/state"
+  [ -d "$sub_state" ] || return 0
+  for child_meta in "$sub_state"/*.meta; do
+    [ -e "$child_meta" ] || continue
+    child_id=$(basename "$child_meta" .meta)
+    durable_custody_check "$child_id" cleanup || return 3
+    child_kind=$(meta_value "$child_meta" kind)
+    if [ "$child_kind" = xo ]; then
+      child_wt=$(meta_value "$child_meta" worktree)
+      child_home=$(meta_value "$child_meta" home)
+      [ -n "$child_home" ] || child_home=$child_wt
+      if [ -n "$child_home" ] && [ -d "$child_home" ]; then
+        preflight_Squad_home_custody "$child_home" || return 3
+      fi
+    fi
+  done
+}
+
 cleanup_Squad_home_children() {
   local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
   sub_state="$home/state"
@@ -2082,6 +2118,7 @@ cleanup_Squad_home_children() {
   for child_meta in "$sub_state"/*.meta; do
     [ -e "$child_meta" ] || continue
     child_id=$(basename "$child_meta" .meta)
+    durable_custody_check "$child_id" cleanup || return 3
     child_wt=$(meta_value "$child_meta" worktree)
     child_proj=$(meta_value "$child_meta" project)
     child_kind=$(meta_value "$child_meta" kind)
@@ -2153,7 +2190,7 @@ cleanup_Squad_home_children() {
     fi
     remove_grok_turnend_auth "$sub_state" "$child_id"
     remove_kimi_turnend_auth "$sub_state" "$child_id"
-    remove_pr_poll_artifacts "$sub_state" "$child_id" || return 1
+    remove_pr_poll_artifacts "$sub_state" "$child_id" || return $?
     child_busy_gen=$(meta_value "$child_meta" busy_gen)
     if [ -z "$child_busy_gen" ]; then
       child_busy_gen=$(cat "$sub_state/$child_id.busy-gen" 2>/dev/null || true)
@@ -2184,6 +2221,7 @@ if [ "$KIND" = xo ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_Squad_home_for_removal "$HOME_PATH" "XO home" "$ID" >/dev/null || exit 1
   if [ "$FORCE" = "--force" ]; then
+    preflight_Squad_home_custody "$HOME_PATH" || exit 3
     validate_Squad_home_children_removal "$HOME_PATH" || exit 1
     if [ "$BACKEND" = herdr ]; then
       teardown_herdr_preflight_target "$T" "$ID" || exit 1
@@ -2197,6 +2235,7 @@ if [ "$KIND" = xo ] && [ "$FORCE" != "--force" ]; then
   if [ -d "$SUB_STATE" ]; then
     for child_meta in "$SUB_STATE"/*.meta; do
       [ -e "$child_meta" ] || continue
+      durable_custody_check "$(basename "$child_meta" .meta)" cleanup || exit 3
       echo "REFUSED: XO $ID still has in-flight work in $SUB_STATE." >&2
       echo "Found $(basename "$child_meta"). Let that home finish or explicitly discard with --force." >&2
       exit 1
@@ -2463,14 +2502,14 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/sq-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
-remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
+remove_pr_poll_artifacts "$STATE" "$ID" || exit $?
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 retire_watcher_markers "$STATE" "$ID" "$T"
 # A remote XO teardown removes the home before reaching this common cleanup
 # path. Avoid invoking sq-exec-state in that case because its startup mkdir
 # would recreate the just-removed remote state directory.
 if [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
-  "$SCRIPT_DIR/sq-exec-state.sh" release "$ID" >/dev/null || true
+  retire_exec_record || exit 1
 fi
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token" \

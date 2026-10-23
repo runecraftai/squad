@@ -17,6 +17,13 @@
 # The receipt binds the terminal observation to the canonical registration and
 # lets a restart finish fixed-path removal without executing state-file bytes.
 
+# Every PR-watch artifact of a task is written through the mutators below, which
+# consult custody first (bin/sq-durable-custody.sh).
+_SQUAD_PR_LIB_DIR=${BASH_SOURCE[0]%/*}
+[ "$_SQUAD_PR_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _SQUAD_PR_LIB_DIR=.
+# shellcheck source=bin/sq-durable-custody.sh
+. "$_SQUAD_PR_LIB_DIR/sq-durable-custody.sh"
+
 SQUAD_PR_PROVIDER=
 SQUAD_PR_URL=
 SQUAD_PR_HOST=
@@ -452,6 +459,7 @@ fm_pr_poll_revoke_final() {
 fm_pr_poll_prepare() {
   local state=$1 id=$2 provider=$3 url=$4 host=$5 path=$6 number=$7 template=$8
   fm_pr_task_id_valid "$id" || return 1
+  durable_custody_check "$id" metadata || return $?
   fm_pr_url_parse "$url" || return 1
   [ "$provider" = "$SQUAD_PR_PROVIDER" ] || return 1
   [ "$host" = "$SQUAD_PR_HOST" ] || return 1
@@ -853,6 +861,7 @@ fm_pr_poll_retirement_discard_obsolete() {
 fm_pr_poll_retirement_publish() {
   local state=$1 id=$2 template=$3 result=$4 receipt state_device tmp
   [ "$result" = merged ] || return 1
+  durable_custody_check "$id" metadata || return $?
   fm_pr_poll_snapshot_matches "$state" "$id" "$template" || return 1
   state_device=$(fm_pr_file_device "$state") || return 1
   receipt="$state/$id.pr-poll-retirement"
@@ -897,6 +906,7 @@ fm_pr_poll_retirement_recover_one() {
   if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
     return 0
   fi
+  durable_custody_check "$id" cleanup || return $?
   if ! fm_pr_poll_retirement_state_valid "$state" "$id"; then
     fm_pr_poll_retirement_discard_obsolete "$state" "$id" "$template" && return 0
     return 1
@@ -928,15 +938,29 @@ fm_pr_poll_retirement_recover_one() {
 }
 
 fm_pr_poll_retirement_recover_all() {
-  local state=$1 template=$2 receipt id
+  local state=$1 template=$2 receipt id rc custody_refused=0
   SQUAD_PR_POLL_RETIREMENT_REJECTED=
   for receipt in "$state"/*.pr-poll-retirement; do
     [ -e "$receipt" ] || [ -L "$receipt" ] || continue
     id=$(basename "$receipt" .pr-poll-retirement)
-    if ! fm_pr_task_id_valid "$id" \
-      || ! fm_pr_poll_retirement_recover_one "$state" "$id" "$template"; then
-      SQUAD_PR_POLL_RETIREMENT_REJECTED="$SQUAD_PR_POLL_RETIREMENT_REJECTED $receipt"
+    rc=0
+    fm_pr_task_id_valid "$id" || rc=1
+    if [ "$rc" -eq 0 ]; then
+      fm_pr_poll_retirement_recover_one "$state" "$id" "$template" || rc=$?
     fi
+    if [ "$rc" -eq 0 ]; then
+      continue
+    fi
+    if [ "$rc" -eq 3 ]; then
+      custody_refused=1
+    fi
+    SQUAD_PR_POLL_RETIREMENT_REJECTED="$SQUAD_PR_POLL_RETIREMENT_REJECTED $receipt"
   done
-  [ -z "$SQUAD_PR_POLL_RETIREMENT_REJECTED" ]
+  if [ -z "$SQUAD_PR_POLL_RETIREMENT_REJECTED" ]; then
+    return 0
+  fi
+  if [ "$custody_refused" -ne 0 ]; then
+    return 3
+  fi
+  return 1
 }

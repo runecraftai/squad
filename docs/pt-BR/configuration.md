@@ -15,6 +15,7 @@ A raiz de código rastreada contém as superfícies de instrução, habilidade, 
 `data/` contém registros privados duráveis da unidade, como os registros de projetos e XOs, preferências do comandante, preferências compartilhadas opcionais do comandante, aprendizados, backlog, briefs e relatórios de recon.
 `state/` contém registros voláteis de runtime, como metadados de tarefas, eventos de status append-only, sinais de endpoint, coordenação de sentry e fila de stand-to, estado de away-mode, artefatos Relay gerados, gerações de re-leitura de configuração XO privadas com seu estado de retentativa e quarentena, e registros de resposta pendente de XOs de propriedade do pai sob `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `state/window-states` é a verdade derivada da sidebar tmux por janela publicada por `bin/sq-window-state.sh`; o cabeçalho desse script é dono do contrato do arquivo, e `bin/sq-crew-state.sh` continua sendo o dono da reconciliação de estado atual que publica.
+`data/durable/` contém o armazenamento do núcleo durável e o log de recusas de custódia, e o cabeçalho de `bin/sq-durable-custody.sh` é dono desse log de recusas e dos sinais de geração `state/.custody-signal-*` que ele escreve.
 `config/` contém escolhas de operação locais e gitignored, e `projects/` contém as cópias locais de projetos que Squad lê mas altera apenas através das exceções restritas, protegidas e concretamente aprovadas pelo comandante em `AGENTS.md`.
 
 `bin/sq-spawn.sh` é dono dos campos de metadados de tarefa base que emite, enquanto a seção de backend de runtime abaixo é dona dos campos específicos do backend e da interpretação do seletor.
@@ -556,6 +557,7 @@ SQUAD_CONFIG_OVERRIDE=      # diretório config alternativo, principalmente para
 SQUAD_PROC_ROOT_OVERRIDE=   # /proc root alternativo para leituras de identidade de processo Linux em sq-stand-to-lib.sh e sq-teardown.sh, principalmente para testes
 SQUAD_BACKEND=             # sobrescrever backend de runtime opcional para novos spawns; tmux/herdr/zellij/orca/cmux/tuios suportam spawns ship/recon, codex-app não é aceito
 SQUAD_TRACE_CONTEXT=       # sobrescrever trace-context opcional; veja "Propagação de trace context"
+SQ_DURABLE_STORE=          # sobrescrita do armazenamento do núcleo durável para verificações de custódia condicionadas (cabeçalho de bin/sq-durable-custody.sh)
 HERDR_SESSION=default  # apenas herdr: sessão nomeada para operações normais de backend; insuficiente para limpeza destrutiva (docs/herdr-backend.md)
 SQUAD_BACKEND_HERDR_COMPOSER_LINES=20  # apenas herdr: linhas de cauda escaneadas por caminhos de fallback/guard de composer-state; submissão de confirmação de idle-baseline usa agent-state
 SQUAD_BACKEND_HERDR_IDLE_RE='^Type a message\.\.\.$'  # apenas herdr: regex de placeholder de composer vazio após extração de ghost compartilhado mais remoção de borda e prompt

@@ -86,6 +86,25 @@ _SQUAD_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/de
 . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-tmux-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
 . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-durable-custody.sh
+. "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-durable-custody.sh"
+
+# Parent status appends are xo-routing, not metadata: a pending reply exists only for work routed to an XO, and a durable
+# mission is never routed to an XO, so a durable parent is refused here even though generation 2 leaves its status legacy.
+fm_pending_reply_parent_custody() {  # <parent-status-file>
+  local id=${1##*/}
+  durable_custody_check "${id%.status}" xo-routing
+}
+
+# Custody of the parent status a pending-reply record belongs to.
+_fm_pending_reply_record_custody() {  # <state-dir> <corr_id>
+  local rec parent_status
+  rec=$(fm_pending_reply_path "$1" "$2")
+  [ -f "$rec" ] || return 0
+  parent_status=$(fm_pending_reply_get "$rec" parent_status)
+  [ -n "$parent_status" ] || return 0
+  fm_pending_reply_parent_custody "$parent_status"
+}
 
 SQUAD_PENDING_REPLY_SCHEMA='sq-pending-reply.v1'
 SQUAD_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
@@ -500,6 +519,7 @@ fm_pending_reply_try_resolve() {  # <state-dir> <corr_id> [status-file-override]
   local state=$1 corr=$2 lock rc=0
   local STATE SQUAD_WAKE_QUEUE SQUAD_WAKE_QUEUE_LOCK
   STATE=$state
+  _fm_pending_reply_record_custody "$state" "$corr" || return $?
   lock="$state/.pending-reply-$corr.lock"
   # shellcheck source=bin/sq-stand-to-lib.sh
   . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-stand-to-lib.sh"
@@ -927,6 +947,7 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
       open_note=${open_note#*$'\t'}
       [ "$open_note" = "$note" ] || continue
       line="resolved [key=$key]: pending-reply-resolved: task=$(fm_pending_reply_get "$rec" task_id) pending-reply-id=$corr via=$(fm_pending_reply_get "$rec" resolved_via)"
+      fm_pending_reply_parent_custody "$parent_status" || return $?
       status_line_append "$parent_status" "$line" 2>/dev/null || return 1
       break
     done <<EOF
@@ -950,6 +971,7 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 lock rc=0
   local STATE SQUAD_WAKE_QUEUE SQUAD_WAKE_QUEUE_LOCK
   STATE=$state
+  _fm_pending_reply_record_custody "$state" "$corr" || return $?
   lock="$state/.pending-reply-$corr.lock"
   # shellcheck source=bin/sq-stand-to-lib.sh
   . "$_SQUAD_PENDING_REPLY_LIB_DIR/sq-stand-to-lib.sh"
@@ -990,6 +1012,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   esac
   payload=$(fm_pending_reply_escalation_payload "$rec" "$kind") || return 1
   [ -n "$parent_status" ] || return 1
+  fm_pending_reply_parent_custody "$parent_status" || return $?
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
   line="blocked [key=$(fm_pending_reply_escalation_key "$corr")]: $payload"
   if ! grep -Fqx "$line" "$parent_status" 2>/dev/null; then

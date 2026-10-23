@@ -23,9 +23,14 @@
 # Exit codes:
 #   0  clean or dry-run
 #   1  issues found (--check) or invalid usage
+#   3  a durable mission's records were refused and left in place
 set -euo pipefail
 
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+_SQUAD_SELF_HEAL_DIR=${BASH_SOURCE[0]%/*}
+[ "$_SQUAD_SELF_HEAL_DIR" != "${BASH_SOURCE[0]}" ] || _SQUAD_SELF_HEAL_DIR=.
+# shellcheck source=bin/sq-durable-custody.sh
+. "$_SQUAD_SELF_HEAL_DIR/sq-durable-custody.sh"
 SCRIPT_NAME="sq-self-heal"
 ISSUES_FOUND=0
 
@@ -145,6 +150,8 @@ sh_apply_orphan_status_cleanup() {
     basename_id=$(basename "$status_file" .status)
     meta_file="$state_dir/${basename_id}.meta"
     if [ ! -f "$meta_file" ]; then
+      # A missing .meta never licenses housekeeping a durable mission's record.
+      durable_custody_check "$basename_id" cleanup || continue
       mkdir -p "$archive_dir"
       mv "$status_file" "$archive_dir/"
       sh_log_fix "archived orphan status log: ${basename_id}.status -> archived/"
@@ -339,6 +346,10 @@ main() {
   fi
 
   # --- Summary ---
+  if durable_custody_refused; then
+    sh_log "refused cleanup of a durable mission's records; leaving them for the durable core"
+    exit 3
+  fi
   if [ "$ISSUES_FOUND" -eq 1 ]; then
     sh_log "issues found — review above output"
     if [ "$mode" = "check" ]; then
