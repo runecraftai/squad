@@ -448,9 +448,32 @@ test_tmux_channel_without_tmux() {
   pass "sq-status-notify fails silently when the tmux channel is enabled but tmux is absent"
 }
 
-# ---------------------------------------------------------------------------
+test_dispatch_log_data_override() {
+  local base fakebin notify_log relocated
+  command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found"; return 0; }
+  base=$(make_base dispatch-log-data-override)
+  fakebin=$(make_fake_notify "$base")
+  notify_log="$base/notify.log"
+  relocated="$base/relocated-data"
+  mkdir -p "$relocated"
+  printf 'working: seed\n' > "$base/state/sq-9.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    SQUAD_DATA_OVERRIDE="$relocated" "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'done: finished work\n' >> "$base/state/sq-9.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    SQUAD_DATA_OVERRIDE="$relocated" "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  python3 - "$relocated/sq-9/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [(r['event'], r['source'], r['result']) for r in rows] == [
+    ('outcome', 'status-notify', 'done')], rows
+PY
+  assert_absent "$base/data/sq-9/dispatch.jsonl" \
+    "a relocated data directory must not split one task's dispatch history"
+  pass "sq-status-notify records its outcome under the data directory in force"
+}
 
-test_baseline_no_spam
+# ---------------------------------------------------------------------------
 test_notifies_each_verb
 test_verb_override
 test_truncation_reset
@@ -464,3 +487,4 @@ test_stderr_notify_log
 test_tmux_channel_target_window
 test_tmux_channel_no_target
 test_tmux_channel_without_tmux
+test_dispatch_log_data_override

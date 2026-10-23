@@ -715,6 +715,10 @@ assert_grep '--session sq-remote' "$HERDR_LOG" "remote launch did not target the
 assert_no_grep '--session default' "$HERDR_LOG" "remote launch targeted the interactive default session"
 assert_grep 'window=remote:ios' "$PARENT/state/ios.meta" "parent metadata pretended the endpoint was local"
 assert_present "$PARENT/state/procevent/remote-reply-ios.source" "remote spawn did not arm its reply source"
+jq -se 'map(select(.event == "spawn")) | length == 1
+  and .[0].harness == "codex" and .[0].model == "default" and .[0].effort == "default"' \
+  "$PARENT/data/ios/dispatch.jsonl" >/dev/null \
+  || fail "a remote XO spawn must append one spawn record with its harness and defaulted model and effort"
 publish_healthy_sentry_identity "$PARENT/state" "$PARENT" "$ROOT/bin/sq-sentry.sh"
 [ "$(remote_env "$ROOT/bin/sq-on.sh" ios sq-remote-xo-control.sh state ios)" = alive ] \
   || fail "remote endpoint was not projected alive from its own host"

@@ -14,6 +14,7 @@
 #   (f) malformed PR URL fails fast without calling sq-gh
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
+#   (i) --auto only enables auto-merge, so no landing outcome is recorded
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -302,6 +303,37 @@ test_parses_pr_url_for_gh_axi() {
   pass "sq-pr-merge parses a GitHub PR URL into sq-gh number and --repo arguments"
 }
 
+test_auto_merge_is_not_recorded_as_landed() {
+  local case_dir landed_dir
+  case_dir=$(make_case auto-merge)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  : > "$case_dir/sq-gh.log"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/31 -- --auto \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "auto-merge: sq-pr-merge failed"
+
+  grep -qxF 'pr merge 31 --repo example/repo --squash --auto' "$case_dir/sq-gh.log" \
+    || fail "auto-merge: --auto was not forwarded to sq-gh pr merge"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "auto-merge: enabling auto-merge on an open PR must not record a landing"
+
+  landed_dir=$(make_case real-merge)
+  mkdir -p "$landed_dir/wt"
+  add_gh_mocks "$landed_dir" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  : > "$landed_dir/sq-gh.log"
+
+  run_pr_merge "$landed_dir" task-x1 https://github.com/example/repo/pull/32 \
+    > "$landed_dir/stdout" 2> "$landed_dir/stderr" || fail "real-merge: sq-pr-merge failed"
+  python3 - "$landed_dir/data/task-x1/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [(r['event'], r['source'], r['result']) for r in rows] == [
+    ('outcome', 'pr-merge', 'landed')], rows
+PY
+  pass "sq-pr-merge records a landing for a merge it performs and never for --auto"
+}
+
 test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
@@ -311,4 +343,5 @@ test_rejects_unsafe_url_segments_before_recording
 test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
+test_auto_merge_is_not_recorded_as_landed
 test_parses_pr_url_for_gh_axi
