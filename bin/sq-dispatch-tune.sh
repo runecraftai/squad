@@ -17,16 +17,22 @@
 #   sq-dispatch-tune.sh --fallback-rate          # share of provider or quota failures
 #
 # Profile = harness + model + effort. The dispatched profile is the log's spawn
-# row; a log without one uses its decision row, and a task without a log uses
-# state/<id>.meta.
+# row; a log without one uses state/<id>.meta, and a task without a log uses
+# state/<id>.meta too. A log with neither reads as unknown.
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
-# else the last done/failed line of state/<id>.status.
-# Fallback = a blocked, paused, or failed status line naming a quota or provider
-# failure. Teardown removes the status file, so a torn-down task is "unknown".
+# else the last done/failed line of state/<id>.status. A log whose only outcome
+# is released (teardown) counts toward its lane and dispatch totals, not toward
+# profile success rates or fallback.
+# Fallback = a log's failure_class of provider or quota (guard and other are
+# misses). Without one, a blocked, paused, or failed status line naming a quota
+# or provider failure. Teardown removes the status file, so a torn-down task
+# without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
+# Credential guard: a harness, model, effort, lane, or recommendation that looks
+# like a credential or token prints as "redacted", never verbatim.
 #
 # Exit codes: 0 success, 2 usage error.
 set -euo pipefail
@@ -39,6 +45,8 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
 # Provider or quota failure wording on a status line that stopped or paused work.
 FALLBACK_RE='^(blocked|paused|failed): .*(quota|usage limit|session limit|rate[ -]?limit|overloaded|provider (error|outage|unavailable)|insufficient (credit|quota))'
+# Credential or token shapes; matching values are never printed.
+SECRET_SHAPE_RE='(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]|(token|secret|passwd|password|api[_-]?key|credential)[=:]|[A-Za-z0-9_+/]{32,}'
 
 # ── defaults ──────────────────────────────────────────────────────────────
 
@@ -200,6 +208,15 @@ status_fallback() { # <status_file>
   fi
 }
 
+# Print a value, or "redacted" when it looks like a credential or token.
+redact_shape() { # <value>
+  if printf '%s' "$1" | grep -E -i -q -- "$SECRET_SHAPE_RE"; then
+    echo redacted
+  else
+    printf '%s' "$1"
+  fi
+}
+
 # ── data collection ───────────────────────────────────────────────────────
 
 CUTOFF=$(days_ago "$PERIOD_DAYS")
@@ -220,7 +237,10 @@ fi
 
 # Append one task record after the --profile filter.
 record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended>
-  local profile="$2/$3/$4"
+  local harness model effort lane recommended profile
+  harness=$(redact_shape "$2"); model=$(redact_shape "$3"); effort=$(redact_shape "$4")
+  lane=$(redact_shape "$7"); recommended=$(redact_shape "$9")
+  profile="$harness/$model/$effort"
   if [ -n "$FILTER_PROFILE" ]; then
     case "$profile" in
       *"$FILTER_PROFILE"*) ;; # match
@@ -228,7 +248,7 @@ record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <f
     esac
   fi
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$1" "$2" "$3" "$4" "$5" "$6" "$profile" "$7" "$8" "$9" >> "$TASKS_FILE"
+    "$1" "$harness" "$model" "$effort" "$5" "$6" "$profile" "$lane" "$8" "$recommended" >> "$TASKS_FILE"
   TASKS_COUNT=$((TASKS_COUNT + 1))
 }
 
@@ -261,6 +281,9 @@ def moment(value):
         return None
 
 
+FAILURE_CLASSES = ("provider", "quota", "guard", "other")
+
+
 def triple(row):
     if not isinstance(row, dict):
         return ["", "", ""]
@@ -285,6 +308,7 @@ for name in names:
         decision = None
         spawn = None
         results = set()
+        failure = ""
         stamps = []
         with open(path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -304,6 +328,8 @@ for name in names:
                     spawn = row
                 elif event == "outcome" and isinstance(row.get("result"), str):
                     results.add(row["result"])
+                    if row.get("failure_class") in FAILURE_CLASSES:
+                        failure = row["failure_class"]
     except OSError:
         continue
     profile = decision.get("profile") if isinstance(decision, dict) else None
@@ -312,10 +338,12 @@ for name in names:
         outcome = "done"
     elif "failed" in results:
         outcome = "failed"
+    elif "released" in results:
+        outcome = "released"
     else:
         outcome = "none"
     span = int(max(stamps) - min(stamps)) if len(stamps) > 1 else 0
-    columns = [name, lane, *triple(decision), *triple(spawn), outcome, str(span)]
+    columns = [name, lane, *triple(decision), *triple(spawn), outcome, failure, str(span)]
     sys.stdout.write("\x1f".join(columns) + "\n")
 PY
   then
@@ -326,16 +354,14 @@ PY
 
 # Tasks with a dispatch log: the log decides lane, profile, and recommendation.
 collect_logged_tasks() {
-  local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome duration
+  local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration
   local status_file status_result outcome harness model effort recommended meta_file fallback
 
-  while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome duration; do
+  while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration; do
     status_file="$STATE/$task_id.status"
     status_result=""
-    fallback="unknown"
     if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
       status_result=$(status_outcome "$status_file")
-      fallback=$(status_fallback "$status_file")
     fi
 
     outcome="$log_outcome"
@@ -343,15 +369,23 @@ collect_logged_tasks() {
       outcome="$status_result"
     fi
     case "$outcome" in
-      done|failed) ;;
+      done|failed|released) ;;
       *) continue ;; # no terminal state yet
+    esac
+
+    case "$outcome:$log_class" in
+      released:*) fallback="unknown" ;;
+      *:provider|*:quota) fallback="hit" ;;
+      *:guard|*:other) fallback="miss" ;;
+      *) fallback="unknown"
+         if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
+           fallback=$(status_fallback "$status_file")
+         fi ;;
     esac
 
     harness=""; model=""; effort=""
     if [ -n "$spawn_h" ]; then
       harness="$spawn_h"; model="$spawn_m"; effort="$spawn_e"
-    elif [ -n "$rec_h" ]; then
-      harness="$rec_h"; model="$rec_m"; effort="$rec_e"
     else
       meta_file="$STATE/$task_id.meta"
       if [ -f "$meta_file" ]; then
@@ -457,6 +491,7 @@ compute_metrics() {
     outcome = $5
     duration = $6 + 0
 
+    if (outcome == "released") next
     total[profile]++
     if (outcome == "done") success[profile]++
     else if (outcome == "failed") failure[profile]++
@@ -484,7 +519,7 @@ compute_lanes() {
     total[lane]++
     if ($5 == "done") success[lane]++
     else if ($5 == "failed") failure[lane]++
-    if ($10 != "-" && $10 != $7) off[lane]++
+    if ($10 != "-" && $7 != "unknown/unknown/unknown" && $10 != $7) off[lane]++
     if ($9 == "hit") hit[lane]++
     if ($9 == "hit" || $9 == "miss") observed[lane]++
     chosen[lane SUBSEP $7]++
@@ -660,10 +695,10 @@ emit_fallback_markdown() {
   read -r hits observed unknown < <(fallback_totals)
   echo "## Fallback Rate"
   echo ""
-  echo "A fallback is a blocked, paused, or failed status line naming a quota or provider failure."
-  echo "Teardown removes the status file, so a torn-down task is unknown rather than clean."
+  echo "A fallback is a provider or quota failure, from the log's failure_class or else a blocked, paused, or failed status line."
+  echo "Teardown removes the status file, so a torn-down task without a failure_class is unknown rather than clean."
   echo ""
-  echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (status file still present)"
+  echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (failure class or status file present)"
   echo "- **Provider or quota fallbacks:** ${hits}"
   echo "- **Fallback rate:** $(pct_text "$hits" "$observed") of observed tasks"
   echo ""
