@@ -450,6 +450,8 @@ def parse_answer(s, cards):
             text = toks[k][1]
             k += 1
         pairs.append((d, o, text))
+    if not pairs:
+        raise Rejected("the answer names no decision or option")
     if any(d is None for d, _, _ in pairs):
         if len(cards) != 1 or len(pairs) != 1:
             raise Rejected("a bare option needs exactly one decision on screen")
@@ -554,6 +556,8 @@ def main():
                 raise Rejected("no option O%s" % val)
             emit([result(c, o, None, "picker")], False, fmt)
         elif kind == "free":
+            if not c.get("allow_free_text", True):
+                raise Rejected("decision does not take free text")
             if not val.strip():
                 emit([result(c, default_index(c), None, "picker")], False, fmt)
             else:

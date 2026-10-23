@@ -312,6 +312,8 @@ test_answer_rejects() {
   long2001=$(printf 'd1 o1 %.0s' $(seq 1 400))
   assert_rejected "empty answer" "$BOTH" ''
   assert_rejected "whitespace answer" "$BOTH" '   '
+  assert_rejected "comma-only answer" "$BOTH" ','
+  assert_rejected "semicolon-only answer" "$BOTH" ';'
   assert_rejected "unknown decision" "$BOTH" 'd3 o1 d2 o1'
   assert_rejected "unknown option" "$BOTH" 'd1 o9 d2 o1'
   assert_rejected "decision without option" "$BOTH" 'd1 d2 o1'
@@ -418,15 +420,29 @@ test_payload() {
 
 # --- T9 doc drift ---
 # The examples doc is the commander-facing contract: each golden it shows must be
-# exactly what the real renderer prints for that card.
+# exactly what the real renderer prints for that card. Blocks are read from the
+# doc's fenced text sections and compared whole, never as substrings.
 test_doc_drift() {
-  local name rendered examples
-  examples=$(cat "$ROOT/docs/decision-card-examples.md")
+  local name rendered
   for name in merge gate scope; do
     rendered=$("$ASK" --render < "$FIX/$name.json") || fail "T9: render failed for $name"
     [[ $rendered == "$(cat "$FIX/$name.prose")" ]] || fail "T9: render of $name drifted from its golden"
-    [[ $examples == *"$rendered"* ]] \
-      || fail "T9: docs/decision-card-examples.md does not show the current render of $name"
+    WANT=$rendered python3 -c '
+import os, sys
+want = os.environ["WANT"]
+blocks, cur = [], None
+for line in open(sys.argv[1], encoding="utf-8").read().split("\n"):
+    if cur is None:
+        if line == "```text":
+            cur = []
+    elif line == "```":
+        blocks.append("\n".join(cur))
+        cur = None
+    else:
+        cur.append(line)
+sys.exit(0 if want in blocks else 1)
+' "$ROOT/docs/decision-card-examples.md" \
+      || fail "T9: docs/decision-card-examples.md has no text block equal to the current render of $name"
   done
   pass "T9: the examples doc shows exactly what the renderer prints for each golden"
 }
