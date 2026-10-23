@@ -229,6 +229,16 @@ assert a["metadata"]["key"] == b["metadata"]["key"], "key"
   if printf 'not a decision\n' | "$ASK" --parse-card >/dev/null 2>&1; then fail "T2: malformed prose should be rejected"; fi
   printf 'not a decision\n' | "$ASK" --parse-card >/dev/null 2>&1; [[ $? -eq 2 ]] || fail "T2: malformed prose should exit 2"
   pass "T2: malformed prose exits 2"
+
+  local dup='D1 - Gate
+  Proceed?
+  O1 - Yes (recommended)
+  O0 - Your own words
+D2 - Merge (ref: gate)
+  Merge now?
+  O1 - Yes (recommended)'
+  printf '%s\n' "$dup" | "$ASK" --parse-card >/dev/null 2>&1; [[ $? -eq 2 ]] || fail "T2: duplicate card id from a key should exit 2"
+  pass "T2: parse-card rejects duplicate card ids"
 }
 
 # --- T3 identity ---

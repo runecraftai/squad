@@ -220,13 +220,17 @@ def load_cards(raw):
         raise Invalid("empty array: need at least one card")
     for n, c in enumerate(cards, 1):
         check_card(c, ("card %d: " % n) if is_array else "")
+    check_unique(cards)
+    return cards, is_array
+
+
+def check_unique(cards):
     ids = [c["id"] for c in cards]
     keys = [(c.get("metadata") or {}).get("key") for c in cards if (c.get("metadata") or {}).get("key")]
     if len(ids) != len(set(ids)):
         raise Invalid("card ids must be unique across the array")
     if len(keys) != len(set(keys)):
         raise Invalid("card keys must be unique across the array")
-    return cards, is_array
 
 
 def key_of(c):
@@ -520,6 +524,7 @@ def main():
         cards = parse_prose(raw)
         for n, c in enumerate(cards, 1):
             check_card(c, "D%d: " % n)
+        check_unique(cards)
         print(json.dumps(cards if len(cards) > 1 else cards[0]))
         return
     cards, is_array = load_cards(raw)
