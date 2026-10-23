@@ -87,7 +87,9 @@ fi
 
 auto_merge=0
 for arg in "$@"; do
-  [ "$arg" != "--auto" ] || auto_merge=1
+  case "$arg" in
+    --auto|--disable-auto) auto_merge=1 ;;
+  esac
 done
 
 sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"

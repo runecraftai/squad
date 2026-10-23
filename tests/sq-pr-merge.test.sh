@@ -334,6 +334,23 @@ PY
   pass "sq-pr-merge records a landing for a merge it performs and never for --auto"
 }
 
+test_disable_auto_is_not_recorded_as_landed() {
+  local case_dir
+  case_dir=$(make_case disable-auto)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cccccccccccccccccccccccccccccccccccccccc
+  : > "$case_dir/sq-gh.log"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/33 -- --disable-auto \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "disable-auto: sq-pr-merge failed"
+
+  grep -qxF 'pr merge 33 --repo example/repo --squash --disable-auto' "$case_dir/sq-gh.log" \
+    || fail "disable-auto: --disable-auto was not forwarded to sq-gh pr merge"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "disable-auto: disabling auto-merge must not record a landing"
+  pass "sq-pr-merge never records a landing for --disable-auto"
+}
+
 test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
@@ -344,4 +361,5 @@ test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_auto_merge_is_not_recorded_as_landed
+test_disable_auto_is_not_recorded_as_landed
 test_parses_pr_url_for_gh_axi
