@@ -321,11 +321,10 @@ Batch spawns satisfy the same requirement with a shared `--harness`.
 XO spawns are exempt and still resolve through `config/xo-harness` and its optional model and effort tokens.
 This section is the single owner of the canonical schema and its per-field semantics.
 `AGENTS.md` section 4 owns the always-loaded dispatch intake boundary, and `quota-array-dispatch` owns the completion-aware profile-array selection procedure.
-Every operator or recon dispatch records one intake `decision` event in `data/<id>/dispatch.jsonl` before launch, once harness, model and effort resolve; XO spawns are exempt.
-Squad may pass the resolved profile name (`--decision-profile`) or a reason (`--decision-reason`), plus the compact quota summary it read (`--quota-summary`); without a name or reason, `sq-spawn.sh` derives the reason from its own resolution source (explicit harness argument, raw launch command, or the `config/crew-harness` default, noting an active `config/crew-dispatch.json`), since it cannot know a profile name the caller did not pass.
-The reason text is limited to 256 characters with no control characters, which is the hard rule the writer enforces; no secret, token or brief text may be written there.
-Logging is best effort and never blocks a spawn; batch spawns write one decision per pair.
-`bin/sq-dispatch-log.sh` owns that event's shape, and `sq-spawn.sh --help` owns the flags.
+Every operator or recon spawn, including each batch pair, records one intake `decision` event in `data/<id>/dispatch.jsonl` before launch; XO spawns are exempt.
+For a single spawn, Squad must pass the matched profile name as `--decision-profile` (or a short `--decision-reason` when no profile fits) and the compact quota summary it read as `--quota-summary`, so the event names the profile and why it was chosen; batch spawns refuse these flags and record a reason derived by `sq-spawn.sh` from its own resolution source.
+Recording is best effort and never blocks a spawn, and no secret, token, or brief text may appear in the reason or quota summary.
+`bin/sq-dispatch-log.sh` owns the event's shape and limits, and `sq-spawn.sh --help` owns the flags.
 
 ```json
 {
