@@ -277,6 +277,21 @@ PY
 assert_no_grep PRIVATE_SECRET_SENTINEL "$dir/intake.err" 'warning leaked rejected quota payload'
 pass 'a rejected decision never blocks spawn and never echoes its payload'
 
+dir=$(make_case intake-secret-reason)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'api_key=PRIVATE_REASON_SENTINEL' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'credential-shaped reason blocked spawn'
+[ -f "$dir/state/task.meta" ] || fail 'spawn with credential-shaped reason did not publish task meta'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+raw = open(sys.argv[1]).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['spawn'], rows
+assert 'PRIVATE_REASON_SENTINEL' not in raw
+PY
+assert_no_grep PRIVATE_REASON_SENTINEL "$dir/intake.err" 'warning leaked credential-shaped reason'
+pass 'a credential-shaped decision reason is refused and never stored'
+
 # Every operator spawn records its intake decision without a caller reason: the
 # reason comes from the harness source, and the quota snapshot passes through.
 dir=$(make_case intake-derived)
