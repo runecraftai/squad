@@ -330,6 +330,7 @@ cmd_consume() {
   require_tools
 
   local events_dir consumed_dir stderr_file file event_id payload derived out rc reason consume_rc=0
+  local custody_refused=0
   local obligation delivery request platform
   events_dir=$(fm_pf_events_dir "$STATE")
   consumed_dir=$(fm_pf_consumed_dir "$STATE")
@@ -392,7 +393,7 @@ cmd_consume() {
       continue
     fi
     if ! durable_custody_check "$obligation" metadata; then
-      consume_rc=3
+      custody_refused=1
       continue
     fi
 
@@ -435,6 +436,7 @@ cmd_consume() {
   # A fresh event must be able to wake Squad again, so drop the surfaced
   # signature once the inbox has been worked.
   rm -f -- "$(fm_pf_root "$STATE")/$SQUAD_PF_SURFACED_BASENAME" 2>/dev/null || true
+  [ "$custody_refused" -eq 0 ] || return 3
   return "$consume_rc"
 }
 
