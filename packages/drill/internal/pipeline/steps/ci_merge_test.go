@@ -33,8 +33,22 @@ func TestCIStep_MergeConflictDetected_ReturnsNeedsApproval(t *testing.T) {
 	var logs []string
 	sctx.Log = func(s string) { logs = append(logs, s) }
 
+	// The timeout must only be able to fire from a real stall. Resolving the
+	// base branch tip would otherwise run `git fetch` against the fixture's
+	// unreachable upstream on every iteration, and that network call (including
+	// a possible credential prompt) can outlast the CI timeout and mask the
+	// merge conflict this test asserts. Freeze the clock and resolve the tip
+	// locally so only the conflict path can end monitoring here.
+	frozen := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	polls := 0
 	step := &CIStep{
+		now:           func() time.Time { return frozen },
+		baseBranchTip: func(context.Context) (string, bool) { return baseSHA, true },
 		waitForNextPoll: func(ctx context.Context, interval time.Duration) error {
+			polls++
+			if polls > 2 {
+				t.Fatalf("CI monitor kept polling without reporting the merge conflict; logs: %v", logs)
+			}
 			return nil
 		},
 	}
