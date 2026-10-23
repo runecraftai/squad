@@ -888,9 +888,9 @@ cmd_retire() {
     shift || true
   done
   fm_pf_slug_valid "$id" || die "unsafe obligation id: $id"
+  pf_custody "$id"
   fm_pf_relay_active "$SQUAD_BASE" || exit 0
   require_tools
-  pf_custody "$id"
 
   payload=$(obligation_json "$id") || die "could not read the backlog through sq-tasks" 1
   if [ -n "$payload" ]; then

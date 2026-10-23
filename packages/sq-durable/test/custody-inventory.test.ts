@@ -92,6 +92,25 @@ describe("legacy writer inventory, derived from the code", () => {
 		}
 	});
 
+	it("fails for a record write reached through a variable derived from the state directory", () => {
+		const repo = scratchRepo();
+		writeFileSync(
+			join(repo, "bin", "sq-transitive-writer.sh"),
+			['#!/usr/bin/env bash', 'STATE="$SQUAD_BASE/state"', "dir=$STATE", 'ID=$1', 'f="$dir/$ID.exec"', 'printf "x=1\\n" >> "$f"', ""].join("\n"),
+		);
+		const violations = inventoryViolations(repo).join("\n");
+		expect(violations).toContain("bin/sq-transitive-writer.sh writes task records without passing through custody");
+	});
+
+	it("fails for a second unguarded record write in a file that already consults custody", () => {
+		const repo = scratchRepo();
+		const file = join(repo, "bin", "sq-check-register.sh");
+		writeFileSync(file, `${readFileSync(file, "utf8")}\nprintf 'x=1\\n' >> "$STATE/$ID.meta"\n`);
+		const violations = inventoryViolations(repo);
+		expect(violations).toHaveLength(1);
+		expect(violations[0]).toMatch(/^bin\/sq-check-register\.sh:\d+ writes a task record outside its reviewed custody consultation: printf 'x=1/);
+	});
+
 	it("does not accept a consultation or a source that survives only as comment or heredoc text", () => {
 		const repo = scratchRepo();
 		const replace = (file: string, pattern: RegExp, replacement: string) => {

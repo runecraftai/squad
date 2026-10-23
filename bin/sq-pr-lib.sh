@@ -899,10 +899,10 @@ fm_pr_poll_retirement_publish() {
 }
 
 fm_pr_poll_retirement_recover_one() {
-  local state=$1 id=$2 template=$3 receipt state_device check data registration
+  local state=$1 id=$2 template=$3 responsibility=${4:-metadata} receipt state_device check data registration
   local receipt_hash receipt_identity
   fm_pr_task_id_valid "$id" || return 1
-  durable_custody_check "$id" metadata || return $?
+  durable_custody_check "$id" "$responsibility" || return $?
   receipt="$state/$id.pr-poll-retirement"
   if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
     return 0

@@ -482,7 +482,7 @@ ensure_quarantine_dir() {
 }
 
 quarantine_tree_repair_and_validate() {
-  local artifact
+  local artifact artifact_id
   [ -e "$QUARANTINE" ] || [ -L "$QUARANTINE" ] || return 0
   ensure_quarantine_dir || return 1
   for artifact in "$QUARANTINE"/* "$QUARANTINE"/.[!.]* "$QUARANTINE"/..?*; do
@@ -490,6 +490,12 @@ quarantine_tree_repair_and_validate() {
     [ -f "$artifact" ] && [ ! -L "$artifact" ] || return 1
     [ "$(fm_pr_file_device "$artifact")" = "$STATE_DEVICE" ] || return 1
     [ "$(fm_pr_file_link_count "$artifact")" = 1 ] || return 1
+    artifact_id=${artifact##*/}
+    artifact_id=${artifact_id%%.*}
+    if ! durable_custody_check "$artifact_id" metadata; then
+      custody_refused=1
+      continue
+    fi
     chmod 0600 "$artifact" || return 1
     [ "$(fm_pr_file_mode "$artifact")" = 600 ] || return 1
     [ "$(fm_pr_file_device "$artifact")" = "$STATE_DEVICE" ] || return 1

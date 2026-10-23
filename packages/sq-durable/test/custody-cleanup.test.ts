@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { custodyCheck, refusalLog, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
+import { custodyCheck, REPO_ROOT, refusalLog, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
 import { admit, answer, cleanup, initStore, receipt, startReady, tempDir, until, waitEffect } from "./helpers.js";
 
 afterEach(cleanup);
@@ -167,5 +167,55 @@ describe("conditioned cleanup of engine-owned artifacts", () => {
 		expect(readFileSync(durableStatus, "utf8")).toBe(before);
 		expect(readFileSync(legacyExec, "utf8")).toContain("exec_state=retry_queued");
 		expect(readFileSync(join(base, "state", "legacy-task.status"), "utf8")).toContain("stall interrupted");
+	});
+});
+
+describe("custody ahead of every gate and mutation of the legacy writers", () => {
+	it("refuses a retire of a durable mission even when the relay is inactive, with no state change", async () => {
+		const { base, env } = await pendingMission();
+		const before = stateDigest(base);
+		const result = await runScript("sq-public-followup.sh", ["retire", MISSION], env);
+		expect(result.code).toBe(3);
+		expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses an emit for a durable mission even when the owning home's relay is inactive", async () => {
+		const { base, env } = await pendingMission();
+		const before = stateDigest(base);
+		const result = await runScript(
+			"sq-public-followup-emit.sh",
+			["--home", base, "--obligation", MISSION, "--relation", "rel-1", "--source-home", "main", "--work-id", "work-1", "--generation", "1", "--outcome", "done", "--outcome-text", "finished"],
+			env,
+		);
+		expect(result.code).toBe(3);
+		expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("grants the PR-watch retirement teardown performs under its cleanup consultation, and no other responsibility", async () => {
+		const { store, base, env } = await pendingMission();
+		await complete(store);
+		const lib = join(REPO_ROOT, "bin", "sq-pr-lib.sh");
+		const template = join(REPO_ROOT, "bin", "sq-pr-poll.sh");
+		const retire = (responsibility: string) =>
+			runBash(["-c", '. "$1"; fm_pr_poll_retirement_recover_one "$2" "$3" "$4" "$5"', "pr", lib, join(base, "state"), MISSION, template, responsibility], env);
+		expect(await retire("cleanup")).toMatchObject({ code: 0, stderr: "" });
+		const refused = await retire("");
+		expect(refused.code).toBe(3);
+		expect(refused.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
+	});
+
+	it("leaves a durable mission's quarantined artifact untouched by the PR-check migration", async () => {
+		const { base, env } = await pendingMission();
+		const quarantine = join(base, "state", ".pr-check-quarantine");
+		mkdirSync(quarantine, { recursive: true });
+		chmodSync(quarantine, 0o700);
+		const artifact = join(quarantine, `${MISSION}.diagnostic.pending-canonical`);
+		writeFileSync(artifact, "diagnostic\n");
+		chmodSync(artifact, 0o644);
+		const result = await runScript("sq-pr-check-migrate.sh", [], env);
+		expect(result.code).toBe(3);
+		expect(statSync(artifact).mode & 0o777).toBe(0o644);
 	});
 });

@@ -168,9 +168,9 @@ esac
 [ -d "$HOME_DIR" ] && [ ! -L "$HOME_DIR" ] \
   || die "--home must name an existing directory, got '$HOME_DIR'"
 
+durable_custody_check "$OBLIGATION" metadata || exit 3
 fm_pf_relay_active "$HOME_DIR" || exit 0
 command -v jq >/dev/null 2>&1 || die "jq is required to build a typed terminal event" 1
-durable_custody_check "$OBLIGATION" metadata || exit 3
 
 STATE="$HOME_DIR/state"
 REGISTRY="$(fm_pf_registry_dir "$STATE")/$OBLIGATION"

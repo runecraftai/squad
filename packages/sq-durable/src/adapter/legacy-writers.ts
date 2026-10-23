@@ -250,6 +250,107 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 	},
 ]);
 
+/**
+ * Task-record write lines a consulting writer performs, reviewed by hand: each one runs only after the file's
+ * `durable_custody_check` for its responsibility. A new record write in a consulting file, or a pinned line that moved or
+ * vanished, fails `inventoryViolations` until it is reviewed and pinned here again.
+ */
+export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+	"bin/sq-brief.sh": [
+		"cat > \"$BRIEF\" <<EOF",
+		"rm -f \"$BRIEF\"",
+		"cat > \"$BRIEF\" <<EOF",
+		"rm -f \"$BRIEF\"",
+		"cat > \"$BRIEF\" <<EOF",
+		"rm -f \"$BRIEF\"",
+	],
+	"bin/sq-check-register.sh": [
+		"mv -f -- \"$TMP\" \"$TRUST\" || exit 1",
+		"fm_custom_check_registered \"$STATE\" \"$ID\" || { rm -f -- \"$TRUST\"; exit 1; }",
+	],
+	"bin/sq-decision-hold.sh": [
+		"printf 'decisions_reviewed=1\\ndecision_keys=%s\\n' \"$keys\" >> \"$meta\"",
+	],
+	"bin/sq-exec-state.sh": [
+		"mv -f -- \"$tmp\" \"$(path_for \"$id\")\"",
+		"mv -f -- \"$tmp\" \"$(path_for \"$id\")\"",
+		"durable_custody_check \"$id\" cleanup && rm -f \"$file\"",
+	],
+	"bin/sq-herdr-session-cleanup.sh": [
+		"rm -f -- \"$journal\" || fm_herdr_cleanup_warn \"$id pane closed but its journal could not be retired\"",
+	],
+	"bin/sq-home-seed.sh": [
+		"rm -f \"$SEED_PARENT_BRIEF\" 2>/dev/null || true",
+		"cp \"$SEED_PARENT_BRIEF\" \"$home/data/charter.md\"",
+	],
+	"bin/sq-mcp-link.sh": [
+		"mv -f \"$TMP\" \"$META\"",
+	],
+	"bin/sq-pr-check.sh": [
+		"[ -z \"$META_TMP\" ] || rm -f -- \"$META_TMP\"",
+		"*) printf '%s\\n' \"$line\" >> \"$META_TMP\" || exit 1 ;;",
+		"printf 'pr=%s\\n' \"$URL\" >> \"$META_TMP\" || exit 1",
+		"[ -z \"$PR_HEAD\" ] || printf 'pr_head=%s\\n' \"$PR_HEAD\" >> \"$META_TMP\" || exit 1",
+		"mv -f -- \"$META_TMP\" \"$META\" || exit 1",
+	],
+	"bin/sq-pr-lib.sh": [
+		"rm -f -- \"$SQUAD_PR_POLL_CHECK_DEST\" || failed=1",
+		"rm -f -- \"$SQUAD_PR_POLL_REG_DEST\" || failed=1",
+		"rm -f -- \"$SQUAD_PR_POLL_DATA_DEST\" || failed=1",
+		"if ! mv -f -- \"$SQUAD_PR_POLL_DATA_TMP\" \"$SQUAD_PR_POLL_DATA_DEST\"; then",
+		"if ! mv -f -- \"$SQUAD_PR_POLL_REG_TMP\" \"$SQUAD_PR_POLL_REG_DEST\"; then",
+		"|| ! mv -f -- \"$SQUAD_PR_POLL_CHECK_TMP\" \"$SQUAD_PR_POLL_CHECK_DEST\"; then",
+		"|| ! mv -f -- \"$tmp\" \"$receipt\"; then",
+	],
+	"bin/sq-procevent-remote-reply.sh": [
+		"rm -f -- \"$(cursor_path \"$id\")\"",
+	],
+	"bin/sq-promote.sh": [
+		"mv \"$TMP\" \"$META\"",
+	],
+	"bin/sq-public-followup.sh": [
+		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
+		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
+		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
+		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
+		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
+		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
+	],
+	"bin/sq-remote-home-seed.sh": [
+		"[ \"$BRIEF_CREATED\" -eq 0 ] || rm -f -- \"$BRIEF\"",
+		"[ \"$BRIEF_CREATED\" -eq 0 ] || rm -f -- \"$BRIEF\"",
+	],
+	"bin/sq-self-heal.sh": [
+		"mv \"$status_file\" \"$archive_dir/\"",
+	],
+	"bin/sq-spawn.sh": [
+		"mv -f -- \"$tmp\" \"$meta\"",
+		"} > \"$STATE/$ID.meta\" 2>/dev/null || true",
+		"cat > \"$STATE/$ID.pi-ext.ts\" <<EOF",
+		"printf '%s\\n' \"${auth_file##*/}\" > \"$STATE/$ID.grok-turnend-token\"",
+		"rm -f \"$STATE/$ID.muse-session-current\"",
+		"} > \"$STATE/$ID.muse-session\"",
+		"printf '%s\\n' \"${auth_file##*/}\" > \"$STATE/$ID.kimi-turnend-token\"",
+		"} > \"$STATE/$ID.meta\"",
+		"if ! echo \"traceparent=$SPAWN_TRACEPARENT\" >> \"$STATE/$ID.meta\"; then",
+	],
+	"bin/sq-stall-detect.sh": [
+		"[ -f \"$STATE/$id.status\" ] || : >\"$STATE/$id.status\"",
+	],
+	"bin/sq-teardown.sh": [
+		"rm -f -- \"$STATE/$ID.status\" \"$STATE/$ID.meta\" \"$STATE/$ID.turn-ended\" \\",
+		"rm -f \"$state_dir/$id.check.sh\" \"$state_dir/$id.pr-poll\" \\",
+		"rm -f \"$sub_state/$child_id.status\" \"$sub_state/$child_id.turn-ended\" \\",
+		"rm -f \"$HERDR_PRESENTATION_JOURNAL\"",
+		"rm -f \"$STATE/$ID.status\" \"$STATE/$ID.turn-ended\" \"$STATE/$ID.meta\" \\",
+	],
+	"bin/sq-x-lib.sh": [
+		"mv -f \"$tmp\" \"$meta\" || { rm -f \"$tmp\"; return 1; }",
+		"mv -f \"$tmp\" \"$meta\" || { rm -f \"$tmp\"; return 1; }",
+		"mv -f \"$tmp\" \"$meta\" || { rm -f \"$tmp\"; return 1; }",
+	],
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Derivation from the code.
 
@@ -262,8 +363,15 @@ export type ScannedWriter = { readonly path: string; readonly hits: readonly Sca
 const STATE_DIR = String.raw`(?:\$\{?[A-Za-z_]*(?:STATE|state)[A-Za-z_0-9]*\}?|\$\{?[A-Za-z_]*(?:BASE|HOME|ROOT|base|home|root)\}?/state|\bstate)`;
 const DATA_DIR = String.raw`(?:\$\{?[A-Za-z_]*(?:DATA|data)[A-Za-z_0-9]*\}?|\$\{?[A-Za-z_]*(?:BASE|HOME|ROOT|base|home|root)\}?/data)`;
 const VAR = String.raw`\$\{?[A-Za-z_][A-Za-z_0-9]*\}?`;
+/** The state and data directories, by name and by any variable a line assigns from them. */
+function recordDirectories(dirVars: ReadonlySet<string>): string {
+	const aliases = [...dirVars].map((name) => String.raw`\$\{?${name}\}?`);
+	return [STATE_DIR, DATA_DIR, ...aliases].join("|");
+}
 /** A path to one task's record: `<state>/<id>.<ext>` or `<data>/<id>/...`, the ID coming from a variable. */
-const TASK_RECORD = new RegExp(String.raw`${STATE_DIR}/${VAR}\.[a-z][a-z0-9-]*|${DATA_DIR}/${VAR}/`);
+function recordPath(directories: string): RegExp {
+	return new RegExp(String.raw`(?:${directories})/${VAR}\.[a-z][a-z0-9-]*|(?:${directories})/${VAR}/`);
+}
 const WRITE_OP = /(?:(?<![0-9&<>])>>?\s*["']?\$|\b(?:mv|rm|cp|tee|touch|ln|install|truncate)\s)/;
 /** Variables that hold a task record path by name. */
 const RECORD_VAR_NAME = /^(?:[A-Za-z_]*_)?(?:meta|META|status|STATUS|exec|EXEC)(?:_[A-Za-z_]*)?$/;
@@ -388,26 +496,56 @@ function writesRecordVariable(line: string, recordVars: ReadonlySet<string>): bo
  * Scan one file's text for task-record write signatures. `self` is the file's own name, so a script naming itself in
  * its usage text is not taken for a call to itself.
  */
+/**
+ * The variables that name a state or data directory, and the variables that hold a task record path, found by repeating
+ * the assignments until nothing new appears: `dir=$STATE; f="$dir/$id.exec"` makes `f` a record.
+ */
+function locateRecords(lines: readonly (string | undefined)[]): { directories: string; recordVars: Set<string> } {
+	const assignment = /(?:^|[\s;(])(?:local\s+|export\s+|readonly\s+)?([A-Za-z_][A-Za-z_0-9]*)=("[^"]*"|'[^']*'|[^\s;]+)/g;
+	const dirVars = new Set<string>();
+	const recordVars = new Set<string>();
+	let changed = true;
+	while (changed) {
+		changed = false;
+		const directories = recordDirectories(dirVars);
+		const dirOnly = new RegExp(String.raw`^"?(?:${directories})"?$`);
+		const record = recordPath(directories);
+		// `for file in "$dir"/*.exec` walks task records.
+		const walk = new RegExp(String.raw`\bfor\s+([A-Za-z_][A-Za-z_0-9]*)\s+in\s+["']?(?:${directories})["']?/\*`);
+		for (const line of lines) {
+			if (line === undefined) continue;
+			for (const match of line.matchAll(assignment)) {
+				const name = match[1] as string;
+				const value = match[2] as string;
+				if (!dirVars.has(name) && dirOnly.test(value)) {
+					dirVars.add(name);
+					changed = true;
+				}
+				if (!recordVars.has(name) && record.test(value)) {
+					recordVars.add(name);
+					changed = true;
+				}
+			}
+			const walked = walk.exec(line);
+			if (walked !== null && !recordVars.has(walked[1] as string)) {
+				recordVars.add(walked[1] as string);
+				changed = true;
+			}
+		}
+	}
+	return { directories: recordDirectories(dirVars), recordVars };
+}
+
 export function scanText(text: string, self = "", python = false): ScanHit[] {
 	const lines = codeLines(text, python);
-	const recordVars = new Set<string>();
-	const assignment = /(?:^|[\s;(])(?:local\s+|export\s+|readonly\s+)?([A-Za-z_][A-Za-z_0-9]*)=("[^"]*"|'[^']*'|[^\s;]+)/g;
-	const loop = new RegExp(String.raw`\bfor\s+([A-Za-z_][A-Za-z_0-9]*)\s+in\s+["']?${STATE_DIR}["']?/\*`);
-	for (const line of lines) {
-		if (line === undefined) continue;
-		for (const match of line.matchAll(assignment)) {
-			if (TASK_RECORD.test(match[2] as string)) recordVars.add(match[1] as string);
-		}
-		// `for file in "$STATE"/*.exec` walks task records.
-		const walked = loop.exec(line);
-		if (walked !== null) recordVars.add(walked[1] as string);
-	}
+	const { directories, recordVars } = locateRecords(lines);
+	const record = recordPath(directories);
 	const hits: ScanHit[] = [];
 	lines.forEach((line, index) => {
 		if (line === undefined || isComment(line)) return;
 		const at = index + 1;
 		const text = line.trim();
-		if ((WRITE_OP.test(line) && TASK_RECORD.test(line)) || writesRecordVariable(line, recordVars)) {
+		if ((WRITE_OP.test(line) && record.test(line)) || writesRecordVariable(line, recordVars)) {
 			hits.push({ line: at, text, signature: "record-write" });
 			return;
 		}
@@ -465,6 +603,23 @@ const CONSULT = (responsibility: string) => {
 };
 
 /**
+ * Record writes a consulting writer performs that the reviewed table does not pin, and pinned lines the file no longer
+ * performs. Both sides are compared as multisets, so a second copy of a pinned line is a new write.
+ */
+function reviewedRecordWriteViolations(path: string, found: readonly ScanHit[], reviewed: readonly string[]): string[] {
+	const violations: string[] = [];
+	const unpinned = [...reviewed];
+	for (const hit of found) {
+		if (hit.signature !== "record-write") continue;
+		const at = unpinned.indexOf(hit.text);
+		if (at >= 0) unpinned.splice(at, 1);
+		else violations.push(`${path}:${hit.line} writes a task record outside its reviewed custody consultation: ${hit.text}`);
+	}
+	for (const line of unpinned) violations.push(`${path} pins a write line that no longer exists: ${line}`);
+	return violations;
+}
+
+/**
  * Inventory violations against the scanned code: every scanned writer is inventoried; every consulted responsibility has
  * a `durable_custody_check` call naming it and the shell library is sourced; a writer that consults nothing keeps only
  * its pinned, reviewed write lines and delegates every writer call to an inventoried writer that consults.
@@ -503,6 +658,9 @@ export function inventoryViolations(repoRoot: string, inventory: readonly Legacy
 		}
 		if (entry.consults.length > 0 && !code.includes("sq-durable-custody.sh")) {
 			violations.push(`${entry.path} consults custody but never sources ${CUSTODY_SHELL_LIBRARY}`);
+		}
+		if (entry.consults.length > 0) {
+			violations.push(...reviewedRecordWriteViolations(entry.path, writer?.hits ?? [], CONSULTED_RECORD_WRITES[entry.path] ?? []));
 		}
 		if (entry.consults.length === 0 && writer !== undefined) {
 			const pinned = new Set(entry.exempt?.lines ?? []);
