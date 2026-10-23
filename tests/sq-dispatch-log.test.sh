@@ -225,3 +225,77 @@ PY
 lock_case brief-hold 0.2 'Brief lock' appended
 lock_case over-budget 3 'Over budget lock' dropped
 pass 'briefly held lock appends after release; over-budget lock returns promptly with one warning'
+
+# Intake: a spawn carrying the decision records it once, immediately before the
+# spawn event, with the same harness, model and effort, and never the brief text.
+dir=$(make_case intake-profile)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-profile closed-scope \
+  --quota-summary '{"remaining_percent":80,"reset_seconds":3600}' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'intake spawn with profile failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, os, stat, sys
+path = sys.argv[1]
+raw = open(path).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+decision = rows[0]
+assert decision['profile'] == 'closed-scope' and 'reason' not in decision, decision
+assert decision['harness'] == 'claude' and decision['model'] == 'haiku' and decision['effort'] == 'low'
+assert decision['quota_summary'] == {'remaining_percent': 80, 'reset_seconds': 3600}
+assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+assert 'PRIVATE_BRIEF_SENTINEL' not in raw and 'PRIVATE_SECRET_SENTINEL' not in raw
+PY
+pass 'intake spawn records one profile decision before the spawn event, privately'
+
+dir=$(make_case intake-reason)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'No profile matched' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'intake spawn with reason failed'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'No profile matched' and 'profile' not in rows[0]
+assert rows[0]['quota_summary'] == {'status': 'unknown'}
+PY
+pass 'intake spawn with a reason and no quota summary records an unknown quota'
+
+# A refused decision payload is a logging failure: the spawn still launches and
+# only its spawn row is kept. The warning must not echo the rejected payload.
+dir=$(make_case intake-bad-quota)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-profile closed-scope \
+  --quota-summary '{"token":"PRIVATE_SECRET_SENTINEL"}' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'rejected decision blocked spawn'
+[ -f "$dir/state/task.meta" ] || fail 'spawn did not publish task meta'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+raw = open(sys.argv[1]).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['spawn'], rows
+assert 'PRIVATE_SECRET_SENTINEL' not in raw
+PY
+assert_no_grep PRIVATE_SECRET_SENTINEL "$dir/intake.err" 'warning leaked rejected quota payload'
+pass 'a rejected decision never blocks spawn and never echoes its payload'
+
+# Usage refusals happen before any endpoint exists: batch and --xo spawns cannot
+# carry a per-task decision, decisions cannot be doubled, and a quota summary
+# needs a decision to attach to.
+dir=$(make_case intake-refusals)
+refuse() {
+  local expect=$1 rc=0
+  shift
+  run_case "$dir" sq-spawn.sh "$@" > "$dir/refuse.out" 2> "$dir/refuse.err" || rc=$?
+  [ "$rc" -ne 0 ] || fail "accepted refused intake flags: $*"
+  assert_grep "$expect" "$dir/refuse.err" "wrong refusal for: $*"
+  [ ! -e "$dir/data/task/dispatch.jsonl" ] || fail "refused intake wrote a decision: $*"
+  [ ! -e "$dir/state/task.meta" ] || fail "refused intake published task meta: $*"
+}
+refuse 'per task' "task=$dir/project" --mode local-only --yolo off --decision-reason batch
+refuse 'operator and recon spawns' task "$dir/project" --xo --decision-reason xo
+refuse 'pass only one of' task "$dir/project" --mode local-only --yolo off \
+  --decision-profile a --decision-reason b
+refuse 'requires --decision-profile or --decision-reason' task "$dir/project" \
+  --mode local-only --yolo off --quota-summary '{}'
+pass 'batch, XO, doubled, and quota-only decision flags are refused before any spawn'

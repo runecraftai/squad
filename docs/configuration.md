@@ -321,6 +321,8 @@ Batch spawns satisfy the same requirement with a shared `--harness`.
 XO spawns are exempt and still resolve through `config/xo-harness` and its optional model and effort tokens.
 This section is the single owner of the canonical schema and its per-field semantics.
 `AGENTS.md` section 4 owns the always-loaded dispatch intake boundary, and `quota-array-dispatch` owns the completion-aware profile-array selection procedure.
+Every operator or recon dispatch must record its intake decision: Squad passes the resolved profile name or a short rationale, plus the compact quota summary it read at intake, to `sq-spawn.sh`, which writes one `decision` event to `data/<id>/dispatch.jsonl` before the spawn event.
+`bin/sq-dispatch-log.sh` owns that event's shape, and `sq-spawn.sh --help` owns the flags.
 
 ```json
 {

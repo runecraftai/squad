@@ -57,6 +57,11 @@
 #   refused for a remote --xo route (docs/configuration.md "Claude account
 #   selection"). Absent --account leaves today's ambient-forwarding behavior
 #   unchanged, and state/<id>.meta records account= only when it was passed.
+#   --decision-profile <name> or --decision-reason <text> records the intake
+#   decision (bin/sq-dispatch-log.sh decision; --quota-summary <json> is passed
+#   through to it) right before the spawn event, once the launch has succeeded.
+#   Logging is best effort and never blocks the spawn. Batch and --xo spawns
+#   refuse these flags because the decision belongs to one operator or recon.
 #   A herdr operator or recon is placed in the exact workspace of the Squad
 #   or XO process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -261,6 +266,12 @@ MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
 ACCOUNT_SET=0
+DECISION_PROFILE_ARG=
+DECISION_PROFILE_SET=0
+DECISION_REASON_ARG=
+DECISION_REASON_SET=0
+QUOTA_SUMMARY_ARG=
+QUOTA_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -277,6 +288,9 @@ for a in "$@"; do
       yolo) YOLO=$a; YOLO_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
       account) ACCOUNT_ARG=$a; ACCOUNT_SET=1 ;;
+      decision-profile) DECISION_PROFILE_ARG=$a; DECISION_PROFILE_SET=1 ;;
+      decision-reason) DECISION_REASON_ARG=$a; DECISION_REASON_SET=1 ;;
+      quota-summary) QUOTA_SUMMARY_ARG=$a; QUOTA_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -301,6 +315,12 @@ for a in "$@"; do
     --traceparent=*) TRACEPARENT_ARG=${a#--traceparent=}; TRACEPARENT_SET=1 ;;
     --account) want_value=account ;;
     --account=*) ACCOUNT_ARG=${a#--account=}; ACCOUNT_SET=1 ;;
+    --decision-profile) want_value=decision-profile ;;
+    --decision-profile=*) DECISION_PROFILE_ARG=${a#--decision-profile=}; DECISION_PROFILE_SET=1 ;;
+    --decision-reason) want_value=decision-reason ;;
+    --decision-reason=*) DECISION_REASON_ARG=${a#--decision-reason=}; DECISION_REASON_SET=1 ;;
+    --quota-summary) want_value=quota-summary ;;
+    --quota-summary=*) QUOTA_SUMMARY_ARG=${a#--quota-summary=}; QUOTA_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
@@ -313,6 +333,21 @@ done
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
 [ "$ACCOUNT_SET" -eq 0 ] || [ -n "$ACCOUNT_ARG" ] || { echo "error: --account requires a non-empty value" >&2; exit 1; }
+[ "$DECISION_PROFILE_SET" -eq 0 ] || [ -n "$DECISION_PROFILE_ARG" ] || { echo "error: --decision-profile requires a non-empty value" >&2; exit 1; }
+[ "$DECISION_REASON_SET" -eq 0 ] || [ -n "$DECISION_REASON_ARG" ] || { echo "error: --decision-reason requires a non-empty value" >&2; exit 1; }
+[ "$QUOTA_SET" -eq 0 ] || [ -n "$QUOTA_SUMMARY_ARG" ] || { echo "error: --quota-summary requires a non-empty value" >&2; exit 1; }
+if [ "$DECISION_PROFILE_SET" -eq 1 ] && [ "$DECISION_REASON_SET" -eq 1 ]; then
+  echo "error: pass only one of --decision-profile or --decision-reason" >&2
+  exit 1
+fi
+if [ "$QUOTA_SET" -eq 1 ] && [ "$DECISION_PROFILE_SET" -eq 0 ] && [ "$DECISION_REASON_SET" -eq 0 ]; then
+  echo "error: --quota-summary requires --decision-profile or --decision-reason" >&2
+  exit 1
+fi
+if { [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ]; } && [ "$KIND" = xo ]; then
+  echo "error: --decision-profile and --decision-reason apply only to operator and recon spawns" >&2
+  exit 1
+fi
 # A parent-delivered carrier replaces this base's own resolution, so it is
 # refused unless it is an XO spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -804,6 +839,10 @@ idpart=${idpart%%=*}
 if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in */*) false ;; *) true ;; esac; then
   if [ "$KIND" != xo ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+    exit 1
+  fi
+  if [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ]; then
+    echo "error: --decision-profile and --decision-reason are per task; spawn each pair singly so its decision is recorded" >&2
     exit 1
   fi
   rc=0
@@ -3046,6 +3085,16 @@ if [ "$KIND" = xo ] && [ "${SQUAD_SKIP_XO_INHERIT:-0}" != 1 ]; then
   fi
 fi
 
+if [ "$DECISION_PROFILE_SET" -eq 1 ] || [ "$DECISION_REASON_SET" -eq 1 ]; then
+  decision_args=(--harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}")
+  if [ "$DECISION_PROFILE_SET" -eq 1 ]; then
+    decision_args+=(--profile "$DECISION_PROFILE_ARG")
+  else
+    decision_args+=(--reason "$DECISION_REASON_ARG")
+  fi
+  [ "$QUOTA_SET" -eq 0 ] || decision_args+=(--quota-summary "$QUOTA_SUMMARY_ARG")
+  SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" decision "${decision_args[@]}" || true
+fi
 SQUAD_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" spawn \
   --harness "$HARNESS" --model "${MODEL:-default}" --effort "${EFFORT:-default}" || true
 
