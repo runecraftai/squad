@@ -175,9 +175,18 @@ test_operand_with_equals_is_a_file() {
   printf 'D1 - Merge strategy\n  O1 - Squash: one commit\n' > "$TMP_ROOT/a=b.md"
   L_ERR=$(cd "$TMP_ROOT" && "$LINT" 'a=b.md' 2>&1 >/dev/null < /dev/null); L_RC=$?
   expect_code 0 "$L_RC" "T10a: a relative file name containing '=' exits 0"
-  [ "$L_ERR" = "warning: ./a=b.md:1: RECOMENDACAO_AUSENTE no option ends with (recommended)" ] \
+  [ "$L_ERR" = "warning: a=b.md:1: RECOMENDACAO_AUSENTE no option ends with (recommended)" ] \
     || fail "T10a: a relative file name containing '=' is linted, got: $L_ERR"
   pass "T10a: a relative file name containing '=' is linted, not taken as an awk assignment"
+}
+
+test_relative_operand_is_printed_as_typed() {
+  printf 'D1 - Merge strategy\n  O1 - Squash: one commit\n' > "$TMP_ROOT/plain.md"
+  L_ERR=$(cd "$TMP_ROOT" && "$LINT" 'plain.md' 2>&1 >/dev/null < /dev/null); L_RC=$?
+  expect_code 0 "$L_RC" "T10b: a relative file name exits 0"
+  [ "$L_ERR" = "warning: plain.md:1: RECOMENDACAO_AUSENTE no option ends with (recommended)" ] \
+    || fail "T10b: a relative file name is printed as typed, got: $L_ERR"
+  pass "T10b: a relative file name is printed as typed, with no ./ prefix"
 }
 
 test_fenced_examples_are_skipped() {
@@ -222,5 +231,6 @@ test_crlf_records_are_silent
 test_non_consecutive_option
 test_legacy_c_prefix
 test_operand_with_equals_is_a_file
+test_relative_operand_is_printed_as_typed
 test_fenced_examples_are_skipped
 test_exit_is_always_zero

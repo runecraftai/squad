@@ -47,7 +47,7 @@ EOF
 # shellcheck disable=SC2016 # The awk program's $0 and $1 are awk fields, not shell expansions.
 LINT_AWK='
 function warn(at, code, detail) {
-  printf "warning: %s:%d: %s %s\n", FILENAME, at, code, detail
+  printf "warning: %s:%d: %s %s\n", name, at, code, detail
 }
 function close_block(   why) {
   if (!in_block) return
@@ -139,10 +139,6 @@ for file in "$@"; do
     printf 'warning: %s:0: ARQUIVO_ILEGIVEL cannot read file\n' "$file" >&2
     continue
   fi
-  case $file in
-    /*) operand=$file ;;
-    *) operand=./$file ;;
-  esac
-  awk "$LINT_AWK" "$operand" >&2
+  awk -v name="$file" "$LINT_AWK" < "$file" >&2
 done
 exit 0
