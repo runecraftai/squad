@@ -474,6 +474,8 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+
+test_baseline_no_spam
 test_notifies_each_verb
 test_verb_override
 test_truncation_reset
