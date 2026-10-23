@@ -1080,6 +1080,20 @@ test_status_instruction_is_present_in_all_scaffolds() {
   pass "sq-brief.sh: all scaffold types include the status reporting instruction"
 }
 
+test_ambiguity_rule_stops_coding_and_asks() {
+  local home brief
+  home="$TMP_ROOT/ambiguity-rule-home"
+  mkdir -p "$home/data"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" ambiguity-strike some-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" ambiguity-recon some-proj --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  # shellcheck disable=SC2016 # literal backticks are part of the emitted sentence
+  sentence='When the task is still ambiguous after reading the code, do not code: open a keyed decision with `needs-decision [key=ambiguity-<slug>]:` carrying at most three objective questions.'
+  for brief in "$home/data/ambiguity-strike/brief.md" "$home/data/ambiguity-recon/brief.md"; do
+    assert_grep "$sentence" "$brief" "brief missing the ambiguity stop-and-ask sentence"
+  done
+  pass "sq-brief.sh: strike and recon briefs tell the operator to ask instead of coding through ambiguity"
+}
+
 test_autonomous_policy_refusals_and_topology_boundaries() {
   local home name out status
   home="$TMP_ROOT/autonomous-policy-home"
@@ -1314,4 +1328,5 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_XO_load_decision_hold_policy
 test_scout_and_XO_scaffold
 test_status_instruction_is_present_in_all_scaffolds
+test_ambiguity_rule_stops_coding_and_asks
 test_status_instruction_enforcement_refuses_missing_pattern
