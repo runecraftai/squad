@@ -473,6 +473,36 @@ PY
   pass "sq-status-notify records its outcome under the data directory in force"
 }
 
+test_failure_class_follows_reported_line() {
+  local base fakebin notify_log
+  base=$(make_base failure-class)
+  fakebin=$(make_fake_notify "$base")
+  notify_log="$base/notify.log"
+  printf 'working: seed\n' > "$base/state/sq-1.status"
+  printf 'working: seed\n' > "$base/state/sq-2.status"
+
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+  printf 'failed: quota exceeded\nblocked: waiting for input\n' >> "$base/state/sq-1.status"
+  printf 'failed: provider overloaded\ndone: retried ok\n' >> "$base/state/sq-2.status"
+  PATH="$fakebin:$BASE_PATH" XDG_STATE_HOME="$STATE_ROOT" FAKE_NOTIFY_LOG="$notify_log" \
+    "$ROOT/bin/sq-status-notify.sh" scan "$base"
+
+  python3 - "$base/data" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+def rows(task):
+    with open(os.path.join(root, task, "dispatch.jsonl")) as handle:
+        return [json.loads(line) for line in handle]
+quota = [r for r in rows("sq-1") if r["event"] == "outcome"]
+assert [(r["result"], r.get("failure_class")) for r in quota] == [("failed", "quota")], quota
+mixed = [r for r in rows("sq-2") if r["event"] == "outcome"]
+assert [(r["result"], r.get("failure_class")) for r in mixed] == [
+    ("failed", "provider"), ("done", None)], mixed
+PY
+  pass "a failed outcome keeps the class of its own line when a later line lands in the same scan"
+}
+
 # ---------------------------------------------------------------------------
 
 test_baseline_no_spam
@@ -490,3 +520,4 @@ test_tmux_channel_target_window
 test_tmux_channel_no_target
 test_tmux_channel_without_tmux
 test_dispatch_log_data_override
+test_failure_class_follows_reported_line

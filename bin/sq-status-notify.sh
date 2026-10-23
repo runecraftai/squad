@@ -112,7 +112,7 @@ notify_one() {  # <id> <verb> <text> <target>
 }
 
 scan_once() {  # <base>: one pass over the base's state dir
-  local base=$1 state_dir cache_sub dir id f size off target line verb text
+  local base=$1 state_dir cache_sub dir id f size off target line verb text failure_class
   state_dir="$base/state"
   [[ -d "$state_dir" ]] || return 0
   cache_sub="$(printf '%s' "$base" | tr '/' '_')"
@@ -142,8 +142,12 @@ scan_once() {  # <base>: one pass over the base's state dir
         text="${BASH_REMATCH[2]}"
         case "$verb" in
           done|failed)
+            failure_class=none
+            if [[ "$verb" == failed ]]; then
+              failure_class="$(printf '%s' "$text" | python3 "$SCRIPT_DIR/sq_dispatch_failure.py" 2>/dev/null || echo none)"
+            fi
             SQUAD_STATE_OVERRIDE="$state_dir" SQUAD_DATA_OVERRIDE="${SQUAD_DATA_OVERRIDE:-$base/data}" "$SCRIPT_DIR/sq-dispatch-log.sh" "$id" outcome \
-              --source status-notify --result "$verb" || true
+              --source status-notify --result "$verb" --failure-class "$failure_class" || true
             ;;
         esac
         case " $NOTIFY_VERBS " in
