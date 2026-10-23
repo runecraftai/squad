@@ -380,10 +380,10 @@ collect_status_tasks() {
 
     task_id=$(basename "$status_file" .status)
 
-    # A task with a dispatch log was already collected from that log.
-    if [ "$LOG_READER" -eq 1 ] && [ -e "$DATA/$task_id/dispatch.jsonl" ]; then
-      continue
-    fi
+    # A task whose log was read was already collected from that log.
+    case $'\n'"$LOGGED_IDS"$'\n' in
+      *$'\n'"$task_id"$'\n'*) continue ;;
+    esac
 
     # Skip tasks outside the analysis window (use status file mtime as proxy).
     mtime=$(file_mtime "$status_file")
@@ -418,6 +418,7 @@ collect_status_tasks() {
 
 collect_tasks() {
   collect_log_rows
+  LOGGED_IDS=$(cut -d $'\x1f' -f1 "$LOG_FILE")
   collect_logged_tasks
   collect_status_tasks
 }
