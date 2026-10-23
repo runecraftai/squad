@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "id": "merge-strategy",
+  "title": "Merge Strategy",
+  "question": "How should we merge the authentication fix PR?",
+  "context": "PR #42 fixes the OAuth token refresh bug. CI is green, 2 commits, time-sensitive.",
+  "options": [
+    {"id": "squash", "label": "Squash & Merge", "description": "Combine into one clean commit on main", "recommended": true},
+    {"id": "rebase", "label": "Rebase & Merge", "description": "Preserve both commits in history"},
+    {"id": "merge-commit", "label": "Create Merge Commit", "description": "Standard merge with a merge commit message"}
+  ],
+  "default_option_id": "squash",
+  "allow_free_text": false,
+  "expires_at": null,
+  "metadata": {"task_id": "fix-auth-bug", "key": "merge-strategy", "source": "ask-user"}
+}

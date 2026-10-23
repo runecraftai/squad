@@ -1,0 +1,7 @@
+D1 - Dashboard Scope (ref: dashboard-scope)
+  Should the user dashboard include analytics widgets in the initial release?
+  Context: The basic dashboard is done. Analytics widgets were in the original spec but could move to v2 to ship faster; adding them now costs about 2 days.
+  O1 - Ship Without Analytics: Release with profile and activity only (recommended)
+  O2 - Include Analytics: Add analytics widgets before release (+2 days)
+  O3 - Analytics Behind Flag: Include analytics but gate them behind a feature flag
+  O0 - Your own words

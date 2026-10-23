@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "id": "review-gate-1",
+  "title": "Review gate: 2 open findings",
+  "question": "Accepted intent does not require the compatibility layer.",
+  "options": [
+    {"id": "fix-all", "label": "Fix both findings", "description": "apply both as proposed",
+     "payload": {"action": "fix", "step": "review", "findings": ["review-1", "review-2"]}},
+    {"id": "accept", "label": "Accept as is", "description": "keep the code, finish this step",
+     "payload": {"action": "approve", "step": "review"}},
+    {"id": "skip-step", "label": "Skip the step", "description": "do not run this check",
+     "payload": {"action": "skip", "step": "review"}}
+  ],
+  "default_option_id": "fix-all",
+  "allow_free_text": true,
+  "findings": [
+    {"id": "review-1", "text": "src/a.go:10 - flags an intentional guard"},
+    {"id": "review-2", "text": "src/b.go:44 - asks for a new compatibility layer"}
+  ],
+  "metadata": {"task_id": "refactor-utils", "key": "review-gate-1", "source": "ask-user"}
+}

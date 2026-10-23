@@ -43,6 +43,7 @@ State all five of these elements in one concise, evidence-first escalation:
 4. The concrete consequences of accepting and declining the expansion.
 5. A recommendation with the reason it best serves the accepted intent.
 
+Render it with the `AGENTS.md` section 9 decision block: elements 1 and 2 in the question and context lines, elements 3 and 4 in the option descriptions, element 5 as the `(recommended)` option.
 Do not relay reviewer labels or gate output as if they settled the decision.
 
 ## Classification examples

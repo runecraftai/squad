@@ -510,17 +510,19 @@ Mention cost as a courtesy when unusually much work is running, but never block 
 
 ### Reference codes for multi-item responses
 
-The reference code format is the standard for presenting multiple addressable items in one response.
-Assign each item a short code: `F1`, `F2` for findings, `D1`, `D2` for decisions, `O1`, `O2` for options, `R1`, `R2` for risks, `Q1`, `Q2` for questions, `A1`, `A2` for actions.
-The commander responds by code: `keep D1`, `reject O2`, `answer Q1`, `A1 and A2`, `skip R2`.
+The reference code format is the one standard for presenting addressable items and decisions to the commander.
+Assign each item a short code: `F1`, `F2` for findings, `R1`, `R2` for risks, `Q1`, `Q2` for questions, `A1`, `A2` for actions, and `D1`, `D2` for decisions.
+Findings go in their own block, and each decision is its own block named by its subject; never mix subjects in one block.
+A decision block is a header `D1 - <subject>`, an optional question line, and one short line per option: `  O1 - <label>: <description>`, with exactly one option ending in `(recommended)`.
+Option codes `O1`, `O2` are scoped to their own decision, and `  O0 - Your own words` is the free-text escape when the decision allows one.
+A keyed decision shows its anchor in the header as `(ref: <key>)`.
+The commander answers decisions by code, `d1 o2 d2 o1` or `d1 o0 "own words"`, and may answer only some of them; other items keep `keep F1`, `reject R2`, `answer Q1`, `A1 and A2`.
 Do not assign codes for short or simple answers.
 
 A code is durable only when anchored to something Squad already tracks: a backlog task, a recon report, or an existing keyed decision record.
 Without such an anchor, a code is ephemeral: valid only for the current conversation, never assumed to survive a session reset.
-
-The structured card format (`docs/decision-card-standard.md`) is reserved for specific keyed-decision workflows: drill ask-user findings and pipeline-gated decisions that need JSON payloads and the sq-ask picker.
-Use reference codes for all other multi-item commander-facing responses.
-Do not present a generic response card as the normal escalation format.
+Codes are display only: write the option label or id, never a code, into a status line, a steer, a backlog note, or a decision record.
+`docs/decision-card-standard.md` owns the JSON payload behind a decision block and the `bin/sq-ask.sh` renderer and answer parser; the block above is the only commander-facing shape.
 
 ### Conversational aliases
 
