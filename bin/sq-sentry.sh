@@ -25,7 +25,9 @@
 #                          terminal (commander-relevant) or non-terminal (no verb),
 #                          both surfaced at once. A provably-working stale past the
 #                          wedge threshold also surfaces, with an "escalation N"
-#                          count in the reason; at SQUAD_WEDGE_DEMAND_INSPECT_COUNT
+#                          count in the reason, unless its drill run-step is still
+#                          active (a foreground gate or CI wait), which restarts the
+#                          idle clock instead; at SQUAD_WEDGE_DEMAND_INSPECT_COUNT
 #                          consecutive escalations on the SAME pane, the reason
 #                          also carries a "demand-deep-inspection" marker so the
 #                          wake payload itself, not just repetition, forces a
@@ -356,14 +358,24 @@ drop_orphan_window_markers() {
 # below).
 SQUAD_WEDGE_DEMAND_INSPECT_COUNT=${SQUAD_WEDGE_DEMAND_INSPECT_COUNT:-3}
 
+# 0 iff <window>'s task has an active drill run-step (a foreground gate or CI
+# monitor): the one signal that a static pane is a declared wait needing no status
+# line. A busy pane alone never counts (operator_absorb_verdict reports it as a
+# pane source, not run-step).
+window_run_step_active() {  # <window>
+  [ "$(operator_absorb_verdict "$(window_to_task "$1" "$STATE")")" = "working run-step" ]
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # sentry restart between recording the hash and recording the timer), or
-# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the operator
-# state (the costly check already ran once, at classification time). Shared by
-# both places a hash can be absorbed this way: the plain non-terminal path,
-# and the stale_is_terminal-overridden path (a commander-relevant status-log
-# line that an active run/busy pane outranked).
+# escalates once STALE_ESCALATE_SECS have elapsed. Shared by both places a hash
+# can be absorbed this way: the plain non-terminal path, and the
+# stale_is_terminal-overridden path (a commander-relevant status-log line that
+# an active run/busy pane outranked). Reads the operator state only at the
+# threshold crossing, never per poll: a still-active run-step there defers the
+# escalation and restarts the idle clock, so the wedge limit applies again once
+# that step ends.
 wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file>
   local win=$1 since_file=$2 label=$3 escalation_file=$4 since age n reason
   since=$(cat "$since_file" 2>/dev/null || true)
@@ -374,7 +386,10 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       ;;
     *)
       age=$(( $(date +%s) - since ))
-      if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
+      if [ "$age" -ge "$STALE_ESCALATE_SECS" ] && window_run_step_active "$win"; then
+        date +%s > "$since_file"
+        triage_log "absorbed $label (active run-step, wedge deferred): $win"
+      elif [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
@@ -1234,8 +1249,9 @@ EOF
           # Decided once per distinct stale hash (the costly state reads run only
           # on first sight, never every poll) via pause_state_class, which returns:
           #   - working: an actively-running pipeline legitimately sits on a static
-          #     pane (e.g. waiting on CI), so absorb and start the wedge timer so a
-          #     genuinely frozen run still escalates past STALE_ESCALATE_SECS;
+          #     pane (e.g. waiting on CI), so absorb and start the wedge timer, which
+          #     defers while that run-step holds and escalates a frozen pane with no
+          #     active step once STALE_ESCALATE_SECS have elapsed;
           #   - paused: the operator declared an external wait, or a declared pause or
           #     commander hold is paired with a confidently dead agent, so absorb on
           #     the long PAUSE_RESURFACE_SECS cadence instead of wedge-escalating;
