@@ -18,7 +18,7 @@ The tracked code root contains the shared instruction, skill, documentation, wor
 
 `bin/sq-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
 The producing PR and Relay helpers own the fields they append, `bin/sq-classify-lib.sh` owns status-event vocabulary, and `bin/sq-crew-state.sh` owns current-state reconciliation.
-Wake, sentry, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections rather than being duplicated into one exhaustive state tree here.
+Wake, sentry, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections; the tree below names those files without owning their mechanics.
 
 `bin/sq-session-start.sh`'s header is the single owner of session-start ordering, composed commands, digest contents, and the digest's startup mechanism.
 `bin/sq-startup-network.sh`'s header owns the deferred network stage that keeps every external-network call off that digest's blocking path, including its state files and the safety argument for running them later.

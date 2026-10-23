@@ -20,7 +20,7 @@ A raiz de código rastreada contém as superfícies de instrução, habilidade, 
 
 `bin/sq-spawn.sh` é dono dos campos de metadados de tarefa base que emite, enquanto a seção de backend de runtime abaixo é dona dos campos específicos do backend e da interpretação do seletor.
 Os helpers de PR e Relay que produzem são donos dos campos que anexam, `bin/sq-classify-lib.sh` é dono do vocabulário de eventos de status, e `bin/sq-crew-state.sh` é dono da reconciliação de estado atual.
-A mecânica de wake, sentry, away-mode e específica do Relay permanece com seus scripts e seções de referência nomeados em vez de ser duplicada em uma árvore de estado exaustiva aqui.
+A mecânica de wake, sentry, away-mode e específica do Relay permanece com seus scripts e seções de referência nomeados; a árvore abaixo nomeia esses arquivos sem ser dona dessa mecânica.
 
 O cabeçalho de `bin/sq-session-start.sh` é o único dono da ordenação de início de sessão, comandos compostos, conteúdo do digest e o mecanismo de startup do digest.
 O cabeçalho de `bin/sq-startup-network.sh` é dono do estágio de rede adiado que mantém todas as chamadas de rede externa fora do caminho de bloqueio do digest, incluindo seus arquivos de estado e o argumento de segurança para executá-los depois.
