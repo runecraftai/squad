@@ -521,6 +521,115 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(stateDigest(base)).toBe(before);
 	});
 
+	it("refuses a durable mission registered as a remote XO before the remote route writes its launch metadata", async () => {
+		const base = sandboxBase();
+		writeFileSync(
+			join(base, "data", "XOs.md"),
+			"- dm2-remote - remote route fixture (host: fake-host; root: /remote/root; home: /remote/home; scope: test; projects: alpha; added 2026-01-01)\n",
+		);
+		const before = stateDigest(base);
+		const result = await runScript("sq-spawn.sh", ["dm2-remote", "--xo"], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(owned("xo-routing", "dm2-remote", 2));
+		expect(existsSync(join(base, "state", "dm2-remote.meta"))).toBe(false);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses a non-terminal durable mission's pending PR-watch retirement in sq-pr-check with exit 3 and no state change", async () => {
+		const base = sandboxBase();
+		seedTask(base, "dm2-pilot");
+		const receipt = join(base, "state", "dm2-pilot.pr-poll-retirement");
+		writeFileSync(receipt, "retirement receipt\n");
+		const before = stateDigest(base);
+		const logged = refusalLog(base).length;
+		const result = await runScript("sq-pr-check.sh", ["dm2-pilot", "https://github.com/acme/app/pull/7"], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(/^refused: cleanup of mission dm2-pilot needs the durable core to confirm the mission is terminal/m);
+		expect(existsSync(receipt)).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+		expect(refusalLog(base).slice(logged).filter((line) => line.includes("\tdm2-pilot\tcleanup\t"))).toHaveLength(1);
+	});
+
+	it("refuses a noncanonical reserved PR-watch artifact in the migration before it quarantines it, consulting cleanup", async () => {
+		const base = sandboxBase();
+		const state = join(base, "state");
+		writeFileSync(join(state, "dm2-pilot+x.check.sh"), "legacy check\n");
+		writeFileSync(join(state, "dm2-pilot+x.pr-poll"), "legacy poll\n");
+		writeFileSync(join(state, "dm2-pilot+x.pr-poll-registration"), "legacy registration\n");
+		const before = stateDigest(base);
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(/^refused: cleanup of mission dm2-pilot\+x /m);
+		expect(existsSync(join(state, "dm2-pilot+x.check.sh"))).toBe(true);
+		expect(existsSync(join(state, "dm2-pilot+x.pr-poll"))).toBe(true);
+		expect(existsSync(join(state, "dm2-pilot+x.pr-poll-registration"))).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("refuses a case-variant noncanonical artifact of a durable mission in the migration before it quarantines it", async () => {
+		const base = sandboxBase();
+		const state = join(base, "state");
+		writeFileSync(join(state, "DM2-pilot+x.check.sh"), "legacy check\n");
+		writeFileSync(join(state, "DM2-pilot+x.pr-poll"), "legacy poll\n");
+		writeFileSync(join(state, "DM2-pilot+x.pr-poll-registration"), "legacy registration\n");
+		const before = stateDigest(base);
+		const result = await runScript("sq-pr-check-migrate.sh", [], scriptEnv(base));
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(/^refused: metadata of mission DM2-pilot\+x collides with the reserved durable ID dm2-pilot\+x/m);
+		expect(existsSync(join(state, "DM2-pilot+x.check.sh"))).toBe(true);
+		expect(existsSync(join(state, "DM2-pilot+x.pr-poll"))).toBe(true);
+		expect(existsSync(join(state, "DM2-pilot+x.pr-poll-registration"))).toBe(true);
+		expect(stateDigest(base)).toBe(before);
+	});
+
+	it("consumes the legacy follow-up events of a batch past a durable one, which stays in place with exit 3", async () => {
+		const base = sandboxBase();
+		const fakebin = join(tempDir(), "bin");
+		mkdirSync(fakebin, { recursive: true });
+		writeFileSync(join(fakebin, "tasks-axi"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+		writeFileSync(join(base, ".env"), "SQX_PAIRING_TOKEN=test-token\n");
+		const events = join(base, "state", "public-followup", "events");
+		const consumed = join(base, "state", "public-followup", "consumed");
+		mkdirSync(events, { recursive: true, mode: 0o700 });
+		mkdirSync(consumed, { recursive: true, mode: 0o700 });
+		const eventFor = (obligation: string) => {
+			const eventId = createHash("sha256")
+				.update([obligation, "rel", "main", `${obligation}-work`, "1", "pr-merged", "{}"].join("\x1f"))
+				.digest("hex");
+			const file = join(events, `${eventId}.json`);
+			writeFileSync(
+				file,
+				JSON.stringify({
+					schema_version: 1,
+					event_id: eventId,
+					obligation_id: obligation,
+					relation_id: "rel",
+					work_id: `${obligation}-work`,
+					generation: 1,
+					source_home_id: "main",
+					outcome_type: "pr-merged",
+					deliverables: {},
+					public_safe_outcome: "landed",
+					occurred_at: "2026-01-01T00:00:00Z",
+					successor: null,
+				}),
+				{ mode: 0o600 },
+			);
+			return { eventId, file };
+		};
+		const durable = eventFor("dm1-lab");
+		const legacy = eventFor("legacy-obl");
+		const durableBefore = readFileSync(durable.file, "utf8");
+		const env = scriptEnv(base, { PATH: `${fakebin}:${process.env.PATH ?? ""}` });
+		const result = await runScript("sq-public-followup.sh", ["consume"], env);
+		expect({ code: result.code }).toEqual({ code: 3 });
+		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
+		expect(existsSync(legacy.file)).toBe(false);
+		expect(existsSync(join(consumed, legacy.eventId))).toBe(true);
+		expect(readFileSync(durable.file, "utf8")).toBe(durableBefore);
+		expect(existsSync(join(consumed, durable.eventId))).toBe(false);
+	});
+
 	it("prints the crew state but exits 3 when custody refused the drill PR sidecar of a durable mission, and 0 for a legacy task", async () => {
 		const base = sandboxBase();
 		const worktree = join(base, "wt");

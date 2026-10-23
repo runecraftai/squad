@@ -339,7 +339,7 @@ reject_event() {
 }
 
 cmd_consume() {
-  pf_custody_pending_events
+  fm_pf_relay_active "$SQUAD_BASE" || pf_custody_pending_events
   gate_or_exit
   fm_pf_has_events "$STATE" || exit 0
   require_tools
@@ -382,6 +382,11 @@ cmd_consume() {
       continue
     fi
 
+    if ! durable_custody_check "$(pf_field "$payload" '.obligation_id')" metadata; then
+      custody_refused=1
+      continue
+    fi
+
     # The filename, the declared event_id, and the identity tuple must all agree.
     # A mismatch means the file was hand-edited or built by something other than
     # sq-public-followup-emit.sh, so it is refused before sq-tasks sees it.
@@ -405,10 +410,6 @@ cmd_consume() {
     obligation=$(pf_field "$payload" '.obligation_id')
     if ! fm_pf_slug_valid "$obligation"; then
       reject_event "$file" "$event_id" "unsafe obligation id in event" || consume_rc=1
-      continue
-    fi
-    if ! durable_custody_check "$obligation" metadata; then
-      custody_refused=1
       continue
     fi
 

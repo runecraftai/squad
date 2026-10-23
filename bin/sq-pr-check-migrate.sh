@@ -1107,6 +1107,11 @@ if migration_needed; then
         fi
       fi
     else
+      if ! durable_custody_check "$id" metadata || ! durable_custody_check "$id" cleanup; then
+        custody_refused=1
+        migration_failed=1
+        continue
+      fi
       message='noncanonical task artifact: migration outcome tracking started before legacy poll handling'
       if ! ensure_diagnostic_obligation "$NONCANONICAL_PREFIX" pending-noncanonical "$message" \
         || ! process_diagnostic_obligations; then

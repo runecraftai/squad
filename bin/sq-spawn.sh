@@ -621,6 +621,7 @@ spawn_remote_XO() {
 }
 
 if [ "$KIND" = xo ]; then
+  durable_custody_check "${POS[0]:-}" xo-routing || exit 3
   if spawn_remote_XO "${POS[0]:-}"; then
     exit 0
   else
@@ -833,9 +834,7 @@ ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
 # Custody before the first write: a durable mission is launched only once the
 # durable core confirms its admission, and never as an XO.
-if [ "$KIND" = xo ]; then
-  durable_custody_check "$ID" xo-routing || exit 3
-else
+if [ "$KIND" != xo ]; then
   durable_custody_check "$ID" admission spawn retry || exit 3
 fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
