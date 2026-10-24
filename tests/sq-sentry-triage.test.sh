@@ -2778,6 +2778,80 @@ test_busy_static_pane_without_readable_viewport_never_expires() {
   pass "a busy claim expires only on a readable complete rendered viewport, never on tail-only evidence"
 }
 
+test_busy_static_unreadable_viewport_logs_limitation_once() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-viewport-limit); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-viewport-limit"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-viewport-limit.meta"
+  record_pi_busy "$state" busy-viewport-limit
+  printf 'working: setup complete\n' > "$state/busy-viewport-limit.status"
+  sig=$(seen_sig "$state/busy-viewport-limit.status"); printf '%s' "$sig" > "$state/.seen-busy-viewport-limit_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  use_no_viewport_tmux "$fakebin"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "unreadable static busy pane exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an unevaluable busy claim woke: $(cat "$out")"
+  [ "$(grep -c "busy claim not evaluated" "$state/.sentry-triage.log" || true)" = 1 ] \
+    || fail "the unevaluable busy limitation was not logged exactly once: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  pass "a static busy claim with no complete viewport logs its evaluation limit once and never alarms"
+}
+
+test_busy_static_finished_task_is_absorbed_without_alarm() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-finished"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-finished.meta"
+  record_pi_busy "$state" busy-finished
+  printf 'done: shipped\n' > "$state/busy-finished.status"
+  sig=$(seen_sig "$state/busy-finished.status"); printf '%s' "$sig" > "$state/.seen-busy-finished_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_CREW_STATE='state: done · source: status · shipped'
+  pid=$!
+  wait_live "$pid" 50 || { reap "$pid"; fail "finished busy task exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a busy pane whose task already finished raised an alarm: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "a finished busy task counted a wedge escalation"
+  grep -F "absorbed busy (task already finished)" "$state/.sentry-triage.log" >/dev/null \
+    || fail "finished busy absorption was not recorded"
+  pass "a static busy pane whose task already finished is absorbed on every threshold crossing without alarming"
+}
+
+test_busy_static_done_status_never_masks_active_run() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-done-active); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-done-active"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-done-active.meta"
+  record_pi_busy "$state" busy-done-active
+  printf 'done: earlier attempt\n' > "$state/busy-done-active.status"
+  sig=$(seen_sig "$state/busy-done-active.status"); printf '%s' "$sig" > "$state/.seen-busy-done-active_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · new validation'
+  pid=$!
+  wait_live "$pid" 50 || { reap "$pid"; fail "done-with-active-run busy task exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an active run-step was escalated behind an old done status: $(cat "$out")"
+  grep -F "already finished" "$state/.sentry-triage.log" >/dev/null 2>&1 \
+    && fail "an old done status absorbed a task whose current state is an active run"
+  pass "an old done status never absorbs a static busy pane whose current state is an active run-step"
+}
+
 test_nonterminal_stale_repairs_missing_or_corrupt_timer() {
   local dir state fakebin out capture_file window key pane_hash sig pid since
   dir=$(make_case nonterminal-stale-timer-repair); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3283,6 +3357,9 @@ test_busy_static_afk_run_step_defers_handoff
 test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_static_pane_without_readable_viewport_never_expires
+test_busy_static_unreadable_viewport_logs_limitation_once
+test_busy_static_finished_task_is_absorbed_without_alarm
+test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_decision_parked_stale_is_throttled

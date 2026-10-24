@@ -685,6 +685,10 @@ busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
     rm -f "$marker"
     return 0
   fi
+  if operator_is_finished "$task"; then
+    stale_marker_remove "$win" "$state"
+    return 0
+  fi
   if window_run_step_active "$win" "$state"; then
     _now > "$marker"
     return 0

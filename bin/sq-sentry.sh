@@ -347,6 +347,19 @@ window_run_step_active() {  # <window>
   [ "$(operator_absorb_verdict "$(window_to_task "$1" "$STATE")")" = "working run-step" ]
 }
 
+busy_static_absorb_finished() {  # <window> <task> <hash> <since-file> <escalation-file> <suppressor-file>
+  local since age
+  since=$(cat "$4" 2>/dev/null || true)
+  case "$since" in ''|*[!0-9]*) since=0 ;; esac
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 1
+  operator_is_finished "$2" || return 1
+  printf '%s' "$3" > "$6"
+  date +%s > "$4"
+  rm -f "$5"
+  triage_log "absorbed busy (task already finished): $1"
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # sentry restart between recording the hash and recording the timer), or
@@ -1279,7 +1292,7 @@ EOF
         if [ "$busy_now" -eq 0 ] && status_is_paused_or_commander_held "$last"; then
           handle_paused_stale "$w" "$task" "$h"
         elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ] && afk_present; then
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ] && ! busy_static_absorb_finished "$w" "$task" "$h" "$ssf" "$ewf" "$sf"; then
             since=$(cat "$ssf" 2>/dev/null || true)
             case "$since" in
               ''|*[!0-9]*) since=0 ;;
@@ -1298,8 +1311,12 @@ EOF
           fi
         elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ]; then
           printf '%s' "$h" > "$sf"
-          wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
+          busy_static_absorb_finished "$w" "$task" "$h" "$ssf" "$ewf" "$sf" \
+            || wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
         else
+          if [ "$busy_now" -eq 0 ] && [ "$busy_expirable" -eq 0 ] && [ "$n" -eq 2 ]; then
+            triage_log "busy claim not evaluated for static expiry (backend $backend has no complete rendered viewport): $w"
+          fi
           rm -f "$ssf" "$ewf"
         fi
         if [ -e "$pf" ] && ! status_is_paused_or_commander_held "$last"; then
