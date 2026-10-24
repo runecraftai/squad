@@ -112,6 +112,10 @@ with tempfile.TemporaryDirectory() as td:
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unhashable.stdout) == {"status": "error"} and unhashable.stderr == ""
         assert not (data / "task/dispatch.jsonl").exists()
+        state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": None}
+        unrecorded = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unrecorded.stdout) == {"status": "error"}
+        assert not (data / "task/dispatch.jsonl").exists()
         state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": .8, "padding": "x" * 70000}
         oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(oversized.stdout) == {"status": "error"}
