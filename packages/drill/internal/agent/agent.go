@@ -328,8 +328,7 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	}
 
 	if candidateErr == nil {
-		_, err := lastBareJSONObject(text, validationSchema)
-		if err != nil && !isJSONSyntaxError(err) {
+		if err := bareJSONObjectError(text, validationSchema); err != nil && !isJSONSyntaxError(err) {
 			candidateErr = err
 		}
 	}
@@ -501,6 +500,10 @@ func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
 			body := text[contentStart:]
 			end, next := indexJSONFenceClose(body)
 			if end < 0 {
+				candidates = append(candidates, jsonCandidate{text: body, fenced: true})
+				if json.Valid([]byte(body)) {
+					break
+				}
 				i = contentStart - 1
 				continue
 			}
@@ -655,11 +658,13 @@ func indexJSONFenceClose(text string) (int, int) {
 	return -1, -1
 }
 
-// lastBareJSONObject scans text for balanced {...} substrings that parse
-// as JSON and returns the last one found. This handles models that emit
+// bareJSONObjectError scans text for balanced {...} substrings and classifies
+// the outcome for the caller: nil when at least one candidate parses and
+// validates, otherwise the last validation error, or else the first syntax
+// error when no candidate was even valid JSON. This handles models that emit
 // reasoning prose followed by a raw JSON answer, with no code fence.
-func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, error) {
-	var last json.RawMessage
+func bareJSONObjectError(text string, schema json.RawMessage) error {
+	var found bool
 	var validationErr error
 	var syntaxErr error
 	for i := 0; i < len(text); i++ {
@@ -692,9 +697,9 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 			continue
 		}
 		candidate := text[i:end]
-		obj, err := parseStructuredCandidate([]byte(candidate), schema)
+		_, err := parseStructuredCandidate([]byte(candidate), schema)
 		if err == nil {
-			last = obj
+			found = true
 			validationErr = nil
 			syntaxErr = nil
 		} else if isJSONSyntaxError(err) {
@@ -706,13 +711,13 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 		}
 		i = end - 1
 	}
-	if last != nil {
-		return last, nil
+	if found {
+		return nil
 	}
 	if validationErr != nil {
-		return nil, validationErr
+		return validationErr
 	}
-	return nil, syntaxErr
+	return syntaxErr
 }
 
 // scanBalancedArray is the bracket counterpart to scanBalancedObject. It

@@ -1338,6 +1338,7 @@ func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
 		{name: "prose then object", text: "Here are my findings: " + object},
 		{name: "prose then array", text: "Here are my findings: " + array},
 		{name: "prose then fenced object", text: "Here are my findings:\n```json\n" + object + "\n```"},
+		{name: "prose then unclosed fenced object", text: "Here are my findings:\n```json\n" + object},
 		{name: "prose braces are not payloads", text: "The note {is just prose} before the findings: " + object + " and {this is prose too}."},
 	}
 	for _, tt := range tests {
@@ -1433,6 +1434,17 @@ func TestFinalizeTextResult_RefusesAmbiguousFindingsPayloads(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "ambiguous") {
 		t.Fatalf("error = %v, want actionable ambiguity message", err)
+	}
+}
+
+func TestFinalizeTextResult_UnclosedFencedPayloadKeepsItsSyntaxError(t *testing.T) {
+	text := "Review complete.\n```json\n{\"findings\": [{\"id\":"
+	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("truncated unclosed payload must fail")
+	}
+	if !strings.Contains(err.Error(), "unexpected end of JSON input") {
+		t.Fatalf("error = %v, want the fenced payload's truncation error rather than the whole-text parse error", err)
 	}
 }
 
