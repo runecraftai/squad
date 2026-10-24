@@ -167,7 +167,7 @@ Classify each wake this way:
 - `check` -> always escalate. Check scripts print only when Squad should wake.
 - `stale` with a terminal status or bare legacy commander-relevant line -> escalate.
   Nonterminal progress remains transient even when its prose contains a legacy free-text token or its seen-status marker already matches, so record a marker and self-handle.
-  If the pane is still idle past `SQUAD_STALE_ESCALATE_SECS` (default 240s), housekeeping escalates it as a possible wedge.
+  If the pane is still idle, or busy with a static complete viewport, past `SQUAD_STALE_ESCALATE_SECS` (default 240s), housekeeping escalates it as a possible wedge.
   This bounds wedge-detection latency to the threshold plus a tick: a delay, never a loss.
   Healthy operators are autonomous and do not wait on Squad mid-task.
 - `heartbeat` -> self-handle. The daemon runs its own cheap bash unit scan

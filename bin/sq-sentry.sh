@@ -32,19 +32,13 @@
 #                          also carries a "demand-deep-inspection" marker so the
 #                          wake payload itself, not just repetition, forces a
 #                          closer look instead of another routine supervision
-#                          resume. Unless afk is active. A genuinely busy pane
-#                          (window_is_busy true) is exempt from the above, but
-#                          only up to BUSY_TURN_MAX_SECS with no completed turn
-#                          (state/<id>.turn-ended, or the spawn record before any
-#                          turn completes); past that bound busy_turn_over_age
-#                          routes it through the same wedge timer, so it surfaces
-#                          with the identical "stale: ..." reason, escalation
-#                          count, and demand-deep-inspection marker, for human
-#                          inspection only - never an automatic interrupt,
-#                          signal, or restart of the worker or its tool process.
+#                          resume. Unless afk is active. A busy claim does not
+#                          exempt an unchanged pane, including its rendered
+#                          cost/token gauge: it uses the same wedge timer and
+#                          names "busy expired without activity" on escalation.
+#                          Changing output resets that timer and counter.
 #                          A declared paused:/commander-held last status line
-#                          still outranks that busy verdict and keeps the bounded
-#                          pause cadence instead of starting the wedge timer.
+#                          still outranks busy and keeps the bounded pause cadence.
 #   stale: <window> (<backend>: agent blocked - ...)
 #                          a backend's native transition record (bin/sq-transition-lib.sh)
 #                          reports the SAME window as `blocked` (a person is
@@ -165,21 +159,8 @@ SIGNAL_GRACE=${SQUAD_SIGNAL_GRACE:-30}   # seconds to linger after a signal so t
 # daemon owns triage, so this sentry reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read.
 STALE_ESCALATE_SECS=${SQUAD_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
-# A busy pane is unconditional proof of liveness with no built-in duration bound,
-# so a hung foreground call can remain hidden even while its rendered busy
-# footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
-# may go with no completed turn: once its task's
-# state/<id>.turn-ended marker (or, before any turn has completed, the task's
-# spawn record) is this old, busy_turn_over_age routes the pane through the
-# same STALE_ESCALATE_SECS-paced wedge_timer_check used for a provably-working
-# non-busy stale, so it escalates via the existing stale reason, escalation
-# counter, and demand-deep-inspection marker for human inspection only - never
-# an automatic interrupt, signal, or restart. A declared paused:/commander-held
-# last status line outranks that busy verdict, so the caller keeps the bounded
-# pause cadence instead of starting the wedge timer. A completed turn touches
-# turn-ended and resets the age. Set generously above any legitimate interval
-# between completed turns, including long tool calls, builds, or test runs.
-BUSY_TURN_MAX_SECS=${SQUAD_BUSY_TURN_MAX_SECS:-3600}
+# Busy claims on static output use this same timer; output progress (including
+# a changing rendered cost/token gauge) resets it, independent of turn age.
 # A crew that declared a pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated, and that declared pause outranks
 # a merely busy pane so a foreground long poll cannot force a working verdict.
@@ -366,6 +347,26 @@ window_run_step_active() {  # <window>
   [ "$(operator_absorb_verdict "$(window_to_task "$1" "$STATE")")" = "working run-step" ]
 }
 
+busy_static_absorb_finished() {  # <window> <task> <since-file> <escalation-file> <suppressor-file>
+  operator_is_finished "$2" || return 1
+  # Never latch a finished result: the next poll checks current state again.
+  rm -f "$3" "$4" "$5"
+  triage_log "absorbed busy (task already finished): $1"
+}
+
+suspend_busy_episode() {  # <window> <since-file>
+  local task marker epoch
+  if ! afk_present; then
+    rm -f "$2"
+    return 0
+  fi
+  task=$(window_to_task "$1" "$STATE")
+  marker="$STATE/.subsuper-stale-$(printf '%s' "$task" | tr ':/.' '___')"
+  [ -e "$marker" ] || return 0
+  epoch=$(cat "$marker" 2>/dev/null || date +%s)
+  printf -- '-%s\n' "${epoch#-}" > "$marker"
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # sentry restart between recording the hash and recording the timer), or
@@ -376,8 +377,9 @@ window_run_step_active() {  # <window>
 # threshold crossing, never per poll: a still-active run-step there defers the
 # escalation and restarts the idle clock, so the wedge limit applies again once
 # that step ends.
-wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 since age n reason
+wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> [context]
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 context=${5:-} since age n reason
+  [ -z "$context" ] || context=", $context"
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -392,9 +394,9 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       elif [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$escalation_file"
-        reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
+        reason="stale: $win (idle ${age}s, possible wedge, escalation $n${context})"
         if [ "$n" -ge "$SQUAD_WEDGE_DEMAND_INSPECT_COUNT" ]; then
-          reason="stale: $win (idle ${age}s, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
+          reason="stale: $win (idle ${age}s, possible wedge, escalation $n${context}, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
         fi
         fm_wake_append stale "$win" "$reason" || exit 1
         rm -f "$since_file"
@@ -402,21 +404,6 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       fi
       ;;
   esac
-}
-
-# busy_turn_over_age: 0 iff <task>'s latest completed-turn marker is at least
-# BUSY_TURN_MAX_SECS old. Ages the per-task turn-ended marker, the harness-neutral
-# signal every verified harness's turn-end hook touches; before any turn has
-# completed, ages the task's spawn record instead so a fresh task still gets a
-# bound. The caller checks that the pane is busy and routes a crossed bound
-# through the existing wedge_timer_check, or through the bounded pause cadence
-# when the last status line declares a pause, never anything that touches the
-# worker itself.
-busy_turn_over_age() {  # <task>
-  local task=$1 f
-  f="$STATE/$task.turn-ended"
-  [ -e "$f" ] || f="$STATE/$task.meta"
-  [ "$(age_of "$f")" -ge "$BUSY_TURN_MAX_SECS" ]
 }
 
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
@@ -1129,9 +1116,9 @@ EOF
     fi
   fi
 
-  # Layer 1 backbone: pane staleness. Two consecutive identical hashes with no busy
-  # signature means the operator finished, is waiting, or is wedged. Each distinct
-  # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
+  # Layer 1 backbone: pane staleness. Two consecutive identical hashes mean the
+  # operator finished, is waiting, or may be wedged, even when claiming busy.
+  # Each distinct stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
   # remembers the hash already classified). Before any of that, re-derive which
   # keys still belong to a live task record: bookkeeping whose task record is gone
   # is dropped, so a released window ends supervision instead of resuming an
@@ -1179,7 +1166,6 @@ EOF
       esac
     fi
     tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
-    h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
@@ -1194,6 +1180,39 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    busy_expirable=0
+    episode_busy=0
+    case "$(cat "$sf" 2>/dev/null || true)" in
+      busy:*|busy-afk:*) episode_busy=1 ;;
+    esac
+    rendered_ok=0
+    if [ "$busy_now" -eq 0 ] || [ "$episode_busy" -eq 1 ]; then
+      rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null) && rendered_ok=1
+    fi
+    # A busy claim expires only on the whole rendered pane (including the
+    # footer cost/token gauge), so progress above the bottom 40 lines counts.
+    # An unreadable viewport hashes the tail for pause tracking only and never expires.
+    if [ "$busy_now" -eq 0 ] && [ "$rendered_ok" -eq 1 ]; then
+      h=$(printf '%s' "$rendered" | hash_pane)
+      busy_expirable=1
+    else
+      h=$(printf '%s' "$tail40" | hash_pane)
+    fi
+    if [ "$episode_busy" -eq 1 ] && [ "$rendered_ok" -eq 0 ]; then
+      suspend_busy_episode "$w" "$ssf"
+      continue
+    fi
+    # Busy suppressors are classed so they cannot swallow a later idle turn.
+    # On a static busy-to-idle transition compare the same complete viewport
+    # before returning to the idle tail hash, preserving immediate surfacing.
+    if [ "$busy_now" -ne 0 ] && [ "$episode_busy" -eq 1 ]; then
+      if [ "$(printf '%s' "$rendered" | hash_pane)" = "$prev" ]; then
+        prev=$h
+        printf '%s' "$h" > "$hf"
+        echo 1 > "$cf"
+      fi
+      rm -f "$sf" "$ssf" "$ewf"
+    fi
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
       echo "$n" > "$cf"
@@ -1210,6 +1229,7 @@ EOF
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             fm_wake_append stale "$w" "stale: $w" || exit 1
             printf '%s' "$h" > "$sf"
+            date +%s > "$ssf"
             wake "stale: $w"
           fi
         elif stale_is_terminal "$w" "$STATE"; then
@@ -1293,16 +1313,35 @@ EOF
           fi
         fi
       else
-        # Pane busy or not yet stably stale: reset pending escalation bookkeeping,
-        # unless a genuinely busy pane has gone too long with no completed turn -
-        # then route it through the same wedge timer instead of erasing it.
-        if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
-          if status_is_paused_or_commander_held "$last"; then
-            handle_paused_stale "$w" "$task" "$h"
-          else
-            wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+        # A busy claim is not proof of life on a static pane. The same hash
+        # includes the rendered cost/token gauge, so progress in either resets
+        # expiry. Declared waits still outrank busy; active runs defer in the timer.
+        if [ "$busy_now" -eq 0 ] && status_is_paused_or_commander_held "$last"; then
+          handle_paused_stale "$w" "$task" "$h"
+        elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ] \
+             && busy_static_absorb_finished "$w" "$task" "$ssf" "$ewf" "$sf"; then
+          :
+        elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ] && afk_present; then
+          # Normal busy tracking is not an actual daemon handoff. This early
+          # internal event starts the daemon's one full static window.
+          if [ "$(cat "$sf" 2>/dev/null || true)" != "busy-afk:$h" ]; then
+            if window_run_step_active "$w"; then
+              date +%s > "$ssf"
+              triage_log "absorbed busy (active run-step, handoff deferred): $w"
+            else
+              fm_wake_append stale "$w" "stale: $w (busy expired without activity)" || exit 1
+              printf 'busy-afk:%s' "$h" > "$sf"
+              date +%s > "$ssf"
+              wake "stale: $w (busy expired without activity)"
+            fi
           fi
+        elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ]; then
+          printf 'busy:%s' "$h" > "$sf"
+          wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
         else
+          if [ "$busy_now" -eq 0 ] && [ "$busy_expirable" -eq 0 ] && [ "$n" -eq 2 ]; then
+            triage_log "busy claim not evaluated for static expiry (backend $backend has no complete rendered viewport): $w"
+          fi
           rm -f "$ssf" "$ewf"
         fi
         if [ -e "$pf" ] && ! status_is_paused_or_commander_held "$last"; then
@@ -1312,14 +1351,15 @@ EOF
     else
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
-      if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
-        if status_is_paused_or_commander_held "$last"; then
-          rm -f "$ssf" "$ewf"
-        else
-          wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
-        fi
-      else
-        rm -f "$ssf" "$ewf"
+      rm -f "$ssf" "$ewf"
+      # Progress breaks the handed-off episode. Drop its handoff tag and the
+      # daemon's episode marker so a return to the same hash starts a fresh
+      # full static window instead of resurrecting the first handoff's clock.
+      case "$(cat "$sf" 2>/dev/null || true)" in
+        busy:*|busy-afk:*) rm -f "$sf" ;;
+      esac
+      if afk_present; then
+        rm -f "$sf" "$STATE/.subsuper-stale-$(printf '%s' "$task" | tr ':/.' '___')"
       fi
       task=$(window_to_task "$w" "$STATE")
       if ! afk_present && status_is_paused_or_commander_held "$(last_status_state_line "$STATE/$task.status")"; then

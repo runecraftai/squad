@@ -2597,6 +2597,11 @@ fm_backend_herdr_capture() {  # <target> <lines>
   printf '%s' "$out" | tail -n "$lines"
 }
 
+fm_backend_herdr_capture_rendered() {  # <target>
+  echo 'error: herdr complete rendered viewport is unverified; cannot evaluate busy expiry' >&2
+  return 1
+}
+
 fm_backend_herdr_capture_ansi() {  # <target> <lines>
   fm_backend_herdr_target_ready "$1" || return 1
   local lines=${2:-200} fetch out

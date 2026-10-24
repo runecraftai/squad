@@ -468,11 +468,28 @@ classify_unknown() {  # <reason>
 
 _stale_key() { printf '%s' "$1" | tr ':/.' '___'; }
 
-stale_marker_record() {  # <window> <state>  — create if absent
-  local win=$1 state=$2 key marker
+stale_marker_record() {  # <window> <state> [episode-epoch] - create or advance episode
+  local win=$1 state=$2 episode=${3:-} key marker prior
   key=$(_stale_key "$(window_to_task "$win" "$state")")
   marker="$state/.subsuper-stale-$key"
-  [ -e "$marker" ] || _now > "$marker"
+  case "$episode" in
+    ''|*[!0-9]*) ;;
+    *)
+      prior=$(cat "$marker" 2>/dev/null || echo 0)
+      prior=${prior#-}
+      case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
+      # A replay must not rewind active-step deferral or a capture retry.
+      [ "$episode" -le "$prior" ] || printf '%s\n' "$episode" > "$marker"
+      ;;
+  esac
+}
+
+# Negative epoch in the existing marker means a read gap, not proven inactivity.
+# Keep ownership retryable; the next successful read starts a full new window.
+stale_marker_suspend() {  # <marker>
+  local epoch
+  epoch=$(cat "$1" 2>/dev/null || _now)
+  printf -- '-%s\n' "${epoch#-}" > "$1"
 }
 
 stale_marker_remove() {  # <window> <state>
@@ -665,6 +682,44 @@ stale_window_is_busy() {  # <window> <state>
   tail40=$(fm_backend_capture "$backend" "$win" 40 "$label" 2>/dev/null) || return 2
   verdict=$(fm_busy_classify "$backend" "$win" "$harness" "$task" "$state" "$tail40")
   [ "${verdict%% *}" = busy ]
+}
+
+window_run_step_active() {  # <window> <state>
+  [ "$(operator_absorb_verdict "$(window_to_task "$1" "$2")")" = "working run-step" ]
+}
+
+# A busy verdict on a stale marker is not proof of life once the sentry has handed
+# off the same rendered pane as static. Escalate it like an idle stale pane while
+# the whole pane still matches the sentry's handed-off hash; any progress drops the
+# episode, and an active drill run-step restarts the clock instead of alarming.
+busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
+  local win=$1 state=$2 task=$3 marker=$4 age=$5 backend key rendered handed
+  backend=$(task_window_backend "$win" "$state")
+  rendered=$(fm_backend_capture_rendered "$backend" "$win" "sq-$task" 2>/dev/null) || {
+    stale_marker_suspend "$marker"
+    return 0
+  }
+  key=$(_stale_key "$win")
+  handed=$(cat "$state/.stale-$key" 2>/dev/null || true)
+  handed=${handed#busy-afk:}
+  handed=${handed#busy:}
+  if [ "$(_hash_text "$rendered")" != "$handed" ]; then
+    rm -f "$marker"
+    return 0
+  fi
+  if operator_is_finished "$task"; then
+    stale_marker_remove "$win" "$state"
+    return 0
+  fi
+  case "$(cat "$marker" 2>/dev/null || true)" in
+    -*) _now > "$marker"; return 0 ;;
+  esac
+  if window_run_step_active "$win" "$state"; then
+    _now > "$marker"
+    return 0
+  fi
+  escalate_add "$state" "stale persisted ${age}s (busy expired without activity, possible wedge): $win"
+  stale_marker_remove "$win" "$state"
 }
 
 escalate_add() {  # <state> <distilled-item>
@@ -1126,10 +1181,19 @@ housekeeping() {  # <state>
     [ "$age" -ge "${SQUAD_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}" ] || continue
     stale_window_is_busy "$win" "$state"
     case "$?" in
-      0) rm -f "$marker" ;;
-      2) rm -f "$marker" ;;
-      *) escalate_add "$state" "stale persisted ${age}s (possible wedge): $win"
-         stale_marker_remove "$win" "$state" ;;
+      0) busy_stale_recheck "$win" "$state" "$task" "$marker" "$age" ;;
+      2) stale_marker_suspend "$marker" ;;
+      *)
+        if window_run_step_active "$win" "$state"; then
+          _now > "$marker"
+        else
+          case "$(cat "$marker" 2>/dev/null || true)" in
+            -*) _now > "$marker" ;;
+            *) escalate_add "$state" "stale persisted ${age}s (possible wedge): $win"
+               stale_marker_remove "$win" "$state" ;;
+          esac
+        fi
+        ;;
     esac
   done
 
@@ -1345,8 +1409,8 @@ is_wake_reason() {  # <reason>
 # --- dispatch one wake reason to self-handle or escalate --------------------
 # Side effects: logging, marker records, escalation buffer appends.
 handle_wake() {  # <reason> <state>
-  local reason=$1 state=$2 decision action distilled task last stale_detail
-  local kind="" arg=""
+  local reason=$1 state=$2 decision action distilled task last stale_detail episode
+  local kind="" arg="" busy_handoff=0
   case "$reason" in
     routine:*) reason=${reason#routine: } ;;
   esac
@@ -1361,6 +1425,13 @@ handle_wake() {  # <reason> <state>
               case "$arg" in *" ("*) stale_detail="${arg#*" ("}"; arg="${arg%% \(*}" ;; esac
               decision=$(classify_stale "$arg" "$state")
               case "$stale_detail" in
+                busy\ expired\ without\ activity*)
+                  # The sentry already proved the task is not finished, so an
+                  # old terminal status line must not classify this handoff.
+                  busy_handoff=1
+                  case "$decision" in
+                    escalate\|*) decision="self|busy expired without activity: $arg" ;;
+                  esac ;;
                 idle\ *s,\ possible\ wedge,\ escalation\ *)
                   decision="escalate|${reason#stale: }" ;;
               esac ;;
@@ -1419,7 +1490,7 @@ handle_wake() {  # <reason> <state>
         # Nonterminal progress verbs keep possible-wedge markers even if free text
         # once looked commander-relevant or was written into a seen marker.
         _clear_wedge=0
-        if [ -n "$last" ] && status_is_commander_relevant "$last"; then
+        if [ "$busy_handoff" != 1 ] && [ -n "$last" ] && status_is_commander_relevant "$last"; then
           if status_is_terminal_verb "$last"; then
             _clear_wedge=1
           else
@@ -1433,7 +1504,10 @@ handle_wake() {  # <reason> <state>
           stale_marker_remove "$arg" "$state"
         else
           pause_marker_remove "$arg" "$state"
-          stale_marker_record "$arg" "$state"
+          # Both busy and idle handoffs carry their episode in the existing
+          # sentry timer; a new hash advances it, while replay cannot rewind it.
+          episode=$(cat "$state/.stale-since-$(_stale_key "$arg")" 2>/dev/null || true)
+          stale_marker_record "$arg" "$state" "$episode"
         fi
       fi
       log "self-handle: $reason -> $distilled"

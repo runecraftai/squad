@@ -488,6 +488,13 @@ fm_backend_zellij_capture() {  # <target> <lines> [expected-label]
   printf '%s' "$out" | tail -n "$lines"
 }
 
+# fm_backend_zellij_capture_rendered: the visible rendered viewport only. The
+# plain dump-screen is the viewport; --full would dump the whole scrollback.
+fm_backend_zellij_capture_rendered() {  # <target> [expected-label]
+  fm_backend_zellij_target_ready "$1" "${2:-}" || return 1
+  fm_backend_zellij_cli "$SQUAD_BACKEND_ZELLIJ_SESSION" action dump-screen --pane-id "$SQUAD_BACKEND_ZELLIJ_PANE" 2>/dev/null
+}
+
 # fm_backend_zellij_send_text_submit: type <text> into <target> once (raw,
 # unsubmitted, via send_literal), then submit with a named Enter key, retried
 # (Enter only, never retyped) until the pane visibly changes. Unlike herdr's

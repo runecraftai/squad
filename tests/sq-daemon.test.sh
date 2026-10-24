@@ -171,7 +171,7 @@ test_stale_transient_self_records_marker() {
   dir=$(make_supercase stale-transient)
   state="$dir/state"
   printf 'working: building\n' > "$state/qux-w4.status"
-  stale_marker_record "sess:sq-qux-w4" "$state"
+  stale_marker_record "sess:sq-qux-w4" "$state" "$(date +%s)"
   out=$(SQUAD_STATE_OVERRIDE="$state" classify_stale "sess:sq-qux-w4" "$state")
   case "$out" in self\|*) ;; *) fail "transient stale did not self-handle: $out" ;; esac
   key=$(printf '%s' "$(window_to_task "sess:sq-qux-w4")" | tr ':/.' '___')
@@ -527,6 +527,373 @@ test_housekeeping_persistent_stale_escalates() {
   pass "persistent stale escalates after threshold and clears its marker"
 }
 
+# End-to-end away-mode busy expiry: the real sentry hands a static busy pane off
+# as one wake, handle_wake records the daemon's stale marker from that wake, and
+# housekeeping's persistence recheck must act on it. The still-busy pane must
+# escalate once frozen, but progress or an active drill run-step must not.
+afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition coverage
+  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen episode i
+  dir=$(make_supercase "afk-busy-e2e-$case_name")
+  state="$dir/state"; fakebin="$dir/fakebin"; win="test:sq-afk-busy"; pane="$dir/pane.txt"; out="$dir/sentry.out"
+  make_fake_crew_state "$fakebin" >/dev/null
+  printf 'Working...\n12k tokens USD 0.42' > "$pane"
+  fm_write_meta "$state/afk-busy.meta" "window=$win" "backend=tmux" "harness=pi"
+  printf 'working: setup complete\n' > "$state/afk-busy.status"
+  if [ "$case_name" = old-terminal ]; then
+    # An already-escalated historical done line; the task then starts a new busy turn.
+    printf 'done: previous turn\n' > "$state/afk-busy.status"
+    printf '%s' 'done: previous turn' > "$state/.subsuper-seen-status-afk-busy"
+  fi
+  printf '%s' "$(stat -c '%s:%Y' "$state/afk-busy.status" 2>/dev/null || stat -f '%z:%Fm' "$state/afk-busy.status")" \
+    > "$state/.seen-afk-busy_status"
+  gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" afk-busy)
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy busy --gen "$gen" --source pi-ext --event agent-start >/dev/null
+  case "$case_name" in
+    idle-episode|idle-run-step)
+      "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy idle --gen "$gen" --source pi-ext --event agent-settled ;;
+  esac
+  [ "$case_name" = mode-transition ] || date '+%s' > "$state/.afk"
+  key=$(printf '%s' afk-busy | tr ':/.' '___')
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+    SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+  sentry_pid=$!
+  if [ "$case_name" = mode-transition ]; then
+    i=0
+    while [ "$i" -lt 100 ]; do
+      case "$(cat "$state/.stale-$(_stale_key "$win")" 2>/dev/null || true)" in
+        busy:*) break ;;
+      esac
+      sleep 0.1
+      i=$((i + 1))
+    done
+    [ "$i" -lt 100 ] || fail "control never entered normal static-busy tracking"
+    date +%s > "$state/.afk"
+  fi
+  wait_for_exit "$sentry_pid" 100 || fail "$case_name: afk sentry did not hand off the static pane: $(cat "$out")"
+  reason=$(grep -m1 "stale: $win" "$out") || fail "$case_name: sentry did not emit the stale handoff: $(cat "$out")"
+
+  (
+    kill() { :; }
+    fm_backend_send_text_submit() { :; }
+    LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+  )
+  [ -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon did not record a stale marker for the busy handoff"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+  [ ! -s "$state/.subsuper-escalations" ] || fail "$case_name: busy handoff reached the commander before the complete static window"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  if [ "$case_name" = producer-capture-failure ]; then
+    mv "$fakebin/tmux" "$fakebin/tmux-working"
+    cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -e "${SQUAD_CAPTURE_FAILURE_FILE:-/nonexistent}" ]; then
+  case " $* " in *' -S '*) ;; *) exit 1 ;; esac
+fi
+exec "$(dirname "$0")/tmux-working" "$@"
+SH
+    chmod +x "$fakebin/tmux"
+    : > "$dir/capture-failed"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_CAPTURE_FAILURE_FILE="$dir/capture-failed" SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 \
+      SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    if grep -F "stale: $win" "$out" >/dev/null; then fail "producer capture failure woke the commander: $(cat "$out")"; fi
+    case "$(cat "$state/.stale-$(_stale_key "$win")" 2>/dev/null || true)" in
+      busy-afk:*) ;;
+      *) fail "producer capture failure dropped the handed-off busy episode" ;;
+    esac
+    case "$(cat "$state/.subsuper-stale-$key" 2>/dev/null || true)" in
+      -*) ;;
+      *) fail "producer capture failure did not suspend daemon ownership" ;;
+    esac
+    rm -f "$dir/capture-failed"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_CAPTURE_FAILURE_FILE="$dir/capture-failed" SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 \
+      SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    if grep -F "stale: $win" "$out" >/dev/null; then fail "recovered static read woke before a daemon window: $(cat "$out")"; fi
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "recovered static read did not start a fresh daemon window"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "capture recovery alarmed before a full static window"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ "$(grep -c "busy expired without activity" "$state/.subsuper-escalations")" -eq 1 ] \
+      || fail "recovered frozen busy episode did not escalate exactly once"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ "$(grep -c "busy expired without activity" "$state/.subsuper-escalations")" -eq 1 ] \
+      || fail "escalated busy episode alarmed again on a later housekeeping pass"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 \
+      SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    if grep -F "stale: $win" "$out" >/dev/null; then fail "escalated busy episode was re-handed to the daemon"; fi
+    return 0
+  fi
+  if [ "$case_name" = progress-replay ]; then
+    printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 1.5
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    [ ! -e "$state/.subsuper-stale-$key" ] || fail "real progress kept the handed-off busy episode's daemon tracking"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    [ ! -e "$state/.subsuper-stale-$key" ] || fail "a replayed handoff after real progress recreated daemon tracking"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "a replayed handoff after real progress alarmed"
+    return 0
+  fi
+  if [ "$case_name" = repeat-hash ]; then
+    # Brief progress breaks the first episode; returning to the same frozen hash
+    # must issue a fresh handoff whose daemon clock is not the first episode's.
+    printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    printf 'Working...\n12k tokens USD 0.42' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    wait_for_exit "$sentry_pid" 100 || fail "repeated frozen hash was not handed off again: $(cat "$out")"
+    reason=$(grep -m1 "stale: $win" "$out") || fail "repeated frozen hash emitted no stale handoff"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "repeated hash inherited the first episode's expired clock"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "repeated frozen hash escalated before its full window"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  fi
+  if [ "$case_name" = episode ] || [ "$case_name" = idle-episode ] || [ "$case_name" = busy-idle ]; then
+    # A new busy/idle static episode replaces the first episode's clock even
+    # when housekeeping has not noticed progress or the busy claim clearing.
+    if [ "$case_name" = busy-idle ]; then
+      "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy idle --gen "$gen" --source pi-ext --event agent-settled
+    else
+      printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    fi
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    wait_for_exit "$sentry_pid" 100 || fail "new static episode was not handed off: $(cat "$out")"
+    reason=$(grep -m1 "stale: $win" "$out") || fail "second static episode was not handed off"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "new hash inherited the first handoff's expired clock"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "second static episode escalated before its full window"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    [ "$(cat "$state/.subsuper-stale-$key")" = "$episode" ] || fail "replaying a handoff reset the same episode's clock"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  fi
+  if [ "$case_name" = capture-retry ]; then
+    # Fail the real complete-viewport CLI read, not the tail or daemon logic.
+    # A negative existing marker retains ownership but invalidates its age.
+    mv "$fakebin/tmux" "$fakebin/tmux-working"
+    cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -e "${SQUAD_CAPTURE_FAILURE_FILE:-/nonexistent}" ]; then
+  case " $* " in *' -S '*) ;; *) exit 1 ;; esac
+fi
+exec "$(dirname "$0")/tmux-working" "$@"
+SH
+    chmod +x "$fakebin/tmux"
+    : > "$dir/capture-failed"
+    printf '%s\n' "$(cat "$state/.subsuper-stale-$key")" > "$state/.stale-since-$(_stale_key "$win")"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_CAPTURE_FAILURE_FILE="$dir/capture-failed" SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    case "$(cat "$state/.subsuper-stale-$key" 2>/dev/null || true)" in
+      -*) ;;
+      *) fail "capture failure lost retryable episode ownership or kept a proven idle clock" ;;
+    esac
+    [ ! -s "$state/.subsuper-escalations" ] || fail "unreadable output caused a commander alarm"
+    rm -f "$dir/capture-failed"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "successful capture inherited unreadable time"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    [ "$(cat "$state/.subsuper-stale-$key")" = "$episode" ] || fail "handoff replay rewound capture recovery"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "capture recovery alarmed before a full successful static window"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  fi
+  case "$case_name" in
+    progress) printf 'Working... (13k tokens)\n12k tokens USD 0.42' > "$pane" ;;
+    run-step|idle-run-step) export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running' ;;
+  esac
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+  unset SQUAD_FAKE_CREW_STATE
+
+  case "$case_name" in
+    frozen|episode|mode-transition|capture-retry|idle-episode|busy-idle|repeat-hash|old-terminal)
+      if [ "$case_name" != idle-episode ] && [ "$case_name" != busy-idle ]; then
+        grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+          || fail "$case_name: frozen busy pane was absorbed instead of escalating"
+      fi
+      if [ "$case_name" = old-terminal ]; then
+        [ "$(grep -c "busy expired without activity" "$state/.subsuper-escalations")" -eq 1 ] \
+          || fail "old terminal status did not yield exactly one busy-expiry escalation"
+        grep -F "terminal" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+          && fail "old terminal status escalated the frozen busy episode as terminal"
+      fi
+      grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+        || fail "frozen afk busy escalation did not flag a possible wedge"
+      [ ! -e "$state/.subsuper-stale-$key" ] || fail "frozen afk busy escalation retained the stale marker"
+      ;;
+    progress)
+      [ ! -s "$state/.subsuper-escalations" ] || fail "progress above the static tail escalated a busy pane"
+      [ ! -e "$state/.subsuper-stale-$key" ] || fail "progress did not release the busy episode"
+      ;;
+    run-step|idle-run-step)
+      [ ! -s "$state/.subsuper-escalations" ] || fail "an active drill run-step escalated an afk pane"
+      [ "$(cat "$state/.subsuper-stale-$key")" -gt $(( $(date +%s) - 240 )) ] \
+        || fail "an active drill run-step did not restart the busy escalation clock"
+      ;;
+  esac
+}
+
+test_afk_busy_handoff_escalates_through_daemon_recheck() {
+  local case_name
+  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step repeat-hash old-terminal producer-capture-failure progress-replay; do
+    afk_busy_daemon_case "$case_name"
+  done
+  pass "away-mode episodes survive capture gaps and mode changes, restart busy/idle clocks, and defer active steps"
+}
+
+# Non-afk wedge escalation end to end: the real sentry emits the expired-busy
+# wake from a static busy pane, and handle_wake must consume that exact line as an
+# escalation. "first" is the first wedge escalation; "repeat" is the threshold
+# escalation that demands deep inspection, consumed after afk is toggled on.
+busy_wedge_daemon_case() {  # <first|repeat>
+  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen hash
+  dir=$(make_supercase "busy-wedge-e2e-$case_name")
+  state="$dir/state"; fakebin="$dir/fakebin"; win="test:sq-busy-wedge"; pane="$dir/pane.txt"; out="$dir/sentry.out"
+  make_fake_crew_state "$fakebin" >/dev/null
+  printf 'Working...\n12k tokens USD 0.42' > "$pane"
+  fm_write_meta "$state/busy-wedge.meta" "window=$win" "backend=tmux" "harness=pi"
+  printf 'working: setup complete\n' > "$state/busy-wedge.status"
+  printf '%s' "$(stat -c '%s:%Y' "$state/busy-wedge.status" 2>/dev/null || stat -f '%z:%Fm' "$state/busy-wedge.status")" \
+    > "$state/.seen-busy-wedge_status"
+  gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" busy-wedge)
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" busy-wedge busy --gen "$gen" --source pi-ext --event agent-start >/dev/null
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  hash=$(printf '%s' "$(cat "$pane")" | md5sum | cut -d' ' -f1)
+  printf '%s' "$hash" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  if [ "$case_name" = repeat ]; then
+    printf '2\n' > "$state/.wedge-escalations-$key"
+  fi
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 SQUAD_WEDGE_DEMAND_INSPECT_COUNT=3 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+  sentry_pid=$!
+  wait_for_exit "$sentry_pid" 100 || fail "$case_name: sentry did not emit the expired-busy wedge wake: $(cat "$out")"
+  reason=$(grep -m1 "stale: $win (idle " "$out") || fail "$case_name: sentry wake was not a wedge escalation: $(cat "$out")"
+  grep -E "possible wedge, escalation [0-9]+, busy expired without activity" <<<"$reason" >/dev/null \
+    || fail "$case_name: wedge wake did not name the expired busy claim after its escalation: $reason"
+
+  date '+%s' > "$state/.afk"
+  (
+    kill() { :; }
+    fm_backend_send_text_submit() { :; }
+    LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+  )
+  grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+    || fail "$case_name: daemon absorbed the expired-busy wedge wake instead of escalating it: $reason"
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon kept a transient stale marker for the escalated wake"
+  if [ "$case_name" = repeat ]; then
+    grep -F "demand-deep-inspection" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+      || fail "repeat expired-busy wedge did not carry demand-deep-inspection to the daemon"
+  else
+    grep -F "demand-deep-inspection" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+      && fail "first expired-busy wedge demanded deep inspection too early"
+  fi
+  return 0
+}
+
+test_busy_wedge_escalation_reaches_daemon() {
+  busy_wedge_daemon_case first
+  busy_wedge_daemon_case repeat
+  pass "expired-busy wedge wake escalates through the daemon at first escalation and on the demand-deep-inspection repeat"
+}
+
 test_housekeeping_resumed_stale_cleared() {
   local dir state fakebin win pane key
   dir=$(make_supercase stale-resumed)
@@ -609,9 +976,9 @@ test_housekeeping_herdr_idle_busy_record_clears_stale() {
     [ "$(fm_backend_busy_state herdr default:w1:p4)" = idle ] || fail "herdr busy stub did not report idle"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
   ) || fail "herdr idle busy-footer housekeeping failed"
-  [ ! -e "$state/.subsuper-stale-$key" ] || fail "idle-native busy-record herdr stale marker was not cleared"
+  [ -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport lost its pending marker"
   [ ! -s "$state/.subsuper-escalations" ] || fail "idle-native busy-record herdr stale was escalated"
-  pass "herdr idle busy-footer stale clears through capture corroboration"
+  pass "herdr busy-record stale does not alarm without verified complete viewport evidence"
 }
 
 test_housekeeping_herdr_resumed_stale_cleared() {
@@ -637,9 +1004,9 @@ test_housekeeping_herdr_resumed_stale_cleared() {
     [ "$(fm_backend_busy_state herdr default:w1:p3)" = busy ] || fail "herdr busy stub did not report busy"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
   ) || fail "herdr resumed stale housekeeping failed"
-  [ ! -e "$state/.subsuper-stale-$key" ] || fail "busy herdr stale marker was not cleared"
+  [ -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport lost its pending busy marker"
   [ ! -s "$state/.subsuper-escalations" ] || fail "busy herdr stale was escalated"
-  pass "resumed herdr stale clears through backend-aware busy state"
+  pass "busy herdr stale cannot expire without verified complete viewport evidence"
 }
 
 test_housekeeping_orca_persistent_stale_resolves_terminal() {
@@ -1159,6 +1526,7 @@ test_afk_nonterminal_working_merged_keeps_wedge_aging() {
       esac
       ;;
   esac
+  date +%s > "$state/.stale-since-$(printf '%s' "$win" | tr ':/.' '___')"
   SQUAD_STATE_OVERRIDE="$state" handle_wake "stale: $win" "$state"
   [ -e "$state/.subsuper-stale-$key" ] \
     || fail "wedge stale marker was not recorded for already-seen nonterminal working:"
@@ -2842,6 +3210,8 @@ test_housekeeping_migrates_sentry_pause_marker
 test_housekeeping_migrates_sentry_unpaused_marker_to_clear
 test_housekeeping_retires_sentry_seen_markers_for_torn_down_task
 test_housekeeping_seeds_pause_marker_from_status
+test_afk_busy_handoff_escalates_through_daemon_recheck
+test_busy_wedge_escalation_reaches_daemon
 test_housekeeping_persistent_stale_escalates
 test_housekeeping_resumed_stale_cleared
 test_housekeeping_paused_resurfaces_and_resets

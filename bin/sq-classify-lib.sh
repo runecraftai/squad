@@ -868,9 +868,8 @@ signal_operator_is_paused() {  # <file> ...
 #     at 1 when a same-id relaunch re-arms the contract, and a stale marker
 #     from the prior incarnation must not suppress the new one's compaction.
 # Ordinary short pauses and ordinary long tool calls never set event=compaction
-# at all, so they never reach this check; busy_turn_over_age's generous
-# SQUAD_BUSY_TURN_MAX_SECS wedge timer is unaffected and keeps owning the
-# unrelated "busy pane with no completed turn" case.
+# at all, so they never reach this check; sq-sentry.sh's pane-hash wedge
+# timer independently owns the unrelated busy-without-output-activity case.
 # Residual false positive this still allows: the age floor is measured from
 # the task's own age (the busy-gen arm time), not from how long the
 # compaction itself has been unresolved, so a willRetry compaction on a task

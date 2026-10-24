@@ -120,6 +120,7 @@ Real tests share the commander's running app rather than creating an isolated cm
 - The only-workspace cleanup path leaves a fresh default workspace and cannot close the window.
 - Label lookup and recovery are currently scoped to the current cmux window, so a task moved to a non-current window is a known recovery blind spot.
 - Workspace ids do not survive app relaunch and are never recovery authority.
+- Busy-expiry cannot be evaluated: no verified complete-viewport read exists, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 
 ## Regression entry points
 

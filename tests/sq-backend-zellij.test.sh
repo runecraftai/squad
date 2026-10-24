@@ -558,6 +558,25 @@ test_capture_large_reads_use_full_scrollback_and_trim() {
   pass "fm_backend_zellij_capture: reads above the sentry-size threshold request --full scrollback"
 }
 
+test_capture_rendered_reads_viewport_not_scrollback() {
+  local dir fb out
+  dir="$TMP_ROOT/capture-rendered"; mkdir -p "$dir/responses"
+  zellij_pane_response "$dir" 1 7 3
+  printf 'viewport row\nUSD 0.42\n' > "$dir/responses/2.out"
+  fb=$(make_zellij_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" SQUAD_ZELLIJ_LOG="$dir/log" SQUAD_ZELLIJ_RESPONSES="$dir/responses" \
+    SQUAD_ZELLIJ_SESSION_LIST="Squad" \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_capture_rendered Squad:7' "$ROOT" )
+  [ "$out" = $'viewport row\nUSD 0.42' ] || fail "rendered capture should return the viewport, got '$out'"
+  zellij_assert_call_order "$dir/log" $'\x1f''list-panes'$'\x1f''--json' $'\x1f''dump-screen' \
+    "rendered capture did not verify the pane before dump-screen"
+  assert_contains "$(cat "$dir/log")" $'\x1f''dump-screen'$'\x1f''--pane-id'$'\x1f''7' \
+    "rendered capture did not call dump-screen --pane-id <pane>"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''--full' \
+    "rendered capture requested the full scrollback"
+  pass "fm_backend_zellij_capture_rendered: busy hashing reads the viewport and never requests --full"
+}
+
 test_capture_fails_when_pane_absent() {
   local dir fb out status
   dir="$TMP_ROOT/capture-no-pane"; mkdir -p "$dir/responses"
@@ -1101,6 +1120,7 @@ test_create_task_restores_previously_active_tab
 test_create_task_no_restore_when_new_tab_was_already_active
 test_capture_small_reads_use_viewport_and_trim
 test_capture_large_reads_use_full_scrollback_and_trim
+test_capture_rendered_reads_viewport_not_scrollback
 test_capture_fails_when_pane_absent
 test_capture_fails_when_session_absent
 test_send_key_normalizes_and_targets_pane

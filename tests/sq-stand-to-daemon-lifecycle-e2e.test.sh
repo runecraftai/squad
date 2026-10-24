@@ -120,7 +120,7 @@ test_stale_pane_transient_persistent_resume() {
   fm_write_meta "$state/stale-w2.meta" "window=$win" "backend=tmux"
 
   # Transient: first stale observation self-handles and records a marker.
-  stale_marker_record "$win" "$state"
+  stale_marker_record "$win" "$state" "$(date +%s)"
   case "$(SQUAD_STATE_OVERRIDE="$state" classify_stale "$win" "$state")" in
     self\|*) : ;;
     *) fail "transient stale did not self-handle" ;;
@@ -143,7 +143,7 @@ test_stale_pane_transient_persistent_resume() {
   # Resumed: a fresh transient marker but the operator is provably working again ->
   # housekeeping clears the marker without escalating. The proof is the operator's
   # own semantic busy-state record (bin/sq-busy-lib.sh), not rendered pane text.
-  stale_marker_record "$win" "$state"
+  stale_marker_record "$win" "$state" "$(date +%s)"
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
   printf 'Working...\n' > "$dir/pane.txt"
   fm_write_meta "$state/stale-w2.meta" "window=$win" "worktree=$dir/wt" "kind=strike" "harness=pi"

@@ -71,7 +71,7 @@ file_mtime() {
   if [ "$(uname)" = Darwin ]; then stat -f %m "$1" 2>/dev/null; else stat -c %Y "$1" 2>/dev/null; fi
 }
 
-# Set <file>'s mtime to exactly <epoch> seconds, for aging a busy-turn marker by
+# Set <file>'s mtime to exactly <epoch> seconds, for aging a marker by
 # a precise amount (touch -t takes a local-time stamp, not an epoch, on both
 # platforms, so convert via BSD `date -r` or GNU `date -d @`).
 set_mtime() {  # <epoch> <file>
@@ -93,10 +93,32 @@ seen_sig() {
 # Prime <file>'s .seen-* suppressor to its CURRENT signature, so the per-poll
 # no-verb signal scan (which watches every *.turn-ended for a size:mtime change)
 # treats a just-created or just-backdated turn-ended marker as already seen.
-# Busy-turn-age fixtures create/backdate turn-ended directly (there is no real
+# Busy-expiry fixtures create/backdate turn-ended directly (there is no real
 # harness touching it), so without this the marker's own first sighting would
-# fire an unrelated "signal:" wake and mask the busy-turn-age assertion under
+# fire an unrelated "signal:" wake and mask the static-busy assertion under
 # test. Call again after any further touch/set_mtime on the same file.
+# Wraps the case's fake tmux so `capture-pane -S -N` returns only the last N lines
+# of the fixture, as a real pane's bottom-anchored capture does. Without this the
+# fake returns the whole fixture and a tall pane's above-tail content is invisible.
+use_tail_aware_tmux() {  # <fakebin>
+  local fakebin=$1
+  mv "$fakebin/tmux" "$fakebin/tmux-base"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -n "${SQUAD_FAKE_TMUX_CAPTURE:-}" ]; then
+  lines=
+  while [ $# -gt 0 ]; do
+    if [ "$1" = -S ]; then lines=${2#-}; fi
+    shift
+  done
+  if [ -n "$lines" ]; then tail -n "$lines" "$SQUAD_FAKE_TMUX_CAPTURE"; else cat "$SQUAD_FAKE_TMUX_CAPTURE"; fi
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-base" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+}
+
 prime_turnend_seen() {  # <file>
   local f=$1 base
   base=$(basename "$f" | tr '.' '_')
@@ -1532,16 +1554,15 @@ test_busy_pane_without_declared_pause_still_escalates() {
   pass "with no declared pause, a busy pane still escalates past the wedge threshold exactly as before"
 }
 
-# Regression: the busy-turn-age wedge path (a provably busy pane past
-# BUSY_TURN_MAX_SECS with no completed turn) must honor a declared pause too.
+# Regression: the static-busy wedge path must honor a declared pause too.
 # window_is_busy is true there, so before the fix the sentry took the busy
 # branch without ever consulting the paused: last status line and wedge-
 # escalated instead of applying the long pause cadence. This drives a real
 # busy pane (record_pi_busy) with a pre-aged turn marker through both pane-
 # hash shapes and then asserts the pause cadence is stable across polls.
-test_paused_busy_pane_past_turn_age_does_not_wedge() {
+test_paused_busy_pane_with_static_output_does_not_wedge() {
   local dir state fakebin out capture_file statusf window key pane_hash sig pid round wakes back
-  dir=$(make_case paused-busy-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
+  dir=$(make_case paused-static-busy); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/paused-busy-age.status"
   window="test:sq-paused-busy-age"
   printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/paused-busy-age.meta"
@@ -1559,13 +1580,13 @@ test_paused_busy_pane_past_turn_age_does_not_wedge() {
   # Stable hash (h == prev): a declared pause must not start the wedge timer.
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
-    SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_PAUSE_RESURFACE_SECS=999 \
+    SQUAD_STALE_ESCALATE_SECS=999 SQUAD_PAUSE_RESURFACE_SECS=999 \
     SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_live "$pid" 30 || { reap "$pid"; fail "declared pause + busy pane past the turn-age bound exited: $(cat "$out")"; }
-  [ ! -e "$state/.stale-since-$key" ] || fail "declared pause did not outrank a busy pane past the turn-age bound (wedge timer started)"
-  [ -e "$state/.paused-$key" ] || fail "declared pause was not retained on the stable-hash busy-turn-age path"
-  grep -F "possible wedge" "$out" >/dev/null && fail "declared pause + busy pane past the turn-age bound wedge-escalated"
+  wait_live "$pid" 30 || { reap "$pid"; fail "declared pause + busy pane with static output exited: $(cat "$out")"; }
+  [ ! -e "$state/.stale-since-$key" ] || fail "declared pause did not outrank a busy pane with static output (wedge timer started)"
+  [ -e "$state/.paused-$key" ] || fail "declared pause was not retained on the stable-hash static-busy path"
+  grep -F "possible wedge" "$out" >/dev/null && fail "declared pause + busy pane with static output wedge-escalated"
   reap "$pid"
 
   # Changing hash (h != prev): same precedence, the branch the field spinner hits.
@@ -1574,13 +1595,13 @@ test_paused_busy_pane_past_turn_age_does_not_wedge() {
   : > "$out"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
-    SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_PAUSE_RESURFACE_SECS=999 \
+    SQUAD_STALE_ESCALATE_SECS=999 SQUAD_PAUSE_RESURFACE_SECS=999 \
     SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_live "$pid" 30 || { reap "$pid"; fail "declared pause + changed busy pane past the turn-age bound exited: $(cat "$out")"; }
-  [ ! -e "$state/.stale-since-$key" ] || fail "declared pause did not outrank a changed busy pane past the turn-age bound (wedge timer started)"
-  [ -e "$state/.paused-$key" ] || fail "declared pause was not retained on the changing-hash busy-turn-age path"
-  grep -F "possible wedge" "$out" >/dev/null && fail "declared pause + changed busy pane past the turn-age bound wedge-escalated"
+  wait_live "$pid" 30 || { reap "$pid"; fail "declared pause + changed busy pane with static output exited: $(cat "$out")"; }
+  [ ! -e "$state/.stale-since-$key" ] || fail "declared pause did not outrank a changed busy pane with static output (wedge timer started)"
+  [ -e "$state/.paused-$key" ] || fail "declared pause was not retained on the changing-hash static-busy path"
+  grep -F "possible wedge" "$out" >/dev/null && fail "declared pause + changed busy pane with static output wedge-escalated"
   reap "$pid"
 
   # Long cadence: with the pause marker preserved, repeated polls surface at most
@@ -1594,7 +1615,7 @@ test_paused_busy_pane_past_turn_age_does_not_wedge() {
   while [ "$round" -le 4 ]; do
     PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
       SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
-      SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_PAUSE_RESURFACE_SECS=60 \
+      SQUAD_STALE_ESCALATE_SECS=999 SQUAD_PAUSE_RESURFACE_SECS=60 \
       SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" >> "$out" &
     pid=$!
     if wait_live "$pid" 20; then reap "$pid"; else wait "$pid" 2>/dev/null || true; fi
@@ -1603,15 +1624,15 @@ test_paused_busy_pane_past_turn_age_does_not_wedge() {
   wakes=$(grep -c "awaiting external" "$out" || true)
   [ "$wakes" -le 1 ] || fail "declared pause + busy pane re-surfaced $wakes times across polls instead of one bounded recheck"
   grep -F "possible wedge" "$out" >/dev/null && fail "declared pause + busy pane wedge-escalated during the cadence loop"
-  pass "a declared pause outranks a provably busy pane past the turn-age bound and keeps the long pause cadence"
+  pass "a declared pause outranks a provably busy pane with static output and keeps the long pause cadence"
 }
 
-# Companion to the busy-turn-age precedence test: with NO declared pause the
-# same provably busy, past-turn-age pane must still walk the wedge timer and
+# Companion to the static-busy precedence test: with NO declared pause the
+# same provably busy, static-output pane must still walk the wedge timer and
 # escalate - the fix must not silence a genuine wedge baked into the busy path.
-test_busy_pane_past_turn_age_without_pause_still_wedges() {
+test_busy_pane_static_without_pause_still_wedges() {
   local dir state fakebin out capture_file window key pane_hash sig pid
-  dir=$(make_case busy-turn-age-no-pause); state="$dir/state"; fakebin="$dir/fakebin"
+  dir=$(make_case static-busy-no-pause); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-no-pause"
   printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-no-pause.meta"
   record_pi_busy "$state" busy-no-pause
@@ -1624,16 +1645,16 @@ test_busy_pane_past_turn_age_without_pause_still_wedges() {
   printf '1\n' > "$state/.count-$key"
   touch -t 200001010000 "$state/busy-no-pause.meta"
 
-  # Phase A: the over-age busy pane starts the wedge timer without escalating.
+  # Phase A: the static busy pane starts the wedge timer without escalating.
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
-    SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a no-pause busy pane past the turn-age bound escalated before the wedge threshold: $(cat "$out")"
+    reap "$pid"; fail "a no-pause busy pane with static output escalated before the wedge threshold: $(cat "$out")"
   fi
-  [ -s "$state/.stale-since-$key" ] || fail "a no-pause busy pane past the turn-age bound did not start the wedge timer"
+  [ -s "$state/.stale-since-$key" ] || fail "a no-pause busy pane with static output did not start the wedge timer"
   reap "$pid"
 
   # Phase B: backdate the timer and the next poll must escalate.
@@ -1641,13 +1662,13 @@ test_busy_pane_past_turn_age_without_pause_still_wedges() {
   : > "$out"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
-    SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 40 || fail "a no-pause busy pane past the turn-age bound did not wedge-escalate"
-  grep -F "stale: $window" "$out" >/dev/null || fail "no-pause busy turn-age escalation did not print the stale wake"
-  grep -F "possible wedge" "$out" >/dev/null || fail "no-pause busy turn-age escalation did not flag a possible wedge"
-  pass "with no declared pause, a busy pane past the turn-age bound still wedge-escalates"
+  wait_for_exit "$pid" 40 || fail "a no-pause busy pane with static output did not wedge-escalate"
+  grep -F "stale: $window" "$out" >/dev/null || fail "no-pause static busy escalation did not print the stale wake"
+  grep -F "possible wedge" "$out" >/dev/null || fail "no-pause static busy escalation did not flag a possible wedge"
+  pass "with no declared pause, a busy pane with static output still wedge-escalates"
 }
 
 # Regression: surface_nonterminal_stale must refresh the resurfaced throttle
@@ -2447,165 +2468,257 @@ test_teardown_drops_target_and_wedge_counter() {
   pass "a torn-down target is dropped with its wedge counter reset, and a live window keeps escalating"
 }
 
-# --- busy pane duration bound: a completed-turn age gate on top of busy -----
-# 2026-07 hibit-agent-focus-nonsteal-r1 incident: a busy pane (herdr "working"
-# and/or the harness's rendered busy footer) is unconditional, unbounded proof
-# of liveness in every existing classifier, so a genuinely hung foreground tool
-# call behind a busy signature ran undetected for 25h. BUSY_TURN_MAX_SECS bounds
-# how long a busy pane may run with no completed turn (state/<id>.turn-ended, or
-# the task's spawn record before any turn completes); past the bound the SAME
-# wedge_timer_check already used for a provably-working non-busy stale takes
-# over, so escalation reuses the identical stale reason, escalation counter, and
-# demand-deep-inspection marker - never an automatic interrupt or restart.
+# --- busy claims expire only when the rendered pane, including its usage
+# gauge, stays static. Reuse the ordinary pane hash and wedge timer. ------------
 
-test_busy_pane_below_turn_age_bound_is_absorbed() {
+test_busy_static_pane_escalates_without_turn_age() {
   local dir state fakebin out capture_file window key sig pid
-  dir=$(make_case busy-below-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-fresh"
-  printf 'Working... (12.3s)' > "$capture_file"
-  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-fresh.meta"
-  record_pi_busy "$state" busy-fresh
-  printf 'working: setup complete\n' > "$state/busy-fresh.status"
-  sig=$(seen_sig "$state/busy-fresh.status"); printf '%s' "$sig" > "$state/.seen-busy-fresh_status"
+  dir=$(make_case busy-static-expiry); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-static"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-static.meta"
+  record_pi_busy "$state" busy-static
+  printf 'working: setup complete\n' > "$state/busy-static.status"
+  sig=$(seen_sig "$state/busy-static.status"); printf '%s' "$sig" > "$state/.seen-busy-static_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
-  touch "$state/busy-fresh.turn-ended"
-  prime_turnend_seen "$state/busy-fresh.turn-ended"
+  # A fresh completed turn must not give a frozen agent an hour of immunity.
+  touch "$state/busy-static.turn-ended"
+  prime_turnend_seen "$state/busy-static.turn-ended"
 
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=999 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=1
   pid=$!
-  if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a busy pane below the turn-age bound was escalated: $(cat "$out")"
-  fi
-  [ ! -s "$out" ] || fail "a busy pane below the turn-age bound printed a wake reason"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a busy pane below the turn-age bound started a wedge timer"
-  reap "$pid"
-  pass "a busy worker below the turn-age bound remains working with no escalation"
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "a static busy pane never expired: $(cat "$out")"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "static busy expiry did not print the stale wake"
+  grep -F "busy expired without activity" "$out" >/dev/null || fail "static busy expiry reason was not explicit"
+  grep -F "busy expired without activity" "$state/.stand-to-queue" >/dev/null || fail "busy expiry was not durably queued"
+  [ "$(cat "$state/.wedge-escalations-$key")" = 1 ] || fail "busy expiry did not reuse the escalation counter"
+  pass "a fresh busy claim expires within the bounded static-pane window"
 }
 
-test_busy_pane_stable_hash_escalates_past_turn_age_bound() {
-  local dir state fakebin out capture_file window key pane_hash sig pid
-  dir=$(make_case busy-stable-hash-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-stable"
-  printf 'Working...' > "$capture_file"
-  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-stable.meta"
-  record_pi_busy "$state" busy-stable
-  printf 'working: setup complete\n' > "$state/busy-stable.status"
-  sig=$(seen_sig "$state/busy-stable.status"); printf '%s' "$sig" > "$state/.seen-busy-stable_status"
+test_busy_changing_pane_resets_expiry() {
+  local change dir state fakebin out capture_file window key sig pid text pane_hash
+  for change in content gauge; do
+    dir=$(make_case "busy-changing-$change"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-changing-$change"
+    printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/changing-$change.meta"
+    record_pi_busy "$state" "changing-$change"
+    printf 'working: setup complete\n' > "$state/changing-$change.status"
+    sig=$(seen_sig "$state/changing-$change.status"); printf '%s' "$sig" > "$state/.seen-changing-${change}_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    text=$(printf 'Working...\n12k tokens USD 0.42')
+    pane_hash=$(hash_text "$text")
+    printf '%s' "$pane_hash" > "$state/.hash-$key"
+    printf '2\n' > "$state/.count-$key"
+    # Old turn and expired wedge clock: only actual output progress may save it.
+    touch -t 200001010000 "$state/changing-$change.meta"
+    echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+    printf '2\n' > "$state/.wedge-escalations-$key"
+    if [ "$change" = content ]; then
+      printf 'Reading files...\n12k tokens USD 0.42' > "$capture_file"
+    else
+      printf 'Working...\n13k tokens USD 0.44' > "$capture_file"
+    fi
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+      SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+    pid=$!
+    wait_live "$pid" 30 || { reap "$pid"; fail "busy $change progress escalated: $(cat "$out")"; }
+    [ ! -s "$out" ] || { reap "$pid"; fail "busy $change progress printed a wake"; }
+    [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "busy $change progress queued a wake"; }
+    [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "busy $change progress kept the escalation counter"; }
+    # A subsequent static sample may start a fresh timer, but not keep the old one.
+    if [ -e "$state/.stale-since-$key" ]; then
+      [ "$(cat "$state/.stale-since-$key")" -gt $(( $(date +%s) - 500 )) ] \
+        || { reap "$pid"; fail "busy $change progress kept the expired timer"; }
+    fi
+    reap "$pid"
+  done
+  pass "changing rendered content or usage gauge resets busy expiry even with an old turn"
+}
+
+# A 62-line pane whose top row carries <header>; the bottom 40 lines and the
+# footer gauge stay identical across calls, so only above-tail content varies.
+write_tall_pane() {  # <header> <file>
+  {
+    printf 'status %s\n' "$1"
+    for i in $(seq 2 60); do printf 'row %s\n' "$i"; done
+    printf 'Working...\n12k tokens USD 0.42\n'
+  } > "$2"
+}
+
+test_busy_tall_pane_above_tail_progress_resets_expiry() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-tall-pane); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-tall"
   key=$(printf '%s' "$window" | tr ':/.' '___')
-  pane_hash=$(hash_text "Working...")
-  printf '%s' "$pane_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-  # No completed turn ever recorded for this task: age the spawn record itself.
-  touch -t 200001010000 "$state/busy-stable.meta"
+  use_tail_aware_tmux "$fakebin"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-tall.meta"
+  record_pi_busy "$state" busy-tall
+  printf 'working: setup complete\n' > "$state/busy-tall.status"
+  sig=$(seen_sig "$state/busy-tall.status"); printf '%s' "$sig" > "$state/.seen-busy-tall_status"
 
-  # Phase A: past the bound, the stable-hash busy pane is absorbed but starts
-  # the wedge timer (mirrors the existing provably-working-stale Phase A/B).
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a stable-hash busy pane past the turn-age bound escalated before the wedge threshold: $(cat "$out")"
-  fi
-  [ -s "$state/.stale-since-$key" ] || fail "a stable-hash busy pane past the turn-age bound did not start a wedge timer"
-  reap "$pid"
+  poll_tall_pane() {
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+      SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+    pid=$!
+    wait_live "$pid" 30 || { reap "$pid"; fail "tall busy pane exited: $(cat "$out")"; }
+    reap "$pid"
+  }
 
-  # Phase B: backdate the wedge timer past the threshold; the next poll escalates.
+  write_tall_pane row-a "$capture_file"
+  poll_tall_pane
+  [ -s "$state/.stale-since-$key" ] || fail "a static busy tall pane did not start the expiry clock"
+
+  # Only the above-tail row changes: the busy claim is not static, so no expiry.
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  write_tall_pane row-b "$capture_file"
+  : > "$out"
+  poll_tall_pane
+  [ ! -s "$out" ] || fail "progress above the bottom 40 lines was escalated as a frozen busy pane: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "progress above the bottom 40 lines escalated the wedge counter"
+
+  # Control: the same tall pane, truly unchanged, does expire on the aged clock.
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
   pid=$!
-  wait_for_exit "$pid" 40 || fail "a stable-hash busy pane did not wedge-escalate past the turn-age bound"
-  grep -F "stale: $window" "$out" >/dev/null || fail "busy turn-age escalation did not print the stale wake"
-  grep -F "possible wedge" "$out" >/dev/null || fail "busy turn-age escalation did not flag a possible wedge"
-  pass "a busy worker with a stable pane hash still escalates once its completed-turn age reaches the bound"
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "a truly static tall busy pane never expired: $(cat "$out")"; }
+  grep -F "busy expired without activity" "$out" >/dev/null || fail "static tall busy expiry reason was not explicit"
+  pass "tall-pane progress above the bottom 40 lines resets busy expiry; a truly static tall pane still expires"
 }
 
-# Regression fixture for the incident's actual masking condition: Pi's rendered
-# elapsed-time footer changes every poll, so the pane hash never repeats and the
-# sentry always takes the "new hash" branch, never the stable-hash one above.
-test_busy_pane_changing_hash_escalates_past_turn_age_bound() {
-  local dir state fakebin out capture_file window key pid
-  dir=$(make_case busy-changing-hash-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-ticking"
-  printf 'Working... (3600.1s)' > "$capture_file"
-  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-ticking.meta"
-  record_pi_busy "$state" busy-ticking
-  printf 'working: setup complete\n' > "$state/busy-ticking.status"
-  sig=$(seen_sig "$state/busy-ticking.status"); printf '%s' "$sig" > "$state/.seen-busy-ticking_status"
+# AFK hands a static busy pane to the daemon exactly like a static idle stale
+# pane: one stale wake per distinct unchanged hash, no wedge timer, no escalation
+# counter growth on repeated polls of the same frozen pane.
+test_busy_static_afk_hands_off_once_per_hash() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-afk); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-afk"
   key=$(printf '%s' "$window" | tr ':/.' '___')
-  touch -t 200001010000 "$state/busy-ticking.meta"
-  # No pre-seeded .hash-<key>: with a real ticking elapsed footer, every poll
-  # lands here (h != prev) - the reproduction's actual masking condition.
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-afk.meta"
+  record_pi_busy "$state" busy-afk
+  printf 'working: setup complete\n' > "$state/busy-afk.status"
+  sig=$(seen_sig "$state/busy-afk.status"); printf '%s' "$sig" > "$state/.seen-busy-afk_status"
+  date '+%s' > "$state/.afk"
 
-  # Phase A: first sight past the bound absorbs and starts the wedge timer,
-  # without ever needing the "genuinely stale" hash-match path.
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
   pid=$!
-  if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a changing-hash busy pane past the turn-age bound escalated before the wedge threshold: $(cat "$out")"
-  fi
-  [ -s "$state/.stale-since-$key" ] || fail "a changing-hash busy pane past the turn-age bound did not start a wedge timer"
-  reap "$pid"
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "AFK static busy pane did not hand off a stale wake: $(cat "$out")"; }
+  grep -F "stale: $window (busy expired without activity)" "$out" >/dev/null \
+    || fail "AFK busy handoff did not name the expired busy claim: $(cat "$out")"
+  [ "$(grep -c "busy expired without activity" "$out")" = 1 ] || fail "AFK busy handoff emitted more than one wake"
+  wait_numeric_file "$state/.stale-since-$key" || fail "AFK busy handoff did not record its episode epoch"
 
-  # Phase B: another tick (still a fresh, never-before-seen hash) plus a
-  # backdated wedge timer escalates exactly as the stable-hash case does.
-  printf 'Working... (3601.2s)' > "$capture_file"
-  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
   pid=$!
-  wait_for_exit "$pid" 40 || fail "a changing-hash busy pane did not wedge-escalate past the turn-age bound"
-  grep -F "stale: $window" "$out" >/dev/null || fail "busy turn-age escalation (changing hash) did not print the stale wake"
-  grep -F "possible wedge" "$out" >/dev/null || fail "busy turn-age escalation (changing hash) did not flag a possible wedge"
-  pass "a busy worker whose pane hash changes every poll still escalates once its completed-turn age reaches the bound"
+  wait_live "$pid" 30 || { reap "$pid"; fail "AFK repeat poll of the same frozen busy pane exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "AFK re-woke the same frozen busy pane: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "AFK busy handoff accumulated deep-inspection escalations"
+  [ "$(grep -c "busy expired without activity" "$state/.stand-to-queue" || true)" = 1 ] \
+    || fail "AFK busy handoff was not queued exactly once"
+  pass "AFK hands a static busy pane to the daemon once per distinct hash, never as a repeated wedge"
 }
 
-test_busy_pane_turn_end_touch_resets_age() {
-  local dir state fakebin out capture_file window key pane_hash sig pid
-  dir=$(make_case busy-turn-end-resets-age); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-reset"
-  printf 'Working...' > "$capture_file"
-  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-reset.meta"
-  record_pi_busy "$state" busy-reset
-  printf 'working: setup complete\n' > "$state/busy-reset.status"
-  sig=$(seen_sig "$state/busy-reset.status"); printf '%s' "$sig" > "$state/.seen-busy-reset_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
-  pane_hash=$(hash_text "Working...")
-  printf '%s' "$pane_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-  # A wedge is already mid-escalation, as if several over-age polls already ran.
-  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
-  printf '1\n' > "$state/.wedge-escalations-$key"
-  # The worker's most recent turn just completed: touching turn-ended resets age.
-  touch "$state/busy-reset.turn-ended"
-  prime_turnend_seen "$state/busy-reset.turn-ended"
+# An active drill run-step must suppress the away-mode busy handoff just as the
+# non-afk wedge timer defers it: no wake and no handed-off hash while it runs.
+test_busy_static_to_idle_surfaces_without_busy_timer_delay() {
+  local mode dir state fakebin out capture_file window key sig pid gen
+  for mode in normal afk; do
+    dir=$(make_case "busy-to-idle-$mode"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-to-idle-$mode"
+    printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+    printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-to-idle-$mode.meta"
+    record_pi_busy "$state" "busy-to-idle-$mode"
+    printf 'working: setup complete\n' > "$state/busy-to-idle-$mode.status"
+    sig=$(seen_sig "$state/busy-to-idle-$mode.status"); printf '%s' "$sig" > "$state/.seen-busy-to-idle-${mode}_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    [ "$mode" != afk ] || date +%s > "$state/.afk"
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+      SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=999999
+    pid=$!
+    if [ "$mode" = afk ]; then
+      wait_for_exit "$pid" 60 || { reap "$pid"; fail "busy AFK control did not hand off"; }
+    else
+      wait_live "$pid" 40 || { reap "$pid"; fail "busy control exited before going idle: $(cat "$out")"; }
+    fi
+    case "$(cat "$state/.stale-$key" 2>/dev/null || true)" in
+      busy:*|busy-afk:*) ;;
+      *) reap "$pid"; fail "control never entered static-busy tracking" ;;
+    esac
+    gen=$(cat "$state/busy-to-idle-$mode.busy-gen")
+    "$ROOT/bin/sq-busy-event.sh" apply "$state" "busy-to-idle-$mode" idle --gen "$gen" \
+      --source pi-ext --event agent-settled
+    if [ "$mode" = afk ]; then
+      : > "$out"
+      watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+        SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=999999
+      pid=$!
+    fi
+    wait_for_exit "$pid" 40 || { reap "$pid"; fail "$mode busy-to-idle transition waited for busy expiry"; }
+    grep -Fx -e "stale: $window" -e "routine: stale: $window" "$out" >/dev/null \
+      || fail "$mode unchanged idle transition was not surfaced: $(cat "$out")"
+    grep -F 'possible wedge' "$out" >/dev/null && fail "$mode idle transition was treated as busy expiry"
+  done
+  pass "static busy-to-idle surfaces immediately in normal and away modes without waiting out busy expiry"
+}
 
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=3600 SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+test_busy_static_afk_run_step_defers_handoff() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-afk-run); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-afk-run"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-afk-run.meta"
+  record_pi_busy "$state" busy-afk-run
+  printf 'working: validation running\n' > "$state/busy-afk-run.status"
+  sig=$(seen_sig "$state/busy-afk-run.status"); printf '%s' "$sig" > "$state/.seen-busy-afk-run_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  date '+%s' > "$state/.afk"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240 \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running'
   pid=$!
-  if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a freshly completed turn on a busy pane was still escalated: $(cat "$out")"
-  fi
-  [ ! -s "$out" ] || fail "a freshly completed turn on a busy pane printed a wake reason"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a freshly completed turn did not clear the wedge timer"
-  [ ! -e "$state/.wedge-escalations-$key" ] || fail "a freshly completed turn did not clear the escalation counter"
+  wait_live "$pid" 30 || { reap "$pid"; fail "afk busy run-step exited: $(cat "$out")"; }
   reap "$pid"
-  pass "touching a busy worker's completed-turn marker resets the age and prevents an old-age escalation"
+  [ ! -s "$out" ] || fail "afk busy pane handed off during an active run-step: $(cat "$out")"
+  [ ! -e "$state/.stale-$key" ] || fail "afk busy run-step recorded a handed-off hash"
+  pass "an active drill run-step suppresses the away-mode busy handoff"
+}
+
+test_busy_static_pane_defers_while_run_step_active() {
+  local dir state fakebin out capture_file window key sig pid since
+  dir=$(make_case busy-static-active-run); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-active-run"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-active-run.meta"
+  record_pi_busy "$state" busy-active-run
+  printf 'working: validation running\n' > "$state/busy-active-run.status"
+  sig=$(seen_sig "$state/busy-active-run.status"); printf '%s' "$sig" > "$state/.seen-busy-active-run_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240 \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running'
+  pid=$!
+  wait_live "$pid" 30 || { reap "$pid"; fail "busy active run-step escalated: $(cat "$out")"; }
+  since=$(cat "$state/.stale-since-$key")
+  [ "$since" -gt $(( $(date +%s) - 240 )) ] || { reap "$pid"; fail "busy active run-step did not defer the timer"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "busy active run-step counted an escalation"; }
+  reap "$pid"
+  pass "a genuine active drill run-step defers static busy expiry"
 }
 
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection() {
   local dir state fakebin out capture_file window key pane_hash sig pid n
-  dir=$(make_case busy-turn-age-demand-inspect); state="$dir/state"; fakebin="$dir/fakebin"
+  dir=$(make_case static-busy-demand-inspect); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-demand-inspect"
   printf 'Working...' > "$capture_file"
   printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-demand.meta"
@@ -2619,14 +2732,14 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection() {
   touch -t 200001010000 "$state/busy-demand.turn-ended"
   prime_turnend_seen "$state/busy-demand.turn-ended"
 
-  # Priming round: first sighting past the turn-age bound absorbs and starts
+  # Priming round: first sighting of a static busy pane absorbs and starts
   # the wedge timer, mirroring the existing provably-working wedge tests.
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
     SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "priming round for busy turn-age escalation was not absorbed: $(cat "$out")"
+    reap "$pid"; fail "priming round for static busy escalation was not absorbed: $(cat "$out")"
   fi
   reap "$pid"
 
@@ -2635,65 +2748,161 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection() {
     echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
     : > "$out"
     PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-      SQUAD_STATE_OVERRIDE="$state" SQUAD_BUSY_TURN_MAX_SECS=1 SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
       SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
     pid=$!
-    wait_for_exit "$pid" 40 || fail "busy turn-age escalation round $n did not escalate: $(cat "$out")"
-    grep -F "escalation $n" "$out" >/dev/null || fail "busy turn-age round $n did not report escalation count $n: $(cat "$out")"
+    wait_for_exit "$pid" 40 || fail "static busy escalation round $n did not escalate: $(cat "$out")"
+    grep -F "escalation $n" "$out" >/dev/null || fail "static busy round $n did not report escalation count $n: $(cat "$out")"
+    grep -F "busy expired without activity" "$out" >/dev/null || fail "busy expiry round $n lost its explicit reason"
     if [ "$n" -lt 3 ]; then
-      grep -F "demand-deep-inspection" "$out" >/dev/null && fail "busy turn-age round $n escalated to demand-deep-inspection before the threshold: $(cat "$out")"
+      grep -F "demand-deep-inspection" "$out" >/dev/null && fail "static busy round $n escalated to demand-deep-inspection before the threshold: $(cat "$out")"
     else
-      grep -F "demand-deep-inspection" "$out" >/dev/null || fail "busy turn-age round $n (threshold) did not demand deep inspection: $(cat "$out")"
+      grep -F "demand-deep-inspection" "$out" >/dev/null || fail "static busy round $n (threshold) did not demand deep inspection: $(cat "$out")"
     fi
     n=$((n + 1))
   done
-  [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || echo 0)" = 3 ] || fail "busy turn-age escalation counter did not persist across consecutive rounds"
-  pass "repeated busy turn-age escalations reuse the existing escalation counter and demand deep inspection at the threshold"
+  [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || echo 0)" = 3 ] || fail "static busy escalation counter did not persist across consecutive rounds"
+  pass "repeated static busy escalations reuse the existing counter and demand deep inspection at the threshold"
 }
 
-# Behavioral proof that the production default (no SQUAD_BUSY_TURN_MAX_SECS override
-# anywhere in this env) is 3600s: a completed turn 5 minutes old must not start a
-# wedge timer, while one 66 minutes old must - bracketing the default around 3600
-# without waiting a literal hour.
-test_busy_pane_default_turn_age_bound_is_3600s() {
-  local dir state fakebin out capture_file window key pane_hash sig pid
-  dir=$(make_case busy-default-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-default"
-  printf 'Working...' > "$capture_file"
-  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-default.meta"
-  record_pi_busy "$state" busy-default
-  printf 'working: setup complete\n' > "$state/busy-default.status"
-  sig=$(seen_sig "$state/busy-default.status"); printf '%s' "$sig" > "$state/.seen-busy-default_status"
+# tmux without a viewport-only capture: scrollback-bounded reads still work, but the
+# complete rendered screen cannot be read, so a busy claim has no proof of staticness.
+use_no_viewport_tmux() {  # <fakebin>
+  local fakebin=$1
+  mv "$fakebin/tmux" "$fakebin/tmux-base"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -n "${SQUAD_FAKE_TMUX_CAPTURE:-}" ]; then
+  lines=
+  while [ $# -gt 0 ]; do
+    if [ "$1" = -S ]; then lines=${2#-}; fi
+    shift
+  done
+  [ -n "$lines" ] || exit 1
+  tail -n "$lines" "$SQUAD_FAKE_TMUX_CAPTURE"
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-base" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+}
+
+test_busy_static_pane_without_readable_viewport_never_expires() {
+  local mode dir state fakebin out capture_file window key sig pid
+  for mode in readable unreadable; do
+    dir=$(make_case "busy-viewport-$mode"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-viewport-$mode"
+    printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+    printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-viewport-$mode.meta"
+    record_pi_busy "$state" "busy-viewport-$mode"
+    printf 'working: setup complete\n' > "$state/busy-viewport-$mode.status"
+    sig=$(seen_sig "$state/busy-viewport-$mode.status"); printf '%s' "$sig" > "$state/.seen-busy-viewport-${mode}_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+    printf '2\n' > "$state/.count-$key"
+    echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+    [ "$mode" = readable ] || use_no_viewport_tmux "$fakebin"
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+      SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+    pid=$!
+    if [ "$mode" = readable ]; then
+      wait_for_exit "$pid" 60 || { reap "$pid"; fail "control: a readable static busy viewport never expired: $(cat "$out")"; }
+      grep -F "busy expired without activity" "$out" >/dev/null || fail "control: readable static busy expiry reason was not explicit"
+    else
+      wait_live "$pid" 30 || { reap "$pid"; fail "unreadable viewport exited: $(cat "$out")"; }
+      reap "$pid"
+      [ ! -s "$out" ] || fail "a busy pane with an unreadable rendered viewport woke: $(cat "$out")"
+      [ ! -e "$state/.wedge-escalations-$key" ] || fail "an unreadable rendered viewport counted a wedge escalation"
+      [ ! -e "$state/.stale-since-$key" ] || fail "an unreadable rendered viewport kept the busy expiry clock running"
+    fi
+  done
+  pass "a busy claim expires only on a readable complete rendered viewport, never on tail-only evidence"
+}
+
+test_busy_static_unreadable_viewport_logs_limitation_once() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-viewport-limit); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-viewport-limit"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-viewport-limit.meta"
+  record_pi_busy "$state" busy-viewport-limit
+  printf 'working: setup complete\n' > "$state/busy-viewport-limit.status"
+  sig=$(seen_sig "$state/busy-viewport-limit.status"); printf '%s' "$sig" > "$state/.seen-busy-viewport-limit_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
-  pane_hash=$(hash_text "Working...")
-  printf '%s' "$pane_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-
-  set_mtime $(( $(date +%s) - 300 )) "$state/busy-default.turn-ended"
-  prime_turnend_seen "$state/busy-default.turn-ended"
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  use_no_viewport_tmux "$fakebin"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
   pid=$!
-  if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a 5-minute-old completed turn tripped the default busy-turn-age bound: $(cat "$out")"
-  fi
-  [ ! -e "$state/.stale-since-$key" ] || fail "a 5-minute-old completed turn started a wedge timer under the default bound"
+  wait_live "$pid" 40 || { reap "$pid"; fail "unreadable static busy pane exited: $(cat "$out")"; }
   reap "$pid"
+  [ ! -s "$out" ] || fail "an unevaluable busy claim woke: $(cat "$out")"
+  [ "$(grep -c "busy claim not evaluated" "$state/.sentry-triage.log" || true)" = 1 ] \
+    || fail "the unevaluable busy limitation was not logged exactly once: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  pass "a static busy claim with no complete viewport logs its evaluation limit once and never alarms"
+}
 
-  set_mtime $(( $(date +%s) - 4000 )) "$state/busy-default.turn-ended"
-  prime_turnend_seen "$state/busy-default.turn-ended"
-  : > "$out"
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=999 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
-    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$out" &
+test_busy_static_finished_task_is_absorbed_without_alarm() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
+  cat > "$fakebin/sq-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+cat "$(dirname "$0")/current-state"
+SH
+  printf 'state: done · source: status · shipped\n' > "$fakebin/current-state"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-finished"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-finished.meta"
+  record_pi_busy "$state" busy-finished
+  printf 'done: shipped\n' > "$state/busy-finished.status"
+  sig=$(seen_sig "$state/busy-finished.status"); printf '%s' "$sig" > "$state/.seen-busy-finished_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_CREW_STATE='state: done · source: status · shipped'
   pid=$!
-  if ! wait_live "$pid" 30; then
-    reap "$pid"; fail "a 66-minute-old completed turn escalated before the wedge threshold under the default bound: $(cat "$out")"
-  fi
-  [ -s "$state/.stale-since-$key" ] || fail "a 66-minute-old completed turn did not start a wedge timer under the default bound (default is not 3600s)"
+  wait_live "$pid" 50 || { reap "$pid"; fail "finished busy task exited: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a finished busy task raised an alarm: $(cat "$out")"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "a finished busy task counted an escalation"; }
+  [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "finished absorption rearmed the wedge timer"; }
+  grep -F "absorbed busy (task already finished)" "$state/.sentry-triage.log" >/dev/null \
+    || { reap "$pid"; fail "finished busy absorption was not recorded"; }
+  # The same pane now belongs to a current active run; no finished latch may
+  # hide it merely because the old done status and rendered output persist.
+  printf 'state: working · source: run-step · newer validation\n' > "$fakebin/current-state"
+  wait_live "$pid" 40 || { reap "$pid"; fail "new active validation was alarmed: $(cat "$out")"; }
+  [ -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "old finished state hid the newer active run"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "new active run counted a false wedge"; }
   reap "$pid"
-  pass "the production default busy-turn-age bound is 3600s (5min under does not wedge, 66min over does)"
+  pass "finished busy clears its timer without alarms and never latches over a newer authoritative active run"
+}
+
+test_busy_static_done_status_never_masks_active_run() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-done-active); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-done-active"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-done-active.meta"
+  record_pi_busy "$state" busy-done-active
+  printf 'done: earlier attempt\n' > "$state/busy-done-active.status"
+  sig=$(seen_sig "$state/busy-done-active.status"); printf '%s' "$sig" > "$state/.seen-busy-done-active_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · new validation'
+  pid=$!
+  wait_live "$pid" 50 || { reap "$pid"; fail "done-with-active-run busy task exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an active run-step was escalated behind an old done status: $(cat "$out")"
+  grep -F "already finished" "$state/.sentry-triage.log" >/dev/null 2>&1 \
+    && fail "an old done status absorbed a task whose current state is an active run"
+  pass "an old done status never absorbs a static busy pane whose current state is an active run-step"
 }
 
 test_nonterminal_stale_repairs_missing_or_corrupt_timer() {
@@ -3193,12 +3402,18 @@ test_wedge_timer_escalates_without_active_step
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
 test_wedge_escalation_resets_when_pane_becomes_active
 test_teardown_drops_target_and_wedge_counter
-test_busy_pane_below_turn_age_bound_is_absorbed
-test_busy_pane_stable_hash_escalates_past_turn_age_bound
-test_busy_pane_changing_hash_escalates_past_turn_age_bound
-test_busy_pane_turn_end_touch_resets_age
+test_busy_static_pane_escalates_without_turn_age
+test_busy_changing_pane_resets_expiry
+test_busy_tall_pane_above_tail_progress_resets_expiry
+test_busy_static_afk_hands_off_once_per_hash
+test_busy_static_afk_run_step_defers_handoff
+test_busy_static_to_idle_surfaces_without_busy_timer_delay
+test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
-test_busy_pane_default_turn_age_bound_is_3600s
+test_busy_static_pane_without_readable_viewport_never_expires
+test_busy_static_unreadable_viewport_logs_limitation_once
+test_busy_static_finished_task_is_absorbed_without_alarm
+test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_decision_parked_stale_is_throttled
@@ -3207,8 +3422,8 @@ test_paused_busy_pane_without_run_step_does_not_override_pause
 test_paused_busy_churning_pane_surfaces_first_recheck
 test_paused_busy_churning_pane_rearms_long_cadence
 test_busy_pane_without_declared_pause_still_escalates
-test_paused_busy_pane_past_turn_age_does_not_wedge
-test_busy_pane_past_turn_age_without_pause_still_wedges
+test_paused_busy_pane_with_static_output_does_not_wedge
+test_busy_pane_static_without_pause_still_wedges
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_XO_paused_resurfaces_in_normal_mode
 test_XO_nonpaused_stale_remains_suppressed

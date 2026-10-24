@@ -87,6 +87,20 @@ test_capture_reads_terminal_tail_json() {
   pass "fm_backend_orca_capture: parses result.terminal.tail and calls terminal read"
 }
 
+test_capture_rendered_reports_unverified_interface() {
+  local out status
+  orca_case capture-rendered-unverified
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_capture_rendered term-123' "$ROOT" 2>"$TMP_ROOT/rendered-error" )
+  status=$?
+  [ "$status" -ne 0 ] || fail "unverified Orca viewport was treated as complete"
+  [ -z "$out" ] || fail "unverified Orca viewport returned static evidence"
+  [ ! -s "$LOG" ] || fail "unverified Orca viewport guessed a CLI call"
+  grep -F "orca complete rendered viewport is unverified" "$TMP_ROOT/rendered-error" >/dev/null \
+    || fail "unverified Orca viewport did not name its limitation"
+  pass "unverified Orca viewport returns cannot-evaluate without a speculative CLI call"
+}
+
 test_capture_falls_back_to_text_fields() {
   local out
   orca_case capture-text
@@ -1367,6 +1381,7 @@ test_dispatcher_sources_orca_and_routes_primitives() {
 }
 
 test_capture_reads_terminal_tail_json
+test_capture_rendered_reports_unverified_interface
 test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json
 test_runtime_check_accepts_ready_orca_status
