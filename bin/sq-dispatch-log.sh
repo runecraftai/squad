@@ -4,6 +4,7 @@
 #   sq-dispatch-log.sh <id> decision --harness H --model M --effort E \
 #     (--profile NAME | --reason TEXT) [--quota-summary JSON]
 #   sq-dispatch-log.sh <id> spawn --harness H --model M --effort E
+#   sq-dispatch-log.sh <id> recommendation   (reads SQUAD_RECOMMENDATION_JSON)
 #   sq-dispatch-log.sh <id> outcome --source status-notify|pr-merge|teardown \
 #     --result done|failed|landed|released
 # Base: SQUAD_BASE > SQUAD_HOME > SQUAD_ROOT_OVERRIDE > repository root;
@@ -73,6 +74,7 @@ for event in ("decision", "spawn"):
         reason.add_argument("--profile")
         reason.add_argument("--reason")
         command.add_argument("--quota-summary", default='{"status":"unknown"}')
+command = commands.add_parser("recommendation")
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
@@ -105,6 +107,35 @@ if args.event == "decision":
                 or type(value) not in (int, float) or not math.isfinite(value) or value < 0:
             raise ValueError("invalid quota field")
     record["quota_summary"] = quota
+if args.event == "recommendation":
+    recommendation = json.loads(os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}"))
+    if not isinstance(recommendation, dict) or recommendation.get("label") != "recommendation":
+        raise ValueError("invalid recommendation event")
+    status = recommendation.get("status")
+    if status == "unavailable":
+        reason = recommendation.get("reason")
+        if not isinstance(reason, str) or not re.fullmatch(r"[a-z][a-z_]{0,63}", reason):
+            raise ValueError("invalid recommendation reason")
+        record.update(label="recommendation", status=status, reason=reason)
+    elif status == "recommended":
+        choice = recommendation.get("choice")
+        if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice):
+            raise ValueError("invalid recommendation choice")
+        record.update(label="recommendation", status=status, choice=choice)
+        confidence = recommendation.get("confidence")
+        if confidence is not None:
+            if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                raise ValueError("invalid recommendation confidence")
+            record["confidence"] = confidence
+        probabilities = recommendation.get("probabilities")
+        if probabilities is not None:
+            if not isinstance(probabilities, dict) or any(
+                    not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
+                    for k, v in probabilities.items()):
+                raise ValueError("invalid recommendation probabilities")
+            record["probabilities"] = probabilities
+    else:
+        raise ValueError("invalid recommendation status")
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
     status = os.path.join(sys.argv[2], args.id + ".status")

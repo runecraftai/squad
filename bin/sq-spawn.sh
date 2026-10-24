@@ -1518,6 +1518,12 @@ if grep -qx '{TASK}' "$BRIEF"; then
   exit 1
 fi
 
+# Jev is advisory shadow-only: its response is logged separately and never
+# supplies any spawn argument or changes the dispatch decision above.
+python3 "$SCRIPT_DIR/sq-jev-call.py" --id "$ID" --project "$PROJ_ABS" \
+  --task-type "$KIND" --brief "$BRIEF" --project-config "$CONFIG/crew-dispatch.json" \
+  --config "$CONFIG/jev-dispatch.json" --data "$DATA" >/dev/null 2>&1 || true
+
 # Optional execution-playbook identity is validated before endpoint creation.
 PLAYBOOK_LINES=$(grep -c '^Execution playbook: ' "$BRIEF" 2>/dev/null || true)
 if [ "$PLAYBOOK_LINES" -gt 1 ]; then
