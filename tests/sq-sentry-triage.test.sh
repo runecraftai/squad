@@ -2648,7 +2648,7 @@ test_busy_static_to_idle_surfaces_without_busy_timer_delay() {
       wait_live "$pid" 40 || { reap "$pid"; fail "busy control exited before going idle: $(cat "$out")"; }
     fi
     case "$(cat "$state/.stale-$key" 2>/dev/null || true)" in
-      busy:*) ;;
+      busy:*|busy-afk:*) ;;
       *) reap "$pid"; fail "control never entered static-busy tracking" ;;
     esac
     gen=$(cat "$state/busy-to-idle-$mode.busy-gen")
@@ -2845,6 +2845,11 @@ test_busy_static_unreadable_viewport_logs_limitation_once() {
 test_busy_static_finished_task_is_absorbed_without_alarm() {
   local dir state fakebin out capture_file window key sig pid
   dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
+  cat > "$fakebin/sq-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+cat "$(dirname "$0")/current-state"
+SH
+  printf 'state: done · source: status · shipped\n' > "$fakebin/current-state"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-finished"
   printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
   printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-finished.meta"
@@ -2860,12 +2865,19 @@ test_busy_static_finished_task_is_absorbed_without_alarm() {
     SQUAD_FAKE_CREW_STATE='state: done · source: status · shipped'
   pid=$!
   wait_live "$pid" 50 || { reap "$pid"; fail "finished busy task exited: $(cat "$out")"; }
-  reap "$pid"
-  [ ! -s "$out" ] || fail "a busy pane whose task already finished raised an alarm: $(cat "$out")"
-  [ ! -e "$state/.wedge-escalations-$key" ] || fail "a finished busy task counted a wedge escalation"
+  [ ! -s "$out" ] || { reap "$pid"; fail "a finished busy task raised an alarm: $(cat "$out")"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "a finished busy task counted an escalation"; }
+  [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "finished absorption rearmed the wedge timer"; }
   grep -F "absorbed busy (task already finished)" "$state/.sentry-triage.log" >/dev/null \
-    || fail "finished busy absorption was not recorded"
-  pass "a static busy pane whose task already finished is absorbed on every threshold crossing without alarming"
+    || { reap "$pid"; fail "finished busy absorption was not recorded"; }
+  # The same pane now belongs to a current active run; no finished latch may
+  # hide it merely because the old done status and rendered output persist.
+  printf 'state: working · source: run-step · newer validation\n' > "$fakebin/current-state"
+  wait_live "$pid" 40 || { reap "$pid"; fail "new active validation was alarmed: $(cat "$out")"; }
+  [ -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "old finished state hid the newer active run"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "new active run counted a false wedge"; }
+  reap "$pid"
+  pass "finished busy clears its timer without alarms and never latches over a newer authoritative active run"
 }
 
 test_busy_static_done_status_never_masks_active_run() {

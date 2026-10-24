@@ -15,12 +15,15 @@ Each signal scan, and the re-validation immediately before the wake after the gr
 On each stale-classification pass, the sentry re-derives each supervised target from live task metadata and drops the pane hash, stale suppressor, wedge timer, escalation count, and pause markers of any window key whose `state/<id>.meta` is gone, so a released window ends supervision instead of resuming an episode it no longer owns.
 A busy claim alone does not prove activity: the existing pane hash and stale timer expire it only after complete rendered output, including the cost/token gauge, stays unchanged for `SQUAD_STALE_ESCALATE_SECS`.
 Output changes reset the episode and escalation count regardless of turn age; the reason names `busy expired without activity` while preserving the daemon's first/repeat/deep-inspection wake grammar.
-While afk is active, the sentry hands off once per distinct static busy hash and the daemon owns the escalation timer; the handoff's existing timer epoch restarts that clock on each new static episode, not on a replay of the same handoff.
+While afk is active, the sentry hands off once per distinct static hash, busy or idle, and the daemon owns one full escalation window; this early internal handoff is not a commander-facing alarm.
+The existing timer carries each new episode's epoch; replay cannot rewind a later validation or retry clock, and normal busy tracking is distinct from an actual daemon handoff so enabling away mode mid-episode does not suppress it.
 Busy suppressors are classed in the existing stale marker so clearing busy on an unchanged viewport still surfaces the inconclusive idle transition immediately.
-A current authoritative done/failed task is absorbed instead of re-alarmed, and a current active run-step outranks an old terminal status and defers expiry in both modes.
+A current authoritative done/failed task clears wedge tracking instead of re-arming it; current state is checked again so an old finished result cannot hide a newer active run.
+A current active run-step outranks an old terminal status and defers expiry in both modes.
 Complete viewport reads are supported on tmux, zellij (viewport-only `dump-screen`), and tuios (`capture-pane` without scrollback); zellij's maintained backend guide and TUIOS's real-pane timing evidence substantiate those interfaces.
 Herdr and Orca viewport flags are unverified, and cmux has no verified complete-viewport read in this repository: these paths return cannot-evaluate, never claim static from a tail, and log a named backend limitation for a static busy episode.
-An unreadable complete viewport on a supported backend likewise never expires busy; non-busy stale and declared-pause supervision are unchanged.
+An unreadable complete viewport never proves inactivity: the daemon retains retryable ownership in the existing marker, excludes the read gap, and starts a full new static window on successful recovery.
+Idle handoffs follow the same per-episode timing rule; declared-pause cadence is unchanged.
 Escalation requests inspection only, never an automatic interrupt or restart.
 A declared `paused:` or durable `commander-held` last status line outranks that busy verdict, so the busy indicator alone no longer forces a working classification and the pane keeps the bounded pause cadence instead of starting the wedge timer.
 Those actionable wakes are written to a durable local queue (`state/.stand-to-queue`) before detector state advances, so a missed process exit can be recovered by draining the queue.

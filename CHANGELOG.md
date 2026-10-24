@@ -8,7 +8,8 @@ It is not an exhaustive repository log and does not represent a root package ver
 - Detect frozen busy agents using the existing static-pane timer, including the rendered cost/token gauge, and report `busy expired without activity`; changing output resets the timer, while declared pauses and active drill run-steps still suppress wedge alarms.
   This replaces the completed-turn age bound and removes `SQUAD_BUSY_TURN_MAX_SECS`.
   Busy expiry hashes the complete rendered viewport on tmux, zellij and tuios; unverified Herdr/Orca viewport interfaces and the missing verified cmux viewport read return cannot-evaluate and log a named limitation instead of raising a false alarm.
-  Each changed-output episode restarts away-mode timing, and clearing busy on an unchanged pane preserves immediate idle surfacing.
+  Each changed-output episode, busy or idle, restarts away-mode timing; entering away mode mid-episode delivers its own handoff, and clearing busy on an unchanged pane preserves immediate idle surfacing.
+  Transient capture failures retain retryable episode ownership but require a fresh full static window after recovery; finished tasks clear the wedge timer without hiding a newer active run.
   A static busy pane whose task is already done or failed in the current authoritative state is absorbed rather than escalated, and an active run-step still outranks an old terminal status.
   Measured rendered-pane capture cost on a representative TUIOS pane: mean 33.185 ms per busy poll (`/home/rehem/Projects/squad/data/squad-sentry-busy-expiry/capture-cost.md`).
 - Fix a false possible-wedge alarm while a task legitimately waits on a foreground drill gate or CI monitor: the sentry no longer escalates an idle pane whose drill run-step is active, and still escalates a frozen pane once no step is active.

@@ -64,6 +64,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-remote-readiness-lib.sh` | Gate compartilhado de prontidão de segundo-imediato remoto: conferir e, quando necessário, reparar e re-conferir via `sq-remote-doctor.sh` |
 | [`sq-project-origin-lib.sh`](../../bin/sq-project-origin-lib.sh) | Dono dos formatos de origem aceitos compartilhado pelas duas fronteiras de provisionamento remoto |
 | `sq-spawn.sh`            | Spawnar operadores, scouts, lotes `id=repo` e XOs no harness e backend de runtime resolvidos |
+| `sq-jev-call.py`         | Cliente Jev somente-sombra que registra um evento rotulado e nunca resolve o dispatch (`docs/pt-BR/configuration.md`) |
 | `sq-backend.sh`          | Seleção de backend de runtime, helpers de meta, resolução de seletores e despacho de operações |
 | `sq-backend-hometag-lib.sh` | Derivação compartilhada de base-tag por instalação para títulos de aba zellij e workspace cmux |
 | `sq-composer-lib.sh`     | Único dono unitário da classificação de conteúdo de composer para todos os backends          |

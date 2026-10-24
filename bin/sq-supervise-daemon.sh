@@ -468,14 +468,28 @@ classify_unknown() {  # <reason>
 
 _stale_key() { printf '%s' "$1" | tr ':/.' '___'; }
 
-stale_marker_record() {  # <window> <state> [busy-episode-epoch] - create or match episode
-  local win=$1 state=$2 episode=${3:-} key marker
+stale_marker_record() {  # <window> <state> [episode-epoch] - create or advance episode
+  local win=$1 state=$2 episode=${3:-} key marker prior
   key=$(_stale_key "$(window_to_task "$win" "$state")")
   marker="$state/.subsuper-stale-$key"
   case "$episode" in
     ''|*[!0-9]*) [ -e "$marker" ] || _now > "$marker" ;;
-    *) printf '%s\n' "$episode" > "$marker" ;;
+    *)
+      prior=$(cat "$marker" 2>/dev/null || echo 0)
+      prior=${prior#-}
+      case "$prior" in ''|*[!0-9]*) prior=0 ;; esac
+      # A replay must not rewind active-step deferral or a capture retry.
+      [ "$episode" -le "$prior" ] || printf '%s\n' "$episode" > "$marker"
+      ;;
   esac
+}
+
+# Negative epoch in the existing marker means a read gap, not proven inactivity.
+# Keep ownership retryable; the next successful read starts a full new window.
+stale_marker_suspend() {  # <marker>
+  local epoch
+  epoch=$(cat "$1" 2>/dev/null || _now)
+  printf -- '-%s\n' "${epoch#-}" > "$1"
 }
 
 stale_marker_remove() {  # <window> <state>
@@ -681,9 +695,13 @@ window_run_step_active() {  # <window> <state>
 busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
   local win=$1 state=$2 task=$3 marker=$4 age=$5 backend key rendered handed
   backend=$(task_window_backend "$win" "$state")
-  rendered=$(fm_backend_capture_rendered "$backend" "$win" "sq-$task" 2>/dev/null) || return 0
+  rendered=$(fm_backend_capture_rendered "$backend" "$win" "sq-$task" 2>/dev/null) || {
+    stale_marker_suspend "$marker"
+    return 0
+  }
   key=$(_stale_key "$win")
   handed=$(cat "$state/.stale-$key" 2>/dev/null || true)
+  handed=${handed#busy-afk:}
   handed=${handed#busy:}
   if [ "$(_hash_text "$rendered")" != "$handed" ]; then
     rm -f "$marker"
@@ -693,6 +711,9 @@ busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
     stale_marker_remove "$win" "$state"
     return 0
   fi
+  case "$(cat "$marker" 2>/dev/null || true)" in
+    -*) _now > "$marker"; return 0 ;;
+  esac
   if window_run_step_active "$win" "$state"; then
     _now > "$marker"
     return 0
@@ -1161,9 +1182,18 @@ housekeeping() {  # <state>
     stale_window_is_busy "$win" "$state"
     case "$?" in
       0) busy_stale_recheck "$win" "$state" "$task" "$marker" "$age" ;;
-      2) rm -f "$marker" ;;
-      *) escalate_add "$state" "stale persisted ${age}s (possible wedge): $win"
-         stale_marker_remove "$win" "$state" ;;
+      2) stale_marker_suspend "$marker" ;;
+      *)
+        if window_run_step_active "$win" "$state"; then
+          _now > "$marker"
+        else
+          case "$(cat "$marker" 2>/dev/null || true)" in
+            -*) _now > "$marker" ;;
+            *) escalate_add "$state" "stale persisted ${age}s (possible wedge): $win"
+               stale_marker_remove "$win" "$state" ;;
+          esac
+        fi
+        ;;
     esac
   done
 
@@ -1467,14 +1497,9 @@ handle_wake() {  # <reason> <state>
           stale_marker_remove "$arg" "$state"
         else
           pause_marker_remove "$arg" "$state"
-          episode=
-          case "$reason" in
-            *'(busy expired without activity)')
-              # The existing sentry timer identifies this static episode.
-              # New output gets a new epoch; replaying a handoff keeps it.
-              episode=$(cat "$state/.stale-since-$(_stale_key "$arg")" 2>/dev/null || true)
-              ;;
-          esac
+          # Both busy and idle handoffs carry their episode in the existing
+          # sentry timer; a new hash advances it, while replay cannot rewind it.
+          episode=$(cat "$state/.stale-since-$(_stale_key "$arg")" 2>/dev/null || true)
           stale_marker_record "$arg" "$state" "$episode"
         fi
       fi

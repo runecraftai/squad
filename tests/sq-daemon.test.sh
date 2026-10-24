@@ -531,8 +531,8 @@ test_housekeeping_persistent_stale_escalates() {
 # as one wake, handle_wake records the daemon's stale marker from that wake, and
 # housekeeping's persistence recheck must act on it. The still-busy pane must
 # escalate once frozen, but progress or an active drill run-step must not.
-afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
-  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen episode
+afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition coverage
+  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen episode i
   dir=$(make_supercase "afk-busy-e2e-$case_name")
   state="$dir/state"; fakebin="$dir/fakebin"; win="test:sq-afk-busy"; pane="$dir/pane.txt"; out="$dir/sentry.out"
   make_fake_crew_state "$fakebin" >/dev/null
@@ -543,7 +543,11 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
     > "$state/.seen-afk-busy_status"
   gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" afk-busy)
   "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy busy --gen "$gen" --source pi-ext --event agent-start >/dev/null
-  date '+%s' > "$state/.afk"
+  case "$case_name" in
+    idle-episode|idle-run-step)
+      "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy idle --gen "$gen" --source pi-ext --event agent-settled ;;
+  esac
+  [ "$case_name" = mode-transition ] || date '+%s' > "$state/.afk"
   key=$(printf '%s' afk-busy | tr ':/.' '___')
 
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
@@ -551,8 +555,20 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
     SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
     SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
   sentry_pid=$!
-  wait_for_exit "$sentry_pid" 100 || fail "$case_name: afk sentry did not hand off the static busy pane: $(cat "$out")"
-  reason=$(grep -m1 "busy expired without activity" "$out") || fail "$case_name: sentry handoff did not name expired busy: $(cat "$out")"
+  if [ "$case_name" = mode-transition ]; then
+    i=0
+    while [ "$i" -lt 100 ]; do
+      case "$(cat "$state/.stale-$(_stale_key "$win")" 2>/dev/null || true)" in
+        busy:*) break ;;
+      esac
+      sleep 0.1
+      i=$((i + 1))
+    done
+    [ "$i" -lt 100 ] || fail "control never entered normal static-busy tracking"
+    date +%s > "$state/.afk"
+  fi
+  wait_for_exit "$sentry_pid" 100 || fail "$case_name: afk sentry did not hand off the static pane: $(cat "$out")"
+  reason=$(grep -m1 "stale: $win" "$out") || fail "$case_name: sentry did not emit the stale handoff: $(cat "$out")"
 
   (
     kill() { :; }
@@ -560,12 +576,20 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
     LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   )
   [ -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon did not record a stale marker for the busy handoff"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+  [ ! -s "$state/.subsuper-escalations" ] || fail "$case_name: busy handoff reached the commander before the complete static window"
 
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
-  if [ "$case_name" = episode ]; then
-    # A second actual sentry handoff must replace the first static episode's
-    # age, even when housekeeping has not yet noticed the intervening progress.
-    printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+  if [ "$case_name" = episode ] || [ "$case_name" = idle-episode ] || [ "$case_name" = busy-idle ]; then
+    # A new busy/idle static episode replaces the first episode's clock even
+    # when housekeeping has not noticed progress or the busy claim clearing.
+    if [ "$case_name" = busy-idle ]; then
+      "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy idle --gen "$gen" --source pi-ext --event agent-settled
+    else
+      printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    fi
     : > "$out"
     PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
       SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
@@ -573,7 +597,7 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
       SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
     sentry_pid=$!
     wait_for_exit "$sentry_pid" 100 || fail "new static episode was not handed off: $(cat "$out")"
-    reason=$(grep -m1 "busy expired without activity" "$out") || fail "second handoff lost busy-expiry reason"
+    reason=$(grep -m1 "stale: $win" "$out") || fail "second static episode was not handed off"
     (
       kill() { :; }
       fm_backend_send_text_submit() { :; }
@@ -593,9 +617,49 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
     [ "$(cat "$state/.subsuper-stale-$key")" = "$episode" ] || fail "replaying a handoff reset the same episode's clock"
     echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
   fi
+  if [ "$case_name" = capture-retry ]; then
+    # Fail the real complete-viewport CLI read, not the tail or daemon logic.
+    # A negative existing marker retains ownership but invalidates its age.
+    mv "$fakebin/tmux" "$fakebin/tmux-working"
+    cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -e "${SQUAD_CAPTURE_FAILURE_FILE:-/nonexistent}" ]; then
+  case " $* " in *' -S '*) ;; *) exit 1 ;; esac
+fi
+exec "$(dirname "$0")/tmux-working" "$@"
+SH
+    chmod +x "$fakebin/tmux"
+    : > "$dir/capture-failed"
+    printf '%s\n' "$(cat "$state/.subsuper-stale-$key")" > "$state/.stale-since-$(_stale_key "$win")"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_CAPTURE_FAILURE_FILE="$dir/capture-failed" SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    case "$(cat "$state/.subsuper-stale-$key" 2>/dev/null || true)" in
+      -*) ;;
+      *) fail "capture failure lost retryable episode ownership or kept a proven idle clock" ;;
+    esac
+    [ ! -s "$state/.subsuper-escalations" ] || fail "unreadable output caused a commander alarm"
+    rm -f "$dir/capture-failed"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "successful capture inherited unreadable time"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    [ "$(cat "$state/.subsuper-stale-$key")" = "$episode" ] || fail "handoff replay rewound capture recovery"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "capture recovery alarmed before a full successful static window"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  fi
   case "$case_name" in
     progress) printf 'Working... (13k tokens)\n12k tokens USD 0.42' > "$pane" ;;
-    run-step) export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running' ;;
+    run-step|idle-run-step) export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running' ;;
   esac
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
@@ -603,9 +667,11 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
   unset SQUAD_FAKE_CREW_STATE
 
   case "$case_name" in
-    frozen|episode)
-      grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
-        || fail "frozen afk busy pane was absorbed by the daemon instead of escalating"
+    frozen|episode|mode-transition|capture-retry|idle-episode|busy-idle)
+      if [ "$case_name" != idle-episode ] && [ "$case_name" != busy-idle ]; then
+        grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+          || fail "$case_name: frozen busy pane was absorbed instead of escalating"
+      fi
       grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
         || fail "frozen afk busy escalation did not flag a possible wedge"
       [ ! -e "$state/.subsuper-stale-$key" ] || fail "frozen afk busy escalation retained the stale marker"
@@ -614,8 +680,8 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
       [ ! -s "$state/.subsuper-escalations" ] || fail "progress above the static tail escalated a busy pane"
       [ ! -e "$state/.subsuper-stale-$key" ] || fail "progress did not release the busy episode"
       ;;
-    run-step)
-      [ ! -s "$state/.subsuper-escalations" ] || fail "an active drill run-step escalated an afk busy pane"
+    run-step|idle-run-step)
+      [ ! -s "$state/.subsuper-escalations" ] || fail "an active drill run-step escalated an afk pane"
       [ "$(cat "$state/.subsuper-stale-$key")" -gt $(( $(date +%s) - 240 )) ] \
         || fail "an active drill run-step did not restart the busy escalation clock"
       ;;
@@ -624,10 +690,10 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
 
 test_afk_busy_handoff_escalates_through_daemon_recheck() {
   local case_name
-  for case_name in frozen progress run-step episode; do
+  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step; do
     afk_busy_daemon_case "$case_name"
   done
-  pass "afk busy handoff escalates frozen output, restarts each changed-output episode, and defers active steps"
+  pass "away-mode episodes survive capture gaps and mode changes, restart busy/idle clocks, and defer active steps"
 }
 
 # Non-afk wedge escalation end to end: the real sentry emits the expired-busy
