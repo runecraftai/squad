@@ -271,6 +271,13 @@ func inspectAxiBranchSync(ctx context.Context, env *axiEnv) branchsync.State {
 
 func freshRunBranchOwnershipState(ctx context.Context, env *axiEnv) *branchsync.State {
 	state := inspectAxiBranchSync(ctx, env)
+	return branchOwnershipBlock(state)
+}
+
+// branchOwnershipBlock reduces an already-inspected branch-sync state to the
+// one that must refuse a fresh trigger, so a caller that already inspected can
+// raise the same structured refusal without paying for a second inspection.
+func branchOwnershipBlock(state branchsync.State) *branchsync.State {
 	switch state.State {
 	case branchsync.StatePipelineOwned:
 		// The ownership block exists to keep a fresh push from discarding
@@ -312,8 +319,8 @@ func triggerRun(ctx context.Context, env *axiEnv, branch, headSHA string, skipSt
 		// a matching terminal run may predate this push, so do not attach to it.
 		priorRunIDs = nil
 	}
-	if state := freshRunBranchOwnershipState(ctx, env); state != nil {
-		return "", &branchOwnershipError{state: *state}
+	if blocked := branchOwnershipBlock(state); blocked != nil {
+		return "", &branchOwnershipError{state: *blocked}
 	}
 	pushErr := git.PushWithOptions(ctx, ".", gate.RemoteName, "refs/heads/"+branch, "", false, pushOptions)
 	if pushErr != nil {
