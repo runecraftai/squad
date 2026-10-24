@@ -614,7 +614,7 @@ emit_markdown() {
 
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
     printf '| %s | %s | %s | %s |' \
-      "$profile" "$total" "$(pct_text "$success" $((success + failure)))" "$(fmt_duration "${avg_dur%.*}")"
+      "$(md_cell "$profile")" "$total" "$(pct_text "$success" $((success + failure)))" "$(fmt_duration "${avg_dur%.*}")"
     echo ""
 
     # Track best/worst for recommendations; released-only profiles have no rate.
@@ -697,7 +697,7 @@ emit_markdown() {
     echo "| Task ID | Profile | Outcome | Duration |"
     echo "|---------|---------|---------|----------|"
     sort -t$'\t' -k7,7 -k5,5 "$TASKS_FILE" | while IFS=$'\t' read -r tid _h _m _e outcome dur _p _rest; do
-      printf '| %s | %s | %s | %s |\n' "$(redact_shape "$tid")" "$_p" "$outcome" "$(fmt_duration "$dur")"
+      printf '| %s | %s | %s | %s |\n' "$(redact_shape "$tid")" "$(md_cell "$_p")" "$outcome" "$(fmt_duration "$dur")"
     done
     echo ""
   fi
