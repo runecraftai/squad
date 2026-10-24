@@ -13,6 +13,7 @@ from pathlib import Path
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MAX_TEXT = 240
+MAX_RESPONSE = 65536
 
 
 def redact(value):
@@ -105,7 +106,7 @@ def main():
     if file_count is None:
         try:
             tracked = subprocess.run(["git", "-C", args.project, "ls-files", "-z"],
-                                     capture_output=True, check=True).stdout
+                                     capture_output=True, check=True, timeout=3).stdout
             file_count = len([path for path in tracked.split(b"\0") if path])
         except (OSError, subprocess.SubprocessError):
             file_count = 0
@@ -135,7 +136,7 @@ def main():
     )
     try:
         with urllib.request.build_opener(NoRedirect).open(request, timeout=3) as response:
-            answer = json.loads(response.read())
+            answer = json.loads(response.read(MAX_RESPONSE))
         choice = answer.get("choice")
         if choice not in lanes or answer.get("type") != "choice":
             raise ValueError("invalid recommendation")

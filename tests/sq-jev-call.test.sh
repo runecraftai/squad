@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("jev", root / "bin/sq-jev-call.py")
@@ -67,13 +68,27 @@ with tempfile.TemporaryDirectory() as td:
             "--lanes-json", '{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"}',
             "--config", str(config), "--data", str(data), "--url", url]
     env = {**os.environ, "TYPESAFE_API_KEY": "runtime-test-key"}
+
+    def argv_for(path):
+        return [str(path) if arg == str(project) else arg for arg in argv]
+
     try:
         config.write_text('{"enabled_projects":[]}')
         disabled = subprocess.run(argv, text=True, capture_output=True, env=env)
         assert json.loads(disabled.stdout) == {"status": "disabled"}
         assert not captured and not (data / "task/dispatch.jsonl").exists()
+        other = base / "other"
+        other.mkdir()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
-        missing = subprocess.run(argv, text=True, capture_output=True,
+        unlisted = subprocess.run(argv_for(other), text=True, capture_output=True, env=env)
+        assert json.loads(unlisted.stdout) == {"status": "disabled"}
+        assert not captured and not (data / "task/dispatch.jsonl").exists()
+        config.unlink()
+        absent = subprocess.run(argv, text=True, capture_output=True, env=env)
+        assert json.loads(absent.stdout) == {"status": "disabled"}
+        assert not captured and not (data / "task/dispatch.jsonl").exists()
+        config.write_text(json.dumps({"enabled_projects": [str(project)]}))
+        missing =subprocess.run(argv, text=True, capture_output=True,
                                  env={k: v for k, v in os.environ.items() if k != "TYPESAFE_API_KEY"})
         assert json.loads(missing.stdout) == {"status": "missing_key"}
         dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
@@ -97,9 +112,25 @@ with tempfile.TemporaryDirectory() as td:
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unhashable.stdout) == {"status": "error"} and unhashable.stderr == ""
         assert not (data / "task/dispatch.jsonl").exists()
+        state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": .8, "padding": "x" * 70000}
+        oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(oversized.stdout) == {"status": "error"}
+        assert not (data / "task/dispatch.jsonl").exists()
         state["reply"] = OK_REPLY
 
-        result = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        bin_dir = base / "bin"
+        bin_dir.mkdir()
+        fake_git = bin_dir / "git"
+        fake_git.write_text("#!/bin/sh\nexec sleep 30\n")
+        fake_git.chmod(0o755)
+        no_count = argv[:argv.index("--file-count")] + argv[argv.index("--file-count") + 2:]
+        started = time.monotonic()
+        slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
+                              env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+        assert time.monotonic() - started < 10
+        assert json.loads(slow.stdout)["instructions"].endswith('"file_count":0}')
+
+        result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         assert captured["path"] == "/v1/systemone" and captured["auth"] == "Bearer runtime-test-key"
         assert set(captured["body"]) == {"type", "criteria", "instructions"}
