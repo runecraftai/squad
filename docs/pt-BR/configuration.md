@@ -13,7 +13,7 @@ O comportamento compartilhado do orquestrador vive em [`AGENTS.md`](../../AGENTS
 Esta seção é a única dona do layout da base operacional no nível superior; os cabeçalhos dos scripts de produção e sua ajuda são donos dos campos de arquivo filhos e contratos de mutação exatos.
 A raiz de código rastreada contém as superfícies de instrução, habilidade, documentação, workflow e `bin/` compartilhadas, enquanto cada `SQUAD_BASE` efetivo contém diretórios operacionais privados.
 `data/` contém registros privados duráveis da unidade, como os registros de projetos e XOs, preferências do comandante, preferências compartilhadas opcionais do comandante, aprendizados, backlog, briefs e relatórios de recon.
-`data/<id>/dispatch.jsonl` é o log privado de despacho, somente para acréscimo (0600), preservado após a limpeza; `bin/sq-dispatch-log.sh` é dono dos eventos de decisão, spawn e resultado, e os eventos `recommendation` rotulados do Jev são descritos em "Recomendações Jev em modo sombra".
+`data/<id>/dispatch.jsonl` é o log privado de despacho, somente para acréscimo (0600), preservado após a limpeza; `bin/sq-dispatch-log.sh` é dono dos eventos de decisão, spawn, recomendação e resultado; o contrato do evento `recommendation` do Jev é descrito em "Recomendações Jev em modo sombra".
 Uma base operacional normal pode armazenar este log privado sob o fallback da raiz do repositório, enquanto fixtures de teste devem isolá-lo com `SQUAD_DATA_OVERRIDE` para que nenhum log vaze para o checkout.
 `state/` contém registros voláteis de runtime, como metadados de tarefas, eventos de status append-only, sinais de endpoint, coordenação de sentry e fila de stand-to, estado de away-mode, artefatos Relay gerados, gerações de re-leitura de configuração XO privadas com seu estado de retentativa e quarentena, e registros de resposta pendente de XOs de propriedade do pai sob `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `state/window-states` é a verdade derivada da sidebar tmux por janela publicada por `bin/sq-window-state.sh`; o cabeçalho desse script é dono do contrato do arquivo, e `bin/sq-crew-state.sh` continua sendo o dono da reconciliação de estado atual que publica.
@@ -351,7 +351,7 @@ A requisição contém apenas o tipo da tarefa, um título e uma descrição, a 
 O título e a descrição vêm do primeiro cabeçalho e do texto do corpo do brief, a menos que sejam informados diretamente, e são redigidos antes de serem truncados em 240 caracteres.
 A redação cobre valores com formato de segredo, credenciais em URLs e identificadores de harness e modelo, incluindo os nomes das lanes em `config/crew-dispatch.json`; a contagem de arquivos é o número de entradas de `git ls-files`.
 `TYPESAFE_API_KEY` é lida somente do ambiente e enviada somente como credencial bearer; ela nunca é passada em argv, gravada em log ou em `dispatch.jsonl`, nem armazenada em fixture.
-O cliente contata apenas a URL fixa do serviço, recusa redirecionamentos e aplica um prazo de 3 segundos.
+O cliente contata apenas a URL fixa do serviço (um `SQUAD_JEV_URL_OVERRIDE` restrito a loopback existe para testes), recusa redirecionamentos e aplica um prazo de 3 segundos.
 Toda falha é registrada como `status: "unavailable"` com um `reason` não sensível: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `no_lane_match` ou `service_error`.
 `bin/sq-jev-call.py --dry-run --project <path> --task-type <type>` imprime o corpo exato da requisição sem o opt-in, a chave ou uma chamada de rede.
 `tests/sq-jev-call.test.sh` e `tests/sq-jev-shadow-dispatch.test.sh` verificam o cliente e a garantia de não influência offline; nenhum deles chama o serviço real.
@@ -656,11 +656,11 @@ SQUAD_CREW_STATE_DRILL_TIMEOUT=10   # segundos permitidos por query de drill den
 SQUAD_TEARDOWN_DRILL_TIMEOUT=10    # segundos permitidos por query de drill ou abort dentro de sq-teardown.sh
 SQUAD_CREW_STATE_RUNS_LIMIT=200  # linhas recentes de execução de drill escaneadas por sq-crew-state.sh e sq-exec-state.sh quando axi status não pode ser atribuído ao código atual
 SQUAD_CREW_STATE_BIN=bin/sq-crew-state.sh   # sobrescrever de teste para o leitor de estado atual usado por triagem de sentry working/paused
+TYPESAFE_API_KEY=       # recomendações Jev em modo sombra; somente ambiente, nunca argv ou logs (ver "Recomendações Jev em modo sombra")
 SQX_PAIRING_TOKEN=      # token de emparelhamento Relay; opt-in .env autoriza respostas e ações de lifecycle elegíveis
 SQX_RELAY_URL=https://mySquad.io   # sobrescrever endpoint Relay opcional, principalmente para desenvolvimento de relay local
 SQX_ENV_FILE=           # arquivo .env alternativo opcional para invocações diretas de cliente Relay; bootstrap ainda verifica $SQUAD_BASE/.env
 SQX_DRY_RUN=            # verdadeiro pré-visualiza respostas e dismissals do Relay para state/x-outbox/ sem postar ou exigir token
-TYPESAFE_API_KEY=       # recomendações Jev em modo sombra; somente ambiente, nunca argv ou logs (ver "Recomendações Jev em modo sombra")
 SQX_X_REPLY_MAX_CHARS=280   # orçamento de split por mensagem de resposta X; valores abaixo de 50 limitam a 50
 SQX_DISCORD_REPLY_MAX_CHARS=1900   # orçamento de split por mensagem de resposta Discord; valores abaixo de 50 limitam a 50, valores acima de 2000 resetam para 1900
 SQX_X_THREAD_MAX=25     # máximo de mensagens em uma thread de resposta auto-dividida
