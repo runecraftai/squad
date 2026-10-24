@@ -25,13 +25,18 @@ def redact(value):
         (r"\bghp_[A-Za-z0-9]{8,}\b", "[REDACTED]"),
         (r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]"),
         (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[REDACTED]"),
-        (r"-----BEGIN [^-]*KEY-----.*?-----END [^-]*KEY-----", "[REDACTED]"),
-        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=([^\s]+)", "[REDACTED]"),
+        (r"-----BEGIN [^-]*KEY-----.*?(?:-----END [^-]*KEY-----|\Z)", "[REDACTED]"),
+        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"[^\"]*\"|'[^']*'|\S+)", "[REDACTED]"),
         (r"(https?://)[^/@\s]+@", r"\1[REDACTED]@"),
     ]
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
     return value[:MAX_TEXT]
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def project_enabled(config_path, project):
@@ -129,7 +134,7 @@ def main():
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=3) as response:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=3) as response:
             answer = json.loads(response.read())
         choice = answer.get("choice")
         if choice not in lanes or answer.get("type") != "choice":
@@ -144,7 +149,7 @@ def main():
                         args.id, "recommendation"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         print(json.dumps({"status": "recommended", "choice": choice}))
-    except (urllib.error.URLError, TimeoutError, ValueError, AttributeError, OSError,
+    except (urllib.error.URLError, TimeoutError, ValueError, TypeError, AttributeError, OSError,
             json.JSONDecodeError, subprocess.SubprocessError):
         print(json.dumps({"status": "error"}))
     return 0

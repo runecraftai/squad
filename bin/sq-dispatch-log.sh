@@ -4,6 +4,7 @@
 #   sq-dispatch-log.sh <id> decision --harness H --model M --effort E \
 #     (--profile NAME | --reason TEXT) [--quota-summary JSON]
 #   sq-dispatch-log.sh <id> spawn --harness H --model M --effort E
+#   sq-dispatch-log.sh <id> recommendation   (reads SQUAD_RECOMMENDATION_JSON)
 #   sq-dispatch-log.sh <id> outcome --source status-notify|pr-merge|teardown \
 #     --result done|failed|landed|released
 # Base: SQUAD_BASE > SQUAD_HOME > SQUAD_ROOT_OVERRIDE > repository root;
