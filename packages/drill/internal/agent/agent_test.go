@@ -1155,29 +1155,29 @@ func TestFinalizeTextResult_RegressionReviewWithExtraFences(t *testing.T) {
 	}
 }
 
-func TestFencedJSONCandidates_IgnoreBackticksInsideJSONString(t *testing.T) {
+func TestJSONPayloadCandidates_IgnoreBackticksInsideJSONString(t *testing.T) {
 	text := "review complete\n```json\n{\"summary\":\"quoted ```snippet``` in markdown\",\"findings\":[]}\n```\npostlude"
 
-	got := fencedJSONCandidates(text)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 candidate, got %d", len(got))
+	got := jsonPayloadCandidates(text, false)
+	if len(got) != 1 || !got[0].fenced {
+		t.Fatalf("expected 1 fenced candidate, got %+v", got)
 	}
 	want := "{\"summary\":\"quoted ```snippet``` in markdown\",\"findings\":[]}\n"
-	if got[0] != want {
-		t.Fatalf("candidate = %q, want %q", got[0], want)
+	if got[0].text != want {
+		t.Fatalf("candidate = %q, want %q", got[0].text, want)
 	}
 }
 
-func TestFencedJSONCandidates_AllowIndentedClosingFence(t *testing.T) {
+func TestJSONPayloadCandidates_AllowIndentedClosingFence(t *testing.T) {
 	text := "review complete\n```json\n{\"summary\":\"ok\",\"findings\":[]}\n   ```\nnext paragraph"
 
-	got := fencedJSONCandidates(text)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 candidate, got %d", len(got))
+	got := jsonPayloadCandidates(text, false)
+	if len(got) != 1 || !got[0].fenced {
+		t.Fatalf("expected 1 fenced candidate, got %+v", got)
 	}
 	want := "{\"summary\":\"ok\",\"findings\":[]}\n"
-	if got[0] != want {
-		t.Fatalf("candidate = %q, want %q", got[0], want)
+	if got[0].text != want {
+		t.Fatalf("candidate = %q, want %q", got[0].text, want)
 	}
 }
 
@@ -1193,8 +1193,8 @@ func TestFinalizeTextResult_WithSchemaIgnoresJSONInsideNonJSONFence(t *testing.T
 		"Final answer: not valid JSON",
 	}, "\n")
 
-	if got := fencedJSONCandidates(text); len(got) != 0 {
-		t.Fatalf("expected no fenced JSON candidates, got %q", got)
+	if got := jsonPayloadCandidates(text, false); len(got) != 0 {
+		t.Fatalf("expected no JSON candidates, got %+v", got)
 	}
 
 	_, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
@@ -1354,6 +1354,40 @@ func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
 				t.Fatalf("normalized output lacks findings: %s", result.Output)
 			}
 		})
+	}
+}
+
+func TestFinalizeTextResult_LastValidPayloadFollowsTextualOrder(t *testing.T) {
+	text := `Earlier draft: {"step":"first"} then the final answer:` + "\n```json\n" + `{"step":"second"}` + "\n```\n"
+	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct {
+		Step string `json:"step"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if got.Step != "second" {
+		t.Errorf("step = %q, want the textually last payload second", got.Step)
+	}
+}
+
+func TestFinalizeTextResult_ProseBracketsDoNotBlockRoundSummary(t *testing.T) {
+	text := "Renamed items[0] in parser and left the rest alone."
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("prose with brackets must still become the round summary, got: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != text {
+		t.Errorf("summary = %q, want %q", output.Summary, text)
 	}
 }
 
