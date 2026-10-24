@@ -11,7 +11,7 @@ The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it 
 This section is the single owner of the top-level operational-base layout; producer script headers and their help own exact child-file fields and mutation contracts.
 Tracked files hold shared instructions and tooling: the tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `SQUAD_BASE` contains private operational directories.
 `data/` holds durable private unit records such as the project and XO registries, commander preferences, optional shared commander preferences, learnings, backlog, briefs, and recon reports.
-`data/<id>/dispatch.jsonl` is the private, append-only dispatch log (0600), retained after teardown; `bin/sq-dispatch-log.sh` owns its decision, spawn, and outcome events, and `bin/sq-jev-call.py` appends a separately labelled `recommendation` event that never changes the actual dispatch.
+`data/<id>/dispatch.jsonl` is the private, append-only dispatch log (0600), retained after teardown; `bin/sq-dispatch-log.sh` owns its decision, spawn, and outcome events, and labelled Jev `recommendation` events are described in "Jev shadow recommendations".
 A normal operational base may store this private log under the repository-root fallback, while test fixtures must isolate it with `SQUAD_DATA_OVERRIDE` so no log leaks into the checkout.
 `state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, sentry and stand-to queue coordination, away-mode state, generated Relay artifacts, private XO config-reread generations with their retry and quarantine state, and parent-owned XO pending-reply records under `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `state/window-states` is the derived per-window tmux sidebar truth published by `bin/sq-window-state.sh`; that script's header owns the file contract, and `bin/sq-crew-state.sh` remains the owner of the current-state reconciliation it publishes.
@@ -47,7 +47,7 @@ bin/                 helper scripts, committed; read each script's header before
 .env                 optional Relay pairing token; LOCAL, gitignored; presence-gates AGENTS.md section 14
 config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO base's own operators (AGENTS.md section 4)
 config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (AGENTS.md section 4). Inherited by XO bases
-config/jev-dispatch.json  optional Jev shadow opt-in; LOCAL, gitignored; `{"enabled_projects":["/absolute/project/path"]}` enables recommendations only for listed project roots; absent or invalid means disabled
+config/jev-dispatch.json  optional Jev shadow opt-in; LOCAL, gitignored; disabled unless listed in `enabled_projects`; see "Jev shadow recommendations"
 config/claude-accounts  optional registry mapping short labels to absolute CLAUDE_CONFIG_DIR paths for harness=claude account selection; LOCAL, gitignored; inherited by XO bases; see docs/configuration.md "Claude account selection"
 config/xo-harness  harness the PRIMARY uses to launch XO agents, optionally followed by a model and effort token on the same line ("<harness> [<model>] [<effort>]"; AGENTS.md section 4); LOCAL, gitignored; absent or "default" harness falls back to config/crew-harness then Squad's own. The primary's own setting; NOT inherited into XO bases (XOs do not spawn XOs)
 config/backlog-backend  backlog backend override; LOCAL, gitignored; absent (or any non-manual value) = default sq-tasks backend, "manual" = force routine backlog updates to hand-editing; inherited by XO bases (AGENTS.md section 10)
@@ -414,6 +414,22 @@ A probe that cannot run surfaces explicit uncertainty rather than a hard failure
 While the file remains present, no operator or recon spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 XO bases inherit this file from the primary, so an XO's own operators apply the same dispatch profile behavior.
 
+## Jev shadow recommendations (config/jev-dispatch.json)
+
+Jev is an optional, shadow-only harness and model recommendation service that `bin/sq-spawn.sh` consults with a task projection before launching a spawn.
+It is disabled by default and opt-in per project: `config/jev-dispatch.json` is an optional local, gitignored file whose `enabled_projects` lists absolute project roots, for example `{"enabled_projects":["/absolute/project/path"]}`.
+An absent, malformed, or unlisted project means no request is sent.
+A recommendation never changes the dispatch: `bin/sq-jev-call.py` appends it to `data/<id>/dispatch.jsonl` as a labelled `recommendation` event through `bin/sq-dispatch-log.sh`, `sq-spawn.sh` discards the client output, and no harness, model, effort, account, or script is selected from it.
+`config/crew-dispatch.json` routing is unchanged by Jev.
+The request contains only the task type, a title and description, the tracked file count, and the configured lane candidates.
+The title and description come from the brief's first heading and body text unless supplied directly, and they are redacted before truncation to 240 characters.
+Redaction covers secret-shaped values, URL credentials, and harness and model identifiers, including the names of the lanes in `config/crew-dispatch.json`; the file count is the number of `git ls-files` entries.
+`TYPESAFE_API_KEY` is read only from the environment and is sent only as the bearer credential; it is never passed in argv, written to a log or to `dispatch.jsonl`, or stored in a fixture.
+The client contacts only the fixed service URL, refuses redirects, and enforces a 3-second deadline.
+Every failure is recorded as `status: "unavailable"` with one non-sensitive `reason`: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `no_lane_match`, or `service_error`.
+`bin/sq-jev-call.py --dry-run --project <path> --task-type <type>` prints the exact request body without the opt-in, the key, or a network call.
+`tests/sq-jev-call.test.sh` and `tests/sq-jev-shadow-dispatch.test.sh` verify the client and the non-influence guarantee offline; neither calls the live service.
+
 ## Claude account selection (config/claude-accounts)
 
 `config/claude-accounts` is an optional local, gitignored registry mapping short labels to absolute `CLAUDE_CONFIG_DIR` paths, one already-authenticated Claude account each.
@@ -758,6 +774,7 @@ SQX_PAIRING_TOKEN=      # Relay pairing token; .env opt-in authorizes replies an
 SQX_RELAY_URL=https://mySquad.io   # optional Relay endpoint override, mainly for local relay development
 SQX_ENV_FILE=           # optional alternate .env file for direct Relay client invocations; bootstrap still checks $SQUAD_BASE/.env
 SQX_DRY_RUN=            # truthy previews Relay replies and dismissals to state/x-outbox/ without posting or requiring a token
+TYPESAFE_API_KEY=       # Jev shadow recommendations; environment only, never argv or logs (see "Jev shadow recommendations")
 SQX_X_REPLY_MAX_CHARS=280   # X reply per-message split budget; values below 50 clamp to 50
 SQX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
 SQX_X_THREAD_MAX=25     # maximum messages in one auto-split reply thread
