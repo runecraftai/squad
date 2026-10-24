@@ -474,7 +474,7 @@ type jsonCandidate struct {
 // order: ```json fence bodies and brace-balanced object spans in prose, plus
 // bracket-balanced array spans when arrays is set (only the findings-object
 // schema accepts bare arrays as payloads). Non-JSON fences are skipped whole
-// and fence bodies are never rescanned for prose payloads.
+// and closed ```json bodies are never rescanned for prose payloads.
 //
 // Fence markers may appear anywhere in the text, including glued to the end
 // of a preceding line (e.g. "...behavior.```json"), which is a shape real
