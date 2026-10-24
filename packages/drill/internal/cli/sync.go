@@ -293,7 +293,7 @@ func humanSyncSummary(state branchsync.State) string {
 			if state.Pipeline.PreservedHeadMissing {
 				return "the recorded pipeline head is missing from this repository and the local gate; the pipeline's unpublished fixes are lost with it - recover custody to start a fresh run from the current head"
 			}
-			return "run ended without publishing its pipeline commits; recover custody with `drill sync --recover` (or `drill rerun` to resume validation)"
+			return "run ended with unpublished pipeline commits in the local gate; recover custody with `drill sync --recover` (or `drill rerun` to resume validation)"
 		}
 		return "pipeline fix is not pushed yet; do not make local follow-up commits"
 	case branchsync.StateCustodyReturned:

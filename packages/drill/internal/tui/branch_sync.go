@@ -22,9 +22,9 @@ func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int
 		case branchsync.StatePipelineOwned:
 			if recoverableBranchSync(state) {
 				if state.Pipeline.PreservedHeadMissing {
-					message = "Run ended without publishing its pipeline commits, and the recorded pipeline head is missing from this repository and the local gate. The pipeline's unpublished fixes are lost with it; recover custody to start a fresh run from your current head."
+					message = "The run's recorded pipeline head is missing from this repository and the local gate. The pipeline's unpublished fixes are lost with it; recover custody to start a fresh run from your current head."
 				} else {
-					message = "Run ended without publishing its pipeline commits; they are preserved in the local gate. Recover custody to take the branch back, or rerun to resume validation."
+					message = "Run ended with unpublished pipeline commits preserved in the local gate. Recover custody to take the branch back, or rerun to resume validation."
 				}
 				footer = "u recover custody"
 			} else {
@@ -120,8 +120,8 @@ func renderRecoverConfirmation(state branchsync.State, width int) string {
 	}
 	var b strings.Builder
 	if state.Pipeline.PreservedHeadMissing || state.Pipeline.CustodyReturnNote != "" {
-		fmt.Fprintf(&b, "The run ended %s without publishing its pipeline commits, and the recorded pipe-\n", state.Pipeline.Status)
-		fmt.Fprintf(&b, "line head %s is missing from this repository and the local gate.\n", state.Pipeline.CurrentHead)
+		fmt.Fprintf(&b, "The run ended %s and its recorded pipeline head was lost:\n", state.Pipeline.Status)
+		fmt.Fprintf(&b, "%s is missing from this repository and the local gate.\n", state.Pipeline.CurrentHead)
 		fmt.Fprintf(&b, "The pipeline's unpublished fixes are lost with that object.\n\n")
 		fmt.Fprintf(&b, "Local branch:   %s\n", state.Local.Branch)
 		fmt.Fprintf(&b, "Local HEAD:     %s\n", state.Local.Head)
@@ -129,9 +129,10 @@ func renderRecoverConfirmation(state branchsync.State, width int) string {
 		b.WriteString("Recovery only records custody at your current head: no branch, ref, or worktree moves. Start a fresh run when ready.")
 		return renderBoxWithFooter("Confirm custody recovery", b.String(), width, "u/enter recover  ·  esc cancel")
 	}
-	fmt.Fprintf(&b, "The run ended %s without publishing its pipeline commits. Recovery returns\n", state.Pipeline.Status)
-	fmt.Fprintf(&b, "custody by fast-forwarding a clean behind worktree, or by adopting a diverged\n")
-	fmt.Fprintf(&b, "preserved head only when it is proven to carry every local change.\n\n")
+	fmt.Fprintf(&b, "The run ended %s with unpublished pipeline commits in the local gate.\n", state.Pipeline.Status)
+	fmt.Fprintf(&b, "Recovery returns custody by fast-forwarding a clean behind worktree, or\n")
+	fmt.Fprintf(&b, "by adopting a diverged preserved head only when it is proven to carry every\n")
+	fmt.Fprintf(&b, "local change.\n\n")
 	fmt.Fprintf(&b, "Local branch:   %s\n", state.Local.Branch)
 	fmt.Fprintf(&b, "Local HEAD:     %s\n", state.Local.Head)
 	fmt.Fprintf(&b, "Preserved HEAD: %s\n\n", state.Pipeline.CurrentHead)

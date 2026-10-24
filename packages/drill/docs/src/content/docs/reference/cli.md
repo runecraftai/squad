@@ -233,9 +233,12 @@ A run that goes terminal (cancelled, failed, or completed without a push stage) 
 A run whose terminalization verifies that the managed worktree head never changed from the submitted head releases the branch instead: the terminal outcome, including cancellation, ends ownership; status reports `state: user_owned` with the same exact ownership facts and no `next_action`; the branch and head are immediately usable for any separately authorized delivery; and nothing blocks a direct push or PR.
 Without that positive terminal head evidence, custody stays recoverable rather than being guessed away.
 When the run's recorded pipeline head is not a Git object in either the invoking repository or the validated local gate, the run is an orphaned record rather than a recoverable head, and status reports the same recoverable state with `pipeline.preserved_head_missing: true` and a loss reason.
+That holds for a run that never pushed and for a run whose published head survives while its later unpublished pipeline commits were lost: the recorded head is the missing object, and the published head still exists.
 `--recover` then releases custody without anchoring, moving, or rewriting any branch or ref.
 The release is recorded atomically with a loss audit: `pipeline.custody_return_note` names the orphan run id, the missing pipeline head, the exact released local head, and that the pipeline's unpublished fixes are lost with the missing object, while `pipeline.custody_return_head` keeps that released local head as the immutable ancestry anchor; the original run identity and recorded head are unchanged.
+When the run had already published, the audit also names the surviving published head, and the loss is limited to the unpublished tail past it.
 Absence must hold in both repositories: an object that still exists in the gate, an unreachable or invalid gate, an invalid identity, or an existing divergent head is never treated as loss and still refuses.
+A published head that is itself the missing object is not an unpublished tail loss and still refuses.
 The human `drill sync --recover` prompt and the TUI recovery surfaces render the same audit before and after release instead of claiming the commits are preserved.
 After an orphan release, `drill axi run` starts a fresh pipeline from the exact current local head, either the audited released head or a proven descendant of it.
 That entry submits the exact local commit to a private `refs/drill/orphan-submit/<run>` ref with a non-forced push that never updates a branch and never triggers a pipeline through the gate hook, asks the daemon to admit the exact-head operation, and the daemon re-verifies the submission and its descent from the audited head under the branch lock before creating the run.
@@ -256,7 +259,7 @@ Anything it cannot decide - unlanded local commits, or a rebase whose fix rounds
 A dirty worktree refuses with explicit choices.
 When you explicitly keep a behind or diverged local head instead of taking the preserved head, `--keep-local` returns custody at the current head without touching the worktree and atomically points the gate branch at it, so a concurrent gate push wins and the recovery refuses instead.
 `drill rerun` is the alternative exit that resumes validating the preserved head instead of taking the branch back.
-A recovered never-pushed run reports `state: custody_returned`; a recovered pushed run reports its ordinary classification against the last push binding, typically `local_ahead`.
+A recovered never-pushed run reports `state: custody_returned`, and so does a pushed run released as an orphaned record; a pushed run recovered by taking a preserved head that still exists reports its ordinary classification against the last push binding, typically `local_ahead`.
 On a `user_owned` branch, `--recover` is an idempotent no-op success: nothing pipeline-created exists to recover, and no file, ref, or database row changes.
 
 ## drill axi logs

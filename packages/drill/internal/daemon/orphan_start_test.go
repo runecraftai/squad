@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
+	"github.com/runecraftai/squad/packages/drill/internal/db"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 	"github.com/runecraftai/squad/packages/drill/internal/types"
@@ -89,7 +90,7 @@ func TestOrphanStartRefusesUnprovenLocalHead(t *testing.T) {
 	if err := d.UpdateRunStatusWithVerifiedHead(prior.ID, types.RunFailed, missing); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.ReleaseOrphanedRun(prior.ID, missing, head); err != nil {
+	if err := d.ReleaseOrphanedRun(prior.ID, missing, head, ""); err != nil {
 		t.Fatal(err)
 	}
 	client, err := ipc.Dial(p.Socket())
@@ -122,5 +123,76 @@ func TestOrphanStartRefusesUnprovenLocalHead(t *testing.T) {
 				t.Fatalf("refused start created a run: %#v, %v", runs, err)
 			}
 		})
+	}
+}
+
+// TestOrphanReleaseWithLostPublishedTailStartsFreshRun covers the pushed half
+// of the orphan class: the run published the gate head, then a later fix round
+// advanced its recorded head past that published head and the object was lost.
+// The release must still admit a fresh run for the descendant local head
+// without pushing or moving any branch.
+func TestOrphanReleaseWithLostPublishedTailStartsFreshRun(t *testing.T) {
+	p, d := startTestDaemonWithSteps(t, func() []pipeline.Step {
+		return []pipeline.Step{&mockPassStep{name: types.StepReview}}
+	})
+	repo, published := setupTestGitRepo(t, p, d, "orphan-pushed-tail")
+	local := repo.WorkingPath
+	if err := os.WriteFile(filepath.Join(local, "local.txt"), []byte("new local work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, local, "add", "local.txt")
+	gitCmd(t, local, "commit", "-m", "local commit not in gate")
+	head := gitOutput(t, local, "rev-parse", "HEAD")
+	branch := gitOutput(t, local, "branch", "--show-current")
+	prior, err := d.InsertRun(repo.ID, branch, head, published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.UpdateRunPushBinding(prior.ID, db.PushBinding{
+		HeadSHA: published, TargetKind: "upstream", TargetFingerprint: branchsync.TargetFingerprint(repo.PushURL()), Ref: "refs/heads/" + branch,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	missing := strings.Repeat("a", 40)
+	if err := d.UpdateRunStatusWithVerifiedHead(prior.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	service := &branchsync.Service{DB: d, Repo: repo, WorkDir: local, GateDir: p.RepoDir(repo.ID), Paths: p}
+	state := service.Recover(context.Background(), false)
+	if !state.Recovered || state.State != branchsync.StateCustodyReturned {
+		t.Fatalf("pushed tail release: %#v", state)
+	}
+	prior, err = d.GetRun(prior.ID)
+	if err != nil || prior.CustodyReturnHead == nil || *prior.CustodyReturnHead != head {
+		t.Fatalf("released head = %#v, %v", prior, err)
+	}
+	if prior.CustodyReturnNote == nil || !strings.Contains(*prior.CustodyReturnNote, "published head "+published+" survives") {
+		t.Fatalf("release audit does not name the surviving published head: %#v", prior.CustodyReturnNote)
+	}
+	client, err := ipc.Dial(p.Socket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	request := &ipc.OrphanStartParams{RepoID: repo.ID, Branch: branch, PreviousRunID: prior.ID, HeadSHA: head, CheckOnly: true, Intent: "preserve all accepted requirements"}
+	var result ipc.OrphanStartResult
+	if err := client.Call(ipc.MethodStartOrphan, request, &result); err != nil || !result.Ready {
+		t.Fatalf("pushed prior preflight: %#v, %v", result, err)
+	}
+	ref := ipc.OrphanSubmissionPrefix + prior.ID
+	gitCmd(t, local, "push", p.RepoDir(repo.ID), head+":"+ref)
+	request.CheckOnly = false
+	if err := client.Call(ipc.MethodStartOrphan, request, &result); err != nil || result.RunID == "" {
+		t.Fatalf("pushed prior start: %#v, %v", result, err)
+	}
+	run := waitForRunTerminalState(t, d, result.RunID)
+	if run.SubmittedHeadSHA == nil || *run.SubmittedHeadSHA != head || run.HeadSHA != head {
+		t.Fatalf("fresh run after published tail loss: %#v", run)
+	}
+	if got := gitOutput(t, local, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("fresh start moved local HEAD to %s", got)
+	}
+	if got := gitOutput(t, p.RepoDir(repo.ID), "rev-parse", "refs/heads/"+branch); got != published {
+		t.Fatalf("fresh start moved gate branch to %s, want %s", got, published)
 	}
 }

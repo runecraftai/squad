@@ -34,7 +34,7 @@ func orphanRunHead(t *testing.T, local string, release bool) (string, string) {
 		t.Fatal(err)
 	}
 	if release {
-		if err := database.ReleaseOrphanedRun(runs[0].ID, missing, cliGit(t, local, "rev-parse", "HEAD")); err != nil {
+		if err := database.ReleaseOrphanedRun(runs[0].ID, missing, cliGit(t, local, "rev-parse", "HEAD"), ""); err != nil {
 			t.Fatal(err)
 		}
 	}

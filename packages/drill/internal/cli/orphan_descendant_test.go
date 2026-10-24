@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
 	"github.com/runecraftai/squad/packages/drill/internal/db"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
@@ -41,7 +42,7 @@ func newReleasedOrphanCLI(t *testing.T, f cliRecoverFixture) (*axiEnv, string) {
 	if err := database.UpdateRunHeadSHA(runs[0].ID, missing); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.ReleaseOrphanedRun(runs[0].ID, missing, f.submitted); err != nil {
+	if err := database.ReleaseOrphanedRun(runs[0].ID, missing, f.submitted, ""); err != nil {
 		t.Fatal(err)
 	}
 	client := serveOrphanStub(t, runs[0].ID)
@@ -171,7 +172,7 @@ func TestTriggerOrphanRunRetriesDescendantAfterFailedStart(t *testing.T) {
 	if err := database.UpdateRunHeadSHA(runs[0].ID, missing); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.ReleaseOrphanedRun(runs[0].ID, missing, f.submitted); err != nil {
+	if err := database.ReleaseOrphanedRun(runs[0].ID, missing, f.submitted, ""); err != nil {
 		t.Fatal(err)
 	}
 	ref := ipc.OrphanSubmissionPrefix + runs[0].ID
@@ -219,5 +220,84 @@ func TestTriggerOrphanRunRetriesDescendantAfterFailedStart(t *testing.T) {
 	}
 	if cliGit(t, f.gate, "rev-parse", "refs/heads/feature/recover") != gateBefore {
 		t.Fatal("retry moved the gate branch")
+	}
+}
+
+// TestTriggerPushedOrphanRunAfterLostTailRelease covers the pushed half of the
+// orphan class end to end at the CLI layer: a run that published the submitted
+// head and then lost its later unpublished pipeline tail releases through the
+// human recovery command, and a fresh run for a descendant local head goes
+// through the audited private submission instead of a branch push. Rewritten
+// history is still refused by name.
+func TestTriggerPushedOrphanRunAfterLostTailRelease(t *testing.T) {
+	f := newCLIRecoverFixture(t)
+	p, err := paths.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	repo, err := database.GetRepoByPath(f.local)
+	if err != nil || repo == nil {
+		t.Fatalf("repo: %#v, %v", repo, err)
+	}
+	runs, err := database.GetRunsByRepo(repo.ID)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs: %#v, %v", runs, err)
+	}
+	prior := runs[0]
+	missing := strings.Repeat("a", 40)
+	cliGit(t, f.local, "push", repo.PushURL(), "refs/heads/feature/recover:refs/heads/feature/recover")
+	if err := database.UpdateRunPushBinding(prior.ID, db.PushBinding{
+		HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: branchsync.TargetFingerprint(repo.PushURL()), Ref: "refs/heads/feature/recover",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpdateRunHeadSHA(prior.ID, missing); err != nil {
+		t.Fatal(err)
+	}
+	gateHead := cliGit(t, f.gate, "rev-parse", "refs/heads/feature/recover")
+	gateRefs := cliGit(t, f.gate, "show-ref")
+
+	out, err := executeCmd("sync", "--recover", "--yes")
+	if err != nil {
+		t.Fatalf("pushed orphan recovery: %v\n%s", err, out)
+	}
+	for _, want := range []string{prior.ID, missing, f.submitted, "unpublished fixes are lost", "published head " + f.submitted + " survives"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("pushed orphan release missing %q:\n%s", want, out)
+		}
+	}
+	if cliGit(t, f.gate, "show-ref") != gateRefs || cliGit(t, f.local, "rev-parse", "HEAD") != f.submitted {
+		t.Fatal("pushed orphan release moved a ref or HEAD")
+	}
+
+	client := serveOrphanStub(t, prior.ID)
+	env := &axiEnv{d: database, repo: repo, p: p, client: client}
+
+	cliGit(t, f.local, "reset", "--hard", f.submitted+"^")
+	rewritten := commitLocalFile(t, f.local, "rewritten.txt", "rewritten\n", "rewritten local history")
+	if _, err := triggerRun(context.Background(), env, "feature/recover", rewritten, nil, "full accepted intent", false); err == nil || !strings.Contains(err.Error(), "descend") {
+		t.Fatalf("rewritten head accepted after a pushed release: %v", err)
+	}
+	cliGit(t, f.local, "reset", "--hard", f.submitted)
+
+	head := commitLocalFile(t, f.local, "redo.txt", "redone fix\n", "redo the lost pipeline tail")
+	localBefore := cliGit(t, f.local, "show-ref")
+	id, err := triggerRun(context.Background(), env, "feature/recover", head, nil, "full accepted intent", false)
+	if err != nil || id != "successor" {
+		t.Fatalf("descendant fresh run after pushed release: %s, %v", id, err)
+	}
+	if staged := cliGit(t, f.gate, "rev-parse", ipc.OrphanSubmissionPrefix+prior.ID+"^{commit}"); staged != head {
+		t.Fatalf("private submission = %s, want %s", staged, head)
+	}
+	if cliGit(t, f.local, "show-ref") != localBefore {
+		t.Fatal("fresh run moved the local branch")
+	}
+	if got := cliGit(t, f.gate, "rev-parse", "refs/heads/feature/recover"); got != gateHead {
+		t.Fatalf("fresh run moved the gate branch to %s, want %s", got, gateHead)
 	}
 }

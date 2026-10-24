@@ -43,7 +43,7 @@ func TestTriggerOrphanRunPrivateSubmissionAndNoFallback(t *testing.T) {
 			if err := database.UpdateRunHeadSHA(prior.ID, missing); err != nil {
 				t.Fatal(err)
 			}
-			if err := database.ReleaseOrphanedRun(prior.ID, missing, f.submitted); err != nil {
+			if err := database.ReleaseOrphanedRun(prior.ID, missing, f.submitted, ""); err != nil {
 				t.Fatal(err)
 			}
 			srv := ipc.NewServer()

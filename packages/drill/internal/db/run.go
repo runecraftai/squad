@@ -291,15 +291,20 @@ func (d *DB) SetRunCustodyReturned(id string) error {
 }
 
 // ReleaseOrphanedRun atomically records the loss and returns custody. The exact
-// terminal, never-pushed run must still own the recorded head at write time.
-func (d *DB) ReleaseOrphanedRun(id, missingHead, localHead string) error {
+// terminal run must still own the recorded head at write time, and the lost head
+// must be unpublished pipeline work: either the run never pushed, or the
+// published head survives separately.
+func (d *DB) ReleaseOrphanedRun(id, missingHead, localHead, publishedHead string) error {
 	ts := now()
 	note := fmt.Sprintf("orphaned run %s: missing pipeline head %s; custody released to local head %s; pipeline unpublished fixes are lost with the missing object", id, missingHead, localHead)
+	if publishedHead != "" {
+		note += "; published head " + publishedHead + " survives"
+	}
 	result, err := d.sql.Exec(
 		`UPDATE runs SET custody_returned_at = ?, custody_return_note = ?, custody_return_head = ?, updated_at = ?
 		WHERE id = ? AND head_sha = ? AND custody_returned_at IS NULL
 		AND status IN ('failed', 'cancelled', 'completed') AND push_active = 0
-		AND last_pushed_sha IS NULL
+		AND (last_pushed_sha IS NULL OR last_pushed_sha != head_sha)
 		AND NOT EXISTS (SELECT 1 FROM runs AS active WHERE active.repo_id = runs.repo_id
 		AND active.branch = runs.branch AND active.id != runs.id AND active.status IN ('pending', 'running'))`,
 		ts, note, localHead, ts, id, missingHead)

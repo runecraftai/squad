@@ -100,9 +100,10 @@ type PipelineState struct {
 	PushGeneration    int64
 	CustodyReturnNote string
 	CustodyReturnHead string
-	// PreservedHeadMissing reports a terminal never-pushed run whose recorded
-	// pipeline head is proven absent from both the invoking repository and the
-	// validated local gate. It is the loss classification behind recoverOrphanedRun.
+	// PreservedHeadMissing reports a terminal run whose recorded pipeline head
+	// is proven absent from both the invoking repository and the validated local
+	// gate while any published head survives. It is the loss classification
+	// behind recoverOrphanedRun.
 	PreservedHeadMissing bool
 }
 
@@ -490,10 +491,12 @@ func (s *Service) Apply(ctx context.Context) State {
 //
 // Fail-safe rules, in the same spirit as Refresh/Apply:
 //   - An active run always refuses: only terminal runs are recoverable.
-//   - A terminal never-pushed orphan can return custody at the clean local
-//     head when its recorded object is confirmed missing in both valid repos.
-//     The loss audit and exact released local head are stamped atomically;
-//     no branch or recovery ref moves. A missing anchor alone is not loss.
+//   - A terminal orphan whose recorded head is confirmed missing in both valid
+//     repos can return custody at the clean local head: either a never-pushed
+//     run, or a run whose unpublished tail past the published head was lost.
+//     The loss audit, the surviving published head, and the exact released
+//     local head are stamped atomically; no branch or recovery ref moves. A
+//     missing anchor alone is not loss.
 //   - Otherwise the preserved commits must be provably safe before custody moves: when
 //     already reachable from the local branch (equal/ahead), recovery pins the
 //     private anchor ref refs/drill/recover/<runID> locally without gate
@@ -512,10 +515,10 @@ func (s *Service) Apply(ctx context.Context) State {
 //     and changes nothing.
 //
 // Recovery ends with a persisted custody-return stamp on the run; inspection
-// then reports custody_returned (never-pushed runs) or the ordinary
-// classification against the last push binding (pushed runs), both pointing at
-// run_pipeline as the next step. `drill rerun` remains the alternative
-// exit that resumes validating the preserved head instead of taking it back.
+// then reports custody_returned after an orphan release, or the ordinary
+// classification against the last push binding after taking a preserved head.
+// Both point at starting a fresh run, and `drill rerun` remains the alternative
+// exit that resumes validating a preserved head that still exists.
 func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	if refusal, blocked := s.gateContextRefusal(ctx); blocked {
 		return refusal
@@ -653,8 +656,9 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	}
 }
 
-// recoverOrphanedRun releases only a terminal, never-pushed record whose
-// object is gone in both repositories. It never moves any ref or worktree.
+// recoverOrphanedRun releases only a terminal record whose recorded head is
+// gone in both repositories: a never-pushed run, or a run whose unpublished
+// tail past the published head was lost. It never moves any ref or worktree.
 func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state State) State {
 	fresh, selected, _ := s.inspect(ctx)
 	if selected == nil || selected.ID != run.ID || selected.HeadSHA != run.HeadSHA ||
@@ -672,7 +676,7 @@ func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state Sta
 	if !s.preservedHeadMissing(ctx, run) {
 		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_assumptions_changed", "the recorded pipeline object is no longer proven missing; custody was not returned")
 	}
-	if err := s.DB.ReleaseOrphanedRun(run.ID, run.HeadSHA, fresh.Local.Head); err != nil {
+	if err := s.DB.ReleaseOrphanedRun(run.ID, run.HeadSHA, fresh.Local.Head, ptr(run.LastPushedSHA)); err != nil {
 		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_stamp_failed", "the orphaned run release and loss audit could not be recorded; custody was not returned")
 	}
 	result, _, _ := s.inspect(ctx)
@@ -1089,9 +1093,15 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 		state.Error = "this run has no exact successful push provenance and cannot be synchronized safely"
 		return state, run, false
 	}
-	if run.HeadSHA != ptr(run.LastPushedSHA) && run.CustodyReturnedAt == nil {
-		s.classifyPipelineOwned(ctx, &state, run, "the pipeline head has not been successfully bound to the push target; do not make local follow-up commits yet")
-		return state, run, false
+	if run.HeadSHA != ptr(run.LastPushedSHA) {
+		if run.CustodyReturnedAt != nil && run.CustodyReturnNote != nil {
+			s.classifyCustodyReturned(ctx, &state)
+			return state, run, true
+		}
+		if run.CustodyReturnedAt == nil {
+			s.classifyPipelineOwned(ctx, &state, run, "the pipeline head has not been successfully bound to the push target; do not make local follow-up commits yet")
+			return state, run, false
+		}
 	}
 	// Terminal PR lifecycle retires the branch regardless of local dirtiness
 	// or later target configuration. Refresh may classify retained versus
@@ -1358,12 +1368,19 @@ func samePushTargetBinding(older, newer *db.Run) bool {
 		older.PushRef != nil && newer.PushRef != nil && ptr(older.PushRef) == ptr(newer.PushRef)
 }
 
-// preservedHeadMissing proves a terminal never-pushed run's recorded head is
-// absent from both the invoking repository and the validated local gate. A
-// missing local object that still exists in the gate, an unreachable gate, an
-// invalid identity, or any inspection error is not loss.
+// preservedHeadMissing proves a terminal run's recorded head is absent from
+// both the invoking repository and the validated local gate, and that the lost
+// object is unpublished pipeline work: either the run never pushed, or the
+// pipeline advanced its head past the last successful push. A published head
+// that is itself missing is a repository repair problem, not a lost
+// unpublished tail, so it still refuses. A missing local object that still
+// exists in the gate, an unreachable gate, an invalid identity, or any
+// inspection error is not loss either.
 func (s *Service) preservedHeadMissing(ctx context.Context, run *db.Run) bool {
-	if run == nil || run.LastPushedSHA != nil || run.HeadSHA == "" || strings.TrimSpace(s.GateDir) == "" {
+	if run == nil || run.HeadSHA == "" || strings.TrimSpace(s.GateDir) == "" {
+		return false
+	}
+	if published := ptr(run.LastPushedSHA); published != "" && published == run.HeadSHA {
 		return false
 	}
 	localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)

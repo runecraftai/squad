@@ -14,7 +14,9 @@ import (
 // HandleOrphanStart admits an audited local head, not the mutable gate branch
 // tip. The accepted commit must be the released local head recorded at release
 // or a proven descendant of it, so redoing the lost fixes after a release still
-// has a supported fresh start. The private submission push only transfers
+// has a supported fresh start. The prior run may have pushed successfully: its
+// released record only qualifies while the lost head is the unpublished tail
+// past the surviving published head. The private submission push only transfers
 // objects; neither admission nor detached worktree creation updates either
 // branch. Eligibility is checked again under the normal branch lock, before
 // active runs could be cancelled.
@@ -48,7 +50,7 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	if err != nil || prior == nil || prior.RepoID != p.RepoID || prior.Branch != p.Branch ||
 		prior.CustodyReturnedAt == nil || prior.CustodyReturnNote == nil ||
 		prior.CustodyReturnHead == nil || *prior.CustodyReturnHead == "" ||
-		prior.LastPushedSHA != nil || prior.PushActive ||
+		prior.PushActive || (prior.LastPushedSHA != nil && *prior.LastPushedSHA == prior.HeadSHA) ||
 		(prior.Status != "failed" && prior.Status != "cancelled" && prior.Status != "completed") {
 		return refuse("the requested commit is not a local head released from an orphaned run")
 	}
