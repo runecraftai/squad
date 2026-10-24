@@ -164,8 +164,30 @@ with tempfile.TemporaryDirectory() as td:
         unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
                                     env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                                          "TYPESAFE_API_KEY": "runtime-test-key"})
-        assert json.loads(unmeasured.stdout) == {"status": "unavailable"}
-        assert not captured and not (data / "task/dispatch.jsonl").exists()
+        assert json.loads(unmeasured.stdout) == {"status": "unavailable", "reason": "file_count_unmeasured"}
+        assert not captured and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "file_count_unmeasured"}]
+        (data / "task/dispatch.jsonl").unlink()
+        no_lanes_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--lanes-json"), argv.index("--lanes-json") + 1)]
+        no_lanes_argv += ["--project-config", str(base / "absent.json")]
+        no_lanes = subprocess.run(no_lanes_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(no_lanes.stdout) == {"status": "unavailable", "reason": "no_lanes"}
+        assert not captured and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "no_lanes"}]
+        (data / "task/dispatch.jsonl").unlink()
+        brief = base / "brief.md"
+        brief.write_text("# Port lanes\nMove the sonnet and opus work to codex for this task.\n")
+        brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
+        brief_argv += ["--brief", str(brief), "--dry-run"]
+        briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
+        assert json.loads(briefed.stdout) == {"type": "choice", "instructions":
+                                              "Recommend the best-fitting lane for this task. Task projection: "
+                                              + json.dumps({"task_type": "feature", "title": "title", "description":
+                                                            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task.",
+                                                            "file_count": 3},
+                                                           ensure_ascii=True, separators=(",", ":"))}
 
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
