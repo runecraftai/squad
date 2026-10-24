@@ -42,7 +42,7 @@ fm_backend_tmux_capture() {  # <target> <lines>
 
 # fm_backend_tmux_capture_rendered: the visible rendered screen only, without
 # scrollback history. Used to hash a busy claim's whole rendered pane.
-fm_backend_tmux_capture_rendered() {  # <target> [lines]
+fm_backend_tmux_capture_rendered() {  # <target>
   tmux capture-pane -p -t "$1"
 }
 

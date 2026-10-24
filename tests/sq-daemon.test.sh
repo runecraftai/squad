@@ -737,6 +737,11 @@ test_housekeeping_herdr_idle_busy_record_clears_stale() {
       [ "$2" = "default:w1:p4" ] || fail "expected herdr busy target, got $2"
       printf 'idle'
     }
+    fm_backend_capture_rendered() {
+      [ "$1" = herdr ] || fail "expected herdr rendered backend, got $1"
+      [ "$2" = "default:w1:p4" ] || fail "expected herdr rendered target, got $2"
+      printf 'quiet\n'
+    }
     fm_backend_capture herdr default:w1:p4 40 >/dev/null
     [ "$(fm_backend_busy_state herdr default:w1:p4)" = idle ] || fail "herdr busy stub did not report idle"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
@@ -758,6 +763,11 @@ test_housekeeping_herdr_resumed_stale_cleared() {
     fm_backend_capture() {
       [ "$1" = herdr ] || fail "expected herdr capture backend, got $1"
       [ "$2" = "default:w1:p3" ] || fail "expected herdr window target, got $2"
+      printf 'unchanged pane\n'
+    }
+    fm_backend_capture_rendered() {
+      [ "$1" = herdr ] || fail "expected herdr rendered backend, got $1"
+      [ "$2" = "default:w1:p3" ] || fail "expected herdr rendered target, got $2"
       printf 'unchanged pane\n'
     }
     fm_backend_busy_state() {

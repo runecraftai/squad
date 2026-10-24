@@ -296,6 +296,11 @@ current_path_out=$(fm_backend_tuios_current_path owned:w-opaque_7 2>"$TMP_ROOT/c
 [ -s "$TMP_ROOT/current-path-err" ] && fail 'a silent read failure must not leak a jq indexing error'
 unset SQUAD_TUIOS_FAKE_STRING_WINDOW
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'capture-pane --session owned --window w-opaque_7 --scrollback --lines 10' 'capture did not use supported bounded scrollback flags'
+rendered_log_start=$(wc -l < "$SQUAD_TUIOS_LOG")
+[ "$(fm_backend_tuios_capture_rendered owned:w-opaque_7 sq-task-1)" = 'captured output' ] || fail 'rendered capture failed'
+rendered_log=$(tail -n +$((rendered_log_start + 1)) "$SQUAD_TUIOS_LOG")
+assert_contains "$rendered_log" 'capture-pane --session owned --window w-opaque_7' 'rendered capture did not target the owned window'
+assert_not_contains "$rendered_log" '--scrollback' 'rendered capture requested scrollback instead of the visible screen'
 
 # Operator-controlled payload text must never be parsed as TUIOS options: a
 # leading-dash message is a literal payload after `--`, and the exact session

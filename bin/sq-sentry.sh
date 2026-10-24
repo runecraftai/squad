@@ -1160,11 +1160,17 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    busy_expirable=0
     if [ "$busy_now" -eq 0 ]; then
       # A busy claim expires only on the whole rendered pane (including the
       # footer cost/token gauge), so progress above the bottom 40 lines counts.
-      rendered=$(fm_backend_capture_rendered "$backend" "$w" "$BUSY_PANE_CAPTURE_LINES" "$(window_label "$w")" 2>/dev/null) || continue
-      h=$(printf '%s' "$rendered" | hash_pane)
+      # An unreadable viewport hashes the tail for pause tracking only and never expires.
+      if rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null); then
+        h=$(printf '%s' "$rendered" | hash_pane)
+        busy_expirable=1
+      else
+        h=$(printf '%s' "$tail40" | hash_pane)
+      fi
     else
       h=$(printf '%s' "$tail40" | hash_pane)
     fi
@@ -1272,13 +1278,13 @@ EOF
         # expiry. Declared waits still outrank busy; active runs defer in the timer.
         if [ "$busy_now" -eq 0 ] && status_is_paused_or_commander_held "$last"; then
           handle_paused_stale "$w" "$task" "$h"
-        elif [ "$busy_now" -eq 0 ] && [ "$n" -ge 2 ] && afk_present; then
+        elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ] && afk_present; then
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ] && ! window_run_step_active "$w"; then
             fm_wake_append stale "$w" "stale: $w (busy expired without activity)" || exit 1
             printf '%s' "$h" > "$sf"
             wake "stale: $w (busy expired without activity)"
           fi
-        elif [ "$busy_now" -eq 0 ] && [ "$n" -ge 2 ]; then
+        elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ]; then
           printf '%s' "$h" > "$sf"
           wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
         else

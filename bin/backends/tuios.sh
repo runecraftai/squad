@@ -308,6 +308,13 @@ fm_backend_tuios_capture() {  # <target> <lines> [expected-label]
     --window "$SQUAD_BACKEND_TUIOS_WINDOW" --scrollback --lines "$lines" 2>/dev/null
 }
 
+fm_backend_tuios_capture_rendered() {  # <target> [expected-label]
+  local target=$1 expected=${2:-}
+  fm_backend_tuios_target_ready "$target" "$expected" || return 1
+  fm_backend_tuios_cli "$SQUAD_BACKEND_TUIOS_SESSION" capture-pane \
+    --window "$SQUAD_BACKEND_TUIOS_WINDOW" 2>/dev/null
+}
+
 fm_backend_tuios_send_literal() {  # <target> <text> [expected-label]
   local target=$1 text=$2 expected=${3:-}
   fm_backend_tuios_target_ready "$target" "$expected" || return 1

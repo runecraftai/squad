@@ -2724,6 +2724,60 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection() {
   pass "repeated static busy escalations reuse the existing counter and demand deep inspection at the threshold"
 }
 
+# tmux without a viewport-only capture: scrollback-bounded reads still work, but the
+# complete rendered screen cannot be read, so a busy claim has no proof of staticness.
+use_no_viewport_tmux() {  # <fakebin>
+  local fakebin=$1
+  mv "$fakebin/tmux" "$fakebin/tmux-base"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -n "${SQUAD_FAKE_TMUX_CAPTURE:-}" ]; then
+  lines=
+  while [ $# -gt 0 ]; do
+    if [ "$1" = -S ]; then lines=${2#-}; fi
+    shift
+  done
+  [ -n "$lines" ] || exit 1
+  tail -n "$lines" "$SQUAD_FAKE_TMUX_CAPTURE"
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-base" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+}
+
+test_busy_static_pane_without_readable_viewport_never_expires() {
+  local mode dir state fakebin out capture_file window key sig pid
+  for mode in readable unreadable; do
+    dir=$(make_case "busy-viewport-$mode"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-viewport-$mode"
+    printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+    printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-viewport-$mode.meta"
+    record_pi_busy "$state" "busy-viewport-$mode"
+    printf 'working: setup complete\n' > "$state/busy-viewport-$mode.status"
+    sig=$(seen_sig "$state/busy-viewport-$mode.status"); printf '%s' "$sig" > "$state/.seen-busy-viewport-${mode}_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+    printf '2\n' > "$state/.count-$key"
+    echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+    [ "$mode" = readable ] || use_no_viewport_tmux "$fakebin"
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+      SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+    pid=$!
+    if [ "$mode" = readable ]; then
+      wait_for_exit "$pid" 60 || { reap "$pid"; fail "control: a readable static busy viewport never expired: $(cat "$out")"; }
+      grep -F "busy expired without activity" "$out" >/dev/null || fail "control: readable static busy expiry reason was not explicit"
+    else
+      wait_live "$pid" 30 || { reap "$pid"; fail "unreadable viewport exited: $(cat "$out")"; }
+      reap "$pid"
+      [ ! -s "$out" ] || fail "a busy pane with an unreadable rendered viewport woke: $(cat "$out")"
+      [ ! -e "$state/.wedge-escalations-$key" ] || fail "an unreadable rendered viewport counted a wedge escalation"
+      [ ! -e "$state/.stale-since-$key" ] || fail "an unreadable rendered viewport kept the busy expiry clock running"
+    fi
+  done
+  pass "a busy claim expires only on a readable complete rendered viewport, never on tail-only evidence"
+}
+
 test_nonterminal_stale_repairs_missing_or_corrupt_timer() {
   local dir state fakebin out capture_file window key pane_hash sig pid since
   dir=$(make_case nonterminal-stale-timer-repair); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3228,6 +3282,7 @@ test_busy_static_afk_hands_off_once_per_hash
 test_busy_static_afk_run_step_defers_handoff
 test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
+test_busy_static_pane_without_readable_viewport_never_expires
 test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_decision_parked_stale_is_throttled
