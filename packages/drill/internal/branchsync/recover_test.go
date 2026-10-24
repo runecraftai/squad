@@ -165,6 +165,11 @@ func TestRecoverOrphanedHeadReturnsCustodyWithoutMovingBranches(t *testing.T) {
 	if objectExists(f.ctx, f.local, missing) || objectExists(f.ctx, f.gate, missing) {
 		t.Fatal("orphan fixture unexpectedly has the recorded object")
 	}
+	pre := f.service.InspectCached(f.ctx)
+	if !pre.Pipeline.PreservedHeadMissing || pre.State != StatePipelineOwned ||
+		pre.Safety != "blocked_pipeline_owned_recoverable" || !strings.Contains(pre.Error, "lost") {
+		t.Fatalf("orphan classification = %#v", pre)
+	}
 	localRefs := mustRun(t, f.local, "show-ref")
 	gateRefs := mustRun(t, f.gate, "show-ref")
 	state := f.service.Recover(f.ctx, false)
@@ -186,6 +191,9 @@ func TestRecoverOrphanedHeadReturnsCustodyWithoutMovingBranches(t *testing.T) {
 		if !strings.Contains(note, want) || !strings.Contains(state.Pipeline.CustodyReturnNote, want) {
 			t.Fatalf("audit missing %q: %s", want, note)
 		}
+	}
+	if persisted.CustodyReturnHead == nil || *persisted.CustodyReturnHead != f.submitted || state.Pipeline.CustodyReturnHead != f.submitted {
+		t.Fatalf("released local head audit = %#v", persisted.CustodyReturnHead)
 	}
 	again := f.service.Recover(f.ctx, false)
 	persisted, err = f.db.GetRun(f.run.ID)
@@ -212,6 +220,9 @@ func TestRecoverMissingAnchorNeverReleasesExistingDivergentHead(t *testing.T) {
 			// Move the gate to the submitted head, leaving the recorded
 			// pipeline object present but unreachable. No recovery ref exists.
 			mustRun(t, f.gate, "update-ref", "refs/heads/feature/recover", f.submitted)
+			if pre := f.service.InspectCached(f.ctx); pre.Pipeline.PreservedHeadMissing {
+				t.Fatalf("existing head mistaken for loss: %#v", pre)
+			}
 			before := mustRun(t, f.local, "show-ref")
 			state := f.service.Recover(f.ctx, false)
 			if state.Recovered || state.Safety != "blocked_recover_gate_diverged" || f.custodyReturned() {

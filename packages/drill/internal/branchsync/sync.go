@@ -99,6 +99,11 @@ type PipelineState struct {
 	PushedAt          int64
 	PushGeneration    int64
 	CustodyReturnNote string
+	CustodyReturnHead string
+	// PreservedHeadMissing reports a terminal never-pushed run whose recorded
+	// pipeline head is proven absent from both the invoking repository and the
+	// validated local gate. It is the loss classification behind recoverOrphanedRun.
+	PreservedHeadMissing bool
 }
 
 type TargetState struct {
@@ -539,14 +544,8 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	// sufficient evidence of loss: the object must be absent from BOTH the
 	// invoking repository and the validated gate. Existing objects, even
 	// unreachable ones, continue through the original divergence checks.
-	if run.LastPushedSHA == nil && strings.TrimSpace(s.GateDir) != "" {
-		localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)
-		if localErr == nil && localMissing && git.ValidateBareRepository(ctx, s.GateDir) == nil {
-			gateMissing, gateErr := git.ObjectMissing(ctx, s.GateDir, run.HeadSHA)
-			if gateErr == nil && gateMissing {
-				return s.recoverOrphanedRun(ctx, run, state)
-			}
-		}
+	if s.preservedHeadMissing(ctx, run) {
+		return s.recoverOrphanedRun(ctx, run, state)
 	}
 	if run.TerminalHeadVerifiedAt == nil {
 		branch := state.Local.Branch
@@ -665,9 +664,7 @@ func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state Sta
 	}
 	// Recheck absence immediately before recording the release. Inspection
 	// errors, invalid identities, and a newly available object all refuse.
-	localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)
-	gateMissing, gateErr := git.ObjectMissing(ctx, s.GateDir, run.HeadSHA)
-	if localErr != nil || gateErr != nil || !localMissing || !gateMissing {
+	if !s.preservedHeadMissing(ctx, run) {
 		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_assumptions_changed", "the recorded pipeline object is no longer proven missing; custody was not returned")
 	}
 	if err := s.DB.ReleaseOrphanedRun(run.ID, run.HeadSHA, fresh.Local.Head); err != nil {
@@ -1036,6 +1033,7 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 		RunID: run.ID, Status: string(run.Status), SubmittedHead: ptr(run.SubmittedHeadSHA), CurrentHead: run.HeadSHA,
 		PushedHead: ptr(run.LastPushedSHA), PushedAt: value(run.LastPushedAt), PushGeneration: value(run.PushGeneration),
 		CustodyReturnNote: ptr(run.CustodyReturnNote),
+		CustodyReturnHead: ptr(run.CustodyReturnHead),
 	}
 	state.PRState = normalizePRState(run.PRState)
 	state.Target = TargetState{Kind: ptr(run.PushTargetKind), URL: displayTarget(s.Repo.PushURL()), Ref: ptr(run.PushRef)}
@@ -1355,6 +1353,22 @@ func samePushTargetBinding(older, newer *db.Run) bool {
 		older.PushRef != nil && newer.PushRef != nil && ptr(older.PushRef) == ptr(newer.PushRef)
 }
 
+// preservedHeadMissing proves a terminal never-pushed run's recorded head is
+// absent from both the invoking repository and the validated local gate. A
+// missing local object that still exists in the gate, an unreachable gate, an
+// invalid identity, or any inspection error is not loss.
+func (s *Service) preservedHeadMissing(ctx context.Context, run *db.Run) bool {
+	if run == nil || run.LastPushedSHA != nil || run.HeadSHA == "" || strings.TrimSpace(s.GateDir) == "" {
+		return false
+	}
+	localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)
+	if localErr != nil || !localMissing || git.ValidateBareRepository(ctx, s.GateDir) != nil {
+		return false
+	}
+	gateMissing, gateErr := git.ObjectMissing(ctx, s.GateDir, run.HeadSHA)
+	return gateErr == nil && gateMissing
+}
+
 func terminalRunStatus(status types.RunStatus) bool {
 	switch status {
 	case types.RunCompleted, types.RunFailed, types.RunCancelled:
@@ -1382,6 +1396,10 @@ func (s *Service) classifyPipelineOwned(ctx context.Context, state *State, run *
 	if terminalRunStatus(run.Status) {
 		state.Safety = "blocked_pipeline_owned_recoverable"
 		state.Error = "the run finished " + string(run.Status) + " with unpublished pipeline commits preserved in the local gate; recover custody before any local follow-up commit"
+		if s.preservedHeadMissing(ctx, run) {
+			state.Pipeline.PreservedHeadMissing = true
+			state.Error = "the run finished " + string(run.Status) + " and its recorded pipeline head is missing from both this repository and the local gate; the pipeline's unpublished fixes are lost with that object; recover custody to start a fresh run from the current head"
+		}
 		state.NextAction = &NextAction{Code: "recover_custody", Command: "drill axi sync --recover"}
 		return
 	}

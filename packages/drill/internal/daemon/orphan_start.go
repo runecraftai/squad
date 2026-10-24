@@ -11,9 +11,12 @@ import (
 )
 
 // HandleOrphanStart admits an audited local head, not the mutable gate branch
-// tip. The private submission push only transfers objects; neither admission
-// nor detached worktree creation updates either branch. Eligibility is checked
-// again under the normal branch lock, before active runs could be cancelled.
+// tip. The accepted commit must be the released local head recorded at release
+// or a proven descendant of it, so redoing the lost fixes after a release still
+// has a supported fresh start. The private submission push only transfers
+// objects; neither admission nor detached worktree creation updates either
+// branch. Eligibility is checked again under the normal branch lock, before
+// active runs could be cancelled.
 func (m *RunManager) HandleOrphanStart(ctx context.Context, p *ipc.OrphanStartParams) (*ipc.OrphanStartResult, error) {
 	repo, prior, err := m.validateOrphanStart(ctx, p)
 	if err != nil {
@@ -40,10 +43,10 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	prior, err := m.db.GetRun(p.PreviousRunID)
 	if err != nil || prior == nil || prior.RepoID != p.RepoID || prior.Branch != p.Branch ||
 		prior.CustodyReturnedAt == nil || prior.CustodyReturnNote == nil ||
-		prior.CustodyReturnHead == nil || *prior.CustodyReturnHead != p.HeadSHA ||
+		prior.CustodyReturnHead == nil || *prior.CustodyReturnHead == "" ||
 		prior.LastPushedSHA != nil || prior.PushActive ||
 		(prior.Status != "failed" && prior.Status != "cancelled" && prior.Status != "completed") {
-		return refuse("the requested commit is not the audited local head of a released orphan")
+		return refuse("the requested commit is not a local head released from an orphaned run")
 	}
 	if strings.Trim(p.PreviousRunID, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
 		return refuse("invalid prior run identity")
@@ -87,8 +90,34 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	if stageErr == nil && staged != p.HeadSHA {
 		return refuse("the private submission names a different commit")
 	}
-	if !p.CheckOnly && (stageErr != nil || staged != p.HeadSHA) {
+	submitted := stageErr == nil && staged == p.HeadSHA
+	if !p.CheckOnly && !submitted {
 		return refuse("the exact local commit was not submitted to the private ref")
 	}
+	// The released head stays the immutable audit anchor. A later local head is
+	// admitted only when the submitted commit proves it descends from that
+	// anchor, so a rewritten or unrelated head still refuses.
+	if audited := *prior.CustodyReturnHead; p.HeadSHA != audited {
+		proven := submitted || (p.CheckOnly && commitExists(ctx, gateDir, audited))
+		if proven && !commitIsAncestor(ctx, gateDir, audited, p.HeadSHA) {
+			return refuse("the requested commit does not descend from the audited released local head")
+		}
+	}
 	return repo, prior, nil
+}
+
+func commitExists(ctx context.Context, dir, sha string) bool {
+	if sha == "" {
+		return false
+	}
+	_, err := git.Run(ctx, dir, "cat-file", "-e", sha+"^{commit}")
+	return err == nil
+}
+
+func commitIsAncestor(ctx context.Context, dir, ancestor, descendant string) bool {
+	if ancestor == "" || descendant == "" {
+		return false
+	}
+	_, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
 }

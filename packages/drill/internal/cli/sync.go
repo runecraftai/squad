@@ -199,19 +199,24 @@ func runHumanRecover(cmd *cobra.Command, keepLocal, yes bool) error {
 	// an idempotent no-op that cannot mutate anything.
 	if !yes && state.State != branchsync.StateUserOwned {
 		printHumanSyncState(cmd, state)
+		fmt.Fprintln(cmd.OutOrStdout(), "  Recovery returns custody of this branch from its terminal run.")
+		switch {
+		case state.Pipeline.PreservedHeadMissing || state.Pipeline.CustodyReturnNote != "":
+			fmt.Fprintln(cmd.OutOrStdout(), "  Its recorded pipeline head is missing from both this repository and the local")
+			fmt.Fprintln(cmd.OutOrStdout(), "  gate, so the pipeline's unpublished fixes are lost with that object. Recovery")
+			fmt.Fprintln(cmd.OutOrStdout(), "  only records custody at your current head: no branch, ref, or worktree moves.")
+		case keepLocal:
+			fmt.Fprintln(cmd.OutOrStdout(), "  The only possible change is anchoring the preserved pipeline commits and moving the")
+			fmt.Fprintln(cmd.OutOrStdout(), "  local gate branch to your current head; the worktree is never touched.")
+		default:
+			fmt.Fprintln(cmd.OutOrStdout(), "  The only possible worktree change is a fast-forward of this clean behind branch, or")
+			fmt.Fprintln(cmd.OutOrStdout(), "  adoption of a diverged preserved head proven to carry every local change;")
+			fmt.Fprintln(cmd.OutOrStdout(), "  unproven divergence refuses, and --keep-local keeps the current head.")
+		}
 		if !syncInteractive() {
 			fmt.Fprintln(cmd.OutOrStdout(), "  Non-interactive input cannot confirm this recovery. Re-run with `drill sync --recover --yes`.")
 			result = "refused"
 			return &exitError{code: 1}
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "  Recovery returns custody of this branch from its terminal run. The only")
-		if keepLocal {
-			fmt.Fprintln(cmd.OutOrStdout(), "  possible changes are anchoring the preserved pipeline commits and moving the")
-			fmt.Fprintln(cmd.OutOrStdout(), "  local gate branch to your current head; the worktree is never touched.")
-		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "  possible worktree change is a fast-forward of this clean behind branch, or")
-			fmt.Fprintln(cmd.OutOrStdout(), "  adoption of a diverged preserved head proven to carry every local change;")
-			fmt.Fprintln(cmd.OutOrStdout(), "  unproven divergence refuses, and --keep-local keeps the current head.")
 		}
 		fmt.Fprint(cmd.OutOrStdout(), "  Return custody of this branch? [y/N] ")
 		line, readErr := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
@@ -232,6 +237,8 @@ func runHumanRecover(cmd *cobra.Command, keepLocal, yes bool) error {
 	if recovered.Recovered {
 		if recovered.State == branchsync.StateUserOwned {
 			fmt.Fprintln(cmd.OutOrStdout(), "  Nothing to recover; cancellation already released this branch to you.")
+		} else if recovered.Pipeline.CustodyReturnNote != "" {
+			fmt.Fprintln(cmd.OutOrStdout(), "  Custody returned; the pipeline's unpublished fixes were lost with the missing object. Start a fresh run from the current head when ready.")
 		} else {
 			fmt.Fprintln(cmd.OutOrStdout(), "  Custody returned; start a fresh run when ready.")
 		}
@@ -255,7 +262,17 @@ func printHumanSyncState(cmd *cobra.Command, state branchsync.State) {
 	if state.Pipeline.PushedHead != "" {
 		fmt.Fprintf(w, "  pipeline: %s\n", state.Pipeline.PushedHead)
 	} else if state.Pipeline.CurrentHead != "" && state.Pipeline.CurrentHead != state.Local.Head {
-		fmt.Fprintf(w, "  preserved: %s (run %s, %s)\n", state.Pipeline.CurrentHead, state.Pipeline.RunID, state.Pipeline.Status)
+		label := "preserved"
+		if state.Pipeline.PreservedHeadMissing {
+			label = "recorded"
+		}
+		fmt.Fprintf(w, "  %s: %s (run %s, %s)\n", label, state.Pipeline.CurrentHead, state.Pipeline.RunID, state.Pipeline.Status)
+	}
+	switch {
+	case state.Pipeline.CustodyReturnNote != "":
+		fmt.Fprintf(w, "  audit:    %s\n", state.Pipeline.CustodyReturnNote)
+	case state.Pipeline.PreservedHeadMissing:
+		fmt.Fprintf(w, "  audit:    pipeline head %s is missing from this repository and the local gate; the pipeline's unpublished fixes are lost with it\n", state.Pipeline.CurrentHead)
 	}
 	if state.Target.Ref != "" {
 		fmt.Fprintf(w, "  target:   %s %s (%s)\n", state.Target.Remote, state.Target.Ref, state.Target.Kind)
@@ -269,10 +286,16 @@ func humanSyncSummary(state branchsync.State) string {
 	switch state.State {
 	case branchsync.StatePipelineOwned:
 		if state.Safety == "blocked_pipeline_owned_recoverable" {
+			if state.Pipeline.PreservedHeadMissing {
+				return "the recorded pipeline head is missing from this repository and the local gate; the pipeline's unpublished fixes are lost with it - recover custody to start a fresh run from the current head"
+			}
 			return "run ended without publishing its pipeline commits; recover custody with `drill sync --recover` (or `drill rerun` to resume validation)"
 		}
 		return "pipeline fix is not pushed yet; do not make local follow-up commits"
 	case branchsync.StateCustodyReturned:
+		if state.Pipeline.CustodyReturnNote != "" {
+			return "custody returned; the pipeline's unpublished fixes were lost with the missing object - start a fresh run from the current head when ready"
+		}
 		return "custody returned; the branch is yours - start a fresh run when ready"
 	case branchsync.StateUserOwned:
 		return "run ended before the pipeline changed anything; the branch and head are yours and immediately usable"
@@ -341,7 +364,7 @@ func runAxiSync(cmd *cobra.Command, check, recover, keepLocal bool) error {
 	if state.NextAction != nil {
 		help = append(help, "Run `"+state.NextAction.Command+"`")
 	}
-	if state.Safety == "blocked_pipeline_owned_recoverable" {
+	if state.Safety == "blocked_pipeline_owned_recoverable" && !state.Pipeline.PreservedHeadMissing {
 		help = append(help, "Run `drill rerun` instead to resume validating the preserved pipeline head")
 	}
 	if len(help) > 0 {
@@ -435,6 +458,12 @@ func branchSyncField(state branchsync.State) toON.Field {
 	}
 	if state.Pipeline.CustodyReturnNote != "" {
 		pipeline = append(pipeline, toON.Field{Key: "custody_return_note", Value: state.Pipeline.CustodyReturnNote})
+	}
+	if state.Pipeline.CustodyReturnHead != "" {
+		pipeline = append(pipeline, toON.Field{Key: "custody_return_head", Value: state.Pipeline.CustodyReturnHead})
+	}
+	if state.Pipeline.PreservedHeadMissing {
+		pipeline = append(pipeline, toON.Field{Key: "preserved_head_missing", Value: true})
 	}
 	target := toON.NewObject(
 		toON.Field{Key: "kind", Value: state.Target.Kind},

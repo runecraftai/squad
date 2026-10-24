@@ -22,6 +22,12 @@ func triggerOrphanRun(ctx context.Context, env *axiEnv, state branchsync.State, 
 	if !unchanged() {
 		return "", fmt.Errorf("orphan_start_refused: local branch, head or cleanliness changed")
 	}
+	// The released head stays the audit anchor. Redoing the lost fixes after a
+	// release is supported only from a proven descendant of it, never from a
+	// rewritten or unrelated history.
+	if audited := state.Pipeline.CustodyReturnHead; audited != "" && head != audited && !commitDescendsFrom(ctx, ".", audited, head) {
+		return "", fmt.Errorf("orphan_start_refused: the requested commit does not descend from the audited released local head; no branch push attempted")
+	}
 	p := &ipc.OrphanStartParams{RepoID: env.repo.ID, Branch: branch, PreviousRunID: state.Pipeline.RunID, HeadSHA: head, CheckOnly: true, SkipSteps: skip, Intent: intent, SpecializedReview: specialized}
 	var result ipc.OrphanStartResult
 	if err := env.client.Call(ipc.MethodStartOrphan, p, &result); err != nil {
@@ -49,4 +55,15 @@ func triggerOrphanRun(ctx context.Context, env *axiEnv, state branchsync.State, 
 		return "", fmt.Errorf("orphan_start_refused: daemon did not confirm a run for the submitted local commit")
 	}
 	return result.RunID, nil
+}
+
+func commitDescendsFrom(ctx context.Context, dir, ancestor, descendant string) bool {
+	if ancestor == "" || descendant == "" {
+		return false
+	}
+	if ancestor == descendant {
+		return true
+	}
+	_, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
 }

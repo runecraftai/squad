@@ -252,3 +252,42 @@ func TestActivePipelineOwnedStateOffersNoRecoveryAction(t *testing.T) {
 		t.Fatalf("u acted on an active pipeline_owned state: %#v", m)
 	}
 }
+
+// TestOrphanedRecoverySurfacesReportLostPipelineFixes pins that the TUI never
+// claims a missing pipeline head is preserved and always names the loss.
+func TestOrphanedRecoverySurfacesReportLostPipelineFixes(t *testing.T) {
+	missing := strings.Repeat("c", 40)
+	state := branchsync.State{
+		State: branchsync.StatePipelineOwned, Relation: branchsync.RelationUnknown, Safety: "blocked_pipeline_owned_recoverable",
+		Local:    branchsync.LocalState{Branch: "feature", Head: strings.Repeat("a", 40), Clean: true},
+		Pipeline: branchsync.PipelineState{RunID: "run-1", Status: "cancelled", Phase: "pre_push", CurrentHead: missing, PreservedHeadMissing: true},
+	}
+	view := stripANSI(renderLocalBranchStatus(&state, false, 80))
+	if !strings.Contains(view, "lost") || strings.Contains(view, "preserved in the local gate") {
+		t.Fatalf("orphan status promised preservation:\n%s", view)
+	}
+	if !strings.Contains(view, "u recover custody") {
+		t.Fatalf("orphan status lost the recovery action:\n%s", view)
+	}
+
+	confirmation := stripANSI(renderRecoverConfirmation(state, 100))
+	for _, want := range []string{missing, "lost", "no branch, ref, or worktree moves", "Recorded HEAD"} {
+		if !strings.Contains(confirmation, want) {
+			t.Errorf("orphan confirmation missing %q:\n%s", want, confirmation)
+		}
+	}
+	for _, unwanted := range []string{"Preserved HEAD", "fast-forwarding"} {
+		if strings.Contains(confirmation, unwanted) {
+			t.Errorf("orphan confirmation still promises %q:\n%s", unwanted, confirmation)
+		}
+	}
+
+	state.State = branchsync.StateCustodyReturned
+	state.Safety = "custody_returned"
+	state.Pipeline.PreservedHeadMissing = false
+	state.Pipeline.CustodyReturnNote = "orphaned run run-1: missing pipeline head " + missing
+	returned := stripANSI(renderLocalBranchStatus(&state, false, 80))
+	if !strings.Contains(returned, "lost") || !strings.Contains(returned, "Custody returned") {
+		t.Fatalf("released orphan status hid the loss:\n%s", returned)
+	}
+}
