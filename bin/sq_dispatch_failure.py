@@ -7,7 +7,7 @@ FAILURE_BUCKETS = (
     ("provider", re.compile(r"provider|overloaded|outage|unavailable|server error", re.IGNORECASE)),
     ("guard", re.compile(r"guard|policy|refus|denied", re.IGNORECASE)),
 )
-TERMINAL_LINE = re.compile(r"^(done|failed|blocked|paused): (.*)$")
+TERMINAL_LINE = re.compile(r"^(done|failed|blocked|paused):[ \t]*(.*)$")
 
 
 def line_failure_class(text):
