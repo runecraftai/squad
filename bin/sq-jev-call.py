@@ -20,7 +20,10 @@ MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
 
 
-def redact(value):
+KNOWN_NAMES = ("claude", "codex", "gemini", "sonnet", "opus", "haiku", "gpt")
+
+
+def redact(value, names=()):
     home = os.path.expanduser("~")
     if home and home != "/":
         value = value.replace(home, "~")
@@ -36,6 +39,9 @@ def redact(value):
     ]
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
+    terms = sorted(set(names) | set(KNOWN_NAMES), key=len, reverse=True)
+    value = re.sub(r"(?i)(?<![A-Za-z0-9])(?:" + "|".join(re.escape(term) for term in terms) + r")(?![A-Za-z0-9])",
+                   "[REDACTED]", value)
     return value[:MAX_TEXT]
 
 
@@ -135,6 +141,16 @@ def record(args, event):
         raise OSError("recommendation not recorded")
 
 
+def finish(args, event):
+    try:
+        record(args, event)
+    except (OSError, subprocess.SubprocessError):
+        print(json.dumps({"status": "error"}))
+        return 0
+    print(json.dumps({name: event[name] for name in ("status", "choice", "reason") if name in event}))
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", required=True)
@@ -167,11 +183,13 @@ def main():
             args.description = args.description or paragraph
         except OSError:
             pass
+    lanes = load_lanes(args)
+    names = {part for lane in lanes for part in lane.split("/")}
     file_count = args.file_count if args.file_count is not None else count_tracked_files(args.project)
     projection = {
-        "task_type": redact(args.task_type),
-        "title": redact(args.title),
-        "description": redact(args.description),
+        "task_type": redact(args.task_type, names),
+        "title": redact(args.title, names),
+        "description": redact(args.description, names),
         "file_count": file_count,
     }
     payload = {
@@ -182,13 +200,10 @@ def main():
     if args.dry_run:
         print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
         return 0
-    lanes = load_lanes(args)
     if not lanes:
-        print(json.dumps({"status": "disabled"}))
-        return 0
+        return finish(args, {"status": "unavailable", "reason": "no_lanes"})
     if file_count is None:
-        print(json.dumps({"status": "unavailable"}))
-        return 0
+        return finish(args, {"status": "unavailable", "reason": "file_count_unmeasured"})
     parsed_url = urllib.parse.urlparse(args.url)
     if args.url != API_URL and parsed_url.hostname not in ("127.0.0.1", "localhost", "::1"):
         print(json.dumps({"status": "error"}))
@@ -202,13 +217,7 @@ def main():
         event = classify(json.loads(fetch_with_deadline(request, DEADLINE_SECONDS)), lanes)
     except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, OSError):
         event = {"status": "unavailable", "reason": "service_error"}
-    try:
-        record(args, event)
-    except (OSError, subprocess.SubprocessError):
-        print(json.dumps({"status": "error"}))
-        return 0
-    print(json.dumps({name: event[name] for name in ("status", "choice", "reason") if name in event}))
-    return 0
+    return finish(args, event)
 
 
 if __name__ == "__main__":
