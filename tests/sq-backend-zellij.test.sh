@@ -566,7 +566,7 @@ test_capture_rendered_reads_viewport_not_scrollback() {
   fb=$(make_zellij_fakebin "$dir")
   out=$( PATH="$fb:$PATH" SQUAD_ZELLIJ_LOG="$dir/log" SQUAD_ZELLIJ_RESPONSES="$dir/responses" \
     SQUAD_ZELLIJ_SESSION_LIST="Squad" \
-    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_capture_rendered Squad:7 1000' "$ROOT" )
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_capture_rendered Squad:7' "$ROOT" )
   [ "$out" = $'viewport row\nUSD 0.42' ] || fail "rendered capture should return the viewport, got '$out'"
   zellij_assert_call_order "$dir/log" $'\x1f''list-panes'$'\x1f''--json' $'\x1f''dump-screen' \
     "rendered capture did not verify the pane before dump-screen"

@@ -769,18 +769,21 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
   esac
 }
 
-# fm_backend_capture_rendered: plain-text capture of the rendered viewport, used
-# to hash a busy claim's whole pane. tmux and zellij read only the visible screen
-# (zellij's --full would dump the entire scrollback); other backends keep their
-# bounded tail capture.
-fm_backend_capture_rendered() {  # <backend> <target> <lines> [expected-label]
+# fm_backend_capture_rendered: plain-text capture of the complete rendered viewport,
+# used to hash a busy claim's whole pane. Only backends with a verified viewport-only
+# read are listed; any other backend fails so static-busy expiry never runs on
+# incomplete evidence.
+fm_backend_capture_rendered() {  # <backend> <target> [expected-label]
   local backend=$1
   shift
   fm_backend_source "$backend" || return 1
   case "$backend" in
     tmux) fm_backend_tmux_capture_rendered "$@" ;;
     zellij) fm_backend_zellij_capture_rendered "$@" ;;
-    *) fm_backend_capture "$backend" "$@" ;;
+    herdr) fm_backend_herdr_capture_rendered "$@" ;;
+    tuios) fm_backend_tuios_capture_rendered "$@" ;;
+    orca) fm_backend_orca_capture_rendered "$@" ;;
+    *) echo "error: no rendered-viewport capture for backend '$backend'" >&2; return 1 ;;
   esac
 }
 

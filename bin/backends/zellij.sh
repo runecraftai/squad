@@ -490,8 +490,8 @@ fm_backend_zellij_capture() {  # <target> <lines> [expected-label]
 
 # fm_backend_zellij_capture_rendered: the visible rendered viewport only. The
 # plain dump-screen is the viewport; --full would dump the whole scrollback.
-fm_backend_zellij_capture_rendered() {  # <target> [lines] [expected-label]
-  fm_backend_zellij_target_ready "$1" "${3:-}" || return 1
+fm_backend_zellij_capture_rendered() {  # <target> [expected-label]
+  fm_backend_zellij_target_ready "$1" "${2:-}" || return 1
   fm_backend_zellij_cli "$SQUAD_BACKEND_ZELLIJ_SESSION" action dump-screen --pane-id "$SQUAD_BACKEND_ZELLIJ_PANE" 2>/dev/null
 }
 
