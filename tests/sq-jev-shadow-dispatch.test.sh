@@ -156,8 +156,11 @@ import sys
 request = json.loads(open(sys.argv[1]).readline())
 assert request["auth"] == "Bearer runtime-test-key"
 assert request["body"]["type"] == "choice"
-assert set(request["body"]) == {"type", "instructions"}
-assert "codex/gpt-5" not in json.dumps(request["body"]) and "grok/grok-4" not in json.dumps(request["body"])
+assert set(request["body"]) == {"type", "criteria", "instructions"}
+assert request["body"]["criteria"] == {"codex/gpt-5": "codex/gpt-5", "grok/grok-4": "grok/grok-4"}
+projection = json.loads(request["body"]["instructions"].split("Task projection: ", 1)[1])
+assert set(projection) == {"task_type", "title", "description", "file_count"}
+assert "codex/gpt-5" not in json.dumps(projection) and "grok/grok-4" not in json.dumps(projection)
 PY
 
   diff <(dispatch_rows "$case_base/home/data/$ID/dispatch.jsonl") \
