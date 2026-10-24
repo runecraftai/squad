@@ -109,7 +109,7 @@ func TestFixtureAccessIsGatedByBuildNotExecutableName(t *testing.T) {
 	}
 	policy, err := New(repo)
 	if err != nil {
-		t.Skipf("execution sandbox unavailable: %v", err)
+		t.Fatalf("execution sandbox unavailable: %v", err)
 	}
 	defer policy.Close()
 	for _, name := range []string{"fakeagent", "synthetic-agent"} {
@@ -154,7 +154,7 @@ func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
 	}
 	policy, err := New(repo)
 	if err != nil {
-		t.Skipf("execution sandbox unavailable: %v", err)
+		t.Fatalf("execution sandbox unavailable: %v", err)
 	}
 	defer policy.Close()
 	first := exec.Command(claude)

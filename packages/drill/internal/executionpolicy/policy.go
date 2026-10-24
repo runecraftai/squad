@@ -405,6 +405,9 @@ func installationRoot(path string) string {
 func (p *Policy) mountAgentCredentials(executable, home string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return errors.New(Name + ": execution policy is unavailable")
+	}
 	layouts := map[string][]string{
 		"pi":       {".pi/agent/auth.json", ".pi/agent/models.json"},
 		"claude":   {".claude/.credentials.json"},
