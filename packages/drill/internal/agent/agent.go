@@ -327,12 +327,6 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 		return parsed[len(parsed)-1], nil
 	}
 
-	if candidateErr == nil {
-		if err := bareJSONObjectError(text, validationSchema); err != nil && !isJSONSyntaxError(err) {
-			candidateErr = err
-		}
-	}
-
 	if candidateErr != nil {
 		if bareFindingsPayload {
 			return nil, rawErr
@@ -656,68 +650,6 @@ func indexJSONFenceClose(text string) (int, int) {
 		return len(trimmed) - 3, len(trimmed)
 	}
 	return -1, -1
-}
-
-// bareJSONObjectError scans text for balanced {...} substrings and classifies
-// the outcome for the caller: nil when at least one candidate parses and
-// validates, otherwise the last validation error, or else the first syntax
-// error when no candidate was even valid JSON. This handles models that emit
-// reasoning prose followed by a raw JSON answer, with no code fence.
-func bareJSONObjectError(text string, schema json.RawMessage) error {
-	var found bool
-	var validationErr error
-	var syntaxErr error
-	for i := 0; i < len(text); i++ {
-		if strings.HasPrefix(text[i:], "```") {
-			if !isFenceOpener(text, i) {
-				// Inline-code mention of a fence in prose, not a real fence
-				// block: ignore the backticks and keep scanning so a JSON
-				// object after them is still recoverable.
-				continue
-			}
-			contentStart, _ := fenceContentStart(text, i)
-			next := skipFenceBlock(text[contentStart:])
-			if next < 0 {
-				// Unclosed fence: the opener's body runs to EOF. Do not abort
-				// the whole scan - a JSON object after the opener (e.g. the
-				// payload of an unterminated ```json fence) must still be
-				// recoverable by the balanced-brace scan below. Skip just the
-				// opener and keep scanning from the body start.
-				i = contentStart - 1
-				continue
-			}
-			i = contentStart + next - 1
-			continue
-		}
-		if text[i] != '{' {
-			continue
-		}
-		end, ok := scanBalancedObject(text, i)
-		if !ok {
-			continue
-		}
-		candidate := text[i:end]
-		_, err := parseStructuredCandidate([]byte(candidate), schema)
-		if err == nil {
-			found = true
-			validationErr = nil
-			syntaxErr = nil
-		} else if isJSONSyntaxError(err) {
-			if syntaxErr == nil {
-				syntaxErr = err
-			}
-		} else if validationErr == nil {
-			validationErr = err
-		}
-		i = end - 1
-	}
-	if found {
-		return nil
-	}
-	if validationErr != nil {
-		return validationErr
-	}
-	return syntaxErr
 }
 
 // scanBalancedArray is the bracket counterpart to scanBalancedObject. It
