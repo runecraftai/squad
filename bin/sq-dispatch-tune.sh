@@ -43,8 +43,8 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 
-# Credential or token shapes; matching values are never printed.
-SECRET_SHAPE_RE='(^|[^A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]|(token|secret|passwd|password|api[_-]?key|credential)[=:]|[A-Za-z0-9_+/]{32,}'
+# Credential or token shapes; matching values are never printed. Long token runs are checked by has_secret_run.
+SECRET_SHAPE_RE='(^|[^A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]|(token|secret|passwd|password|api[_-]?key|credential)[=:]'
 
 # ── defaults ──────────────────────────────────────────────────────────────
 
@@ -197,9 +197,18 @@ status_outcome() { # <status_file>
   grep -E '^(done|failed):' "$1" 2>/dev/null | tail -1 | cut -d: -f1 || true
 }
 
+# True when a run of 32 or more token characters is not exactly a commit SHA (40 or 64 hex).
+has_secret_run() { # <value>
+  local run
+  while IFS= read -r run; do
+    [[ $run =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]] || return 0
+  done < <(printf '%s' "$1" | grep -E -o -- '[A-Za-z0-9_+/]{32,}' || true)
+  return 1
+}
+
 # Print a value, or "redacted" when it looks like a credential or token.
 redact_shape() { # <value>
-  if printf '%s' "$1" | grep -E -i -q -- "$SECRET_SHAPE_RE"; then
+  if printf '%s' "$1" | grep -E -i -q -- "$SECRET_SHAPE_RE" || has_secret_run "$1"; then
     echo redacted
   else
     printf '%s' "$1"
@@ -344,33 +353,21 @@ PY
 # Tasks with a dispatch log: the log decides lane, profile, and recommendation.
 collect_logged_tasks() {
   local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window
-  local status_file status_result outcome harness model effort recommended meta_file fallback
+  local outcome harness model effort recommended meta_file fallback
 
   while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window; do
     [ "$in_window" = "1" ] || continue
-    status_file="$STATE/$task_id.status"
-    status_result=""
-    if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
-      status_result=$(status_outcome "$status_file")
-    fi
 
     outcome="$log_outcome"
-    if [ "$outcome" = "none" ]; then
-      outcome="$status_result"
-    fi
     case "$outcome" in
       done|failed|released) ;;
-      *) continue ;; # no terminal state yet
+      *) continue ;; # no terminal state in the log
     esac
 
     case "$outcome:$log_class" in
       *:provider|*:quota) fallback="hit" ;;
-      *:guard|*:other) fallback="miss" ;;
-      released:*) fallback="unknown" ;;
-      *) fallback="unknown"
-         if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
-           fallback="pending"
-         fi ;;
+      *:guard|*:other|done:) fallback="miss" ;;
+      *) fallback="unknown" ;;
     esac
 
     harness=""; model=""; effort=""
@@ -738,7 +735,7 @@ emit_fallback_markdown() {
   echo "## Fallback Rate"
   echo ""
   echo "A fallback is a provider or quota failure, from the log's failure_class or else a blocked, paused, or failed status line."
-  echo "Teardown removes the status file, so a torn-down task without a failure_class is unknown rather than clean."
+  echo "A logged done task without a failure_class is clean; a released or failed one without a failure_class is unknown."
   echo ""
   echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (failure class or status file present)"
   echo "- **Provider or quota fallbacks:** ${hits}"

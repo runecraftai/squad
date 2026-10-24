@@ -567,8 +567,9 @@ fi
 echo ""
 echo "=== Fallback Rate ==="
 
-# Live state: closed-a (no quota wording), closed-c (provider outage), meta-only (plain failure),
-# closed-b has no status file (torn-down-like, so unknown). A "working:" mention of quota must not count.
+# Live state: closed-a and closed-b are clean done rows (logs decide, so misses), closed-c has a log
+# failed row with no class (unknown, its live provider outage is never read), meta-only is a status-only
+# done line. A "working:" mention of quota must not count.
 FALLBACK_STATE="$TMP_ROOT/fallback-state"
 mkdir -p "$FALLBACK_STATE"
 cp "$TMP_ROOT/log-meta-state/closed-a.status" "$FALLBACK_STATE/closed-a.status"
@@ -580,23 +581,23 @@ printf 'working: adding quota tests\ndone: PR https://example.invalid/pull/2 che
 cp "$META_STATE/meta-only.meta" "$FALLBACK_STATE/meta-only.meta"
 
 output=$(SQUAD_STATE_OVERRIDE="$FALLBACK_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json --fallback-rate 2>&1)
-# Overall: 3 observed (1 hit), 1 unknown, so 33.3%.
-if echo "$output" | grep -q '"fallback":{"hits":1,"observed":3,"unknown":1,"rate":33.3}'; then
-  pass "--fallback-rate counts provider or quota hits against observed tasks"
+# Overall: 3 observed (0 hits, all clean misses), 1 unknown, so 0.0%.
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":3,"unknown":1,"rate":0.0}'; then
+  pass "--fallback-rate counts only log or status failure classes, not live provider text"
 else
   fail "--fallback-rate overall wrong: $output"
 fi
 
 # A "working:" line that merely mentions quota is not a stopped run, so the meta-only task is a miss.
 output=$(SQUAD_STATE_OVERRIDE="$FALLBACK_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --json --by-lane --fallback-rate 2>&1)
-if echo "$output" | grep -q '"lane":"(no-profile)".*"fallback":{"hits":1,"observed":2,"unknown":0,"rate":50.0}'; then
+if echo "$output" | grep -q '"lane":"(no-profile)".*"fallback":{"hits":0,"observed":1,"unknown":1,"rate":0.0}'; then
   pass "--by-lane --fallback-rate reports fallback per lane"
 else
   fail "--by-lane --fallback-rate lane wrong: $output"
 fi
 
 output=$(SQUAD_STATE_OVERRIDE="$FALLBACK_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --fallback-rate 2>&1)
-if echo "$output" | grep -q '^## Fallback Rate' && echo "$output" | grep -q -- '- \*\*Fallback rate:\*\* 33.3% of observed tasks'; then
+if echo "$output" | grep -q '^## Fallback Rate' && echo "$output" | grep -q -- '- \*\*Fallback rate:\*\* 0.0% of observed tasks'; then
   pass "--fallback-rate markdown renders the fallback section"
 else
   fail "--fallback-rate markdown wrong: $output"
@@ -762,6 +763,54 @@ if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate
   pass "a quota failure superseded by a later done row is not a fallback hit"
 else
   fail "sticky quota class counted as fallback: $output"
+fi
+
+# A commit SHA in a decision reason is accepted; a longer hex run is still refused.
+SHA40=0123456789abcdef0123456789abcdef01234567
+HEX41=0123456789abcdef0123456789abcdef012345678
+SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$SECRET_DATA" "$LOG_WRITER" sha-a decision \
+  --harness claude --model sonnet --effort default --reason "commit $SHA40 landed" >/dev/null 2>&1
+SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$SECRET_DATA" "$LOG_WRITER" hex-a decision \
+  --harness claude --model sonnet --effort default --reason "$HEX41" >/dev/null 2>&1
+if [ -e "$SECRET_DATA/sha-a/dispatch.jsonl" ] && [ ! -e "$SECRET_DATA/hex-a/dispatch.jsonl" ]; then
+  pass "a commit SHA in a decision reason is stored; a 41 character hex run is refused"
+else
+  fail "SHA reason guard wrong: sha-a=$(ls "$SECRET_DATA" 2>/dev/null | tr '\n' ' ')"
+fi
+
+# A torn-down done task with no failure class is clean: a fallback miss, never unknown.
+write_log "$TMP_ROOT/clean-data" clean-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"clean-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"clean-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"clean-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T10:20:00+00:00","id":"clean-a","event":"outcome","source":"status-notify","result":"done"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/clean-data" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
+  pass "a torn-down done task with no failure class is a clean fallback miss"
+else
+  fail "done task without class not clean: $output"
+fi
+
+# The log is authoritative: a later live status line must not reclassify a logged done row as a hit.
+mkdir -p "$TMP_ROOT/authority-state"
+echo "failed: provider unavailable" > "$TMP_ROOT/authority-state/clean-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/authority-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/clean-data" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
+  pass "a logged done row is not reclassified by a later live status line"
+else
+  fail "live status reclassified a logged row: $output"
+fi
+
+# A log with no terminal outcome is not completed from a live status line either.
+write_log "$TMP_ROOT/open-data" open-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"open-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"open-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"open-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}'
+mkdir -p "$TMP_ROOT/open-state"
+echo "done: PR ok" > "$TMP_ROOT/open-state/open-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/open-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/open-data" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q '"tasks":0' && ! echo "$output" | grep -q 'no-profile'; then
+  pass "a logged task without an outcome is not completed from its status file"
+else
+  fail "logged task without outcome read from status: $output"
 fi
 
 # A status-only task with a provider-class failure line is a fallback hit, as the writer classifies it.
