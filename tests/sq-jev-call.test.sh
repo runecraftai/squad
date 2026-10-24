@@ -227,6 +227,7 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("Refactor task-management-service for risk-assessment ask-user") == "Refactor task-management-service for risk-assessment ask-user"
         assert module.redact("sk-abcd1234567890 and task-sk-abcd1234567890") == "[REDACTED] and task-[REDACTED]"
         assert module.redact("XeyJX.abc.def end") == "X[REDACTED] end"
+        assert module.redact("a, b", [""]) == "a, b"
     finally:
         server.shutdown()
         target.shutdown()
