@@ -185,8 +185,13 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 	if err != nil {
 		return fmt.Errorf("%s: create fresh launch home: %w", Name, err)
 	}
+	launched := false
+	defer func() {
+		if !launched {
+			_ = os.RemoveAll(home)
+		}
+	}()
 	if err := os.Chmod(home, 0o700); err != nil {
-		_ = os.RemoveAll(home)
 		return fmt.Errorf("%s: secure fresh launch home: %w", Name, err)
 	}
 	if err := p.mountAgentCredentials(filepath.Base(cmd.Path), home); err != nil {
@@ -239,6 +244,7 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 	cmd.Args = append([]string{bwrap}, args...)
 	cmd.Dir = p.workDir
 	cmd.Env = []string{"PATH=/usr/bin:/bin"}
+	launched = true
 	return nil
 }
 
