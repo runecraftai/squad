@@ -681,7 +681,10 @@ window_run_step_active() {  # <window> <state>
 busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
   local win=$1 state=$2 task=$3 marker=$4 age=$5 backend key rendered handed
   backend=$(task_window_backend "$win" "$state")
-  rendered=$(fm_backend_capture_rendered "$backend" "$win" "sq-$task" 2>/dev/null) || return 0
+  rendered=$(fm_backend_capture_rendered "$backend" "$win" "sq-$task" 2>/dev/null) || {
+    rm -f "$marker"
+    return 0
+  }
   key=$(_stale_key "$win")
   handed=$(cat "$state/.stale-$key" 2>/dev/null || true)
   handed=${handed#busy:}

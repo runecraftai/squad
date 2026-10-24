@@ -776,7 +776,7 @@ test_housekeeping_herdr_idle_busy_record_clears_stale() {
     [ "$(fm_backend_busy_state herdr default:w1:p4)" = idle ] || fail "herdr busy stub did not report idle"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
   ) || fail "herdr idle busy-footer housekeeping failed"
-  [ -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport lost its pending marker"
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport retained its pending marker"
   [ ! -s "$state/.subsuper-escalations" ] || fail "idle-native busy-record herdr stale was escalated"
   pass "herdr busy-record stale does not alarm without verified complete viewport evidence"
 }
@@ -804,7 +804,7 @@ test_housekeeping_herdr_resumed_stale_cleared() {
     [ "$(fm_backend_busy_state herdr default:w1:p3)" = busy ] || fail "herdr busy stub did not report busy"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
   ) || fail "herdr resumed stale housekeeping failed"
-  [ -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport lost its pending busy marker"
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport retained its pending busy marker"
   [ ! -s "$state/.subsuper-escalations" ] || fail "busy herdr stale was escalated"
   pass "busy herdr stale cannot expire without verified complete viewport evidence"
 }
