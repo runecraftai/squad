@@ -193,7 +193,9 @@ with tempfile.TemporaryDirectory() as td:
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
         brief_argv += ["--brief", str(brief), "--dry-run"]
         briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
-        assert json.loads(briefed.stdout) == {"type": "choice", "instructions":
+        assert json.loads(briefed.stdout) == {"type": "choice",
+                                              "criteria": {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"},
+                                              "instructions":
                                               "Recommend the best-fitting lane for this task. Task projection: "
                                               + json.dumps({"task_type": "feature", "title": "title", "description":
                                                             "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task; use [REDACTED] with [REDACTED].",
@@ -242,7 +244,7 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("try o3 then grok-4, gpt4 and llama3.1.") == "try [REDACTED] then [REDACTED], [REDACTED] and [REDACTED]."
         assert module.redact("pipeline claude-sonnet-5 o3-mini") == "pipeline [REDACTED] [REDACTED]"
         assert module.redact("pi day with cursor and qwen2.5") == "[REDACTED] day with [REDACTED] and [REDACTED]"
-        assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED]"
+        assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED] [REDACTED]"
     finally:
         server.shutdown()
         target.shutdown()
