@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/runecraftai/squad/compare/sq-report-v0.1.4...sq-report-v0.1.5) (2026-10-24)
+
+
+### Bug Fixes
+
+* **sq-report:** spawn the running program as the server and reap failed starts ([#277](https://github.com/runecraftai/squad/issues/277)) ([6cf9ac6](https://github.com/runecraftai/squad/commit/6cf9ac6ed200985c3ccf78a86a1a0a7927a4b70e))
+
 ## [0.1.4](https://github.com/runecraftai/squad/compare/sq-report-v0.1.3...sq-report-v0.1.4) (2026-09-08)
 
 
