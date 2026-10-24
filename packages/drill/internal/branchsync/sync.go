@@ -485,7 +485,11 @@ func (s *Service) Apply(ctx context.Context) State {
 //
 // Fail-safe rules, in the same spirit as Refresh/Apply:
 //   - An active run always refuses: only terminal runs are recoverable.
-//   - The preserved commits must be provably safe before custody moves: when
+//   - A terminal never-pushed orphan can return custody at the clean local
+//     head when its recorded object is confirmed missing in both valid repos.
+//     The loss audit and exact released local head are stamped atomically;
+//     no branch or recovery ref moves. A missing anchor alone is not loss.
+//   - Otherwise the preserved commits must be provably safe before custody moves: when
 //     already reachable from the local branch (equal/ahead), recovery pins the
 //     private anchor ref refs/drill/recover/<runID> locally without gate
 //     access; otherwise the preserved head is verified at the gate branch head

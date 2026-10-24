@@ -82,7 +82,7 @@ func runInDirWithEnv(ctx context.Context, dir string, extraEnv []string, args ..
 // ObjectMissing distinguishes an absent object from a failed Git inspection.
 // Batch mode reports missing objects on stdout with a successful exit code.
 func ObjectMissing(ctx context.Context, dir, sha string) (bool, error) {
-	if (len(sha) != 40 && len(sha) != 64) || strings.Trim(sha, "0123456789abcdef") != "" || IsZeroSHA(sha) {
+	if (len(sha) != 40 && len(sha) != 64) || strings.Trim(sha, "0123456789abcdef") != "" || strings.Trim(sha, "0") == "" {
 		return false, fmt.Errorf("invalid object identity")
 	}
 	args := []string{"cat-file", "--batch-check"}

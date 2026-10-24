@@ -295,6 +295,10 @@ func freshRunBranchOwnershipState(ctx context.Context, env *axiEnv) *branchsync.
 // no-op (the gate already had this commit). Callers must check for an existing
 // active run first (see activeRunID) and apply pre-flight guards.
 func triggerRun(ctx context.Context, env *axiEnv, branch, headSHA string, skipSteps []types.StepName, intent string, specializedReview bool) (string, error) {
+	state := inspectAxiBranchSync(ctx, env)
+	if state.State == branchsync.StateCustodyReturned && state.Pipeline.CustodyReturnNote != "" {
+		return triggerOrphanRun(ctx, env, state, branch, headSHA, skipSteps, intent, specializedReview)
+	}
 	pushOptions := formatSkipPushOptions(skipSteps)
 	if specializedReview {
 		pushOptions = append(pushOptions, specializedReviewPushOption)

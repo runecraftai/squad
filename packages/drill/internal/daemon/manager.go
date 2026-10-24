@@ -612,6 +612,11 @@ func assertGateTrustedConfigReadable(ctx context.Context, wtDir, defaultBranch, 
 // HandlePushReceived processes a push notification from the post-receive hook.
 // It creates a run, sets up a worktree, and launches pipeline execution in the background.
 func (m *RunManager) HandlePushReceived(ctx context.Context, params *ipc.PushReceivedParams) (string, error) {
+	if strings.HasPrefix(params.Ref, ipc.OrphanSubmissionPrefix) {
+		// Private submission transfers objects only. The explicit guarded IPC
+		// start selects the audited local commit, never the gate branch tip.
+		return "", nil
+	}
 	// Ref deletion (git push remote :branch) sends new SHA as all-zeros.
 	// Nothing to validate - skip pipeline.
 	if git.IsZeroSHA(params.New) {
@@ -740,6 +745,10 @@ func enableSpecializedReviewShadow(mode *config.ReviewMode) error {
 // when no intent is supplied, RunIntentSourceAgent for a new explicit
 // override, and RunIntentSourceRerun for inherited explicit intent.
 func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo, branch, headSHA, baseSHA, trigger string, skipSteps []types.StepName, intent, source string, specializedReview bool) (string, error) {
+	return m.startRunChecked(ctx, repo, branch, headSHA, baseSHA, trigger, skipSteps, intent, source, specializedReview, nil)
+}
+
+func (m *RunManager) startRunChecked(ctx context.Context, repo *db.Repo, branch, headSHA, baseSHA, trigger string, skipSteps []types.StepName, intent, source string, specializedReview bool, check func() error) (string, error) {
 	branchRole := telemetryBranchRole(branch, repo.DefaultBranch)
 	trackStartFailure := func(stage string) {
 		telemetry.Track("run", telemetry.Fields{
@@ -762,6 +771,11 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 	branchMu := lockVal.(*sync.Mutex)
 	branchMu.Lock()
 	defer branchMu.Unlock()
+	if check != nil {
+		if err := check(); err != nil {
+			return "", err
+		}
+	}
 
 	// Best-effort only: a clone's remotes may change after init. Refresh the
 	// registered URLs before constructing any run-owned Git operation, but keep
