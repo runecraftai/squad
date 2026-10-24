@@ -599,6 +599,66 @@ test_afk_busy_handoff_escalates_through_daemon_recheck() {
   pass "afk busy handoff escalates a frozen pane once, releases on progress, and defers during an active run-step"
 }
 
+# Non-afk wedge escalation end to end: the real sentry emits the expired-busy
+# wake from a static busy pane, and handle_wake must consume that exact line as an
+# escalation. "first" is the first wedge escalation; "repeat" is the threshold
+# escalation that demands deep inspection, consumed after afk is toggled on.
+busy_wedge_daemon_case() {  # <first|repeat>
+  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen hash
+  dir=$(make_supercase "busy-wedge-e2e-$case_name")
+  state="$dir/state"; fakebin="$dir/fakebin"; win="test:sq-busy-wedge"; pane="$dir/pane.txt"; out="$dir/sentry.out"
+  make_fake_crew_state "$fakebin" >/dev/null
+  printf 'Working...\n12k tokens USD 0.42' > "$pane"
+  fm_write_meta "$state/busy-wedge.meta" "window=$win" "backend=tmux" "harness=pi"
+  printf 'working: setup complete\n' > "$state/busy-wedge.status"
+  printf '%s' "$(stat -c '%s:%Y' "$state/busy-wedge.status" 2>/dev/null || stat -f '%z:%Fm' "$state/busy-wedge.status")" \
+    > "$state/.seen-busy-wedge_status"
+  gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" busy-wedge)
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" busy-wedge busy --gen "$gen" --source pi-ext --event agent-start >/dev/null
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  hash=$(printf '%s' "$(cat "$pane")" | md5sum | cut -d' ' -f1)
+  printf '%s' "$hash" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  if [ "$case_name" = repeat ]; then
+    printf '2\n' > "$state/.wedge-escalations-$key"
+  fi
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 SQUAD_WEDGE_DEMAND_INSPECT_COUNT=3 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+  sentry_pid=$!
+  wait_for_exit "$sentry_pid" 100 || fail "$case_name: sentry did not emit the expired-busy wedge wake: $(cat "$out")"
+  reason=$(grep -m1 "stale: $win (idle " "$out") || fail "$case_name: sentry wake was not a wedge escalation: $(cat "$out")"
+  grep -E "possible wedge, escalation [0-9]+, busy expired without activity" <<<"$reason" >/dev/null \
+    || fail "$case_name: wedge wake did not name the expired busy claim after its escalation: $reason"
+
+  date '+%s' > "$state/.afk"
+  (
+    kill() { :; }
+    fm_backend_send_text_submit() { :; }
+    LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+  )
+  grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+    || fail "$case_name: daemon absorbed the expired-busy wedge wake instead of escalating it: $reason"
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon kept a transient stale marker for the escalated wake"
+  if [ "$case_name" = repeat ]; then
+    grep -F "demand-deep-inspection" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+      || fail "repeat expired-busy wedge did not carry demand-deep-inspection to the daemon"
+  else
+    grep -F "demand-deep-inspection" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+      && fail "first expired-busy wedge demanded deep inspection too early"
+  fi
+  return 0
+}
+
+test_busy_wedge_escalation_reaches_daemon() {
+  busy_wedge_daemon_case first
+  busy_wedge_daemon_case repeat
+  pass "expired-busy wedge wake escalates through the daemon at first escalation and on the demand-deep-inspection repeat"
+}
+
 test_housekeeping_resumed_stale_cleared() {
   local dir state fakebin win pane key
   dir=$(make_supercase stale-resumed)
@@ -2915,6 +2975,7 @@ test_housekeeping_migrates_sentry_unpaused_marker_to_clear
 test_housekeeping_retires_sentry_seen_markers_for_torn_down_task
 test_housekeeping_seeds_pause_marker_from_status
 test_afk_busy_handoff_escalates_through_daemon_recheck
+test_busy_wedge_escalation_reaches_daemon
 test_housekeeping_persistent_stale_escalates
 test_housekeeping_resumed_stale_cleared
 test_housekeeping_paused_resurfaces_and_resets
