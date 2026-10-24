@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/runecraftai/squad/compare/drill-v0.1.10...drill-v0.1.11) (2026-10-24)
+
+
+### Bug Fixes
+
+* **drill:** recover reviewer findings payloads wrapped in prose ([#293](https://github.com/runecraftai/squad/issues/293)) ([69864d4](https://github.com/runecraftai/squad/commit/69864d40fda615de61c7de1fe9830ef2e1a111df))
+
 ## [0.1.10](https://github.com/runecraftai/squad/compare/drill-v0.1.9...drill-v0.1.10) (2026-10-24)
 
 

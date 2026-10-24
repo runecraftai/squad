@@ -468,11 +468,14 @@ classify_unknown() {  # <reason>
 
 _stale_key() { printf '%s' "$1" | tr ':/.' '___'; }
 
-stale_marker_record() {  # <window> <state>  — create if absent
-  local win=$1 state=$2 key marker
+stale_marker_record() {  # <window> <state> [busy-episode-epoch] - create or match episode
+  local win=$1 state=$2 episode=${3:-} key marker
   key=$(_stale_key "$(window_to_task "$win" "$state")")
   marker="$state/.subsuper-stale-$key"
-  [ -e "$marker" ] || _now > "$marker"
+  case "$episode" in
+    ''|*[!0-9]*) [ -e "$marker" ] || _now > "$marker" ;;
+    *) printf '%s\n' "$episode" > "$marker" ;;
+  esac
 }
 
 stale_marker_remove() {  # <window> <state>
@@ -681,8 +684,13 @@ busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
   rendered=$(fm_backend_capture_rendered "$backend" "$win" "sq-$task" 2>/dev/null) || return 0
   key=$(_stale_key "$win")
   handed=$(cat "$state/.stale-$key" 2>/dev/null || true)
+  handed=${handed#busy:}
   if [ "$(_hash_text "$rendered")" != "$handed" ]; then
     rm -f "$marker"
+    return 0
+  fi
+  if operator_is_finished "$task"; then
+    stale_marker_remove "$win" "$state"
     return 0
   fi
   if window_run_step_active "$win" "$state"; then
@@ -1371,7 +1379,7 @@ is_wake_reason() {  # <reason>
 # --- dispatch one wake reason to self-handle or escalate --------------------
 # Side effects: logging, marker records, escalation buffer appends.
 handle_wake() {  # <reason> <state>
-  local reason=$1 state=$2 decision action distilled task last stale_detail
+  local reason=$1 state=$2 decision action distilled task last stale_detail episode
   local kind="" arg=""
   case "$reason" in
     routine:*) reason=${reason#routine: } ;;
@@ -1459,7 +1467,15 @@ handle_wake() {  # <reason> <state>
           stale_marker_remove "$arg" "$state"
         else
           pause_marker_remove "$arg" "$state"
-          stale_marker_record "$arg" "$state"
+          episode=
+          case "$reason" in
+            *'(busy expired without activity)')
+              # The existing sentry timer identifies this static episode.
+              # New output gets a new epoch; replaying a handoff keeps it.
+              episode=$(cat "$state/.stale-since-$(_stale_key "$arg")" 2>/dev/null || true)
+              ;;
+          esac
+          stale_marker_record "$arg" "$state" "$episode"
         fi
       fi
       log "self-handle: $reason -> $distilled"

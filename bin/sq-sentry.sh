@@ -347,6 +347,19 @@ window_run_step_active() {  # <window>
   [ "$(operator_absorb_verdict "$(window_to_task "$1" "$STATE")")" = "working run-step" ]
 }
 
+busy_static_absorb_finished() {  # <window> <task> <hash> <since-file> <escalation-file> <suppressor-file>
+  local since age
+  since=$(cat "$4" 2>/dev/null || true)
+  case "$since" in ''|*[!0-9]*) since=0 ;; esac
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 1
+  operator_is_finished "$2" || return 1
+  printf 'busy:%s' "$3" > "$6"
+  date +%s > "$4"
+  rm -f "$5"
+  triage_log "absorbed busy (task already finished): $1"
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # sentry restart between recording the hash and recording the timer), or
@@ -1174,6 +1187,22 @@ EOF
     else
       h=$(printf '%s' "$tail40" | hash_pane)
     fi
+    # Busy suppressors are classed so they cannot swallow a later idle turn.
+    # On a static busy-to-idle transition compare the same complete viewport
+    # before returning to the idle tail hash, preserving immediate surfacing.
+    if [ "$busy_now" -ne 0 ]; then
+      case "$(cat "$sf" 2>/dev/null || true)" in
+        busy:*)
+          if rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null) \
+             && [ "$(printf '%s' "$rendered" | hash_pane)" = "$prev" ]; then
+            prev=$h
+            printf '%s' "$h" > "$hf"
+            echo 1 > "$cf"
+          fi
+          rm -f "$sf" "$ssf" "$ewf"
+          ;;
+      esac
+    fi
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
       echo "$n" > "$cf"
@@ -1279,15 +1308,33 @@ EOF
         if [ "$busy_now" -eq 0 ] && status_is_paused_or_commander_held "$last"; then
           handle_paused_stale "$w" "$task" "$h"
         elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ] && afk_present; then
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ] && ! window_run_step_active "$w"; then
-            fm_wake_append stale "$w" "stale: $w (busy expired without activity)" || exit 1
-            printf '%s' "$h" > "$sf"
-            wake "stale: $w (busy expired without activity)"
+          if [ "$(cat "$sf" 2>/dev/null || true)" != "busy:$h" ] && ! busy_static_absorb_finished "$w" "$task" "$h" "$ssf" "$ewf" "$sf"; then
+            since=$(cat "$ssf" 2>/dev/null || true)
+            case "$since" in
+              ''|*[!0-9]*) since=0 ;;
+            esac
+            if [ $(( $(date +%s) - since )) -ge "$STALE_ESCALATE_SECS" ]; then
+              if window_run_step_active "$w"; then
+                date +%s > "$ssf"
+                triage_log "absorbed busy (active run-step, wedge deferred): $w"
+              else
+                fm_wake_append stale "$w" "stale: $w (busy expired without activity)" || exit 1
+                printf 'busy:%s' "$h" > "$sf"
+                # The daemon reuses this episode epoch to reset its clock on
+                # a new hash without resetting it on a replayed handoff.
+                date +%s > "$ssf"
+                wake "stale: $w (busy expired without activity)"
+              fi
+            fi
           fi
         elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ]; then
-          printf '%s' "$h" > "$sf"
-          wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
+          printf 'busy:%s' "$h" > "$sf"
+          busy_static_absorb_finished "$w" "$task" "$h" "$ssf" "$ewf" "$sf" \
+            || wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
         else
+          if [ "$busy_now" -eq 0 ] && [ "$busy_expirable" -eq 0 ] && [ "$n" -eq 2 ]; then
+            triage_log "busy claim not evaluated for static expiry (backend $backend has no complete rendered viewport): $w"
+          fi
           rm -f "$ssf" "$ewf"
         fi
         if [ -e "$pf" ] && ! status_is_paused_or_commander_held "$last"; then
