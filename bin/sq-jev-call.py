@@ -25,10 +25,10 @@ def redact(value):
         value = value.replace(home, "~")
     value = value.replace("$HOME", "~")
     patterns = [
-        (r"(?i)\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]"),
-        (r"\bghp_[A-Za-z0-9]{8,}\b", "[REDACTED]"),
-        (r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]"),
-        (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
+        (r"(?i)sk-[A-Za-z0-9_-]{8,}", "[REDACTED]"),
+        (r"ghp_[A-Za-z0-9]{8,}", "[REDACTED]"),
+        (r"AKIA[A-Z0-9]{16}[A-Za-z0-9]*", "[REDACTED]"),
+        (r"eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
         (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
         (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
         (r"([A-Za-z][A-Za-z0-9+.-]{0,31}://)\S*@", r"\1[REDACTED]@"),
