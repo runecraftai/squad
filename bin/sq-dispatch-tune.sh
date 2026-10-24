@@ -203,19 +203,26 @@ status_outcome() { # <status_file>
 
 # True when a run of 32 or more token characters is not exactly a commit SHA (40 or 64 hex).
 has_secret_run() { # <value>
-  local run
-  while IFS= read -r run; do
+  local rest="$1" run
+  while [[ $rest =~ [A-Za-z0-9_+/]{32,} ]]; do
+    run="${BASH_REMATCH[0]}"
     [[ $run =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]] || return 0
-  done < <(printf '%s' "$1" | grep -E -o -- '[A-Za-z0-9_+/]{32,}' || true)
+    rest="${rest#*"$run"}"
+  done
   return 1
 }
 
-# Print a value, or "redacted" when it looks like a credential or token.
+# Set REDACTED to the value, or "redacted" when it looks like a credential or token.
+# Pure bash so callers avoid a subshell and external grep per value.
 redact_shape() { # <value>
-  if printf '%s' "$1" | grep -E -i -q -- "$SECRET_SHAPE_RE" || has_secret_run "$1"; then
-    echo redacted
+  local shape_re="$SECRET_SHAPE_RE" credential=0
+  shopt -s nocasematch
+  [[ $1 =~ $shape_re ]] && credential=1
+  shopt -u nocasematch
+  if [ "$credential" -eq 1 ] || has_secret_run "$1"; then
+    REDACTED=redacted
   else
-    printf '%s' "$1"
+    REDACTED="$1"
   fi
 }
 
@@ -242,8 +249,11 @@ fi
 # Append one task record after the --profile filter.
 record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended> [profile]
   local harness model effort lane recommended profile
-  harness=$(redact_shape "$2"); model=$(redact_shape "$3"); effort=$(redact_shape "$4")
-  lane=$(redact_shape "$7"); recommended="$9"
+  redact_shape "$2"; harness=$REDACTED
+  redact_shape "$3"; model=$REDACTED
+  redact_shape "$4"; effort=$REDACTED
+  redact_shape "$7"; lane=$REDACTED
+  recommended="$9"
   profile="${10:-$harness/$model/$effort}"
   if [ -n "$FILTER_PROFILE" ]; then
     case "$profile" in
@@ -396,7 +406,9 @@ collect_logged_tasks() {
 
     recommended="-"
     if [ -n "$rec_h" ]; then
-      recommended="$(redact_shape "$rec_h")/$(redact_shape "$rec_m")/$(redact_shape "$rec_e")"
+      redact_shape "$rec_h"; recommended=$REDACTED
+      redact_shape "$rec_m"; recommended+="/$REDACTED"
+      redact_shape "$rec_e"; recommended+="/$REDACTED"
     fi
     record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "${duration:-0}" \
       "$lane" "$fallback" "$recommended" "$profile"
@@ -469,14 +481,15 @@ resolve_status_fallbacks() {
   STATUS_BUCKETS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-status.XXXXXX")
   RESOLVED_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-resolved.XXXXXX")
   if command -v python3 >/dev/null 2>&1; then
-    python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" "$LOGGED_IDS" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
+    python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" "$LOG_FILE" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
 import os
 import sys
 sys.path.insert(0, sys.argv[1])
 from sq_dispatch_failure import status_failure_class
 
 state, cutoff = sys.argv[2], int(sys.argv[3])
-logged = set(sys.argv[4].split("\n"))
+with open(sys.argv[4], encoding="utf-8", errors="replace") as handle:
+    logged = {line.split("\x1f", 1)[0] for line in handle}
 try:
     names = sorted(os.listdir(state))
 except OSError:
@@ -638,7 +651,8 @@ emit_markdown() {
     echo "| Task ID | Profile | Outcome | Duration |"
     echo "|---------|---------|---------|----------|"
     sort -t$'\t' -k7,7 -k5,5 "$TASKS_FILE" | while IFS=$'\t' read -r tid _h _m _e outcome dur _p _rest; do
-      printf '| %s | %s | %s | %s |\n' "$(redact_shape "$tid")" "$(md_cell "$_p")" "$outcome" "$(fmt_duration "$dur")"
+      redact_shape "$tid"
+      printf '| %s | %s | %s | %s |\n' "$REDACTED" "$(md_cell "$_p")" "$outcome" "$(fmt_duration "$dur")"
     done
     echo ""
   fi
