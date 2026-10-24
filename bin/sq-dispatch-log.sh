@@ -111,22 +111,31 @@ if args.event == "recommendation":
     recommendation = json.loads(os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}"))
     if not isinstance(recommendation, dict) or recommendation.get("label") != "recommendation":
         raise ValueError("invalid recommendation event")
-    choice = recommendation.get("choice")
-    if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice):
-        raise ValueError("invalid recommendation choice")
-    record.update(label="recommendation", choice=choice)
-    confidence = recommendation.get("confidence")
-    if confidence is not None:
-        if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
-            raise ValueError("invalid recommendation confidence")
-        record["confidence"] = confidence
-    probabilities = recommendation.get("probabilities")
-    if probabilities is not None:
-        if not isinstance(probabilities, dict) or any(
-                not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-                for k, v in probabilities.items()):
-            raise ValueError("invalid recommendation probabilities")
-        record["probabilities"] = probabilities
+    status = recommendation.get("status")
+    if status == "unavailable":
+        reason = recommendation.get("reason")
+        if not isinstance(reason, str) or not re.fullmatch(r"[a-z][a-z_]{0,63}", reason):
+            raise ValueError("invalid recommendation reason")
+        record.update(label="recommendation", status=status, reason=reason)
+    elif status == "recommended":
+        choice = recommendation.get("choice")
+        if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice):
+            raise ValueError("invalid recommendation choice")
+        record.update(label="recommendation", status=status, choice=choice)
+        confidence = recommendation.get("confidence")
+        if confidence is not None:
+            if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                raise ValueError("invalid recommendation confidence")
+            record["confidence"] = confidence
+        probabilities = recommendation.get("probabilities")
+        if probabilities is not None:
+            if not isinstance(probabilities, dict) or any(
+                    not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
+                    for k, v in probabilities.items()):
+                raise ValueError("invalid recommendation probabilities")
+            record["probabilities"] = probabilities
+    else:
+        raise ValueError("invalid recommendation status")
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
     status = os.path.join(sys.argv[2], args.id + ".status")

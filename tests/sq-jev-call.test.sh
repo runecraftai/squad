@@ -106,30 +106,41 @@ with tempfile.TemporaryDirectory() as td:
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
 
+        def recorded():
+            path = data / "task/dispatch.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+            return [{key: value for key, value in row.items() if key != "timestamp"} for row in rows]
+
         state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
         redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
-        assert json.loads(redirect.stdout) == {"status": "error"}
-        assert not redirected and not (data / "task/dispatch.jsonl").exists()
+        assert json.loads(redirect.stdout) == {"status": "unavailable", "reason": "service_error"}
+        assert not redirected and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "service_error"}]
+        (data / "task/dispatch.jsonl").unlink()
         state["location"] = None
 
         captured.clear()
         state["reply"] = {"type": "choice", "choice": ["claude/sonnet"], "confidence": .8}
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
-        assert json.loads(unhashable.stdout) == {"status": "error"} and unhashable.stderr == ""
-        assert not (data / "task/dispatch.jsonl").exists()
+        assert json.loads(unhashable.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
+        assert unhashable.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "no_lane_match"}]
+        (data / "task/dispatch.jsonl").unlink()
         captured.clear()
         state["reply"] = {"type": "choice", "choice": "claude/sonnet"}
         bare = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(bare.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
-        bare_rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
-        assert [{key: value for key, value in row.items() if key != "timestamp"} for row in bare_rows] == [
-            {"id": "task", "event": "recommendation", "label": "recommendation", "choice": "claude/sonnet"}]
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet"}]
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = OK_REPLY
         state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": .8, "padding": "x" * 70000}
         oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
-        assert json.loads(oversized.stdout) == {"status": "error"}
-        assert not (data / "task/dispatch.jsonl").exists()
+        assert json.loads(oversized.stdout) == {"status": "unavailable", "reason": "service_error"}
+        assert recorded()[0]["reason"] == "service_error"
+        (data / "task/dispatch.jsonl").unlink()
         state["reply"] = OK_REPLY
 
         bin_dir = base / "bin"
@@ -142,7 +153,13 @@ with tempfile.TemporaryDirectory() as td:
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
                               env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
         assert time.monotonic() - started < 10
-        assert json.loads(slow.stdout) == {"status": "unavailable"}
+        assert json.loads(slow.stdout) == {"type": "choice", "instructions":
+                                           "Recommend the best-fitting lane for this task. Task projection: "
+                                           + json.dumps({"task_type": "feature", "title": "title", "description":
+                                                         "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
+                                                         "https://[REDACTED]@example.invalid [REDACTED]",
+                                                         "file_count": None},
+                                                        ensure_ascii=True, separators=(",", ":"))}
         captured.clear()
         unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
                                     env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
@@ -156,7 +173,7 @@ with tempfile.TemporaryDirectory() as td:
         assert captured["body"] == payload
         rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
         assert rows == [{"timestamp": rows[0]["timestamp"], "id":"task", "event":"recommendation",
-                         "label":"recommendation", "choice":"claude/sonnet", "confidence":.8,
+                         "label":"recommendation", "status":"recommended", "choice":"claude/sonnet", "confidence":.8,
                          "probabilities":{"claude/sonnet":.8,"pi/gpt":.2}}]
         state["reply"] = {**OK_REPLY, "probabilities": {"claude/sonnet": .8, "pi/gpt": .1, "sq-send": .1}}
         leak_data = base / "leak"
