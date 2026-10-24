@@ -315,7 +315,7 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 		}
 	}
 	if len(parsed) > 1 && isFindingsObjectSchema(validationSchema) {
-		return nil, fmt.Errorf("ambiguous structured output: found %d valid findings payloads", len(parsed))
+		return nil, fmt.Errorf("ambiguous structured output: found %d valid findings payloads; emit exactly one findings JSON object and remove the others", len(parsed))
 	}
 	switch len(parsed) {
 	case 0:
