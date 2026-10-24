@@ -527,6 +527,78 @@ test_housekeeping_persistent_stale_escalates() {
   pass "persistent stale escalates after threshold and clears its marker"
 }
 
+# End-to-end away-mode busy expiry: the real sentry hands a static busy pane off
+# as one wake, handle_wake records the daemon's stale marker from that wake, and
+# housekeeping's persistence recheck must act on it. The still-busy pane must
+# escalate once frozen, but progress or an active drill run-step must not.
+afk_busy_daemon_case() {  # <case: frozen|progress|run-step>
+  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen
+  dir=$(make_supercase "afk-busy-e2e-$case_name")
+  state="$dir/state"; fakebin="$dir/fakebin"; win="test:sq-afk-busy"; pane="$dir/pane.txt"; out="$dir/sentry.out"
+  make_fake_crew_state "$fakebin" >/dev/null
+  printf 'Working...\n12k tokens USD 0.42' > "$pane"
+  fm_write_meta "$state/afk-busy.meta" "window=$win" "backend=tmux" "harness=pi"
+  printf 'working: setup complete\n' > "$state/afk-busy.status"
+  printf '%s' "$(stat -c '%s:%Y' "$state/afk-busy.status" 2>/dev/null || stat -f '%z:%Fm' "$state/afk-busy.status")" \
+    > "$state/.seen-afk-busy_status"
+  gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" afk-busy)
+  "$ROOT/bin/sq-busy-event.sh" apply "$state" afk-busy busy --gen "$gen" --source pi-ext --event agent-start >/dev/null
+  date '+%s' > "$state/.afk"
+  key=$(printf '%s' afk-busy | tr ':/.' '___')
+
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+    SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+  sentry_pid=$!
+  wait_for_exit "$sentry_pid" 100 || fail "$case_name: afk sentry did not hand off the static busy pane: $(cat "$out")"
+  reason=$(grep -m1 "busy expired without activity" "$out") || fail "$case_name: sentry handoff did not name expired busy: $(cat "$out")"
+
+  (
+    kill() { :; }
+    fm_backend_send_text_submit() { :; }
+    LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+  )
+  [ -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon did not record a stale marker for the busy handoff"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  case "$case_name" in
+    progress) printf 'Working... (13k tokens)\n12k tokens USD 0.42' > "$pane" ;;
+    run-step) export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running' ;;
+  esac
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+    SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+    SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+  unset SQUAD_FAKE_CREW_STATE
+
+  case "$case_name" in
+    frozen)
+      grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+        || fail "frozen afk busy pane was absorbed by the daemon instead of escalating"
+      grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+        || fail "frozen afk busy escalation did not flag a possible wedge"
+      [ ! -e "$state/.subsuper-stale-$key" ] || fail "frozen afk busy escalation retained the stale marker"
+      ;;
+    progress)
+      [ ! -s "$state/.subsuper-escalations" ] || fail "progress above the static tail escalated a busy pane"
+      [ ! -e "$state/.subsuper-stale-$key" ] || fail "progress did not release the busy episode"
+      ;;
+    run-step)
+      [ ! -s "$state/.subsuper-escalations" ] || fail "an active drill run-step escalated an afk busy pane"
+      [ "$(cat "$state/.subsuper-stale-$key")" -gt $(( $(date +%s) - 240 )) ] \
+        || fail "an active drill run-step did not restart the busy escalation clock"
+      ;;
+  esac
+}
+
+test_afk_busy_handoff_escalates_through_daemon_recheck() {
+  local case_name
+  for case_name in frozen progress run-step; do
+    afk_busy_daemon_case "$case_name"
+  done
+  pass "afk busy handoff escalates a frozen pane once, releases on progress, and defers during an active run-step"
+}
+
 test_housekeeping_resumed_stale_cleared() {
   local dir state fakebin win pane key
   dir=$(make_supercase stale-resumed)
@@ -2842,6 +2914,7 @@ test_housekeeping_migrates_sentry_pause_marker
 test_housekeeping_migrates_sentry_unpaused_marker_to_clear
 test_housekeeping_retires_sentry_seen_markers_for_torn_down_task
 test_housekeeping_seeds_pause_marker_from_status
+test_afk_busy_handoff_escalates_through_daemon_recheck
 test_housekeeping_persistent_stale_escalates
 test_housekeeping_resumed_stale_cleared
 test_housekeeping_paused_resurfaces_and_resets
