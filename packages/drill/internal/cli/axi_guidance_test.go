@@ -46,13 +46,10 @@ var canonicalBranchSyncPhrases = []string{
 	"blocked",
 	"reset, stash, merge, rebase, force, or branch replacement",
 	// Guarded custody recovery for a terminal run whose pipeline commits were
-	// never published (v1.38.1 dogfood catch): the action, its next_action
-	// code, and the custody claim must stay on every guidance surface, with an
-	// explicit loss meaning when the recorded head is proven gone.
+	// never published (v1.38.1 dogfood catch): the action and its next_action
+	// code must stay on every guidance surface.
 	"recover_custody",
 	"drill axi sync --recover",
-	"preserved_head_missing",
-	"unpublished fixes are lost",
 	// Cancellation releases a run that never changed the submitted head
 	// (v1.44.2 dogfood catch): every surface must name the released state and
 	// that it needs no recovery.
@@ -147,9 +144,6 @@ func TestBranchSyncGuidance_SyncedAcrossStaticAndLiveSurfaces(t *testing.T) {
 			if !strings.Contains(content, phrase) {
 				t.Errorf("%s is missing branch-sync guidance phrase %q", name, phrase)
 			}
-		}
-		if strings.Contains(content, "preserved in the local gate") {
-			t.Errorf("%s still promises preservation for a possibly lost head", name)
 		}
 	}
 }

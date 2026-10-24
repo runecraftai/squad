@@ -11,6 +11,7 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/db"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
+	"github.com/runecraftai/squad/packages/drill/internal/paths"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
@@ -18,6 +19,7 @@ import (
 type releasedOrphanFixture struct {
 	client   *ipc.Client
 	db       *db.DB
+	paths    *paths.Paths
 	repo     *db.Repo
 	local    string
 	gate     string
@@ -61,7 +63,7 @@ func newReleasedOrphanFixture(t *testing.T) releasedOrphanFixture {
 	}
 	t.Cleanup(func() { client.Close() })
 	return releasedOrphanFixture{
-		client: client, db: d, repo: repo, local: local, gate: p.RepoDir(repo.ID),
+		client: client, db: d, paths: p, repo: repo, local: local, gate: p.RepoDir(repo.ID),
 		branch: branch, released: released, priorID: prior.ID,
 	}
 }
@@ -242,6 +244,35 @@ func TestOrphanStartClearsStalePrivateSubmission(t *testing.T) {
 		}
 		if got := gitOutput(t, f.gate, "rev-parse", ref+"^{commit}"); got != first {
 			t.Fatalf("live owner lost its submission: %s, want %s", got, first)
+		}
+	})
+
+	t.Run("live owner keeps the submission under the branch lock", func(t *testing.T) {
+		f := newReleasedOrphanFixture(t)
+		ref := ipc.OrphanSubmissionPrefix + f.priorID
+		gateBefore := gitOutput(t, f.gate, "rev-parse", "refs/heads/"+f.branch)
+		first := commitReleasedOrphanHead(t, f, "first.txt")
+		gitCmd(t, f.local, "push", f.gate, first+":"+ref)
+		head := commitReleasedOrphanHead(t, f, "second.txt")
+		// A run that goes live after the request-level ownership check must
+		// still keep its submission when the in-lock proof runs again.
+		if _, err := f.db.InsertRun(f.repo.ID, f.branch, head, f.released); err != nil {
+			t.Fatal(err)
+		}
+		prior, err := f.db.GetRun(f.priorID)
+		if err != nil || prior == nil {
+			t.Fatalf("released orphan: %#v, %v", prior, err)
+		}
+		manager := NewRunManager(f.db, f.paths, nil)
+		err = manager.clearStaleOrphanSubmission(context.Background(), f.repo, prior, head)
+		if err == nil || !strings.Contains(err.Error(), "orphan_start_refused") {
+			t.Fatalf("in-lock ownership proof admitted a live run: %v", err)
+		}
+		if got := gitOutput(t, f.gate, "rev-parse", ref+"^{commit}"); got != first {
+			t.Fatalf("live owner lost its submission under the branch lock: %s, want %s", got, first)
+		}
+		if gitOutput(t, f.local, "rev-parse", "HEAD") != head || gitOutput(t, f.gate, "rev-parse", "refs/heads/"+f.branch) != gateBefore {
+			t.Fatal("in-lock refusal moved a branch")
 		}
 	})
 }
