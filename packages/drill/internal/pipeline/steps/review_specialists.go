@@ -62,11 +62,7 @@ type reviewConsolidation struct {
 const reviewConsolidationSchema = `{"type":"object","required":["findings","inspected_files","risk_level","risk_rationale","risk_scope"],"properties":{"findings":{"type":"array","items":{"type":"object","required":["severity","description","action","review_scope"],"properties":{"severity":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"review_scope":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"}}}},"inspected_files":{"type":"array","items":{"type":"string"}},"risk_level":{"type":"string","enum":["low","medium","high"]},"risk_rationale":{"type":"string"},"risk_scope":{"type":"string","enum":["source-or-external","pipeline-owned-delivery"]}}}`
 
 // RunStandaloneReview captures a local immutable range and runs the same specialist and consolidation engine used by ReviewStep.
-func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, headSHA, intent string, maxParallel int, timeout time.Duration, logf func(string), policies ...agent.ProcessExecutionPolicy) (Findings, error) {
-	var policy agent.ProcessExecutionPolicy
-	if len(policies) > 0 {
-		policy = policies[0]
-	}
+func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, headSHA, intent string, maxParallel int, timeout time.Duration, logf func(string), policy agent.ProcessExecutionPolicy) (Findings, error) {
 	diff, err := git.Run(ctx, repoDir, "diff", "--no-ext-diff", "--binary", baseSHA+".."+headSHA)
 	if err != nil {
 		return Findings{}, fmt.Errorf("capture review snapshot diff: %w", err)
@@ -263,11 +259,7 @@ func validateReviewLensOutput(output reviewLensOutput) error {
 	return nil
 }
 
-func runReviewSpecialists(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, maxParallel int, timeout time.Duration, logf func(string), policies ...agent.ProcessExecutionPolicy) []reviewLensResult {
-	var policy agent.ProcessExecutionPolicy
-	if len(policies) > 0 {
-		policy = policies[0]
-	}
+func runReviewSpecialists(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, maxParallel int, timeout time.Duration, logf func(string), policy agent.ProcessExecutionPolicy) []reviewLensResult {
 	batchStarted := time.Now()
 	batchID := fmt.Sprintf("%s-%x", shortReviewSHA(snapshot.TargetHeadSHA), batchStarted.UnixNano())
 	if logf != nil {
@@ -324,9 +316,9 @@ dispatch:
 	return results
 }
 
-func prepareReviewLensExecutionCopy(checkout string) error {
+func prepareReviewLensExecutionCopy(root, checkout string) error {
 	gitDir := filepath.Join(checkout, ".git")
-	privateGitDir := filepath.Join(checkout, ".review-git")
+	privateGitDir := filepath.Join(root, "review-git")
 	if err := os.Rename(gitDir, privateGitDir); err != nil {
 		return fmt.Errorf("isolate lens Git metadata: %w", err)
 	}
@@ -349,6 +341,10 @@ func runReviewLens(ctx context.Context, a agent.Agent, policy agent.ProcessExecu
 	out.Lens = lens.name
 	started := time.Now()
 	defer func() { out.Duration = time.Since(started) }()
+	if policy == nil {
+		out.Err = fmt.Errorf("lens %s requires the mandatory execution policy", lens.name)
+		return
+	}
 	root, err := os.MkdirTemp("", "drill-review-lens-")
 	if err != nil {
 		out.Err = err
@@ -364,23 +360,19 @@ func runReviewLens(ctx context.Context, a agent.Agent, policy agent.ProcessExecu
 		out.Err = fmt.Errorf("checkout isolated lens snapshot: %w", err)
 		return
 	}
-	if policy != nil {
-		if err := prepareReviewLensExecutionCopy(checkout); err != nil {
-			out.Err = fmt.Errorf("prepare confined review lens: %w", err)
-			return
-		}
+	if err := prepareReviewLensExecutionCopy(root, checkout); err != nil {
+		out.Err = fmt.Errorf("prepare confined review lens: %w", err)
+		return
 	}
 	lensCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if policy != nil {
-		lensPolicy, err := executionpolicy.New(checkout)
-		if err != nil {
-			out.Err = fmt.Errorf("create confined review lens: %w", err)
-			return
-		}
-		defer lensPolicy.Close()
-		policy = lensPolicy
+	lensPolicy, err := executionpolicy.New(checkout)
+	if err != nil {
+		out.Err = fmt.Errorf("create confined review lens: %w", err)
+		return
 	}
+	defer lensPolicy.Close()
+	policy = lensPolicy
 	prompt := string(snapshot.ContextForLens(lens.prompt)) + "\nReturn JSON only matching the supplied schema. Include every inspected file."
 	if logf != nil {
 		logf("review lens " + lens.name + " started")

@@ -46,7 +46,7 @@ func TestSpecializedReviewBatchTelemetryUsesWallTimeAndAdditiveUsage(t *testing.
 		mu.Lock()
 		logs = append(logs, line)
 		mu.Unlock()
-	})
+	}, fixtureExecutionPolicy{dir: dir})
 	wall := time.Since(started)
 	var summed time.Duration
 	for _, result := range results {
@@ -72,8 +72,8 @@ func TestSpecializedReviewRetryUsesNewBatchAndCurrentHead(t *testing.T) {
 	a := controlledReviewAgent{run: func(context.Context, agent.RunOpts) (*agent.Result, error) {
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
-	first := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, nil)
-	second := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, nil)
+	first := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, nil, fixtureExecutionPolicy{dir: dir})
+	second := runReviewSpecialists(context.Background(), a, dir, snapshot, len(reviewLensInstructions), time.Second, nil, fixtureExecutionPolicy{dir: dir})
 	if len(first) != len(reviewLensInstructions) || len(second) != len(reviewLensInstructions) {
 		t.Fatalf("batch lens counts = %d/%d", len(first), len(second))
 	}
@@ -125,7 +125,7 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, time.Second, nil)
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, time.Second, nil, fixtureExecutionPolicy{dir: dir})
 	if peak.Load() != 2 {
 		t.Fatalf("peak concurrency = %d, want 2", peak.Load())
 	}
@@ -163,7 +163,7 @@ func TestSpecializedReviewBatch_DiscardsLensMutationAndPreservesOfficialWorktree
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 6, time.Second, nil)
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 6, time.Second, nil, fixtureExecutionPolicy{dir: dir})
 	for _, result := range results {
 		if result.Err != nil {
 			t.Fatal(result.Err)
@@ -738,7 +738,7 @@ func TestSpecializedReviewBatch_CancellationReapsAgentProcess(t *testing.T) {
 		return nil, err
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 1, 100*time.Millisecond, nil)
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 1, 100*time.Millisecond, nil, fixtureExecutionPolicy{dir: dir})
 	if results[0].Err == nil || pid.Load() == 0 || results[0].Duration <= 0 || !reaped.Load() {
 		t.Fatalf("child cleanup result=%#v pid=%d reaped=%v", results[0], pid.Load(), reaped.Load())
 	}
@@ -754,7 +754,7 @@ func TestSpecializedReviewBatch_CancellationAndTimeoutReleaseResources(t *testin
 	cancel()
 	a := controlledReviewAgent{run: func(ctx context.Context, _ agent.RunOpts) (*agent.Result, error) { <-ctx.Done(); return nil, ctx.Err() }}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(ctx, a, dir, snapshot, 2, time.Second, nil)
+	results := runReviewSpecialists(ctx, a, dir, snapshot, 2, time.Second, nil, fixtureExecutionPolicy{dir: dir})
 	for _, result := range results {
 		if result.Err == nil {
 			t.Fatalf("cancelled lens reported success: %#v", result)
@@ -768,7 +768,7 @@ func TestSpecializedReviewBatch_CancellationAndTimeoutReleaseResources(t *testin
 		return nil, ctx.Err()
 	}}
 	before, _ := filepath.Glob(filepath.Join(tempRoot, "drill-review-lens-*"))
-	results = runReviewSpecialists(context.Background(), timed, dir, snapshot, 1, time.Millisecond, nil)
+	results = runReviewSpecialists(context.Background(), timed, dir, snapshot, 1, time.Millisecond, nil, fixtureExecutionPolicy{dir: dir})
 	for _, result := range results {
 		if result.Err == nil || result.Duration <= 0 {
 			t.Fatalf("timeout lacks error/duration: %#v", result)
@@ -815,7 +815,7 @@ func TestStandaloneReviewPopulatesRiskFields(t *testing.T) {
 			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
 		}
 	}}
-	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil)
+	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil, fixtureExecutionPolicy{dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
