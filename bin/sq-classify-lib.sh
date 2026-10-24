@@ -69,9 +69,10 @@ SQUAD_CLASSIFY_COMMANDER_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR r
 # to declare it is intentionally idling on a KNOWN external dependency - an
 # upstream release, a vendor rate-limit reset, a scheduled window. Unlike
 # `blocked:` (stuck, Squad must help) an idle `paused:` pane is EXPECTED, so
-# the stale path absorbs it instead of escalating a possible wedge. It is
-# deliberately NOT in the commander-relevant set above: a pause is a "stop
-# wedge-nagging this idle pane" signal, not work to keep surfacing. This constant
+# the stale path normally absorbs it instead of escalating a possible wedge.
+# The sentry's independent dirty-worktree and pause-age limits are owned by
+# bin/sq-sentry.sh; the verb alone is not proof that unfinished work is safe.
+# It is deliberately NOT in the commander-relevant set above. This constant
 # is the ONE definition of the verb; both the sentry and the daemon read it here
 # (status_is_paused) rather than hardcoding the literal, so the vocabulary cannot
 # drift between the two consumers. SQUAD_CLASSIFY_PAUSED_VERB overrides it.
@@ -118,6 +119,22 @@ last_status_state_line() {  # <status-file>
     effective=$line
   done < "$f"
   printf '%s' "$effective"
+}
+
+# Identity of the effective declared pause in an append-only status stream.
+# A fresh declaration (even identical text) renews it; resolved events do not.
+# The ordinal survives restarts without making unrelated appends renew the wait.
+status_pause_episode() {  # <status-file> -> record ordinal, or empty
+  local f=$1 line episode='' n=0
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    [ -n "${line//[[:space:]]/}" ] || continue
+    [ "$(status_line_verb "$line")" = resolved ] && continue
+    episode=
+    status_is_paused "$line" && episode=$n
+  done < "$f"
+  printf '%s' "$episode"
 }
 
 # 0 if the given (last) status line's leading verb is a real terminal commander verb

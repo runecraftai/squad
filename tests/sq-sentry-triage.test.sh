@@ -3371,6 +3371,161 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
+# The dirty clock is independent of both pane hashes and the pause cadence.
+# Use real Git dirt, not a canned cleanliness verdict.
+start_pause_watch() {  # <extra env assignments...>
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_TMUX_CURRENT_COMMAND=zsh SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_FAKE_CREW_STATE='state: paused · source: status-log · external wait' \
+    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+    "$@" "$WATCH" >> "$out" &
+  pid=$!
+}
+
+pause_worktree_case() {
+  dir=$(make_case "$1"); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-held"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  wt="$dir/work tree"
+  git init -q "$wt"
+  printf 'window=%s\nkind=strike\nworktree=%s\n' "$window" "$wt" > "$state/held.meta"
+  printf 'paused: waiting for upstream\n' > "$state/held.status"
+  printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+  printf 'idle external wait' > "$capture_file"
+  printf '%s' "$(hash_text 'idle external wait')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+}
+
+test_idle_dirty_pause_escalates() {
+  local dir state fakebin out capture_file window key wt pid i
+  pause_worktree_case dirty-pause
+  for i in 1 2 3 4 5 6; do printf 'base\n' > "$wt/tracked-$i"; done
+  git -C "$wt" add .
+  git -C "$wt" -c user.name=Test -c user.email=test@example.invalid commit -qm base
+  for i in 1 2 3 4 5 6; do printf 'unfinished\n' >> "$wt/tracked-$i"; done
+  i=1
+  while [ "$i" -le 43 ]; do printf 'unfinished\n' > "$wt/untracked-$i"; i=$((i + 1)); done
+  [ "$(git -C "$wt" status --porcelain | wc -l | tr -d ' ')" = 49 ] || fail "measured dirty fixture is not 6 modified + 43 untracked files"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=2
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "idle dirty declared pause never escalated"; }
+  grep -F 'idle with uncommitted work' "$out" >/dev/null || fail "dirty pause lost its explicit reason: $(cat "$out")"
+  grep -F 'idle with uncommitted work' "$state/.stand-to-queue" >/dev/null || fail "dirty stall was not durably queued"
+  pass "idle uncommitted work escalates despite a fresh declared pause"
+}
+
+test_clean_fresh_pause_suppresses() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case clean-pause
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 35 || { reap "$pid"; fail "clean fresh pause escalated: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "clean pause printed a wake"
+  pass "a clean fresh declared pause still suppresses stale alarms"
+}
+
+test_pause_ages_out_once_per_episode() {
+  local dir state fakebin out capture_file window key wt pid round
+  pause_worktree_case pause-age
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=2
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "declared pause never aged out"; }
+  grep -F 'declared pause aged out' "$out" >/dev/null || fail "pause age-out lost its explicit reason"
+  grep -F 'confirm or clear' "$out" >/dev/null || fail "pause age-out did not request confirmation"
+  # Restart and change the pane. Neither can renew an expired pause.
+  printf 'idle external wait with a changed footer' > "$capture_file"
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=2 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_live "$pid" 35 || { reap "$pid"; fail "expired pause escalated again: $(cat "$out")"; }
+  reap "$pid"
+  [ "$(grep -c 'declared pause aged out' "$state/.stand-to-queue")" = 1 ] || fail "pause age-out was not one-shot"
+  # An unrelated resolution does not renew the pause episode.
+  printf 'resolved [key=other]: unrelated decision\n' >> "$state/held.status"
+  printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=2 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_live "$pid" 25 || { reap "$pid"; fail "unrelated resolution renewed the pause"; }
+  reap "$pid"
+  # A fresh declaration, even with identical text, permits exactly one new alarm.
+  for round in renewed cleared; do
+    [ "$round" != cleared ] || printf 'working: resumed\n' >> "$state/held.status"
+    printf 'paused: waiting for upstream\n' >> "$state/held.status"
+    printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+    start_pause_watch env SQUAD_PAUSE_MAX_SECS=2
+    wait_for_exit "$pid" 80 || { reap "$pid"; fail "$round pause never aged out"; }
+  done
+  [ "$(grep -c 'declared pause aged out' "$state/.stand-to-queue")" = 3 ] || fail "renewed/cleared pauses did not re-arm ageing"
+  pass "pause ageing escalates once across restarts and footer changes, re-arming only on renewal or clearance"
+}
+
+test_dirty_pause_protections() {
+  local dir state fakebin out capture_file window key wt pid mode
+  for mode in busy run-step terminal clean; do
+    pause_worktree_case "dirty-protected-$mode"
+    printf 'unfinished\n' > "$wt/untracked"
+    printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.dirty-since-$key"
+    case "$mode" in
+      busy)
+        printf 'harness=pi\n' >> "$state/held.meta"
+        record_pi_busy "$state" held
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=0
+        ;;
+      run-step)
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=0 \
+          SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating'
+        ;;
+      terminal)
+        printf 'done: finished\n' > "$state/held.status"
+        printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_FAKE_CREW_STATE='state: done · source: run-step · passed'
+        ;;
+      clean)
+        rm "$wt/untracked"
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+        ;;
+    esac
+    wait_live "$pid" 25 || { reap "$pid"; fail "$mode did not defer dirty/pause escalation: $(cat "$out")"; }
+    reap "$pid"
+    [ ! -s "$out" ] || fail "$mode emitted an alarm"
+    if [ "$mode" = run-step ]; then
+      [ "$(cat "$state/.dirty-since-$key")" -gt "$(( $(date +%s) - 500 ))" ] || fail "active run did not defer the dirty timer"
+    else
+      [ ! -e "$state/.dirty-since-$key" ] || fail "$mode did not reset the dirty timer"
+    fi
+  done
+  pass "busy, active run-step, terminal, and cleaned worktrees preserve their protections"
+}
+
+test_dirty_staged_pause_survives_footer_change() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case dirty-staged-footer
+  printf 'staged unfinished work\n' > "$wt/staged"
+  git -C "$wt" add .
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=240
+  wait_numeric_file "$state/.dirty-since-$key" 40 || { reap "$pid"; fail "staged work did not start the dirty clock"; }
+  reap "$pid"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.dirty-since-$key"
+  printf 'idle external wait with a changed footer\n' > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=240
+  wait_for_exit "$pid" 40 || { reap "$pid"; fail "footer change or restart hid staged unfinished work"; }
+  grep -F 'idle with uncommitted work' "$out" >/dev/null || fail "staged work lost the dirty reason"
+  pass "staged unfinished work keeps its idle clock across a restart and changing footer"
+}
+
+test_pause_episode_classifier() {
+  local dir state
+  dir=$(make_case pause-episode-classifier); state="$dir/state"
+  printf 'paused: upstream\nresolved: unrelated\n' > "$state/a.status"
+  [ "$(status_pause_episode "$state/a.status")" = 1 ] || fail "resolution renewed pause identity"
+  printf 'paused: upstream\n' >> "$state/a.status"
+  [ "$(status_pause_episode "$state/a.status")" = 3 ] || fail "identical pause did not renew identity"
+  printf 'working: resumed\n' >> "$state/a.status"
+  [ -z "$(status_pause_episode "$state/a.status")" ] || fail "working did not clear pause identity"
+  pass "pause identity renews on declarations, not resolutions, and clears on resumed work"
+}
+
+test_idle_dirty_pause_escalates
+test_dirty_staged_pause_survives_footer_change
+test_pause_episode_classifier
+test_dirty_pause_protections
+test_clean_fresh_pause_suppresses
+test_pause_ages_out_once_per_episode
 test_signal_reason_is_actionable_classifier
 test_stale_is_terminal_classifier
 test_scan_commander_relevant_statuses_classifier

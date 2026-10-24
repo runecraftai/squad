@@ -7,7 +7,12 @@
 # actively-running drill step, or a backend busy signal), and surfaced
 # otherwise, so an operator that finishes (or stops and waits) without a current
 # working signal is never silently swallowed. A declared external-wait pause is
-# the separate idle absorb case and re-surfaces only on its long bounded cadence,
+# the separate idle absorb case, bounded by SQUAD_PAUSE_MAX_SECS (default 3600).
+# Idle uncommitted work independently escalates after SQUAD_STALE_ESCALATE_SECS,
+# even under a declared pause. Both checks defer to active drill run-steps;
+# busy panes and terminal tasks do not enter the dirty-worktree clock.
+# A pause ages out once per declaration, asking Squad to confirm or clear it,
+# rather than repeating on every poll. Before that it uses the long cadence,
 # although its initial no-verb status signal still surfaces in normal mode.
 # While state/.afk exists, the daemon owns triage and this sentry queues and exits
 # on every wake. Printed reason lines:
@@ -169,6 +174,7 @@ STALE_ESCALATE_SECS=${SQUAD_STALE_ESCALATE_SECS:-240}  # idle secs before a prov
 # These cases re-surface once for a recheck every PAUSE_RESURFACE_SECS - far
 # longer than the wedge threshold, but finite so a forgotten hold cannot rot invisibly.
 PAUSE_RESURFACE_SECS=${SQUAD_PAUSE_RESURFACE_SECS:-$SQUAD_PAUSE_RESURFACE_SECS_DEFAULT}
+PAUSE_MAX_SECS=${SQUAD_PAUSE_MAX_SECS:-3600}  # one age-out escalation per declared pause
 # Consecutive event-path failures (fm_backend_wait_transition returning 2 -
 # connect/subscribe failure) before the push fast-path is disabled for the rest
 # of this sentry process and the loop reverts to pure polling (report section
@@ -270,7 +276,7 @@ recorded_windows() {
 # is a backend target mangled by tr ':/.' '___' - the same transform
 # sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
 # is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
-SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .stale-since- .stale- .paused- .count- .hash-"
+SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .stale-since- .stale- .paused- .count- .hash-"
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
@@ -285,7 +291,8 @@ drop_window_markers() {  # <window>
   key=$(printf '%s' "$win" | tr ':/.' '___')
   rm -f "$STATE/.hash-$key" "$STATE/.count-$key" "$STATE/.stale-$key" \
     "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
-    "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
+    "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key" \
+    "$STATE/.dirty-since-$key" "$STATE/.pause-episode-$key"
 }
 
 # drop_orphan_window_markers: re-derive which keys still belong to a live task
@@ -308,7 +315,7 @@ drop_orphan_window_markers() {
     live="$live$(printf '%s' "$w" | tr ':/.' '___') "
   done < <(recorded_windows)
   for f in "$STATE"/.wedge-escalations-* "$STATE"/.paused-resurfaced-* \
-           "$STATE"/.paused-rechecked-* "$STATE"/.stale-* \
+           "$STATE"/.paused-rechecked-* "$STATE"/.pause-episode-* "$STATE"/.dirty-since-* "$STATE"/.stale-* \
            "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
     [ -e "$f" ] || continue
     base=${f##*/}
@@ -404,6 +411,67 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       fi
       ;;
   esac
+}
+
+# Independent of pane hashes and pause suppression: an idle dirty worktree is
+# unfinished work, even if a footer keeps changing. Never write the Git index.
+# Reset on busy/clean/terminal; report once per continuous idle-dirty episode.
+dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
+  local win=$1 task=$2 marker="$STATE/.dirty-since-$3" busy=$4 last=$5 wt dirt since age reason
+  if [ "$busy" -eq 0 ] || status_is_terminal_verb "$last"; then
+    rm -f "$marker"
+    return
+  fi
+  wt=$(awk '/^worktree=/ {sub(/^worktree=/, ""); print; exit}' "$STATE/$task.meta")
+  dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null) || dirt=
+  if [ -z "$dirt" ]; then
+    rm -f "$marker"
+    return
+  fi
+  since=$(cat "$marker" 2>/dev/null || true)
+  case "$since" in
+    reported) return ;;
+    ''|*[!0-9]*) date +%s > "$marker"; return ;;
+  esac
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 0
+  if window_run_step_active "$win" || operator_is_finished "$task"; then
+    date +%s > "$marker"
+    return
+  fi
+  reason="stale: $win (operator idle with uncommitted work for ${age}s; inspect the unfinished work)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf 'reported\n' > "$marker"
+  wake "$reason"
+}
+
+# Keep pause identity and age separate from hash/cadence markers. Return 0
+# for expired pauses, so ordinary pause rechecks cannot repeat the escalation.
+# Initial age uses the status mtime (the log has no event timestamps); later
+# unrelated appends cannot move the clock. Active runs and busy panes defer.
+pause_age_check() {  # <window> <task> <key> <busy: 0=yes>
+  local win=$1 task=$2 marker="$STATE/.pause-episode-$3" busy=$4 episode saved since reported age reason
+  episode=$(status_pause_episode "$STATE/$task.status")
+  if [ -z "$episode" ]; then rm -f "$marker"; return 1; fi
+  saved='' since='' reported=''
+  read -r saved since reported 2>/dev/null < "$marker" || true
+  if [ "$saved" != "$episode" ] || [[ ! "$since" =~ ^[0-9]+$ ]]; then
+    since=$(stat_mtime "$STATE/$task.status")
+    reported=0
+    printf '%s %s 0\n' "$episode" "$since" > "$marker"
+  fi
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$PAUSE_MAX_SECS" ] || return 1
+  [ "$busy" -ne 0 ] || return 0
+  window_run_step_active "$win" && return 1
+  operator_is_finished "$task" && return 0
+  if [ "$reported" != 1 ]; then
+    reason="stale: $win (declared pause aged out after ${age}s; confirm or clear the declared pause)"
+    fm_wake_append stale "$win" "$reason" || exit 1
+    printf '%s %s 1\n' "$episode" "$since" > "$marker"
+    wake "$reason"
+  fi
+  return 0
 }
 
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
@@ -1180,6 +1248,16 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    if [ "$kind" != xo ]; then
+      dirty_worktree_check "$w" "$task" "$key" "$busy_now" "$last"
+    fi
+    if status_is_paused "$last"; then
+      if pause_age_check "$w" "$task" "$key" "$busy_now"; then
+        continue
+      fi
+    else
+      rm -f "$STATE/.pause-episode-$key"
+    fi
     busy_expirable=0
     episode_busy=0
     case "$(cat "$sf" 2>/dev/null || true)" in
