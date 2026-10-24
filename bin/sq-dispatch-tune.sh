@@ -19,7 +19,7 @@
 # Profile = harness + model + effort. The dispatched profile is the log's spawn
 # row; a log without one uses state/<id>.meta, then the decision's recommended
 # profile. A task without a log uses state/<id>.meta. With none of these, the
-# profile is "(no-profile)".
+# profile is "no-profile/no-profile/no-profile", a bucket outside the chosen-model totals.
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
@@ -55,6 +55,7 @@ FILTER_PROFILE=""
 VERBOSE=0
 BY_LANE=0
 FALLBACK_RATE=0
+NO_PROFILE_LABEL="no-profile/no-profile/no-profile"
 
 # ── usage ─────────────────────────────────────────────────────────────────
 
@@ -387,7 +388,7 @@ collect_logged_tasks() {
     fi
     profile=""
     if [ -z "$harness$model$effort" ]; then
-      profile="(no-profile)"
+      profile="$NO_PROFILE_LABEL"
     fi
     harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
 
@@ -423,12 +424,15 @@ collect_status_tasks() {
     [ -z "$outcome" ] && continue  # skip tasks with no terminal state
 
     # Read metadata.
-    harness=""; model=""; effort=""
+    harness=""; model=""; effort=""; profile=""
     meta_file="$STATE/$task_id.meta"
     if [ -f "$meta_file" ]; then
       harness=$(meta_value "$meta_file" harness)
       model=$(meta_value "$meta_file" model)
       effort=$(meta_value "$meta_file" effort)
+    fi
+    if [ -z "$harness$model$effort" ]; then
+      profile="$NO_PROFILE_LABEL"
     fi
     harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
 
@@ -444,7 +448,7 @@ collect_status_tasks() {
       fallback="pending"
     fi
     record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "$duration" \
-      "(no-profile)" "$fallback" "-"
+      "(no-profile)" "$fallback" "-" "$profile"
   done
 }
 
@@ -555,7 +559,7 @@ compute_metrics() {
 # Per-lane rows: L lane dispatches successes failures off-recommendation fallback-hits observed;
 # C lane chosen-profile dispatches. Sorted so each lane's L row precedes its C rows.
 compute_lanes() {
-  awk -F'\t' '
+  awk -F'\t' -v no_profile="$NO_PROFILE_LABEL" '
   {
     lane = $8
     total[lane]++
@@ -564,7 +568,7 @@ compute_lanes() {
     if ($10 != "-" && $10 != $7) off[lane]++
     if ($9 == "hit") hit[lane]++
     if ($9 == "hit" || $9 == "miss") observed[lane]++
-    chosen[lane SUBSEP $7]++
+    if ($7 != no_profile) chosen[lane SUBSEP $7]++
   }
   END {
     for (l in total)
@@ -602,6 +606,8 @@ emit_markdown() {
 
   # Summary table.
   echo "## Per-Profile Metrics"
+  echo ""
+  echo "Success rate is done / (done + failed); released counts as a dispatch, never as a success or failure."
   echo ""
   echo "| Profile | Tasks | Success Rate | Avg Duration |"
   echo "|---------|------:|-------------:|-------------:|"
@@ -691,7 +697,7 @@ emit_markdown() {
     echo "| Task ID | Profile | Outcome | Duration |"
     echo "|---------|---------|---------|----------|"
     sort -t$'\t' -k7,7 -k5,5 "$TASKS_FILE" | while IFS=$'\t' read -r tid _h _m _e outcome dur _p _rest; do
-      printf '| %s | %s | %s | %s |\n' "$(redact_shape "$tid")" "$_h/$_m/$_e" "$outcome" "$(fmt_duration "$dur")"
+      printf '| %s | %s | %s | %s |\n' "$(redact_shape "$tid")" "$_p" "$outcome" "$(fmt_duration "$dur")"
     done
     echo ""
   fi
@@ -704,6 +710,8 @@ emit_lanes_markdown() {
   echo "## Lanes"
   echo ""
   echo "A lane is the decision profile recorded at intake; (no-profile) covers decisions that recorded only a reason and tasks without a log."
+  echo ""
+  echo "Success rate is done / (done + failed); released counts as a dispatch, never as a success or failure."
   echo ""
   if [ "$FALLBACK_RATE" -eq 1 ]; then
     echo "| Lane | Dispatches | Chosen Models | Off Recommendation | Success Rate | Fallback Rate |"
