@@ -85,7 +85,7 @@ def main():
     parser.add_argument("--project-config", default="config/crew-dispatch.json")
     parser.add_argument("--file-count", type=int)
     parser.add_argument("--lanes-json", help="JSON object mapping allowed lane ids to descriptions")
-    parser.add_argument("--config", default=os.environ.get("SQUAD_CONFIG_OVERRIDE", "config/jev-dispatch.json"))
+    parser.add_argument("--config", default=os.path.join(os.environ.get("SQUAD_CONFIG_OVERRIDE", "config"), "jev-dispatch.json"))
     parser.add_argument("--data", default=os.environ.get("SQUAD_DATA_OVERRIDE", "data"))
     parser.add_argument("--url", default=os.environ.get("SQUAD_JEV_URL_OVERRIDE", API_URL), help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true")
