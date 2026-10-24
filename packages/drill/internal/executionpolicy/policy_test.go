@@ -82,7 +82,7 @@ func TestRepositoryCommandCannotReadOutsideExecutionCopy(t *testing.T) {
 		t.Fatalf("private Git history unavailable: output=%q code=%d err=%v", out, code, err)
 	}
 	original := git(t, source, "rev-parse", "HEAD")
-	out, code, err = policy.RunCommand(context.Background(), "git config user.name 'Sandbox Agent' && git config user.email sandbox@example.invalid && printf changed > confined.txt && git add confined.txt && git commit -m sandbox-commit", nil)
+	out, code, err = policy.RunCommand(context.Background(), "printf changed > confined.txt && git add confined.txt && GIT_AUTHOR_NAME='Sandbox Agent' GIT_AUTHOR_EMAIL=sandbox@example.invalid GIT_COMMITTER_NAME='Sandbox Agent' GIT_COMMITTER_EMAIL=sandbox@example.invalid git commit -m sandbox-commit", nil)
 	if err != nil || code != 0 {
 		t.Fatalf("confined git commit failed: output=%q code=%d err=%v", out, code, err)
 	}
@@ -91,6 +91,71 @@ func TestRepositoryCommandCannotReadOutsideExecutionCopy(t *testing.T) {
 	}
 	if got := git(t, source, "rev-parse", "HEAD"); got != original {
 		t.Fatalf("private commit changed source repository ref: got %s, want %s", got, original)
+	}
+}
+
+func TestSandboxCannotPlantHostGitHookInPrivateConfig(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	repo := createExecutionCopy(t, root)
+	marker := filepath.Join(root, "hook-ran")
+	hook := filepath.Join(root, "hook.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nprintf pwned > "+shellQuote(marker)+"\nexec git \"$@\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+	plant := "printf '[uploadpack]\\n\\tpackObjectsHook = %s\\n' " + shellQuote(hook) + " >> /run/drill-execution/git/config"
+	if _, code, err := policy.RunCommand(context.Background(), plant, nil); err != nil || code == 0 {
+		t.Fatalf("sandbox rewrote private Git config: code=%d err=%v", code, err)
+	}
+	commit := "printf planted > planted.txt && git add planted.txt && GIT_AUTHOR_NAME='Sandbox Agent' GIT_AUTHOR_EMAIL=sandbox@example.invalid GIT_COMMITTER_NAME='Sandbox Agent' GIT_COMMITTER_EMAIL=sandbox@example.invalid git commit -q -m planted"
+	if out, code, err := policy.RunCommand(context.Background(), commit, nil); err != nil || code != 0 {
+		t.Fatalf("sandbox commit failed: output=%q code=%d err=%v", out, code, err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("host Git executed a hook planted from the sandbox into private Git config")
+	}
+}
+
+func TestExecutionPolicyDoesNotMountCredentialBearingPathEntries(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	repo := createExecutionCopy(t, root)
+	home := filepath.Join(root, "host-home")
+	credential := filepath.Join(home, ".claude", ".credentials.json")
+	if err := os.MkdirAll(filepath.Dir(credential), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credential, []byte(`{"token":"host-token"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", home+string(os.PathListSeparator)+os.Getenv("PATH"))
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+	out, code, err := policy.RunCommand(context.Background(), "cat "+shellQuote(credential), nil)
+	if err != nil {
+		t.Fatalf("confined read: %v", err)
+	}
+	if code == 0 || strings.Contains(string(out), "host-token") {
+		t.Fatalf("credential-bearing PATH entry exposed host credential: code=%d output=%q", code, out)
 	}
 }
 
