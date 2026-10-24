@@ -147,3 +147,101 @@ func TestOrphanStartRefusesHeadThatDoesNotDescendFromReleasedHead(t *testing.T) 
 		t.Fatalf("refused start created a run: %#v, %v", runs, err)
 	}
 }
+
+// commitReleasedOrphanHead adds a local commit for the orphan fixture and
+// returns its SHA.
+func commitReleasedOrphanHead(t *testing.T, f releasedOrphanFixture, name string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(f.local, name), []byte(name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, f.local, "add", name)
+	gitCmd(t, f.local, "commit", "-m", "commit "+name)
+	return gitOutput(t, f.local, "rev-parse", "HEAD")
+}
+
+func TestOrphanStartClearsStalePrivateSubmission(t *testing.T) {
+	t.Run("descendant supersedes leftover submission", func(t *testing.T) {
+		f := newReleasedOrphanFixture(t)
+		ref := ipc.OrphanSubmissionPrefix + f.priorID
+		gateBefore := gitOutput(t, f.gate, "rev-parse", "refs/heads/"+f.branch)
+
+		// A failed start leaves the private submission behind at the head it
+		// had pushed; the operator then commits more work on top.
+		first := commitReleasedOrphanHead(t, f, "first.txt")
+		gitCmd(t, f.local, "push", f.gate, first+":"+ref)
+		head := commitReleasedOrphanHead(t, f, "second.txt")
+
+		request := &ipc.OrphanStartParams{RepoID: f.repo.ID, Branch: f.branch, PreviousRunID: f.priorID, HeadSHA: head, CheckOnly: true, Intent: "preserve all accepted requirements"}
+		var result ipc.OrphanStartResult
+		if err := f.client.Call(ipc.MethodStartOrphan, request, &result); err != nil || !result.Ready {
+			t.Fatalf("preflight blocked by stale submission: %#v, %v", result, err)
+		}
+		if _, err := git.Run(context.Background(), f.gate, "rev-parse", "--verify", ref+"^{commit}"); err == nil {
+			t.Fatal("stale private submission was not cleared")
+		}
+		gitCmd(t, f.local, "push", f.gate, head+":"+ref)
+		request.CheckOnly = false
+		result = ipc.OrphanStartResult{}
+		if err := f.client.Call(ipc.MethodStartOrphan, request, &result); err != nil || result.RunID == "" {
+			t.Fatalf("retry start: %#v, %v", result, err)
+		}
+		run := waitForRunTerminalState(t, f.db, result.RunID)
+		if run.SubmittedHeadSHA == nil || *run.SubmittedHeadSHA != head {
+			t.Fatalf("retry run head: %#v", run)
+		}
+		if gitOutput(t, f.local, "rev-parse", "HEAD") != head || gitOutput(t, f.gate, "rev-parse", "refs/heads/"+f.branch) != gateBefore {
+			t.Fatal("retry moved a branch")
+		}
+	})
+
+	t.Run("rewritten descendant still supersedes", func(t *testing.T) {
+		f := newReleasedOrphanFixture(t)
+		ref := ipc.OrphanSubmissionPrefix + f.priorID
+		gateBefore := gitOutput(t, f.gate, "rev-parse", "refs/heads/"+f.branch)
+
+		first := commitReleasedOrphanHead(t, f, "first.txt")
+		gitCmd(t, f.local, "push", f.gate, first+":"+ref)
+		gitCmd(t, f.local, "reset", "--hard", f.released)
+		head := commitReleasedOrphanHead(t, f, "rewritten.txt")
+		if _, err := git.Run(context.Background(), f.local, "merge-base", "--is-ancestor", first, head); err == nil {
+			t.Fatal("fixture did not rewrite the leftover submission")
+		}
+
+		request := &ipc.OrphanStartParams{RepoID: f.repo.ID, Branch: f.branch, PreviousRunID: f.priorID, HeadSHA: head, CheckOnly: true, Intent: "preserve all accepted requirements"}
+		var result ipc.OrphanStartResult
+		if err := f.client.Call(ipc.MethodStartOrphan, request, &result); err != nil || !result.Ready {
+			t.Fatalf("preflight blocked by stale submission: %#v, %v", result, err)
+		}
+		// A non-forced push can only succeed once the stale ref is cleared.
+		gitCmd(t, f.local, "push", f.gate, head+":"+ref)
+		request.CheckOnly = false
+		result = ipc.OrphanStartResult{}
+		if err := f.client.Call(ipc.MethodStartOrphan, request, &result); err != nil || result.RunID == "" {
+			t.Fatalf("rewritten descendant start: %#v, %v", result, err)
+		}
+		if gitOutput(t, f.local, "rev-parse", "HEAD") != head || gitOutput(t, f.gate, "rev-parse", "refs/heads/"+f.branch) != gateBefore {
+			t.Fatal("rewritten descendant start moved a branch")
+		}
+	})
+
+	t.Run("live owner keeps the submission", func(t *testing.T) {
+		f := newReleasedOrphanFixture(t)
+		ref := ipc.OrphanSubmissionPrefix + f.priorID
+		first := commitReleasedOrphanHead(t, f, "first.txt")
+		gitCmd(t, f.local, "push", f.gate, first+":"+ref)
+		head := commitReleasedOrphanHead(t, f, "second.txt")
+		if _, err := f.db.InsertRun(f.repo.ID, f.branch, head, f.released); err != nil {
+			t.Fatal(err)
+		}
+
+		request := &ipc.OrphanStartParams{RepoID: f.repo.ID, Branch: f.branch, PreviousRunID: f.priorID, HeadSHA: head, CheckOnly: true, Intent: "preserve all accepted requirements"}
+		var result ipc.OrphanStartResult
+		if err := f.client.Call(ipc.MethodStartOrphan, request, &result); err == nil || !strings.Contains(err.Error(), "orphan_start_refused") {
+			t.Fatalf("live owner admitted a stale submission: %#v, %v", result, err)
+		}
+		if got := gitOutput(t, f.gate, "rev-parse", ref+"^{commit}"); got != first {
+			t.Fatalf("live owner lost its submission: %s, want %s", got, first)
+		}
+	})
+}

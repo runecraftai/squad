@@ -748,6 +748,11 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 	return m.startRunChecked(ctx, repo, branch, headSHA, baseSHA, trigger, skipSteps, intent, source, specializedReview, nil)
 }
 
+func (m *RunManager) branchLock(repoID, branch string) *sync.Mutex {
+	lockVal, _ := m.branchLocks.LoadOrStore(repoID+"/"+branch, &sync.Mutex{})
+	return lockVal.(*sync.Mutex)
+}
+
 func (m *RunManager) startRunChecked(ctx context.Context, repo *db.Repo, branch, headSHA, baseSHA, trigger string, skipSteps []types.StepName, intent, source string, specializedReview bool, check func() error) (string, error) {
 	branchRole := telemetryBranchRole(branch, repo.DefaultBranch)
 	trackStartFailure := func(stage string) {
@@ -766,9 +771,7 @@ func (m *RunManager) startRunChecked(ctx context.Context, repo *db.Repo, branch,
 
 	// Serialize per repo+branch to prevent two concurrent pushes from both
 	// passing cancelActiveRuns and creating duplicate pipelines.
-	lockKey := repo.ID + "/" + branch
-	lockVal, _ := m.branchLocks.LoadOrStore(lockKey, &sync.Mutex{})
-	branchMu := lockVal.(*sync.Mutex)
+	branchMu := m.branchLock(repo.ID, branch)
 	branchMu.Lock()
 	defer branchMu.Unlock()
 	if check != nil {

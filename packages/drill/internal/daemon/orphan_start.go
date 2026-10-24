@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -23,6 +24,9 @@ func (m *RunManager) HandleOrphanStart(ctx context.Context, p *ipc.OrphanStartPa
 		return nil, err
 	}
 	if p.CheckOnly {
+		if err := m.clearStaleOrphanSubmission(ctx, repo, prior, p.HeadSHA); err != nil {
+			return nil, err
+		}
 		return &ipc.OrphanStartResult{Ready: true}, nil
 	}
 	check := func() error {
@@ -55,24 +59,8 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	if err != nil || repo == nil {
 		return refuse("repository registration is unavailable")
 	}
-	runs, err := m.db.GetRunsByRepo(repo.ID)
-	if err != nil {
-		return refuse("cannot verify current branch ownership")
-	}
-	latest := ""
-	for _, run := range runs {
-		if run.Branch != p.Branch {
-			continue
-		}
-		if latest == "" {
-			latest = run.ID
-		}
-		if run.Status == "pending" || run.Status == "running" || run.PushActive {
-			return refuse("a live run already owns this branch")
-		}
-	}
-	if latest != prior.ID {
-		return refuse("a newer run already owns this branch")
+	if err := m.validateOrphanBranchOwnership(repo.ID, p.Branch, prior); err != nil {
+		return refuse(err.Error())
 	}
 	gateDir := m.paths.RepoDir(repo.ID)
 	if err := git.ValidateBareRepository(ctx, gateDir); err != nil {
@@ -85,33 +73,74 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	if _, err := git.Run(ctx, gateDir, "check-ref-format", "refs/heads/"+p.Branch); err != nil {
 		return refuse("invalid branch identity")
 	}
+	// The preflight runs before the CLI's non-forced private push, so the exact
+	// requested commit cannot be in the gate yet. The authoritative start below
+	// proves the exact submitted head and its descent under the branch lock.
+	if p.CheckOnly {
+		return repo, prior, nil
+	}
 	ref := ipc.OrphanSubmissionPrefix + prior.ID
 	staged, stageErr := git.Run(ctx, gateDir, "rev-parse", "--verify", ref+"^{commit}")
-	if stageErr == nil && staged != p.HeadSHA {
-		return refuse("the private submission names a different commit")
-	}
-	submitted := stageErr == nil && staged == p.HeadSHA
-	if !p.CheckOnly && !submitted {
+	if stageErr != nil || staged != p.HeadSHA {
 		return refuse("the exact local commit was not submitted to the private ref")
 	}
 	// The released head stays the immutable audit anchor. A later local head is
 	// admitted only when the submitted commit proves it descends from that
 	// anchor, so a rewritten or unrelated head still refuses.
-	if audited := *prior.CustodyReturnHead; p.HeadSHA != audited {
-		proven := submitted || (p.CheckOnly && commitExists(ctx, gateDir, audited))
-		if proven && !commitIsAncestor(ctx, gateDir, audited, p.HeadSHA) {
-			return refuse("the requested commit does not descend from the audited released local head")
-		}
+	if audited := *prior.CustodyReturnHead; p.HeadSHA != audited && !commitIsAncestor(ctx, gateDir, audited, p.HeadSHA) {
+		return refuse("the requested commit does not descend from the audited released local head")
 	}
 	return repo, prior, nil
 }
 
-func commitExists(ctx context.Context, dir, sha string) bool {
-	if sha == "" {
-		return false
+// validateOrphanBranchOwnership proves no run currently owns the branch and
+// that the released orphan is still its newest run, so a stale submission can
+// never be cleared while a live or successor run depends on it.
+func (m *RunManager) validateOrphanBranchOwnership(repoID, branch string, prior *db.Run) error {
+	runs, err := m.db.GetRunsByRepo(repoID)
+	if err != nil {
+		return errors.New("cannot verify current branch ownership")
 	}
-	_, err := git.Run(ctx, dir, "cat-file", "-e", sha+"^{commit}")
-	return err == nil
+	latest := ""
+	for _, run := range runs {
+		if run.Branch != branch {
+			continue
+		}
+		if latest == "" {
+			latest = run.ID
+		}
+		if run.Status == "pending" || run.Status == "running" || run.PushActive {
+			return errors.New("a live run already owns this branch")
+		}
+	}
+	if latest != prior.ID {
+		return errors.New("a newer run already owns this branch")
+	}
+	return nil
+}
+
+// clearStaleOrphanSubmission removes a private submission left behind by a
+// failed start so the next non-forced push can create it again, including when
+// it cannot fast-forward the leftover ref. It holds the branch lock, re-proves
+// that no live run owns the branch, and deletes only the exact commit it
+// observed, so a concurrent submission is never clobbered.
+func (m *RunManager) clearStaleOrphanSubmission(ctx context.Context, repo *db.Repo, prior *db.Run, head string) error {
+	ref := ipc.OrphanSubmissionPrefix + prior.ID
+	gateDir := m.paths.RepoDir(repo.ID)
+	branchMu := m.branchLock(repo.ID, prior.Branch)
+	branchMu.Lock()
+	defer branchMu.Unlock()
+	staged, err := git.Run(ctx, gateDir, "rev-parse", "--verify", ref+"^{commit}")
+	if err != nil || staged == head {
+		return nil
+	}
+	if err := m.validateOrphanBranchOwnership(repo.ID, prior.Branch, prior); err != nil {
+		return fmt.Errorf("orphan_start_refused: %s", err)
+	}
+	if _, err := git.Run(ctx, gateDir, "update-ref", "-d", ref, staged); err != nil {
+		return fmt.Errorf("orphan_start_refused: the stale private submission could not be cleared; no branch push attempted: %w", err)
+	}
+	return nil
 }
 
 func commitIsAncestor(ctx context.Context, dir, ancestor, descendant string) bool {

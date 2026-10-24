@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
 	"github.com/runecraftai/squad/packages/drill/internal/gatecontext"
 	"github.com/runecraftai/squad/packages/drill/internal/gateguidance"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
@@ -41,10 +42,13 @@ var canonicalBranchSyncPhrases = []string{
 	"reset, stash, merge, rebase, force, or branch replacement",
 	// Guarded custody recovery for a terminal run whose pipeline commits were
 	// never published (v1.38.1 dogfood catch): the action, its next_action
-	// code, and the preservation claim must stay on every guidance surface.
+	// code, and the custody claim must stay on every guidance surface, with an
+	// explicit loss meaning when the recorded head is proven gone.
 	"recover_custody",
 	"drill axi sync --recover",
-	"preserved in the local gate",
+	"preserved_head_missing",
+	"unpublished fixes are lost",
+	"preserved head",
 	// Cancellation releases a run that never changed the submitted head
 	// (v1.44.2 dogfood catch): every surface must name the released state and
 	// that it needs no recovery.
@@ -140,6 +144,41 @@ func TestBranchSyncGuidance_SyncedAcrossStaticAndLiveSurfaces(t *testing.T) {
 				t.Errorf("%s is missing branch-sync guidance phrase %q", name, phrase)
 			}
 		}
+		if strings.Contains(content, "preserved in the local gate") {
+			t.Errorf("%s still promises preservation for a possibly lost head", name)
+		}
+	}
+}
+
+// TestBranchSyncGuidanceForOrphanedHeadReportsLoss pins the emitted refusal an
+// agent receives for a terminal run whose recorded head is proven missing: the
+// guidance must name the loss and offer recovery without promising that the
+// missing commits were preserved.
+func TestBranchSyncGuidanceForOrphanedHeadReportsLoss(t *testing.T) {
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	state := branchsync.State{
+		State:  branchsync.StatePipelineOwned,
+		Safety: "blocked_pipeline_owned_recoverable",
+		Local:  branchsync.LocalState{Branch: "feature/x", Head: strings.Repeat("a", 40), Clean: true},
+		Pipeline: branchsync.PipelineState{
+			RunID: "run-1", Status: string(types.RunFailed), CurrentHead: strings.Repeat("b", 40),
+			PreservedHeadMissing: true,
+		},
+		NextAction: &branchsync.NextAction{Code: "recover_custody", Command: "drill axi sync --recover"},
+	}
+	if err := emitBranchOwnershipError(cmd, &branchOwnershipError{state: state}); err == nil {
+		t.Fatal("orphaned-head ownership refusal must exit nonzero")
+	}
+	got := out.String()
+	for _, want := range []string{"recover_custody", "preserved_head_missing", "unpublished fixes are lost"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("orphaned-head refusal missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "preserved in the local gate") {
+		t.Errorf("orphaned-head refusal claims the missing commits are preserved:\n%s", got)
 	}
 }
 
