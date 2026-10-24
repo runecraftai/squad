@@ -1509,6 +1509,25 @@ func TestFinalizeTextResult_LastValidFencedPayloadWinsOverProseDuplicates(t *tes
 	}
 }
 
+func TestFinalizeTextResult_ValidFenceTakesPrecedenceOverBarePayloads(t *testing.T) {
+	bare := `{"findings":[],"risk_level":"low","risk_rationale":"bare draft","risk_scope":"source-or-external"}`
+	fenced := `{"findings":[],"risk_level":"low","risk_rationale":"fenced final","risk_scope":"source-or-external"}`
+	text := "Draft: " + bare + "\nFinal:\n```json\n" + fenced + "\n```"
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("valid fence must take precedence over unfenced candidates, got: %v", err)
+	}
+	var got struct {
+		RiskRationale string `json:"risk_rationale"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+	if got.RiskRationale != "fenced final" {
+		t.Errorf("risk_rationale = %q, want the fenced payload", got.RiskRationale)
+	}
+}
+
 func TestFinalizeTextResult_UnclosedFencedPayloadKeepsItsSyntaxError(t *testing.T) {
 	text := "Review complete.\n```json\n{\"findings\": [{\"id\":"
 	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
