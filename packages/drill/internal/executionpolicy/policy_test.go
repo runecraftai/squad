@@ -94,6 +94,129 @@ func TestRepositoryCommandCannotReadOutsideExecutionCopy(t *testing.T) {
 	}
 }
 
+func TestBinaryNamedLikeFixtureDoesNotEnableFixtureAccess(t *testing.T) {
+	if e2eBuild {
+		t.Skip("fixture behavior is enabled only in the explicit e2e build")
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	repo := createExecutionCopy(t, root)
+	fixture := filepath.Join(root, "synthetic-fixture.yaml")
+	if err := os.WriteFile(fixture, []byte("scenario: synthetic\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := filepath.Join(root, "fakeagent")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := New(repo)
+	if err != nil {
+		t.Skipf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+	cmd := exec.Command(fake)
+	cmd.Dir = repo
+	cmd.Env = []string{"FAKEAGENT_FIXTURE=" + fixture}
+	if err := policy.Command(cmd); err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(cmd.Args, "\\x00")
+	if strings.Contains(args, fixture) || strings.Contains(strings.Join(cmd.Env, "\\x00"), "FAKEAGENT_FIXTURE") {
+		t.Fatalf("production binary name enabled fixture access: args=%q env=%q", args, cmd.Env)
+	}
+}
+
+func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	repo := createExecutionCopy(t, root)
+	home := filepath.Join(root, "host-home")
+	credential := filepath.Join(home, ".claude", ".credentials.json")
+	if err := os.MkdirAll(filepath.Dir(credential), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credential, []byte(`{"token":"host-token"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	claude := filepath.Join(root, "claude")
+	if err := os.WriteFile(claude, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := New(repo)
+	if err != nil {
+		t.Skipf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+	launchHomes := make([]string, 0, 2)
+	for i := 0; i < 2; i++ {
+		cmd := exec.Command(claude)
+		cmd.Dir = repo
+		if err := policy.Command(cmd); err != nil {
+			t.Fatal(err)
+		}
+		launchHome := boundLaunchHome(t, cmd.Args)
+		launchHomes = append(launchHomes, launchHome)
+		if i == 0 {
+			marker := filepath.Join(launchHome, "previous-launch-secret")
+			if err := os.WriteFile(marker, []byte("previous launch token"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if launchHomes[0] == launchHomes[1] {
+		t.Fatalf("launch homes = %q, want distinct homes", launchHomes)
+	}
+	if _, err := os.Stat(filepath.Join(launchHomes[1], "previous-launch-secret")); !os.IsNotExist(err) {
+		t.Fatalf("previous launch secret is reachable from next launch home: err=%v", err)
+	}
+	for i, launchHome := range launchHomes {
+		if data, err := os.ReadFile(filepath.Join(launchHome, ".claude", ".credentials.json")); err != nil || !strings.Contains(string(data), "host-token") {
+			t.Fatalf("launch home %d lacks its provider credential: data=%q err=%v", i, data, err)
+		}
+	}
+}
+
+func boundLaunchHome(t *testing.T, args []string) string {
+	t.Helper()
+	for i := 0; i+2 < len(args); i++ {
+		if args[i] == "--bind" && args[i+2] == "/run/drill-execution/home" {
+			return args[i+1]
+		}
+	}
+	t.Fatal("sandbox arguments do not bind a launch home")
+	return ""
+}
+
+func createExecutionCopy(t *testing.T, root string) string {
+	t.Helper()
+	source := filepath.Join(root, "source")
+	if err := os.Mkdir(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git(t, source, "init", "-q")
+	git(t, source, "config", "user.name", "Policy Test")
+	git(t, source, "config", "user.email", "policy@example.invalid")
+	if err := os.WriteFile(filepath.Join(source, "tracked.txt"), []byte("tracked\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git(t, source, "add", "tracked.txt")
+	git(t, source, "commit", "-m", "fixture")
+	repo := filepath.Join(root, "repo")
+	git(t, source, "worktree", "add", "--detach", repo, "HEAD")
+	return repo
+}
+
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 )
 
@@ -61,7 +62,11 @@ type reviewConsolidation struct {
 const reviewConsolidationSchema = `{"type":"object","required":["findings","inspected_files","risk_level","risk_rationale","risk_scope"],"properties":{"findings":{"type":"array","items":{"type":"object","required":["severity","description","action","review_scope"],"properties":{"severity":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"review_scope":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"}}}},"inspected_files":{"type":"array","items":{"type":"string"}},"risk_level":{"type":"string","enum":["low","medium","high"]},"risk_rationale":{"type":"string"},"risk_scope":{"type":"string","enum":["source-or-external","pipeline-owned-delivery"]}}}`
 
 // RunStandaloneReview captures a local immutable range and runs the same specialist and consolidation engine used by ReviewStep.
-func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, headSHA, intent string, maxParallel int, timeout time.Duration, logf func(string)) (Findings, error) {
+func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, headSHA, intent string, maxParallel int, timeout time.Duration, logf func(string), policies ...agent.ProcessExecutionPolicy) (Findings, error) {
+	var policy agent.ProcessExecutionPolicy
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
 	diff, err := git.Run(ctx, repoDir, "diff", "--no-ext-diff", "--binary", baseSHA+".."+headSHA)
 	if err != nil {
 		return Findings{}, fmt.Errorf("capture review snapshot diff: %w", err)
@@ -75,7 +80,7 @@ func RunStandaloneReview(ctx context.Context, a agent.Agent, repoDir, baseSHA, h
 	if len(paths) == 0 {
 		return Findings{RiskLevel: "low", RiskRationale: "no changes to review", RiskScope: "source-or-external"}, nil
 	}
-	results := runReviewSpecialists(ctx, a, repoDir, snapshot, maxParallel, timeout, logf)
+	results := runReviewSpecialists(ctx, a, repoDir, snapshot, maxParallel, timeout, logf, policy)
 	if failures := countSpecialistFailures(results); failures > 0 {
 		return Findings{}, fmt.Errorf("specialized review incomplete: %d of %d lenses failed", failures, len(results))
 	}
@@ -258,7 +263,11 @@ func validateReviewLensOutput(output reviewLensOutput) error {
 	return nil
 }
 
-func runReviewSpecialists(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, maxParallel int, timeout time.Duration, logf func(string)) []reviewLensResult {
+func runReviewSpecialists(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, maxParallel int, timeout time.Duration, logf func(string), policies ...agent.ProcessExecutionPolicy) []reviewLensResult {
+	var policy agent.ProcessExecutionPolicy
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
 	batchStarted := time.Now()
 	batchID := fmt.Sprintf("%s-%x", shortReviewSHA(snapshot.TargetHeadSHA), batchStarted.UnixNano())
 	if logf != nil {
@@ -280,7 +289,7 @@ func runReviewSpecialists(ctx context.Context, a agent.Agent, repoDir string, sn
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				results[i] = runReviewLens(ctx, a, repoDir, snapshot, i, timeout, logf)
+				results[i] = runReviewLens(ctx, a, policy, repoDir, snapshot, i, timeout, logf)
 			}
 		}()
 	}
@@ -315,6 +324,19 @@ dispatch:
 	return results
 }
 
+func prepareReviewLensExecutionCopy(checkout string) error {
+	gitDir := filepath.Join(checkout, ".git")
+	privateGitDir := filepath.Join(checkout, ".review-git")
+	if err := os.Rename(gitDir, privateGitDir); err != nil {
+		return fmt.Errorf("isolate lens Git metadata: %w", err)
+	}
+	if err := os.WriteFile(gitDir, []byte("gitdir: "+privateGitDir+"\n"), 0o600); err != nil {
+		_ = os.Rename(privateGitDir, gitDir)
+		return fmt.Errorf("prepare lens Git pointer: %w", err)
+	}
+	return nil
+}
+
 func shortReviewSHA(sha string) string {
 	if len(sha) > 12 {
 		return sha[:12]
@@ -322,7 +344,7 @@ func shortReviewSHA(sha string) string {
 	return sha
 }
 
-func runReviewLens(ctx context.Context, a agent.Agent, repoDir string, snapshot ReviewSnapshot, index int, timeout time.Duration, logf func(string)) (out reviewLensResult) {
+func runReviewLens(ctx context.Context, a agent.Agent, policy agent.ProcessExecutionPolicy, repoDir string, snapshot ReviewSnapshot, index int, timeout time.Duration, logf func(string)) (out reviewLensResult) {
 	lens := reviewLensInstructions[index]
 	out.Lens = lens.name
 	started := time.Now()
@@ -342,13 +364,28 @@ func runReviewLens(ctx context.Context, a agent.Agent, repoDir string, snapshot 
 		out.Err = fmt.Errorf("checkout isolated lens snapshot: %w", err)
 		return
 	}
+	if policy != nil {
+		if err := prepareReviewLensExecutionCopy(checkout); err != nil {
+			out.Err = fmt.Errorf("prepare confined review lens: %w", err)
+			return
+		}
+	}
 	lensCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if policy != nil {
+		lensPolicy, err := executionpolicy.New(checkout)
+		if err != nil {
+			out.Err = fmt.Errorf("create confined review lens: %w", err)
+			return
+		}
+		defer lensPolicy.Close()
+		policy = lensPolicy
+	}
 	prompt := string(snapshot.ContextForLens(lens.prompt)) + "\nReturn JSON only matching the supplied schema. Include every inspected file."
 	if logf != nil {
 		logf("review lens " + lens.name + " started")
 	}
-	result, err := a.Run(lensCtx, agent.RunOpts{Prompt: prompt, CWD: checkout, JSONSchema: json.RawMessage(reviewCandidateSchema), Purpose: "review-lens:" + lens.name, Workload: snapshot.Workload})
+	result, err := a.Run(lensCtx, agent.RunOpts{Prompt: prompt, ExecutionPolicy: policy, CWD: checkout, JSONSchema: json.RawMessage(reviewCandidateSchema), Purpose: "review-lens:" + lens.name, Workload: snapshot.Workload})
 	if err != nil {
 		out.Err = fmt.Errorf("lens %s: %w", lens.name, err)
 	} else if err := json.Unmarshal(result.Output, &out.Output); err != nil {

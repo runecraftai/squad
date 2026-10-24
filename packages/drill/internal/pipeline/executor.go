@@ -1133,7 +1133,9 @@ func (a *gateStepBoundaryAgent) Name() string { return a.inner.Name() }
 
 func (a *gateStepBoundaryAgent) Run(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 	opts.Prompt = gateguidance.PromptBoundary(string(a.phase)) + opts.Prompt
-	opts.ExecutionPolicy = a.policy
+	if opts.ExecutionPolicy == nil {
+		opts.ExecutionPolicy = a.policy
+	}
 	return a.inner.Run(ctx, opts)
 }
 

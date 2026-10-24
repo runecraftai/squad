@@ -159,6 +159,66 @@ func TestReviewCommandReportsRepositoryAndReviewedSHAs(t *testing.T) {
 	}
 }
 
+func TestStandaloneReviewLensesCannotReadOutsideExecutionCopy(t *testing.T) {
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root, base, head := prepareStandaloneReviewRepo(t)
+	outsideDir, err := os.MkdirTemp("/var/tmp", "drill-review-outside-")
+	if err != nil {
+		t.Skipf("cannot create outside canary: %v", err)
+	}
+	defer os.RemoveAll(outsideDir)
+	outside := filepath.Join(outsideDir, "synthetic-secret")
+	if err := os.WriteFile(outside, []byte("review-lens-outside-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previous := standaloneReviewAgentFactory
+	standaloneReviewAgentFactory = func(context.Context, *config.Config) (agent.Agent, error) {
+		return standaloneReviewPolicyTestAgent{outside: outside}, nil
+	}
+	t.Cleanup(func() { standaloneReviewAgentFactory = previous })
+	out, err := executeStandaloneReviewCmd("review", "--base", base, "--head", head, "--format", "json")
+	if err != nil {
+		t.Fatalf("review command: %v", err)
+	}
+	if strings.Contains(out, "review-lens-outside-secret") {
+		t.Fatalf("review lens read a synthetic file outside its execution copy: %s", out)
+	}
+	if got := reviewGitOutput(t, root, "status", "--porcelain"); got != "" {
+		t.Fatalf("review changed source checkout: %q", got)
+	}
+}
+
+type standaloneReviewPolicyTestAgent struct{ outside string }
+
+func (a standaloneReviewPolicyTestAgent) Name() string { return "test" }
+func (a standaloneReviewPolicyTestAgent) Close() error { return nil }
+func (a standaloneReviewPolicyTestAgent) Run(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+	cmd := exec.CommandContext(ctx, "cat", a.outside)
+	cmd.Dir = opts.CWD
+	if opts.ExecutionPolicy == nil {
+		return nil, errors.New("review lens has no execution policy")
+	}
+	if err := opts.ExecutionPolicy.Command(cmd); err != nil {
+		return nil, err
+	}
+	output, err := cmd.CombinedOutput()
+	if strings.Contains(string(output), "review-lens-outside-secret") {
+		return nil, errors.New("review lens read outside canary")
+	}
+	if err != nil {
+		if opts.Purpose == "review-consolidator" {
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":[],"risk_level":"low","risk_rationale":"clean","risk_scope":"source-or-external"}`)}, nil
+		}
+		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["file.txt"]}`)}, nil
+	}
+	if opts.Purpose == "review-consolidator" {
+		return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":[],"risk_level":"low","risk_rationale":"clean","risk_scope":"source-or-external"}`)}, nil
+	}
+	return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["file.txt"]}`)}, nil
+}
+
 func TestReviewCommandEmitsNativeAndHumanFindings(t *testing.T) {
 	_, base, head := prepareStandaloneReviewRepo(t)
 	installStandaloneReviewTestAgent(t, false)

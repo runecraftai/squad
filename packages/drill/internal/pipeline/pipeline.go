@@ -19,6 +19,7 @@ type StepContext struct {
 	Repo            *db.Repo
 	WorkDir         string
 	ExecutionPolicy interface {
+		agent.ProcessExecutionPolicy
 		RunCommand(context.Context, string, []string) ([]byte, int, error)
 	}
 	Agent                  agent.Agent

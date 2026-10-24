@@ -32,7 +32,7 @@ type Policy struct {
 	root       string
 	gitDir     string
 	gitFile    string
-	home       string
+	homes      []string
 	syncedHead string
 	closed     bool
 	mu         sync.Mutex
@@ -74,10 +74,6 @@ func New(workDir string) (*Policy, error) {
 		return fail(fmt.Errorf("%s: cannot locate repository history: %w", Name, err))
 	}
 	gitDir := filepath.Join(root, "git")
-	home := filepath.Join(root, "home")
-	if err := os.Mkdir(home, 0o700); err != nil {
-		return fail(fmt.Errorf("%s: create private home: %w", Name, err))
-	}
 	if _, err := gitOutput("", "clone", "--bare", "--no-hardlinks", "--no-local", gitCommon, gitDir); err != nil {
 		return fail(fmt.Errorf("%s: cannot create task-private Git database: %w", Name, err))
 	}
@@ -97,7 +93,7 @@ func New(workDir string) (*Policy, error) {
 	if err := os.WriteFile(gitFile, []byte("gitdir: /run/drill-execution/git\n"), 0o400); err != nil {
 		return fail(fmt.Errorf("%s: prepare private Git pointer: %w", Name, err))
 	}
-	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, home: home, syncedHead: initialHead}
+	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, syncedHead: initialHead}
 	if err := p.acknowledge(bubblewrap); err != nil {
 		return fail(err)
 	}
@@ -105,7 +101,12 @@ func New(workDir string) (*Policy, error) {
 }
 
 func (p *Policy) acknowledge(bwrap string) error {
-	args := p.baseArgs()
+	home, err := os.MkdirTemp(p.root, "ack-home-")
+	if err != nil {
+		return fmt.Errorf("%s: prepare sandbox acknowledgement home: %w", Name, err)
+	}
+	defer os.RemoveAll(home)
+	args := p.baseArgs(home)
 	args = append(args, "--", "/bin/true")
 	cmd := exec.Command(bwrap, args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -114,7 +115,7 @@ func (p *Policy) acknowledge(bwrap string) error {
 	return nil
 }
 
-func (p *Policy) baseArgs() []string {
+func (p *Policy) baseArgs(home string) []string {
 	args := []string{"--unshare-all", "--unshare-user", "--unshare-pid", "--share-net", "--die-with-parent", "--new-session", "--disable-userns", "--cap-drop", "ALL", "--clearenv"}
 	for _, dir := range []string{"/usr", "/bin", "/sbin", "/lib", "/lib64"} {
 		info, err := os.Lstat(dir)
@@ -141,7 +142,7 @@ func (p *Policy) baseArgs() []string {
 	args = append(args, "--bind", p.workDir, p.workDir,
 		"--bind", p.gitDir, "/run/drill-execution/git",
 		"--ro-bind", p.gitFile, filepath.Join(p.workDir, ".git"),
-		"--bind", p.home, "/run/drill-execution/home",
+		"--bind", home, "/run/drill-execution/home",
 		"--setenv", "HOME", "/run/drill-execution/home", "--setenv", "TMPDIR", "/tmp",
 		"--setenv", "PATH", strings.Join(append(toolDirs.bins, "/usr/local/bin", "/usr/bin", "/bin"), string(os.PathListSeparator)))
 	for _, key := range []string{"LANG", "LC_ALL", "TERM", "CI"} {
@@ -181,15 +182,26 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 	if len(argv) == 0 {
 		argv = []string{cmd.Path}
 	}
-	args := p.baseArgs()
+	home, err := os.MkdirTemp(p.root, "launch-home-")
+	if err != nil {
+		return fmt.Errorf("%s: create fresh launch home: %w", Name, err)
+	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		_ = os.RemoveAll(home)
+		return fmt.Errorf("%s: secure fresh launch home: %w", Name, err)
+	}
+	p.mu.Lock()
+	p.homes = append(p.homes, home)
+	p.mu.Unlock()
+	if err := p.mountAgentCredentials(filepath.Base(cmd.Path), home); err != nil {
+		return err
+	}
+	args := p.baseArgs(home)
 	schemaBinds, err := executionSchemaAccess(argv)
 	if err != nil {
 		return err
 	}
 	args = append(args, schemaBinds...)
-	if err := p.mountAgentCredentials(filepath.Base(cmd.Path)); err != nil {
-		return err
-	}
 	tool := cmd.Path
 	if !filepath.IsAbs(tool) {
 		tool, err = exec.LookPath(tool)
@@ -213,7 +225,7 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 		}
 	}
 	allowedEnv := sandboxEnv(cmd.Env)
-	if filepath.Base(tool) == "fakeagent" {
+	if e2eBuild && filepath.Base(tool) == "fakeagent" {
 		fixtureArgs, fixtureEnv, err := fakeAgentFixtureAccess(p.workDir, cmd.Env)
 		if err != nil {
 			return err
@@ -385,7 +397,7 @@ func installationRoot(path string) string {
 	return ""
 }
 
-func (p *Policy) mountAgentCredentials(executable string) error {
+func (p *Policy) mountAgentCredentials(executable, home string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	layouts := map[string][]string{
@@ -399,12 +411,12 @@ func (p *Policy) mountAgentCredentials(executable string) error {
 	if len(files) == 0 {
 		return nil
 	}
-	home, err := os.UserHomeDir()
+	hostHome, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("%s: resolve provider credentials: %w", Name, err)
 	}
 	for _, relative := range files {
-		source := filepath.Join(home, relative)
+		source := filepath.Join(hostHome, relative)
 		info, err := os.Stat(source)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -412,7 +424,7 @@ func (p *Policy) mountAgentCredentials(executable string) error {
 		if err != nil || !info.Mode().IsRegular() {
 			return fmt.Errorf("%s: provider credential is not a regular file: %s", Name, source)
 		}
-		target := filepath.Join(p.home, relative)
+		target := filepath.Join(home, relative)
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return fmt.Errorf("%s: prepare private credential directory: %w", Name, err)
 		}

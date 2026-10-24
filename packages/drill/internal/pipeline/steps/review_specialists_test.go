@@ -680,6 +680,40 @@ func TestReviewStep_SpecializedBatchDetectsOfficialWorktreeMutation(t *testing.T
 	}
 }
 
+func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	dir, _, head := setupGitRepo(t)
+	outside := filepath.Join(filepath.Dir(dir), "review-lens-outside-canary")
+	if err := os.WriteFile(outside, []byte("review-lens-outside-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var parentPolicy agent.ProcessExecutionPolicy = fixtureExecutionPolicy{dir: dir}
+	var output string
+	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		cmd := exec.CommandContext(ctx, "cat", outside)
+		cmd.Dir = opts.CWD
+		if err := opts.ExecutionPolicy.Command(cmd); err != nil {
+			return nil, err
+		}
+		data, err := cmd.CombinedOutput()
+		output = string(data)
+		if err != nil {
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
+		}
+		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
+	}}
+	snapshot := newReviewSnapshot("", "", "", head, "", nil, "", "", "", "")
+	result := runReviewLens(context.Background(), a, parentPolicy, dir, snapshot, 0, time.Second, nil)
+	if strings.Contains(output, "review-lens-outside-secret") {
+		t.Fatalf("review lens read a synthetic file outside its execution copy: %q", output)
+	}
+	if result.Err != nil {
+		t.Fatalf("review lens failed: %v", result.Err)
+	}
+}
+
 func TestReviewLensHelperSubprocess(t *testing.T) {
 	if os.Getenv("DRILL_REVIEW_LENS_HELPER") == "1" {
 		for {

@@ -105,7 +105,9 @@ type executionPolicyAgent struct {
 
 func (a *executionPolicyAgent) Name() string { return a.inner.Name() }
 func (a *executionPolicyAgent) Run(ctx context.Context, opts RunOpts) (*Result, error) {
-	opts.ExecutionPolicy = a.policy
+	if opts.ExecutionPolicy == nil {
+		opts.ExecutionPolicy = a.policy
+	}
 	return a.inner.Run(ctx, opts)
 }
 func (a *executionPolicyAgent) Close() error                { return a.inner.Close() }

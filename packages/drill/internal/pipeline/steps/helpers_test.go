@@ -24,6 +24,9 @@ import (
 
 type fixtureExecutionPolicy struct{ dir string }
 
+func (fixtureExecutionPolicy) Command(*exec.Cmd) error { return nil }
+func (fixtureExecutionPolicy) Sync() error             { return nil }
+
 func (p fixtureExecutionPolicy) RunCommand(ctx context.Context, script string, env []string) ([]byte, int, error) {
 	output, code, err := runShellCommandWithEnv(ctx, p.dir, env, script)
 	return []byte(output), code, err

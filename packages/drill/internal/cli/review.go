@@ -99,7 +99,7 @@ func newReviewCmd() *cobra.Command {
 			defer policy.Close()
 			ag = agent.WithExecutionPolicy(ag, policy)
 			defer ag.Close()
-			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) })
+			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) }, policy)
 			if err != nil {
 				return err
 			}
