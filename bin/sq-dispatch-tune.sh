@@ -461,13 +461,13 @@ resolve_status_fallbacks() {
   STATUS_BUCKETS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-status.XXXXXX")
   RESOLVED_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-resolved.XXXXXX")
   if command -v python3 >/dev/null 2>&1; then
-    python3 - "$SCRIPT_DIR" "$STATE" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
+    python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
 import os
 import sys
 sys.path.insert(0, sys.argv[1])
 from sq_dispatch_failure import status_failure_class
 
-state = sys.argv[2]
+state, cutoff = sys.argv[2], int(sys.argv[3])
 try:
     names = sorted(os.listdir(state))
 except OSError:
@@ -479,16 +479,22 @@ for name in names:
     path = os.path.join(state, name)
     if "\t" in task_id or "\n" in task_id or os.path.islink(path) or not os.path.isfile(path):
         continue
+    if int(os.stat(path).st_mtime) < cutoff:
+        continue
     print(f"{task_id}\t{status_failure_class(path) or 'none'}")
 PY
   fi
-  awk -F'\t' -v OFS='\t' -v buckets="$STATUS_BUCKETS_FILE" '
+  if awk -F'\t' -v OFS='\t' -v buckets="$STATUS_BUCKETS_FILE" '
     FILENAME == buckets { bucket[$1] = $2; next }
     $9 == "pending" {
       b = ($1 in bucket) ? bucket[$1] : ""
       $9 = (b == "provider" || b == "quota") ? "hit" : (b == "none" || b == "guard" || b == "other") ? "miss" : "unknown"
     }
-    { print }' "$STATUS_BUCKETS_FILE" "$TASKS_FILE" > "$RESOLVED_FILE" && mv "$RESOLVED_FILE" "$TASKS_FILE"
+    { print }' "$STATUS_BUCKETS_FILE" "$TASKS_FILE" > "$RESOLVED_FILE"; then
+    mv "$RESOLVED_FILE" "$TASKS_FILE"
+  else
+    rm -f "$RESOLVED_FILE"
+  fi
 }
 
 collect_tasks
