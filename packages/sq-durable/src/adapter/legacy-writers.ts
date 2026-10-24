@@ -224,6 +224,15 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 		note: "check runner",
 	},
 	{
+		path: "bin/sq-dispatch-tune.sh",
+		consults: [],
+		exempt: {
+			reason: "redirects its per-status bucket classification into a mktemp scratch file, STATUS_BUCKETS_FILE, that it reads back and removes; never a task record",
+			lines: ['python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" "$LOG_FILE" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<\'PY\' || true'],
+		},
+		note: "read-only dispatch report over data/*/dispatch.jsonl and state/<id>.status; its only write is a mktemp scratch file",
+	},
+	{
 		path: "bin/sq-timeout-lib.sh",
 		consults: [],
 		exempt: {
