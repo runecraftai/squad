@@ -691,7 +691,7 @@ emit_markdown() {
     echo "| Task ID | Profile | Outcome | Duration |"
     echo "|---------|---------|---------|----------|"
     sort -t$'\t' -k7,7 -k5,5 "$TASKS_FILE" | while IFS=$'\t' read -r tid _h _m _e outcome dur _p _rest; do
-      printf '| %s | %s | %s | %s |\n' "$tid" "$_h/$_m/$_e" "$outcome" "$(fmt_duration "$dur")"
+      printf '| %s | %s | %s | %s |\n' "$(redact_shape "$tid")" "$_h/$_m/$_e" "$outcome" "$(fmt_duration "$dur")"
     done
     echo ""
   fi
@@ -814,7 +814,7 @@ emit_json() {
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
     rate_int="${rate%.*}"
     avg_int="${avg_dur%.*}"
-    if [ "$total" -ge 1 ]; then
+    if [ $((success + failure)) -ge 1 ]; then
       if [ "$rate_int" -gt "${best_rate%.*}" ] 2>/dev/null || [ "$best_rate" = "0" ]; then
         best_rate="$rate"; best_profile="$profile"
       fi
@@ -855,14 +855,15 @@ emit_json() {
   fi
 
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    if [ "$failure" -ge 3 ] 2>/dev/null && [ "$total" -ge 3 ] 2>/dev/null; then
+    local decided=$((success + failure))
+    if [ "$failure" -ge 3 ] 2>/dev/null && [ "$decided" -ge 3 ] 2>/dev/null; then
       local fail_pct ep2
-      fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $total) * 100 }")
+      fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
       ep2=$(json_escape "$profile")
       [ "$first_rec" -eq 0 ] && recs_json+=","
       first_rec=0
       recs_json+=$(printf '{"action":"avoid","profile":"%s","reason":"%d%% failure rate (%d/%d tasks)"}' \
-        "$ep2" "$fail_pct" "$failure" "$total")
+        "$ep2" "$fail_pct" "$failure" "$decided")
     fi
   done < "$metrics_file"
 
