@@ -121,7 +121,7 @@ PY
 
 test_recommendation_never_changes_actual_dispatch() {
   local baseline shadow case_base case_shadow home_shadow proj_shadow proj_real
-  local out_base out_shadow status requests
+  local out_shadow jev_port status requests
   local reply='{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}'
   baseline=$(make_case shadow-off)
   shadow=$(make_case shadow-on)
@@ -131,10 +131,11 @@ test_recommendation_never_changes_actual_dispatch() {
   start_jev_server "$case_shadow" "$reply"
   printf '{"enabled_projects":["%s"]}\n' "$proj_real" > "$home_shadow/config/jev-dispatch.json"
 
-  out_base=$(unset TYPESAFE_API_KEY; spawn_explicit "$baseline" "$case_base/launch.log")
+  (unset TYPESAFE_API_KEY; spawn_explicit "$baseline" "$case_base/launch.log")
   status=$?
   expect_code 0 "$status" "baseline explicit spawn should succeed"
-  out_shadow=$(export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$(cat "$case_shadow/port")/v1/systemone"
+  jev_port=$(cat "$case_shadow/port")
+  out_shadow=$(export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$jev_port/v1/systemone"
     spawn_explicit "$shadow" "$case_shadow/launch.log")
   status=$?
   expect_code 0 "$status" "explicit spawn with Jev shadow should succeed"
