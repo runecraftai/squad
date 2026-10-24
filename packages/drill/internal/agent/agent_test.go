@@ -1425,6 +1425,30 @@ func TestFinalizeTextResult_StrayBraceInProseDoesNotSwallowFencedPayload(t *test
 	}
 }
 
+func TestFinalizeTextResult_CodeBracketsInProseAreNotPayloads(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	t.Run("bracket without payload fails loudly", func(t *testing.T) {
+		_, err := finalizeTextResult("pi", "Checked the []byte path, no issues.", reviewFindingsSchemaShape, TokenUsage{})
+		if err == nil {
+			t.Fatal("prose code brackets with no payload must not normalize to zero findings")
+		}
+	})
+	t.Run("code bracket does not make a fenced payload ambiguous", func(t *testing.T) {
+		text := "Checked the []byte path.\n```json\n" + object + "\n```"
+		result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+		if err != nil {
+			t.Fatalf("fenced payload after a code bracket must recover, got: %v", err)
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(result.Output, &got); err != nil {
+			t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+		}
+		if _, ok := got["findings"]; !ok {
+			t.Fatalf("normalized output lacks findings: %s", result.Output)
+		}
+	})
+}
+
 func TestFinalizeTextResult_RefusesAmbiguousFindingsPayloads(t *testing.T) {
 	payload := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
 	text := "First result: " + payload + " Second result: " + payload

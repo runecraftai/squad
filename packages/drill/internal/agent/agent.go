@@ -517,11 +517,19 @@ func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
 				continue
 			}
 			if end, ok := scanBalancedArray(text, i); ok {
+				glued := (i > 0 && isIdentifierByte(text[i-1])) || (end < len(text) && isIdentifierByte(text[end]))
+				if glued {
+					continue
+				}
 				candidates = append(candidates, jsonCandidate{text: text[i:end]})
 			}
 		}
 	}
 	return candidates
+}
+
+func isIdentifierByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // isFenceOpener reports whether a ``` run at byte i begins a real fence
