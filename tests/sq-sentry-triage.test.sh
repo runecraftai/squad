@@ -97,6 +97,28 @@ seen_sig() {
 # harness touching it), so without this the marker's own first sighting would
 # fire an unrelated "signal:" wake and mask the static-busy assertion under
 # test. Call again after any further touch/set_mtime on the same file.
+# Wraps the case's fake tmux so `capture-pane -S -N` returns only the last N lines
+# of the fixture, as a real pane's bottom-anchored capture does. Without this the
+# fake returns the whole fixture and a tall pane's above-tail content is invisible.
+use_tail_aware_tmux() {  # <fakebin>
+  local fakebin=$1
+  mv "$fakebin/tmux" "$fakebin/tmux-base"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -n "${SQUAD_FAKE_TMUX_CAPTURE:-}" ]; then
+  lines=
+  while [ $# -gt 0 ]; do
+    if [ "$1" = -S ]; then lines=${2#-}; fi
+    shift
+  done
+  if [ -n "$lines" ]; then tail -n "$lines" "$SQUAD_FAKE_TMUX_CAPTURE"; else cat "$SQUAD_FAKE_TMUX_CAPTURE"; fi
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-base" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+}
+
 prime_turnend_seen() {  # <file>
   local f=$1 base
   base=$(basename "$f" | tr '.' '_')
@@ -2514,6 +2536,95 @@ test_busy_changing_pane_resets_expiry() {
   pass "changing rendered content or usage gauge resets busy expiry even with an old turn"
 }
 
+# A 62-line pane whose top row carries <header>; the bottom 40 lines and the
+# footer gauge stay identical across calls, so only above-tail content varies.
+write_tall_pane() {  # <header> <file>
+  {
+    printf 'status %s\n' "$1"
+    for i in $(seq 2 60); do printf 'row %s\n' "$i"; done
+    printf 'Working...\n12k tokens USD 0.42\n'
+  } > "$2"
+}
+
+test_busy_tall_pane_above_tail_progress_resets_expiry() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-tall-pane); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-tall"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  use_tail_aware_tmux "$fakebin"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-tall.meta"
+  record_pi_busy "$state" busy-tall
+  printf 'working: setup complete\n' > "$state/busy-tall.status"
+  sig=$(seen_sig "$state/busy-tall.status"); printf '%s' "$sig" > "$state/.seen-busy-tall_status"
+
+  poll_tall_pane() {
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+      SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+    pid=$!
+    wait_live "$pid" 30 || { reap "$pid"; fail "tall busy pane exited: $(cat "$out")"; }
+    reap "$pid"
+  }
+
+  write_tall_pane row-a "$capture_file"
+  poll_tall_pane
+  [ -s "$state/.stale-since-$key" ] || fail "a static busy tall pane did not start the expiry clock"
+
+  # Only the above-tail row changes: the busy claim is not static, so no expiry.
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  write_tall_pane row-b "$capture_file"
+  : > "$out"
+  poll_tall_pane
+  [ ! -s "$out" ] || fail "progress above the bottom 40 lines was escalated as a frozen busy pane: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "progress above the bottom 40 lines escalated the wedge counter"
+
+  # Control: the same tall pane, truly unchanged, does expire on the aged clock.
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "a truly static tall busy pane never expired: $(cat "$out")"; }
+  grep -F "busy expired without activity" "$out" >/dev/null || fail "static tall busy expiry reason was not explicit"
+  pass "tall-pane progress above the bottom 40 lines resets busy expiry; a truly static tall pane still expires"
+}
+
+# AFK hands a static busy pane to the daemon exactly like a static idle stale
+# pane: one stale wake per distinct unchanged hash, no wedge timer, no escalation
+# counter growth on repeated polls of the same frozen pane.
+test_busy_static_afk_hands_off_once_per_hash() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-afk); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-afk"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-afk.meta"
+  record_pi_busy "$state" busy-afk
+  printf 'working: setup complete\n' > "$state/busy-afk.status"
+  sig=$(seen_sig "$state/busy-afk.status"); printf '%s' "$sig" > "$state/.seen-busy-afk_status"
+  date '+%s' > "$state/.afk"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "AFK static busy pane did not hand off a stale wake: $(cat "$out")"; }
+  grep -F "stale: $window (busy expired without activity)" "$out" >/dev/null \
+    || fail "AFK busy handoff did not name the expired busy claim: $(cat "$out")"
+  [ "$(grep -c "busy expired without activity" "$out")" = 1 ] || fail "AFK busy handoff emitted more than one wake"
+  [ ! -e "$state/.stale-since-$key" ] || fail "AFK busy handoff started the wedge timer"
+
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_live "$pid" 30 || { reap "$pid"; fail "AFK repeat poll of the same frozen busy pane exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "AFK re-woke the same frozen busy pane: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "AFK busy handoff accumulated deep-inspection escalations"
+  [ "$(grep -c "busy expired without activity" "$state/.stand-to-queue" || true)" = 1 ] \
+    || fail "AFK busy handoff was not queued exactly once"
+  pass "AFK hands a static busy pane to the daemon once per distinct hash, never as a repeated wedge"
+}
+
 test_busy_static_pane_defers_while_run_step_active() {
   local dir state fakebin out capture_file window key sig pid since
   dir=$(make_case busy-static-active-run); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3087,6 +3198,8 @@ test_wedge_escalation_resets_when_pane_becomes_active
 test_teardown_drops_target_and_wedge_counter
 test_busy_static_pane_escalates_without_turn_age
 test_busy_changing_pane_resets_expiry
+test_busy_tall_pane_above_tail_progress_resets_expiry
+test_busy_static_afk_hands_off_once_per_hash
 test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_nonterminal_stale_not_working_surfaced

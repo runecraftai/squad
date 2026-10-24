@@ -159,6 +159,7 @@ SIGNAL_GRACE=${SQUAD_SIGNAL_GRACE:-30}   # seconds to linger after a signal so t
 # daemon owns triage, so this sentry reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read.
 STALE_ESCALATE_SECS=${SQUAD_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+BUSY_PANE_CAPTURE_LINES=${SQUAD_BUSY_PANE_CAPTURE_LINES:-1000}  # rendered-pane lines hashed while a pane claims busy, so progress above the bottom 40 lines counts
 # Busy claims on static output use this same timer; output progress (including
 # a changing rendered cost/token gauge) resets it, independent of turn age.
 # A crew that declared a pause is idling on a known external wait, so its stale
@@ -1146,7 +1147,6 @@ EOF
       esac
     fi
     tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
-    h=$(printf '%s' "$tail40" | hash_pane)
     key=$(printf '%s' "$w" | tr ':/.' '___')
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
@@ -1161,6 +1161,14 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    if [ "$busy_now" -eq 0 ]; then
+      # A busy claim expires only on the whole rendered pane (including the
+      # footer cost/token gauge), so progress above the bottom 40 lines counts.
+      rendered=$(fm_backend_capture "$backend" "$w" "$BUSY_PANE_CAPTURE_LINES" "$(window_label "$w")" 2>/dev/null) || continue
+      h=$(printf '%s' "$rendered" | hash_pane)
+    else
+      h=$(printf '%s' "$tail40" | hash_pane)
+    fi
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
       echo "$n" > "$cf"
@@ -1265,6 +1273,12 @@ EOF
         # expiry. Declared waits still outrank busy; active runs defer in the timer.
         if [ "$busy_now" -eq 0 ] && status_is_paused_or_commander_held "$last"; then
           handle_paused_stale "$w" "$task" "$h"
+        elif [ "$busy_now" -eq 0 ] && [ "$n" -ge 2 ] && afk_present; then
+          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+            fm_wake_append stale "$w" "stale: $w (busy expired without activity)" || exit 1
+            printf '%s' "$h" > "$sf"
+            wake "stale: $w (busy expired without activity)"
+          fi
         elif [ "$busy_now" -eq 0 ] && [ "$n" -ge 2 ]; then
           printf '%s' "$h" > "$sf"
           wedge_timer_check "$w" "$ssf" "busy (static pane)" "$ewf" "busy expired without activity"
