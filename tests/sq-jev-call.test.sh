@@ -100,6 +100,11 @@ with tempfile.TemporaryDirectory() as td:
                            "https://[REDACTED]@example.invalid [REDACTED]","file_count":3},
                            ensure_ascii=True,separators=(",",":"))}
         assert not captured
+        config.write_text('{"enabled_projects":[]}')
+        dry_opt_out = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, check=True)
+        assert json.loads(dry_opt_out.stdout) == payload
+        assert not captured and not (data / "task/dispatch.jsonl").exists()
+        config.write_text(json.dumps({"enabled_projects": [str(project)]}))
 
         state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
         redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)

@@ -87,10 +87,10 @@ def main():
     parser.add_argument("--lanes-json", help="JSON object mapping allowed lane ids to descriptions")
     parser.add_argument("--config", default=os.environ.get("SQUAD_CONFIG_OVERRIDE", "config/jev-dispatch.json"))
     parser.add_argument("--data", default=os.environ.get("SQUAD_DATA_OVERRIDE", "data"))
-    parser.add_argument("--url", default=API_URL, help=argparse.SUPPRESS)
+    parser.add_argument("--url", default=os.environ.get("SQUAD_JEV_URL_OVERRIDE", API_URL), help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if not project_enabled(args.config, args.project):
+    if not args.dry_run and not project_enabled(args.config, args.project):
         print(json.dumps({"status": "disabled"}))
         return 0
     key = os.environ.get("TYPESAFE_API_KEY")
