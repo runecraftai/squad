@@ -7,6 +7,7 @@ FAILURE_BUCKETS = (
     ("provider", re.compile(r"provider|overloaded|outage|unavailable|server error", re.IGNORECASE)),
     ("guard", re.compile(r"guard|policy|refus|denied", re.IGNORECASE)),
 )
+FAILURE_CLASSES = tuple(bucket for bucket, _ in FAILURE_BUCKETS) + ("other",)
 TERMINAL_LINE = re.compile(r"^(done|failed|blocked|paused):[ \t]*(.*)$")
 
 

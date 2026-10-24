@@ -47,7 +47,7 @@ import sys
 import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
-from sq_dispatch_failure import status_failure_class
+from sq_dispatch_failure import FAILURE_CLASSES, status_failure_class
 
 SECRET_SHAPE = re.compile(
     r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
@@ -73,7 +73,7 @@ for event in ("decision", "spawn"):
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
-command.add_argument("--failure-class", choices=("provider", "quota", "guard", "other", "none"))
+command.add_argument("--failure-class", choices=FAILURE_CLASSES + ("none",))
 args = parser.parse_args(sys.argv[3:])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")

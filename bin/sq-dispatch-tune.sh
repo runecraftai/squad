@@ -29,8 +29,8 @@
 # success rate is done over done plus failed, as in the lane table.
 # Fallback = a logged task's failure_class of provider or quota, even on a released
 # task (guard and other are misses); the log is authoritative and its status file is never read.
-# A task without a log takes its fallback from the last done or failed status line; a blocked
-# or paused line counts only when no done or failed line exists.
+# A task without a log takes its fallback from the last done or failed status line; a status
+# file with neither is skipped, so a blocked or paused line never counts.
 # Teardown removes the status file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
@@ -261,14 +261,17 @@ record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <f
 # Rows are unit-separator delimited so empty fields survive `read`.
 collect_log_rows() {
   [ "$LOG_READER" -eq 1 ] || return 0
-  if ! python3 - "$DATA" "$CUTOFF" > "$LOG_FILE" 2>/dev/null <<'PY'
+  if ! python3 - "$SCRIPT_DIR" "$DATA" "$CUTOFF" > "$LOG_FILE" 2>/dev/null <<'PY'
 import datetime
 import json
 import os
 import re
 import sys
 
-data_dir, cutoff = sys.argv[1], int(sys.argv[2])
+sys.path.insert(0, sys.argv[1])
+from sq_dispatch_failure import FAILURE_CLASSES
+
+data_dir, cutoff = sys.argv[2], int(sys.argv[3])
 id_pattern = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
@@ -283,9 +286,6 @@ def moment(value):
         return datetime.datetime.fromisoformat(value).timestamp()
     except (TypeError, ValueError):
         return None
-
-
-FAILURE_CLASSES = ("provider", "quota", "guard", "other")
 
 
 def triple(row):
@@ -755,7 +755,7 @@ emit_fallback_markdown() {
   read -r hits observed unknown < <(fallback_totals)
   echo "## Fallback Rate"
   echo ""
-  echo "A fallback is a provider or quota failure: a logged task reads its log's failure_class only, and a task without a log reads its last done or failed status line (blocked or paused when neither exists)."
+  echo "A fallback is a provider or quota failure: a logged task reads its log's failure_class only, and a task without a log reads its last done or failed status line (a status file with neither is skipped)."
   echo "A logged done task without a failure_class is clean; a released or failed one without a failure_class is unknown."
   echo ""
   echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (failure class or status file present)"
