@@ -100,12 +100,11 @@ def load_lanes(args):
                 profiles.extend(use if isinstance(use, list) else [use])
             default = dispatch.get("default", [])
             profiles.extend(default if isinstance(default, list) else [default])
-            lanes = {"/".join(str(profile.get(key, "default")) for key in ("harness", "model")):
-                     "/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
+            lanes = {"/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
                      for profile in profiles if isinstance(profile, dict) and profile.get("harness")}
     except (OSError, ValueError, AttributeError):
-        return {}
-    return lanes if isinstance(lanes, dict) else {}
+        return set()
+    return set(lanes) if isinstance(lanes, (dict, set)) else set()
 
 
 def classify(answer, lanes):
