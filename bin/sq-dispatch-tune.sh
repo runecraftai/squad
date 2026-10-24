@@ -27,8 +27,8 @@
 # counts toward its lane and profile dispatch totals, never as a success or failure;
 # success rate is done over done plus failed, as in the lane table.
 # Fallback = a log's failure_class of provider or quota, even on a released
-# task (guard and other are misses). Without one, the last done, failed, blocked,
-# or paused status line, classified as the writer does. Teardown removes the status
+# task (guard and other are misses). Without one, the last done or failed status line
+# decides; a blocked or paused line counts only when no done or failed line exists. Teardown removes the status
 # file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
@@ -747,7 +747,7 @@ emit_fallback_markdown() {
   read -r hits observed unknown < <(fallback_totals)
   echo "## Fallback Rate"
   echo ""
-  echo "A fallback is a provider or quota failure, from the log's failure_class or else a blocked, paused, or failed status line."
+  echo "A fallback is a provider or quota failure, from the log's failure_class or else the last done or failed status line (blocked or paused when neither exists)."
   echo "A logged done task without a failure_class is clean; a released or failed one without a failure_class is unknown."
   echo ""
   echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (failure class or status file present)"
