@@ -53,7 +53,7 @@ SECRET_SHAPE = re.compile(
     r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
     r"|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]"
     r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"
-    r"|[A-Za-z0-9_+/]{32,}",
+    r"|(?<![A-Za-z0-9_+/])(?!(?:[0-9a-f]{40}|[0-9a-f]{64})(?![A-Za-z0-9_+/]))[A-Za-z0-9_+/]{32,}",
     re.IGNORECASE)
 
 
