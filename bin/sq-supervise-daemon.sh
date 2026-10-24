@@ -473,7 +473,7 @@ stale_marker_record() {  # <window> <state> [episode-epoch] - create or advance 
   key=$(_stale_key "$(window_to_task "$win" "$state")")
   marker="$state/.subsuper-stale-$key"
   case "$episode" in
-    ''|*[!0-9]*) [ -e "$marker" ] || _now > "$marker" ;;
+    ''|*[!0-9]*) ;;
     *)
       prior=$(cat "$marker" 2>/dev/null || echo 0)
       prior=${prior#-}

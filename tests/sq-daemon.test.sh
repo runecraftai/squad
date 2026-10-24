@@ -171,7 +171,7 @@ test_stale_transient_self_records_marker() {
   dir=$(make_supercase stale-transient)
   state="$dir/state"
   printf 'working: building\n' > "$state/qux-w4.status"
-  stale_marker_record "sess:sq-qux-w4" "$state"
+  stale_marker_record "sess:sq-qux-w4" "$state" "$(date +%s)"
   out=$(SQUAD_STATE_OVERRIDE="$state" classify_stale "sess:sq-qux-w4" "$state")
   case "$out" in self\|*) ;; *) fail "transient stale did not self-handle: $out" ;; esac
   key=$(printf '%s' "$(window_to_task "sess:sq-qux-w4")" | tr ':/.' '___')
@@ -587,6 +587,98 @@ afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition
   [ ! -s "$state/.subsuper-escalations" ] || fail "$case_name: busy handoff reached the commander before the complete static window"
 
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  if [ "$case_name" = producer-capture-failure ]; then
+    mv "$fakebin/tmux" "$fakebin/tmux-working"
+    cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ] && [ -e "${SQUAD_CAPTURE_FAILURE_FILE:-/nonexistent}" ]; then
+  case " $* " in *' -S '*) ;; *) exit 1 ;; esac
+fi
+exec "$(dirname "$0")/tmux-working" "$@"
+SH
+    chmod +x "$fakebin/tmux"
+    : > "$dir/capture-failed"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_CAPTURE_FAILURE_FILE="$dir/capture-failed" SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 \
+      SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    if grep -F "stale: $win" "$out" >/dev/null; then fail "producer capture failure woke the commander: $(cat "$out")"; fi
+    case "$(cat "$state/.stale-$(_stale_key "$win")" 2>/dev/null || true)" in
+      busy-afk:*) ;;
+      *) fail "producer capture failure dropped the handed-off busy episode" ;;
+    esac
+    case "$(cat "$state/.subsuper-stale-$key" 2>/dev/null || true)" in
+      -*) ;;
+      *) fail "producer capture failure did not suspend daemon ownership" ;;
+    esac
+    rm -f "$dir/capture-failed"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_CAPTURE_FAILURE_FILE="$dir/capture-failed" SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 \
+      SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    if grep -F "stale: $win" "$out" >/dev/null; then fail "recovered static read woke before a daemon window: $(cat "$out")"; fi
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "recovered static read did not start a fresh daemon window"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "capture recovery alarmed before a full static window"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ "$(grep -c "busy expired without activity" "$state/.subsuper-escalations")" -eq 1 ] \
+      || fail "recovered frozen busy episode did not escalate exactly once"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ "$(grep -c "busy expired without activity" "$state/.subsuper-escalations")" -eq 1 ] \
+      || fail "escalated busy episode alarmed again on a later housekeeping pass"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 \
+      SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    if grep -F "stale: $win" "$out" >/dev/null; then fail "escalated busy episode was re-handed to the daemon"; fi
+    return 0
+  fi
+  if [ "$case_name" = progress-replay ]; then
+    printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 1.5
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    [ ! -e "$state/.subsuper-stale-$key" ] || fail "real progress kept the handed-off busy episode's daemon tracking"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    [ ! -e "$state/.subsuper-stale-$key" ] || fail "a replayed handoff after real progress recreated daemon tracking"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "a replayed handoff after real progress alarmed"
+    return 0
+  fi
   if [ "$case_name" = repeat-hash ]; then
     # Brief progress breaks the first episode; returning to the same frozen hash
     # must issue a fresh handoff whose daemon clock is not the first episode's.
@@ -736,7 +828,7 @@ SH
 
 test_afk_busy_handoff_escalates_through_daemon_recheck() {
   local case_name
-  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step repeat-hash old-terminal; do
+  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step repeat-hash old-terminal producer-capture-failure progress-replay; do
     afk_busy_daemon_case "$case_name"
   done
   pass "away-mode episodes survive capture gaps and mode changes, restart busy/idle clocks, and defer active steps"
@@ -1434,6 +1526,7 @@ test_afk_nonterminal_working_merged_keeps_wedge_aging() {
       esac
       ;;
   esac
+  date +%s > "$state/.stale-since-$(printf '%s' "$win" | tr ':/.' '___')"
   SQUAD_STATE_OVERRIDE="$state" handle_wake "stale: $win" "$state"
   [ -e "$state/.subsuper-stale-$key" ] \
     || fail "wedge stale marker was not recorded for already-seen nonterminal working:"

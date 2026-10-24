@@ -354,6 +354,19 @@ busy_static_absorb_finished() {  # <window> <task> <since-file> <escalation-file
   triage_log "absorbed busy (task already finished): $1"
 }
 
+suspend_busy_episode() {  # <window> <since-file>
+  local task marker epoch
+  if ! afk_present; then
+    rm -f "$2"
+    return 0
+  fi
+  task=$(window_to_task "$1" "$STATE")
+  marker="$STATE/.subsuper-stale-$(printf '%s' "$task" | tr ':/.' '___')"
+  [ -e "$marker" ] || return 0
+  epoch=$(cat "$marker" 2>/dev/null || date +%s)
+  printf -- '-%s\n' "${epoch#-}" > "$marker"
+}
+
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # sentry restart between recording the hash and recording the timer), or
@@ -1168,34 +1181,37 @@ EOF
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
     busy_expirable=0
-    if [ "$busy_now" -eq 0 ]; then
-      # A busy claim expires only on the whole rendered pane (including the
-      # footer cost/token gauge), so progress above the bottom 40 lines counts.
-      # An unreadable viewport hashes the tail for pause tracking only and never expires.
-      if rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null); then
-        h=$(printf '%s' "$rendered" | hash_pane)
-        busy_expirable=1
-      else
-        h=$(printf '%s' "$tail40" | hash_pane)
-      fi
+    episode_busy=0
+    case "$(cat "$sf" 2>/dev/null || true)" in
+      busy:*|busy-afk:*) episode_busy=1 ;;
+    esac
+    rendered_ok=0
+    if [ "$busy_now" -eq 0 ] || [ "$episode_busy" -eq 1 ]; then
+      rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null) && rendered_ok=1
+    fi
+    # A busy claim expires only on the whole rendered pane (including the
+    # footer cost/token gauge), so progress above the bottom 40 lines counts.
+    # An unreadable viewport hashes the tail for pause tracking only and never expires.
+    if [ "$busy_now" -eq 0 ] && [ "$rendered_ok" -eq 1 ]; then
+      h=$(printf '%s' "$rendered" | hash_pane)
+      busy_expirable=1
     else
       h=$(printf '%s' "$tail40" | hash_pane)
+    fi
+    if [ "$episode_busy" -eq 1 ] && [ "$rendered_ok" -eq 0 ]; then
+      suspend_busy_episode "$w" "$ssf"
+      continue
     fi
     # Busy suppressors are classed so they cannot swallow a later idle turn.
     # On a static busy-to-idle transition compare the same complete viewport
     # before returning to the idle tail hash, preserving immediate surfacing.
-    if [ "$busy_now" -ne 0 ]; then
-      case "$(cat "$sf" 2>/dev/null || true)" in
-        busy:*|busy-afk:*)
-          if rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null) \
-             && [ "$(printf '%s' "$rendered" | hash_pane)" = "$prev" ]; then
-            prev=$h
-            printf '%s' "$h" > "$hf"
-            echo 1 > "$cf"
-          fi
-          rm -f "$sf" "$ssf" "$ewf"
-          ;;
-      esac
+    if [ "$busy_now" -ne 0 ] && [ "$episode_busy" -eq 1 ]; then
+      if [ "$(printf '%s' "$rendered" | hash_pane)" = "$prev" ]; then
+        prev=$h
+        printf '%s' "$h" > "$hf"
+        echo 1 > "$cf"
+      fi
+      rm -f "$sf" "$ssf" "$ewf"
     fi
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
